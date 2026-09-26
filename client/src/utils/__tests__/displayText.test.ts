@@ -45,4 +45,41 @@ describe('formatTitleCaseLabel', () => {
   it('collapses whitespace and trims', () => {
     expect(formatTitleCaseLabel('  cancer   biology  ')).toBe('Cancer Biology');
   });
+
+  it('keeps short function words lower-case away from the opening position', () => {
+    expect(formatTitleCaseLabel('work and gender')).toBe('Work and Gender');
+    expect(formatTitleCaseLabel('Epigenetics and DNA Methylation')).toBe(
+      'Epigenetics and DNA Methylation',
+    );
+    expect(formatTitleCaseLabel('Complement System in Diseases')).toBe(
+      'Complement System in Diseases',
+    );
+    expect(formatTitleCaseLabel('economics of education')).toBe('Economics of Education');
+    expect(formatTitleCaseLabel('bacterial interactions with mammalian hosts')).toBe(
+      'Bacterial Interactions with Mammalian Hosts',
+    );
+  });
+
+  it('capitalizes a function word that opens the label', () => {
+    expect(formatTitleCaseLabel('the faboratory')).toBe('The Faboratory');
+    expect(formatTitleCaseLabel('in vivo imaging')).toBe('In Vivo Imaging');
+    expect(formatTitleCaseLabel('of mice and men')).toBe('Of Mice and Men');
+  });
+
+  it('treats a slash or bracket as the start of a new label', () => {
+    expect(formatTitleCaseLabel('in vivo/in vitro')).toBe('In Vivo/In Vitro');
+    expect(formatTitleCaseLabel('imaging/of tissue')).toBe('Imaging/Of Tissue');
+  });
+
+  it('keeps function words lower-case across a hyphen, which continues one label', () => {
+    expect(formatTitleCaseLabel('state-of-the-art microscopy')).toBe('State-of-the-Art Microscopy');
+  });
+
+  it('keeps the closing word capitalised, because a trailing letter is a designator', () => {
+    expect(formatTitleCaseLabel('Vascular Endothelial Growth Factor A')).toBe(
+      'Vascular Endothelial Growth Factor A',
+    );
+    expect(formatTitleCaseLabel('hepatitis a')).toBe('Hepatitis A');
+    expect(formatTitleCaseLabel('things to think about')).toBe('Things to Think About');
+  });
 });

@@ -1,17 +1,31 @@
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { sanitizePersonName } from '../utils/personNameHygiene';
 import {
   isStudiesResearchAreaEchoDescription,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
+import {
+  isFacultyResearchEntity,
+  servedResearchEntityTitle,
+} from '../utils/servedResearchEntityTitle';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { dropDomainIncoherentUnsourcedResearchAreas } from '../utils/researchAreaDomainCoherence';
-import { isSyntheticResearchHomeMetadataDescription } from '../utils/researchEntityDescriptionText';
+import {
+  isSyntheticResearchHomeMetadataDescription,
+  revoiceFirstPersonResearchLead,
+} from '../utils/researchEntityDescriptionText';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import {
+  isPlaceholderEntityName,
+  personScopedResearchEntityNameFromPersonName,
+  personScopedResearchEntityNameNamesSomethingElseByUrlPath,
+  isExternalScholarlyPlatformLinkLabelName,
+} from '../utils/researchHomeNameIdentityAuthority';
 import {
   RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
   RESEARCH_ENTITY_MEILI_SYNONYMS,
@@ -36,6 +50,10 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'methods',
     'studentSearchTerms',
     'departments',
+    // Searchable but deliberately absent from `filterableAttributes`: a center,
+    // hospital, or program a source listed beside an appointment should stay
+    // findable by name without becoming a department facet value (#2194).
+    'orgAffiliationLabels',
     'shortDescription',
     'fullDescription',
     'school',
@@ -53,10 +71,6 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'departments',
     'researchAreas',
     'hasUndergradHostingEvidence',
-    'hasDocumentedWayIn',
-    'undergraduateCurrentAvailability',
-    'undergraduateCompensationModel',
-    'undergraduateEligibleStudentLevels',
     'studentVisibilityTier',
   ],
   sortableAttributes: ['browseRankScore', 'lastObservedAt', 'name', 'createdAt', 'updatedAt'],
@@ -164,6 +178,9 @@ const RETIRED_ACCESS_INDEX_FIELDS = [
   'opennessExplanationCache',
   'opennessComputedAt',
   'opennessLastSignalAt',
+  'undergraduateCurrentAvailability',
+  'undergraduateCompensationModel',
+  'undergraduateEligibleStudentLevels',
 ] as const;
 
 const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
@@ -204,7 +221,8 @@ const uniqueObjectIdValues = (values: unknown[]): unknown[] => {
 
 const cleanPersonName = (value: unknown): string => {
   if (typeof value !== 'string') return '';
-  const cleaned = redactDirectContactInfo(value)
+  const hygienic = sanitizePersonName(value) || value;
+  const cleaned = redactDirectContactInfo(hygienic)
     .replace(/\[(?:email|phone) redacted\]/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -376,20 +394,77 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     delete out[field];
   }
 
+  // This withhold is a matching guard, not a display guard: browse and search
+  // re-read the Mongo row and spread it over the hit (`researchGroupService.ts`),
+  // so the indexed `displayName` never titles a card. It still has to drop
+  // placeholder filler or an umbrella-organization / foreign-lab graft on the same
+  // terms the detail-page DTO does, because `displayName` is a
+  // `searchableAttributes` entry and filler left in it keyword matches a record
+  // whose served title is its real `name` (#2351/#2367).
+  if (
+    isPlaceholderEntityName(out.displayName) ||
+    isExternalScholarlyPlatformLinkLabelName(out.displayName) ||
+    personScopedResearchEntityNameNamesSomethingElseByUrlPath({
+      candidateName: out.displayName,
+      entityType: out.entityType,
+      kind: out.kind,
+      slug: out.slug,
+      websiteUrl: out.fieldProvenance?.displayName?.sourceUrl || out.websiteUrl || out.website,
+      recordCitedUrls: [out.websiteUrl, out.website, out.sourceUrls],
+    })
+  ) {
+    delete out.displayName;
+  }
+
+  // The same bare-person-name substitution the serve sanitizer makes, so the
+  // indexed title cannot drift from the served one on a row whose stored name the
+  // repair has not reached yet (#2373/#2507).
+  for (const field of ['name', 'displayName'] as const) {
+    const derived = personScopedResearchEntityNameFromPersonName({
+      candidateName: out[field],
+      entityType: out.entityType,
+      kind: out.kind,
+    });
+    if (derived) out[field] = derived;
+  }
+
   for (const field of SEARCH_INDEX_TEXT_FIELDS) {
     if (typeof out[field] === 'string') {
       out[field] = redactDirectContactInfo(out[field]);
     }
   }
 
+  /**
+   * The same revoice the detail path applies, so ranking is computed over the copy a
+   * student is shown rather than the harvested first person underneath it.
+   *
+   * Only the detail chokepoint ran it, so the index stored "I have been heavily
+   * involved ..." while the card displayed the third-person form: 1,245 of 4,908
+   * indexed documents carried a first-person pronoun against 2.9% carrying the
+   * placeholder the served representation puts on 26% of rows (#3418). The
+   * embedder template is built from these fields, so the vectors inherited it too.
+   *
+   * Wired here rather than at materialize time because a stored description no live
+   * observation asserts gets no planned value, so a write-time derivation cannot
+   * reach the stale rows that most need it. #1640 is the precedent for one pure
+   * function wired into both chokepoints.
+   *
+   * Runs before the hygiene chain, which is where the detail path runs it too, so a
+   * description already revoiced upstream is unchanged by this second pass.
+   */
+  const revoiceSubject = out as Record<string, any>;
   if (typeof out.fullDescription === 'string') {
-    let cleaned = sanitizeResearchEntityDescription(out.fullDescription);
+    let cleaned = sanitizeResearchEntityDescription(
+      revoiceFirstPersonResearchLead(out.fullDescription, revoiceSubject),
+    );
     if (isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) cleaned = '';
     if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';
     out.fullDescription = stripEndowedChairTitles(cleaned);
   }
   if (typeof out.shortDescription === 'string') {
-    let cleaned = sanitizeResearchEntityShortDescription(out.shortDescription);
+    let cleaned = sanitizeResearchEntityShortDescription(
+      revoiceFirstPersonResearchLead(out.shortDescription, revoiceSubject),
+    );
     if (isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) cleaned = '';
     if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';
     out.shortDescription = stripEndowedChairTitles(cleaned);
@@ -457,10 +532,6 @@ export function buildResearchEntitySearchIndexDocument(
     out.leadProfessorNames = memberNames.leadProfessorNames;
     out.professorNames = memberNames.professorNames;
   }
-  const studentSearchTerms = buildStudentSearchTerms(out);
-  if (studentSearchTerms.length > 0) {
-    out.studentSearchTerms = studentSearchTerms;
-  }
   delete out._id;
   delete out.__v;
   delete out.embedding;
@@ -468,6 +539,35 @@ export function buildResearchEntitySearchIndexDocument(
     delete out[field];
   }
   sanitizeResearchEntityIndexDocument(out);
+
+  /**
+   * Index the title a student actually reads. `name` carries a synthesized
+   * `"<Person> Faculty Research"` for a faculty research area, which the client has
+   * always stripped for display while rendering "Faculty Research" as a kind label.
+   * Because `name` and `displayName` are both `searchableAttributes`, that unseen
+   * suffix was indexed on 1,543 served rows, so "research" and "faculty research"
+   * matched every one of them and ranked placeholders above real labs.
+   *
+   * Must run before `buildStudentSearchTerms`, which derives aliases from this
+   * document: an alias built from the suffix would reintroduce the same match.
+   */
+  if (isFacultyResearchEntity(out)) {
+    const servedTitle = servedResearchEntityTitle(out);
+    if (servedTitle) {
+      out.name = servedTitle;
+      if (out.displayName) out.displayName = servedTitle;
+    }
+  }
+
+  // Ordering constraint: topic aliases have to come off the sanitized document,
+  // never the raw one. `studentSearchTerms` is a `searchableAttributes` entry, so
+  // an alias derived from copy the sanitizer removes (a chip-echo or synthetic
+  // metadata description, an endowed-chair title, a domain-incoherent research
+  // area) makes the entity match a term no surface ever serves (#2396).
+  const studentSearchTerms = buildStudentSearchTerms(out);
+  if (studentSearchTerms.length > 0) {
+    out.studentSearchTerms = studentSearchTerms;
+  }
   return out;
 }
 

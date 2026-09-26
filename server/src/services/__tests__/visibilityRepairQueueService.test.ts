@@ -8,10 +8,21 @@ import {
   classifyVisibilityRepairStage,
   normalizeVisibilityRepairObjectId,
   researchEntityLeadMembersFromRoster,
+  RESOLVED_BY_GATE_DRY_RUN_NOTE,
   runVisibilityRepairQueue,
+  VISIBILITY_REPAIR_QUEUE_DRAIN_SORT,
   type VisibilityRepairQueueItemInput,
 } from '../visibilityRepairQueueService';
 import type { ResearchEntityRosterEntry } from '../researchEntityMembershipAccessor';
+import { partitionResolvableQueueRecordIds } from '../studentVisibilityGateService';
+import { classifyRecoverabilityForRecordIds } from '../visibilityRecoverabilityService';
+
+vi.mock('../visibilityRecoverabilityService', () => ({
+  classifyRecoverabilityForRecordIds: vi.fn().mockResolvedValue({
+    byRecordId: new Map(),
+    bucketCounts: { regate: 0, materialize: 0, acquire: 0, ceiling: 0 },
+  }),
+}));
 
 const queueItem = (
   overrides: Partial<VisibilityRepairQueueItemInput> = {},
@@ -26,6 +37,14 @@ const queueItem = (
 });
 
 describe('visibilityRepairQueueService', () => {
+  it('drains the queue oldest-first so a never-attempted tail is reachable', () => {
+    // Not a style preference. Every gate run refreshes `lastSeenAt` on every open item,
+    // so sorting by it descending re-reads whatever the gate just touched: 1,153 of
+    // 1,218 open items had never been attempted while 65 had (#2872).
+    expect(VISIBILITY_REPAIR_QUEUE_DRAIN_SORT).toEqual({ firstSeenAt: 1, _id: 1 });
+    expect(Object.keys(VISIBILITY_REPAIR_QUEUE_DRAIN_SORT)).not.toContain('lastSeenAt');
+  });
+
   it('normalizes visibility repair ObjectIds without object-shaped coercion', () => {
     expect(normalizeVisibilityRepairObjectId(' 507f1f77bcf86cd799439011 ')).toBe(
       '507f1f77bcf86cd799439011',
@@ -67,20 +86,46 @@ describe('visibilityRepairQueueService', () => {
           target: { kind: 'RESEARCH_ENTITY', id: researchEntityId },
           role: 'PI',
           state: 'CURRENT',
-          archived: false,
           confidence: 0.95,
-          reviewStatus: 'UNREVIEWED',
           rosterProvenance: {
             sourceName: 'visibility-repair-queue',
             sourceUrl: 'https://medicine.yale.edu/profile/example-faculty/',
             observedAt: now,
           },
         },
-        $setOnInsert: { startedAt: now, evidenceClaimIds: [] },
+        $setOnInsert: { startedAt: now, archived: false, reviewStatus: 'UNREVIEWED' },
         $unset: { endedAt: '' },
       },
       options: { upsert: true },
+      reattach: {
+        filter: {
+          personId,
+          'target.kind': 'RESEARCH_ENTITY',
+          'target.id': researchEntityId,
+          role: 'PI',
+          reviewStatus: { $ne: 'DISPUTED' },
+        },
+        update: { $set: { archived: false, reviewStatus: 'UNREVIEWED' } },
+      },
     });
+  });
+
+  it('never re-attaches a role edge a retirement repair disputed (#3143)', () => {
+    const now = new Date('2026-06-05T04:00:00.000Z');
+    const upsert = buildVisibilityRepairPiRoleAssignmentUpsert(
+      new mongoose.Types.ObjectId(),
+      new mongoose.Types.ObjectId(),
+      {
+        sourceUrl: 'https://medicine.yale.edu/profile/example-faculty/',
+        sourceName: 'visibility-repair-queue',
+        confidence: 0.95,
+      },
+      now,
+    );
+
+    expect(upsert.update.$set).not.toHaveProperty('archived');
+    expect(upsert.update.$set).not.toHaveProperty('reviewStatus');
+    expect(upsert.reattach.filter.reviewStatus).toEqual({ $ne: 'DISPUTED' });
   });
 
   it('classifies blockers into automatic repair stages', () => {
@@ -149,6 +194,111 @@ describe('visibilityRepairQueueService', () => {
     });
   });
 
+  const repairDeps = (overrides: Record<string, unknown> = {}) => ({
+    findOpenQueueItems: vi.fn().mockResolvedValue([queueItem()]),
+    updateQueueItem: vi.fn(),
+    findResearchEntity: vi.fn().mockResolvedValue({
+      _id: 'entity-1',
+      bio: 'The lab studies immune mechanisms in cancer and develops translational approaches for therapy.',
+      websiteUrl: 'https://medicine.yale.edu/example-lab',
+      sourceUrls: ['https://medicine.yale.edu/example-lab'],
+    }),
+    updateResearchEntity: vi.fn(),
+    findProgram: vi.fn(),
+    updateProgram: vi.fn(),
+    runGate: vi.fn(),
+    ...overrides,
+  });
+
+  const mockedClassify = vi.mocked(classifyRecoverabilityForRecordIds);
+
+  it('routes an acquire-bucket item away instead of spending the sweep on it', async () => {
+    mockedClassify.mockResolvedValueOnce({
+      byRecordId: new Map([
+        [
+          '507f1f77bcf86cd799439011',
+          {
+            recordId: '507f1f77bcf86cd799439011',
+            slug: 'needs-a-crawl',
+            bucket: 'acquire' as const,
+            decidingBlocker: 'missing_description',
+            residualBlockers: [],
+          },
+        ],
+      ]),
+      bucketCounts: { regate: 0, materialize: 0, acquire: 1, ceiling: 0 },
+    });
+    const deps = repairDeps({
+      findOpenQueueItems: vi
+        .fn()
+        .mockResolvedValue([queueItem({ recordId: '507f1f77bcf86cd799439011' })]),
+    });
+
+    const report = await runVisibilityRepairQueue(
+      { mode: 'dry-run', collection: 'research' },
+      deps,
+    );
+
+    expect(report).toMatchObject({
+      queuedBeforeRouting: 1,
+      scanned: 0,
+      attempted: 0,
+      skippedByBucket: { acquire: 1 },
+    });
+    expect(deps.findResearchEntity).not.toHaveBeenCalled();
+  });
+
+  it('attempts a materialize-bucket item, because its evidence is already stored', async () => {
+    mockedClassify.mockResolvedValueOnce({
+      byRecordId: new Map([
+        [
+          '507f1f77bcf86cd799439011',
+          {
+            recordId: '507f1f77bcf86cd799439011',
+            slug: 'has-stored-evidence',
+            bucket: 'materialize' as const,
+            decidingBlocker: 'missing_description',
+            residualBlockers: [],
+          },
+        ],
+      ]),
+      bucketCounts: { regate: 0, materialize: 1, acquire: 0, ceiling: 0 },
+    });
+    const deps = repairDeps({
+      findOpenQueueItems: vi
+        .fn()
+        .mockResolvedValue([queueItem({ recordId: '507f1f77bcf86cd799439011' })]),
+    });
+
+    const report = await runVisibilityRepairQueue(
+      { mode: 'dry-run', collection: 'research' },
+      deps,
+    );
+
+    expect(report).toMatchObject({ queuedBeforeRouting: 1, scanned: 1, patched: 1 });
+    expect(report.skippedByBucket).toEqual({});
+  });
+
+  it('never attempts a reviewed cap, which is not a defect a repair can clear', async () => {
+    const deps = repairDeps({
+      findOpenQueueItems: vi.fn().mockResolvedValue([
+        queueItem({
+          collection: 'programs',
+          recordId: 'program-1',
+          blockerReasons: ['formalization_only'],
+        }),
+      ]),
+    });
+
+    const report = await runVisibilityRepairQueue({ mode: 'dry-run', collection: 'all' }, deps);
+
+    expect(report).toMatchObject({
+      queuedBeforeRouting: 1,
+      scanned: 0,
+      skippedByBucket: { review_exception: 1 },
+    });
+  });
+
   it('dry-runs repair planning without applying patches or rerunning gates', async () => {
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([queueItem()]),
@@ -170,10 +320,39 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report.repaired).toBe(1);
+    expect(report.patched).toBe(1);
     expect(deps.updateResearchEntity).not.toHaveBeenCalled();
     expect(deps.updateQueueItem).not.toHaveBeenCalled();
     expect(deps.runGate).not.toHaveBeenCalled();
+  });
+
+  // Reporting 0 promotions next to a non-zero patch count, in the only mode a sizing
+  // decision is ever taken from, is how this lane was sized at roughly 6x its yield.
+  // A dry run applies no patch, so the number is unknowable rather than zero (#2440).
+  it('reports no promotion count at all in a dry run rather than a misleading zero', async () => {
+    const deps = {
+      findOpenQueueItems: vi.fn().mockResolvedValue([queueItem()]),
+      updateQueueItem: vi.fn(),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        bio: 'The lab studies immune mechanisms in cancer and develops translational approaches for therapy.',
+        websiteUrl: 'https://medicine.yale.edu/example-lab',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+      }),
+      updateResearchEntity: vi.fn(),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      runGate: vi.fn(),
+    };
+
+    const report = await runVisibilityRepairQueue(
+      { mode: 'dry-run', collection: 'research' },
+      deps,
+    );
+
+    expect(report.patched).toBeGreaterThan(0);
+    expect(report.resolvedByGate).toBeNull();
+    expect(report.resolvedByGateNote).toBe(RESOLVED_BY_GATE_DRY_RUN_NOTE);
   });
 
   it('applies deterministic source-backed description repairs and reruns the gate', async () => {
@@ -194,7 +373,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.updateResearchEntity).toHaveBeenCalledWith(
       'entity-1',
       expect.objectContaining({
@@ -247,7 +426,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: true,
       status: 'repaired',
@@ -303,7 +482,7 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.findConflictingOfficialLabUrls).toHaveBeenCalledWith('entity-1', [
       'https://medicine.yale.edu/lab/example',
     ]);
-    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1, resolvedByGate: 0 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -348,7 +527,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: true,
       status: 'repaired',
@@ -398,7 +577,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1, resolvedByGate: 0 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -437,7 +616,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1, resolvedByGate: 0 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -478,7 +657,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: true,
       status: 'blocked',
@@ -534,7 +713,7 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.findConflictingOfficialLabUrls).toHaveBeenCalledWith('entity-1', [
       'https://medicine.yale.edu/lab/example',
     ]);
-    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1, resolvedByGate: 0 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -577,7 +756,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -655,13 +834,46 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report.repaired).toBe(1);
+    expect(report.patched).toBe(1);
     expect(deps.updateResearchEntity).toHaveBeenCalledWith(
       'entity-1',
       expect.objectContaining({
         shortDescription: expect.stringMatching(/quantum|lattice|topology/i),
       }),
     );
+    expect(report.resolvedByGate).toBe(1);
+    expect(report.resolvedByGateNote).toBeUndefined();
+  });
+
+  // `patched` counts the blockers this lane models being cleared; the gate re-decides the
+  // patched row against the full reason set and can still hold it. The two numbers are
+  // separate on purpose, so an apply run that patches and promotes nothing still says so.
+  it('separates the patch count from the promotion count when the gate still holds the row', async () => {
+    const deps = {
+      findOpenQueueItems: vi.fn().mockResolvedValue([
+        queueItem({
+          blockerReasons: ['missing_card_description'],
+        }),
+      ]),
+      updateQueueItem: vi.fn(),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        fullDescription:
+          'The lab studies quantum simulation, ultracold atoms, optical lattices, and topology in many-body physics. Current projects examine how unusual lattice geometries shape quantum behavior.',
+        shortDescription: '',
+        websiteUrl: 'https://physics.yale.edu/example-lab',
+        sourceUrls: ['https://physics.yale.edu/example-lab'],
+      }),
+      updateResearchEntity: vi.fn().mockResolvedValue(undefined),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0, promoted: 0 } }),
+    };
+
+    const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
+
+    expect(report.patched).toBe(1);
+    expect(report.resolvedByGate).toBe(0);
   });
 
   it('blocks missing card repair when only directory source URLs support the description', async () => {
@@ -691,7 +903,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report.repaired).toBe(0);
+    expect(report.patched).toBe(0);
     expect(report.blocked).toBe(1);
     expect(report.attempts[0]).toMatchObject({
       applied: false,
@@ -727,7 +939,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report.repaired).toBe(0);
+    expect(report.patched).toBe(0);
     expect(report.blocked).toBe(1);
   });
 
@@ -859,7 +1071,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: true,
       status: 'repaired',
@@ -936,7 +1148,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1, resolvedByGate: null });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -984,7 +1196,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -1041,7 +1253,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1, resolvedByGate: null });
     expect(report.attempts[0]).toMatchObject({
       applied: true,
       status: 'blocked',
@@ -1527,7 +1739,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -1586,7 +1798,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -1684,7 +1896,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(deps.upsertResearchEntityMember).not.toHaveBeenCalled();
   });
 
@@ -1727,7 +1939,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.upsertResearchEntityMember).toHaveBeenCalledWith(
       'entity-1',
       '64a000000000000000000001',
@@ -1783,7 +1995,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(report.attempts[0]).toMatchObject({
       patchSummary: [
         'attached PI member from exact source/user URL match',
@@ -1839,7 +2051,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1, resolvedByGate: null });
     expect(report.attempts[0]).toMatchObject({
       applied: true,
       status: 'blocked',
@@ -1889,7 +2101,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findUserByExactWebsiteUrl).toHaveBeenCalledWith(
       expect.arrayContaining(['https://physics.yale.edu/fixture-lead']),
     );
@@ -1943,7 +2155,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(deps.upsertResearchEntityMember).not.toHaveBeenCalled();
   });
 
@@ -1999,7 +2211,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -2052,7 +2264,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.updateResearchEntity).toHaveBeenCalledWith(
       'entity-1',
       expect.objectContaining({
@@ -2113,7 +2325,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.updateResearchEntity).toHaveBeenCalledWith(
       'entity-1',
       expect.objectContaining({
@@ -2189,7 +2401,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).not.toHaveBeenCalled();
@@ -2247,7 +2459,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -2307,7 +2519,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findActionEvidenceObservationIds).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'user-1',
@@ -2372,7 +2584,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).not.toHaveBeenCalled();
@@ -2430,7 +2642,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findActionEvidenceObservationIds).toHaveBeenCalledWith(
       expect.objectContaining({
         sourceUrl: profileUrl,
@@ -2442,6 +2654,162 @@ describe('visibilityRepairQueueService', () => {
         researchEntityId: 'entity-1',
         type: 'REACH_OUT_PLAUSIBLE',
       }),
+    );
+  });
+
+  /**
+   * The repair queue mints an Observation without going through `appendObservations`,
+   * which is the path that refuses a platform-assigned deploy host. Left unfiltered it
+   * would synthesize a fresh citation to the very host #2805 retires.
+   */
+  it('refuses to synthesize action evidence at a platform-assigned deploy host', async () => {
+    const deployHostUrl =
+      'https://example-nuxt-production-fqvp7.ondigitalocean.app/people/faculty-and-staff/example-person';
+    const deps = {
+      findOpenQueueItems: vi.fn().mockResolvedValue([
+        queueItem({
+          blockerReasons: ['missing_action_evidence'],
+        }),
+      ]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        fullDescription:
+          'Research fields include musicology and musical analysis, diverse musicological studies, and music technology and sound studies.',
+        shortDescription:
+          'Studies musicology and musical analysis, diverse musicological studies, and music technology and sound studies.',
+        sourceUrls: [deployHostUrl],
+        websiteUrl: deployHostUrl,
+      }),
+      updateResearchEntity: vi.fn(),
+      findResearchEntityMembers: vi.fn().mockResolvedValue([
+        {
+          role: 'pi',
+          userId: 'user-1',
+          user: {
+            _id: 'user-1',
+            fname: 'Alex',
+            lname: 'Rivera',
+            website: deployHostUrl,
+          },
+        },
+      ]),
+      upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
+      findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
+      findEntityActionEvidenceObservationIds: vi
+        .fn()
+        .mockResolvedValue([{ id: 'obs-2', sourceUrl: deployHostUrl }]),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
+    };
+
+    const report = await runVisibilityRepairQueue(
+      {
+        mode: 'apply',
+        collection: 'research',
+        stage: 'action_evidence',
+        limit: 1,
+      },
+      deps,
+    );
+
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
+    expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
+    expect(deps.findEntityActionEvidenceObservationIds).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Refusing an uncitable host shrinks the entity's URL list, and the evidence query
+   * reads an empty list as "unscoped" rather than as "nothing to cite". Left unguarded
+   * the refusal would make the PI-identity stage MORE permissive for exactly the
+   * entities it means to refuse (#2805).
+   */
+  it('refuses entity-source evidence when the refusal leaves the entity no citable URL', async () => {
+    const deployHostUrl = 'https://example-nuxt-production-fqvp7.ondigitalocean.app/people';
+    const deps = {
+      findOpenQueueItems: vi.fn().mockResolvedValue([
+        queueItem({
+          blockerReasons: ['missing_lead', 'missing_action_evidence'],
+          label: 'Deploy Host Only Lab',
+        }),
+      ]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        name: 'Deploy Host Only Lab',
+        websiteUrl: deployHostUrl,
+        sourceUrls: [deployHostUrl],
+      }),
+      updateResearchEntity: vi.fn(),
+      findResearchEntityMembers: vi.fn().mockResolvedValue([]),
+      findUserByProfileUrl: vi.fn().mockResolvedValue(null),
+      findUserByExactWebsiteUrl: vi.fn().mockResolvedValue(null),
+      upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      findEntityActionEvidenceObservationIds: vi
+        .fn()
+        .mockResolvedValue([{ id: 'obs-unrelated', sourceUrl: deployHostUrl }]),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
+    };
+
+    const report = await runVisibilityRepairQueue(
+      { mode: 'apply', collection: 'research', stage: 'pi_identity', limit: 1 },
+      deps,
+    );
+
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
+    expect(deps.findEntityActionEvidenceObservationIds).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).not.toHaveBeenCalled();
+  });
+
+  it('cites the entity URL rather than a deploy host the matched evidence row was stored at', async () => {
+    const deployHostUrl = 'https://example-nuxt-production-fqvp7.ondigitalocean.app/people';
+    const deps = {
+      findOpenQueueItems: vi.fn().mockResolvedValue([
+        queueItem({
+          blockerReasons: ['missing_lead', 'missing_action_evidence'],
+          label: 'Mixed Citation Lab',
+        }),
+      ]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        name: 'Mixed Citation Lab',
+        websiteUrl: 'https://physics.yale.edu/mixed-citation-lab',
+        sourceUrls: ['https://physics.yale.edu/mixed-citation-lab'],
+      }),
+      updateResearchEntity: vi.fn(),
+      findResearchEntityMembers: vi.fn().mockResolvedValue([]),
+      findUserByProfileUrl: vi.fn().mockResolvedValue(null),
+      findUserByExactWebsiteUrl: vi.fn().mockResolvedValue(null),
+      upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      findEntityActionEvidenceObservationIds: vi
+        .fn()
+        .mockResolvedValue([{ id: 'obs-1', sourceUrl: deployHostUrl, excerpt: 'Undergraduates.' }]),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
+    };
+
+    await runVisibilityRepairQueue(
+      { mode: 'apply', collection: 'research', stage: 'pi_identity', limit: 1 },
+      deps,
+    );
+
+    expect(deps.findEntityActionEvidenceObservationIds).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceUrls: expect.not.arrayContaining([deployHostUrl]),
+      }),
+    );
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceUrl: 'https://physics.yale.edu/mixed-citation-lab' }),
     );
   });
 
@@ -2499,7 +2867,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findActionEvidenceObservationIds).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'user-1',
@@ -2560,7 +2928,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).not.toHaveBeenCalled();
@@ -2614,7 +2982,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findEntityActionEvidenceObservationIds).toHaveBeenCalledWith({
       researchEntityId: 'entity-1',
       sourceUrl: 'https://jackson.yale.edu/centers-initiatives/example-program/',
@@ -2696,7 +3064,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: true,
       status: 'blocked',
@@ -2763,7 +3131,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0].remainingBlockers).toContain('missing_source_evidence');
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).not.toHaveBeenCalled();
@@ -2822,7 +3190,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
   });
 
@@ -2878,7 +3246,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findActionEvidenceObservationIds).toHaveBeenCalledWith({
       researchEntityId: 'entity-1',
       userId: 'user-1',
@@ -2944,7 +3312,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0].remainingBlockers).toContain('missing_source_evidence');
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).not.toHaveBeenCalled();
@@ -2965,7 +3333,7 @@ describe('visibilityRepairQueueService', () => {
         shortDescription:
           'Studies infectious disease modeling, public health interventions, and health policy through interdisciplinary data science.',
         websiteUrl: 'https://cidma.us/',
-        sourceUrls: ['https://orcid.org/0000-0002-2059-6716', 'https://cidma.us/'],
+        sourceUrls: ['https://orcid.org/9999-9005-9999-9052', 'https://cidma.us/'],
       }),
       updateResearchEntity: vi.fn(),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
@@ -2977,7 +3345,7 @@ describe('visibilityRepairQueueService', () => {
             fname: 'Alison',
             lname: 'Galvani',
             profileUrls: {
-              orcid: 'https://orcid.org/0000-0002-2059-6716',
+              orcid: 'https://orcid.org/9999-9005-9999-9052',
             },
           },
         },
@@ -3009,12 +3377,12 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.findEntityActionEvidenceObservationIds).toHaveBeenCalledWith({
       researchEntityId: 'entity-1',
       sourceUrl: 'https://cidma.us/',
-      sourceUrls: ['https://cidma.us/', 'https://orcid.org/0000-0002-2059-6716'],
+      sourceUrls: ['https://cidma.us/', 'https://orcid.org/9999-9005-9999-9052'],
     });
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).toHaveBeenCalledWith(
@@ -3085,7 +3453,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.findEntityActionEvidenceObservationIds).toHaveBeenCalledWith({
       researchEntityId: 'entity-1',
@@ -3124,7 +3492,7 @@ describe('visibilityRepairQueueService', () => {
       { mode: 'apply', collection: 'programs', stage: 'suppression' },
       deps,
     );
-    expect(blocked).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(blocked).toMatchObject({ patched: 0, blocked: 1 });
     expect(deps.updateProgram).not.toHaveBeenCalled();
 
     const suppressed = await runVisibilityRepairQueue(
@@ -3137,7 +3505,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(suppressed).toMatchObject({ repaired: 1, blocked: 0 });
+    expect(suppressed).toMatchObject({ patched: 1, blocked: 0 });
     expect(deps.updateProgram).toHaveBeenCalledWith(
       'entity-1',
       expect.objectContaining({
@@ -3192,8 +3560,104 @@ describe('researchEntityLeadMembersFromRoster', () => {
   it('does not carry lead bio, research interests, or topics onto members', () => {
     const [member] = researchEntityLeadMembersFromRoster([rosterEntry({ role: 'pi' })]);
 
+    // `Researcher.profile` holds no prose field to wire, so these lanes stay
+    // inert by construction rather than by omission here (#2154 part b).
     expect(member.user.bio).toBeUndefined();
     expect(member.user.researchInterests).toBeUndefined();
     expect(member.user.topics).toBeUndefined();
+  });
+
+  it('passes the roster email through, so PI name matching has a local part to read', () => {
+    const [member] = researchEntityLeadMembersFromRoster([
+      rosterEntry({ role: 'pi', email: 'roster.person@yale.edu' }),
+    ]);
+
+    expect(member.email).toBe('roster.person@yale.edu');
+    expect(member.user.email).toBe('roster.person@yale.edu');
+  });
+
+  it('passes profile-page links through as profile URLs the repair lanes already read', () => {
+    const [member] = researchEntityLeadMembersFromRoster([
+      rosterEntry({
+        role: 'pi',
+        websiteUrl: 'https://lab.example.test/',
+        profileLinks: [
+          { kind: 'YALE_OFFICIAL', url: 'https://example-dept.yale.test/profile/roster-person' },
+          { kind: 'PERSONAL_ACADEMIC', url: 'https://roster-person.example.test/' },
+        ] as ResearchEntityRosterEntry['profileLinks'],
+      }),
+    ]);
+
+    expect(Object.values(member.user.profileUrls)).toEqual([
+      'https://example-dept.yale.test/profile/roster-person',
+      'https://roster-person.example.test/',
+    ]);
+  });
+
+  // A publication index is not a profile page, and `profileSourceUrlForMember`
+  // falls through to any http URL, so passing these would let a repaired field
+  // cite a citation index as its source.
+  it('withholds ORCID, Google Scholar, and lab-about links', () => {
+    const [member] = researchEntityLeadMembersFromRoster([
+      rosterEntry({
+        role: 'pi',
+        profileLinks: [
+          { kind: 'ORCID', url: 'https://orcid.org/0009-0009-0009-0009' },
+          { kind: 'GOOGLE_SCHOLAR', url: 'https://scholar.google.com/citations?user=abc' },
+          { kind: 'LAB_ABOUT', url: 'https://lab.example.test/about' },
+        ] as ResearchEntityRosterEntry['profileLinks'],
+      }),
+    ]);
+
+    expect(member.user.profileUrls).toEqual({});
+  });
+
+  it('keeps a second link of the same kind rather than collapsing it', () => {
+    const [member] = researchEntityLeadMembersFromRoster([
+      rosterEntry({
+        role: 'pi',
+        profileLinks: [
+          { kind: 'YALE_OFFICIAL', url: 'https://example-dept.yale.test/profile/one' },
+          { kind: 'YALE_OFFICIAL', url: 'https://example-school.yale.test/profile/one' },
+        ] as ResearchEntityRosterEntry['profileLinks'],
+      }),
+    ]);
+
+    expect(Object.values(member.user.profileUrls)).toEqual([
+      'https://example-dept.yale.test/profile/one',
+      'https://example-school.yale.test/profile/one',
+    ]);
+  });
+});
+
+describe('partitionResolvableQueueRecordIds', () => {
+  it('reports an absent row separately from an archived one, so the closing reason is honest', () => {
+    const result = partitionResolvableQueueRecordIds(
+      ['present-open', 'archived-row', 'deleted-row'],
+      new Set(['present-open', 'archived-row']),
+      new Set(['archived-row']),
+    );
+
+    expect(result).toEqual({ archived: ['archived-row'], absent: ['deleted-row'] });
+  });
+
+  it('leaves a present, unarchived row queued rather than closing it', () => {
+    expect(
+      partitionResolvableQueueRecordIds(['still-held'], new Set(['still-held']), new Set()),
+    ).toEqual({ archived: [], absent: [] });
+  });
+
+  it('treats a row that is both absent and listed archived as absent, since absence is the stronger fact', () => {
+    expect(partitionResolvableQueueRecordIds(['gone'], new Set(), new Set(['gone']))).toEqual({
+      archived: [],
+      absent: ['gone'],
+    });
+  });
+
+  it('returns empty partitions for an empty queue', () => {
+    expect(partitionResolvableQueueRecordIds([], new Set(), new Set())).toEqual({
+      archived: [],
+      absent: [],
+    });
   });
 });

@@ -10,6 +10,7 @@ import { buildEvidenceCoverageImpactReportForObservations } from '../services/re
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { appendObservations, getSourceByName } from './observationStore';
+import { readPriorRunYieldFacts, resolveBarrenStreakFailure } from './sourceYieldGuard';
 import type {
   IScraper,
   ScraperContext,
@@ -17,6 +18,13 @@ import type {
   ObservationInput,
   ScraperResult,
 } from './types';
+
+/**
+ * Cap on the observation values a single `--explain` run collects in memory and
+ * writes to its report, so a corpus-wide dry run cannot produce an unbounded
+ * artifact. Raise per run with `--explain-limit`.
+ */
+const DEFAULT_EXPLAIN_LIMIT = 500;
 
 export class ScraperOrchestrator {
   private scrapers: Map<string, IScraper> = new Map();
@@ -36,7 +44,15 @@ export class ScraperOrchestrator {
     return this.scrapers.get(name);
   }
 
-  async run(name: string, options: ScraperOptions): Promise<{ runId: string; result: unknown }> {
+  async run(
+    name: string,
+    options: ScraperOptions,
+  ): Promise<{
+    runId: string;
+    result: unknown;
+    explainedObservations?: Array<Record<string, unknown>>;
+    explainTruncated?: boolean;
+  }> {
     const scraper = this.scrapers.get(name);
     if (!scraper) {
       throw new Error(
@@ -63,6 +79,9 @@ export class ScraperOrchestrator {
     const observedEntityKeys = new Set<string>();
     const errors: any[] = [];
     const previewObservations: Array<Record<string, unknown>> = [];
+    const explainLimit = options.explain
+      ? (options.explainLimit ?? DEFAULT_EXPLAIN_LIMIT)
+      : Infinity;
     const scrapeRunId = serializedDocumentId(run._id) || '';
 
     const ctx: ScraperContext = {
@@ -81,15 +100,18 @@ export class ScraperOrchestrator {
           sourceWeight: source.defaultWeight,
           dryRun: options.dryRun,
         });
-        if (options.dryRun && options.dbReview) {
-          previewObservations.push(
-            ...inputs.map((obs) => ({
-              ...obs,
-              sourceName: source.name,
-              sourceId: source._id,
-              confidence: obs.confidenceOverride ?? source.defaultWeight,
-            })),
-          );
+        if (options.dryRun && (options.dbReview || options.explain)) {
+          const room = explainLimit - previewObservations.length;
+          if (room > 0) {
+            previewObservations.push(
+              ...inputs.slice(0, room).map((obs) => ({
+                ...obs,
+                sourceName: source.name,
+                sourceId: source._id,
+                confidence: obs.confidenceOverride ?? source.defaultWeight,
+              })),
+            );
+          }
         }
         observationCount += options.dryRun ? inputs.length : res.inserted;
         for (const o of inputs) {
@@ -112,12 +134,25 @@ export class ScraperOrchestrator {
         options.dryRun && options.dbReview
           ? await buildEvidenceCoverageImpactReportForObservations(previewObservations)
           : undefined;
+      const barrenStreakFailure = resolveBarrenStreakFailure({
+        sourceName: source.name,
+        source,
+        currentRun: { observationCount, metrics: result.metrics, options },
+        priorRunsNewestFirst: await readPriorRunYieldFacts({
+          sourceId: source._id,
+          currentRunId: run._id,
+        }),
+      });
+      if (barrenStreakFailure) {
+        console.error(`[${name}] ${barrenStreakFailure.message}`);
+        errors.push({ message: barrenStreakFailure.message, at: new Date() });
+      }
       await ScrapeRun.updateOne(
         { _id: run._id },
         {
           $set: {
             finishedAt: new Date(),
-            status: errors.length === 0 ? 'success' : 'partial',
+            status: barrenStreakFailure ? 'failure' : errors.length === 0 ? 'success' : 'partial',
             observationCount,
             entitiesObserved,
             fetchMetrics: result.fetchMetrics,
@@ -136,6 +171,12 @@ export class ScraperOrchestrator {
               metrics: { ...(result.metrics || {}), evidenceCoverageImpact },
             }
           : result,
+        ...(options.explain
+          ? {
+              explainedObservations: previewObservations,
+              explainTruncated: observationCount > previewObservations.length,
+            }
+          : {}),
       };
     } catch (err: any) {
       const errorMessage = sanitizeLogValue(err instanceof Error ? err.message : err);

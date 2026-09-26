@@ -17,8 +17,9 @@ import {
 } from './fraProfileSynthesisCore';
 import {
   FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS,
+  fraProfileSynthesisLeads,
   newFraProfileSynthesisRunId,
-  profileUrlOf,
+  profileUrlsOf,
   runFraProfileSynthesisEntity,
   selectFraProfileSynthesisTargets,
   type FraProfileSynthesisEntity,
@@ -61,19 +62,29 @@ async function main(): Promise<void> {
   const entities = (await ResearchEntity.find(filter)
     .select(FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS)
     .lean()) as FraProfileSynthesisEntity[];
+  const leadsByEntityId = await fraProfileSynthesisLeads(entities);
 
-  const scoped = selectFraProfileSynthesisTargets(entities);
+  const scoped = selectFraProfileSynthesisTargets(
+    entities.map((entity) => ({
+      ...entity,
+      leads: leadsByEntityId.get(String(entity._id)) ?? [],
+    })),
+  );
   const targets = args.limit > 0 ? scoped.slice(0, args.limit) : scoped;
 
   const reports: FraProfileSynthesisEntityReport[] = [];
   let written = 0;
+  let adopted = 0;
   let synthesized = 0;
+  let reverted = 0;
+  let regated = 0;
+  let revertLeftRowUnserved = 0;
   const runId = newFraProfileSynthesisRunId();
 
   for (const entity of targets) {
     const report = await runFraProfileSynthesisEntity({
       entity,
-      profileUrl: profileUrlOf(entity.sourceUrls),
+      profileUrls: profileUrlsOf(entity),
       callLLM,
       fetchProfileText: async (url) => htmlToText((await fetchPageWithPolicy(url)).html),
       apply: args.apply,
@@ -83,22 +94,35 @@ async function main(): Promise<void> {
     reports.push(report);
     if (report.synthesized) synthesized += 1;
     if (report.written) written += 1;
+    if (report.adopted) adopted += 1;
+    if (report.reverted) reverted += 1;
+    if (report.regated) regated += 1;
+    if (report.reverted && !report.revertRestoredServedCard) revertLeftRowUnserved += 1;
   }
 
   const summary = {
     generatedAt: new Date().toISOString(),
     mode: args.apply ? 'apply' : 'dry-run',
     db: guard.dbLabel,
-    inScopeBioShaped: scoped.length,
+    inScope: scoped.length,
     attempted: targets.length,
     synthesized,
     written,
+    adopted,
+    reverted,
+    regated,
+    revertLeftRowUnserved,
     skipped: reports.filter((report) => report.skipped).length,
   };
   console.log(JSON.stringify(summary, null, 2));
   for (const report of reports) {
+    const outcome = report.reverted
+      ? `  (reverted: ${report.revertedReason}${report.revertRestoredServedCard ? '' : '; row still serves no card'})`
+      : report.skipped
+        ? `  (${report.skipped})`
+        : '';
     console.log(
-      `  ${report.synthesized ? 'OK  ' : 'skip'} ${sanitizeLogValue(report.slug)}${report.skipped ? `  (${report.skipped})` : ''}`,
+      `  ${report.reverted ? 'back' : report.synthesized ? 'OK  ' : 'skip'} ${sanitizeLogValue(report.slug)}${outcome}`,
     );
   }
 

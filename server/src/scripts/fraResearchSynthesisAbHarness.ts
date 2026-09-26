@@ -18,11 +18,17 @@
  *
  * ## Arms
  *
- * A: the description we serve today.
+ * A: the description we serve today, read through the lane's own
+ *    `servedFullDescription` rather than off the stored field, because a row storing a
+ *    body the serve layer withholds is in scope precisely because it shows a student
+ *    nothing, and counting that body as arm A's coverage overstates the baseline the
+ *    lane is measured against. Empty for most of the cohort for that reason, so read
+ *    A's guardrail rate as the coverage the lane is starting from rather than as a
+ *    like-for-like baseline.
  * B: `synthesizeCoverageDescription` over research sentences harvested from the
- *    same profile page, then the lane's own pronoun repair and its
- *    dangling-subject rejection. Reuses the production pieces so the arm measures
- *    what an apply run would write, gates included.
+ *    lane's own candidate pages in the lane's own order, then the lane's pronoun
+ *    repair and its dangling-subject rejection. Reuses the production pieces, cohort
+ *    selection included, so the arm measures what an apply run would write.
  *
  * ## Metrics
  *
@@ -47,11 +53,21 @@ import { isHighConfidencePersonBio } from '../utils/researchHomeDescriptionSelec
 import { researchSubjectSpecificityScore } from '../utils/researchSubjectSpecificity';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  PROFILE_FETCH_FAILED_NOTE,
   hasResidualPronounLead,
+  profilePageProgressRank,
   profileResearchSnippets,
   repairPronounLead,
 } from './fraProfileSynthesisCore';
-import { FRA_PROFILE_SYNTHESIS_ENTITY_TYPE } from './fraProfileSynthesisLane';
+import {
+  FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS,
+  FRA_PROFILE_SYNTHESIS_ENTITY_TYPE,
+  fraProfileSynthesisLeads,
+  profileUrlsOf,
+  selectFraProfileSynthesisTargets,
+  servedFullDescription,
+  type FraProfileSynthesisEntity,
+} from './fraProfileSynthesisLane';
 
 dotenv.config();
 
@@ -85,11 +101,85 @@ export function appointmentLabelFromPageText(pageText: string): string {
 
 interface Outcome {
   slug: string;
-  storedDescription: string;
+  profileUrl: string;
+  servedDescription: string;
   synthesized: string;
   appointmentLabel: string;
   snippetCount: number;
   note?: string;
+}
+
+type ProfileProbe = Omit<Outcome, 'slug' | 'servedDescription'>;
+
+const FETCH_FAILED_NOTE = PROFILE_FETCH_FAILED_NOTE;
+
+async function probeProfilePage(
+  entity: FraProfileSynthesisEntity,
+  profileUrl: string,
+): Promise<ProfileProbe> {
+  let pageText = '';
+  try {
+    pageText = htmlToText((await fetchPageWithPolicy(profileUrl)).html);
+  } catch {
+    return {
+      profileUrl,
+      synthesized: '',
+      appointmentLabel: '',
+      snippetCount: 0,
+      note: FETCH_FAILED_NOTE,
+    };
+  }
+  const snippets = researchSnippetsFromPageText(pageText, profileUrl);
+  const appointmentLabel = appointmentLabelFromPageText(pageText);
+  const probe = { profileUrl, appointmentLabel, snippetCount: snippets.length };
+  if (snippets.length === 0) {
+    return { ...probe, synthesized: '', note: 'no research snippets on page' };
+  }
+  const result = await synthesizeCoverageDescription({
+    snippets,
+    entityName: textValue(entity.name) || 'Research',
+    entityType: FRA_PROFILE_SYNTHESIS_ENTITY_TYPE,
+    researchAreas: entity.researchAreas,
+    callLLM: defaultCoverageSynthesisLLM(process.env.OPENAI_API_KEY as string),
+  });
+  if (!result) {
+    return {
+      ...probe,
+      synthesized: '',
+      note: 'synthesizer failed closed (grounding or quality gate)',
+    };
+  }
+  // Arm B must be exactly what an apply run would write, or the guardrail
+  // rate overstates coverage and the bio signal is read off text the lane
+  // never serves.
+  const repaired = repairPronounLead(result.description);
+  if (!repaired || hasResidualPronounLead(repaired)) {
+    return {
+      ...probe,
+      synthesized: '',
+      note: 'synthesis rejected by the lane (dangling pronoun subject)',
+    };
+  }
+  return { ...probe, synthesized: textValue(repaired) };
+}
+
+/**
+ * The lane tries every candidate page and reports the one that got furthest, so the
+ * harness ranks by `profilePageProgressRank` rather than by "first thing that is not a
+ * fetch failure". That weaker rule reports a no-prose page ahead of a real synthesis
+ * rejection, and `scored` keeps only synthesis failures, so the rejection leaves the
+ * denominator and arm B's pre-registered guardrail rate prints higher than the truth.
+ */
+function probeThatMattered(probes: readonly ProfileProbe[]): ProfileProbe {
+  const rank = (probe: ProfileProbe): number =>
+    profilePageProgressRank({
+      snippets: probe.snippetCount,
+      fetchFailed: probe.note === FETCH_FAILED_NOTE,
+    });
+  return (
+    probes.find((probe) => probe.synthesized) ??
+    probes.reduce((best, probe) => (rank(probe) > rank(best) ? probe : best), probes[0])
+  );
 }
 
 async function main(): Promise<void> {
@@ -102,86 +192,48 @@ async function main(): Promise<void> {
     : '';
 
   await mongoose.connect(mongoUrl);
-  const candidates = await ResearchEntity.find({
-    studentVisibilityTier: 'student_ready',
+  // The lane's own cohort and candidate pages, not a copy of them: a harness that
+  // reads only what a row cites, or only rows already serving a bio, measures a
+  // narrower cohort than the lane visits, so its guardrail rates would describe
+  // pages the lane no longer restricts itself to (#1937).
+  const candidates = (await ResearchEntity.find({
     archived: { $ne: true },
     entityType: FRA_PROFILE_SYNTHESIS_ENTITY_TYPE,
   })
-    .select({ slug: 1, name: 1, fullDescription: 1, sourceUrls: 1, researchAreas: 1 })
-    .lean();
-
-  const bioShaped = candidates.filter((entity) =>
-    isHighConfidencePersonBio(textValue((entity as { fullDescription?: unknown }).fullDescription)),
+    .select(FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS)
+    .lean()) as FraProfileSynthesisEntity[];
+  const leadsByEntityId = await fraProfileSynthesisLeads(candidates);
+  const inScope = selectFraProfileSynthesisTargets(
+    candidates.map((entity) => ({
+      ...entity,
+      leads: leadsByEntityId.get(String(entity._id)) ?? [],
+    })),
   );
-  const targets: Array<{ entity: Record<string, unknown>; profileUrl: string }> = [];
-  for (const entity of bioShaped) {
-    const urls = (entity as { sourceUrls?: unknown }).sourceUrls;
-    const profileUrl = (Array.isArray(urls) ? urls : []).find(
-      (url): url is string => typeof url === 'string' && /\/profile\//i.test(url),
-    );
-    if (!profileUrl) continue;
-    targets.push({ entity: entity as unknown as Record<string, unknown>, profileUrl });
-    if (targets.length >= limit) break;
-  }
+  const targets = inScope.slice(0, limit);
 
-  console.log(`bio-shaped FRA in corpus: ${bioShaped.length}; probing ${targets.length}\n`);
+  console.log(`in-scope FRA in corpus: ${inScope.length}; probing ${targets.length}\n`);
 
   const outcomes: Outcome[] = [];
-  for (const { entity, profileUrl } of targets) {
-    const slug = String(entity.slug ?? '');
-    let pageText = '';
-    try {
-      const fetched = await fetchPageWithPolicy(profileUrl);
-      pageText = htmlToText(fetched.html);
-    } catch {
-      outcomes.push({
-        slug,
-        storedDescription: textValue(entity.fullDescription),
-        synthesized: '',
-        appointmentLabel: '',
-        snippetCount: 0,
-        note: 'fetch failed',
-      });
-      continue;
+  for (const entity of targets) {
+    const slug = textValue(entity.slug);
+    const probes: ProfileProbe[] = [];
+    for (const profileUrl of profileUrlsOf(entity)) {
+      probes.push(await probeProfilePage(entity, profileUrl));
+      if (probes[probes.length - 1].synthesized) break;
     }
-    const snippets = researchSnippetsFromPageText(pageText, profileUrl);
-    const label = appointmentLabelFromPageText(pageText);
-    let synthesized = '';
-    let note: string | undefined;
-    if (snippets.length === 0) {
-      note = 'no research snippets on page';
-    } else {
-      const result = await synthesizeCoverageDescription({
-        snippets,
-        entityName: String(entity.name ?? 'Research'),
-        entityType: FRA_PROFILE_SYNTHESIS_ENTITY_TYPE,
-        researchAreas: entity.researchAreas,
-        callLLM: defaultCoverageSynthesisLLM(process.env.OPENAI_API_KEY as string),
-      });
-      if (!result) note = 'synthesizer failed closed (grounding or quality gate)';
-      else {
-        // Arm B must be exactly what an apply run would write, or the guardrail
-        // rate overstates coverage and the bio signal is read off text the lane
-        // never serves.
-        const repaired = repairPronounLead(result.description);
-        if (!repaired || hasResidualPronounLead(repaired)) {
-          note = 'synthesis rejected by the lane (dangling pronoun subject)';
-        } else {
-          synthesized = textValue(repaired);
-        }
-      }
-    }
-    outcomes.push({
+    const outcome: Outcome = {
       slug,
-      storedDescription: textValue(entity.fullDescription),
-      synthesized,
-      appointmentLabel: label,
-      snippetCount: snippets.length,
-      note,
-    });
-    const flag = synthesized ? (isHighConfidencePersonBio(synthesized) ? 'BIO ' : 'ok  ') : '--  ';
+      servedDescription: servedFullDescription(entity),
+      ...probeThatMattered(probes),
+    };
+    outcomes.push(outcome);
+    const flag = outcome.synthesized
+      ? isHighConfidencePersonBio(outcome.synthesized)
+        ? 'BIO '
+        : 'ok  '
+      : '--  ';
     console.log(
-      `  ${flag} snippets=${String(outcomes[outcomes.length - 1].snippetCount).padStart(2)} label=${label ? 'Y' : 'n'}  ${slug}${note ? `  (${note})` : ''}`,
+      `  ${flag} snippets=${String(outcome.snippetCount).padStart(2)} label=${outcome.appointmentLabel ? 'Y' : 'n'}  ${slug}${outcome.note ? `  (${outcome.note})` : ''}`,
     );
   }
 
@@ -198,14 +250,14 @@ async function main(): Promise<void> {
       named,
     };
   };
-  const a = stat(scored, (row) => row.storedDescription);
+  const a = stat(scored, (row) => row.servedDescription);
   const b = stat(scored, (row) => row.synthesized);
   const pct = (value: number, of: number) => (of ? `${((100 * value) / of).toFixed(1)}%` : 'n/a');
 
   console.log('\n===== pre-registered metrics =====');
   console.log(`scored: ${scored.length}`);
   console.log(
-    `A_stored_extract   nonEmpty=${pct(a.nonEmpty, a.n)} (guardrail)  bioSignal=${pct(a.bio, a.nonEmpty)}  namesSubject=${pct(a.named, a.nonEmpty)}`,
+    `A_served_today     nonEmpty=${pct(a.nonEmpty, a.n)} (guardrail)  bioSignal=${pct(a.bio, a.nonEmpty)}  namesSubject=${pct(a.named, a.nonEmpty)}`,
   );
   console.log(
     `B_synthesized      nonEmpty=${pct(b.nonEmpty, b.n)} (guardrail)  bioSignal=${pct(b.bio, b.nonEmpty)}  namesSubject=${pct(b.named, b.nonEmpty)}`,

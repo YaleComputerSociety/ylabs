@@ -7,10 +7,10 @@
  * Tetelman, Mellon Mays, etc.).
  *
  * Each {student, program, year, advisor} pair feeds the matched advisor's
- * ResearchGroup as a `pastUndergradAdvisees` entry. The pure presence of even
- * one prior advisee is a strong "this lab actually takes undergrads" signal —
- * stronger than course-listing inference — so we set
- * `acceptingUndergrads=true` with a relatively high confidence override (0.8).
+ * ResearchGroup as a `pastUndergradAdvisees` entry, which the access materializer
+ * reads into the PAST_UNDERGRADS and FELLOWSHIP_COMPATIBLE signals. Having mentored
+ * a fellowship recipient is pathway-specific evidence, so this lane deliberately
+ * asserts nothing about generic current openness.
  *
  * Strategy:
  *   1. For each per-program config:
@@ -33,9 +33,6 @@
  *        - `pastUndergradAdvisees`: FULL aggregated array for the PI on every
  *          run. The resolver picks the highest-confidence (most recent) value
  *          per field rather than trying to merge partial arrays.
- *        - `acceptingUndergrads = true` (confidenceOverride 0.8 — strong
- *          evidence; they actually mentored an undergrad, not just listed a
- *          course)
  *        - `lastObservedAt = now`
  *
  * Honors:
@@ -72,6 +69,12 @@ import { findOrCreateForOwner } from '../../services/researchGroupService';
 import { normalizeOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import {
+  SHARED_TEMP_ROOT,
+  approvedTempRootFor,
+  hasPathPrefix,
+  sharedTempRoot,
+} from '../../utils/tempArtifactRoots';
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
@@ -80,15 +83,15 @@ const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MIN_FELLOWSHIP_RECIPIENT_YEAR = 1980;
 const MAX_FELLOWSHIP_RECIPIENT_FUTURE_YEARS = 1;
-export const DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR =
-  '/tmp/ylabs-accepted-inputs/fellowships';
+export const DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR = path.join(
+  sharedTempRoot(),
+  'ylabs-accepted-inputs',
+  'fellowships',
+);
 export const DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_PDF_DIR =
   DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR;
 const SAFE_MANUAL_RECIPIENT_SEGMENT_RE = /^[A-Za-z0-9._-]{1,120}$/;
 const MANUAL_RECIPIENT_FILE_EXTENSIONS = new Set(['.csv', '.pdf']);
-
-const hasPathPrefix = (target: string, root: string): boolean =>
-  target === root || target.startsWith(`${root}${path.sep}`);
 
 export function resolveSafeManualRecipientInputPath(
   root: string,
@@ -107,7 +110,7 @@ export function resolveSafeManualRecipientInputPath(
   const tmpRoot = path.resolve(os.tmpdir());
   const projectTmpRoot = path.resolve(process.cwd(), 'tmp');
 
-  if (!hasPathPrefix(resolvedRoot, tmpRoot) && !hasPathPrefix(resolvedRoot, projectTmpRoot)) {
+  if (!approvedTempRootFor(resolvedRoot, [tmpRoot, SHARED_TEMP_ROOT, projectTmpRoot])) {
     throw new Error('Manual recipient input root must be under system temp or ./tmp');
   }
   if (!hasPathPrefix(resolvedPath, resolvedRoot)) {
@@ -726,10 +729,6 @@ async function defaultOwnerToGroupSlug(owner: UserMatch): Promise<string | null>
  * resolver picks the highest-confidence value per field rather than trying to
  * merge partial arrays from successive runs — this keeps the materialized lab
  * record consistent even if a single run only sees a subset of programs.
- *
- * `acceptingUndergrads=true` carries a 0.8 confidence override because
- * mentoring an undergrad on a *named, dollar-backed fellowship* is far stronger
- * evidence than (e.g.) listing an independent-study course at 0.7.
  */
 export function buildObservationsForAdvisor(
   groupSlug: string,
@@ -743,12 +742,6 @@ export function buildObservationsForAdvisor(
   };
   return [
     { ...base, field: 'pastUndergradAdvisees', value: advisees },
-    {
-      ...base,
-      field: 'acceptingUndergrads',
-      value: true,
-      confidenceOverride: 0.8,
-    },
     { ...base, field: 'lastObservedAt', value: new Date() },
   ];
 }

@@ -17,17 +17,28 @@ export const sourceCoverageRegistry = {
     notes:
       'Reviewed official current-roster sections for allowlisted research homes. Disabled by default until the roster coverage/precision audit is reviewed; refresh owner is Yale Research data operations on a weekly cadence.',
   },
+  'lab-site-lead-verification': {
+    priority: 1,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "Checks each attached lead against the research home's own site and stores a per-lead verdict on the entity. A contradiction requires positive evidence naming somebody else, so an omission is never read as a refutation.",
+  },
+  'description-derived-research-area': {
+    priority: 0,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['ResearchEntity'],
+    evidenceCategories: ['TOPICS'],
+    defaultConfidence: 'LOW',
+    notes:
+      "Not a crawl: the materializer infers chips from a row's own stored name and description through the canonical research-area vocabulary, and records this name so the serve-time coherence guard has provenance to reconcile against. LOW because no page named the facet, only the subject.",
+  },
   'manual-admin-edit': {
     priority: 0,
     tier: 'MANUAL_OVERRIDE',
-    artifactTypes: [
-      'ResearchEntity',
-      'EntryPathway',
-      'AccessSignal',
-      'ContactRoute',
-      'PostedOpportunity',
-      'Observation',
-    ],
+    artifactTypes: ['ResearchEntity', 'Observation'],
     evidenceCategories: [
       'ENTITY_IDENTITY',
       'JOIN_INSTRUCTIONS',
@@ -40,28 +51,118 @@ export const sourceCoverageRegistry = {
   'manual-pi-edit': {
     priority: 0,
     tier: 'MANUAL_OVERRIDE',
-    artifactTypes: ['ResearchEntity', 'EntryPathway', 'ContactRoute', 'Observation'],
+    artifactTypes: ['ResearchEntity', 'Observation'],
     evidenceCategories: ['ENTITY_IDENTITY', 'JOIN_INSTRUCTIONS', 'OFFICIAL_CONTACT_ROUTE'],
     defaultConfidence: 'HIGH',
     notes: 'PI edits should remain protected by manual locks where appropriate.',
-  },
-  'research-entity-cache-backfill': {
-    priority: 1,
-    tier: 'DERIVED_OFFICIAL',
-    artifactTypes: ['Observation', 'EntryPathway', 'AccessSignal'],
-    evidenceCategories: ['UNDERGRAD_ROLE_LANGUAGE', 'PAST_UNDERGRADS', 'JOIN_INSTRUCTIONS'],
-    defaultConfidence: 'LOW',
-    notes:
-      'One-time provenance recovery from legacy ResearchEntity undergraduate-access cache fields; use only to bridge old scalar cache data into first-class access artifacts.',
   },
   'lab-microsite-description-llm': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
     artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: ['LAB_WEBSITE', 'TOPICS', 'METHODS'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'LAB_WEBSITE', 'TOPICS', 'METHODS'],
     defaultConfidence: 'MEDIUM',
     notes:
-      'Official microsite description extraction for research focus, questions, methods, and conservative areas only; must not create access, route, or opportunity evidence.',
+      "Official microsite description extraction for research focus, questions, methods, and conservative areas only; must not create access, route, or opportunity evidence. Where the site declares itself a laboratory it also emits that record's branded name and its entityType/kind, so a person-scoped row cannot keep a faculty-research type while carrying a lab's name.",
+  },
+  'lab-site-declared-lead-llm': {
+    priority: 1,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['LAB_WEBSITE'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "Reads a lab site for the lead it declares for itself, so a website harvested from another person's profile lab-website slot is re-homed to the researcher who runs the lab; emits websiteUrl, sourceUrls, and a branded name only, never access, route, or opportunity evidence.",
+  },
+  'directory-alias-resolution': {
+    priority: 2,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "Maps a roster's friendly email alias to the netid the Yale directory holds for that person, so an alias-keyed observation can join to a person. Emits email only, keyed by the real netid, which is the shape the alias resolver already reads. Asserts nothing about research, membership, or access. Refuses an undergraduate, an alias that resolves to itself, and any alias the directory maps to two netids.",
+  },
+  'lead-person-name-research-record': {
+    priority: 3,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      "Derives a person-scoped research-record name from the single lead the row's own PI edge names, only where the stored name asserts a laboratory that no live observation asserts and no lab site backs. Emits name and displayName only, never a description, website, type, access or opportunity evidence. DERIVED and LOW because a lead's own name is evidence about the person rather than about what the research record is called.",
+  },
+  'lead-pi-school-inheritance': {
+    priority: 3,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      "Inherits school and departments from the row's own single lead PI when the row states neither. Emits school and departments only, never a name, description, website, access, route, or opportunity evidence. LOW confidence and DERIVED because a lead's appointment is evidence about the person rather than about the research home, so any directly observed org unit must outrank it.",
+  },
+  'school-profile-host-backfill': {
+    priority: 3,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      "The school implied by the host of a research home's own cited profile URL, delivered to a row that states none. Emits school, schools and departments only. DERIVED because a hostname places a page rather than stating an appointment.",
+  },
+  'school-host-mismatch-backfill': {
+    priority: 3,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      "Corrects a stored school that the row's own cited host contradicts, for the disjoint schools where a host is decisive. Emits school, schools and departments only.",
+  },
+  'coverage-synthesis-llm': {
+    priority: 3,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      "LLM synthesis over a research home's already-harvested evidence to fill a coverage gap it can support. Emits description fields only, never access, route or opportunity evidence.",
+  },
+  'nih-nsf-pi-center-lab-conflation-repair': {
+    priority: 3,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      'Separates a grant-derived shell that conflated a principal investigator, a centre and a laboratory into one row. Records the corrected identity it can support from the grant record itself.',
+  },
+  'visibility-repair-queue': {
+    priority: 3,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      'Values the visibility repair queue can support from evidence a row already carries, recorded when it clears a release blocker. Emits sourceUrls and description fields only.',
+  },
+  'lab-site-search-discovery': {
+    priority: 2,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['LAB_WEBSITE'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      "Web search for a researcher's own lab, research-group, or personal academic homepage, adopted only where the fetched page identifies that researcher's research unit. Emits websiteUrl and sourceUrls only, never a name, description, access, route, or opportunity evidence. DERIVED rather than PRIMARY because the address comes from a search engine's ranking and not from a Yale page that states it.",
+  },
+  'lab-site-type-probe': {
+    priority: 1,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'LAB_WEBSITE'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "Deterministic, no-LLM read of a row's own already-cited website for a self-declaration of a laboratory. Emits entityType and kind only, never a name, description, access, route, or opportunity evidence. It does not re-check that the page names the row's lead: the URL being the row's own cited websiteUrl is what ties the two, so re-demanding a name match only produces false refusals on lab sites that name their lead by first name (#2686).",
   },
   'research-area-source-extractor': {
     priority: 1,
@@ -93,13 +194,7 @@ export const sourceCoverageRegistry = {
   'lab-microsite-undergrad-llm': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: [
-      'EntryPathway',
-      'AccessSignal',
-      'ContactRoute',
-      'UndergraduateLogisticsClaim',
-      'Observation',
-    ],
+    artifactTypes: ['Observation'],
     evidenceCategories: [
       'LAB_WEBSITE',
       'JOIN_INSTRUCTIONS',
@@ -108,34 +203,15 @@ export const sourceCoverageRegistry = {
       'APPLICATION_LINK',
       'CONSTRAINTS',
       'PAST_UNDERGRADS',
-      'UNDERGRAD_STUDENT_LEVEL',
-      'UNDERGRAD_COMPENSATION',
-      'UNDERGRAD_TIME_COMMITMENT',
-      'UNDERGRAD_MODALITY',
-      'UNDERGRAD_CURRENT_AVAILABILITY',
     ],
     defaultConfidence: 'MEDIUM',
     notes:
-      'Bounded lab/faculty microsite extraction from canonical ResearchEntity websites; evidence remains public-page quotes and source URLs.',
-  },
-  'lab-microsite-llm': {
-    priority: 1,
-    tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['ResearchEntity', 'AccessSignal', 'ContactRoute', 'Observation'],
-    evidenceCategories: [
-      'LAB_WEBSITE',
-      'TOPICS',
-      'METHODS',
-      'JOIN_INSTRUCTIONS',
-      'OFFICIAL_CONTACT_ROUTE',
-    ],
-    defaultConfidence: 'MEDIUM',
-    notes: 'General lab microsite extraction used for entity context and access hints.',
+      'Bounded lab/faculty microsite extraction from canonical ResearchEntity websites; evidence remains public-page quotes and source URLs. A crawled sub-page is a crawl seed until it is shown to be about this entity: a paginated or multi-person index page, and a person page belonging to somebody else, are traversed but never cited as a description source for this row.',
   },
   'dept-faculty-roster': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',
-    artifactTypes: ['ResearchEntity', 'EntryPathway', 'ContactRoute', 'Observation'],
+    artifactTypes: ['ResearchEntity', 'Observation'],
     evidenceCategories: [
       'ENTITY_IDENTITY',
       'ENTITY_MEMBERSHIP',
@@ -152,7 +228,7 @@ export const sourceCoverageRegistry = {
   'department-undergrad-research': {
     priority: 2,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['Fellowship', 'EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+    artifactTypes: ['Fellowship', 'Observation'],
     evidenceCategories: [
       'ENTITY_IDENTITY',
       'TOPICS',
@@ -171,20 +247,11 @@ export const sourceCoverageRegistry = {
   'undergrad-research-posting': {
     priority: 2,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['AccessSignal', 'Observation'],
+    artifactTypes: ['Observation'],
     evidenceCategories: ['POSTED_OPENING', 'APPLICATION_LINK'],
     defaultConfidence: 'HIGH',
     notes:
       'Curated, public Yale undergraduate research posting/opportunity index pages. Emits a POSTED_OPENING access signal only for a fully-specified, apply-now posting: a title, a hiring research home resolvable to an existing ResearchEntity, an apply route, and a future-dated deadline (fail-closed on any missing field). Each signal carries the deadline as an expiry so it degrades out of the top-tier "Apply" state once the window closes. Must not ingest auth-gated aggregators or infer an opening from a generic lab website (#1303/#1332/#1568). Disabled by default until an operator confirms each page is reliably public on Development.',
-  },
-  'official-profile-enrichment': {
-    priority: 2,
-    tier: 'OFFICIAL_INDEX',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['OFFICIAL_PROFILE', 'TOPICS', 'METHODS'],
-    defaultConfidence: 'HIGH',
-    notes:
-      'Known official Yale profile URLs for existing faculty users; fills profile biography, research-interest, image, ORCID, and profile URL observations without creating research entities or access claims.',
   },
   'official-profile-pi-backfill': {
     priority: 2,
@@ -202,15 +269,6 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE'],
     defaultConfidence: 'HIGH',
     notes: 'Authoritative Yale appointment metadata, not access evidence by itself.',
-  },
-  'yale-directory-csv': {
-    priority: 3,
-    tier: 'OFFICIAL_INDEX',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['ENTITY_MEMBERSHIP'],
-    defaultConfidence: 'LOW',
-    notes:
-      'Static Yale directory CSV for coverage denominator and identity/affiliation observations only. Must not create public research entities, pathways, access signals, contact routes, or opportunities by itself.',
   },
   'ysm-atoz-index': {
     priority: 2,
@@ -300,7 +358,7 @@ export const sourceCoverageRegistry = {
   'undergrad-fellowships-recipients': {
     priority: 4,
     tier: 'DERIVED_OFFICIAL',
-    artifactTypes: ['EntryPathway', 'AccessSignal', 'Observation'],
+    artifactTypes: ['Observation'],
     evidenceCategories: ['FELLOWSHIP_COMPATIBILITY', 'PAST_UNDERGRADS'],
     defaultConfidence: 'MEDIUM',
     notes:
@@ -309,14 +367,7 @@ export const sourceCoverageRegistry = {
   'yale-college-fellowships-office': {
     priority: 4,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: [
-      'Fellowship',
-      'EntryPathway',
-      'AccessSignal',
-      'ContactRoute',
-      'PostedOpportunity',
-      'Observation',
-    ],
+    artifactTypes: ['Fellowship', 'Observation'],
     evidenceCategories: [
       'FELLOWSHIP_COMPATIBILITY',
       'APPLICATION_LINK',
@@ -347,20 +398,11 @@ export const sourceCoverageRegistry = {
   'student-grants-database': {
     priority: 4,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['Fellowship', 'ContactRoute', 'Observation'],
+    artifactTypes: ['Fellowship', 'Observation'],
     evidenceCategories: ['FELLOWSHIP_COMPATIBILITY', 'APPLICATION_LINK', 'OFFICIAL_CONTACT_ROUTE'],
     defaultConfidence: 'HIGH',
     notes:
       "Yale's comprehensive officially-curated student funding catalog (studentgrants.yale.edu -> yale.communityforce.com). Browsing/detail is public; only applying requires login. Enumerates each fund from the rendered (headless) fund search and cites the fund's own /Funds/FundDetails.aspx page - never the search/index root (#516/#549). Fails closed when the rendered fetcher is disabled or the catalog degrades to a login/auth shell; contact is fail-closed (sponsoring org only, no scraped emails). Funds already linked from public fellowship pages merge via the record-specific application-link dedupe rather than duplicating. Disabled by default until an operator confirms the rendered catalog is reliably public on Development.",
-  },
-  'ylabs-listing': {
-    priority: 5,
-    tier: 'MANUAL_OVERRIDE',
-    artifactTypes: ['EntryPathway', 'AccessSignal', 'PostedOpportunity'],
-    evidenceCategories: ['POSTED_OPENING', 'APPLICATION_LINK'],
-    defaultConfidence: 'MEDIUM',
-    notes:
-      'Legacy YLabs listing rows bridged into opportunity-like records. Treat as audit seeds for scraper coverage, not proof that official scraper coverage is complete.',
   },
   'nih-reporter': {
     priority: 6,

@@ -23,6 +23,7 @@ import { materializeEntity } from '../entityMaterializer';
 type PersistedEntity = {
   yaleStatusCache?: string;
   activeAtYaleCache?: boolean;
+  yaleStatusReasonCache?: string;
   sourceUrls?: string[];
 };
 
@@ -167,5 +168,79 @@ describe('materializeEntity derives activeAtYaleCache/yaleStatusCache from inges
 
     expect(persisted?.activeAtYaleCache).toBe(false);
     expect(persisted?.yaleStatusCache).toBe('departed');
+  });
+
+  // These are reachability tests, not just behaviour tests. The derivation reads a
+  // hand-built projection of the entity doc, so omitting
+  // `studentVisibilitySuppressionReason` from it would leave the recorded-closure
+  // arm correct in isolation and permanently inert through materialize (#1923).
+  const CLOSURE_REASON =
+    'permanently_closed: research home no longer active; PI departed/relocated (reported 2026-08-31, recorded per #2284)';
+
+  it('marks a recorded closure as departed through materialize (#1923)', async () => {
+    await seedEntity({
+      name: 'Avram Holmes Research',
+      studentVisibilitySuppressionReason: CLOSURE_REASON,
+    });
+    await seedObservation(
+      'fullDescription',
+      'The lab studies cognitive neuroscience, with active undergraduate research opportunities.',
+    );
+
+    await materializeEntity('researchEntity', { entityKey: 'yale-status-fixture' });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'yale-status-fixture',
+    }).lean<PersistedEntity>();
+
+    expect(persisted?.activeAtYaleCache).toBe(false);
+    expect(persisted?.yaleStatusCache).toBe('departed');
+    expect(persisted?.yaleStatusReasonCache).toBe('departed');
+  });
+
+  it('does not reset a closure-marked departed cache on re-materialize (#1923)', async () => {
+    await seedEntity({
+      name: 'Debra Fischer Research',
+      activeAtYaleCache: false,
+      yaleStatusCache: 'departed',
+      yaleStatusReasonCache: 'departed',
+      studentVisibilitySuppressionReason: CLOSURE_REASON,
+    });
+    await seedObservation(
+      'fullDescription',
+      'The lab studies exoplanet detection, with active undergraduate research opportunities.',
+    );
+
+    await materializeEntity('researchEntity', { entityKey: 'yale-status-fixture' });
+    await materializeEntity('researchEntity', { entityKey: 'yale-status-fixture' });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'yale-status-fixture',
+    }).lean<PersistedEntity>();
+
+    expect(persisted?.activeAtYaleCache).toBe(false);
+    expect(persisted?.yaleStatusCache).toBe('departed');
+  });
+
+  it('still self-heals an inactive cache carrying an unrelated suppression reason (#1923)', async () => {
+    await seedEntity({
+      name: 'Core Facility Research',
+      activeAtYaleCache: false,
+      yaleStatusCache: 'departed',
+      studentVisibilitySuppressionReason: 'research_infrastructure_only',
+    });
+    await seedObservation(
+      'fullDescription',
+      'The facility studies reaction kinetics, with active undergraduate research opportunities.',
+    );
+
+    await materializeEntity('researchEntity', { entityKey: 'yale-status-fixture' });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'yale-status-fixture',
+    }).lean<PersistedEntity>();
+
+    expect(persisted?.activeAtYaleCache).toBe(true);
+    expect(persisted?.yaleStatusCache).toBe('unknown');
   });
 });

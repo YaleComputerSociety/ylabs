@@ -3,7 +3,6 @@ import fs from 'fs';
 import {
   MongoClient,
   type AnyBulkWriteOperation,
-  type CreateCollectionOptions,
   type Db,
   type Document,
   type ObjectId,
@@ -14,6 +13,7 @@ import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { applyStagedCollectionSwap, mirroredValidationOptions } from './stagedCollectionSwap';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const betaOperatorProfilePath = path.join(SERVER_ROOT, '.env.beta-operator');
@@ -49,8 +49,6 @@ const LOCAL_MONGO_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 const BASE_COPY_COLLECTIONS: SyncCollection[] = [
   { name: 'research_entities', category: 'research-discovery' },
   { name: 'research_entity_relationships', category: 'research-discovery' },
-  { name: 'research_entity_redirects', category: 'research-discovery' },
-  { name: 'canonical_aliases', category: 'research-discovery' },
   { name: 'signals', category: 'research-discovery' },
   { name: 'researchers', category: 'identity-spine' },
   { name: 'role_assignments', category: 'identity-spine' },
@@ -132,8 +130,22 @@ const EXCLUDED_BETA_COLLECTIONS = [
   'admin_audit_events',
   'admin_grants',
   'analytics_events',
+  // Retired in #3027: a merged identity is reached through its archived row's
+  // canonicalGroupId tombstone, so no side ledger records the mapping. Classified
+  // as excluded rather than removed outright, because an unclassified collection
+  // still present on the source blocks apply.
+  'canonical_aliases',
+  'research_entity_redirects',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy:
+  // copying a quality measurement both misdates the target's history and loses
+  // it, because a sync replaces the whole collection.
+  'corpus_quality_snapshots',
   'entitycorrectionreports',
   'evidence_claims',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a
+  // copied gate scorecard presents one environment's promotion verdict as the
+  // other's, and each row names the database its audit measured.
+  'gate_scorecard_snapshots',
   'listingclaimrequests',
   'observation_reference_repair_audits',
   'research_plans',
@@ -498,34 +510,6 @@ async function syncIndexes(
   );
 }
 
-// The cutover renames staging over the target, and a rename carries no
-// collection options, so any $jsonSchema validator on the replaced collection is
-// lost unless staging is created with it. Source options win because the mirror
-// makes the target match the source; the target's own options are the fallback
-// so a mirror never downgrades a validated collection to unvalidated.
-async function mirroredValidationOptions(
-  sourceDb: Db,
-  targetDb: Db,
-  collectionName: string,
-): Promise<CreateCollectionOptions> {
-  const sourceOptions = await collectionValidationOptions(sourceDb, collectionName);
-  if (Object.keys(sourceOptions).length > 0) return sourceOptions;
-  return collectionValidationOptions(targetDb, collectionName);
-}
-
-async function collectionValidationOptions(
-  db: Db,
-  collectionName: string,
-): Promise<CreateCollectionOptions> {
-  const [info] = await db.listCollections({ name: collectionName }).toArray();
-  const options = ((info as { options?: Document } | undefined)?.options ?? {}) as Document;
-  const validation: CreateCollectionOptions = {};
-  if (options.validator) validation.validator = options.validator;
-  if (options.validationLevel) validation.validationLevel = options.validationLevel;
-  if (options.validationAction) validation.validationAction = options.validationAction;
-  return validation;
-}
-
 async function copyCollection(
   betaDb: Db,
   developmentDb: Db,
@@ -591,84 +575,16 @@ export async function applySync(
   clearedCollectionNames: string[],
   verify: () => Promise<void>,
 ): Promise<void> {
-  const operationId = `${process.pid}_${Date.now()}`;
-  const staged = new Map<string, string>();
-  const backups = new Map<string, string>();
-  const replaced: string[] = [];
-  let cutoverVerified = false;
-
-  try {
-    for (const collection of collections) {
-      staged.set(
-        collection.name,
-        await copyCollection(betaDb, developmentDb, collection, operationId),
-      );
-    }
-
-    for (const collection of collections) {
-      const targetName = collection.name;
-      const backupName = `__beta_backup_${operationId}_${targetName}`;
-      if (await collectionExists(developmentDb, targetName)) {
-        await developmentDb.collection(targetName).rename(backupName);
-        backups.set(targetName, backupName);
-      }
-      await developmentDb.collection(staged.get(targetName)!).rename(targetName);
-      replaced.push(targetName);
-    }
-
-    for (const targetName of clearedCollectionNames) {
-      if (!(await collectionExists(developmentDb, targetName))) continue;
-      const backupName = `__beta_backup_${operationId}_${targetName}`;
-      await developmentDb.collection(targetName).rename(backupName);
-      backups.set(targetName, backupName);
-    }
-
-    await verify();
-    cutoverVerified = true;
-
-    for (const backupName of backups.values()) {
-      if (await collectionExists(developmentDb, backupName)) {
-        await developmentDb.collection(backupName).drop();
-      }
-    }
-  } catch (error) {
-    if (cutoverVerified) {
-      throw error;
-    }
-    let rollbackError: unknown;
-    try {
-      for (const targetName of [...replaced].reverse()) {
-        if (await collectionExists(developmentDb, targetName)) {
-          await developmentDb.collection(targetName).drop();
-        }
-        const backupName = backups.get(targetName);
-        if (backupName && (await collectionExists(developmentDb, backupName))) {
-          await developmentDb.collection(backupName).rename(targetName);
-          backups.delete(targetName);
-        }
-      }
-      for (const [targetName, backupName] of backups) {
-        if (await collectionExists(developmentDb, backupName)) {
-          await developmentDb.collection(backupName).rename(targetName);
-        }
-      }
-    } catch (caughtRollbackError) {
-      rollbackError = caughtRollbackError;
-    }
-    if (rollbackError) {
-      throw new AggregateError(
-        [error, rollbackError],
-        'Beta to Development sync and rollback failed',
-      );
-    }
-    throw error;
-  } finally {
-    for (const stagingName of staged.values()) {
-      if (await collectionExists(developmentDb, stagingName)) {
-        await developmentDb.collection(stagingName).drop();
-      }
-    }
-  }
+  await applyStagedCollectionSwap({
+    targetDb: developmentDb,
+    collections,
+    clearedCollectionNames,
+    backupPrefix: '__beta_backup_',
+    label: 'Beta to Development sync',
+    stage: (collection, operationId) =>
+      copyCollection(betaDb, developmentDb, collection, operationId),
+    verify,
+  });
 }
 
 async function main(): Promise<void> {

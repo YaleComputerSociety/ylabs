@@ -49,7 +49,6 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
   contextState: 'complete',
   contextLabel: 'Research description',
   contextLine: 'Neuroscience · School of Medicine',
-  matchReason: 'Matched systems neuroscience.',
   entityCount: 1,
   pathwayCount: 0,
   peopleCount: 0,
@@ -61,7 +60,6 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
       slug: 'example-research-home',
       name: 'Example Research Home',
       kind: 'lab',
-      description: 'Studies systems neuroscience.',
       websiteUrl: '',
       location: '',
       departments: ['Neuroscience'],
@@ -89,7 +87,7 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
 });
 
 describe('ResearchHomeCard', () => {
-  it('frames profile results as research homes instead of clusters', () => {
+  it('frames profile results as research instead of clusters', () => {
     const onSelect = vi.fn();
     const { container } = render(
       <MemoryRouter>
@@ -101,9 +99,8 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).toContain('Neuroscience · School of Medicine');
     expect(container.textContent).toContain('Systems Neuroscience');
     expect(container.textContent).not.toContain('Evidence limited');
-    expect(screen.queryByText('Research homes')).toBeNull();
-    expect(container.textContent).toContain('Why it might fit');
-    expect(container.textContent).toContain('Matched systems neuroscience.');
+    expect(screen.queryByText('Research entries')).toBeNull();
+    expect(container.textContent).not.toContain('Why it might fit');
     expect(container.textContent).not.toContain('Why this matches');
     expect(container.textContent).not.toContain('1 contact');
     expect(container.textContent).not.toContain('1 next step');
@@ -112,7 +109,7 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).not.toContain('Cluster: metadata-grouped');
     expect(container.textContent).not.toContain('Profiles in this cluster');
 
-    expect(screen.getByRole('link', { name: 'View profile →' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'View profile' }).getAttribute('href')).toBe(
       '/research/example-research-home',
     );
     expect(screen.getByRole('link', { name: 'Example Research Home' }).getAttribute('href')).toBe(
@@ -154,13 +151,16 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).not.toContain('this lab');
   });
 
-  it('puts department and topic badges before summary and evidence badges', () => {
+  it('puts department and topic badges before the coverage warning and the summary', () => {
     const { container } = render(
       <MemoryRouter>
         <ResearchHomeCard
+          variant="compact"
           home={researchHome({
             labels: ['social cognition'],
             metadataTags: ['computational modeling'],
+            contextState: 'sparse',
+            contextLabel: 'Summary limited',
           })}
         />
       </MemoryRouter>,
@@ -169,8 +169,8 @@ describe('ResearchHomeCard', () => {
     const text = container.textContent || '';
     expect(text.indexOf('Computational Modeling')).toBeGreaterThanOrEqual(0);
     expect(text.indexOf('Computational Modeling')).toBeLessThan(text.indexOf('Social Cognition'));
-    expect(text.indexOf('Social Cognition')).toBeLessThan(text.indexOf('Research description'));
-    expect(text.indexOf('Research description')).toBeLessThan(
+    expect(text.indexOf('Social Cognition')).toBeLessThan(text.indexOf('Summary limited'));
+    expect(text.indexOf('Summary limited')).toBeLessThan(
       text.indexOf('Studies systems neuroscience'),
     );
   });
@@ -373,7 +373,7 @@ describe('ResearchHomeCard', () => {
     );
     expect(description.className).toContain('line-clamp-4');
     expect(description.className).not.toContain('line-clamp-2');
-    expect(screen.getByRole('link', { name: 'View profile →' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'View profile' })).toBeTruthy();
   });
 
   it('keeps the profile list for grouped homes with more than one linked profile', () => {
@@ -395,7 +395,7 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Research homes')).toBeTruthy();
+    expect(screen.getByText('Research entries')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Example Research Home' }).getAttribute('href')).toBe(
       '/research/example-research-home',
     );
@@ -404,13 +404,14 @@ describe('ResearchHomeCard', () => {
     );
   });
 
-  it('shows sparse research context as a coverage state', () => {
+  it('shows sparse research context as a coverage state on the compact browse card', () => {
     const { container } = render(
       <MemoryRouter>
         <ResearchHomeCard
+          variant="compact"
           home={researchHome({
             description:
-              'Review evidence and official source links for research homes connected to Computer Science.',
+              'Review evidence and official source links for research connected to Computer Science.',
             contextState: 'sparse',
             contextLabel: 'Summary limited',
             metadataTags: ['Computer Science'],
@@ -425,6 +426,21 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).not.toContain('Source-backed profile context');
     expect(container.textContent).toContain('Review evidence and official source links');
     expect(container.textContent).toContain('Computer Science');
+  });
+
+  it('badges no coverage state when the summary is the research home own description', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          variant="compact"
+          home={researchHome({ contextState: 'complete', contextLabel: 'Research description' })}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.textContent).toContain('Studies systems neuroscience');
+    expect(container.textContent).not.toContain('Research description');
+    expect(container.textContent).not.toContain('Summary limited');
   });
 
   it('searches a browse-only area with a student-facing CTA', () => {
@@ -482,7 +498,6 @@ describe('ResearchHomeCard', () => {
                 slug: '',
                 name: 'Legacy Entry',
                 kind: 'lab',
-                description: 'No slug yet.',
                 websiteUrl: '',
                 location: '',
                 departments: ['Computer Science'],

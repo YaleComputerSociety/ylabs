@@ -20,6 +20,7 @@ import {
   extractedPageDescribesAnotherPersonsLab,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
+import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
 import type { ObservationInput, ScraperContext } from '../types';
 
 const FOREIGN_LAB_PAGE = 'https://medicine.yale.edu/lab/rhea-vandermolen/';
@@ -64,6 +65,7 @@ function makeContext(): { ctx: ScraperContext; emitted: ObservationInput[]; logs
 describe('foreign lab prose guard (#2272)', () => {
   it('emits nothing from a principal investigator lab page onto a lab member record', () => {
     const observations = descriptionExtractionToObservations(foreignLabExtraction(), {
+      knownPersonSurnames: NO_SURNAME_ROSTER,
       entityId: 'entity-member',
       entityKey: 'ysm-faculty-tomasz-okonkwo',
       entityType: 'LAB',
@@ -76,6 +78,7 @@ describe('foreign lab prose guard (#2272)', () => {
 
   it('still adopts the same page for the principal investigator it belongs to', () => {
     const observations = descriptionExtractionToObservations(foreignLabExtraction(), {
+      knownPersonSurnames: NO_SURNAME_ROSTER,
       entityId: 'entity-pi',
       entityKey: 'ysm-rhea-vandermolen',
       entityType: 'LAB',
@@ -104,6 +107,7 @@ describe('foreign lab prose guard (#2272)', () => {
         name: 'Yale Center for Customer Insights',
       },
       {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-affiliated',
         entityKey: 'dept-econ-marisol-abarca',
         entityType: 'FACULTY_RESEARCH_AREA',
@@ -122,6 +126,7 @@ describe('foreign lab prose guard (#2272)', () => {
     const observations = descriptionExtractionToObservations(
       { ...foreignLabExtraction(), name: '' },
       {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-member',
         entityKey: 'ysm-faculty-tomasz-okonkwo',
         entityType: 'LAB',
@@ -135,6 +140,7 @@ describe('foreign lab prose guard (#2272)', () => {
 
   it('leaves organization-shaped records untouched by the person-lab guard', () => {
     const observations = descriptionExtractionToObservations(foreignLabExtraction(), {
+      knownPersonSurnames: NO_SURNAME_ROSTER,
       entityId: 'entity-core',
       entityKey: 'research-yale-shared-imaging-core',
       entityType: 'CORE_FACILITY',
@@ -151,6 +157,7 @@ describe('foreign lab prose guard (#2272)', () => {
       entityType: 'LAB',
       kind: 'lab',
       sourceUrl: FOREIGN_LAB_PAGE,
+      knownPersonSurnames: NO_SURNAME_ROSTER,
     };
     expect(
       extractedPageDescribesAnotherPersonsLab({ name: 'The Vandermolen Lab' }, memberContext),
@@ -181,6 +188,10 @@ describe('foreign lab prose guard (#2272)', () => {
     ctx.options.only = ['ysm-faculty-tomasz-okonkwo'];
     ctx.options.limit = 1;
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -203,5 +214,48 @@ describe('foreign lab prose guard (#2272)', () => {
     await scraper.run(ctx);
 
     expect(emitted.map((obs) => obs.field)).toEqual(['sourceContentHash']);
+  });
+});
+
+// The shape the URL path cannot see: a foreign lab on its own eponymous host with a
+// bare path, so nothing in the path echoes the eponym and the host is deliberately
+// not corroboration. Path-only accepted it and stored the foreign lab's prose as this
+// record's own research description (#2369).
+describe('bare-eponymous-host foreign lab prose (#2369)', () => {
+  const BARE_HOST = 'https://www.vandermolenlab.example.org/';
+  const memberIdentity = {
+    entityId: 'entity-member',
+    entityKey: 'ysm-faculty-tomasz-okonkwo',
+    entityType: 'LAB',
+    kind: 'lab',
+    sourceUrl: BARE_HOST,
+  };
+
+  it('refuses the prose once a roster corroborates the eponym', () => {
+    const observations = descriptionExtractionToObservations(foreignLabExtraction(), {
+      ...memberIdentity,
+      knownPersonSurnames: new Set(['vandermolen', 'okonkwo']),
+    });
+
+    expect(observations.map((obs) => obs.field)).toEqual([]);
+  });
+
+  it('is the shape a path-only roster accepts, so the roster is what refuses it', () => {
+    const observations = descriptionExtractionToObservations(foreignLabExtraction(), {
+      ...memberIdentity,
+      knownPersonSurnames: NO_SURNAME_ROSTER,
+    });
+
+    expect(observations.map((obs) => obs.field)).toContain('fullDescription');
+  });
+
+  it('keeps the eponym holder own prose from the same bare host', () => {
+    const observations = descriptionExtractionToObservations(foreignLabExtraction(), {
+      ...memberIdentity,
+      entityKey: 'ysm-faculty-rhea-vandermolen',
+      knownPersonSurnames: new Set(['vandermolen', 'okonkwo']),
+    });
+
+    expect(observations.map((obs) => obs.field)).toContain('fullDescription');
   });
 });

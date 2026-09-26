@@ -124,35 +124,15 @@ describe('INVENTORY_COLLECTIONS', () => {
 
   it('classifies Phase 1 storage contracts under their owning cutover phases', () => {
     expect(
-      INVENTORY_COLLECTIONS.filter((spec) =>
-        ['research_plans', 'source_documents', 'evidence_claims', 'review_decisions'].includes(
-          spec.collection,
-        ),
-      ).map(({ collection, model, group, phase }) => ({
-        collection,
-        model,
-        group,
-        phase,
-      })),
+      INVENTORY_COLLECTIONS.filter((spec) => spec.collection === 'research_plans').map(
+        ({ collection, model, group, phase }) => ({
+          collection,
+          model,
+          group,
+          phase,
+        }),
+      ),
     ).toEqual([
-      {
-        collection: 'evidence_claims',
-        model: 'EvidenceClaim',
-        group: 'evidence',
-        phase: 5,
-      },
-      {
-        collection: 'source_documents',
-        model: 'SourceDocument',
-        group: 'evidence',
-        phase: 5,
-      },
-      {
-        collection: 'review_decisions',
-        model: 'ReviewDecision',
-        group: 'evidence',
-        phase: 5,
-      },
       {
         collection: 'research_plans',
         model: 'ResearchPlan',
@@ -160,6 +140,13 @@ describe('INVENTORY_COLLECTIONS', () => {
         phase: 4,
       },
     ]);
+  });
+
+  it('no longer inventories the retired evidence claim-graph collections', () => {
+    const names = INVENTORY_COLLECTIONS.map((spec) => spec.collection);
+    for (const retired of ['evidence_claims', 'source_documents', 'review_decisions']) {
+      expect(names).not.toContain(retired);
+    }
   });
 
   it('uses the durable relationship collection name without aliases', () => {

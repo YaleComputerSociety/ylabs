@@ -1,5 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import cookieSession from 'cookie-session';
+import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
+import type { AddressInfo } from 'node:net';
+import type { Server } from 'node:http';
 import {
   MIN_FIRST_CONTACT_MAX,
   FIRST_CONTACT_VOLUME_NOTICE_FRACTION,
@@ -148,5 +152,76 @@ describe('volume telemetry', () => {
       observeFirstContactVolume(req, noopResponse, next as any);
       expect(next).toHaveBeenCalledTimes(1);
     }
+  });
+});
+
+// The real `firstContactLimiter`, not a rebuild of it: `skills/auth-security/SKILL.md`
+// and `scripts/security-preflight.test.mjs` both claim first contact counts every
+// response, and only driving the exported limiter proves the counter behaves that
+// way rather than that the options text reads that way (#2990). Its own `skip`
+// returns `bypassRuntimeSecurity`, which is true under test, so the module is
+// re-imported with a deployed NODE_ENV to make the limiter live.
+describe('first-contact metering counts every response, a 5xx included (#2990)', () => {
+  let server: Server;
+  let baseUrl = '';
+
+  beforeAll(async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.resetModules();
+    const limiters = await import('../rateLimiters');
+
+    const app = express()
+      .set('trust proxy', () => true)
+      .use(
+        cookieSession({
+          name: 'ylabs-first-contact-test',
+          keys: ['first-contact-test-secret'],
+          httpOnly: true,
+          path: '/',
+        }),
+      )
+      .use('/api', limiters.ensureAnonymousRateLimitId)
+      .use('/api', limiters.firstContactLimiter)
+      .get('/api/probe', (req, res) => {
+        const status = Number(req.query.status) || 200;
+        res.status(status).json({ used: (req as any).rateLimit?.used });
+      });
+
+    server = await new Promise<Server>((resolve) => {
+      const started = app.listen(0, '127.0.0.1', () => resolve(started));
+    });
+    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    vi.resetModules();
+    vi.unstubAllEnvs();
+  });
+
+  const cookielessProbe = async (status: number) => {
+    const response = await fetch(`${baseUrl}/api/probe?status=${status}`, {
+      headers: { 'X-Forwarded-For': '203.0.113.9' },
+    });
+    const body = (await response.json()) as { used?: number };
+    return { status: response.status, used: body.used };
+  };
+
+  it('does not refund a failed response, so an outage is not a session-minting window', async () => {
+    const failed = await cookielessProbe(500);
+    const followUp = await cookielessProbe(200);
+
+    expect(failed.status).toBe(500);
+    expect(failed.used).toBe(1);
+    // 2 rather than 1: a limiter that refunded the 5xx would hand the second
+    // cookie-less caller the first caller's slot back.
+    expect(followUp.used).toBe(2);
+  });
+
+  it('counts a 4xx as well, so no status class escapes the first-contact budget', async () => {
+    const rejected = await cookielessProbe(404);
+
+    expect(rejected.status).toBe(404);
+    expect(rejected.used).toBe(3);
   });
 });

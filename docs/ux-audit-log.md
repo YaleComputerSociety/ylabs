@@ -136,6 +136,8 @@ This log keeps the durable findings and fixes; new ad hoc screenshots should liv
   - Updated `buildMetadataClusters` to prefer meaningful `departments` over research areas, then school, then entity-kind fallback.
   - Normalized cluster keys with case/spacing normalization so case-only duplicates do not split clusters.
   - Added cluster source-aware copy (`Shared department:` / `Shared research area:`) in `matchReason`.
+    That copy and the `matchReason` field itself were later retired; see the 2026-09-05 `searchMatch` decision in `docs/decisions.md`.
+    The department-first grouping this entry records is unaffected.
   - Added regression tests for department-first grouping and case-normalized department merges.
 - **Status**
   - Fixed.

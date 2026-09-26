@@ -357,7 +357,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         .catch((error) => {
           console.error('Error loading fellowships.');
           if (error?.response?.status !== 401) {
-            swal({
+            void swal({
               text: 'Unable to load fellowships. Please try again later.',
               icon: 'warning',
             });

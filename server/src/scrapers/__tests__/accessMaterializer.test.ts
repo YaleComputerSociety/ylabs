@@ -1,18 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES,
   MATERIALIZED_ACCESS_SIGNAL_TYPES,
-  ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES,
   deriveAccessArtifactsFromObservations,
   deriveAccessArtifactsForResearchGroup,
-  deriveIdentifiedLeadWaysIn,
   isExplicitUndergradUnavailabilityPhrase,
   normalizeAccessMaterializerObjectId,
   officialNonGrantSourceUrl,
   parsePostedOpening,
   type AccessObservation,
 } from '../accessMaterializer';
-import { ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY } from '../../services/accessAcceptanceLevel';
 
 const D = new Date('2026-05-07T12:00:00.000Z');
 
@@ -59,7 +55,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.accessSignals.every((signal) => signal.confidenceScore === 0.7)).toBe(true);
   });
 
-  it('does not turn course-specific acceptingUndergrads into generic exploratory outreach', () => {
+  it('does not turn a course-listing-only lane into generic exploratory outreach', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
         field: 'offersIndependentStudy',
@@ -70,12 +66,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
       obs({
         field: 'independentStudyCourses',
         value: [{ code: 'MCDB 471', title: 'Independent Research' }],
-        sourceName: 'department-research-pathways',
-        confidence: 0.7,
-      }),
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
         sourceName: 'department-research-pathways',
         confidence: 0.7,
       }),
@@ -117,28 +107,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.accessSignals.every((signal) => signal.confidence === 'HIGH')).toBe(true);
   });
 
-  it('does not turn fellowship-recipient legacy accepting fields into generic outreach', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'pastUndergradAdvisees',
-        value: [{ year: 2025, programName: 'STARS', count: 2 }],
-        sourceName: 'undergrad-fellowships-recipients',
-        confidence: 0.8,
-      }),
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'undergrad-fellowships-recipients',
-        confidence: 0.8,
-      }),
-    ]);
-
-    expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
-      'FELLOWSHIP_COMPATIBLE',
-      'PAST_UNDERGRADS',
-    ]);
-  });
-
   it('uses the original observation confidence, not resolved field confidence', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
@@ -160,18 +128,31 @@ describe('deriveAccessArtifactsFromObservations', () => {
     ]);
   });
 
-  it('does not turn YSM/YSE entity-discovery booleans into access evidence', () => {
+  // #696 required two independent sources before a bare `acceptingUndergrads=true`
+  // could become outreach evidence. #2055 retired the boolean instead, so no number
+  // of stored copies of it derives anything: only `undergradAccessEvidence`, which
+  // carries a verdict and the quote that backs it, is read.
+  it('derives nothing from the retired acceptingUndergrads boolean, whatever asserts it (#696, #2055)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
+        _id: 'accepting-a',
         field: 'acceptingUndergrads',
         value: true,
-        sourceName: 'ysm-atoz-index',
+        sourceName: 'lab-microsite-undergrad-llm',
         confidence: 0.9,
       }),
       obs({
+        _id: 'accepting-b',
         field: 'acceptingUndergrads',
         value: true,
-        sourceName: 'yse-centers-index',
+        sourceName: 'department-faculty-roster',
+        confidence: 0.9,
+      }),
+      obs({
+        _id: 'accepting-c',
+        field: 'acceptingUndergrads',
+        value: false,
+        sourceName: 'ysm-atoz-index',
         confidence: 0.9,
       }),
     ]);
@@ -179,27 +160,8 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.accessSignals).toEqual([]);
   });
 
-  it('does not derive reach-out-plausible from a single bare acceptingUndergrads=true (#696)', () => {
+  it('does not derive reach-out-plausible from an unvalidated quote alone (#1387)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
-    ]);
-
-    expect(result.accessSignals.map((signal) => signal.type)).not.toContain('REACH_OUT_PLAUSIBLE');
-  });
-
-  it('does not derive reach-out-plausible from a bare accepting boolean plus an unvalidated quote alone (#1387)', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
       obs({
         field: 'undergradEvidenceQuote',
         value: 'Undergraduates are welcome to join the lab.',
@@ -213,12 +175,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
 
   it('derives reach-out-plausible from structured undergradAccessEvidence, using a companion quote only as the excerpt (#1387)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
       obs({
         field: 'undergradAccessEvidence',
         value: {
@@ -248,12 +204,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
   it('drops a wrong-entity/mission-blurb quote from the excerpt even when structured evidence corroborates access (#1387)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
-      obs({
         field: 'undergradAccessEvidence',
         value: { openToUndergrads: 'yes', evidenceSource: 'members_section' },
         sourceName: 'lab-microsite-undergrad-llm',
@@ -276,51 +226,11 @@ describe('deriveAccessArtifactsFromObservations', () => {
     ]);
   });
 
-  it('derives reach-out-plausible when a second independent source corroborates accepting (#696)', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'department-faculty-roster',
-        confidence: 0.6,
-      }),
-    ]);
-
-    expect(result.accessSignals.map((signal) => signal.type)).toContain('REACH_OUT_PLAUSIBLE');
-  });
-
-  it('does not corroborate accepting from repeated observations of the same source (#696)', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        _id: 'accepting-a',
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
-      obs({
-        _id: 'accepting-b',
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
-    ]);
-
-    expect(result.accessSignals.map((signal) => signal.type)).not.toContain('REACH_OUT_PLAUSIBLE');
-  });
-
   it('stores explicit negative availability as a signal without creating a pathway', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
-        field: 'acceptingUndergrads',
-        value: false,
+        field: 'undergradAccessEvidence',
+        value: { openToUndergrads: 'no', evidenceSource: 'explicit_text' },
         sourceName: 'lab-microsite-undergrad-llm',
         confidence: 0.5,
       }),
@@ -386,8 +296,8 @@ describe('deriveAccessArtifactsFromObservations', () => {
   it('does not emit NOT_CURRENTLY_AVAILABLE from a research-abstract sentence misparsed as negative (#1304)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
-        field: 'acceptingUndergrads',
-        value: false,
+        field: 'undergradAccessEvidence',
+        value: { openToUndergrads: 'no', evidenceSource: 'explicit_text' },
         sourceName: 'lab-microsite-undergrad-llm',
         confidence: 0.8,
       }),
@@ -408,8 +318,8 @@ describe('deriveAccessArtifactsFromObservations', () => {
   it('does not emit NOT_CURRENTLY_AVAILABLE from an empty-roster fact (#1304)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
-        field: 'acceptingUndergrads',
-        value: false,
+        field: 'undergradAccessEvidence',
+        value: { openToUndergrads: 'no', evidenceSource: 'members_section' },
         sourceName: 'lab-microsite-undergrad-llm',
         confidence: 0.7,
       }),
@@ -503,13 +413,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
         sourceName: 'department-undergrad-research',
         sourceUrl: 'https://chem.yale.edu/undergraduate-research',
         confidence: 0.8,
-      }),
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'department-undergrad-research',
-        sourceUrl: 'https://chem.yale.edu/undergraduate-research',
-        confidence: 0.75,
       }),
     ]);
 
@@ -682,8 +585,8 @@ describe('deriveAccessArtifactsFromObservations', () => {
       ],
       [
         obs({
-          field: 'acceptingUndergrads',
-          value: false,
+          field: 'undergradAccessEvidence',
+          value: { openToUndergrads: 'no', evidenceSource: 'explicit_text' },
           sourceName: 'lab-microsite-undergrad-llm',
           confidence: 0.5,
         }),
@@ -757,6 +660,128 @@ describe('officialNonGrantSourceUrl', () => {
       }),
     ).toBe('');
   });
+
+  it('skips a websiteUrl the corpus knows is gone and falls through to a live source', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'https://medicine.yale.edu/lab/solomon/',
+        sourceUrls: ['https://medicine.yale.edu/profile/a-person/'],
+        sourceLinkHealth: [
+          {
+            url: 'https://medicine.yale.edu/lab/solomon/',
+            healthStatus: 'UNAVAILABLE',
+            httpStatusCode: 404,
+          },
+        ],
+      }),
+    ).toBe('https://medicine.yale.edu/profile/a-person/');
+  });
+
+  // #2556: a host resolving only into private address space is alive and unopenable
+  // at once. It recorded no liveness verdict, so it read here as an unprobed URL and
+  // therefore as proof of access for a student who cannot reach it.
+  it('skips a private-address host and falls through to a publicly reachable citation', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'https://internal.example.edu/lab/',
+        sourceUrls: ['https://medicine.yale.edu/profile/a-person/'],
+        sourceLinkHealth: [
+          {
+            url: 'https://internal.example.edu/lab/',
+            healthStatus: 'UNKNOWN',
+            privateAddressHost: true,
+          },
+          {
+            url: 'https://medicine.yale.edu/profile/a-person/',
+            healthStatus: 'HEALTHY',
+            httpStatusCode: 200,
+          },
+        ],
+      }),
+    ).toBe('https://medicine.yale.edu/profile/a-person/');
+  });
+
+  it('returns empty when the only citation is a private-address host', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'https://internal.example.edu/lab/',
+        sourceLinkHealth: [
+          {
+            url: 'https://internal.example.edu/lab/',
+            healthStatus: 'UNKNOWN',
+            privateAddressHost: true,
+          },
+        ],
+      }),
+    ).toBe('');
+  });
+
+  // The control: a plain inconclusive verdict on a public Yale host must keep
+  // counting, or every throttled probe would demote a row.
+  it('still credits a public Yale host whose verdict is merely inconclusive', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'https://medicine.yale.edu/lab/a-lab/',
+        sourceLinkHealth: [
+          {
+            url: 'https://medicine.yale.edu/lab/a-lab/',
+            healthStatus: 'UNKNOWN',
+            httpStatusCode: 403,
+          },
+        ],
+      }),
+    ).toBe('https://medicine.yale.edu/lab/a-lab/');
+  });
+
+  it('returns empty when every candidate is known dead, so the gate sees no way in', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'http://art.yale.edu/SomePerson',
+        sourceLinkHealth: [
+          {
+            url: 'http://art.yale.edu/SomePerson',
+            healthStatus: 'UNAVAILABLE',
+            httpStatusCode: 404,
+          },
+        ],
+      }),
+    ).toBe('');
+  });
+
+  it('matches a verdict across cosmetic url differences in scheme, www, and trailing slash', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'http://www.art.yale.edu/SomePerson/',
+        sourceLinkHealth: [
+          {
+            url: 'https://art.yale.edu/SomePerson',
+            healthStatus: 'UNAVAILABLE',
+            httpStatusCode: 404,
+          },
+        ],
+      }),
+    ).toBe('');
+  });
+
+  it('still counts an unprobed url, since absence of a verdict is not evidence of death', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'https://somelab.yale.edu/',
+        sourceLinkHealth: [],
+      }),
+    ).toBe('https://somelab.yale.edu/');
+  });
+
+  it('still counts a url whose verdict is only inconclusive', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'https://slow.yale.edu/lab/',
+        sourceLinkHealth: [
+          { url: 'https://slow.yale.edu/lab/', healthStatus: 'UNKNOWN', httpStatusCode: 403 },
+        ],
+      }),
+    ).toBe('https://slow.yale.edu/lab/');
+  });
 });
 
 describe('deriveAccessArtifactsForResearchGroup', () => {
@@ -771,110 +796,6 @@ describe('deriveAccessArtifactsForResearchGroup', () => {
       type: 'CURRENT_UNDERGRADS',
       sourceEvidenceId: '64f000000000000000000099',
     });
-  });
-});
-
-describe('deriveIdentifiedLeadWaysIn', () => {
-  const supporting: AccessObservation = {
-    _id: 'obs-identity',
-    field: 'profileUrl',
-    value: 'https://medicine.yale.edu/profile/jane-smith/',
-    sourceName: 'dept-faculty-roster',
-    sourceUrl: 'https://medicine.yale.edu/profile/jane-smith/',
-    confidence: 0.6,
-    observedAt: D,
-  };
-
-  const baseInput = {
-    researchEntityId: '64f000000000000000000010',
-    entity: { entityType: 'FACULTY_RESEARCH_AREA', name: 'Jane Smith Research' },
-    officialUrl: 'https://medicine.yale.edu/profile/jane-smith/',
-    leadName: 'Jane Smith',
-    supportingObservations: [supporting],
-  };
-
-  it('derives a reach-out-plausible ways-in signal for an identified faculty lead', () => {
-    const result = deriveIdentifiedLeadWaysIn(baseInput);
-    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
-    // confidence is intentionally conservative (LOW / WEAK)
-    expect(result.accessSignals[0].confidenceScore).toBeLessThanOrEqual(0.4);
-  });
-
-  it('skips entities flagged as duplicates by the visibility gate', () => {
-    const result = deriveIdentifiedLeadWaysIn({
-      ...baseInput,
-      entity: { ...baseInput.entity, studentVisibilityReasons: ['exact_url_duplicate_risk'] },
-    });
-    expect(result.accessSignals).toHaveLength(0);
-  });
-
-  it('skips grant-only source URLs and non-home entity types', () => {
-    expect(
-      deriveIdentifiedLeadWaysIn({
-        ...baseInput,
-        officialUrl: 'https://reporter.nih.gov/project-details/1',
-      }).accessSignals,
-    ).toHaveLength(0);
-    expect(
-      deriveIdentifiedLeadWaysIn({ ...baseInput, entity: { entityType: 'PROGRAM' } }).accessSignals,
-    ).toHaveLength(0);
-  });
-
-  it('requires supporting source evidence so the claim gate keeps the artifacts', () => {
-    const result = deriveIdentifiedLeadWaysIn({ ...baseInput, supportingObservations: [] });
-    expect(result.accessSignals).toHaveLength(0);
-  });
-
-  it('still requires an official non-grant page to emit REACH_OUT_PLAUSIBLE (creation criteria unchanged, #530)', () => {
-    expect(
-      deriveIdentifiedLeadWaysIn({ ...baseInput, officialUrl: '' }).accessSignals,
-    ).toHaveLength(0);
-    expect(
-      deriveIdentifiedLeadWaysIn({ ...baseInput, officialUrl: 'ftp://chemistry.yale.edu/lab' })
-        .accessSignals,
-    ).toHaveLength(0);
-  });
-
-  it('gives a lead-less digital-humanities project an organizational ways-in from its official page', () => {
-    const result = deriveIdentifiedLeadWaysIn({
-      researchEntityId: '64f000000000000000000011',
-      entity: { entityType: 'INITIATIVE', name: 'Mapping Manuscript Migrations' },
-      officialUrl: 'https://library.yale.edu/dhlab/projects/mapping-manuscript-migrations',
-      supportingObservations: [supporting],
-    });
-    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
-    expect(result.accessSignals[0].excerpt).toMatch(/explore its programs and affiliated people/i);
-  });
-
-  it('keeps every organizational ways-in type eligible for the lead ways-in (three-allowlist consistency, #1361)', () => {
-    for (const entityType of ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES) {
-      expect(IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES.has(entityType)).toBe(true);
-    }
-  });
-
-  it('derives the organizational center-level ways-in for a lead-exempt CORE_FACILITY (#1361)', () => {
-    const result = deriveIdentifiedLeadWaysIn({
-      ...baseInput,
-      entity: { entityType: 'CORE_FACILITY', name: 'Keck Mass Spectrometry Resource' },
-      officialUrl: 'https://medicine.yale.edu/keck/ms/',
-      leadName: undefined,
-    });
-    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
-    expect(result.accessSignals[0].derivationKey).toBe(ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY);
-  });
-
-  it('gives a lead-less collections initiative an organizational ways-in from its official page (#1360)', () => {
-    const result = deriveIdentifiedLeadWaysIn({
-      researchEntityId: '64f000000000000000000012',
-      entity: {
-        entityType: 'INITIATIVE',
-        name: 'Prospects of Empire',
-      },
-      officialUrl: 'https://onlineexhibits.library.yale.edu/s/prospectsofempire',
-      supportingObservations: [supporting],
-    });
-    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
-    expect(result.accessSignals[0].excerpt).toMatch(/explore its programs and affiliated people/i);
   });
 });
 

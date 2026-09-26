@@ -42,10 +42,18 @@ const departmentTable: DepartmentConfig[] = [
   },
 ];
 
+const PILL_ELIGIBLE_LABELS = ['Physics', 'Computer Science'];
+
 const renderMembersWithConfig = (members: LabMember[], entityDepartments: string[] = []) =>
   render(
     <MemoryRouter>
-      <ConfigContext.Provider value={{ ...defaultConfigContext, departments: departmentTable }}>
+      <ConfigContext.Provider
+        value={{
+          ...defaultConfigContext,
+          departments: departmentTable,
+          departmentPillEligibleLabels: PILL_ELIGIBLE_LABELS,
+        }}
+      >
         <LabMembersList members={members} entityDepartments={entityDepartments} />
       </ConfigContext.Provider>
     </MemoryRouter>,
@@ -86,6 +94,32 @@ describe('LabMembersList', () => {
     expect(link.getAttribute('href')).toBe('https://medicine.yale.edu/profile/fixture-advisor/');
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toContain('noopener');
+  });
+
+  it('states the card is a link, since the removed website CTA left only a hover tint', () => {
+    const { getByRole, container } = render(
+      <MemoryRouter>
+        <LabMembersList
+          members={[member('')]}
+          resolveMemberProfileUrl={() => 'https://medicine.yale.edu/profile/fixture-advisor/'}
+        />
+      </MemoryRouter>,
+    );
+
+    const link = getByRole('link', { name: "Open Fixture Advisor's official profile" });
+    expect(link.textContent).toContain('View official profile');
+    expect(container.textContent).toContain('View official profile');
+  });
+
+  it('shows no link text on a card with no profile to open', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <LabMembersList members={[member('')]} />
+      </MemoryRouter>,
+    );
+
+    expect(container.querySelector('a')).toBeNull();
+    expect(container.textContent).not.toContain('View official profile');
   });
 
   it('links each lead card to its own official profile when several leads render', () => {
@@ -249,6 +283,24 @@ describe('LabMembersList', () => {
     expect(container.textContent).toContain('Researcher');
   });
 
+  it('does not label a non-research staff lead as Principal Investigator', () => {
+    for (const title of ['Program Manager', 'Program Managers', 'Data Analyst', 'Lab Technician']) {
+      const { container } = renderMembers([member('', { title })]);
+
+      expect(container.textContent, `"${title}" should not read as a lead`).not.toContain(
+        'Principal Investigator',
+      );
+      expect(container.textContent).toContain('Researcher');
+      expect(container.textContent).toContain(title);
+    }
+  });
+
+  it('keeps the Principal Investigator label for a research-ladder lead', () => {
+    const { container } = renderMembers([member('', { title: 'Associate Research Scientist' })]);
+
+    expect(container.textContent).toContain('Principal Investigator');
+  });
+
   it('keeps the Principal Investigator label for a research assistant professor', () => {
     const { container } = renderMembers([member('', { title: 'Research Assistant Professor' })]);
 
@@ -261,8 +313,8 @@ describe('LabMembersList', () => {
     expect(container.textContent).toContain('Principal Investigator');
   });
 
-  it('renders the department pill text at an AA-contrast gray on the muted panel', () => {
-    const { container } = renderMembers([member('')]);
+  it('renders the department pill text at an AA-contrast neutral step on the muted panel', () => {
+    const { container } = renderMembersWithConfig([member('')]);
 
     const departmentPill = Array.from(container.querySelectorAll('span')).find(
       (element) => element.textContent === 'Computer Science',
@@ -270,8 +322,8 @@ describe('LabMembersList', () => {
 
     expect(departmentPill).toBeTruthy();
     expect(departmentPill?.className).toContain('bg-[var(--yr-panel-muted)]');
-    expect(departmentPill?.className).toContain('text-gray-700');
-    expect(departmentPill?.className).not.toContain('text-gray-500');
+    expect(departmentPill?.className).toContain('text-ink-soft');
+    expect(departmentPill?.className).not.toMatch(/text-(?:gray|slate)-\d/);
   });
 
   it('renders no department pill when the HR org unit is administrative chrome', () => {

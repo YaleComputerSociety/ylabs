@@ -6,6 +6,8 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeEach, beforeAll, describe, expect, it } from 'vitest';
 
+import { hermeticChildEnvironment } from '../../test/hermeticEnvironment';
+
 const SCRIPT_PATH = path.resolve(__dirname, '../backfillYaleStatusCache.ts');
 const TSX_BIN = path.resolve(__dirname, '../../../node_modules/.bin/tsx');
 
@@ -19,6 +21,9 @@ interface StatusCacheReport {
   manuallyLockedSkipped: number;
   healingStaleInactiveCache: number;
   healingSuppressedOnlyByInactiveAtYale: number;
+  plannedWrites: number;
+  writtenThisRun: number;
+  deferredByWriteLimit: number;
   nextStep?: string;
   healSample: Array<{ label: string; previousYaleStatusCache: string }>;
 }
@@ -112,12 +117,11 @@ async function runBackfillCli(mongoUrl: string, args: string[]) {
   return new Promise<{ code: number | null; stderr: string }>((resolve) => {
     const child = spawn(TSX_BIN, [SCRIPT_PATH, ...args], {
       cwd: path.resolve(__dirname, '../../..'),
-      env: {
-        ...process.env,
+      env: hermeticChildEnvironment({
         MONGODBURL: mongoUrl,
         SCRAPER_ENV: 'development',
         NODE_ENV: 'development',
-      },
+      }),
       stdio: ['ignore', 'ignore', 'pipe'],
     });
     let stderr = '';
@@ -236,6 +240,43 @@ describe('research:backfill-yale-status-cache apply is bidirectional (issue #228
       activeAtYaleCache: true,
       yaleStatusCache: 'unknown',
       studentVisibilityTier: 'student_ready',
+    });
+  }, 120_000);
+
+  // `--limit` used to bound the query, so a bounded apply planned from the first N
+  // rows by name and could never reach a row further down the corpus however many
+  // times it ran. That is why the row #2684 found stayed unrepaired: it sits
+  // beyond any limit an operator would pick, and the whole-corpus scan the plan
+  // needs was the same run that exceeded Mongo's 32MB unindexed-sort limit.
+  it('scans the whole corpus and bounds only the writes with --limit', async () => {
+    const first = await runAndReadReport(mongoUrl, [
+      '--apply',
+      '--confirm-yale-status-cache-backfill',
+      '--limit=1',
+    ]);
+
+    expect(first.scanned).toBe(5);
+    expect(first.plannedWrites).toBe(2);
+    expect(first.writtenThisRun).toBe(1);
+    expect(first.deferredByWriteLimit).toBe(1);
+    // The write budget went to the earlier row by label, so the heal is deferred
+    // rather than dropped, and the row is still waiting untouched.
+    expect((await statusCacheBySlug())['synthetic-stale-departed-home']).toMatchObject({
+      activeAtYaleCache: false,
+      yaleStatusCache: 'departed',
+    });
+
+    const second = await runAndReadReport(mongoUrl, [
+      '--apply',
+      '--confirm-yale-status-cache-backfill',
+      '--limit=2',
+    ]);
+
+    expect(second.scanned).toBe(5);
+    expect(second.writtenThisRun).toBeGreaterThanOrEqual(1);
+    expect((await statusCacheBySlug())['synthetic-stale-departed-home']).toMatchObject({
+      activeAtYaleCache: true,
+      yaleStatusCache: 'unknown',
     });
   }, 120_000);
 

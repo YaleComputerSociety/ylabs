@@ -79,6 +79,7 @@ describe('launchAcquisitionReportService', () => {
           : [],
       ),
       countUndergraduateAccessObservations: vi.fn().mockResolvedValue(0),
+      observationStorePopulated: vi.fn().mockResolvedValue(true),
       countAccessRecords: vi
         .fn()
         .mockResolvedValue({ accessSignals: 0, entryPathways: 0, contactRoutes: 0 }),
@@ -152,6 +153,7 @@ describe('launchAcquisitionReportService', () => {
       countUndergraduateAccessObservations: vi.fn(async (entity: Record<string, unknown>) =>
         entity._id === 'entity-2' ? 3 : 0,
       ),
+      observationStorePopulated: vi.fn().mockResolvedValue(true),
       countAccessRecords: vi.fn(async (id: string) =>
         id === 'entity-4'
           ? { accessSignals: 1, entryPathways: 1, contactRoutes: 1 }
@@ -245,6 +247,7 @@ describe('launchAcquisitionReportService', () => {
       countSourceObservations: vi.fn().mockResolvedValue(0),
       findUsersByUrls: vi.fn().mockResolvedValue([]),
       countUndergraduateAccessObservations: vi.fn().mockResolvedValue(0),
+      observationStorePopulated: vi.fn().mockResolvedValue(true),
       countAccessRecords: vi
         .fn()
         .mockResolvedValue({ accessSignals: 0, entryPathways: 0, contactRoutes: 0 }),
@@ -323,6 +326,7 @@ describe('launchAcquisitionReportService', () => {
           : [],
       ),
       countUndergraduateAccessObservations: vi.fn().mockResolvedValue(0),
+      observationStorePopulated: vi.fn().mockResolvedValue(true),
       countAccessRecords: vi
         .fn()
         .mockResolvedValue({ accessSignals: 0, entryPathways: 0, contactRoutes: 0 }),
@@ -378,6 +382,7 @@ describe('launchAcquisitionReportService', () => {
       countSourceObservations: vi.fn(),
       findUsersByUrls: vi.fn(),
       countUndergraduateAccessObservations: vi.fn(),
+      observationStorePopulated: vi.fn().mockResolvedValue(true),
       countAccessRecords: vi.fn(),
     };
 
@@ -396,6 +401,7 @@ describe('launchAcquisitionReportService', () => {
       countSourceObservations: vi.fn(),
       findUsersByUrls: vi.fn(),
       countUndergraduateAccessObservations: vi.fn(),
+      observationStorePopulated: vi.fn().mockResolvedValue(true),
       countAccessRecords: vi.fn(),
     };
 
@@ -404,5 +410,68 @@ describe('launchAcquisitionReportService', () => {
     ).rejects.toThrow('--sample-limit must be a safe positive integer');
 
     expect(deps.findQueueItems).not.toHaveBeenCalled();
+  });
+  it('reports an unavailable observation store instead of diagnosing every row as unsourced', async () => {
+    const deps = {
+      findQueueItems: vi
+        .fn()
+        .mockResolvedValue([
+          item({ recordId: 'entity-1', repairStage: 'action_evidence' }),
+          item({ _id: 'queue-2', recordId: 'entity-2', repairStage: 'action_evidence' }),
+        ]),
+      findResearchEntity: vi.fn(async (id: string) => ({
+        _id: id,
+        name: 'Example Lab',
+        slug: id,
+        sourceUrls: ['https://medicine.yale.edu/lab/example/'],
+      })),
+      findResearchEntityMembers: vi.fn().mockResolvedValue([]),
+      countSourceObservations: vi.fn().mockResolvedValue(0),
+      findUsersByUrls: vi.fn().mockResolvedValue([]),
+      countUndergraduateAccessObservations: vi.fn().mockResolvedValue(0),
+      observationStorePopulated: vi.fn().mockResolvedValue(false),
+      countAccessRecords: vi.fn().mockResolvedValue({ accessSignals: 2 }),
+    };
+
+    const report = await buildLaunchAcquisitionReport(
+      { stages: ['action_evidence'], limit: 10, sampleLimit: 5 },
+      deps,
+    );
+
+    expect(report.observationStorePopulated).toBe(false);
+    expect(report.actionEvidence?.groups.observationStoreUnavailable.count).toBe(2);
+    // The false positive this replaces, and the verdict the early return suppressed.
+    expect(report.actionEvidence?.groups.noSourceObservations.count).toBe(0);
+    expect(report.actionEvidence?.groups.sourceObservationsWithoutUndergradAccess.count).toBe(0);
+    expect(report.actionEvidence?.groups.sourceBackedRouteNotLaunchMaterialized.count).toBe(2);
+  });
+
+  it('still diagnoses a genuinely unsourced row when the observation store is populated', async () => {
+    const deps = {
+      findQueueItems: vi
+        .fn()
+        .mockResolvedValue([item({ recordId: 'entity-1', repairStage: 'action_evidence' })]),
+      findResearchEntity: vi.fn(async (id: string) => ({
+        _id: id,
+        name: 'Example Lab',
+        slug: id,
+        sourceUrls: ['https://medicine.yale.edu/lab/example/'],
+      })),
+      findResearchEntityMembers: vi.fn().mockResolvedValue([]),
+      countSourceObservations: vi.fn().mockResolvedValue(0),
+      findUsersByUrls: vi.fn().mockResolvedValue([]),
+      countUndergraduateAccessObservations: vi.fn().mockResolvedValue(0),
+      observationStorePopulated: vi.fn().mockResolvedValue(true),
+      countAccessRecords: vi.fn().mockResolvedValue({ accessSignals: 0 }),
+    };
+
+    const report = await buildLaunchAcquisitionReport(
+      { stages: ['action_evidence'], limit: 10, sampleLimit: 5 },
+      deps,
+    );
+
+    expect(report.observationStorePopulated).toBe(true);
+    expect(report.actionEvidence?.groups.noSourceObservations.count).toBe(1);
+    expect(report.actionEvidence?.groups.observationStoreUnavailable.count).toBe(0);
   });
 });

@@ -5,6 +5,7 @@
  * and reusable across any scraper that needs to derive stable keys from messy
  * external data (names, emails, URLs).
  */
+import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 
 /**
  * Lowercase, ASCII-fold (basic), strip diacritics, and replace any run of
@@ -12,10 +13,16 @@
  *
  * Used to build deterministic entity keys from human-readable strings such as
  * faculty names or research-group names.
+ *
+ * Invisible format characters are stripped first because they are load-bearing for
+ * identity here, not merely cosmetic: NFKD does not decompose U+00AD, so a CMS
+ * soft hyphen survives into `[^a-z0-9]+` and becomes a dash. The same person keys
+ * as `robin-read-er` on the hyphenated page and `robin-reader` everywhere else, and
+ * the two keys never join (#2874).
  */
 export function slugify(input: string): string {
   if (!input) return '';
-  return input
+  return stripInvisibleFormatCharacters(input)
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '') // strip combining diacritics
     .toLowerCase()
@@ -132,7 +139,7 @@ export function isLikelyPersonSpecificYaleEmail(
  */
 export function normalizeName(name: string | undefined | null): string {
   if (!name) return '';
-  let n = String(name).replace(/\s+/g, ' ').trim();
+  let n = stripInvisibleFormatCharacters(String(name)).replace(/\s+/g, ' ').trim();
   // strip leading honorifics
   n = n.replace(/^(prof(\.|essor)?|dr\.?|mr\.?|mrs\.?|ms\.?|mx\.?)\s+/i, '');
   // drop parenthetical nicknames/asides e.g. "Ruby (Hsin-Fang) Tu" -> "Ruby Tu",
@@ -142,10 +149,17 @@ export function normalizeName(name: string | undefined | null): string {
     .replace(/[()]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  // strip trailing credential clauses after the last comma, repeating so that
-  // stacked degrees collapse fully e.g. "Avery Sloan, MD, PhD" -> "Avery Sloan"
+  // Strip trailing credential clauses after the last comma, repeating so that
+  // stacked degrees collapse fully e.g. "Avery Sloan, MD, PhD" -> "Avery Sloan".
+  // A degree missing from this list is not a cosmetic miss: the clause stays on
+  // the name, `splitName` then reads the last credential as the surname, and the
+  // roster member is keyed and served under a surname that is a degree
+  // abbreviation ("Avery Sloan, MD, MHS" split to first "Avery Sloan, MD," and
+  // last "MHS", #2535). The `$` anchor is what keeps a longer degree from being
+  // eaten by a shorter prefix alternative, so MSc and MSCR survive the
+  // `m\.?\s*s\.?` branch.
   const credentialClause =
-    /,\s*(ph\.?\s*d\.?|m\.?\s*d\.?|m\.?\s*p\.?\s*h\.?|j\.?\s*d\.?|sc\.?\s*d\.?|d\.?\s*phil\.?|dphil|ed\.?\s*d\.?|m\.?\s*s\.?|m\.?\s*a\.?|m\.?\s*b\.?\s*a\.?|esq\.?)\.?\s*$/i;
+    /,\s*(ph\.?\s*d\.?|m\.?\s*d\.?|m\.?\s*p\.?\s*h\.?\s*s\.?|m\.?\s*p\.?\s*h\.?|j\.?\s*d\.?|sc\.?\s*d\.?|d\.?\s*phil\.?|dphil|dr\.?\s*p\.?\s*h\.?|ed\.?\s*d\.?|pharm\.?\s*d\.?|m\.?\s*s\.?\s*c\.?\s*r\.?|m\.?\s*s\.?\s*c\.?|m\.?\s*s\.?|m\.?\s*a\.?|m\.?\s*b\.?\s*a\.?|m\.?\s*h\.?\s*s\.?|m\.?\s*h\.?\s*a\.?|m\.?\s*phil\.?|m\.?\s*f\.?\s*a\.?|m\.?\s*l\.?\s*s\.?|l\.?\s*m\.?\s*s\.?\s*w\.?|l\.?\s*m\.?\s*f\.?\s*t\.?|esq\.?)\.?\s*$/i;
   let stripped = n.replace(credentialClause, '');
   while (stripped !== n) {
     n = stripped;

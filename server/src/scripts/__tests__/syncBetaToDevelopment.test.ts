@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import mongoose from 'mongoose';
 import { ObjectId, type Db, type Document } from 'mongodb';
 import '../../models';
-import '../../models/canonicalAlias';
 import '../../models/observation';
 import '../../models/scrapeRun';
 import '../../models/scrapeSnapshot';
@@ -286,12 +285,10 @@ describe('Beta to Development sync guards', () => {
       expect.arrayContaining([
         'research_entities',
         'research_entity_relationships',
-        'research_entity_redirects',
         'signals',
         'researchers',
         'role_assignments',
         'accounts',
-        'canonical_aliases',
         'sources',
         'scrape_runs',
         'observations',
@@ -501,7 +498,8 @@ describe('Beta to Development sync guards', () => {
     const modelCollectionNames = Object.values(mongoose.models).map(
       (model) => model.collection.name,
     );
-    expect(modelCollectionNames).toContain('canonical_aliases');
+    expect(modelCollectionNames).not.toContain('canonical_aliases');
+    expect(modelCollectionNames).not.toContain('research_entity_redirects');
     expect(modelCollectionNames).toContain('observations');
 
     const mirrorNames = betaToDevelopmentCollectionNames();

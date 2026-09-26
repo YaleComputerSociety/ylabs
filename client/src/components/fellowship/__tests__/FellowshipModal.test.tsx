@@ -269,7 +269,9 @@ describe('FellowshipModal', () => {
 
     expect(screen.getByText('Opens Soon')).toBeInTheDocument();
     expect(screen.getByText(/Applications are not open yet/i)).toBeInTheDocument();
-    expect(screen.getByText('Track Opening Date').closest('a')).toHaveClass('bg-gray-600');
+    const closedWindowAction = screen.getByText('Track Opening Date').closest('a');
+    expect(closedWindowAction).toHaveClass('bg-muted');
+    expect(closedWindowAction).not.toHaveClass('bg-brand');
     expect(screen.queryByText('Apply Now')).not.toBeInTheDocument();
   });
 

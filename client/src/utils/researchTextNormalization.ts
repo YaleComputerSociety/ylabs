@@ -42,7 +42,12 @@ export const stripResearchDescriptionChrome = (value: unknown): string => {
   text = text
     .replace(/^INFORMATION FOR\s+(?=Copy Link\b|[A-Z])/i, '')
     .replace(/\bCopy Link\b/gi, ' ')
-    .replace(/([a-z])\.([A-Z])/g, '$1. $2')
+    // Two lowercase letters, not one: this repairs a run-together sentence
+    // ("cells.We study") without splitting a degree abbreviation, whose second
+    // letter follows an uppercase one ("Ph.D." -> "Ph. D."). Splitting it defeated
+    // the degree allowlist in isIncompleteSentenceFragment, so a description
+    // ending in "Ph.D." was blanked here while the server served it (#2433).
+    .replace(/([a-z][a-z])\.([A-Z])/g, '$1. $2')
     .replace(/([a-z]),([a-z])/g, '$1, $2')
     .replace(/([a-z])(?=leading-edge\b)/gi, '$1 ')
     .replace(/\s+/g, ' ')

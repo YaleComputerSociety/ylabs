@@ -182,6 +182,53 @@ describe('canonical membership materialization (integration)', () => {
     expect(assignments[0].reviewStatus).toBe('APPROVED');
   });
 
+  it('reports what it wrote, so an idempotent second pass reads as zero work (#210)', async () => {
+    const id = entityId();
+    const facts = {
+      legacyRole: 'grad-student',
+      displayName: 'Repeat Member',
+      evidenceStatus: 'verified',
+      isCurrentMember: true,
+      confidence: 0.9,
+      startedAt: new Date('2026-01-01T00:00:00Z'),
+    };
+    const identity = {
+      netid: 'rm999',
+      email: 'rm999@example.test',
+      displayName: 'Repeat Member',
+      hasCanonicalSourceReference: true,
+    };
+
+    expect(await materializeCanonicalMembership(id, facts, identity)).toBe('created');
+    expect(await materializeCanonicalMembership(id, facts, identity)).toBe('unchanged');
+
+    const assignments = await RoleAssignment.find({
+      'target.id': new mongoose.Types.ObjectId(id),
+    }).lean();
+    expect(assignments).toHaveLength(1);
+  });
+
+  it('names the reason it refused rather than returning the same nothing as a no-op', async () => {
+    const identity = {
+      netid: 'rf998',
+      displayName: 'Refused Member',
+      hasCanonicalSourceReference: true,
+    };
+    expect(
+      await materializeCanonicalMembership('not-an-object-id', { legacyRole: 'pi' }, identity),
+    ).toBe('refused-entity');
+    expect(
+      await materializeCanonicalMembership(entityId(), { legacyRole: 'nonsense' }, identity),
+    ).toBe('refused-role');
+    expect(
+      await materializeCanonicalMembership(
+        entityId(),
+        { legacyRole: 'pi' },
+        { email: 'info@example.test', displayName: 'Lab Office' },
+      ),
+    ).toBe('refused-organizational-mailbox');
+  });
+
   it('materializes a lead for a vanity netid that is not the letters-then-digits shape', async () => {
     const id = entityId();
     await materializeCanonicalMembership(
@@ -381,6 +428,46 @@ describe('canonical membership materialization (integration)', () => {
     );
     expect(await Researcher.countDocuments({ displayName: 'Delta Four' })).toBe(1);
     expect(await RoleAssignment.countDocuments({})).toBe(1);
+  });
+
+  it('adopts and heals a name-only researcher whose stored name still carries scraped furniture', async () => {
+    const id = entityId();
+    const stored = await Researcher.create({
+      displayName: 'Photo of EPSILON FIVE, PhD.',
+      profileLinks: [],
+      archived: false,
+    });
+    await materializeCanonicalMembership(
+      id,
+      { legacyRole: 'staff', displayName: 'Epsilon Five', isCurrentMember: true, confidence: 0.5 },
+      { displayName: 'Epsilon Five' },
+    );
+    expect(await Researcher.countDocuments({})).toBe(1);
+    const healed = await Researcher.findById(stored._id).lean<WithObjectId<ResearcherRecord>>();
+    expect(healed?.displayName).toBe('Epsilon Five');
+    expect(await RoleAssignment.countDocuments({})).toBe(1);
+  });
+
+  it('serves one roster entry, not two, after the scraped name stops carrying furniture', async () => {
+    const id = entityId();
+    await materializeCanonicalMembership(
+      id,
+      {
+        legacyRole: 'staff',
+        displayName: 'Photo of Eta Seven.',
+        isCurrentMember: true,
+        confidence: 0.5,
+      },
+      { displayName: 'Photo of Eta Seven.' },
+    );
+    await materializeCanonicalMembership(
+      id,
+      { legacyRole: 'staff', displayName: 'Eta Seven', isCurrentMember: true, confidence: 0.5 },
+      { displayName: 'Eta Seven' },
+    );
+    const roster = await getResearchEntityRoster(id);
+    expect(roster).toHaveLength(1);
+    expect(roster[0].name).toBe('Eta Seven');
   });
 
   it('creates only one name-only researcher when the same identity resolves concurrently', async () => {

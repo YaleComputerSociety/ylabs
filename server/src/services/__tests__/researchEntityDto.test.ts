@@ -5,6 +5,7 @@ import {
   toPublicResearchEntityDto,
   toPublicResearchEntitySummaryDto,
 } from '../researchEntityDto';
+import { servedCitationIsWithheld } from '../servedCitationPolicy';
 import { MAX_SHORT_DESCRIPTION_LENGTH } from '../../utils/descriptionHygiene';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../researchEntityPublicDescription';
 
@@ -18,6 +19,100 @@ describe('researchEntityDto', () => {
       shortDescription: 'INFORMATION FOR Copy Link The lab studies airway disease.',
     });
     expect(dto.shortDescription).toBe('The lab studies airway disease.');
+  });
+
+  it('withholds a person-scoped displayName that names an umbrella organization (#2351)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-affiliation-graft',
+      slug: 'dept-econ-rafferty-duchamp',
+      name: 'Rafferty Duchamp Faculty Research',
+      displayName: 'Yale School of Management',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(dto.displayName).toBe('');
+    expect(dto.name).toBe('Rafferty Duchamp Faculty Research');
+  });
+
+  it('serves a person-scoped lab name as the research record, not as a person (#2373)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-bare-person-lab',
+      slug: 'dept-econ-robin-roster',
+      name: 'Robin Roster',
+      kind: 'lab',
+      entityType: 'LAB',
+    });
+    expect(dto.name).toBe('Robin Roster Lab');
+  });
+
+  it('serves a person-scoped faculty-research name with the roster convention (#2507)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-bare-person-fra',
+      slug: 'dept-econ-rafferty-duchamp',
+      name: 'Rafferty Duchamp',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(dto.name).toBe('Rafferty Duchamp Faculty Research');
+  });
+
+  it('carries the substitution into the summary DTO title as well', () => {
+    const summary = toPublicResearchEntitySummaryDto({
+      id: 'entity-bare-person-lab',
+      slug: 'dept-econ-robin-roster',
+      name: 'Robin Roster',
+      kind: 'lab',
+      entityType: 'LAB',
+    });
+    expect(summary.name).toBe('Robin Roster Lab');
+  });
+
+  it('leaves a legitimate branded research name alone', () => {
+    for (const name of ['The Cogitorium', 'Yale NLP Lab', 'MiXCAST', 'Quillfeather Lab']) {
+      const dto = toPublicResearchEntityDto({
+        id: 'entity-branded',
+        slug: 'dept-seas-branded',
+        name,
+        kind: 'lab',
+        entityType: 'LAB',
+      });
+      expect(dto.name, name).toBe(name);
+    }
+  });
+
+  it('never doubles the suffix on a name that already follows the convention', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-conforming',
+      slug: 'dept-econ-rafferty-duchamp',
+      name: 'Rafferty Duchamp Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(dto.name).toBe('Rafferty Duchamp Faculty Research');
+  });
+
+  it('withholds the graft from the summary DTO title too', () => {
+    const summary = toPublicResearchEntitySummaryDto({
+      id: 'entity-affiliation-graft',
+      slug: 'dept-econ-rafferty-duchamp',
+      name: '',
+      displayName: 'Yale School of Management',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(summary.name).toBe('');
+  });
+
+  it('keeps an organization-shaped record own organization displayName', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-center',
+      slug: 'center-customer-insights',
+      name: 'Yale Center for Customer Insights',
+      displayName: 'Yale Center for Customer Insights',
+      kind: 'center',
+      entityType: 'CENTER',
+    });
+    expect(dto.displayName).toBe('Yale Center for Customer Insights');
   });
 
   it('drops methods already shown as research areas so a term never appears in both lists', () => {
@@ -155,6 +250,108 @@ describe('researchEntityDto', () => {
     );
   });
 
+  it('keeps an ungrounded stored card rather than surrendering it to a chip summary (#2299)', () => {
+    const storedShort =
+      'Develops novel statistical and bioinformatics methodology for the analysis of cancer, mental disorders, and cardiovascular disease.';
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-surrender-to-chips',
+      slug: 'surrender-to-chips-lab',
+      name: 'Surrender To Chips Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      shortDescription: storedShort,
+      fullDescription:
+        'The team builds high-dimensional regression and integrative multi-omics estimators, with an emphasis on reproducible pipelines for large observational cohorts, and applies them with clinical collaborators.',
+      researchAreas: ['Biostatistics', 'Computational Biology', 'Economics', 'Neoplasms'],
+    });
+    expect(dto.shortDescription).toBe(storedShort);
+    expect(dto.shortDescription).not.toBe(
+      'Studies Biostatistics, Computational Biology, Economics, and Neoplasms.',
+    );
+  });
+
+  it('keeps an ungrounded stored card when the fallback is withheld rather than a chip summary (#2299, #2972)', () => {
+    const storedShort =
+      'Develops novel statistical and bioinformatics methodology for the analysis of cancer, mental disorders, and cardiovascular disease.';
+    const fullDescription =
+      'The team builds high-dimensional regression and integrative multi-omics estimators, with an emphasis on reproducible pipelines for large observational cohorts, and applies them with clinical collaborators.';
+    const researchAreas = ['Biostatistics', 'Computational Biology', 'Economics', 'Neoplasms'];
+    // Sourced chips, because the unsourced ones are already dropped for domain
+    // incoherence before the card resolver ever sees them.
+    const fieldProvenance = {
+      researchAreas: { sourceUrl: 'https://example.edu/directory/lab' },
+    };
+
+    const withoutStoredCard = toPublicResearchEntityDto({
+      id: 'entity-withheld-fallback-no-stored-card',
+      slug: 'withheld-fallback-no-stored-card-lab',
+      name: 'Withheld Fallback Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      shortDescription: '',
+      fullDescription,
+      researchAreas,
+      fieldProvenance,
+    });
+    expect(withoutStoredCard.shortDescription).toBe('');
+
+    const withStoredCard = toPublicResearchEntityDto({
+      id: 'entity-withheld-fallback-stored-card',
+      slug: 'withheld-fallback-stored-card-lab',
+      name: 'Withheld Fallback Stored Card Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      shortDescription: storedShort,
+      fullDescription,
+      researchAreas,
+      fieldProvenance,
+    });
+    expect(withStoredCard.shortDescription).toBe(storedShort);
+    expect(withStoredCard.shortDescription).not.toBe(fullDescription);
+  });
+
+  it('swaps an ungrounded stored card for the derived sentence the card bar accepts (#1832/#1878)', () => {
+    const storedShort = 'Studies Texas groundwater salinity gradients.';
+    const derivableBodySentence =
+      'The group models Moroccan aquifer recharge under drought using isotope tracers.';
+    const entity = {
+      id: 'entity-body-fails-card-bar',
+      slug: 'body-fails-card-bar-lab',
+      name: 'Body Fails Card Bar Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      shortDescription: storedShort,
+      fullDescription: `They joined the faculty in 2009. ${derivableBodySentence}`,
+      researchAreas: ['Hydrology'],
+    };
+    const dto = toPublicResearchEntityDto(entity);
+    const gate = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(dto.shortDescription).toBe(derivableBodySentence);
+    expect(gate.cardDescription).toBe(derivableBodySentence);
+    expect(gate.invariant.reasons).toEqual([]);
+  });
+
+  it('still keeps an ungrounded stored card when no derived sentence clears the card bar (#1832)', () => {
+    const storedShort = 'Studies Texas groundwater salinity gradients.';
+    const entity = {
+      id: 'entity-body-yields-no-card',
+      slug: 'body-yields-no-card-lab',
+      name: 'Body Yields No Card Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      shortDescription: storedShort,
+      fullDescription:
+        'They joined the faculty in 2009. They have taught there ever since and served on several committees, and they continue to advise students each term.',
+      researchAreas: ['Hydrology'],
+    };
+    const dto = toPublicResearchEntityDto(entity);
+    const gate = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(dto.shortDescription).toBe(storedShort);
+    expect(gate.cardDescription).toBe(storedShort);
+  });
+
   it('collapses a doubled research-home suffix at read time so stale storage renders clean (#1106)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-doubled',
@@ -222,6 +419,24 @@ describe('researchEntityDto', () => {
     expect(dto).not.toHaveProperty('acceptanceConfidence');
   });
 
+  it('never serves a searchMatch, which no index builder produces (#2431)', () => {
+    const dto = toPublicResearchEntityDto({
+      _id: { toString: () => 'entity-search-match' },
+      slug: 'search-match-lab',
+      name: 'Search Match Lab',
+      kind: 'lab',
+      fullDescription: 'Investigates vascular biology in human disease.',
+      searchMatch: {
+        mode: 'hybrid',
+        reason: 'Matched on research areas.',
+        concepts: ['Vascular biology'],
+        methods: ['Imaging'],
+      },
+    } as Parameters<typeof toPublicResearchEntityDto>[0]);
+
+    expect(dto).not.toHaveProperty('searchMatch');
+  });
+
   it('keeps explicit entityType values from materialized records', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-2',
@@ -286,6 +501,133 @@ describe('researchEntityDto', () => {
     expect(dto.sourceUrls).toEqual(['https://url-safety.example.edu/source']);
   });
 
+  it('suppresses a stored shared multi-tenant host root websiteUrl at read time (#2359)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-multi-tenant-root',
+      slug: 'manohar-lab',
+      name: 'Manohar Lab',
+      kind: 'lab',
+      websiteUrl: 'https://csl.yale.edu/',
+    });
+
+    expect(dto).not.toHaveProperty('websiteUrl');
+  });
+
+  it('suppresses a stored news-article websiteUrl at read time (#2532)', () => {
+    for (const websiteUrl of [
+      'https://news.yale.edu/2024/06/05/example-headline',
+      'https://www.wsj.com/personal-finance/example-24057ac4',
+      'https://www.cnn.com/2026/07/31/tv/video/example-segment',
+    ]) {
+      const dto = toPublicResearchEntityDto({
+        id: 'entity-press-host-website',
+        slug: 'dept-example-press-cited-person',
+        name: 'Example press-cited research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        websiteUrl,
+        website: websiteUrl,
+        sourceUrls: [websiteUrl],
+      });
+
+      expect(dto, websiteUrl).not.toHaveProperty('websiteUrl');
+      expect(dto, websiteUrl).not.toHaveProperty('website');
+      expect(dto.sourceUrls, websiteUrl).toEqual([websiteUrl]);
+    }
+  });
+
+  it('keeps a research home whose own site merely reports news (#2532)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-lab-own-news-page',
+      slug: 'example-news-reporting-lab',
+      name: 'Example News Reporting Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      websiteUrl: 'https://examplelab.yale.edu/news/2026/update/',
+    });
+
+    expect(dto.websiteUrl).toBe('https://examplelab.yale.edu/news/2026/update/');
+  });
+
+  it('keeps the shared host root for the host organization’s own entity', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-multi-tenant-owner',
+      slug: 'computer-systems-lab',
+      name: 'Computer Systems Lab',
+      entityType: 'CENTER',
+      kind: 'center',
+      websiteUrl: 'https://csl.yale.edu/',
+    });
+
+    expect(dto.websiteUrl).toBe('https://csl.yale.edu/');
+  });
+
+  it('withholds the shared host root from a person-scoped entity carrying a grafted host name', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-multi-tenant-grafted-tenant',
+      slug: 'nih-pi-example-person',
+      name: 'Computer Systems Lab at Yale',
+      entityType: 'LAB',
+      kind: 'lab',
+      websiteUrl: 'https://csl.yale.edu/',
+    });
+
+    expect(dto).not.toHaveProperty('websiteUrl');
+  });
+
+  it('keeps a tenant page under a shared host as the served website', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-multi-tenant-tenant-page',
+      slug: 'tenant-page-lab',
+      name: 'Tenant Page Lab',
+      kind: 'lab',
+      websiteUrl: 'https://gauss.math.yale.edu/~an592/',
+    });
+
+    expect(dto.websiteUrl).toBe('https://gauss.math.yale.edu/~an592/');
+  });
+
+  it('suppresses a research group host root served as one member’s website (#2579)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-group-host-root',
+      slug: 'dept-physics-example-theorist',
+      name: 'Example theorist research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      websiteUrl: 'http://het.yale.edu/',
+      sourceUrls: ['http://het.yale.edu/'],
+    });
+
+    expect(dto).not.toHaveProperty('websiteUrl');
+    expect(dto.sourceUrls).toEqual(['http://het.yale.edu/']);
+  });
+
+  it('suppresses a department audience-recruitment page served as a person’s website (#2579)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-department-audience-page',
+      slug: 'dept-economics-example-economist',
+      name: 'Example economist research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      websiteUrl: 'http://economics.yale.edu/undergraduate/employment-opportunities',
+    });
+
+    expect(dto).not.toHaveProperty('websiteUrl');
+  });
+
+  it('keeps the group host root for the group’s own organizational entity', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-group-host-owner',
+      slug: 'particle-theory-group',
+      name: 'Particle Theory Group',
+      entityType: 'CENTER',
+      kind: 'center',
+      websiteUrl: 'http://het.yale.edu/',
+    });
+
+    expect(dto.websiteUrl).toBe('http://het.yale.edu/');
+  });
+
   it('redacts direct contact details from public evidence-style fields', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-evidence-redaction',
@@ -339,7 +681,6 @@ describe('researchEntityDto', () => {
         reasons: ['Call 203-555-1212 before outreach.'],
       },
       waysIn: [{ label: 'Email hidden@example.edu to ask about openings.' }],
-      searchMatch: { snippet: 'Contact hidden@example.edu or 203-555-1212.' },
     });
 
     expect(dto.name).toBe('Recursive Redaction Lab [email redacted]');
@@ -352,7 +693,6 @@ describe('researchEntityDto', () => {
       reasons: ['Call [phone redacted] before outreach.'],
     });
     expect(dto.waysIn).toEqual([{ label: 'Email [email redacted] to ask about openings.' }]);
-    expect(dto.searchMatch).toEqual({ snippet: 'Contact [email redacted] or [phone redacted].' });
     expect(JSON.stringify(dto)).not.toContain('hidden@example.edu');
     expect(JSON.stringify(dto)).not.toContain('203-555-1212');
   });
@@ -420,7 +760,7 @@ describe('researchEntityDto', () => {
     expect(dto.fullDescription).toBe('');
   });
 
-  it('blanks a served fullDescription that near-verbatim restates the served shortDescription (#1721)', () => {
+  it('serves a fullDescription that near-verbatim restates the card rather than blanking it (#1721, reversed by #2721)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-restatement',
       slug: 'restatement-lab',
@@ -434,7 +774,28 @@ describe('researchEntityDto', () => {
     expect(dto.shortDescription).toBe(
       'Studies the mechanisms of resistance to anti-cancer therapy and novel therapeutic approaches to overcome resistance.',
     );
-    expect(dto.fullDescription).toBe('');
+    // #1721 blanked this to avoid a redundant body, on the premise that the
+    // materializer had already blanked such a body at write time. #2721 reversed
+    // that premise: the materializer now keeps the body, so blanking here served
+    // the lossy card in place of the stored body the visibility gate admitted on.
+    expect(dto.fullDescription).toBe(
+      'The Mu Lab studies the mechanisms of resistance to anti-cancer therapy and novel therapeutic approaches to overcome resistance.',
+    );
+  });
+
+  it('serves the stored body and a card derived from it when only a body is stored (#2721)', () => {
+    const storedBody =
+      'The Mu Lab studies how tumors evolve resistance to targeted anti-cancer therapy and tests combination regimens that delay that resistance.';
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-body-without-card',
+      slug: 'body-without-card-lab',
+      name: 'Mu Lab',
+      fullDescription: storedBody,
+    });
+
+    expect(dto.fullDescription).toBe(storedBody);
+    expect(String(dto.shortDescription ?? '').trim()).not.toBe('');
+    expect(dto.shortDescription).not.toBe(storedBody);
   });
 
   it('keeps a served fullDescription that is genuinely distinct from the shortDescription (#1721)', () => {
@@ -568,6 +929,106 @@ describe('researchEntityDto', () => {
     expect(gate.invariant.reasons).toEqual([]);
   });
 
+  it('serves the same card line the visibility gate judges when a stored short past the rendering preference fails the card bar (#1878)', () => {
+    const storedShort =
+      'The lab maps how salt-marsh sediments lock away atmospheric carbon along the Atlantic coast, pairing summer monitoring transects with laboratory incubations that measure decomposition under warmer water.';
+    const entity = {
+      id: 'entity-over-preference-short-fails-bar',
+      slug: 'over-preference-short-lab',
+      name: 'Over Preference Lab',
+      kind: 'lab',
+      shortDescription: storedShort,
+      fullDescription: storedShort,
+      researchAreas: ['Sediments', 'Decomposition'],
+    };
+    expect(storedShort.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
+
+    const dto = toPublicResearchEntityDto(entity);
+    const summary = toPublicResearchEntitySummaryDto(entity);
+    const gate = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(dto.shortDescription).not.toBe(storedShort);
+    expect(dto.shortDescription).toBe(gate.cardDescription);
+    expect(summary.blurb).toBe(gate.cardDescription);
+  });
+
+  it('serves no card at all, gate included, when the same row supports none of its chips (#2972)', () => {
+    const storedShort =
+      'The lab maps how salt-marsh sediments lock away atmospheric carbon along the Atlantic coast, pairing summer monitoring transects with laboratory incubations that measure decomposition under warmer water.';
+    const entity = {
+      id: 'entity-over-preference-short-unsupported-chips',
+      slug: 'over-preference-short-unsupported-chips-lab',
+      name: 'Unsupported Chips Lab',
+      kind: 'lab',
+      shortDescription: storedShort,
+      fullDescription: storedShort,
+      researchAreas: ['Cardiology', 'Dentistry'],
+      // Sourced chips, because the unsourced ones are already dropped for domain
+      // incoherence before the card resolver ever sees them.
+      fieldProvenance: { researchAreas: { sourceUrl: 'https://example.edu/directory/lab' } },
+    };
+    expect(storedShort.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
+
+    const dto = toPublicResearchEntityDto(entity);
+    const summary = toPublicResearchEntitySummaryDto(entity);
+    const gate = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(dto.shortDescription).toBe('');
+    expect(summary.blurb).toBeUndefined();
+    expect(gate.cardDescription).toBe('');
+    expect(gate.invariant.reasons).toContain('missing_public_card_description');
+  });
+
+  it('serves the derived card line on both paths when the stored short inside the rendering preference fails the card bar (#1878)', () => {
+    const fullDescription =
+      'The group studies how coastal wetlands buffer storm surge, combining field sensor networks with hydrodynamic models of tidal marshes. Fieldwork in three estuaries feeds a simulation suite that projects marsh response under sea-level rise scenarios.';
+    const derivedCardLine =
+      'The group studies how coastal wetlands buffer storm surge, combining field sensor networks with hydrodynamic models of tidal marshes.';
+    const entity = {
+      id: 'entity-inside-preference-short-fails-bar',
+      slug: 'inside-preference-short-lab',
+      name: 'Inside Preference Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      shortDescription: 'Studies Photonics.',
+      fullDescription,
+      researchAreas: ['Photonics', 'Coastal Ecology'],
+    };
+    expect('Studies Photonics.'.length).toBeLessThan(MAX_SHORT_DESCRIPTION_LENGTH);
+
+    const dto = toPublicResearchEntityDto(entity);
+    const summary = toPublicResearchEntitySummaryDto(entity);
+    const gate = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(gate.cardDescription).toBe(derivedCardLine);
+    expect(dto.shortDescription).toBe(derivedCardLine);
+    expect(summary.blurb).toBe(derivedCardLine);
+    expect(gate.invariant.reasons).toEqual([]);
+  });
+
+  it('serves a stored short past the rendering preference that clears the card bar (#1878)', () => {
+    const storedShort =
+      'The lab maps how salt-marsh sediments lock away atmospheric carbon along the Atlantic coast, pairing summer monitoring transects with laboratory incubations that measure decomposition under warmer water.';
+    const entity = {
+      id: 'entity-over-preference-short-clears-bar',
+      slug: 'over-preference-short-clearing-lab',
+      name: 'Over Preference Clearing Lab',
+      kind: 'lab',
+      shortDescription: storedShort,
+      fullDescription:
+        'Salt marshes along the Atlantic coast bury organic matter faster than it decomposes, and the group quantifies how much of that buried carbon stays put. Each summer, field crews run monitoring transects across a tidal gradient, then return cores to the laboratory for incubations under warmer and saltier conditions.',
+      researchAreas: ['Coastal ecology'],
+    };
+    expect(storedShort.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
+
+    const dto = toPublicResearchEntityDto(entity);
+    const gate = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(dto.shortDescription).toBe(storedShort);
+    expect(gate.cardDescription).toBe(storedShort);
+    expect(gate.invariant.reasons).toEqual([]);
+  });
+
   it('serves the grant funding recency cache the v4 grant backfill maintains', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-grant-cache',
@@ -662,6 +1123,64 @@ describe('researchEntityDto', () => {
     expect(result).not.toHaveProperty('hits');
     expect(result.researchEntities[0].entityType).toBe('CENTER');
     expect(result.estimatedTotalHits).toBe(1);
+  });
+
+  /**
+   * The browse card and the detail card must be the same string for the same row.
+   * They diverged on 97 of 3,214 live `student_ready` rows because only the detail
+   * path supplied the roster-derived lead names, so the mismatched-person-name strip
+   * was a structural no-op on browse (#2240).
+   */
+  it('runs the lead-name-aware guard on a browse card so it matches the detail card (#2240)', () => {
+    const entity = {
+      _id: '6a05677c7c6d4fba869fbb81',
+      slug: 'dept-econ-hollis-quintrell',
+      name: 'Hollis Quintrell Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      researchAreas: ['Coral Reef Ecology'],
+      fullDescription:
+        "Marguerite Delacroix's research examines coral reef resilience under thermal stress.",
+    };
+    const leadMemberNames = ['Hollis Quintrell'];
+
+    const withoutLeadNames = addResearchEntitySearchAliases({ hits: [entity] });
+    const withLeadNames = addResearchEntitySearchAliases(
+      { hits: [entity] },
+      { leadMemberNamesByEntityId: new Map([[entity._id, leadMemberNames]]) },
+    );
+    const detail = buildResearchEntityPublicDescriptionRepresentation({
+      entity,
+      leadMemberNames,
+    });
+
+    expect(withoutLeadNames.researchEntities[0].cardDescription?.text).toBe(
+      "Marguerite Delacroix's research examines coral reef resilience under thermal stress.",
+    );
+    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(
+      'This research examines coral reef resilience under thermal stress.',
+    );
+    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(detail.fullDescription);
+  });
+
+  it('leaves a browse card intact when the possessive names the row own lead (#2240)', () => {
+    const entity = {
+      _id: '6a05677c7c6d4fba869fbb82',
+      slug: 'dept-econ-hollis-quintrell-two',
+      name: 'Hollis Quintrell Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      researchAreas: ['Coral Reef Ecology'],
+      fullDescription:
+        "Professor Quintrell's research examines coral reef resilience under thermal stress.",
+    };
+
+    const withLeadNames = addResearchEntitySearchAliases(
+      { hits: [entity] },
+      { leadMemberNamesByEntityId: new Map([[entity._id, ['Hollis Quintrell']]]) },
+    );
+
+    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(entity.fullDescription);
   });
 
   it('disambiguates two student-visible entities sharing an identical name (#1211)', () => {
@@ -946,5 +1465,196 @@ describe('researchEntityDto', () => {
     });
 
     expect(dto).not.toHaveProperty('methods');
+  });
+
+  describe('internal operator state never reaches an anonymous caller', () => {
+    const operatorStateEntity = () => ({
+      id: 'entity-operator-state',
+      slug: 'operator-state-lab',
+      name: 'Operator State Lab',
+      kind: 'lab',
+      shortDescription: 'The lab studies airway disease.',
+      studentVisibilityTier: 'operator_review',
+      studentVisibilityComputedTier: 'suppressed',
+      studentVisibilityOverrideTier: 'operator_review',
+      studentVisibilityReasons: ['missing_lead', 'dead_website_url'],
+      studentVisibilitySuppressionReason: 'operator withheld pending review',
+      studentVisibilityComputedAt: new Date('2026-09-01T00:00:00.000Z'),
+      studentVisibilityReviewedAt: new Date('2026-09-02T00:00:00.000Z'),
+      studentVisibilityReviewedByAccountId: 'account-operator',
+      qualitySummary: { repairFlags: ['missing_lead'], privateNote: 'operator only' },
+    });
+
+    const internalStateFields = [
+      'studentVisibilityTier',
+      'studentVisibilityComputedTier',
+      'studentVisibilityOverrideTier',
+      'studentVisibilityReasons',
+      'studentVisibilitySuppressionReason',
+      'studentVisibilityComputedAt',
+      'studentVisibilityReviewedAt',
+      'studentVisibilityReviewedByAccountId',
+      'qualitySummary',
+    ];
+
+    const internalStateStrings = ['operator_review', 'suppressed', 'studentVisibilityTier'];
+
+    it('withholds every visibility and quality field from the detail DTO', () => {
+      const dto = toPublicResearchEntityDto(operatorStateEntity());
+
+      for (const field of internalStateFields) {
+        expect(dto).not.toHaveProperty(field);
+      }
+      for (const marker of internalStateStrings) {
+        expect(JSON.stringify(dto)).not.toContain(marker);
+      }
+    });
+
+    it('withholds every visibility and quality field from the list summary DTO', () => {
+      const dto = toPublicResearchEntitySummaryDto(operatorStateEntity());
+
+      for (const field of internalStateFields) {
+        expect(dto).not.toHaveProperty(field);
+      }
+      for (const marker of internalStateStrings) {
+        expect(JSON.stringify(dto)).not.toContain(marker);
+      }
+    });
+
+    it('withholds every visibility and quality field from search hits', () => {
+      const aliased = addResearchEntitySearchAliases({ hits: [operatorStateEntity()] });
+
+      expect(aliased.researchEntities).toHaveLength(1);
+      for (const field of internalStateFields) {
+        expect(aliased.researchEntities[0]).not.toHaveProperty(field);
+      }
+      for (const marker of internalStateStrings) {
+        expect(JSON.stringify(aliased.researchEntities)).not.toContain(marker);
+      }
+    });
+
+    it('surfaces exactly two operator fields when an admin caller opts in', () => {
+      const dto = toPublicResearchEntityDto(operatorStateEntity(), {
+        includeOperatorFields: true,
+      });
+
+      expect(dto).toHaveProperty('studentVisibilityTier', 'operator_review');
+      expect(dto).toHaveProperty('qualitySummary');
+      for (const field of internalStateFields.filter(
+        (candidate) => candidate !== 'studentVisibilityTier' && candidate !== 'qualitySummary',
+      )) {
+        expect(dto).not.toHaveProperty(field);
+      }
+    });
+  });
+});
+
+/**
+ * A citation the corpus knows is gone is expired evidence, not a link to offer (#3267).
+ *
+ * #3222 taught the lead-link gate to withhold a dead `YALE_OFFICIAL` profile URL, but
+ * that withhold was profile-link-specific, so the same URL kept reaching a student
+ * through the citation list. That is #2525's mechanism, and its cause (#2531) is that a
+ * health verdict had exactly one consumer.
+ */
+const servedContributionUrls = (dto: Record<string, unknown>): string[] =>
+  ((dto.sourceFieldContributions ?? []) as Array<{ sourceUrl: string }>).map(
+    (entry) => entry.sourceUrl,
+  );
+
+describe('a dead provenance citation stays in the served list, qualified (#3312)', () => {
+  const LIVE = 'https://example.yale.edu/people/live-page';
+  const DEAD = 'https://example.yale.edu/people/gone-page';
+
+  const dtoWith = (health: unknown) =>
+    toPublicResearchEntityDto({
+      id: 'entity-dead-citation',
+      slug: 'entity-dead-citation',
+      name: 'Somebody Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      sourceUrls: [LIVE, DEAD],
+      sourceLinkHealth: health,
+    } as Record<string, unknown>);
+
+  // #3292 withheld this url, and the settled policy reverses that for provenance: the
+  // client marks a source `isLikelyUnavailable` from the health record and groups the
+  // unavailable ones last, so a url the payload never carries cannot be marked, and
+  // withholding it starved the pathway built to qualify it (#2556/#3312).
+  it('keeps a citation the stored health says is unavailable, so the client can qualify it', () => {
+    const dto = dtoWith([
+      { url: LIVE, healthStatus: 'AVAILABLE', httpStatusCode: 200 },
+      { url: DEAD, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+    ]);
+    expect(dto.sourceUrls).toEqual([LIVE, DEAD]);
+  });
+
+  // Serving every citation when nothing is known is the correct default: absence of a
+  // verdict is not a verdict, and withholding on silence would empty the list.
+  it('serves both when the corpus knows nothing about either', () => {
+    expect(dtoWith(undefined).sourceUrls).toEqual([LIVE, DEAD]);
+    expect(dtoWith([]).sourceUrls).toEqual([LIVE, DEAD]);
+  });
+
+  // A 404 is gone; a server that answered with an error, or a host nothing can route
+  // to, is not the same claim and must not be treated as one here.
+  it('keeps a citation whose verdict is not a positive death', () => {
+    expect(dtoWith([{ url: DEAD, healthStatus: 'UNKNOWN' }]).sourceUrls).toEqual([LIVE, DEAD]);
+  });
+
+  // Both halves have to travel for qualification to be possible at all: the url so the
+  // client has a source row, and the verdict so it can mark that row unavailable.
+  it('serves the dead url and the verdict about it together', () => {
+    const dto = dtoWith([{ url: DEAD, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 }]);
+    expect(dto.sourceUrls).toContain(DEAD);
+    expect((dto.sourceLinkHealth ?? []).map((entry) => entry.url)).toContain(DEAD);
+  });
+
+  // The same policy on the other provenance surface. A contribution entry says which
+  // stored fields a page supplied, so dropping it removes the only record of where a
+  // served value came from, and the client uses it to LABEL a source row rather than to
+  // create one (#3312).
+  it('keeps a source-field contribution whose url is known dead', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-dead-contribution',
+      slug: 'entity-dead-contribution',
+      name: 'Somebody Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      sourceUrls: [LIVE],
+      sourceFieldContributions: [
+        { sourceUrl: LIVE, contributions: ['Research summary'] },
+        { sourceUrl: DEAD, contributions: ['Research summary'] },
+      ],
+      sourceLinkHealth: [
+        { url: LIVE, healthStatus: 'AVAILABLE', httpStatusCode: 200 },
+        { url: DEAD, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+      ],
+    } as Record<string, unknown>);
+    expect(servedContributionUrls(dto)).toEqual([LIVE, DEAD]);
+  });
+
+  it('serves a contribution whose url the corpus knows nothing about', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-unknown-contribution',
+      slug: 'entity-unknown-contribution',
+      name: 'Somebody Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      sourceFieldContributions: [{ sourceUrl: DEAD, contributions: ['Research summary'] }],
+    } as Record<string, unknown>);
+    expect(servedContributionUrls(dto)).toEqual([DEAD]);
+  });
+
+  // One owner, and the answer depends on the KIND of citation. Two opposite policies on
+  // one rendered list is the defect this replaces, so the kind is what varies and the
+  // predicate is not.
+  it('withholds an instruction and never a provenance citation, from one owner', () => {
+    const health = [{ url: DEAD, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 }];
+
+    expect(servedCitationIsWithheld('instruction', health, DEAD)).toBe(true);
+    expect(servedCitationIsWithheld('provenance', health, DEAD)).toBe(false);
+    expect(servedCitationIsWithheld('instruction', health, LIVE)).toBe(false);
+    expect(servedCitationIsWithheld('instruction', undefined, DEAD)).toBe(false);
   });
 });

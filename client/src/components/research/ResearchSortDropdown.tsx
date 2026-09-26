@@ -70,13 +70,13 @@ const ResearchSortDropdown = ({
 
   return (
     <div className="relative" ref={outerRef}>
-      <div className="flex min-h-[44px] items-center overflow-hidden rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] text-sm">
+      <div className="flex min-h-[44px] items-center overflow-hidden rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] text-sm">
         <button
           ref={buttonRef}
           type="button"
           aria-haspopup="listbox"
           aria-expanded={isDropdownOpen}
-          aria-label={`Sort research homes, currently ${currentLabel}`}
+          aria-label={`Sort research, currently ${currentLabel}`}
           onClick={() => setIsDropdownOpen((open) => !open)}
           onKeyDown={handleKeyDown}
           onBlur={() => {
@@ -86,9 +86,9 @@ const ResearchSortDropdown = ({
               }
             }, 100);
           }}
-          className="flex min-h-[44px] min-w-[150px] items-center justify-between whitespace-nowrap px-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+          className="flex min-h-[44px] min-w-[150px] items-center justify-between whitespace-nowrap px-3 text-ink-soft yr-focus-ring-inset"
         >
-          <span className="mr-1 text-slate-500">Sort:</span>
+          <span className="mr-1 text-muted">Sort:</span>
           <span className="truncate">{currentLabel}</span>
           <svg
             aria-hidden="true"
@@ -103,11 +103,11 @@ const ResearchSortDropdown = ({
 
         {sortBy !== 'relevance' && (
           <>
-            <div className="h-5 w-px bg-slate-300" />
+            <div className="h-5 w-px bg-line-strong" />
             <button
               type="button"
               onClick={onToggleSortDirection}
-              className="flex min-h-[44px] min-w-[44px] items-center justify-center text-slate-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft yr-focus-ring-inset"
               aria-label={
                 sortOrder === 'asc'
                   ? 'Sorted ascending, switch to descending'
@@ -137,12 +137,8 @@ const ResearchSortDropdown = ({
       </div>
 
       {isDropdownOpen && (
-        <div className="absolute left-0 top-full z-50 mt-1 min-w-[180px] overflow-hidden rounded-lg border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] shadow-lg">
-          <ul
-            role="listbox"
-            aria-label="Sort research homes"
-            className="max-h-[250px] overflow-y-auto"
-          >
+        <div className="absolute left-0 top-full z-50 mt-1 min-w-[180px] overflow-hidden rounded-overlay border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] shadow-yr-overlay">
+          <ul role="listbox" aria-label="Sort research" className="max-h-[250px] overflow-y-auto">
             {sortOptions.map((option, index) => (
               <li
                 key={option.value}
@@ -160,7 +156,7 @@ const ResearchSortDropdown = ({
                 {sortBy === option.value && (
                   <svg
                     aria-hidden="true"
-                    className="h-4 w-4 text-blue-500"
+                    className="h-4 w-4 text-brand"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"

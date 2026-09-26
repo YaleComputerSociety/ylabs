@@ -11,7 +11,7 @@ It uses the native MongoDB client and the `MONGODBURL` loaded from `server/.env`
 Before every run, verify that `MONGODBURL` names the intended database and does not contain a different environment's target.
 
 The required `--environment` value must match both the configured database name and the database name reported after connection.
-The primary environment mapping is `development` to `Development`, `beta` to `Beta`, and `production` to `Production`.
+The primary environment mapping is `development` to `Development`, `beta` to `Beta`, and `production` to `Prod` (the deployed production database name; `Production` is also accepted).
 The command also accepts `production-copy` for `ProductionCopy` and `test` for an explicit test database.
 It fails closed on a missing environment, a target mismatch, an invalid reviewed artifact, or database drift.
 
@@ -40,7 +40,84 @@ yarn --cwd server model-refactor:reference-integrity --environment development -
 `model-refactor:reference-integrity` counts dangling and missing-required references on the canonical relationship edges; a dangling ObjectId is bson-valid and therefore invisible to the readiness audit, so both audits are required.
 `model-refactor:legacy-writer-scan` is the companion dual-write verification that no runtime code path still writes retired legacy storage.
 After a clean readiness result, set `validationLevel: 'strict'` for that collection in the registry, review the fingerprint change, then apply through the standard dry-run and apply flow below.
-Carrying a verified-clean Development flip forward to Beta or Production is a separate live-database change on those environments and requires its own review.
+Apply the flip to Development only.
+Beta and Production then receive it through the ordinary whole-collection copies, as the next section describes.
+
+## A whole-collection copy carries the validator with it
+
+A validator is collection metadata, and `rename` carries no collection options, so a staged swap replaces its target's validator with whatever its staging collection was created with.
+Both copy paths therefore create staging through the shared `mirroredValidationOptions` in [`stagedCollectionSwap.ts`](../server/src/scripts/stagedCollectionSwap.ts): the source database's validation options win, and the target's own options are the fallback so a copy never downgrades a validated collection to unvalidated.
+
+That makes a Development flip reach the other environments by construction rather than by a separate apply.
+`beta:refresh-from-development` carries it from Development onto Beta, and `production:promote-beta-copy` carries it from Beta onto Production, for the five canonical collections on the promotion manifest (`accounts`, `researchers`, `role_assignments`, `org_units`, `taxonomy_terms`; only `research_plans` is not promoted).
+Until #754 this was true of the sync path alone, and every promotion silently left those five Production collections unvalidated no matter what had been applied to Production beforehand.
+
+One consequence is load-bearing.
+A copy now writes source documents into a validated staging collection, so a source document the canonical `$jsonSchema` rejects fails the copy and rolls the whole cutover back with the target untouched.
+That is the intended fail-closed behavior, and `model-refactor:strict-readiness` against the source environment is the pre-flight that tells you before the copy does.
+
+A direct apply against Beta or Production remains a live-database change on those environments that needs its own review, and is now needed only to fix a collection a copy cannot reach.
+
+## Required MongoDB grant
+
+`collMod` is the one privilege this workflow cannot work around, and the application credentials in `server/.env` do not carry it.
+Measured on 2026-09-23 against Development, the configured user holds `readWriteAnyDatabase@admin` only: 25 granted actions including `createCollection` but **not** `collMod`.
+Every planned `collMod` is therefore refused with `user is not allowed to do action [collMod] on [<Database>.<collection>]`, and no canonical validator can be applied by anyone but a user the repository owner grants.
+
+Confirm the gap before blaming the plan:
+
+```bash
+yarn --cwd server model-refactor:validators --environment development \
+  --output /tmp/ylabs-canonical-validators-development-dry-run.json
+jq '.summary' /tmp/ylabs-canonical-validators-development-dry-run.json
+```
+
+A non-zero `writesPlanned` with an apply that fails on the first collection is the privilege gap, not drift in the registry.
+
+The owner makes the grant once, on the Atlas project that hosts the target database.
+`collMod` is not part of any built-in Atlas role, so it needs a custom role.
+In the Atlas UI: **Database Access -> Custom Roles -> Add New Custom Role**, name it `canonicalValidatorAdmin`, inherit `readWriteAnyDatabase@admin`, and add the `collMod` action, then assign that role to the operator's database user.
+The equivalent through the Atlas Admin API or a `mongosh` session with `userAdmin` on `admin` is:
+
+```javascript
+db.getSiblingDB('admin').createRole({
+  role: 'canonicalValidatorAdmin',
+  privileges: [{ resource: { db: 'Development', collection: '' }, actions: ['collMod'] }],
+  roles: [{ role: 'readWriteAnyDatabase', db: 'admin' }],
+});
+
+db.getSiblingDB('admin').grantRolesToUser('<operator-database-user>', [
+  { role: 'canonicalValidatorAdmin', db: 'admin' },
+]);
+```
+
+Scope the `resource.db` to the one database being changed, grant it for the apply, and revoke it afterwards:
+
+```javascript
+db.getSiblingDB('admin').revokeRolesFromUser('<operator-database-user>', [
+  { role: 'canonicalValidatorAdmin', db: 'admin' },
+]);
+```
+
+Do not widen the shared application credential.
+`collMod` on a student-facing database is a schema-level privilege that the running server never needs.
+
+## Detecting drift without a hand-run
+
+A declaration is not presence.
+Two recorded traps make this the rule rather than a caution: a whole-collection copy carries no collection options, so a promotion can strip a `$jsonSchema` from a canonical collection that the registry still declares; and a declared unique index whose `sparse` and `partialFilterExpression` combination MongoDB rejects is never created at all.
+Neither shows up in a code review of the declaration, so assert against the database:
+
+```bash
+yarn --cwd server model-refactor:validators-assert --environment development
+```
+
+This is read-only and refuses to combine with `--apply`.
+It exits non-zero when any declared validator is not present as declared, and it separates three states so the report distinguishes a stripped validator from ordinary drift:
+
+- `validator-absent`: the collection exists and stores no `$jsonSchema` at all. This is the promotion-stripping and never-applied signature.
+- `validator-drifted`: a `$jsonSchema` is stored but does not match the declaration, or its level or action differs.
+- `collection-missing`: the collection does not exist yet.
 
 ## Required review and recovery
 
@@ -84,6 +161,8 @@ Run a new dry run and confirm that `summary.writesPlanned` is `0` before continu
 
 ## Beta
 
+Read the copy section above first: `beta:refresh-from-development` already carries Development's validators onto Beta, so a Beta apply is needed only for a collection no refresh reaches.
+
 Point `server/.env` at the `Beta` database.
 Create or verify the Beta recovery artifact, then generate and review a new Beta-specific artifact:
 
@@ -108,6 +187,8 @@ Review the apply report and rerun the Beta dry run.
 Do not proceed until the second dry run reports `summary.writesPlanned` as `0` and Beta application behavior remains healthy.
 
 ## Production
+
+Read the copy section above first: `production:promote-beta-copy` carries Beta's validators onto the five canonical collections on its manifest, so a Production apply is needed only for a collection the promotion does not copy.
 
 Point `server/.env` at the `Production` database.
 Create and record a fresh Production export, Atlas backup, or point-in-time restore point before generating the final plan.
@@ -139,7 +220,15 @@ Review `postApplyPlan`, then run a fresh Production dry run and require `summary
 
 MongoDB collection commands are applied sequentially in deterministic collection-name order.
 The multi-command apply is not transactional.
-The runner stops at the first failed command and reports the successfully applied collection names, the failed collection, and the unattempted collections.
+The runner stops at the first failed command and reports the successfully applied collection names, the failed collection, the unattempted collections, and the collections it can prove were refused.
+
+A missing `collMod` grant is a database-wide privilege gap rather than a per-collection one, so the runner reports every remaining planned `collMod` as refused rather than merely unattempted, and names the grant.
+Any other rejection stays scoped to the single collection that failed.
+
+Every run records its outcome at `--output`, failures included.
+A failed run writes a report with `"mode": "failed"` carrying the refusal, and with no `applied` or `postApplyPlan` field, so a stale success artifact from an earlier run can never be reviewed as this run's result.
+That artifact is not a reviewed plan and `--apply-from` rejects it.
+#752 was closed as completed while its apply had been refused, because a failed apply used to write nothing at all.
 
 If apply stops partway:
 

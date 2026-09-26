@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { resolveField, resolveAllFields, resolveFieldRanked } from '../confidenceResolver';
 import { isHighConfidencePersonBio } from '../../utils/researchHomeDescriptionSelection';
+import {
+  fullDescriptionQuality,
+  standaloneCardQuality,
+} from '../../utils/researchEntityDescriptionQuality';
 
 const D = (s: string) => new Date(s);
 
@@ -446,6 +450,54 @@ describe('resolveField name selection prefers branded over synthesized', () => {
     );
     expect(r?.value).toBe('SPIN (Statistical Physics, Information & Networks) Lab');
     expect(r?.contributingSources).toEqual(['lab-microsite-description-llm']);
+  });
+
+  // A microsite "n/a" used to count as the genuine brand to prefer, which filtered
+  // every roster candidate out of the ranked list and left the materialize name
+  // repair nothing to fall through to (#2367).
+  it('never lets placeholder filler win or suppress a real name from another source', () => {
+    const observations = [
+      {
+        field: 'name',
+        value: 'n/a',
+        sourceName: 'lab-microsite-description-llm',
+        confidence: 0.95,
+        observedAt: D('2026-08-23'),
+      },
+      {
+        field: 'name',
+        value: 'Rafferty Duchamp Faculty Research',
+        sourceName: 'dept-faculty-roster',
+        confidence: 0.7,
+        observedAt: D('2026-07-25'),
+      },
+    ];
+
+    expect(resolveField('name', observations, { now: D('2026-08-24') })?.value).toBe(
+      'Rafferty Duchamp Faculty Research',
+    );
+    expect(
+      resolveFieldRanked('name', observations, { now: D('2026-08-24') }).map((r) => r.value),
+    ).toContain('Rafferty Duchamp Faculty Research');
+  });
+
+  // The corpus is never left nameless: with nothing better on offer the filler is
+  // still returned, and the `unusable_name` visibility blocker holds the record.
+  it('keeps placeholder filler when it is the only name on offer', () => {
+    const r = resolveField(
+      'name',
+      [
+        {
+          field: 'name',
+          value: 'n/a',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.95,
+          observedAt: D('2026-08-23'),
+        },
+      ],
+      { now: D('2026-08-24') },
+    );
+    expect(r?.value).toBe('n/a');
   });
 
   it('demotes a bare person name in favor of a head-noun lab name from the same source', () => {
@@ -974,5 +1026,383 @@ describe('person-bio demotion for fullDescription', () => {
       { now: D('2026-02-08') },
     );
     expect(resolved?.value).toBe(BIO);
+  });
+});
+
+describe('undergrad-access lane demotion for fullDescription', () => {
+  // Shapes taken from Development rows this demotion was measured on:
+  // `center-ycga` and `yse-green-chemistry` serve the first while the second
+  // sits unadopted in an active observation (#2266).
+  const ACCESS_SUMMARY =
+    'The lab focuses on genomic technology, offering sequencing and analysis services to Yale researchers across a range of projects.';
+  const MICROSITE_RESEARCH =
+    'The center develops and applies high-throughput sequencing technology for human genetics, spanning whole-genome and exome sequencing, single-cell transcriptomics, and long-read assembly. Its staff collaborate with investigators on experimental design, library preparation, and downstream statistical analysis, and it maintains shared instrumentation for the wider Yale research community.';
+
+  const obs = (
+    value: string,
+    sourceName: string,
+    confidence: number,
+    observedAt = D('2026-02-01'),
+  ) => ({
+    field: 'fullDescription',
+    value,
+    sourceName,
+    confidence,
+    observedAt,
+  });
+
+  it('lets a richer microsite description displace a fresher undergrad-access summary', () => {
+    // The access lane re-emits weekly at 0.5, so recency alone keeps a 128-char
+    // access blurb ahead of the lab's own 383-char research description.
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
+        obs(MICROSITE_RESEARCH, 'lab-microsite-description-llm', 0.55, D('2025-11-01')),
+      ],
+      { now: D('2026-02-25') },
+    );
+    expect(resolved?.value).toBe(MICROSITE_RESEARCH);
+    expect(resolved?.contributingSources).toEqual(['lab-microsite-description-llm']);
+  });
+
+  it('ranks the access summary last but keeps it reachable as the materializer fallback', () => {
+    const ranked = resolveFieldRanked(
+      'fullDescription',
+      [
+        obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
+        obs(MICROSITE_RESEARCH, 'lab-microsite-description-llm', 0.55, D('2025-11-01')),
+      ],
+      { now: D('2026-02-25') },
+    );
+    expect(ranked.map((entry) => entry.value)).toEqual([MICROSITE_RESEARCH, ACCESS_SUMMARY]);
+  });
+
+  it('still serves a sole undergrad-access summary rather than blanking the description', () => {
+    const resolved = resolveField(
+      'fullDescription',
+      [obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55)],
+      { now: D('2026-02-08') },
+    );
+    expect(resolved?.value).toBe(ACCESS_SUMMARY);
+  });
+
+  it('keeps the access summary when the richer alternative is a career biography', () => {
+    // The regression this demotion invites: on 52 of the thin served rows the
+    // richest available value is a resume, and length alone would adopt it.
+    const CAREER_BIO =
+      'Godfrey Pearlson received his medical degree from the University of Edinburgh and completed his residency in psychiatry at Johns Hopkins, where he joined the faculty in 1980 before coming to Yale. He is the recipient of numerous awards for his work in neuroimaging and has served as director of several research centers.';
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
+        obs(CAREER_BIO, 'ysm-faculty-directory', 0.55, D('2025-11-01')),
+      ],
+      { now: D('2026-02-25') },
+    );
+    expect(resolved?.value).toBe(ACCESS_SUMMARY);
+  });
+
+  it('keeps the access summary when the richer alternative is an escaped-HTML citation dump', () => {
+    // A "Selected Publications" widget reaches fullDescriptionQuality with zero
+    // flags, because the interposed `</span>` breaks the citation-author-list
+    // run the detector matches on (`faculty-research-area-chao-ma`).
+    const CITATION_DUMP =
+      '<span data-id="165184">Djebra Y</span>, <span data-id="165327">Liu X</span>, <span data-id="165133">Marin T</span>, <span data-id="168637">Dhaynaut M</span>, <span data-id="165201">Petibon Y</span>, <span data-id="165399">Fakhri G</span>, <span data-id="165402">Ma C</span>. Joint reconstruction and motion estimation in respiratory-gated positron emission tomography using a matrix-free approach.';
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
+        obs(CITATION_DUMP, 'lab-microsite-description-llm', 0.55, D('2025-11-01')),
+      ],
+      { now: D('2026-02-25') },
+    );
+    expect(resolved?.value).toBe(ACCESS_SUMMARY);
+  });
+
+  it('keeps the access summary when the alternative is not materially richer', () => {
+    const SLIGHTLY_LONGER = `${ACCESS_SUMMARY} It also runs a seminar series.`;
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
+        obs(SLIGHTLY_LONGER, 'lab-microsite-description-llm', 0.55, D('2025-11-01')),
+      ],
+      { now: D('2026-02-25') },
+    );
+    expect(resolved?.value).toBe(ACCESS_SUMMARY);
+  });
+
+  it('does not demote an access-lane value a human also recorded', () => {
+    // The demotion only applies to a group sourced solely from the access lane,
+    // so a value co-signed by a manual edit keeps the curated decay exemption
+    // and stays ahead of a richer scraped description.
+    const ranked = resolveFieldRanked(
+      'fullDescription',
+      [
+        obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
+        obs(ACCESS_SUMMARY, 'manual-admin-edit', 0.55, D('2025-06-01')),
+        obs(MICROSITE_RESEARCH, 'lab-microsite-description-llm', 0.55, D('2025-11-01')),
+      ],
+      { now: D('2026-02-25') },
+    );
+    expect(ranked[0]?.value).toBe(ACCESS_SUMMARY);
+  });
+
+  it('leaves other fields untouched by the access-lane demotion', () => {
+    const resolved = resolveField(
+      'shortDescription',
+      [
+        {
+          ...obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
+          field: 'shortDescription',
+        },
+        {
+          ...obs(MICROSITE_RESEARCH, 'lab-microsite-description-llm', 0.55, D('2025-11-01')),
+          field: 'shortDescription',
+        },
+      ],
+      { now: D('2026-02-25') },
+    );
+    expect(resolved?.value).toBe(ACCESS_SUMMARY);
+  });
+});
+
+describe('person-bio demotion for shortDescription (#2654)', () => {
+  const D = (iso: string) => new Date(`${iso}T00:00:00Z`);
+  const obs = (value: string, sourceName: string, confidence: number) => ({
+    field: 'shortDescription',
+    value,
+    sourceName,
+    confidence,
+    observedAt: D('2026-02-01'),
+  });
+
+  const CARD_BIO =
+    'Dr. Rowan Halvard received a BS in Engineering Physics from a midwestern university, minoring in physiological psychology.';
+  const CARD_RESEARCH =
+    'The Halvard lab investigates the molecular mechanisms of light-induced skin cancer, focusing on specific mutations and a chemiexcitation process.';
+
+  it('lets card-length research prose displace a higher-confidence card biography', () => {
+    const resolved = resolveField(
+      'shortDescription',
+      [
+        obs(CARD_BIO, 'official-profile-pi-backfill', 0.55),
+        obs(CARD_RESEARCH, 'lab-microsite-description-llm', 0.48),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(CARD_RESEARCH);
+  });
+
+  it('keeps the card biography when every candidate is biography-shaped', () => {
+    // The trap this rule was reverted over once: demoting the better biography
+    // promotes the worse one, so the row moves BACKWARDS.
+    const SECOND_CARD_BIO =
+      'Dr. Rowan A. Halvard specializes in medical oncology with a focus on kidney cancers, integrating laboratory and clinical work.';
+    const resolved = resolveField(
+      'shortDescription',
+      [
+        obs(CARD_BIO, 'official-profile-pi-backfill', 0.55),
+        obs(SECOND_CARD_BIO, 'lab-microsite-description-llm', 0.48),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(CARD_BIO);
+  });
+
+  it('still serves a sole card biography rather than blanking the card', () => {
+    const resolved = resolveField(
+      'shortDescription',
+      [obs(CARD_BIO, 'official-profile-pi-backfill', 0.55)],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(CARD_BIO);
+  });
+
+  it('promotes a card line the body bar would reject on length alone', () => {
+    // The whole reason the field list did not transfer on its own: the promotion
+    // arm asked `fullDescriptionQuality`, which rejects anything under 12 words,
+    // so no card this short could ever license a demotion.
+    const SHORT_CARD = 'Studies the molecular mechanisms of light-induced skin cancer.';
+    expect(fullDescriptionQuality(SHORT_CARD).flags).toContain('too-short');
+    expect(standaloneCardQuality(SHORT_CARD).isUseful).toBe(true);
+
+    const resolved = resolveField(
+      'shortDescription',
+      [
+        obs(CARD_BIO, 'official-profile-pi-backfill', 0.55),
+        obs(SHORT_CARD, 'lab-microsite-description-llm', 0.48),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(SHORT_CARD);
+  });
+
+  it('does not promote a card the card bar itself refuses', () => {
+    const TRUNCATED_CARD = 'Research on light-induced skin cancer and chemiexcitation, with';
+    expect(standaloneCardQuality(TRUNCATED_CARD).isUseful).toBe(false);
+
+    const resolved = resolveField(
+      'shortDescription',
+      [
+        obs(CARD_BIO, 'official-profile-pi-backfill', 0.55),
+        obs(TRUNCATED_CARD, 'lab-microsite-description-llm', 0.48),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(CARD_BIO);
+  });
+});
+
+describe('quality demotion for served prose a lane-specific rule does not describe', () => {
+  const D = (iso: string) => new Date(`${iso}T00:00:00Z`);
+  const obs = (field: string, value: string, sourceName: string, confidence: number) => ({
+    field,
+    value,
+    sourceName,
+    confidence,
+    observedAt: D('2026-02-01'),
+  });
+
+  const CARD_DANGLING_REFERENCE =
+    'These projects span basic, translational and clinical studies of inherited kidney disease.';
+  const CARD_RESEARCH =
+    'The Halvard Lab studies the signalling pathways that control cyst formation in inherited kidney disease.';
+
+  it('demotes a card no lane rule names but the card bar rejects', () => {
+    expect(standaloneCardQuality(CARD_DANGLING_REFERENCE).flags).toEqual(['non-self-contained']);
+    expect(standaloneCardQuality(CARD_RESEARCH).isUseful).toBe(true);
+
+    const resolved = resolveField(
+      'shortDescription',
+      [
+        obs('shortDescription', CARD_DANGLING_REFERENCE, 'ysm-faculty-directory', 0.92),
+        obs('shortDescription', CARD_RESEARCH, 'lab-microsite-undergrad-llm', 0.55),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(CARD_RESEARCH);
+  });
+
+  it('demotes a bare interest list in favour of a body that passes the bar', () => {
+    const INTEREST_LIST =
+      'Medical Research Interests Airway Management; Asthma; Epithelium; Lung; Lung Diseases; Metaplasia';
+    const BODY =
+      'The Cohn Lab investigates chronic inflammation in asthma, defining the inflammatory pathways that drive airway epithelial remodelling in chronic lung disease.';
+    expect(fullDescriptionQuality(INTEREST_LIST).isUseful).toBe(false);
+    expect(fullDescriptionQuality(BODY).isUseful).toBe(true);
+
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs('fullDescription', INTEREST_LIST, 'ysm-atoz-index', 0.92),
+        obs('fullDescription', BODY, 'lab-microsite-description-llm', 0.82),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(BODY);
+  });
+
+  it('still serves a sole unusable value rather than blanking the field', () => {
+    const resolved = resolveField(
+      'shortDescription',
+      [obs('shortDescription', CARD_DANGLING_REFERENCE, 'ysm-faculty-directory', 0.92)],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(CARD_DANGLING_REFERENCE);
+  });
+
+  it('keeps every candidate in the ranked list so a content gate still has a fallback', () => {
+    const ranked = resolveFieldRanked(
+      'shortDescription',
+      [
+        obs('shortDescription', CARD_DANGLING_REFERENCE, 'ysm-faculty-directory', 0.92),
+        obs('shortDescription', CARD_RESEARCH, 'lab-microsite-undergrad-llm', 0.55),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(ranked.map((r) => r.value)).toEqual([CARD_RESEARCH, CARD_DANGLING_REFERENCE]);
+  });
+
+  it('never reorders a curated override, because that is a human decision', () => {
+    const CURATED_APPOINTMENT =
+      'Leying Guan is an Associate Professor of Biostatistics at Yale University.';
+    expect(fullDescriptionQuality(CURATED_APPOINTMENT).isUseful).toBe(false);
+
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs('fullDescription', CURATED_APPOINTMENT, 'manual-admin-edit', 1),
+        obs(
+          'fullDescription',
+          'The Guan Lab develops statistical and machine learning methods for high-dimensional scientific applications and genomics.',
+          'lab-microsite-description-llm',
+          0.82,
+        ),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(CURATED_APPOINTMENT);
+  });
+});
+
+describe('a faculty research profile that also publishes a teaching statement', () => {
+  const RESEARCH_PARAGRAPH =
+    'Professor Ada Marlowe studies ecosystems in dry areas. Her past work focused on grasslands and her current research concentrates on mixtures of grasses and shrubs, plant population ecology, and the effects of projected climate change on plant communities.';
+  const TEACHING_STATEMENT =
+    'Over the past decade, I have taught courses at two land-grant universities. I taught a junior and senior level course in the vegetation ecology of the western US. This course included a lab that focused on identifying the important plant species in each vegetation type. I also co-taught a doctoral level course in the ecology of grasslands and shrublands.';
+
+  // Both values come off the same profile page: the whole-page LLM extractor
+  // returned the teaching section at a higher confidence than the directory lane
+  // that read the page's own research paragraph.
+  const observations = [
+    {
+      field: 'fullDescription',
+      value: TEACHING_STATEMENT,
+      sourceName: 'lab-microsite-description-llm',
+      confidence: 0.82,
+      observedAt: new Date('2026-08-24T00:00:00Z'),
+    },
+    {
+      field: 'fullDescription',
+      value: RESEARCH_PARAGRAPH,
+      sourceName: 'yse-faculty-directory',
+      confidence: 0.55,
+      observedAt: new Date('2026-08-28T00:00:00Z'),
+    },
+  ];
+  const now = new Date('2026-09-25T00:00:00Z');
+
+  it('serves the course inventory when the record is scored as an organization', () => {
+    const [winner] = resolveFieldRanked('fullDescription', observations, { now });
+    expect(winner.value).toBe(TEACHING_STATEMENT);
+  });
+
+  it('serves the research paragraph once the record is scored in its own voice', () => {
+    const [winner] = resolveFieldRanked('fullDescription', observations, {
+      now,
+      descriptionEntityKind: 'person',
+    });
+    expect(winner.value).toBe(RESEARCH_PARAGRAPH);
+    expect(winner.contributingSources).toEqual(['yse-faculty-directory']);
+  });
+
+  it('keeps the course inventory as a last resort rather than blanking the field', () => {
+    const ranked = resolveFieldRanked('fullDescription', [observations[0]], {
+      now,
+      descriptionEntityKind: 'person',
+    });
+    expect(ranked[0].value).toBe(TEACHING_STATEMENT);
   });
 });

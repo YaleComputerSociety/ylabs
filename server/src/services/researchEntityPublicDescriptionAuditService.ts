@@ -5,8 +5,7 @@ import {
   type ResearchEntityPublicDescriptionRepresentation,
 } from './researchEntityPublicDescription';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
-
-const LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
 export const PUBLIC_DESCRIPTION_AUDIT_VERSION = 'public-description-v1';
 
@@ -112,7 +111,7 @@ export async function auditStudentReadyPublicDescriptions({
   const leadMembersByEntityId = new Map<string, Array<Record<string, any>>>();
   for (const [entityId, entries] of rosterByEntityId.entries()) {
     const leadMembers = entries
-      .filter((entry) => entry.state !== 'HISTORICAL' && LEAD_ROLES.has(entry.role))
+      .filter((entry) => entry.state !== 'HISTORICAL' && LEAD_ROLE_LEGACY_LABELS.has(entry.role))
       .map((entry) => ({
         researchEntityId: entry.researchEntityId,
         personId: entry.personId,

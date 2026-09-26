@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getItemTags, isItemOpen, BrowsableItem } from '../browsable';
-import { ResearchEntity } from '../researchEntity';
+import { getItemTags, BrowsableItem } from '../browsable';
 import { Fellowship } from '../types';
 
 const fellowshipItem = (overrides: Partial<Fellowship> = {}): BrowsableItem => ({
@@ -15,42 +14,18 @@ const fellowshipItem = (overrides: Partial<Fellowship> = {}): BrowsableItem => (
   } as Fellowship,
 });
 
-const neutralColor = () => ({ bg: 'bg-gray-50', text: 'text-gray-700' });
-
-const researchEntity = (overrides: Partial<ResearchEntity> = {}): ResearchEntity => ({
-  _id: 'entity-1',
-  slug: 'entity-1',
-  name: 'Entity One',
-  kind: 'lab',
-  description: '',
-  websiteUrl: '',
-  location: '',
-  departments: [],
-  researchAreas: [],
-  school: '',
-  typicalUndergradRoles: [],
-  prerequisiteCourses: [],
-  creditOptions: [],
-  fundingPrograms: [],
-  contactEmail: '',
-  contactName: '',
-  contactRole: '',
-  sourceUrls: [],
-  ...overrides,
-});
-
 describe('getItemTags fellowship audience', () => {
   it('labels graduate-only programs with a Graduate tag', () => {
-    const tags = getItemTags(fellowshipItem({ undergraduateOnly: false }), neutralColor);
+    const tags = getItemTags(fellowshipItem({ undergraduateOnly: false }));
     expect(tags.map((t) => t.label)).toContain('Graduate');
   });
 
   it('does not add a Graduate tag for undergraduate or unknown-audience programs', () => {
     expect(
-      getItemTags(fellowshipItem({ undergraduateOnly: true }), neutralColor).map((t) => t.label),
+      getItemTags(fellowshipItem({ undergraduateOnly: true })).map((t) => t.label),
     ).not.toContain('Graduate');
     expect(
-      getItemTags(fellowshipItem({ undergraduateOnly: null }), neutralColor).map((t) => t.label),
+      getItemTags(fellowshipItem({ undergraduateOnly: null })).map((t) => t.label),
     ).not.toContain('Graduate');
   });
 
@@ -60,7 +35,6 @@ describe('getItemTags fellowship audience', () => {
         studentFacingCategory: 'Faculty matching program',
         entryMode: 'DIRECT_FACULTY_MATCHING',
       }),
-      neutralColor,
     ).map((t) => t.label);
     expect(labels).toContain('Faculty matching program');
     expect(labels).not.toContain('Faculty matching');
@@ -69,7 +43,6 @@ describe('getItemTags fellowship audience', () => {
   it('drops exact duplicate labels across facets', () => {
     const labels = getItemTags(
       fellowshipItem({ studentFacingCategory: 'Research', purpose: ['Research'] }),
-      neutralColor,
     ).map((t) => t.label);
     expect(labels.filter((label) => label === 'Research')).toHaveLength(1);
   });
@@ -80,7 +53,6 @@ describe('getItemTags fellowship audience', () => {
         undergraduateOnly: false,
         studentFacingCategory: 'Undergraduate research funding',
       }),
-      neutralColor,
     ).map((t) => t.label);
     expect(labels).toContain('Graduate');
     expect(labels).toContain('Undergraduate research funding');
@@ -92,20 +64,8 @@ describe('getItemTags fellowship audience', () => {
         studentFacingCategory: 'Senior research funding',
         yearOfStudy: ['Senior'],
       }),
-      neutralColor,
     ).map((t) => t.label);
     expect(labels).toContain('Senior');
     expect(labels).toContain('Senior research funding');
-  });
-});
-
-describe('isItemOpen for research entities', () => {
-  it('never surfaces a research entity as open/closed; reaching out is the constant CTA', () => {
-    const item: BrowsableItem = {
-      type: 'researchGroup',
-      data: researchEntity({}),
-    };
-
-    expect(isItemOpen(item)).toBe(false);
   });
 });

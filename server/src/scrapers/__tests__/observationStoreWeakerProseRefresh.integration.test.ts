@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearC4Flags } from './c4FlagTestEnv';
 
 vi.mock('../../services/meiliSyncService', async () => {
   const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
@@ -21,6 +22,10 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { appendObservations } from '../observationStore';
 import { materializeEntity } from '../entityMaterializer';
 
+// Each test states its own C4 flag position; none inherits one from the
+// ambient environment (#2063).
+beforeEach(clearC4Flags);
+
 const SLUG = 'weaker-prose-fixture';
 const SOURCE_NAME = 'lab-microsite-description-llm';
 
@@ -30,6 +35,12 @@ const RESEARCH =
   'We are studying the dynamic interactions between non-epithelial cells in tissues that interface with the environment. Using multi pronged approaches including mouse genetics, cell culture models, genomics and microscopy, we tackle complex biological processes focusing on the contribution of cell-intrinsic and cell-extrinsic factors that contribute to regenerative processes.';
 const LATER_RESEARCH =
   'The lab investigates chromatin regulation of genome stability in multicellular eukaryotes, using histone variants and post-translational modifications to map repair pathways across tissues.';
+// Deliberately LONGER than RESEARCH and failing the quality bar outright, which
+// is the combination neither comparative guard can see: `isWeakerProseRefresh`
+// needs both values to clear the bar and `isMateriallyThinnerProseRefresh` needs
+// a value at least 200 chars shorter (#2302).
+const RECRUITMENT =
+  'We are always looking for motivated undergraduates and rotation students to join the lab. Please email the principal investigator with your CV, a transcript, and a short statement of research interests, and we will get back to you as soon as we can. Prospective postdoctoral fellows should include a cover letter describing their long term goals, along with the names and contact details of three referees who can comment on their independence.';
 
 type PersistedEntity = { fullDescription?: string; shortDescription?: string };
 
@@ -149,5 +160,30 @@ describe('a useful-but-worse prose refresh cannot displace a clean incumbent end
       if (previous === undefined) delete process.env.C4_LOSSLESS_INGEST;
       else process.env.C4_LOSSLESS_INGEST = previous;
     }
+  });
+
+  it('keeps grounded research prose when a longer recruitment notice arrives under lossless ingest', async () => {
+    const previous = process.env.C4_LOSSLESS_INGEST;
+    process.env.C4_LOSSLESS_INGEST = 'true';
+    try {
+      await scrapeRun(RESEARCH, '2026-05-01T00:00:00.000Z');
+      const secondRun = await scrapeRun(RECRUITMENT, '2026-08-01T00:00:00.000Z');
+
+      expect(secondRun.inserted).toBe(1);
+      expect((await activeFullDescriptions()).sort()).toEqual([RECRUITMENT, RESEARCH].sort());
+      expect(await servedFullDescription()).toBe(RESEARCH);
+    } finally {
+      if (previous === undefined) delete process.env.C4_LOSSLESS_INGEST;
+      else process.env.C4_LOSSLESS_INGEST = previous;
+    }
+  });
+
+  it('holds the same recruitment notice off at the write path when ingest is not lossless', async () => {
+    await scrapeRun(RESEARCH, '2026-05-01T00:00:00.000Z');
+    const secondRun = await scrapeRun(RECRUITMENT, '2026-08-01T00:00:00.000Z');
+
+    expect(secondRun).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+    expect(await activeFullDescriptions()).toEqual([RESEARCH]);
+    expect(await servedFullDescription()).toBe(RESEARCH);
   });
 });

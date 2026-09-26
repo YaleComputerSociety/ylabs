@@ -50,7 +50,7 @@ const RichText = ({ text }: { text: string }) => {
           href={linkHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-blue-600 hover:underline"
+          className="text-brand hover:underline yr-focus-ring"
         >
           {match[1]}
         </a>,
@@ -87,19 +87,21 @@ const RichTextBlock = ({ text, className }: { text: string; className?: string }
 };
 
 const trackFellowshipApplyClick = (fellowshipId: string, href: string) => {
-  trackResearchEvent({
+  void trackResearchEvent({
     eventType: 'source_link_click',
     entityType: 'fellowship',
     entityId: fellowshipId,
     payload: { sourceCategory: 'external', url: href },
   });
-  trackResearchEvent({
+  void trackResearchEvent({
     eventType: 'ways_in_click',
     entityType: 'fellowship',
     entityId: fellowshipId,
     payload: { waysInKind: 'apply', label: 'Apply' },
   });
 };
+
+const sectionHeadingClass = 'mb-3 text-xs font-semibold uppercase tracking-wider text-muted';
 
 const FellowshipModal = ({
   fellowship,
@@ -239,14 +241,14 @@ const FellowshipModal = ({
         break;
     }
 
-    trackResearchEvent({
+    void trackResearchEvent({
       eventType: 'ways_in_click',
       entityType: 'fellowship',
       entityId: fellowship.id,
       payload: { waysInKind: 'best_next_step', label: filterType },
     });
     onClose();
-    navigate('/programs');
+    void navigate('/programs');
   };
 
   const hasContactInfo =
@@ -255,9 +257,9 @@ const FellowshipModal = ({
     fellowship.contactPhone ||
     fellowship.contactOffice;
   const iconActionClass =
-    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
+    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-brand yr-focus-ring';
   const filterChipClass =
-    'inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
+    'inline-flex min-h-[44px] items-center rounded-control px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 yr-focus-ring';
   const applicationActionLabel = applicationStatus.isApplicationWindowOpen
     ? 'Apply'
     : 'Open source';
@@ -288,7 +290,7 @@ const FellowshipModal = ({
     >
       <div
         ref={dialogRef}
-        className="bg-[var(--yr-panel)] rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
+        className="bg-[var(--yr-panel)] rounded-overlay shadow-yr-modal w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-labelledby="program-detail-title"
@@ -326,7 +328,7 @@ const FellowshipModal = ({
                   ref={titleRef}
                   id="program-detail-title"
                   tabIndex={-1}
-                  className="text-xl font-bold text-gray-900 leading-tight focus:outline-none"
+                  className="text-xl font-bold text-ink leading-tight focus:outline-none"
                 >
                   {fellowship.title}
                 </h2>
@@ -371,7 +373,7 @@ const FellowshipModal = ({
                     href={contactEmailHref}
                     onClick={(e) => {
                       e.stopPropagation();
-                      trackResearchEvent({
+                      void trackResearchEvent({
                         eventType: 'contact_route_click',
                         entityType: 'fellowship',
                         entityId: fellowship.id,
@@ -407,7 +409,7 @@ const FellowshipModal = ({
                 />
                 <button
                   onClick={onClose}
-                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft yr-focus-ring"
                   aria-label="Close"
                 >
                   <svg
@@ -436,10 +438,8 @@ const FellowshipModal = ({
               <div className="col-span-1 space-y-6">
                 {fellowship.awardAmount && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Award Amount
-                    </h3>
-                    <div className="bg-emerald-50 rounded-lg p-3">
+                    <h3 className={sectionHeadingClass}>Award Amount</h3>
+                    <div className="bg-emerald-50 rounded-card p-3">
                       <p className="text-sm font-semibold text-emerald-800">
                         {fellowship.awardAmount}
                       </p>
@@ -448,13 +448,11 @@ const FellowshipModal = ({
                 )}
 
                 <section>
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                    Program Route
-                  </h3>
-                  <div className="space-y-2 rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
+                  <h3 className={sectionHeadingClass}>Program Route</h3>
+                  <div className="space-y-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
                     <div>
-                      <span className="text-xs text-slate-500">What this is</span>
-                      <p className="text-sm font-medium text-slate-900">
+                      <span className="text-xs text-muted">What this is</span>
+                      <p className="text-sm font-medium text-ink">
                         {fellowship.studentFacingCategory ||
                           programKindLabel(fellowship.programKind)}
                       </p>
@@ -463,8 +461,8 @@ const FellowshipModal = ({
                       fellowship.undergraduateOnly === true ||
                       fellowship.yaleCollegeOnly === true) && (
                       <div>
-                        <span className="text-xs text-slate-500">Audience</span>
-                        <p className="text-sm font-medium text-slate-900">
+                        <span className="text-xs text-muted">Audience</span>
+                        <p className="text-sm font-medium text-ink">
                           {fellowship.undergraduateOnly === false
                             ? 'Graduate students'
                             : 'Undergraduate students'}
@@ -472,54 +470,52 @@ const FellowshipModal = ({
                       </div>
                     )}
                     <div>
-                      <span className="text-xs text-slate-500">Entry mode</span>
-                      <p className="text-sm font-medium text-slate-900">
+                      <span className="text-xs text-muted">Entry mode</span>
+                      <p className="text-sm font-medium text-ink">
                         {entryModeLabel(fellowship.entryMode)}
                       </p>
                     </div>
                     <div>
-                      <span className="text-xs text-slate-500">Do you need a mentor first?</span>
-                      <p className="text-sm font-medium text-slate-900">{mentorFirstAnswer}</p>
+                      <span className="text-xs text-muted">Do you need a mentor first?</span>
+                      <p className="text-sm font-medium text-ink">{mentorFirstAnswer}</p>
                     </div>
                   </div>
                 </section>
 
                 <section>
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                    Key Dates
-                  </h3>
-                  <div className="bg-[var(--yr-blue-soft)] rounded-lg p-3 space-y-3">
+                  <h3 className={sectionHeadingClass}>Key Dates</h3>
+                  <div className="bg-[var(--yr-blue-soft)] rounded-card p-3 space-y-3">
                     <div>
-                      <span className="text-xs text-blue-600">Current Status</span>
-                      <p className="text-sm font-semibold text-blue-900">
+                      <span className="text-xs text-brand">Current Status</span>
+                      <p className="text-sm font-semibold text-brand-navy">
                         {applicationStatus.label}
                       </p>
-                      <p className="text-xs text-blue-700">{applicationStatus.detail}</p>
+                      <p className="text-xs text-brand">{applicationStatus.detail}</p>
                     </div>
                     {cycleStatus.category === 'nextCycle' && (
-                      <div className="rounded-md bg-[var(--yr-panel)]/70 border border-sky-100 px-2.5 py-2">
+                      <div className="rounded-card bg-[var(--yr-panel)]/70 border border-sky-100 px-2.5 py-2">
                         <p className="text-xs font-medium text-sky-800">
                           Past cycle, useful for next-cycle planning.
                         </p>
                       </div>
                     )}
                     <div>
-                      <span className="text-xs text-blue-600">Application Opens</span>
-                      <p className="text-sm font-medium text-blue-900">
+                      <span className="text-xs text-brand">Application Opens</span>
+                      <p className="text-sm font-medium text-brand-navy">
                         {formatFellowshipDate(fellowship.applicationOpenDate)}
                       </p>
                     </div>
                     <div>
-                      <span className="text-xs text-blue-600">
+                      <span className="text-xs text-brand">
                         {fellowship.deadlineProjectedNextCycle
                           ? 'Estimated Next Deadline'
                           : 'Deadline'}
                       </span>
-                      <p className="text-sm font-medium text-blue-900">
+                      <p className="text-sm font-medium text-brand-navy">
                         {formatFellowshipDate(fellowship.deadline)}
                       </p>
                       {fellowship.deadlineProjectedNextCycle && (
-                        <p className="text-xs text-blue-700">
+                        <p className="text-xs text-brand">
                           Projected from the last cycle - unconfirmed, verify at source.
                         </p>
                       )}
@@ -529,27 +525,23 @@ const FellowshipModal = ({
 
                 {hasContactInfo && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Contact
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Contact</h3>
                     <div className="space-y-2">
                       {fellowship.contactName && (
-                        <p className="text-sm text-gray-800 font-medium">
-                          {fellowship.contactName}
-                        </p>
+                        <p className="text-sm text-ink font-medium">{fellowship.contactName}</p>
                       )}
                       {contactEmailHref && (
                         <a
                           href={contactEmailHref}
                           onClick={() =>
-                            trackResearchEvent({
+                            void trackResearchEvent({
                               eventType: 'contact_route_click',
                               entityType: 'fellowship',
                               entityId: fellowship.id,
                               payload: { contactMethod: 'email' },
                             })
                           }
-                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-blue-600 hover:text-blue-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-control px-2 text-sm text-brand hover:text-brand-navy hover:underline yr-focus-ring"
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -570,10 +562,10 @@ const FellowshipModal = ({
                         </a>
                       )}
                       {fellowship.contactPhone && (
-                        <p className="text-sm text-gray-600">{fellowship.contactPhone}</p>
+                        <p className="text-sm text-muted">{fellowship.contactPhone}</p>
                       )}
                       {fellowship.contactOffice && (
-                        <p className="text-sm text-gray-600">{fellowship.contactOffice}</p>
+                        <p className="text-sm text-muted">{fellowship.contactOffice}</p>
                       )}
                     </div>
                   </section>
@@ -583,10 +575,8 @@ const FellowshipModal = ({
                   fellowship.hoursPerWeek ||
                   fellowship.programDates) && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Time & Funding
-                    </h3>
-                    <div className="space-y-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">
+                    <h3 className={sectionHeadingClass}>Time & Funding</h3>
+                    <div className="space-y-2 rounded-card bg-emerald-50 p-3 text-sm text-emerald-900">
                       {fellowship.compensationSummary && <p>{fellowship.compensationSummary}</p>}
                       {fellowship.hoursPerWeek && <p>{fellowship.hoursPerWeek} hours/week</p>}
                       {fellowship.programDates && <p>{fellowship.programDates}</p>}
@@ -596,9 +586,7 @@ const FellowshipModal = ({
 
                 {safeLinks.length > 0 && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Links
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Links</h3>
                     <div className="space-y-1.5">
                       {safeLinks.map((link, i) => (
                         <a
@@ -608,7 +596,7 @@ const FellowshipModal = ({
                           rel="noopener noreferrer"
                           onClick={() => {
                             if (link.href) {
-                              trackResearchEvent({
+                              void trackResearchEvent({
                                 eventType: 'source_link_click',
                                 entityType: 'fellowship',
                                 entityId: fellowship.id,
@@ -616,7 +604,7 @@ const FellowshipModal = ({
                               });
                             }
                           }}
-                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-blue-600 hover:text-blue-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-control px-2 text-sm text-brand hover:text-brand-navy hover:underline yr-focus-ring"
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -642,14 +630,12 @@ const FellowshipModal = ({
                 )}
 
                 <section>
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                    Eligibility Filters
-                  </h3>
-                  <p className="text-xs text-gray-400 mb-3">Click to find similar fellowships</p>
+                  <h3 className={sectionHeadingClass}>Eligibility Filters</h3>
+                  <p className="text-xs text-muted mb-3">Click to find similar fellowships</p>
                   <div className="space-y-3">
                     {fellowship.yearOfStudy.length > 0 && (
                       <div>
-                        <span className="text-xs text-gray-500">Year of Study</span>
+                        <span className="text-xs text-muted">Year of Study</span>
                         <div className="mt-1 flex flex-wrap gap-2">
                           {fellowship.yearOfStudy.map((year) => (
                             <button
@@ -665,7 +651,7 @@ const FellowshipModal = ({
                     )}
                     {fellowship.termOfAward.length > 0 && (
                       <div>
-                        <span className="text-xs text-gray-500">Term of Award</span>
+                        <span className="text-xs text-muted">Term of Award</span>
                         <div className="mt-1 flex flex-wrap gap-2">
                           {fellowship.termOfAward.map((term) => (
                             <button
@@ -681,7 +667,7 @@ const FellowshipModal = ({
                     )}
                     {fellowship.purpose.length > 0 && (
                       <div>
-                        <span className="text-xs text-gray-500">Purpose</span>
+                        <span className="text-xs text-muted">Purpose</span>
                         <div className="mt-1 flex flex-wrap gap-2">
                           {fellowship.purpose.map((p) => (
                             <button
@@ -697,7 +683,7 @@ const FellowshipModal = ({
                     )}
                     {fellowship.globalRegions.length > 0 && (
                       <div>
-                        <span className="text-xs text-gray-500">Global Regions</span>
+                        <span className="text-xs text-muted">Global Regions</span>
                         <div className="mt-1 flex flex-wrap gap-2">
                           {fellowship.globalRegions.map((region) => (
                             <button
@@ -713,7 +699,7 @@ const FellowshipModal = ({
                     )}
                     {fellowship.citizenshipStatus.length > 0 && (
                       <div>
-                        <span className="text-xs text-gray-500">Citizenship Status</span>
+                        <span className="text-xs text-muted">Citizenship Status</span>
                         <div className="mt-1 flex flex-wrap gap-2">
                           {fellowship.citizenshipStatus.map((status) => (
                             <button
@@ -734,10 +720,8 @@ const FellowshipModal = ({
               <div className="col-span-1 md:col-span-2 space-y-6">
                 {fellowship.bestNextStep && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      What To Do Next
-                    </h3>
-                    <p className="rounded-lg border border-blue-100 bg-[var(--yr-blue-soft)]/70 p-4 text-sm leading-relaxed text-blue-950">
+                    <h3 className={sectionHeadingClass}>What To Do Next</h3>
+                    <p className="rounded-card border border-line-brand bg-brand-soft/70 p-4 text-sm leading-relaxed text-brand-navy">
                       {fellowship.bestNextStep}
                     </p>
                   </section>
@@ -745,14 +729,12 @@ const FellowshipModal = ({
 
                 {fellowship.prepSteps.length > 0 && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Prep Steps
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Prep Steps</h3>
                     <div className="flex flex-wrap gap-2">
                       {fellowship.prepSteps.map((step) => (
                         <span
                           key={step}
-                          className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-2.5 py-1 text-xs font-medium text-slate-700"
+                          className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-2.5 py-1 text-xs font-medium text-ink-soft"
                         >
                           {step}
                         </span>
@@ -763,22 +745,20 @@ const FellowshipModal = ({
 
                 {(fellowship.applicationInformation || applicationMaterials.length > 0) && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Application Process
-                    </h3>
-                    <div className="space-y-3 rounded-lg border border-blue-100 bg-[var(--yr-blue-soft)]/50 p-4">
+                    <h3 className={sectionHeadingClass}>Application Process</h3>
+                    <div className="space-y-3 rounded-card border border-line-brand bg-brand-soft/50 p-4">
                       {applicationMaterials.length > 0 && (
                         <div>
-                          <p className="mb-2 text-xs font-semibold text-blue-900">
+                          <p className="mb-2 text-xs font-semibold text-brand-navy">
                             Materials listed by the official source
                           </p>
                           <ul className="grid gap-2 sm:grid-cols-2">
                             {applicationMaterials.map((material) => (
                               <li
                                 key={material}
-                                className="flex items-start gap-2 text-sm text-slate-700"
+                                className="flex items-start gap-2 text-sm text-ink-soft"
                               >
-                                <span aria-hidden="true" className="mt-0.5 text-blue-600">
+                                <span aria-hidden="true" className="mt-0.5 text-brand">
                                   ✓
                                 </span>
                                 <span>{material}</span>
@@ -790,7 +770,7 @@ const FellowshipModal = ({
                       {fellowship.applicationInformation && (
                         <RichTextBlock
                           text={fellowship.applicationInformation}
-                          className="text-sm leading-relaxed text-slate-700"
+                          className="text-sm leading-relaxed text-ink-soft"
                         />
                       )}
                       {applicationHref && (
@@ -799,7 +779,7 @@ const FellowshipModal = ({
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
-                          className="inline-flex min-h-[44px] items-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+                          className="yr-pressable inline-flex min-h-[44px] items-center rounded-control bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
                         >
                           Open official application
                         </a>
@@ -811,34 +791,28 @@ const FellowshipModal = ({
                 {hasDistinctSummaryAndDescription ? (
                   <>
                     <section>
-                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                        Brief Description
-                      </h3>
+                      <h3 className={sectionHeadingClass}>Brief Description</h3>
                       <RichTextBlock
                         text={summaryText}
-                        className="text-sm text-gray-700 leading-relaxed"
+                        className="text-sm text-ink-soft leading-relaxed"
                       />
                     </section>
 
                     <section>
-                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                        Full Description
-                      </h3>
+                      <h3 className={sectionHeadingClass}>Full Description</h3>
                       <RichTextBlock
                         text={descriptionText}
-                        className="text-sm text-gray-700 leading-relaxed"
+                        className="text-sm text-ink-soft leading-relaxed"
                       />
                     </section>
                   </>
                 ) : (
                   combinedDescriptionText && (
                     <section>
-                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                        Description
-                      </h3>
+                      <h3 className={sectionHeadingClass}>Description</h3>
                       <RichTextBlock
                         text={combinedDescriptionText}
-                        className="text-sm text-gray-700 leading-relaxed"
+                        className="text-sm text-ink-soft leading-relaxed"
                       />
                     </section>
                   )
@@ -846,32 +820,28 @@ const FellowshipModal = ({
 
                 {fellowship.eligibility && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Eligibility Requirements
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Eligibility Requirements</h3>
                     <RichTextBlock
                       text={fellowship.eligibility}
-                      className="text-sm text-gray-700 leading-relaxed"
+                      className="text-sm text-ink-soft leading-relaxed"
                     />
                   </section>
                 )}
 
                 {!fellowship.eligibility && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Eligibility Requirements
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Eligibility Requirements</h3>
                     {structuredEligibilityDetails.length > 0 ? (
                       <dl className="space-y-1.5">
                         {structuredEligibilityDetails.map((detail) => (
                           <div key={detail.label} className="text-sm leading-relaxed">
-                            <dt className="inline font-semibold text-gray-600">{detail.label}: </dt>
-                            <dd className="inline text-gray-700">{detail.value}</dd>
+                            <dt className="inline font-semibold text-muted">{detail.label}: </dt>
+                            <dd className="inline text-ink-soft">{detail.value}</dd>
                           </div>
                         ))}
                       </dl>
                     ) : (
-                      <p className="text-sm text-gray-700 leading-relaxed">
+                      <p className="text-sm text-ink-soft leading-relaxed">
                         Eligibility requirements have not been specified.
                       </p>
                     )}
@@ -880,24 +850,20 @@ const FellowshipModal = ({
 
                 {fellowship.restrictionsToUseOfAward && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Restrictions to Use of Award
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Restrictions to Use of Award</h3>
                     <RichTextBlock
                       text={fellowship.restrictionsToUseOfAward}
-                      className="text-sm text-gray-700 leading-relaxed"
+                      className="text-sm text-ink-soft leading-relaxed"
                     />
                   </section>
                 )}
 
                 {fellowship.additionalInformation && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Additional Information
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Additional Information</h3>
                     <RichTextBlock
                       text={fellowship.additionalInformation}
-                      className="text-sm text-gray-700 leading-relaxed"
+                      className="text-sm text-ink-soft leading-relaxed"
                     />
                   </section>
                 )}
@@ -905,7 +871,7 @@ const FellowshipModal = ({
                 {applicationHref && (
                   <div className="pt-4 border-t border-[var(--yr-line)]">
                     {!applicationStatus.isApplicationWindowOpen && (
-                      <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">
+                      <p className="mb-3 rounded-card border border-line-brand bg-brand-soft p-3 text-sm text-brand">
                         {applicationStatus.kind === 'notOpenYet'
                           ? `Applications are not open yet. They open ${formatFellowshipDate(fellowship.applicationOpenDate)}.`
                           : 'This application window is not currently open. Use the source to verify the next cycle.'}
@@ -916,10 +882,10 @@ const FellowshipModal = ({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
-                      className={`inline-flex min-h-[44px] items-center rounded-md px-6 py-2.5 text-sm font-medium text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+                      className={`inline-flex min-h-[44px] items-center rounded-control px-6 py-2.5 text-sm font-medium text-white transition-colors yr-focus-ring ${
                         applicationStatus.isApplicationWindowOpen
                           ? 'bg-brand hover:bg-brand-navy'
-                          : 'bg-gray-600 hover:bg-gray-700'
+                          : 'bg-muted hover:bg-ink-soft'
                       }`}
                     >
                       {applicationStatus.isApplicationWindowOpen
@@ -946,19 +912,19 @@ const FellowshipModal = ({
                 )}
 
                 {(sourceLabel || sourceHref) && (
-                  <p className="mt-4 border-t border-[var(--yr-line)] pt-3 text-xs text-gray-500">
+                  <p className="mt-4 border-t border-[var(--yr-line)] pt-3 text-xs text-muted">
                     Source:{' '}
                     {sourceHref ? (
                       <a
                         href={sourceHref}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline"
+                        className="text-brand hover:underline yr-focus-ring"
                       >
                         {sourceLabel || 'Official source'}
                       </a>
                     ) : (
-                      <span className="text-gray-600">{sourceLabel}</span>
+                      <span className="text-muted">{sourceLabel}</span>
                     )}
                   </p>
                 )}

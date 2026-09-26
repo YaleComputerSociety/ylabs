@@ -103,13 +103,37 @@ const withAccessPlans = (
   });
 };
 
+const withUnavailablePlans = (
+  unavailableSavedResearchEntities: Array<{ _id: string; reason: string }>,
+  savedResearchEntities: Array<Record<string, unknown>> = [],
+) => {
+  mockedAxios.get.mockImplementation((url: string) => {
+    if (url === '/users/savedResearchEntityIds') {
+      return Promise.resolve({
+        data: {
+          savedResearchEntityIds: savedResearchEntities.map((entity) => entity.slug as string),
+        },
+      });
+    }
+    if (url === '/users/savedResearchEntities') {
+      return Promise.resolve({
+        data: { savedResearchEntities, unavailableSavedResearchEntities },
+      });
+    }
+    if (url === '/users/savedResearchEntityPlans') {
+      return Promise.resolve({ data: { savedResearchEntityPlans: {} } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+};
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
 
 describe('SavedResearchPlans', () => {
-  it('renders saved research homes with an openable link and reports the count', async () => {
+  it('renders saved research with an openable link and reports the count', async () => {
     withSavedPlans();
     const onCountChange = vi.fn();
 
@@ -138,7 +162,7 @@ describe('SavedResearchPlans', () => {
     );
 
     const header = await screen.findByText(
-      /Open a saved research home to find its official profile and reach out/,
+      /Open saved research to find its official profile and reach out/,
     );
     expect(header.textContent).toContain('keep private notes');
     expect(header.textContent).not.toMatch(/email the PI/i);
@@ -238,38 +262,6 @@ describe('SavedResearchPlans', () => {
     expect(screen.getByTestId('comparison').textContent).toContain('comparing 2');
   });
 
-  it('badges a currently open home and a not-currently-available home', async () => {
-    withAccessPlans([
-      {
-        _id: 'open-id',
-        slug: 'open-lab',
-        name: 'Open Lab',
-        kind: 'lab',
-        departments: [],
-        undergraduateCurrentAvailability: 'OPEN',
-      },
-      {
-        _id: 'closed-id',
-        slug: 'closed-lab',
-        name: 'Closed Lab',
-        kind: 'lab',
-        departments: [],
-        undergraduateCurrentAvailability: 'NOT_CURRENTLY_AVAILABLE',
-      },
-    ]);
-
-    render(
-      <MemoryRouter>
-        <SavedResearchPlans />
-      </MemoryRouter>,
-    );
-
-    await screen.findByText('Open Lab');
-    expect(screen.getByText('Open now')).toBeTruthy();
-    expect(screen.getByText('Not currently available')).toBeTruthy();
-    expect(screen.getByText('Check back later')).toBeTruthy();
-  });
-
   it('shows no availability badge when the access fields are absent', async () => {
     withAccessPlans([
       { _id: 'bare-id', slug: 'bare-lab', name: 'Bare Lab', kind: 'lab', departments: [] },
@@ -285,77 +277,6 @@ describe('SavedResearchPlans', () => {
     expect(screen.queryByText('Open now')).toBeNull();
     expect(screen.queryByText('Not currently available')).toBeNull();
     expect(screen.queryByText('Has hosted undergrads before')).toBeNull();
-  });
-
-  it('orders currently open homes ahead of ones with no current availability', async () => {
-    withAccessPlans([
-      {
-        _id: 'closed-id',
-        slug: 'closed-lab',
-        name: 'Closed Lab',
-        kind: 'lab',
-        departments: [],
-        undergraduateCurrentAvailability: 'NOT_CURRENTLY_AVAILABLE',
-      },
-      {
-        _id: 'open-id',
-        slug: 'open-lab',
-        name: 'Open Lab',
-        kind: 'lab',
-        departments: [],
-        undergraduateCurrentAvailability: 'ROLLING',
-      },
-    ]);
-
-    render(
-      <MemoryRouter>
-        <SavedResearchPlans />
-      </MemoryRouter>,
-    );
-
-    await screen.findByText('Open Lab');
-    const headings = screen.getAllByRole('heading', { level: 3 });
-    expect(headings[0].textContent).toBe('Open Lab');
-    expect(headings[1].textContent).toBe('Closed Lab');
-  });
-
-  it('reports the count of currently open saved homes to the header', async () => {
-    withAccessPlans([
-      {
-        _id: 'open-id',
-        slug: 'open-lab',
-        name: 'Open Lab',
-        kind: 'lab',
-        departments: [],
-        undergraduateCurrentAvailability: 'OPEN',
-      },
-      {
-        _id: 'evidence-id',
-        slug: 'evidence-lab',
-        name: 'Evidence Lab',
-        kind: 'lab',
-        departments: [],
-        hasUndergradHostingEvidence: true,
-      },
-      {
-        _id: 'closed-id',
-        slug: 'closed-lab',
-        name: 'Closed Lab',
-        kind: 'lab',
-        departments: [],
-        undergraduateCurrentAvailability: 'NOT_CURRENTLY_AVAILABLE',
-      },
-    ]);
-    const onOpenCountChange = vi.fn();
-
-    render(
-      <MemoryRouter>
-        <SavedResearchPlans onOpenCountChange={onOpenCountChange} />
-      </MemoryRouter>,
-    );
-
-    await screen.findByText('Open Lab');
-    await waitFor(() => expect(onOpenCountChange).toHaveBeenLastCalledWith(1));
   });
 
   it('caps comparison selection at four saved homes', async () => {
@@ -462,6 +383,161 @@ describe('SavedResearchPlans', () => {
 
     await screen.findByText(/Not saved/);
     expect(stageSelect.value).toBe('SAVED');
+  });
+
+  it('says a saved home is held back rather than dropping it silently (#2174)', async () => {
+    withUnavailablePlans([{ _id: 'id-held', reason: 'UNAVAILABLE' }]);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('1 saved item is not showing below');
+    expect(screen.getByText(/Held back from the student directory/)).toBeTruthy();
+    expect(screen.queryByText('No saved research plans yet')).toBeNull();
+  });
+
+  it('never tells the owner a held research home cannot be opened (#2597)', async () => {
+    withUnavailablePlans([{ _id: 'id-held', reason: 'UNAVAILABLE' }]);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('1 saved item is not showing below');
+    expect(screen.queryByText(/cannot be opened/)).toBeNull();
+  });
+
+  it('does not promise a readable note for a target that will never come back', async () => {
+    withUnavailablePlans([{ _id: 'id-gone', reason: 'REMOVED' }]);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('1 saved item is not showing below');
+    expect(screen.queryByText(/note is kept/)).toBeNull();
+  });
+
+  it('counts a saved plan the list cannot show so the dashboard tally agrees (#2174)', async () => {
+    withUnavailablePlans([
+      { _id: 'id-gone', reason: 'REMOVED' },
+      { _id: 'id-held', reason: 'UNAVAILABLE' },
+    ]);
+    const onCountChange = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans onCountChange={onCountChange} />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('2 saved items are not showing below');
+    await waitFor(() => expect(onCountChange).toHaveBeenLastCalledWith(2));
+  });
+
+  it('counts held plans alongside servable ones', async () => {
+    withUnavailablePlans(
+      [{ _id: 'id-held', reason: 'UNAVAILABLE' }],
+      [{ _id: 'id1', slug: 'owner-lab', name: 'Owner Lab', kind: 'lab', departments: ['CS'] }],
+    );
+    const onCountChange = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans onCountChange={onCountChange} />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('1 saved item is not showing below');
+    await waitFor(() => expect(onCountChange).toHaveBeenLastCalledWith(2));
+  });
+
+  it('distinguishes a home that left the directory from one that is only held back', async () => {
+    withUnavailablePlans([
+      { _id: 'id-gone', reason: 'REMOVED' },
+      { _id: 'id-held', reason: 'UNAVAILABLE' },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('2 saved items are not showing below');
+    expect(screen.getByText(/No longer in the directory/)).toBeTruthy();
+    expect(screen.getByText(/Held back from the student directory/)).toBeTruthy();
+  });
+
+  it('gives each notice row its own remove control name so two alike rows are tellable apart', async () => {
+    withUnavailablePlans([
+      { _id: 'id-held-one', reason: 'UNAVAILABLE' },
+      { _id: 'id-held-two', reason: 'UNAVAILABLE' },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('2 saved items are not showing below');
+    expect(screen.getByRole('button', { name: 'Remove saved item 1 from my plans' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove saved item 2 from my plans' })).toBeTruthy();
+  });
+
+  it('removes the notice row whose control the owner pressed', async () => {
+    withUnavailablePlans([
+      { _id: 'id-held-one', reason: 'UNAVAILABLE' },
+      { _id: 'id-held-two', reason: 'UNAVAILABLE' },
+    ]);
+    mockedAxios.delete.mockResolvedValue({ data: { savedResearchEntityIds: [] } });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('2 saved items are not showing below');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove saved item 2 from my plans' }));
+
+    await waitFor(() =>
+      expect(mockedAxios.delete).toHaveBeenCalledWith('/users/savedResearchEntities', {
+        withCredentials: true,
+        data: { savedResearchEntities: ['id-held-two'] },
+      }),
+    );
+    await screen.findByText('1 saved item is not showing below');
+  });
+
+  it('removes an unavailable plan by its entity id and drops the notice row', async () => {
+    withUnavailablePlans([{ _id: 'id-gone', reason: 'REMOVED' }]);
+    mockedAxios.delete.mockResolvedValue({ data: { savedResearchEntityIds: [] } });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('1 saved item is not showing below');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove from my plans' }));
+
+    await waitFor(() =>
+      expect(mockedAxios.delete).toHaveBeenCalledWith('/users/savedResearchEntities', {
+        withCredentials: true,
+        data: { savedResearchEntities: ['id-gone'] },
+      }),
+    );
+    await screen.findByText('No saved research plans yet');
   });
 
   it('orders closed homes after active ones so the pipeline reads at a glance', async () => {

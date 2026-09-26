@@ -1,12 +1,86 @@
 import {
   describesResearchFocus,
   fullDescriptionQuality,
+  isTeachingOrAdvisingStatementProse,
   type DescriptionQualityFlag,
 } from './researchEntityDescriptionQuality';
-import { isDirectoryIndexChromeText } from './researchEntityDescriptionText';
-import { containsHtmlTagMarkup } from './descriptionHygiene';
+import {
+  isDirectoryIndexChromeText,
+  isFacultyResearchTextEntity,
+} from './researchEntityDescriptionText';
+import { isPersonProfileOrDirectoryUrl } from './researchHomeWebsiteUrl';
+import { containsHtmlTagMarkup, isPhilanthropicFundAppealText } from './descriptionHygiene';
 
 export type DescriptionEntityKind = 'organization' | 'person';
+
+export interface DescriptionEntityKindEvidence {
+  entityType?: unknown;
+  kind?: unknown;
+  websiteUrl?: unknown;
+  website?: unknown;
+  sourceUrls?: unknown;
+}
+
+const citedUrls = (entity: DescriptionEntityKindEvidence): string[] => {
+  const urls = Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [];
+  return urls.map((value) => textValue(value)).filter(Boolean);
+};
+
+/**
+ * Whether the record cites nothing but pages that render one person.
+ *
+ * This is the evidence question the stored `entityType` cannot answer. A faculty
+ * directory lane mints a row from a profile page and labels it `LAB` with a
+ * templated `<Person> Lab` name, even where the page names no lab, so the enum
+ * records what a lane guessed rather than what the sources show. The sources are
+ * unambiguous: a record whose only citations are profile or people-directory
+ * pages, and which has found no research site of its own, is a faculty research
+ * profile whatever the enum says.
+ *
+ * A row with a research site is excluded even when it also cites a profile page,
+ * because that site is the organization's own page and its prose is organization
+ * prose. That keeps an eponymous lab with a real microsite ("The Pyle Lab
+ * studies RNA structure and RNA recognition by proteins") on the organization
+ * bar, where a CV biography of its PI must keep losing.
+ */
+export function citesOnlyPersonPages(entity?: DescriptionEntityKindEvidence | null): boolean {
+  if (!entity) return false;
+  if (textValue(entity.websiteUrl) || textValue(entity.website)) return false;
+  const urls = citedUrls(entity);
+  if (urls.length === 0) return false;
+  return urls.every((url) => isPersonProfileOrDirectoryUrl(url));
+}
+
+/**
+ * The voice a record's description is expected to be written in.
+ *
+ * `person` means person-voiced research prose is the expected shape, so the
+ * organization-only person-centric penalty must not be charged against it. The
+ * penalty is right for an organization - "Jane Doe received her Ph.D. from ..."
+ * is not a description of a centre - and wrong for a faculty research profile,
+ * where the page's own research paragraph is written about the person by
+ * construction ("Professor Lauenroth studies ecosystems in dry areas"). Charging
+ * it there ranks the research paragraph below whatever else the page publishes,
+ * which on a profile with a teaching statement means the course inventory wins.
+ *
+ * Two independent routes to `person`, because the enum and the evidence each
+ * catch rows the other misses: `isFacultyResearchTextEntity` reads the declared
+ * type, and `citesOnlyPersonPages` reads what the record actually cites.
+ */
+export function descriptionEntityKindForResearchEntity(
+  entity?: DescriptionEntityKindEvidence | null,
+): DescriptionEntityKind {
+  if (!entity) return 'organization';
+  if (
+    isFacultyResearchTextEntity({
+      entityType: textValue(entity.entityType),
+      kind: textValue(entity.kind),
+    })
+  ) {
+    return 'person';
+  }
+  return citesOnlyPersonPages(entity) ? 'person' : 'organization';
+}
 
 export interface SelectResearchHomeDescriptionOptions {
   kind?: DescriptionEntityKind;
@@ -40,10 +114,23 @@ const CREDENTIAL_NAME_LEAD = new RegExp(
   `\\b[A-Z][a-z]+(?:\\s+(?:[A-Z]\\.?|van|von|de|del|della|di|da|la|le|[A-Z][a-z]+)){1,3},\\s*(?:${ACADEMIC_CREDENTIAL})\\b`,
 );
 
-const NAME_VERB_LEAD = new RegExp(
-  `^([A-Z][\\p{L}'’.-]+(?:\\s+[A-Z][\\p{L}'’.-]+){1,3})(?:['’]s)?(?:,\\s*(?:${ACADEMIC_CREDENTIAL})\\b)*,?\\s+(?:is|was|received|earned|holds|joined|serves|completed|obtained|graduated|attended|studies|investigates|examines|explores|focuses|researches|works|has)\\b`,
-  'u',
-);
+// Split by what the verb asserts, because the two halves separate differently on
+// a person-scoped record. A career verb says who someone is; a research verb says
+// what they study, which on a faculty research profile is the description we
+// want. On an organization both halves are equally wrong, so both still apply.
+const CAREER_LEAD_VERB =
+  'is|was|received|earned|holds|joined|serves|completed|obtained|graduated|attended|has';
+const RESEARCH_LEAD_VERB = 'studies|investigates|examines|explores|focuses|researches|works';
+
+const nameLeadPattern = (verbs: string): RegExp =>
+  new RegExp(
+    `^([A-Z][\\p{L}'’.-]+(?:\\s+[A-Z][\\p{L}'’.-]+){1,3})(?:['’]s)?(?:,\\s*(?:${ACADEMIC_CREDENTIAL})\\b)*,?\\s+(?:${verbs})\\b`,
+    'u',
+  );
+
+const NAME_VERB_LEAD = nameLeadPattern(`${CAREER_LEAD_VERB}|${RESEARCH_LEAD_VERB}`);
+
+const NAME_CAREER_VERB_LEAD = nameLeadPattern(CAREER_LEAD_VERB);
 
 const PERSONAL_QUOTE_ATTRIBUTION =
   /[,"'”’]\s*(?:he|she|they)\s+(?:says?|said|explains?|explained|notes?|noted|adds?|added|recalls?|recalled|believes?)\b/gi;
@@ -132,6 +219,17 @@ export function isHighConfidencePersonBio(text: string): boolean {
   return isDemotablePersonBio(value);
 }
 
+const ORGANIZATION_LEAD_WORD = /^(?:the|our|this|a|an|in|within|at)\b/i;
+
+const ORGANIZATION_HEAD_NOUN_IN_LEAD =
+  /\b(?:Lab|Laboratory|Center|Centre|Institute|Program|Group|Initiative|Project|Department|School|University|College|Yale)\b/;
+
+function hasBareNameLead(value: string, pattern: RegExp): boolean {
+  if (ORGANIZATION_LEAD_WORD.test(value)) return false;
+  const lead = value.match(pattern);
+  return Boolean(lead && !ORGANIZATION_HEAD_NOUN_IN_LEAD.test(lead[1]));
+}
+
 export function isPersonCentricLead(text: string): boolean {
   const value = textValue(text);
   if (!value) return false;
@@ -140,17 +238,29 @@ export function isPersonCentricLead(text: string): boolean {
   // obtained his PhD from ..."), so that check must run before the
   // organization-voice lead words below are allowed to short-circuit it.
   if (isHighConfidencePersonBio(value)) return true;
-  if (/^(?:the|our|this|a|an|in|within|at)\b/i.test(value)) return false;
-  const lead = value.match(NAME_VERB_LEAD);
-  if (
-    lead &&
-    !/\b(?:Lab|Laboratory|Center|Centre|Institute|Program|Group|Initiative|Project|Department|School|University|College|Yale)\b/.test(
-      lead[1],
-    )
-  ) {
-    return true;
-  }
-  return false;
+  return hasBareNameLead(value, NAME_VERB_LEAD);
+}
+
+/**
+ * A career narrative about a named person, as distinct from that person's
+ * research.
+ *
+ * This is the half of `isPersonCentricLead` that is still wrong on a faculty
+ * research profile. The other half - a name followed by a research verb - is the
+ * research paragraph such a page is expected to publish ("Professor Lauenroth
+ * studies ecosystems in dry areas"), so charging it there ranks the page's own
+ * research description below whatever else the page happens to say.
+ *
+ * `TITLED_NAME_OPENER` is deliberately not consulted. It accepts a bare
+ * `Dr./Professor <Name>` opener, which the file already records as leading
+ * ordinary research prose at least as often as a biography, and it is what made
+ * the research paragraph unpromotable in the first place.
+ */
+export function isCareerNarrativeLead(text: string): boolean {
+  const value = textValue(text);
+  if (!value) return false;
+  if (isDemotablePersonBio(value)) return true;
+  return hasBareNameLead(value, NAME_CAREER_VERB_LEAD);
 }
 
 // The off-topic markers below scan the whole passage, so on their own they also
@@ -270,8 +380,49 @@ export function isNavigationalCrossReferenceProse(text: unknown): boolean {
 
 const PERSON_CENTRIC_PENALTY = -100;
 
+/**
+ * Person voice is not a description of an organization: "Jane Doe received her
+ * Ph.D. from ..." and "Jane Doe studies protein folding" both describe a person
+ * rather than a centre, so on an organization either one disqualifies the value
+ * outright.
+ *
+ * Deliberately organization-only, and the `person` arm is a ranking term below
+ * rather than a second disqualifier here. This is the arm
+ * `selectResearchHomeDescription` reads to decide whether to return nothing at
+ * all, and a person-scoped record whose only prose is a biography has to keep
+ * serving it (#2176, #919).
+ */
 function personCentricPenalty(text: string, kind: DescriptionEntityKind): number {
   return kind === 'organization' && isPersonCentricLead(text) ? PERSON_CENTRIC_PENALTY : 0;
+}
+
+const CAREER_NARRATIVE_DEMOTION = -35;
+
+/**
+ * On a faculty research profile, a career narrative ranks below every passage
+ * that says what the person studies, but it is not disqualified.
+ *
+ * This is the half of the organization penalty that is still wrong to ignore on a
+ * person-scoped record. The other half - a name followed by a research verb - is
+ * the research paragraph such a page is expected to publish ("Professor
+ * Lauenroth studies ecosystems in dry areas"), and charging that inverts the
+ * ranking: the research paragraph scores -100 while the profile's teaching
+ * statement scores 0, so the course inventory wins (#2232 in a new shape).
+ *
+ * A demotion rather than a penalty, because the resolver's promotion bars test
+ * for a score of exactly 0 - so a career narrative still cannot be promoted over
+ * research prose - while `selectResearchHomeDescription`'s fail-closed arm keys
+ * on `personCentricPenalty` alone and so cannot blank a record whose only prose
+ * is a biography.
+ *
+ * Ranked at -35: below a recruiting pitch's -30, because a pitch usually sits on
+ * a page whose research prose is still there, and a CV names no research at all;
+ * above a navigational cross-reference's -40, because a CV at least names the
+ * person's field. Measured on Development, moving it either side of those two
+ * reorders no pair, because no record carries both shapes.
+ */
+function careerNarrativeDemotion(text: string, kind: DescriptionEntityKind): number {
+  return kind === 'person' && isCareerNarrativeLead(text) ? CAREER_NARRATIVE_DEMOTION : 0;
 }
 
 /**
@@ -285,6 +436,21 @@ function personCentricPenalty(text: string, kind: DescriptionEntityKind): number
 export function offTopicResearchHomeDemotionScore(text: unknown): number {
   const value = textValue(text);
   let score = 0;
+  // Below a mission statement's -20 and above a recruiting pitch's -30. A unit's
+  // mission at least says what the unit is for, while a course inventory says
+  // nothing about the research at all, so the mission has to beat it outright; a
+  // recruiting pitch usually sits on a research page and buries prose that is
+  // still there, which is the worse of the two. Unlike the three below, this term
+  // is paired with a `profile-chrome` quality flag, so it ranks a teaching
+  // statement down for a lane choosing between page regions and the quality bar
+  // refuses it outright at write time.
+  if (isTeachingOrAdvisingStatementProse(value)) score -= 25;
+  // Ranked below every other demotion, including a mission statement's -20,
+  // because a unit's own mission page is the correct replacement for its
+  // landing-page appeal and has to beat it outright under the strictly-better
+  // rule. Measured on Development, this term fires on 1 of 8,660 stored
+  // descriptions, so it cannot reorder any other pair (#2957).
+  if (isPhilanthropicFundAppealText(value)) score -= 60;
   if (isNavigationalCrossReferenceProse(value)) score -= 40;
   if (isRecruitingNoticeLead(value)) score -= 30;
   if (isMissionOrCultureProse(value)) score -= 20;
@@ -300,7 +466,11 @@ export function scoreResearchHomeDescriptionCandidate(
   kind: DescriptionEntityKind = 'organization',
 ): number {
   const value = textValue(text);
-  return personCentricPenalty(value, kind) + offTopicResearchHomeDemotionScore(value);
+  return (
+    personCentricPenalty(value, kind) +
+    careerNarrativeDemotion(value, kind) +
+    offTopicResearchHomeDemotionScore(value)
+  );
 }
 
 export function collectDescriptionCandidates(

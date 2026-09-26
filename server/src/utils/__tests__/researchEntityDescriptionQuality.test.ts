@@ -6,12 +6,15 @@ import {
   describesResearchFocus,
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
+  fullDescriptionWouldMaterialize,
   isFullDescriptionRestatementOfShortDescription,
   isPoorerThanCardDescription,
   isReplaceableResearchAreaChipEchoShort,
   programCardShortDescriptionQuality,
+  programLikeCardShortDescription,
   shortDescriptionQuality,
 } from '../researchEntityDescriptionQuality';
+import { sanitizeResearchEntityDescription } from '../descriptionHygiene';
 
 describe('fullDescriptionQuality', () => {
   it('keeps official lab overview copy that starts with a welcome sentence', () => {
@@ -1526,8 +1529,8 @@ describe('shortDescriptionQuality grant-significance boilerplate guard (#1595)',
 });
 
 describe('shortDescriptionQuality topic-label-list gate for LAB/FACULTY_RESEARCH_AREA (#1616)', () => {
-  const labOptions = { entityType: 'LAB' };
-  const fraOptions = { entityType: 'FACULTY_RESEARCH_AREA' };
+  const labOptions = { entityType: 'LAB' } as const;
+  const fraOptions = { entityType: 'FACULTY_RESEARCH_AREA' } as const;
 
   it('rejects a bare "Studies <tags>." short that is identical to the fullDescription', () => {
     const text = 'Studies Condensed Matter Physics, Theorist, and Stochastic processes.';
@@ -1840,6 +1843,66 @@ describe('deriveProgramCardShortDescription (#1425)', () => {
   });
 });
 
+describe('programLikeCardShortDescription (#2215)', () => {
+  const ONE_SENTENCE_OFFER =
+    'A Richter Summer Fellowship is awarded for independent study and research, not for mere travel, work or enrollment in a school.';
+  const WHOLE_BODY_AS_CARD = `${ONE_SENTENCE_OFFER} Richter Fellowships are ordinarily awarded to juniors, but first years, sophomores and graduate affiliates are eligible, and applicants submit a project proposal, a budget and a faculty recommendation before the March deadline.`;
+
+  it('serves the stored line unchanged when it clears the program card bar', () => {
+    expect(
+      programLikeCardShortDescription({
+        shortDescription: ONE_SENTENCE_OFFER,
+        fullDescription: WHOLE_BODY_AS_CARD,
+      }),
+    ).toBe(ONE_SENTENCE_OFFER);
+  });
+
+  it('derives a complete sentence when the stored line is the whole body', () => {
+    expect(
+      programCardShortDescriptionQuality(WHOLE_BODY_AS_CARD, WHOLE_BODY_AS_CARD).flags,
+    ).toContain('too-long');
+    expect(
+      programLikeCardShortDescription({
+        shortDescription: WHOLE_BODY_AS_CARD,
+        fullDescription: WHOLE_BODY_AS_CARD,
+      }),
+    ).toBe(ONE_SENTENCE_OFFER);
+  });
+
+  it('keeps a failing line whole when no sentence of the body clears the bar', () => {
+    const noSentenceFits =
+      'The Latin American and Iberian Studies Summer Travel Awards at the MacMillan Center provide support for senior undergraduates and graduate students who plan to conduct research or study abroad (including language study) in Latin America, the Caribbean, Portugal or Spain during the summer.';
+    expect(deriveProgramCardShortDescription(noSentenceFits)).toBe('');
+    expect(
+      programLikeCardShortDescription({
+        shortDescription: noSentenceFits,
+        fullDescription: noSentenceFits,
+      }),
+    ).toBe(noSentenceFits);
+  });
+
+  it('keeps the stored line of a body-less program rather than reading an ungrounded card as a defect', () => {
+    expect(programCardShortDescriptionQuality(ONE_SENTENCE_OFFER, '').flags).toContain(
+      'full-not-useful',
+    );
+    expect(
+      programLikeCardShortDescription({
+        shortDescription: ONE_SENTENCE_OFFER,
+        fullDescription: '',
+      }),
+    ).toBe(ONE_SENTENCE_OFFER);
+  });
+
+  it('returns an empty card line for a blank or non-string stored line', () => {
+    expect(
+      programLikeCardShortDescription({ shortDescription: '   ', fullDescription: 'body' }),
+    ).toBe('   ');
+    expect(
+      programLikeCardShortDescription({ shortDescription: undefined, fullDescription: 'body' }),
+    ).toBe('');
+  });
+});
+
 describe('deriveProgramCardShortDescription administrative-copy fixes (#1653)', () => {
   it('falls through past a self-referential "is listed by" lead to the offer sentence', () => {
     const full =
@@ -2001,5 +2064,212 @@ describe('isPoorerThanCardDescription (#2259)', () => {
     expect(isPoorerThanCardDescription('', 'a'.repeat(140))).toBe(false);
     expect(isPoorerThanCardDescription('a'.repeat(10), '')).toBe(false);
     expect(isPoorerThanCardDescription(undefined, undefined)).toBe(false);
+  });
+});
+
+describe('fullDescriptionWouldMaterialize (#2721)', () => {
+  it('rejects copy the write path reduces to nothing even when quality accepts it', () => {
+    // A first-person opener with a question list, the commonest of the nine shapes
+    // measured on Development. The body-level `first-person` flag covers only an
+    // "our/my group focuses..." lead and a "... we are also involved in" tail, so
+    // this shape clears quality, while `sanitizeResearchEntityDescription` fails it
+    // closed and the materializer stores nothing. Synthetic, not corpus copy.
+    const text =
+      'In the laboratory we study soil microbes to answer the following questions: What limits nitrogen cycling in cold soils? How can we shift those limits? How do communities recover after disturbance?';
+
+    expect(fullDescriptionQuality(text).isUseful).toBe(true);
+    expect(sanitizeResearchEntityDescription(text).trim()).toBe('');
+    expect(fullDescriptionWouldMaterialize(text)).toBe(false);
+  });
+
+  it('accepts a body the sanitizer repairs rather than rejects', () => {
+    // The two bars compose in the write path's order: sanitize, then judge the
+    // sanitized text. The raw text carries a trailing contact address, which the
+    // sanitizer strips and quality would otherwise flag as profile chrome.
+    const text =
+      'The group develops transition-metal catalysts and studies their mechanisms using stopped-flow kinetics and computation. 225 Prospect Street, New Haven, CT 06511';
+
+    expect(fullDescriptionQuality(text).isUseful).toBe(false);
+    expect(fullDescriptionQuality(sanitizeResearchEntityDescription(text)).isUseful).toBe(true);
+    expect(fullDescriptionWouldMaterialize(text)).toBe(true);
+  });
+
+  it('accepts a body that restates the row card, because #2740 keeps such a body', () => {
+    // The pipeline's first pass rejected this class, citing the pre-#2740 materializer.
+    // Measured against the 19 bodies the engine actually stored on Development, that
+    // check answered false for 17 of them, so the predicate contradicted ground truth.
+    const text =
+      'The group combines live-cell imaging with mouse genetics to map how mitochondrial transport failures along axons drive neurodegeneration.';
+
+    expect(isFullDescriptionRestatementOfShortDescription(text, text)).toBe(true);
+    expect(fullDescriptionWouldMaterialize(text)).toBe(true);
+  });
+
+  it('accepts a body that clears both the quality bar and the served hygiene bar', () => {
+    const text =
+      'The group combines live-cell imaging with mouse genetics to map how mitochondrial transport failures along axons drive neurodegeneration.';
+
+    expect(fullDescriptionQuality(text).isUseful).toBe(true);
+    expect(sanitizeResearchEntityDescription(text).trim()).not.toBe('');
+    expect(fullDescriptionWouldMaterialize(text)).toBe(true);
+  });
+
+  it('rejects blank and non-string input rather than throwing', () => {
+    expect(fullDescriptionWouldMaterialize('')).toBe(false);
+    expect(fullDescriptionWouldMaterialize('   ')).toBe(false);
+    expect(fullDescriptionWouldMaterialize(undefined)).toBe(false);
+    expect(fullDescriptionWouldMaterialize(null)).toBe(false);
+  });
+
+  it('answers the write path verdict for each documented body shape', () => {
+    const expectedVerdicts: [string, boolean][] = [
+      [
+        'The group combines live-cell imaging with mouse genetics to map how mitochondrial transport failures drive neurodegeneration.',
+        true,
+      ],
+      [
+        'The group develops transition-metal catalysts and studies their mechanisms using stopped-flow kinetics and computation. 225 Prospect Street, New Haven, CT 06511',
+        true,
+      ],
+      [
+        'In the laboratory we study soil microbes to answer the following questions: What limits nitrogen cycling in cold soils? How can we shift those limits? How do communities recover after disturbance?',
+        false,
+      ],
+      ['Research areas include immunology, virology and structural biology.', false],
+      ['Our group focuses on soft matter and we are also involved in polymer rheology.', false],
+      ['Studies.', false],
+      ['', false],
+    ];
+
+    expect(expectedVerdicts.map(([text]) => fullDescriptionWouldMaterialize(text))).toEqual(
+      expectedVerdicts.map(([, expected]) => expected),
+    );
+  });
+});
+
+describe('verb-first research-focus assertion and dropped card lead (#3047)', () => {
+  const body =
+    'A former chair of the Department of Comparative Scripture, Professor Quilling focuses his research on prophetic literature, chronicle history, and ritual practice in its social and cultural context. His books include Genealogy in the Ancient Near East and Prophecy and Society, the second of which has been translated into Korean. His scholarly articles have appeared in the Journal of Comparative Scripture, among others, and he has contributed to the Encyclopedia of Ritual.';
+
+  it('keeps a body whose only venue word sits in its own publication list', () => {
+    const quality = fullDescriptionQuality(body);
+
+    expect(quality.flags).not.toContain('paper-fragment');
+    expect(quality.isUseful).toBe(true);
+  });
+
+  it('rejects a card whose lead is a title run the body no longer carries', () => {
+    const quality = shortDescriptionQuality(
+      'D Comparative Scripture A former chair of the Department of Comparative Scripture, Professor Quilling focuses his research on prophetic literature, chronicle history, and ritual practice in its social and cultural context.',
+      body,
+    );
+
+    expect(quality.flags).toContain('incomplete-sentence');
+  });
+
+  it('keeps the same card once the lead run is gone', () => {
+    const quality = shortDescriptionQuality(
+      'A former chair of the Department of Comparative Scripture, Professor Quilling focuses his research on prophetic literature, chronicle history, and ritual practice in its social and cultural context.',
+      body,
+    );
+
+    expect(quality.flags).not.toContain('incomplete-sentence');
+  });
+
+  it('keeps an ordinary derived card that re-leads a mid-sentence span of its body', () => {
+    const derivedFrom =
+      'Professor Tamsin Ardley studies the culture of personal debt in the late imperial period, exploring how informal personal debt was integral to the regime of private property and to the stability of the era.';
+    const quality = shortDescriptionQuality(
+      'Focuses on the culture of personal debt in the late imperial period, exploring how informal personal debt was integral to the regime of private property and to the stability of the era.',
+      derivedFrom,
+    );
+
+    expect(quality.flags).not.toContain('incomplete-sentence');
+  });
+});
+
+describe('interrogative colon elaboration in a derived card', () => {
+  const head =
+    'Dr. Alina Rivera is an Associate Professor in the Department of Coastal Science. Dr. Rivera received her BA from Norwood College and her PhD from Calder University, and completed postdoctoral training at the Brackish Bay Marine Station. ';
+  const tail =
+    ' Dr. Rivera serves on the editorial board of two coastal science journals and is a licensed professional engineer.';
+
+  it('keeps the elaboration when the whole sentence already fits the card ceiling', () => {
+    const body = `${head}Her research focuses on estuary sediment chemistry: how best to sample, model, and predict nutrient release from tidal wetlands.${tail}`;
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe(
+      "Dr. Alina Rivera's research focuses on estuary sediment chemistry: how best to sample, model, and predict nutrient release from tidal wetlands.",
+    );
+  });
+
+  it('keeps a sentence whose colon introduces its own object rather than leaving a predicate with nothing after it', () => {
+    const body = `${head}Among the questions her laboratory studies are: how do coastal sediments release stored nutrients when tides change, what controls the rate of that release across seasons, and which microbial communities mediate it in brackish water.${tail}`;
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe(
+      'Among the questions her laboratory studies are: how do coastal sediments release stored nutrients when tides change, what controls the rate of that release across seasons, and which microbial communities mediate it in brackish water.',
+    );
+  });
+
+  it('keeps a work title whole rather than cutting it at its subtitle colon', () => {
+    const body = `${head}Her research focuses on the history of coastal engineering and is the subject of the monograph Holding the Line: How Cities Learned to Fear the Sea, together with earlier work on levee politics, the economics of dredging, and municipal flood insurance.${tail}`;
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toContain(
+      'Holding the Line: How Cities Learned to Fear the Sea',
+    );
+  });
+
+  it('still drops the elaboration when the sentence exceeds the ceiling and the remainder stands alone', () => {
+    const body = `${head}Her research focuses on how coastal cities came to understand flooding as a question of engineering rather than of weather: how municipal engineers, insurers, and residents have argued about levees, dredging, and retreat since the nineteenth century, and how those arguments shaped the maps that cities still use today.${tail}`;
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe(
+      "Dr. Alina Rivera's research focuses on how coastal cities came to understand flooding as a question of engineering rather than of weather.",
+    );
+  });
+});
+
+describe('over-cap lead sentence trailing-modifier cut', () => {
+  const tail =
+    ' The group trains undergraduates each summer. Recent projects compared two river mouths. Findings are shared with municipal planners.';
+
+  it('derives a card by dropping the trailing modifier clauses of a lead too long to be one', () => {
+    const body = `Investigates how coastal sediments release stored nutrients when tides change and how nutrient fluxes shape estuary water quality across seasons and river mouths, using continuous in-situ sensor deployments, seasonal panel sampling, isotope tracing of nitrogen sources, and comparison of paired tidal marshes.${tail}`;
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe(
+      'Investigates how coastal sediments release stored nutrients when tides change and how nutrient fluxes shape estuary water quality across seasons and river mouths.',
+    );
+  });
+
+  it('refuses to cut an over-cap lead whose commas are all list items, so a list is never reported short', () => {
+    const body = `Investigates coastal sediment chemistry, estuary water quality, tidal nutrient fluxes, salt marsh ecology, benthic microbial communities, river mouth hydrodynamics, seasonal oxygen dynamics, brackish water chemistry, shoreline erosion processes, and coastal groundwater discharge in two river systems.${tail}`;
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe('');
+  });
+
+  it('leaves a lead already within the card ceiling whole, modifier clause and all', () => {
+    const body = `Investigates how coastal sediments release stored nutrients when tides change, using continuous in-situ sensor deployments.${tail}`;
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe(
+      'Investigates how coastal sediments release stored nutrients when tides change, using continuous in-situ sensor deployments.',
+    );
+  });
+});
+
+describe('career-history prose is not glued into a card', () => {
+  it('does not prefix "Studies " onto a CV sentence that already has its own past-tense verb', () => {
+    const body =
+      'Rowan Ashby studied Classical History at Marlow College (BA 1991) and Comparative Literature at Calder University (MA, PhD 1997). The project examines the later Roman provinces and their administration. Recent work compares two provincial archives.';
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe(
+      'The project examines the later Roman provinces and their administration.',
+    );
+  });
+
+  it('rewrites "current activities are focused on" to a verb that governs the participle', () => {
+    const body =
+      'Dr. Rowan Ashby is a research scientist in the Department of Analytical Science. Her current activities are focused on the application of mass spectrometry to qualitative and quantitative food, beverage and environmental testing. Findings are shared with regulators each spring.';
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe(
+      'Focuses on the application of mass spectrometry to qualitative and quantitative food, beverage and environmental testing.',
+    );
   });
 });

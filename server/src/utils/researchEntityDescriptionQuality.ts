@@ -1,4 +1,7 @@
+import type { ResearchEntityType } from '../models/researchAccessTypes';
 import {
+  MAX_CARD_SHORT_DESCRIPTION_LENGTH,
+  MAX_CARD_SHORT_DESCRIPTION_WORDS,
   collapseDoubledConjunction,
   collapseDoubledSynthesisVerb,
   hasContactBlockResidue,
@@ -7,7 +10,9 @@ import {
   isConnectedToKeywordListStub,
   isCurriculumVitaePositionListingText,
   isNonSelfContainedShortDescription,
+  isPhilanthropicFundAppealText,
   isResearchAreaTemplateLeakText,
+  sanitizeResearchEntityDescription,
   isStudiesResearchAreaEchoDescription,
   isStudiesTemplateGlueMalformed,
   stripLeadingRoleTitleHeaderSentences,
@@ -51,6 +56,7 @@ export type DescriptionQualityFlag =
   | 'topic-label-list'
   | 'ungrounded-topic-short'
   | 'grant-significance-boilerplate'
+  | 'fundraising-appeal'
   | 'full-not-useful';
 
 export interface ResearchEntityDescriptionQualityInput {
@@ -61,7 +67,7 @@ export interface ResearchEntityDescriptionQualityInput {
   website?: unknown;
   websiteUrl?: unknown;
   isProgramLike?: boolean;
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
 }
 
 export interface FieldQuality {
@@ -237,9 +243,19 @@ const hasPaperFragment = (value: string): boolean =>
   ) ||
   /\b(?:arxiv|doi|journal|proceedings|abstract)\b/i.test(value);
 
+// In an administrative appointment title, "studies" is the head of a degree-level
+// program name rather than a research verb ("Director of Graduate Studies"). A
+// curriculum vitae of appointment lines otherwise carries no research-focus
+// phrase at all, so this one noun reading was enough to promote a whole CV to a
+// person's research description (#2670). Scoped to the degree-level program names,
+// which say nothing about a subject; a field name that happens to end in Studies
+// ("Yale Studies in English") still counts, as does the verb in any position.
+const DEGREE_LEVEL_STUDIES_PROGRAM =
+  /\b(?:Graduate|Undergraduate|Postgraduate|Doctoral|Professional)\s+Studies\b/g;
+
 const hasResearchDescriptionVerb = (value: string): boolean =>
   /\b(studies|investigates|examines|explores|focuses on|focused on|revolves? around|works on|works towards|develops|supports|advances|fosters|innovates|uses|employs|researches|analyzes|models|measures|seeks to)\b/i.test(
-    value,
+    value.replace(DEGREE_LEVEL_STUDIES_PROGRAM, ' '),
   );
 
 // A plural-subject research clause ("his scholarship and teaching examine the
@@ -467,7 +483,7 @@ function isUngroundedTopicLabelListShort(text: string, full: string): boolean {
 
 const TOPIC_LABEL_LIST_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA']);
 
-const isTopicLabelListEligibleEntityType = (entityType: unknown): boolean =>
+const isTopicLabelListEligibleEntityType = (entityType?: ResearchEntityType): boolean =>
   typeof entityType === 'string' && TOPIC_LABEL_LIST_ENTITY_TYPES.has(entityType.toUpperCase());
 
 const SINGLE_CLAUSE_STUDIES_SHORT_PATTERN = /^Studies\s+[^.,]{3,70}\.$/i;
@@ -564,7 +580,7 @@ export function isReplaceableResearchAreaChipEchoShort(
   text: string,
   full: string,
   researchAreas: unknown,
-  entityType: unknown,
+  entityType: ResearchEntityType | undefined,
 ): boolean {
   if (!isTopicLabelListEligibleEntityType(entityType)) return false;
   const fields = parseLabelListFields(text);
@@ -653,6 +669,52 @@ const hasFragmentaryCardCopy = (value: string): boolean =>
   (/^[^()]*\)/.test(value) && !/\([^)]*\)/.test(value)) ||
   /\b[A-Z]\.$/.test(value) ||
   /^[a-z]{2,10}\/\s/.test(value);
+
+const MAX_DROPPED_CARD_LEAD_LENGTH = 60;
+const MIN_DROPPED_CARD_LEAD_WORDS = 2;
+const MIN_GROUNDED_CARD_REMAINDER_LENGTH = 60;
+
+const isTitleRunWord = (word: string): boolean => /^[A-Z][\p{L}.'’-]*[,;]?$/u.test(word);
+
+/**
+ * A card line that opens on a bare title run the entity's own body no longer
+ * carries, over a remainder that is verbatim one of the body's own sentences.
+ *
+ * The body's hygiene is the authority here rather than a residue pattern. A
+ * whole-block DOM extraction glues a degree run onto the first real sentence with
+ * no delimiter, and `stripLeadingCredentialTitleRun` removes that run from the
+ * body; the card was cut from the same glued text under a length budget, so it
+ * keeps the tail of the run ("D Yale University" out of "M.A., Ph.D Yale
+ * University") and no card check sees anything wrong with it. Reading the body's
+ * own verdict rather than re-deriving one keeps the two from disagreeing, and makes
+ * this self-limiting: it can only fire where that strip already fired (#3047).
+ *
+ * Deliberately not a residue regex. A lone capital ahead of a capitalised word is
+ * how an abbreviated given name reads, and on Development that shape covers six
+ * stored cards of which five are real names ("K. Sudhir studies ...").
+ *
+ * The remainder must be a WHOLE body sentence, and the dropped run must carry no
+ * lower-case word. Accepting any body substring instead makes this fire on the
+ * ordinary derivation, which lifts a mid-sentence span and re-leads it ("Focuses on
+ * the culture of personal debt ..."): measured on Development that wider form
+ * flagged 565 rows and pulled 318 out of `student_ready`.
+ */
+const cardLeadDroppedFromOwnBody = (text: string, full: string): boolean => {
+  if (!text || !full) return false;
+  const lead = textValue(sentenceList(text)[0]);
+  if (!lead || full.includes(lead)) return false;
+  const bodySentences = new Set(sentenceList(full).map(textValue));
+  const words = lead.split(' ');
+  for (let index = MIN_DROPPED_CARD_LEAD_WORDS; index < words.length; index += 1) {
+    const prefixWords = words.slice(0, index);
+    if (prefixWords.join(' ').length > MAX_DROPPED_CARD_LEAD_LENGTH) return false;
+    if (!prefixWords.every(isTitleRunWord)) return false;
+    const remainder = words.slice(index).join(' ');
+    if (remainder.length < MIN_GROUNDED_CARD_REMAINDER_LENGTH) return false;
+    if (bodySentences.has(remainder)) return true;
+  }
+  return false;
+};
 
 // A stored short that's a bare bibliography citation - a dash-quote lead
 // into a paper/article title - rather than a description of the research
@@ -773,6 +835,15 @@ const hasExplicitProfileResearchFocus = (value: string): boolean =>
         sentence,
       ) ||
       /\b(?:i|he|she|they)\s+(?:do|does|conducts?)\s+research\s+in\b/i.test(sentence) ||
+      // The same assertion with the possessive after the verb rather than before
+      // it ("focuses his research on Israelite prophecy" vs. "his research
+      // focuses on ..."). Only the possessive-first ordering was listed, so a
+      // body making the claim this way carried no explicit research focus at all
+      // and stayed at the mercy of whichever chrome pattern its publication list
+      // happened to trip (#3047).
+      /\b(?:focuses|focused|centers|centres|centered|centred|concentrates|concentrated)\s+(?:my|his|her|their|our)\s+research\s+(?:on|in|around)\b/i.test(
+        sentence,
+      ) ||
       /\b(?:my|his|her|their|our|[\p{L}.'’-]+(?:\s+[\p{L}.'’-]+){0,3}['’]s)\s+research\s+is\s+centered\s+on\b/iu.test(
         sentence,
       ) ||
@@ -819,6 +890,137 @@ const isTeachingOnlyProfileDescription = (value: string): boolean => {
     /\bteaches?\s+an?\s+undergraduate\b/i.test(text)
   );
 };
+
+const TEACHING_STATEMENT_LABEL_LEAD =
+  /^(?:my\s+)?(?:teaching|advising|mentoring)(?:\s*(?:,|and|\/)\s*(?:teaching|advising|mentoring))*\s+(?:statement|philosophy|style|approach|experience)\b/i;
+
+// A course as the grammatical subject, which no research description uses. "The
+// lab"/"the class" are deliberately absent: the first names a research home and
+// the second names a cohort as often as a session.
+const COURSE_AS_SUBJECT_LEAD = /^(?:this|the|that|each|my)\s+(?:course|seminar|syllabus)\b/i;
+
+// Declared without the global flag so `.test` below stays stateless; the
+// counting helper builds its own global form.
+const COURSE_INSTRUCTION_PREDICATE =
+  /\b(?:I|we|who|she|he|they)\s+(?:(?:have|had|also|then|later|subsequently|currently)\s+)*(?:co-)?(?:taught|teach)\b|\b(?:co-)?taught\s+(?:a|an|the|my|this|two|three|four|several|courses)\b|\bteaches\s+(?:a|an|the)\b/i;
+
+const COURSE_SUBJECT_NOUN =
+  /\b(?:courses?|seminars?|syllabus|syllabi|lectures?|curriculum|clerkship|classroom|textbook|semester)\b/i;
+
+const ADVISING_ROLE_STATEMENT =
+  /\bmy\s+(?:role|approach|style)\s+(?:in|to|as|with)\b[^.]{0,100}\b(?:advis|mentor|master|doctoral|undergraduate|student)/i;
+
+const countMatches = (value: string, pattern: RegExp): number =>
+  (value.match(new RegExp(pattern.source, `${pattern.flags}g`)) ?? []).length;
+
+const RESEARCH_CLAIM_POSSESSOR = `(?:my|our|his|her|their|[\\p{L}.'’-]+(?:\\s+[\\p{L}.'’-]+){0,3}['’]s)`;
+
+const OWN_RESEARCH_CLAIM = new RegExp(
+  `\\b${RESEARCH_CLAIM_POSSESSOR}\\s+(?:main\\s+|primary\\s+|current\\s+|broad\\s+)?research\\s+(?:topic|topics|interests?|focus(?:es)?|programme?|agenda|examines?|investigates?|explores?|centers?|concentrates?)\\b`,
+  'iu',
+);
+
+// A bare interest list is a research claim on a faculty profile ("His interests
+// include Egyptian religion, cryptography, the scripts and texts of Graeco-Roman
+// Egypt"). Without it, a rich research bio that closes with a long course list
+// reached the density arm.
+const OWN_SCHOLARLY_INTEREST_CLAIM = new RegExp(
+  `\\b${RESEARCH_CLAIM_POSSESSOR}\\s+(?:main\\s+|primary\\s+|current\\s+|broad\\s+|scholarly\\s+|academic\\s+|substantive\\s+)?interests?\\s+(?:include|are|lie|centers?|focus(?:es)?)\\b`,
+  'iu',
+);
+
+// Someone teaching something, or a course in subject position. A bare mention of
+// a course noun is not enough: a research claim can name one among its topics
+// ("Dr. Barber's research interests include effective teaching strategies,
+// fostering classroom diversity ... and the linguistic performance practice of
+// African American spirituals"), and counting that as instruction withdrew the
+// exemption from the only sentence that proves the passage is a research
+// description.
+const isInstructionSentence = (sentence: string): boolean =>
+  COURSE_INSTRUCTION_PREDICATE.test(sentence) || COURSE_AS_SUBJECT_LEAD.test(sentence.trim());
+
+/**
+ * A research claim standing apart from any instruction sentence.
+ *
+ * Asked sentence by sentence, and asked only of the sentences that are not
+ * themselves about a course, because a course sentence satisfies a topical
+ * research-focus test on its own: "At UW, I have taught a vegetation ecology
+ * course that focused on western North America" and "This course included a lab
+ * that focused on identifying the important plant species" both read as research
+ * focus to `hasResearchFocusPhrase`, and they are two of the three sentences a
+ * whole-text test would have found in the statement this was written for. A
+ * whole-text or later-sentence exemption therefore withdraws on exactly the
+ * evidence it is meant to exclude.
+ */
+const statesResearchApartFromInstruction = (value: string): boolean =>
+  sentenceList(value).some(
+    (sentence) =>
+      !isInstructionSentence(sentence) &&
+      (hasResearchFocusPhrase(sentence) ||
+        OWN_RESEARCH_CLAIM.test(sentence) ||
+        OWN_SCHOLARLY_INTEREST_CLAIM.test(sentence) ||
+        hasExplicitProfileResearchFocus(sentence)),
+  );
+
+/**
+ * A faculty profile's teaching statement: prose whose subject is instruction,
+ * advising, or mentoring rather than inquiry.
+ *
+ * Separate from `isTeachingOnlyProfileDescription` above rather than folded into
+ * it, because both of that predicate's entry conditions are exactly what a real
+ * teaching statement defeats. It gates on `\bteaches?\b`, which a first-person
+ * or past-tense statement never writes ("Over the past decade, I have taught
+ * courses at ..."; "I co-taught a master's level ... course"), and it then bails
+ * on `hasResearchFocusPhrase`, which a course title always supplies because
+ * courses are named after research fields ("a junior and senior level course in
+ * the vegetation ecology of the western US"). Widening that predicate instead
+ * would have to drop the research-focus bail for every one of its own cases,
+ * where the bail is what keeps it off ordinary research prose.
+ *
+ * So the separating signal cannot be topical. It is grammatical: what the
+ * sentences are about. A course or a student in subject position, a labelled
+ * statement heading, or a stated advising role - never a field name, which both
+ * shapes share.
+ *
+ * Exempt when the passage opens by saying what the entity studies, matching the
+ * three off-topic demotions in `researchHomeDescriptionSelection`: research
+ * prose that closes with a teaching line is still a research description.
+ */
+export function isTeachingOrAdvisingStatementProse(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  if (isUndergraduateResearchProgramDescription(text)) return false;
+  // The three structural arms run ahead of the research-focus exemption, which
+  // guards only the density arm. A course in subject position or a labelled
+  // statement heading is decisive whatever field the sentence then names, and
+  // the exemption would otherwise swallow the single-sentence card shape this
+  // was written for: "This course included a lab that focused on identifying
+  // the important plant species in each of the vegetation types."
+  if (TEACHING_STATEMENT_LABEL_LEAD.test(text)) return true;
+  if (COURSE_AS_SUBJECT_LEAD.test(text)) return true;
+  if (ADVISING_ROLE_STATEMENT.test(text)) return true;
+  // The density arm counts instruction, so on its own it cannot tell a teaching
+  // statement from a research description that also states what its author
+  // teaches. Every false positive measured against the corpus was the latter
+  // shape - "I teach American literature ... My main research topic is the
+  // culture of discipline in the United States"; "Khandelwal's research examines
+  // the link between international trade and economic development ... At
+  // Columbia, he taught courses in microeconomics" - so a research claim
+  // anywhere in the passage withdraws the arm. The claim has to be looked for
+  // sentence by sentence rather than over the whole text, because a course title
+  // names a research field and so satisfies a whole-text phrase test on its own.
+  if (statesResearchApartFromInstruction(text)) return false;
+  // One instruction predicate plus three course nouns, rather than two and two:
+  // a statement can name its courses once and then describe them ("I teach two
+  // undergraduate courses each year and one graduate seminar. The undergraduate
+  // courses cover introductory statistics ..."), so requiring a second predicate
+  // missed the shape while the noun count still separates it from a research
+  // description that mentions teaching in passing.
+  return (
+    countMatches(text, COURSE_INSTRUCTION_PREDICATE) >= 1 &&
+    countMatches(text, COURSE_SUBJECT_NOUN) >= 3
+  );
+}
 
 // Filler that a fluent synthesized full description leans on when it has no
 // real source to draw from beyond the entity's own researchAreas chips: verbs
@@ -1112,10 +1314,60 @@ const isAppointmentOnly = (value: string): boolean => {
   );
 };
 
+/**
+ * Whether a candidate body would actually reach storage, which is NOT what
+ * `fullDescriptionQuality(...).isUseful` answers.
+ *
+ * `materializedFieldValue` routes `fullDescription` through
+ * `sanitizeResearchEntityDescription`, which fails first-person, CV-biography and
+ * title-chrome copy closed. So a candidate can clear every quality flag and still
+ * be reduced to nothing on the way in. Measured on Development while tracing
+ * #2721: of 28 bodies `isUseful` reported usable, 9 sanitized to empty - three CV
+ * biographies, three first-person openers, two title-chrome headers and one topic
+ * label list. Treating `isUseful` as recoverability overstated the recoverable
+ * population by a third and sent a repair pass after rows the engine was right to
+ * refuse.
+ *
+ * The two verdicts disagree in BOTH directions and that is deliberate, which is
+ * why this is a separate predicate rather than a stricter `isUseful`. #1598 pins
+ * that a "Research areas include <areas>" body and concise research-field lists
+ * stay useful, and the sanitizer strips exactly those; making `isUseful` fail
+ * closed on the sanitizer breaks four documented cases. Quality answers "is this
+ * good copy", hygiene answers "may we serve this text", and only the composition
+ * answers "will this candidate survive to a stored value".
+ *
+ * The ORDER of that composition matters and mirrors `entityMaterializer`, which
+ * sanitizes a ranked candidate and then judges the sanitized text. Judging the
+ * raw text instead answers false for every class the sanitizer repairs rather
+ * than rejects - a trailing contact address, a glued profile role label, a
+ * leading administrative-location sentence - which under-reports the recoverable
+ * population, the mirror image of the overcount this predicate exists to prevent.
+ *
+ * Deliberately does NOT reject a body that restates the row's card. #2740 reversed
+ * that: the materializer keeps such a body and reconsiders the card instead, so a
+ * restatement check here answers false for bodies the engine does store. Measured
+ * against the 19 bodies the engine stored on Development, adding that check made
+ * this predicate answer false for 17 of them.
+ *
+ * Use this when deciding whether stranded or observation-only prose is worth
+ * recovering. Use `fullDescriptionQuality` when judging copy that is already
+ * stored, because a stored body has already survived the sanitizer.
+ */
+export function fullDescriptionWouldMaterialize(
+  value: unknown,
+  researchAreas?: unknown,
+  entityType?: ResearchEntityType,
+): boolean {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  const materialized = textValue(sanitizeResearchEntityDescription(value));
+  if (!materialized) return false;
+  return fullDescriptionQuality(materialized, researchAreas, entityType).isUseful;
+}
+
 export function fullDescriptionQuality(
   value: unknown,
   researchAreas?: unknown,
-  entityType?: unknown,
+  entityType?: ResearchEntityType,
 ): FieldQuality {
   const text = textValue(value);
   const flags: DescriptionQualityFlag[] = [];
@@ -1152,6 +1404,7 @@ export function fullDescriptionQuality(
   }
   if (text && hasDuplicatedLongFragment(text)) flags.push('duplicated-fragment');
   if (text && hasRecruitmentBoilerplate(text)) flags.push('recruitment-boilerplate');
+  if (text && isPhilanthropicFundAppealText(text)) flags.push('fundraising-appeal');
   if (text && isDominatedByConsentBoilerplate(text)) flags.push('consent-boilerplate');
   if (text && hasMalformedGeneratedText(text)) flags.push('malformed-generated-text');
   if (
@@ -1202,6 +1455,7 @@ export function fullDescriptionQuality(
     flags.push('profile-chrome');
   }
   if (text && isTeachingOnlyProfileDescription(text)) flags.push('profile-chrome');
+  if (text && isTeachingOrAdvisingStatementProse(text)) flags.push('profile-chrome');
   if (
     text &&
     isResearchAreaPlaceholderDescription(text) &&
@@ -1422,11 +1676,21 @@ export function fullDescriptionAddsPropositionBeyondShort(
   });
 }
 
+/**
+ * The card's hard length ceiling, read from the single owner in
+ * `descriptionHygiene.ts` so the whole-sentence clamp there and this bar cannot
+ * drift apart. They did, and a stored card line in the 201-280 band was accepted
+ * here and deleted there (#1878).
+ */
+const isPastCardLengthCeiling = (text: string): boolean =>
+  text.length > MAX_CARD_SHORT_DESCRIPTION_LENGTH ||
+  wordCount(text) > MAX_CARD_SHORT_DESCRIPTION_WORDS;
+
 export function shortDescriptionQuality(
   value: unknown,
   fullDescription: unknown,
   researchAreas?: unknown,
-  options?: { entityType?: unknown },
+  options?: { entityType?: ResearchEntityType },
 ): FieldQuality {
   const text = textValue(value);
   const full = textValue(fullDescription);
@@ -1438,13 +1702,14 @@ export function shortDescriptionQuality(
   if (text && wordCount(text) < 8 && !isConciseSpecificResearchDescription(text)) {
     flags.push('too-short');
   }
-  if (text && (text.length > 280 || wordCount(text) > 44)) flags.push('too-long');
+  if (text && isPastCardLengthCeiling(text)) flags.push('too-long');
   if (text && isSyntheticResearchHomeMetadataDescription(text)) flags.push('synthetic-placeholder');
   if (text && hasBrokenTemplate(text)) flags.push('broken-template');
   if (text && isResearchAreaTemplateLeakText(text)) flags.push('broken-template');
   if (text && hasDuplicatedLongFragment(text)) flags.push('duplicated-fragment');
   if (text && hasRecruitmentBoilerplate(text)) flags.push('recruitment-boilerplate');
   if (text && isSolicitationCallToActionShort(text)) flags.push('recruitment-boilerplate');
+  if (text && isPhilanthropicFundAppealText(text)) flags.push('fundraising-appeal');
   if (text && isDominatedByConsentBoilerplate(text)) flags.push('consent-boilerplate');
   if (text && hasMalformedGeneratedText(text)) flags.push('malformed-generated-text');
   if (text && isStudiesTemplateGlueMalformed(text)) flags.push('malformed-generated-text');
@@ -1500,6 +1765,7 @@ export function shortDescriptionQuality(
   }
   if (text && isResearchEntitySourceChromeText(text)) flags.push('profile-chrome');
   if (text && isTeachingOnlyProfileDescription(text)) flags.push('profile-chrome');
+  if (text && isTeachingOrAdvisingStatementProse(text)) flags.push('profile-chrome');
   if (
     text &&
     isResearchAreaPlaceholderDescription(text) &&
@@ -1526,6 +1792,7 @@ export function shortDescriptionQuality(
   if (text && isGrantSignificanceBoilerplateShort(text))
     flags.push('grant-significance-boilerplate');
   if (text && hasFragmentaryCardCopy(text)) flags.push('incomplete-sentence');
+  if (text && cardLeadDroppedFromOwnBody(text, full)) flags.push('incomplete-sentence');
   if (text && isTruncatedCardCopy(text)) flags.push('incomplete-sentence');
   if (text && isNonSelfContainedShortDescription(text)) flags.push('non-self-contained');
   if (
@@ -1558,6 +1825,39 @@ export function shortDescriptionQuality(
     flags: uniqueFlags(flags),
     isUseful: flags.length === 0,
   };
+}
+
+/**
+ * The `shortDescriptionQuality` flags that judge a card against a DIFFERENT body
+ * rather than judging the card text itself.
+ */
+const CARD_FLAGS_RELATIVE_TO_A_BODY: ReadonlySet<DescriptionQualityFlag> = new Set([
+  'same-as-full',
+  'copied-first-sentence',
+  'full-not-useful',
+]);
+
+/**
+ * The card bar for a candidate judged in isolation, with no body to compare it
+ * against.
+ *
+ * `confidenceResolver` ranks one field's observations at a time, so when it asks
+ * whether a `shortDescription` candidate is an adoptable research description it
+ * has no resolved body to hand. Every source-quality demotion there was scoped to
+ * `fullDescription` for exactly that reason: its promotion arm gates on
+ * `fullDescriptionQuality(...).isUseful`, a bar written for long prose, which a
+ * card line fails on length alone. So a served field accumulated defects with no
+ * source-quality gate at all (#2654).
+ *
+ * Derived from `shortDescriptionQuality` rather than re-listing its checks, because
+ * two owners of one bar is the recurring defect in this file (#1878). The candidate
+ * is passed as its own body and the three relational flags above are subtracted,
+ * which is what makes this the same bar minus the question it cannot ask.
+ */
+export function standaloneCardQuality(value: unknown): FieldQuality {
+  const quality = shortDescriptionQuality(value, value);
+  const flags = quality.flags.filter((flag) => !CARD_FLAGS_RELATIVE_TO_A_BODY.has(flag));
+  return { text: quality.text, flags, isUseful: flags.length === 0 };
 }
 
 const PROGRAM_CARD_EXCLUSION_CLAUSE_PATTERN =
@@ -1642,7 +1942,7 @@ export function programCardShortDescriptionQuality(
 
   if (!text) flags.push('blank');
   if (text && wordCount(text) < 6) flags.push('too-short');
-  if (text && (text.length > 280 || wordCount(text) > 44)) flags.push('too-long');
+  if (text && isPastCardLengthCeiling(text)) flags.push('too-long');
   if (text && isSyntheticResearchHomeMetadataDescription(text)) flags.push('synthetic-placeholder');
   if (text && hasBrokenTemplate(text)) flags.push('broken-template');
   if (text && isResearchAreaTemplateLeakText(text)) flags.push('broken-template');
@@ -1655,6 +1955,13 @@ export function programCardShortDescriptionQuality(
     flags.push('profile-chrome');
   }
   if (text && isResearchEntitySourceChromeText(text)) flags.push('profile-chrome');
+  // The card bar needs this too, not only the two body bars. A card line is one
+  // sentence, so the density arm can never reach it and only the structural arms
+  // apply - but a single sentence about a course is exactly what an extractor
+  // returns for `shortDescription` when it took a teaching statement for the
+  // body: "This course included a lab that focused on identifying the important
+  // plant species in each of the vegetation types."
+  if (text && isTeachingOrAdvisingStatementProse(text)) flags.push('profile-chrome');
   if (text && isAppointmentOnly(text)) flags.push('appointment-only');
   if (text && isRoleOnlyTitleFragment(text)) flags.push('role-only');
   if (text && hasFirstPersonShortLead(text)) flags.push('first-person');
@@ -1695,6 +2002,32 @@ export function deriveProgramCardShortDescription(fullDescription: unknown): str
     if (programCardShortDescriptionQuality(candidate, full).isUseful) return candidate;
   }
   return '';
+}
+
+/**
+ * The card line to serve for program-like copy.
+ *
+ * `Fellowship` is the live caller (#2215): a `ResearchEntity` reaches
+ * `isProgramLikeResearchEntity` only through an operator lock on `kind`, so
+ * without this the program card bar scored nothing a student reads. A fellowship
+ * conflates the two roles in one stored `summary` - card line on the browse
+ * surface, body on the detail surface when no separate `description` exists - so
+ * this returns the card line and leaves `summary` itself alone.
+ *
+ * A stored line that fails the bar is replaced by the first sentence of the
+ * program's own body that clears it, and kept whole when no sentence does,
+ * because dropping a card line lost more than keeping it (#1878). A body-less
+ * program therefore keeps its stored line: `full-not-useful` asks whether a
+ * derived card is grounded, which is not a defect in a source-asserted summary.
+ */
+export function programLikeCardShortDescription(input: {
+  shortDescription: unknown;
+  fullDescription: unknown;
+}): string {
+  const stored = typeof input.shortDescription === 'string' ? input.shortDescription : '';
+  if (!textValue(stored)) return stored;
+  if (programCardShortDescriptionQuality(stored, input.fullDescription).isUseful) return stored;
+  return deriveProgramCardShortDescription(input.fullDescription) || stored;
 }
 
 export function describesResearchFocus(value: unknown): boolean {
@@ -1811,8 +2144,161 @@ function restoreDanglingPronounSubject(candidate: string, leadSentence: string):
   return `${replacement}${candidate.slice(pronounMatch[0].length)}`;
 }
 
+const INTERROGATIVE_COLON_ELABORATION_PATTERN =
+  /:\s+(?:how|what|why|when|where|who|which)\b[\s\S]*$/i;
+
+/**
+ * A remainder that cannot stand without the clause the colon introduced,
+ * because the colon was the sentence's own object: "Among the questions we
+ * research and discuss are:", "...to answer the following questions:",
+ * "Questions we are interested in the lab include:". Cutting there leaves a
+ * card that promises a list and names nothing, or no predicate at all.
+ */
+const DANGLING_COLON_INTRODUCER_PATTERN =
+  /\b(?:are|is|was|were|include|includes|comprise|comprises|address|addresses|following|question|questions|like|namely|as\s+follows)$/i;
+
+/**
+ * The colon belongs to a work's title ("Bitter Pill: How Medical Bills Are
+ * Killing Us", "Speak Freely: Why Universities Must Defend Free Speech")
+ * rather than to an elaboration of a research claim. Title Case separates the
+ * two: a rhetorical-question elaboration reads as a sentence ("how best to
+ * assess, predict, and reduce the risk..."), a title capitalizes its content
+ * words. Short words are ignored because a title lower-cases its articles and
+ * prepositions.
+ */
+function isTitleCaseColonElaboration(elaboration: string): boolean {
+  const words = elaboration.match(/[\p{L}][\p{L}'’-]{3,}/gu) || [];
+  if (words.length < 2) return false;
+  const capitalized = words.filter((word) => /^\p{Lu}/u.test(word)).length;
+  return capitalized / words.length >= 0.6;
+}
+
+/**
+ * Drops a trailing rhetorical-question elaboration ("Much of my work asks what
+ * is distinctive about literary knowledge: how literary form engages
+ * perception, how criticism develops its arguments, and how...") so an
+ * over-long bio sentence still yields a card.
+ *
+ * It fires only where it buys something and costs nothing, because measured
+ * against Development the unguarded strip was wrong on 9 of the 10 entities it
+ * touched: it deleted the whole research claim from a sentence that already fit
+ * the card ("...has focused on youth suicide: how best to assess, predict, and
+ * reduce the risk of suicidal thoughts and behaviors early in life"), left
+ * predicate-less fragments where the colon introduced the sentence's own object
+ * ("Among the questions we research and discuss are."), and renamed published
+ * work by cutting a title at its subtitle colon ("...the author of Limbo and
+ * Pretentiousness."). This is the trailing-direction twin of the leading-strip
+ * finding in #2593: the risk is not missing a defect, it is deleting the best
+ * sentence.
+ *
+ * A sentence that already fits the card's hard ceiling is left whole, since the
+ * only thing dropping content can buy is length.
+ */
+function withoutInterrogativeColonElaboration(sentence: string): string {
+  const match = sentence.match(INTERROGATIVE_COLON_ELABORATION_PATTERN);
+  if (!match || match.index === undefined) return sentence;
+  if (sentence.length <= MAX_CARD_SHORT_DESCRIPTION_LENGTH) return sentence;
+  const remainder = sentence.slice(0, match.index).trim();
+  if (DANGLING_COLON_INTRODUCER_PATTERN.test(remainder)) return sentence;
+  if (isTitleCaseColonElaboration(match[0].replace(/^:\s*/, ''))) return sentence;
+  return `${remainder}.`;
+}
+
+/**
+ * A clause that only elaborates the claim before it - a methods list, an
+ * example list, a narrowing focus - and can therefore be dropped without
+ * changing what the sentence asserts. The connector is required: a comma
+ * followed by a bare noun phrase is a list item, and cutting there would
+ * misreport a three-item list as a two-item one.
+ */
+const TRAILING_MODIFIER_CLAUSE_CONNECTOR =
+  /^(?:using|utilizing|employing|applying|leveraging|including|combining|integrating|spanning|drawing|with|through|as|from|by|while|where|which|such)\b/i;
+
+/**
+ * The card for a body whose lead sentence is a single well-written sentence too
+ * long to be a card.
+ *
+ * Every other arm of the derivation either matches a source idiom or returns the
+ * lead sentence whole, so a lead over `MAX_CARD_SHORT_DESCRIPTION_LENGTH` failed
+ * `too-long` and the whole derivation returned nothing. Measured on Development
+ * that cost 19 `student_ready` rows their card: each fell back to the
+ * research-area chip template, so a row whose body opens "Investigates neural
+ * connectivity and developmental trajectories of functional brain networks from
+ * the third trimester of gestation ... using magnetic resonance imaging" served
+ * "Studies adaptive mechanisms of developing brain" instead.
+ *
+ * Truncation, never synthesis: the result is a prefix of the body's own
+ * sentence, so it cannot assert anything the source does not. Dropping is
+ * restricted to clauses a connector marks as elaboration, and the caller still
+ * puts the result through `shortDescriptionQuality`, so a cut that reads as a
+ * fragment or a bare noun phrase is refused rather than served.
+ *
+ * Hand-read against the complete population of 19 rather than a sample: 18 of
+ * the 19 cuts replaced a generic chip list with the row's own specific research
+ * claim, and every dropped span opened on "including", "using", or "with a
+ * focus on".
+ */
+function withoutTrailingModifierClauses(sentence: string): string {
+  const trimmed = textValue(sentence);
+  if (trimmed.length <= MAX_CARD_SHORT_DESCRIPTION_LENGTH) return '';
+  const clauses = trimmed.replace(/[.!?]+$/g, '').split(/,\s+/);
+  for (let keep = clauses.length - 1; keep >= 1; keep -= 1) {
+    if (!TRAILING_MODIFIER_CLAUSE_CONNECTOR.test(clauses[keep])) continue;
+    const candidate = `${clauses.slice(0, keep).join(', ')}.`;
+    if (candidate.length <= MAX_CARD_SHORT_DESCRIPTION_LENGTH) return candidate;
+  }
+  return '';
+}
+
+const RESEARCH_VERB_BY_SUBJECT =
+  /^(?:(?:Dr|Prof|Professor)\.?\s+)?([A-Z][\p{L}'’.-]*(?:\s+[A-Z][\p{L}'’.-]*){0,3})\s+(studies|investigates|examines|explores|researches|focuses\s+on|works\s+on)\s+/u;
+
+const ORGANIZATION_SUBJECT_HEAD_NOUN =
+  /\b(?:Lab|Laboratory|Center|Centre|Institute|Program|Programme|Group|Initiative|Project|Consortium|Network|Clinic|Core|Department|School|University|College)\b/i;
+
+// A sentence-initial common noun is capitalised like a surname but is not a
+// subject to drop: "Research examines how human groups used natural resources"
+// already reads as a card, and dropping its subject left "Examines ..." short
+// enough to fail the card bar on five measured rows.
+const NON_PERSON_SENTENCE_SUBJECT =
+  /^(?:research|work|works|study|studies|scholarship|teaching|interests?|publications?|projects?|current|recent|ongoing|future|this|that|these|those|the|a|an|our|his|her|their|my|its|it|he|she|they|we|faculty|members?|team|topics?|areas?|fields?)$/i;
+
+const capitalizeFirstLetter = (value: string): string =>
+  value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value;
+
+/**
+ * Drops a person subject ahead of a research verb, the way every rule in
+ * `normalizeLead` above drops an organization one.
+ *
+ * A faculty research profile's research paragraph names the person, because that
+ * is who does the research: "Professor Lauenroth studies ecosystems in dry
+ * areas". The card convention is subjectless ("Studies ..."), so keeping the name
+ * cost the card both `too-short` and `non-self-contained`, and the whole
+ * derivation then returned nothing - which falls through to the research-area
+ * chip template that `sanitizeServedResearchEntityCopyFields` blanks at serve
+ * time, so the row lost its card, failed the public-description invariant, and
+ * left the served surface with a correct body sitting on it.
+ *
+ * Research verbs only. A career verb ("Professor Lauenroth is the Cullman
+ * Professor of ...") is a CV line, and stripping its subject would promote an
+ * appointment into the card. The organization head-noun guard keeps this off the
+ * subjects the rules above are written to rewrite, so an unmatched lab or centre
+ * name is never silently handled here instead.
+ */
+function withoutPersonSubject(sentence: string): string {
+  const match = sentence.match(RESEARCH_VERB_BY_SUBJECT);
+  if (!match) return sentence;
+  const subject = match[1];
+  if (ORGANIZATION_SUBJECT_HEAD_NOUN.test(subject)) return sentence;
+  // A possessive subject means the "verb" is a noun ("The Yale Cancer Center's
+  // studies encompass ..."), so there is no subject to drop.
+  if (/['’]s$/.test(subject)) return sentence;
+  if (NON_PERSON_SENTENCE_SUBJECT.test(subject)) return sentence;
+  return `${capitalizeFirstLetter(match[2].replace(/\s+/g, ' '))} ${sentence.slice(match[0].length)}`;
+}
+
 function normalizeLead(sentence: string): string {
-  return textValue(sentence)
+  const rewritten = textValue(sentence)
     .replace(/^INFORMATION FOR\s+(?:Research Focus|Areas of Focus)\s+/i, '')
     .replace(
       /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+conducts\s+research\s+focused\s+on\b/i,
@@ -1944,8 +2430,8 @@ function normalizeLead(sentence: string): string {
     .replace(/^Our group develops\b/i, 'Develops')
     .replace(/^Our group works on\b/i, 'Studies')
     .replace(/^Our group is interested in\b/i, 'Studies')
-    .replace(/^Our work focuses on\b/i, 'Studies')
-    .replace(/:\s+(?:how|what|why|when|where|who|which)\b[\s\S]*$/i, '.');
+    .replace(/^Our work focuses on\b/i, 'Studies');
+  return withoutInterrogativeColonElaboration(withoutPersonSubject(rewritten));
 }
 
 function methodPhrase(sentence: string): string {
@@ -2138,6 +2624,9 @@ const PERSON_NAME_SUBJECT_PREDICATE =
 const startsWithPersonNameSubjectPredicate = (value: string): boolean =>
   PERSON_NAME_SUBJECT_PREDICATE.test(value);
 
+const CAREER_HISTORY_VERB_PATTERN =
+  /\b(?:studied|received|earned|completed|graduated|trained|held|served|founded|co-founded|directed|joined)\b/i;
+
 function leadingScholarlyFieldListSummary(sentences: string[], full: string): string {
   const first = textValue(sentences[0]);
   if (!first || first.length > 140) return '';
@@ -2150,6 +2639,13 @@ function leadingScholarlyFieldListSummary(sentences: string[], full: string): st
   ) {
     return '';
   }
+  // A sentence whose own verb is a past-tense career or training fact is a CV
+  // line, not a field list, so prefixing "Studies " doubles the verb and promotes
+  // a degree run into the card: "Studies <Name> studied Classics at <College>
+  // (BA 1989) and Classics and Ancient History at <University> (MA, PhD 1995)."
+  // The present-tense arm above cannot see it, and the same verb battery already
+  // fails closed at serve time as `leadingDoctorDegreeOpenerPattern`.
+  if (CAREER_HISTORY_VERB_PATTERN.test(first)) return '';
   if (
     !/\b(?:Arabic|American|Asian|Black|Classical|Comparative|English|European|French|German|Greek|Hebrew|History|Humanities|Islamic|Jewish|Latin|Literature|Medieval|Modern|Music|Philosophy|Poetry|Religion|Studies|Theory)\b/i.test(
       first,
@@ -2172,6 +2668,14 @@ function laterResearchActivitySummary(sentences: string[], full: string): string
   if (!laterResearchSentence) return '';
 
   const cleaned = textValue(laterResearchSentence)
+    // "... activities are FOCUSED ON x" needs a verb that governs a participle, so
+    // it is rewritten before the bare-copula arms below. Substituting "Conducts"
+    // there produced the served card "Conducts focused on the application of mass
+    // spectrometry ...", which is not a sentence.
+    .replace(
+      /^(?:(?:His|Her|Their)\s+)?current\s+activities\s+are\s+(?:focused|centered|centred)\s+on\b/i,
+      'Focuses on',
+    )
     .replace(/^Current activities are\b/i, 'Conducts')
     .replace(/^(?:He|She|They)\s+(?:did|does|conducts?)\b/i, 'Conducts')
     .replace(/^(?:His|Her|Their)\s+current\s+activities\s+are\b/i, 'Conducts')
@@ -2833,7 +3337,11 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
   // make, not a new synthesis (#1533 reopen: schmidt-camacho-ask8's "Her
   // scholarship examines..." only needs "Her" grounded to her own name).
   const namedLead = restoreDanglingPronounSubject(lead, sentences[0]);
-  return namedLead !== lead && shortDescriptionQuality(namedLead, rawFull).isUseful
-    ? namedLead
-    : '';
+  if (namedLead !== lead && shortDescriptionQuality(namedLead, rawFull).isUseful) return namedLead;
+
+  for (const candidate of [namedLead, lead]) {
+    const shortened = withoutTrailingModifierClauses(candidate);
+    if (shortened && shortDescriptionQuality(shortened, rawFull).isUseful) return shortened;
+  }
+  return '';
 }

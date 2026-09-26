@@ -5,6 +5,7 @@
  * scrapers — any outbound fetch to a host derived from user input or stored data must go through it.
  */
 import net from 'net';
+import type { LookupAddress } from 'dns';
 import dns from 'dns/promises';
 import http from 'http';
 import https from 'https';
@@ -127,17 +128,80 @@ export const isPrivateAddress = (addr: string): boolean => {
   ].some(([base, prefix]) => isIpv6InCidr(clean, String(base), Number(prefix)));
 };
 
-export const isPublicHostname = async (hostname: string): Promise<boolean> => {
-  const clean = stripIpv6Brackets(hostname);
-  if (net.isIP(clean)) return !isPrivateAddress(clean);
-  try {
-    const records = await dns.lookup(clean, { all: true });
-    if (records.length === 0) return false;
-    return records.every((r) => !isPrivateAddress(r.address));
-  } catch {
-    return false;
-  }
+/**
+ * Why a hostname is not usable, not merely that it is not. Callers that only need
+ * a yes/no keep using `isPublicHostname`; callers that must tell a name which no
+ * longer exists from one we refuse to reach need the distinction, because those
+ * are opposite facts: the first is about the resource, the second about us.
+ */
+export type HostnameResolution =
+  | { kind: 'public' }
+  | { kind: 'private-address' }
+  | { kind: 'unresolvable' }
+  | { kind: 'resolver-failure' };
+
+/**
+ * Only NXDOMAIN and NODATA even claim that a name has no record. Every other
+ * lookup failure (SERVFAIL, a timeout, `EAI_AGAIN`) is our resolver having a bad
+ * moment and must stay inconclusive, or a DNS blip would retire live citations.
+ */
+const NAME_DOES_NOT_EXIST_DNS_CODES = new Set(['ENOTFOUND', 'ENODATA']);
+
+/**
+ * Delays before each re-ask of a claimed negative. A single 250ms re-ask survives
+ * one dropped packet and nothing more: during a resolver outage lasting seconds
+ * both attempts fail inside the same window, the negative is recorded as
+ * confirmed, and a live host is retired. Measured, not theorised - a pass run
+ * from a machine with an intermittently failing resolver wrote 154 such verdicts
+ * and 134 of them answered 200 when re-probed from a healthy network (#2775).
+ *
+ * A genuinely absent name costs three cheap lookups. A transient failure gets
+ * more than ten seconds to recover, which is the difference that matters.
+ */
+const NAME_LOOKUP_RETRY_DELAYS_MS = [250, 2_000, 10_000] as const;
+
+const nameDoesNotExist = (error: unknown): boolean => {
+  const code = (error as { code?: unknown })?.code;
+  return typeof code === 'string' && NAME_DOES_NOT_EXIST_DNS_CODES.has(code);
 };
+
+const classifyLookupResult = (records: LookupAddress[]): HostnameResolution => {
+  if (records.length === 0) return { kind: 'unresolvable' };
+  return records.every((r) => !isPrivateAddress(r.address))
+    ? { kind: 'public' }
+    : { kind: 'private-address' };
+};
+
+export const classifyHostnameResolution = async (
+  hostname: string,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<HostnameResolution> => {
+  const clean = stripIpv6Brackets(hostname);
+  if (net.isIP(clean)) {
+    return isPrivateAddress(clean) ? { kind: 'private-address' } : { kind: 'public' };
+  }
+
+  const ask = async (): Promise<HostnameResolution> => {
+    try {
+      return classifyLookupResult(await dns.lookup(clean, { all: true }));
+    } catch (error) {
+      return nameDoesNotExist(error) ? { kind: 'unresolvable' } : { kind: 'resolver-failure' };
+    }
+  };
+
+  let verdict = await ask();
+  for (const delayMs of NAME_LOOKUP_RETRY_DELAYS_MS) {
+    // Only a claimed negative is re-asked. A resolver failure is already
+    // inconclusive, and anything else is an answer, so neither costs a retry.
+    if (verdict.kind !== 'unresolvable') return verdict;
+    await sleep(delayMs);
+    verdict = await ask();
+  }
+  return verdict;
+};
+
+export const isPublicHostname = async (hostname: string): Promise<boolean> =>
+  (await classifyHostnameResolution(hostname)).kind === 'public';
 
 export const ssrfSafeLookup: LookupFunction = (hostname, options, callback) => {
   dns
@@ -160,10 +224,22 @@ export const ssrfSafeLookup: LookupFunction = (hostname, options, callback) => {
     .catch((error) => callback(error as NodeJS.ErrnoException, '', 0));
 };
 
+export type SsrfBlockedReason =
+  | 'invalid-url'
+  | 'unsupported-scheme'
+  | 'credentials'
+  | 'port'
+  | 'private-address'
+  | 'unresolvable'
+  | 'resolver-failure';
+
 export class SsrfBlockedError extends Error {
-  constructor(message = 'Blocked by SSRF guard') {
+  readonly reason: SsrfBlockedReason;
+
+  constructor(message = 'Blocked by SSRF guard', reason: SsrfBlockedReason = 'invalid-url') {
     super(message);
     this.name = 'SsrfBlockedError';
+    this.reason = reason;
     Object.setPrototypeOf(this, SsrfBlockedError.prototype);
   }
 }
@@ -180,34 +256,35 @@ const isAllowedPublicHttpPort = (url: URL): boolean =>
  */
 export const assertPublicHttpUrl = async (rawUrl: string): Promise<URL> => {
   if (typeof rawUrl !== 'string') {
-    throw new SsrfBlockedError('Invalid URL');
+    throw new SsrfBlockedError('Invalid URL', 'invalid-url');
   }
 
   const trimmed = rawUrl.trim();
   if (!trimmed || trimmed.length > MAX_SSRF_PUBLIC_HTTP_URL_LENGTH) {
-    throw new SsrfBlockedError('Invalid URL');
+    throw new SsrfBlockedError('Invalid URL', 'invalid-url');
   }
   if (hasUnsafePublicHttpUrlCharacter(trimmed)) {
-    throw new SsrfBlockedError('Invalid URL');
+    throw new SsrfBlockedError('Invalid URL', 'invalid-url');
   }
 
   let parsed: URL;
   try {
     parsed = new URL(trimmed);
   } catch {
-    throw new SsrfBlockedError('Invalid URL');
+    throw new SsrfBlockedError('Invalid URL', 'invalid-url');
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new SsrfBlockedError('Unsupported URL scheme');
+    throw new SsrfBlockedError('Unsupported URL scheme', 'unsupported-scheme');
   }
   if (parsed.username || parsed.password) {
-    throw new SsrfBlockedError('URL credentials are not allowed');
+    throw new SsrfBlockedError('URL credentials are not allowed', 'credentials');
   }
   if (!isAllowedPublicHttpPort(parsed)) {
-    throw new SsrfBlockedError('URL port is not allowed');
+    throw new SsrfBlockedError('URL port is not allowed', 'port');
   }
-  if (!(await isPublicHostname(parsed.hostname))) {
-    throw new SsrfBlockedError('URL resolves to a private or non-public address');
+  const resolution = await classifyHostnameResolution(parsed.hostname);
+  if (resolution.kind !== 'public') {
+    throw new SsrfBlockedError('URL resolves to a private or non-public address', resolution.kind);
   }
   return parsed;
 };

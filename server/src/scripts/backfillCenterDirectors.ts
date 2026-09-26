@@ -32,6 +32,7 @@ import type { MaterializerObservationLike } from '../scrapers/entityMaterializer
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,7 +40,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SOURCE_NAME = 'center-director-llm';
 const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
-const LEAD_ROLES = ['pi', 'co-pi', 'director', 'co-director'];
+const LEAD_ROLES = Array.from(LEAD_ROLE_LEGACY_LABELS);
 const DEFAULT_OBSERVATION_CONFIDENCE = 0.6;
 const CENTER_DIRECTOR_BACKFILL_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 

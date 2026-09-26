@@ -1,11 +1,11 @@
 ---
 name: architecture
-description: Use when an agent needs the Yale Research repo map, tech stack, commands, route inventory, service inventory, naming conventions, environments, external integrations, or general architecture context before making or explaining a code change.
+description: Use when an agent needs the y/labs repo map, tech stack, commands, route inventory, service inventory, naming conventions, environments, external integrations, or general architecture context before making or explaining a code change.
 ---
 
 # Architecture
 
-Yale Research is a monorepo with a React client and an Express server communicating over REST.
+y/labs is a monorepo with a React client and an Express server communicating over REST.
 MongoDB Atlas is the primary data store.
 Meilisearch handles search with semantic plus keyword support.
 Yale CAS provides SSO authentication.
@@ -21,6 +21,26 @@ Routes define endpoints and middleware chains.
 Controllers extract request data, delegate to services, and format responses.
 Services contain business logic, DB operations, and external API calls.
 Models are Mongoose schemas with indexes.
+
+### Import order
+
+Read top to bottom as "may import".
+`scripts/` sits at the top because an operator entrypoint composes every layer below it.
+
+```
+scripts -> routes -> controllers -> services -> scrapers -> middleware -> utils -> db -> models
+```
+
+`models/` and `db/` are the bottom, and that is the half currently enforced: `no-restricted-imports` in `eslint.config.js` fails a build where either imports a higher layer.
+A stored enum is part of the storage contract rather than of whichever lane writes it, so it belongs in `models/storedVocabularies.ts`; the interpreting layer re-exports it so the prose explaining how a value is chosen stays beside the logic that chooses it.
+
+Two known violations of the order above are measured but not yet enforced, because both need a file move rather than a rule.
+Do not add a rule for either without doing the move first, and do not "fix" them with an exception list, which is how a boundary rule dies.
+
+- **26 edges reach up into `scripts/`** from `services/`, `scrapers/`, `utils/` and `index.ts`, because 16 files there are load-bearing libraries rather than CLIs (the `*Core.ts` suffix is the tell, plus `scriptWriteGuards.ts`, `operatorDatabaseEnvironment.ts`, `sweepStageFlags.ts`, `gateRefreshScheduler.ts`). Extracting them rewrites imports in about 256 files, dominated by the 212 operator scripts that call `assertScriptApplyAllowed`. Worth doing as a dedicated change when the tree is quiet, not alongside feature work.
+- **6 edges reach from `utils/` into `scrapers/utils/`** for generic text and name helpers (`htmlText`, `personNameCasing`, `profilePublicityRegions`, `researchAreaCanonicalization`, `scraperHelpers`, `prompts/index`). These have 6 to 464 importers each, and the right fix may be to move the consumer rather than the helper.
+
+Cycles are not the problem here and a cycle rule is not worth adding: the whole tree measured 3 in 1,616 files on 2026-09-24.
 
 ## Stack
 
@@ -64,15 +84,30 @@ Models are Mongoose schemas with indexes.
 | `yarn --cwd client test:ci`                                      | Client Vitest once.                                                                          |
 | `yarn --cwd server test`                                         | Server Vitest suite.                                                                         |
 | `yarn --cwd server scrape <cmd>`                                 | Scraper CLI.                                                                                 |
-| `yarn --cwd server gates:refresh`                                | Regenerate canonical gate scorecards.                                                        |
+| `yarn --cwd server gates:refresh`                                | Regenerate canonical gate scorecards and store them (`docs/gate-scorecard-board.md`).        |
 | `yarn --cwd server model-refactor:inventory --environment <env>` | Run the read-only research-model Phase 0 inventory.                                          |
 | `yarn model-refactor:inventory:beta`                             | Run aggregate-only Beta inventory through the external read-only profile.                    |
 | `yarn model-refactor:inventory:production-copy`                  | Run aggregate-only ProductionCopy inventory through its separate external read-only profile. |
 | `yarn model-refactor:inventory:validate-evidence`                | Validate a private inventory against its versioned recovery manifest.                        |
-| `yarn --cwd server model-refactor:query-cost`                    | Run the bounded Phase 0 MongoDB hot-path audit described in the Phase 0 runbook.             |
-| `yarn --cwd server model-refactor:access-review-projection`      | Dry-run or apply the environment-local admin access-review projection reconciliation.        |
 | `yarn --cwd server model-refactor:identity-plan`                 | Produce the bounded read-only Phase 2 account, person, role, and quarantine plan.            |
 
+
+Server test timeouts are owned by `server/vitest.config.ts`: `testTimeout` 10000 ms and `hookTimeout` 60000 ms.
+The hook budget is deliberately long because over a hundred suites start a `MongoMemoryReplSet` or `MongoMemoryServer` in `beforeAll` and stop it in `afterAll`, and that teardown outlasts vitest's 10000 ms default under full-suite parallel load.
+Do not add a per-hook timeout to a new MongoMemory setup or teardown, because the config already covers it, and `server/src/scripts/__tests__/vitestHookBudget.test.ts` pins the config default.
+An explicit hook argument wins over the config, so never write one below the configured `hookTimeout`: that reintroduces #2903 for the suite that carries it, and the guard parses every hook call in the `server/src` test and spec files and fails on an argument below the config value or on one it cannot resolve to a numeric literal.
+Existing hooks still pass an argument at or above the budget, which is harmless, and a setup genuinely slower than 60000 ms may keep its larger one.
+The guard reads its threshold from the config rather than from a copy, so raising `hookTimeout` also raises the threshold and turns every hook argument that now sits below the new value into a guard failure: raise the budget and delete those arguments in the same change.
+This applies to hooks only.
+`testTimeout` stays at 10000 ms, so a slow `it` still needs its own argument.
+
+The server suite is fenced off from the local environment by `server/src/test/hermeticEnvironment.ts`, registered as the only `setupFiles` entry.
+It neutralises `dotenv.config()` and `dotenv/config`, deletes every name `server/.env` and `server/.env.example` declare except the ones the runner and the operating system own (`NODE_ENV`, `CI`, `PATH`, `HOME`, `TMPDIR`, `TZ`), and replaces `utils/meiliClient` with a client that refuses every call.
+A test run therefore sees the environment CI sees whether or not a `server/.env` is present, which is the point: before the fence, `browseSchoolFacet()` in one suite asserted against the live Yale school list, and four suites upserted synthetic fixture documents into the search index the local dev stack serves (#2966).
+A suite that needs a search index declares its own `vi.mock('../../utils/meiliClient', ...)`, and a suite that needs a database starts its own `mongodb-memory-server`.
+A suite that spawns a real CLI builds the child environment with `hermeticChildEnvironment({ MONGODBURL: <memory uri> })` from the same file, never with `{ ...process.env }`.
+A module mock stops at the process boundary and a spawned script re-runs `dotenv.config()` for itself, so the child is fenced by its environment alone: unroutable backend values it cannot re-resolve, because `dotenv` only fills a name that is absent, plus the `YLABS_SKIP_LOCAL_DOTENV=true` the scripts honour.
+Never read a connection string or a feature flag from `process.env` in a test, and never re-load an env file inside one.
 
 Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test undergraduate session.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for another dev account.
@@ -145,7 +180,7 @@ Beta is the staging gate.
 | Beta        | Render `ylabs-gr4v.onrender.com`  | `beta`                     |
 | Prod        | Render `yalelabs.onrender.com`    | `prod`                     |
 
-Yale-network scraper fetches run from the VPN-connected local machine.
+Scraper fetches run from the local machine and need no Yale VPN or campus wifi; only private-address hosts such as `ensemble.yale.edu` are Yale-network-only.
 Development runs can fetch and materialize locally.
 Beta operator runs fetch observations into the `Beta` database without local materialization, then the Beta Render service materializes the recorded run ID and updates private Beta Meilisearch.
 Use `docs/data-refresh-runbook.md` for the canonical commands.

@@ -15,7 +15,7 @@ The engine was built and merged as a series of behavior-safe pull requests.
 
 ### Prevention lever (resolve-at-mint)
 
-- Unified canonical-alias ledger and service (#2087): a delete-safe, multi-key, cycle-guarded `canonical_aliases` collection that generalizes `research_entity_redirects`.
+- Unified canonical-alias ledger and service (#2087): **retired in #3027.** The ledger existed to survive deletion of the record it pointed at, and merged shells are no longer deleted, so an archived row's own `canonicalGroupId` tombstone is the single mapping. Its one non-redundant capability went with it: the non-normalized `website-url`, `profile-lab-url` and `source-url` keys had no other resolver. #3036 restored the `website-url` arm without a ledger and without a stored key, by enumerating the stored spellings the normalizer folds into a key; `profile-lab-url` and `org-name` remain unresolved because their keys lower-case part of the value and so have no enumerable inverse.
 - `resolveCanonical` orchestrator plus per-type key extractors (#2094): strength-ordered resolution that reuses the existing dedupe guards verbatim and never merges (it returns existing, mint, ambiguous, or blocked).
 - Resolve-at-mint wiring for users (#2096) and for research entities and fellowships (#2098): the materializer consults `resolveCanonical` before minting, so a duplicate resolves to its canonical instead of being minted and merged later.
 
@@ -46,22 +46,23 @@ The engine was built and merged as a series of behavior-safe pull requests.
 ## Flags
 
 All three are read from the environment and default OFF.
-When unset, the pipeline behaves exactly as before each change.
+When unset, the pipeline behaves exactly as before each change, with one exception: an observation prune now needs `C4_LOSSLESS_INGEST` declared (`=false`) before `--apply` is honored, because a separate prune process cannot read an unset flag as proof that the target's materializer excludes superseded rows (#2944).
+Rollback therefore means setting the flags OFF rather than unsetting them; see step 4 of the go-live sequence.
 
-| Flag | Enables | Notes |
-| --- | --- | --- |
-| `C4_RESOLVE_AT_MINT_USERS` | Resolve a user to its canonical (netid, email, ORCID) before minting | Closes the after-mint User email/ORCID dedupe gap |
-| `C4_RESOLVE_AT_MINT_ENTITIES` | Resolve a research entity or fellowship to its canonical before minting | Honors the non-demoting invariant (defers to mint if resolving would demote a tier) |
-| `C4_LOSSLESS_INGEST` | Stop write-time prose drop and latest-wins supersession; project over the full retained log | Store-changing; relies on `collapseLatestWins` plus the ranked quality preference |
+| Flag                          | Enables                                                                                     | Notes                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `C4_RESOLVE_AT_MINT_USERS`    | Resolve a user to its canonical (netid, email, ORCID) before minting                        | NOT WIRED: no code reads this flag, and no caller passes `type: 'researcher'` to `resolveCanonical`, so setting it changes nothing (#2270). Its person-identity veto is now correct and fails closed, but it is still waiting on a caller |
+| `C4_RESOLVE_AT_MINT_ENTITIES` | Resolve a research entity or fellowship to its canonical before minting                     | PREVENTS NOTHING TODAY: after #3027 `findEntityCandidatesByKey` resolves only `slug` for an entity and `source-key` for a fellowship, and the mint path already resolved both before the resolver runs, so no duplicate shape reaches it (#2572). Honors the non-demoting invariant (defers to mint if resolving would demote a tier) |
+| `C4_LOSSLESS_INGEST`          | Stop write-time prose drop and latest-wins supersession; project over the full retained log | Store-changing; relies on `collapseLatestWins` plus the ranked quality preference; disables observation pruning (#2944) |
 
-Order to flip on a target environment: backfill the canonical aliases first, then enable the resolve-at-mint flags, then enable lossless ingest.
+Order to flip on a target environment: enable the resolve-at-mint flags, then enable lossless ingest.
+The canonical-alias ledger is retired (#3027), so resolve-at-mint resolves only through live candidate lookups; see step 2 of the go-live sequence.
 
 ## New CLIs
 
 Run from `server/`.
 Data-writing CLIs are dry-run by default and require an explicit confirm flag plus a Development database guard to apply.
 
-- `yarn data:backfill-canonical-aliases` (dry-run; `--apply --confirm-canonical-alias-backfill` on Development): seed the alias ledger from existing redirects and dedupe tombstones.
 - `yarn research-entity:coverage-synthesis` (dry-run; `--apply --confirm-coverage-synthesis` on Development): grounded gpt-5-mini description synthesis for description-blocked entities; requires a hand-created `coverage-synthesis-llm` source row (see the go-live sequence below).
 - `yarn fuzzy:labeled-set`: report the labeled positives and negatives and their counts.
 - `yarn fuzzy:residual-report`: run the fuzzy matcher over a scope and report pair-completeness and precision and recall against the labeled set.
@@ -70,24 +71,55 @@ Data-writing CLIs are dry-run by default and require an explicit confirm flag pl
 ## Dev-first go-live sequence
 
 1. Create the `coverage-synthesis-llm` source row in the Development database by hand; `scrape:seed-sources` does not carry this source, and the coverage CLI errors clearly if the row is absent.
-2. Backfill the canonical aliases: run `yarn data:backfill-canonical-aliases` dry-run, review, then `--apply --confirm-canonical-alias-backfill`.
-3. Set `C4_RESOLVE_AT_MINT_USERS` and `C4_RESOLVE_AT_MINT_ENTITIES` in the Development environment.
-4. Set `C4_LOSSLESS_INGEST` in the Development environment.
+2. No alias backfill step is needed for prevention to work, but do not expect a re-projection to seed the ledger.
+The canonical-alias ledger is retired (#3027), so there is nothing to seed and nothing to back-fill.
+   Prevention does not depend on the ledger being populated - `resolveCanonical` does a live `findCandidatesByKey` lookup for every `unique` and `strong` key, which is what catches a duplicate of an entity that already exists.
+   The ledger adds durability, so a key still resolves after its canonical has been merged or deleted, and it fills in as new entities mint.
+3. `C4_RESOLVE_AT_MINT_USERS` has no reader, as the table above records, so do not set it.
+   `C4_RESOLVE_AT_MINT_ENTITIES` failed the same test until #3036, for a different reason (#2572): retiring the canonical-alias ledger (#3027) removed the only resolver for the `website-url`, `profile-lab-url` and `org-name` keys, so `findEntityCandidatesByKey` resolved only `slug` for an entity and `source-key` for a fellowship.
+   The mint path resolves both of those itself, and more broadly, before the resolver is reached: `findEntityDocByIdentifier` looks up `{ slug: entityKey }` with no `archived` filter, and the resolver's `slug` key is the observed `slug` field.
+   Measured on Development on 2026-09-22: of 8,175 active `slug` observations, **0** carry a value that differs from their `entityKey`, and of 356 active fellowship `sourceKey` observations, **0** differ.
+   Control on the same query: 8,088 distinct entityKeys where the two are equal, so the comparison reads values rather than returning an empty set.
+
+   #3036 restored the `website-url` arm, by enumerating the stored spellings a key folds together rather than storing a normalized copy of the URL on the row.
+   The flag now changes something, and the size of the something is measured: of 3,889 entityKeys carrying an active `websiteUrl` or `sourceUrl` observation, 101 reach the resolver at all, and of those **32** carry a `website-url` key exactly one live row already holds, so 32 mints fold instead of duplicating.
+   Nothing on Development is ambiguous on that key today.
+   A `profile-lab-url` arm would add 5, and is not built because that key lower-cases its path segments and so has no enumerable inverse.
+   Do not treat the 786-of-1,240 simulated prevention as a forecast; `docs/decisions.md` records why it measures the dedupe idea rather than this flag.
+
+   Setting it is therefore a product call about whether 32 folds is worth a resolver in the mint path, not a blocked step.
+   Verify either position with `entityMaterializerResolveAtMintEntities.integration.test.ts`: four cases pin the `website-url` arm (fold, spelling-agnostic fold, ambiguous, name veto), and two reachability cases still assert that a shared specific profile URL and a shared normalized org name mint.
+   When it is time, either the sweep's process environment or `server/.env` works, and the choice no longer affects the test suite: the C4 tests clear the flags for themselves (`clearC4Flags`, `src/scrapers/__tests__/c4FlagTestEnv.ts`, #2063), and as of #2966 the server suite cannot read `server/.env` at all because `server/src/test/hermeticEnvironment.ts` deletes every name that file declares.
+4. Set `C4_LOSSLESS_INGEST` in the Development environment, and unlike the resolve-at-mint flags above, set it in `server/.env` rather than only in the sweep's shell.
+   Observation retention runs in its own process, so a flag exported into the sweep alone is invisible to a later `scrape prune-observations` or `observations:prune-dead` shell; both prune entry points load `server/.env`, so declaring it there is what makes the guard hold for every process that reaches this database.
+   An undeclared flag is treated as unknown rather than off, so the failure mode is a refused delete rather than a silent one.
+   This disables observation retention, including a sweep's `--prune-between-phases` prune stage, and that is deliberate: under lossless ingest the read scope widens to the whole retained log, so a superseded row can be the only evidence a field has and the delete stops being a storage reclaim (#2944).
+   `docs/research-data-pipeline.md` owns that coupling, the measured sole-evidence counts, and the guard contract.
+   To reclaim storage under the flag, either set it to `false` for the prune (unsetting it is the undeclared case above, which refuses to apply) or add a scope-aware filter first; do not work around the guard.
 5. Run a full re-projection (`yarn research-entity:rematerialize` over the corpus, or the exhaustive Development sweep).
+   This applies the decide-late lever to existing rows; it does not retro-resolve existing duplicates, which stay for the dedup engine.
 6. Run the student-visibility gate and let it sync Meilisearch.
 7. Measure: `yarn eval:pipeline --sample=800 --llm --gate` and `yarn fuzzy:residual-report`, and compare against the C0 baseline below.
+   Re-baseline rather than comparing against the numbers below directly: they were measured on a 1,144,695-observation corpus, and Development held 420,906 observations over 7,000 entities on 2026-09-11.
 8. Only after the Development numbers hold, promote to Beta and then production by setting the same flags there; this is an explicit operator launch decision.
 
 ## Measured gains
 
 The eval harness measured these on the Development corpus (1,144,695 observations projecting to 6,234 research entities; 4,596 live).
 
-| Metric | C0 baseline | C4 (measured) |
-| --- | --- | --- |
-| Card-complete rate | 0.585 - 0.594 | ~0.70 (+10 points, LLM-enabled decide-late plus synthesis) |
-| Student-ready rate | ~0.49 | improves with the description and duplicate levers |
+Re-measured on 2026-09-11 with `yarn eval:pipeline --sample=400` (no LLM) against 420,906 observations over 7,000 entities, with all three flags still off: 1,240 ground-truth merged pairs, 786 caught, dedupe recall 0.634, 786 avoided mints.
+
+Read that row as a ceiling for the dedupe idea, never as a measurement of the flag (#2572).
+`scoreDedupeStrategy` blocks on its own `identityKeysFor` key set (`url`, `profile`, `pi`, `org`, `name`, `namedept`, `orcid`) and its own union-find, and never calls `resolveCanonical` or `findEntityCandidatesByKey`, so it scores keys the shipped resolver has no resolver for.
+The number it reports is what prevention would be worth if the resolver could read those keys, which since #3027 it cannot.
+Note the same run predicts 2,035 new merge pairs of which 0 are same-PI, so the fuzzy residual matcher's precision needs review before any of it is applied.
+
+| Metric                          | C0 baseline                  | C4 (measured)                                                   |
+| ------------------------------- | ---------------------------- | --------------------------------------------------------------- |
+| Card-complete rate              | 0.585 - 0.594                | ~0.70 (+10 points, LLM-enabled decide-late plus synthesis)      |
+| Student-ready rate              | ~0.49                        | improves with the description and duplicate levers              |
 | Avoided mints (churn prevented) | 0 (1,161 minted then merged) | 595 with basic keys, 700 with rich keys (of 1,158 known merges) |
-| Dedupe recall | n/a | 0.514 basic, 0.605 rich keys |
+| Dedupe recall                   | n/a                          | 0.514 basic, 0.605 rich keys                                    |
 
 Not-ready blocker breakdown (why the other ~50% is held), from the gate recompute (tier-match rate 0.965):
 

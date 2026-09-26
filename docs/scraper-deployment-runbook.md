@@ -19,8 +19,8 @@ production-copy claim is accepted:
 yarn security:smoke:production
 ```
 
-The same check is also available as the `Production Security Smoke` GitHub
-Actions workflow. It fails if the deployed app is stale, if `/api/config` is
+The same check also runs automatically as the `Post-Promotion Verify` GitHub
+Actions workflow on every push to `main`. It fails if the deployed app is stale, if `/api/config` is
 missing CSP or Permissions-Policy, if current API routes are absent, or if
 authenticated/private surfaces no longer enforce the expected boundary.
 Override `SMOKE_API_BASE` or `SMOKE_APP_BASE` only when intentionally checking a
@@ -31,7 +31,7 @@ Use this with:
 
 - [`docs/research-data-pipeline.md`](./research-data-pipeline.md) for the stable evidence-to-product data flow.
 - [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md) for per-source expectations and audit commands.
-- [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) for source readiness status, WorkPlanner follow-ups, and ranked production tasks.
+- [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) for standing launch priorities and the operating baseline. Source readiness status, WorkPlanner follow-ups, and outstanding production tasks are tracked in GitHub issues, not there.
 
 ## Operating Model
 
@@ -50,15 +50,13 @@ The web app can stay on Render while scraper execution remains separate:
 
 ```txt
 Source metadata
-  -> ScrapeJobLock for cron runs
+  -> ScrapeJobLock for every writing run, cron or CLI
   -> ScrapeRun
   -> append-only Observation rows
   -> entity materialization
   -> ResearchEntity/Researcher/RoleAssignment/etc.
   -> access materialization where evidence supports it
   -> Signal (access types)
-  -> logistics materialization where exact official evidence supports each independent claim
-  -> Signal (logistics types)
   -> Meilisearch sync or later reindex
 ```
 
@@ -154,17 +152,7 @@ For each Beta source:
 - Confirm public surfaces do not expose non-public scraped contact data.
 - Confirm expected access artifacts match the source's coverage metadata.
 
-After a bounded logistics-producing run, save the read-only coverage and sampled-review artifact:
-
-```bash
-SCRAPER_ENV=beta yarn --cwd server undergraduate-logistics:audit \
-  --sample-size=25 \
-  --minimum-precision=0.95 \
-  --output=/tmp/ylabs-undergraduate-logistics-audit.json
-```
-
-Review every sampled claim against its official source, record the decisions in the audit command's `{"decisions":[...]}` input shape, and rerun with `--decisions=<reviewed-file>`.
-Do not broaden the source list or enable recurring logistics acquisition until parent issue `#187` records the accepted bounded private Beta run, `precision.releaseReady=true`, and accepted unknown, stale, conflict, validation-rejection, and per-claim coverage totals.
+The undergraduate-logistics release audit is retired with the vertical (#3088); there is no logistics acquisition left to gate.
 
 Beta can be seeded from a local machine pointed at the Beta database. This is usually cheaper than paying for long-lived cloud compute during initial backfill.
 
@@ -177,7 +165,7 @@ Production writes are off by default: no operator should run a production copy, 
 
 ### Production Promotion Gate Checklist
 
-Record each item in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) before changing production data. These unchecked boxes are gate fields, not evidence of completed work. Leave them unchecked until a human operator provides the value and accepts the promotion window.
+Record each item in the promotion's GitHub issue before changing production data. These unchecked boxes are gate fields, not evidence of completed work. Leave them unchecked until a human operator provides the value and accepts the promotion window.
 
 - [ ] **Backup and restore drill:** Create the fresh Atlas backup or restore point, name its identifier and rollback owner, and confirm the restore drill or exact restore procedure has been exercised for the target cluster.
 - [ ] **Dataset versioning:** Assign a promotion dataset version such as `prod-promote-YYYY-MM-DD-<lane>` and attach it to the accepted Beta snapshot or per-source production run IDs, saved reports, and Meili rebuild outputs.
@@ -191,8 +179,8 @@ Required before any production copy or write:
 
 - Atlas backup or restore point exists.
 - The operator can name the exact restore point and the person who can restore it.
-- Source readiness is recorded in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
-- The Beta trust-audit caveats in the roadmap are either fixed or explicitly accepted for this release.
+- Source readiness is recorded in the promotion's GitHub issue.
+- The open Beta trust-audit caveats are either fixed or explicitly accepted for this release.
 - Promotion lane is chosen and recorded: accepted Beta copy or guarded production delta.
 - Promotion dataset version is recorded and tied to accepted reports or source run IDs.
 - Privacy payload gate is accepted for public student routes.
@@ -259,7 +247,6 @@ Apply mode is blocked unless the restore point and both production confirmations
 BETA_MONGODBURL='<beta-mongodb-url>' \
 PRODUCTION_MONGODBURL='<production-mongodb-url>' \
 PROMOTION_DATASET_VERSION='prod-promote-2026-05-28-lane-a-beta-copy' \
-ATLAS_RESTORE_POINT='<fresh-production-restore-point>' \
 CONFIRM_LANE_A_COPY=true \
 CONFIRM_PROD_SCRAPE=true \
 yarn --cwd server production:promote-beta-copy --apply
@@ -404,16 +391,16 @@ These are not automatic blockers if still accurate and accepted in the roadmap, 
 - Local Meili may lack the semantic `default` embedder; production Meili must be checked independently.
 - Browser smoke may require host libraries that are missing in some local workspaces; if Playwright cannot run locally, use production API smokes plus a browser from an environment with the required libraries.
 
-### Local, VPN, And Render Constraints
+### Local And Render Constraints
 
-- Local operator runs can use Yale VPN, local accepted-input files, local Meili, and browser tooling. Confirm `MONGODBURL`, Meili host, and `SCRAPER_ENV` before every run.
+- Local operator runs can use local accepted-input files, local Meili, and browser tooling. Confirm `MONGODBURL`, Meili host, and `SCRAPER_ENV` before every run.
 - Render web service should not run scraper backfills. Keep scraper execution in local CLI, one-off jobs, or source-specific cron.
-- Render cron should run only public/network-reachable sources with all required environment variables configured. It cannot assume Yale VPN, local files under `/tmp/ylabs-accepted-inputs`, local Meili, or interactive browser dependencies.
-- For sources that need Yale network access, private credentials, or manual accepted-input files, run a guarded local or one-off job instead of Render cron.
+- Render cron should run only sources whose dependencies exist in the container, with all required environment variables configured. Network reachability is not the constraint: no scraper source requires Yale VPN or campus wifi, and `docs/data-refresh-runbook.md` records the paired measurement. What Render cron cannot assume is local files under `/tmp/ylabs-accepted-inputs`, local Meili, interactive browser dependencies, or a MongoDB Atlas access-list entry for its egress addresses.
+- For sources that need private credentials, manual accepted-input files, or the `renderedFetch` python and browser toolchain, run a guarded local or one-off job instead of Render cron. The single exception on network grounds is any host on a private address, currently only `ensemble.yale.edu`, which no off-campus runner can reach.
 
 ### Post-Gate Documentation
 
-After a successful gate, update [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) with:
+After a successful gate, update the promotion's GitHub issue with:
 
 - Promotion lane used.
 - Backup or restore-point identifier, without secrets.
@@ -448,6 +435,13 @@ The cron command:
   Because the re-gate is corpus-wide and unconditional, a gate-logic change self-applies on the next scheduled per-source run with no version bump and no manual `student-visibility:gate` op.
 - Heartbeats the lock during long runs and releases it with the last `ScrapeRun` id on success or failure.
 
+The `run` and `materialize` commands take the same per-source lock when they write (#2498), so a second writer on one source is refused rather than interleaved.
+They differ from `cron` in how they report it: `cron` skips with exit `0` because a missed cron tick is routine, while `run` and `materialize` exit nonzero because an operator asked for work that did not happen.
+A `--dry-run` does not contend for the lock and instead warns when a live holder exists.
+Interrupting a writing command releases its lock before the process dies, so a Ctrl-C does not block the retry that usually follows it.
+A refusal names the current holder and when its lease expires, so the choice between waiting and investigating does not need a database query.
+`skills/scrapers/SKILL.md` owns the concurrency contract, including why `scrape_runs.status` cannot be used as a liveness signal.
+
 Use `--output <path>` to save the full cron result JSON from a cron run. The artifact includes lock-skip outcomes when a source lock is held, and completed runs include the scrape result, materialization result, optional inferred-PI lead reclaim result, optional visibility-gate result, and ScrapeRun report.
 
 Suggested starting cadence:
@@ -463,7 +457,7 @@ Suggested starting cadence:
 | `yale-directory`                   | weekly                               | Broad directory paging; watch runtime.                                                               |
 | `nih-reporter`                     | weekly or monthly                    | Enrichment only; conflicts should remain understood aggregate churn.                                 |
 | `nsf-award-search`                 | weekly or monthly                    | Enrichment only.                                                                                     |
-| `lab-microsite-undergrad-llm`      | weekly legacy-only after WorkPlanner | Paid/LLM source; logistics acquisition remains manual and bounded until the parent gate is accepted. |
+| `lab-microsite-undergrad-llm`      | weekly legacy-only after WorkPlanner | Paid/LLM source; emits undergraduate-access evidence, description text and quote fields only, since logistics is retired (#3088). |
 | `undergrad-fellowships-recipients` | monthly/manual                       | Requires accepted real CSV/manual data.                                                              |
 
 Use separate Render Cron jobs per source or per source group and stagger start times. If a job needs more than the platform's cron runtime limits, split it into batches or use a background worker temporarily for that backfill only.
@@ -475,9 +469,9 @@ Do not enable recurring cron for a source until its row is accepted. A source ma
 | Source                            | Cron acceptance prerequisites                                                                                                                                                                                                                                                                  | First cron posture                                                                                                                                                                      | Hold if                                                                                                                                                                                |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ysm-atoz-index`                  | Manual production or accepted Beta evidence shows entity discovery is stable, `materialization.errors = 0`, and source health has no unexplained errors.                                                                                                                                       | Weekly, one source-specific cron, report saved with run ID.                                                                                                                             | Selector/fetch failures, duplicate entity churn, or unexpected access artifacts.                                                                                                       |
-| `department-undergrad-research`   | Source metadata exists, output is verified as undergraduate-access evidence rather than generic department discovery, and public contact policy is reviewed.                                                                                                                                   | Manual or low-frequency cron after one accepted guarded run.                                                                                                                            | It emits unsupported access claims, non-public contact data, or department pages require Yale-network-only access.                                                                     |
+| `department-undergrad-research`   | Source metadata exists, output is verified as undergraduate-access evidence rather than generic department discovery, and public contact policy is reviewed.                                                                                                                                   | Manual or low-frequency cron after one accepted guarded run.                                                                                                                            | It emits unsupported access claims, non-public contact data, or department pages resolve to a private address.                                                                         |
 | `yale-college-fellowships-office` | Fellowship program mapping and public application/contact routes are reviewed; no private recipient or applicant data is required.                                                                                                                                                             | Monthly or term-bound cron, aligned to public deadline cycles.                                                                                                                          | The run depends on manual/private files, creates person-level scraped data, or deadline state cannot be verified.                                                                      |
-| `lab-microsite-undergrad-llm`     | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested. Recurring runs remain legacy-only until parent issue `#187` records an accepted bounded private Beta run and sampled logistics precision audit. | Weekly legacy-only after WorkPlanner, with saved report and sampled public UI smoke. Logistics acquisition remains manual and explicitly allowlisted until the parent gate is accepted. | Cost cap is missing, source emits raw non-public emails, logistics review is incomplete or below threshold, parent acceptance is absent, or materialization conflicts are unexplained. |
+| `lab-microsite-undergrad-llm`     | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested. | Weekly legacy-only after WorkPlanner, with saved report and sampled public UI smoke. | Cost cap is missing, source emits raw non-public emails, or materialization conflicts are unexplained. |
 
 ### Recurring fellowship refresh
 
@@ -536,7 +530,11 @@ Beta retention requires a new target-bound dry-run, the same restore-boundary re
 Never reuse Development candidate counts or an old Beta artifact.
 
 The retention command deletes only old `superseded: true` observations that are not referenced by durable materialized records.
-It always preserves active observations, recent observations inside the age window, observations attached to the latest retained runs per source, and observations referenced by provenance, access signals, logistics claims, or supersession links.
+It always preserves active observations, recent observations inside the age window, observations attached to the latest retained runs per source, and observations referenced by provenance, access signals, or supersession links.
+Retention is only projection-neutral while the materializer's read scope excludes superseded rows, so it refuses to apply under `C4_LOSSLESS_INGEST`, forces a dry-run when that flag is undeclared, and reports `projectionNeutral` in the artifact; `docs/research-data-pipeline.md` owns that contract and the reasoning behind it (#2944).
+Read `projectionNeutral` before filing an artifact in a promotion packet: under lossless ingest the candidate count is a count of live evidence, not of dead storage.
+Declare `C4_LOSSLESS_INGEST=false` (or `true`) in the environment the target materializes from, so the prune's view of the read scope is the materializer's view and not a blank shell's.
+The artifact records the downgrade as `mode: dry-run` and `options.apply: false`, and `readScopeDeclared: false` names the cause, so a promotion packet whose apply run reports zero deletions can be read as an undeclared read scope rather than a clean corpus.
 Use `--output <path>` on dry-runs and apply runs so the private promotion packet has eligible, protected, candidate, deleted, and retained-run counts plus command, target `environment`, `db`, and parsed `options`.
 
 Production retention stays disabled.
@@ -618,7 +616,7 @@ Use these controls before spending cloud or API money:
 - Use `--limit`, `--only`, `--since`, and source-specific caps during the first pass.
 - Keep LLM sources gated until the exact target list is accepted.
 - Use `--use-cache` for development reruns only.
-- Complete the WorkPlanner cost-control tasks in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) before unattended recurring paid/broad jobs.
+- Complete the tracked WorkPlanner cost-control work before unattended recurring paid/broad jobs.
 - `lab-microsite-description-llm` and `lab-microsite-undergrad-llm` skip the paid LLM call when a per-entity `sourceContentHash` observation matches the fresh page bytes, so repeat runs (including `--exhaustive` sweeps that bypass WorkPlanner freshness) do not re-pay for unchanged pages.
   Pass `--force-llm` only when intentionally re-extracting a source whose hash is up to date.
   `lab-microsite-description-llm` also budgets for its research-page crawl: an entity whose page publishes a research anchor costs up to two extra HTTP fetches per run because the crawl feeds the hash input and therefore runs before that gate, and a crawled page that wins the description can add one LLM call for its own methods (#2176).
@@ -649,33 +647,40 @@ If a production run is bad:
 3. For minor field-quality issues, use manual locks or a fixed rerun after inspection.
 4. For a bad Beta copy or broad bad materialization, restore from the pre-run Atlas backup.
 5. Rebuild or resync Meilisearch after restoring MongoDB.
-6. Record the rollback and follow-up decision in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
+6. Record the rollback and follow-up decision in the promotion's GitHub issue.
 
-For a bad undergraduate logistics acquisition run, first generate a claim-local dry-run plan:
-
-```bash
-SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
-  yarn --cwd server undergraduate-logistics:rollback \
-  --run=<scrapeRunId> \
-  --output=/tmp/ylabs-undergraduate-logistics-rollback.json
-```
-
-If the plan is accepted and the broad Atlas restore threshold is not met, add `--apply --confirm-undergraduate-logistics-rollback`.
-The command marks only the selected run's logistics observations as rolled back, restores the newest eligible predecessor observations, and rematerializes affected entities from the remaining evidence.
-Run the coverage and precision audit again before resuming acquisition.
+Claim-local rollback of a single run was only ever implemented for undergraduate logistics, which is retired (#3088), so there is no per-claim rollback path today: a bad run is handled by the steps above.
 
 `Source.enabled=false` blocks cron execution by default. Use `--force-disabled` only for an explicit manual recovery run after checking the source-health report.
 
 ### Rolling back a written description
 
-`fullDescription` and `shortDescription` are coupled, and treating either in isolation blanks the other.
+`fullDescription` and `shortDescription` are coupled, and treating either in isolation leaves the other wrong.
 Never roll back or replace one without reverting or re-deriving the other in the same operation, then re-materializing.
 
 The coupling is the `winnerFullUseful` guard in `server/src/scrapers/entityMaterializer.ts`: a resolved winner is accepted only when `fullDescriptionQuality(...).isUseful` holds **and** `isFullDescriptionRestatementOfShortDescription(...)` does not.
 A winner that restates the stored short is rejected, and the ranked walk can terminate having written nothing.
-The guard only ever clears `fullDescription`, so the failure is invisible to the visibility gate: the short description survives, the record still looks complete, and the tier stays `student_ready` while the detail page has no prose to serve.
+Since #2721 the materializer answers that pair by keeping the body and reopening the card for re-derivation instead of clearing `fullDescription`, so a stale short no longer costs a row its prose.
+What it costs is the distinct body the walk refused: the row keeps a redundant pair until the stale short is unset, and card reconsideration writes a replacement only when one clears the card bar and beats the bare research-areas echo.
 
-This is how 19 entities lost their description, 14 of them served, after 99 synthesized `fullDescription` observations were superseded without touching the `shortDescription` values that had been derived from them.
+The walk itself may not answer a pair rejection with a career biography, and until #2901 it did.
+Both reasons a winner is rejected here are relationships to the CARD rather than judgements of the body, and a biography satisfies both by construction: a resume never restates a research card and is never thinner than one.
+So the rows that served a resume under a research card were exactly the rows whose card was good, which is also why no count caught them: the card gate passes and `missing_card_description` never fires.
+The walk now carries the same explicit biography rejection the access-signal lane's displacement bar carries, keyed on the same two predicates the confidence resolver's bio demotion selects on, so what the resolver demotes the walk cannot re-adopt.
+Refusing every candidate leaves the resolver's winner in place, which is what the restatement branch above already wants.
+Measured on Development: 4 rows served a biography under a clean research card and now serve their research body, and 67 live rows are in the state where the walk had an acceptable biography to take, split 34 restatement and 33 poorer-than-card.
+A thinner research body under a richer card is the deliberate trade: the inversion is a redundant pair, while the biography is a data defect on the surface a student opened to look closer.
+
+`fullDescriptionQuality(...).isUseful` is therefore not a recoverability verdict, and sizing a description repair pass on it overstates what the pass can recover.
+The write path sanitizes a candidate before it judges it, so a body can clear every quality flag and still be reduced to nothing on the way in; that overcount is what sent a repair pass after rows the materializer was right to refuse while #2721 was being traced.
+Use `fullDescriptionWouldMaterialize` in `server/src/utils/researchEntityDescriptionQuality.ts`, which composes the sanitizer, the quality bar, and (when the caller supplies the row's stored card) the restatement guard in the write path's own order.
+Its doc comment owns the measured divergence and the reason the two verdicts disagree in both directions; do not restate those predicates here or in a repair script.
+
+Program-like entities keep a narrower version of the old clear.
+The materializer still empties a stored `fullDescription` that restates the card when no observation-backed body and no freshly derived card is in play, and that failure is invisible to the visibility gate: the short description survives, the record still looks complete, and the tier stays `student_ready` while the detail page drops to the surviving one-line card.
+It is a loss of prose rather than a blank page, and that is why no gate catches it: the public-description gate fails closed only when both fields reduce to empty, so a body-less row that still has a card reads as healthy on every check.
+
+Before #2721 the clear applied to every entity, and that is how 19 entities lost their description, 14 of them served, after 99 synthesized `fullDescription` observations were superseded without touching the `shortDescription` values that had been derived from them.
 Marking the observations superseded and re-materializing was not enough, because the stale short was the thing causing the blank.
 A perfectly good alternative was active and unused the entire time.
 
@@ -689,15 +694,17 @@ Procedure:
   Restoring both fields to their pre-rollback values is **not** automatically safe: the `studentReadyDescription` emit block in `server/src/scrapers/sources/labMicrositeUndergradLLMExtractor.ts` emits one string as `fullDescription` at 0.55 and, when it is card-length, the same string again as `shortDescription` at 0.55.
   What decides whether such a pair is stable is how its two members are attributed, not the duplication.
   Both of those pushes share one `...base`, so they carry the same `sourceName` and `sourceUrl`, the materializer treats the projected short as self-derived from the full, the guard is not applied, and the row keeps serving its prose.
-  Re-attribute the same string across two URLs or two sources, which is what a hand repair does and what a second source writing the card produces, and the short reads as independent evidence, so the guard fires and blanks the full.
+  Re-attribute the same string across two URLs or two sources, which is what a hand repair does and what a second source writing the card produces, and the short reads as independent evidence, so the guard fires: the row keeps the duplicated body, the ranked walk writes nothing distinct, and the detail page has nothing the card does not already say.
 - When the restored pair would be attributed that way, no data repair holds until the emitting source stops producing the duplicate.
   Fix the source, then repair the rows.
 - Use `server/src/scripts/descriptionPairRollbackCore.ts` to build the observation filter, so the query cannot be scoped to one field by accident, and so rows stored under `entityId` rather than `entityKey` are matched too.
 - Unset the projected `shortDescription` and `fieldProvenance.shortDescription` on the entity document in the same operation, before re-materializing.
-  `shortDescription` is not in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`, so the projected card outlives the observation that produced it and the guard keeps refusing every replacement full: the record stays blank however many times it is re-materialized.
+  `shortDescription` is not in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`, so the projected card outlives the observation that produced it and the guard keeps refusing every replacement full: the record settles on a body that restates the stale card however many times it is re-materialized, rather than on the distinct one the ranked walk was holding.
   `planDescriptionPairRollback` returns those paths in `entityFieldsToUnset`.
 - Verify afterwards on the served record, not on the supersede count.
-  `describeDescriptionPairRisk` reports the three failure states, using the same two predicates as the materializer guard: an empty full description, a full that restates the short and will therefore blank on the next materialize, and a full that is distinct but below the usefulness bar, which the ranked walk refuses to write.
+  `describeDescriptionPairRisk` reports the three failure states, using the same two predicates as the materializer guard: an empty full description, a full that restates the short and so serves the same sentence on the card and the detail page, and a full that is distinct but below the usefulness bar, which the ranked walk refuses to write.
+  A restating pair no longer blanks on the next materialize, because the materializer keeps the body and reconsiders the card instead, so treat that verdict as "the emitting source still needs fixing" rather than as "this row is about to lose its description".
+  The row serves that body however close the pair is: since #2721 the serve-time DTO no longer withholds a body that merely restates the card, so the detail page shows the stored body rather than falling back to the thinner card.
   Pass the whole served document, including `fieldProvenance`.
   It routes the short through the same self-derived exclusion the guard uses, so reading the raw stored short instead would report every re-derived card as a restatement and send an operator back to re-repair a healthy row.
 - Include an empty-`fullDescription`-on-`student_ready` count in any post-run diff.

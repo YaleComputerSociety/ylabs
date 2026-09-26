@@ -4,6 +4,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
+import { archivedEntityUpdate, PI_DEDUPE_ARCHIVE_REASON } from '../models/entityArchival';
+import {
+  rematerializeMergeCanonicalFillOnly,
+  type MergeCanonicalRematerialization,
+} from '../services/researchEntityMergeRematerializeService';
 import { RoleAssignment } from '../models/roleAssignment';
 import {
   buildFundingResearchEntityDedupePlan,
@@ -16,9 +21,13 @@ import {
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
   buildWebsiteUrlResearchEntityDedupePlan,
   normalizeWebsiteUrlIdentityKey,
+  partitionPlanByPersonProfileConflation,
+  personProfileIdentityFromUrl,
   specificProfileLabUrlIdentityKey,
   ORG_NAME_DEDUPE_ENTITY_TYPES,
   isLowTrustAreaShellSlug,
+  MERGE_RELINKABLE_OBSERVATION_FIELDS,
+  planStrandedFundingObservationRelink,
   type MultiPersonEntityQuarantine,
   type OfficialLabUrlDedupeRow,
   type OrgNameDedupeEntity,
@@ -34,10 +43,9 @@ import {
   type ArchivedEntityArtifactType,
 } from './repairArchivedEntityArtifactsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { isSweepStageOptedIn } from './sweepStageFlags';
+import { isSweepStageEnabledByDefault } from './sweepStageFlags';
 import { deleteFromIndex, syncEntities } from '../services/meiliSyncService';
 import { recomputeVisibilityAndResyncCanonicals } from '../services/researchEntityEponymousMergeService';
-import { recordResearchEntityMergeRedirects } from '../services/researchEntityMergeRedirectService';
 import {
   repairMergeSurvivorVisibility,
   type MergeSurvivorVisibilityRepair,
@@ -54,10 +62,13 @@ import {
 } from '../utils/researchEntityDescriptionQuality';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+if (process.env.YLABS_SKIP_LOCAL_DOTENV !== 'true') {
+  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+}
 
 const REVIEW_DECISION_APPLY_STATUS =
   'Accepted same-PI dedupe decisions can drive apply mode; only valid merge_into_canonical decisions are applied.';
@@ -86,6 +97,14 @@ export type ResearchEntityPiDedupeDecisionValue =
   | 'mark_distinct_homes'
   | 'defer_review';
 
+/**
+ * A merge that lowers the survivor's tier is an operator decision each time, so it takes
+ * a named confirm flag rather than a bare boolean. `--dry-run` names every row the flag
+ * would demote and the tier it would land on, so the flag is never the first place someone
+ * learns what it does (#3145).
+ */
+export const DEMOTING_MERGE_CONFIRM_FLAG = '--confirm-demoting-grant-shell-merge';
+
 export interface ResearchEntityPiDedupeArgs {
   apply: boolean;
   confirmResearchEntityPiDedupe: boolean;
@@ -98,6 +117,8 @@ export interface ResearchEntityPiDedupeArgs {
   websiteUrlOnly: boolean;
   reviewedProfileAreaOnly: boolean;
   sharedPersonId: boolean;
+  rematerializeCanonical: boolean;
+  confirmDemotingMerge: boolean;
   limit: number;
   limitProvided: boolean;
   maxApply: number;
@@ -176,6 +197,8 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     websiteUrlOnly: false,
     reviewedProfileAreaOnly: false,
     sharedPersonId: false,
+    rematerializeCanonical: false,
+    confirmDemotingMerge: false,
     limit: 10000,
     limitProvided: false,
     maxApply: 10,
@@ -234,6 +257,14 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     }
     if (arg === '--shared-person-id') {
       args.sharedPersonId = true;
+      continue;
+    }
+    if (arg === DEMOTING_MERGE_CONFIRM_FLAG) {
+      args.confirmDemotingMerge = true;
+      continue;
+    }
+    if (arg === '--rematerialize-canonical') {
+      args.rematerializeCanonical = true;
       continue;
     }
     if (arg === '--allow-empty-decisions') {
@@ -357,6 +388,149 @@ export function assertResearchEntityPiDedupeApplyAllowed(args: {
   if (plannedRepairs > args.maxApply) {
     throw new Error(`Apply would modify ${plannedRepairs} rows, above --max-apply.`);
   }
+}
+
+export function capResearchEntityPiDedupePlanByApplyBudget<
+  T extends { duplicateEntityIds: string[] },
+>(
+  plan: T[],
+  maxApply: number,
+): {
+  cappedPlan: T[];
+  deferredByCapGroups: number;
+  deferredByCapDuplicateEntities: number;
+} {
+  const budget = Math.max(0, maxApply);
+  const cappedPlan: T[] = [];
+  let cappedDuplicateEntities = 0;
+  for (const group of plan) {
+    const groupDuplicateEntities = group.duplicateEntityIds.length;
+    if (cappedDuplicateEntities + groupDuplicateEntities > budget) break;
+    cappedPlan.push(group);
+    cappedDuplicateEntities += groupDuplicateEntities;
+  }
+  const plannedDuplicateEntities = plan.reduce(
+    (sum, group) => sum + group.duplicateEntityIds.length,
+    0,
+  );
+  return {
+    cappedPlan,
+    deferredByCapGroups: plan.length - cappedPlan.length,
+    deferredByCapDuplicateEntities: plannedDuplicateEntities - cappedDuplicateEntities,
+  };
+}
+
+export interface ResearchEntityDedupeApplyOutcome {
+  archivedEntities?: number;
+  deletedEntities?: number;
+  deferredAsWouldDemote?: boolean;
+  deferredAsWouldSwapPinnedCanonical?: boolean;
+}
+
+export interface ResearchEntityDedupeApplyDeferrals {
+  appliedGroups: number;
+  deferredAsWouldDemoteGroups: number;
+  deferredAsWouldSwapPinnedCanonicalGroups: number;
+}
+
+/**
+ * A deferred group is still an entry in `applied`, so counting `applied.length` as
+ * merges reports work that never happened. Every read of an apply run - the stage
+ * delta and the top-level report alike - goes through here so the two cannot drift.
+ */
+export function countResearchEntityDedupeApplyDeferrals(
+  applied: ReadonlyArray<ResearchEntityDedupeApplyOutcome>,
+): ResearchEntityDedupeApplyDeferrals {
+  const deferredAsWouldDemoteGroups = applied.filter(
+    (result) => result.deferredAsWouldDemote === true,
+  ).length;
+  const deferredAsWouldSwapPinnedCanonicalGroups = applied.filter(
+    (result) => result.deferredAsWouldSwapPinnedCanonical === true,
+  ).length;
+  return {
+    appliedGroups:
+      applied.length - deferredAsWouldDemoteGroups - deferredAsWouldSwapPinnedCanonicalGroups,
+    deferredAsWouldDemoteGroups,
+    deferredAsWouldSwapPinnedCanonicalGroups,
+  };
+}
+
+export interface UrlIdentityDedupeStageDelta {
+  candidateGroups: number;
+  plannedGroups: number;
+  appliedGroups: number;
+  deferredAsWouldDemoteGroups: number;
+  deferredAsWouldSwapPinnedCanonicalGroups: number;
+  deferredByCapGroups: number;
+  archivedEntities: number;
+  deletedEntities: number;
+  quarantinedSameNameGroups: DedupeQuarantineCount;
+  quarantinedMultiPersonEntities: DedupeQuarantineCount;
+  quarantinedConflatedPersonProfileGroups: number;
+  visibilityRecomputed: number;
+  canonicalEntitiesResynced: number;
+  maxApply: number;
+}
+
+/**
+ * A quarantine count of `0` and a quarantine that never ran are different facts, and
+ * reporting both as `0` reads as "screened, found nothing". `buildSameNameDifferentPersonQuarantine`
+ * and `buildMultiPersonEntityQuarantine` are constructed only under `--shared-person-id`
+ * (default false), so every other lane reported two zeros for screens it never
+ * built. I trusted those zeros across several runs before checking (#2716).
+ *
+ * `partitionPlanByPersonProfileConflation` (#2748) does run on every lane, so the plan
+ * IS screened for person conflation; these two are the narrower same-name and
+ * multi-person checks, and only their reporting was misleading.
+ */
+export type DedupeQuarantineCount = number | 'not_evaluated';
+
+/**
+ * Report a quarantine's size only when it was actually constructed. Callers must route
+ * every quarantine count through this rather than reading `.length` directly: a mutation
+ * check on #2716 showed that reverting a single emission site restores the misleading
+ * `0` while its sibling still reads `not_evaluated`, and a unit test on the delta
+ * builder cannot catch that because the builder faithfully passes through whatever the
+ * emission site hands it.
+ */
+export function reportedQuarantineCount(
+  evaluated: boolean,
+  quarantine: readonly unknown[],
+): DedupeQuarantineCount {
+  return evaluated ? quarantine.length : 'not_evaluated';
+}
+
+export function buildUrlIdentityDedupeStageDelta(input: {
+  candidateGroups: number;
+  plannedGroups: number;
+  deferredByCapGroups: number;
+  applied: ReadonlyArray<ResearchEntityDedupeApplyOutcome>;
+  quarantinedSameNameGroups: DedupeQuarantineCount;
+  quarantinedMultiPersonEntities: DedupeQuarantineCount;
+  quarantinedConflatedPersonProfileGroups: number;
+  visibilityRecomputed: number;
+  canonicalEntitiesResynced: number;
+  maxApply: number;
+}): UrlIdentityDedupeStageDelta {
+  const deferrals = countResearchEntityDedupeApplyDeferrals(input.applied);
+  const sumApplied = (read: (result: (typeof input.applied)[number]) => unknown): number =>
+    input.applied.reduce((sum, result) => sum + (Number(read(result)) || 0), 0);
+  return {
+    candidateGroups: input.candidateGroups,
+    plannedGroups: input.plannedGroups,
+    appliedGroups: deferrals.appliedGroups,
+    deferredAsWouldDemoteGroups: deferrals.deferredAsWouldDemoteGroups,
+    deferredAsWouldSwapPinnedCanonicalGroups: deferrals.deferredAsWouldSwapPinnedCanonicalGroups,
+    deferredByCapGroups: input.deferredByCapGroups,
+    archivedEntities: sumApplied((result) => result.archivedEntities),
+    deletedEntities: sumApplied((result) => result.deletedEntities),
+    quarantinedSameNameGroups: input.quarantinedSameNameGroups,
+    quarantinedMultiPersonEntities: input.quarantinedMultiPersonEntities,
+    quarantinedConflatedPersonProfileGroups: input.quarantinedConflatedPersonProfileGroups,
+    visibilityRecomputed: input.visibilityRecomputed,
+    canonicalEntitiesResynced: input.canonicalEntitiesResynced,
+    maxApply: input.maxApply,
+  };
 }
 
 export function assertResearchEntityPiDedupeApplyBounded(args: {
@@ -653,16 +827,14 @@ export function chooseArchivedDocumentConflictOutcome(args: {
   return args.allowDeleteOnConflict ? 'delete' : 'blocked';
 }
 
-export function buildArchivedDocumentArchiveSet(args: {
+export function buildArchivedDocumentArchiveUpdate(args: {
   now: Date;
   relinkField?: string;
   relinkValue?: unknown;
   includeRelink: boolean;
-}): Record<string, unknown> {
-  const set: Record<string, unknown> = {
-    archived: true,
-    lastMaterializedAt: args.now,
-  };
+  archivedReason?: string;
+}): { $set: Record<string, unknown>; $unset: Record<string, ''> } {
+  const set: Record<string, unknown> = { lastMaterializedAt: args.now };
   if (
     args.includeRelink &&
     args.relinkField &&
@@ -671,7 +843,7 @@ export function buildArchivedDocumentArchiveSet(args: {
   ) {
     set[args.relinkField] = args.relinkValue;
   }
-  return set;
+  return archivedEntityUpdate(args.archivedReason || PI_DEDUPE_ARCHIVE_REASON, set);
 }
 
 export function buildResearchEntityDedupeReferenceFilter(args: {
@@ -835,6 +1007,13 @@ function isFullPersonLabName(normalizedName: string): boolean {
   return /\s+lab$/i.test(normalizedName) && tokens.length >= 2;
 }
 
+function primaryAppointmentProfileUrlFromLinks(urls: unknown): string | undefined {
+  if (!Array.isArray(urls)) return undefined;
+  return urls
+    .filter((url): url is string => typeof url === 'string')
+    .find((url) => Boolean(personProfileIdentityFromUrl(url)));
+}
+
 export async function loadSamePiCandidateRows(
   limit: number,
   options: {
@@ -883,6 +1062,19 @@ export async function loadSamePiCandidateRows(
       $project: {
         personId: { $toString: '$personId' },
         piDisplayName: '$person.displayName',
+        piPrimaryIdentityUrls: {
+          $map: {
+            input: {
+              $filter: {
+                input: { $ifNull: ['$person.profileLinks', []] },
+                as: 'link',
+                cond: { $eq: ['$$link.purpose', 'PRIMARY_IDENTITY'] },
+              },
+            },
+            as: 'link',
+            in: '$$link.url',
+          },
+        },
         entity: {
           id: { $toString: '$entity._id' },
           slug: '$entity.slug',
@@ -898,6 +1090,7 @@ export async function loadSamePiCandidateRows(
           recentGrants: '$entity.recentGrants',
           recentGrantCount: '$entity.recentGrantCount',
           fundingAgencies: '$entity.fundingAgencies',
+          identitySourceUrl: '$entity.fieldProvenance.slug.sourceUrl',
         },
       },
     },
@@ -905,6 +1098,7 @@ export async function loadSamePiCandidateRows(
       $group: {
         _id: { userId: '$personId' },
         piDisplayName: { $first: '$piDisplayName' },
+        piPrimaryIdentityUrls: { $first: '$piPrimaryIdentityUrls' },
         entities: { $addToSet: '$entity' },
       },
     },
@@ -929,7 +1123,7 @@ export async function loadSamePiCandidateRows(
               name: { $in: exactPersonNames },
             })
               .select(
-                '_id slug name kind entityType websiteUrl fullDescription shortDescription sourceUrls departments researchAreas recentGrants recentGrantCount fundingAgencies',
+                '_id slug name kind entityType websiteUrl fullDescription shortDescription sourceUrls departments researchAreas recentGrants recentGrantCount fundingAgencies fieldProvenance.slug.sourceUrl',
               )
               .lean()
           : [];
@@ -939,6 +1133,9 @@ export async function loadSamePiCandidateRows(
         normalizedName: `same-pi:${row._id.userId}`,
         piFirstName: firstName,
         piLastName: lastName,
+        primaryAppointmentProfileUrl: primaryAppointmentProfileUrlFromLinks(
+          row.piPrimaryIdentityUrls,
+        ),
         entities: [
           ...(row.entities || []).map((entity: { id?: string }) => ({
             ...entity,
@@ -960,6 +1157,7 @@ export async function loadSamePiCandidateRows(
               recentGrants: entity.recentGrants,
               recentGrantCount: entity.recentGrantCount,
               fundingAgencies: entity.fundingAgencies,
+              identitySourceUrl: entity.fieldProvenance?.slug?.sourceUrl,
             }))
             .filter((entity) => {
               if (entityIds.has(entity.id)) return false;
@@ -993,6 +1191,7 @@ async function loadSinglePiNameCandidateRows(limit: number) {
           recentGrants: '$recentGrants',
           recentGrantCount: '$recentGrantCount',
           fundingAgencies: '$fundingAgencies',
+          identitySourceUrl: '$fieldProvenance.slug.sourceUrl',
         },
       },
     },
@@ -1020,6 +1219,32 @@ async function loadSinglePiNameCandidateRows(limit: number) {
             },
           },
           { $group: { _id: '$personId' } },
+          {
+            $lookup: {
+              from: 'researchers',
+              localField: '_id',
+              foreignField: '_id',
+              as: 'person',
+            },
+          },
+          { $unwind: { path: '$person', preserveNullAndEmptyArrays: true } },
+          {
+            $project: {
+              primaryIdentityUrls: {
+                $map: {
+                  input: {
+                    $filter: {
+                      input: { $ifNull: ['$person.profileLinks', []] },
+                      as: 'link',
+                      cond: { $eq: ['$$link.purpose', 'PRIMARY_IDENTITY'] },
+                    },
+                  },
+                  as: 'link',
+                  in: '$$link.url',
+                },
+              },
+            },
+          },
         ],
         as: 'piUsers',
       },
@@ -1035,6 +1260,9 @@ async function loadSinglePiNameCandidateRows(limit: number) {
       .map((row: any) => ({
         userId: row.piUsers?.[0]?._id ? String(row.piUsers[0]._id) : `name:${row._id}`,
         normalizedName: row._id,
+        primaryAppointmentProfileUrl: primaryAppointmentProfileUrlFromLinks(
+          row.piUsers?.[0]?.primaryIdentityUrls,
+        ),
         entities: row.entities,
       })),
   );
@@ -1476,14 +1704,14 @@ async function archiveOrDeleteDuplicateDocument(args: {
   const existing = await collection.findOne({ _id: id }, { projection: { archived: 1 } });
   if (!existing) return 'skipped';
   if (Object.prototype.hasOwnProperty.call(existing, 'archived')) {
-    const set = buildArchivedDocumentArchiveSet({
+    const update = buildArchivedDocumentArchiveUpdate({
       now: args.now,
       relinkField: args.relinkField,
       relinkValue: args.relinkValue,
       includeRelink: true,
     });
     try {
-      const result = await collection.updateOne({ _id: id }, { $set: set });
+      const result = await collection.updateOne({ _id: id }, update);
       return result.modifiedCount > 0 ? 'archived' : 'skipped';
     } catch (error: any) {
       if (error?.code !== 11000) throw error;
@@ -1491,14 +1719,12 @@ async function archiveOrDeleteDuplicateDocument(args: {
         try {
           const archiveOnly = await collection.updateOne(
             { _id: id },
-            {
-              $set: buildArchivedDocumentArchiveSet({
-                now: args.now,
-                relinkField: args.relinkField,
-                relinkValue: args.relinkValue,
-                includeRelink: false,
-              }),
-            },
+            buildArchivedDocumentArchiveUpdate({
+              now: args.now,
+              relinkField: args.relinkField,
+              relinkValue: args.relinkValue,
+              includeRelink: false,
+            }),
           );
           if (archiveOnly.modifiedCount > 0) return 'archived';
         } catch (retryError: any) {
@@ -1612,6 +1838,65 @@ async function applyDeleteModeArtifactPlan(args: {
     if (outcome === 'deleted') counts.artifactMergeDeleted += 1;
   }
 
+  return counts;
+}
+
+/**
+ * Re-key the duplicates' funding observations onto the survivor's `entityKey`.
+ *
+ * Runs before the survivor is re-materialized, because the re-projection is what turns
+ * the relinked evidence into a served value; relinking afterwards would leave the
+ * survivor serving the pre-merge union until some later pass (#3145).
+ */
+async function relinkStrandedFundingObservations(args: {
+  canonicalId: mongoose.Types.ObjectId;
+  duplicateIds: mongoose.Types.ObjectId[];
+  now: Date;
+}): Promise<Record<string, number>> {
+  const db = mongoose.connection.db;
+  const counts: Record<string, number> = {};
+  if (!db || !(await collectionExists('observations'))) return counts;
+
+  const entities = await ResearchEntity.find({
+    _id: { $in: [args.canonicalId, ...args.duplicateIds] },
+  })
+    .select('slug')
+    .lean<Array<{ _id: mongoose.Types.ObjectId; slug?: string }>>();
+  const survivorKey = entities.find((row) => String(row._id) === String(args.canonicalId))?.slug;
+  const duplicateKeys = args.duplicateIds.map(
+    (id) => entities.find((row) => String(row._id) === String(id))?.slug,
+  );
+  if (!survivorKey) return counts;
+
+  const observations = await db
+    .collection('observations')
+    .find({
+      entityKey: { $in: duplicateKeys.filter(Boolean) as string[] },
+      field: { $in: [...MERGE_RELINKABLE_OBSERVATION_FIELDS] },
+      retractedAt: { $exists: false },
+    })
+    .project({ _id: 1, entityKey: 1, field: 1, entityId: 1 })
+    .toArray();
+
+  const plan = planStrandedFundingObservationRelink({
+    survivorKey,
+    duplicateKeys,
+    observations: observations.map((row) => ({
+      id: row._id,
+      entityKey: row.entityKey,
+      field: row.field,
+      entityId: row.entityId,
+    })),
+  });
+  if (!plan) return counts;
+
+  const result = await db
+    .collection('observations')
+    .updateMany(
+      { _id: { $in: plan.ids as mongoose.Types.ObjectId[] } },
+      { $set: { entityKey: plan.survivorKey, updatedAt: args.now } },
+    );
+  counts['observations.entityKey.fundingRelinked'] = result.modifiedCount || 0;
   return counts;
 }
 
@@ -1764,8 +2049,12 @@ export const SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES_ENV =
   'SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES';
 export const DEFAULT_URL_IDENTITY_MERGE_MAX = 500;
 
+// Opt-in until #2699: the gate existed to keep Beta and Prod untouched pending Dev
+// validation, but `resolveDevelopmentPostRunOptions` already makes the whole
+// post-run set unreachable outside Development, and `resolveNonDemotingMerge`
+// defers instead of demoting (#2070), so the lane defaults on like its siblings.
 export function isUrlIdentityDedupeStageEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return isSweepStageOptedIn(env[SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES_ENV]);
+  return isSweepStageEnabledByDefault(env[SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES_ENV]);
 }
 
 const STUDENT_VISIBILITY_TIER_RANK: Record<string, number> = {
@@ -1783,7 +2072,7 @@ const STUDENT_VISIBILITY_RANK_TIER = [
 const mergeTierRank = (tier: unknown): number =>
   STUDENT_VISIBILITY_TIER_RANK[String(tier ?? '')] ?? STUDENT_VISIBILITY_TIER_RANK.operator_review;
 
-const MERGE_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+const MERGE_LEAD_ROLES = LEAD_ROLE_LEGACY_LABELS;
 
 function renderLeadMembersFromRoster(
   entries: ResearchEntityRosterEntry[],
@@ -1808,6 +2097,16 @@ function pickBestUsefulText(values: string[], isUseful: (value: string) => boole
   const useful = cleaned.filter(isUseful);
   const pool = useful.length > 0 ? useful : cleaned;
   return pool.sort((a, b) => b.length - a.length)[0] || '';
+}
+
+/**
+ * Mirrors the plan builders' `trustedAreaShellEntities` guard: an area or funding
+ * shell's generated blurb must never be promoted onto a real research home. Falls
+ * back to the full set when every twin is a shell, matching the plan's own fallback.
+ */
+function describableMergeTwins(docs: Array<Record<string, any>>): Array<Record<string, any>> {
+  const trusted = docs.filter((doc) => !isLowTrustAreaShellSlug(doc.slug));
+  return trusted.length > 0 ? trusted : docs;
 }
 
 /**
@@ -1848,12 +2147,7 @@ async function hydrateMergeDescriptions(
   const allDocs = await ResearchEntity.find({ _id: { $in: [canonicalId, ...duplicateIds] } })
     .select('_id slug fullDescription shortDescription researchAreas')
     .lean<Array<Record<string, any>>>();
-  // Mirror the plan builders' `trustedAreaShellEntities` guard: an area or
-  // funding shell's generated blurb must never be promoted onto a real research
-  // home. Fall back to the full set when every twin is a shell, matching the
-  // plan's own fallback.
-  const trusted = allDocs.filter((doc) => !isLowTrustAreaShellSlug(doc.slug));
-  const docs = trusted.length > 0 ? trusted : allDocs;
+  const docs = describableMergeTwins(allDocs);
   const unionAreas = Array.from(
     new Set(
       docs
@@ -1912,7 +2206,7 @@ export async function resolveNonDemotingMerge(
   const unionSourceUrls = unionStrings('sourceUrls');
   const unionDepartments = unionStrings('departments');
   const { fullDescription: bestFull, shortDescription: bestShort } = bestMergeDescriptions(
-    docs,
+    describableMergeTwins(docs),
     unionAreas,
   );
 
@@ -1981,6 +2275,8 @@ export async function applyResearchEntityDedupeMergeGroup(
     relinkReferences?: boolean;
     redirectReason?: string;
     neverDemote?: boolean;
+    pinnedCanonical?: boolean;
+    rematerializeCanonical?: boolean;
   },
 ) {
   const requestedCanonicalId = objectId(group.canonicalEntityId);
@@ -1998,10 +2294,12 @@ export async function applyResearchEntityDedupeMergeGroup(
     artifactRelink: {},
     scalarRelink: {},
     arrayRelink: {},
+    fundingObservationRelink: {},
     remainingReferencesBeforeDelete: {},
     removedFromSearchIndex: 0,
     survivorVisibility: { regated: false } as MergeSurvivorVisibilityRepair,
     survivorIndexResynced: false,
+    canonicalRematerialization: { attempted: false } as MergeCanonicalRematerialization,
   });
   if (
     !requestedCanonicalId ||
@@ -2025,6 +2323,17 @@ export async function applyResearchEntityDedupeMergeGroup(
         bestInputTier: resolution.bestInputTier,
       };
     }
+    // A reviewer who pinned the canonical did not authorise a different survivor, and
+    // `--delete-duplicates` would hard-delete the entity the plan named as the
+    // survivor, so a swap that would otherwise avoid a demotion defers instead.
+    const canonicalIsPinned = Boolean(options.pinnedCanonical) || options.deleteDuplicates;
+    if (canonicalIsPinned && String(resolution.canonicalId) !== String(requestedCanonicalId)) {
+      return {
+        ...zeroedResult(),
+        deferredAsWouldSwapPinnedCanonical: true,
+        bestInputTier: resolution.bestInputTier,
+      };
+    }
     canonicalId = resolution.canonicalId;
     duplicateIds = resolution.duplicateIds;
     hydratedFullDescription = resolution.hydratedFullDescription;
@@ -2042,23 +2351,17 @@ export async function applyResearchEntityDedupeMergeGroup(
     }
   }
 
-  const duplicateSlugDocs = await ResearchEntity.find({ _id: { $in: duplicateIds } })
-    .select('_id slug')
-    .lean<Array<{ _id: mongoose.Types.ObjectId; slug?: string }>>();
-  const duplicateSlugById = new Map(duplicateSlugDocs.map((doc) => [String(doc._id), doc.slug]));
-  await recordResearchEntityMergeRedirects({
-    canonicalEntityId: canonicalId,
-    mergedShells: duplicateIds.map((id) => ({
-      entityId: id,
-      slug: duplicateSlugById.get(String(id)),
-    })),
-    reason: options.redirectReason,
-    mergedAt: now,
-  });
-
   const canonicalIdentitySet: Record<string, unknown> = { lastObservedAt: new Date() };
-  const carriedName = String(group.canonicalName || '').trim();
-  const carriedWebsiteUrl = String(group.canonicalWebsiteUrl || '').trim();
+  // `canonicalName`/`canonicalWebsiteUrl` are the identity a donor twin should lend to
+  // the entity the plan named as canonical, gated on that entity carrying no concrete
+  // website of its own. A never-demote swap makes a different twin the survivor, and
+  // the gate was never evaluated for it, so carrying the pair over would rename a
+  // third entity and repoint it at another lab's site.
+  const survivorIsPlannedCanonical = canonicalId.equals(requestedCanonicalId);
+  const carriedName = survivorIsPlannedCanonical ? String(group.canonicalName || '').trim() : '';
+  const carriedWebsiteUrl = survivorIsPlannedCanonical
+    ? String(group.canonicalWebsiteUrl || '').trim()
+    : '';
   if (carriedName) {
     canonicalIdentitySet.name = carriedName;
     canonicalIdentitySet.displayName = carriedName;
@@ -2096,13 +2399,10 @@ export async function applyResearchEntityDedupeMergeGroup(
     ? { modifiedCount: 0 }
     : await ResearchEntity.updateMany(
         { _id: { $in: duplicateIds }, archived: { $ne: true } },
-        {
-          $set: {
-            archived: true,
-            canonicalGroupId: canonicalId,
-            lastObservedAt: now,
-          },
-        },
+        archivedEntityUpdate(PI_DEDUPE_ARCHIVE_REASON, {
+          canonicalGroupId: canonicalId,
+          lastObservedAt: now,
+        }),
       );
 
   const duplicateMembers = await RoleAssignment.find({
@@ -2173,6 +2473,9 @@ export async function applyResearchEntityDedupeMergeGroup(
   const arrayRelink = shouldRelinkReferences
     ? await relinkArrayReferences({ canonicalId, duplicateIds })
     : {};
+  const fundingObservationRelink = shouldRelinkReferences
+    ? await relinkStrandedFundingObservations({ canonicalId, duplicateIds, now })
+    : {};
   const remainingReferencesBeforeDelete = options.deleteDuplicates
     ? await countRemainingDuplicateReferences(duplicateIds)
     : {};
@@ -2188,6 +2491,21 @@ export async function applyResearchEntityDedupeMergeGroup(
   const idsToRemoveFromIndex =
     options.deleteDuplicates && (deleted.deletedCount || 0) === 0 ? [] : duplicateIds.map(String);
   await Promise.all(idsToRemoveFromIndex.map((id) => deleteFromIndex('researchEntity', id)));
+
+  // The merge relinks the duplicates' observations onto the survivor, so the
+  // survivor's evidence set is now the union of the group's. The reference relink
+  // above moves the ones carrying an `entityId`; `relinkStrandedFundingObservations`
+  // moves the funding ones keyed only by `entityKey`, which the `entityId` relink
+  // cannot see (#3145). Re-projecting it from
+  // that evidence is what makes the merge additive: the carry list above copies a
+  // fixed eleven fields, and everything outside it keeps the survivor's own value
+  // however thin, which is how a merge can leave a research home emptier than the
+  // twin it archived. Requires the relink, because projecting from a survivor's own
+  // evidence alone would unset what the carry just wrote.
+  const canonicalRematerialization =
+    options.rematerializeCanonical && shouldRelinkReferences
+      ? await rematerializeMergeCanonicalFillOnly(canonicalId)
+      : ({ attempted: false } as MergeCanonicalRematerialization);
 
   const survivorVisibility = await repairMergeSurvivorVisibility(canonicalId);
 
@@ -2213,10 +2531,12 @@ export async function applyResearchEntityDedupeMergeGroup(
     artifactRelink,
     scalarRelink,
     arrayRelink,
+    fundingObservationRelink,
     remainingReferencesBeforeDelete,
     removedFromSearchIndex: idsToRemoveFromIndex.length,
     survivorVisibility,
     survivorIndexResynced,
+    canonicalRematerialization,
   };
 }
 
@@ -2294,6 +2614,8 @@ async function main() {
     slug,
     reviewedProfileAreaOnly,
     sharedPersonId,
+    rematerializeCanonical,
+    confirmDemotingMerge,
     acceptedDecisions,
     allowEmptyDecisions,
     decisionTemplateOutput,
@@ -2313,6 +2635,7 @@ async function main() {
   await mongoose.connect(process.env.MONGODBURL);
 
   const usesNonPiLane = officialLabUrlOnly || profileLabUrlOnly || orgNameOnly || websiteUrlOnly;
+  const unattendedUrlIdentityLane = profileLabUrlOnly || websiteUrlOnly;
   const officialLabUrlRows: OfficialLabUrlDedupeRow[] = officialLabUrlOnly
     ? await loadOfficialLabUrlCandidateRows(limit)
     : [];
@@ -2348,21 +2671,24 @@ async function main() {
   const multiPersonEntityQuarantine: MultiPersonEntityQuarantine[] = sharedPersonId
     ? buildMultiPersonEntityQuarantine(piRows)
     : [];
-  const allPlan = dedupePlannedGroups(
-    officialLabUrlOnly
-      ? buildOfficialLabUrlResearchEntityDedupePlan(officialLabUrlRows)
-      : profileLabUrlOnly
-        ? buildSpecificProfileLabUrlResearchEntityDedupePlan(profileLabUrlRows)
-        : orgNameOnly
-          ? buildOrgNameResearchEntityDedupePlan(orgNameRows)
-          : websiteUrlOnly
-            ? buildWebsiteUrlResearchEntityDedupePlan(websiteUrlRows)
-            : sharedPersonId
-              ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
-              : fundingOnly
-                ? buildFundingResearchEntityDedupePlan(piRows)
-                : buildResearchEntityPiDedupePlan(piRows),
-  );
+  const { plan: allPlan, quarantine: conflatedPersonProfileQuarantine } =
+    partitionPlanByPersonProfileConflation(
+      dedupePlannedGroups(
+        officialLabUrlOnly
+          ? buildOfficialLabUrlResearchEntityDedupePlan(officialLabUrlRows)
+          : profileLabUrlOnly
+            ? buildSpecificProfileLabUrlResearchEntityDedupePlan(profileLabUrlRows)
+            : orgNameOnly
+              ? buildOrgNameResearchEntityDedupePlan(orgNameRows)
+              : websiteUrlOnly
+                ? buildWebsiteUrlResearchEntityDedupePlan(websiteUrlRows)
+                : sharedPersonId
+                  ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
+                  : fundingOnly
+                    ? buildFundingResearchEntityDedupePlan(piRows)
+                    : buildResearchEntityPiDedupePlan(piRows),
+      ),
+    );
   const slugFilteredPlan = slug
     ? allPlan.filter((group) => group.canonicalSlug === slug || group.duplicateSlugs.includes(slug))
     : allPlan;
@@ -2401,21 +2727,61 @@ async function main() {
     (sum, group) => sum + group.memberIdsToRetire.length,
     0,
   );
+  // The URL-identity lanes run unattended on every Development sweep and re-plan
+  // their deferred tail each run, so an over-budget plan must trim to the budget
+  // rather than fail the sweep stage (matching `--max-merges` on
+  // `eponymous-fra-merge`). Operator-driven lanes keep the hard stop.
+  const { cappedPlan, deferredByCapGroups, deferredByCapDuplicateEntities } =
+    unattendedUrlIdentityLane
+      ? capResearchEntityPiDedupePlanByApplyBudget(plan, maxApply - plannedDuplicateCurrentMembers)
+      : { cappedPlan: plan, deferredByCapGroups: 0, deferredByCapDuplicateEntities: 0 };
   assertResearchEntityPiDedupeApplyAllowed({
     apply,
     maxApply,
-    plannedDuplicateEntities,
+    plannedDuplicateEntities: plannedDuplicateEntities - deferredByCapDuplicateEntities,
     plannedDuplicateCurrentMembers,
   });
   const applied = apply
-    ? await applyResearchEntityPiDedupeGroupsSequentially(plan, (group) =>
+    ? await applyResearchEntityPiDedupeGroupsSequentially(cappedPlan, (group) =>
         applyResearchEntityDedupeMergeGroup(group, {
           deleteDuplicates,
           relinkReferences: shouldRelinkReferencesForResearchEntityPiDedupeRun({ apply }),
-          neverDemote: profileLabUrlOnly,
+          // Off by default: a merge that lowers the survivor's tier normally defers, because
+          // the usual duplicate pair is two real rows and losing a served one is a regression.
+          // It is opt-in for the grant-shell lane, where the higher-tiered input is a row a
+          // grant fabricated, so keeping it served to protect the count preserves a fabrication
+          // (#3145).
+          neverDemote: !confirmDemotingMerge,
+          pinnedCanonical: Boolean(acceptedDecisions),
+          rematerializeCanonical,
         }),
       )
     : [];
+  // Named in the dry run so the demotion is legible before the confirm flag is typed,
+  // not after (#3145). Same resolver the apply path consults, so the preview cannot
+  // disagree with what the flag would actually do.
+  const demotionPreview = apply
+    ? []
+    : (
+        await Promise.all(
+          cappedPlan.map(async (group) => {
+            const canonicalId = objectId(group.canonicalEntityId);
+            const duplicateIds = group.duplicateEntityIds
+              .map((id) => objectId(id))
+              .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+            if (!canonicalId || duplicateIds.length === 0) return null;
+            const resolution = await resolveNonDemotingMerge(canonicalId, duplicateIds);
+            if (!resolution.defer) return null;
+            return {
+              canonicalSlug: group.canonicalSlug,
+              duplicateSlugs: group.duplicateSlugs,
+              bestInputTier: resolution.bestInputTier,
+              survivorTierWithFlag: resolution.simulatedTier,
+            };
+          }),
+        )
+      ).filter(Boolean);
+
   const retiredDuplicateCurrentMembers = apply
     ? await retireDuplicateCurrentMembers(duplicateCurrentMembers)
     : [];
@@ -2462,20 +2828,57 @@ async function main() {
     reviewCandidateGroups: candidatePlan.length,
     plannedGroups: plan.length,
     plannedDuplicateEntities,
+    deferredByCapGroups,
+    deferredByCapDuplicateEntities,
     duplicateCurrentMemberGroups: duplicateCurrentMembers.length,
     plannedDuplicateCurrentMembers,
     sameNameDifferentPersonQuarantine,
-    quarantinedSameNameGroups: sameNameDifferentPersonQuarantine.length,
+    quarantinedSameNameGroups: reportedQuarantineCount(
+      sharedPersonId,
+      sameNameDifferentPersonQuarantine,
+    ),
     multiPersonEntityQuarantine,
-    quarantinedMultiPersonEntities: multiPersonEntityQuarantine.length,
+    quarantinedMultiPersonEntities: reportedQuarantineCount(
+      sharedPersonId,
+      multiPersonEntityQuarantine,
+    ),
+    conflatedPersonProfileQuarantine,
+    quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
     reviewBreakdown: buildResearchEntityPiDedupeReviewBreakdown(plan),
     plan: fullPlan ? plan : plan.slice(0, 25),
     currentMemberPlan: duplicateCurrentMembers.slice(0, 25),
     ...(reviewDecisionValidation ? { reviewDecisionValidation } : {}),
     applied,
+    ...countResearchEntityDedupeApplyDeferrals(applied),
+    demotingMergeConfirmFlag: DEMOTING_MERGE_CONFIRM_FLAG,
+    demotingMergeConfirmed: confirmDemotingMerge,
+    wouldDemoteOnConfirm: demotionPreview.length,
+    demotionPreview,
     retiredDuplicateCurrentMembers,
     visibilityRecomputed,
     canonicalEntitiesResynced,
+    ...(unattendedUrlIdentityLane
+      ? {
+          urlIdentityDedupeDelta: buildUrlIdentityDedupeStageDelta({
+            candidateGroups: rows.length,
+            plannedGroups: plan.length,
+            deferredByCapGroups,
+            applied,
+            quarantinedSameNameGroups: reportedQuarantineCount(
+              sharedPersonId,
+              sameNameDifferentPersonQuarantine,
+            ),
+            quarantinedMultiPersonEntities: reportedQuarantineCount(
+              sharedPersonId,
+              multiPersonEntityQuarantine,
+            ),
+            quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
+            visibilityRecomputed,
+            canonicalEntitiesResynced,
+            maxApply,
+          }),
+        }
+      : {}),
   };
 
   const outputReport = buildResearchEntityPiDedupeOutput(report, {

@@ -17,6 +17,7 @@ import {
   getUserAnalytics,
   getUserAnalyticsDrilldown,
 } from '../services/analyticsService';
+import { getCorpusQualityDashboard } from '../services/corpusQualityDashboardService';
 import { validateNetid } from '../middleware/validation';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -96,11 +97,33 @@ router.post(
 
     const user = request.user as { netId?: string; userType?: string };
     let accepted = 0;
+    const rejectedEventTypes = new Map<string, number>();
     for (const event of events) {
-      if (await acceptResearchEvent(event, user)) accepted += 1;
+      if (await acceptResearchEvent(event, user)) {
+        accepted += 1;
+        continue;
+      }
+      const eventType = (event as { eventType?: unknown })?.eventType;
+      const key = isResearchEventType(eventType) ? eventType : 'unrecognized';
+      rejectedEventTypes.set(key, (rejectedEventTypes.get(key) || 0) + 1);
     }
 
-    return response.status(202).json({ accepted });
+    // A batch answers 202 whatever it stored, and the browser swallows the body,
+    // so validation that rejects everything is otherwise invisible. It stayed
+    // invisible long enough for every research-entity journey event ever emitted
+    // to be dropped (#2677). Event types and counts only, never an identifier.
+    if (accepted < events.length) {
+      console.warn(
+        '[analytics] research batch partially rejected:',
+        sanitizeLogValue({
+          sent: events.length,
+          accepted,
+          rejected: Object.fromEntries(rejectedEventTypes),
+        }),
+      );
+    }
+
+    return response.status(202).json({ accepted, sent: events.length });
   }),
 );
 
@@ -258,6 +281,20 @@ router.get('/', isAuthenticated, isAdmin, async (request: Request, response: Res
   }
 });
 
+router.get(
+  '/corpus-quality',
+  isAuthenticated,
+  isAdmin,
+  async (_request: Request, response: Response) => {
+    try {
+      response.status(200).json(await getCorpusQualityDashboard());
+    } catch (error) {
+      console.error('Error fetching corpus quality:', sanitizeLogValue(error));
+      handleAnalyticsError(response, error, 'Failed to fetch corpus quality');
+    }
+  },
+);
+
 router.get('/users', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
   try {
     const { userType, activeSince, search, sort, direction, limit, offset } = request.query;
@@ -367,17 +404,21 @@ router.get('/funnel', isAuthenticated, isAdmin, async (request: Request, respons
           conversionRate: previous > 0 ? stage.count / previous : 0,
         };
       }),
-      visitorCount: analytics.logins,
-      searcherCount: analytics.searches,
-      viewerCount: analytics.fellowshipViews,
-      applicantCount: analytics.qualifiedActions,
       journeyMetrics: {
         sourceInspections: analytics.sourceInspections,
         officialRouteAttempts: analytics.officialRouteAttempts,
         applicationOpens: analytics.applicationOpens,
       },
+      qualifiedActionEventsRecorded: analytics.qualifiedActionEvents,
+      // A rate of 0 and a lane that recorded nothing are different facts, and a
+      // dashboard that renders both as "0%" reports an instrumentation gap as a
+      // product failure (#2677). Null means unmeasured; 0 means measured at zero.
       overallConversionRate:
-        analytics.logins > 0 ? analytics.qualifiedActions / analytics.logins : 0,
+        analytics.qualifiedActionEvents === 0
+          ? null
+          : analytics.logins > 0
+            ? analytics.qualifiedActions / analytics.logins
+            : 0,
     });
   } catch (error) {
     console.error('Error fetching funnel analytics:', sanitizeLogValue(error));

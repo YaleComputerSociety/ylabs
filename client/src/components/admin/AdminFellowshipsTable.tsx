@@ -107,7 +107,7 @@ const AdminFellowshipsTable = () => {
       });
     } catch {
       console.error('Error fetching admin fellowships.');
-      swal({ text: 'Failed to fetch fellowships', icon: 'error' });
+      void swal({ text: 'Failed to fetch fellowships', icon: 'error' });
       dispatch({ type: 'FETCH_FAILURE' });
     }
   }, [search, sortBy, sortOrder, page, pageSize, archivedFilter, auditedFilter]);
@@ -115,7 +115,7 @@ const AdminFellowshipsTable = () => {
   useEffect(() => {
     const debounce = setTimeout(
       () => {
-        fetchFellowships();
+        void fetchFellowships();
       },
       search ? 400 : 0,
     );
@@ -135,11 +135,11 @@ const AdminFellowshipsTable = () => {
 
     try {
       await axios.delete(`/admin/fellowships/${fellowship._id}`, { withCredentials: true });
-      swal({ text: 'Fellowship deleted', icon: 'success', timer: 1500 });
-      fetchFellowships();
+      void swal({ text: 'Fellowship deleted', icon: 'success', timer: 1500 });
+      void fetchFellowships();
     } catch {
       console.error('Error deleting fellowship.');
-      swal({ text: 'Failed to delete fellowship', icon: 'error' });
+      void swal({ text: 'Failed to delete fellowship', icon: 'error' });
     }
   };
 
@@ -151,11 +151,11 @@ const AdminFellowshipsTable = () => {
         {},
         { withCredentials: true },
       );
-      swal({ text: `Fellowship ${action}d`, icon: 'success', timer: 1500 });
-      fetchFellowships();
+      void swal({ text: `Fellowship ${action}d`, icon: 'success', timer: 1500 });
+      void fetchFellowships();
     } catch {
       console.error(`Error ${action}ing fellowship.`);
-      swal({ text: `Failed to ${action} fellowship`, icon: 'error' });
+      void swal({ text: `Failed to ${action} fellowship`, icon: 'error' });
     }
   };
 
@@ -168,12 +168,12 @@ const AdminFellowshipsTable = () => {
         { data: updatedData },
         { withCredentials: true },
       );
-      swal({ text: 'Fellowship updated', icon: 'success', timer: 1500 });
+      void swal({ text: 'Fellowship updated', icon: 'success', timer: 1500 });
       dispatch({ type: 'CLOSE_EDIT' });
-      fetchFellowships();
+      void fetchFellowships();
     } catch {
       console.error('Error updating fellowship.');
-      swal({ text: 'Failed to update fellowship', icon: 'error' });
+      void swal({ text: 'Failed to update fellowship', icon: 'error' });
     }
   };
 
@@ -197,7 +197,7 @@ const AdminFellowshipsTable = () => {
           placeholder="Search fellowships..."
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring w-64"
         />
 
         <select
@@ -205,7 +205,7 @@ const AdminFellowshipsTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'archived', value: e.target.value })
           }
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring"
         >
           <option value="">All</option>
           <option value="false">Active</option>
@@ -217,7 +217,7 @@ const AdminFellowshipsTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'audited', value: e.target.value })
           }
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring"
         >
           <option value="">All (Audit)</option>
           <option value="true">Audited</option>
@@ -227,7 +227,7 @@ const AdminFellowshipsTable = () => {
         <select
           value={pageSize}
           onChange={(e) => dispatch({ type: 'SET_PAGE_SIZE', payload: Number(e.target.value) })}
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring"
         >
           {PAGE_SIZES.map((size) => (
             <option key={size} value={size}>
@@ -320,26 +320,26 @@ const AdminFellowshipsTable = () => {
                         ✓
                       </span>
                     ) : (
-                      <span className="text-gray-400 text-xs">—</span>
+                      <span className="text-muted text-xs">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-sm">
                     <div className="flex gap-2">
                       <button
                         onClick={() => dispatch({ type: 'OPEN_EDIT', item: fellowship })}
-                        className="text-blue-600 hover:text-blue-800"
+                        className="text-brand hover:text-brand-navy yr-focus-ring"
                       >
                         Edit
                       </button>
                       <button
-                        onClick={() => handleArchive(fellowship)}
-                        className="text-yellow-600 hover:text-yellow-800"
+                        onClick={() => void handleArchive(fellowship)}
+                        className="text-yellow-700 hover:text-yellow-800 yr-focus-ring"
                       >
                         {fellowship.archived ? 'Unarchive' : 'Archive'}
                       </button>
                       <button
-                        onClick={() => handleDelete(fellowship)}
-                        className="text-red-600 hover:text-red-800"
+                        onClick={() => void handleDelete(fellowship)}
+                        className="text-red-600 hover:text-red-800 yr-focus-ring"
                       >
                         Delete
                       </button>
@@ -361,7 +361,7 @@ const AdminFellowshipsTable = () => {
             <button
               onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.max(1, page - 1) })}
               disabled={page === 1}
-              className="min-h-[44px] px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--yr-panel-muted)]"
+              className="min-h-[44px] px-3 py-1 border rounded-card disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
             >
               Previous
             </button>
@@ -370,7 +370,7 @@ const AdminFellowshipsTable = () => {
                 dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })
               }
               disabled={page === totalPages}
-              className="min-h-[44px] px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--yr-panel-muted)]"
+              className="min-h-[44px] px-3 py-1 border rounded-card disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
             >
               Next
             </button>
@@ -381,7 +381,7 @@ const AdminFellowshipsTable = () => {
       {editingFellowship && (
         <FellowshipEditModal
           fellowship={editingFellowship}
-          onSave={handleSave}
+          onSave={(data) => void handleSave(data)}
           onClose={() => dispatch({ type: 'CLOSE_EDIT' })}
         />
       )}
@@ -421,13 +421,13 @@ const ArrayFieldEditor = ({
         {values.map((value) => (
           <span
             key={value}
-            className="inline-flex items-center bg-[var(--yr-blue-soft)] text-blue-800 text-sm px-2 py-0.5 rounded border border-blue-200"
+            className="inline-flex items-center bg-brand-soft text-brand text-sm px-2 py-0.5 rounded border border-line-brand"
           >
             {value}
             <button
               type="button"
               onClick={() => handleRemove(value)}
-              className="ml-1.5 text-blue-400 hover:text-blue-600"
+              className="ml-1.5 text-muted hover:text-brand yr-focus-ring"
             >
               &times;
             </button>
@@ -451,7 +451,7 @@ const ArrayFieldEditor = ({
         <button
           type="button"
           onClick={handleAdd}
-          className="px-3 py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-navy"
+          className="px-3 py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-navy yr-focus-ring"
         >
           Add
         </button>
@@ -492,14 +492,14 @@ const LinksEditor = ({
           {links.map((link, i) => (
             <div
               key={i}
-              className="flex items-center gap-2 bg-[var(--yr-blue-soft)] border border-blue-200 rounded px-2 py-1 text-sm"
+              className="flex items-center gap-2 bg-brand-soft border border-line-brand rounded px-2 py-1 text-sm"
             >
-              <span className="font-medium text-blue-800 truncate">{link.label}</span>
-              <span className="text-blue-400 truncate flex-shrink min-w-0">{link.url}</span>
+              <span className="font-medium text-brand truncate">{link.label}</span>
+              <span className="text-muted truncate flex-shrink min-w-0">{link.url}</span>
               <button
                 type="button"
                 onClick={() => handleRemove(i)}
-                className="ml-auto text-blue-400 hover:text-blue-600 flex-shrink-0"
+                className="ml-auto text-muted hover:text-brand flex-shrink-0 yr-focus-ring"
               >
                 &times;
               </button>
@@ -531,7 +531,7 @@ const LinksEditor = ({
         <button
           type="button"
           onClick={handleAdd}
-          className="px-3 py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-navy"
+          className="px-3 py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-navy yr-focus-ring"
         >
           Add
         </button>
@@ -626,7 +626,7 @@ const FellowshipEditModal = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-[var(--yr-panel)] rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
+      <div className="bg-[var(--yr-panel)] rounded-overlay shadow-yr-modal max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
         <h3 className="text-lg font-semibold mb-4">Edit Fellowship</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -649,10 +649,10 @@ const FellowshipEditModal = ({
             />
           </div>
 
-          <div className="bg-[var(--yr-panel-muted)] border border-[var(--yr-line)] rounded-lg p-3">
+          <div className="bg-[var(--yr-panel-muted)] border border-[var(--yr-line)] rounded-card p-3">
             <p className="text-xs text-gray-500 mb-1">
               <strong>Tip:</strong> To add a clickable link inside any text field, use the format:{' '}
-              <code className="bg-[var(--yr-panel-muted)] px-1 rounded">
+              <code className="bg-[var(--yr-panel-muted)] px-1 rounded-card">
                 [link text](https://url)
               </code>
             </p>
@@ -865,7 +865,7 @@ const FellowshipEditModal = ({
             <div
               className={`mt-3 rounded-lg border p-3 text-sm ${
                 statusPreview.isCurrentlyRelevant
-                  ? 'bg-blue-50 border-blue-100 text-blue-800'
+                  ? 'bg-brand-soft border-line-brand text-brand'
                   : 'bg-red-50 border-red-100 text-red-700'
               }`}
             >
@@ -945,13 +945,13 @@ const FellowshipEditModal = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-[var(--yr-line-strong)] rounded-lg hover:bg-[var(--yr-panel-muted)]"
+              className="px-4 py-2 border border-[var(--yr-line-strong)] rounded-card hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-brand text-white rounded-lg hover:bg-brand-navy"
+              className="px-4 py-2 bg-brand text-white rounded-lg hover:bg-brand-navy yr-focus-ring"
             >
               Save Changes
             </button>

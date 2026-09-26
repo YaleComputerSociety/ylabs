@@ -1,16 +1,16 @@
 /**
- * Optional in-process scheduler that keeps the canonical gate scorecards fresh by periodically
- * running gates:refresh. This is what makes the operator board "real-time" on a single-instance
- * deploy: the same process that serves /api/admin/operator-board also regenerates the /tmp
- * artifacts it reads, so the board reflects live DB state within one interval.
+ * Optional in-process scheduler that keeps the gate scorecards fresh by periodically running
+ * gates:refresh, so the operator board reflects live DB state within one interval.
  *
  * Disabled unless GATE_REFRESH_INTERVAL_MINUTES is a positive number (default off, so dev/CI/tests
  * are unaffected). Set GATE_REFRESH_SKIP_HEAVY=true to skip the ~3.5min data-quality audit on the
  * frequent cadence (run it on a separate, slower schedule).
  *
- * NOTE: relies on `yarn gates:refresh` (tsx + src/), which suits beta/staging — the environments
- * the gate exists for. A pure production build (tsup → build/, no tsx) should drive refresh via an
- * external scheduler hitting a trigger, or persist scorecards to Mongo (the multi-instance fix).
+ * `gates:refresh` now stores each summary in `gate_scorecard_snapshots`, so it no longer has to run
+ * in the serving process to reach the board and any runner with the connection string will do; see
+ * docs/gate-scorecard-board.md. This scheduler remains the in-process option and relies on
+ * `yarn gates:refresh` (tsx + src/), which suits beta/staging. A pure production build (tsup →
+ * build/, no tsx) should drive the refresh from an external scheduler instead.
  */
 import { spawn } from 'child_process';
 import path from 'path';

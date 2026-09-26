@@ -10,15 +10,22 @@ import { Observation } from '../models/observation';
 import type { ObservedEntityType } from '../models/observation';
 import { Source } from '../models/source';
 import { researchGroupKinds, researchEntityTypes } from '../models/researchAccessTypes';
+import type { ResearchEntityType } from '../models/researchAccessTypes';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { isSelfReferentialUrl } from '../utils/urlSafety';
-import { sanitizeObservationField } from './observationFieldSanitizer';
+import { isUncitableHostUrl } from '../utils/urlSafety';
+import {
+  isRefusedObservationField,
+  kindOnlyTypeAssertionKeys,
+  sanitizeObservationField,
+} from './observationFieldSanitizer';
 import {
   fullDescriptionQuality,
   isFullDescriptionRestatementOfShortDescription,
   shortDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import { offTopicResearchHomeDemotionScore } from '../utils/researchHomeDescriptionSelection';
+import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
+import { containsHtmlTagMarkup } from '../utils/descriptionHygiene';
 import type { ObservationInput } from './types';
 
 export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
@@ -27,18 +34,33 @@ export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDe
 // value-less latest-wins supersession are skipped, and the materializer reads the full
 // retained log and decides late (collapseLatestWins + the resolver's ranked prose
 // preference). Off by default so behavior is byte-identical to today.
-export function c4LosslessIngestEnabled(): boolean {
-  return process.env.C4_LOSSLESS_INGEST === 'true';
+export function c4LosslessIngestEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.C4_LOSSLESS_INGEST === 'true';
+}
+
+// Absence of the flag is not the same as knowing it is off: a destructive step that runs
+// in its own process (observation retention) would otherwise read its own blank
+// environment as proof that the target environment's materializer excludes superseded
+// rows. Callers that need cross-process certainty require an explicit declaration.
+export function c4LosslessIngestDeclared(env: NodeJS.ProcessEnv = process.env): boolean {
+  return String(env.C4_LOSSLESS_INGEST ?? '').trim() !== '';
 }
 
 function entityKeyForProse(obs: { entityId?: string; entityKey?: string }): string {
   return obs.entityId || obs.entityKey || '';
 }
 
+/**
+ * `entityType` here is the PRODUCT entity type, and the ingest path cannot supply
+ * one: an observation carries its subject type under the same name, and the two
+ * vocabularies are disjoint. Typed rather than `unknown` so handing over the
+ * subject value is a compile error instead of a predicate that quietly answers
+ * "not a lab" for every row (#210).
+ */
 interface ProseQualityContext {
   fullContext?: string;
   researchAreas?: unknown;
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
 }
 
 export function proseValueIsUseful(
@@ -56,13 +78,15 @@ export function proseValueIsUseful(
 
 /**
  * A shortDescription that restates the fullDescription it arrives with is
- * self-defeating rather than merely low quality: the materializer answers the
- * pair by clearing the fullDescription, so persisting the card destroys the
- * richer field and leaves a detail page with no prose behind a card that still
- * looks healthy to the visibility gate. `isRegressiveProseRefresh` cannot catch
- * this because it only fires when there is an existing useful value to protect,
- * and the first write of a pair has none. Dropping the card is the safe half to
- * lose: it is derivable from the full, and the full is not derivable from it.
+ * self-defeating rather than merely low quality: it adds nothing the detail page
+ * does not already show, and it displaces whatever card the entity holds with a
+ * duplicate of its own body. The materializer answers the same pair by keeping
+ * the body and re-deriving the card (#2721), so declining to persist the scraped
+ * card here leaves that re-derivation working from the richer field rather than
+ * from an echo of it. `isRegressiveProseRefresh` cannot catch this because it
+ * only fires when there is an existing useful value to protect, and the first
+ * write of a pair has none. Dropping the card is the safe half to lose: it is
+ * derivable from the full, and the full is not derivable from it.
  */
 export function selfDefeatingCardRestatesFullDescription(
   field: string,
@@ -118,6 +142,63 @@ export function isRegressiveProseRefresh(input: {
 export function prosePreferenceScore(value: unknown): number {
   if (typeof value !== 'string' || !value.trim()) return Number.NEGATIVE_INFINITY;
   return offTopicResearchHomeDemotionScore(value);
+}
+
+const MATERIALLY_THINNER_PROSE_CHARS = 200;
+
+const normalizedProseLength = (value: unknown): number =>
+  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().length : 0;
+
+/**
+ * DELIBERATELY KEEPS AN OLDER VALUE. Not a bug; do not "restore" newest-wins.
+ *
+ * `isWeakerProseRefresh` above only drops a refresh that is off-topic, and its
+ * contract is that ties pass so the corpus cannot freeze on its first capture.
+ * That leaves one case uncovered: the same extractor re-reads the same page and
+ * returns far LESS of it. Both values are on-topic, so they tie, newest wins, and
+ * the body text is gone - `collapseLatestWins` keeps one row per
+ * (source, field), so the richer value never reaches the resolver at all and no
+ * downstream ranking can recover it.
+ *
+ * Measured on Development: 22 served rows had a same-source value a median 444
+ * chars richer than the one being served, all from
+ * `lab-microsite-description-llm` (#2423).
+ *
+ * Owner decision, 2026-09-05: prefer the richer value, accepting that a lab which
+ * genuinely shortened its page will keep serving the longer earlier copy. This
+ * NARROWS the "ties pass" contract rather than removing it - a refresh within
+ * 200 chars of the incumbent still wins on recency, so an ordinary re-scrape and
+ * a genuine rewrite both behave as before, and only a materially thinner capture
+ * is held off.
+ *
+ * The retained value must itself be servable, because "richer but worse" is the
+ * real failure mode. `scoreResearchHomeDescriptionCandidate` cannot be used here
+ * for the reason given on `prosePreferenceScore` above - the observation does not
+ * carry the product kind, so its person-centric term would charge legitimate
+ * person-voiced faculty research prose -100 - so this uses the kind-free
+ * `offTopicResearchHomeDemotionScore` plus the biography and markup rejections.
+ */
+export function isMateriallyThinnerProseRefresh(input: {
+  field: string;
+  incomingValue: unknown;
+  existingValue: unknown;
+  incomingContext?: ProseQualityContext;
+  existingContext?: ProseQualityContext;
+}): boolean {
+  if (!QUALITY_GUARDED_PROSE_FIELDS.has(input.field)) return false;
+  if (typeof input.existingValue !== 'string' || !input.existingValue.trim()) return false;
+  if (typeof input.incomingValue !== 'string' || !input.incomingValue.trim()) return false;
+  if (
+    normalizedProseLength(input.incomingValue) + MATERIALLY_THINNER_PROSE_CHARS >
+    normalizedProseLength(input.existingValue)
+  ) {
+    return false;
+  }
+  if (!proseValueIsUseful(input.field, input.existingValue, input.existingContext)) return false;
+  if (offTopicResearchHomeDemotionScore(input.existingValue) !== 0) return false;
+  if (isCareerBiographyDescription(input.existingValue)) return false;
+  if (containsHtmlTagMarkup(input.existingValue)) return false;
+  return true;
 }
 
 /**
@@ -241,6 +322,15 @@ const ENUM_FIELD_VALIDATORS: Record<string, ReadonlySet<string>> = {
   entityType: new Set(researchEntityTypes),
 };
 
+/**
+ * Fields an out-of-enum value is dropped for at ingest. Exported for the same
+ * reason as `INGEST_REJECTABLE_RESEARCH_ENTITY_FIELDS`: a dropped value looks
+ * from the log exactly like a value the source stopped asserting.
+ */
+export const ENUM_VALIDATED_OBSERVATION_FIELDS: ReadonlySet<string> = new Set(
+  Object.keys(ENUM_FIELD_VALIDATORS),
+);
+
 function normalizeObservationValue(field: string, value: unknown): unknown {
   if (field === 'sourceUrls') {
     if (Array.isArray(value)) return value;
@@ -270,8 +360,22 @@ export async function appendObservations(
   if (inputs.length === 0) return { inserted: 0, skipped: 0, superseded: 0 };
   const loadActiveProse = opts.loadActiveProse ?? loadActiveProseValue;
 
-  const rejectedSelfReferential = inputs.filter((obs) => isSelfReferentialUrl(obs.sourceUrl));
-  const candidateInputs = inputs.filter((obs) => !isSelfReferentialUrl(obs.sourceUrl));
+  // A deploy-target host names a build rather than a page, so an observation cited to
+  // one records evidence at an address that stops existing on the next deploy. It is
+  // refused here, the one path every scraper lane writes through, rather than in the
+  // extractor that produced it: #2804 stopped the School of Art lane trusting a
+  // cross-domain `<link rel="canonical">`, and 100 citations to that build host were
+  // already stored by the time it landed (#2805).
+  // This does NOT cover a writer that reaches `Observation` directly. Any new one must
+  // repeat `isUncitableHostUrl`, as `visibilityRepairQueueService` does; the two
+  // operator scripts that insert observations (`promoteFacultyResearchToLab`,
+  // `labBrandedNameTypeBackfill`) still carry a stored `websiteUrl` through unchecked.
+  const candidateInputs: ObservationInput[] = [];
+  let rejectedUncitableHost = 0;
+  for (const obs of inputs) {
+    if (isUncitableHostUrl(obs.sourceUrl)) rejectedUncitableHost += 1;
+    else candidateInputs.push(obs);
+  }
   const sanitizedInputs: ObservationInput[] = [];
   let rejectedFurniture = 0;
   for (const obs of candidateInputs) {
@@ -282,10 +386,24 @@ export async function appendObservations(
     }
     sanitizedInputs.push(sanitized.value === obs.value ? obs : { ...obs, value: sanitized.value });
   }
-  const rejectedInvalidEnum = sanitizedInputs.filter((obs) =>
+  // Refused before the enum check because the field is retired outright, not merely
+  // carrying a bad value: nothing reads it, so storing it would recreate the residue
+  // #3362 measured rather than reject one assertion (#3362).
+  const rejectedRetiredField = sanitizedInputs.filter((obs) =>
+    isRefusedObservationField(obs.entityType, obs.field),
+  );
+  const liveFieldInputs = sanitizedInputs.filter(
+    (obs) => !isRefusedObservationField(obs.entityType, obs.field),
+  );
+  if (rejectedRetiredField.length > 0) {
+    console.warn(
+      `[observation-store] ${ctx.sourceName} asserted ${rejectedRetiredField.length} observation(s) on a retired field; nothing reads them, so they are refused at ingest (#3362).`,
+    );
+  }
+  const rejectedInvalidEnum = liveFieldInputs.filter((obs) =>
     isObservationValueRejected(obs.field, obs.value),
   );
-  const acceptedInputs = sanitizedInputs.filter(
+  const acceptedInputs = liveFieldInputs.filter(
     (obs) => !isObservationValueRejected(obs.field, obs.value),
   );
   const incomingFullByEntity = new Map<string, string>();
@@ -321,7 +439,6 @@ export async function appendObservations(
       const incomingResearchAreas = incomingResearchAreasByEntity.get(entityKey);
       const incomingContext: ProseQualityContext = {
         researchAreas: incomingResearchAreas,
-        entityType: obs.entityType,
       };
       if (obs.field === 'shortDescription') {
         incomingContext.fullContext = incomingFullByEntity.get(entityKey);
@@ -332,12 +449,11 @@ export async function appendObservations(
         incomingContext,
       );
       const existingValue = proseIncumbents.get(proseIncumbentKey(obs, obs.field));
-      // Judged with the same entityType and researchAreas as the incoming value:
-      // an asymmetric verdict would let an incumbent the quality bar rejects
-      // still block a refresh.
+      // Judged with the same researchAreas as the incoming value: an asymmetric
+      // verdict would let an incumbent the quality bar rejects still block a
+      // refresh.
       const existingContext: ProseQualityContext = {
         researchAreas: incomingResearchAreas,
-        entityType: obs.entityType,
       };
       if (obs.field === 'shortDescription') {
         const existingFullContext = proseIncumbents.get(proseIncumbentKey(obs, 'fullDescription'));
@@ -381,8 +497,18 @@ export async function appendObservations(
     keptInputs.push(obs);
   }
 
+  // Reported, never subtracted from the batch: a `kind` assertion is not invalid, it is
+  // unread, so the lane that wrote it needs to know rather than the batch being shrunk.
+  const kindOnlyKeys = kindOnlyTypeAssertionKeys(candidateInputs);
+  if (kindOnlyKeys.length > 0) {
+    console.warn(
+      `[observation-store] ${ctx.sourceName} asserted kind without entityType for ${kindOnlyKeys.length} key(s); the materializer never reads an observed kind, so those assertions set nothing (#3362).`,
+    );
+  }
+
   const skippedCount =
-    rejectedSelfReferential.length +
+    rejectedRetiredField.length +
+    rejectedUncitableHost +
     rejectedFurniture +
     rejectedInvalidEnum.length +
     regressiveProseGuarded +
@@ -407,6 +533,12 @@ export async function appendObservations(
       observedAt: obs.observedAt || new Date(),
       confidence: obs.confidenceOverride ?? ctx.sourceWeight,
       superseded: false,
+      // Deliberately outside the fingerprint: an absence assertion is a fact about
+      // the run, not part of the value's identity, so adding one must not make an
+      // otherwise-unchanged observation supersede its predecessor.
+      ...(obs.assertsNoValueFor && obs.assertsNoValueFor.length > 0
+        ? { assertsNoValueFor: [...new Set(obs.assertsNoValueFor)] }
+        : {}),
       observationFingerprint: buildObservationFingerprint({
         sourceName: ctx.sourceName,
         entityType: obs.entityType,
@@ -507,15 +639,27 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   'rosterEnrichment',
   'currentUndergradCount',
   'undergradEvidenceQuote',
-  'undergraduateLogisticsStudentLevel',
-  'undergraduateLogisticsCompensation',
-  'undergraduateLogisticsTimeCommitment',
-  'undergraduateLogisticsModality',
-  'undergraduateLogisticsCurrentAvailability',
   'applicationInformation',
   'applicationMaterials',
   'researchFocused',
   'sourceContentHash',
+  'inferredDirectorName',
+  'inferredDirectorUserName',
+  'inferredDirectorTitle',
+  'inferredDirectorRole',
+  'inferredDirectorProfileUrl',
+  'leadVerification',
+  'courseCreditRoute',
+  // A roster-health snapshot is a source-owned statement about one department at
+  // one moment, and the roster lane collapses its several configs to one row per
+  // department, so it satisfies the one-row-per-(entity, field)-per-run rule above.
+  // With `value` in the fingerprint a department whose roster was byte-identical to
+  // the stored one wrote nothing, so a page read minutes ago kept an `observedAt`
+  // from the previous run: measured on Development, 7 of 113 departments carried a
+  // live snapshot up to 11 days older than the run that had just re-read them, and
+  // 176 live snapshots spanned 113 departments because a changed roster took a new
+  // fingerprint instead of superseding its predecessor (#3251).
+  'departmentRosterHealth',
 ]);
 
 export function usesLatestWinsFingerprint(input: { entityType: string; field: string }): boolean {
@@ -532,6 +676,58 @@ function latestWinsObservedTime(value: unknown): number {
 // keep only the newest observation per (sourceName, field); every other field keeps all rows.
 // On an active-only read this is a no-op (write-time supersession already left one active row
 // per key), so it is safe to land before a full-log read replaces that supersession.
+/**
+ * Latest-wins list fields whose items ACCUMULATE, so a same-source group is unioned
+ * rather than collapsed to its freshest row (#3221).
+ *
+ * The rule is the one the repo already settled for retraction: omission is not
+ * absence (#2647). A fresher grant read that lists one award is not a statement that
+ * the awards it does not mention never happened, so taking the freshest list drops
+ * them. Measured on Development, 4 live rows store more awards than the next pass
+ * would write and 14 items were one re-materialize away from being deleted.
+ *
+ * `researchAreas` and `methods` are deliberately NOT here even though they are
+ * latest-wins lists. Those describe a home's CURRENT research, so a fresher read that
+ * drops a topic is usually a correction, and unioning them would hoard every topic a
+ * source ever guessed. An accumulating field is one whose items are dated events, not
+ * a description of the present.
+ */
+const ADDITIVE_LATEST_WINS_LIST_FIELDS = new Set(['recentGrants']);
+
+/**
+ * Identity for unioning an accumulating list. A grant carries its own award id, which
+ * is the only stable handle: the same award arrives with a different dollar amount or
+ * end date as it is amended, and keying on the whole object would keep both copies.
+ */
+function additiveListItemKey(item: unknown): string {
+  if (item && typeof item === 'object' && !Array.isArray(item)) {
+    const id = (item as { id?: unknown }).id;
+    if (typeof id === 'string' && id.trim()) return `id:${id.trim().toLowerCase()}`;
+  }
+  if (typeof item === 'string') return `s:${item.trim().toLowerCase()}`;
+  return `j:${JSON.stringify(item)}`;
+}
+
+/**
+ * The union of every list in a same-source group, freshest row's items first so an
+ * amended copy of an award wins over the older one carrying the same id.
+ */
+export function unionAdditiveListValues(
+  values: readonly unknown[],
+  orderedNewestFirst: readonly number[],
+): unknown[] {
+  const seen = new Map<string, unknown>();
+  for (const index of orderedNewestFirst) {
+    const value = values[index];
+    if (!Array.isArray(value)) continue;
+    for (const item of value) {
+      const itemKey = additiveListItemKey(item);
+      if (!seen.has(itemKey)) seen.set(itemKey, item);
+    }
+  }
+  return [...seen.values()];
+}
+
 export function collapseLatestWins<
   T extends { field: string; sourceName: string; observedAt?: unknown; value?: unknown },
 >(observations: T[], entityType: string): T[] {
@@ -569,14 +765,25 @@ export function collapseLatestWins<
       // plus the resolver decide, so a pure newest-wins here would reinstate the
       // exact regression the write path now blocks. Keep the incumbent when the
       // newer row is a strictly worse statement of the home's research (#2232).
+      //
+      // The chain has to match the write path's chain, not a subset of it.
+      // `isWeakerProseRefresh` requires BOTH values to clear the quality bar, so
+      // it is blind to a newer value that fails the bar outright, and
+      // `isMateriallyThinnerProseRefresh` only sees a value at least 200 chars
+      // shorter. A longer newer value that fails the bar - a recruitment notice
+      // displacing grounded research prose - fell through both and won on
+      // recency, which is the half of #2232 that never fired (#2302).
+      const refreshComparison = {
+        field: candidate.field,
+        incomingValue: candidate.value,
+        existingValue: incumbent.value,
+        incomingContext: {},
+        existingContext: {},
+      };
       if (
-        isWeakerProseRefresh({
-          field: candidate.field,
-          incomingValue: candidate.value,
-          existingValue: incumbent.value,
-          incomingContext: { entityType },
-          existingContext: { entityType },
-        })
+        isRegressiveProseRefresh(refreshComparison) ||
+        isWeakerProseRefresh(refreshComparison) ||
+        isMateriallyThinnerProseRefresh(refreshComparison)
       ) {
         continue;
       }
@@ -585,11 +792,29 @@ export function collapseLatestWins<
     winningIndexByKey.set(key, winningIndex);
   }
 
-  return observations.filter((observation, index) => {
-    if (!usesLatestWinsFingerprint({ entityType, field: observation.field })) return true;
-    const key = JSON.stringify([observation.sourceName, observation.field]);
-    return winningIndexByKey.get(key) === index;
-  });
+  return observations
+    .filter((observation, index) => {
+      if (!usesLatestWinsFingerprint({ entityType, field: observation.field })) return true;
+      const key = JSON.stringify([observation.sourceName, observation.field]);
+      return winningIndexByKey.get(key) === index;
+    })
+    .map((observation, _position, kept) => {
+      void kept;
+      if (!ADDITIVE_LATEST_WINS_LIST_FIELDS.has(observation.field)) return observation;
+      const key = JSON.stringify([observation.sourceName, observation.field]);
+      const group = indicesByKey.get(key);
+      if (!group || group.length < 2) return observation;
+      const newestFirst = [...group].sort(
+        (left, right) =>
+          latestWinsObservedTime(observations[right].observedAt) -
+            latestWinsObservedTime(observations[left].observedAt) || left - right,
+      );
+      const union = unionAdditiveListValues(
+        observations.map((entry) => entry.value),
+        newestFirst,
+      );
+      return { ...observation, value: union };
+    });
 }
 
 // `entityKey` is canonical rather than `entityId` because a scraper always knows the
@@ -642,6 +867,8 @@ export async function getSourceByName(name: string): Promise<{
   _id: string;
   name: string;
   defaultWeight: number;
+  enabled?: boolean;
+  coverage?: { tier?: string };
 } | null> {
   const src = await Source.findOne({ name }).lean();
   if (!src) return null;
@@ -649,5 +876,7 @@ export async function getSourceByName(name: string): Promise<{
     _id: serializedDocumentId(src._id) || '',
     name: (src as any).name,
     defaultWeight: (src as any).defaultWeight,
+    enabled: (src as any).enabled,
+    coverage: (src as any).coverage,
   };
 }

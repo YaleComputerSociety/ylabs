@@ -6,6 +6,8 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { hermeticChildEnvironment } from '../../test/hermeticEnvironment';
+
 const SORT_MEMORY_LIMIT_BYTES = 200_000;
 const NOISE_ENTITY_COUNT = 80;
 const NOISE_DESCRIPTION = 'x'.repeat(12_000);
@@ -59,6 +61,15 @@ function seedDocuments() {
   return documents;
 }
 
+// Newer Node majors emit runtime deprecation notices for loader APIs `tsx` uses, which are
+// diagnostics from the runtime rather than output from the lane under test.
+const stripNodeRuntimeNotices = (stderr: string): string =>
+  stderr
+    .split('\n')
+    .filter((line) => !/^\(node:\d+\)/.test(line) && !/^\(Use `node --trace-/.test(line))
+    .join('\n')
+    .trim();
+
 async function runDedupeCli(mongoUrl: string, outputPath: string) {
   return new Promise<{ code: number | null; stderr: string }>((resolve) => {
     const child = spawn(
@@ -66,7 +77,7 @@ async function runDedupeCli(mongoUrl: string, outputPath: string) {
       [SCRIPT_PATH, '--profile-lab-url-only', '--dry-run', '--full-plan', '--output', outputPath],
       {
         cwd: path.resolve(__dirname, '../../..'),
-        env: { ...process.env, MONGODBURL: mongoUrl, NODE_ENV: 'test' },
+        env: hermeticChildEnvironment({ MONGODBURL: mongoUrl, NODE_ENV: 'test' }),
         stdio: ['ignore', 'ignore', 'pipe'],
       },
     );
@@ -146,7 +157,7 @@ describe('profile-lab-url dedupe loader aggregation memory bound', () => {
 
     const { code, stderr } = await runDedupeCli(mongoUrl, outputPath);
 
-    expect(stderr).toBe('');
+    expect(stripNodeRuntimeNotices(stderr)).toBe('');
     expect(code).toBe(0);
 
     const report = JSON.parse(fs.readFileSync(outputPath, 'utf8')) as DedupeReport;

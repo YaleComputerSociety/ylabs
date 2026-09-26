@@ -4,11 +4,13 @@ import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
+import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   applyUnionPlanToSnapshot,
   buildCanonicalNameIndex,
+  buildCanonicalNetidIndex,
   decideShellMerge,
   planResearcherAttributeUnion,
   researcherAttributeUnionIsEmpty,
@@ -30,6 +32,8 @@ export interface ResearcherDedupeStageDelta {
   shellsMerged: number;
   roleAssignmentsRepointed: number;
   roleAssignmentsArchivedRedundant: number;
+  rosterChangedEntities: number;
+  regatedEntities: number;
   profileLinksAppended: number;
 }
 
@@ -106,8 +110,13 @@ export interface DedupeAccountlessResearcherShellsResult {
   netidBackedAccountlessResearchers: number;
   byReason: Record<ShellMergeReason, number>;
   shellsMerged: number;
+  /** Which identity decided each fold, so a netid fold cannot hide inside a name count. */
+  foldsByMatchedIdentity: Record<'netid' | 'name', number>;
   roleAssignmentsRepointed: number;
   roleAssignmentsArchivedRedundant: number;
+  /** Entities whose roster the merges edited, and so the population the re-gate covers. */
+  rosterChangedEntities: number;
+  regatedEntities: number;
   attributeUnion: AttributeUnionTotals;
   merges: Array<{
     shellId: string;
@@ -150,6 +159,23 @@ export async function dedupeAccountlessResearcherShells(options: {
 
   const canonicalIndex = buildCanonicalNameIndex(researcherIdentities);
 
+  // A netid twin carries no `identifiers.netid` of its own, so its netid is only
+  // reachable through the account it is keyed on. Joining through `accounts` is
+  // what makes the pair visible at all (#3166).
+  const Account = mongoose.connection.collection('accounts');
+  const accounts = await Account.find({}, { projection: { netid: 1 } }).toArray();
+  const netidByAccountId = new Map<string, unknown>(
+    (accounts as any[]).map((doc) => [idKey(doc._id), doc.netid]),
+  );
+  const canonicalNetidIndex = buildCanonicalNetidIndex(
+    researcherIdentities.map((entry) => ({
+      id: entry.id,
+      accountId: entry.accountId,
+      orcid: entry.orcid,
+      netid: entry.netid ?? netidByAccountId.get(idKey(entry.accountId)),
+    })),
+  );
+
   const foldableShells = researcherIdentities.filter(
     (entry) => researcherIdentityTier(entry) !== 'ACCOUNT',
   );
@@ -167,11 +193,13 @@ export async function dedupeAccountlessResearcherShells(options: {
   };
 
   const mergeTargetByShellId = new Map<string, string>();
+  const foldsByMatchedIdentity: Record<'netid' | 'name', number> = { netid: 0, name: 0 };
   for (const shell of foldableShells) {
-    const decision = decideShellMerge(shell, canonicalIndex);
+    const decision = decideShellMerge(shell, canonicalIndex, canonicalNetidIndex);
     byReason[decision.reason] += 1;
     if (decision.merge && decision.canonicalId && decision.canonicalId !== shell.id) {
       mergeTargetByShellId.set(shell.id, decision.canonicalId);
+      if (decision.matchedOn) foldsByMatchedIdentity[decision.matchedOn] += 1;
     }
   }
 
@@ -236,10 +264,14 @@ export async function dedupeAccountlessResearcherShells(options: {
   }
 
   const mergesByShell = new Map<string, { repointed: string[]; archivedRedundant: string[] }>();
+  const rosterChangedEntityIds = new Set<string>();
   for (const ra of shellRoleAssignments as any[]) {
     const shellId = idKey(ra.personId);
     const canonicalId = mergeTargetByShellId.get(shellId);
     if (!canonicalId) continue;
+    if (ra.target?.kind === 'RESEARCH_ENTITY' && idKey(ra.target?.id)) {
+      rosterChangedEntityIds.add(idKey(ra.target.id));
+    }
     const entry = mergesByShell.get(shellId) ?? { repointed: [], archivedRedundant: [] };
     const edgeKey = roleAssignmentEdgeKey({
       targetKind: ra.target?.kind,
@@ -387,11 +419,29 @@ export async function dedupeAccountlessResearcherShells(options: {
     });
   }
 
+  let regatedEntities = 0;
   if (options.apply) {
     if (researcherOps.length) await Researcher.bulkWrite(researcherOps, { ordered: false });
     if (canonicalUnionOps.length) await Researcher.bulkWrite(canonicalUnionOps, { ordered: false });
     if (roleAssignmentOps.length)
       await RoleAssignment.bulkWrite(roleAssignmentOps, { ordered: false });
+
+    // Folding a shell changes the roster of every entity it held an edge on, and the
+    // gate reads that roster: a merge can turn a name-only lead into a netid-backed
+    // one, or remove a duplicate the row was held on. Without this the row keeps a
+    // tier and a search document describing a roster that no longer exists (#2952),
+    // the same self-resync obligation `docs/research-data-pipeline.md` records for the
+    // other roster-editing lanes. Re-gate through the ordinary gate rather than
+    // writing tiers here, so every other blocker still applies; its apply path also
+    // resyncs the affected search documents.
+    if (rosterChangedEntityIds.size > 0) {
+      await runStudentVisibilityGate({
+        collection: 'research',
+        mode: 'apply',
+        recordIds: [...rosterChangedEntityIds],
+      });
+      regatedEntities = rosterChangedEntityIds.size;
+    }
   }
 
   return {
@@ -401,8 +451,11 @@ export async function dedupeAccountlessResearcherShells(options: {
     netidBackedAccountlessResearchers,
     byReason,
     shellsMerged: mergeTargetByShellId.size,
+    foldsByMatchedIdentity,
     roleAssignmentsRepointed,
     roleAssignmentsArchivedRedundant,
+    rosterChangedEntities: rosterChangedEntityIds.size,
+    regatedEntities,
     attributeUnion,
     merges,
   };

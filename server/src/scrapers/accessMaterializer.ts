@@ -7,15 +7,11 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { getResearchEntityRoster } from '../services/researchEntityMembershipAccessor';
+import { isPubliclyUnreachableSourceUrl } from '../services/sourceLinkHealth';
 import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
 import { upsertSignal, type UpsertSignalInput } from '../services/signalService';
-import {
-  IDENTIFIED_FACULTY_LEAD_WAYS_IN_DERIVATION_KEY,
-  ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY,
-} from '../services/accessAcceptanceLevel';
 import {
   validateAccessArtifactBundle,
   type AccessArtifactCandidate,
@@ -46,9 +42,6 @@ export const MATERIALIZED_ACCESS_SIGNAL_TYPES: readonly AccessSignalType[] = [
   'POSTED_OPENING',
 ];
 
-const ENTITY_DISCOVERY_ONLY_SOURCES = new Set(['ysm-atoz-index', 'yse-centers-index']);
-
-const PATHWAY_SPECIFIC_ACCEPTING_SOURCES = new Set(['undergrad-fellowships-recipients']);
 const ACCESS_MATERIALIZER_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export function normalizeAccessMaterializerObjectId(value: unknown): string | undefined {
@@ -207,10 +200,6 @@ function isPositiveBoolean(obs: AccessObservation): boolean {
   return obs.value === true;
 }
 
-function isNegativeBoolean(obs: AccessObservation): boolean {
-  return obs.value === false;
-}
-
 function isCourseArray(value: unknown): value is Array<{ code?: string; title?: string }> {
   return Array.isArray(value) && value.length > 0;
 }
@@ -335,9 +324,6 @@ export function deriveAccessArtifactsFromObservations(
     ...(byField.get('offersIndependentStudy') || []).filter(isPositiveBoolean),
     ...(byField.get('independentStudyCourses') || []).filter((obs) => isCourseArray(obs.value)),
   ];
-  const independentStudySourceNames = new Set(
-    independentStudyObservations.map((obs) => obs.sourceName),
-  );
   if (independentStudyObservations.length > 0) {
     const score = maxConfidence(independentStudyObservations);
     const courseObs = (byField.get('independentStudyCourses') || []).find((obs) =>
@@ -391,12 +377,12 @@ export function deriveAccessArtifactsFromObservations(
     );
   }
 
-  const acceptingObservations = (byField.get('acceptingUndergrads') || []).filter(
-    (obs) =>
-      !ENTITY_DISCOVERY_ONLY_SOURCES.has(obs.sourceName) &&
-      !PATHWAY_SPECIFIC_ACCEPTING_SOURCES.has(obs.sourceName) &&
-      !independentStudySourceNames.has(obs.sourceName),
-  );
+  // Undergraduate access is read only from `undergradAccessEvidence`, which carries
+  // a verdict, the quote that backs it and the page the quote came from. The retired
+  // `acceptingUndergrads` boolean carried none of those, so the source allowlists and
+  // the two-independent-source corroboration rule that used to compensate for a bare
+  // `true` were retired with the field rather than carried onto the evidence object
+  // (#2055).
   const undergradAccessEvidence = byField.get('undergradAccessEvidence') || [];
   const positiveAccessEvidence = undergradAccessEvidence.filter(
     (obs) => undergradAccessVerdict(obs.value) === 'yes',
@@ -404,53 +390,40 @@ export function deriveAccessArtifactsFromObservations(
   const negativeAccessEvidence = undergradAccessEvidence.filter(
     (obs) => undergradAccessVerdict(obs.value) === 'no',
   );
-  const positiveAccepting = [
-    ...acceptingObservations.filter(isPositiveBoolean),
-    ...positiveAccessEvidence,
-  ];
   const plausibleUndergradEvidenceQuote = (byField.get('undergradEvidenceQuote') || []).filter(
     (obs) => typeof obs.value !== 'string' || isPlausibleUndergradEvidenceQuote(obs.value),
   );
   const undergradAccessQuote =
     publicExcerpt(bestObservation(byField.get('undergradRoleEvidenceQuote') || [])?.value) ||
     publicExcerpt(bestObservation(plausibleUndergradEvidenceQuote)?.value);
-  const independentPositiveSources = new Set(
-    positiveAccepting.map((obs) => obs.sourceName).filter(Boolean),
-  );
-  const hasCorroboratedUndergradAccess =
-    positiveAccessEvidence.length > 0 || independentPositiveSources.size >= 2;
-  if (positiveAccepting.length > 0 && hasCorroboratedUndergradAccess) {
-    const score = maxConfidence(positiveAccepting);
+  if (positiveAccessEvidence.length > 0) {
+    const score = maxConfidence(positiveAccessEvidence);
     accessSignals.push(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
         type: 'REACH_OUT_PLAUSIBLE',
         score,
-        observations: positiveAccepting,
+        observations: positiveAccessEvidence,
         excerpt: undergradAccessQuote || undefined,
       }),
     );
   }
 
-  const negativeAccepting = [
-    ...acceptingObservations.filter(isNegativeBoolean),
-    ...negativeAccessEvidence,
-  ];
   const negativeUnavailabilityQuote = [
     firstString(bestObservation(byField.get('undergradConstraintQuote') || [])?.value),
     firstString(bestObservation(byField.get('undergradEvidenceQuote') || [])?.value),
     ...negativeAccessEvidence.map((obs) => undergradAccessEvidenceQuote(obs.value)),
   ].find(isExplicitUndergradUnavailabilityPhrase);
-  if (negativeAccepting.length > 0 && negativeUnavailabilityQuote) {
-    const score = maxConfidence(negativeAccepting);
+  if (negativeAccessEvidence.length > 0 && negativeUnavailabilityQuote) {
+    const score = maxConfidence(negativeAccessEvidence);
     accessSignals.push(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:NOT_CURRENTLY_AVAILABLE',
         type: 'NOT_CURRENTLY_AVAILABLE',
         score,
-        observations: negativeAccepting,
+        observations: negativeAccessEvidence,
         excerpt: publicExcerpt(negativeUnavailabilityQuote) || undefined,
       }),
     );
@@ -570,48 +543,6 @@ export function deriveAccessArtifactsFromObservations(
   });
 }
 
-/**
- * Research-home entity types where an identified faculty lead plus an official
- * (non-grant) source page is itself a legitimate, evidence-based "ways in":
- * the student can plan specific outreach to a named faculty mentor whose
- * documented work matches their interest. Organizational homes here fall back
- * to the lead-optional center-level ways-in when no single director is named.
- *
- * Must be a superset of ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES: any type granted a
- * lead-exempt organizational ways-in must also be eligible here, or that class
- * (e.g. CORE_FACILITY, #1361) can never derive its organizational signal and is
- * left a permanent missing_action_evidence dead-end. Guarded by a subset test.
- *
- * Excluded by design: programs/fellowships (own program logic) and any entity
- * the visibility gate has flagged as a duplicate.
- */
-export const IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES = new Set([
-  'LAB',
-  'CENTER',
-  'INSTITUTE',
-  'FACULTY_RESEARCH_AREA',
-  'FACULTY_PROJECT',
-  'INITIATIVE',
-  'CORE_FACILITY',
-  'INDIVIDUAL_RESEARCH',
-]);
-
-const IDENTIFIED_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
-
-/**
- * Organizational research homes (centers, institutes, initiatives, core
- * facilities, and the humanities/collections project homes - digital-humanities
- * projects, collections initiatives, archive/museum projects) are
- * institutionally contactable via their official page - so they get a
- * center-level ways-in even when no single named director is published.
- */
-export const ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES = new Set([
-  'CENTER',
-  'INSTITUTE',
-  'INITIATIVE',
-  'CORE_FACILITY',
-]);
-
 const GRANT_OR_DIRECTORY_ONLY_HOST =
   /(reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov|api\.nsf\.gov|orcid\.org)$/i;
 
@@ -623,11 +554,31 @@ function isGrantOrOrcidOnlyUrl(value: string): boolean {
   }
 }
 
-/** First official, non-grant http(s) URL describing the research home. */
+/**
+ * First official, non-grant http(s) URL describing the research home, skipping
+ * any the corpus already knows is gone.
+ *
+ * The link-health check is not cosmetic: this URL is what the visibility gate
+ * reads as proof the entity has a way in, while the detail page hides a link
+ * whose stored verdict says it is dead. Without it the two halves disagree, and
+ * an entity is published on the strength of a link the same product then
+ * refuses to render (#2531). An unprobed URL still counts - absence of a verdict
+ * is not evidence of death, and failing closed on silence would demote every
+ * entity whose links have not been probed yet.
+ *
+ * "Gone" is not the only way a link fails to be a way in. A host that resolves
+ * only into private address space is alive and unopenable at the same time, and
+ * because that refusal records no liveness verdict it read here as an unprobed
+ * URL and therefore as proof of access (#2556). The URL stays a legitimate
+ * citation - it is real provenance - but it may not be the thing that makes an
+ * entity publishable, which is why the skip happens in this projection rather
+ * than by deleting the citation.
+ */
 export function officialNonGrantSourceUrl(entity: {
   websiteUrl?: unknown;
   website?: unknown;
   sourceUrls?: unknown;
+  sourceLinkHealth?: unknown;
 }): string {
   const urls = [
     entity.websiteUrl,
@@ -636,144 +587,13 @@ export function officialNonGrantSourceUrl(entity: {
   ]
     .map(firstString)
     .filter((url) => /^https?:\/\//i.test(url));
-  return urls.find((url) => !isGrantOrOrcidOnlyUrl(url)) || '';
-}
-
-export interface IdentifiedLeadWaysInInput {
-  researchEntityId: string;
-  entity: {
-    entityType?: string;
-    name?: string;
-    displayName?: string;
-    studentVisibilityReasons?: unknown;
-  };
-  officialUrl: string;
-  leadName?: string;
-  supportingObservations: AccessObservation[];
-}
-
-/**
- * Pure derivation of the identified-faculty-lead ways-in signal. Returns empty
- * artifacts when the entity is not an eligible research home, is flagged as a
- * duplicate, or has no supporting source evidence (so the claim gate keeps it).
- */
-export function deriveIdentifiedLeadWaysIn(
-  input: IdentifiedLeadWaysInInput,
-): DerivedAccessArtifacts {
-  const empty: DerivedAccessArtifacts = { accessSignals: [] };
-  const entityType = firstString(input.entity.entityType).toUpperCase();
-  if (!IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES.has(entityType)) return empty;
-  const reasons = Array.isArray(input.entity.studentVisibilityReasons)
-    ? input.entity.studentVisibilityReasons.map((r) => firstString(r))
-    : [];
-  if (reasons.includes('duplicate_risk') || reasons.includes('exact_url_duplicate_risk'))
-    return empty;
-  if (!/^https?:\/\//i.test(input.officialUrl) || isGrantOrOrcidOnlyUrl(input.officialUrl))
-    return empty;
-  if (input.supportingObservations.length === 0) return empty;
-
-  const score = Math.min(0.4, maxConfidence(input.supportingObservations) || 0.4);
-  const leadName = firstString(input.leadName);
-  const organizational = !leadName && ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES.has(entityType);
-
-  const accessSignals: DerivedAccessSignal[] = [
-    makeSignal({
-      researchEntityId: input.researchEntityId,
-      derivationKey: organizational
-        ? ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY
-        : IDENTIFIED_FACULTY_LEAD_WAYS_IN_DERIVATION_KEY,
-      type: 'REACH_OUT_PLAUSIBLE',
-      score,
-      observations: input.supportingObservations,
-      excerpt: organizational
-        ? 'Official center/institute page found; explore its programs and affiliated people for a way in.'
-        : 'Identified faculty lead with an official research page; outreach is plausible but no posting was found.',
-    }),
-  ];
-
-  return filterArtifactsByValidatedClaims({ accessSignals });
-}
-
-/**
- * Fetch the entity, its current PI/director lead, and a supporting identity
- * observation, then derive the identified-faculty-lead ways-in. Returns empty
- * artifacts unless the entity qualifies and has an attached lead.
- */
-async function deriveIdentifiedLeadWaysInForEntity(
-  researchEntityId: string,
-): Promise<DerivedAccessArtifacts> {
-  const empty: DerivedAccessArtifacts = { accessSignals: [] };
-  const researchEntityObjectId = toAccessMaterializerObjectId(researchEntityId);
-  if (!researchEntityObjectId) return empty;
-  const entity: any = await ResearchEntity.findById(researchEntityObjectId, {
-    entityType: 1,
-    name: 1,
-    displayName: 1,
-    slug: 1,
-    websiteUrl: 1,
-    website: 1,
-    sourceUrls: 1,
-    studentVisibilityReasons: 1,
-  }).lean();
-  if (!entity) return empty;
-
-  const roster = await getResearchEntityRoster(researchEntityObjectId);
-  const lead = roster.find(
-    (entry) =>
-      entry.state !== 'HISTORICAL' &&
-      IDENTIFIED_LEAD_ROLES.has(entry.role) &&
-      firstString(entry.name).length > 0,
+  return (
+    urls.find(
+      (url) =>
+        !isGrantOrOrcidOnlyUrl(url) &&
+        !isPubliclyUnreachableSourceUrl(entity.sourceLinkHealth, url),
+    ) || ''
   );
-  const entityTypeUpper = firstString(entity.entityType).toUpperCase();
-  const isOrganizational = ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES.has(entityTypeUpper);
-  if (!lead && !isOrganizational) return empty;
-
-  const leadName = firstString(lead?.name);
-  const candidateLeadUrls = lead
-    ? [lead.websiteUrl, ...(lead.profileLinks || []).map((link) => link.url)]
-    : [];
-  const leadProfileUrl =
-    candidateLeadUrls
-      .map(firstString)
-      .find(
-        (u: string) => /^https?:\/\//i.test(u) && /yale\.edu/i.test(u) && !isGrantOrOrcidOnlyUrl(u),
-      ) || '';
-
-  const officialUrl = officialNonGrantSourceUrl(entity) || leadProfileUrl;
-  if (!officialUrl) return empty;
-
-  const identityMatch: Record<string, any>[] = [{ entityId: researchEntityObjectId }];
-  if (entity.slug) identityMatch.push({ entityKey: entity.slug });
-  const identityObs: any = await Observation.findOne({
-    entityType: { $in: ['researchEntity', 'researchGroup'] },
-    superseded: false,
-    sourceUrl: { $regex: '^https?://', $options: 'i' },
-    $or: identityMatch,
-  })
-    .sort({ observedAt: -1 })
-    .lean();
-
-  const supporting: AccessObservation[] = identityObs
-    ? [
-        {
-          _id: identityObs._id,
-          field: identityObs.field,
-          value: identityObs.value,
-          sourceName: identityObs.sourceName,
-          sourceUrl: identityObs.sourceUrl || officialUrl,
-          confidence: Number(identityObs.confidence) || 0.4,
-          observedAt: identityObs.observedAt || new Date(),
-        },
-      ]
-    : [];
-
-  return deriveIdentifiedLeadWaysIn({
-    researchEntityId,
-    entity,
-    officialUrl,
-    leadName,
-    supportingObservations: supporting,
-  });
 }
 
 async function resolveResearchEntityId(identifier: {
@@ -790,6 +610,17 @@ async function resolveResearchEntityId(identifier: {
   return normalizeAccessMaterializerObjectId(group?._id) || null;
 }
 
+/**
+ * An empty observation read yields no signals here, and that is a no-op rather
+ * than a retraction: `materializeAccessForResearchGroup` upserts what it derived
+ * and never archives what it did not. So do NOT move an observation-store
+ * availability guard into this function, which #2514 proposed. Three paths reach
+ * the read below without supplying observations - the reconcile lane, the entity
+ * materializer through the wrapper, and the orphan-reference repair's
+ * `rematerialize_access` recovery - so a throw here would abort a scrape over a
+ * condition only the reconcile lane is endangered by. The guard belongs where an
+ * empty read becomes a retirement, which is that lane.
+ */
 export async function deriveAccessArtifactsForResearchGroup(
   identifier: { researchEntityId?: string; entityKey?: string },
   inputObservations?: AccessObservation[],
@@ -821,23 +652,6 @@ export async function deriveAccessArtifactsForResearchGroup(
     }).lean()) as unknown as AccessObservation[]);
 
   const artifacts = deriveAccessArtifactsFromObservations(researchEntityId, observations);
-
-  // Fallback ways-in: when observations yielded no source-backed access signal
-  // (a signal carrying an http(s) source URL as action evidence), a research
-  // home with an identified faculty lead and an official source page is still a
-  // legitimate, evidence-based exploratory contact. This removes the dominant
-  // `missing_action_evidence` blocker for real faculty research homes without
-  // manufacturing undergrad-access claims.
-  const hasQualifyingSignal = artifacts.accessSignals.some((signal) =>
-    /^https?:\/\//i.test(String(signal.sourceUrl || '')),
-  );
-  if (!hasQualifyingSignal) {
-    const leadWaysIn = await deriveIdentifiedLeadWaysInForEntity(researchEntityId);
-    const existingSignalKeys = new Set(artifacts.accessSignals.map((s) => s.derivationKey));
-    artifacts.accessSignals.push(
-      ...leadWaysIn.accessSignals.filter((s) => !existingSignalKeys.has(s.derivationKey)),
-    );
-  }
 
   return { researchEntityId, artifacts };
 }

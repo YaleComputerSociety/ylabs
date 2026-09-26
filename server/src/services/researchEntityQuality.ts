@@ -1,4 +1,5 @@
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
+import { cannotOwnResearchHome } from '../utils/researchHomeOwnership';
 
 export type ResearchEntityDescriptionState =
   | 'source_backed'
@@ -48,10 +49,28 @@ const visibilityReasonsForEntity = (entity: Record<string, any>): string[] =>
       : []),
   ].map(textValue);
 
-const hasStrongLead = (member: Record<string, any>): boolean =>
-  Boolean(
+/**
+ * A lead is strong when it names an identity AND that person can own the research
+ * home a student would be joining.
+ *
+ * Identity alone was the whole test, so a row whose only lead was a postdoc shipped
+ * as a research home. A postdoc runs real research but cannot admit an
+ * undergraduate: the student approaches the PI, who pairs them with the postdoc. So
+ * such a row becomes `lead_weak` and carries `missing_lead`, which routes it to the
+ * PI-attachment lane rather than deleting it - attaching the faculty lead is the
+ * remedy, and the row returns to the served surface once it is found (#2876).
+ *
+ * A programme manager, a data analyst or a research affiliate fails the same test for
+ * a different reason: they hold no research appointment to own a research home with
+ * (#1897).
+ */
+const hasStrongLead = (member: Record<string, any>): boolean => {
+  const identified = Boolean(
     member.userId || member.user?._id || textValue(member.name) || textValue(member.user?.netid),
   );
+  if (!identified) return false;
+  return !cannotOwnResearchHome(textValue(member.title) || textValue(member.user?.title));
+};
 
 function descriptionStateForEntity(
   entity: Record<string, any>,
@@ -65,7 +84,17 @@ function descriptionStateForEntity(
   return 'missing';
 }
 
-function leadStateForMembers(leadMembers: Array<Record<string, any>>): ResearchEntityLeadState {
+/**
+ * The gate's own answer to "does this row have a lead a student could approach".
+ *
+ * Exported because a lane that decides whether a row still needs a lead must ask
+ * this question rather than a weaker one. `#2931` measured what happens otherwise:
+ * a lane asking only whether a lead role assignment exists skipped 52 rows the gate
+ * was holding on `missing_lead`, so the lane could never revisit them.
+ */
+export function researchEntityLeadStateForMembers(
+  leadMembers: Array<Record<string, any>>,
+): ResearchEntityLeadState {
   if (leadMembers.some(hasStrongLead)) return 'lead_attached';
   if (leadMembers.length > 0) return 'lead_weak';
   return 'lead_missing';
@@ -83,7 +112,7 @@ export function buildResearchEntityQualitySummary({
   const descriptionQuality = publicDescription.quality;
   const descriptionState = descriptionStateForEntity(publicEntity, descriptionQuality);
   const cardState = descriptionQuality.cardState;
-  const leadState = leadStateForMembers(leadMembers);
+  const leadState = researchEntityLeadStateForMembers(leadMembers);
   const repairFlags: ResearchEntityRepairFlag[] = [];
 
   if (descriptionState === 'missing') repairFlags.push('missing_description');

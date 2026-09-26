@@ -44,6 +44,7 @@ export type ScraperCliPreflight =
     };
 
 const VALUE_FLAGS = new Set([
+  'explain-limit',
   'keep-runs',
   'limit',
   'manual-recipient-csv-dir',
@@ -64,10 +65,10 @@ const BOOLEAN_FLAGS = new Set([
   'confirm-observation-prune',
   'dry-run',
   'exhaustive',
+  'explain',
   'force-disabled',
   'force-llm',
   'ignore-work-planner',
-  'logistics-production',
   'release',
   'use-cache',
 ]);
@@ -137,12 +138,29 @@ export function parseScraperOptions(flags: Record<string, string | boolean>): Sc
       min: 1,
       label: 'positive',
     }),
-    logisticsProductionMode: !!flags['logistics-production'],
     since: flags.since ? new Date(String(flags.since)) : undefined,
+    explain: !!flags.explain,
+    explainLimit: parseOptionalIntegerFlag(flags, 'explain-limit', {
+      min: 1,
+      label: 'positive',
+    }),
   };
 
   if (flags.since && Number.isNaN(options.since?.getTime())) {
     throw new Error('--since must be a valid date');
+  }
+
+  if (options.explain) {
+    // A preview only exists when nothing is written, and observation values carry
+    // names, emails and bios, so they go to a write-guarded file rather than to
+    // stdout where they would land in terminal scrollback and CI logs.
+    if (!options.dryRun) throw new Error('--explain requires --dry-run');
+    if (typeof flags.output !== 'string' || !flags.output.trim()) {
+      throw new Error('--explain requires --output <path> so observation values are not printed');
+    }
+  }
+  if (flags['explain-limit'] !== undefined && !options.explain) {
+    throw new Error('--explain-limit requires --explain');
   }
 
   return options;
@@ -181,6 +199,30 @@ export function parseIntegerFlag(
     throw new Error(`--${name} must be an integer greater than or equal to ${options.min}`);
   }
   return value;
+}
+
+/**
+ * A write run that materializes nothing leaves every key it observed for the first
+ * time with no record, and says so nowhere: the ScrapeRun reports `success` with
+ * `entitiesCreated: 0`, which reads identically to a run that had nothing to create.
+ * The `art` lane's 2026-09-16 apply run left 18 research-home keys stranded that way,
+ * 13 of which mint cleanly through the ordinary path (#2759). Deferring
+ * materialization is legitimate, so this names the two commands that finish the job
+ * rather than refusing the run.
+ */
+export function unmaterializedWriteRunWarning(input: {
+  runId: string;
+  dryRun: boolean;
+  autoMaterialize: boolean;
+  observationCount: number;
+}): string | undefined {
+  if (input.dryRun || input.autoMaterialize || input.observationCount <= 0) return undefined;
+  return [
+    `Run ${input.runId} wrote ${input.observationCount} observation(s) and materialized none,`,
+    'so any key it observed for the first time still has no record.',
+    `Finish with "yarn --cwd server scrape materialize --run ${input.runId} --confirm-materialize",`,
+    'or sweep the backlog with "yarn --cwd server observations:catch-up-materialize".',
+  ].join(' ');
 }
 
 export function buildMaterializeOutputPayload({

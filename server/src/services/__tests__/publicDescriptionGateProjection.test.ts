@@ -7,14 +7,20 @@ import {
   withPublicDescriptionGateFields,
 } from '../researchEntityPublicDescription';
 import { buildPublicDescriptionAuditReport } from '../researchEntityPublicDescriptionAuditService';
-import { PUBLIC_RELATED_ENTITY_PROJECTION } from '../researchGroupService';
+import { toPublicResearchEntitySummaryDto } from '../researchEntityDto';
+import {
+  PUBLIC_RELATED_ENTITY_PROJECTION,
+  publicResearchEntityLeadMemberNames,
+} from '../researchGroupService';
 import { savedResearchEntityProjection } from '../researchPlanService';
+import { researchEntityGateProjection } from '../studentVisibilityGateService';
+import { sanitizeResearchEntityPublicDescriptionFields } from '../../utils/researchEntityDescriptionText';
 
 const HISTORICAL_AUDIT_PROJECTION =
   '_id slug name displayName kind entityType website websiteUrl sourceUrls shortDescription fullDescription profileSynthesisDescription descriptionSource';
 
 const HISTORICAL_SAVED_PROJECTION =
-  '_id slug name displayName kind entityType departments school shortDescription fullDescription profileSynthesisDescription sourceUrls website websiteUrl undergraduateCurrentAvailability hasUndergradHostingEvidence';
+  '_id slug name displayName kind entityType departments school shortDescription fullDescription profileSynthesisDescription sourceUrls website websiteUrl hasUndergradHostingEvidence';
 
 const HISTORICAL_RELATED_PROJECTION =
   '_id slug name displayName kind entityType departments shortDescription fullDescription studentVisibilityTier descriptionSource sourceUrls website websiteUrl';
@@ -66,12 +72,16 @@ const applyProjection = <T extends Record<string, any>>(entity: T, projection: s
 const auditOver = (entities: Array<Record<string, any>>) =>
   buildPublicDescriptionAuditReport({ entities, leadMembersByEntityId: new Map() });
 
+const servedCard = (entity: Record<string, any>) =>
+  toPublicResearchEntitySummaryDto(sanitizeResearchEntityPublicDescriptionFields(entity));
+
 describe('public description gate projection completeness', () => {
   const fixtures = [plainEntity, chipCardEntity];
 
-  it('reports researchAreas as read-but-unprojected for the projection that inflated the audit', () => {
+  it('reports every field read-but-unprojected by the projection that inflated the audit', () => {
     expect(missingPublicDescriptionGateFields(HISTORICAL_AUDIT_PROJECTION)).toEqual([
       'researchAreas',
+      'fieldProvenance',
     ]);
   });
 
@@ -79,16 +89,28 @@ describe('public description gate projection completeness', () => {
     expect(missingPublicDescriptionGateFields(HISTORICAL_SAVED_PROJECTION)).toEqual([
       'descriptionSource',
       'researchAreas',
+      'fieldProvenance',
     ]);
     expect(missingPublicDescriptionGateFields(HISTORICAL_RELATED_PROJECTION)).toEqual([
       'profileSynthesisDescription',
       'researchAreas',
+      'fieldProvenance',
     ]);
   });
 
   it('keeps every live serve-path projection complete with respect to the gate', () => {
     expect(missingPublicDescriptionGateFields(savedResearchEntityProjection)).toEqual([]);
     expect(missingPublicDescriptionGateFields(PUBLIC_RELATED_ENTITY_PROJECTION)).toEqual([]);
+  });
+
+  // The visibility gate reads the same description representation, and it was the
+  // third projection to omit `fieldProvenance` while this guard existed. Enrolling
+  // it here is what stops a fourth: on Development the omission left 10 live rows
+  // where the gate's citation verdict disagreed with the whole document, one of them
+  // `student_ready` and serving a card whose only citation is a known 404.
+  it('keeps the student-visibility gate projection complete with respect to the gate', () => {
+    expect(missingPublicDescriptionGateFields(researchEntityGateProjection)).toEqual([]);
+    expect(researchEntityGateProjection.split(/\s+/)).toContain('fieldProvenance');
   });
 
   it('composes a projection that covers every gate field alongside caller-specific fields', () => {
@@ -108,6 +130,7 @@ describe('public description gate projection completeness', () => {
       withPublicDescriptionGateFields('_id slug'),
       savedResearchEntityProjection,
       PUBLIC_RELATED_ENTITY_PROJECTION,
+      researchEntityGateProjection,
     ]) {
       const projected = auditOver(fixtures.map((entity) => applyProjection(entity, projection)));
       expect(projected.counts).toEqual(wholeDocument.counts);
@@ -124,6 +147,75 @@ describe('public description gate projection completeness', () => {
     expect(starved.counts.violations).toBe(1);
     expect(starved.counts.missingPublicCardDescription).toBe(1);
     expect(starved.counts).not.toEqual(wholeDocument.counts);
+  });
+
+  // The verdict-parity test above passed all through #2425, because an unprojected
+  // `fieldProvenance` flipped no gate verdict - it only degraded the copy. Parity has
+  // to be asserted on what the student reads, not only on who is allowed to serve.
+  it('serves identical card copy from every gate-complete projection and the whole document', () => {
+    for (const entity of fixtures) {
+      const wholeDocument = servedCard(entity);
+      for (const projection of [
+        withPublicDescriptionGateFields('_id slug'),
+        savedResearchEntityProjection,
+        PUBLIC_RELATED_ENTITY_PROJECTION,
+      ]) {
+        expect(servedCard(applyProjection(entity, projection))).toEqual(wholeDocument);
+      }
+    }
+  });
+
+  // Card copy also depends on a field no gate reads: the lead-name derivation reads
+  // `rosterEnrichment` to decide whether an official-roster lead is still fresh, and
+  // fails closed on a field it cannot see. A projection that drops it serves a card
+  // stripped of the very lead name its own detail page keeps (#2240).
+  it('derives the same lead names from every card-path projection and the whole document', () => {
+    const snapshot = {
+      state: 'current',
+      memberKeys: ['official-profile:fresh|pi'],
+      sourceUrl: 'https://example.yale.edu/labs/plain/members/',
+      observedAt: '2026-07-14T00:00:00Z',
+    };
+    const entity = { ...plainEntity, rosterEnrichment: snapshot };
+    const rosterEntries = [
+      {
+        researchEntityId: entity._id,
+        personId: 'person-official-lead',
+        roleAssignmentId: 'assignment-official-lead',
+        name: 'Wei Finchbrook',
+        netid: '',
+        email: '',
+        role: 'pi',
+        roleCanonical: 'PI',
+        state: 'CURRENT',
+        isCurrentMember: true,
+        confidence: 0.8,
+        reviewStatus: 'APPROVED',
+        profileLinks: [],
+        rosterProvenance: {
+          sourceName: 'official-research-home-roster',
+          sourceUrl: snapshot.sourceUrl,
+          evidenceStatus: 'verified',
+          membershipKey: 'official-profile:fresh|pi',
+          observedAt: snapshot.observedAt,
+          freshnessExpiresAt: '2026-08-04T00:00:00Z',
+        },
+      },
+    ] as any[];
+    const now = new Date('2026-07-14T00:00:00Z');
+
+    expect(publicResearchEntityLeadMemberNames(entity, rosterEntries, now)).toEqual([
+      'Wei Finchbrook',
+    ]);
+    for (const projection of [savedResearchEntityProjection, PUBLIC_RELATED_ENTITY_PROJECTION]) {
+      expect(
+        publicResearchEntityLeadMemberNames(
+          applyProjection(entity, projection),
+          rosterEntries,
+          now,
+        ),
+      ).toEqual(['Wei Finchbrook']);
+    }
   });
 
   it('serves the chip-derived card on a whole document and fails closed without researchAreas', () => {

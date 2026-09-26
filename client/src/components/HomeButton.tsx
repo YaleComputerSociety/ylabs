@@ -1,25 +1,26 @@
 /**
- * Logo home button that navigates to the primary research discovery page.
+ * Logo home button that navigates to a clean research discovery home.
  */
 import Button from '@mui/material/Button';
 import { Link, useLocation } from 'react-router-dom';
 import { navFocusRingSx } from '../utils/focusRing';
+import Wordmark from './Wordmark';
+import {
+  RESEARCH_HOME_PATH,
+  isResearchHomeLocation,
+  researchHomeResetState,
+} from './researchHomeNavigation';
 
 const HomeButton = () => {
   const location = useLocation();
-
-  const handleClick = (event: React.MouseEvent) => {
-    if (location.pathname === '/research') {
-      event.preventDefault();
-      window.location.reload();
-    }
-  };
+  const alreadyAtResearchHome = isResearchHomeLocation(location);
 
   return (
     <Button
       component={Link}
-      to="/research"
-      onClick={handleClick}
+      to={RESEARCH_HOME_PATH}
+      state={researchHomeResetState()}
+      replace={alreadyAtResearchHome}
       disableRipple={true}
       sx={{
         '&:hover': { backgroundColor: 'transparent' },
@@ -37,9 +38,7 @@ const HomeButton = () => {
         className="mr-2"
         style={{ width: '32px', height: '32px' }}
       />
-      <span className="yr-wordmark text-xl text-[var(--yr-blue)] sm:text-[1.35rem]">
-        Yale Research
-      </span>
+      <Wordmark className="text-xl text-[var(--yr-blue)] sm:text-[1.35rem]" />
     </Button>
   );
 };

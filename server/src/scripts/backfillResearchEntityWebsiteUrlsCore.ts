@@ -1,15 +1,32 @@
+import { isExternalScholarlyPlatformHost } from '../utils/externalScholarlyPlatforms';
 import {
   isBoilerplatePlatformHostUrl,
+  isDepartmentRosterProvenanceUrl,
   isFileShareOrDocumentUrl,
+  isInstitutionalAdvancementUrl,
+  isInstitutionalPublicityPageUrl,
   isListingOrIndexUrl,
+  isMapOrDirectionsUrl,
+  isMultiTenantAcademicHostRootUrl,
   isPersonProfileOrDirectoryUrl,
+  isPressOrNewsHostUrl,
+  isProgrammePageCitedByPerson,
+  isSharedPeopleRosterUrl,
+  isUmbrellaPageCitedByPerson,
+  organizationOwnedSiteUrlFromCitation,
   sourceUrlToResearchHomeWebsiteUrl,
+  type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
+import { normalizeWebsiteUrlIdentityKey } from './researchEntityPiDedupeCore';
 
 export interface WebsiteUrlBackfillCandidateEntity {
   websiteUrl?: unknown;
   website?: unknown;
   sourceUrls?: unknown;
+  name?: unknown;
+  displayName?: unknown;
+  entityType?: unknown;
+  kind?: unknown;
 }
 
 const URL_MAXLENGTH = 2048;
@@ -60,41 +77,216 @@ export function isProfilePageWebsiteUrl(value: unknown): boolean {
   return isPersonProfileOrDirectoryUrl(value);
 }
 
+export function isInstitutionalAdvancementWebsiteUrl(value: unknown): boolean {
+  return isInstitutionalAdvancementUrl(value);
+}
+
 export function isListingPageWebsiteUrl(value: unknown): boolean {
   return isListingOrIndexUrl(value);
+}
+
+export function isPressOrNewsHostWebsiteUrl(value: unknown): boolean {
+  return isPressOrNewsHostUrl(value);
 }
 
 export function isBoilerplateHostWebsiteUrl(value: unknown): boolean {
   return isBoilerplatePlatformHostUrl(value);
 }
 
+/**
+ * A map pin, a driving-directions link, or a school's own news-article or
+ * media-player page: the destinations a profile page's Locations card and
+ * "News & Links" region publish (#3184).
+ *
+ * `isContentPageUrl` already declines a `/news-article/` path on the promotion path,
+ * but it is not an arm of `isUnservableWebsiteUrl`, so a stored one was never
+ * cleared, and it reads neither `/media-player/` nor a directions link at all.
+ */
+export function isPublicityOrDirectionsWebsiteUrl(value: unknown): boolean {
+  return isMapOrDirectionsUrl(value) || isInstitutionalPublicityPageUrl(value);
+}
+
 export function isFileShareOrDocumentWebsiteUrl(value: unknown): boolean {
   return isFileShareOrDocumentUrl(value);
 }
 
-export function isPromotableWebsiteUrl(value: unknown): boolean {
+export function isMultiTenantHostRootWebsiteUrl(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  return isMultiTenantAcademicHostRootUrl(value, entity);
+}
+
+const PERSON_SCOPED_RESEARCH_HOME_TYPES: ReadonlySet<string> = new Set([
+  'LAB',
+  'FACULTY_RESEARCH_AREA',
+  'FACULTY_PROJECT',
+  'FACULTY_RESEARCH',
+  'INDIVIDUAL_RESEARCH',
+]);
+
+/**
+ * A faculty roster or members list is legitimate evidence about the department or
+ * centre that publishes it, and a graft on a person's row. `retireGraftedDirectoryUrls`
+ * removes these, but the promotion path never refused them, so the engine restored the
+ * value on the next materialization and the repair had to run again: a churn loop
+ * rather than a fix (#2708).
+ *
+ * Refusing 0 of the 1,976 stored `websiteUrl` values on Development, so this is
+ * preventive only. It blocks the two rows a dry run would otherwise have pointed at
+ * one institute's members list.
+ */
+export function isRosterPageWebsiteUrlForPerson(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  const entityType = typeof entity?.entityType === 'string' ? entity.entityType : '';
+  if (!PERSON_SCOPED_RESEARCH_HOME_TYPES.has(entityType)) return false;
+  const url = cleanString(value);
+  if (!url) return false;
+  return isSharedPeopleRosterUrl(url) || isDepartmentRosterProvenanceUrl(url);
+}
+
+export function isPromotableWebsiteUrl(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
   return (
     isPublicHttpUrl(value) &&
     !isGrantOrIdentifierUrl(value) &&
     !isContentPageUrl(value) &&
+    !isInstitutionalAdvancementWebsiteUrl(value) &&
+    // The promotion lane does not route through `sourceUrlToResearchHomeWebsiteUrl`
+    // when no stored `websiteUrl` exists, so without this arm a cleared row's press
+    // article is re-promoted from `website`/`sourceUrls` on the next pass (#2532).
+    !isPressOrNewsHostWebsiteUrl(value) &&
+    !isPublicityOrDirectionsWebsiteUrl(value) &&
+    // The empty-slot branch of `resolveBackfillWebsiteUrl` never consults
+    // `sourceUrlToResearchHomeWebsiteUrl`, so this arm is the only thing standing
+    // between a citation-index page in `sourceUrls` and the `websiteUrl` slot. Without
+    // it the promotion path writes exactly the value `isUnservableWebsiteUrl` then
+    // clears, which is a churn loop rather than a fix (#2285, the #2708 shape).
+    !isExternalScholarlyPlatformWebsiteUrl(value) &&
     !isProfilePageWebsiteUrl(value) &&
     !isListingPageWebsiteUrl(value) &&
     !isBoilerplateHostWebsiteUrl(value) &&
-    !isFileShareOrDocumentWebsiteUrl(value)
+    !isFileShareOrDocumentWebsiteUrl(value) &&
+    !isMultiTenantHostRootWebsiteUrl(value, entity) &&
+    !isRosterPageWebsiteUrlForPerson(value, entity) &&
+    // A department's programme or training-opportunities page describes what the
+    // department offers, and is a graft on a person's row. Already scoped by who cites
+    // it, so the page stays valid evidence for the department itself (#2708).
+    !isProgrammePageCitedByPerson(value, entity) &&
+    // A research group's host root or a department's audience-recruitment page names a
+    // collective. The serve-time gate hides one, but promotion is where the value comes
+    // from: without this arm the resolver re-fills a cleared slot from `sourceUrls` on
+    // the next materialization and the repair undoes itself (#2579, #2708).
+    !isUmbrellaPageCitedByPerson(value, entity)
   );
+}
+
+/**
+ * A stored `websiteUrl` that can never be served as an entity's research home,
+ * so it is re-picked from evidence when evidence has a real one and otherwise
+ * cleared unconditionally. Distinct from the profile-page case, which clears only
+ * when the entity already cites the same destination and otherwise keeps the
+ * profile as a PI link.
+ */
+export function isUnservableWebsiteUrl(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  return (
+    isListingPageWebsiteUrl(value) ||
+    isInstitutionalAdvancementWebsiteUrl(value) ||
+    isPressOrNewsHostWebsiteUrl(value) ||
+    isPublicityOrDirectionsWebsiteUrl(value) ||
+    isBoilerplateHostWebsiteUrl(value) ||
+    isFileShareOrDocumentWebsiteUrl(value) ||
+    isExternalScholarlyPlatformWebsiteUrl(value) ||
+    isMultiTenantHostRootWebsiteUrl(value, entity) ||
+    isUmbrellaPageCitedByPerson(value, entity)
+  );
+}
+
+/**
+ * A citation index or social profile is where a person's output is listed, never
+ * the research home itself.
+ *
+ * `sourceUrlToResearchHomeWebsiteUrl` refuses these hosts, which is why a stored one
+ * gets re-picked from evidence or cleared (#2285). That refusal does NOT make one
+ * unpromotable, which this comment used to claim: the resolver runs only on the two
+ * replacement branches, and the branch that fills an EMPTY slot picks the first
+ * `isPromotableWebsiteUrl` candidate without consulting it. 10 served Development rows
+ * with no website were queued to receive a citation-index page from `sourceUrls` on the
+ * next materialization, so the refusal is read on both paths now.
+ */
+function isExternalScholarlyPlatformWebsiteUrl(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  try {
+    return isExternalScholarlyPlatformHost(new URL(value.trim()).hostname);
+  } catch {
+    return false;
+  }
 }
 
 export function hasUsableWebsiteUrl(entity: WebsiteUrlBackfillCandidateEntity): boolean {
   return isPublicHttpUrl(entity.websiteUrl);
 }
 
-function selectResearchHomeWebsiteUrl(candidates: unknown[]): string | undefined {
+function selectResearchHomeWebsiteUrl(
+  candidates: unknown[],
+  entity?: ResearchEntityHostOwnerIdentity,
+): string | undefined {
   for (const candidate of candidates) {
-    if (!isPromotableWebsiteUrl(candidate)) continue;
-    const url = sourceUrlToResearchHomeWebsiteUrl(candidate);
+    if (!isPromotableWebsiteUrl(candidate, entity)) continue;
+    const url = sourceUrlToResearchHomeWebsiteUrl(candidate, entity);
     if (url) return url;
   }
   return undefined;
+}
+
+/**
+ * Last resort for an organization whose evidence names its own site only through a
+ * page one level inside it. Tried strictly AFTER `selectResearchHomeWebsiteUrl`, so a
+ * real research home in the evidence always wins. The only stored or promotable value
+ * it outranks is the organization's own people-roster page, which is the worst
+ * rendering of a host it owns; otherwise it fills a slot that would be left empty.
+ *
+ * The derived URL is put back through `isPromotableWebsiteUrl` rather than trusted:
+ * the fallback decides WHOSE site a host is, and must not become a way past the
+ * refusals that decide whether a page can be a research home at all.
+ */
+function selectOrganizationOwnedWebsiteUrl(
+  candidates: unknown[],
+  entity?: ResearchEntityHostOwnerIdentity,
+): string | undefined {
+  for (const candidate of candidates) {
+    const owned = organizationOwnedSiteUrlFromCitation(candidate, entity);
+    if (owned && isPromotableWebsiteUrl(owned, entity)) return owned;
+  }
+  return undefined;
+}
+
+const websiteUrlDestinationKey = (value: unknown): string =>
+  typeof value === 'string' ? normalizeWebsiteUrlIdentityKey(value).toLowerCase() : '';
+
+/**
+ * Whether clearing `websiteUrl` still leaves the student a way to that destination.
+ * Only `sourceUrls` counts as a citation: the detail page renders `websiteUrl` and
+ * `sourceUrls`, never the legacy `website` field, so a `website`-only match would
+ * drop the URL off the page entirely. A department-roster provenance shape does not
+ * count either, because the detail page drops those from both the Sources list and
+ * the official-profile CTA.
+ */
+function isWebsiteUrlAlreadyCitedAsRenderedEvidence(
+  entity: WebsiteUrlBackfillCandidateEntity,
+): boolean {
+  if (isDepartmentRosterProvenanceUrl(entity.websiteUrl)) return false;
+  const key = websiteUrlDestinationKey(entity.websiteUrl);
+  if (!key) return false;
+  const sourceUrls = Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [];
+  return sourceUrls.some((candidate) => websiteUrlDestinationKey(candidate) === key);
 }
 
 export type WebsiteUrlBackfillResolution =
@@ -110,18 +302,40 @@ export type WebsiteUrlBackfillResolution =
  * roots, bare `/people`, `/people/faculty`, `/faculty` roots), and generic
  * CMS/platform boilerplate hosts (e.g. `wordpress.org` "Powered by" footer links)
  * and file-share/direct-document hosts (Google Drive/Docs, Dropbox, Box, OneDrive,
- * bare `.pdf`/`.doc(x)`/`.ppt(x)`/`.xls(x)` links) are never promoted, so a listing,
- * profile, boilerplate, or non-navigable file page can never beat a real lab site.
- * An entity whose existing `websiteUrl` is a listing/index page (including
- * `/people/members`, `/people/index`, and other people-roster/index subpages), a
- * boilerplate platform host, or a file-share/document link is corrected to a genuine
+ * bare `.pdf`/`.doc(x)`/`.ppt(x)`/`.xls(x)` links) and the roots of shared academic
+ * hosts that publish one page per tenant under `~user` are never promoted, so a
+ * listing, profile, boilerplate, non-navigable file, or shared-host page can never
+ * beat a real lab site.
+ * An entity whose existing `websiteUrl` is unservable as a research home - a
+ * listing/index page (including `/people/members`, `/people/index`, and other
+ * people-roster/index subpages), a boilerplate platform host, a shared
+ * multi-tenant host root, or a file-share/document link - is corrected to a genuine
  * research home / lab site when one exists in its evidence, and otherwise cleared
  * (fail closed to no website rather than an off-site, directory-index, or dead/non-navigable
  * file link). A single-person
- * profile-page `websiteUrl` is corrected to a research home when one exists and
- * otherwise kept as a PI fallback. Any other usable `websiteUrl` is kept.
+ * profile-page `websiteUrl` is corrected to a research home when one exists; when none
+ * does it is cleared if the same destination is already cited in the entity's own
+ * `sourceUrls`, and kept as a PI fallback only when clearing would drop the URL entirely.
+ * The materializer projects a lead's official profile page onto `sourceUrls` (#613)
+ * and the detail page renders that as the official-profile CTA, so a profile URL that
+ * is already cited there reaches the student either way; keeping it as `websiteUrl` too
+ * only made an entity advertise a "Website" that was its PI's profile page under a
+ * second label (#2352). The citation match folds scheme, `www.`, trailing slash, and
+ * case, and it ignores citations the detail page refuses to render (the legacy `website`
+ * field, department-roster provenance pages) so clearing never leaves an entity with no
+ * link at all. Any other usable `websiteUrl` is kept.
  * When no usable `websiteUrl` exists, the first promotable candidate (`website`
- * then ordered `sourceUrls`) is used.
+ * then ordered `sourceUrls`) is used, except that a people-roster candidate
+ * (`isSharedPeopleRosterUrl`) loses to a site derived from it, and stays the answer
+ * when no site can be derived.
+ * The entity's own shape and `name`/`displayName` are consulted for two decisions:
+ * so a shared academic host's own organization keeps its root as its website instead
+ * of being stripped along with its tenants, and so an organization citing only a page
+ * inside its own site has that site derived from the citation
+ * (`organizationOwnedSiteUrlFromCitation`, the last resort of each arm that picks a
+ * replacement value, #2534).
+ * A person-scoped entity is never eligible for either, so a grafted organization name
+ * cannot buy one an exemption.
  */
 export function resolveBackfillWebsiteUrl(
   entity: WebsiteUrlBackfillCandidateEntity,
@@ -130,27 +344,45 @@ export function resolveBackfillWebsiteUrl(
     entity.website,
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
   ];
+  const hostOwnerIdentity: ResearchEntityHostOwnerIdentity = {
+    name: entity.name,
+    displayName: entity.displayName,
+    entityType: entity.entityType,
+    kind: entity.kind,
+  };
+  // The unservable value is itself a citation on the organization's own host, so it
+  // stays available to the fallback after it has been rejected as a research home.
+  const ownedSiteCitations = [entity.websiteUrl, ...candidates];
+  // One expression for both replacement branches: two copies of the same precedence
+  // are what let a resolver this layered drift apart.
+  const selectReplacementWebsiteUrl = (): string | undefined =>
+    selectResearchHomeWebsiteUrl(candidates, hostOwnerIdentity) ??
+    selectOrganizationOwnedWebsiteUrl(ownedSiteCitations, hostOwnerIdentity);
   if (hasUsableWebsiteUrl(entity)) {
-    if (isListingPageWebsiteUrl(entity.websiteUrl)) {
-      const researchHome = selectResearchHomeWebsiteUrl(candidates);
-      return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
-    }
-    if (isBoilerplateHostWebsiteUrl(entity.websiteUrl)) {
-      const researchHome = selectResearchHomeWebsiteUrl(candidates);
-      return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
-    }
-    if (isFileShareOrDocumentWebsiteUrl(entity.websiteUrl)) {
-      const researchHome = selectResearchHomeWebsiteUrl(candidates);
+    if (isUnservableWebsiteUrl(entity.websiteUrl, hostOwnerIdentity)) {
+      const researchHome = selectReplacementWebsiteUrl();
       return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
     }
     if (isProfilePageWebsiteUrl(entity.websiteUrl)) {
-      const researchHome = selectResearchHomeWebsiteUrl(candidates);
-      return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'keep' };
+      const researchHome = selectReplacementWebsiteUrl();
+      if (researchHome) return { action: 'set', websiteUrl: researchHome };
+      return isWebsiteUrlAlreadyCitedAsRenderedEvidence(entity)
+        ? { action: 'clear' }
+        : { action: 'keep' };
     }
     return { action: 'keep' };
   }
-  const promotable = candidates.find(isPromotableWebsiteUrl);
+  const promotable = candidates.find((candidate) =>
+    isPromotableWebsiteUrl(candidate, hostOwnerIdentity),
+  );
   const cleaned = promotable ? cleanString(promotable) : undefined;
+  // An organization's own roster page is promotable, because refusing it outright would
+  // strand a small org whose only site is its `/team` page. It is still the worst
+  // rendering of a host the organization owns, so the site that host belongs to wins
+  // when one can be derived, and the roster stays the answer when none can.
+  if (cleaned && !isSharedPeopleRosterUrl(cleaned)) return { action: 'set', websiteUrl: cleaned };
+  const owned = selectOrganizationOwnedWebsiteUrl(ownedSiteCitations, hostOwnerIdentity);
+  if (owned) return { action: 'set', websiteUrl: owned };
   return cleaned ? { action: 'set', websiteUrl: cleaned } : { action: 'keep' };
 }
 

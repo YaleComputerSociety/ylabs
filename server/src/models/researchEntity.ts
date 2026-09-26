@@ -6,7 +6,12 @@ import {
   canonicalSchemaVersionField,
   defineCanonicalSchemaVersion,
 } from './canonicalSchemaVersion';
-import { fieldProvenanceSchema } from './modelPrimitives';
+import { archiveAttributionFields } from './entityArchival';
+import {
+  fieldLockProvenanceSchema,
+  fieldProvenanceSchema,
+  fieldValueRefusalSchema,
+} from './modelPrimitives';
 import {
   mapResearchGroupKindToEntityType,
   researchEntityTypes,
@@ -14,9 +19,50 @@ import {
   type ResearchEntityType,
 } from './researchAccessTypes';
 import { studentVisibilityFields } from './studentVisibility';
-import { sourceLinkHealthStatuses } from '../services/sourceLinkHealth';
+import {
+  descriptionGroundingVerdicts,
+  labSiteLeadMatchReasons,
+  labSiteLeadVerdicts,
+  labSiteVerificationStates,
+  sourceLinkHealthStatuses,
+} from './storedVocabularies';
 
 export const researchEntitySchemaVersion = defineCanonicalSchemaVersion({ currentVersion: 1 });
+
+/**
+ * One lead's verdict against the research home's own website. Holds a person
+ * reference and never a name, so the stored row cannot leak a person-bearing
+ * identifier next to a defect judgement.
+ */
+const leadVerificationJudgementSchema = new mongoose.Schema(
+  {
+    personId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Researcher',
+      required: true,
+    },
+    role: {
+      type: String,
+      required: true,
+    },
+    verdict: {
+      type: String,
+      enum: [...labSiteLeadVerdicts],
+      required: true,
+    },
+    matchedBy: {
+      type: String,
+      enum: [...labSiteLeadMatchReasons],
+      default: 'NONE',
+      required: true,
+    },
+    evidenceUrl: {
+      type: String,
+      default: '',
+    },
+  },
+  { _id: false },
+);
 
 const sourceLinkHealthSchema = new mongoose.Schema(
   {
@@ -36,7 +82,77 @@ const sourceLinkHealthSchema = new mongoose.Schema(
       max: 599,
       required: false,
     },
+    /**
+     * The host resolves only into private address space, so a student off the
+     * Yale network cannot reach it whatever `healthStatus` says. A separate axis
+     * on purpose: it is a fact about addressing that no page fetch establishes
+     * and no freshness horizon expires (#2556).
+     */
+    privateAddressHost: {
+      type: Boolean,
+      required: false,
+    },
     checkedAt: {
+      type: Date,
+      required: false,
+    },
+    /**
+     * When a probe last ran for this URL, as opposed to when it last produced a
+     * verdict. They differ when an inconclusive probe preserved a decisive stored
+     * verdict: the assertion keeps its original `checkedAt` so the freshness
+     * horizon can still age it out, while this records that we did try (#2762).
+     */
+    lastAttemptedAt: {
+      type: Date,
+      required: false,
+    },
+  },
+  { _id: false },
+);
+
+/**
+ * Whether one served description still appears on the page it cites, re-checked on a
+ * cadence by `research-entity:recheck-description-grounding`.
+ *
+ * A sibling of `sourceLinkHealth` rather than part of it: link health asks whether a
+ * student can reach the page, and this asks whether the page still says what we
+ * attribute to it. The two answers differ - a live page that was rewritten is
+ * `HEALTHY` and `ABSENT` - and collapsing them would let a rewrite read as a dead
+ * link, or a dead link as a rewrite (#2879).
+ */
+const descriptionGroundingSchema = new mongoose.Schema(
+  {
+    field: {
+      type: String,
+      required: true,
+    },
+    url: {
+      type: String,
+      required: true,
+    },
+    verdict: {
+      type: String,
+      enum: [...descriptionGroundingVerdicts],
+      default: 'UNKNOWN',
+      required: true,
+    },
+    httpStatusCode: {
+      type: Number,
+      min: 100,
+      max: 599,
+      required: false,
+    },
+    /** When the probe last produced a verdict, which the freshness horizon ages out. */
+    checkedAt: {
+      type: Date,
+      required: false,
+    },
+    /**
+     * When a probe last ran, as opposed to when it last produced a verdict. An
+     * inconclusive re-check records only this, so a throttled afternoon cannot reset
+     * the horizon on a decisive stored verdict.
+     */
+    lastAttemptedAt: {
       type: Date,
       required: false,
     },
@@ -102,6 +218,14 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: [String],
       default: [],
     },
+    // Org strings a source listed beside the appointment that are not canonical
+    // departments: centers, hospital systems, graduate programs, societies. Search
+    // text only, never a facet, so the department facet stays an org-chart
+    // assertion while these stay findable (#2194).
+    orgAffiliationLabels: {
+      type: [String],
+      default: [],
+    },
     researchAreas: {
       type: [String],
       default: [],
@@ -137,6 +261,10 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       required: false,
     },
     absentFromRosterSinceRunId: {
+      type: String,
+      default: '',
+    },
+    absentFromIndexSinceRunId: {
       type: String,
       default: '',
     },
@@ -245,6 +373,28 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       required: false,
       default: undefined,
     },
+    leadVerification: {
+      type: {
+        state: {
+          type: String,
+          enum: [...labSiteVerificationStates],
+          required: true,
+        },
+        checkedUrl: { type: String, default: '' },
+        httpStatusCode: { type: Number, min: 100, max: 599, required: false },
+        pagesRead: { type: Number, min: 0, default: 0 },
+        confirmedCount: { type: Number, min: 0, default: 0 },
+        contradictedCount: { type: Number, min: 0, default: 0 },
+        unstatedCount: { type: Number, min: 0, default: 0 },
+        leads: {
+          type: [leadVerificationJudgementSchema],
+          default: [],
+        },
+        observedAt: { type: Date, required: true },
+      },
+      required: false,
+      default: undefined,
+    },
     timeCommitmentHoursPerWeek: {
       type: {
         min: { type: Number },
@@ -272,6 +422,10 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: [sourceLinkHealthSchema],
       default: [],
     },
+    descriptionGrounding: {
+      type: [descriptionGroundingSchema],
+      default: [],
+    },
     confidenceByField: {
       type: mongoose.Schema.Types.Mixed,
       default: {},
@@ -284,6 +438,22 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
     manuallyLockedFields: {
       type: [String],
       default: [],
+    },
+    /**
+     * Why each `manuallyLockedFields` entry was locked, keyed by field name. A
+     * field locked without an entry here reads as `unknown`, which is the
+     * conservative reading: a lock is never revisited on the strength of a
+     * missing record. See `utils/researchEntityFieldLocks.ts` (#2612).
+     */
+    fieldLockProvenance: {
+      type: Map,
+      of: fieldLockProvenanceSchema,
+      default: {},
+    },
+    fieldValueRefusals: {
+      type: Map,
+      of: [fieldValueRefusalSchema],
+      default: {},
     },
     lastObservedAt: {
       type: Date,
@@ -313,66 +483,11 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: Boolean,
       default: false,
     },
-    /**
-     * True when the entity carries at least one allowlisted, evidence-backed
-     * documented-way-in access signal (a posted/recurring opening, application
-     * form, explicit contact route, undergraduate participation, or
-     * faculty-supervised student projects), excluding the REACH_OUT_PLAUSIBLE
-     * fallback and negative signals. Derived from Signal by researchEntityBrowseRankService and mirrored to
-     * the Meilisearch index as a filterable attribute so the "documented way
-     * in" browse filter is truthful. See #1519.
-     */
-    hasDocumentedWayIn: {
-      type: Boolean,
-      default: false,
-    },
-    /**
-     * Current undergraduate-availability status ('OPEN' / 'ROLLING' /
-     * 'NOT_CURRENTLY_AVAILABLE' / 'UNKNOWN'), re-derived from the
-     * CURRENT_AVAILABILITY Signal by researchEntityBrowseRankService with its
-     * own 60-day freshness re-check, independent of the Signal's own
-     * lastMaterializedAt. Defaults to 'UNKNOWN' so a sparse/stale signal never
-     * surfaces as open. Mirrored to the Meilisearch index for the "Open now" /
-     * "Rolling" browse filter. See #1285.
-     */
-    undergraduateCurrentAvailability: {
-      type: String,
-      enum: ['OPEN', 'ROLLING', 'NOT_CURRENTLY_AVAILABLE', 'UNKNOWN'],
-      default: 'UNKNOWN',
-    },
-    /**
-     * Undergraduate-compensation model ('PAID_OR_STIPEND' / 'COURSE_CREDIT' /
-     * 'UNKNOWN'), re-derived from the COMPENSATION Signal by
-     * researchEntityBrowseRankService with its own freshness re-check,
-     * independent of the Signal's own lastMaterializedAt. Defaults to 'UNKNOWN'
-     * so a sparse/stale signal never surfaces as paid. Mirrored to the
-     * Meilisearch index for the "Paid or stipend" / "Course credit" browse
-     * filter. See #1540.
-     */
-    undergraduateCompensationModel: {
-      type: String,
-      enum: ['PAID_OR_STIPEND', 'COURSE_CREDIT', 'UNKNOWN'],
-      default: 'UNKNOWN',
-    },
-    /**
-     * Explicitly-welcomed undergraduate class years ('FIRST_YEAR' /
-     * 'SOPHOMORE' / 'JUNIOR' / 'SENIOR'), re-derived from the STUDENT_LEVEL
-     * Signal by researchEntityBrowseRankService with its own 365-day freshness
-     * re-check, independent of the Signal's own lastMaterializedAt. Defaults to
-     * [] so a sparse, stale, or conflicting signal never surfaces a class year
-     * as welcome. Multi-valued because a page may name several years. Mirrored
-     * to the Meilisearch index for the "Open to first-years" browse filter.
-     * See #1733.
-     */
-    undergraduateEligibleStudentLevels: {
-      type: [String],
-      enum: ['FIRST_YEAR', 'SOPHOMORE', 'JUNIOR', 'SENIOR'],
-      default: [],
-    },
     archived: {
       type: Boolean,
       default: false,
     },
+    ...archiveAttributionFields,
     embedding: {
       type: [Number],
       required: false,
@@ -388,6 +503,10 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
 researchEntitySchema.index({ kind: 1 });
 researchEntitySchema.index({ entityType: 1 });
 researchEntitySchema.index({ canonicalGroupId: 1 });
+// Not unique on purpose: 130 live website-url identity groups already hold more than
+// one row, so a unique index would refuse to build until those are resolved. The
+// resolver's ambiguity guard is what keeps a shared URL from merging (#3036).
+researchEntitySchema.index({ websiteUrl: 1 });
 researchEntitySchema.index({ school: 1 });
 researchEntitySchema.index({ schools: 1 });
 researchEntitySchema.index({ departments: 1 });
@@ -397,15 +516,12 @@ researchEntitySchema.index({ archived: 1 });
 researchEntitySchema.index({ lastObservedAt: 1 });
 researchEntitySchema.index({ archived: 1, browseRankScore: -1 });
 researchEntitySchema.index({ archived: 1, hasUndergradHostingEvidence: 1 });
-researchEntitySchema.index({ archived: 1, hasDocumentedWayIn: 1 });
-researchEntitySchema.index({ archived: 1, undergraduateCurrentAvailability: 1 });
-researchEntitySchema.index({ archived: 1, undergraduateCompensationModel: 1 });
-researchEntitySchema.index({ archived: 1, undergraduateEligibleStudentLevels: 1 });
 researchEntitySchema.index({ recentGrantCount: -1 });
 researchEntitySchema.index({ fundingAgencies: 1 });
 researchEntitySchema.index({ offersIndependentStudy: 1 });
 researchEntitySchema.index({ studentVisibilityTier: 1, archived: 1 });
 researchEntitySchema.index({ studentVisibilityComputedAt: -1 });
+researchEntitySchema.index({ studentVisibilityEvaluatedAt: -1 });
 
 export const ResearchEntity =
   mongoose.models.ResearchEntity ||

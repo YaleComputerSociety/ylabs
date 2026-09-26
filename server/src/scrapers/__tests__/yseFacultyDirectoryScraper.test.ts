@@ -222,9 +222,17 @@ describe('facultyToUserObservations', () => {
     expect(observations.every((o) => o.sourceUrl === RIVERS.profileUrl)).toBe(true);
     expect(observations.find((o) => o.field === 'netid')?.value).toBe('jordan.rivers');
     expect(observations.find((o) => o.field === 'userType')?.value).toBe('faculty');
-    expect(observations.find((o) => o.field === 'primaryDepartment')?.value).toBe(
-      'Yale School of the Environment',
-    );
+  });
+
+  it('never claims its school as a department', () => {
+    // A school-wide directory knows the school, never the department. Stamping it
+    // reached 53 served rows whose department pill read the school's own name, and
+    // because `primaryDepartment` is not latest-wins the claim also competed with
+    // the real department roster's own (#2841, the #2838 defect in this source).
+    const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
+    const { observations } = facultyToUserObservations(profile);
+    expect(observations.find((o) => o.field === 'primaryDepartment')).toBeUndefined();
+    expect(observations.find((o) => o.field === 'departments')).toBeUndefined();
   });
 
   it('falls back to a synthetic yse: key when no person email is available', () => {
@@ -343,5 +351,54 @@ describe('YseFacultyDirectoryScraper.run', () => {
     expect(everySource).not.toContain(DIRECTORY_URL);
     expect(everySource).toContain(RIVERS.profileUrl);
     expect(everySource).toContain(MEADOW.profileUrl);
+  });
+});
+
+describe('a linked lab site the corpus knows is dead (#3452)', () => {
+  it('withdraws the lab identity rather than re-asserting a URL already probed as gone', () => {
+    // `hasLab` used to be `Boolean(profile.labUrl)`, so a dead link kept minting a
+    // LAB named "<Person> Lab" and the websiteUrl retraction could never stick:
+    // this lane re-asserted the URL on the next run.
+    const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
+    const obs = facultyToResearchEntityObservations(
+      profile,
+      'yse:jordan-rivers',
+      (url) => url === 'https://riverslab.example.org/',
+    );
+    const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(byField.kind).toBe('individual');
+    expect(byField.name).toBe('Jordan Rivers Faculty Research');
+    expect(byField.sourceUrls).toEqual([RIVERS.profileUrl]);
+    expect(obs.some((o) => o.field === 'websiteUrl')).toBe(false);
+  });
+
+  it('keeps the lab when the verdict is about a different URL', () => {
+    const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
+    const obs = facultyToResearchEntityObservations(
+      profile,
+      'yse:jordan-rivers',
+      (url) => url === 'https://some-other-site.example.org/',
+    );
+    const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
+    expect(byField.entityType).toBe('LAB');
+    expect(byField.websiteUrl).toBe('https://riverslab.example.org/');
+  });
+
+  it('keeps the lab when no verdict exists, so an unprobed site never loses its identity', () => {
+    const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
+    const obs = facultyToResearchEntityObservations(profile, 'yse:jordan-rivers');
+    expect(Object.fromEntries(obs.map((o) => [o.field, o.value])).entityType).toBe('LAB');
+  });
+
+  it('mints nothing when a dead lab link was the only reason to mint', () => {
+    // Withdrawing the lab drops the row to the areas/description arm, and a
+    // profile with neither must still mint nothing rather than an empty home.
+    const bare = {
+      ...extractProfile(PROFILE_WITH_LAB, RIVERS),
+      researchAreas: [],
+      description: '',
+    };
+    expect(facultyToResearchEntityObservations(bare, 'yse:jordan-rivers', () => true)).toEqual([]);
   });
 });

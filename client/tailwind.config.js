@@ -17,6 +17,7 @@ module.exports = {
           soft: "var(--yr-gold-soft)",
         },
         ink: "var(--yr-ink)",
+        "ink-soft": "var(--yr-ink-soft)",
         muted: "var(--yr-muted)",
         canvas: "var(--yr-page)",
         parchment: "var(--yr-parchment)",
@@ -28,6 +29,7 @@ module.exports = {
           DEFAULT: "var(--yr-line)",
           strong: "var(--yr-line-strong)",
           warm: "var(--yr-border-warm)",
+          brand: "var(--yr-blue-border)",
         },
         success: {
           DEFAULT: "var(--yr-green)",
@@ -39,7 +41,15 @@ module.exports = {
         serif: ["Source Serif 4", "Newsreader", "Georgia", "Times New Roman", "serif"],
       },
       boxShadow: {
-        yr: "var(--yr-shadow)",
+        "yr-raised": "var(--yr-shadow-raised)",
+        "yr-lifted": "var(--yr-shadow-lifted)",
+        "yr-overlay": "var(--yr-shadow-overlay)",
+        "yr-modal": "var(--yr-shadow-modal)",
+      },
+      borderRadius: {
+        control: "var(--yr-radius-control)",
+        card: "var(--yr-radius-card)",
+        overlay: "var(--yr-radius-overlay)",
       },
     },
   },

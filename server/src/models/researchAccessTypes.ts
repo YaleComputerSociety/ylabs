@@ -26,6 +26,21 @@ export const researchEntityTypes = [
 
 export type ResearchEntityType = (typeof researchEntityTypes)[number];
 
+/**
+ * The one door from an untyped read into the product entity-type vocabulary.
+ *
+ * Required because a second, disjoint vocabulary is also spelled `entityType`: an
+ * `Observation`'s SUBJECT type (`user`, `researchEntity`, ...). Every consumer of a
+ * product entity type used to take `unknown`, so handing it a subject value
+ * compiled, and the receiving predicate answered "not this kind" rather than
+ * failing. Narrow here and the two cannot be crossed silently: a subject value
+ * returns undefined, and a typed one is a compile error (#210).
+ */
+export const asResearchEntityType = (value: unknown): ResearchEntityType | undefined =>
+  typeof value === 'string' && researchEntityTypes.includes(value as ResearchEntityType)
+    ? (value as ResearchEntityType)
+    : undefined;
+
 export const postedOpportunityStatuses = ['OPEN', 'CLOSED', 'ROLLING', 'ARCHIVED'] as const;
 
 export type PostedOpportunityStatus = (typeof postedOpportunityStatuses)[number];
@@ -55,19 +70,16 @@ export const accessSignalConfidences = ['HIGH', 'MEDIUM', 'LOW'] as const;
 
 export type AccessSignalConfidence = (typeof accessSignalConfidences)[number];
 
-export const undergraduateLogisticsSignalTypes = [
-  'STUDENT_LEVEL',
-  'COMPENSATION',
-  'TIME_COMMITMENT',
-  'MODALITY',
-  'CURRENT_AVAILABILITY',
-] as const;
+/**
+ * The undergraduate-logistics claim types `STUDENT_LEVEL`, `COMPENSATION`,
+ * `TIME_COMMITMENT`, `MODALITY` and `CURRENT_AVAILABILITY` were retired (#3088),
+ * so a `Signal` now carries an access type and nothing else. Stored rows keep the
+ * retired names, because dropping an enum value never rewrites a document, and no
+ * read path queries them. See docs/decisions.md for the measurement.
+ */
+export const signalTypes = accessSignalTypes;
 
-export type UndergraduateLogisticsSignalType = (typeof undergraduateLogisticsSignalTypes)[number];
-
-export const signalTypes = [...accessSignalTypes, ...undergraduateLogisticsSignalTypes] as const;
-
-export type SignalType = (typeof signalTypes)[number];
+export type SignalType = AccessSignalType;
 
 export const signalConfidences = accessSignalConfidences;
 
@@ -140,4 +152,3 @@ export const AccessSignalConfidences = accessSignalConfidences;
 export const SignalTypes = signalTypes;
 export const SignalConfidences = signalConfidences;
 export const SignalStatuses = signalStatuses;
-export const UndergraduateLogisticsSignalTypes = undergraduateLogisticsSignalTypes;

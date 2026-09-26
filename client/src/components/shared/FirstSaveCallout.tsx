@@ -22,24 +22,24 @@ const FirstSaveCallout = ({ kind, onDismiss }: FirstSaveCalloutProps) => {
   return (
     <div
       role="status"
-      className="mb-4 rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] p-4 text-blue-950"
+      className="mb-4 rounded-card border border-line-brand bg-brand-soft p-4 text-brand-navy"
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm font-semibold">{message.title}</p>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-blue-900">{message.body}</p>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-brand-navy">{message.body}</p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           <Link
             to="/dashboard"
-            className="yr-focus-ring inline-flex min-h-[40px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy"
+            className="yr-pressable yr-focus-ring inline-flex min-h-[40px] items-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy"
           >
             Open Dashboard
           </Link>
           <button
             type="button"
             onClick={onDismiss}
-            className="yr-focus-ring inline-flex min-h-[40px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-[var(--yr-blue-soft)]"
+            className="yr-focus-ring inline-flex min-h-[40px] items-center rounded-card border border-line bg-panel px-3 py-2 text-sm font-semibold text-brand hover:bg-brand-soft"
           >
             Dismiss
           </button>

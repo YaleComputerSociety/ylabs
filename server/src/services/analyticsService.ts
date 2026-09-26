@@ -6,6 +6,14 @@ import { ResearchEntity, Fellowship } from '../models/index';
 import { Account } from '../models/account';
 import { Researcher } from '../models/researcher';
 import { Types, type PipelineStage } from 'mongoose';
+import {
+  SEARCH_EPISODE_CANDIDATE_LIMIT,
+  SEARCH_EPISODE_MAX_SPAN_MS,
+  SEARCH_EPISODE_WINDOW_MS,
+  continuesSearchEpisode,
+  isFullerSearchEpisodeQuery,
+  type SearchEpisodeOutcome,
+} from './searchEpisode';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -20,6 +28,13 @@ export interface LogEventParams {
   searchDepartments?: string[];
   metadata?: any;
   dedupeKey?: string;
+  // When the event happened, for a caller that knows it earlier than this call.
+  // Two requests issued in order can finish out of order, so the order events
+  // are logged in is not the order the student acted in.
+  occurredAt?: Date;
+  // Whether an edit of the previous query continues it rather than asking
+  // something new. An identical repeat collapses either way.
+  foldQueryEdits?: boolean;
 }
 
 const MAX_ANALYTICS_METADATA_DEPTH = 5;
@@ -230,6 +245,8 @@ export interface SearchQuerySearcherAnalytics {
 
 export interface SearchQueryAnalyticsRow {
   query: string;
+  filterSummary: string;
+  surface: string;
   totalSearches: number;
   uniqueSearchers: number;
   zeroResultSearches: number;
@@ -256,6 +273,7 @@ export interface FunnelAnalytics {
   qualifiedActions: number;
   officialRouteAttempts: number;
   applicationOpens: number;
+  qualifiedActionEvents: number;
 }
 
 export interface HighSearchLowResultsAction {
@@ -407,6 +425,17 @@ const sanitizeResearchEntityId = (value: unknown): string | undefined => {
 const sanitizeAnalyticsDedupeKey = (value: unknown): string | undefined =>
   typeof value === 'string' && ANALYTICS_DEDUPE_KEY_RE.test(value) ? value : undefined;
 
+/**
+ * A caller-supplied event time is only honoured when it is a usable date at or
+ * before now, so a clock that ran backwards or a missing value still records the
+ * event where the report can find it.
+ */
+const sanitizeAnalyticsEventTimestamp = (value: unknown): Date => {
+  const now = new Date();
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return now;
+  return value.getTime() > now.getTime() ? now : value;
+};
+
 const normalizeAnalyticsStoredObjectIdString = (value: unknown): string | undefined => {
   if (value instanceof Types.ObjectId) {
     return value.toHexString();
@@ -507,6 +536,75 @@ const buildEventCountAccumulator = (eventType: AnalyticsEventType) => ({
   },
 });
 
+/**
+ * Joins at most one foreign document, and never joins on an absent key.
+ *
+ * Two guards, both load bearing. A `localField` join coerces an absent key to
+ * null and matches every foreign document whose key is also null, so the join
+ * requires the foreign key to be present and correctly typed - null can then
+ * never find a partner. Taking `$first` rather than `$unwind` keeps a duplicate
+ * on the foreign side from multiplying the row. Keying off `localField` rather
+ * than a correlated `$expr` keeps the join index-eligible: the `$expr` form is
+ * not, and measured 6s against 1.5s for one page of the Prod users table.
+ */
+const singleMatchLookupStages = (input: {
+  from: string;
+  localField: string;
+  foreignField: string;
+  foreignFieldType: 'string' | 'objectId';
+  project: Record<string, 1>;
+  as: string;
+}): PipelineStage.FacetPipelineStage[] => {
+  const matchesField = `${input.as}LookupMatches`;
+
+  return [
+    {
+      $lookup: {
+        from: input.from,
+        localField: input.localField,
+        foreignField: input.foreignField,
+        as: matchesField,
+        pipeline: [
+          { $match: { [input.foreignField]: { $type: input.foreignFieldType } } },
+          { $project: input.project },
+        ],
+      },
+    },
+    { $addFields: { [input.as]: { $first: `$${matchesField}` } } },
+    { $project: { [matchesField]: 0 } },
+  ];
+};
+
+const accountByNetidLookupStages = (netidField: string): PipelineStage.FacetPipelineStage[] =>
+  singleMatchLookupStages({
+    from: 'accounts',
+    localField: netidField,
+    foreignField: 'netid',
+    foreignFieldType: 'string',
+    project: { email: 1, createdAt: 1, lastLoginAt: 1 },
+    as: 'account',
+  });
+
+/**
+ * Joins the researcher profile for an account, if any.
+ *
+ * Analytics rows routinely have no account, and an unguarded
+ * `localField: 'account._id'` join then matches every accountless researcher
+ * shell, multiplying each row thousands of times and inflating every
+ * downstream count.
+ */
+const researcherByAccountLookupStages = (
+  accountIdField: string,
+): PipelineStage.FacetPipelineStage[] =>
+  singleMatchLookupStages({
+    from: 'researchers',
+    localField: accountIdField,
+    foreignField: 'accountId',
+    foreignFieldType: 'objectId',
+    project: { displayName: 1 },
+    as: 'researcher',
+  });
+
 const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): PipelineStage[] => {
   const activeSince = parseActiveSince(query.activeSince);
   const limit = clampLimit(query.limit, 50, 200);
@@ -537,34 +635,8 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
         ),
       },
     },
-    {
-      $lookup: {
-        from: 'accounts',
-        localField: '_id',
-        foreignField: 'netid',
-        as: 'account',
-      },
-    },
-    {
-      $unwind: {
-        path: '$account',
-        preserveNullAndEmptyArrays: true,
-      },
-    },
-    {
-      $lookup: {
-        from: 'researchers',
-        localField: 'account._id',
-        foreignField: 'accountId',
-        as: 'researcher',
-      },
-    },
-    {
-      $unwind: {
-        path: '$researcher',
-        preserveNullAndEmptyArrays: true,
-      },
-    },
+    ...accountByNetidLookupStages('_id'),
+    ...researcherByAccountLookupStages('account._id'),
     {
       $addFields: {
         netid: '$_id',
@@ -713,6 +785,70 @@ export const getUserAnalyticsDrilldown = async (
   };
 };
 
+/**
+ * Rewrites the student's previous search in place when this one continues it, so
+ * the report keeps one row per typing episode rather than one row per keystroke
+ * pause or per re-sort of the same result set. `searchEpisode` decides which
+ * snapshot's query and result count that row reports; when the stored query wins,
+ * this search moves nothing but the episode's last-snapshot time.
+ *
+ * The compare-and-set on the row's last-snapshot time means two concurrent
+ * searches cannot both claim the same row: the winner moves that field, so the
+ * loser matches nothing and records separately, which is the safe direction.
+ *
+ * The merged row keeps the episode's first timestamp. Search attribution counts
+ * only the actions recorded after a search's timestamp, so moving the row
+ * forward past an entity open that already followed the earlier snapshot would
+ * orphan that click and count the search as a failure. The window is measured
+ * from `searchEpisodeUpdatedAt` instead, so a long typing episode keeps folding;
+ * a row written before that field existed still windows on its timestamp.
+ */
+const supersedeSearchEpisode = async (
+  eventPayload: Record<string, unknown>,
+  foldQueryEdits: boolean,
+): Promise<SearchEpisodeOutcome> => {
+  const timestamp = eventPayload.timestamp as Date;
+  const windowStart = new Date(timestamp.getTime() - SEARCH_EPISODE_WINDOW_MS);
+  const candidates = await AnalyticsEvent.find({
+    eventType: AnalyticsEventType.SEARCH,
+    netid: eventPayload.netid,
+    dedupeKey: { $exists: false },
+    timestamp: { $gte: new Date(timestamp.getTime() - SEARCH_EPISODE_MAX_SPAN_MS) },
+    $or: [
+      { searchEpisodeUpdatedAt: { $gte: windowStart } },
+      { searchEpisodeUpdatedAt: null, timestamp: { $gte: windowStart } },
+    ],
+  })
+    .sort({ searchEpisodeUpdatedAt: -1, timestamp: -1 })
+    .limit(SEARCH_EPISODE_CANDIDATE_LIMIT)
+    .select({ searchQuery: 1, metadata: 1, timestamp: 1, searchEpisodeUpdatedAt: 1 })
+    .lean();
+
+  const previous = candidates.find((candidate) =>
+    continuesSearchEpisode(candidate, eventPayload, foldQueryEdits),
+  );
+  if (!previous) return 'separate';
+
+  const previousSnapshotAt = previous.searchEpisodeUpdatedAt ?? previous.timestamp;
+  if (previousSnapshotAt instanceof Date && previousSnapshotAt.getTime() > timestamp.getTime()) {
+    return 'stale';
+  }
+
+  const storedQuery = previous.searchQuery ?? '';
+  const incomingQuery = String(eventPayload.searchQuery ?? '');
+  const incomingWins = !isFullerSearchEpisodeQuery(storedQuery, incomingQuery);
+
+  const result = await AnalyticsEvent.updateOne(
+    { _id: previous._id, searchEpisodeUpdatedAt: previous.searchEpisodeUpdatedAt ?? null },
+    {
+      $set: incomingWins
+        ? { ...eventPayload, timestamp: previous.timestamp }
+        : { searchEpisodeUpdatedAt: eventPayload.searchEpisodeUpdatedAt },
+    },
+  );
+  return result.matchedCount > 0 ? 'folded' : 'separate';
+};
+
 export const logEvent = async (params: LogEventParams): Promise<void> => {
   try {
     const eventType = sanitizeAnalyticsEventType(params.eventType);
@@ -738,7 +874,7 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
       searchQuery: sanitizeAnalyticsText(params.searchQuery),
       searchDepartments: sanitizeAnalyticsStringArray(params.searchDepartments),
       metadata: sanitizeAnalyticsMetadata(params.metadata),
-      timestamp: new Date(),
+      timestamp: sanitizeAnalyticsEventTimestamp(params.occurredAt),
     };
     if (fellowshipId) eventPayload.fellowshipId = fellowshipId;
     if (entityType) eventPayload.entityType = entityType;
@@ -752,6 +888,11 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
         { upsert: true },
       );
       if (result.upsertedCount === 0) return;
+    } else if (eventType === AnalyticsEventType.SEARCH) {
+      eventPayload.searchEpisodeUpdatedAt = eventPayload.timestamp;
+      const outcome = await supersedeSearchEpisode(eventPayload, params.foldQueryEdits === true);
+      if (outcome !== 'separate') return;
+      await AnalyticsEvent.create(eventPayload);
     } else {
       await AnalyticsEvent.create(eventPayload);
     }
@@ -1038,6 +1179,61 @@ const computeSearchQualityAnalytics = async (
   };
 };
 
+/**
+ * Renders `metadata.filters` as `key: a / b, key: c`, skipping the keys with no
+ * selection.
+ *
+ * A filter-only search carries no query text, and reporting every one of them as
+ * a single `(empty search)` row throws away the only thing the student actually
+ * asked for. Derived at read time rather than stored, so rows written before this
+ * existed report their filters too.
+ *
+ * Values are sorted, because both surfaces send a filter's values in the order
+ * the student clicked them: unsorted, one filter-only search would split into a
+ * row per click order, and the summary would disagree with the episode fold,
+ * which compares sorted values.
+ */
+const searchFilterSummaryExpression = {
+  $reduce: {
+    input: {
+      $filter: {
+        input: {
+          $cond: [
+            { $eq: [{ $type: '$metadata.filters' }, 'object'] },
+            { $objectToArray: '$metadata.filters' },
+            [],
+          ],
+        },
+        cond: {
+          $gt: [{ $size: { $cond: [{ $isArray: '$$this.v' }, '$$this.v', []] } }, 0],
+        },
+      },
+    },
+    initialValue: '',
+    in: {
+      $concat: [
+        '$$value',
+        { $cond: [{ $eq: ['$$value', ''] }, '', ', '] },
+        '$$this.k',
+        ': ',
+        {
+          $reduce: {
+            input: { $sortArray: { input: '$$this.v', sortBy: 1 } },
+            initialValue: '',
+            in: {
+              $concat: [
+                '$$value',
+                { $cond: [{ $eq: ['$$value', ''] }, '', ' / '] },
+                { $toString: '$$this' },
+              ],
+            },
+          },
+        },
+      ],
+    },
+  },
+};
+
 export const getSearchQueryAnalytics = async (
   range: AnalyticsDateRange = {},
   options: { limit?: number } = {},
@@ -1055,6 +1251,8 @@ export const getSearchQueryAnalytics = async (
         netid: { $ifNull: ['$netid', 'unknown'] },
         userType: { $ifNull: ['$userType', 'unknown'] },
         normalizedQuery: { $trim: { input: { $ifNull: ['$searchQuery', ''] } } },
+        filterSummary: searchFilterSummaryExpression,
+        surface: { $ifNull: ['$metadata.entityType', 'unknown'] },
         resultCount: {
           $convert: {
             input: '$metadata.resultCount',
@@ -1070,6 +1268,14 @@ export const getSearchQueryAnalytics = async (
       $group: {
         _id: {
           query: '$normalizedQuery',
+          // Only a filter-only search splits by filter set. Splitting a typed
+          // query by its filters too would scatter one query across a row per
+          // filter combination and bury it below the noise.
+          filterSummary: { $cond: [{ $eq: ['$normalizedQuery', ''] }, '$filterSummary', ''] },
+          // One corpus per row: the same word searched on two surfaces has two
+          // different result counts, so merging them reports an average that
+          // describes neither and mis-attributes a zero-result search.
+          surface: '$surface',
           netid: '$netid',
         },
         userType: { $last: '$userType' },
@@ -1081,38 +1287,14 @@ export const getSearchQueryAnalytics = async (
         lastSearchedAt: { $max: '$timestamp' },
       },
     },
-    {
-      $lookup: {
-        from: 'accounts',
-        localField: '_id.netid',
-        foreignField: 'netid',
-        as: 'account',
-      },
-    },
-    {
-      $unwind: {
-        path: '$account',
-        preserveNullAndEmptyArrays: true,
-      },
-    },
-    {
-      $lookup: {
-        from: 'researchers',
-        localField: 'account._id',
-        foreignField: 'accountId',
-        as: 'researcher',
-      },
-    },
-    {
-      $unwind: {
-        path: '$researcher',
-        preserveNullAndEmptyArrays: true,
-      },
-    },
+    ...accountByNetidLookupStages('_id.netid'),
+    ...researcherByAccountLookupStages('account._id'),
     {
       $project: {
         _id: 0,
         query: '$_id.query',
+        filterSummary: '$_id.filterSummary',
+        surface: '$_id.surface',
         netid: '$_id.netid',
         userType: '$userType',
         displayName: '$researcher.displayName',
@@ -1123,10 +1305,19 @@ export const getSearchQueryAnalytics = async (
         lastSearchedAt: 1,
       },
     },
-    { $sort: { query: 1, searchCount: -1, lastSearchedAt: -1, netid: 1 } },
+    {
+      $sort: {
+        query: 1,
+        filterSummary: 1,
+        surface: 1,
+        searchCount: -1,
+        lastSearchedAt: -1,
+        netid: 1,
+      },
+    },
     {
       $group: {
-        _id: '$query',
+        _id: { query: '$query', filterSummary: '$filterSummary', surface: '$surface' },
         totalSearches: { $sum: '$searchCount' },
         zeroResultSearches: { $sum: '$zeroResultSearches' },
         resultCountTotal: { $sum: '$resultCountTotal' },
@@ -1147,7 +1338,9 @@ export const getSearchQueryAnalytics = async (
     {
       $project: {
         _id: 0,
-        query: '$_id',
+        query: '$_id.query',
+        filterSummary: '$_id.filterSummary',
+        surface: '$_id.surface',
         totalSearches: 1,
         uniqueSearchers: 1,
         zeroResultSearches: 1,
@@ -1162,7 +1355,16 @@ export const getSearchQueryAnalytics = async (
         searchers: { $slice: ['$searchers', 8] },
       },
     },
-    { $sort: { totalSearches: -1, zeroResultSearches: -1, lastSearchedAt: -1, query: 1 } },
+    {
+      $sort: {
+        totalSearches: -1,
+        zeroResultSearches: -1,
+        lastSearchedAt: -1,
+        query: 1,
+        filterSummary: 1,
+        surface: 1,
+      },
+    },
     { $limit: limit },
   ];
 
@@ -1200,6 +1402,10 @@ export const getFunnelAnalytics = async (
           { $group: { _id: '$_id.eventType', count: { $sum: 1 } } },
           { $project: { _id: 0, eventType: '$_id', count: 1 } },
         ],
+        qualifiedActionEvents: [
+          { $match: { eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION } },
+          { $count: 'count' },
+        ],
         qualifiedActorsByCategory: [
           { $match: { eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION } },
           { $group: { _id: { actionCategory: '$metadata.actionCategory', netid: '$netid' } } },
@@ -1223,6 +1429,9 @@ export const getFunnelAnalytics = async (
     actionCategory?: string;
     uniqueNetids: string[];
   }>;
+  const qualifiedActionEvents = Number(
+    (facet?.qualifiedActionEvents as Array<{ count?: number }> | undefined)?.[0]?.count ?? 0,
+  );
 
   const counts = uniqueActorsByEventType.reduce(
     (result: Partial<Record<AnalyticsEventType, number>>, row) => {
@@ -1261,6 +1470,7 @@ export const getFunnelAnalytics = async (
       'reviewed_route',
     ]),
     applicationOpens: countQualifiedCategories(['open_position', 'official_application']),
+    qualifiedActionEvents,
   };
 };
 
@@ -1537,34 +1747,8 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
           },
           { $sort: { eventCount: -1 } },
           { $limit: 10 },
-          {
-            $lookup: {
-              from: 'accounts',
-              localField: '_id.netid',
-              foreignField: 'netid',
-              as: 'account',
-            },
-          },
-          {
-            $unwind: {
-              path: '$account',
-              preserveNullAndEmptyArrays: true,
-            },
-          },
-          {
-            $lookup: {
-              from: 'researchers',
-              localField: 'account._id',
-              foreignField: 'accountId',
-              as: 'researcher',
-            },
-          },
-          {
-            $unwind: {
-              path: '$researcher',
-              preserveNullAndEmptyArrays: true,
-            },
-          },
+          ...accountByNetidLookupStages('_id.netid'),
+          ...researcherByAccountLookupStages('account._id'),
           {
             $project: {
               _id: 0,

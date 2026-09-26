@@ -136,7 +136,6 @@ describe('buildScrapeRunReport', () => {
           entryPathways: 1,
           accessSignals: 1,
           contactRoutes: 1,
-          undergraduateLogisticsClaims: 0,
         },
       },
       [
@@ -189,7 +188,7 @@ describe('buildScrapeRunReport', () => {
       {
         priority: 1,
         tier: 'PRIMARY_OFFICIAL',
-        artifactTypes: ['AccessSignal', 'ContactRoute', 'Observation'],
+        artifactTypes: ['ResearchEntity', 'Observation'],
         evidenceCategories: ['LAB_WEBSITE', 'UNDERGRAD_ROLE_LANGUAGE'],
         defaultConfidence: 'MEDIUM',
       },
@@ -675,7 +674,7 @@ describe('buildScrapeRunReport', () => {
       {
         priority: 1,
         tier: 'PRIMARY_OFFICIAL',
-        artifactTypes: ['EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+        artifactTypes: ['ResearchEntity', 'Observation'],
         evidenceCategories: ['LAB_WEBSITE', 'JOIN_INSTRUCTIONS', 'UNDERGRAD_ROLE_LANGUAGE'],
         defaultConfidence: 'MEDIUM',
         notes: 'Preserve source URLs.',
@@ -686,8 +685,8 @@ describe('buildScrapeRunReport', () => {
       priority: 1,
       tier: 'PRIMARY_OFFICIAL',
       artifactTypes: {
-        total: 4,
-        values: ['EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+        total: 2,
+        values: ['ResearchEntity', 'Observation'],
       },
       evidenceCategories: {
         total: 3,
@@ -735,7 +734,7 @@ describe('buildScrapeRunReport', () => {
       {
         priority: 1,
         tier: 'PRIMARY_OFFICIAL',
-        artifactTypes: ['EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+        artifactTypes: ['ResearchEntity', 'Observation'],
         evidenceCategories: ['LAB_WEBSITE', 'JOIN_INSTRUCTIONS'],
         defaultConfidence: 'MEDIUM',
       },
@@ -771,7 +770,7 @@ describe('buildScrapeRunReport', () => {
       {
         priority: 1,
         tier: 'PRIMARY_OFFICIAL',
-        artifactTypes: ['EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+        artifactTypes: ['ResearchEntity', 'Observation'],
         evidenceCategories: ['LAB_WEBSITE', 'JOIN_INSTRUCTIONS'],
         defaultConfidence: 'MEDIUM',
       },
@@ -791,7 +790,7 @@ describe('buildScrapeRunReport', () => {
     const report = buildScrapeRunReport(
       {
         _id: 'run-5',
-        sourceName: 'ylabs-listing',
+        sourceName: 'undergrad-research-posting',
         status: 'success',
         fetchMetrics: {
           attempts: [
@@ -846,7 +845,7 @@ describe('buildScrapeRunReport', () => {
     const report = buildScrapeRunReport(
       {
         _id: 'run-6',
-        sourceName: 'ylabs-listing',
+        sourceName: 'undergrad-research-posting',
         status: 'success',
       },
       [
@@ -901,7 +900,7 @@ describe('buildScrapeRunReport', () => {
       {
         priority: 1,
         tier: 'PRIMARY_OFFICIAL',
-        artifactTypes: ['EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+        artifactTypes: ['ResearchEntity', 'Observation'],
         evidenceCategories: ['LAB_WEBSITE', 'JOIN_INSTRUCTIONS'],
         defaultConfidence: 'MEDIUM',
       },
@@ -912,13 +911,12 @@ describe('buildScrapeRunReport', () => {
       accessSignals: 3,
       contactRoutes: 1,
       postedOpportunities: 0,
-      undergraduateLogisticsClaims: 0,
       guardedContactRoutes: 1,
       staleEvidenceSkipped: 2,
       conflicts: 0,
       errors: 0,
       totalAccessArtifacts: 6,
-      expectedArtifactTypes: ['EntryPathway', 'AccessSignal', 'ContactRoute'],
+      expectedArtifactTypes: [],
       missingExpectedArtifactTypes: [],
     });
     expect(report.warnings).toEqual(
@@ -1012,7 +1010,6 @@ describe('buildScrapeRunReport', () => {
           accessSignals: 2,
           contactRoutes: 1,
           postedOpportunities: 0,
-          undergraduateLogisticsClaims: 1,
         },
       },
       {
@@ -1026,8 +1023,8 @@ describe('buildScrapeRunReport', () => {
         },
       },
       {
-        sourceName: 'ylabs-listing',
-        sourceCoverage: getSourceCoverage('ylabs-listing'),
+        sourceName: 'undergrad-research-posting',
+        sourceCoverage: getSourceCoverage('undergrad-research-posting'),
         postMaterializationMetrics: {
           entryPathways: 1,
           accessSignals: 1,
@@ -1042,48 +1039,40 @@ describe('buildScrapeRunReport', () => {
     expect(review).toEqual([
       {
         sourceName: 'lab-microsite-undergrad-llm',
-        expectedArtifactTypes: [
-          'EntryPathway',
-          'AccessSignal',
-          'ContactRoute',
-          'UndergraduateLogisticsClaim',
-        ],
+        expectedArtifactTypes: [],
         actualArtifactCounts: {
           entryPathways: 2,
           accessSignals: 2,
           contactRoutes: 1,
           postedOpportunities: 0,
-          undergraduateLogisticsClaims: 1,
         },
         missingExpectedArtifactTypes: [],
-        totalAccessArtifacts: 6,
+        totalAccessArtifacts: 5,
         hasGap: false,
         coverageKnown: true,
       },
       {
         sourceName: 'undergrad-fellowships-recipients',
-        expectedArtifactTypes: ['EntryPathway', 'AccessSignal'],
+        expectedArtifactTypes: [],
         actualArtifactCounts: {
           entryPathways: 0,
           accessSignals: 0,
           contactRoutes: 0,
           postedOpportunities: 0,
-          undergraduateLogisticsClaims: 0,
         },
-        missingExpectedArtifactTypes: ['EntryPathway', 'AccessSignal'],
+        missingExpectedArtifactTypes: [],
         totalAccessArtifacts: 0,
-        hasGap: true,
+        hasGap: false,
         coverageKnown: true,
       },
       {
-        sourceName: 'ylabs-listing',
-        expectedArtifactTypes: ['EntryPathway', 'AccessSignal', 'PostedOpportunity'],
+        sourceName: 'undergrad-research-posting',
+        expectedArtifactTypes: [],
         actualArtifactCounts: {
           entryPathways: 1,
           accessSignals: 1,
           contactRoutes: 0,
           postedOpportunities: 1,
-          undergraduateLogisticsClaims: 0,
         },
         missingExpectedArtifactTypes: [],
         totalAccessArtifacts: 3,
@@ -1098,7 +1087,6 @@ describe('buildScrapeRunReport', () => {
           accessSignals: 0,
           contactRoutes: 0,
           postedOpportunities: 0,
-          undergraduateLogisticsClaims: 0,
         },
         missingExpectedArtifactTypes: [],
         totalAccessArtifacts: 0,

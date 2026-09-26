@@ -1,5 +1,5 @@
 /**
- * Shared outreach-stage control for saved research homes and watched programs.
+ * Shared outreach-stage control for saved research and watched programs.
  *
  * Renders the full ResearchPlan stage pipeline (SAVED through CLOSED) as a
  * single accessible, labeled select so a student can record where each home or
@@ -49,7 +49,7 @@ const ResearchPlanStageControl = ({
         aria-label={controlLabel}
         value={stage}
         onChange={(event) => onChange(event.target.value as ResearchPlanStage)}
-        className={`min-h-[44px] rounded-md border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${researchPlanStageMeta[stage].badgeClassName}`}
+        className={`min-h-[44px] rounded-control border px-3 text-base font-semibold transition-colors yr-focus-ring ${researchPlanStageMeta[stage].badgeClassName}`}
       >
         {researchPlanStages.map((option) => (
           <option key={option} value={option}>
@@ -59,7 +59,7 @@ const ResearchPlanStageControl = ({
       </select>
       {message && (
         <p
-          className={`text-xs ${status === 'error' ? 'text-red-700' : 'text-gray-500'}`}
+          className={`text-xs ${status === 'error' ? 'text-red-700' : 'text-muted'}`}
           role={status === 'error' ? 'alert' : 'status'}
           aria-live="polite"
         >

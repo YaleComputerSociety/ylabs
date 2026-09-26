@@ -13,7 +13,6 @@ const entity = (overrides: Partial<ResearchEntity> = {}): ResearchEntity => ({
   name: 'Example Research Initiative',
   kind: 'initiative',
   entityType: 'INITIATIVE',
-  description: 'Archives and computational methods.',
   websiteUrl: 'https://example.edu/project',
   location: '',
   departments: ['History'],

@@ -20,14 +20,14 @@ vi.mock('../../services/studentVisibilityGateService', () => ({
   applyStudentVisibilityGatePlans: vi.fn(async () => {}),
 }));
 
-import { ResearchEntityRedirect } from '../../models/researchEntityRedirect';
+import { ResearchEntity } from '../../models/researchEntity';
 import { applyResearchEntityDedupeMergeGroup } from '../dedupeResearchEntitiesByPi';
 import { runEponymousFraLabMergeStage } from '../researchEntityEponymousMergeStage';
 
 const SINCE = '2026-08-01T00:00:00.000Z';
 const TOUCHED_AT = new Date('2026-08-26T00:00:00.000Z');
 
-describe('dedupe merge persists a durable canonical redirect', () => {
+describe('dedupe merge persists a durable canonical tombstone', () => {
   let replSet: MongoMemoryReplSet;
 
   beforeAll(async () => {
@@ -47,13 +47,7 @@ describe('dedupe merge persists a durable canonical redirect', () => {
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of [
-      'research_entities',
-      'research_entity_redirects',
-      'role_assignments',
-      'researchers',
-      'observations',
-    ]) {
+    for (const name of ['research_entities', 'role_assignments', 'researchers', 'observations']) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -86,7 +80,7 @@ describe('dedupe merge persists a durable canonical redirect', () => {
     ]);
   };
 
-  it('writes the shell -> canonical redirect via the shared merge primitive and is idempotent', async () => {
+  it('stamps the shell -> canonical tombstone via the shared merge primitive and is idempotent', async () => {
     const labId = new mongoose.Types.ObjectId();
     const shellId = new mongoose.Types.ObjectId();
     await seedLabAndShell(labId, shellId);
@@ -106,14 +100,12 @@ describe('dedupe merge persists a durable canonical redirect', () => {
       },
     );
 
-    const redirect = await ResearchEntityRedirect.findOne({ mergedEntityId: shellId }).lean<{
-      mergedSlug?: string;
-      canonicalEntityId?: mongoose.Types.ObjectId;
-      reason?: string;
+    const redirect = await ResearchEntity.findOne({ _id: shellId }).lean<{
+      slug?: string;
+      canonicalGroupId?: mongoose.Types.ObjectId;
     }>();
-    expect(redirect?.mergedSlug).toBe('faculty-research-area-jane-roe');
-    expect(String(redirect?.canonicalEntityId)).toBe(labId.toHexString());
-    expect(redirect?.reason).toBe('eponymous_fra_lab_merge');
+    expect(redirect?.slug).toBe('faculty-research-area-jane-roe');
+    expect(String(redirect?.canonicalGroupId)).toBe(labId.toHexString());
 
     await applyResearchEntityDedupeMergeGroup(
       {
@@ -129,10 +121,12 @@ describe('dedupe merge persists a durable canonical redirect', () => {
         redirectReason: 'eponymous_fra_lab_merge',
       },
     );
-    expect(await ResearchEntityRedirect.countDocuments({ mergedEntityId: shellId })).toBe(1);
+    expect(
+      await ResearchEntity.countDocuments({ _id: shellId, canonicalGroupId: { $ne: null } }),
+    ).toBe(1);
   });
 
-  it('writes the same redirect through the eponymous merge stage (CLI-equivalent path)', async () => {
+  it('stamps the same tombstone through the eponymous merge stage (CLI-equivalent path)', async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
     const labId = new mongoose.Types.ObjectId();
@@ -159,11 +153,9 @@ describe('dedupe merge persists a durable canonical redirect', () => {
     });
     expect(delta.appliedMergeCount).toBe(1);
 
-    const redirect = await ResearchEntityRedirect.findOne({ mergedEntityId: shellId }).lean<{
-      canonicalEntityId?: mongoose.Types.ObjectId;
-      reason?: string;
+    const redirect = await ResearchEntity.findOne({ _id: shellId }).lean<{
+      canonicalGroupId?: mongoose.Types.ObjectId;
     }>();
-    expect(String(redirect?.canonicalEntityId)).toBe(labId.toHexString());
-    expect(redirect?.reason).toBe('eponymous_fra_lab_merge');
+    expect(String(redirect?.canonicalGroupId)).toBe(labId.toHexString());
   });
 });

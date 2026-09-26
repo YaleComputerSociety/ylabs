@@ -1,0 +1,55 @@
+{
+  "$comment": "Shared behavioural contract for the department-hiring-page arm of the umbrella-page category (#3138, #3333). server/src/utils/researchHomeWebsiteUrl.ts refuses the page as a person-scoped row's stored websiteUrl; client/src/utils/researchDetailSources.ts refuses the same page as that row's headline outreach action. Both suites read this table, so the two independent copies fail together instead of drifting: the pair next door drifted by six entries inside the pull request that introduced them, and this arm shipped on the server first while the client kept promoting the same URL one button over. Cases are evaluated with a person-scoped entity unless the section says otherwise. Every host label and path leaf below is synthetic.",
+  "refused": [
+    {
+      "name": "a department's hiring page under /about/",
+      "url": "https://exampledept.yale.edu/about/jobs/"
+    },
+    {
+      "name": "a department's careers page under a school host subpath",
+      "url": "https://medicine.yale.edu/exampledept/about/careers/"
+    },
+    {
+      "name": "an employment page at a department root",
+      "url": "https://exampledept.yale.edu/employment"
+    },
+    {
+      "name": "an open-positions page nested under administration",
+      "url": "https://exampledept.yale.edu/about/administration/open-positions/"
+    },
+    { "name": "a vacancies page", "url": "https://exampledept.yale.edu/vacancies/" },
+    {
+      "name": "a hiring page on a plain-http department host",
+      "url": "http://exampledept.yale.edu/about/jobs/"
+    }
+  ],
+  "kept": [
+    {
+      "name": "a research group's own hiring page on its own subdomain",
+      "url": "https://examplelab.yale.edu/jobs/"
+    },
+    {
+      "name": "a lab's own hiring page under a lab subpath on a shared school host",
+      "url": "https://medicine.yale.edu/lab/examplelab/jobs/examplefellowship/"
+    },
+    {
+      "name": "an unscoped opportunities page, which can be the page a student wants",
+      "url": "https://exampledept.yale.edu/about/opportunities/"
+    },
+    {
+      "name": "a hiring word inside a longer segment",
+      "url": "https://exampledept.yale.edu/about/job-market-candidates"
+    },
+    {
+      "name": "a career-development page, which is not a jobs board",
+      "url": "https://exampledept.yale.edu/about/career-development"
+    },
+    { "name": "a hiring page on a non-Yale host", "url": "https://example.org/jobs/" }
+  ],
+  "keptForOrganizationScopedRows": [
+    {
+      "name": "the same department hiring page cited by the department's own row",
+      "url": "https://exampledept.yale.edu/about/jobs/"
+    }
+  ]
+}

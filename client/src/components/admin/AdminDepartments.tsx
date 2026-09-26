@@ -85,17 +85,17 @@ const AdminDepartments = () => {
     } catch {
       console.error('Error fetching departments.');
       dispatch({ type: 'FETCH_FAILURE' });
-      swal({ text: 'Failed to fetch departments', icon: 'error' });
+      void swal({ text: 'Failed to fetch departments', icon: 'error' });
     }
   };
 
   useEffect(() => {
-    fetchDepartments();
+    void fetchDepartments();
   }, []);
 
   const handleAdd = async () => {
     if (!newDraft.abbr.trim() || !newDraft.name.trim()) {
-      swal({ text: 'Abbreviation and name are required', icon: 'warning' });
+      void swal({ text: 'Abbreviation and name are required', icon: 'warning' });
       return;
     }
 
@@ -111,16 +111,16 @@ const AdminDepartments = () => {
         { withCredentials: true },
       );
       dispatch({ type: 'RESET_NEW_DRAFT', initial: INITIAL_NEW_DRAFT });
-      fetchDepartments();
-      swal({ text: 'Department added', icon: 'success', timer: 1500 });
+      void fetchDepartments();
+      void swal({ text: 'Department added', icon: 'success', timer: 1500 });
     } catch (error: any) {
-      swal({ text: clientErrorMessage(error, 'Failed to add department'), icon: 'error' });
+      void swal({ text: clientErrorMessage(error, 'Failed to add department'), icon: 'error' });
     }
   };
 
   const handleUpdate = async (id: string) => {
     if (!editDraft || !editDraft.abbr.trim() || !editDraft.name.trim()) {
-      swal({ text: 'Abbreviation and name are required', icon: 'warning' });
+      void swal({ text: 'Abbreviation and name are required', icon: 'warning' });
       return;
     }
 
@@ -138,10 +138,10 @@ const AdminDepartments = () => {
         { withCredentials: true },
       );
       dispatch({ type: 'CANCEL_EDIT' });
-      fetchDepartments();
-      swal({ text: 'Department updated', icon: 'success', timer: 1500 });
+      void fetchDepartments();
+      void swal({ text: 'Department updated', icon: 'success', timer: 1500 });
     } catch (error: any) {
-      swal({ text: clientErrorMessage(error, 'Failed to update department'), icon: 'error' });
+      void swal({ text: clientErrorMessage(error, 'Failed to update department'), icon: 'error' });
     }
   };
 
@@ -158,10 +158,10 @@ const AdminDepartments = () => {
 
     try {
       await axios.delete(`/admin/departments/${dept._id}`, { withCredentials: true });
-      fetchDepartments();
-      swal({ text: 'Department deleted', icon: 'success', timer: 1500 });
+      void fetchDepartments();
+      void swal({ text: 'Department deleted', icon: 'success', timer: 1500 });
     } catch {
-      swal({ text: 'Failed to delete department', icon: 'error' });
+      void swal({ text: 'Failed to delete department', icon: 'error' });
     }
   };
 
@@ -188,7 +188,7 @@ const AdminDepartments = () => {
 
   return (
     <div>
-      <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-4 border border-[var(--yr-line)] mb-4">
+      <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised p-4 border border-[var(--yr-line)] mb-4">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Add New Department</h3>
         <div className="flex flex-wrap gap-2 items-end">
           <div className="w-28">
@@ -199,7 +199,7 @@ const AdminDepartments = () => {
                 dispatch({ type: 'SET_NEW_DRAFT', payload: { abbr: e.target.value } })
               }
               placeholder="e.g. CPSC"
-              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
+              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring uppercase"
             />
           </div>
           <div className="flex-1 min-w-[200px]">
@@ -210,9 +210,9 @@ const AdminDepartments = () => {
                 dispatch({ type: 'SET_NEW_DRAFT', payload: { name: e.target.value } })
               }
               placeholder="e.g. Computer Science"
-              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleAdd();
+                if (e.key === 'Enter') void handleAdd();
               }}
             />
           </div>
@@ -223,7 +223,7 @@ const AdminDepartments = () => {
               onChange={(e) =>
                 dispatch({ type: 'SET_NEW_DRAFT', payload: { category: e.target.value } })
               }
-              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
             >
               {DEPARTMENT_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
@@ -233,8 +233,8 @@ const AdminDepartments = () => {
             </select>
           </div>
           <button
-            onClick={handleAdd}
-            className="min-h-[44px] bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition-colors"
+            onClick={() => void handleAdd()}
+            className="min-h-[44px] bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition-colors yr-focus-ring"
           >
             Add
           </button>
@@ -246,12 +246,12 @@ const AdminDepartments = () => {
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
           placeholder="Filter departments..."
-          className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
         />
-        <div className="text-xs text-gray-400 mt-1">{filtered.length} departments</div>
+        <div className="text-xs text-muted mt-1">{filtered.length} departments</div>
       </div>
 
-      <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+      <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
@@ -287,7 +287,7 @@ const AdminDepartments = () => {
                           onChange={(e) =>
                             dispatch({ type: 'SET_EDIT_DRAFT', payload: { abbr: e.target.value } })
                           }
-                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-20 uppercase focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-20 uppercase yr-focus-ring"
                           autoFocus
                         />
                       ) : (
@@ -301,9 +301,9 @@ const AdminDepartments = () => {
                           onChange={(e) =>
                             dispatch({ type: 'SET_EDIT_DRAFT', payload: { name: e.target.value } })
                           }
-                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-full yr-focus-ring"
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleUpdate(dept._id);
+                            if (e.key === 'Enter') void handleUpdate(dept._id);
                             if (e.key === 'Escape') dispatch({ type: 'CANCEL_EDIT' });
                           }}
                         />
@@ -322,7 +322,7 @@ const AdminDepartments = () => {
                               payload: { category: e.target.value },
                             })
                           }
-                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm yr-focus-ring"
                         >
                           {DEPARTMENT_CATEGORIES.map((c) => (
                             <option key={c} value={c}>
@@ -358,7 +358,7 @@ const AdminDepartments = () => {
                           <span className="text-xs">{editDraft.active ? 'Yes' : 'No'}</span>
                         </label>
                       ) : dept.isActive ? (
-                        <span className="text-green-600 text-xs font-medium">Yes</span>
+                        <span className="text-green-700 text-xs font-medium">Yes</span>
                       ) : (
                         <span className="text-red-600 text-xs font-medium">No</span>
                       )}
@@ -368,14 +368,14 @@ const AdminDepartments = () => {
                         {editingId === dept._id ? (
                           <>
                             <button
-                              onClick={() => handleUpdate(dept._id)}
-                              className="min-h-[44px] text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
+                              onClick={() => void handleUpdate(dept._id)}
+                              className="min-h-[44px] text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 yr-focus-ring"
                             >
                               Save
                             </button>
                             <button
                               onClick={() => dispatch({ type: 'CANCEL_EDIT' })}
-                              className="min-h-[44px] text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400"
+                              className="min-h-[44px] text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400 yr-focus-ring"
                             >
                               Cancel
                             </button>
@@ -384,13 +384,13 @@ const AdminDepartments = () => {
                           <>
                             <button
                               onClick={() => startEdit(dept)}
-                              className="min-h-[44px] text-xs bg-brand text-white px-2 py-1 rounded hover:bg-brand-navy"
+                              className="min-h-[44px] text-xs bg-brand text-white px-2 py-1 rounded hover:bg-brand-navy yr-focus-ring"
                             >
                               Edit
                             </button>
                             <button
-                              onClick={() => handleDelete(dept)}
-                              className="min-h-[44px] text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700"
+                              onClick={() => void handleDelete(dept)}
+                              className="min-h-[44px] text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 yr-focus-ring"
                             >
                               Delete
                             </button>

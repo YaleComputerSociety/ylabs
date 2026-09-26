@@ -1,6 +1,9 @@
-export const OFFICIAL_PROFILE_DISCOVERED_VIA = 'OFFICIAL_PROFILE';
-
-export const RETIRED_COLLECTIONS = ['papers', 'paper_authors'] as const;
+export const RETIRED_COLLECTIONS = [
+  'papers',
+  'paper_authors',
+  'research_scholarly_links',
+  'research_scholarly_attributions',
+] as const;
 
 export const RETIRED_USER_FIELDS = [
   'publications',
@@ -21,22 +24,28 @@ export const RETIRED_RESEARCH_ENTITY_FIELDS = [
 ] as const;
 
 export interface RetireBibliographicMirrorInvariantInput {
-  officialProfileLinksBefore: number;
-  officialProfileLinksAfter: number;
-  nonOfficialLinksAfter: number;
+  remainingByCollection: Record<string, number>;
 }
 
 export function assertRetireBibliographicMirrorInvariants(
   input: RetireBibliographicMirrorInvariantInput,
 ): void {
-  if (input.officialProfileLinksAfter !== input.officialProfileLinksBefore) {
+  const survivors = Object.entries(input.remainingByCollection)
+    .filter(([, remaining]) => remaining !== 0)
+    .map(([name, remaining]) => `${name}=${remaining}`);
+
+  if (survivors.length > 0) {
     throw new Error(
-      `retire:bibliographic-mirror invariant violated: OFFICIAL_PROFILE scholarly links changed from ${input.officialProfileLinksBefore} to ${input.officialProfileLinksAfter}.`,
+      `retire:bibliographic-mirror invariant violated: rows remain after apply (${survivors.join(', ')}).`,
     );
   }
-  if (input.nonOfficialLinksAfter !== 0) {
+
+  const missing = RETIRED_COLLECTIONS.filter(
+    (name) => !Object.hasOwn(input.remainingByCollection, name),
+  );
+  if (missing.length > 0) {
     throw new Error(
-      `retire:bibliographic-mirror invariant violated: ${input.nonOfficialLinksAfter} non-OFFICIAL_PROFILE scholarly links remain after apply.`,
+      `retire:bibliographic-mirror invariant violated: no post-apply count reported for ${missing.join(', ')}.`,
     );
   }
 }

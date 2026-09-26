@@ -120,11 +120,10 @@ export interface BetaDataQualitySummaryInput {
   suspiciousUserEmailsProductionCopyExclusionComplete?: boolean;
   betaStudentAnalyticsEventCount?: number;
   retentionCandidateCount: number;
+  retentionProjectionNeutral?: boolean;
   liveLinkFailureCount?: number;
   coverageGaps: {
-    withoutPathways: number;
-    withoutAccessSignals: number;
-    withoutContactRoutes: number;
+    withoutSignals: number;
   };
 }
 
@@ -362,23 +361,9 @@ const BETA_CHECK_OPERATOR_METADATA: Record<
       'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
     ),
   },
-  coverageWithoutPathways: {
+  coverageWithoutSignals: {
     classification: 'accepted_release_warning',
-    owner: 'pathway coverage operator',
-    nextCommand: betaCommand(
-      'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
-    ),
-  },
-  coverageWithoutAccessSignals: {
-    classification: 'accepted_release_warning',
-    owner: 'pathway coverage operator',
-    nextCommand: betaCommand(
-      'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
-    ),
-  },
-  coverageWithoutContactRoutes: {
-    classification: 'accepted_release_warning',
-    owner: 'contact coverage operator',
+    owner: 'access coverage operator',
     nextCommand: betaCommand(
       'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
     ),
@@ -629,38 +614,24 @@ export function buildMissingRequiredRefSamplePipeline(
   ];
 }
 
-export function buildScalarRefOrphanSamplePipeline(
+/**
+ * Selects the references that point at a document that does not exist, one
+ * output row per reference rather than per owning document.
+ *
+ * Unwinding suits a scalar field as well as an array one, because `$unwind`
+ * treats a non-array value as a single element. A missing field, a null, an
+ * empty string and the schema-default empty array all yield no reference at
+ * all, so none of them can be mistaken for a broken one (#2294).
+ */
+export function buildRefOrphanMatchPipeline(
   localField: string,
   targetCollectionName: string,
-  sampleLimit: number,
-  ownerFilter: Record<string, unknown> = {},
-): Array<Record<string, unknown>> {
-  return [
-    { $match: { ...ownerFilter, [localField]: { $exists: true, $nin: [null, ''] } } },
-    {
-      $lookup: {
-        from: targetCollectionName,
-        localField,
-        foreignField: '_id',
-        as: '_refTarget',
-      },
-    },
-    { $match: { _refTarget: { $size: 0 } } },
-    { $project: { id: { $toString: '$_id' }, value: `$${localField}` } },
-    { $limit: sampleLimit },
-  ];
-}
-
-export function buildArrayRefOrphanSamplePipeline(
-  localField: string,
-  targetCollectionName: string,
-  sampleLimit: number,
   ownerFilter: Record<string, unknown> = {},
 ): Array<Record<string, unknown>> {
   const pipeline: Array<Record<string, unknown>> = [
     { $project: { ref: { $ifNull: [`$${localField}`, []] } } },
     { $unwind: '$ref' },
-    { $match: { ref: { $ne: null } } },
+    { $match: { ref: { $nin: [null, ''] } } },
     {
       $lookup: {
         from: targetCollectionName,
@@ -670,10 +641,21 @@ export function buildArrayRefOrphanSamplePipeline(
       },
     },
     { $match: { _refTarget: { $size: 0 } } },
+  ];
+  return Object.keys(ownerFilter).length > 0 ? [{ $match: ownerFilter }, ...pipeline] : pipeline;
+}
+
+export function buildRefOrphanSamplePipeline(
+  localField: string,
+  targetCollectionName: string,
+  sampleLimit: number,
+  ownerFilter: Record<string, unknown> = {},
+): Array<Record<string, unknown>> {
+  return [
+    ...buildRefOrphanMatchPipeline(localField, targetCollectionName, ownerFilter),
     { $project: { id: { $toString: '$_id' }, value: '$ref' } },
     { $limit: sampleLimit },
   ];
-  return Object.keys(ownerFilter).length > 0 ? [{ $match: ownerFilter }, ...pipeline] : pipeline;
 }
 
 export function buildBetaDataQualitySummary(
@@ -760,25 +742,14 @@ export function buildBetaDataQualitySummary(
       'Research entities have very short descriptions that may be weak.',
       0,
     ),
+    // Three checks became one: `entry_pathways` and `contact_routes` were dropped with
+    // the dead access model (#2829), so their gap counts were "every active entity",
+    // permanently warning at the threshold and drowning the one gap that is real.
     buildCheck(
-      'coverageWithoutPathways',
+      'coverageWithoutSignals',
       'warn',
-      input.coverageGaps.withoutPathways,
-      'Active research entities do not yet have entry pathways.',
-      0,
-    ),
-    buildCheck(
-      'coverageWithoutAccessSignals',
-      'warn',
-      input.coverageGaps.withoutAccessSignals,
+      input.coverageGaps.withoutSignals,
       'Active research entities do not yet have access signals.',
-      0,
-    ),
-    buildCheck(
-      'coverageWithoutContactRoutes',
-      'warn',
-      input.coverageGaps.withoutContactRoutes,
-      'Active research entities do not yet have contact routes.',
       0,
     ),
     buildCheck(
@@ -802,7 +773,9 @@ export function buildBetaDataQualitySummary(
       'retentionCandidates',
       'warn',
       input.retentionCandidateCount,
-      'Superseded scraper observations are eligible for compact retention pruning.',
+      input.retentionProjectionNeutral === false
+        ? 'Superseded scraper observations are still in the materializer read scope (C4_LOSSLESS_INGEST), so they are live evidence rather than prunable storage and retention pruning is refused.'
+        : 'Superseded scraper observations are eligible for compact retention pruning.',
       0,
     ),
     buildCheck(

@@ -1,3 +1,4 @@
+import type { ResearchEntityType } from '../models/researchAccessTypes';
 import axios from 'axios';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { openAiChatSampling } from '../utils/openAiChatSampling';
@@ -5,7 +6,6 @@ import {
   CARD_SYNTHESIS_MODEL,
   MAX_CARD_SOURCE_CHARS,
   cardGroundingScore,
-  isUngroundedSynthesizedCard,
 } from '../utils/groundedCardSynthesis';
 import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 import { isRejectedDescriptionSourceUrl } from './sources/labMicrositeDescriptionLLMExtractor';
@@ -75,7 +75,7 @@ export function gatherCoverageSnippets(observations: CoverageObservationLike[]):
 export interface SynthesizeCoverageInput {
   snippets: CoverageSnippet[];
   entityName: string;
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
   researchAreas?: unknown;
   callLLM: CoverageSynthesisLLMFn;
 }
@@ -87,41 +87,142 @@ export interface CoverageSynthesisResult {
 }
 
 /**
+ * Why a synthesis was discarded, or `null` when it was kept.
+ *
+ * Reported rather than collapsed to a null, because a refusal count is only usable
+ * as an audit while every refusal names its own cause (#3068). A single
+ * "failed closed (grounding or quality gate)" label covered all eight arms below,
+ * and #1878 recorded 40 rows under it as "refused by the synthesizer's own gates"
+ * when two of the arms are not gates at all: `llm-call-failed` and
+ * `llm-malformed-response` mean the row was never judged.
+ */
+export type CoverageSynthesisRefusal =
+  | 'no-snippets'
+  | 'llm-call-failed'
+  | 'llm-malformed-response'
+  | 'empty-description'
+  | 'no-cited-snippets'
+  | 'grounding-overlap-below-floor'
+  | 'quality-bar'
+  | 'internal-vocabulary';
+
+/**
+ * The verbs a synthesized body uses of its subject. Shared with the two internal
+ * vocabulary patterns below rather than copied, for the #2200 reason: a verb present
+ * in one list and missing from the other leaves the defect in place on half its forms.
+ */
+const SYNTHESIS_SUBJECT_VERB =
+  'investigates?|studies|study|examines?|explores?|researches?|analy[sz]es?|develops?|designs?|builds?|models?|measures?|applies|employs|uses|combines?|focuses|centers?|centres?|works|leads?|directs?|maintains?|oversees|conducts?|supports?|characteri[sz]es?';
+
+/**
+ * A body whose grammatical SUBJECT is one of the repo's own nouns for a stored
+ * record: "The entity studies melanocytic neoplasms ..." (#3217).
+ *
+ * Anchored on subject position and a following research verb, NOT a bare word ban,
+ * because every noun in the set is also ordinary research prose somewhere in this
+ * corpus. `entity` is a term of art in NLP ("named entity recognition"), `record`
+ * appears in "electronic health records" and "the fossil record", and `document`
+ * appears in document classification. Refusing those as internal vocabulary would
+ * discard correct bodies to prevent a wording defect, which is the wrong trade.
+ *
+ * `row` is in the set even though no observed body used it, because it is what this
+ * corpus calls a research_entities document in its own issues and commit messages and
+ * is the likeliest next leak. Generic-but-valid English subjects are deliberately NOT
+ * here: "The research examines ..." and "The research program studies ..." both read
+ * flat next to the corpus convention of a bare verb lead, but they are true and
+ * student-readable, so they are a copy preference rather than a defect to fail closed on.
+ */
+const INTERNAL_RECORD_NOUN_SUBJECT = new RegExp(
+  `(?:^|[.!?]\\s+)(?:the|this)\\s+(?:research\\s+)?(?:entit(?:y|ies)|rows?|records?|documents?)\\s+(?:${SYNTHESIS_SUBJECT_VERB})\\b`,
+  'i',
+);
+
+/**
+ * Retired product vocabulary, matched anywhere rather than in subject position.
+ *
+ * AGENTS.md retires "research home" and "research area" in copy outright, and
+ * `client/src/__tests__/deprecatedVocabularyGuard.test.ts` already enforces that on
+ * the copy the repo hand-writes. A synthesized body is copy this product authors, so
+ * the same rule applies to it; the client guard cannot see it because the text is
+ * generated at scrape time rather than committed.
+ *
+ * The pattern is the client guard's, deliberately character for character: whitespace
+ * between the two words is required, so the stored field name `researchAreas` and the
+ * identifier `researchHome` never match. Only prose does.
+ */
+const DEPRECATED_PRODUCT_VOCABULARY = /research\s+(?:home|area)s?\b/i;
+
+export function hasInternalVocabulary(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  return INTERNAL_RECORD_NOUN_SUBJECT.test(text) || DEPRECATED_PRODUCT_VOCABULARY.test(text);
+}
+
+export interface CoverageSynthesisDecision {
+  result: CoverageSynthesisResult | null;
+  refusal: CoverageSynthesisRefusal | null;
+}
+
+/**
  * Fuse thin/alternate evidence snippets into one description via the LLM, then
  * FAIL CLOSED: the result is discarded unless its distinctive tokens are grounded
- * in the snippet corpus, it cites real snippets, it clears the description-quality
- * bar, and it is not an ungrounded synthesized blurb. Contact data is redacted on
- * the way in and out, so a coverage description can never leak or invent PII.
+ * in the snippet corpus at `COVERAGE_MIN_OVERLAP`, it cites real snippets, and it
+ * clears the description-quality bar. Contact data is redacted on the way in and
+ * out, so a coverage description can never leak or invent PII.
+ *
+ * Grounding is asked ONCE, by `cardGroundingScore` against `COVERAGE_MIN_OVERLAP`.
+ * There used to be a second arm, `isUngroundedSynthesizedCard(description, corpus)`,
+ * which re-asked the same question through a predicate contracted for a one-sentence
+ * card: its synthesis-verb gate matches nearly every output of this prompt, which asks
+ * for third-person research prose, and behind that gate it requires
+ * `MIN_CARD_GROUNDING` (0.9) instead of the 0.45 declared here. The effect was a 0.9
+ * floor nobody chose for a 2-to-4-sentence body, on the one arm of eight that reported
+ * as a quality verdict; it accounted for 28 of #1878's 40 refusals (#3201).
+ *
+ * The refusing arm is produced HERE rather than by a caller re-deriving it, because
+ * a re-derivation drifts from this function the moment an arm moves and then
+ * attributes refusals to gates that did not fire (#3068).
  */
-export async function synthesizeCoverageDescription(
+export async function coverageSynthesisDecision(
   input: SynthesizeCoverageInput,
-): Promise<CoverageSynthesisResult | null> {
+): Promise<CoverageSynthesisDecision> {
+  const refuse = (refusal: CoverageSynthesisRefusal): CoverageSynthesisDecision => ({
+    result: null,
+    refusal,
+  });
   const { snippets } = input;
-  if (snippets.length === 0) return null;
+  if (snippets.length === 0) return refuse('no-snippets');
 
   let raw: CoverageSynthesisLLMResult;
   try {
     raw = await input.callLLM({ snippets, entityName: input.entityName });
   } catch {
-    return null;
+    return refuse('llm-call-failed');
   }
-  if (!raw || typeof raw !== 'object') return null;
+  if (!raw || typeof raw !== 'object') return refuse('llm-malformed-response');
 
   const description = redactDirectContactInfo(textValue(raw.fullDescription));
-  if (!description) return null;
+  if (!description) return refuse('empty-description');
 
   const usedSnippetIndexes = Array.isArray(raw.usedSnippetIndexes)
     ? raw.usedSnippetIndexes.filter(
         (index) => Number.isInteger(index) && index >= 0 && index < snippets.length,
       )
     : [];
-  if (usedSnippetIndexes.length === 0) return null;
+  if (usedSnippetIndexes.length === 0) return refuse('no-cited-snippets');
 
   const corpus = snippets.map((snippet) => snippet.text).join(' \n ');
-  if (cardGroundingScore(description, corpus) < COVERAGE_MIN_OVERLAP) return null;
-  if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful)
-    return null;
-  if (isUngroundedSynthesizedCard(description, corpus)) return null;
+  if (cardGroundingScore(description, corpus) < COVERAGE_MIN_OVERLAP) {
+    return refuse('grounding-overlap-below-floor');
+  }
+  if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful) {
+    return refuse('quality-bar');
+  }
+  // Last, so every arm above keeps the attribution it had and this one's count is
+  // exactly the bodies that would otherwise have been ACCEPTED. A refusal placed
+  // earlier would absorb rows another gate was already refusing and overstate itself,
+  // which is the #2440 shape of a counter that misreports its own outcome.
+  if (hasInternalVocabulary(description)) return refuse('internal-vocabulary');
 
   const sourceUrls = Array.from(
     new Set(
@@ -130,7 +231,13 @@ export async function synthesizeCoverageDescription(
         .filter((url): url is string => typeof url === 'string' && url.length > 0),
     ),
   );
-  return { description, usedSnippetIndexes, sourceUrls };
+  return { result: { description, usedSnippetIndexes, sourceUrls }, refusal: null };
+}
+
+export async function synthesizeCoverageDescription(
+  input: SynthesizeCoverageInput,
+): Promise<CoverageSynthesisResult | null> {
+  return (await coverageSynthesisDecision(input)).result;
 }
 
 export function defaultCoverageSynthesisLLM(

@@ -1,3 +1,4 @@
+import { launchReviewExceptionsOperatorCommand } from './gateScorecardArtifacts';
 import {
   publicStudentVisibilityTiers,
   publicSafeStudentVisibilityTiers,
@@ -140,9 +141,7 @@ const laneCommand = (
       '--suppress-unsafe',
     );
   }
-  return betaCommand(
-    `yarn --cwd server launch:review-exceptions ${collectionArg} --limit=500 --decision-template-output /tmp/ylabs-launch-review-exceptions-template.json --accepted-decisions=/tmp/ylabs-launch-review-exceptions-decisions.json --allow-empty-decisions --output /tmp/ylabs-launch-review-exceptions.json`,
-  );
+  return betaCommand(launchReviewExceptionsOperatorCommand(collectionArg));
 };
 
 function buildRepairLanes(

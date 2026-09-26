@@ -220,6 +220,29 @@ describe('runScraperCron', () => {
     );
   });
 
+  it('exits nonzero when the run itself was failed by the barren-streak guard (#2607)', async () => {
+    const deps = makeDeps({
+      getScrapeRunReport: vi.fn().mockResolvedValue({ run: { id: 'run-1', status: 'failure' } }),
+    });
+
+    const result = await runScraperCron(
+      {
+        sourceName: 'openalex',
+        environment: 'production',
+        options: { dryRun: false, useCache: false, release: true },
+        ownerId: 'owner-1',
+        now: NOW,
+        heartbeatIntervalMs: 0,
+      },
+      deps,
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(deps.releaseScrapeJobLock).toHaveBeenCalledWith(
+      expect.objectContaining({ releaseReason: 'failure', lastRunId: 'run-1' }),
+    );
+  });
+
   it('completes the run when the inferred-PI lead reclaim throws', async () => {
     const deps = makeDeps({
       reclaimInferredPiLeads: vi.fn().mockRejectedValue(new Error('reclaim boom')),
@@ -251,5 +274,51 @@ describe('runScraperCron', () => {
     expect(deps.releaseScrapeJobLock).toHaveBeenCalledWith(
       expect.objectContaining({ releaseReason: 'success', lastRunId: 'run-1' }),
     );
+  });
+
+  // A lease that is not renewed expires mid-run and lets a second writer steal
+  // the source, so the cron path has to keep renewing while the run is in flight.
+  it('renews the lease on an interval while the run is still in flight', async () => {
+    vi.useFakeTimers();
+    let finishRun: (value: { runId: string; result: unknown }) => void = () => undefined;
+    const deps = makeDeps({
+      orchestrator: {
+        run: vi.fn().mockReturnValue(
+          new Promise((resolve) => {
+            finishRun = resolve;
+          }),
+        ),
+      },
+    });
+
+    const cron = runScraperCron(
+      {
+        sourceName: 'openalex',
+        environment: 'production',
+        options: { dryRun: false, useCache: false, release: true },
+        ownerId: 'owner-1',
+        now: NOW,
+        heartbeatIntervalMs: 100,
+        leaseMs: 5_000,
+      },
+      deps,
+    );
+
+    const renewals = deps.heartbeatScrapeJobLock as ReturnType<typeof vi.fn>;
+    await vi.advanceTimersByTimeAsync(250);
+    expect(renewals).toHaveBeenCalledWith({
+      environment: 'production',
+      sourceName: 'openalex',
+      ownerId: 'owner-1',
+      leaseMs: 5_000,
+    });
+    expect(renewals.mock.calls.length).toBe(2);
+
+    finishRun({ runId: 'run-1', result: { observationCount: 1, entitiesObserved: 1 } });
+    await cron;
+
+    const renewalsDuringRun = renewals.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(300);
+    expect(renewals.mock.calls.length).toBe(renewalsDuringRun);
   });
 });

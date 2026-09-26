@@ -12,7 +12,7 @@ const TABS = [
   'Operator Board',
   'Correction Reports',
   'Fellowships',
-  'Research Areas',
+  'Topics',
   'Departments',
 ] as const;
 type Tab = (typeof TABS)[number];
@@ -36,7 +36,7 @@ const AdminPanel = () => {
             d="M12 9v2m0 4h.01M20.618 5.984A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
           />
         </svg>
-        <h2 className="text-3xl font-bold text-gray-900">Admin Controls</h2>
+        <h2 className="yr-display text-3xl font-semibold text-gray-900">Admin Controls</h2>
       </div>
 
       <div className="border-b border-[var(--yr-line-strong)] mb-6">
@@ -45,9 +45,9 @@ const AdminPanel = () => {
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`min-h-[44px] px-5 py-3 text-sm font-semibold border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+              className={`min-h-[44px] px-5 py-3 text-sm font-semibold border-b-2 transition-colors yr-focus-ring ${
                 activeTab === tab
-                  ? 'border-blue-600 text-blue-600'
+                  ? 'border-brand text-brand'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-[var(--yr-line-strong)]'
               }`}
             >
@@ -60,7 +60,7 @@ const AdminPanel = () => {
       {activeTab === 'Operator Board' && <AdminOperatorBoard />}
       {activeTab === 'Correction Reports' && <AdminCorrectionReports />}
       {activeTab === 'Fellowships' && <AdminFellowshipsTable />}
-      {activeTab === 'Research Areas' && <AdminResearchAreas />}
+      {activeTab === 'Topics' && <AdminResearchAreas />}
       {activeTab === 'Departments' && <AdminDepartments />}
     </section>
   );

@@ -26,6 +26,107 @@ describe('buildResearchEntityQualitySummary', () => {
     expect(summary.score).toBeGreaterThanOrEqual(90);
   });
 
+  it('does not count a postdoc-only lead as attached, since a postdoc cannot host a student', () => {
+    const summary = buildResearchEntityQualitySummary({
+      entity: {
+        fullDescription:
+          'The group studies how coastal sediment transport responds to storm frequency.',
+        shortDescription: 'Coastal sediment transport under changing storm frequency.',
+        sourceUrls: ['https://example.yale.edu/lab/fixture/'],
+      },
+      leadMembers: [
+        {
+          role: 'pi',
+          userId: 'user-1',
+          title: 'Postdoctoral Associate',
+          user: { title: 'Postdoctoral Associate' },
+        },
+      ],
+    });
+
+    expect(summary.leadState).toBe('lead_weak');
+    expect(summary.repairFlags).toContain('missing_lead');
+  });
+
+  it('counts a postdoc who also holds a supervisory title as attached', () => {
+    const summary = buildResearchEntityQualitySummary({
+      entity: {
+        fullDescription:
+          'The group studies how coastal sediment transport responds to storm frequency.',
+        shortDescription: 'Coastal sediment transport under changing storm frequency.',
+        sourceUrls: ['https://example.yale.edu/lab/fixture/'],
+      },
+      leadMembers: [{ role: 'pi', userId: 'user-1', title: 'Postdoctoral Associate & Lecturer' }],
+    });
+
+    expect(summary.leadState).toBe('lead_attached');
+    expect(summary.repairFlags).not.toContain('missing_lead');
+  });
+
+  it('keeps a row attached when a faculty lead sits beside the postdoc', () => {
+    const summary = buildResearchEntityQualitySummary({
+      entity: {
+        fullDescription:
+          'The group studies how coastal sediment transport responds to storm frequency.',
+        shortDescription: 'Coastal sediment transport under changing storm frequency.',
+        sourceUrls: ['https://example.yale.edu/lab/fixture/'],
+      },
+      leadMembers: [
+        { role: 'pi', userId: 'user-1', title: 'Postdoctoral Associate' },
+        { role: 'pi', userId: 'user-2', title: 'Associate Professor of Geology' },
+      ],
+    });
+
+    expect(summary.leadState).toBe('lead_attached');
+  });
+
+  it('does not count a programme-staff-only lead as attached, since they own no research home', () => {
+    for (const title of [
+      'Program Manager',
+      'Data Analyst',
+      'Biostatistician',
+      'Lab Manager',
+      'Program Managers',
+      'Research Specialists',
+    ]) {
+      const summary = buildResearchEntityQualitySummary({
+        entity: {
+          fullDescription:
+            'The group studies how coastal sediment transport responds to storm frequency.',
+          shortDescription: 'Coastal sediment transport under changing storm frequency.',
+          sourceUrls: ['https://example.yale.edu/lab/fixture/'],
+        },
+        leadMembers: [{ role: 'pi', userId: 'user-1', title, user: { title } }],
+      });
+
+      expect(summary.leadState, `"${title}" should not count as attached`).toBe('lead_weak');
+      expect(summary.repairFlags).toContain('missing_lead');
+    }
+  });
+
+  it('keeps a research-ladder lead attached, since independence is not readable from that title', () => {
+    for (const title of [
+      'Associate Research Scientist',
+      'Research Scientist in Genetics',
+      'Senior Research Scientist',
+      'Senior Research Scholar',
+      'Research Scientists',
+    ]) {
+      const summary = buildResearchEntityQualitySummary({
+        entity: {
+          fullDescription:
+            'The group studies how coastal sediment transport responds to storm frequency.',
+          shortDescription: 'Coastal sediment transport under changing storm frequency.',
+          sourceUrls: ['https://example.yale.edu/lab/fixture/'],
+        },
+        leadMembers: [{ role: 'pi', userId: 'user-1', title, user: { title } }],
+      });
+
+      expect(summary.leadState, `"${title}" should stay attached`).toBe('lead_attached');
+      expect(summary.repairFlags).not.toContain('missing_lead');
+    }
+  });
+
   it('treats profile synthesis with an attached lead as useful but still repairable', () => {
     const summary = buildResearchEntityQualitySummary({
       entity: {

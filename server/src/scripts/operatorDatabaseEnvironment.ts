@@ -12,8 +12,28 @@ const OPERATOR_DATABASE_NAMES: Record<
   development: new Set(['development']),
   beta: new Set(['beta']),
   'production-copy': new Set(['productioncopy']),
-  production: new Set(['production']),
+  // The production database is named `Prod`, not `Production`. Until #2575 no
+  // caller had run this guard against the real production URL, so it rejected
+  // the only database it was written to accept.
+  production: new Set(['production', 'prod']),
 };
+
+/**
+ * The environment a connected database belongs to, or undefined when the name
+ * matches none. Reverse of the assertion below, for a caller that must discover
+ * where it is connected rather than check a claim.
+ */
+export function operatorEnvironmentForDatabaseName(
+  databaseName: string,
+): OperatorDatabaseEnvironment | undefined {
+  const normalized = databaseName.trim().toLowerCase().replace(/[-_]/g, '');
+  if (!normalized) return undefined;
+  if (normalized === 'test' || /test$/.test(normalized)) return 'test';
+  for (const [environment, names] of Object.entries(OPERATOR_DATABASE_NAMES)) {
+    if (names.has(normalized)) return environment as OperatorDatabaseEnvironment;
+  }
+  return undefined;
+}
 
 export function parseOperatorDatabaseEnvironment(
   value: string | undefined,

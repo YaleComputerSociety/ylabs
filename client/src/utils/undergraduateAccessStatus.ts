@@ -1,64 +1,23 @@
 export interface UndergraduateAccessFields {
-  undergraduateCurrentAvailability?: string | null;
   hasUndergradHostingEvidence?: boolean | null;
 }
 
-export type UndergraduateAccessTone = 'open' | 'muted' | 'evidence';
+export type UndergraduateAccessTone = 'evidence';
 
 export interface UndergraduateAccessStatus {
   tone: UndergraduateAccessTone;
   label: string;
-  detail?: string;
-  isCurrentlyOpen: boolean;
 }
 
-export const CURRENTLY_OPEN_AVAILABILITY_VALUES: ReadonlySet<string> = new Set(['OPEN', 'ROLLING']);
-
+// Past hosting evidence is the only undergraduate access signal the corpus
+// carries, which is why one tone is enough here. See the 2026-09-15 entry in
+// docs/decisions.md for why availability, compensation and class years went.
 export const deriveUndergraduateAccessStatus = (
   fields: UndergraduateAccessFields,
-): UndergraduateAccessStatus | null => {
-  switch (fields.undergraduateCurrentAvailability) {
-    case 'OPEN':
-      return {
-        tone: 'open',
-        label: 'Open now',
-        detail: 'Open to undergraduates right now',
-        isCurrentlyOpen: true,
-      };
-    case 'ROLLING':
-      return {
-        tone: 'open',
-        label: 'Rolling',
-        detail: 'Accepting undergraduates on a rolling basis',
-        isCurrentlyOpen: true,
-      };
-    case 'NOT_CURRENTLY_AVAILABLE':
-      return {
-        tone: 'muted',
-        label: 'Not currently available',
-        detail: 'Check back later',
-        isCurrentlyOpen: false,
-      };
-    default:
-      break;
-  }
+): UndergraduateAccessStatus | null =>
+  fields.hasUndergradHostingEvidence
+    ? { tone: 'evidence', label: 'Has hosted undergrads before' }
+    : null;
 
-  if (fields.hasUndergradHostingEvidence) {
-    return {
-      tone: 'evidence',
-      label: 'Has hosted undergrads before',
-      isCurrentlyOpen: false,
-    };
-  }
-
-  return null;
-};
-
-export const isCurrentlyOpenToUndergraduates = (fields: UndergraduateAccessFields): boolean =>
-  deriveUndergraduateAccessStatus(fields)?.isCurrentlyOpen === true;
-
-export const undergraduateAccessSortRank = (status: UndergraduateAccessStatus | null): number => {
-  if (status?.isCurrentlyOpen) return 0;
-  if (status?.tone === 'muted') return 2;
-  return 1;
-};
+export const undergraduateAccessSortRank = (status: UndergraduateAccessStatus | null): number =>
+  status?.tone === 'evidence' ? 0 : 1;

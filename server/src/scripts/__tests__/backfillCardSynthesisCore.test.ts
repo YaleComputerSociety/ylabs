@@ -149,6 +149,58 @@ describe('planCardBackfillRow', () => {
   });
 });
 
+describe('planCardBackfillRow assesses the served card, not the stored one (#2671)', () => {
+  // Shape drawn from a real Development row, with every name replaced: an appointment
+  // and editorship block runs straight into genuine research prose with no separator.
+  // The public-description sanitizer empties the whole body, so no card can rescue the
+  // row, yet the stored short reads perfectly well on its own.
+  const TITLES_RUN_INTO_PROSE =
+    'Emeritus Professor of Surgery and of Cellular and Molecular Physiology Principal Investigator, Example Laboratory Editor-in-Chief, Journal of Example Science, Society for Example Surgery Dr. Rowan Tallis is a surgeon-scientist who harnesses the power of molecular biology to achieve a modern understanding of vascular disease, and then uses the basic science laboratory to ultimately benefit patients with vascular diseases. Dr. Tallis trained at three universities before an appointment to the faculty in 2001. Dr. Tallis focuses a clinical practice on teaching, and the laboratory studies the healing and function of blood vessels, fistulae and vessel patches used in patients having vascular surgery.';
+  const STORED_SHORT_THAT_READS_WELL =
+    'Studies the healing and function of blood vessels, fistulae and vessel patches that are used in patients having vascular surgery.';
+
+  it('refuses short-ok when the served full description sanitizes away, because the gate would still hold the card', async () => {
+    const synthesize = vi.fn(async () => '');
+    const row = await planCardBackfillRow(
+      {
+        id: '00000000000000000000000f',
+        entityType: 'LAB',
+        shortDescription: STORED_SHORT_THAT_READS_WELL,
+        fullDescription: TITLES_RUN_INTO_PROSE,
+        visibilityReasons: ['missing_card_description'],
+      },
+      synthesize,
+    );
+    expect(row.action).toBe('no-card');
+    expect(row.gainedCard).toBe(false);
+    expect(row.wouldPromote).toBe(false);
+    expect(row.proposedShort).toBeNull();
+  });
+
+  it('still reports short-ok when the served representation keeps both halves', async () => {
+    const synthesize = vi.fn(async () => '');
+    const row = await planCardBackfillRow(
+      {
+        id: '000000000000000000000010',
+        shortDescription: GROUNDED_CARD,
+        fullDescription: RICH_FIRST_PERSON_FULL,
+        visibilityReasons: ['missing_card_description'],
+      },
+      synthesize,
+    );
+    expect(row.action).toBe('short-ok');
+    expect(synthesize).not.toHaveBeenCalled();
+  });
+
+  // The `leadMemberNames` pass-through is deliberately NOT asserted here. It is
+  // load bearing: on Development, supplying the real roster lead names flips all 6
+  // rows whose representation reads `complete` without them to `sparse`, which is the
+  // entire difference between the planner's verdict and the gate's. Five attempts to
+  // reproduce that flip on synthetic text failed, so any unit case written here would
+  // pass whether or not the names are passed at all, and would give false assurance
+  // rather than protection. Verified on real data instead; see #2671.
+});
+
 describe('planCardBackfillRow topic-label-list awareness (#1730/#1680)', () => {
   it('holds rather than fabricates when a stored bare label-list short would be rejected at serve time', async () => {
     const emptySynthesize = vi.fn(async () => '');
@@ -237,5 +289,132 @@ describe('summarizeCardBackfill', () => {
     expect(summary.wouldPromote).toBe(1);
     expect(summary.actions['no-card']).toBe(1);
     expect(summary.actions['short-ok']).toBe(1);
+  });
+});
+
+describe('planCardBackfillRow career-biography cards (#3098)', () => {
+  // Career facts and no research subject, and it survives the serve sanitizers, which
+  // is what makes it this class rather than #2915's withheld-card class. The synthetic
+  // name is the repo's existing fixture name for exactly this shape.
+  const CAREER_BIOGRAPHY_CARD =
+    'Dr. Rowan Tallis trained at three universities before an appointment to the faculty in 2001.';
+  // All 34 rows in this class pass fullDescription quality with zero flags, so the
+  // material for a real card is already on the row.
+  const DERIVABLE_RESEARCH_BODY =
+    'The laboratory studies how microglia clear protein aggregates in the ageing brain, combining two-photon imaging in mouse models with single-nucleus sequencing of post-mortem cortex to identify the clearance pathways that fail earliest in tauopathy.';
+  // 24 of the 34 are this shape: genuine research prose the deterministic derivation
+  // has no pattern to compress, which is why the LLM arm is the only one that reaches
+  // them.
+  const UNDERIVABLE_RESEARCH_BODY =
+    'Questions about measurement and questions about mechanism have driven the group for fifteen years, and the instrumentation built to answer the first has repeatedly reshaped what could be asked of the second, so the two threads are now inseparable in the work the group does.';
+  const SYNTHESIZED_CARD =
+    'Studies questions about measurement and mechanism, building instrumentation that reshapes what can be asked of the biology.';
+  // A synthesized biography that is GROUNDED in the body, so it clears
+  // shortDescriptionQuality and survives the serve sanitizers as a complete card.
+  // That is the only shape the output refusal is load-bearing for: an ungrounded or
+  // sanitizer-blanked biography is already refused by `servedCardIsComplete`.
+  const SYNTHESIZED_BIOGRAPHY =
+    'Dr. Rowan Tallis trained at three universities in measurement and mechanism before joining the group.';
+
+  const biographyRow = (fullDescription: string, researchAreas?: string[]) => ({
+    id: '000000000000000000000031',
+    slug: 'example-neurology-profile',
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: 'individual',
+    shortDescription: CAREER_BIOGRAPHY_CARD,
+    fullDescription,
+    ...(researchAreas ? { researchAreas } : {}),
+  });
+
+  it('no longer calls a served career-biography card short-ok', async () => {
+    const synthesize = vi.fn(async () => SYNTHESIZED_CARD);
+
+    const row = await planCardBackfillRow(biographyRow(DERIVABLE_RESEARCH_BODY), synthesize);
+
+    expect(row.gainedCard).toBe(true);
+    expect(row.proposedShort).not.toBe(CAREER_BIOGRAPHY_CARD);
+  });
+
+  it('refuses the body derivation on a row that already has a card', async () => {
+    const derived = deriveShortDescriptionFromFullDescription(DERIVABLE_RESEARCH_BODY);
+    const synthesize = vi.fn(async () => SYNTHESIZED_CARD);
+
+    const row = await planCardBackfillRow(biographyRow(DERIVABLE_RESEARCH_BODY), synthesize);
+
+    expect(derived).toBeTruthy();
+    expect(row.proposedShort).not.toBe(derived);
+    expect(row.action).toBe('card-synthesized');
+  });
+
+  // The role noun is a career fact, so isCareerBiographyDescription fires on every one
+  // of these, but each states what the person works on and a student is well served by
+  // it. These are the shapes the hand read found the lane regressing.
+  it.each([
+    [
+      'possessive research focus',
+      'Dr. Rowan Tallis is a medical oncologist whose research focuses on gastrointestinal cancers and biomarker-driven therapy selection.',
+    ],
+    [
+      'apposition with specializing in',
+      'Dr. Rowan Tallis is a historian specializing in Chinese religious and legal history and the Silk Road.',
+    ],
+    [
+      'role noun plus focusing on',
+      'Dr. Rowan Tallis is a pathologist specializing in brain diseases, focusing on neuropathology and molecular diagnostics.',
+    ],
+    [
+      'organization conducting research on',
+      'The Example Collaboratory conducts research on learning and social-emotional development, evidence synthesis, and assessment methodologies.',
+    ],
+  ])('leaves a card that names what is studied alone: %s', async (_label, card) => {
+    const synthesize = vi.fn(async () => SYNTHESIZED_CARD);
+
+    const row = await planCardBackfillRow(
+      { ...biographyRow(DERIVABLE_RESEARCH_BODY), shortDescription: card },
+      synthesize,
+    );
+
+    expect(row.action).toBe('short-ok');
+    expect(synthesize).not.toHaveBeenCalled();
+  });
+
+  it('reaches the LLM arm on a body the derivation cannot compress', async () => {
+    const synthesize = vi.fn(async () => SYNTHESIZED_CARD);
+
+    const row = await planCardBackfillRow(biographyRow(UNDERIVABLE_RESEARCH_BODY), synthesize);
+
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    expect(row.action).toBe('card-synthesized');
+    expect(row.proposedShort).toBe(SYNTHESIZED_CARD);
+  });
+
+  it('keeps the stored card rather than trading one biography for another', async () => {
+    const synthesize = vi.fn(async () => SYNTHESIZED_BIOGRAPHY);
+
+    const row = await planCardBackfillRow(
+      biographyRow(UNDERIVABLE_RESEARCH_BODY, ['Neurodegeneration', 'Imaging']),
+      synthesize,
+    );
+
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    expect(row.action).toBe('no-card');
+    expect(row.proposedShort).toBeNull();
+    expect(row.gainedCard).toBe(false);
+  });
+
+  it('still calls a research-focus card short-ok and never calls the synthesizer', async () => {
+    const synthesize = vi.fn(async () => SYNTHESIZED_CARD);
+
+    const row = await planCardBackfillRow(
+      {
+        ...biographyRow(DERIVABLE_RESEARCH_BODY),
+        shortDescription:
+          'Studies how microglia clear protein aggregates in the ageing brain and which clearance pathways fail earliest in tauopathy.',
+      },
+      synthesize,
+    );
+
+    expect(row.action).toBe('short-ok');
+    expect(synthesize).not.toHaveBeenCalled();
   });
 });

@@ -242,6 +242,8 @@ export interface AnalyticsSearchQuerySearcher {
 
 export interface AnalyticsSearchQueryRow {
   query: string;
+  filterSummary?: string;
+  surface?: string;
   totalSearches: number;
   uniqueSearchers: number;
   zeroResultSearches?: number;
@@ -267,12 +269,8 @@ export interface AnalyticsFunnelStage {
 export interface AnalyticsFunnelResponse {
   range?: AnalyticsRange;
   stages?: AnalyticsFunnelStage[];
-  visitorCount?: number;
-  searcherCount?: number;
-  viewerCount?: number;
-  applicantCount?: number;
-  profileUpdateCount?: number;
-  overallConversionRate?: number;
+  overallConversionRate?: number | null;
+  qualifiedActionEventsRecorded?: number;
   journeyMetrics?: {
     sourceInspections: number;
     officialRouteAttempts: number;

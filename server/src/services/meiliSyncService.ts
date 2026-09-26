@@ -47,9 +47,16 @@ export const syncEntity = async (entityType: string, doc: any): Promise<void> =>
   }
 };
 
-export const syncEntities = async (entityType: string, docs: any[]): Promise<void> => {
+/**
+ * Returns the number of documents actually submitted to the index, and 0 when the
+ * batch failed. Callers still get best-effort behaviour by ignoring the value, but
+ * one that reports a resync has to read it: inferring success from the input length
+ * let a repair script print "20 entities resynced" while the index kept serving the
+ * text the corpus no longer held (#2874).
+ */
+export const syncEntities = async (entityType: string, docs: any[]): Promise<number> => {
   const config = getConfig(entityType);
-  if (!config || !docs || docs.length === 0) return;
+  if (!config || !docs || docs.length === 0) return 0;
 
   try {
     const meiliDocs = config.transformMany
@@ -57,12 +64,55 @@ export const syncEntities = async (entityType: string, docs: any[]): Promise<voi
       : (await Promise.all(docs.map(config.transform))).filter(
           (meiliDoc): meiliDoc is Record<string, any> => meiliDoc !== null,
         );
-    if (meiliDocs.length === 0) return;
+    if (meiliDocs.length === 0) return 0;
     const index = await getMeiliIndex(config.indexName);
     await index.addDocuments(meiliDocs, { primaryKey: config.primaryKey });
+    return meiliDocs.length;
   } catch (error) {
     console.error(`Failed to sync ${entityType} batch to Meilisearch:`, sanitizeLogValue(error));
+    return 0;
   }
+};
+
+const INDEXED_FIELD_PAGE_SIZE = 1000;
+
+/**
+ * Projects one field of every indexed document, keyed by primary key, so a caller
+ * can compare what the index serves against what the corpus holds.
+ *
+ * Unlike the sync helpers this deliberately does not catch: a swallowed read is
+ * indistinguishable from "no drift", which is how a gate apply came to report a
+ * clean run while the index kept serving a tier the corpus no longer held (#3049).
+ *
+ * It pages the whole index rather than requesting the ids it wants because
+ * Meilisearch 1.13 rejects an `ids` argument on the documents-fetch endpoint and
+ * the primary key is not a filterable attribute, so per-id reads would be one
+ * request per row.
+ */
+export const readIndexedFieldByDocumentId = async (
+  entityType: string,
+  field: string,
+): Promise<Map<string, unknown>> => {
+  const config = getConfig(entityType);
+  if (!config) return new Map();
+  const index = await getMeiliIndex(config.indexName);
+  const byDocumentId = new Map<string, unknown>();
+  let offset = 0;
+  for (;;) {
+    const page = (await index.getDocuments({
+      limit: INDEXED_FIELD_PAGE_SIZE,
+      offset,
+      fields: [config.primaryKey, field],
+    })) as { results: Array<Record<string, unknown>>; total: number };
+    for (const doc of page.results) {
+      const id = doc[config.primaryKey];
+      if (id == null) continue;
+      byDocumentId.set(String(id), doc[field]);
+    }
+    offset += page.results.length;
+    if (page.results.length === 0 || offset >= page.total) break;
+  }
+  return byDocumentId;
 };
 
 export const deleteFromIndex = async (entityType: string, id: string): Promise<void> => {

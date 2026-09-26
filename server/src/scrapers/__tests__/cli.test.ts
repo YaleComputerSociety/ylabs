@@ -139,10 +139,6 @@ describe('scraper CLI helpers', () => {
       limit: 25,
       offset: 5,
     });
-    expect(cli.parseScraperOptions({ 'logistics-production': true })).toMatchObject({
-      logisticsProductionMode: true,
-    });
-    expect(cli.parseScraperOptions({})).toMatchObject({ logisticsProductionMode: false });
     expect(() => cli.parseScraperOptions({ limit: '12abc' })).toThrow(
       /--limit must be a positive integer/,
     );
@@ -193,7 +189,11 @@ describe('scraper CLI helpers', () => {
         'prune-observations',
         { apply: true, 'confirm-observation-prune': true },
         'mongodb+srv://example.mongodb.net/Beta',
-        { SCRAPER_ENV: 'beta', ALLOW_NON_PROD_SCRAPER_WRITES: 'true' } as NodeJS.ProcessEnv,
+        {
+          SCRAPER_ENV: 'beta',
+          ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
+          C4_LOSSLESS_INGEST: 'false',
+        } as NodeJS.ProcessEnv,
       ),
     ).toMatchObject({
       command: 'prune-observations',
@@ -430,5 +430,106 @@ describe('scraper CLI helpers', () => {
       exitCode: 0,
       ownerId: 'owner-1',
     });
+  });
+});
+
+describe('scrape run --explain', () => {
+  it('collects the planned observation values only when explicitly asked', async () => {
+    const cli = await import('../cliHelpers');
+    expect(cli.parseScraperOptions({})).toMatchObject({ explain: false });
+    expect(
+      cli.parseScraperOptions({ 'dry-run': true, explain: true, output: '/tmp/report.json' }),
+    ).toMatchObject({ explain: true, dryRun: true });
+  });
+
+  it('refuses --explain without --dry-run, because a live run has nothing to preview', async () => {
+    const cli = await import('../cliHelpers');
+    expect(() => cli.parseScraperOptions({ explain: true, output: '/tmp/report.json' })).toThrow(
+      '--explain requires --dry-run',
+    );
+  });
+
+  // Observation values carry names, emails and bios, so they must land in a
+  // write-guarded file rather than terminal scrollback or a CI log.
+  it('refuses --explain without --output', async () => {
+    const cli = await import('../cliHelpers');
+    expect(() => cli.parseScraperOptions({ 'dry-run': true, explain: true })).toThrow(
+      '--explain requires --output',
+    );
+    expect(() =>
+      cli.parseScraperOptions({ 'dry-run': true, explain: true, output: '   ' }),
+    ).toThrow('--explain requires --output');
+    expect(() => cli.parseScraperOptions({ 'dry-run': true, explain: true, output: true })).toThrow(
+      '--explain requires --output',
+    );
+  });
+
+  it('parses and bounds --explain-limit, and refuses it without --explain', async () => {
+    const cli = await import('../cliHelpers');
+    expect(
+      cli.parseScraperOptions({
+        'dry-run': true,
+        explain: true,
+        output: '/tmp/report.json',
+        'explain-limit': '25',
+      }),
+    ).toMatchObject({ explainLimit: 25 });
+    expect(() => cli.parseScraperOptions({ 'explain-limit': '25' })).toThrow(
+      '--explain-limit requires --explain',
+    );
+    expect(() =>
+      cli.parseScraperOptions({
+        'dry-run': true,
+        explain: true,
+        output: '/tmp/report.json',
+        'explain-limit': '0',
+      }),
+    ).toThrow('--explain-limit must be a positive integer');
+  });
+
+  it('accepts --explain and --explain-limit as declared flags', async () => {
+    const cli = await import('../cliHelpers');
+    expect(
+      cli.parseArgs([
+        'node',
+        'cli.ts',
+        'run',
+        '--source',
+        'dept-faculty-roster',
+        '--dry-run',
+        '--explain',
+        '--explain-limit',
+        '10',
+        '--output',
+        '/tmp/report.json',
+      ]).flags,
+    ).toMatchObject({ explain: true, 'explain-limit': '10' });
+    expect(() => cli.parseArgs(['node', 'cli.ts', 'run', '--explain=yes'])).toThrow(
+      '--explain does not accept a value',
+    );
+  });
+});
+
+describe('a write run that materializes nothing', () => {
+  it('names the run and the commands that finish it', async () => {
+    const cli = await import('../cliHelpers');
+    const warning = cli.unmaterializedWriteRunWarning({
+      runId: 'run-1',
+      dryRun: false,
+      autoMaterialize: false,
+      observationCount: 1000,
+    });
+    expect(warning).toContain('run-1');
+    expect(warning).toContain('1000 observation(s) and materialized none');
+    expect(warning).toContain('scrape materialize --run run-1 --confirm-materialize');
+    expect(warning).toContain('observations:catch-up-materialize');
+  });
+
+  it('stays silent for a dry run, an auto-materialized run, and a run that wrote nothing', async () => {
+    const cli = await import('../cliHelpers');
+    const base = { runId: 'run-1', dryRun: false, autoMaterialize: false, observationCount: 1000 };
+    expect(cli.unmaterializedWriteRunWarning({ ...base, dryRun: true })).toBeUndefined();
+    expect(cli.unmaterializedWriteRunWarning({ ...base, autoMaterialize: true })).toBeUndefined();
+    expect(cli.unmaterializedWriteRunWarning({ ...base, observationCount: 0 })).toBeUndefined();
   });
 });

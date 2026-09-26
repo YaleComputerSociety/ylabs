@@ -11,12 +11,17 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isYaleOfficialProfileUrl } from './backfillResearcherOfficialProfileLinksCore';
 import { materializationReadScopeFilter } from '../scrapers/entityMaterializer';
 import {
+  decisiveVerdictCount,
   isDecisivelyDeadProbe,
   isDecisivelyLiveProbe,
+  isProfileLinkDueForVerification,
   isRetryableProbe,
+  profileLinkVerificationCoverage,
+  type ProfileLinkVerificationCoverage,
   officialProfileLinkCandidates,
   officialProfileLinkHost,
   probeRetryDelayMs,
+  DEFAULT_UNSETTLED_RETRY_HOURS,
   settledHealthStatusFor,
   summarizeDepartmentLinkHealth,
   type DepartmentLinkHealthSummary,
@@ -40,6 +45,8 @@ export interface VerifyOfficialProfileLinksOptions {
   host?: string;
   hostConcurrency: number;
   paceDelayMs: number;
+  staleAfterDays: number;
+  unsettledRetryHours: number;
   output?: string;
 }
 
@@ -78,6 +85,8 @@ export function parseVerifyOfficialProfileLinksArgs(
     limit: 0,
     explicitLimit: false,
     hostConcurrency: DEFAULT_HOST_CONCURRENCY,
+    staleAfterDays: 0,
+    unsettledRetryHours: DEFAULT_UNSETTLED_RETRY_HOURS,
     paceDelayMs: DEFAULT_PACE_DELAY_MS,
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -97,6 +106,25 @@ export function parseVerifyOfficialProfileLinksArgs(
       options.host = parseHost(arg.slice('--host='.length));
     } else if (arg === '--host') {
       options.host = parseHost(argv[i + 1]);
+      i += 1;
+    } else if (arg.startsWith('--stale-after-days=')) {
+      options.staleAfterDays = parseNonNegativeInt(
+        arg.slice('--stale-after-days='.length),
+        '--stale-after-days',
+      );
+    } else if (arg.startsWith('--retry-unsettled-after-hours=')) {
+      options.unsettledRetryHours = parseNonNegativeInt(
+        arg.slice('--retry-unsettled-after-hours='.length),
+        '--retry-unsettled-after-hours',
+      );
+    } else if (arg === '--retry-unsettled-after-hours') {
+      options.unsettledRetryHours = parseNonNegativeInt(
+        argv[i + 1],
+        '--retry-unsettled-after-hours',
+      );
+      i += 1;
+    } else if (arg === '--stale-after-days') {
+      options.staleAfterDays = parseNonNegativeInt(argv[i + 1], '--stale-after-days');
       i += 1;
     } else if (arg.startsWith('--host-concurrency=')) {
       options.hostConcurrency = parsePositiveInt(
@@ -145,8 +173,10 @@ export interface VerifyOfficialProfileLinksResult {
   repaired: number;
   dead: number;
   inconclusive: number;
+  decisiveVerdicts: number;
   statusesWritten: number;
   urlsRepaired: number;
+  coverage: ProfileLinkVerificationCoverage;
   departments: DepartmentLinkHealthSummary[];
   rows: OfficialProfileLinkRow[];
 }
@@ -157,6 +187,7 @@ interface OfficialLinkTarget {
   host: string;
   url: string;
   storedHealthStatus?: string;
+  verifiedAt?: Date;
 }
 
 /**
@@ -193,7 +224,12 @@ const observedProfileUrlsByHost = async (): Promise<Map<string, string[]>> => {
   return index;
 };
 
-const officialLinkTargets = async (host?: string): Promise<OfficialLinkTarget[]> => {
+const officialLinkTargets = async (
+  host?: string,
+  staleAfterDays = 0,
+  now: Date = new Date(),
+  unsettledRetryHours = DEFAULT_UNSETTLED_RETRY_HOURS,
+): Promise<OfficialLinkTarget[]> => {
   const researchers = await Researcher.find({
     archived: { $ne: true },
     profileLinks: { $elemMatch: { kind: 'YALE_OFFICIAL' } },
@@ -209,12 +245,25 @@ const officialLinkTargets = async (host?: string): Promise<OfficialLinkTarget[]>
       const linkHost = officialProfileLinkHost(link.url);
       if (!linkHost) continue;
       if (host && linkHost !== host) continue;
+      // Ordered before the push so a bounded run's `--limit` applies to links that
+      // are actually due, rather than being spent re-probing fresh ones.
+      if (
+        !isProfileLinkDueForVerification(
+          link.verifiedAt,
+          staleAfterDays,
+          now,
+          link.healthStatus,
+          unsettledRetryHours,
+        )
+      )
+        continue;
       targets.push({
         researcherId: String(researcher._id),
         displayName: (researcher as { displayName?: string }).displayName,
         host: linkHost,
         url: String(link.url).trim(),
         storedHealthStatus: link.healthStatus,
+        verifiedAt: link.verifiedAt,
       });
     }
   }
@@ -224,8 +273,11 @@ const officialLinkTargets = async (host?: string): Promise<OfficialLinkTarget[]>
 export async function runVerifyOfficialProfileLinks(
   options: Pick<VerifyOfficialProfileLinksOptions, 'apply' | 'host' | 'hostConcurrency'> & {
     limit?: number;
+    staleAfterDays?: number;
+    unsettledRetryHours?: number;
     probe?: (url: string) => Promise<SourceLinkHealth>;
     onHostVerified?: (host: string, links: number) => void;
+    onProgress?: (snapshot: VerifyOfficialProfileLinksResult) => void;
     sleep?: (ms: number) => Promise<unknown>;
     retries?: number;
     retryDelayMs?: number;
@@ -234,7 +286,12 @@ export async function runVerifyOfficialProfileLinks(
 ): Promise<VerifyOfficialProfileLinksResult> {
   const probe = options.probe ?? checkSourceLinkHealth;
   const observedIndex = await observedProfileUrlsByHost();
-  const allTargets = await officialLinkTargets(options.host);
+  const allTargets = await officialLinkTargets(
+    options.host,
+    options.staleAfterDays ?? 0,
+    new Date(),
+    options.unsettledRetryHours ?? DEFAULT_UNSETTLED_RETRY_HOURS,
+  );
   const targets = options.limit ? allTargets.slice(0, options.limit) : allTargets;
 
   const byHost = new Map<string, OfficialLinkTarget[]>();
@@ -247,6 +304,7 @@ export async function runVerifyOfficialProfileLinks(
   const rows: OfficialProfileLinkRow[] = [];
   let statusesWritten = 0;
   let urlsRepaired = 0;
+  let hostsCompleted = 0;
 
   const sleep = options.sleep ?? ((ms: number) => new Promise((done) => setTimeout(done, ms)));
   const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
@@ -317,6 +375,32 @@ export async function runVerifyOfficialProfileLinks(
   };
 
   const hosts = [...byHost.values()];
+
+  const snapshot = (): VerifyOfficialProfileLinksResult => {
+    const countOf = (verdict: OfficialProfileLinkRow['verdict']) =>
+      rows.filter((row) => row.verdict === verdict).length;
+    return {
+      mode: options.apply ? 'apply' : 'dry-run',
+      probed: rows.length,
+      healthy: countOf('healthy'),
+      repaired: countOf('repaired'),
+      dead: countOf('dead'),
+      inconclusive: countOf('inconclusive'),
+      decisiveVerdicts: decisiveVerdictCount(rows),
+      statusesWritten,
+      urlsRepaired,
+      coverage: profileLinkVerificationCoverage({
+        linksDue: allTargets.length,
+        attempted: targets.length,
+        probed: rows.length,
+        hostsPlanned: hosts.length,
+        hostsCompleted,
+      }),
+      departments: summarizeDepartmentLinkHealth(rows),
+      rows,
+    };
+  };
+
   let cursor = 0;
   const worker = async (): Promise<void> => {
     while (cursor < hosts.length) {
@@ -326,29 +410,23 @@ export async function runVerifyOfficialProfileLinks(
         if (index > 0 && paceDelayMs > 0) await sleep(paceDelayMs);
         await verifyTarget(target);
       }
+      hostsCompleted += 1;
       options.onHostVerified?.(bucket[0].host, bucket.length);
+      // Reported per host rather than per link so a death is legible without making
+      // the run pay a report write for every probe. A host is the smallest unit whose
+      // links are all settled, because the walk within one is serial (#3303).
+      options.onProgress?.(snapshot());
     }
   };
   await Promise.all(
     Array.from({ length: Math.min(options.hostConcurrency, hosts.length || 1) }, worker),
   );
 
-  const countOf = (verdict: OfficialProfileLinkRow['verdict']) =>
-    rows.filter((row) => row.verdict === verdict).length;
-
-  return {
-    mode: options.apply ? 'apply' : 'dry-run',
-    probed: rows.length,
-    healthy: countOf('healthy'),
-    repaired: countOf('repaired'),
-    dead: countOf('dead'),
-    inconclusive: countOf('inconclusive'),
-    statusesWritten,
-    urlsRepaired,
-    departments: summarizeDepartmentLinkHealth(rows),
-    rows,
-  };
+  return snapshot();
 }
+
+/** Exposed so a died-partway run can still report how far it got. */
+export type VerifyOfficialProfileLinksSnapshot = VerifyOfficialProfileLinksResult;
 
 async function main(): Promise<void> {
   const options = parseVerifyOfficialProfileLinksArgs(process.argv.slice(2));
@@ -365,36 +443,69 @@ async function main(): Promise<void> {
     }`,
   );
 
+  const safeOutput = options.output ? resolveSafeJsonReportOutputPath(options.output) : undefined;
+  let latest: VerifyOfficialProfileLinksResult | undefined;
+  const writeReport = (result: VerifyOfficialProfileLinksResult | undefined): void => {
+    if (!safeOutput || !result) return;
+    fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+    fs.writeFileSync(
+      safeOutput,
+      `${JSON.stringify(
+        {
+          generatedAt: new Date().toISOString(),
+          environment: guard.environment,
+          db: guard.dbLabel,
+          options: {
+            apply: options.apply,
+            host: options.host,
+            hostConcurrency: options.hostConcurrency,
+            paceDelayMs: options.paceDelayMs,
+            staleAfterDays: options.staleAfterDays,
+            limit: options.explicitLimit ? options.limit : undefined,
+          },
+          result,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  };
+
+  // A signal or an unhandled failure has to leave the report behind, because the
+  // whole defect in #3303 was that a run which died at 90% wrote nothing and read
+  // exactly like one that died at 0%. The handler writes what the run has and exits
+  // non-zero rather than trying to finish.
+  const flushAndExit = (reason: string) => {
+    writeReport(latest);
+    console.error(`verify-official-profile-links stopped early (${reason})`);
+    process.exit(1);
+  };
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(signal, () => flushAndExit(signal));
+  }
+
   await mongoose.connect(process.env.MONGODBURL as string);
   try {
-    const result = await runVerifyOfficialProfileLinks({
+    latest = await runVerifyOfficialProfileLinks({
       apply: options.apply,
       host: options.host,
       hostConcurrency: options.hostConcurrency,
       paceDelayMs: options.paceDelayMs,
+      staleAfterDays: options.staleAfterDays,
+      unsettledRetryHours: options.unsettledRetryHours,
       limit: options.explicitLimit ? options.limit : undefined,
       onHostVerified: (host, links) => console.log(`verified ${host} (${links} links)`),
-    });
-    const payload = {
-      generatedAt: new Date().toISOString(),
-      environment: guard.environment,
-      db: guard.dbLabel,
-      options: {
-        apply: options.apply,
-        host: options.host,
-        hostConcurrency: options.hostConcurrency,
-        paceDelayMs: options.paceDelayMs,
-        limit: options.explicitLimit ? options.limit : undefined,
+      onProgress: (progress) => {
+        latest = progress;
+        writeReport(progress);
       },
-      result,
-    };
-    if (options.output) {
-      const safeOutput = resolveSafeJsonReportOutputPath(options.output);
-      fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(safeOutput, `${JSON.stringify(payload, null, 2)}\n`);
-      console.log(`Saved verification report to ${safeOutput}`);
-    }
-    console.log(JSON.stringify({ ...result, rows: result.rows.length }, null, 2));
+    });
+    writeReport(latest);
+    if (safeOutput) console.log(`Saved verification report to ${safeOutput}`);
+    console.log(JSON.stringify({ ...latest, rows: latest.rows.length }, null, 2));
+  } catch (error) {
+    writeReport(latest);
+    throw error;
   } finally {
     await mongoose.disconnect();
   }

@@ -58,6 +58,61 @@ describe('officialResearchDescription', () => {
     expect(extractOfficialResearchDescription(html, { kind: 'organization' })).toBeNull();
   });
 
+  describe('a profile JSON-LD Person description is read but not adopted (docs/decisions.md 2026-09-22)', () => {
+    const profileHtml = (description: string): string => `<!doctype html><html><head>
+      <script type="application/ld+json">${JSON.stringify({
+        '@type': 'Person',
+        name: 'Avery Lindqvist',
+        jobTitle: 'Professor of Molecular Biophysics and Biochemistry',
+        description,
+      })}</script>
+    </head><body><main><p>Short.</p></main></body></html>`;
+
+    const CV_DESCRIPTION =
+      'Professor of Molecular Biophysics and Biochemistry; Professor of Chemistry; Member, Riverbend Cancer Center. ' +
+      'B.S., Riverbend State University, 1994; Ph.D., Lakeshore Institute of Technology, 2000. ' +
+      'Postdoctoral Fellow, Harborview Institute, 2000-2004. ' +
+      'Assistant Professor, 2004-2010; Associate Professor, 2010-2016; Professor, 2016-present. ' +
+      'Chair, Departmental Appointments Committee, 2017-2019. Deputy Chair for Academic Affairs, 2020-2022. ' +
+      'Elected Fellow, National Academy of Synthetic Sciences, 2018. ' +
+      'Member, Association of Academic Chemists; Member, International Union of Molecular Sciences; Member, Harborview Academic Society. ' +
+      'Distinguished Teaching Award, 2009. Early Career Prize, 2007. Mentoring Medal, 2015. ' +
+      'Editorial Board, Journal of Structural Reports, 2013-present. Editorial Board, Annual Review of Molecular Methods, 2019-present. ' +
+      'Ad hoc reviewer for numerous journals and federal funding agencies.';
+
+    const RESEARCH_DESCRIPTION =
+      'Our group studies how molecular chaperones recognize misfolded proteins inside living cells, combining cryo-electron microscopy with single-molecule force spectroscopy to map the conformational steps that precede aggregation.';
+
+    it('offers the CV description as a first-position candidate', () => {
+      const candidates = collectVisibleDescriptionCandidates(profileHtml(CV_DESCRIPTION));
+      expect(candidates[0]).toBe(CV_DESCRIPTION);
+    });
+
+    it('refuses to adopt it as a person research description', () => {
+      expect(
+        extractOfficialResearchDescription(profileHtml(CV_DESCRIPTION), { kind: 'person' }),
+      ).toBeNull();
+    });
+
+    it('still refuses it when an appointment line names an academic program ending in Studies (#2670)', () => {
+      const cvWithProgramTitle = CV_DESCRIPTION.replace(
+        'Deputy Chair for Academic Affairs, 2020-2022.',
+        'Director of Graduate Studies, 2012-2015.',
+      );
+      expect(cvWithProgramTitle).toContain('Director of Graduate Studies');
+      expect(
+        extractOfficialResearchDescription(profileHtml(cvWithProgramTitle), { kind: 'person' }),
+      ).toBeNull();
+    });
+
+    it('adopts the same field when it carries research prose instead, so the selection is the guard', () => {
+      const result = extractOfficialResearchDescription(profileHtml(RESEARCH_DESCRIPTION), {
+        kind: 'person',
+      });
+      expect(result?.fullDescription).toContain('how molecular chaperones recognize misfolded');
+    });
+  });
+
   it('inserts a block-boundary separator between a section-label div and the following prose (#1481)', () => {
     const html = `<html><body><main>
       <div>Titles</div>

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearC4Flags } from './c4FlagTestEnv';
 
 vi.mock('../../services/meiliSyncService', async () => {
   const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
@@ -20,6 +21,10 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { appendObservations } from '../observationStore';
 import { materializeEntity } from '../entityMaterializer';
+
+// Each test states its own C4 flag position; none inherits one from the
+// ambient environment (#2063).
+beforeEach(clearC4Flags);
 
 const ENTITY_KEY = 'lossless-decide-late-fixture';
 

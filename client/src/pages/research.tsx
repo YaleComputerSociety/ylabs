@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useStat
 import { isCancel } from 'axios';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
+import { isResearchHomeResetState } from '../components/researchHomeNavigation';
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
@@ -31,6 +32,7 @@ import {
   StudentVisibilityTier,
 } from '../types/researchEntity';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
+import { isKnownResearchEntityType } from '../utils/researchEntityCopy';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import type { PathwaySearchFilters } from '../types/pathway';
@@ -57,55 +59,14 @@ interface DepartmentSearchTarget {
   };
 }
 
-type CurrentAvailabilityFilterValue = 'OPEN' | 'ROLLING';
-type CompensationFilterValue = 'PAID_OR_STIPEND' | 'COURSE_CREDIT';
-type EligibleStudentLevelFilterValue = 'FIRST_YEAR' | 'SOPHOMORE' | 'JUNIOR' | 'SENIOR';
-
 type ResearchSearchFilters = PathwaySearchFilters & {
   kind?: string[];
   entityType?: string[];
   school?: string[];
-  currentAvailability?: CurrentAvailabilityFilterValue[];
-  compensation?: CompensationFilterValue[];
-  eligibleStudentLevels?: EligibleStudentLevelFilterValue[];
 };
 
 type ResearchQualityFilter = 'description-issue' | 'missing-lead' | 'profile-fallback';
 type ResearchTrustTierFilter = StudentVisibilityTier;
-
-const CURRENT_AVAILABILITY_FILTER_VALUES: readonly CurrentAvailabilityFilterValue[] = [
-  'OPEN',
-  'ROLLING',
-];
-
-const CURRENT_AVAILABILITY_FILTER_LABELS: Record<CurrentAvailabilityFilterValue, string> = {
-  OPEN: 'Open now',
-  ROLLING: 'Rolling',
-};
-
-const COMPENSATION_FILTER_VALUES: readonly CompensationFilterValue[] = [
-  'PAID_OR_STIPEND',
-  'COURSE_CREDIT',
-];
-
-const COMPENSATION_FILTER_LABELS: Record<CompensationFilterValue, string> = {
-  PAID_OR_STIPEND: 'Paid or stipend',
-  COURSE_CREDIT: 'Course credit',
-};
-
-const ELIGIBLE_STUDENT_LEVEL_FILTER_VALUES: readonly EligibleStudentLevelFilterValue[] = [
-  'FIRST_YEAR',
-  'SOPHOMORE',
-  'JUNIOR',
-  'SENIOR',
-];
-
-const ELIGIBLE_STUDENT_LEVEL_FILTER_LABELS: Record<EligibleStudentLevelFilterValue, string> = {
-  FIRST_YEAR: 'Open to first-years',
-  SOPHOMORE: 'Open to sophomores',
-  JUNIOR: 'Open to juniors',
-  SENIOR: 'Open to seniors',
-};
 
 const FILTERED_RESULT_QUERY_LABEL = 'filtered research';
 const DEFAULT_RESEARCH_HOME_LIMIT = 24;
@@ -131,6 +92,11 @@ const readSearchParamList = <T extends string>(
       seen.add(value);
       return true;
     });
+};
+
+const readEntityTypeParam = (params: URLSearchParams): string => {
+  const value = (params.get('type') || '').trim();
+  return isKnownResearchEntityType(value) ? value : '';
 };
 
 const emptyGroupedResults = (query: string): GroupedResearchResults =>
@@ -162,12 +128,7 @@ interface ActiveResearchSearchRequest {
 
 interface ResearchFilterAnalyticsChange {
   operation: 'apply' | 'remove';
-  filter:
-    | 'school'
-    | 'department'
-    | 'current_availability'
-    | 'compensation'
-    | 'eligible_student_levels';
+  filter: 'school' | 'department' | 'research_type';
 }
 
 interface ResearchPageSnapshot {
@@ -179,11 +140,9 @@ interface ResearchPageSnapshot {
   showWeakestProfilesFirst: boolean;
   qualityFilters: ResearchQualityFilter[];
   trustTierFilters: ResearchTrustTierFilter[];
+  selectedEntityType: string;
   selectedSchool: string;
   selectedDepartment: string;
-  selectedCurrentAvailability: CurrentAvailabilityFilterValue[];
-  selectedCompensation: CompensationFilterValue[];
-  selectedEligibleStudentLevels: EligibleStudentLevelFilterValue[];
   sortBy: ResearchSortField;
   sortOrder: 'asc' | 'desc';
   facetDistribution: Record<string, Record<string, number>>;
@@ -210,6 +169,9 @@ interface ResearchEntitySearchOptions {
   includeSuppressed?: boolean;
   sortBy?: 'name' | 'lastObservedAt';
   sortOrder?: 'asc' | 'desc';
+  // Marks a search this page issued on the student's behalf, so search-query
+  // telemetry does not report it as a query the student typed.
+  suggestionProbe?: boolean;
 }
 
 const defaultResearchSortOrder = (field: ResearchSortField): 'asc' | 'desc' =>
@@ -241,6 +203,7 @@ const searchResearchEntities = async (
         : {}),
       ...(options.includeSuppressed ? { includeSuppressed: true } : {}),
       ...(options.sortBy ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' } : {}),
+      ...(options.suggestionProbe ? { suggestionProbe: true } : {}),
     },
     { signal },
   );
@@ -275,11 +238,11 @@ const SectionHeading = ({ children }: { children: string }) => (
 );
 
 const ClusterLoadingCard = () => (
-  <div className="yr-card rounded-md p-4">
-    <div className="h-3 w-2/3 rounded bg-slate-100" />
-    <div className="mt-3 h-2 w-full rounded bg-slate-100" />
-    <div className="mt-2 h-2 w-5/6 rounded bg-slate-100" />
-    <p className="mt-4 text-xs text-slate-500">Loading research homes</p>
+  <div className="yr-card rounded-card p-4">
+    <div className="h-3 w-2/3 rounded-control bg-panel-muted" />
+    <div className="mt-3 h-2 w-full rounded-control bg-panel-muted" />
+    <div className="mt-2 h-2 w-5/6 rounded-control bg-panel-muted" />
+    <p className="mt-4 text-xs text-muted">Loading research</p>
   </div>
 );
 
@@ -293,13 +256,13 @@ const resultSummary = (
   departmentGapLabel?: string,
   totalMatchingHomeCount?: number,
 ): string => {
-  if (loading) return `Searching Yale Research for ${query}.`;
+  if (loading) return `Searching y/labs for ${query}.`;
   const loadedHomeCount = results.clusters.length;
   const matchingHomeCount = Math.max(totalMatchingHomeCount ?? loadedHomeCount, loadedHomeCount);
   if (departmentGapLabel && matchingHomeCount === 0 && results.people.length === 0) {
-    return `No indexed research homes yet for ${departmentGapLabel}.`;
+    return `No indexed research yet for ${departmentGapLabel}.`;
   }
-  const homeCountLabel = pluralize(matchingHomeCount, 'research home');
+  const homeCountLabel = pluralize(matchingHomeCount, 'result');
   const homeSummary =
     query === FILTERED_RESULT_QUERY_LABEL
       ? `${homeCountLabel} match your filters`
@@ -315,7 +278,7 @@ const resultSummary = (
 };
 
 const EmptyGroup = ({ children }: { children: string }) => (
-  <div className="yr-muted-surface rounded-md border-dashed p-4 text-sm text-slate-500">
+  <div className="yr-muted-surface rounded-card border-dashed p-4 text-sm text-muted">
     {children}
   </div>
 );
@@ -432,30 +395,14 @@ const Research = () => {
           )
         : []),
   );
+  const [selectedEntityType, setSelectedEntityType] = useState(
+    () => restoredSnapshotRef.current?.selectedEntityType ?? readEntityTypeParam(searchParams),
+  );
   const [selectedSchool, setSelectedSchool] = useState(
     () => restoredSnapshotRef.current?.selectedSchool ?? searchParams.get('school') ?? '',
   );
   const [selectedDepartment, setSelectedDepartment] = useState(
     () => restoredSnapshotRef.current?.selectedDepartment ?? searchParams.get('department') ?? '',
-  );
-  const [selectedCurrentAvailability, setSelectedCurrentAvailability] = useState<
-    CurrentAvailabilityFilterValue[]
-  >(
-    () =>
-      restoredSnapshotRef.current?.selectedCurrentAvailability ??
-      readSearchParamList(searchParams, 'availability', CURRENT_AVAILABILITY_FILTER_VALUES),
-  );
-  const [selectedCompensation, setSelectedCompensation] = useState<CompensationFilterValue[]>(
-    () =>
-      restoredSnapshotRef.current?.selectedCompensation ??
-      readSearchParamList(searchParams, 'compensation', COMPENSATION_FILTER_VALUES),
-  );
-  const [selectedEligibleStudentLevels, setSelectedEligibleStudentLevels] = useState<
-    EligibleStudentLevelFilterValue[]
-  >(
-    () =>
-      restoredSnapshotRef.current?.selectedEligibleStudentLevels ??
-      readSearchParamList(searchParams, 'eligibleYears', ELIGIBLE_STUDENT_LEVEL_FILTER_VALUES),
   );
   const [sortBy, setSortBy] = useState<ResearchSortField>(
     () => restoredSnapshotRef.current?.sortBy ?? 'relevance',
@@ -544,58 +491,6 @@ const Research = () => {
       ? `${pageSnapshotKey}|${String(isAdmin)}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`
       : null,
   );
-  const buildCurrentAvailabilityOptions = useCallback(
-    (counts: Record<string, number> | undefined) =>
-      CURRENT_AVAILABILITY_FILTER_VALUES.map((value) => ({
-        value,
-        label: CURRENT_AVAILABILITY_FILTER_LABELS[value],
-        count: (counts || {})[value],
-      })).filter((option) => Number.isFinite(option.count) && (option.count ?? 0) > 0),
-    [],
-  );
-  const currentAvailabilityOptions = useMemo(
-    () => buildCurrentAvailabilityOptions(facetDistribution.undergraduateCurrentAvailability),
-    [buildCurrentAvailabilityOptions, facetDistribution.undergraduateCurrentAvailability],
-  );
-  const browseCurrentAvailabilityOptions = useMemo(
-    () => buildCurrentAvailabilityOptions(browseFacetDistribution.undergraduateCurrentAvailability),
-    [buildCurrentAvailabilityOptions, browseFacetDistribution.undergraduateCurrentAvailability],
-  );
-  const buildCompensationOptions = useCallback(
-    (counts: Record<string, number> | undefined) =>
-      COMPENSATION_FILTER_VALUES.map((value) => ({
-        value,
-        label: COMPENSATION_FILTER_LABELS[value],
-        count: (counts || {})[value],
-      })).filter((option) => Number.isFinite(option.count) && (option.count ?? 0) > 0),
-    [],
-  );
-  const compensationOptions = useMemo(
-    () => buildCompensationOptions(facetDistribution.undergraduateCompensationModel),
-    [buildCompensationOptions, facetDistribution.undergraduateCompensationModel],
-  );
-  const browseCompensationOptions = useMemo(
-    () => buildCompensationOptions(browseFacetDistribution.undergraduateCompensationModel),
-    [buildCompensationOptions, browseFacetDistribution.undergraduateCompensationModel],
-  );
-  const buildEligibleStudentLevelsOptions = useCallback(
-    (counts: Record<string, number> | undefined) =>
-      ELIGIBLE_STUDENT_LEVEL_FILTER_VALUES.map((value) => ({
-        value,
-        label: ELIGIBLE_STUDENT_LEVEL_FILTER_LABELS[value],
-        count: (counts || {})[value],
-      })).filter((option) => Number.isFinite(option.count) && (option.count ?? 0) > 0),
-    [],
-  );
-  const eligibleStudentLevelsOptions = useMemo(
-    () => buildEligibleStudentLevelsOptions(facetDistribution.undergraduateEligibleStudentLevels),
-    [buildEligibleStudentLevelsOptions, facetDistribution.undergraduateEligibleStudentLevels],
-  );
-  const browseEligibleStudentLevelsOptions = useMemo(
-    () =>
-      buildEligibleStudentLevelsOptions(browseFacetDistribution.undergraduateEligibleStudentLevels),
-    [buildEligibleStudentLevelsOptions, browseFacetDistribution.undergraduateEligibleStudentLevels],
-  );
   const departmentSearchTargets = useMemo(
     () => buildDepartmentSearchTargets(departments),
     [departments],
@@ -614,11 +509,9 @@ const Research = () => {
       showWeakest?: boolean;
       quality?: ResearchQualityFilter[];
       trustTiers?: ResearchTrustTierFilter[];
+      entityType?: string;
       school?: string;
       department?: string;
-      currentAvailability?: CurrentAvailabilityFilterValue[];
-      compensation?: CompensationFilterValue[];
-      eligibleStudentLevels?: EligibleStudentLevelFilterValue[];
     },
     options: { replace?: boolean; markPending?: boolean } = {},
   ) => {
@@ -627,17 +520,9 @@ const Research = () => {
     if (nextQuery) params.set('q', nextQuery);
     const departmentLabel = (nextState.departmentLabel || '').trim();
     if (departmentLabel) params.set('dept', departmentLabel);
+    if (nextState.entityType?.trim()) params.set('type', nextState.entityType.trim());
     if (nextState.school?.trim()) params.set('school', nextState.school.trim());
     if (nextState.department?.trim()) params.set('department', nextState.department.trim());
-    if (nextState.currentAvailability?.length) {
-      params.set('availability', nextState.currentAvailability.join(','));
-    }
-    if (nextState.compensation?.length) {
-      params.set('compensation', nextState.compensation.join(','));
-    }
-    if (nextState.eligibleStudentLevels?.length) {
-      params.set('eligibleYears', nextState.eligibleStudentLevels.join(','));
-    }
 
     if (isAdmin) {
       if (nextState.showWeakest) params.set('weak', '1');
@@ -657,6 +542,9 @@ const Research = () => {
     const generation = ++effectGenerationRef.current;
     return () => {
       queueMicrotask(() => {
+        // Reading the ref late is the point: a StrictMode remount bumps the generation
+        // before this microtask runs, and only the final teardown may abort the searches.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         if (effectGenerationRef.current !== generation) return;
         searchAbortRef.current?.abort();
         defaultSearchAbortRef.current?.abort();
@@ -753,7 +641,7 @@ const Research = () => {
         !controller.signal.aborted &&
         !isCancel(error)
       ) {
-        setDefaultSearchError('Research homes are temporarily unavailable.');
+        setDefaultSearchError('Research results are temporarily unavailable.');
       }
     } finally {
       if (requestId === defaultSearchRequestIdRef.current && !controller.signal.aborted) {
@@ -842,11 +730,9 @@ const Research = () => {
         {
           query: trimmed,
           departmentLabel: options.departmentSearch?.label,
+          entityType: filters.entityType?.[0],
           school: filters.school?.[0],
           department: filters.departments?.[0],
-          currentAvailability: filters.currentAvailability,
-          compensation: filters.compensation,
-          eligibleStudentLevels: filters.eligibleStudentLevels,
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
           trustTiers: trustTierFilters,
@@ -1005,7 +891,7 @@ const Research = () => {
         !controller.signal.aborted &&
         !isCancel(error)
       ) {
-        setSearchError('More research homes are temporarily unavailable.');
+        setSearchError('More research results are temporarily unavailable.');
         setSearchExhausted(true);
       }
     } finally {
@@ -1018,6 +904,8 @@ const Research = () => {
   const runSearchRef = useRef(runSearch);
   const runDefaultResearchHomeSearchRef = useRef(runDefaultResearchHomeSearch);
   const runSearchResultsPageRef = useRef(runSearchResultsPage);
+  const returnToCleanResearchHomeRef = useRef<() => void>(() => {});
+  const consumedHomeResetKeyRef = useRef<string | null>(null);
   runSearchRef.current = runSearch;
   runDefaultResearchHomeSearchRef.current = runDefaultResearchHomeSearch;
   runSearchResultsPageRef.current = runSearchResultsPage;
@@ -1025,21 +913,17 @@ const Research = () => {
   const studentSearchFilters = (
     school = selectedSchool,
     department = selectedDepartment,
-    availability = selectedCurrentAvailability,
-    compensation = selectedCompensation,
-    eligibleStudentLevels = selectedEligibleStudentLevels,
+    entityType = selectedEntityType,
   ): ResearchSearchFilters => ({
+    ...(entityType ? { entityType: [entityType] } : {}),
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
-    ...(availability.length ? { currentAvailability: availability } : {}),
-    ...(compensation.length ? { compensation } : {}),
-    ...(eligibleStudentLevels.length ? { eligibleStudentLevels } : {}),
   });
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const filters = studentSearchFilters();
-    runSearch(query.trim(), {
+    void runSearch(query.trim(), {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
     });
@@ -1051,11 +935,9 @@ const Research = () => {
     setQuery('');
     setSubmittedQuery('');
     setDepartmentSearch(null);
+    setSelectedEntityType('');
     setSelectedSchool('');
     setSelectedDepartment('');
-    setSelectedCurrentAvailability([]);
-    setSelectedCompensation([]);
-    setSelectedEligibleStudentLevels([]);
     setFacetDistribution({});
     setGroupedResults(emptyGroupedResults(''));
     setSearchResultResearchEntities([]);
@@ -1080,7 +962,7 @@ const Research = () => {
     );
     if (defaultResearchEntities.length === 0) {
       setDefaultSearchTotal(0);
-      runDefaultResearchHomeSearch(1);
+      void runDefaultResearchHomeSearch(1);
     }
   };
 
@@ -1116,23 +998,9 @@ const Research = () => {
     }
     const urlQuery = searchParams.get('q') || '';
     const urlDepartmentLabel = searchParams.get('dept') || '';
+    const urlEntityType = readEntityTypeParam(searchParams);
     const urlSchool = searchParams.get('school') || '';
     const urlDepartment = searchParams.get('department') || '';
-    const urlCurrentAvailability = readSearchParamList(
-      searchParams,
-      'availability',
-      CURRENT_AVAILABILITY_FILTER_VALUES,
-    );
-    const urlCompensation = readSearchParamList(
-      searchParams,
-      'compensation',
-      COMPENSATION_FILTER_VALUES,
-    );
-    const urlEligibleStudentLevels = readSearchParamList(
-      searchParams,
-      'eligibleYears',
-      ELIGIBLE_STUDENT_LEVEL_FILTER_VALUES,
-    );
     const urlWeakestFirst = isAdmin && searchParams.get('weak') === '1';
     const urlQualityFilters = isAdmin
       ? readSearchParamList(
@@ -1167,6 +1035,10 @@ const Research = () => {
       setTrustTierFilters(urlTrustTierFilters);
       return;
     }
+    if (selectedEntityType !== urlEntityType) {
+      setSelectedEntityType(urlEntityType);
+      return;
+    }
     if (selectedSchool !== urlSchool) {
       setSelectedSchool(urlSchool);
       return;
@@ -1175,26 +1047,12 @@ const Research = () => {
       setSelectedDepartment(urlDepartment);
       return;
     }
-    if (selectedCurrentAvailability.join(',') !== urlCurrentAvailability.join(',')) {
-      setSelectedCurrentAvailability(urlCurrentAvailability);
-      return;
-    }
-    if (selectedCompensation.join(',') !== urlCompensation.join(',')) {
-      setSelectedCompensation(urlCompensation);
-      return;
-    }
-    if (selectedEligibleStudentLevels.join(',') !== urlEligibleStudentLevels.join(',')) {
-      setSelectedEligibleStudentLevels(urlEligibleStudentLevels);
-      return;
-    }
+    // Key order matches `studentSearchFilters` because the reconcile below
+    // compares these objects with `JSON.stringify`.
     const studentFilters: ResearchSearchFilters = {
+      ...(urlEntityType ? { entityType: [urlEntityType] } : {}),
       ...(urlSchool ? { school: [urlSchool] } : {}),
       ...(urlDepartment ? { departments: [urlDepartment] } : {}),
-      ...(urlCurrentAvailability.length ? { currentAvailability: urlCurrentAvailability } : {}),
-      ...(urlCompensation.length ? { compensation: urlCompensation } : {}),
-      ...(urlEligibleStudentLevels.length
-        ? { eligibleStudentLevels: urlEligibleStudentLevels }
-        : {}),
     };
 
     const urlDepartmentSearch = urlDepartmentLabel
@@ -1286,11 +1144,9 @@ const Research = () => {
     showWeakestProfilesFirst,
     qualityFilters,
     trustTierFilters,
+    selectedEntityType,
     selectedSchool,
     selectedDepartment,
-    selectedCurrentAvailability,
-    selectedCompensation,
-    selectedEligibleStudentLevels,
     departmentSearchTargetByLabel,
     departmentSearch,
     hasSubmittedSearch,
@@ -1308,11 +1164,9 @@ const Research = () => {
       showWeakestProfilesFirst,
       qualityFilters,
       trustTierFilters,
+      selectedEntityType,
       selectedSchool,
       selectedDepartment,
-      selectedCurrentAvailability,
-      selectedCompensation,
-      selectedEligibleStudentLevels,
       sortBy,
       sortOrder,
       facetDistribution,
@@ -1340,11 +1194,9 @@ const Research = () => {
     showWeakestProfilesFirst,
     qualityFilters,
     trustTierFilters,
+    selectedEntityType,
     selectedSchool,
     selectedDepartment,
-    selectedCurrentAvailability,
-    selectedCompensation,
-    selectedEligibleStudentLevels,
     sortBy,
     sortOrder,
     facetDistribution,
@@ -1408,7 +1260,7 @@ const Research = () => {
           controller.signal,
           activeSearchRequest.filters,
           1,
-          activeSearchRequest.options || {},
+          { ...(activeSearchRequest.options || {}), suggestionProbe: true },
         );
         if (requestId !== relaxProbeRequestIdRef.current || controller.signal.aborted) return;
         setRelaxedQuerySuggestion(probe.estimatedTotalHits > 0 ? relaxedQuery : null);
@@ -1464,80 +1316,44 @@ const Research = () => {
     totalRawCount: searchTotal,
     filteredCount: searchResultResearchEntities.length,
   });
-  const hasStudentFacetSelection = Boolean(
-    selectedSchool ||
-    selectedDepartment ||
-    selectedCurrentAvailability.length ||
-    selectedCompensation.length ||
-    selectedEligibleStudentLevels.length,
-  );
+  const activeStudentFilterCount =
+    Number(Boolean(selectedEntityType)) +
+    Number(Boolean(selectedSchool)) +
+    Number(Boolean(selectedDepartment));
+  const hasStudentFacetSelection = activeStudentFilterCount > 0;
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
   const searchDisabled =
     (query.trim().length === 0 && !hasStudentFacetSelection) ||
     (searchLoading && !hasSubmittableChange);
   const searchHelpText = query.trim()
-    ? 'Press Enter or Search to see matching research homes.'
+    ? 'Press Enter or Search to see matching research.'
     : hasStudentFacetSelection
       ? 'Search with the selected filters.'
       : 'Enter a topic or name to enable Search.';
   const departmentFacetLabel = (department: string) =>
     getUniqueDepartmentLabels([department], departments)[0] || department;
-  const currentAvailabilityFilterLabel = (value: string) =>
-    CURRENT_AVAILABILITY_FILTER_LABELS[value as CurrentAvailabilityFilterValue] ?? value;
-  const compensationFilterLabel = (value: string) =>
-    COMPENSATION_FILTER_LABELS[value as CompensationFilterValue] ?? value;
-  const eligibleStudentLevelsFilterLabel = (value: string) =>
-    ELIGIBLE_STUDENT_LEVEL_FILTER_LABELS[value as EligibleStudentLevelFilterValue] ?? value;
   const applyStudentFilters = (next: {
     school?: string;
     department?: string;
-    currentAvailability?: CurrentAvailabilityFilterValue[];
-    compensation?: CompensationFilterValue[];
-    eligibleStudentLevels?: EligibleStudentLevelFilterValue[];
+    entityType?: string;
   }) => {
     const school = next.school ?? selectedSchool;
     const department = next.department ?? selectedDepartment;
-    const availability = next.currentAvailability ?? selectedCurrentAvailability;
-    const compensation = next.compensation ?? selectedCompensation;
-    const eligibleStudentLevels = next.eligibleStudentLevels ?? selectedEligibleStudentLevels;
+    const entityType = next.entityType ?? selectedEntityType;
     const filterChanges: ResearchFilterAnalyticsChange[] = [];
+    if (entityType !== selectedEntityType) {
+      filterChanges.push({ operation: entityType ? 'apply' : 'remove', filter: 'research_type' });
+    }
     if (school !== selectedSchool) {
       filterChanges.push({ operation: school ? 'apply' : 'remove', filter: 'school' });
     }
     if (department !== selectedDepartment) {
       filterChanges.push({ operation: department ? 'apply' : 'remove', filter: 'department' });
     }
-    if (availability.join(',') !== selectedCurrentAvailability.join(',')) {
-      filterChanges.push({
-        operation: availability.length > selectedCurrentAvailability.length ? 'apply' : 'remove',
-        filter: 'current_availability',
-      });
-    }
-    if (compensation.join(',') !== selectedCompensation.join(',')) {
-      filterChanges.push({
-        operation: compensation.length > selectedCompensation.length ? 'apply' : 'remove',
-        filter: 'compensation',
-      });
-    }
-    if (eligibleStudentLevels.join(',') !== selectedEligibleStudentLevels.join(',')) {
-      filterChanges.push({
-        operation:
-          eligibleStudentLevels.length > selectedEligibleStudentLevels.length ? 'apply' : 'remove',
-        filter: 'eligible_student_levels',
-      });
-    }
+    setSelectedEntityType(entityType);
     setSelectedSchool(school);
     setSelectedDepartment(department);
-    setSelectedCurrentAvailability(availability);
-    setSelectedCompensation(compensation);
-    setSelectedEligibleStudentLevels(eligibleStudentLevels);
-    const filters = studentSearchFilters(
-      school,
-      department,
-      availability,
-      compensation,
-      eligibleStudentLevels,
-    );
+    const filters = studentSearchFilters(school, department, entityType);
     if (!query.trim() && !hasStructuredFilters(filters)) {
       filterChanges.forEach((change) => {
         void trackResearchEvent({
@@ -1549,7 +1365,7 @@ const Research = () => {
       resetSearch();
       return;
     }
-    runSearch(query.trim(), {
+    void runSearch(query.trim(), {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
       filterChanges,
@@ -1600,36 +1416,32 @@ const Research = () => {
     [departmentSearchTargetByLabel],
   );
   const toggleQualityFilter = (filter: ResearchQualityFilter) => {
-    setQualityFilters((current) => {
-      const next = current.includes(filter)
-        ? current.filter((value) => value !== filter)
-        : [...current, filter];
-      writeResearchSearchParams(
-        {
-          showWeakest: showWeakestProfilesFirst,
-          quality: next,
-          trustTiers: trustTierFilters,
-        },
-        { replace: true },
-      );
-      return next;
-    });
+    const next = qualityFilters.includes(filter)
+      ? qualityFilters.filter((value) => value !== filter)
+      : [...qualityFilters, filter];
+    setQualityFilters(next);
+    writeResearchSearchParams(
+      {
+        showWeakest: showWeakestProfilesFirst,
+        quality: next,
+        trustTiers: trustTierFilters,
+      },
+      { replace: true },
+    );
   };
   const toggleTrustTierFilter = (filter: ResearchTrustTierFilter) => {
-    setTrustTierFilters((current) => {
-      const next = current.includes(filter)
-        ? current.filter((value) => value !== filter)
-        : [...current, filter];
-      writeResearchSearchParams(
-        {
-          showWeakest: showWeakestProfilesFirst,
-          quality: qualityFilters,
-          trustTiers: next,
-        },
-        { replace: true },
-      );
-      return next;
-    });
+    const next = trustTierFilters.includes(filter)
+      ? trustTierFilters.filter((value) => value !== filter)
+      : [...trustTierFilters, filter];
+    setTrustTierFilters(next);
+    writeResearchSearchParams(
+      {
+        showWeakest: showWeakestProfilesFirst,
+        quality: qualityFilters,
+        trustTiers: next,
+      },
+      { replace: true },
+    );
   };
   const setWeakestProfilesFirst = (value: boolean) => {
     setShowWeakestProfilesFirst(value);
@@ -1676,52 +1488,24 @@ const Research = () => {
 
   const researchFilterProps = {
     facetDistribution,
+    selectedEntityType,
     selectedSchool,
     selectedDepartment,
-    currentAvailabilityOptions,
-    selectedCurrentAvailability,
-    compensationOptions,
-    selectedCompensation,
-    eligibleStudentLevelsOptions,
-    selectedEligibleStudentLevels,
     isApplying: searchLoading,
     hasFacetError,
     departmentLabel: departmentFacetLabel,
-    currentAvailabilityLabel: currentAvailabilityFilterLabel,
-    compensationLabel: compensationFilterLabel,
-    eligibleStudentLevelsLabel: eligibleStudentLevelsFilterLabel,
+    onEntityTypeChange: (entityType: string) => applyStudentFilters({ entityType }),
     onSchoolChange: (school: string) => applyStudentFilters({ school }),
     onDepartmentChange: (department: string) => applyStudentFilters({ department }),
-    onCurrentAvailabilityChange: (values: string[]) =>
-      applyStudentFilters({ currentAvailability: values as CurrentAvailabilityFilterValue[] }),
-    onCompensationChange: (values: string[]) =>
-      applyStudentFilters({ compensation: values as CompensationFilterValue[] }),
-    onEligibleStudentLevelsChange: (values: string[]) =>
-      applyStudentFilters({
-        eligibleStudentLevels: values as EligibleStudentLevelFilterValue[],
-      }),
-    onClearAll: () =>
-      applyStudentFilters({
-        school: '',
-        department: '',
-        currentAvailability: [],
-        compensation: [],
-        eligibleStudentLevels: [],
-      }),
+    onClearAll: () => applyStudentFilters({ school: '', department: '', entityType: '' }),
   };
 
   const browseFilterProps = {
     ...researchFilterProps,
     facetDistribution: browseFacetDistribution,
-    currentAvailabilityOptions: browseCurrentAvailabilityOptions,
-    compensationOptions: browseCompensationOptions,
-    eligibleStudentLevelsOptions: browseEligibleStudentLevelsOptions,
     isApplying: false,
     hasFacetError: false,
   };
-
-  const activeStudentFilterCount =
-    Number(Boolean(selectedSchool)) + Number(Boolean(selectedDepartment));
 
   const retryRelaxedQuery = () => {
     if (!relaxedQuerySuggestion) return;
@@ -1738,19 +1522,41 @@ const Research = () => {
     scrollResearchViewportToTop();
     resetSearch();
   };
+  const returnToCleanResearchHome = () => {
+    scrollResearchViewportToTop();
+    const hasResetableSearchState =
+      query.trim().length > 0 ||
+      submittedQuery.length > 0 ||
+      departmentSearch !== null ||
+      hasStructuredFilters(studentSearchFilters());
+    if (!hasResetableSearchState) return;
+    resetSearch();
+  };
+  returnToCleanResearchHomeRef.current = returnToCleanResearchHome;
+
+  // The URL-sync effect cannot carry this on its own: an unsubmitted draft query
+  // lives only in page state, and the page snapshot restores it whenever the
+  // target search params match, so the brand logo states the reset intent
+  // explicitly on every click.
+  useEffect(() => {
+    if (!isResearchHomeResetState(location.state)) return;
+    if (consumedHomeResetKeyRef.current === location.key) return;
+    consumedHomeResetKeyRef.current = location.key;
+    returnToCleanResearchHomeRef.current();
+  }, [location.key, location.state]);
 
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">
       <div className="mx-auto w-full max-w-screen-2xl px-5 py-5 sm:py-8 lg:px-8">
         <div className="grid gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
-          <header className="yr-panel rounded-md p-4 sm:p-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
-            <p className="yr-kicker mb-3">Yale Research</p>
-            <h1 className="max-w-3xl text-2xl font-semibold leading-tight tracking-normal text-slate-950 sm:text-4xl">
+          <header className="yr-panel rounded-card p-4 sm:p-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
+            <p className="yr-kicker mb-3">Research discovery</p>
+            <h1 className="yr-display max-w-3xl text-3xl font-semibold leading-tight text-ink sm:text-5xl">
               Find a Yale lab that fits you.
             </h1>
             <p
               id="research-search-context"
-              className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 sm:mt-3 sm:text-base xl:hidden"
+              className="mt-2 max-w-2xl text-sm leading-relaxed text-muted sm:mt-3 sm:text-base xl:hidden"
             >
               Search by interest, professor, course topic, method, or question. We&apos;ll help you
               find relevant research profiles and verified ways in when the source evidence is
@@ -1758,22 +1564,22 @@ const Research = () => {
             </p>
 
             {!isAuthenticated && (
-              <div className="mt-4 rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-3 py-2 text-sm leading-relaxed text-blue-900">
+              <div className="mt-4 rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy">
                 You&apos;re browsing as a guest.{' '}
                 <Link
                   to="/login"
                   state={{ from: `${location.pathname}${location.search}` }}
-                  className="font-semibold underline underline-offset-2 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
                 >
                   Log in with Yale CAS
                 </Link>{' '}
-                to save research homes and reach out.
+                to save research and reach out.
               </div>
             )}
 
             {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
               <div
-                className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
+                className="mt-4 rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
                 role="status"
               >
                 <Link
@@ -1782,7 +1588,7 @@ const Research = () => {
                     watchedDeadlineApproachingCount,
                     watchedDeadlineNotStartedCount,
                   )}
-                  className="font-semibold underline underline-offset-2 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200"
+                  className="font-semibold underline underline-offset-2 hover:text-amber-700 yr-focus-ring"
                 >
                   {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
                 </Link>
@@ -1795,9 +1601,9 @@ const Research = () => {
             <form onSubmit={onSubmit} className="mt-4 sm:mt-7">
               <label
                 htmlFor="research-search"
-                className="mb-2 block text-sm font-semibold text-slate-950"
+                className="mb-2 block text-sm font-semibold text-ink"
               >
-                Search Yale research
+                Search y/labs
               </label>
               <div className="flex flex-col gap-2 sm:flex-row xl:flex-col">
                 <input
@@ -1814,17 +1620,17 @@ const Research = () => {
                   }}
                   aria-describedby="research-search-context research-search-help"
                   placeholder={searchPlaceholder}
-                  className="min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:min-h-14"
+                  className="yr-focus-ring min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-ink placeholder:text-muted focus:border-[var(--yr-blue)] sm:min-h-14"
                 />
                 <button
                   type="submit"
-                  className="min-h-12 rounded-md bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:bg-slate-200 disabled:text-slate-700 sm:min-h-14"
+                  className="yr-focus-ring min-h-12 rounded-control bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-line disabled:text-ink-soft sm:min-h-14"
                   disabled={searchDisabled}
                 >
                   {searchLoading ? 'Searching...' : 'Search'}
                 </button>
               </div>
-              <p id="research-search-help" className="mt-2 text-sm text-slate-600">
+              <p id="research-search-help" className="mt-2 text-sm text-muted">
                 {searchHelpText}
               </p>
             </form>
@@ -1843,11 +1649,11 @@ const Research = () => {
 
           <div className="min-w-0">
             {!hasSubmittedSearch && (
-              <section aria-busy={defaultSearchLoading} aria-label="Research homes to explore">
+              <section aria-busy={defaultSearchLoading} aria-label="Research to explore">
                 <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div className="w-full">
-                    <SectionHeading>Research homes to explore</SectionHeading>
-                    <p className="text-sm text-gray-600">
+                    <SectionHeading>Research to explore</SectionHeading>
+                    <p className="text-sm text-muted">
                       Open a profile to review people, evidence, sources, and planning context.
                     </p>
                   </div>
@@ -1859,12 +1665,12 @@ const Research = () => {
                       onToggleSortDirection={toggleResearchSortDirection}
                     />
                     {isAdmin && (
-                      <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-700">
+                      <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-card px-3 py-2 text-sm font-medium text-ink-soft">
                         <input
                           type="checkbox"
                           checked={showWeakestProfilesFirst}
                           onChange={(event) => setWeakestProfilesFirst(event.target.checked)}
-                          className="h-4 w-4 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+                          className="yr-focus-ring h-4 w-4 rounded-control border-[var(--yr-line-strong)] accent-brand"
                         />
                         <span>Show weakest profiles first</span>
                       </label>
@@ -1883,14 +1689,14 @@ const Research = () => {
                 {defaultSearchError && (
                   <div
                     role="alert"
-                    className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+                    className="mb-4 rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
                   >
                     {defaultSearchError}
                   </div>
                 )}
                 {isAdmin && showWeakestProfilesFirst && (
                   <div
-                    className="yr-muted-surface mb-4 flex flex-wrap gap-2 rounded-md p-2"
+                    className="yr-muted-surface mb-4 flex flex-wrap gap-2 rounded-card p-2"
                     aria-label="Quality filters"
                   >
                     {QUALITY_FILTER_OPTIONS.map((option) => {
@@ -1901,10 +1707,10 @@ const Research = () => {
                           type="button"
                           aria-pressed={isActive}
                           onClick={() => toggleQualityFilter(option.value)}
-                          className={`min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+                          className={`yr-focus-ring min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors ${
                             isActive
-                              ? 'border-blue-700 bg-[var(--yr-panel)] text-blue-900'
-                              : 'border-[var(--yr-border-warm)] bg-transparent text-slate-700 hover:bg-[var(--yr-panel)]'
+                              ? 'border-brand bg-panel text-brand'
+                              : 'border-[var(--yr-border-warm)] bg-transparent text-ink-soft hover:bg-[var(--yr-panel)]'
                           }`}
                         >
                           {option.label}
@@ -1915,7 +1721,7 @@ const Research = () => {
                 )}
                 {isAdmin && (
                   <div
-                    className="mb-4 flex flex-wrap gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
+                    className="mb-4 flex flex-wrap gap-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
                     aria-label="Trust tier filters"
                   >
                     {TRUST_TIER_FILTER_OPTIONS.map((option) => {
@@ -1926,10 +1732,10 @@ const Research = () => {
                           type="button"
                           aria-pressed={isActive}
                           onClick={() => toggleTrustTierFilter(option.value)}
-                          className={`min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+                          className={`yr-focus-ring min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors ${
                             isActive
-                              ? 'border-slate-900 bg-slate-900 text-white'
-                              : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-slate-700 hover:bg-[var(--yr-panel-muted)]'
+                              ? 'border-brand bg-brand text-white'
+                              : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-ink-soft hover:bg-[var(--yr-panel-muted)]'
                           }`}
                         >
                           {option.label}
@@ -1959,7 +1765,7 @@ const Research = () => {
                         ))}
                       </div>
                       {defaultSearchLoading && defaultClusters.length > 0 && (
-                        <InfiniteScrollLoadingDots label="Loading more research homes" />
+                        <InfiniteScrollLoadingDots label="Loading more research" />
                       )}
                       {!defaultSearchExhausted && (
                         <div ref={defaultSentinelRef} className="h-10 w-full" />
@@ -1968,7 +1774,7 @@ const Research = () => {
                   </div>
                 ) : (
                   <EmptyGroup>
-                    No research homes match these filters. Try a broader topic, professor name, lab,
+                    No research matches these filters. Try a broader topic, professor name, lab,
                     method, or research question.
                   </EmptyGroup>
                 )}
@@ -1982,7 +1788,7 @@ const Research = () => {
                     role="status"
                     aria-live="polite"
                     aria-atomic="true"
-                    className="min-w-0 text-sm font-medium text-slate-700"
+                    className="min-w-0 text-sm font-medium text-ink-soft"
                   >
                     {resultSummary(
                       activeResults,
@@ -2015,7 +1821,7 @@ const Research = () => {
                 {searchError && (
                   <div
                     role="alert"
-                    className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+                    className="mt-4 rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
                   >
                     {searchError}
                   </div>
@@ -2049,7 +1855,7 @@ const Research = () => {
                         </div>
                       </div>
                       {isLoadingMore && activeClusters.length > 0 && (
-                        <InfiniteScrollLoadingDots label="Loading more research homes" />
+                        <InfiniteScrollLoadingDots label="Loading more research" />
                       )}
                       {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
                     </>
@@ -2057,9 +1863,11 @@ const Research = () => {
                     <ResearchZeroResultRecovery
                       isDepartmentSearch={Boolean(departmentSearch)}
                       activeFilterCount={activeStudentFilterCount}
+                      selectedEntityType={selectedEntityType}
                       selectedSchool={selectedSchool}
                       selectedDepartment={selectedDepartment}
                       departmentLabel={departmentFacetLabel}
+                      onRemoveEntityType={() => applyStudentFilters({ entityType: '' })}
                       onRemoveSchool={() => applyStudentFilters({ school: '' })}
                       onRemoveDepartment={() => applyStudentFilters({ department: '' })}
                       onClearAllFilters={researchFilterProps.onClearAll}

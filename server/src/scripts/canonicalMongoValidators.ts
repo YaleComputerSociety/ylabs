@@ -15,9 +15,14 @@ import {
   buildCanonicalMongoValidatorRollbackPlan,
   canonicalMongoValidatorFingerprint,
   canonicalMongoValidatorValuesEqual,
+  describeCanonicalMongoValidatorApplyFailure,
+  findCanonicalValidatorDrift,
   planCanonicalMongoValidators,
+  type CanonicalMongoValidatorApplyFailureFacts,
+  type CanonicalMongoValidatorApplyFailureKind,
   type CanonicalMongoValidatorPlanItem,
   type CanonicalMongoValidatorRollbackItem,
+  type CanonicalValidatorDriftFinding,
   type CurrentMongoCollectionValidation,
 } from './canonicalMongoValidatorsCore';
 import {
@@ -68,12 +73,15 @@ export interface ValidatorMongoClient {
   close(): Promise<void>;
 }
 
+export const ASSERT_CANONICAL_VALIDATORS_CURRENT_FLAG = '--assert-current' as const;
+
 export interface CanonicalMongoValidatorArgs {
   environment: OperatorDatabaseEnvironment;
   apply: boolean;
   confirmEnvironment?: OperatorDatabaseEnvironment;
   applyFrom?: string;
   output?: string;
+  assertCurrent?: boolean;
 }
 
 export interface CanonicalMongoValidatorSummary {
@@ -103,39 +111,82 @@ export interface CanonicalMongoValidatorReport {
   postApplyPlan?: CanonicalMongoValidatorPlanItem[];
 }
 
+export const CANONICAL_MONGO_VALIDATOR_FAILURE_MODE = 'failed' as const;
+
+/**
+ * A failed run must leave a durable artifact that cannot be read as a success.
+ * #752 was closed as completed while its apply had been refused, because a
+ * failed apply wrote nothing and the operator reviewed a stale success report
+ * still sitting at the `--output` path.
+ */
+export interface CanonicalMongoValidatorFailureReport {
+  reportVersion: typeof CANONICAL_MONGO_VALIDATOR_REPORT_VERSION;
+  mode: typeof CANONICAL_MONGO_VALIDATOR_FAILURE_MODE;
+  requestedMode: 'dry-run' | 'apply';
+  environment: OperatorDatabaseEnvironment;
+  failure: {
+    name: string;
+    reason: string;
+    kind?: CanonicalMongoValidatorApplyFailureKind;
+    refusedCollections: readonly string[];
+    appliedCollections: readonly string[];
+    unattemptedCollections: readonly string[];
+  };
+  databaseName?: string;
+  plan?: CanonicalMongoValidatorPlanItem[];
+  planFingerprint?: string;
+}
+
+export const MISSING_COLLMOD_GRANT_REMEDY =
+  "The database user has no collMod grant, so no canonical validator can be applied. See the 'Required MongoDB grant' section of docs/canonical-mongodb-validator-runbook.md." as const;
+
 export class CanonicalMongoValidatorApplyError extends Error {
   readonly appliedCollections: readonly string[];
   readonly failedCollection: string;
   readonly failureReason: string;
   readonly unattemptedCollections: readonly string[];
+  readonly failureKind: CanonicalMongoValidatorApplyFailureKind;
+  readonly refusedCollections: readonly string[];
+  readonly failureReport: CanonicalMongoValidatorFailureReport;
 
   constructor(args: {
-    appliedCollections: readonly string[];
-    failedCollection: string;
     failureReason: string;
-    unattemptedCollections: readonly string[];
+    facts: CanonicalMongoValidatorApplyFailureFacts;
+    failureReport: CanonicalMongoValidatorFailureReport;
   }) {
+    const { facts } = args;
+    const remedy =
+      facts.kind === 'missing-collmod-grant'
+        ? ` ${MISSING_COLLMOD_GRANT_REMEDY}`
+        : ' Generate a fresh dry-run before retrying.';
     super(
-      `Canonical validator apply stopped at ${args.failedCollection}: ${args.failureReason}. Applied: ${
-        args.appliedCollections.join(', ') || '(none)'
-      }. Unattempted: ${args.unattemptedCollections.join(', ') || '(none)'}. Generate a fresh dry-run before retrying.`,
+      `Canonical validator apply stopped at ${facts.failedCollection}: ${args.failureReason}. Refused: ${
+        facts.refusedCollections.join(', ') || '(none)'
+      }. Applied: ${facts.appliedCollections.join(', ') || '(none)'}. Unattempted: ${
+        facts.unattemptedCollections.join(', ') || '(none)'
+      }.${remedy}`,
     );
     this.name = 'CanonicalMongoValidatorApplyError';
-    this.appliedCollections = [...args.appliedCollections];
-    this.failedCollection = args.failedCollection;
+    this.appliedCollections = [...facts.appliedCollections];
+    this.failedCollection = facts.failedCollection;
     this.failureReason = args.failureReason;
-    this.unattemptedCollections = [...args.unattemptedCollections];
+    this.unattemptedCollections = [...facts.unattemptedCollections];
+    this.failureKind = facts.kind;
+    this.refusedCollections = [...facts.refusedCollections];
+    this.failureReport = args.failureReport;
   }
 }
 
 export class CanonicalMongoValidatorVerificationError extends Error {
   readonly appliedCollections: readonly string[];
   readonly remainingCollections: readonly string[];
+  readonly failureReport: CanonicalMongoValidatorFailureReport;
 
   constructor(args: {
     appliedCollections: readonly string[];
     failureReason: string;
     remainingCollections?: readonly string[];
+    failureReport: CanonicalMongoValidatorFailureReport;
   }) {
     const remainingCollections = args.remainingCollections ?? [];
     super(
@@ -148,7 +199,78 @@ export class CanonicalMongoValidatorVerificationError extends Error {
     this.name = 'CanonicalMongoValidatorVerificationError';
     this.appliedCollections = [...args.appliedCollections];
     this.remainingCollections = [...remainingCollections];
+    this.failureReport = args.failureReport;
   }
+}
+
+export class CanonicalMongoValidatorDriftError extends Error {
+  readonly findings: readonly CanonicalValidatorDriftFinding[];
+  readonly failureReport: CanonicalMongoValidatorFailureReport;
+
+  constructor(args: {
+    databaseName: string;
+    findings: readonly CanonicalValidatorDriftFinding[];
+    report: CanonicalMongoValidatorReport;
+  }) {
+    const describe = (state: CanonicalValidatorDriftFinding['state']): string => {
+      const names = args.findings
+        .filter((finding) => finding.state === state)
+        .map(({ collectionName }) => collectionName);
+      return names.join(', ') || '(none)';
+    };
+    super(
+      `${args.findings.length} of ${args.report.desiredCollections.length} declared canonical validators are not present on ${args.databaseName}. No $jsonSchema stored: ${describe(
+        'validator-absent',
+      )}. Stored but drifted: ${describe('validator-drifted')}. Collection missing: ${describe(
+        'collection-missing',
+      )}. A declaration is not presence: apply the reviewed plan per docs/canonical-mongodb-validator-runbook.md.`,
+    );
+    this.name = 'CanonicalMongoValidatorDriftError';
+    this.findings = args.findings.map((finding) => ({ ...finding, reasons: [...finding.reasons] }));
+    this.failureReport = {
+      reportVersion: CANONICAL_MONGO_VALIDATOR_REPORT_VERSION,
+      mode: CANONICAL_MONGO_VALIDATOR_FAILURE_MODE,
+      requestedMode: 'dry-run',
+      environment: args.report.environment,
+      databaseName: args.databaseName,
+      failure: {
+        name: 'CanonicalMongoValidatorDriftError',
+        reason: this.message,
+        refusedCollections: args.findings.map(({ collectionName }) => collectionName),
+        appliedCollections: [],
+        unattemptedCollections: [],
+      },
+      plan: args.report.plan,
+      planFingerprint: args.report.planFingerprint,
+    };
+  }
+}
+
+export function canonicalMongoValidatorFailureReport(
+  error: unknown,
+  args: CanonicalMongoValidatorArgs,
+): CanonicalMongoValidatorFailureReport {
+  if (
+    error instanceof CanonicalMongoValidatorApplyError ||
+    error instanceof CanonicalMongoValidatorVerificationError ||
+    error instanceof CanonicalMongoValidatorDriftError
+  ) {
+    return error.failureReport;
+  }
+
+  return {
+    reportVersion: CANONICAL_MONGO_VALIDATOR_REPORT_VERSION,
+    mode: CANONICAL_MONGO_VALIDATOR_FAILURE_MODE,
+    requestedMode: args.apply ? 'apply' : 'dry-run',
+    environment: args.environment,
+    failure: {
+      name: error instanceof Error ? error.name : 'Error',
+      reason: sanitizeLogValue(error instanceof Error ? error.message : error),
+      refusedCollections: [],
+      appliedCollections: [],
+      unattemptedCollections: [],
+    },
+  };
 }
 
 function requireFlagValue(argv: string[], index: number, flag: string): string {
@@ -165,10 +287,13 @@ export function parseCanonicalMongoValidatorArgs(argv: string[]): CanonicalMongo
   let confirmEnvironment: OperatorDatabaseEnvironment | undefined;
   let applyFrom: string | undefined;
   let output: string | undefined;
+  let assertCurrent = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === '--environment') {
+    if (arg === ASSERT_CANONICAL_VALIDATORS_CURRENT_FLAG) {
+      assertCurrent = true;
+    } else if (arg === '--environment') {
       environment = parseOperatorDatabaseEnvironment(
         requireFlagValue(argv, index, '--environment'),
       );
@@ -215,6 +340,7 @@ export function parseCanonicalMongoValidatorArgs(argv: string[]): CanonicalMongo
     ...(confirmEnvironment ? { confirmEnvironment } : {}),
     ...(applyFrom ? { applyFrom } : {}),
     ...(output ? { output } : {}),
+    ...(assertCurrent ? { assertCurrent } : {}),
   };
 }
 
@@ -224,6 +350,11 @@ export function assertCanonicalMongoValidatorApplyAllowed(
 ): void {
   if (!args.apply && (args.confirmEnvironment || args.applyFrom)) {
     throw new Error(`${CONFIRM_CANONICAL_VALIDATOR_APPLY_FLAG} and --apply-from require --apply.`);
+  }
+  if (args.apply && args.assertCurrent) {
+    throw new Error(
+      `${ASSERT_CANONICAL_VALIDATORS_CURRENT_FLAG} is a read-only drift check and cannot be combined with --apply.`,
+    );
   }
   if (args.apply && !args.confirmEnvironment) {
     throw new Error(`${CONFIRM_CANONICAL_VALIDATOR_APPLY_FLAG} is required when --apply is set.`);
@@ -455,7 +586,19 @@ export async function runCanonicalMongoValidators(
       currentCollections,
     });
 
-    if (!args.apply) return currentReport;
+    if (!args.apply) {
+      if (args.assertCurrent) {
+        const findings = findCanonicalValidatorDrift(currentReport.plan, currentCollections);
+        if (findings.length > 0) {
+          throw new CanonicalMongoValidatorDriftError({
+            databaseName: db.databaseName,
+            findings,
+            report: currentReport,
+          });
+        }
+      }
+      return currentReport;
+    }
 
     assertReviewedCanonicalMongoValidatorPlan(options.reviewedArtifact, {
       ...currentReport,
@@ -477,13 +620,38 @@ export async function runCanonicalMongoValidators(
       try {
         await db.command(structuredClone(item.command));
       } catch (error) {
-        throw new CanonicalMongoValidatorApplyError({
-          appliedCollections: applied.map(({ collectionName }) => collectionName),
+        const failureReason = sanitizeLogValue(error instanceof Error ? error.message : error);
+        const unattempted = writePlan.slice(index + 1);
+        const facts = describeCanonicalMongoValidatorApplyFailure({
+          failureReason,
           failedCollection: item.collectionName,
-          failureReason: sanitizeLogValue(error instanceof Error ? error.message : error),
-          unattemptedCollections: writePlan
-            .slice(index + 1)
+          failedAction: item.action,
+          appliedCollections: applied.map(({ collectionName }) => collectionName),
+          unattemptedCollections: unattempted.map(({ collectionName }) => collectionName),
+          unattemptedCollModCollections: unattempted
+            .filter((pending) => pending.action === 'collMod')
             .map(({ collectionName }) => collectionName),
+        });
+        throw new CanonicalMongoValidatorApplyError({
+          failureReason,
+          facts,
+          failureReport: {
+            reportVersion: CANONICAL_MONGO_VALIDATOR_REPORT_VERSION,
+            mode: CANONICAL_MONGO_VALIDATOR_FAILURE_MODE,
+            requestedMode: 'apply',
+            environment: args.environment,
+            databaseName: db.databaseName,
+            failure: {
+              name: 'CanonicalMongoValidatorApplyError',
+              reason: failureReason,
+              kind: facts.kind,
+              refusedCollections: facts.refusedCollections,
+              appliedCollections: facts.appliedCollections,
+              unattemptedCollections: facts.unattemptedCollections,
+            },
+            plan: currentReport.plan,
+            planFingerprint: currentReport.planFingerprint,
+          },
         });
       }
       applied.push({
@@ -492,13 +660,35 @@ export async function runCanonicalMongoValidators(
       });
     }
 
+    const verificationFailureReport = (
+      reason: string,
+      remainingCollections: readonly string[],
+    ): CanonicalMongoValidatorFailureReport => ({
+      reportVersion: CANONICAL_MONGO_VALIDATOR_REPORT_VERSION,
+      mode: CANONICAL_MONGO_VALIDATOR_FAILURE_MODE,
+      requestedMode: 'apply',
+      environment: args.environment,
+      databaseName: db.databaseName,
+      failure: {
+        name: 'CanonicalMongoValidatorVerificationError',
+        reason,
+        refusedCollections: remainingCollections,
+        appliedCollections: applied.map(({ collectionName }) => collectionName),
+        unattemptedCollections: [],
+      },
+      plan: currentReport.plan,
+      planFingerprint: currentReport.planFingerprint,
+    });
+
     let postApplyCurrent: CurrentMongoCollectionValidation[];
     try {
       postApplyCurrent = await readCurrentCanonicalMongoValidators(db);
     } catch (error) {
+      const failureReason = sanitizeLogValue(error instanceof Error ? error.message : error);
       throw new CanonicalMongoValidatorVerificationError({
         appliedCollections: applied.map(({ collectionName }) => collectionName),
-        failureReason: sanitizeLogValue(error instanceof Error ? error.message : error),
+        failureReason,
+        failureReport: verificationFailureReport(failureReason, []),
       });
     }
     const postApplyPlan = planCanonicalMongoValidators(
@@ -507,10 +697,13 @@ export async function runCanonicalMongoValidators(
     );
     const remainingWrites = postApplyPlan.filter((item) => item.action !== 'noop');
     if (remainingWrites.length > 0) {
+      const remainingCollections = remainingWrites.map(({ collectionName }) => collectionName);
+      const failureReason = `MongoDB still reports ${remainingWrites.length} validator write plan(s)`;
       throw new CanonicalMongoValidatorVerificationError({
         appliedCollections: applied.map(({ collectionName }) => collectionName),
-        failureReason: `MongoDB still reports ${remainingWrites.length} validator write plan(s)`,
-        remainingCollections: remainingWrites.map(({ collectionName }) => collectionName),
+        failureReason,
+        remainingCollections,
+        failureReport: verificationFailureReport(failureReason, remainingCollections),
       });
     }
 
@@ -535,12 +728,50 @@ export function readCanonicalMongoValidatorArtifact(target: string): unknown {
 }
 
 export function writeCanonicalMongoValidatorReport(
-  report: CanonicalMongoValidatorReport,
+  report: CanonicalMongoValidatorReport | CanonicalMongoValidatorFailureReport,
   target: string | undefined,
 ): void {
   if (!target) return;
   const safeTarget = resolveSafeJsonReportOutputPath(target);
   fs.writeFileSync(safeTarget, `${JSON.stringify(report, null, 2)}\n`);
+}
+
+/**
+ * Records every outcome at `--output`, failures included. Writing nothing on
+ * failure is what let #752 be closed as completed: a stale success artifact
+ * from an earlier run stayed at the path the runbook tells the operator to
+ * review, so a refused `collMod` read as a clean apply.
+ */
+export async function recordCanonicalMongoValidatorRun(
+  args: CanonicalMongoValidatorArgs,
+  mongoUrl: string,
+  options: {
+    client?: ValidatorMongoClient;
+    reviewedArtifact?: unknown;
+    env?: NodeJS.ProcessEnv;
+  } = {},
+): Promise<CanonicalMongoValidatorReport> {
+  let report: CanonicalMongoValidatorReport;
+  try {
+    report = await runCanonicalMongoValidators(args, mongoUrl, options);
+  } catch (error) {
+    try {
+      writeCanonicalMongoValidatorReport(
+        canonicalMongoValidatorFailureReport(error, args),
+        args.output,
+      );
+    } catch (writeError) {
+      console.error(
+        `Failed to record the canonical validator failure artifact: ${sanitizeLogValue(
+          writeError instanceof Error ? writeError.message : writeError,
+        )}`,
+      );
+    }
+    throw error;
+  }
+
+  writeCanonicalMongoValidatorReport(report, args.output);
+  return report;
 }
 
 function pathsReferToSameFile(left: string, right: string): boolean {
@@ -574,11 +805,9 @@ async function main(): Promise<void> {
   const reviewedArtifact = args.applyFrom
     ? readCanonicalMongoValidatorArtifact(args.applyFrom)
     : undefined;
-  const report = await runCanonicalMongoValidators(args, mongoUrl, {
-    reviewedArtifact,
-  });
+
+  const report = await recordCanonicalMongoValidatorRun(args, mongoUrl, { reviewedArtifact });
   console.log(JSON.stringify(report, null, 2));
-  writeCanonicalMongoValidatorReport(report, args.output);
 }
 
 const isDirectRun = process.argv[1]

@@ -5,6 +5,9 @@ It was refreshed from Beta commit `b016ad44` without connecting to MongoDB, Meil
 All cost statements below are structural inferences from source.
 They are not measured runtime results.
 
+> Historical record. The `model-refactor:query-cost` audit that was built to measure these shapes against a live database was retired on 2026-09-22 (#2224), because 12 of the 16 collections named below are absent from Development, Beta and `Prod` alike.
+> The surfaces described here are the pre-refactor read paths; see [Research model](./research-model.md) for the current ones.
+
 ## How to read this audit
 
 `Bounded` means that source applies a fixed request, result, or fan-out limit before application memory can grow without limit.
@@ -59,7 +62,7 @@ It enriches the bounded page with listing presence, access summaries, and planni
 
 ### Declared indexes and settings
 
-The Meilisearch settings in `researchEntitySearchIndexService.ts` declare the filterable attributes used here, including visibility, kind, school, departments, research areas, and the Signal-derived `hasUndergradHostingEvidence`, `hasDocumentedWayIn`, and `undergraduateCurrentAvailability`.
+The Meilisearch settings in `researchEntitySearchIndexService.ts` declare the filterable attributes used here, including visibility, kind, school, departments, research areas, and the Signal-derived `hasUndergradHostingEvidence`.
 They declare `browseRankScore`, `lastObservedAt`, `name`, `createdAt`, and `updatedAt` as sortable.
 The `research_entities` schema declares single-field indexes for the common browse filters and a compound `{ studentVisibilityTier: 1, archived: 1 }` index.
 It also declares `{ archived: 1, browseRankScore: -1 }`, which does not match the public visibility predicate plus the two-key browse order as one compound index.

@@ -1,28 +1,35 @@
 ---
 name: product-model
-description: Use when changing or evaluating Yale Research product behavior, student-facing research discovery, Ways In, access evidence, entity pages, visibility, research-home modeling, fellowships, course credit, or product vocabulary. This skill captures the product north star and canonical runtime model.
+description: Use when changing or evaluating y/labs product behavior, student-facing research discovery, Ways In, access evidence, entity pages, visibility, research-entity modeling, fellowships, course credit, or product vocabulary. This skill captures the product north star and canonical runtime model.
 ---
 
 # Product Model
 
-Yale Research is a simple, source-driven directory of Yale research whose two co-equal priorities are good data and good search.
+y/labs is a simple, source-driven directory of Yale research whose two co-equal priorities are good data and good search.
 Its first responsibility is broad, accurate coverage of research entities and researchers with the correct lead and official links, made findable through fast, relevant search.
 Signals and research-entity affiliations are factual enrichments that inform a student; they never gate visibility, score trust, or condition contact.
 Per the 2026-08-25 "Simple Directory First" decision, the access-plausibility tier (the `Signal`-driven browse trust filter, `REACH_OUT_PLAUSIBLE` plausibility signals, the "Evidence" and "Best Next Step" framing, and "Ways in") is retired, and "research home" and "research area" are deprecated framings; see `docs/decisions.md`.
+Say "research", or the entity's own kind noun (lab, center, faculty research profile), for the thing itself; "research website" for `websiteUrl`; and "topics" for `researchAreas`.
+The stored `researchAreas` field keeps its name because renaming a schema field is a migration, and the topics themselves stay student-facing content rather than a background search signal.
 
 Do not model the product as a faculty-maintained job board or require faculty uploads for coverage.
 Yale research includes labs, centers, institutes, faculty projects, digital humanities initiatives, collections and archive projects, RA programs, fellowships, senior theses, and exploratory outreach.
 
 ## Student-facing surfaces
 
-- **Explore Research**: directory-first browsing of labs, centers, faculty projects, institutes, archives, collections projects, and thesis-adviser-like research areas.
+- **Explore Research**: directory-first browsing of labs, centers, faculty projects, institutes, archives, collections projects, and thesis-adviser-like faculty research.
 - **Planning Context**: optional practical evidence for plausible homes, including access, timing, formalization possibilities, and explicit constraints when sources support them.
 
-Keep Ways In as an internal model embedded in Yale Research rather than spinning it into a separate product surface.
+Keep Ways In as an internal model embedded in y/labs rather than spinning it into a separate product surface.
 Use warmer student-facing vocabulary such as "Planning Context", "Evidence", and "Best Next Step" where appropriate.
 Do not manufacture a `Signal` for every lab or expose model complexity that does not improve a student decision.
 Iterate on canonical product surfaces such as `/research`, or use a non-URL feature flag.
 Do not create student-facing versioned routes like `/v1`, `/research-v2`, or similar for ordinary product iteration.
+
+The brand logo is the escape hatch back to a clean start, for signed-in and logged-out visitors alike.
+Clicking it lands on `/research` with no query, no filters, an empty search box, the default browse results, and the viewport scrolled back to the top, and it never re-runs the search the student was just looking at.
+A submitted search lives in the URL, but an unsubmitted draft lives only in page state and the research page restores that state from a snapshot keyed on the target search params, so a bare `/research` URL is not enough on its own: the logo carries an explicit reset intent on every click, from every route (`client/src/components/researchHomeNavigation.ts`).
+Never implement this reset as `window.location.reload()`: a reload replays the current URL, which is exactly the query the student asked to leave.
 
 Entity pages should answer:
 
@@ -30,7 +37,7 @@ Entity pages should answer:
 - what it studies;
 - who leads it;
 - who might supervise undergrads day to day;
-- which important centers, institutes, programs, or research homes it is affiliated with;
+- which important centers, institutes, programs, or other research entities it is affiliated with;
 - what methods it uses;
 - where verified Google Scholar or ORCID profiles make the PI's publications discoverable;
 - whether undergrads have participated before;
@@ -46,31 +53,52 @@ Entity pages should answer:
 | `ResearchEntity`             | `research_entities`             | What exists: lab, center, institute, faculty project, RA program, fellowship program, etc.                                                                                                                                                                                                                                             |
 | `Researcher`                 | `researchers`                   | Public research identity (a PI, grad student, or researcher), surfaced through the research entities they lead rather than a standalone person page (the person page and researcher search are retired). Roster membership joins here, not an embedded person record.                                                                 |
 | `RoleAssignment`             | `role_assignments`              | The canonical roster edge: a `Researcher` in a role (`PI`, `CO_PI`, `DIRECTOR`, and similar) on a `ResearchEntity`. Replaces the retired `ResearchGroupMember`; never embedded on `ResearchEntity`.                                                                                                                                   |
-| `Signal`                     | `signals`                       | Source-attributed, typed fact about a research entity. Consolidates the former `AccessSignal` (each access type is its own `Signal.type`, keeping the per-type confidence gradient) and `UndergraduateLogisticsClaim` (student level, compensation or credit, weekly time, modality, current availability). |
+| `Signal`                     | `signals`                       | Source-attributed, typed fact about a research entity or about an `OrgUnit`. Exactly one of `researchEntityId` and `orgUnitId` is set; the org-unit arm carries a department-scoped fact such as `COURSE_CREDIT_PATHWAY`, which the detail serve path inherits at read time and attributes to the department by name, never copying it onto an entity (#2214). Consolidates the former `AccessSignal`, each access type being its own `Signal.type`, keeping the per-type confidence gradient. It also absorbed `UndergraduateLogisticsClaim`, whose five claim types are now retired (#3088), so `signalTypes` is exactly `accessSignalTypes`. |
 | `ResearchEntityRelationship` | `research_entity_relationships` | A source-backed affiliation, hosting, membership, or umbrella relationship between research entities.                                                                                                                                                                                                                                  |
 | `ResearchPlan`               | `research_plans`                | Private, account-owned saved planning, keyed on `accountId` plus a `ResearchEntity` or program target. The only student write surface.                                                                                                                                                                                                |
 
 ## Modeling rules
 
-- Course credit is a formalization outcome after a student finds a research home.
+- Course credit is a formalization outcome after a student finds a lab or a professor.
   It is not access evidence by itself.
 - Fellowship funding usually behaves like formalization or funding, except when the fellowship is itself a structured discovery or mentor-matching program.
 - Programs and fellowships live only on `/programs` (backed by the `Fellowship` collection), never in the `/research` corpus.
-  A program is not a `ResearchEntity`: there is no `PROGRAM` `entityType`, and department "undergraduate research" pages materialize as `Fellowship` records, not research homes (see `docs/decisions.md` 2026-08-26).
+  A program is not a `ResearchEntity`: there is no `PROGRAM` `entityType`, and department "undergraduate research" pages materialize as `Fellowship` records, not research entities (see `docs/decisions.md` 2026-08-26).
   A program is lead-optional and surfaces an "Apply to this program" next step rather than the generic email-a-PI default.
   The distinct `researchPlanTargetKinds` `'PROGRAM'` is a saved-plan target for a program and is unrelated to any research-entity type.
+- `LAB` and `FACULTY_RESEARCH_AREA` are both first-class, and the line between them is organizational identity versus topical scope.
+A `LAB` is a named organization a student could join; a `FACULTY_RESEARCH_AREA` is the topic a professor works on.
+Name shape is the only signal that expresses it, and `researchEntityTypeNameContradiction` in `server/src/utils/researchHomeNameIdentityAuthority.ts` owns the rule: measured on served Development rows, 1,020 of 1,062 `LAB` names carry an organizational token against 1 of 2,148 `FACULTY_RESEARCH_AREA` names.
+Never key this rule on `websiteUrl` presence, which is a gradient at 72 against 23 percent and belongs to ranking, and never on roster size, which does not discriminate at all because 96 percent of served `LAB` rows are lead-only.
+A contradiction is a thing to report, never a demotion: per `docs/decisions.md` 2026-09-21 a `FACULTY_RESEARCH_AREA` backed only by the professor's profile is fully served, and a contradicting row may be mis-typed or mis-named without the name deciding which.
+Read the contradiction set with `yarn --cwd server research-entity:audit-kind-typing`.
+Where one person leads both, the 2026-08-25 precedence applies: the `FACULTY_RESEARCH_AREA` duplicating a lab is evidence the professor has a lab and merges into it, which `research-entity:merge-eponymous-fra` does.
 - Directory inclusion does not require a `Signal` or other access evidence.
 - Scrapers emit append-only `Observation` rows.
   Materializers derive first-class access records.
 - Avoid binary fields like `acceptingUndergrads`.
   Use a `Signal` row (the former `AccessSignal` model is folded into `Signal`) with evidence strength instead.
-- Keep undergraduate logistics claims independent and neutral when unknown.
-  Do not infer one logistics claim from another or from generic undergraduate-access evidence.
+- `sourceCoverageArtifactTypes` no longer lists `EntryPathway`, `AccessSignal`, `ContactRoute`, `PostedOpportunity` or `UndergraduateLogisticsClaim` (#2829).
+  This doc already described them as consolidated into `Signal`; the coverage registry had not caught up, so 15 sources declared a capability nothing could materialize and every successful scrape run warned that expected access artifacts were missing.
+  A permanent warning is what a real coverage gap would have had to be noticed against.
+  Declare the surviving `Signal` evidence categories instead, and never add an artifact type without a model, a collection and a materializer behind it.
 - Contact is fail-closed and purely derived, never a stored `ContactRoute` or surfaced scraped email.
   Prefer official and public URLs.
   Redact scraped emails from public payloads.
 - The normal PI action is a link to the official Yale profile and does not imply permission to contact.
 - When no official Yale profile exists, the primary PI link may use a verified person-specific lab about page or personal academic page.
+- When a row carries more than one official profile, rank them rather than trusting `sourceUrls` order: the profile hosted by the entity's own department outranks a school-wide directory that publishes people from every school, and `personProfileRanking.ts` owns that decision on both the client and the server.
+Never suppress a school directory profile, because most rows that cite one have no other profile at all.
+- Whether a cited URL is a person's own page is decided per host, not by tokens in the path.
+Several Yale hosts publish a person's page under a prefix carrying none of `profile|profiles|people|faculty`, so the token test alone left the profile slot empty on rows that already cited the right page (#2912).
+`yalePersonPagePrefix.ts` records the prefix each host uses and owns that decision on both the client and the server.
+Where a host's mapped prefix is non-empty the prefix itself declares a person; where the host maps to its root the path asserts nothing, so the leaf has to name the row's own lead before the URL may fill the profile slot.
+Do not widen the token regex instead: two of the affected hosts map to the root, and a widened regex would read a bare institutional page as somebody's profile.
+The host-mapped arm fills an empty profile slot and never competes for a filled one, because a root-mapped host is where personal sites live and a personal academic page belongs behind the official profile rather than ahead of it.
+The leaf test is deliberately strict, carrying the surname and nothing the person's own name does not: a looser rule read `<surname>-fellowship` as that person's profile, and the lead card renders whatever wins as "Open <name>'s official profile", so a wrong page here makes a false claim to a student.
+Refusing the middle name a slug sometimes adds is the cheaper error.
+- Keep every cited profile visible in Sources, labelled by role rather than by URL path leaf, so two profiles for one person never render the same title.
+A page that serves a mirror's prose while hiding the mirror's citation is worse than one that shows both.
 - Do not show research papers or publication-derived activity in the public directory or detail experience.
 - A research detail page may deduplicate official links in a Sources section, but it must not turn provenance into a paper or publication surface.
 - Show verified Google Scholar and ORCID profiles only as secondary outbound links near the PI.

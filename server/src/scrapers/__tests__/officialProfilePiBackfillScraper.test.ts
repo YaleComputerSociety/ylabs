@@ -11,6 +11,7 @@ import {
   identityToResearchEntityPiKeyObservations,
   identityToResearchEntityPiObservations,
   identityToUserObservations,
+  isInstitutionalHomeMismatchedWithPersonScopedShell,
   generatedOfficialProfileUrlCandidatesForPerson,
   leadDirectResearchHomeUrlsForEntity,
   leadDirectResearchHomeUrlsForUser,
@@ -20,7 +21,6 @@ import {
   preferredOfficialProfileUrl,
   PROFILE_DESCRIPTION_SUPPRESSED_BY_PREFERRED_SOURCE_NAMES_FIELD,
   resolveExistingUserForIdentity,
-  selectVisibleProfileBioTargets,
   shouldQueueEntityForPiBackfill,
   sourceUrlResearchHomeUrlsForEntity,
   websiteDuplicateLookupUrls,
@@ -869,6 +869,33 @@ const profileLinkedLabWithFirstPersonBlurbHtml = `
   </html>
 `;
 
+const profileLinkedPressArticleWebsiteHtml = `
+  <html>
+    <head>
+      <link rel="canonical" href="https://medicine.yale.edu/profile/rowan-fixture/" />
+      <script type="application/ld+json" data-schema="ProfilePage">
+        {
+          "@type": "ProfilePage",
+          "mainEntity": {
+            "@type": "Person",
+            "name": "Rowan Fixture",
+            "jobTitle": "Professor of Medicine",
+            "description": "Rowan Fixture directs the Rowan Fixture Research Lab."
+          }
+        }
+      </script>
+    </head>
+    <body>
+      <main>
+        <article class="profile-details-lab">
+          <h3 class="profile-details-lab__title">Rowan Fixture Research Lab</h3>
+          <a href="https://www.wsj.com/personal-finance/example-24057ac4"><span>View Lab Website</span></a>
+        </article>
+      </main>
+    </body>
+  </html>
+`;
+
 const profileLinkedDaycareWebsiteHtml = `
   <html>
     <head>
@@ -1708,6 +1735,36 @@ describe('officialProfilePiBackfillScraper', () => {
       'https://campuspress.yale.edu/seylabenhabib/',
       'http://staverlab.yale.edu/',
     ]);
+  });
+
+  /**
+   * This lane's `isDirectPersonalSite` disjunct is `!isYale`, so every non-Yale host
+   * used to skip the path-vocabulary checks and be emitted as both `website` and
+   * `websiteUrl`. The materializer's derive cleared the latter each pass while the
+   * press URL stayed in the legacy `website` field, so the row churned (#2532).
+   */
+  it('refuses a press or news host as a direct lead research home (#2532)', () => {
+    expect(
+      leadDirectResearchHomeUrlsForUser({
+        websiteUrl: 'https://www.wsj.com/personal-finance/example-24057ac4',
+        website: 'https://news.yale.edu/2024/06/05/example-headline',
+        profileUrls: { personal: 'https://examplelab.yale.edu/' },
+      }),
+    ).toEqual(['https://examplelab.yale.edu/']);
+    expect(
+      leadDirectResearchHomeUrlsForEntity({
+        sourceUrls: [
+          'https://www.cnn.com/2026/07/31/tv/video/example-segment',
+          'https://edition.cnn.com/2026/01/02/example',
+        ],
+      }),
+    ).toEqual([]);
+    expect(
+      entityLeadDirectWebsiteToObservations(
+        { _id: 'entity-rowan', slug: 'rowan-fixture-lab-ab1', sourceUrls: [] },
+        'https://www.wsj.com/personal-finance/example-24057ac4',
+      ),
+    ).toEqual([]);
   });
 
   it('selects the first direct lead research-home URL not already used by another entity', () => {
@@ -3915,6 +3972,15 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(homes[0]?.name).not.toMatch(/divide/i);
   });
 
+  it('does not promote a press article linked as a lab website (#2532)', () => {
+    const homes = extractOfficialProfileResearchHomes(
+      profileLinkedPressArticleWebsiteHtml,
+      'https://medicine.yale.edu/profile/rowan-fixture/',
+    );
+
+    expect(homes).toEqual([]);
+  });
+
   it('does not promote daycare or kindergarten profile cards as research homes', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedDaycareWebsiteHtml,
@@ -4276,6 +4342,64 @@ describe('officialProfilePiBackfillScraper', () => {
         }),
       ]),
     );
+  });
+
+  describe('isInstitutionalHomeMismatchedWithPersonScopedShell (#1484/#2913)', () => {
+    const centre = {
+      name: 'Program in Addiction Medicine',
+      rawName: 'Program in Addiction Medicine',
+      url: 'https://medicine.yale.edu/internal-medicine/genmed/addiction-medicine/',
+      kind: 'initiative' as const,
+      entityType: 'INITIATIVE' as const,
+      score: 1,
+    };
+    const ownLab = {
+      ...centre,
+      name: 'Fiellin Lab',
+      rawName: 'Fiellin Lab',
+      entityType: 'LAB' as const,
+      kind: 'lab' as const,
+    };
+
+    it('refuses an institutional home on a shell keyed to the profile person', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          centre,
+          'David Fiellin',
+        ),
+      ).toBe(true);
+    });
+
+    it('keeps refusing it on a grant-derived shell with no lead name available', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'nih-pi-david-fiellin' },
+          centre,
+          undefined,
+        ),
+      ).toBe(true);
+    });
+
+    it('lets the person own lab through', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          ownLab,
+          'David Fiellin',
+        ),
+      ).toBe(false);
+    });
+
+    it('lets an organization-keyed record adopt its own institutional home', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'center-program-in-addiction-medicine' },
+          centre,
+          'David Fiellin',
+        ),
+      ).toBe(false);
+    });
   });
 
   it('emits direct lead website observations without inventing a research-home name', () => {

@@ -53,20 +53,11 @@ export interface RoleAssignmentRecord {
   state: RoleAssignmentState;
   startedAt?: Date;
   endedAt?: Date;
-  evidenceClaimIds: mongoose.Types.ObjectId[];
   confidence: number;
   reviewStatus: RoleAssignmentReviewStatus;
+  reviewNotes?: string;
   rosterProvenance?: RoleAssignmentRosterProvenance;
   archived: boolean;
-}
-
-export const MAX_EVIDENCE_CLAIMS_PER_ROLE = 100;
-
-function hasBoundedUniqueObjectIds(values: readonly mongoose.Types.ObjectId[]): boolean {
-  return (
-    values.length <= MAX_EVIDENCE_CLAIMS_PER_ROLE &&
-    new Set(values.map((value) => value.toString())).size === values.length
-  );
 }
 
 export const roleAssignmentTargetSchema = new mongoose.Schema<RoleAssignmentTarget>(
@@ -126,19 +117,6 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
         message: 'endedAt must follow startedAt and cannot be set on a CURRENT role assignment.',
       },
     },
-    evidenceClaimIds: {
-      type: [
-        {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'EvidenceClaim',
-        },
-      ],
-      default: [],
-      validate: {
-        validator: hasBoundedUniqueObjectIds,
-        message: `evidenceClaimIds must contain at most ${MAX_EVIDENCE_CLAIMS_PER_ROLE} unique ids.`,
-      },
-    },
     confidence: {
       type: Number,
       required: true,
@@ -149,6 +127,14 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
       type: String,
       enum: [...roleAssignmentReviewStatuses],
       default: 'UNREVIEWED',
+    },
+    // Why an edge reached its reviewStatus. Two retirement lanes already set this
+    // field, and without it in the schema mongoose dropped the value silently, so
+    // every edge either of them archived carries a verdict and no reason (#2880).
+    reviewNotes: {
+      type: String,
+      trim: true,
+      maxlength: 500,
     },
     rosterProvenance: {
       type: new mongoose.Schema<RoleAssignmentRosterProvenance>(
@@ -183,6 +169,40 @@ roleAssignmentSchema.index({
   state: 1,
   archived: 1,
 });
+
+/**
+ * The verdict a retirement repair writes on an edge it detached. It is the one
+ * signal that outranks a source: a scrape may re-observe the underlying listing
+ * forever without re-attaching the edge, and only a human clearing the dispute
+ * lets it back.
+ */
+export const DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS: RoleAssignmentReviewStatus = 'DISPUTED';
+
+/**
+ * The guarded second write that re-attaches an edge a source still asserts.
+ *
+ * Every writer keys its upsert on `(personId, target, role)` and none of them can
+ * exclude a detached row from that filter, because `role_assignments` carries no
+ * unique index on those fields and a filter that skipped the detached row would
+ * insert a second, un-detached edge for the same person. So `archived` and
+ * `reviewStatus` leave the upsert's `$set` entirely and move here, behind a
+ * `reviewStatus` guard.
+ *
+ * Without this, a `$set` of `archived: false` reached the rows a repair had just
+ * archived: measured on Development, 133 of 391 retired edges were back to
+ * `archived: false` and `UNREVIEWED` with the repair's own `reviewNotes` still
+ * attached, across #2880, #1897 and #2768 (#3143). Any new role-assignment writer
+ * must route its `archived`/`reviewStatus` write through here.
+ */
+export function roleAssignmentReattachWrite(
+  upsertFilter: Record<string, unknown>,
+  reviewStatus: RoleAssignmentReviewStatus,
+): { filter: Record<string, unknown>; update: Record<string, unknown> } {
+  return {
+    filter: { ...upsertFilter, reviewStatus: { $ne: DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS } },
+    update: { $set: { archived: false, reviewStatus } },
+  };
+}
 
 export const RoleAssignment =
   mongoose.models.RoleAssignment ||

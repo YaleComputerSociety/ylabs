@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  EVIDENCE_CLAIM_SCHEMA_VERSION,
   RESEARCH_PLAN_SCHEMA_VERSION,
-  REVIEW_DECISION_SCHEMA_VERSION,
-  SOURCE_DOCUMENT_SCHEMA_VERSION,
   accountSchemaVersion,
   orgUnitSchemaVersion,
   researcherSchemaVersion,
@@ -18,42 +15,33 @@ import { canonicalMongoValidatorFingerprint } from '../canonicalMongoValidatorsC
 
 const EXPECTED_COLLECTIONS = [
   'accounts',
-  'evidence_claims',
   'org_units',
   'research_plans',
   'researchers',
-  'review_decisions',
   'role_assignments',
-  'source_documents',
   'taxonomy_terms',
 ];
 
 const STRICT_READINESS_CLEAN_COLLECTIONS = new Set([
   'accounts',
-  'evidence_claims',
   'org_units',
   'research_plans',
   'researchers',
-  'review_decisions',
   'role_assignments',
-  'source_documents',
   'taxonomy_terms',
 ]);
 
 const VERSION_BY_COLLECTION = new Map([
   ['accounts', accountSchemaVersion],
-  ['evidence_claims', EVIDENCE_CLAIM_SCHEMA_VERSION],
   ['org_units', orgUnitSchemaVersion],
   ['researchers', researcherSchemaVersion],
   ['research_plans', RESEARCH_PLAN_SCHEMA_VERSION],
-  ['review_decisions', REVIEW_DECISION_SCHEMA_VERSION],
   ['role_assignments', roleAssignmentSchemaVersion],
-  ['source_documents', SOURCE_DOCUMENT_SCHEMA_VERSION],
   ['taxonomy_terms', taxonomyTermSchemaVersion],
 ]);
 
 describe('canonical MongoDB validator registry', () => {
-  it('contains exactly the nine versioned Phase 1 collections in deterministic order', () => {
+  it('contains exactly the six versioned Phase 1 collections in deterministic order', () => {
     expect(CANONICAL_MONGO_VALIDATOR_COLLECTIONS).toEqual(EXPECTED_COLLECTIONS);
     expect(CANONICAL_MONGO_VALIDATORS).toHaveLength(EXPECTED_COLLECTIONS.length);
   });
@@ -88,13 +76,10 @@ describe('canonical MongoDB validator registry', () => {
         .map(([name]) => name),
     ).toEqual([
       'accounts',
-      'evidence_claims',
       'org_units',
       'research_plans',
       'researchers',
-      'review_decisions',
       'role_assignments',
-      'source_documents',
       'taxonomy_terms',
     ]);
     expect(
@@ -116,25 +101,17 @@ describe('canonical MongoDB validator registry', () => {
       maxItems: 5,
     });
     expect(
-      byCollection.get('role_assignments')?.validator.$jsonSchema.properties.evidenceClaimIds,
+      byCollection.get('taxonomy_terms')?.validator.$jsonSchema.properties.aliases,
     ).toMatchObject({
       bsonType: ['array', 'null'],
-      maxItems: 100,
-      uniqueItems: true,
     });
-    expect(
-      byCollection.get('source_documents')?.validator.$jsonSchema.properties.redirectChain,
-    ).toMatchObject({
-      bsonType: ['array', 'null'],
-      maxItems: 10,
-    });
-    expect(
-      byCollection.get('review_decisions')?.validator.$jsonSchema.properties.evidenceClaimIds,
-    ).toMatchObject({
-      bsonType: ['array', 'null'],
-      maxItems: 50,
-      uniqueItems: true,
-    });
+  });
+
+  it('carries no validator for a retired evidence claim-graph collection', () => {
+    for (const retired of ['evidence_claims', 'review_decisions', 'source_documents']) {
+      expect(CANONICAL_MONGO_VALIDATOR_COLLECTIONS).not.toContain(retired);
+    }
+    expect(JSON.stringify(CANONICAL_MONGO_VALIDATORS)).not.toContain('evidenceClaimIds');
   });
 
   it('does not close schemas to migration-era fields or invent unrelated validators', () => {
@@ -146,8 +123,20 @@ describe('canonical MongoDB validator registry', () => {
   });
 
   it('requires an explicit review when generated validator contracts drift', () => {
+    // Reviewed for #3377. The only drift is taxonomy_terms gaining the three review
+    // provenance properties the reviewer writes: reviewedBy and reviewNote as bounded
+    // strings and reviewedAt as a date. `taxonomy:review-term` requires a reviewer and
+    // a note for every verdict, and until it existed nothing could move a term out of
+    // UNREVIEWED at all, so an approval carried neither. They are optional in the
+    // schema on purpose: 4,619 Development terms predate the writer and carry none, and
+    // a required field would make every one of them unwritable. No other collection or
+    // property changed.
+    //
+    // Reviewed for #2880 before that: role_assignments gained
+    // reviewNotes: { bsonType: ['string','null'], maxLength: 500 }, because two
+    // retirement lanes already wrote that field and mongoose dropped it silently.
     expect(canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS)).toBe(
-      '146dae0fd86bfcec264f452d869ab1912117289877252233b8652a2c920b0c1d',
+      '5488024dbacee95702ad480207e964a94fbc045acd3586e6169b5e9b573eff5d',
     );
   });
 });

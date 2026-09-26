@@ -258,6 +258,15 @@ describe('researchEntityPublicDescription', () => {
     // ever removes more text, so ... dropping it can never hide a card the detail
     // page would serve". Removing text is not the same as a monotonically stricter
     // verdict. If someone reintroduces a nesting assumption, these fail.
+    // #2240 retired the trigger this fixture originally used. It opened on the
+    // record's OWN lead ("Dr. Cohen's" on a record led by Andrew B Cohen), which
+    // the strip treated as a stranger because an honorific standing in for the
+    // given name defeated the match. Every one of the 207 firings the guard
+    // produced over the live corpus was that kind of false positive, so the strip
+    // now recognises its own lead and this shape is preserved verbatim - pinned by
+    // the sibling test below. The mechanism this block exists to pin still exists,
+    // and this fixture now uses the input that reaches it: a genuinely third-party
+    // possessive, which is the graft the strip is for.
     const leadNameOpenerEntity = {
       kind: 'individual',
       entityType: 'FACULTY_RESEARCH_AREA',
@@ -265,20 +274,47 @@ describe('researchEntityPublicDescription', () => {
       sourceUrls: ['https://example.yale.edu/profile/andrew-cohen'],
       studentVisibilityTier: 'student_ready',
       shortDescription:
-        "Dr. Cohen's research aims to understand how immune cells recognise tumour antigens in solid cancers.",
+        "Marguerite Delacroix's research aims to understand how immune cells recognise tumour antigens in solid cancers.",
       fullDescription:
-        "Dr. Cohen's research aims to understand how immune cells recognise tumour antigens in solid cancers, using single-cell sequencing of patient biopsies to map antigen presentation across tumour microenvironments.",
+        "Marguerite Delacroix's research aims to understand how immune cells recognise tumour antigens in solid cancers, using single-cell sequencing of patient biopsies to map antigen presentation across tumour microenvironments.",
     };
 
-    it('passes the name-agnostic gate while the lead-aware gate fails, so browse can advertise a card whose detail page 404s', () => {
+    it('preserves a possessive naming the record own lead under an honorific (#2240)', () => {
+      const ownLeadEntity = {
+        ...leadNameOpenerEntity,
+        shortDescription:
+          "Dr. Cohen's research aims to understand how immune cells recognise tumour antigens in solid cancers.",
+        fullDescription:
+          "Dr. Cohen's research aims to understand how immune cells recognise tumour antigens in solid cancers, using single-cell sequencing of patient biopsies to map antigen presentation across tumour microenvironments.",
+      };
+      const leadAware = buildResearchEntityPublicDescriptionRepresentation({
+        entity: ownLeadEntity,
+        leadMemberNames: ['Andrew B Cohen'],
+      });
+
+      expect(leadAware.entity.fullDescription).toBe(ownLeadEntity.fullDescription);
+      expect(leadAware.entity.fullDescription).not.toContain('This research aims to');
+    });
+
+    // #2597 closed the CARD axis of this disagreement: the serve refusal now asks
+    // whether a card renders rather than how it scores, so lead-name stripping can
+    // no longer turn a still-rendering card into a 404. The non-nesting lesson this
+    // block exists to pin is unchanged and is still load-bearing on the BODY axis,
+    // which the sibling test below measures: stripping CREATES text changes, and a
+    // verdict computed on the stripped body is not a subset of one computed without
+    // it. Do not reintroduce a nesting or monotonicity assumption in either
+    // direction.
+    it('now agrees with the lead-aware gate on the card axis, because a rendering card is served', () => {
       expect(researchEntityServesPublicDetail(leadNameOpenerEntity)).toBe(true);
 
       const leadAware = buildResearchEntityPublicDescriptionRepresentation({
         entity: leadNameOpenerEntity,
         leadMemberNames: ['Andrew B Cohen'],
       });
-      expect(leadAware.invariant.pass).toBe(false);
-      expect(leadAware.invariant.reasons).toContain('missing_public_card_description');
+      expect(leadAware.cardDescription).not.toBe('');
+      expect(leadAware.invariant.cardDescriptionUseful).toBe(false);
+      expect(leadAware.invariant.reasons).not.toContain('missing_public_card_description');
+      expect(leadAware.invariant.pass).toBe(true);
     });
 
     it('shows stripping CREATING the failure rather than only removing text', () => {
@@ -288,12 +324,141 @@ describe('researchEntityPublicDescription', () => {
       });
       // The lead-name self-reference is stripped, and what remains is what fails.
       expect(leadAware.fullDescription).toContain('This research aims to');
-      expect(leadAware.fullDescription).not.toContain("Dr. Cohen's");
+      expect(leadAware.fullDescription).not.toContain("Marguerite Delacroix's");
       // Sharper than "stripping empties the card": the card still renders, falling
       // back to the stripped full. The gate fails on the stored short's own quality
       // after stripping, so it rejects an entity that HAS renderable card copy.
       expect(leadAware.cardDescription).toContain('This research aims to');
       expect(leadAware.invariant.cardDescriptionUseful).toBe(false);
     });
+  });
+});
+
+describe('organizational card exemption agrees with the gate (#1872)', () => {
+  const organizationalHome = {
+    entityType: 'CENTER',
+    name: 'Yale Center for Example Coastal Systems',
+    fullDescription:
+      'The Yale Center for Example Coastal Systems convenes faculty and students across geology, ecology, and engineering to study coastal erosion, sediment transport, and shoreline adaptation, and it runs a visiting-scholar programme and an annual field season.',
+    websiteUrl: 'https://coastal.example.yale.edu',
+    sourceUrls: ['https://coastal.example.yale.edu'],
+  };
+
+  it('does not fail the card invariant for an organizational home with no card', () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: organizationalHome,
+    });
+
+    expect(representation.cardDescription).toBe('');
+    expect(representation.invariant.reasons).not.toContain('missing_public_card_description');
+    expect(representation.invariant.pass).toBe(true);
+    expect(researchEntityServesPublicDetail(organizationalHome)).toBe(true);
+  });
+
+  it('still fails the card invariant for a lab-style home with no card', () => {
+    const labStyleHome = { ...organizationalHome, entityType: 'LAB' };
+
+    expect(
+      buildResearchEntityPublicDescriptionRepresentation({ entity: labStyleHome }).invariant
+        .reasons,
+    ).toContain('missing_public_card_description');
+  });
+});
+
+describe('the serve refusal asks what renders, not how the card scores (#2597)', () => {
+  const body =
+    'The group studies coastal erosion, sediment transport and shoreline adaptation across the Atlantic seaboard, combining field surveys with numerical modelling.';
+  const labWith = (shortDescription: string) => ({
+    entityType: 'LAB',
+    name: 'Example Coastal Lab',
+    fullDescription: body,
+    shortDescription,
+    websiteUrl: 'https://example.yale.edu/coastal',
+    sourceUrls: ['https://example.yale.edu/coastal'],
+  });
+
+  it.each([
+    ['a card byte-identical to the body', body],
+    ['a card copied from the body first clause', 'The group studies coastal erosion.'],
+  ])('serves a row whose card scores poorly but still renders: %s', (_label, shortDescription) => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: labWith(shortDescription),
+    });
+
+    expect(representation.cardDescription).not.toBe('');
+    expect(representation.invariant.cardDescriptionUseful).toBe(false);
+    expect(representation.invariant.reasons).not.toContain('missing_public_card_description');
+    expect(representation.invariant.pass).toBe(true);
+    expect(researchEntityServesPublicDetail(labWith(shortDescription))).toBe(true);
+  });
+
+  it('still refuses a row whose served card is empty', () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: labWith(''),
+    });
+
+    expect(representation.cardDescription).toBe('');
+    expect(representation.invariant.reasons).toContain('missing_public_card_description');
+    expect(representation.invariant.pass).toBe(false);
+  });
+
+  it('does not let a body edit flip a byte-identical card into a refusal', () => {
+    const card = body;
+    const servesWithBody = (fullDescription: string) =>
+      researchEntityServesPublicDetail({
+        entityType: 'LAB',
+        name: 'Example Coastal Lab',
+        fullDescription,
+        shortDescription: card,
+        websiteUrl: 'https://example.yale.edu/coastal',
+        sourceUrls: ['https://example.yale.edu/coastal'],
+      });
+
+    expect(servesWithBody(body)).toBe(true);
+    expect(servesWithBody(`${body} A second sentence extends the body.`)).toBe(true);
+  });
+});
+
+describe('the gate judges the card the serve sanitizer produces (#3097)', () => {
+  it("refuses a person-scoped row whose card is another organization's prose (#3067)", () => {
+    const entity = {
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      name: 'Robin Marrow - Research',
+      slug: 'robin-marrow-research',
+      researchAreas: ['Health Equity'],
+      shortDescription:
+        'The Office of Health Equity Research is the organizing center of health equity research at the medical school.',
+      fullDescription:
+        'Studies how health systems adopt measurement based care, using trial data and clinician interviews to identify what makes routine outcome measurement stick in community mental health settings.',
+      websiteUrl: 'https://medicine.example.edu/profile/marrow/',
+      sourceUrls: ['https://medicine.example.edu/profile/marrow/'],
+    };
+
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(representation.servedCard).toBe('');
+    expect(representation.invariant.reasons).toContain('missing_public_card_description');
+    expect(researchEntityServesPublicDetail(entity)).toBe(false);
+  });
+
+  it('refuses a row whose only carding chip research-area hygiene drops', () => {
+    const entity = {
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      name: 'Example Research Profile',
+      slug: 'example-research-profile',
+      researchAreas: ['Research Interests'],
+      shortDescription: '',
+      fullDescription:
+        'Research interests are pursued with collaborators across the school and are supported by several ongoing awards, and trainees at every level contribute to the work.',
+      websiteUrl: 'https://medicine.example.edu/profile/example/',
+      sourceUrls: ['https://medicine.example.edu/profile/example/'],
+    };
+
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(representation.servedCard).toBe('');
+    expect(representation.invariant.reasons).toContain('missing_public_card_description');
   });
 });

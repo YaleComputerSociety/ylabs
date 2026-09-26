@@ -4,13 +4,12 @@ import {
   resolveCanonical,
   type CanonicalKey,
   type CandidateEntity,
+  type CanonicalType,
   type ResolveCanonicalDeps,
 } from '../resolveCanonical';
-import { type CanonicalType } from '../../models/canonicalAlias';
 
 function deps(overrides: Partial<ResolveCanonicalDeps> = {}): ResolveCanonicalDeps {
   return {
-    resolveAlias: async () => null,
     findCandidatesByKey: async () => [],
     ...overrides,
   };
@@ -61,18 +60,6 @@ describe('deriveCanonicalKeys', () => {
 
 describe('resolveCanonical', () => {
   const uniqueNetid: CanonicalKey = { ns: 'netid', value: 'jdo9', strength: 'unique' };
-
-  it('resolves to an existing canonical via the alias ledger', async () => {
-    const result = await resolveCanonical(
-      { type: 'researcher', keys: [uniqueNetid] },
-      deps({ resolveAlias: async () => 'canonical-1' }),
-    );
-    expect(result).toEqual({
-      status: 'existing',
-      canonicalId: 'canonical-1',
-      matchedKey: uniqueNetid,
-    });
-  });
 
   it('resolves to a single live unique-key candidate', async () => {
     const result = await resolveCanonical(
@@ -138,6 +125,45 @@ describe('resolveCanonical', () => {
     const second = await resolveCanonical(input, differentPerson);
     expect(first.status).toBe('ambiguous');
     expect(second).toEqual(first);
+  });
+
+  it('vetoes a shared email between different people known only by display name', async () => {
+    const key: CanonicalKey = { ns: 'email', value: 'shared@example.edu', strength: 'strong' };
+    const result = await resolveCanonical(
+      { type: 'researcher', keys: [key], self: { id: '', name: 'Jane Doe' } },
+      deps({ findCandidatesByKey: candidatesByNs({ email: [{ id: 'u1', name: 'John Doe' }] }) }),
+    );
+    expect(result.status).toBe('ambiguous');
+  });
+
+  it('resolves a shared email for the same person known only by display name', async () => {
+    const key: CanonicalKey = { ns: 'email', value: 'shared@example.edu', strength: 'strong' };
+    const result = await resolveCanonical(
+      { type: 'researcher', keys: [key], self: { id: '', name: 'J Doe' } },
+      deps({ findCandidatesByKey: candidatesByNs({ email: [{ id: 'u1', name: 'Jane Doe' }] }) }),
+    );
+    expect(result.status).toBe('existing');
+  });
+
+  it('refuses a person merge it cannot evaluate rather than allowing it', async () => {
+    const key: CanonicalKey = { ns: 'email', value: 'shared@example.edu', strength: 'strong' };
+    const candidate = deps({
+      findCandidatesByKey: candidatesByNs({ email: [{ id: 'u1', name: 'Jane Doe' }] }),
+    });
+    const noSelf = await resolveCanonical({ type: 'researcher', keys: [key] }, candidate);
+    const unnamedSelf = await resolveCanonical(
+      { type: 'researcher', keys: [key], self: { id: '' } },
+      candidate,
+    );
+    const singleTokenSelf = await resolveCanonical(
+      { type: 'researcher', keys: [key], self: { id: '', name: 'Doe' } },
+      candidate,
+    );
+    expect([noSelf.status, unnamedSelf.status, singleTokenSelf.status]).toEqual([
+      'ambiguous',
+      'ambiguous',
+      'ambiguous',
+    ]);
   });
 
   it('resolves a shared email for the same-name person', async () => {

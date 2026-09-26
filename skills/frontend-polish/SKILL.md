@@ -15,6 +15,30 @@ When something clearly looks or feels off, fix it, do not ship around it.
 - Never use Tailwind generic `blue-*` classes or raw hex for brand color. Use `bg-brand` / `text-ink` / `--yr-*`.
 - Reuse a shared primitive from `client/src/components/shared/` before writing new markup.
 
+## Does not look machine-generated
+
+The rest of this skill is a correctness bar, and a surface can pass all of it and still read as generically AI-generated.
+That is a separate axis and it needs its own checks.
+These are the tells that have actually been measured in this client, so check each one against your diff rather than trusting that the tokens cover it.
+
+- **Tighten display type.** A heading at `text-3xl` or larger takes `.yr-display`. Default tracking at display size is the single strongest tell. Small labels go the other way and keep `tracking-wide`.
+- **Let size carry hierarchy, not weight.** Reaching for `font-semibold` to make something look important, on a surface where everything is already `text-sm`, produces a page of uniformly loud small text. Change the size.
+- **Use the elevation scale, never a generic Tailwind shadow.** `shadow-md` is untinted black and reads as grey haze on the warm canvas. See `client/DESIGN.md` §6.
+- **Vary radius by nesting.** A control inside a card should be tighter than the card. Uniform `rounded-md` on every box is a tell.
+- **Figures align.** Numbers in a column are tabular. Tables get this from a base rule; a standalone metric needs `.yr-num`.
+- **Pressed state, not just hover.** An interactive card or button needs an `:active` that moves, or it feels like a picture of a button.
+- **Sentence case in headings and labels**, not Title Case On Every Header.
+- **No em dash anywhere**, per `AGENTS.md`. Plain hyphens.
+- **Real copy and real data.** No Lorem Ipsum, no "Acme", no `99.99%`, no `Jane Doe`. No "Elevate", "Seamless", "Unleash", "Next-Gen". No `Oops!` and no exclamation mark in a success message: "Connection failed. Please try again."
+- **No three equal cards** as a feature row, and no equal-height cards forced by flex when the content length varies.
+- **Icons share one stroke weight.** This client hand-rolls 42 inline `<svg>` across 21 files and has no icon set, so a new glyph has nothing to match. Reuse an existing one rather than drawing a 43rd.
+- **Align shared elements across siblings.** Titles, values, and buttons in a row of cards should land on the same baseline, and a card's action pins to the bottom.
+
+Two upstream collections are the source for this section: the AI-tells list in `leonxlnx/taste-skill` and the audit checklist in its `redesign-skill`.
+Both are written for marketing pages, so their aesthetic prescriptions do not apply here.
+Where one contradicts `client/DESIGN.md`, `DESIGN.md` wins: it bans Inter as a body font and bans serif outside editorial work, and this product deliberately uses both.
+Take the tells, not the taste.
+
 ## Interactions
 
 - Every interactive element has a visible `focus-visible` state and a minimum 44px touch target.

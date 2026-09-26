@@ -33,7 +33,7 @@ const safeAuditBaseUrl = (raw, name) => {
   const isLocal = LOCAL_AUDIT_HOSTS.has(hostname);
   const isDeployed = DEPLOYED_AUDIT_HOSTS.has(hostname);
   if (!isLocal && !isDeployed) {
-    throw new Error(`${name} must point to localhost or a Yale Research deployment`);
+    throw new Error(`${name} must point to localhost or a y/labs deployment`);
   }
   if (isDeployed && parsed.protocol !== 'https:') {
     throw new Error(`${name} deployed origins must use HTTPS`);
@@ -197,7 +197,7 @@ const namesAreCompatible = (expected, actualText) => {
   return expectedParts.length > 0 && expectedParts.every((part) => actual.includes(part));
 };
 
-const auditProfileLink = async ({ page, entity, detail, member, netid, name }) => {
+const auditProfileLink = async ({ page, entity, detail, netid, name }) => {
   const profilePath = `/profile/${encodeURIComponent(netid)}`;
   const profileUrl = absoluteClientUrl(profilePath);
 

@@ -9,6 +9,7 @@ import {
 } from '../utils/researchEntityDescriptionText';
 import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLead';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
+import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import {
   isResearchAreaEchoDescription,
@@ -16,6 +17,8 @@ import {
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
 import { resolveServedShortDescription } from '../utils/groundedCardSynthesis';
+import { stripBodyChrome } from '../utils/researchBodyChromeStrip';
+import { servedResearchEntityCopy } from './servedResearchEntityCard';
 
 // Every field `buildResearchEntityPublicDescriptionRepresentation` (and so
 // `researchEntityServesPublicDetail`) reads. A caller that loads entities with a
@@ -29,6 +32,27 @@ import { resolveServedShortDescription } from '../utils/groundedCardSynthesis';
 // read whole documents). Any new gate input must be added here and to
 // `publicDescriptionGateProjection` consumers, or that surface will silently
 // under-serve again.
+//
+// `fieldProvenance` was the second omission of that exact shape (#2425). It has
+// two independent readers, and an unprojected read silently defeats both:
+//   - the gate chain, via `shortDescriptionIsSelfDerivedFromFullDescription`
+//     (`researchEntityDescriptionQuality.ts`), which without provenance sees no
+//     source on either description, reports the short as independently sourced,
+//     and so evaluates the #1721/#1773 restatement guard on a short that should
+//     have been excluded from it;
+//   - served card copy, via `dropDomainIncoherentUnsourcedResearchAreas`, which
+//     without provenance treats every `researchAreas` chip as unsourced,
+//     fail-closes the whole array, and loses the derived "Studies <chips>" short.
+// On the Dev corpus measured for #2425 the copy path was the one that bit (181
+// rows corrected) while no gate verdict happened to flip, but the gate reader
+// above means a flip is possible and that zero is a corpus fact, not a bound.
+//
+// Projecting the field is necessary but not sufficient. #2898 lost it a third
+// way: the detail route reads whole documents, so nothing was unprojected, and
+// then narrowed the document one step before the sanitizer and dropped the field
+// on the way. A narrowing step on a serve path must keep every field listed here
+// for the same reason a projection must include them; what the detail route's
+// `publicResearchDetailGroup` withholds is pinned disjoint from this list.
 export const RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS: readonly string[] = Object.freeze([
   'name',
   'displayName',
@@ -39,6 +63,7 @@ export const RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS: readonly string[] =
   'profileSynthesisDescription',
   'descriptionSource',
   'researchAreas',
+  'fieldProvenance',
   'sourceUrls',
   'website',
   'websiteUrl',
@@ -62,6 +87,14 @@ export interface ResearchEntityPublicDescriptionRepresentation {
   entity: Record<string, any>;
   leadMemberNames: string[];
   quality: ResearchEntityDescriptionQuality;
+  /**
+   * The card line resolved from the copy the canonical serve sanitizer produces,
+   * which is what every verdict in this representation is computed on. It is not
+   * always `entity.shortDescription`: that field stays the pre-sanitizer resolution
+   * the DTO re-reads, because the sanitizer's chip-coherence rescue needs the card
+   * it withheld (#3097).
+   */
+  servedCard: string;
   fullDescription: string;
   cardDescription: string;
   invariant: {
@@ -141,20 +174,66 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   // they change nothing, so build a fresh object here rather than assigning in
   // place: mutating the resolved short onto a shared reference corrupts the
   // caller's stored entity (e.g. the repair queue's own backfill diagnosis).
+  // Strip the two content-independent chrome shapes before anything assesses the
+  // body, so the quality verdict, the card resolution and the served copy all see
+  // the same text (#2593). This never drops a sentence: see the module header for
+  // the precision measurement that rejected the sentence-dropping design.
+  const chromeStrippedFullDescription = stripBodyChrome(sanitizedSourceEntity.fullDescription).body;
+  const bodyBeforeServeHygiene =
+    chromeStrippedFullDescription || sanitizedSourceEntity.fullDescription;
   const sanitizedEntity: Record<string, any> = {
     ...sanitizedSourceEntity,
     entityType: resolvedEntityType,
+    fullDescription: bodyBeforeServeHygiene,
     shortDescription: resolveServedShortDescription({
       shortDescription: sanitizedSourceEntity.shortDescription,
-      fullDescription: sanitizedSourceEntity.fullDescription,
+      fullDescription: bodyBeforeServeHygiene,
       researchAreas: sanitizedSourceEntity.researchAreas,
       entityType: resolvedEntityType,
+      kind: sanitizedSourceEntity.kind,
     }),
   };
+  // The card the gate JUDGES, as opposed to the one `entity` carries for the DTO to
+  // re-read. It is resolved from the copy the canonical serve sanitizer produces,
+  // not from the three-step subset above, because each of the four steps this adds
+  // moves the card: the off-entity guard blanks a stored card describing a
+  // third-party organization (#3067), chip hygiene drops the chips a chip summary
+  // names, body hygiene shortens the body a derived card came from, and the name
+  // guards change whose prose the text layer reads this as. Judging the subset's
+  // value let the gate clear a row on a line no surface renders, and the row then
+  // reached students as a name with nothing under it (#3097).
+  //
+  // Only the VERDICT reads this. `entity.shortDescription` above stays the subset
+  // resolution because the DTO re-runs the whole serve chain over `entity`, and the
+  // sanitizer's chip-coherence rescue reads the card it withheld: substituting the
+  // judged card there costs a row whose only text grounding its chips was the
+  // withheld card every chip it had (#2480).
+  //
+  // The body withhold reaches the card and not the body invariant. A card derived
+  // from prose no surface serves is a phantom, which is this defect; a withheld body
+  // that failed `quality.full` would 404 the row rather than correct what it says,
+  // and #2911 settled that such a row keeps its lead, links and chips instead of
+  // vanishing.
+  //
+  // What is deliberately NOT read is the DTO's last-resort card
+  // (`servedShortDescriptionFallback`, which serves the whole body in the card slot
+  // when nothing derives). That resort only ever runs on a row this invariant has
+  // already passed, so reading it here would be circular: the card invariant could
+  // never refuse an empty card while a body existed, and #2597's refusal and #1872's
+  // organizational exemption both key on card absence.
+  const servedCopy = servedResearchEntityCopy(sanitizedEntity, resolvedLeadMemberNames);
+  const servedCard = resolveServedShortDescription({
+    shortDescription: servedCopy.shortDescription,
+    fullDescription: servedCopy.fullDescription,
+    researchAreas: servedCopy.researchAreas,
+    entityType: resolvedEntityType,
+    kind: servedCopy.kind,
+  });
   const programLike = isProgramLikeResearchEntity(sanitizedEntity);
+  const cardIsOptional = programLike || isOrganizationalResearchEntity(sanitizedEntity);
   const quality = assessResearchEntityDescriptionQuality({
     fullDescription: sanitizedEntity.fullDescription,
-    shortDescription: sanitizedEntity.shortDescription,
+    shortDescription: servedCard,
     researchAreas: sanitizedEntity.researchAreas,
     sourceUrls: sanitizedEntity.sourceUrls,
     website: sanitizedEntity.website,
@@ -171,19 +250,37 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   // entity never renders a blank detail page (#998 precedent). Idempotent with
   // the DTO's own pass, and name-agnostic like the rest of this gate.
   const rawFullDescription = textValue(sanitizedEntity.fullDescription);
-  const rawShortDescription = textValue(sanitizedEntity.shortDescription);
+  const rawShortDescription = textValue(servedCard);
   const servedFullDescription = sanitizeResearchEntityDescription(rawFullDescription);
   const servedShortDescription = sanitizeResearchEntityShortDescription(rawShortDescription);
   // A program-like home's student-facing copy describes what the program offers
-  // and how to apply, not a lab-style "Studies X" research focus, so the
-  // research-focus card invariant is the wrong bar for it: require a useful full
-  // description (and non-blank served copy below) but do not additionally demand
-  // a lab-style card. This mirrors the program-specific visibility path
-  // (`computeProgramStudentVisibility`) and keeps program-like homes servable on
-  // the detail page.
+  // and how to apply, and an organizational home's describes what the
+  // organization is and does; neither is a lab-style "Studies X" research focus,
+  // so the research-focus card invariant is the wrong bar for either: require a
+  // useful full description (and non-blank served copy below) but do not
+  // additionally demand a lab-style card. This mirrors the program-specific
+  // visibility path (`computeProgramStudentVisibility`) and the matching
+  // exemption in `studentVisibilityTier`, which must agree with this one or the
+  // gate publishes a row this route then refuses (#1872).
+  // This invariant decides whether the route SERVES the page, so it asks whether
+  // there is anything to show, not whether what there is scores well. Card
+  // quality is the gate's question: `studentVisibilityTier` holds a row on
+  // `missing_card_description` from `quality.repairFlags`, computed
+  // independently of this reason, so a thin card still keeps a row unpublished.
+  //
+  // Keying the refusal on `quality.short.isUseful` made the served page depend on
+  // a verdict that moves when the BODY changes, because
+  // `shortDescriptionQuality` scores the short relative to the full. A body edit
+  // anywhere could therefore flip a byte-identical card to failing and 404 a row
+  // the list still advertised, while the card itself still rendered. That is the
+  // recurrence mechanism in #2597: the class read 0 one morning and 6 by that
+  // evening after four unrelated body changes. Refusing only an EMPTY card makes
+  // the verdict a function of what renders, so a body change cannot reopen it.
   const reasons: ResearchEntityPublicDescriptionRepresentation['invariant']['reasons'] = [];
   if (!quality.full.isUseful) reasons.push('missing_public_full_description');
-  if (!quality.short.isUseful && !programLike) reasons.push('missing_public_card_description');
+  if (!servedShortDescription && !cardIsOptional) {
+    reasons.push('missing_public_card_description');
+  }
   if (!servedFullDescription && !servedShortDescription) {
     reasons.push('blank_served_public_description');
   }
@@ -204,6 +301,7 @@ export function buildResearchEntityPublicDescriptionRepresentation({
     entity: sanitizedEntity,
     leadMemberNames: resolvedLeadMemberNames,
     quality,
+    servedCard,
     fullDescription: quality.full.text,
     cardDescription: quality.short.text,
     invariant: {
@@ -244,10 +342,21 @@ export function buildResearchEntityPublicDescriptionRepresentation({
 // and it can also pass a card whose detail page 404s. Do not reintroduce a nesting
 // or monotonicity assumption in either direction.
 //
-// Do not "fix" that by calling the detail sanitizer from the browse path: it
-// needs roster-derived lead names that browse deliberately does not fetch, and
-// because the transform is not monotonic it could newly hide cards whose detail
-// pages serve correctly. #2240 holds the options and the decision.
+// Those two figures are a SNAPSHOT, not a contract. Re-measured 2026-09-13 across
+// all three environments: 8 tier-admitted rows fail here, 3 of which the detail
+// path serves, and the reverse case did not reproduce (#2597). The direction of
+// the warning is what is load-bearing; the counts move with the corpus. Measure
+// before quoting them, with `--corpus-reachability` on the served-corpus
+// scoreboard.
+//
+// This predicate stays name-agnostic. #2240 resolved the sibling asymmetry it used
+// to warn about - browse CARD COPY now runs the lead-name-aware guard, because
+// `searchResearchGroupsViaMeili` batches one roster read per page the way it
+// already batches planning contexts - but the browse GATE deliberately still runs
+// without names. Supplying them here would make a hit set's admission depend on a
+// non-monotonic transform, which is the mechanism that hides a card whose detail
+// page serves. Copy and admission are separate questions: repairing the copy
+// cannot drop a row, and this predicate never reads the lead names.
 //
 // The deceased-lead check (#982) is name-agnostic (entity name and description
 // signals only) and mirrors the detail resolver's own guard.

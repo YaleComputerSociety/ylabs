@@ -1,5 +1,5 @@
 /**
- * Admin-only routes for managing listings, fellowships, users, and profiles.
+ * Admin-only routes for managing fellowships, users, and profiles.
  */
 import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';
@@ -58,12 +58,6 @@ const ADMIN_FELLOWSHIP_SORT_FIELDS = new Set([
   'views',
   'favorites',
   'createdAt',
-]);
-const ACCESS_REVIEW_RECORD_TYPES = new Set([
-  'entryPathway',
-  'accessSignal',
-  'contactRoute',
-  'postedOpportunity',
 ]);
 
 const adminPayloadId = (value: unknown): string => {

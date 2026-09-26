@@ -1,0 +1,501 @@
+import { describe, it, expect } from 'vitest';
+import {
+  DEFAULT_STRANDED_KEY_APPLY_LIMIT,
+  STRANDED_KEY_CONFIRM_FLAG,
+  comparableStrandedFields,
+  comparePersonIdentity,
+  decideStrandedKey,
+  parseStrandedKeyApplyArgs,
+  selectStrandedKeyApplyRows,
+  strandedKeyMergeLanded,
+  summarizeStrandedKeyDecisions,
+  wouldDowngradeEntityType,
+  wouldReplaceStatedNameWithTemplate,
+  type StrandedFieldComparison,
+  type StrandedKeyTarget,
+} from '../strandedKeyRedirectDecisionCore';
+
+const personTarget: StrandedKeyTarget = {
+  slug: 'dept-mcdb-jacob-musser',
+  name: 'Jacob Musser Lab',
+  entityType: 'LAB',
+  kind: 'lab',
+  leadName: 'Jacob Musser',
+  studentVisibilityTier: 'student_ready',
+};
+
+const agreeing: StrandedFieldComparison[] = [
+  {
+    field: 'name',
+    verdict: 'AGREES',
+    strandedValue: 'Jacob Musser Lab',
+    targetValue: 'Jacob Musser Lab',
+  },
+  { field: 'kind', verdict: 'AGREES', strandedValue: 'lab', targetValue: 'lab' },
+];
+
+const base = {
+  entityKey: 'nsf-pi-jacob-musser',
+  keyPersonName: 'Jacob Musser',
+  strandedName: 'Jacob Musser Lab',
+  strandedEntityType: 'LAB',
+  targets: [personTarget],
+  fieldComparisons: agreeing,
+};
+
+describe('comparePersonIdentity', () => {
+  it('matches a hyphenated given name against its compressed spelling', () => {
+    expect(comparePersonIdentity('Shi-Yi Wang', 'shi yi wang')).toBe('SAME');
+    expect(comparePersonIdentity('Raul U. Hernandez-Ramirez', 'raul u hernandez ramirez')).toBe(
+      'SAME',
+    );
+  });
+
+  it('matches across a dropped middle initial', () => {
+    expect(comparePersonIdentity('Emma Zang', 'emma x zang')).toBe('SAME');
+  });
+
+  it('calls a familiar form UNCERTAIN rather than deciding it', () => {
+    expect(comparePersonIdentity('Candie Paulsen', 'candice paulsen')).toBe('UNCERTAIN');
+    expect(comparePersonIdentity('Theodore Cohen', 'ted cohen')).toBe('UNCERTAIN');
+  });
+
+  it('calls two different surnames DIFFERENT', () => {
+    expect(comparePersonIdentity('Robin de Graaf', 'henk de feyter')).toBe('DIFFERENT');
+  });
+
+  it('will not call two different people DIFFERENT while they share a surname', () => {
+    // Themis Kyriakides and Tassos C. Kyriakides are distinct Yale researchers, but a
+    // shared surname with no overlapping given name is exactly the case a name cannot
+    // settle, so this reports UNCERTAIN rather than claiming a mismatch it has not shown.
+    expect(comparePersonIdentity('Themis Kyriakides', 'tassos c kyriakides')).toBe('UNCERTAIN');
+  });
+
+  it('is UNCERTAIN when either side is unusable', () => {
+    expect(comparePersonIdentity('', 'jacob musser')).toBe('UNCERTAIN');
+  });
+});
+
+describe('comparableStrandedFields', () => {
+  // The grant fields sat on 44 of the 53 keys the report recommended acting on and a
+  // named comparison list omitted all three, so a redirect was recommended without
+  // anyone having read the bulk of what it would write.
+  it('compares every observed field a redirect would write', () => {
+    expect(
+      comparableStrandedFields([
+        'name',
+        'recentGrants',
+        'recentGrantCount',
+        'fundingAgencies',
+        'researchAreas',
+        'sourceUrls',
+      ]),
+    ).toEqual([
+      'fundingAgencies',
+      'name',
+      'recentGrantCount',
+      'recentGrants',
+      'researchAreas',
+      'sourceUrls',
+    ]);
+  });
+
+  it('drops only the fields a redirect cannot act on', () => {
+    expect(
+      comparableStrandedFields([
+        'slug',
+        'lastObservedAt',
+        'sourceContentHash',
+        'inferredPiUserKey',
+        'name',
+      ]),
+    ).toEqual(['name']);
+  });
+});
+
+describe('wouldDowngradeEntityType', () => {
+  it('flags a person row aimed at a live LAB', () => {
+    expect(wouldDowngradeEntityType('FACULTY_RESEARCH_AREA', personTarget)).toBe(true);
+  });
+
+  it('does not flag equal or stronger', () => {
+    expect(wouldDowngradeEntityType('LAB', personTarget)).toBe(false);
+    expect(
+      wouldDowngradeEntityType('LAB', { ...personTarget, entityType: 'FACULTY_RESEARCH_AREA' }),
+    ).toBe(false);
+  });
+
+  it('does not flag a scope it cannot rank', () => {
+    expect(
+      wouldDowngradeEntityType('FACULTY_RESEARCH_AREA', { ...personTarget, entityType: 'CENTER' }),
+    ).toBe(false);
+  });
+});
+
+describe('wouldReplaceStatedNameWithTemplate', () => {
+  it('flags a template aimed at a stated branded name', () => {
+    expect(
+      wouldReplaceStatedNameWithTemplate('Brian Scassellati Lab', {
+        ...personTarget,
+        name: 'Social Robotics Lab',
+        leadName: 'Brian Scassellati',
+      }),
+    ).toBe(true);
+  });
+
+  it('leaves two templates alone', () => {
+    expect(wouldReplaceStatedNameWithTemplate('Jacob Musser Lab', personTarget)).toBe(false);
+  });
+});
+
+describe('decideStrandedKey', () => {
+  it('redirects when the values agree', () => {
+    expect(decideStrandedKey(base)).toEqual({
+      decision: 'BACKFILL_REDIRECT',
+      reason: 'AGREES_WITH_TARGET',
+      targetSlug: 'dept-mcdb-jacob-musser',
+    });
+  });
+
+  it('refuses to pick between two live targets', () => {
+    expect(
+      decideStrandedKey({ ...base, targets: [personTarget, { ...personTarget, slug: 'other' }] }),
+    ).toMatchObject({ decision: 'LEAVE_ALONE', reason: 'MULTIPLE_LIVE_TARGETS' });
+  });
+
+  it('reports an archived target rather than treating it as absent evidence', () => {
+    expect(decideStrandedKey({ ...base, targets: [] })).toEqual({
+      decision: 'LEAVE_ALONE',
+      reason: 'TARGET_IS_ARCHIVED',
+    });
+  });
+
+  it('never re-keys a person onto an organization it merely directs', () => {
+    expect(
+      decideStrandedKey({
+        ...base,
+        targets: [{ ...personTarget, entityType: 'CENTER', kind: 'center' }],
+      }),
+    ).toMatchObject({
+      decision: 'LEAVE_ALONE',
+      reason: 'TARGET_IS_AN_ORGANIZATION_NOT_A_PERSON_HOME',
+    });
+  });
+
+  it('leaves an unresolved lead alone rather than trusting the slug match (#2384)', () => {
+    expect(
+      decideStrandedKey({ ...base, targets: [{ ...personTarget, leadName: '' }] }),
+    ).toMatchObject({ decision: 'LEAVE_ALONE', reason: 'TARGET_LEAD_UNRESOLVED' });
+  });
+
+  it('holds a familiar-name match for confirmation instead of acting on it', () => {
+    expect(
+      decideStrandedKey({
+        ...base,
+        keyPersonName: 'candice paulsen',
+        targets: [{ ...personTarget, leadName: 'Candie Paulsen' }],
+      }),
+    ).toMatchObject({ decision: 'LEAVE_ALONE', reason: 'TARGET_LEAD_MATCH_NEEDS_CONFIRMATION' });
+  });
+
+  it('leaves a thinner separate record of the same person alone, neither moved nor destroyed', () => {
+    expect(
+      decideStrandedKey({
+        ...base,
+        entityKey: 'dept-ysph-josephine-hoh',
+        keyPersonName: 'Josephine Hoh',
+        strandedName: 'Josephine Hoh Faculty Research',
+        strandedEntityType: 'FACULTY_RESEARCH_AREA',
+        targets: [{ ...personTarget, name: 'Hoh Lab', leadName: 'Josephine Hoh' }],
+        fieldComparisons: [],
+      }),
+    ).toMatchObject({ decision: 'LEAVE_ALONE', reason: 'A_SEPARATE_RECORD_OF_THE_SAME_PERSON' });
+  });
+
+  it('retires a template name aimed at a stated one', () => {
+    expect(
+      decideStrandedKey({
+        ...base,
+        keyPersonName: 'Brian Scassellati',
+        strandedName: 'Brian Scassellati Lab',
+        targets: [{ ...personTarget, name: 'Social Robotics Lab', leadName: 'Brian Scassellati' }],
+      }),
+    ).toMatchObject({
+      decision: 'RETIRE_OBSERVATIONS',
+      reason: 'WOULD_REPLACE_A_STATED_NAME_WITH_A_TEMPLATE',
+    });
+  });
+
+  it('retires a placeholder mint intent (#2367)', () => {
+    expect(decideStrandedKey({ ...base, strandedName: 'n/a' })).toMatchObject({
+      decision: 'RETIRE_OBSERVATIONS',
+      reason: 'PLACEHOLDER_MINT_INTENT',
+    });
+  });
+
+  it('lets a served-copy conflict outrank a gap it would also fill', () => {
+    expect(
+      decideStrandedKey({
+        ...base,
+        fieldComparisons: [
+          {
+            field: 'researchAreas',
+            verdict: 'FILLS_GAP',
+            strandedValue: ['Biophysics'],
+            targetValue: [],
+          },
+          {
+            field: 'fullDescription',
+            verdict: 'DIFFERS',
+            strandedValue: 'Google Scholar: Profile Conventional FIB-SEM',
+            targetValue: 'Our primary research interest is transformative instrumentation',
+          },
+        ],
+      }),
+    ).toMatchObject({ decision: 'LEAVE_ALONE', reason: 'WOULD_OVERWRITE_SERVED_COPY' });
+  });
+
+  it('treats a facet field as served copy, since overwriting it moves the target between facets', () => {
+    expect(
+      decideStrandedKey({
+        ...base,
+        fieldComparisons: [
+          {
+            field: 'departments',
+            verdict: 'DIFFERS',
+            strandedValue: ['Yale School of Public Health'],
+            targetValue: ['Epidemiology'],
+          },
+        ],
+      }),
+    ).toMatchObject({ decision: 'LEAVE_ALONE', reason: 'WOULD_OVERWRITE_SERVED_COPY' });
+  });
+
+  // `researchAreas` is a browse facet beside `school` and `departments`, and
+  // `recentGrants`, `recentGrantCount` and `fundingAgencies` are in the public detail
+  // DTO. Each was absent from the served-field list this guard used to consult, so a
+  // rewrite of one read as a non-event and the key was reported AGREES_WITH_TARGET.
+  it.each([
+    ['researchAreas', ['Cancer Biology'], ['Biophysics']],
+    ['recentGrants', ['Award 1'], ['Award 2']],
+    ['recentGrantCount', 3, 11],
+    ['fundingAgencies', ['NSF'], ['NIH']],
+    ['sourceUrls', ['https://example.edu/a'], ['https://example.edu/b']],
+  ])('refuses a redirect that would rewrite the served field %s', (field, stranded, target) => {
+    expect(
+      decideStrandedKey({
+        ...base,
+        fieldComparisons: [
+          {
+            field: String(field),
+            verdict: 'DIFFERS',
+            strandedValue: stranded,
+            targetValue: target,
+          },
+        ],
+      }),
+    ).toMatchObject({ decision: 'LEAVE_ALONE', reason: 'WOULD_OVERWRITE_SERVED_COPY' });
+  });
+
+  it('does not let bookkeeping drift block a redirect', () => {
+    expect(
+      decideStrandedKey({
+        ...base,
+        fieldComparisons: [
+          {
+            field: 'lastObservedAt',
+            verdict: 'DIFFERS',
+            strandedValue: '2026-09-01',
+            targetValue: '2026-01-01',
+          },
+        ],
+      }),
+    ).toMatchObject({ decision: 'BACKFILL_REDIRECT', reason: 'AGREES_WITH_TARGET' });
+  });
+
+  it('never reports AGREES_WITH_TARGET while a compared field differs', () => {
+    const result = decideStrandedKey({
+      ...base,
+      fieldComparisons: [
+        ...agreeing,
+        { field: 'recentGrantCount', verdict: 'DIFFERS', strandedValue: 2, targetValue: 9 },
+      ],
+    });
+    expect(result.reason).not.toBe('AGREES_WITH_TARGET');
+  });
+
+  it('redirects when the only difference is a gap it fills', () => {
+    expect(
+      decideStrandedKey({
+        ...base,
+        fieldComparisons: [
+          {
+            field: 'researchAreas',
+            verdict: 'FILLS_GAP',
+            strandedValue: ['Biophysics'],
+            targetValue: [],
+          },
+        ],
+      }),
+    ).toMatchObject({
+      decision: 'BACKFILL_REDIRECT',
+      reason: 'ADDS_EVIDENCE_THE_TARGET_LACKS',
+    });
+  });
+});
+
+describe('summarizeStrandedKeyDecisions', () => {
+  it('buckets by decision and reason with observation counts', () => {
+    expect(
+      summarizeStrandedKeyDecisions([
+        { decision: 'BACKFILL_REDIRECT', reason: 'AGREES_WITH_TARGET', liveObservationCount: 8 },
+        { decision: 'BACKFILL_REDIRECT', reason: 'AGREES_WITH_TARGET', liveObservationCount: 4 },
+        { decision: 'LEAVE_ALONE', reason: 'MULTIPLE_LIVE_TARGETS', liveObservationCount: 10 },
+      ]),
+    ).toEqual({
+      'BACKFILL_REDIRECT:AGREES_WITH_TARGET': { keys: 2, liveObservations: 12 },
+      'LEAVE_ALONE:MULTIPLE_LIVE_TARGETS': { keys: 1, liveObservations: 10 },
+    });
+  });
+});
+
+describe('parseStrandedKeyApplyArgs', () => {
+  it('defaults to a bounded dry run', () => {
+    expect(parseStrandedKeyApplyArgs([])).toEqual({
+      apply: false,
+      confirmed: false,
+      limit: DEFAULT_STRANDED_KEY_APPLY_LIMIT,
+      onlyKeys: [],
+    });
+  });
+
+  it('refuses an apply that was not confirmed', () => {
+    expect(() => parseStrandedKeyApplyArgs(['--apply'])).toThrow(STRANDED_KEY_CONFIRM_FLAG);
+  });
+
+  it('scopes the write to the keys and count the operator asked for', () => {
+    expect(
+      parseStrandedKeyApplyArgs([
+        '--apply',
+        STRANDED_KEY_CONFIRM_FLAG,
+        '--limit',
+        '2',
+        '--only',
+        'nsf-pi-jane-roe, ysm-faculty-jane-roe',
+        '--output=/tmp/2405.json',
+      ]),
+    ).toEqual({
+      apply: true,
+      confirmed: true,
+      limit: 2,
+      onlyKeys: ['nsf-pi-jane-roe', 'ysm-faculty-jane-roe'],
+      output: '/tmp/2405.json',
+    });
+  });
+
+  it('rejects a non-numeric limit and an unknown flag rather than ignoring them', () => {
+    expect(() => parseStrandedKeyApplyArgs(['--limit', 'all'])).toThrow('--limit');
+    expect(() => parseStrandedKeyApplyArgs(['--dry-run'])).toThrow('Unknown argument');
+  });
+});
+
+describe('selectStrandedKeyApplyRows', () => {
+  const unbounded = { limit: 100, onlyKeys: [] as string[] };
+
+  it('never selects a row the decision declined to act on', () => {
+    const { selected } = selectStrandedKeyApplyRows(
+      [
+        { entityKey: 'a', decision: 'LEAVE_ALONE', targetEntityId: 't1' },
+        { entityKey: 'b', decision: 'BACKFILL_REDIRECT', targetEntityId: 't2' },
+        { entityKey: 'c', decision: 'RETIRE_OBSERVATIONS' },
+      ],
+      unbounded,
+    );
+    expect(selected.map((row) => row.entityKey)).toEqual(['b', 'c']);
+  });
+
+  // Two stranded keys naming one live home were both judged against the same pre-apply
+  // snapshot of it, so the second would be judged against a target state the first
+  // already replaced and would record a reason that is false.
+  it('defers a sibling key that names a target another row already claimed', () => {
+    const { selected, deferredForSharedTarget } = selectStrandedKeyApplyRows(
+      [
+        { entityKey: 'nsf-pi-jane-roe', decision: 'BACKFILL_REDIRECT', targetEntityId: 'shared' },
+        {
+          entityKey: 'dept-ysph-jane-roe',
+          decision: 'BACKFILL_REDIRECT',
+          targetEntityId: 'shared',
+        },
+        { entityKey: 'nsf-pi-john-doe', decision: 'BACKFILL_REDIRECT', targetEntityId: 'other' },
+      ],
+      unbounded,
+    );
+    expect(selected.map((row) => row.entityKey)).toEqual(['nsf-pi-jane-roe', 'nsf-pi-john-doe']);
+    expect(deferredForSharedTarget.map((row) => row.entityKey)).toEqual(['dept-ysph-jane-roe']);
+  });
+
+  it('lets two retirements share a target, because neither writes it', () => {
+    const { selected, deferredForSharedTarget } = selectStrandedKeyApplyRows(
+      [
+        { entityKey: 'a', decision: 'RETIRE_OBSERVATIONS', targetEntityId: 'shared' },
+        { entityKey: 'b', decision: 'RETIRE_OBSERVATIONS', targetEntityId: 'shared' },
+      ],
+      unbounded,
+    );
+    expect(selected.map((row) => row.entityKey)).toEqual(['a', 'b']);
+    expect(deferredForSharedTarget).toEqual([]);
+  });
+
+  it('bounds the write by limit and by the requested keys', () => {
+    const rows = [
+      { entityKey: 'a', decision: 'BACKFILL_REDIRECT', targetEntityId: 't1' },
+      { entityKey: 'b', decision: 'BACKFILL_REDIRECT', targetEntityId: 't2' },
+      { entityKey: 'c', decision: 'BACKFILL_REDIRECT', targetEntityId: 't3' },
+    ];
+    expect(
+      selectStrandedKeyApplyRows(rows, { limit: 2, onlyKeys: [] }).selected.map(
+        (row) => row.entityKey,
+      ),
+    ).toEqual(['a', 'b']);
+    expect(
+      selectStrandedKeyApplyRows(rows, { limit: 100, onlyKeys: ['c'] }).selected.map(
+        (row) => row.entityKey,
+      ),
+    ).toEqual(['c']);
+  });
+});
+
+describe('strandedKeyMergeLanded', () => {
+  it('accepts a projection that reached the named canonical', () => {
+    expect(strandedKeyMergeLanded({ entityId: 'target' }, 'target')).toBe(true);
+  });
+
+  // A key whose evidence all came from a quarantined run returns before the projection
+  // with no entityId at all, so recording its redirect would remove it from the audit
+  // population without ever merging anything.
+  it('rejects a materialization that never reached an entity', () => {
+    expect(strandedKeyMergeLanded({ skipped: 'invalidated-run-evidence' }, 'target')).toBe(false);
+  });
+
+  it('rejects a projection that landed on some other row', () => {
+    expect(strandedKeyMergeLanded({ entityId: 'elsewhere' }, 'target')).toBe(false);
+  });
+
+  it('accepts the one skip that still means the projection ran', () => {
+    expect(strandedKeyMergeLanded({ entityId: 'target', skipped: 'unchanged' }, 'target')).toBe(
+      true,
+    );
+  });
+
+  // Fails closed on a reason this predicate has never heard of, so a skip added to the
+  // materializer later withdraws the redirect instead of being counted as a merge.
+  it('rejects a skip reason it does not know, even on the right row', () => {
+    for (const skipped of [
+      'program-entity-type-retired',
+      'merged-into-canonical',
+      'a-guard-added-after-this-test-was-written',
+    ]) {
+      expect(strandedKeyMergeLanded({ entityId: 'target', skipped }, 'target')).toBe(false);
+    }
+  });
+});

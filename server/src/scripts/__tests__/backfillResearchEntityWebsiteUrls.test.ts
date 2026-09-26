@@ -5,16 +5,26 @@ import {
   isFileShareOrDocumentWebsiteUrl,
   isGrantOrIdentifierUrl,
   isListingPageWebsiteUrl,
+  isMultiTenantHostRootWebsiteUrl,
+  isPressOrNewsHostWebsiteUrl,
   isProfilePageWebsiteUrl,
   isPromotableWebsiteUrl,
   isPublicHttpUrl,
+  isRosterPageWebsiteUrlForPerson,
   resolveBackfillWebsiteUrl,
   selectBackfillWebsiteUrl,
 } from '../backfillResearchEntityWebsiteUrlsCore';
+import { isRosterPageCitedByPerson } from '../retireGraftedDirectoryUrlsCore';
 import {
   assertResearchEntityWebsiteUrlApplyAllowed,
   parseResearchEntityWebsiteUrlBackfillArgs,
+  LISTING_PAGE_WEBSITE_URL_PATTERN,
+  PROFILE_PAGE_WEBSITE_URL_PATTERN,
 } from '../backfillResearchEntityWebsiteUrls';
+import {
+  MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN,
+  PRESS_AND_NEWS_HOST_URL_PATTERN,
+} from '../../utils/researchHomeWebsiteUrl';
 
 describe('backfillResearchEntityWebsiteUrls URL classification', () => {
   it('accepts public http and https URLs only', () => {
@@ -114,6 +124,172 @@ describe('backfillResearchEntityWebsiteUrls URL classification', () => {
   });
 });
 
+// A `websiteUrl` observation reaches the resolver without passing through
+// `sourceUrlToResearchHomeWebsiteUrl`, which is why these hosts were refused as a
+// promotion candidate yet still reachable as a stored value. Measured on
+// Development: two sources emit the profile's Google Scholar link as a websiteUrl
+// and 3 live entities stored one (#2285).
+describe('resolveBackfillWebsiteUrl external scholarly platform handling', () => {
+  it('clears a citation-index websiteUrl when no research home is available', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://scholar.google.com/citations?user=EXAMPLEPLACEHOLDER',
+        sourceUrls: ['https://medicine.yale.edu/profile/jordan-example/'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('replaces a citation-index websiteUrl with a real research home from evidence', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://scholar.google.com/citations/',
+        sourceUrls: [
+          'https://medicine.yale.edu/profile/jordan-example/',
+          'https://examplelab.yale.edu/',
+        ],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://examplelab.yale.edu/' });
+  });
+
+  it('clears an ORCID or ResearchGate websiteUrl on the same terms', () => {
+    for (const websiteUrl of [
+      'https://orcid.org/example-researcher-placeholder',
+      'https://www.researchgate.net/profile/Jordan-Example',
+      'https://api.nsf.gov/awards/1234',
+    ]) {
+      expect(
+        resolveBackfillWebsiteUrl({
+          websiteUrl,
+          sourceUrls: ['https://medicine.yale.edu/profile/jordan-example/'],
+        }),
+        websiteUrl,
+      ).toEqual({ action: 'clear' });
+    }
+  });
+
+  it('keeps a real Yale lab site whose path merely mentions a platform', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://examplelab.yale.edu/scholar-google-metrics/',
+        sourceUrls: ['https://medicine.yale.edu/profile/jordan-example/'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  // The empty-slot branch does not consult the research-home resolver, so the
+  // clear-side refusal has to be repeated on the promotion side or the two paths
+  // oscillate: 10 served Development rows with no website were queued to receive a
+  // citation-index page from `sourceUrls` that the clear side then removes.
+  it('refuses to promote a citation-index page into an empty websiteUrl slot', () => {
+    for (const sourceUrl of [
+      'https://yale.academia.edu/ExampleResearcher',
+      'https://orcid.org/example-researcher-placeholder',
+      'https://www.researchgate.net/profile/Jordan-Example',
+    ]) {
+      expect(
+        resolveBackfillWebsiteUrl({
+          websiteUrl: '',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: [sourceUrl],
+        }),
+        sourceUrl,
+      ).toEqual({ action: 'keep' });
+    }
+  });
+
+  it('still promotes a real research home cited alongside a citation-index page', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: '',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        sourceUrls: ['https://yale.academia.edu/ExampleResearcher', 'https://examplelab.yale.edu/'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://examplelab.yale.edu/' });
+  });
+});
+
+describe('resolveBackfillWebsiteUrl press and news host handling (#2532)', () => {
+  it('clears a news-article websiteUrl when evidence has no research home', () => {
+    for (const websiteUrl of [
+      'https://news.yale.edu/2024/06/05/example-headline',
+      'https://www.wsj.com/personal-finance/example-24057ac4',
+      'https://www.cnn.com/2026/07/31/tv/video/example-segment',
+    ]) {
+      expect(
+        resolveBackfillWebsiteUrl({
+          websiteUrl,
+          sourceUrls: ['https://medicine.yale.edu/profile/jordan-example/'],
+        }),
+        websiteUrl,
+      ).toEqual({ action: 'clear' });
+    }
+  });
+
+  it('replaces a news-article websiteUrl with a real research home from evidence', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://news.yale.edu/2024/06/05/example-headline',
+        sourceUrls: [
+          'https://news.yale.edu/2024/06/05/example-headline',
+          'https://examplelab.yale.edu/',
+        ],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://examplelab.yale.edu/' });
+  });
+
+  it('keeps a research home whose own site merely reports news', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://examplelab.yale.edu/',
+        sourceUrls: ['https://www.wsj.com/personal-finance/example-24057ac4'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('is part of both the unservable and the promotable vocabulary', () => {
+    expect(isPressOrNewsHostWebsiteUrl('https://news.yale.edu/2024/06/05/example')).toBe(true);
+    expect(isPressOrNewsHostWebsiteUrl('https://examplelab.yale.edu/news/2024/update/')).toBe(
+      false,
+    );
+    expect(isPromotableWebsiteUrl('https://www.wsj.com/personal-finance/example-24057ac4')).toBe(
+      false,
+    );
+    expect(isPromotableWebsiteUrl('https://examplelab.yale.edu/')).toBe(true);
+  });
+
+  /**
+   * The promotion lane never consults `sourceUrlToResearchHomeWebsiteUrl`, so a row with
+   * no stored `websiteUrl` - which is what the pass leaves behind after clearing one -
+   * re-promoted the same article from `website` or `sourceUrls` on the next pass.
+   */
+  it('refuses to promote a press article onto a row that has no websiteUrl', () => {
+    for (const pressUrl of [
+      'https://www.wsj.com/personal-finance/example-24057ac4',
+      'https://news.yale.edu/2024/06/05/example-headline',
+    ]) {
+      expect(resolveBackfillWebsiteUrl({ website: pressUrl }), pressUrl).toEqual({
+        action: 'keep',
+      });
+      expect(
+        resolveBackfillWebsiteUrl({ websiteUrl: '', sourceUrls: [pressUrl] }),
+        pressUrl,
+      ).toEqual({ action: 'keep' });
+    }
+  });
+
+  it('still promotes a real research home from evidence alongside a press citation', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        website: 'https://www.wsj.com/personal-finance/example-24057ac4',
+        sourceUrls: [
+          'https://www.wsj.com/personal-finance/example-24057ac4',
+          'https://examplelab.yale.edu/',
+        ],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://examplelab.yale.edu/' });
+  });
+});
+
 describe('resolveBackfillWebsiteUrl listing handling', () => {
   it('clears an A-Z-index listing websiteUrl when no research home is available', () => {
     expect(
@@ -208,6 +384,21 @@ describe('resolveBackfillWebsiteUrl listing handling', () => {
     ).toEqual({ action: 'keep' });
   });
 
+  // A lab minted from its PI's faculty-directory page cites that page as its own
+  // source, so keeping it as `websiteUrl` made the detail page render the same
+  // destination twice: once as "Website" and once as the official-profile CTA.
+  it('clears a faculty-directory websiteUrl the entity cites as its own source (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://engineering.example.edu/faculty-directory/jordan-example',
+        sourceUrls: [
+          'https://engineering.example.edu/faculty-directory/jordan-example',
+          'https://institute.example.edu/humans/faculty',
+        ],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
   it('clears a Google Drive share-link websiteUrl when no research home is available (#730)', () => {
     expect(
       resolveBackfillWebsiteUrl({
@@ -268,11 +459,152 @@ describe('resolveBackfillWebsiteUrl listing handling', () => {
     ).toEqual({ action: 'clear' });
   });
 
-  it('keeps a single-person /people/ profile page as a PI fallback (#518)', () => {
+  it('clears a single-person /people/ profile page the entity already cites (#518, #2352)', () => {
     expect(
       resolveBackfillWebsiteUrl({
         websiteUrl: 'https://economics.example.edu/people/jordan-example',
         sourceUrls: ['https://economics.example.edu/people/jordan-example'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('keeps a single-person profile page the entity cites nowhere else (#518)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://economics.example.edu/people/jordan-example',
+        sourceUrls: ['https://reporter.nih.gov/project-details/1'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('ignores a trailing slash and case when matching the cited profile page (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://Economics.example.edu/people/Jordan-Example/',
+        sourceUrls: ['https://economics.example.edu/people/jordan-example'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('ignores scheme and a www. prefix when matching the cited profile page (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'http://www.economics.example.edu/people/jordan-example/',
+        sourceUrls: ['https://economics.example.edu/people/jordan-example'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('keeps a profile page cited only by the legacy website field, which the page never renders (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://economics.example.edu/people/jordan-example',
+        website: 'https://economics.example.edu/people/jordan-example',
+        sourceUrls: [],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('keeps a cited department-roster profile page the detail page refuses to re-render (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://economics.yale.edu/people/faculty/jordan-example',
+        sourceUrls: ['https://economics.yale.edu/people/faculty/jordan-example'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('keeps a cited collective-leaf roster page the detail page refuses to re-render (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://whc.yale.edu/people/our-people',
+        sourceUrls: ['https://whc.yale.edu/people/our-people'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+});
+
+describe('multi-tenant academic host roots (#2359)', () => {
+  it('refuses to promote the root of a host whose members publish at ~user', () => {
+    expect(isMultiTenantHostRootWebsiteUrl('https://csl.yale.edu/')).toBe(true);
+    expect(isPromotableWebsiteUrl('https://csl.yale.edu/')).toBe(false);
+  });
+
+  it('still promotes a tenant page under the same host', () => {
+    expect(isMultiTenantHostRootWebsiteUrl('https://csl.yale.edu/~arun/')).toBe(false);
+    expect(isPromotableWebsiteUrl('https://csl.yale.edu/~arun/')).toBe(true);
+  });
+
+  it('clears a shared host root when the entity has no other research home', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://csl.yale.edu/',
+        sourceUrls: [
+          'https://reporter.nih.gov/project-details/11046553',
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/rajit-example/',
+          'https://csl.yale.edu/',
+        ],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('re-picks the tenant page when the entity has one in its evidence', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://csl.yale.edu/',
+        sourceUrls: ['https://csl.yale.edu/', 'https://csl.yale.edu/~arun/'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://csl.yale.edu/~arun/' });
+  });
+
+  it('re-picks the tenant page on a multi-label host too, instead of clearing', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://gauss.math.yale.edu/',
+        sourceUrls: ['https://gauss.math.yale.edu/', 'https://gauss.math.yale.edu/~an592/'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://gauss.math.yale.edu/~an592/' });
+  });
+
+  it('rejects the `www.` alias of a shared host root as well', () => {
+    expect(isMultiTenantHostRootWebsiteUrl('https://www.csl.yale.edu/')).toBe(true);
+    expect(isPromotableWebsiteUrl('https://www.csl.yale.edu/')).toBe(false);
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://www.csl.yale.edu/',
+        sourceUrls: ['https://www.csl.yale.edu/', 'https://www.csl.yale.edu/~arun/'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://www.csl.yale.edu/~arun/' });
+  });
+
+  it('keeps the shared host root for the host organization’s own entity', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Computer Systems Lab',
+        websiteUrl: 'https://csl.yale.edu/',
+        sourceUrls: ['https://csl.yale.edu/'],
+      }),
+    ).toEqual({ action: 'keep' });
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Manohar Lab',
+        websiteUrl: 'https://csl.yale.edu/',
+        sourceUrls: ['https://csl.yale.edu/'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('promotes the shared host root for the host organization when it has no website', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        displayName: 'Computer Systems Lab',
+        sourceUrls: ['https://csl.yale.edu/'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://csl.yale.edu/' });
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Manohar Lab',
+        sourceUrls: ['https://csl.yale.edu/'],
       }),
     ).toEqual({ action: 'keep' });
   });
@@ -506,7 +838,7 @@ describe('prefers a real lab site over a directory/profile stub (#537)', () => {
     ).toEqual({ action: 'set', websiteUrl: 'https://medicine.example.edu/lab/example/' });
   });
 
-  it('keeps a lone directory/profile stub when no better lab site exists', () => {
+  it('clears a lone directory/profile stub the entity already cites (#2352)', () => {
     expect(
       resolveBackfillWebsiteUrl({
         websiteUrl: 'https://math.example.edu/profile/jordan-example/',
@@ -516,7 +848,7 @@ describe('prefers a real lab site over a directory/profile stub (#537)', () => {
           'https://sites.google.com/',
         ],
       }),
-    ).toEqual({ action: 'keep' });
+    ).toEqual({ action: 'clear' });
   });
 });
 
@@ -548,6 +880,55 @@ describe('parseResearchEntityWebsiteUrlBackfillArgs', () => {
 
   it('rejects unknown arguments', () => {
     expect(() => parseResearchEntityWebsiteUrlBackfillArgs(['--nope'])).toThrow(/Unknown/);
+  });
+
+  it('collects repeated --slug scopes so a repair can be bounded to named rows', () => {
+    const options = parseResearchEntityWebsiteUrlBackfillArgs([
+      '--slug=dept-example-one',
+      '--slug=dept-example-two',
+    ]);
+    expect(options.slugs).toEqual(['dept-example-one', 'dept-example-two']);
+    expect(parseResearchEntityWebsiteUrlBackfillArgs([]).slugs).toEqual([]);
+  });
+
+  it('rejects an empty --slug value rather than scoping the run to nothing', () => {
+    expect(() => parseResearchEntityWebsiteUrlBackfillArgs(['--slug='])).toThrow(
+      /--slug requires a slug value/,
+    );
+    expect(() => parseResearchEntityWebsiteUrlBackfillArgs(['--slug=   '])).toThrow(
+      /--slug requires a slug value/,
+    );
+  });
+});
+
+describe('press and news host candidate reachability (#2532)', () => {
+  // Without its own candidate pattern the press refusal is unreachable on stored
+  // data: the backfill selects rows by URL shape, and an article matches none of
+  // the other shapes, so the guard would never be consulted on the rows it exists
+  // for.
+  it('selects a stored news-article websiteUrl that no other candidate pattern matches', () => {
+    for (const websiteUrl of [
+      'https://news.yale.edu/2024/06/05/example-headline',
+      'https://www.wsj.com/personal-finance/example-24057ac4',
+      'https://www.cnn.com/2026/07/31/tv/video/example-segment',
+    ]) {
+      expect(PROFILE_PAGE_WEBSITE_URL_PATTERN.test(websiteUrl), websiteUrl).toBe(false);
+      expect(LISTING_PAGE_WEBSITE_URL_PATTERN.test(websiteUrl), websiteUrl).toBe(false);
+      expect(MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN.test(websiteUrl), websiteUrl).toBe(false);
+      expect(PRESS_AND_NEWS_HOST_URL_PATTERN.test(websiteUrl), websiteUrl).toBe(true);
+    }
+  });
+
+  it('leaves a real research home out of the candidate set', () => {
+    for (const websiteUrl of [
+      'https://examplelab.yale.edu/',
+      'https://timeperception.example.org/',
+      'https://notnpr.example.org/lab/',
+      'https://www.nytimes.com.evil.example/lab/',
+      'https://examplelab.example.org/press/wsj.com-feature/',
+    ]) {
+      expect(PRESS_AND_NEWS_HOST_URL_PATTERN.test(websiteUrl), websiteUrl).toBe(false);
+    }
   });
 });
 
@@ -590,5 +971,302 @@ describe('assertResearchEntityWebsiteUrlApplyAllowed', () => {
         explicitLimit: true,
       }),
     ).not.toThrow();
+  });
+});
+
+describe('a roster page is refused as a person row research home (#2708)', () => {
+  const MEMBERS_LIST = 'https://quantuminstitute.yale.edu/our-mission/our-members/';
+  const LAB_MICROSITE = 'https://medicine.yale.edu/lab/example-lab/';
+
+  it('flags a members list on a person-scoped row', () => {
+    expect(
+      isRosterPageWebsiteUrlForPerson(MEMBERS_LIST, { entityType: 'FACULTY_RESEARCH_AREA' }),
+    ).toBe(true);
+    expect(isRosterPageWebsiteUrlForPerson(MEMBERS_LIST, { entityType: 'LAB' })).toBe(true);
+  });
+
+  it('leaves the same page alone for the organisation that publishes it', () => {
+    expect(isRosterPageWebsiteUrlForPerson(MEMBERS_LIST, { entityType: 'CENTER' })).toBe(false);
+    expect(isRosterPageWebsiteUrlForPerson(MEMBERS_LIST, { entityType: 'INSTITUTE' })).toBe(false);
+  });
+
+  it('needs an entity type, and refuses nothing without one', () => {
+    expect(isRosterPageWebsiteUrlForPerson(MEMBERS_LIST, undefined)).toBe(false);
+    expect(isRosterPageWebsiteUrlForPerson(MEMBERS_LIST, {})).toBe(false);
+  });
+
+  it('does not flag a real research home', () => {
+    expect(
+      isRosterPageWebsiteUrlForPerson(LAB_MICROSITE, { entityType: 'FACULTY_RESEARCH_AREA' }),
+    ).toBe(false);
+  });
+
+  it('makes the members list unpromotable on a person row but promotable for the centre', () => {
+    expect(isPromotableWebsiteUrl(MEMBERS_LIST, { entityType: 'FACULTY_RESEARCH_AREA' })).toBe(
+      false,
+    );
+    expect(isPromotableWebsiteUrl(MEMBERS_LIST, { entityType: 'CENTER' })).toBe(true);
+  });
+
+  it('keeps rather than sets when a person row cites only a roster page', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Example Person Faculty Research',
+        sourceUrls: [MEMBERS_LIST],
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('still picks the real research home when the row cites both', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Example Person Faculty Research',
+        sourceUrls: [MEMBERS_LIST, LAB_MICROSITE],
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toEqual({ action: 'set', websiteUrl: LAB_MICROSITE });
+  });
+});
+
+describe('the promotion guard stays in lockstep with the repair predicate (#2708)', () => {
+  // The churn loop this fixes is the two predicates disagreeing: the repair lane removes
+  // a value the promotion path then restores. Parity is therefore the invariant worth
+  // pinning, rather than either composition's internals. On constructible inputs
+  // `isDepartmentRosterProvenanceUrl` subsumes `isSharedPeopleRosterUrl`, so a test of
+  // the arms individually would leave one of them unpinned.
+  const URLS = [
+    'https://quantuminstitute.yale.edu/our-mission/our-members/',
+    'https://example.yale.edu/people/',
+    'https://example.yale.edu/our-people',
+    'https://example.yale.edu/faculty/',
+    'https://example.yale.edu/lab-members',
+    'https://example.yale.edu/directory',
+    'https://medicine.yale.edu/lab/example-lab/',
+    'https://saltzman.eng.yale.edu/',
+    'https://example.yale.edu/research/projects',
+  ];
+
+  for (const entityType of ['FACULTY_RESEARCH_AREA', 'LAB', 'CENTER', 'INSTITUTE']) {
+    it(`agrees with isRosterPageCitedByPerson for ${entityType}`, () => {
+      for (const url of URLS) {
+        expect(isRosterPageWebsiteUrlForPerson(url, { entityType })).toBe(
+          isRosterPageCitedByPerson(url, { entityType }),
+        );
+      }
+    });
+  }
+});
+
+describe('a department programme page is refused as a person row research home (#2708)', () => {
+  const PROGRAMME =
+    'https://medicine.yale.edu/cancer/collaborative-excellence/training-opportunities/';
+  const LAB = 'https://medicine.yale.edu/lab/example-lab/';
+
+  it('is not promotable on a person-scoped row', () => {
+    expect(isPromotableWebsiteUrl(PROGRAMME, { entityType: 'FACULTY_RESEARCH_AREA' })).toBe(false);
+    expect(isPromotableWebsiteUrl(PROGRAMME, { entityType: 'LAB' })).toBe(false);
+  });
+
+  it('stays promotable for the department that publishes it', () => {
+    expect(isPromotableWebsiteUrl(PROGRAMME, { entityType: 'CENTER' })).toBe(true);
+  });
+
+  it('keeps rather than sets when a person row cites only a programme page', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Example Person Faculty Research',
+        sourceUrls: [PROGRAMME],
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('still picks the real research home when the row cites both', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Example Person Faculty Research',
+        sourceUrls: [PROGRAMME, LAB],
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toEqual({ action: 'set', websiteUrl: LAB });
+  });
+});
+
+describe('an umbrella page is refused as a person row research home (#2579)', () => {
+  const GROUP_ROOT = 'http://het.yale.edu/';
+  const DEPARTMENT_JOBS = 'http://economics.yale.edu/undergraduate/employment-opportunities';
+  const LAB = 'https://ohernlab.yale.edu/';
+  const PERSON = { entityType: 'FACULTY_RESEARCH_AREA', name: 'Example theorist research' };
+
+  it('is not promotable into an empty slot on a person-scoped row', () => {
+    expect(isPromotableWebsiteUrl(GROUP_ROOT, PERSON)).toBe(false);
+    expect(isPromotableWebsiteUrl(DEPARTMENT_JOBS, PERSON)).toBe(false);
+    expect(
+      isPromotableWebsiteUrl(GROUP_ROOT, { entityType: 'CENTER', name: 'Particle Theory' }),
+    ).toBe(true);
+  });
+
+  it('keeps rather than re-fills an empty slot from a group root citation', () => {
+    expect(
+      resolveBackfillWebsiteUrl({ ...PERSON, sourceUrls: [GROUP_ROOT, DEPARTMENT_JOBS] }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('clears a stored group root instead of keeping it, so the repair is not undone', () => {
+    expect(
+      resolveBackfillWebsiteUrl({ ...PERSON, websiteUrl: GROUP_ROOT, sourceUrls: [GROUP_ROOT] }),
+    ).toEqual({ action: 'clear' });
+    expect(resolveBackfillWebsiteUrl({ ...PERSON, websiteUrl: DEPARTMENT_JOBS })).toEqual({
+      action: 'clear',
+    });
+  });
+
+  it('re-picks the real research home when the row also cites one', () => {
+    expect(
+      resolveBackfillWebsiteUrl({ ...PERSON, websiteUrl: GROUP_ROOT, sourceUrls: [LAB] }),
+    ).toEqual({ action: 'set', websiteUrl: LAB });
+  });
+
+  it('leaves the group root stored on the organizational row that owns it', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        entityType: 'CENTER',
+        name: 'Particle Theory Group',
+        websiteUrl: GROUP_ROOT,
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+});
+
+describe('an organization whose only citation is a page inside its own site (#2534)', () => {
+  it('derives the host root for a centre citing nothing but its own people page', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Tobin Center for Economic Policy',
+        entityType: 'CENTER',
+        websiteUrl: '',
+        sourceUrls: ['https://tobin.yale.edu/people'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://tobin.yale.edu/' });
+  });
+
+  it('derives the owned subtree for a centre hosted under a school', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Yale Center for Genome Analysis',
+        entityType: 'CENTER',
+        sourceUrls: ['https://medicine.yale.edu/genetics/research/ycga/people/'],
+      }),
+    ).toEqual({
+      action: 'set',
+      websiteUrl: 'https://medicine.yale.edu/genetics/research/ycga/',
+    });
+  });
+
+  it('replaces a roster page stored as an institute website with the site it belongs to', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Quantitative Biology Institute',
+        displayName: 'QBio',
+        entityType: 'INSTITUTE',
+        websiteUrl: 'https://qbio.yale.edu/members',
+        sourceUrls: ['https://qbio.yale.edu/members'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://qbio.yale.edu/' });
+  });
+
+  it('prefers the organization site over its own roster page', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Whitney Humanities Center',
+        entityType: 'CENTER',
+        sourceUrls: ['https://whc.yale.edu/leadership-and-staff'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://whc.yale.edu/' });
+  });
+
+  it('leaves a centre citing a host its name does not spell with no website', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Cowles Foundation for Research in Economics',
+        entityType: 'CENTER',
+        sourceUrls: ['https://egc.yale.edu/people/faculty'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('keeps a roster page as a website when no owned site can be derived from it', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Cowles Foundation for Research in Economics',
+        entityType: 'CENTER',
+        sourceUrls: ['https://egc.yale.edu/leadership-and-staff'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://egc.yale.edu/leadership-and-staff' });
+  });
+
+  it('lets a real research home in the evidence beat the derived site', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Examplecenter',
+        entityType: 'CENTER',
+        websiteUrl: 'https://examplecenter.yale.edu/people/members/',
+        sourceUrls: [
+          'https://examplecenter.yale.edu/people/members/',
+          'https://examplecenter.yale.edu/labs/imaging/',
+        ],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://examplecenter.yale.edu/labs/imaging/' });
+  });
+
+  // The fallback decides whose site a host is. It must not also decide that a page
+  // which can never be a research home has become one (#2460, #2285).
+  it('clears rather than deriving a site from a citation that can never be a home', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Examplecenter',
+        entityType: 'CENTER',
+        websiteUrl: 'https://ysph.yale.edu/examplecenter/giving/charitable-funds/',
+        sourceUrls: ['https://ysph.yale.edu/examplecenter/giving/charitable-funds/'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  // The refusals inside the derivation judge the CITATION. This judges the URL the
+  // derivation produced, which is a different string and can be a page no entity may
+  // ever serve as its research home: the citation check passes
+  // `https://ysph.yale.edu/news/examplecenter/people/`, and only the re-check refuses
+  // the `https://ysph.yale.edu/news/examplecenter/` it derives from it.
+  it('refuses a derived site whose own prefix is a newsroom', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Examplecenter',
+        entityType: 'CENTER',
+        sourceUrls: ['https://ysph.yale.edu/news/examplecenter/people/'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('leaves a centre whose name merely mentions a school with no website', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Yale Center for Precision Medicine',
+        entityType: 'CENTER',
+        websiteUrl: 'https://medicine.yale.edu/genetics/people/',
+        sourceUrls: ['https://medicine.yale.edu/genetics/people/'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('leaves a person-scoped row on the same citation with no website at all', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Examplegroup',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl: 'https://examplegroup.yale.edu/people/members/',
+        sourceUrls: ['https://examplegroup.yale.edu/people/members/'],
+      }),
+    ).toEqual({ action: 'clear' });
   });
 });

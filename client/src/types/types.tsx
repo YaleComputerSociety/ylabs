@@ -33,6 +33,9 @@ export type Fellowship = {
   title: string;
   competitionType: string;
   summary: string;
+  // The browse-card line, which the server derives from the program's own prose
+  // when `summary` is the whole body. Absent on the admin projection.
+  cardSummary?: string;
   description: string;
   applicationInformation: string;
   eligibility: string;
@@ -81,8 +84,6 @@ export type StudentVisibilityTier =
   | 'limited_but_safe'
   | 'operator_review'
   | 'suppressed';
-
-export type FellowshipStage = 'not_applied' | 'applied';
 
 export type FellowshipFilterOptions = {
   programCategory: string[];

@@ -91,7 +91,7 @@ export const buildProgramDeadlinesIcsCalendar = (
   [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Yale Research//Program Watch//EN',
+    'PRODID:-//y/labs//Program Watch//EN',
     'CALSCALE:GREGORIAN',
     ...events.map((event) => buildVEvent(event, now)),
     'END:VCALENDAR',

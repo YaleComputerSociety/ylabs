@@ -3,8 +3,9 @@
 Status: tooling in place, production measurement pending.
 
 Phase 0 of [`research-model-refactor.md`](./research-model-refactor.md) resolves integration state and measures production before any target collection is written or any legacy storage is dropped.
-This runbook covers the inventory, identity-collision, search-baseline, and MongoDB query-cost tools, how to read their output, and the export and rollback steps that must exist before later phases run destructive cleanup.
-The tooling PR does not complete Phase 0: reviewed Development, Beta, and ProductionCopy identity-collision evidence and collision-class decisions, reviewed Beta and ProductionCopy inventory, search-baseline, and query-cost evidence, plus verified rollback evidence, remain operational exit work.
+This runbook covers the inventory, identity-collision, and search-baseline tools, how to read their output, and the export and rollback steps that must exist before later phases run destructive cleanup.
+The MongoDB query-cost audit it also covered was retired (#2224); see the retirement record below.
+The tooling PR does not complete Phase 0: reviewed Development, Beta, and ProductionCopy identity-collision evidence and collision-class decisions, reviewed Beta and ProductionCopy inventory and search-baseline evidence, plus verified rollback evidence, remain operational exit work.
 
 ## Inventory tool
 
@@ -31,10 +32,11 @@ Reference checks scan all tracked fields from each source collection once and re
 Client memory remains bounded by the scan concurrency, batch size, tracked edges, and configured orphan sample limit rather than collection cardinality.
 The required `--environment` accepts `development`, `beta`, `production-copy`, `production`, or `test`.
 The runner fails before connecting unless the database named in `MONGODBURL` matches the declared environment, and it validates the database name resolved by MongoDB again after connecting.
-The deployed database names are `Development`, `Beta`, `ProductionCopy`, and `Production`; explicit test fixtures may use `Test` or a database name ending in `-test` or `_test`.
+The deployed database names are `Development`, `Beta`, `ProductionCopy`, and `Prod`; the guard also still accepts `Production` for that environment, and explicit test fixtures may use `Test` or a database name ending in `-test` or `_test`.
 Run it against beta first, then against a production copy once access and rollback artifacts are in place.
 Errors go to stderr, so stdout contains only the JSON report.
-The optional output path must end in `.json`, must resolve under the operating-system temp directory or `./tmp` from the runner's working directory, and must have an existing parent directory.
+The optional output path must end in `.json`, must resolve under the operating-system temp directory, the shared `/tmp` root, or `./tmp` from the runner's working directory, and must have an existing parent directory.
+Every comparison resolves both the candidate path and the approved root through `realpath` first, so a platform that reaches its temp directory through a symlink, as macOS does for `/tmp` and `/var`, is accepted while a symlink component below the approved root is still refused.
 Inventory output creation is exclusive and mode `0600`.
 The runner refuses to overwrite an existing report.
 
@@ -51,8 +53,8 @@ Implementation:
 ## Protected Beta and ProductionCopy profiles
 
 Preserved Phase 0 evidence must use the root profile commands instead of editing `server/.env`.
-The commands accept no arbitrary child command and invoke fixed read-only inventory, query-cost, or search-baseline suites.
-Inventory and query-cost launchers load only `MONGODBURL`.
+The commands accept no arbitrary child command and invoke fixed read-only inventory or search-baseline suites.
+The inventory launcher loads only `MONGODBURL`.
 The search launcher combines the matching inventory profile with a separate protected Meilisearch and comparison-salt profile.
 Every launcher skips `server/.env`, binds evidence to a clean source commit, and passes a minimal child environment without migration, promotion, production-write, OpenAI, or scraper credentials.
 
@@ -111,7 +113,7 @@ yarn model-refactor:inventory:production-copy \
   --output /tmp/ylabs-model-inventory-production-copy.json
 ```
 
-Every output path must be a new absolute `.json` file below the system temp directory.
+Every output path must be a new absolute `.json` file below the system temp directory or the shared `/tmp` root, judged after resolving both sides through `realpath`.
 Protected profile runs require that output and print only credential-free completion metadata to stdout, never the report body or private counts.
 Move no real profile into a worktree.
 Named environment files are ignored as a final defense, while placeholder-only examples remain tracked.
@@ -184,7 +186,6 @@ Review all three before preserving an inventory as migration evidence.
 The inventory is a census.
 Deeper collision and identity analysis already lives in dedicated scripts and should be run alongside it:
 
-- `yarn --cwd server users:dedupe-by-identity` for same-person user shells.
 - `yarn --cwd server model-refactor:identity-collisions` for bounded shared-identity and same-name-only evidence.
 - `yarn --cwd server research-entity:duplicate-name-review` for duplicate entity identities.
 - `yarn --cwd server research-entity:coverage-audit` for entity evidence coverage.
@@ -263,12 +264,6 @@ They retain aggregate collision, repair, category, reference-impact, and coverag
 
 ```bash
 umask 077
-
-SCRAPER_ENV=development yarn --cwd server users:dedupe-by-identity \
-  --summary-only \
-  --environment=development \
-  --limit=10000 \
-  --output /tmp/ylabs-development-user-identity-summary.json
 
 SCRAPER_ENV=development yarn --cwd server research-entity:duplicate-name-review \
   --summary-only \
@@ -366,114 +361,34 @@ Treat any degraded sample, active indexing, index task activity during capture, 
 `--strict` writes the artifact and then exits nonzero when indexing, index task activity, degradation, or within-run instability requires review.
 Latency is diagnostic only unless the environments use comparable network and compute conditions.
 
-## Private MongoDB hot-path query-cost evidence
+## Retired: private MongoDB hot-path query-cost evidence
+
+The query-cost audit (`phase0HotPathQueryCost`, `phase0HotPathQueryCostCore`, `phase0HotPathQueryShapes`, and the `model-refactor:query-cost*` commands) was retired on 2026-09-22 (#2224).
+It profiled the pre-refactor schema, and that schema no longer exists in any environment, so the audit could not produce a reviewable verdict.
+
+Measured on 2026-09-22 before the removal, against Development:
+
+- 12 of the 16 collections it profiled are absent from Development, Beta AND `Prod`: `research_entity_members`, `users`, `faculty_members`, `research_scholarly_attributions`, `papers`, `research_scholarly_links`, `listings`, `entry_pathways`, `access_signals`, `contact_routes`, `posted_opportunities`, `admin_access_review_projections`. Only `research_entities`, `research_entity_relationships`, `observations` and `fellowships` remain.
+- 38 of the 43 shapes it measured returned 0 rows having examined 0 documents. The 5 that returned anything read `research_entities` and `fellowships`.
+- 23 further shapes were `fixture-unavailable`, every one of them because the fixture it needed comes from an absent collection.
+- `reviewRequired` was therefore permanently `true` for structural reasons: 12 index inspections report `missing` and 23 labels report an unavailable fixture on a healthy corpus.
+
+The zero is not an instrument error. The same run measures `research-browse-mongo-fallback` at 3,377 rows and `account-planning-fellowships` at 459, and flags a real `blocking-sort` on the latter, so the instrument reads a live collection correctly when it points at one.
+
+The issue that proposed removing only the `admin-access-review` shapes also recorded that the four access collections still existed in the frozen `Prod` snapshot, which would have been a reason to keep them. That is false: all three environments hold the same 25 collections and none of the four is among them.
+
+Narrowing the audit to the surviving four collections was rejected. The live serve path reads `signals`, `role_assignments`, `research_plans`, `researchers`, `accounts` and `org_units`, none of which the audit ever profiled, so a narrowed version would report green over a hot path it never exercised. A replacement must be written against the current read paths rather than carved out of this one.
+
+The Phase 0 exit condition below no longer requires query-cost evidence.
+
 
 ### Admin access-review projection
 
-The admin access-review list reads an environment-local projection instead of joining every access record before pagination.
-The projection stores only the parent `ResearchEntity` reference, bounded normalized word suffixes that preserve case-insensitive substring search, queue sort keys, aggregate record and unreviewed counts, official-application presence, and reconciliation fields.
-It never stores evidence excerpts, contact destinations, review notes, or other detail payloads.
-The list verifies projection readiness, filters and paginates the projection, and only then hydrates the selected parent rows.
-The existing detail route remains separate from the list projection and protected by the shared admin authentication and private `no-store` middleware.
-
-Canonical `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` service writes increment a per-entity generation in the same transaction and refresh only that generation afterward.
-A concurrent or failed refresh leaves the queue stale and unavailable until reconciliation.
-Run reconciliation after deployment, after any bulk migration that bypasses canonical services, and at least once every six hours while scraper or moderation writes are active.
-
-Reconciliation is dry-run-first.
-Its planning reads use one snapshot transaction so counts, current projections, and parent entities describe the same database state.
-Apply accepts only the exact plan fingerprint from a reviewed mode-`0600` artifact for the same environment and database.
-Production is not an allowed target.
-Run Development first, then Beta, then ProductionCopy from a clean current Beta worktree with the matching database URL injected locally.
-Do not run these commands on Render.
-
-```bash
-umask 077
-export MONGODBURL
-
-yarn --cwd server model-refactor:access-review-projection \
-  --environment=development \
-  --output=/tmp/ylabs-access-review-development-plan.json
-
-yarn --cwd server model-refactor:access-review-projection \
-  --environment=development \
-  --apply \
-  --apply-from=/tmp/ylabs-access-review-development-plan.json \
-  --confirm-admin-access-review-projection=development \
-  --output=/tmp/ylabs-access-review-development-apply.json
-
-unset MONGODBURL
-```
-
-Repeat with `--environment=beta` and a fresh Beta artifact while `MONGODBURL` points to Beta.
-Repeat with `--environment=production-copy` and a fresh ProductionCopy artifact only after its restore and rollback evidence have been accepted.
-Never reuse a reviewed artifact across environments or after drift.
-If apply reports drift or verification failure, leave the queue unavailable, stop writers, generate a fresh dry-run, and inspect the canonical records before retrying.
-Keep all artifacts private and never post their counts, identifiers, fingerprints, paths, hashes, or storage references to GitHub.
-
-The query-cost audit measures deployed MongoDB indexes and redacted `executionStats` for every representative query shape in the [Phase 0 hot-path audit](./research-model-refactor-phase0-hot-paths.md).
-It covers Research browse and detail, opportunity detail, account planning, and admin access review.
-It does not call HTTP routes, execute application writes, retain fixture identifiers, or replace the separate Meilisearch baseline.
-
-The runner uses a native MongoDB client with `secondaryPreferred` read preference, disables retryable writes, limits the pool to two connections, applies a `maxTimeMS` ceiling to every fixture and diagnostic query, and adds a `ylabs-phase0-hotpath:*` query comment.
-It rejects primary Production before connecting by requiring `development`, `beta`, or `production-copy` and verifies the connected database name again after connecting.
-Beta and ProductionCopy runs are accepted only through the hardened external inventory-profile contract documented above.
-The profile launcher accepts no arbitrary child command and fixes the per-query ceiling at 5 seconds.
-
-The private artifact contains credential-free index definitions, index fingerprints, fixture availability classes, and aggregate plan statistics.
-It retains plan stages, rejected-plan stages, index names, returned rows, elapsed time, keys and documents examined, amplification ratios, blocking sorts, disk use, spills, and lookup subplan summaries.
-It never retains IDs, names, slugs, netids, notes, contact details, evidence text, raw filters, raw pipelines, or raw explain output.
-Account fixtures are aggregate-selected as zero-save, bounded typical-save, and highest-observed-save representatives, with the highest observed row serving as the nearest available near-limit shape.
-Queries that depend on an empty fixture-ID set are omitted instead of measuring a synthetic empty `$in` shape.
-Their expected labels are recorded as `fixture-unavailable`, which makes strict evidence fail closed.
-Every output must be a new `.json` path under the system temporary directory or the invoking server working directory's `tmp/` directory.
-The writer uses mode `0600`, refuses symlink outputs, and refuses overwrite.
-
-Run Development from a clean Beta worktree with an explicitly injected Development database URL:
-
-```bash
-umask 077
-
-export YLABS_SKIP_LOCAL_DOTENV=true
-export MONGODBURL
-
-yarn model-refactor:query-cost \
-  --environment=development \
-  --max-time-ms=5000 \
-  --strict \
-  --output=/tmp/ylabs-phase0-query-cost-development.json
-```
-
-Run Beta with the same external mode-`0600` profile used by the inventory:
-
-```bash
-umask 077
-
-yarn model-refactor:query-cost:beta \
-  --profile-dir "$YLABS_INVENTORY_PROFILE_DIRECTORY" \
-  --output /tmp/ylabs-phase0-query-cost-beta.json
-```
-
-Run ProductionCopy only after the approved restore is available and its recovery evidence has been validated:
-
-```bash
-umask 077
-
-yarn model-refactor:query-cost:production-copy \
-  --profile-dir "$YLABS_INVENTORY_PROFILE_DIRECTORY" \
-  --output /tmp/ylabs-phase0-query-cost-production-copy.json
-```
-
-Unset `MONGODBURL` and `YLABS_SKIP_LOCAL_DOTENV` after the Development run.
-Do not attach any generated query-cost artifact to an issue or pull request.
-Preserve it only in the approved access-controlled evidence location alongside the matching inventory, source commit, and recovery manifest.
-
-Review every `collection-scan`, `blocking-sort`, `disk-spill`, `keys-amplification`, `documents-amplification`, measurement error, missing index collection, and unavailable fixture before Phase 0 closes.
-The default amplification threshold is 100 keys or documents examined per returned row.
-A zero-row plan is also flagged when it examines more than 100 keys or documents.
-`--strict` writes the artifact first and then exits nonzero whenever any finding, missing fixture, measurement error, index-collection gap, or uncovered query label requires review.
-An expected collection scan or blocking sort still needs a recorded owner and disposition instead of being silently accepted.
-Compare the same query label and index fingerprint across Development, Beta, and ProductionCopy, and investigate plan-stage or amplification drift before later model phases redirect readers.
+This subsystem has been retired, and the reconciliation procedure it documented no longer applies.
+`researchEntityWriteTransaction` replaced `mutateAndRefreshAdminAccessReviewProjection`, there is no `model-refactor:access-review-projection` command, and no projection model remains in `server/src/models`.
+The `admin_access_review_projections` and `admin_access_review_projection_state` collections hold zero rows in Development and are absent from Production.
+There is no six-hourly reconciliation to run and no projection readiness to verify.
+The subsection is kept as a Phase 0 record; `researchModelInventoryCore` still carries both collections in its census.
 
 ## Export and rollback prerequisites
 
@@ -515,5 +430,5 @@ The complete protected object versions and recovery procedures remain inside the
 
 ## Exit condition
 
-Phase 0 exits on reviewed Development, Beta, and ProductionCopy identity-collision evidence with accepted owners and dispositions for every nonzero class, reviewed Development, Beta, and ProductionCopy inventory, search-baseline, and MongoDB query-cost evidence, plus an ownership map of which phase owns each collection and field and verified rollback evidence.
+Phase 0 exits on reviewed Development, Beta, and ProductionCopy identity-collision evidence with accepted owners and dispositions for every nonzero class, reviewed Development, Beta, and ProductionCopy inventory and search-baseline evidence, plus an ownership map of which phase owns each collection and field and verified rollback evidence.
 The collection spec in `researchModelInventoryCore.ts` is the machine-readable form of that ownership map, and should be extended whenever the report surfaces an unclassified collection.

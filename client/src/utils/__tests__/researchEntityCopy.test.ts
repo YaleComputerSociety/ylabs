@@ -15,7 +15,10 @@ import {
   stripLeadingPageChrome,
   neutralizeFirstPersonResearchCopy,
   sanitizeResearchEntityCopy,
+  isKnownResearchEntityType,
+  researchEntityTypeFilterLabel,
 } from '../researchEntityCopy';
+import { researchEntityTypes } from '../../types/researchGroup';
 
 describe('researchEntityCopy', () => {
   it('uses faculty research labels for individual research entities', () => {
@@ -61,14 +64,58 @@ describe('researchEntityCopy', () => {
     ).toBe('Claudia Valeggia');
   });
 
-  it('prefers displayName and keeps natural lab titles for faculty research entities', () => {
+  it('keeps a natural lab title when the entity name corroborates the lab', () => {
+    expect(
+      researchEntityTitle({
+        displayName: 'Caccone Lab',
+        name: 'Caccone Lab',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe('Caccone Lab');
+    expect(
+      researchEntityTitle({
+        displayName: 'The PECIL Lab',
+        name: 'The PECIL Laboratory',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe('The PECIL Lab');
+  });
+
+  it('falls back to name when displayName grafts a lab the name does not claim', () => {
     expect(
       researchEntityTitle({
         displayName: 'Robert J. Schoelkopf Lab',
-        name: 'Robert J. Schoelkopf Faculty Research',
-        entityType: 'INDIVIDUAL_RESEARCH',
+        name: 'Robert Schoelkopf Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
       }),
-    ).toBe('Robert J. Schoelkopf Lab');
+    ).toBe('Robert Schoelkopf');
+    expect(
+      researchEntityTitle({
+        displayName: 'Yung-Chi Cheng Lab',
+        name: 'Yung-Chi Cheng Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe('Yung-Chi Cheng');
+  });
+
+  it('recovers the initial the grafted displayName dropped', () => {
+    expect(
+      researchEntityTitle({
+        displayName: 'I George Miller Lab',
+        name: 'I. George Miller Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe('I. George Miller');
+  });
+
+  it('leaves a grafted-looking lab displayName alone on a real lab entity', () => {
+    expect(
+      researchEntityTitle({
+        displayName: 'Steitz Lab',
+        name: 'Joan Steitz Research Group',
+        entityType: 'LAB',
+      }),
+    ).toBe('Steitz Lab');
   });
 
   it('leaves non-faculty research-home titles untouched', () => {
@@ -399,5 +446,33 @@ describe('relationshipTypeLabel', () => {
     expect(relationshipTypeLabel('WHATEVER')).toBe('');
     expect(relationshipTypeLabel(undefined)).toBe('');
     expect(relationshipTypeLabel(null)).toBe('');
+  });
+});
+
+// The browse Type axis filters both the facet option list and the `?type=` URL
+// value through this accept-list, so drift from the canonical enum shows up as a
+// silently smaller type universe rather than an error (#2195).
+describe('research entity type filter axis', () => {
+  it('accepts exactly the canonical entity-type enum', () => {
+    expect(researchEntityTypes.filter((value) => !isKnownResearchEntityType(value))).toEqual([]);
+  });
+
+  it('rejects a retired type, a typo, and an absent value', () => {
+    expect(isKnownResearchEntityType('FACULTY_RESEARCH')).toBe(false);
+    expect(isKnownResearchEntityType('INDIVIDUAL_RESEARCH')).toBe(false);
+    expect(isKnownResearchEntityType('CORE_FACILTY')).toBe(false);
+    expect(isKnownResearchEntityType('')).toBe(false);
+    expect(isKnownResearchEntityType(undefined)).toBe(false);
+    expect(isKnownResearchEntityType(null)).toBe(false);
+  });
+
+  it('gives every accepted type one distinct label', () => {
+    const labels = researchEntityTypes.map((value) => researchEntityTypeFilterLabel(value));
+    expect(labels.some((label) => label.trim() === '')).toBe(false);
+    expect(new Set(labels).size).toBe(researchEntityTypes.length);
+  });
+
+  it('falls back to the raw value rather than a generic label it cannot justify', () => {
+    expect(researchEntityTypeFilterLabel('SOMETHING_NEW')).toBe('SOMETHING_NEW');
   });
 });

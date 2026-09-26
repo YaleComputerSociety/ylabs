@@ -1,7 +1,7 @@
 /**
  * Dashboard page. Every signed-in account sees the same read view organized into
  * two surfaces:
- *   - Dashboard: the saved research homes an account is tracking (canonical
+ *   - Dashboard: the saved research an account is tracking (canonical
  *     ResearchPlan RESEARCH_ENTITY targets), with notes and the always-available
  *     next step of opening a home to find its official profile and reach out.
  *   - Program Watch: the programs and fellowships an account is watching
@@ -37,7 +37,6 @@ const Dashboard = () => {
     tabParam && SURFACES.includes(tabParam) ? tabParam : 'dashboard',
   );
   const [savedResearchCount, setSavedResearchCount] = useState(0);
-  const [savedOpenCount, setSavedOpenCount] = useState(0);
   const [programSummary, setProgramSummary] = useState<ProgramSummary>({ count: 0 });
   const tabRefs = useRef<Record<DashboardSurface, HTMLButtonElement | null>>({
     dashboard: null,
@@ -73,7 +72,7 @@ const Dashboard = () => {
   };
 
   const tabClass = (active: boolean): string =>
-    `inline-flex min-h-[44px] items-center px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+    `inline-flex min-h-[44px] items-center px-4 py-2 text-sm font-medium transition-colors yr-focus-ring ${
       active
         ? 'bg-[var(--yr-blue)] text-white'
         : 'bg-[var(--yr-panel)] text-slate-600 hover:bg-[var(--yr-panel-muted)]'
@@ -84,7 +83,6 @@ const Dashboard = () => {
       <div className="mx-auto max-w-[1300px] px-6 pt-6 pb-16">
         <PlanningOverview
           savedResearchCount={savedResearchCount}
-          savedOpenCount={savedOpenCount}
           savedFellowshipCount={programSummary.count}
           nextDeadlineLabel={programSummary.nextDeadlineLabel}
           watchedDeadlineApproachingCount={programSummary.approachingCount}
@@ -94,7 +92,7 @@ const Dashboard = () => {
 
         <div className="mb-6 flex justify-center">
           <div
-            className="yr-card inline-flex overflow-hidden rounded-md"
+            className="yr-card inline-flex overflow-hidden rounded-card"
             role="tablist"
             aria-label="Dashboard surfaces"
           >
@@ -140,10 +138,7 @@ const Dashboard = () => {
           tabIndex={0}
           className={surface === 'dashboard' ? '' : 'hidden'}
         >
-          <SavedResearchPlans
-            onCountChange={setSavedResearchCount}
-            onOpenCountChange={setSavedOpenCount}
-          />
+          <SavedResearchPlans onCountChange={setSavedResearchCount} />
         </div>
         <div
           id="dashboard-programs-panel"

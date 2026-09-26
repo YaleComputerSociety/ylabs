@@ -1,9 +1,20 @@
+import {
+  comparePersonProfileUrls,
+  isCrossSchoolDirectoryProfileUrl,
+  isIdentifierRecordUrl,
+  personProfileSourceRoleLabel,
+  rankPersonProfileUrls,
+  type PersonProfileRankingContext,
+} from './personProfileRanking';
 import { safeHttpUrl } from './url';
+import { isCorroboratedPersonPageUrl } from './yalePersonPagePrefix';
 
 interface DetailSourceGroup {
   name?: string;
   websiteUrl?: string;
   sourceUrls?: string[];
+  school?: string;
+  schools?: string[];
 }
 
 interface DetailSourceSignal {
@@ -27,25 +38,31 @@ export const isCitableAccessSignal = (signal: DetailSourceSignal): boolean => {
   return true;
 };
 
-interface DetailSourceUndergraduateLogistics {
-  claims?: Array<{
-    claimType?: string;
-    state?: string;
-    evidence?: { sourceUrl?: string };
-  }>;
-}
+/**
+ * The context every stored citation carried before per-field attribution was
+ * served: it says a source backs the profile without saying which part of it, so
+ * two profiles of one person read identically. Replaced per row wherever
+ * fieldProvenance names what that URL contributed.
+ */
+const GENERIC_PROFILE_SOURCE_CONTEXT = 'Profile source';
 
 export interface DetailSourceLinkHealth {
   url?: string;
   healthStatus?: string;
   httpStatusCode?: number;
+  privateAddressHost?: boolean;
+}
+
+export interface DetailSourceFieldContribution {
+  sourceUrl?: string;
+  contributions?: string[];
 }
 
 export interface BuildResearchDetailSourcesInput {
   group?: DetailSourceGroup | null;
   accessSignals?: DetailSourceSignal[];
-  undergraduateLogistics?: DetailSourceUndergraduateLogistics;
   sourceLinkHealth?: DetailSourceLinkHealth[];
+  sourceFieldContributions?: DetailSourceFieldContribution[];
 }
 
 export interface ResearchDetailSource {
@@ -55,17 +72,48 @@ export interface ResearchDetailSource {
   healthStatus?: string;
   httpStatusCode?: number;
   isLikelyUnavailable: boolean;
+  isPrivateNetworkOnly: boolean;
+  /**
+   * The row exists only because `sourceFieldContributions` named this URL as having
+   * supplied something a student reads. It is a citation for attribution and nothing
+   * more: the outreach slot and the profile resolver must not treat it as a page this
+   * research offers, because `sourceUrls` is what records that and this URL is absent
+   * from it (#3341).
+   */
+  isAttributionOnly?: boolean;
 }
 
+// Mirrors RESOURCE_GONE_HTTP_STATUS_CODES in server/src/services/sourceLinkHealth.ts;
+// changing the arms here requires updating that copy.
+const RESOURCE_GONE_HTTP_STATUS_CODES = new Set([404, 410]);
+
+/**
+ * Only a status that asserts the resource is gone hides a link. 401/403 are
+ * access control, 429 is throttling, and 5xx is an outage: none of them says the
+ * page stopped existing, and suppressing on them hid live citations whenever a
+ * WAF or a slow host answered the probe (#2473).
+ */
 export const isLikelyUnavailableSourceLink = (
   health: { healthStatus?: string; httpStatusCode?: number } | undefined,
 ): boolean => {
   if (!health) return false;
+  if (health.healthStatus === 'UNAVAILABLE') return true;
   return (
-    health.healthStatus === 'UNAVAILABLE' ||
-    (typeof health.httpStatusCode === 'number' && health.httpStatusCode >= 400)
+    typeof health.httpStatusCode === 'number' &&
+    RESOURCE_GONE_HTTP_STATUS_CODES.has(health.httpStatusCode)
   );
 };
+
+/**
+ * Mirrors `privateAddressHost` in server/src/services/sourceLinkHealth.ts. The
+ * host resolves only inside Yale's network, so a student off campus cannot open
+ * it however healthy the page is. Deliberately separate from
+ * `isLikelyUnavailableSourceLink`: the page is not gone, and saying so would be a
+ * different and false claim.
+ */
+export const isPrivateNetworkOnlySourceLink = (
+  health: { privateAddressHost?: boolean } | undefined,
+): boolean => health?.privateAddressHost === true;
 
 export const normalizeSourceUrl = (url?: string | null): string | null => {
   const safe = safeHttpUrl(url);
@@ -142,6 +190,34 @@ const DEPARTMENT_FACULTY_ROSTER_PATH = /^\/people\/faculty(?:-|\/|$)/i;
 
 const FACULTY_DIRECTORY_ROOT_PATH = /^\/research-and-faculty\/faculty-directory$/i;
 
+const ROSTER_COLLECTIVE_LEAF_TOKEN =
+  /^(?:faculty|faculties|staff|professor|professors|lecturer|lecturers|instructor|instructors|people|persons|humans|member|members|membership|fellow|fellows|affiliate|affiliates|associates|scholars|researchers|team|teams|directory|listing|roster|index|primary|emeriti|emeritus)$/i;
+
+const MAX_ROSTER_LEAF_TOKEN_COUNT = 5;
+
+const hasCollectiveToken = (segment: string): boolean =>
+  segment.split('-').some((token) => ROSTER_COLLECTIVE_LEAF_TOKEN.test(token));
+
+const hasFileExtension = (segment: string): boolean => /\.[a-z0-9]{2,5}$/.test(segment);
+
+/**
+ * Yale department sites name a whole-roster page with a collective noun that is
+ * routinely prefixed by the department or a rank - `/people/linguistics-faculty`,
+ * `/people/core-faculty`, `/people/ladder-faculty`, `/people/professors`,
+ * `/about/faculty-directory` - so the fixed `/people/faculty` shape above misses
+ * most of them and one shared roster ends up offered as every colleague's own
+ * profile. Person slugs are name-shaped and never carry a collective noun, so the
+ * leaf's token vocabulary separates the two; the token-count bound keeps long
+ * article slugs (`/news/professor-ian-ayres-aims-to-foster-...`) from reading as a
+ * roster. Mirrors `isSharedPeopleRosterUrl` on the server.
+ */
+const hasRosterCollectiveLeaf = (path: string): boolean => {
+  const segments = path.split('/').filter(Boolean);
+  const leaf = segments[segments.length - 1];
+  if (!leaf || hasFileExtension(leaf)) return false;
+  return leaf.split('-').length <= MAX_ROSTER_LEAF_TOKEN_COUNT && hasCollectiveToken(leaf);
+};
+
 const DIRECTORY_ROSTER_ROOT_PATH =
   /\/directory\/(?:faculty(?:-fellows|-directory|-and-staff|-staff|-affiliates)?|staff|people|members|fellows|affiliates)$/i;
 
@@ -157,6 +233,9 @@ export const isDirectoryRosterRootUrl = (url?: string | null): boolean => {
   }
 };
 
+// Mirrored by `isDepartmentRosterProvenanceUrl` in server/src/utils/researchHomeWebsiteUrl.ts,
+// which gates the server from clearing a cited link this predicate refuses to re-render;
+// changing the arms here requires updating that copy.
 export const isDepartmentRosterProvenanceUrl = (url?: string | null): boolean => {
   const normalized = normalizeSourceUrl(url);
   if (!normalized) return false;
@@ -170,7 +249,8 @@ export const isDepartmentRosterProvenanceUrl = (url?: string | null): boolean =>
     return (
       DIRECTORY_LOADER_SEGMENT_PATH.test(path) ||
       DEPARTMENT_FACULTY_ROSTER_PATH.test(path) ||
-      FACULTY_DIRECTORY_ROOT_PATH.test(path)
+      FACULTY_DIRECTORY_ROOT_PATH.test(path) ||
+      hasRosterCollectiveLeaf(path)
     );
   } catch {
     return false;
@@ -249,11 +329,51 @@ const PROFILE_LIKE_PATH = /(?:^|[/-])(?:profile|profiles|people|faculty)(?:[/-]|
 export const isProfileLikeSourceUrl = (url?: string | null): boolean =>
   PROFILE_LIKE_PATH.test(url || '');
 
+/**
+ * Whether the URL is a person's page, either because the path carries a profile
+ * token or because the citing host is recorded as publishing person pages under
+ * exactly this prefix.
+ *
+ * The token test alone misses whole hosts: several Yale sites put a person's own
+ * page under a prefix carrying none of `profile|profiles|people|faculty`, so the
+ * row cited the right page and the profile slot still stayed empty (#2912). The
+ * host-mapped arm needs the lead's name, because the largest affected group maps to
+ * the host root where the path asserts nothing.
+ */
+export const isPersonPageSourceUrl = (
+  url?: string | null,
+  leadPersonNames: readonly string[] = [],
+): boolean => isProfileLikeSourceUrl(url) || isCorroboratedPersonPageUrl(url, leadPersonNames);
+
 const OFFICIAL_PERSON_PROFILE_PATH =
   /\/(?:profile|profiles|bio|person|people|faculty)\/([a-z0-9][a-z0-9%._-]*)$/i;
 
 const NON_PERSON_PROFILE_LEAF =
   /^(?:faculty|staff|people|members|fellows|affiliates|directory|index|all|list|search)$/i;
+
+/**
+ * Leaves that name a page rather than a person, under the same people-ish prefix a person
+ * page sits under: `/people/joining-lab`, `/people/previous`, `/people/prospective`.
+ *
+ * `NON_PERSON_PROFILE_LEAF` is a shorter list than `ROSTER_COLLECTIVE_LEAF_TOKEN` and
+ * covers neither cohort words nor page words, so the flat arm keyed both of those shapes as
+ * a person's page: it inflated every count the citation-mirror audit reports, and it let the
+ * detail page's kind guard decide the lead card "already links a profile" when the card
+ * links a joining-instructions page, emptying the outreach slot for no reason (#3358, the
+ * inverse of the #3207 duplicate).
+ *
+ * Tested per hyphen-separated token, because these leaves are routinely qualified the way a
+ * roster leaf is (`previous-members`, `joining-the-lab`). A surname that collides with one of
+ * these words loses its mirror key, which costs a collapse rather than showing a student
+ * anything false.
+ */
+const NON_PERSON_PAGE_LEAF_TOKEN =
+  /^(?:joining|join|apply|application|prospective|previous|former|current|incoming|alumni|news|about|contact|overview|home|opportunities|openings|positions|vacancies|recruiting|rotation|rotations|admissions|visit|visiting)$/i;
+
+const namesAPageRatherThanAPerson = (leaf: string): boolean =>
+  NON_PERSON_PROFILE_LEAF.test(leaf) ||
+  hasCollectiveToken(leaf) ||
+  leaf.split('-').some((token) => NON_PERSON_PAGE_LEAF_TOKEN.test(token));
 
 export const isLikelyOfficialPersonProfileUrl = (url?: string | null): boolean => {
   const normalized = normalizeSourceUrl(url);
@@ -267,14 +387,61 @@ export const isLikelyOfficialPersonProfileUrl = (url?: string | null): boolean =
     const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
     if (!host.endsWith('yale.edu')) return false;
     const match = parsed.pathname.replace(/\/+$/, '').match(OFFICIAL_PERSON_PROFILE_PATH);
-    return Boolean(match) && !NON_PERSON_PROFILE_LEAF.test(match![1]);
+    return Boolean(match) && !namesAPageRatherThanAPerson(match![1]);
   } catch {
     return false;
   }
 };
 
 const PERSON_PROFILE_MIRROR_PATH =
-  /\/(profile|profiles|bio|person|people|faculty)\/([a-z0-9][a-z0-9%._-]*)$/i;
+  /\/(?:profile|profiles|bio|person|people|faculty)\/([a-z0-9][a-z0-9%._-]*)$/i;
+
+const PERSON_PAGE_ROOT_SEGMENT =
+  /^(?:people|persons|person|profile|profiles|bio|bios|faculty|directory|who-we-are|our-people|our-faculty)$/i;
+
+/**
+ * Yale department sites nest a person's own page under a rank-named cohort segment -
+ * `/people/professors-emeritus/<slug>`, `/who-we-are/faculty-officers/<slug>`,
+ * `/people/tenured-and-tenure-track-faculty-professors/<slug>` - and rename those
+ * segments over time, so one person accumulates citations under two or three of them.
+ *
+ * Both existing person-page tests miss the shape: `OFFICIAL_PERSON_PROFILE_PATH` needs
+ * the slug directly under the people-ish root, and `YALE_PERSON_PAGE_PREFIXES` records
+ * only each host's current prefix. So a renamed cohort variant read as neither a person
+ * page nor a mirror of one, and the outreach slot offered the same person's page the
+ * lead card already linked, one cohort segment over. The #2835 kind rule and the #2854
+ * mirror key were both already written to forbid exactly that.
+ *
+ * Every segment between the root and the leaf has to be a cohort noun, which is what
+ * keeps `/people/news/<slug>` and other non-person subtrees out, and the leaf itself
+ * has to be person-shaped rather than another roster.
+ */
+export const isRosterNestedPersonPageUrl = (url?: string | null): boolean => {
+  const parts = yaleHostPathSegments(url);
+  if (!parts || parts.segments.length < 3) return false;
+  const [root, ...rest] = parts.segments;
+  const leaf = rest[rest.length - 1];
+  if (!PERSON_PAGE_ROOT_SEGMENT.test(root)) return false;
+  if (!rest.slice(0, -1).every(hasCollectiveToken)) return false;
+  return !hasFileExtension(leaf) && !namesAPageRatherThanAPerson(leaf);
+};
+
+/**
+ * The person-slug leaf of a person page, flat or cohort-nested. Keyed without the
+ * profile-type segment so `/people/<slug>`, `/profile/<slug>` and
+ * `/people/<cohort>/<slug>` on one host collapse onto one destination: they are the
+ * same person's page under the paths a Drupal site publishes it at, and keeping the
+ * type apart let a second one take a slot the page already linked (#2854).
+ */
+const personPageLeaf = (normalizedUrl: string, path: string): string | null => {
+  const flat = path.match(PERSON_PROFILE_MIRROR_PATH);
+  if (flat) {
+    const slug = flat[1].toLowerCase();
+    return namesAPageRatherThanAPerson(slug) ? null : slug;
+  }
+  if (!isRosterNestedPersonPageUrl(normalizedUrl)) return null;
+  return path.split('/').filter(Boolean).pop()!.toLowerCase();
+};
 
 export const officialProfileMirrorKey = (url?: string | null): string | null => {
   const normalized = normalizeSourceUrl(url);
@@ -287,12 +454,8 @@ export const officialProfileMirrorKey = (url?: string | null): string | null => 
     const parsed = new URL(normalized);
     const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
     if (!host.endsWith('yale.edu')) return null;
-    const match = parsed.pathname.replace(/\/+$/, '').match(PERSON_PROFILE_MIRROR_PATH);
-    if (!match) return null;
-    const profileType = match[1].toLowerCase();
-    const slug = match[2].toLowerCase();
-    if (NON_PERSON_PROFILE_LEAF.test(slug)) return null;
-    return `${host} ${profileType} ${slug}`;
+    const leaf = personPageLeaf(normalized, parsed.pathname.replace(/\/+$/, ''));
+    return leaf ? `${host}\u0000${leaf}` : null;
   } catch {
     return null;
   }
@@ -300,6 +463,14 @@ export const officialProfileMirrorKey = (url?: string | null): string | null => 
 
 const sourceDedupeKey = (url?: string | null): string | null =>
   officialProfileMirrorKey(url) || sourceLedgerKey(url);
+
+const actionDedupeKey = (url?: string | null): string | null =>
+  officialProfileMirrorKey(url) || normalizeActionDestination(url);
+
+export const isSameActionDestination = (first?: string | null, second?: string | null): boolean => {
+  const firstKey = actionDedupeKey(first);
+  return Boolean(firstKey) && firstKey === actionDedupeKey(second);
+};
 
 const pathSegmentCount = (url: string): number => {
   try {
@@ -332,6 +503,278 @@ export const isOrgEngagementSourceUrl = (url?: string | null): boolean => {
   }
 };
 
+// Mirrors `PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES` in
+// server/src/utils/researchHomeWebsiteUrl.ts, including the two retired types that
+// persist on rows `research-entity:consolidate-faculty-type` has not reached;
+// changing the arms there requires updating this copy.
+const PERSON_SCOPED_CITING_ENTITY_TYPES = new Set([
+  'LAB',
+  'FACULTY_RESEARCH_AREA',
+  'FACULTY_RESEARCH',
+  'INDIVIDUAL_RESEARCH',
+  'FACULTY_PROJECT',
+]);
+
+// The sets below mirror `RESEARCH_GROUP_HOST_ROOTS`, `isDepartmentAudiencePageUrl`,
+// `isDepartmentHiringPageUrl` and `isDepartmentProgrammePageUrl` in
+// server/src/utils/researchHomeWebsiteUrl.ts, which refuse the same pages as a stored
+// `websiteUrl`. The hiring arm is pinned by `contracts/departmentHiringPage.cases.json`,
+// which both suites read, because this comment is what the other arms have and it did
+// not stop the server arm shipping alone while this copy went on promoting the same URL
+// as the headline action one button over (#3333).
+const RESEARCH_GROUP_HOST_ROOTS = new Set(['het.yale.edu']);
+
+const BARE_INDEX_FILE_PATH = /^\/index\.(?:php|html?|aspx|cgi)$/i;
+
+const RESEARCH_GROUP_HOST_LABEL_TOKEN = /(?:lab|labs|group|project)/i;
+
+const DEPARTMENT_AUDIENCE_SCOPE_SEGMENT =
+  /^(?:diversity|undergraduate|undergrad|graduate|academics|admissions|prospective(?:-students)?)$/i;
+
+const DEPARTMENT_AUDIENCE_SUBJECT_SEGMENT =
+  /^(?:(?:employment|jobs?|hiring|research|training|internship)-)?opportunit(?:y|ies)(?:-(?:undergraduates?|graduates?|students?))?$|^(?:employment|jobs?|hiring)$/i;
+
+const DEPARTMENT_HIRING_SUBJECT_SEGMENT =
+  /^(?:jobs?|job-openings?|open-positions?|employment|careers?|hiring|vacancies|recruitment|work-with-us)$/i;
+
+const SCOPED_RESEARCH_PROGRAMME_SEGMENT =
+  /^(?:(?:undergraduate|undergrad|graduate)-research(?:-opportunit(?:y|ies))?|(?:training|research|educational)-opportunit(?:y|ies))$/i;
+
+const PROGRAMME_SCOPE_SEGMENT = /^(?:undergraduate|undergrad|graduate|academics|admissions)/i;
+
+const PROGRAMME_SUBJECT_SEGMENT =
+  /^(?:(?:undergraduate-|undergrad-|graduate-)?research(?:-opportunit(?:y|ies))?|thesis|senior-thesis|advising|courses|curriculum|programs?|study|opportunities)$/i;
+
+const yaleHostPathSegments = (
+  url?: string | null,
+): { host: string; segments: string[] } | undefined => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return undefined;
+
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    if (!/(^|\.)yale\.edu$/i.test(host)) return undefined;
+    return { host, segments: parsed.pathname.toLowerCase().split('/').filter(Boolean) };
+  } catch {
+    return undefined;
+  }
+};
+
+const isResearchGroupHostRootUrl = (url?: string | null): boolean => {
+  const parts = yaleHostPathSegments(url);
+  if (!parts || !RESEARCH_GROUP_HOST_ROOTS.has(parts.host)) return false;
+  if (parts.segments.length === 0) return true;
+  return parts.segments.length === 1 && BARE_INDEX_FILE_PATH.test(`/${parts.segments[0]}`);
+};
+
+const isDepartmentAudiencePageUrl = (url?: string | null): boolean => {
+  const parts = yaleHostPathSegments(url);
+  if (!parts) return false;
+  if (RESEARCH_GROUP_HOST_LABEL_TOKEN.test(parts.host.split('.')[0])) return false;
+  const scopeAt = parts.segments.findIndex((segment) =>
+    DEPARTMENT_AUDIENCE_SCOPE_SEGMENT.test(segment),
+  );
+  if (scopeAt < 0) return false;
+  return parts.segments
+    .slice(scopeAt + 1)
+    .some((segment) => DEPARTMENT_AUDIENCE_SUBJECT_SEGMENT.test(segment));
+};
+
+/**
+ * A department's hiring page: the staff and postdoc openings page a department
+ * publishes about itself. It answers "how do I get hired here", never "what does this
+ * research study", so it is the wrong destination for a person-scoped row's headline
+ * outreach action even though it is real provenance for the department (#3333).
+ *
+ * Separate from `isDepartmentAudiencePageUrl` because that arm anchors on an audience
+ * scope segment and a department HR page sits under `/about/` instead. The exemption
+ * reads host AND path: a lab's own openings page can live under a `/lab/<name>/`
+ * prefix on a shared school host, and refusing it would drop a link the lab owns.
+ */
+const isDepartmentHiringPageUrl = (url?: string | null): boolean => {
+  const parts = yaleHostPathSegments(url);
+  if (!parts) return false;
+  if (RESEARCH_GROUP_HOST_LABEL_TOKEN.test(`${parts.host}/${parts.segments.join('/')}`)) {
+    return false;
+  }
+  return parts.segments.some((segment) => DEPARTMENT_HIRING_SUBJECT_SEGMENT.test(segment));
+};
+
+const isDepartmentProgrammePageUrl = (url?: string | null): boolean => {
+  const parts = yaleHostPathSegments(url);
+  if (!parts || parts.segments.length < 2) return false;
+  if (parts.segments.some((segment) => SCOPED_RESEARCH_PROGRAMME_SEGMENT.test(segment)))
+    return true;
+  const scopeAt = parts.segments.findIndex((segment) => PROGRAMME_SCOPE_SEGMENT.test(segment));
+  if (scopeAt < 0) return false;
+  return parts.segments
+    .slice(scopeAt + 1)
+    .some((segment) => PROGRAMME_SUBJECT_SEGMENT.test(segment));
+};
+
+/**
+ * Whether this citation is a collective's page - a research group's own root, a
+ * department's audience-recruitment page, or a departmental programme page - held by
+ * a row that is one person's research. The server already refuses to serve such a URL
+ * as that row's `websiteUrl` (#2579); the citation itself stays, because it is real
+ * provenance for a person who appears on the page.
+ */
+export const isUmbrellaPageCitedByPersonUrl = (
+  url?: string | null,
+  entityType?: string,
+): boolean => {
+  if (!PERSON_SCOPED_CITING_ENTITY_TYPES.has((entityType || '').toUpperCase())) return false;
+  return (
+    isResearchGroupHostRootUrl(url) ||
+    isDepartmentAudiencePageUrl(url) ||
+    isDepartmentHiringPageUrl(url) ||
+    isDepartmentProgrammePageUrl(url)
+  );
+};
+
+/**
+ * The client half of the press and news host category. The server half in
+ * `server/src/utils/researchHomeWebsiteUrl.ts` refuses the same hosts as a stored
+ * `websiteUrl`; this copy refuses them as the detail page's headline outreach action.
+ *
+ * Parity is pinned by `contracts/pressAndNewsHosts.cases.json`, which both suites
+ * read, rather than by a comment asking the next author to update the other copy.
+ * That comment is what the two lists had, and they drifted by six entries inside the
+ * pull request that introduced them. Add a host to the contract, never to one side
+ * alone.
+ */
+export const PRESS_AND_NEWS_HOSTS: readonly string[] = [
+  'abcnews.go.com',
+  'apnews.com',
+  'axios.com',
+  'bbc.co.uk',
+  'bbc.com',
+  'bloomberg.com',
+  'bostonglobe.com',
+  'businessinsider.com',
+  'c-span.org',
+  'cbsnews.com',
+  'cnbc.com',
+  'cnn.com',
+  'courant.com',
+  'ctinsider.com',
+  'ctmirror.org',
+  'ctpost.com',
+  'dailymail.co.uk',
+  'economist.com',
+  'forbes.com',
+  'foxnews.com',
+  'ft.com',
+  'huffpost.com',
+  'independent.co.uk',
+  'insidehighered.com',
+  'latimes.com',
+  'marketwatch.com',
+  'medscape.com',
+  'msnbc.com',
+  'nbcnews.com',
+  'newhavenindependent.org',
+  'news.yale.edu',
+  'newsweek.com',
+  'newyorker.com',
+  'nhregister.com',
+  'npr.org',
+  'nypost.com',
+  'nytimes.com',
+  'pbs.org',
+  'politico.com',
+  'propublica.org',
+  'reuters.com',
+  'salon.com',
+  'scientificamerican.com',
+  'slate.com',
+  'statnews.com',
+  'theatlantic.com',
+  'theconversation.com',
+  'theguardian.com',
+  'thehill.com',
+  'time.com',
+  'usatoday.com',
+  'vox.com',
+  'washingtonpost.com',
+  'wired.com',
+  'wsj.com',
+  'yalealumnimagazine.com',
+  'yaledailynews.com',
+];
+
+/**
+ * A media mention is real provenance, so it keeps its citation row; what it can never
+ * be is a headline action claiming to open this research's own page (#2532). The server
+ * refuses the same hosts as a stored `websiteUrl`, but a row whose only evidence is the
+ * article falls through to this slot once the repair clears that field, which put a
+ * dated news article behind "Open the official page".
+ */
+export const isPressOrNewsSourceUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    const host = new URL(normalized).hostname.toLowerCase().replace(/\.$/, '');
+    return PRESS_AND_NEWS_HOSTS.some((press) => host === press || host.endsWith(`.${press}`));
+  } catch {
+    return false;
+  }
+};
+
+const MAP_AND_DIRECTIONS_HOSTS: readonly string[] = [
+  'google.com/maps',
+  'maps.google.com',
+  'maps.apple.com',
+  'bing.com/maps',
+  'openstreetmap.org',
+  'waze.com',
+  'goo.gl/maps',
+  'maps.app.goo.gl',
+];
+
+const DIRECTIONS_QUERY_PARAMS: readonly string[] = ['directionsmode', 'daddr', 'saddr'];
+
+const INSTITUTIONAL_PUBLICITY_PAGE_PATH = /\/(?:news-article|media-player)\//i;
+
+/**
+ * A map pin, a driving-directions link, or a school's own news-article or media-player
+ * page. Mirrored by `isMapOrDirectionsUrl` and `isInstitutionalPublicityPageUrl` in
+ * server/src/utils/researchHomeWebsiteUrl.ts, which refuse the same destination as a
+ * stored `websiteUrl`; parity is pinned by `contracts/mapAndPublicityDestinations.cases.json`,
+ * which both suites read (#3184).
+ *
+ * The client copy is not redundant: once the server clears such a `websiteUrl`, a row
+ * whose only remaining evidence is that destination falls through to this slot, which
+ * would restate one button over the claim the clear had just removed.
+ */
+export const isMapOrPublicityPageSourceUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    const parsed = new URL(normalized);
+    if (INSTITUTIONAL_PUBLICITY_PAGE_PATH.test(parsed.pathname)) return true;
+    const host = parsed.hostname
+      .toLowerCase()
+      .replace(/^www\./, '')
+      .replace(/\.$/, '');
+    const hostPath = `${host}${parsed.pathname.replace(/\/+$/, '')}`;
+    if (
+      MAP_AND_DIRECTIONS_HOSTS.some(
+        (maps) => host === maps || hostPath === maps || hostPath.startsWith(`${maps}/`),
+      )
+    ) {
+      return true;
+    }
+    const params = [...parsed.searchParams.keys()].map((key) => key.toLowerCase());
+    return DIRECTIONS_QUERY_PARAMS.some((param) => params.includes(param));
+  } catch {
+    return false;
+  }
+};
+
 const ORG_UMBRELLA_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE']);
 
 export const resolveOutreachOfficialSource = (
@@ -339,18 +782,70 @@ export const resolveOutreachOfficialSource = (
   claimedActionUrls: Array<string | undefined>,
   leadIdentityUnderReview: boolean,
   entityType?: string,
+  rankingContext: PersonProfileRankingContext = {},
+  leadPersonNames: readonly string[] = [],
 ): ResearchDetailSource | undefined => {
+  /**
+   * `actionDedupeKey` rather than `normalizeActionDestination`: the latter compares
+   * host plus path, so `/bbs/profile/<slug>` and `/profile/<slug>` on one host read
+   * as two destinations and the second takes a slot the page already links. The
+   * mirror key collapses them, and `isSameActionDestination` already answers this
+   * exact question elsewhere, so the slot was the only caller using the weaker key
+   * (#2854).
+   */
   const claimedDestinations = new Set(
-    claimedActionUrls.map((url) => normalizeActionDestination(url)).filter(Boolean),
+    claimedActionUrls.map((url) => actionDedupeKey(url)).filter(Boolean),
+  );
+  const claimsAPersonProfile = claimedActionUrls.some(
+    (url) =>
+      url &&
+      (isLikelyOfficialPersonProfileUrl(url) ||
+        isCorroboratedPersonPageUrl(url, leadPersonNames) ||
+        isRosterNestedPersonPageUrl(url)),
   );
 
   const eligible = sources.filter((source) => {
+    /**
+     * An attribution-only row is in the list because a contribution named it, not because
+     * `sourceUrls` records it as a page this research offers. Promoting one here would turn
+     * a provenance record into a headline offer, which is the claim this slot makes and the
+     * one #3341 deliberately did not widen.
+     */
+    if (source.isAttributionOnly) return false;
     if (source.isLikelyUnavailable) return false;
+    if (source.isPrivateNetworkOnly) return false;
     if (!safeHttpUrl(source.url)) return false;
     if (isIdentifierOrGrantDbSourceUrl(source.url)) return false;
     if (isNonContactableDocumentSourceUrl(source.url)) return false;
-    if (leadIdentityUnderReview && isProfileLikeSourceUrl(source.url)) return false;
-    const destination = normalizeActionDestination(source.url);
+    if (leadIdentityUnderReview && isPersonPageSourceUrl(source.url, leadPersonNames)) return false;
+    /**
+     * The headline action makes the same claim the suppressed `websiteUrl` made: that
+     * the page it opens is this research's own. For a person-scoped row a collective's
+     * page is the wrong kind of thing for the slot, so hiding it from `websiteUrl`
+     * while promoting it here would restate the claim one button over (#2579). The row
+     * falls through to the directory-search copy, which is true, and the citation is
+     * still listed as provenance below.
+     */
+    if (isUmbrellaPageCitedByPersonUrl(source.url, entityType)) return false;
+    if (isPressOrNewsSourceUrl(source.url)) return false;
+    if (isMapOrPublicityPageSourceUrl(source.url)) return false;
+    /**
+     * This slot means "this research's own website". Once the page links a person's
+     * profile, another profile is the wrong KIND of thing for it, not merely a
+     * worse-ranked one, so no dedupe key can rescue the cases the key cannot
+     * collapse: the same person under two path types on one host, or on two hosts
+     * entirely, which is the genuine joint-appointment case. Empty beats a second
+     * door to a room the card already opens (#2835, #2854).
+     */
+    if (
+      claimsAPersonProfile &&
+      (isLikelyOfficialPersonProfileUrl(source.url) ||
+        isCorroboratedPersonPageUrl(source.url, leadPersonNames) ||
+        isRosterNestedPersonPageUrl(source.url) ||
+        isCrossSchoolDirectoryProfileUrl(source.url, rankingContext.schools))
+    )
+      return false;
+    const destination = actionDedupeKey(source.url);
     return Boolean(destination) && !claimedDestinations.has(destination);
   });
 
@@ -374,18 +869,42 @@ interface DecisionProfileGroup {
   websiteUrl?: string;
   website?: string;
   sourceUrls?: unknown;
+  school?: string;
+  schools?: unknown;
 }
+
+const entityRankingContext = (
+  group?: { school?: string; schools?: unknown } | null,
+): PersonProfileRankingContext => ({
+  schools: [group?.school, ...(Array.isArray(group?.schools) ? group.schools : [])].filter(
+    (school): school is string => typeof school === 'string',
+  ),
+});
 
 export const resolveDecisionProfileUrl = (
   fallbackSourceUrl: string | undefined,
   group?: DecisionProfileGroup | null,
   corroboratedLeadProfileUrl?: string,
+  leadPersonNames: readonly string[] = [],
 ): string | undefined => {
   if (group?.leadIdentityStatus === 'under_review') return undefined;
 
+  /**
+   * A press article carrying a profile path token ranks like a profile, so the slot has
+   * to refuse the host rather than trust the shape (#2532). Gating the corroborated URL
+   * here and the candidates in `eligibleUrlsAdmittedBy` keeps the refusal at the one
+   * boundary every arm of this resolver passes through, so a media mention can never be
+   * the headline action no matter which arm proposed it.
+   */
+  const corroboratedProfileUrl =
+    isPressOrNewsSourceUrl(corroboratedLeadProfileUrl) ||
+    isMapOrPublicityPageSourceUrl(corroboratedLeadProfileUrl)
+      ? undefined
+      : corroboratedLeadProfileUrl;
+
   const labWebsiteDestinations = new Set(
     [group?.websiteUrl, group?.website]
-      .filter((url) => url && !isProfileLikeSourceUrl(url))
+      .filter((url) => url && !isPersonPageSourceUrl(url, leadPersonNames))
       .map((url) => normalizeActionDestination(url))
       .filter(Boolean),
   );
@@ -399,20 +918,44 @@ export const resolveDecisionProfileUrl = (
       .map((url) => normalizeActionDestination(url))
       .filter(Boolean),
   );
-  const corroboratedDestination = normalizeActionDestination(corroboratedLeadProfileUrl);
+  const corroboratedDestination = normalizeActionDestination(corroboratedProfileUrl);
   if (corroboratedDestination && entitySourceDestinations.has(corroboratedDestination)) {
-    return corroboratedLeadProfileUrl;
+    return corroboratedProfileUrl;
   }
 
-  for (const url of candidateUrls) {
-    if (typeof url !== 'string') continue;
-    if (!isProfileLikeSourceUrl(url) || isDepartmentRosterProvenanceUrl(url)) continue;
-    if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) continue;
-    const destination = normalizeActionDestination(url);
-    if (!destination || labWebsiteDestinations.has(destination)) continue;
-    return normalizeSourceUrl(url) || corroboratedLeadProfileUrl;
+  const eligibleUrlsAdmittedBy = (admits: (url: string) => boolean): string[] =>
+    candidateUrls.filter((url): url is string => {
+      if (typeof url !== 'string') return false;
+      if (!admits(url)) return false;
+      if (isPressOrNewsSourceUrl(url)) return false;
+      if (isMapOrPublicityPageSourceUrl(url)) return false;
+      if (isDepartmentRosterProvenanceUrl(url)) return false;
+      if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) return false;
+      const destination = normalizeActionDestination(url);
+      return Boolean(destination) && !labWebsiteDestinations.has(destination);
+    });
+
+  const bestOf = (urls: string[]): string | undefined =>
+    rankPersonProfileUrls(urls, entityRankingContext(group))[0];
+
+  const bestTokenProfileUrl = bestOf(eligibleUrlsAdmittedBy(isProfileLikeSourceUrl));
+  if (bestTokenProfileUrl) {
+    return normalizeSourceUrl(bestTokenProfileUrl) || corroboratedProfileUrl;
   }
-  return corroboratedLeadProfileUrl;
+  if (corroboratedProfileUrl) return corroboratedProfileUrl;
+
+  /**
+   * Strictly last, so this arm can only fill a slot the other two left empty and can
+   * never change a link the page already had. A root-mapped host is where personal
+   * sites live, and letting one compete displaced a department's own `/profile/` page
+   * on two rows and the lead's own recorded official profile on two more, all four of
+   * which the product model ranks ahead of a personal academic page.
+   */
+  const bestHostMappedPersonPageUrl = bestOf(
+    eligibleUrlsAdmittedBy((url) => isCorroboratedPersonPageUrl(url, leadPersonNames)),
+  );
+  if (!bestHostMappedPersonPageUrl) return undefined;
+  return normalizeSourceUrl(bestHostMappedPersonPageUrl) || undefined;
 };
 
 export const prefersOrgEngagementOutreach = (
@@ -489,6 +1032,30 @@ export const isUnavailableResearchWebsiteCtaUrl = (
   return isLikelyUnavailableSourceLink(health);
 };
 
+export const isPrivateNetworkOnlyResearchWebsiteCtaUrl = (
+  url: string | null | undefined,
+  sourceLinkHealth: DetailSourceLinkHealth[] = [],
+): boolean => {
+  const key = sourceLedgerKey(url);
+  if (!key) return false;
+  return isPrivateNetworkOnlySourceLink(
+    sourceLinkHealth.find((entry) => sourceLedgerKey(entry.url) === key),
+  );
+};
+
+/**
+ * Whether the research-website CTA must not offer this URL as an ordinary link,
+ * because the student it is offered to cannot open it: the page is known gone, or
+ * its host is reachable only from inside Yale's network (#2556). The citation
+ * itself survives in the Sources list, qualified, because it is real provenance.
+ */
+export const isUnreachableResearchWebsiteCtaUrl = (
+  url: string | null | undefined,
+  sourceLinkHealth: DetailSourceLinkHealth[] = [],
+): boolean =>
+  isUnavailableResearchWebsiteCtaUrl(url, sourceLinkHealth) ||
+  isPrivateNetworkOnlyResearchWebsiteCtaUrl(url, sourceLinkHealth);
+
 const titleFromPath = (path: string): string => {
   const parts = path.split('/').filter(Boolean);
   const rawLeaf = parts[parts.length - 1];
@@ -521,14 +1088,84 @@ export const sourceLabelForUrl = (url: string): string => {
   }
 };
 
+/**
+ * A source row the profile ranking may reorder and name by role: a person profile
+ * or an identifier record, never a lab page or an evidence citation, whose label
+ * still has to describe the page a student is about to open.
+ */
+const isRankableProfileSource = (url: string): boolean =>
+  isProfileLikeSourceUrl(url) || isIdentifierRecordUrl(url);
+
+const personProfileRoleLabelForSource = (url: string): string | undefined =>
+  isRankableProfileSource(url) ? personProfileSourceRoleLabel(url) : undefined;
+
+/**
+ * Reorder the profile rows among themselves while every other row, and the
+ * unavailable-last grouping, stays exactly where the caller put it. Ranking the
+ * whole list instead would let an evidence citation or a dead link change place.
+ */
+const withPersonProfilesRanked = <T extends { url: string; isLikelyUnavailable: boolean }>(
+  sources: T[],
+  context: PersonProfileRankingContext,
+): T[] => {
+  const ranked = [...sources];
+  [false, true].forEach((unavailable) => {
+    const positions = ranked
+      .map((source, index) => ({ source, index }))
+      .filter(
+        ({ source }) =>
+          source.isLikelyUnavailable === unavailable && isRankableProfileSource(source.url),
+      );
+    const ordered = positions
+      .map(({ source }) => source)
+      .sort((left, right) => comparePersonProfileUrls(left.url, right.url, context));
+    positions.forEach(({ index }, position) => {
+      ranked[index] = ordered[position];
+    });
+  });
+  return ranked;
+};
+
+/**
+ * The first row that is a citation in its own right. The detail page feeds this to
+ * `resolveDecisionProfileUrl` as its fallback, so an attribution-only row reaching it would
+ * change which profile the lead card links on the strength of a provenance record.
+ */
+export const firstCitedResearchDetailSource = (
+  sources: ResearchDetailSource[],
+): ResearchDetailSource | undefined => sources.find((source) => !source.isAttributionOnly);
+
 export const buildResearchDetailSources = ({
   group,
   accessSignals = [],
-  undergraduateLogistics,
   sourceLinkHealth = [],
+  sourceFieldContributions = [],
 }: BuildResearchDetailSourcesInput): ResearchDetailSource[] => {
   const sources = new Map<string, ResearchDetailSource>();
-  const healthByLedgerKey = new Map<string, { healthStatus?: string; httpStatusCode?: number }>();
+  /**
+   * Keyed by `sourceDedupeKey`, the same key the rows themselves are keyed by, rather than by
+   * the exact URL.
+   *
+   * A contribution routinely names one section prefix of a person's page while the citation
+   * carries another. Under an exact key the labels matched no row: the mirror key collapsed the
+   * contribution's URL onto the cited row, so no new row was made for it, and the cited row's
+   * own lookup missed because the two spellings have different exact keys. 70 rows lost their
+   * Research summary, Topics or Methods attribution that way even after #3341 gave every other
+   * uncited contributor a row.
+   */
+  const contributionsByDedupeKey = new Map<string, string[]>();
+
+  sourceFieldContributions.forEach((entry) => {
+    const key = sourceDedupeKey(normalizeSourceUrl(entry.sourceUrl));
+    const labels = (entry.contributions || []).filter(
+      (label): label is string => typeof label === 'string' && label.trim().length > 0,
+    );
+    if (!key || labels.length === 0) return;
+    const existing = contributionsByDedupeKey.get(key);
+    if (existing) labels.forEach((label) => existing.includes(label) || existing.push(label));
+    else contributionsByDedupeKey.set(key, [...labels]);
+  });
+  const healthByLedgerKey = new Map<string, DetailSourceLinkHealth>();
 
   sourceLinkHealth.forEach((entry) => {
     const key = sourceLedgerKey(entry.url);
@@ -536,10 +1173,17 @@ export const buildResearchDetailSources = ({
     healthByLedgerKey.set(key, {
       healthStatus: entry.healthStatus,
       httpStatusCode: entry.httpStatusCode,
+      privateAddressHost: entry.privateAddressHost,
     });
   });
 
-  const addSource = (url: string | undefined, context: string) => {
+  const contextsFor = (normalizedUrl: string, context: string): string[] => {
+    if (context !== GENERIC_PROFILE_SOURCE_CONTEXT) return [context];
+    const contributed = contributionsByDedupeKey.get(sourceDedupeKey(normalizedUrl) || '');
+    return contributed && contributed.length ? contributed : [context];
+  };
+
+  const addSource = (url: string | undefined, context: string, attributionOnly = false) => {
     const normalized = normalizeSourceUrl(url);
     if (!normalized) return;
     if (isDepartmentRosterProvenanceUrl(normalized)) return;
@@ -552,8 +1196,18 @@ export const buildResearchDetailSources = ({
     if (!key) return;
 
     const existing = sources.get(key);
+    /**
+     * A contribution only ever creates a row. It never edits one an earlier pass made,
+     * because a `Profile website` or evidence row already states what it is and the repo
+     * deliberately does not append contribution labels to those.
+     */
+    if (existing && attributionOnly) return;
+
+    const contexts = contextsFor(normalized, context);
     if (existing) {
-      if (!existing.contexts.includes(context)) existing.contexts.push(context);
+      contexts.forEach((entry) => {
+        if (!existing.contexts.includes(entry)) existing.contexts.push(entry);
+      });
       if (isMoreCanonicalSourceUrl(normalized, existing.url)) {
         existing.url = normalized;
       }
@@ -562,29 +1216,51 @@ export const buildResearchDetailSources = ({
 
     sources.set(key, {
       url: normalized,
-      label: context === 'Profile website' ? 'Research website' : sourceLabelForUrl(normalized),
-      contexts: [context],
+      label:
+        context === 'Profile website'
+          ? 'Research website'
+          : personProfileRoleLabelForSource(normalized) || sourceLabelForUrl(normalized),
+      contexts,
       isLikelyUnavailable: false,
+      isPrivateNetworkOnly: false,
+      ...(attributionOnly ? { isAttributionOnly: true } : {}),
     });
   };
 
   addSource(group?.websiteUrl, 'Profile website');
-  group?.sourceUrls?.forEach((url) => addSource(url, 'Profile source'));
+  group?.sourceUrls?.forEach((url) => addSource(url, GENERIC_PROFILE_SOURCE_CONTEXT));
 
   accessSignals.forEach((signal) => {
     if (!isCitableAccessSignal(signal)) return;
     addSource(signal.sourceUrl, `${labelizeResearchDetailValue(signal.signalType)} evidence`);
   });
 
-  undergraduateLogistics?.claims?.forEach((claim) => {
-    if (claim.state !== 'known') return;
-    addSource(
-      claim.evidence?.sourceUrl,
-      `${labelizeResearchDetailValue(claim.claimType)} logistics evidence`,
+  /**
+   * Last, and only for a URL no earlier pass produced a row for.
+   *
+   * The server computes `sourceFieldContributions` from `fieldProvenance` and serves it, but
+   * the list above is built from `websiteUrl`, `sourceUrls` and access signals alone, so a
+   * contribution naming anything else had no row to attach to and was dropped at render. 527
+   * of 3,376 student_ready rows lost 582 contributions that way, and the labels lost are the
+   * ones that matter most: the research summary, the topics and the methods a student reads
+   * (#3341). `servedCitationPolicy` already treats `sourceFieldContributions` as a served
+   * citation record, so the row is owed one.
+   */
+  sourceFieldContributions.forEach((entry) => {
+    const labels = (entry.contributions || []).filter(
+      (label): label is string => typeof label === 'string' && label.trim().length > 0,
     );
+    if (labels.length === 0) return;
+    addSource(entry.sourceUrl, labels[0], true);
+    const key = sourceDedupeKey(normalizeSourceUrl(entry.sourceUrl));
+    const created = key ? sources.get(key) : undefined;
+    if (!created?.isAttributionOnly) return;
+    labels.slice(1).forEach((label) => {
+      if (!created.contexts.includes(label)) created.contexts.push(label);
+    });
   });
 
-  return Array.from(sources.values())
+  const withHealth = Array.from(sources.values())
     .map((source) => {
       const health = healthByLedgerKey.get(sourceLedgerKey(source.url) || '');
       return {
@@ -594,7 +1270,14 @@ export const buildResearchDetailSources = ({
           ? { httpStatusCode: health.httpStatusCode }
           : {}),
         isLikelyUnavailable: isLikelyUnavailableSourceLink(health),
+        isPrivateNetworkOnly: isPrivateNetworkOnlySourceLink(health),
       };
     })
-    .sort((left, right) => Number(left.isLikelyUnavailable) - Number(right.isLikelyUnavailable));
+    .sort(
+      (left, right) =>
+        Number(left.isLikelyUnavailable || left.isPrivateNetworkOnly) -
+        Number(right.isLikelyUnavailable || right.isPrivateNetworkOnly),
+    );
+
+  return withPersonProfilesRanked(withHealth, entityRankingContext(group));
 };

@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   FRA_PROFILE_SYNTHESIS_CONFIDENCE,
   MIN_SNIPPETS_TO_SYNTHESIZE,
+  isOfficialYalePersonPageUrl,
+  personPageUrlNamesPerson,
+  selectFraProfileUrl,
+  selectLeadProfileUrls,
+  personNamesAgree,
+  profilePageProgressRank,
   assertFraProfileSynthesisApplyAllowed,
   hasResidualPronounLead,
   isBioShapedFacultyDescription,
@@ -11,6 +17,7 @@ import {
   profileResearchSnippets,
   repairPronounLead,
 } from '../fraProfileSynthesisCore';
+import { isCareerFactSentence } from '../../utils/careerBiographyDescription';
 
 const RESEARCH =
   'The laboratory investigates mechanisms of immune surveillance against precancerous cells in the colon, using humanized mouse models to study tumour initiation.';
@@ -30,6 +37,91 @@ describe('profileResearchSentences', () => {
     // Every observed appointment-label false positive came from this text, so a
     // nav run must never reach the model as if it were prose.
     expect(profileResearchSentences(NAV)).toHaveLength(0);
+  });
+
+  // `explor` matches inside `internet-explorer`, so this banner cleared the length
+  // floor, the research vocabulary, the career filter and the nav filter. It was the
+  // SOLE snippet handed to the synthesizer on 88 of the 100 rows the lane reported as
+  // a synthesizer refusal, so an availability failure read as a gate verdict (#1878).
+  it('does not read a research stem out of a URL', () => {
+    const banner =
+      'You can update your IE here: https://support.microsoft.com/en-us/help/17621/internet-explorer-downloads';
+    expect(banner.length).toBeGreaterThan(60);
+    expect(profileResearchSentences(banner)).toHaveLength(0);
+  });
+
+  it('still keeps research prose that merely cites a URL', () => {
+    const sentence =
+      'The laboratory investigates mechanisms of immune surveillance in the colon, with protocols published at https://example.edu/protocols/colon-immunity for other groups to reuse.';
+    expect(profileResearchSentences(sentence)).toHaveLength(1);
+  });
+
+  // Each marker is a verbatim template lifted off the page, not a vocabulary guess.
+  it('drops the profile page furniture that clears every other filter', () => {
+    for (const furniture of [
+      "Publications Timeline A big-picture view of a researcher's research output by year.",
+      'Research Interests Research topics Quorrow Marlow is interested in exploring.',
+      "View this doctor's clinical profile on the Yale Medicine website for information about the services we offer and making an appointment.",
+      'Peer-Reviewed Original Research Citations Altmetric MeSH Keywords AgedAlgorithmsArtifacts Diffusion Magnetic Resonance Imaging',
+      'Peer-Reviewed Original Research Back to Top Your browser is antiquated and no longer supported on this website.',
+    ]) {
+      expect(profileResearchSentences(furniture), furniture).toHaveLength(0);
+    }
+  });
+
+  // The furniture vocabulary is calibrated on prose with URLs already removed, because
+  // a marker that doubles as a host label otherwise matches inside a link. This is the
+  // same trap as `explor` inside `internet-explorer`.
+  it('keeps research prose that merely cites a metrics host', () => {
+    const sentence =
+      'We study malaria drug resistance in Burkina Faso, and per-paper impact is tracked at https://www.altmetric.com/details/12345 for the whole cohort.';
+    expect(profileResearchSentences(sentence)).toHaveLength(1);
+  });
+
+  // The one body in a 53-row dry run that was built from career prose rather than
+  // research prose: the degree vocabulary covered BA, MD and PhD but not BSc, so a
+  // training sentence reached the model and came back as a research focus (#1878).
+  it('drops a training sentence naming a science bachelors degree', () => {
+    const sentence =
+      'He trained in synthetic organic chemistry at the Australian National University (B.Sc, 1st Class Honors) where he conducted thesis work on immunology.';
+    expect(profileResearchSentences(sentence)).toHaveLength(0);
+  });
+
+  // The shared `isCareerFactSentence` list is the calibrated half and reaches shapes the
+  // local pattern never had: a chairship, a secondary appointment, a spelled-out degree,
+  // a clerkship. All 9 sentences it newly refuses across the leading snippets of the 104
+  // rows that reach the synthesizer read as career prose, and 400 of 409 survive (#1878).
+  it('drops career prose the local pattern misses', () => {
+    for (const career of [
+      'Quorrow served as Director of the Example Center for International and Area Studies from 2004 to 2019.',
+      'She has a secondary appointment in the Example Languages Department and is affiliated with three centres.',
+      'He also holds an MS in Applied Mathematics and Computer Studies from an overseas state university.',
+      'Marlow then returned to the university to study law and, after clerking for a federal judge, joined the faculty.',
+    ]) {
+      expect(profileResearchSentences(career), career).toHaveLength(0);
+    }
+  });
+
+  // The mirror direction, and the reason the vocabulary stops where it does: a career
+  // sentence and a research sentence share words. These four survive, and a filter keyed
+  // on "teaching", "award", "fellow" or "previously" would withhold all of them.
+  it('keeps research prose that merely shares career vocabulary', () => {
+    for (const research of [
+      'His teaching and scholarship focus on the law and economics of property, intellectual property, equity, and restitution.',
+      'Her research fields are experimental and behavioral economics, as well as applied microeconomics of household choice.',
+      'The focus of his research has been the valuation of the environment, developing methods to value natural ecosystems.',
+      "Professor Quorrow's research spans the fields of labor history, urban history, social movements and political economy.",
+    ]) {
+      expect(profileResearchSentences(research), research).toHaveLength(1);
+    }
+  });
+
+  // A degree token is short enough to fall inside a link, so the career vocabulary is
+  // calibrated on URL-stripped text like the research and furniture vocabularies.
+  it('does not read a degree token out of a URL', () => {
+    const sentence =
+      'We study household saving behaviour across cohorts, with the survey instrument documented at https://example.edu/faculty/ba-program/methods for reuse.';
+    expect(profileResearchSentences(sentence)).toHaveLength(1);
   });
 
   it('drops sentences too short to carry a research claim', () => {
@@ -337,6 +429,10 @@ describe('isCareerBiographyDescription', () => {
     ],
     ['tenure history', 'David W. Blight joined the faculty at Yale in January 2003.'],
     [
+      'tenure history with no appointing verb',
+      'Dr. Rowan Tallis trained at three universities before an appointment to the faculty in 2001.',
+    ],
+    [
       // An organization noun sitting later in the opening is an object, not the
       // subject, so it must not exempt a genuine biography.
       'endowed title above an organization object',
@@ -442,5 +538,293 @@ describe('isCareerBiographyDescription', () => {
   it('is empty-safe', () => {
     expect(isCareerBiographyDescription('')).toBe(false);
     expect(isCareerBiographyDescription(undefined)).toBe(false);
+  });
+});
+
+describe('isOfficialYalePersonPageUrl', () => {
+  const ADMIT: Array<[string, string]> = [
+    ['CMS profile path', 'https://medicine.yale.edu/profile/robin-quincy/'],
+    ['section-nested CMS profile', 'https://medicine.yale.edu/bbs/profile/robin-quincy/'],
+    ['people slug', 'https://history.yale.edu/people/robin-quincy'],
+    [
+      'section-nested people slug',
+      'https://english.yale.edu/people/professors-emeritus/robin-quincy',
+    ],
+    ['faculty slug', 'https://www.architecture.yale.edu/faculty/robin-quincy'],
+    [
+      'school faculty directory row',
+      'https://som.yale.edu/faculty-research/faculty-directory/robin-quincy',
+    ],
+    ['directory faculty row', 'https://environment.yale.edu/directory/faculty/robin-quincy'],
+    ['vanity path', 'https://law.yale.edu/robin-quincy'],
+    ['vanity path with no separator', 'https://www.art.yale.edu/RobinQuincy'],
+  ];
+  const REFUSE: Array<[string, string]> = [
+    ['people roster root', 'https://history.yale.edu/people/'],
+    ['named faculty roster leaf', 'https://history.yale.edu/people/core-faculty'],
+    ['faculty directory root', 'https://som.yale.edu/faculty-research/faculty-directory'],
+    ['paginated roster page', 'https://history.yale.edu/people/core-faculty?page=2'],
+    ['faceted directory listing', 'https://ysph.yale.edu/faculty/?f%5b0%5d=department%3A12'],
+    ['directory loader endpoint', 'https://law.yale.edu/views/ajax'],
+    ['a lab page that names a person', 'https://medicine.yale.edu/lab/robin-quincy/'],
+    ['a news story that names a person', 'https://law.yale.edu/news/robin-quincy-wins-prize'],
+    ['a document download', 'https://law.yale.edu/sites/default/files/robin-quincy.pdf'],
+    ['a fundraising page', 'https://law.yale.edu/giving/robin-quincy-fund'],
+    ['a non-Yale host person page', 'https://example.edu/people/robin-quincy'],
+  ];
+
+  for (const [label, url] of ADMIT) {
+    it(`admits ${label}`, () => {
+      expect(isOfficialYalePersonPageUrl(url)).toBe(true);
+    });
+  }
+  for (const [label, url] of REFUSE) {
+    it(`refuses ${label}`, () => {
+      expect(isOfficialYalePersonPageUrl(url)).toBe(false);
+    });
+  }
+});
+
+describe('personPageUrlNamesPerson', () => {
+  it('accepts a leaf naming the person on a vanity path the shape readers cannot key on', () => {
+    expect(personPageUrlNamesPerson('https://law.yale.edu/robin-q-quincy', 'Robin Quincy')).toBe(
+      true,
+    );
+  });
+
+  it('accepts a credentialed display name, since the credential clause is not a surname', () => {
+    // law.yale.edu and som.yale.edu publish every lead as "<name>, J.D." or
+    // "<name>, Ph.D.", and reading the clause as name tokens made the surname
+    // comparison fail on every one of them.
+    expect(
+      personPageUrlNamesPerson('https://law.yale.edu/robin-q-quincy', 'Robin Q. Quincy, J.D.'),
+    ).toBe(true);
+  });
+
+  it('accepts an enumerated short form of the given name', () => {
+    expect(personPageUrlNamesPerson('https://law.yale.edu/philip-quincy', 'Phil Quincy')).toBe(
+      true,
+    );
+  });
+
+  it('elides an apostrophe in a surname the way Yale slugs do', () => {
+    expect(
+      personPageUrlNamesPerson('https://chem.yale.edu/profile/robin-oquincy', "Robin O'Quincy"),
+    ).toBe(true);
+  });
+
+  it('refuses a same-surname colleague', () => {
+    // Same-surname people really do exist across Yale sites (#468), so a
+    // surname alone must never claim a page.
+    expect(personPageUrlNamesPerson('https://law.yale.edu/alison-quincy', 'Robin Quincy')).toBe(
+      false,
+    );
+  });
+
+  it('refuses a surname-only vanity leaf', () => {
+    expect(personPageUrlNamesPerson('https://www.yale.edu/quincy/', 'Robin Quincy')).toBe(false);
+  });
+
+  it('refuses a topical directory leaf that overlaps no person name', () => {
+    expect(
+      personPageUrlNamesPerson(
+        'https://ysph.yale.edu/faculty/chronic-disease-epidemiology',
+        'Robin Quincy',
+      ),
+    ).toBe(false);
+  });
+
+  it('refuses a netid leaf, which names nobody checkably', () => {
+    expect(
+      personPageUrlNamesPerson('https://medicine.yale.edu/profile/rq93/', 'Robin Quincy'),
+    ).toBe(false);
+  });
+});
+
+describe('selectFraProfileUrl', () => {
+  const PERSON = ['Robin Quincy'];
+
+  it('prefers the CMS profile citation over a widened shape', () => {
+    expect(
+      selectFraProfileUrl(
+        ['https://history.yale.edu/people/robin-quincy', 'https://medicine.yale.edu/profile/rq93/'],
+        PERSON,
+      ),
+    ).toBe('https://medicine.yale.edu/profile/rq93/');
+  });
+
+  it('keeps an opaque CMS profile leaf in scope with no identity evidence at all', () => {
+    // Those leaves are routinely netids, so requiring identity on this arm would
+    // narrow the cohort the lane already serves rather than widen it.
+    expect(selectFraProfileUrl(['https://medicine.yale.edu/profile/rq93/'], [])).toBe(
+      'https://medicine.yale.edu/profile/rq93/',
+    );
+  });
+
+  it('selects a vanity path whose leaf names the person', () => {
+    expect(selectFraProfileUrl(['https://law.yale.edu/robin-quincy'], PERSON)).toBe(
+      'https://law.yale.edu/robin-quincy',
+    );
+  });
+
+  it('selects nothing from a roster page, so the lane never reads a whole department', () => {
+    // A directory page adopted as one person's description is the defect #2385
+    // and #2708 each paid for.
+    expect(
+      selectFraProfileUrl(
+        ['https://history.yale.edu/people/core-faculty', 'https://history.yale.edu/people/'],
+        PERSON,
+      ),
+    ).toBe('');
+  });
+
+  it('selects nothing when the only person page names somebody else', () => {
+    expect(selectFraProfileUrl(['https://law.yale.edu/alison-quincy'], PERSON)).toBe('');
+  });
+});
+
+describe('selectLeadProfileUrls (#1937)', () => {
+  const ROW_TITLE = 'Robin Quincy Faculty Research';
+  const lead = (overrides: Record<string, unknown> = {}) => ({
+    name: 'Robin Quincy',
+    netid: 'rq47',
+    officialProfileUrls: ['https://medicine.yale.edu/profile/robin-quincy/'],
+    ...overrides,
+  });
+
+  it('offers a lead official profile the row does not cite', () => {
+    expect(
+      selectLeadProfileUrls([lead()], ['https://history.yale.edu/people/'], [ROW_TITLE]),
+    ).toEqual(['https://medicine.yale.edu/profile/robin-quincy/']);
+  });
+
+  it('refuses a lead the row is not about, so a co-lead page is never harvested', () => {
+    expect(selectLeadProfileUrls([lead()], [], ['Alison Quincy Faculty Research'])).toEqual([]);
+    expect(selectLeadProfileUrls([lead()], [], ['Cellular Neuroscience'])).toEqual([]);
+    expect(selectLeadProfileUrls([lead()], [], [])).toEqual([]);
+  });
+
+  it('admits an opaque netid leaf only when it is the lead own netid', () => {
+    expect(
+      selectLeadProfileUrls(
+        [lead({ officialProfileUrls: ['https://medicine.yale.edu/profile/rq47/'] })],
+        [],
+        [ROW_TITLE],
+      ),
+    ).toEqual(['https://medicine.yale.edu/profile/rq47/']);
+    expect(
+      selectLeadProfileUrls(
+        [lead({ officialProfileUrls: ['https://medicine.yale.edu/profile/xz90/'] })],
+        [],
+        [ROW_TITLE],
+      ),
+    ).toEqual([]);
+  });
+
+  it('refuses a same-surname colleague page, so a namesake bio is never harvested', () => {
+    expect(
+      selectLeadProfileUrls(
+        [lead({ officialProfileUrls: ['https://medicine.yale.edu/profile/alison-quincy/'] })],
+        [],
+        [ROW_TITLE],
+      ),
+    ).toEqual([]);
+  });
+
+  it('refuses a roster page the lead record happens to carry', () => {
+    expect(
+      selectLeadProfileUrls(
+        [lead({ officialProfileUrls: ['https://history.yale.edu/people/core-faculty'] })],
+        [],
+        [ROW_TITLE],
+      ),
+    ).toEqual([]);
+  });
+
+  it('refuses a non-Yale host', () => {
+    expect(
+      selectLeadProfileUrls(
+        [lead({ officialProfileUrls: ['https://example.org/profile/robin-quincy/'] })],
+        [],
+        [ROW_TITLE],
+      ),
+    ).toEqual([]);
+  });
+
+  it('drops a candidate the row already cites under a trailing slash, scheme or www variant', () => {
+    expect(
+      selectLeadProfileUrls(
+        [lead()],
+        ['http://www.medicine.yale.edu/profile/robin-quincy'],
+        [ROW_TITLE],
+      ),
+    ).toEqual([]);
+  });
+
+  it('offers each distinct page once when two leads share a citation', () => {
+    expect(selectLeadProfileUrls([lead(), lead({ netid: 'rq47' })], [], [ROW_TITLE])).toEqual([
+      'https://medicine.yale.edu/profile/robin-quincy/',
+    ]);
+  });
+});
+
+describe('profilePageProgressRank', () => {
+  it('ranks a page that carried prose above one with none, and both above a fetch failure', () => {
+    const gateRejection = { snippets: 4, fetchFailed: false };
+    const noProse = { snippets: 0, fetchFailed: false };
+    const neverLoaded = { snippets: 0, fetchFailed: true };
+
+    expect(profilePageProgressRank(gateRejection)).toBeGreaterThan(
+      profilePageProgressRank(noProse),
+    );
+    expect(profilePageProgressRank(noProse)).toBeGreaterThan(profilePageProgressRank(neverLoaded));
+  });
+});
+
+describe('personNamesAgree', () => {
+  it('accepts a re-slugged or short-form given name and a dropped middle initial', () => {
+    expect(personNamesAgree('Robin Quincy Faculty Research', 'Robin A. Quincy, PhD')).toBe(true);
+    expect(personNamesAgree('Philip Quincy', 'Phil Quincy')).toBe(true);
+  });
+
+  it('refuses a same-surname colleague and a first-initial-only match', () => {
+    expect(personNamesAgree('Robin Quincy', 'Alison Quincy')).toBe(false);
+    expect(personNamesAgree('R Quincy', 'Robin Quincy')).toBe(false);
+  });
+
+  it('refuses a title that names no person', () => {
+    expect(personNamesAgree('Cellular Neuroscience', 'Robin Quincy')).toBe(false);
+    expect(personNamesAgree('', 'Robin Quincy')).toBe(false);
+  });
+});
+
+describe('isCareerFactSentence', () => {
+  it('reads a career fact in one sentence', () => {
+    expect(
+      isCareerFactSentence(
+        'Dr. Rowan Tallis trained at three universities before an appointment to the faculty in 2001.',
+      ),
+    ).toBe(true);
+    expect(
+      isCareerFactSentence('David W. Blight joined the faculty at Yale in January 2003.'),
+    ).toBe(true);
+  });
+
+  it('leaves the orienting sentence a good body opens with, which names a post', () => {
+    // The person-subject role-noun markers are deliberately outside this predicate.
+    // A body whose credential opener is stripped commonly leads with exactly this
+    // sentence, and judging the promoted opener on the whole career-biography
+    // predicate would withdraw those strips.
+    expect(
+      isCareerFactSentence('Justin Willson is a historian of Byzantine and early Slavic art.'),
+    ).toBe(false);
+    expect(
+      isCareerFactSentence('Ryan Rimmer, MD is a subspecialty-trained otolaryngologist.'),
+    ).toBe(false);
+  });
+
+  it('is empty-safe', () => {
+    expect(isCareerFactSentence('')).toBe(false);
+    expect(isCareerFactSentence(undefined)).toBe(false);
   });
 });

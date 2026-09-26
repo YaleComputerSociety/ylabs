@@ -14,12 +14,16 @@
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { publicStudentVisibilityTiers, StudentVisibilityTier } from '../models/studentVisibility';
-import { RoleAssignment } from '../models/roleAssignment';
+import { RoleAssignment, roleAssignmentReattachWrite } from '../models/roleAssignment';
 import {
   getResearchEntityRoster,
   getResearchEntityRosterByEntityId,
   type ResearchEntityRosterEntry,
 } from './researchEntityMembershipAccessor';
+import {
+  LEAD_ROLE_CANONICAL_VALUES,
+  LEAD_ROLE_LEGACY_LABELS,
+} from '../models/canonicalRoleMapping';
 import { Researcher, type ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
 import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
@@ -31,8 +35,11 @@ import {
   RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
 } from './researchEntitySearchIndexService';
+import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
+import { servedCitationUrl } from './servedCitationPolicy';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
+import { buildSourceFieldContributions } from '../utils/servedFieldContributionLabels';
 import {
   detectProfileIdentityRisk,
   entityOfficialPersonProfileDestinations,
@@ -49,6 +56,7 @@ import { accessSignalTypes, mapResearchGroupKindToEntityType } from '../models/r
 import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,
+  publicSourceLinkHealthArray,
   toPublicResearchEntitySummaryDto,
   type PublicResearchEntityDto,
   type PublicResearchEntitySummaryDto,
@@ -63,7 +71,7 @@ import {
   researchEntityServesPublicDetail,
   withPublicDescriptionGateFields,
 } from './researchEntityPublicDescription';
-import { resolveResearchEntityCanonical } from './researchEntityMergeRedirectService';
+import { resolveResearchEntityCanonicalIdentity } from './researchEntityCanonicalTombstone';
 import {
   researchEntityHasDeceasedLead,
   stripTrailingPersonNameLifespan,
@@ -76,16 +84,67 @@ import {
   personNameHasLifespanSuffix,
   stripPersonNameLifespanSuffix,
 } from '../utils/personNameLifespan';
+import { sanitizePersonName } from '../utils/personNameHygiene';
 import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabelHygiene';
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
+import { orcidProfileUrl, servableOrcid } from '../utils/orcid';
 import { listPlanningContextsForResearchEntities } from './planningContextService';
 import {
-  getPublicUndergraduateLogistics,
-  unavailablePublicUndergraduateLogistics,
-  type PublicUndergraduateLogistics,
-} from './undergraduateLogisticsService';
-import { QUERY_TOPIC_ALIASES, STUDENT_QUERY_ALIASES } from './searchTopicAliases';
+  listDepartmentCourseCreditRoutes,
+  type PublicDepartmentCourseCreditRoute,
+} from './departmentResearchContextService';
+import {
+  QUERY_TOPIC_ALIASES,
+  STUDENT_QUERY_ALIASES,
+  WORKING_STYLE_PHRASE_ALIASES,
+  WORKING_STYLE_PHRASE_MAX_TOKENS,
+} from './searchTopicAliases';
 import { maxReachableResearchSearchPage } from './researchSearchPagination';
+
+/**
+ * The page's lead display names, batched for the whole hit set in one roster read
+ * the way `optionalPlanningContexts` batches its own enrichment.
+ *
+ * The browse/search DTO cannot run the mismatched-person-name guard without these,
+ * so a card opening on a possessive name that is not one of the record's own leads
+ * reached students unrepaired while the detail page repaired it (#2240). Degrades
+ * to no names rather than failing the request: a list response with today's cards
+ * is strictly better than no list at all, and the detail page remains the stricter
+ * surface either way.
+ *
+ * Takes whole entity documents, not ids, because the derivation the detail page runs
+ * reads `rosterEnrichment` off the row to decide whether an official-roster row is
+ * still fresh. Deriving names from a looser filter here would feed the sanitizer a
+ * different lead set per surface and reopen the very divergence being closed.
+ *
+ * The roster read is scoped to the people who hold a lead role somewhere on the page,
+ * and keeps ALL of those people's rows on those entities. That is not a looser filter:
+ * `collapseRosterEntriesByPerson` resolves one row per person, so a person holding no
+ * lead row anywhere cannot resolve to a lead, while a person who does needs every row
+ * they hold for the collapse to pick the same one the detail page picks.
+ */
+export const optionalPublicLeadMemberNames = async (
+  entities: Array<Record<string, any>>,
+): Promise<Map<string, readonly string[]>> => {
+  const byEntityId = new Map<string, readonly string[]>();
+  try {
+    const rosterByEntityId = await getResearchEntityRosterByEntityId(
+      entities.map((entity) => entity._id),
+      { peopleHoldingCanonicalRoles: PUBLIC_LEAD_CANONICAL_ROLES },
+    );
+    const now = new Date();
+    for (const entity of entities) {
+      const entityId = researchGroupDocumentId(entity._id);
+      const entries = rosterByEntityId.get(entityId);
+      if (!entityId || !entries?.length) continue;
+      const leadNames = publicResearchEntityLeadMemberNames(entity, entries, now);
+      if (leadNames.length > 0) byEntityId.set(entityId, leadNames);
+    }
+  } catch (error) {
+    console.error('Optional research lead-name enrichment failed:', sanitizeLogValue(error));
+  }
+  return byEntityId;
+};
 
 const optionalPlanningContexts = async (entityIds: any[]) => {
   try {
@@ -102,14 +161,14 @@ const optionalPlanningContexts = async (entityIds: any[]) => {
   }
 };
 
-const optionalUndergraduateLogistics = async (
-  entityId: unknown,
-): Promise<PublicUndergraduateLogistics> => {
+const optionalDepartmentCourseCreditRoutes = async (
+  departmentNames: string[],
+): Promise<PublicDepartmentCourseCreditRoute[]> => {
   try {
-    return await getPublicUndergraduateLogistics(entityId);
+    return await listDepartmentCourseCreditRoutes(departmentNames);
   } catch (error) {
-    console.error('Optional undergraduate-logistics enrichment failed:', sanitizeLogValue(error));
-    return unavailablePublicUndergraduateLogistics();
+    console.error('Optional department course-credit enrichment failed:', sanitizeLogValue(error));
+    return [];
   }
 };
 
@@ -247,13 +306,14 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
   });
   if (ownerPersonId) {
     const now = new Date();
+    const roleFilter = {
+      personId: ownerPersonId,
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': group._id,
+      role: 'PI',
+    };
     await RoleAssignment.updateOne(
-      {
-        personId: ownerPersonId,
-        'target.kind': 'RESEARCH_ENTITY',
-        'target.id': group._id,
-        role: 'PI',
-      },
+      roleFilter,
       {
         $set: {
           personId: ownerPersonId,
@@ -261,14 +321,14 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
           role: 'PI',
           state: 'CURRENT',
           confidence: 1,
-          reviewStatus: 'UNREVIEWED',
-          archived: false,
         },
-        $setOnInsert: { startedAt: now, evidenceClaimIds: [] },
+        $setOnInsert: { startedAt: now, archived: false, reviewStatus: 'UNREVIEWED' },
         $unset: { endedAt: '' },
       },
       { upsert: true },
     );
+    const reattach = roleAssignmentReattachWrite(roleFilter, 'UNREVIEWED');
+    await RoleAssignment.updateOne(reattach.filter, reattach.update);
   }
 
   const created = !group.updatedAt || group.createdAt?.getTime?.() === group.updatedAt?.getTime?.();
@@ -327,6 +387,21 @@ const WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR = 0.5;
 // query fetches a fixed candidate pool of this size (independent of the requested
 // page size) and paginates locally against the already-stable ordering. See #1064.
 export const HYBRID_CANDIDATE_POOL_SIZE = 200;
+// A candidate-pool hit is never served. It is reduced to its id, and the served
+// row is re-read from Mongo by `_id`, so retrieving whole indexed documents for a
+// 200-row pool moved 2.2-2.6MB per query to discard nearly all of it. Measured
+// against the Development index over three queries, twice per text query (pool
+// plus keyword leg): 50-57 attributes per hit became 4, and the response body
+// 2.2-2.6MB became 59-137KB.
+//
+// This list is exactly what the reorder helpers between retrieval and hydration
+// read, so adding a helper that reads another indexed field means adding it here
+// or that helper silently sees `undefined`: `promoteExactAliasFieldMatches` reads
+// `departments` and `researchAreas`, and everything else keys on the id.
+// `_rankingScoreDetails` is response metadata rather than a document attribute,
+// so `floorWeakSemanticOnlyHits` and `dropCoincidentalTypoOnlyHits` keep working
+// (verified against the running index, not assumed). See #3185.
+const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = ['id', 'departments', 'researchAreas'];
 const MAX_FILTER_VALUE_LENGTH = 120;
 const STUDENT_QUERY_STOP_WORDS = new Set([
   'a',
@@ -406,7 +481,77 @@ const STUDENT_QUERY_STOP_WORDS = new Set([
   'best',
   'some',
   'any',
+  // Question-frame verbs only. `studies`, `work`, and `working` are deliberately
+  // absent: the corpus carries them as real field names (192 researchAreas and 11
+  // departments contain "studies", including African Studies and Film & Media
+  // Studies; "Sex Work"; "Working Memory"), so stripping them would silently
+  // narrow those queries to their remaining tokens.
+  'doing',
+  'works',
+  'take',
+  'takes',
 ]);
+
+// `work` and `working` name real fields on their own ("Sex Work", "Working
+// Memory"), so they are filler only where they govern a preposition, which no
+// indexed field name does.
+const QUESTION_FRAME_VERBS_BEFORE_PREPOSITION = new Set(['work', 'working']);
+const QUESTION_FRAME_VERB_PREPOSITIONS = new Set(['on', 'with']);
+
+// `lab` is filler as a bare head noun, because every entity in the corpus is one,
+// but it is load-bearing where it completes a governed working-style phrase: the
+// qualifier in "wet lab" means nothing without the noun it modifies, and the
+// stripped text is also the embedder's input, so dropping the noun leaves a phrase
+// with no research meaning. Measured on Development, "wet experience beginner"
+// tops out at a 0.093 ranking score, below HYBRID_RANKING_SCORE_THRESHOLD, so the
+// whole query returned nothing; keeping the noun reaches 0.267. See #2715.
+const completesWorkingStylePhrase = (tokens: string[], index: number): boolean => {
+  for (let length = 2; length <= WORKING_STYLE_PHRASE_MAX_TOKENS; length += 1) {
+    const start = index - length + 1;
+    if (start < 0) continue;
+    if (WORKING_STYLE_PHRASE_ALIASES[tokens.slice(start, index + 1).join(' ')]) return true;
+  }
+  return false;
+};
+
+const isStudentQueryFiller = (tokens: string[], index: number): boolean => {
+  const token = tokens[index];
+  if (completesWorkingStylePhrase(tokens, index)) return false;
+  if (STUDENT_QUERY_STOP_WORDS.has(token)) return true;
+  return (
+    QUESTION_FRAME_VERBS_BEFORE_PREPOSITION.has(token) &&
+    QUESTION_FRAME_VERB_PREPOSITIONS.has(tokens[index + 1] ?? '')
+  );
+};
+
+// A student's working-style words are not the corpus's, so the phrase is replaced
+// by the vocabulary the corpus carries. That also makes the query an OR expansion
+// rather than a literal phrase, which keeps `matchingStrategy` permissive: the
+// keyword leg can then reach rows carrying any one of the canonical terms, and
+// #2732's ordering serves those ahead of the weak semantic neighbours that are all
+// a phrase nothing carries can otherwise retrieve. See #2715.
+const expandWorkingStylePhrases = (
+  tokens: string[],
+): { terms: string[]; expandedAPhrase: boolean } => {
+  const terms: string[] = [];
+  let expandedAPhrase = false;
+  let index = 0;
+  while (index < tokens.length) {
+    let matchedLength = 0;
+    for (let length = WORKING_STYLE_PHRASE_MAX_TOKENS; length >= 2; length -= 1) {
+      const canonical = WORKING_STYLE_PHRASE_ALIASES[tokens.slice(index, index + length).join(' ')];
+      if (canonical) {
+        terms.push(...canonical);
+        matchedLength = length;
+        expandedAPhrase = true;
+        break;
+      }
+    }
+    if (matchedLength === 0) terms.push(tokens[index]);
+    index += matchedLength || 1;
+  }
+  return { terms, expandedAPhrase };
+};
 
 const resolveTopicAliasExpansion = (queryTokens: string[]): string[] | null => {
   if (queryTokens.length === 0) return null;
@@ -447,29 +592,40 @@ export interface NormalizedResearchSearchQuery {
   tokens: string[];
   isTopicAliasQuery: boolean;
   isAliasExpanded: boolean;
+  aliasExpansionKeepsShorthand: boolean;
+  aliasExpandsToSingleCanonicalPhrase: boolean;
   aliasTerms: string[] | null;
 }
 
 export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearchSearchQuery => {
   const raw = boundedResearchSearchQuery(value);
   const tokens = tokenizeStudentResearchQuery(raw);
-  const meaningfulTokens = tokens.filter((token) => !STUDENT_QUERY_STOP_WORDS.has(token));
+  const meaningfulTokens = tokens.filter((_token, index) => !isStudentQueryFiller(tokens, index));
   const queryTokens = meaningfulTokens.length > 0 ? meaningfulTokens : tokens;
   const aliasExpansion = resolveTopicAliasExpansion(queryTokens);
-  const hasPerTokenAliasExpansion = queryTokens.some(
+  const workingStyle = expandWorkingStylePhrases(queryTokens);
+  const hasPerTokenAliasExpansion = workingStyle.terms.some(
     (token) => STUDENT_QUERY_ALIASES[token] !== undefined,
   );
   const expandedTerms = aliasExpansion
     ? aliasExpansion
-    : queryTokens.flatMap((token) => STUDENT_QUERY_ALIASES[token] || [token]);
+    : workingStyle.terms.flatMap((token) => STUDENT_QUERY_ALIASES[token] || [token]);
   const normalizedTerms = uniqueQueryTerms(expandedTerms);
+  const typedShorthand = queryTokens.join(' ');
+  const keepsShorthand =
+    aliasExpansion !== null &&
+    normalizedTerms.some((term) => term.toLowerCase() === typedShorthand);
 
   return {
     raw,
     query: normalizedTerms.join(' ').slice(0, MAX_SEARCH_QUERY_LENGTH),
     tokens: queryTokens,
     isTopicAliasQuery: aliasExpansion !== null,
-    isAliasExpanded: aliasExpansion !== null || hasPerTokenAliasExpansion,
+    isAliasExpanded:
+      aliasExpansion !== null || hasPerTokenAliasExpansion || workingStyle.expandedAPhrase,
+    aliasExpansionKeepsShorthand: keepsShorthand,
+    aliasExpandsToSingleCanonicalPhrase:
+      aliasExpansion !== null && !keepsShorthand && normalizedTerms.length === 1,
     aliasTerms: aliasExpansion ? normalizedTerms : null,
   };
 };
@@ -494,21 +650,6 @@ const boundedResearchFilterValues = (values?: string[]): string[] => {
 const isResearchGroupQualityFilter = (value: unknown): value is ResearchGroupQualityFilter =>
   value === 'description-issue' || value === 'missing-lead' || value === 'profile-fallback';
 
-const isCurrentAvailabilityFilterInput = (
-  value: string,
-): value is NonNullable<ResearchGroupFilterInput['currentAvailability']>[number] =>
-  value === 'OPEN' || value === 'ROLLING';
-
-const isCompensationFilterInput = (
-  value: string,
-): value is NonNullable<ResearchGroupFilterInput['compensation']>[number] =>
-  value === 'PAID_OR_STIPEND' || value === 'COURSE_CREDIT';
-
-const isEligibleStudentLevelFilterInput = (
-  value: string,
-): value is NonNullable<ResearchGroupFilterInput['eligibleStudentLevels']>[number] =>
-  value === 'FIRST_YEAR' || value === 'SOPHOMORE' || value === 'JUNIOR' || value === 'SENIOR';
-
 const sanitizeResearchGroupSearchFilters = (
   filters: ResearchGroupFilterInput = {},
 ): ResearchGroupFilterInput => ({
@@ -518,14 +659,6 @@ const sanitizeResearchGroupSearchFilters = (
   departments: boundedResearchFilterValues(filters.departments),
   researchAreas: boundedResearchFilterValues(filters.researchAreas),
   hostsUndergrads: filters.hostsUndergrads === true ? true : undefined,
-  hasDocumentedWayIn: filters.hasDocumentedWayIn === true ? true : undefined,
-  currentAvailability: boundedResearchFilterValues(filters.currentAvailability).filter(
-    isCurrentAvailabilityFilterInput,
-  ),
-  compensation: boundedResearchFilterValues(filters.compensation).filter(isCompensationFilterInput),
-  eligibleStudentLevels: boundedResearchFilterValues(filters.eligibleStudentLevels).filter(
-    isEligibleStudentLevelFilterInput,
-  ),
   studentVisibilityTier: boundedResearchFilterValues(filters.studentVisibilityTier),
 });
 
@@ -595,30 +728,16 @@ const mongoFilterFromResearchFilters = (
   if (filters.hostsUndergrads === true) {
     mongoFilter.hasUndergradHostingEvidence = true;
   }
-  if (filters.hasDocumentedWayIn === true) {
-    mongoFilter.hasDocumentedWayIn = true;
-  }
-  if (filters.currentAvailability?.length) {
-    mongoFilter.undergraduateCurrentAvailability = { $in: filters.currentAvailability };
-  }
-  if (filters.compensation?.length) {
-    mongoFilter.undergraduateCompensationModel = { $in: filters.compensation };
-  }
-  if (filters.eligibleStudentLevels?.length) {
-    mongoFilter.undergraduateEligibleStudentLevels = { $in: filters.eligibleStudentLevels };
-  }
 
   return mongoFilter;
 };
 
-const LEAD_MEMBER_ROLES = new Set(['pi', 'principal_investigator', 'lead', 'faculty_lead']);
-
-const leadMembersForEntities = async (entityIds: any[]): Promise<Map<string, any[]>> => {
+export const leadMembersForEntities = async (entityIds: any[]): Promise<Map<string, any[]>> => {
   if (entityIds.length === 0) return new Map();
   const rosterByEntityId = await getResearchEntityRosterByEntityId(entityIds);
   const byEntityId = new Map<string, any[]>();
   for (const [key, roster] of rosterByEntityId) {
-    const leads = roster.filter((member) => LEAD_MEMBER_ROLES.has(member.role));
+    const leads = roster.filter((member) => LEAD_ROLE_LEGACY_LABELS.has(member.role));
     if (leads.length > 0) byEntityId.set(key, leads);
   }
   return byEntityId;
@@ -778,6 +897,36 @@ export const floorWeakSemanticOnlyHits = <T>(hits: T[]): T[] => {
 };
 
 /**
+ * Orders the candidate set by the keyword leg's own ranking, then appends the
+ * hybrid pool rows the keyword leg did not return, deduplicating on either id
+ * field.
+ *
+ * Merging the other way round (pool order first, keyword-leg rows appended) is
+ * what this did before and it re-imported the very defect the separate keyword
+ * leg exists to avoid: the pool is ordered by the blended score, so the keyword
+ * matches inside it were still ranked by an embedding similarity that a typo
+ * moves wholesale, and a keyword row the pool did not hold sat behind every
+ * pooled row whatever its keyword relevance. The keyword leg is queried
+ * precisely because the blended score cannot represent it, so the blended score
+ * must not order its rows either.
+ *
+ * This is a narrow change to the keyword/semantic split rather than a rewrite of
+ * it: `floorWeakSemanticOnlyHits` (#929) already floors a semantic-only hit
+ * beneath every keyword match unless its similarity clears
+ * WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR, and measured over the harness queries
+ * against Development only 117 of 13,806 pooled rows (0.85%) were semantic-only
+ * above that floor. The pool keeps every row it held, so paging still reaches
+ * all of them. See #2732.
+ */
+export const orderCandidatesByKeywordLeg = <T>(poolHits: T[], keywordLegHits: T[]): T[] => {
+  const pool = Array.isArray(poolHits) ? poolHits : [];
+  if (!Array.isArray(keywordLegHits) || keywordLegHits.length === 0) return pool;
+  const hitId = (hit: any): string => String(hit?.id ?? hit?._id);
+  const keywordLegIds = new Set(keywordLegHits.map(hitId));
+  return [...keywordLegHits, ...pool.filter((hit) => !keywordLegIds.has(hitId(hit)))];
+};
+
+/**
  * True when the hit's keyword-leg relevance rests entirely on a coincidental
  * typo: only some query words matched, none of them exactly, and the partial
  * match was only reachable by tolerating a typo. This is the narrow-crossing
@@ -869,30 +1018,13 @@ export const promoteExactAliasFieldMatches = <T>(hits: T[], aliasTerms: string[]
 // dropped; every other active filter still constrains the distribution. See
 // issue #1080.
 const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
-  filterKey:
-    | 'school'
-    | 'departments'
-    | 'researchAreas'
-    | 'entityType'
-    | 'currentAvailability'
-    | 'compensation'
-    | 'eligibleStudentLevels';
-  meiliField:
-    | 'schools'
-    | 'departments'
-    | 'researchAreas'
-    | 'entityType'
-    | 'undergraduateCurrentAvailability'
-    | 'undergraduateCompensationModel'
-    | 'undergraduateEligibleStudentLevels';
+  filterKey: 'school' | 'departments' | 'researchAreas' | 'entityType';
+  meiliField: 'schools' | 'departments' | 'researchAreas' | 'entityType';
 }> = [
   { filterKey: 'school', meiliField: 'schools' },
   { filterKey: 'departments', meiliField: 'departments' },
   { filterKey: 'researchAreas', meiliField: 'researchAreas' },
   { filterKey: 'entityType', meiliField: 'entityType' },
-  { filterKey: 'currentAvailability', meiliField: 'undergraduateCurrentAvailability' },
-  { filterKey: 'compensation', meiliField: 'undergraduateCompensationModel' },
-  { filterKey: 'eligibleStudentLevels', meiliField: 'undergraduateEligibleStudentLevels' },
 ];
 
 const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = [
@@ -900,10 +1032,6 @@ const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = [
   'departments',
   'researchAreas',
   'entityType',
-  'undergraduateCurrentAvailability',
-  'undergraduateCompensationModel',
-  'undergraduateEligibleStudentLevels',
-  'hasDocumentedWayIn',
 ];
 
 /**
@@ -998,7 +1126,10 @@ export async function searchResearchGroupsViaMeili(
       });
     const pageEntities = filteredCandidates.slice(offset, offset + safePageSize);
     const pageEntityIds = pageEntities.map((entity) => entity._id);
-    const planningContextResult = await optionalPlanningContexts(pageEntityIds);
+    const [planningContextResult, leadMemberNamesByEntityId] = await Promise.all([
+      optionalPlanningContexts(pageEntityIds),
+      optionalPublicLeadMemberNames(pageEntities),
+    ]);
     return addResearchEntitySearchAliases(
       {
         hits: pageEntities.map((entity) => ({
@@ -1012,7 +1143,7 @@ export async function searchResearchGroupsViaMeili(
         facetDistribution: requestedFacetDistribution,
         degraded: planningContextResult.degraded,
       },
-      { includeOperatorFields: safeOptions.includeNonPublic },
+      { includeOperatorFields: safeOptions.includeNonPublic, leadMemberNamesByEntityId },
     );
   }
 
@@ -1038,6 +1169,7 @@ export async function searchResearchGroupsViaMeili(
     filter: filterString,
     limit: safePageSize,
     offset,
+    attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
     ...(safeOptions.includeFacets ? { facets: RESEARCH_ENTITY_SEARCH_FACET_FIELDS } : {}),
   };
   if (sortConfig.length > 0) {
@@ -1046,7 +1178,7 @@ export async function searchResearchGroupsViaMeili(
 
   const index = await getMeiliIndex('researchentities');
   if (!isBrowseAllQuery) {
-    if (normalizedQuery.isTopicAliasQuery) {
+    if (normalizedQuery.aliasExpansionKeepsShorthand) {
       searchParams.attributesToSearchOn = TOPIC_ALIAS_QUERY_ATTRIBUTES;
     } else if (await isResearchEntitySearchEmbedderConfigured(index)) {
       searchParams.hybrid = {
@@ -1055,6 +1187,12 @@ export async function searchResearchGroupsViaMeili(
       };
       searchParams.rankingScoreThreshold = HYBRID_RANKING_SCORE_THRESHOLD;
       searchParams.showRankingScoreDetails = true;
+      // One request runs several hybrid queries over this same text, and
+      // Meilisearch embeds the query afresh for each one. Supplying the vector
+      // makes it skip its embedder, so the request pays at most one OpenAI round
+      // trip instead of one per query. See #3149.
+      const queryVector = await getResearchSearchQueryVector(meiliQueryText);
+      if (queryVector) searchParams.vector = queryVector;
     }
   }
 
@@ -1064,10 +1202,14 @@ export async function searchResearchGroupsViaMeili(
   // documents match all of them, so "black hole" admits documents matching only
   // the high-frequency token "black". Require all terms for these queries so a
   // single common token cannot surface off-topic entities or inflate the count.
-  // Alias-expanded queries are left permissive because their terms are OR
-  // synonyms, not a phrase the searcher typed. See #1255.
+  // An alias expansion that is a list of OR synonyms is left permissive, because
+  // no document carries them all. A shorthand that resolves to one canonical
+  // phrase ("orgo" -> "organic chemistry") is the phrase the searcher meant, so
+  // it is a conjunction exactly as the typed phrase is. See #1255, #2733.
+  const literalPhraseQuery = !normalizedQuery.isAliasExpanded && normalizedQuery.tokens.length >= 2;
   const requireAllQueryTerms =
-    !isBrowseAllQuery && !normalizedQuery.isAliasExpanded && normalizedQuery.tokens.length >= 2;
+    !isBrowseAllQuery &&
+    (literalPhraseQuery || normalizedQuery.aliasExpandsToSingleCanonicalPhrase);
   if (requireAllQueryTerms) {
     searchParams.matchingStrategy = 'all';
   }
@@ -1122,6 +1264,9 @@ export async function searchResearchGroupsViaMeili(
         if (params.hybrid && isMissingMeiliEmbedderError(error)) {
           params = { ...params };
           delete params.hybrid;
+          // Left behind, `vector` turns the keyword fallback into a pure
+          // semantic search, which is not what dropping the embedder means.
+          delete params.vector;
           delete params.rankingScoreThreshold;
           delete params.showRankingScoreDetails;
           degraded = true;
@@ -1198,6 +1343,7 @@ export async function searchResearchGroupsViaMeili(
       const exhaustiveCountResult = await index.search(meiliQueryText, {
         filter: filterString,
         hybrid: finalSearchParams.hybrid,
+        ...(finalSearchParams.vector ? { vector: finalSearchParams.vector } : {}),
         rankingScoreThreshold: finalSearchParams.rankingScoreThreshold,
         ...(finalSearchParams.matchingStrategy
           ? { matchingStrategy: finalSearchParams.matchingStrategy }
@@ -1250,6 +1396,7 @@ export async function searchResearchGroupsViaMeili(
     }
     if (finalSearchParams.rankingScoreThreshold !== undefined) {
       params.hybrid = finalSearchParams.hybrid;
+      if (finalSearchParams.vector) params.vector = finalSearchParams.vector;
       params.rankingScoreThreshold = finalSearchParams.rankingScoreThreshold;
       params.page = 1;
       params.hitsPerPage = RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS;
@@ -1297,49 +1444,11 @@ export async function searchResearchGroupsViaMeili(
     return merged;
   })();
 
-  // The documented-way-in filter is a boolean toggle rather than a multi-valued
-  // facet, so it is recomputed here instead of via DISJUNCTIVE_RESEARCH_FACETS:
-  // when it is active, drop only its own clause so the `hasDocumentedWayIn`
-  // distribution still reports both the documented (`true`) and undocumented
-  // (`false`) buckets. Without this the conjunctive distribution collapses to
-  // `{ true: n }`, and the client can no longer tell the split is material. See
-  // issue #1519.
-  const withDocumentedWayInDisjunctiveFacet = await (async (): Promise<
-    Record<string, Record<string, number>> | undefined
-  > => {
-    if (!disjunctiveRawFacetDistribution || safeFilters.hasDocumentedWayIn !== true) {
-      return disjunctiveRawFacetDistribution;
-    }
-    try {
-      const omittedFilterString = buildResearchGroupFilterString(
-        applyVisibilityScopeToFilters(
-          { ...safeFilters, hasDocumentedWayIn: undefined },
-          safeOptions.includeNonPublic,
-        ),
-      );
-      const distribution = await searchFacetDistributionForFilter(omittedFilterString, [
-        'hasDocumentedWayIn',
-      ]);
-      if (distribution?.hasDocumentedWayIn) {
-        return {
-          ...disjunctiveRawFacetDistribution,
-          hasDocumentedWayIn: distribution.hasDocumentedWayIn,
-        };
-      }
-    } catch (error) {
-      console.error(
-        'Disjunctive facet computation for hasDocumentedWayIn failed; keeping conjunctive counts:',
-        sanitizeLogValue(error),
-      );
-    }
-    return disjunctiveRawFacetDistribution;
-  })();
-
   // The School filter now facets on the multi-valued `schools` field; expose it
   // to clients under the existing `school` key so the API contract is unchanged.
   const facetDistribution = ((): Record<string, Record<string, number>> | undefined => {
-    if (!withDocumentedWayInDisjunctiveFacet) return withDocumentedWayInDisjunctiveFacet;
-    const { schools, researchAreas, ...rest } = withDocumentedWayInDisjunctiveFacet;
+    if (!disjunctiveRawFacetDistribution) return disjunctiveRawFacetDistribution;
+    const { schools, researchAreas, ...rest } = disjunctiveRawFacetDistribution;
     const cleanedResearchAreas = sanitizeResearchAreaFacetDistribution(researchAreas);
     return {
       ...rest,
@@ -1348,8 +1457,59 @@ export async function searchResearchGroupsViaMeili(
     };
   })();
 
+  // `rankingScoreThreshold` bars on the *blended* score, which gives the keyword
+  // leg only 0.2 weight, and Meilisearch's `exactness` rule scores a match that
+  // needed a typo corrected at 1/6, so such a match tops out near 0.02 blended:
+  // the cutoff excludes every one of them however deep the candidate pool goes.
+  // Lowering the cutoff does not recover them either, because they then rank
+  // below thousands of weak semantic neighbours that fill the fixed pool first.
+  // Measured against a local copy of the Development index: `immunolgy` matches
+  // 185 documents on the keyword leg, nearly all of them documents `immunology`
+  // matches too, yet its best blended score is 0.022 and its first keyword hit
+  // sits at rank 585 of a 0.02-threshold result set. So the keyword leg runs as
+  // its own query, where its hits compete only against each other and a
+  // misspelling reaches the rows the correct spelling reaches. That ranking then
+  // orders the candidate set, because the blended score the pool is sorted on
+  // cannot represent a keyword hit: see `orderCandidatesByKeywordLeg`.
+  //
+  // It needs no ranking-score floor of its own. #823's cutoff exists because
+  // hybrid k-NN returns the nearest vectors however dissimilar, which dumps the
+  // corpus for a query with no real match; a keyword search instead returns
+  // nothing at all for such a query (measured: zero hits for `kayaking`,
+  // `origami`, `zzzzqqq`), and `dropCoincidentalTypoOnlyHits` still removes
+  // partial typo garbage. See #2732.
+  const keywordLegHits = await (async (): Promise<any[]> => {
+    if (!finalSearchParams.hybrid || finalSearchParams.rankingScoreThreshold === undefined) {
+      return [];
+    }
+    try {
+      const keywordLegResult = await index.search(meiliQueryText, {
+        filter: filterString,
+        ...(finalSearchParams.sort ? { sort: finalSearchParams.sort } : {}),
+        ...(finalSearchParams.matchingStrategy
+          ? { matchingStrategy: finalSearchParams.matchingStrategy }
+          : {}),
+        showRankingScoreDetails: true,
+        attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
+        page: 1,
+        hitsPerPage: finalSearchParams.hitsPerPage ?? HYBRID_CANDIDATE_POOL_SIZE,
+      });
+      return Array.isArray(keywordLegResult?.hits) ? keywordLegResult.hits : [];
+    } catch (error) {
+      console.error('Optional keyword-leg candidate query failed:', sanitizeLogValue(error));
+      return [];
+    }
+  })();
+
+  // #1015's garbage rule runs on each leg's own retrieval before the merge, so
+  // ordering by the keyword leg changes rank without changing membership. A row
+  // the pool admitted on semantics keeps being served when only its keyword-leg
+  // copy is a coincidental typo, and it keeps the pool's position, because the
+  // keyword relevance is the part that was garbage. Dropping it instead would
+  // lose a match the search had already recovered. See #2732.
+  const genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(keywordLegHits).hits;
   const { hits: keywordFilteredHits, dropped: droppedCoincidentalHits } =
-    dropCoincidentalTypoOnlyHits(hits || []);
+    dropCoincidentalTypoOnlyHits(orderCandidatesByKeywordLeg(hits || [], genuineKeywordLegHits));
   const reorderedPool = promoteExactAliasFieldMatches(
     floorWeakSemanticOnlyHits(keywordFilteredHits),
     normalizedQuery.aliasTerms,
@@ -1382,8 +1542,14 @@ export async function searchResearchGroupsViaMeili(
   const visibleHitIds = hitIds.filter((id: any) =>
     visibleEntitiesById.has(researchGroupDocumentId(id)),
   );
-  // Map Meilisearch's `id` back to `_id` for client backward compatibility.
-  const planningContextResult = await optionalPlanningContexts(visibleHitIds);
+  // Map Meilisearch's `id` back to `_id` for client backward compatibility. The
+  // Meilisearch primary key is `serializedDocumentId(_id)`, the same serialization
+  // the lead-name map is keyed by, so the DTO's per-hit lookup matches on either
+  // path's `_id`.
+  const [planningContextResult, leadMemberNamesByEntityId] = await Promise.all([
+    optionalPlanningContexts(visibleHitIds),
+    optionalPublicLeadMemberNames(visibleEntities as Array<Record<string, any>>),
+  ]);
   const normalizedHits = orderedHits.flatMap((hit: any) => {
     const id = hit.id || hit._id;
     const entityId = researchGroupDocumentId(id);
@@ -1393,14 +1559,20 @@ export async function searchResearchGroupsViaMeili(
       ...entity,
       _id: id,
       planningContext: planningContextResult.contexts.get(entityId),
-      ...(hit.searchMatch ? { searchMatch: hit.searchMatch } : {}),
     };
   });
 
-  const adjustedTotalHits =
-    typeof resolvedTotalHits === 'number'
-      ? Math.max(normalizedHits.length, resolvedTotalHits - droppedCoincidentalHits)
-      : normalizedHits.length;
+  // The companion count above counts what cleared the blended cutoff, so it omits
+  // the keyword-leg rows merged into the pool. Those rows are reachable by paging
+  // through the pool, and the client stops its pagination walk once a short page
+  // reaches the reported total, so the locally reachable pool is a floor on the
+  // count rather than something the count may fall below. See #2732.
+  const locallyReachableHits = paginateHybridPoolLocally ? reorderedPool.length : 0;
+  const adjustedTotalHits = Math.max(
+    normalizedHits.length,
+    locallyReachableHits,
+    typeof resolvedTotalHits === 'number' ? resolvedTotalHits - droppedCoincidentalHits : 0,
+  );
 
   return addResearchEntitySearchAliases(
     {
@@ -1411,7 +1583,7 @@ export async function searchResearchGroupsViaMeili(
       facetDistribution: facetDistribution ?? requestedFacetDistribution,
       degraded: degraded || planningContextResult.degraded,
     },
-    { includeOperatorFields: safeOptions.includeNonPublic },
+    { includeOperatorFields: safeOptions.includeNonPublic, leadMemberNamesByEntityId },
   );
 }
 
@@ -1473,19 +1645,6 @@ const facetCounts = (entities: any[], field: string): Record<string, number> => 
     }
   }
   return counts;
-};
-
-// Mirror Meilisearch's boolean facet distribution shape (`{ true: n, false: m }`
-// with string keys) so the Mongo fallback and the primary path present the same
-// contract to the client's documented-way-in gate.
-const booleanFacetCounts = (entities: any[], field: string): Record<string, number> => {
-  let trueCount = 0;
-  let falseCount = 0;
-  for (const entity of entities) {
-    if (entity?.[field] === true) trueCount += 1;
-    else falseCount += 1;
-  }
-  return { true: trueCount, false: falseCount };
 };
 
 const sortResearchEntitiesForMongoFallback = (
@@ -1555,14 +1714,7 @@ const searchResearchGroupsViaMongoFallback = async (
   // that facet's own clause, so its dropdown keeps every sibling value; other
   // active filters still constrain the counts.
   const disjunctiveMongoFacetCounts = async (
-    filterKey:
-      | 'school'
-      | 'departments'
-      | 'researchAreas'
-      | 'entityType'
-      | 'currentAvailability'
-      | 'compensation'
-      | 'eligibleStudentLevels',
+    filterKey: 'school' | 'departments' | 'researchAreas' | 'entityType',
     field: string,
   ): Promise<Record<string, number>> => {
     if (!filters[filterKey]?.length) return facetCounts(visibleCandidates, field);
@@ -1577,23 +1729,6 @@ const searchResearchGroupsViaMongoFallback = async (
     );
     return facetCounts(omittedVisible, field);
   };
-  // The documented-way-in toggle is boolean, so its disjunctive recompute drops
-  // its own clause and counts both buckets over the remaining candidates.
-  const documentedWayInFacetCounts = async (): Promise<Record<string, number>> => {
-    if (filters.hasDocumentedWayIn !== true) {
-      return booleanFacetCounts(visibleCandidates, 'hasDocumentedWayIn');
-    }
-    const omittedFilters = { ...filters, hasDocumentedWayIn: undefined };
-    const omittedCandidates = (await ResearchEntity.find(
-      mongoFilterFromResearchFilters(omittedFilters, options.includeNonPublic),
-    ).lean()) as any[];
-    const omittedVisible = withServablePublicResearchEntities(
-      omittedCandidates.filter((entity) => researchEntityMatchesQuery(entity, trimmedQuery)),
-      omittedFilters,
-      options.includeNonPublic,
-    );
-    return booleanFacetCounts(omittedVisible, 'hasDocumentedWayIn');
-  };
   const facetDistribution = await (async (): Promise<
     Record<string, Record<string, number>> | undefined
   > => {
@@ -1603,29 +1738,17 @@ const searchResearchGroupsViaMongoFallback = async (
       departmentFacetCounts,
       researchAreaFacetCounts,
       entityTypeFacetCounts,
-      currentAvailabilityFacetCounts,
-      compensationFacetCounts,
-      eligibleStudentLevelsFacetCounts,
-      documentedWayInCounts,
     ] = await Promise.all([
       disjunctiveMongoFacetCounts('school', 'schools'),
       disjunctiveMongoFacetCounts('departments', 'departments'),
       disjunctiveMongoFacetCounts('researchAreas', 'researchAreas'),
       disjunctiveMongoFacetCounts('entityType', 'entityType'),
-      disjunctiveMongoFacetCounts('currentAvailability', 'undergraduateCurrentAvailability'),
-      disjunctiveMongoFacetCounts('compensation', 'undergraduateCompensationModel'),
-      disjunctiveMongoFacetCounts('eligibleStudentLevels', 'undergraduateEligibleStudentLevels'),
-      documentedWayInFacetCounts(),
     ]);
     return {
       school: schoolFacetCounts,
       departments: departmentFacetCounts,
       researchAreas: sanitizeResearchAreaFacetDistribution(researchAreaFacetCounts) ?? {},
       entityType: entityTypeFacetCounts,
-      undergraduateCurrentAvailability: currentAvailabilityFacetCounts,
-      undergraduateCompensationModel: compensationFacetCounts,
-      undergraduateEligibleStudentLevels: eligibleStudentLevelsFacetCounts,
-      hasDocumentedWayIn: documentedWayInCounts,
     };
   })();
   const sortedCandidates = sortResearchEntitiesForMongoFallback(
@@ -1634,6 +1757,7 @@ const searchResearchGroupsViaMongoFallback = async (
     sort,
   );
   const pageEntities = sortedCandidates.slice(offset, offset + safePageSize);
+  const leadMemberNamesByEntityId = await optionalPublicLeadMemberNames(pageEntities);
   return addResearchEntitySearchAliases(
     {
       hits: pageEntities.map((entity) => ({
@@ -1646,7 +1770,7 @@ const searchResearchGroupsViaMongoFallback = async (
       facetDistribution,
       degraded: true,
     },
-    { includeOperatorFields: options.includeNonPublic },
+    { includeOperatorFields: options.includeNonPublic, leadMemberNamesByEntityId },
   ) as ResearchGroupSearchResult;
 };
 
@@ -1734,9 +1858,24 @@ const addPublicMemberField = (target: Record<string, any>, key: string, value: a
   }
 };
 
+/**
+ * Serves the iD and the link together so a client never builds an orcid.org URL out of a
+ * raw value, and refuses anything outside ORCID's issued range even when the check digit
+ * computes, because the corpus holds constructed iDs in the never-issued 0000-0000 block.
+ */
+const addPublicMemberOrcid = (target: Record<string, any>, value: unknown) => {
+  const orcid = servableOrcid(value);
+  if (!orcid) return;
+  target.orcid = orcid;
+  target.orcidUrl = orcidProfileUrl(orcid);
+};
+
 const publicPersonNameField = (value: any): any => {
   if (typeof value !== 'string') return value;
-  return stripPersonNameLifespanSuffix(value) || value;
+  const withoutLifespan = stripPersonNameLifespanSuffix(value) || value;
+  // Falls back to the stored value rather than dropping the name: a lead with no
+  // name at all is a worse page than a lead named by a directory slug (#2385).
+  return sanitizePersonName(withoutLifespan) || withoutLifespan;
 };
 
 function publicMemberKeyForResearchDetail(
@@ -1777,6 +1916,7 @@ function publicMemberUserForResearchDetail(user: any): any {
       publicUser.websiteUrl = website;
     }
   }
+  addPublicMemberOrcid(publicUser, user?.orcid ?? user?.identifiers?.orcid);
 
   return publicUser;
 }
@@ -1809,7 +1949,7 @@ const canonicalProfileLinkUrl = (
 };
 
 function canonicalMemberUserForResearchDetail(entry: ResearchEntityRosterEntry): any {
-  const displayName = stripTrailingPersonNameLifespan(entry.name || '');
+  const displayName = publicPersonNameField(stripTrailingPersonNameLifespan(entry.name || ''));
   const [fallbackFirstName = '', ...rest] = displayName.split(/\s+/).filter(Boolean);
   const publicUser: Record<string, any> = {};
   const imageUrl = entry.imageUrl || '';
@@ -1841,6 +1981,7 @@ function canonicalMemberUserForResearchDetail(entry: ResearchEntityRosterEntry):
       publicUser.websiteUrl = website;
     }
   }
+  addPublicMemberOrcid(publicUser, entry.orcid);
 
   return publicUser;
 }
@@ -2035,7 +2176,9 @@ export function publicRosterDisclosure(
   };
 }
 
-const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+export const PUBLIC_LEAD_ROLES = LEAD_ROLE_LEGACY_LABELS;
+
+const PUBLIC_LEAD_CANONICAL_ROLES = LEAD_ROLE_CANONICAL_VALUES;
 
 export const currentResearchEntityMemberFilter = (researchEntityId: unknown) => ({
   researchEntityId,
@@ -2047,8 +2190,13 @@ const MAX_PUBLIC_DETAIL_MEMBERS = 100;
 const MAX_PUBLIC_DETAIL_ACCESS_SIGNALS = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT = 51;
+// `rosterEnrichment` is here because the lead-name derivation these rails now run
+// reads it to decide whether an official-roster row is still fresh, and that check
+// fails CLOSED on a field it cannot see. Unprojected, it would silently drop every
+// official-roster lead, hand the copy sanitizer a short lead list, and make a rail
+// card strip the very name its own detail page keeps (#2240).
 export const PUBLIC_RELATED_ENTITY_PROJECTION = withPublicDescriptionGateFields(
-  '_id slug departments studentVisibilityTier',
+  '_id slug departments studentVisibilityTier rosterEnrichment',
 );
 
 const MAX_SIMILAR_RESEARCH_ENTITIES = 6;
@@ -2171,11 +2319,19 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
     false,
   );
 
+  const relatedLeadNamesByEntityId = await optionalPublicLeadMemberNames(publicRelatedEntities);
   const publicEntitiesByInternalId = new Map(
-    publicRelatedEntities.map((entity) => [
-      researchGroupDocumentId(entity._id),
-      toPublicResearchEntitySummaryDto(sanitizeResearchEntityPublicDescriptionFields(entity)),
-    ]),
+    publicRelatedEntities.map((entity) => {
+      const entityId = researchGroupDocumentId(entity._id);
+      const leadMemberNames = relatedLeadNamesByEntityId.get(entityId) || [];
+      return [
+        entityId,
+        toPublicResearchEntitySummaryDto(
+          sanitizeResearchEntityPublicDescriptionFields(entity, leadMemberNames),
+          leadMemberNames,
+        ),
+      ];
+    }),
   );
 
   const relatedResearchEntities = dedupePublicResearchEntitiesInOrder(
@@ -2281,8 +2437,16 @@ export async function listSimilarResearchEntities(
     return [];
   }
 
-  const seenCanonicalKeys = new Set<string>();
-  const similarResearchEntities: PublicResearchEntitySummaryDto[] = [];
+  const isExcludedKey = (...values: unknown[]): boolean =>
+    values.some((value) => {
+      const key = String(value ?? '')
+        .trim()
+        .toLowerCase();
+      return Boolean(key) && exclusionKeys.has(key);
+    });
+
+  const orderedCandidateIds: string[] = [];
+  const seenCandidateIds = new Set<string>();
   for (const hit of hits) {
     if (!hit || typeof hit !== 'object') continue;
     if (
@@ -2291,25 +2455,51 @@ export async function listSimilarResearchEntities(
     ) {
       continue;
     }
-    if (hit.archived === true) continue;
-    if (!publicStudentVisibilityTiers.includes(hit.studentVisibilityTier)) continue;
-    const hitId = String(hit.id ?? '')
-      .trim()
-      .toLowerCase();
-    const hitSlug = String(hit.slug ?? '')
-      .trim()
-      .toLowerCase();
-    if ((hitId && exclusionKeys.has(hitId)) || (hitSlug && exclusionKeys.has(hitSlug))) continue;
-    const dto = toPublicResearchEntitySummaryDto(
-      sanitizeResearchEntityPublicDescriptionFields(hit),
-    );
-    const canonicalKey = (dto.slug || dto.id || '').toLowerCase();
-    if (!canonicalKey || seenCanonicalKeys.has(canonicalKey)) continue;
-    seenCanonicalKeys.add(canonicalKey);
-    similarResearchEntities.push(dto);
-    if (similarResearchEntities.length >= limit) break;
+    if (isExcludedKey(hit.id, hit.slug)) continue;
+    const candidateId = normalizeResearchGroupObjectId(hit.id ?? hit._id);
+    if (!candidateId || seenCandidateIds.has(candidateId)) continue;
+    seenCandidateIds.add(candidateId);
+    orderedCandidateIds.push(candidateId);
   }
-  return similarResearchEntities;
+  if (orderedCandidateIds.length === 0) return [];
+
+  // The index document is a materialized snapshot carrying its own sanitizer
+  // (`sanitizeResearchEntityIndexDocument`), so it decides only WHICH entities are
+  // similar and in what order. Servability and card copy are re-derived from Mongo
+  // through the same live gate the detail resolver runs, because a stored
+  // `student_ready` tier can go stale and the index sanitizer diverges from the
+  // serve path in both directions (#2395). Reading the hit directly rendered copy
+  // no other surface would show, for a row that may no longer serve.
+  const candidateEntities = (await ResearchEntity.find({
+    _id: { $in: orderedCandidateIds },
+    archived: { $ne: true },
+    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+  })
+    .select(PUBLIC_RELATED_ENTITY_PROJECTION)
+    .lean()) as any[];
+
+  const summaryCandidates = withServablePublicResearchEntities(candidateEntities, {}, false).filter(
+    (candidate) => !isExcludedKey(researchGroupDocumentId(candidate._id), candidate.slug),
+  );
+  const candidateLeadNamesByEntityId = await optionalPublicLeadMemberNames(summaryCandidates);
+  const summariesByInternalId = new Map(
+    summaryCandidates.map((candidate) => {
+      const entityId = researchGroupDocumentId(candidate._id);
+      const leadMemberNames = candidateLeadNamesByEntityId.get(entityId) || [];
+      return [
+        entityId,
+        toPublicResearchEntitySummaryDto(
+          sanitizeResearchEntityPublicDescriptionFields(candidate, leadMemberNames),
+          leadMemberNames,
+        ),
+      ];
+    }),
+  );
+
+  return dedupePublicResearchEntitiesInOrder(orderedCandidateIds, summariesByInternalId).slice(
+    0,
+    limit,
+  );
 }
 
 function normalizedMemberName(member: { user?: any }): string {
@@ -2558,47 +2748,58 @@ const publicString = (value: unknown): string | undefined =>
     ? redactDirectContactInfo(value.slice(0, MAX_PUBLIC_DETAIL_TEXT_LENGTH))
     : undefined;
 
-const publicResearchDetailSourceUrl = (value: unknown): string | undefined => {
+const publicResearchDetailSourceUrl = (value: unknown, entity?: any): string | undefined => {
   const url = publicHttpUrl(value);
-  if (!url || isDisallowedResearchEntitySourceUrl(url)) return undefined;
+  if (!url || isDisallowedResearchEntitySourceUrl(url, entity)) return undefined;
   return url;
 };
 
-const publicAccessSignalForResearchDetail = (signal: any) => ({
+/**
+ * An access signal's citation is an `instruction`, the one citation kind the served
+ * policy withholds: it tells a student how to get involved, so a dead one sends them
+ * nowhere, while `excerpt` keeps what it said and the signal is not retired because a
+ * 404 is not evidence a programme ended. The policy and its reasons live in
+ * `servedCitationPolicy`; this call site only states which kind it is (#3312).
+ */
+const servableAccessSignalCitation = (signal: any, entity?: any): string | undefined =>
+  servedCitationUrl(
+    'instruction',
+    entity?.sourceLinkHealth,
+    publicResearchDetailSourceUrl(signal.source?.url, entity),
+  );
+
+// Kept as a single object literal because `security-preflight` pins this serializer's
+// shape with a literal `=> ({ ... })` pattern, and a block body reads to that gate as the
+// serializer having been deleted. The withhold lives in the helper above.
+const publicAccessSignalForResearchDetail = (signal: any, entity?: any) => ({
   signalType: signal.type,
   confidence: signal.confidence,
   confidenceScore: signal.confidenceScore,
   excerpt: publicString(signal.source?.excerpt),
-  sourceUrl: publicResearchDetailSourceUrl(signal.source?.url),
+  sourceUrl: servableAccessSignalCitation(signal, entity),
   observedAt: signal.observedAt,
 });
 
-const publicSourceLinkHealth = (
-  value: unknown,
-): Array<{
-  url: string;
-  healthStatus: string;
-  httpStatusCode?: number;
-}> => {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
-    const url = publicHttpUrl((entry as { url?: unknown })?.url);
-    const healthStatus = (entry as { healthStatus?: unknown })?.healthStatus;
-    if (!url || typeof healthStatus !== 'string') return [];
-    const httpStatusCode = (entry as { httpStatusCode?: unknown })?.httpStatusCode;
-    return [
-      {
-        url,
-        healthStatus,
-        ...(typeof httpStatusCode === 'number' && Number.isFinite(httpStatusCode)
-          ? { httpStatusCode }
-          : {}),
-      },
-    ];
-  });
-};
-
-const publicResearchDetailGroup = (group: any) => {
+/**
+ * Narrows a whole research-entity document to what the detail response may carry.
+ *
+ * What this withholds must stay disjoint from
+ * `RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS`. Withholding a gate input here
+ * does not keep it out of the payload - the public DTO is an allowlist builder and
+ * already omits every field it does not name - it only starves the serve-time
+ * sanitizer the DTO runs, which then judges the entity on values it cannot see.
+ * `fieldProvenance` is the field that proved the point: withholding it here made
+ * the chip-coherence pass read every sourced `researchAreas` chip as unsourced and
+ * drop the ones it judged domain-incoherent (#2898). It is retained and never
+ * served; only the derived contribution labels are public.
+ *
+ * `sourceUrls` is the same lesson on a field the DTO does name: narrowing the list
+ * here hid the shared academic host root from `servedPersonScopedDisplayName`, which
+ * then served the host organization's name as the card heading (#2360). The DTO owns
+ * that narrowing now (`publicResearchEntitySourceUrls`), so this projection hands it
+ * the row's citations intact.
+ */
+export const publicResearchDetailGroup = (group: any) => {
   const {
     contactEmail: _contactEmail,
     contactName: _contactName,
@@ -2610,14 +2811,13 @@ const publicResearchDetailGroup = (group: any) => {
     sourceLinkHealth: rawSourceLinkHealth,
     ...publicGroup
   } = group || {};
-  if (Array.isArray(publicGroup.sourceUrls)) {
-    publicGroup.sourceUrls = publicGroup.sourceUrls.filter(
-      (url: unknown) => !isDisallowedResearchEntitySourceUrl(url),
-    );
-  }
   return {
     ...publicGroup,
-    sourceLinkHealth: publicSourceLinkHealth(rawSourceLinkHealth),
+    sourceLinkHealth: publicSourceLinkHealthArray(rawSourceLinkHealth),
+    sourceFieldContributions: buildSourceFieldContributions(
+      publicGroup.fieldProvenance,
+      (url) => !isDisallowedResearchEntitySourceUrl(url, publicGroup),
+    ),
   };
 };
 
@@ -2639,6 +2839,92 @@ const isPubliclyServableCanonicalTarget = (candidate: Record<string, any>): bool
   typeof candidate.slug === 'string' &&
   candidate.slug.trim().length > 0;
 
+const PUBLIC_DETAIL_ROLE_PRIORITY: Record<string, number> = {
+  pi: 0,
+  'co-pi': 1,
+  director: 2,
+  'co-director': 3,
+  'core-faculty': 4,
+  affiliated: 5,
+  alumni: 6,
+};
+
+/**
+ * The public roster a detail page renders, derived from raw roster entries: drop
+ * historical rows and stale official-roster rows, map to canonical member users,
+ * and collapse duplicate identity-key/role pairs.
+ *
+ * Single-owner because browse now derives lead names for its own card copy from the
+ * same entries. A looser derivation there would hand the copy sanitizer a different
+ * lead set than the detail page's, and the two surfaces would serve two strings for
+ * one row again, which is the defect #2240 exists to close.
+ */
+function canonicalPublicDetailMembers(
+  entity: Record<string, any>,
+  rosterEntries: ResearchEntityRosterEntry[],
+  now = new Date(),
+): Array<{ user: any; role: string; row: Record<string, any> }> {
+  return rosterEntries
+    .filter((entry) => entry.state !== 'HISTORICAL')
+    .filter(
+      (entry) =>
+        entry.rosterProvenance?.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
+        isFreshVerifiedOfficialRosterRow(
+          canonicalRosterMemberRow(entry),
+          now,
+          entity.rosterEnrichment,
+        ),
+    )
+    .sort(
+      (a, b) =>
+        (PUBLIC_DETAIL_ROLE_PRIORITY[a.role] ?? 99) - (PUBLIC_DETAIL_ROLE_PRIORITY[b.role] ?? 99),
+    )
+    .slice(0, MAX_PUBLIC_DETAIL_MEMBERS)
+    .map((entry) => ({
+      user: canonicalMemberUserForResearchDetail(entry),
+      role: entry.role,
+      row: canonicalRosterMemberRow(entry),
+    }))
+    .filter((member) => Boolean(member.user.displayName || member.user.fname || member.user.lname))
+    .filter((member, index, rows) => {
+      const key = `${(member.row.identityKey || '').toLowerCase()}:${member.role}`;
+      return (
+        index ===
+        rows.findIndex(
+          (candidate) =>
+            `${(candidate.row.identityKey || '').toLowerCase()}:${candidate.role}` === key,
+        )
+      );
+    })
+    .sort(
+      (a, b) =>
+        (PUBLIC_DETAIL_ROLE_PRIORITY[a.role] ?? 99) - (PUBLIC_DETAIL_ROLE_PRIORITY[b.role] ?? 99),
+    );
+}
+
+const publicLeadMemberNames = (members: Array<{ user?: any; role: string }>): string[] =>
+  members
+    .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
+    .map((member) => memberDisplayName(member))
+    .filter(Boolean);
+
+/**
+ * The lead display names a serve path must hand the copy sanitizer, derived from one
+ * entity document and its raw roster entries through exactly the chain the detail
+ * page runs. The image guard the detail page also applies is deliberately skipped:
+ * it only ever rewrites image URLs, never membership, so it cannot change a name.
+ */
+export function publicResearchEntityLeadMemberNames(
+  entity: Record<string, any>,
+  rosterEntries: ResearchEntityRosterEntry[],
+  now = new Date(),
+): string[] {
+  const canonicalMembers = canonicalPublicDetailMembers(entity, rosterEntries, now);
+  return publicLeadMemberNames(
+    dedupeSameNameLeadMembers(dropUncorroboratedPhantomLeads(canonicalMembers), entity),
+  );
+}
+
 export async function resolveArchivedResearchEntityCanonicalSlug(
   slug: string,
 ): Promise<string | null> {
@@ -2656,10 +2942,9 @@ export async function resolveArchivedResearchEntityCanonicalSlug(
     canonicalGroupId?: mongoose.Types.ObjectId;
   } | null;
 
-  const canonical = await resolveResearchEntityCanonical({
+  const canonical = await resolveResearchEntityCanonicalIdentity({
     slug: normalizedSlug,
     entityId: mergedShell?._id,
-    seedCanonicalIds: [mergedShell?.canonicalGroupId],
     isAcceptableCanonical: isPubliclyServableCanonicalTarget,
   });
 
@@ -2673,7 +2958,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   members: Array<{ user: any; role: string }>;
   roster: PublicRosterDisclosure;
   accessSignals: any[];
-  undergraduateLogistics: PublicUndergraduateLogistics;
+  departmentCourseCreditRoutes: PublicDepartmentCourseCreditRoute[];
   entityRelationships: any[];
   relatedResearchEntities: PublicResearchEntitySummaryDto[];
   relatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
@@ -2693,49 +2978,11 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   if (!group) return null;
   if (researchEntityHasDeceasedLead(group as Record<string, any>)) return null;
 
-  const ROLE_PRIORITY: Record<string, number> = {
-    pi: 0,
-    'co-pi': 1,
-    director: 2,
-    'co-director': 3,
-    'core-faculty': 4,
-    affiliated: 5,
-    alumni: 6,
-  };
-
   const rosterEntries = await getResearchEntityRoster((group as any)._id);
-  const currentRosterEntries = rosterEntries
-    .filter((entry) => entry.state !== 'HISTORICAL')
-    .filter(
-      (entry) =>
-        entry.rosterProvenance?.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
-        isFreshVerifiedOfficialRosterRow(
-          canonicalRosterMemberRow(entry),
-          new Date(),
-          (group as any).rosterEnrichment,
-        ),
-    )
-    .sort((a, b) => (ROLE_PRIORITY[a.role] ?? 99) - (ROLE_PRIORITY[b.role] ?? 99))
-    .slice(0, MAX_PUBLIC_DETAIL_MEMBERS);
-
-  const canonicalMembers = currentRosterEntries
-    .map((entry) => ({
-      user: canonicalMemberUserForResearchDetail(entry),
-      role: entry.role,
-      row: canonicalRosterMemberRow(entry),
-    }))
-    .filter((member) => Boolean(member.user.displayName || member.user.fname || member.user.lname))
-    .filter((member, index, rows) => {
-      const key = `${(member.row.identityKey || '').toLowerCase()}:${member.role}`;
-      return (
-        index ===
-        rows.findIndex(
-          (candidate) =>
-            `${(candidate.row.identityKey || '').toLowerCase()}:${candidate.role}` === key,
-        )
-      );
-    })
-    .sort((a, b) => (ROLE_PRIORITY[a.role] ?? 99) - (ROLE_PRIORITY[b.role] ?? 99));
+  const canonicalMembers = canonicalPublicDetailMembers(
+    group as Record<string, any>,
+    rosterEntries,
+  );
   const corroboratedMembers = dropUncorroboratedPhantomLeads(canonicalMembers);
   const imageGuardedMembersWithRows = await withPublicMemberImageGuards(corroboratedMembers);
   const dedupedMembersWithRows = dedupeSameNameLeadMembers(imageGuardedMembersWithRows, group);
@@ -2743,10 +2990,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     group as Record<string, any>,
     dedupedMembersWithRows,
   );
-  const leadMemberNames = dedupedMembersWithRows
-    .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
-    .map((member) => memberDisplayName(member))
-    .filter((name): name is string => Boolean(name));
+  const leadMemberNames = publicLeadMemberNames(dedupedMembersWithRows);
   const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
     entity: group as any,
     leadMemberNames,
@@ -2791,7 +3035,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     availableRosterMembers.length,
     availableRosterMembers.map((member) => member.row),
   );
-  const [accessSignals, planningContexts, undergraduateLogistics] = await Promise.all([
+  const [accessSignals, planningContexts, departmentCourseCreditRoutes] = await Promise.all([
     Signal.find({
       researchEntityId: (group as any)._id,
       type: { $in: accessSignalTypes },
@@ -2801,11 +3045,16 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       .limit(MAX_PUBLIC_DETAIL_ACCESS_SIGNALS)
       .lean(),
     optionalPlanningContexts([(group as any)._id]),
-    optionalUndergraduateLogistics((group as any)._id),
+    optionalDepartmentCourseCreditRoutes(((group as any).departments || []) as string[]),
   ]);
 
-  const publicGroupForResponse = publicResearchDetailGroup(publicGroup);
-  const publicAccessSignals = (accessSignals as any[]).map(publicAccessSignalForResearchDetail);
+  const publicGroupForResponse = publicResearchDetailGroup({
+    ...publicGroup,
+    fieldProvenance: (group as any).fieldProvenance,
+  });
+  const publicAccessSignals = (accessSignals as any[]).map((signal) =>
+    publicAccessSignalForResearchDetail(signal, group),
+  );
   const relationshipPayload = await listResearchEntityRelationshipPayload((group as any)._id);
   const structuralRelationExclusionKeys = [
     ...relationshipPayload.relatedResearchEntities,
@@ -2815,17 +3064,26 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     excludeEntityKeys: structuralRelationExclusionKeys,
   });
 
-  return addResearchEntityDetailAlias({
-    group: {
-      ...publicGroupForResponse,
-      ...leadIdentity,
-      planningContext: planningContexts.contexts.get(researchGroupDocumentId((group as any)._id)),
+  return addResearchEntityDetailAlias(
+    {
+      group: {
+        ...publicGroupForResponse,
+        ...leadIdentity,
+        planningContext: planningContexts.contexts.get(researchGroupDocumentId((group as any)._id)),
+      },
+      members,
+      roster,
+      accessSignals: publicAccessSignals,
+      departmentCourseCreditRoutes,
+      ...relationshipPayload,
+      similarResearchEntities,
     },
-    members,
-    roster,
-    accessSignals: publicAccessSignals,
-    undergraduateLogistics,
-    ...relationshipPayload,
-    similarResearchEntities,
-  });
+    // The names this route already resolved. Every list surface passes its own through
+    // `leadMemberNamesByEntityId`; the detail page computed them and then built its DTO
+    // without them, so the serve chain ran the whole name-identity layer on an empty
+    // lead set. That switched off the #2913 key-names-only-this-person arm for the one
+    // surface a student lands on: 8 served rows titled themselves with an organization
+    // their lead merely directs (#3132, the #2240 browse-versus-detail shape).
+    { leadMemberNames },
+  );
 }

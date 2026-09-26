@@ -1,0 +1,803 @@
+import { describe, expect, it } from 'vitest';
+import fs from 'fs';
+import {
+  assertCollectionSetUnchanged,
+  assertServedCorpusScoreboardConsistent,
+  collectionSetChangedMessage,
+  collectionSetDelta,
+  buildServedCorpusScoreboard,
+  compareServedRowAgainstBaseline,
+  detectBaselineExportCaps,
+  formatServedCorpusScoreboardDetail,
+  formatServedCorpusScoreboardTable,
+  indexServedRowsBySlug,
+  loadServedCorpusBaseline,
+  parseServedCorpusScoreboardArgs,
+  renderServedResearchEntityRow,
+  SERVED_CORPUS_SCOREBOARD_ENVIRONMENTS,
+  type ServedCorpusBaselineEntry,
+  type ServedResearchEntityRow,
+} from '../servedCorpusScoreboardCore';
+
+const baselineEntry = (
+  overrides: Partial<ServedCorpusBaselineEntry> = {},
+): ServedCorpusBaselineEntry => ({
+  slug: 'synthetic-lab-alpha',
+  name: 'Synthetic Alpha Lab',
+  shortDescription: 'Studies synthetic materials.',
+  fullDescription: 'The Synthetic Alpha Lab studies synthetic materials.',
+  websiteUrl: 'https://example.invalid/alpha',
+  researchAreas: ['Materials', 'Synthesis'],
+  ...overrides,
+});
+
+const servedRow = (overrides: Partial<ServedResearchEntityRow> = {}): ServedResearchEntityRow => ({
+  slug: 'synthetic-lab-alpha',
+  name: 'Synthetic Alpha Lab',
+  shortDescription: 'Studies synthetic materials.',
+  fullDescription: 'The Synthetic Alpha Lab studies synthetic materials.',
+  websiteUrl: 'https://example.invalid/alpha',
+  researchAreas: ['Materials', 'Synthesis'],
+  tier: 'student_ready',
+  archived: false,
+  serveTimeHoldback: false,
+  served: true,
+  ...overrides,
+});
+
+describe('parseServedCorpusScoreboardArgs', () => {
+  it('defaults to all three environments', () => {
+    const options = parseServedCorpusScoreboardArgs(['--baseline', '/tmp/baseline.json']);
+    expect(options.environments).toEqual([...SERVED_CORPUS_SCOREBOARD_ENVIRONMENTS]);
+    expect(options.baselinePath).toBe('/tmp/baseline.json');
+  });
+
+  it('requires a baseline because the comparison is paired by slug', () => {
+    expect(() => parseServedCorpusScoreboardArgs([])).toThrow(/--baseline is required/);
+  });
+
+  it('collects repeated environments once, in the order given', () => {
+    const options = parseServedCorpusScoreboardArgs([
+      '--baseline',
+      '/tmp/baseline.json',
+      '--environment',
+      'beta',
+      '--environment',
+      'development',
+      '--environment',
+      'beta',
+    ]);
+    expect(options.environments).toEqual(['beta', 'development']);
+  });
+
+  it('refuses an operator environment this scoreboard cannot read', () => {
+    expect(() =>
+      parseServedCorpusScoreboardArgs([
+        '--baseline',
+        '/tmp/baseline.json',
+        '--environment',
+        'production-copy',
+      ]),
+    ).toThrow(/development, beta, or production/);
+  });
+
+  it('refuses an unknown argument rather than ignoring it', () => {
+    expect(() =>
+      parseServedCorpusScoreboardArgs(['--baseline', '/tmp/baseline.json', '--sample', '10']),
+    ).toThrow(/Unknown argument "--sample"/);
+  });
+
+  it('leaves the corpus reachability scan off unless asked', () => {
+    const options = parseServedCorpusScoreboardArgs(['--baseline', '/tmp/baseline.json']);
+    expect(options.corpusReachability).toBe(false);
+    expect(
+      parseServedCorpusScoreboardArgs(['--baseline', '/tmp/baseline.json', '--corpus-reachability'])
+        .corpusReachability,
+    ).toBe(true);
+  });
+
+  it('refuses a non-numeric text limit', () => {
+    expect(() =>
+      parseServedCorpusScoreboardArgs(['--baseline', '/tmp/baseline.json', '--text-limit', 'all']),
+    ).toThrow(/non-negative integer/);
+  });
+});
+
+describe('loadServedCorpusBaseline', () => {
+  it('reads a well-formed baseline', () => {
+    const entries = loadServedCorpusBaseline(JSON.stringify([baselineEntry()]));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].researchAreas).toEqual(['Materials', 'Synthesis']);
+  });
+
+  it('refuses a duplicate slug, which would double-count a paired comparison', () => {
+    expect(() =>
+      loadServedCorpusBaseline(JSON.stringify([baselineEntry(), baselineEntry()])),
+    ).toThrow(/appears more than once/);
+  });
+
+  it('refuses a missing compared field rather than reading it as a change on every row', () => {
+    const entry = baselineEntry() as unknown as Record<string, unknown>;
+    delete entry.shortDescription;
+    expect(() => loadServedCorpusBaseline(JSON.stringify([entry]))).toThrow(
+      /missing string field "shortDescription"/,
+    );
+  });
+
+  it('refuses an empty array and non-JSON input', () => {
+    expect(() => loadServedCorpusBaseline('[]')).toThrow(/non-empty JSON array/);
+    expect(() => loadServedCorpusBaseline('not json')).toThrow(/not valid JSON/);
+  });
+});
+
+describe('renderServedResearchEntityRow', () => {
+  const storedDocument = (overrides: Record<string, any> = {}): Record<string, any> => ({
+    slug: 'synthetic-lab-alpha',
+    studentVisibilityTier: 'student_ready',
+    archived: false,
+    ...overrides,
+  });
+
+  it('reads the copy the detail route returned, not the stored document', () => {
+    const row = renderServedResearchEntityRow({
+      doc: storedDocument({
+        name: 'STORED Synthetic Alpha Lab',
+        fullDescription: 'Stored copy the route would have sanitized.',
+      }),
+      servedEntity: {
+        slug: 'synthetic-lab-alpha',
+        name: 'Synthetic Alpha Lab',
+        shortDescription: 'Studies synthetic materials.',
+        fullDescription: 'This research studies synthetic materials.',
+        websiteUrl: 'https://example.invalid/alpha',
+        researchAreas: ['Materials'],
+      },
+    });
+
+    expect(row.name).toBe('Synthetic Alpha Lab');
+    expect(row.fullDescription).toBe('This research studies synthetic materials.');
+    expect(row.served).toBe(true);
+    expect(row.serveTimeHoldback).toBe(false);
+    expect(row.tier).toBe('student_ready');
+  });
+
+  it('calls a student_ready row with no payload a serve-time holdback', () => {
+    const row = renderServedResearchEntityRow({
+      doc: storedDocument({ slug: 'synthetic-lab-zeta' }),
+      servedEntity: null,
+    });
+
+    expect(row.served).toBe(false);
+    expect(row.serveTimeHoldback).toBe(true);
+    expect(row.fullDescription).toBe('');
+    expect(row.researchAreas).toEqual([]);
+  });
+
+  it('does not call a tier or archived holdback a serve-time holdback', () => {
+    const held = renderServedResearchEntityRow({
+      doc: storedDocument({ studentVisibilityTier: 'operator_review' }),
+      servedEntity: null,
+    });
+    expect(held.served).toBe(false);
+    expect(held.serveTimeHoldback).toBe(false);
+    expect(held.tier).toBe('operator_review');
+
+    const archived = renderServedResearchEntityRow({
+      doc: storedDocument({ archived: true }),
+      servedEntity: null,
+    });
+    expect(archived.served).toBe(false);
+    expect(archived.serveTimeHoldback).toBe(false);
+    expect(archived.archived).toBe(true);
+  });
+
+  it('tolerates a payload missing optional copy fields', () => {
+    const row = renderServedResearchEntityRow({
+      doc: storedDocument(),
+      servedEntity: { slug: 'synthetic-lab-alpha', name: 'Synthetic Alpha Lab' },
+    });
+    expect(row.shortDescription).toBe('');
+    expect(row.websiteUrl).toBe('');
+    expect(row.researchAreas).toEqual([]);
+    expect(row.served).toBe(true);
+  });
+});
+
+describe('indexServedRowsBySlug', () => {
+  it('refuses two documents serving one slug', () => {
+    expect(() => indexServedRowsBySlug([servedRow(), servedRow()])).toThrow(
+      /Two stored documents serve slug/,
+    );
+  });
+});
+
+describe('compareServedRowAgainstBaseline', () => {
+  it('reports an absent slug without inventing a change', () => {
+    const comparison = compareServedRowAgainstBaseline(baselineEntry(), undefined);
+    expect(comparison).toEqual({
+      slug: 'synthetic-lab-alpha',
+      present: false,
+      served: false,
+      changes: [],
+      truncatedPrefixFields: [],
+    });
+  });
+
+  it('reports no change when the served copy matches the baseline', () => {
+    expect(compareServedRowAgainstBaseline(baselineEntry(), servedRow()).changes).toEqual([]);
+  });
+
+  it('names each changed field and carries both texts', () => {
+    const comparison = compareServedRowAgainstBaseline(
+      baselineEntry(),
+      servedRow({ shortDescription: 'Studies synthetic ceramics.', websiteUrl: '' }),
+    );
+    expect(comparison.changes.map((change) => change.field)).toEqual([
+      'shortDescription',
+      'websiteUrl',
+    ]);
+    expect(comparison.changes[0].baseline).toBe('Studies synthetic materials.');
+    expect(comparison.changes[0].served).toBe('Studies synthetic ceramics.');
+    expect(comparison.changes[0].cosmeticOnly).toBe(false);
+  });
+
+  it('marks a whitespace-only difference cosmetic instead of counting it as progress', () => {
+    const comparison = compareServedRowAgainstBaseline(
+      baselineEntry(),
+      servedRow({ shortDescription: '  Studies   synthetic materials.  ' }),
+    );
+    expect(comparison.changes).toHaveLength(1);
+    expect(comparison.changes[0].cosmeticOnly).toBe(true);
+  });
+
+  it('marks a reordered research-area list cosmetic', () => {
+    const comparison = compareServedRowAgainstBaseline(
+      baselineEntry(),
+      servedRow({ researchAreas: ['Synthesis', 'Materials'] }),
+    );
+    expect(comparison.changes).toHaveLength(1);
+    expect(comparison.changes[0].field).toBe('researchAreas');
+    expect(comparison.changes[0].cosmeticOnly).toBe(true);
+  });
+});
+
+const scoreboardFixture = () =>
+  buildServedCorpusScoreboard({
+    environment: 'beta',
+    databaseName: 'Beta',
+    corpus: { researchEntities: 10, studentReadyNotArchived: 6 },
+    baseline: [
+      baselineEntry(),
+      baselineEntry({ slug: 'synthetic-lab-beta' }),
+      baselineEntry({ slug: 'synthetic-lab-gamma' }),
+      baselineEntry({ slug: 'synthetic-lab-delta' }),
+    ],
+    rows: [
+      servedRow({ shortDescription: 'Studies synthetic ceramics.' }),
+      servedRow({ slug: 'synthetic-lab-beta' }),
+      servedRow({
+        slug: 'synthetic-lab-gamma',
+        tier: 'operator_review',
+        served: false,
+        shortDescription: 'Studies something else entirely.',
+      }),
+    ],
+  });
+
+describe('detectBaselineExportCaps', () => {
+  const atLength = (slug: string, length: number): ServedCorpusBaselineEntry =>
+    baselineEntry({ slug, fullDescription: 'x'.repeat(length) });
+
+  it('detects the cap a hand-read export left behind', () => {
+    const caps = detectBaselineExportCaps([
+      atLength('a', 700),
+      atLength('b', 700),
+      atLength('c', 700),
+      atLength('d', 412),
+    ]);
+    expect(caps).toEqual({ fullDescription: 700 });
+  });
+
+  it('does not call a single long row a cap', () => {
+    const caps = detectBaselineExportCaps([atLength('a', 700), atLength('b', 412)]);
+    expect(caps.fullDescription).toBeUndefined();
+  });
+
+  it('does not call an unrounded shared length a cap', () => {
+    const caps = detectBaselineExportCaps([
+      atLength('a', 413),
+      atLength('b', 413),
+      atLength('c', 413),
+    ]);
+    expect(caps.fullDescription).toBeUndefined();
+  });
+
+  it('does not fire on a corpus whose longest value is not shared', () => {
+    const caps = detectBaselineExportCaps([
+      atLength('a', 700),
+      atLength('b', 650),
+      atLength('c', 600),
+    ]);
+    expect(caps.fullDescription).toBeUndefined();
+  });
+});
+
+describe('comparing against a capped baseline', () => {
+  const cappedBaseline = 'y'.repeat(700);
+  const caps = { fullDescription: 700 } as const;
+
+  it('does not count a change when the baseline is only a prefix of what is served', () => {
+    const comparison = compareServedRowAgainstBaseline(
+      baselineEntry({ fullDescription: cappedBaseline }),
+      servedRow({ fullDescription: `${cappedBaseline} and the rest the export threw away.` }),
+      caps,
+    );
+    expect(comparison.changes).toEqual([]);
+    expect(comparison.truncatedPrefixFields).toEqual(['fullDescription']);
+  });
+
+  it('still counts a change when the text differs inside the prefix', () => {
+    const comparison = compareServedRowAgainstBaseline(
+      baselineEntry({ fullDescription: cappedBaseline }),
+      servedRow({ fullDescription: `z${cappedBaseline.slice(1)} plus more text.` }),
+      caps,
+    );
+    expect(comparison.changes.map((change) => change.field)).toEqual(['fullDescription']);
+    expect(comparison.truncatedPrefixFields).toEqual([]);
+  });
+
+  it('does not apply the cap to a baseline value shorter than it', () => {
+    const comparison = compareServedRowAgainstBaseline(
+      baselineEntry({ fullDescription: 'A short stored description.' }),
+      servedRow({ fullDescription: 'A short stored description, now longer.' }),
+      caps,
+    );
+    expect(comparison.changes.map((change) => change.field)).toEqual(['fullDescription']);
+    expect(comparison.truncatedPrefixFields).toEqual([]);
+  });
+
+  it('keeps prefix rows out of the changed count and reports them in their own bucket', () => {
+    const scoreboard = buildServedCorpusScoreboard({
+      environment: 'development',
+      databaseName: 'Development',
+      corpus: { researchEntities: 10, studentReadyNotArchived: 8 },
+      baseline: [
+        baselineEntry({ slug: 'capped-a', fullDescription: cappedBaseline }),
+        baselineEntry({ slug: 'capped-b', fullDescription: cappedBaseline }),
+        baselineEntry({ slug: 'capped-c', fullDescription: cappedBaseline }),
+      ],
+      rows: [
+        servedRow({ slug: 'capped-a', fullDescription: `${cappedBaseline} extra.` }),
+        servedRow({ slug: 'capped-b', fullDescription: `${cappedBaseline} more.` }),
+        servedRow({ slug: 'capped-c', fullDescription: cappedBaseline }),
+      ],
+    });
+
+    expect(scoreboard.baselineExportCaps).toEqual({ fullDescription: 700 });
+    expect(scoreboard.baseline.changed).toBe(0);
+    expect(scoreboard.baseline.comparedOnTruncatedPrefix).toBe(2);
+    expect(scoreboard.baseline.truncatedPrefixByField.fullDescription).toBe(2);
+    expect(scoreboard.baseline.unchangedStillServed).toBe(3);
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).not.toThrow();
+    expect(formatServedCorpusScoreboardTable([scoreboard])).toContain(
+      'compared on a truncated prefix',
+    );
+    expect(formatServedCorpusScoreboardDetail(scoreboard, 0)).toContain('fullDescription at 700');
+  });
+});
+
+describe('buildServedCorpusScoreboard', () => {
+  it('partitions the baseline into absent, no longer served, changed, and unchanged', () => {
+    const scoreboard = scoreboardFixture();
+    expect(scoreboard.baseline).toMatchObject({
+      slugs: 4,
+      present: 3,
+      absent: 1,
+      stillServed: 2,
+      heldBackAtServeTime: 0,
+      noLongerServed: 1,
+      changed: 1,
+      unchangedStillServed: 1,
+    });
+    expect(scoreboard.absentSlugs).toEqual(['synthetic-lab-delta']);
+    expect(scoreboard.noLongerServedRows).toEqual([
+      { slug: 'synthetic-lab-gamma', tier: 'operator_review', archived: false },
+    ]);
+  });
+
+  it('counts a serve-time holdback separately from a tier or archived change', () => {
+    const scoreboard = buildServedCorpusScoreboard({
+      environment: 'beta',
+      databaseName: 'Beta',
+      corpus: { researchEntities: 4, studentReadyNotArchived: 3 },
+      baseline: [baselineEntry(), baselineEntry({ slug: 'synthetic-lab-epsilon' })],
+      rows: [
+        servedRow(),
+        servedRow({
+          slug: 'synthetic-lab-epsilon',
+          shortDescription: 'Studies synthetic polymers.',
+          serveTimeHoldback: true,
+          served: false,
+        }),
+      ],
+    });
+
+    expect(scoreboard.baseline).toMatchObject({
+      present: 2,
+      stillServed: 1,
+      heldBackAtServeTime: 1,
+      noLongerServed: 0,
+      changed: 0,
+    });
+    expect(scoreboard.heldBackAtServeTimeSlugs).toEqual(['synthetic-lab-epsilon']);
+    expect(scoreboard.noLongerServedRows).toEqual([]);
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).not.toThrow();
+    expect(formatServedCorpusScoreboardTable([scoreboard])).toContain('held back at serve time');
+    expect(formatServedCorpusScoreboardDetail(scoreboard, 0)).toContain(
+      'held back at serve time, so the detail page 404s (1)',
+    );
+  });
+
+  it('counts an archived row with a serve-time holdback once, as no longer served', () => {
+    const scoreboard = buildServedCorpusScoreboard({
+      environment: 'beta',
+      databaseName: 'Beta',
+      corpus: { researchEntities: 4, studentReadyNotArchived: 1 },
+      baseline: [baselineEntry()],
+      rows: [servedRow({ archived: true, serveTimeHoldback: true, served: false })],
+    });
+
+    expect(scoreboard.baseline).toMatchObject({
+      present: 1,
+      stillServed: 0,
+      heldBackAtServeTime: 0,
+      noLongerServed: 1,
+    });
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).not.toThrow();
+  });
+
+  it('records the served rows the next baseline can be built from', () => {
+    const scoreboard = scoreboardFixture();
+    expect(scoreboard.servedRows.map((row) => row.slug)).toEqual([
+      'synthetic-lab-alpha',
+      'synthetic-lab-beta',
+      'synthetic-lab-gamma',
+    ]);
+    const rolledForward = loadServedCorpusBaseline(JSON.stringify(scoreboard.servedRows));
+    expect(rolledForward.map((entry) => entry.slug)).toEqual(
+      scoreboard.servedRows.map((row) => row.slug),
+    );
+    expect(rolledForward[0].shortDescription).toBe('Studies synthetic ceramics.');
+  });
+
+  it('counts a change only for a row that is still served', () => {
+    const scoreboard = scoreboardFixture();
+    expect(scoreboard.baseline.changedByField.shortDescription).toBe(1);
+    expect(scoreboard.changedRows.map((row) => row.slug)).toEqual(['synthetic-lab-alpha']);
+  });
+
+  it('breaks changes out by field', () => {
+    const scoreboard = buildServedCorpusScoreboard({
+      environment: 'development',
+      databaseName: 'Development',
+      corpus: { researchEntities: 5, studentReadyNotArchived: 5 },
+      baseline: [baselineEntry()],
+      rows: [servedRow({ name: 'Synthetic Alpha Laboratory', websiteUrl: '' })],
+    });
+    expect(scoreboard.baseline.changedByField).toMatchObject({
+      name: 1,
+      websiteUrl: 1,
+      shortDescription: 0,
+      fullDescription: 0,
+      researchAreas: 0,
+    });
+    expect(scoreboard.baseline.changed).toBe(1);
+  });
+});
+
+describe('the corpus reachable split', () => {
+  const withCorpus = (corpus: Record<string, unknown>) =>
+    buildServedCorpusScoreboard({
+      environment: 'beta',
+      databaseName: 'Beta',
+      corpus: corpus as never,
+      baseline: [baselineEntry()],
+      rows: [servedRow()],
+    });
+
+  it('is absent unless it was measured, and says so in the table', () => {
+    const scoreboard = withCorpus({ researchEntities: 10, studentReadyNotArchived: 6 });
+    expect(scoreboard.corpus.reachable).toBeUndefined();
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).not.toThrow();
+    expect(formatServedCorpusScoreboardTable([scoreboard])).toContain('not measured');
+  });
+
+  it('accepts a measured split that sums to the tier count', () => {
+    const scoreboard = withCorpus({
+      researchEntities: 10,
+      studentReadyNotArchived: 6,
+      reachable: 4,
+      servesNoPage: 2,
+      servesNoPageSlugs: ['synthetic-lab-yankee', 'synthetic-lab-zulu'],
+    });
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).not.toThrow();
+    expect(formatServedCorpusScoreboardDetail(scoreboard, 0)).toContain(
+      'student_ready corpus-wide but serving no page at all (2 of 6)',
+    );
+  });
+
+  it('refuses a reachable count larger than the tier count', () => {
+    const scoreboard = withCorpus({
+      researchEntities: 10,
+      studentReadyNotArchived: 6,
+      reachable: 7,
+      servesNoPage: 0,
+      servesNoPageSlugs: [],
+    });
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).toThrow(
+      /reachable \(7\) exceeds student_ready and not archived \(6\)/,
+    );
+  });
+
+  it('refuses a split that does not sum to the tier count', () => {
+    const scoreboard = withCorpus({
+      researchEntities: 10,
+      studentReadyNotArchived: 6,
+      reachable: 4,
+      servesNoPage: 1,
+      servesNoPageSlugs: ['synthetic-lab-yankee'],
+    });
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).toThrow(
+      /does not equal student_ready and not archived \(6\)/,
+    );
+  });
+
+  it('refuses a serves-no-page list that disagrees with its count', () => {
+    const scoreboard = withCorpus({
+      researchEntities: 10,
+      studentReadyNotArchived: 6,
+      reachable: 4,
+      servesNoPage: 2,
+      servesNoPageSlugs: ['synthetic-lab-yankee'],
+    });
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).toThrow(
+      /serves-no-page list \(1\) does not match its count \(2\)/,
+    );
+  });
+
+  it('refuses a corpus where the route reaches nothing at all', () => {
+    const scoreboard = withCorpus({
+      researchEntities: 10,
+      studentReadyNotArchived: 6,
+      reachable: 0,
+      servesNoPage: 6,
+      servesNoPageSlugs: ['a', 'b', 'c', 'd', 'e', 'f'],
+    });
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).toThrow(
+      /Treat this as a broken route or a broken scoreboard, not as a corpus collapse/,
+    );
+  });
+});
+
+describe('assertServedCorpusScoreboardConsistent', () => {
+  it('passes on a scoreboard built from its own rows', () => {
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboardFixture())).not.toThrow();
+  });
+
+  it('refuses a served subset larger than the served population', () => {
+    const scoreboard = scoreboardFixture();
+    scoreboard.corpus.studentReadyNotArchived = 1;
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).toThrow(
+      /still served \(2\) exceeds the served population \(1\)/,
+    );
+  });
+
+  it('refuses a served population larger than the corpus', () => {
+    const scoreboard = scoreboardFixture();
+    scoreboard.corpus.researchEntities = 3;
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).toThrow(
+      /student_ready and not archived \(6\) exceeds research_entities \(3\)/,
+    );
+  });
+
+  it('refuses a partition whose parts do not sum to the whole', () => {
+    const absent = scoreboardFixture();
+    absent.baseline.absent = 0;
+    expect(() => assertServedCorpusScoreboardConsistent(absent)).toThrow(
+      /does not equal baseline slugs/,
+    );
+
+    const served = scoreboardFixture();
+    served.baseline.noLongerServed = 5;
+    expect(() => assertServedCorpusScoreboardConsistent(served)).toThrow(/does not equal present/);
+
+    const changed = scoreboardFixture();
+    changed.baseline.unchangedStillServed = 4;
+    expect(() => assertServedCorpusScoreboardConsistent(changed)).toThrow(
+      /does not equal still served/,
+    );
+  });
+
+  it('refuses a per-field count larger than the changed-row count', () => {
+    const scoreboard = scoreboardFixture();
+    scoreboard.baseline.changedByField.fullDescription = 9;
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).toThrow(
+      /fullDescription changed \(9\) exceeds changed rows \(1\)/,
+    );
+  });
+
+  it('refuses a run where the route served none of the tier-admitted rows', () => {
+    const scoreboard = buildServedCorpusScoreboard({
+      environment: 'beta',
+      databaseName: 'Beta',
+      corpus: { researchEntities: 10, studentReadyNotArchived: 6 },
+      baseline: [baselineEntry(), baselineEntry({ slug: 'synthetic-lab-beta' })],
+      rows: [
+        servedRow({ served: false, serveTimeHoldback: true }),
+        servedRow({ slug: 'synthetic-lab-beta', served: false, serveTimeHoldback: true }),
+      ],
+    });
+
+    expect(scoreboard.baseline.stillServed).toBe(0);
+    expect(scoreboard.baseline.heldBackAtServeTime).toBe(2);
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).toThrow(
+      /Treat this as a broken route or a broken scoreboard, not as a corpus collapse/,
+    );
+  });
+
+  it('does not cry broken when the route serves nothing because nothing is tier-admitted', () => {
+    const scoreboard = buildServedCorpusScoreboard({
+      environment: 'beta',
+      databaseName: 'Beta',
+      corpus: { researchEntities: 10, studentReadyNotArchived: 0 },
+      baseline: [baselineEntry()],
+      rows: [servedRow({ tier: 'operator_review', served: false, serveTimeHoldback: false })],
+    });
+
+    expect(scoreboard.baseline.stillServed).toBe(0);
+    expect(scoreboard.baseline.heldBackAtServeTime).toBe(0);
+    expect(scoreboard.baseline.noLongerServed).toBe(1);
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).not.toThrow();
+  });
+
+  it('refuses a detail list that disagrees with its own count', () => {
+    const scoreboard = scoreboardFixture();
+    scoreboard.baseline.changed = 2;
+    scoreboard.baseline.unchangedStillServed = 0;
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).toThrow(
+      /changed-row list \(1\) does not match the changed count \(2\)/,
+    );
+  });
+});
+
+describe('the report emits served text, not only counts', () => {
+  it('prints the baseline and served copy of every changed field', () => {
+    const detail = formatServedCorpusScoreboardDetail(scoreboardFixture(), 0);
+    expect(detail).toContain('Studies synthetic materials.');
+    expect(detail).toContain('Studies synthetic ceramics.');
+    expect(detail).toContain('synthetic-lab-gamma [tier=operator_review, archived=false]');
+    expect(detail).toContain('absent from this environment (1)');
+  });
+
+  it('marks truncated text and names where the full text is', () => {
+    const scoreboard = buildServedCorpusScoreboard({
+      environment: 'beta',
+      databaseName: 'Beta',
+      corpus: { researchEntities: 2, studentReadyNotArchived: 2 },
+      baseline: [baselineEntry()],
+      rows: [servedRow({ fullDescription: 'x'.repeat(80) })],
+    });
+    const detail = formatServedCorpusScoreboardDetail(scoreboard, 20);
+    expect(detail).toContain('[+60 chars, full text in the --output artifact]');
+  });
+
+  it('puts every environment in one table', () => {
+    const table = formatServedCorpusScoreboardTable([scoreboardFixture()]);
+    expect(table).toContain('beta');
+    expect(table).toContain('research_entities');
+    expect(table).toContain('unchanged and still served');
+  });
+});
+
+describe('reading must not change the environment being read', () => {
+  it('accepts an unchanged collection set', () => {
+    expect(() =>
+      assertCollectionSetUnchanged(
+        'beta',
+        ['research_entities', 'observations'],
+        ['research_entities', 'observations'],
+      ),
+    ).not.toThrow();
+  });
+
+  it('refuses a collection the read created, naming it', () => {
+    expect(() =>
+      assertCollectionSetUnchanged(
+        'beta',
+        ['research_entities'],
+        ['research_entities', 'taxonomy_terms'],
+      ),
+    ).toThrow(/Added: taxonomy_terms/);
+  });
+
+  it('refuses a collection the read removed, naming it', () => {
+    expect(() =>
+      assertCollectionSetUnchanged(
+        'development',
+        ['research_entities', 'observations'],
+        ['research_entities'],
+      ),
+    ).toThrow(/Removed: observations/);
+  });
+
+  // The scoreboard opens a Mongoose connection on purpose, to call the real
+  // detail route. Connecting builds indexes for every registered model, which
+  // recreates a collection that was deliberately dropped, so autoIndex must be
+  // disabled BEFORE connect rather than anywhere in the file.
+  it('disables autoIndex before it connects', () => {
+    const source = fs.readFileSync(
+      new URL('../servedCorpusScoreboard.ts', import.meta.url),
+      'utf8',
+    );
+    const disable = source.indexOf("mongoose.set('autoIndex', false)");
+    const connect = source.indexOf('mongoose.connect(');
+    expect(disable).toBeGreaterThan(-1);
+    expect(connect).toBeGreaterThan(-1);
+    expect(disable).toBeLessThan(connect);
+  });
+
+  it('closes the Mongoose connection it opens', () => {
+    const source = fs.readFileSync(
+      new URL('../servedCorpusScoreboard.ts', import.meta.url),
+      'utf8',
+    );
+    expect(source).toContain('await mongoose.disconnect()');
+    expect(source).toMatch(/finally \{\s*await mongoose\.disconnect\(\);/);
+  });
+});
+
+describe('collectionSetDelta names what moved, so a refusal is not an empty result (#3147)', () => {
+  const BEFORE = ['observations', 'research_entities', 'sources'];
+
+  it('reports no change when the set is identical, whatever the order', () => {
+    const delta = collectionSetDelta(BEFORE, ['sources', 'observations', 'research_entities']);
+
+    expect(delta).toEqual({ changed: false, added: [], removed: [] });
+  });
+
+  it('names an added collection, which is what autoIndex recreating a retired one looks like', () => {
+    const delta = collectionSetDelta(BEFORE, [...BEFORE, 'canonical_aliases']);
+
+    expect(delta.changed).toBe(true);
+    expect(delta.added).toEqual(['canonical_aliases']);
+    expect(delta.removed).toEqual([]);
+  });
+
+  it('names a removed collection too, so a concurrent drop is not silently read as clean', () => {
+    const delta = collectionSetDelta(BEFORE, ['observations', 'sources']);
+
+    expect(delta.changed).toBe(true);
+    expect(delta.removed).toEqual(['research_entities']);
+  });
+
+  // The message is what a reader sees instead of a discarded walk, so it has to carry
+  // the names rather than only the fact that something moved.
+  it('carries both names and the environment in the refusal message', () => {
+    const message = collectionSetChangedMessage(
+      'the audited database',
+      collectionSetDelta(BEFORE, ['observations', 'sources', 'canonical_aliases']),
+    );
+
+    expect(message).toContain('the audited database');
+    expect(message).toContain('canonical_aliases');
+    expect(message).toContain('research_entities');
+    expect(message).toContain('must not write');
+  });
+
+  it('still throws from the asserting wrapper, which the scoreboard relies on', () => {
+    expect(() => assertCollectionSetUnchanged('Development', BEFORE, BEFORE)).not.toThrow();
+    expect(() =>
+      assertCollectionSetUnchanged('Development', BEFORE, [...BEFORE, 'users']),
+    ).toThrowError(/users/);
+  });
+});

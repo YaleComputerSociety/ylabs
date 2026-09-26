@@ -1,6 +1,6 @@
-# Yale Research - Client
+# y/labs - Client
 
-The Yale Research web client: a React 19 + TypeScript single-page app built with Vite and styled with Tailwind CSS.
+The y/labs web client: a React 19 + TypeScript single-page app built with Vite and styled with Tailwind CSS.
 It is the student-facing surface for research discovery, program and fellowship browsing, and the account dashboard.
 
 See `PRODUCT.md` for the product model and `../AGENTS.md` for repository-wide conventions.

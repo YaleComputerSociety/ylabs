@@ -13,6 +13,13 @@ export interface ObservationInput {
   sourceUrl?: string;
   observedAt?: Date;
   confidenceOverride?: number;
+  /**
+   * Fields this source states have NO value for this entity in this run. Say this
+   * only when the page itself stopped carrying the value, never when a guard
+   * refused a value the page still carries: field retraction reads this as
+   * permission to retire a prior assertion (#2647).
+   */
+  assertsNoValueFor?: string[];
 }
 
 export interface ScraperContext {
@@ -44,8 +51,9 @@ export interface ScraperOptions {
   exhaustive?: boolean;
   forceLlm?: boolean;
   sourceConcurrency?: number;
-  logisticsProductionMode?: boolean;
   dbReview?: boolean;
+  explain?: boolean;
+  explainLimit?: number;
   triggeredBy?: 'cli' | 'cron' | 'admin';
 }
 

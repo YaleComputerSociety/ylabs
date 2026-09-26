@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyUnionPlanToSnapshot,
+  bareNetid,
   buildCanonicalNameIndex,
+  buildCanonicalNetidIndex,
   decideShellMerge,
   normalizeResearcherName,
   planResearcherAttributeUnion,
@@ -53,6 +55,7 @@ describe('decideShellMerge', () => {
       merge: true,
       canonicalId: 'canonical-roe',
       reason: 'MERGEABLE',
+      matchedOn: 'name',
     });
   });
 
@@ -98,6 +101,7 @@ describe('decideShellMerge', () => {
       merge: true,
       canonicalId: 'canonical-netid',
       reason: 'MERGEABLE',
+      matchedOn: 'name',
     });
   });
 
@@ -126,6 +130,7 @@ describe('decideShellMerge', () => {
       merge: true,
       canonicalId: 'account-backed',
       reason: 'MERGEABLE',
+      matchedOn: 'name',
     });
   });
 
@@ -135,7 +140,12 @@ describe('decideShellMerge', () => {
         { id: 'netid-backed', displayName: 'Nina Netid', netid: 'nn42' },
         mixedIndex,
       ),
-    ).toEqual({ merge: true, canonicalId: 'account-backed', reason: 'MERGEABLE' });
+    ).toEqual({
+      merge: true,
+      canonicalId: 'account-backed',
+      reason: 'MERGEABLE',
+      matchedOn: 'name',
+    });
   });
 
   const accountWithNetidIndex = buildCanonicalNameIndex([
@@ -153,7 +163,12 @@ describe('decideShellMerge', () => {
         { id: 'netid-shell', displayName: 'Nina Netid', netid: 'NN42' },
         accountWithNetidIndex,
       ),
-    ).toEqual({ merge: true, canonicalId: 'canonical-account-netid', reason: 'MERGEABLE' });
+    ).toEqual({
+      merge: true,
+      canonicalId: 'canonical-account-netid',
+      reason: 'MERGEABLE',
+      matchedOn: 'name',
+    });
   });
 
   it('excludes on netid conflict against the sole canonical', () => {
@@ -238,5 +253,87 @@ describe('planResearcherAttributeUnion', () => {
       identifiers: { orcid: '9999-9999-9999-9999' },
     });
     expect(researcherAttributeUnionIsEmpty(secondPlan)).toBe(true);
+  });
+});
+
+describe('bareNetid', () => {
+  it('accepts a bare netid and rejects anything a lookup would not join on', () => {
+    expect(bareNetid('AB12')).toBe('ab12');
+    expect(bareNetid('  jq44  ')).toBe('jq44');
+    expect(bareNetid('https://example.invalid/people/jq44')).toBeUndefined();
+    expect(bareNetid('jq 44')).toBeUndefined();
+    expect(bareNetid('4q44')).toBeUndefined();
+    expect(bareNetid('')).toBeUndefined();
+    expect(bareNetid(undefined)).toBeUndefined();
+  });
+});
+
+describe('decideShellMerge netid arm (#3166)', () => {
+  const netidIndex = buildCanonicalNetidIndex([
+    { id: 'twin', accountId: 'account-1', netid: 'ab12' },
+    { id: 'nameonly', netid: 'zz99' },
+  ]);
+  const emptyNameIndex = buildCanonicalNameIndex([]);
+
+  it('folds a netid holder into the account-linked twin despite disagreeing names', () => {
+    expect(
+      decideShellMerge(
+        { id: 'holder', displayName: 'A Wholly Different Name', netid: 'ab12' },
+        emptyNameIndex,
+        netidIndex,
+      ),
+    ).toEqual({ merge: true, canonicalId: 'twin', reason: 'MERGEABLE', matchedOn: 'netid' });
+  });
+
+  it('folds even when the shell has no usable name at all, which the name arm refuses', () => {
+    expect(
+      decideShellMerge(
+        { id: 'holder', displayName: '   ', netid: 'ab12' },
+        emptyNameIndex,
+        netidIndex,
+      ),
+    ).toMatchObject({ merge: true, canonicalId: 'twin', matchedOn: 'netid' });
+  });
+
+  it('will not match on a netid that is not bare, so a malformed key decides nothing', () => {
+    expect(
+      decideShellMerge(
+        { id: 'holder', displayName: 'Someone', netid: 'https://example.invalid/ab12' },
+        emptyNameIndex,
+        netidIndex,
+      ),
+    ).toMatchObject({ merge: false, reason: 'NO_CANONICAL' });
+  });
+
+  it('refuses a netid whose only same-netid row does not outrank the shell', () => {
+    expect(
+      decideShellMerge(
+        { id: 'holder', displayName: 'Someone', netid: 'zz99' },
+        emptyNameIndex,
+        netidIndex,
+      ),
+    ).toMatchObject({ merge: false, reason: 'NO_CANONICAL' });
+  });
+
+  it('refuses a netid fold when the two rows disagree on ORCID', () => {
+    const index = buildCanonicalNetidIndex([
+      { id: 'twin', accountId: 'account-1', netid: 'ab12', orcid: '0000-0001-2222-3333' },
+    ]);
+    expect(
+      decideShellMerge(
+        { id: 'holder', displayName: 'Someone', netid: 'ab12', orcid: '0000-0001-0000-0000' },
+        emptyNameIndex,
+        index,
+      ),
+    ).toMatchObject({ merge: false, reason: 'ORCID_CONFLICT', matchedOn: 'netid' });
+  });
+
+  it('leaves the name arm reachable and labelled when no netid matches', () => {
+    const nameIndex = buildCanonicalNameIndex([
+      { id: 'canonical', displayName: 'Jane Roe', accountId: 'account-9' },
+    ]);
+    expect(
+      decideShellMerge({ id: 'shell', displayName: 'Jane Roe' }, nameIndex, netidIndex),
+    ).toEqual({ merge: true, canonicalId: 'canonical', reason: 'MERGEABLE', matchedOn: 'name' });
   });
 });

@@ -10,7 +10,8 @@ import { EXTERNAL_IMAGE_REFERRER_POLICY, EXTERNAL_LINK_REL, safeHttpUrl } from '
 import { useConfig } from '../../hooks/useConfig';
 import { canonicalizeResearcherDepartmentLabel } from '../../utils/researcherDepartmentLabel';
 import { DepartmentNameRecord } from '../../utils/departmentNames';
-import { isTraineeLevelTitle } from '../../utils/leadRoleDisplay';
+import { cannotOwnResearchHome } from '../../utils/leadRoleDisplay';
+import { orcidRecordUrlFromMemberUser } from '../../utils/principalInvestigatorLinks';
 
 interface LabMembersListProps {
   members: LabMember[];
@@ -26,12 +27,10 @@ const ROLE_LABELS: Record<LabMemberRole, string> = {
   'co-director': 'Co-Director',
   'core-faculty': 'Core Faculty',
   affiliated: 'Affiliated',
-  alumni: 'Alumni',
   postdoc: 'Postdoctoral Researcher',
   'grad-student': 'Graduate Student',
   undergrad: 'Undergraduate Researcher',
   staff: 'Research Staff',
-  affiliate: 'Other Current Member',
 };
 
 const ROLE_PILL_CLASSES: Record<LabMemberRole, string> = {
@@ -40,19 +39,17 @@ const ROLE_PILL_CLASSES: Record<LabMemberRole, string> = {
   director: 'bg-indigo-100 text-indigo-700',
   'co-director': 'bg-indigo-50 text-indigo-700',
   'core-faculty': 'bg-purple-50 text-purple-700',
-  affiliated: 'bg-[var(--yr-panel-muted)] text-gray-600',
-  alumni: 'bg-[var(--yr-panel-muted)] text-gray-500',
+  affiliated: 'bg-[var(--yr-panel-muted)] text-muted',
   postdoc: 'bg-teal-50 text-teal-700',
   'grad-student': 'bg-emerald-50 text-emerald-700',
   undergrad: 'bg-amber-50 text-amber-800',
   staff: 'bg-slate-100 text-slate-700',
-  affiliate: 'bg-[var(--yr-panel-muted)] text-gray-600',
 };
 
 const LEAD_ROLES: ReadonlySet<LabMemberRole> = new Set(['pi', 'co-pi', 'director', 'co-director']);
 
-const NEUTRAL_TRAINEE_ROLE_LABEL = 'Researcher';
-const NEUTRAL_TRAINEE_ROLE_PILL = 'bg-[var(--yr-panel-muted)] text-gray-600';
+const NEUTRAL_NON_OWNER_ROLE_LABEL = 'Researcher';
+const NEUTRAL_NON_OWNER_ROLE_PILL = 'bg-[var(--yr-panel-muted)] text-muted';
 
 // Lower index = more prominent. Sort members so leaders come first.
 const ROLE_ORDER: Record<LabMemberRole, number> = {
@@ -62,12 +59,10 @@ const ROLE_ORDER: Record<LabMemberRole, number> = {
   'co-director': 3,
   'core-faculty': 4,
   affiliated: 5,
-  alumni: 6,
-  postdoc: 7,
-  'grad-student': 8,
-  undergrad: 9,
-  staff: 10,
-  affiliate: 11,
+  postdoc: 6,
+  'grad-student': 7,
+  undergrad: 8,
+  staff: 9,
 };
 
 const ExternalLinkIcon = () => (
@@ -82,7 +77,7 @@ const ExternalLinkIcon = () => (
     strokeLinecap="round"
     strokeLinejoin="round"
     aria-hidden="true"
-    className="flex-shrink-0 text-gray-400 transition-colors group-hover:text-blue-600"
+    className="flex-shrink-0 text-muted transition-colors group-hover:text-brand"
   >
     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
     <polyline points="15 3 21 3 21 9" />
@@ -95,6 +90,7 @@ const LabMemberCard = ({
   role,
   singleColumn,
   departmentTable,
+  pillEligibleLabels,
   entityDepartments,
   profileUrl,
 }: {
@@ -102,6 +98,7 @@ const LabMemberCard = ({
   role: LabMemberRole;
   singleColumn: boolean;
   departmentTable: DepartmentNameRecord[];
+  pillEligibleLabels: readonly string[];
   entityDepartments: Array<string | undefined | null>;
   profileUrl?: string;
 }) => {
@@ -112,17 +109,18 @@ const LabMemberCard = ({
   const departmentLabel = canonicalizeResearcherDepartmentLabel(
     user.primary_department || user.primaryDepartment,
     departmentTable,
-    entityDepartments,
+    { pillEligibleLabels, entityDepartments },
   );
-  const isMisattributedTraineeLead = LEAD_ROLES.has(role) && isTraineeLevelTitle(user.title);
-  const roleLabel = isMisattributedTraineeLead ? NEUTRAL_TRAINEE_ROLE_LABEL : ROLE_LABELS[role];
-  const rolePillClassName = isMisattributedTraineeLead
-    ? NEUTRAL_TRAINEE_ROLE_PILL
+  const isMisattributedLead = LEAD_ROLES.has(role) && cannotOwnResearchHome(user.title);
+  const roleLabel = isMisattributedLead ? NEUTRAL_NON_OWNER_ROLE_LABEL : ROLE_LABELS[role];
+  const rolePillClassName = isMisattributedLead
+    ? NEUTRAL_NON_OWNER_ROLE_PILL
     : ROLE_PILL_CLASSES[role];
+  const orcidUrl = orcidRecordUrlFromMemberUser(user);
   const isExternalLink = Boolean(profileUrl);
   const isInteractive = isExternalLink;
-  const baseClassName = `group flex items-center rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
-  const linkClassName = `${baseClassName} hover:border-blue-300 hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200`;
+  const baseClassName = `group flex items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
+  const linkClassName = `${baseClassName} hover:border-line-brand hover:bg-brand-soft yr-focus-ring`;
   const identityBody = (
     <>
       <div className="flex-shrink-0">
@@ -136,7 +134,7 @@ const LabMemberCard = ({
           />
         ) : (
           <div
-            className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-blue-200 font-semibold text-blue-700`}
+            className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-gradient-to-br from-brand-soft to-line-brand font-semibold text-brand`}
           >
             {initials || fullName.charAt(0).toUpperCase() || '?'}
           </div>
@@ -144,13 +142,13 @@ const LabMemberCard = ({
       </div>
       <div className="min-w-0 flex-1">
         <p
-          className={`${singleColumn ? 'text-xs leading-snug' : 'truncate text-sm'} font-semibold text-gray-900 ${isInteractive ? 'group-hover:text-blue-700' : ''}`}
+          className={`${singleColumn ? 'text-xs leading-snug' : 'truncate text-sm'} font-semibold text-ink ${isInteractive ? 'group-hover:text-brand' : ''}`}
         >
           {fullName}
         </p>
         {user.title && (
           <p
-            className={`${singleColumn ? 'text-[11px] leading-snug' : 'truncate text-xs'} text-gray-500`}
+            className={`${singleColumn ? 'text-[11px] leading-snug' : 'truncate text-xs'} text-muted`}
           >
             {user.title}
           </p>
@@ -163,18 +161,25 @@ const LabMemberCard = ({
           </span>
           {departmentLabel && (
             <span
-              className={`${singleColumn ? 'max-w-full whitespace-normal text-[9px] leading-snug' : 'max-w-[10rem] truncate text-[10px]'} rounded-full bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-gray-700`}
+              className={`${singleColumn ? 'max-w-full whitespace-normal text-[9px] leading-snug' : 'max-w-[10rem] truncate text-[10px]'} rounded-full bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-ink-soft`}
             >
               {departmentLabel}
             </span>
           )}
         </div>
+        {isExternalLink && (
+          <p
+            className={`${singleColumn ? 'text-[10px]' : 'text-xs'} mt-1.5 font-medium text-brand group-hover:underline`}
+          >
+            View official profile
+          </p>
+        )}
       </div>
       {isExternalLink && <ExternalLinkIcon />}
     </>
   );
-  if (isExternalLink && profileUrl) {
-    return (
+  const identityCard =
+    isExternalLink && profileUrl ? (
       <a
         href={profileUrl}
         target="_blank"
@@ -184,9 +189,24 @@ const LabMemberCard = ({
       >
         {identityBody}
       </a>
+    ) : (
+      <div className={baseClassName}>{identityBody}</div>
     );
-  }
-  return <div className={baseClassName}>{identityBody}</div>;
+  if (!orcidUrl) return identityCard;
+  return (
+    <div className="flex flex-col gap-1">
+      {identityCard}
+      <a
+        href={orcidUrl}
+        target="_blank"
+        rel={EXTERNAL_LINK_REL}
+        aria-label={`Open ${fullName}'s ORCID record`}
+        className={`${singleColumn ? 'text-[10px]' : 'text-xs'} yr-focus-ring self-start rounded-control px-1 font-medium text-muted hover:text-brand hover:underline`}
+      >
+        ORCID {user.orcid}
+      </a>
+    </div>
+  );
 };
 
 const LabMembersList = ({
@@ -195,14 +215,12 @@ const LabMembersList = ({
   entityDepartments = [],
   resolveMemberProfileUrl,
 }: LabMembersListProps) => {
-  const { departments } = useConfig();
+  const { departments, departmentPillEligibleLabels } = useConfig();
   if (!members || members.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-6 text-center">
-        <p className="text-sm font-semibold text-gray-900">
-          No principal investigator is attached yet
-        </p>
-        <p className="mx-auto mt-1 max-w-xl text-sm leading-relaxed text-gray-700">
+      <div className="rounded-card border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-6 text-center">
+        <p className="text-sm font-semibold text-ink">No principal investigator is attached yet</p>
+        <p className="mx-auto mt-1 max-w-xl text-sm leading-relaxed text-ink-soft">
           Check the official profile for current leadership.
         </p>
       </div>
@@ -241,6 +259,7 @@ const LabMembersList = ({
             role={role}
             singleColumn={singleColumn}
             departmentTable={departments}
+            pillEligibleLabels={departmentPillEligibleLabels}
             entityDepartments={entityDepartments}
             profileUrl={safeHttpUrl(resolveMemberProfileUrl?.(member))}
           />

@@ -1,9 +1,15 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   assertCanonicalMongoValidatorApplyAllowed,
   CanonicalMongoValidatorApplyError,
+  CanonicalMongoValidatorDriftError,
   CanonicalMongoValidatorVerificationError,
+  MISSING_COLLMOD_GRANT_REMEDY,
   parseCanonicalMongoValidatorArgs,
+  recordCanonicalMongoValidatorRun,
   runCanonicalMongoValidators,
   type CanonicalMongoValidatorArgs,
   type CanonicalMongoValidatorReport,
@@ -69,6 +75,7 @@ function fakeMongoHarness(
     listError?: Error;
     listFailureCall?: number;
     commandFailure?: (command: Record<string, unknown>, callIndex: number) => boolean;
+    commandFailureMessage?: string;
     closeError?: Error;
   } = {},
 ): FakeMongoHarness {
@@ -96,7 +103,7 @@ function fakeMongoHarness(
     const callIndex = commandCallIndex;
     commandCallIndex += 1;
     if (args.commandFailure?.(mongoCommand, callIndex)) {
-      throw new Error('injected MongoDB command failure');
+      throw new Error(args.commandFailureMessage ?? 'injected MongoDB command failure');
     }
 
     const create = typeof mongoCommand.create === 'string' ? mongoCommand.create : undefined;
@@ -588,5 +595,244 @@ describe('runCanonicalMongoValidators', () => {
     );
     expect(harness.command).not.toHaveBeenCalled();
     expect(harness.close).toHaveBeenCalledOnce();
+  });
+});
+
+const ATLAS_COLLMOD_REFUSAL =
+  'user is not allowed to do action [collMod] on [Development.accounts]';
+
+describe('a refused collMod cannot be mistaken for success', () => {
+  it('names every refused collection and the missing grant, not just the first failure', async () => {
+    const harness = fakeMongoHarness({
+      commandFailure: () => true,
+      commandFailureMessage: ATLAS_COLLMOD_REFUSAL,
+    });
+    const dryRun = await reviewedDryRun(harness);
+    expect(dryRun.summary.collMod).toBe(0);
+    expect(dryRun.summary.createCollection).toBe(CANONICAL_MONGO_VALIDATOR_COLLECTIONS.length);
+
+    const existing = fakeMongoHarness({
+      collectionInfos: CANONICAL_MONGO_VALIDATOR_COLLECTIONS.map((collectionName) => ({
+        name: collectionName,
+        type: 'collection',
+        options: {},
+      })),
+      commandFailure: () => true,
+      commandFailureMessage: ATLAS_COLLMOD_REFUSAL,
+    });
+    const existingDryRun = await reviewedDryRun(existing);
+    expect(existingDryRun.summary.collMod).toBe(CANONICAL_MONGO_VALIDATOR_COLLECTIONS.length);
+
+    let applyError: unknown;
+    try {
+      await runCanonicalMongoValidators(applyArgs(), 'mongodb://localhost/development', {
+        client: existing.client,
+        reviewedArtifact: existingDryRun,
+      });
+    } catch (error) {
+      applyError = error;
+    }
+
+    expect(applyError).toBeInstanceOf(CanonicalMongoValidatorApplyError);
+    expect(applyError).toMatchObject({
+      failureKind: 'missing-collmod-grant',
+      appliedCollections: [],
+      refusedCollections: [...CANONICAL_MONGO_VALIDATOR_COLLECTIONS],
+    });
+    const message = (applyError as Error).message;
+    for (const collectionName of CANONICAL_MONGO_VALIDATOR_COLLECTIONS) {
+      expect(message).toContain(collectionName);
+    }
+    expect(message).toContain(MISSING_COLLMOD_GRANT_REMEDY);
+  });
+
+  it('keeps an ordinary command rejection scoped to the collection that failed', async () => {
+    const harness = fakeMongoHarness({
+      collectionInfos: CANONICAL_MONGO_VALIDATOR_COLLECTIONS.map((collectionName) => ({
+        name: collectionName,
+        type: 'collection',
+        options: {},
+      })),
+      commandFailure: (_command, callIndex) => callIndex === 0,
+    });
+    const dryRun = await reviewedDryRun(harness);
+
+    await expect(
+      runCanonicalMongoValidators(applyArgs(), 'mongodb://localhost/development', {
+        client: harness.client,
+        reviewedArtifact: dryRun,
+      }),
+    ).rejects.toMatchObject({
+      failureKind: 'command-rejected',
+      refusedCollections: [CANONICAL_MONGO_VALIDATOR_COLLECTIONS[0]],
+    });
+  });
+
+  it('overwrites a stale success artifact so the recorded outcome reports the refusal', async () => {
+    const output = path.join(
+      os.tmpdir(),
+      `ylabs-canonical-validator-failure-${process.pid}-${Date.now()}.json`,
+    );
+    const staleSuccess: Partial<CanonicalMongoValidatorReport> = {
+      mode: 'apply',
+      applied: CANONICAL_MONGO_VALIDATOR_COLLECTIONS.map((collectionName) => ({
+        collectionName,
+        action: 'collMod' as const,
+      })),
+      postApplyPlan: [],
+    };
+    fs.writeFileSync(output, `${JSON.stringify(staleSuccess, null, 2)}\n`);
+
+    const harness = fakeMongoHarness({
+      collectionInfos: CANONICAL_MONGO_VALIDATOR_COLLECTIONS.map((collectionName) => ({
+        name: collectionName,
+        type: 'collection',
+        options: {},
+      })),
+      commandFailure: () => true,
+      commandFailureMessage: ATLAS_COLLMOD_REFUSAL,
+    });
+    const dryRun = await reviewedDryRun(harness);
+
+    try {
+      await expect(
+        recordCanonicalMongoValidatorRun(
+          { ...applyArgs(), output },
+          'mongodb://localhost/development',
+          { client: harness.client, reviewedArtifact: dryRun },
+        ),
+      ).rejects.toBeInstanceOf(CanonicalMongoValidatorApplyError);
+
+      const recorded = JSON.parse(fs.readFileSync(output, 'utf8')) as Record<string, unknown>;
+      expect(recorded.mode).toBe('failed');
+      expect(recorded.applied).toBeUndefined();
+      expect(recorded.postApplyPlan).toBeUndefined();
+      expect(recorded.failure).toMatchObject({
+        kind: 'missing-collmod-grant',
+        refusedCollections: [...CANONICAL_MONGO_VALIDATOR_COLLECTIONS],
+        appliedCollections: [],
+      });
+    } finally {
+      fs.rmSync(output, { force: true });
+    }
+  });
+
+  it('cannot recycle a recorded failure artifact as a reviewed dry-run plan', async () => {
+    const harness = fakeMongoHarness({
+      collectionInfos: CANONICAL_MONGO_VALIDATOR_COLLECTIONS.map((collectionName) => ({
+        name: collectionName,
+        type: 'collection',
+        options: {},
+      })),
+      commandFailure: () => true,
+      commandFailureMessage: ATLAS_COLLMOD_REFUSAL,
+    });
+    const dryRun = await reviewedDryRun(harness);
+    let applyError: unknown;
+    try {
+      await runCanonicalMongoValidators(applyArgs(), 'mongodb://localhost/development', {
+        client: harness.client,
+        reviewedArtifact: dryRun,
+      });
+    } catch (error) {
+      applyError = error;
+    }
+    const failureReport = (applyError as CanonicalMongoValidatorApplyError).failureReport;
+
+    await expect(
+      runCanonicalMongoValidators(applyArgs(), 'mongodb://localhost/development', {
+        client: harness.client,
+        reviewedArtifact: failureReport,
+      }),
+    ).rejects.toThrow('--apply-from must reference a dry-run report');
+  });
+});
+
+describe('declared canonical validators are asserted present, never assumed', () => {
+  it('fails and separates an absent $jsonSchema from ordinary drift', async () => {
+    const [absent, drifted, ...current] = CANONICAL_MONGO_VALIDATOR_COLLECTIONS;
+    const harness = fakeMongoHarness({
+      collectionInfos: [
+        { name: absent, type: 'collection', options: {} },
+        {
+          ...desiredCollectionInfo(drifted),
+          options: {
+            ...desiredCollectionInfo(drifted).options,
+            validationLevel: 'moderate',
+          },
+        },
+        ...current.map(desiredCollectionInfo),
+      ],
+    });
+
+    let driftError: unknown;
+    try {
+      await runCanonicalMongoValidators(
+        { ...developmentArgs, assertCurrent: true },
+        'mongodb://localhost/development',
+        { client: harness.client },
+      );
+    } catch (error) {
+      driftError = error;
+    }
+
+    expect(driftError).toBeInstanceOf(CanonicalMongoValidatorDriftError);
+    expect((driftError as CanonicalMongoValidatorDriftError).findings).toEqual([
+      { collectionName: absent, state: 'validator-absent', reasons: expect.any(Array) },
+      {
+        collectionName: drifted,
+        state: 'validator-drifted',
+        reasons: ['validation-level-drift'],
+      },
+    ]);
+    expect((driftError as Error).message).toContain(`No $jsonSchema stored: ${absent}`);
+    expect((driftError as Error).message).toContain(`Stored but drifted: ${drifted}`);
+    expect(harness.command).not.toHaveBeenCalled();
+  });
+
+  it('reports a missing collection separately from a stripped validator', async () => {
+    const harness = fakeMongoHarness({
+      collectionInfos: CANONICAL_MONGO_VALIDATOR_COLLECTIONS.slice(1).map(desiredCollectionInfo),
+    });
+
+    await expect(
+      runCanonicalMongoValidators(
+        { ...developmentArgs, assertCurrent: true },
+        'mongodb://localhost/development',
+        { client: harness.client },
+      ),
+    ).rejects.toMatchObject({
+      findings: [
+        {
+          collectionName: CANONICAL_MONGO_VALIDATOR_COLLECTIONS[0],
+          state: 'collection-missing',
+          reasons: ['collection-missing'],
+        },
+      ],
+    });
+  });
+
+  it('passes silently and writes nothing when every declared validator is present', async () => {
+    const harness = fakeMongoHarness({
+      collectionInfos: CANONICAL_MONGO_VALIDATOR_COLLECTIONS.map(desiredCollectionInfo),
+    });
+
+    const report = await runCanonicalMongoValidators(
+      { ...developmentArgs, assertCurrent: true },
+      'mongodb://localhost/development',
+      { client: harness.client },
+    );
+
+    expect(report.summary.writesPlanned).toBe(0);
+    expect(harness.command).not.toHaveBeenCalled();
+  });
+
+  it('refuses to combine the read-only assertion with an apply', () => {
+    expect(() =>
+      assertCanonicalMongoValidatorApplyAllowed({ ...applyArgs(), assertCurrent: true }),
+    ).toThrow('cannot be combined with --apply');
+    expect(
+      parseCanonicalMongoValidatorArgs(['--environment', 'development', '--assert-current']),
+    ).toEqual({ environment: 'development', apply: false, assertCurrent: true });
   });
 });

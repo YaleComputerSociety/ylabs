@@ -3,6 +3,7 @@ import { Account } from '../models/account';
 import { Researcher, isValidOrcid } from '../models/researcher';
 import {
   RoleAssignment,
+  roleAssignmentReattachWrite,
   type RoleAssignmentReviewStatus,
   type RoleAssignmentRosterProvenance,
   type RoleAssignmentState,
@@ -14,6 +15,8 @@ import {
   roleStateForLegacyMembership,
 } from '../models/canonicalRoleMapping';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { sanitizePersonName } from '../utils/personNameHygiene';
+import { escapeRegex } from '../utils/regex';
 import { canonicalPersonName } from './utils/personNameCasing';
 
 const toObjectId = (value: unknown): mongoose.Types.ObjectId | undefined => {
@@ -259,8 +262,35 @@ const cleanRosterProvenance = (
 export interface CanonicalRoleAssignmentUpsert {
   filter: Record<string, unknown>;
   update: Record<string, unknown>;
+  reattach: {
+    filter: Record<string, unknown>;
+    update: Record<string, unknown>;
+  };
 }
 
+/**
+ * The write that records what a source says about one person's role on one entity.
+ *
+ * `archived` and `reviewStatus` are deliberately NOT in the upsert's `$set`. They
+ * are the two fields a retirement repair writes, and the upsert's filter matches on
+ * `(personId, target, role)` only, so a `$set` of `archived: false` reached the very
+ * rows a repair had just archived and silently re-attached them: measured on
+ * Development, 133 of 391 retired edges were back to `archived: false` and
+ * `UNREVIEWED` with the repair's own `reviewNotes` still attached, across #2880,
+ * #1897 and #2768 (#3143). A repair that reports a detachment count was therefore
+ * reporting a write, not an outcome.
+ *
+ * So re-attachment is a second, guarded write: it clears the detachment only on a
+ * row that is not `DISPUTED`. A disputed row keeps its verdict and its note, and
+ * only a human clearing the dispute can let a scrape re-attach it. Every other
+ * field still updates on a disputed row, so a detached edge keeps accurate evidence
+ * while staying off the served surface.
+ *
+ * It cannot be one atomic upsert with `reviewStatus: { $ne: 'DISPUTED' }` folded
+ * into the filter, because `role_assignments` carries no unique index on
+ * `(personId, target, role)`: a filter that skipped the disputed row would insert a
+ * second, un-disputed edge for the same person and re-attach by another route.
+ */
 export function buildCanonicalRoleAssignmentUpsert(
   personId: mongoose.Types.ObjectId,
   researchEntityId: mongoose.Types.ObjectId,
@@ -289,8 +319,6 @@ export function buildCanonicalRoleAssignmentUpsert(
     role,
     state: options.state,
     confidence: clampConfidence(options.confidence),
-    reviewStatus: options.reviewStatus,
-    archived: false,
   };
   const rosterProvenance = cleanRosterProvenance(options.rosterProvenance);
   if (rosterProvenance) set.rosterProvenance = rosterProvenance;
@@ -298,7 +326,8 @@ export function buildCanonicalRoleAssignmentUpsert(
     $set: set,
     $setOnInsert: {
       startedAt: options.startedAt ?? new Date(),
-      evidenceClaimIds: [],
+      archived: false,
+      reviewStatus: options.reviewStatus,
     },
   };
   if (options.state === 'HISTORICAL' && options.endedAt) {
@@ -306,7 +335,7 @@ export function buildCanonicalRoleAssignmentUpsert(
   } else {
     update.$unset = { endedAt: '' };
   }
-  return { filter, update };
+  return { filter, update, reattach: roleAssignmentReattachWrite(filter, options.reviewStatus) };
 }
 
 async function resolveOrCreateAccountId(
@@ -334,6 +363,51 @@ async function resolveOrCreateAccountId(
   }
 }
 
+/**
+ * Netid identity has two disjoint keys, `accounts.netid` and
+ * `researchers.identifiers.netid`, and the upsert below reads only the first. A
+ * researcher holding its netid at `identifiers.netid` with no `accountId` is
+ * therefore invisible to it, so the next observation of that same human minted a
+ * second row: one person split across two `researchers`, each serving as its own
+ * lead. That also bypassed a detachment rather than overriding it, because the
+ * detachment is keyed to a `personId` and the twin is a different person (#3152).
+ *
+ * Only a bare normalized netid is looked up, which is what every other
+ * `identifiers.netid` reader does, so a malformed stored key cannot be matched
+ * here and is left to its own repair (#2864). Only a live holder is adopted, so
+ * an archived person is never resurrected and the accountId mint below still
+ * runs unchanged for that case.
+ *
+ * The accountId is stamped onto the adopted row so the two keys converge on one
+ * identity: a detachment keyed to a person is only as durable as the guarantee
+ * that the person has one row.
+ */
+async function adoptAccountlessNetidHolderId(
+  identity: CanonicalMemberIdentity,
+  accountId: mongoose.Types.ObjectId,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  const netid = normalizedNetid(identity.netid);
+  if (!netid) return undefined;
+  const holder = await Researcher.findOne({
+    'identifiers.netid': netid,
+    accountId: { $exists: false },
+    archived: { $ne: true },
+  })
+    .select('_id')
+    .lean();
+  const holderId = toObjectId((holder as { _id?: unknown } | null)?._id);
+  if (!holderId) return undefined;
+  try {
+    await Researcher.updateOne(
+      { _id: holderId, accountId: { $exists: false } },
+      { $set: { accountId } },
+    );
+  } catch (error) {
+    if (!isDuplicateKeyError(error)) throw error;
+  }
+  return holderId;
+}
+
 async function resolveOrCreateResearcherId(
   identity: CanonicalMemberIdentity,
   accountId: mongoose.Types.ObjectId | undefined,
@@ -343,6 +417,11 @@ async function resolveOrCreateResearcherId(
   const orcid = normalizedOrcid(identity.orcid);
 
   if (accountId) {
+    const existingByAccount = await Researcher.findOne({ accountId }).select('_id').lean();
+    if (!existingByAccount) {
+      const adopted = await adoptAccountlessNetidHolderId(identity, accountId);
+      if (adopted) return adopted;
+    }
     const setOnInsert: Record<string, unknown> = {
       profileLinks: [],
       archived: false,
@@ -404,6 +483,47 @@ async function resolveOrCreateResearcherId(
 
 const nameOnlyResolutionLocks = new Map<string, Promise<mongoose.Types.ObjectId | undefined>>();
 
+const NOISY_NAME_ADOPTION_CANDIDATE_LIMIT = 20;
+
+/**
+ * A name-only researcher has no netid, email or ORCID, so its stored `displayName` IS
+ * its identity. That makes the row unreachable by exact match once name hygiene starts
+ * cleaning the scraped name at ingest: the corpus holds "Photo of <name>." while the
+ * next scrape now asserts "<name>", and minting a second row would fork one human into
+ * two people carrying two CURRENT role assignments on the same entity, which the entity
+ * page renders twice and no repair pass merges back (#2951).
+ *
+ * So the miss is retried against the sanitized form of the stored names and the adopted
+ * row is healed in place. Narrowed by case-insensitive substring first, which is sound
+ * because every hygiene rule only drops or re-cases characters: the cleaned name is
+ * always a substring of the value it was cleaned from. This also removes the ordering
+ * constraint that the corpus repair must be run before ingest hygiene is deployed.
+ */
+async function adoptNoisyNameOnlyResearcherId(
+  displayName: string,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  const candidates = await Researcher.find({
+    displayName: new RegExp(escapeRegex(displayName), 'i'),
+    archived: { $ne: true },
+    accountId: { $exists: false },
+    'identifiers.orcid': { $exists: false },
+  })
+    .select('_id displayName')
+    .sort({ _id: 1 })
+    .limit(NOISY_NAME_ADOPTION_CANDIDATE_LIMIT)
+    .lean();
+  const adopted = candidates.find(
+    (candidate) =>
+      canonicalPersonName(
+        sanitizePersonName(trimmed((candidate as { displayName?: unknown }).displayName)),
+      ) === displayName,
+  );
+  const adoptedId = toObjectId((adopted as { _id?: unknown } | undefined)?._id);
+  if (!adoptedId) return undefined;
+  await Researcher.updateOne({ _id: adoptedId }, { $set: { displayName } });
+  return adoptedId;
+}
+
 async function findOrCreateNameOnlyResearcherId(
   displayName: string,
 ): Promise<mongoose.Types.ObjectId | undefined> {
@@ -415,6 +535,8 @@ async function findOrCreateNameOnlyResearcherId(
   };
   const existingNameOnly = await Researcher.findOne(nameOnlyFilter).select('_id').lean();
   if (existingNameOnly) return toObjectId((existingNameOnly as { _id?: unknown })._id);
+  const adopted = await adoptNoisyNameOnlyResearcherId(displayName);
+  if (adopted) return adopted;
   try {
     const created = await Researcher.create({ displayName, profileLinks: [], archived: false });
     return toObjectId(created._id);
@@ -483,21 +605,62 @@ export async function resolveCanonicalResearcherId(
   return undefined;
 }
 
+/**
+ * What a canonical membership write actually did.
+ *
+ * Returned rather than swallowed because the roster lane used to report a field
+ * count taken from its RESOLVED INPUTS, so a pass that changed nothing still
+ * reported work. A count is a write, not an outcome (#210).
+ */
+export type CanonicalMembershipOutcome =
+  | 'created'
+  | 'updated'
+  | 'unchanged'
+  | 'refused-entity'
+  | 'refused-role'
+  | 'refused-organizational-mailbox'
+  | 'refused-person'
+  | 'refused-upsert-shape'
+  | 'refused-duplicate-key';
+
+/**
+ * The fields a membership write governs, compared through a pre-image because
+ * `modifiedCount` cannot answer this question: `role_assignments` is a
+ * `timestamps: true` collection, so mongoose adds a fresh `updatedAt` to every
+ * `$set` and an existing document therefore always reports one modification, even
+ * when the write asked for the values it already held (#210).
+ */
+const GOVERNED_ROLE_ASSIGNMENT_FIELDS =
+  'state confidence reviewStatus archived endedAt rosterProvenance';
+
+const governedRoleAssignmentFieldsDiffer = (before: unknown, after: unknown): boolean => {
+  const normalize = (document: unknown): string => {
+    if (!document || typeof document !== 'object') return '';
+    const { _id, createdAt, updatedAt, __v, ...governed } = document as Record<string, unknown>;
+    void _id;
+    void createdAt;
+    void updatedAt;
+    void __v;
+    return JSON.stringify(governed, Object.keys(governed).sort());
+  };
+  return normalize(before) !== normalize(after);
+};
+
 export async function materializeCanonicalMembership(
   researchEntityId: string,
   facts: CanonicalMemberFacts,
   identity: CanonicalMemberIdentity,
-): Promise<void> {
+): Promise<CanonicalMembershipOutcome> {
   const entityObjectId = toObjectId(researchEntityId);
-  if (!entityObjectId) return;
-  if (!canonicalRoleForLegacy(facts.legacyRole)) return;
+  if (!entityObjectId) return 'refused-entity';
+  if (!canonicalRoleForLegacy(facts.legacyRole)) return 'refused-role';
   if (identityIsOrganizationalMailbox(identity)) {
     console.warn(
       `[canonical-membership] skipped mint for entity ${sanitizeLogValue(
         researchEntityId,
       )}: identity resembles an organizational mailbox, not an individual`,
     );
-    return;
+    return 'refused-organizational-mailbox';
   }
 
   const state = roleStateForLegacyMembership(facts);
@@ -509,7 +672,7 @@ export async function materializeCanonicalMembership(
   try {
     const accountId = await resolveOrCreateAccountId(identity);
     const personId = await resolveOrCreateResearcherId(identity, accountId);
-    if (!personId) return;
+    if (!personId) return 'refused-person';
 
     const upsert = buildCanonicalRoleAssignmentUpsert(personId, entityObjectId, facts.legacyRole, {
       state,
@@ -519,8 +682,17 @@ export async function materializeCanonicalMembership(
       endedAt: state === 'HISTORICAL' ? (facts.endedAt ?? undefined) : undefined,
       rosterProvenance: facts.rosterProvenance,
     });
-    if (!upsert) return;
-    await RoleAssignment.updateOne(upsert.filter, upsert.update, { upsert: true });
+    if (!upsert) return 'refused-upsert-shape';
+    const before = await RoleAssignment.findOne(upsert.filter)
+      .select(GOVERNED_ROLE_ASSIGNMENT_FIELDS)
+      .lean();
+    const written = await RoleAssignment.updateOne(upsert.filter, upsert.update, { upsert: true });
+    await RoleAssignment.updateOne(upsert.reattach.filter, upsert.reattach.update);
+    if ((written.upsertedCount ?? 0) > 0 || !before) return 'created';
+    const after = await RoleAssignment.findOne(upsert.filter)
+      .select(GOVERNED_ROLE_ASSIGNMENT_FIELDS)
+      .lean();
+    return governedRoleAssignmentFieldsDiffer(before, after) ? 'updated' : 'unchanged';
   } catch (error) {
     if (isDuplicateKeyError(error)) {
       console.warn(
@@ -528,7 +700,7 @@ export async function materializeCanonicalMembership(
           researchEntityId,
         )} due to duplicate key`,
       );
-      return;
+      return 'refused-duplicate-key';
     }
     throw error;
   }

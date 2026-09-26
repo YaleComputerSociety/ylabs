@@ -15,7 +15,7 @@ const SMOKE_ENTITY_SLUG = 'e2e-smoke-quokka-cognition-lab';
 const SMOKE_SEARCH_TOKEN = 'quokka';
 const SMOKE_ZERO_RESULT_QUERY = 'zzqxwphantomtopicnobodystudies';
 const SMOKE_ZERO_RESULT_COPY =
-  'No indexed research homes matched this search yet. This is a coverage gap, not proof that no such research exists at Yale. Try one of the recovery options below while coverage improves.';
+  'No indexed research matched this search yet. This is a coverage gap, not proof that no such research exists at Yale. Try one of the recovery options below while coverage improves.';
 
 const isInsidePath = (root, target) => {
   const relative = path.relative(root, target);
@@ -39,7 +39,7 @@ const safeSmokeBaseUrl = (raw, name) => {
   const isLocal = LOCAL_SMOKE_HOSTS.has(hostname);
   const isDeployed = DEPLOYED_SMOKE_HOSTS.has(hostname);
   if (!isLocal && !isDeployed) {
-    throw new Error(`${name} must point to localhost or a Yale Research deployment`);
+    throw new Error(`${name} must point to localhost or a y/labs deployment`);
   }
   if (isDeployed && parsed.protocol !== 'https:') {
     throw new Error(`${name} deployed origins must use HTTPS`);
@@ -127,11 +127,11 @@ const settleResearchPage = async (targetPage = page) => {
 };
 
 const submitSearch = async (query) => {
-  await page.getByLabel('Search Yale research').fill(query);
+  await page.getByLabel('Search y/labs').fill(query);
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page
     .waitForFunction(
-      () => !document.body.innerText.includes('Searching Yale Research for'),
+      () => !document.body.innerText.includes('Searching y/labs for'),
       undefined,
       { timeout: 20000 },
     )
@@ -175,7 +175,7 @@ await step('signed-in student reaches the research browse home', async () => {
   await page
     .getByRole('heading', { level: 1, name: 'Find a Yale lab that fits you.' })
     .waitFor({ timeout: 20000 });
-  await page.getByRole('heading', { name: 'Research homes to explore' }).waitFor({ timeout: 20000 });
+  await page.getByRole('heading', { name: 'Research to explore' }).waitFor({ timeout: 20000 });
   await assertTextIncludes(SMOKE_ENTITY_NAME);
 });
 await screenshot('01-browse-home');
@@ -195,7 +195,7 @@ await step('search returns a result and the header settles out of loading', asyn
     .first()
     .innerText();
   assert(
-    /research homes? for '.+'/i.test(status.replace(/\s+/g, ' ')),
+    /results? for '.+'/i.test(status.replace(/\s+/g, ' ')),
     `Search summary never settled out of the loading state (got "${status}").`,
   );
   await page
@@ -219,7 +219,25 @@ await step('opening a result renders the detail identity and description', async
 await screenshot('03-detail');
 
 await step('a signed-in student saves the entity and it persists', async () => {
+  // The button label is optimistic: `useFavorites.setFavorite` updates local state
+  // BEFORE awaiting the PUT, and on failure it rolls back a frame later. So waiting
+  // for "Saved to Dashboard" asserts the click, not the save, and this step's own name
+  // claims persistence it never checked. That is why it and the dashboard step could
+  // disagree inside one run: one read client state and the next read the server's
+  // (#3387). Asserting the response makes a lost write fail here, with a status code,
+  // instead of surfacing as a mystery timeout on the next step.
+  const savedOnServer = page.waitForResponse(
+    (response) =>
+      response.url().includes('/users/savedResearchEntities') &&
+      response.request().method() === 'PUT',
+    { timeout: 20000 },
+  );
   await page.getByRole('button', { name: 'Save research plan' }).click();
+  const response = await savedOnServer;
+  assert(
+    response.ok(),
+    `Saving the research plan returned HTTP ${response.status()}, so nothing was stored.`,
+  );
   await page.getByRole('button', { name: 'Saved to Dashboard' }).waitFor({ timeout: 20000 });
 });
 await screenshot('04-detail-saved');
@@ -231,7 +249,24 @@ await step('the saved entity appears on the dashboard', async () => {
   await page
     .getByRole('heading', { name: 'Saved research plans', exact: true })
     .waitFor({ timeout: 20000 });
-  await page.getByRole('link', { name: SMOKE_ENTITY_NAME }).first().waitFor({ timeout: 20000 });
+  // A timeout here after the save step asserted a 2xx is a read-after-write gap rather
+  // than a lost write, and saying which is the point of reporting the server's own
+  // answer alongside the failure instead of widening the wait (#3387).
+  try {
+    await page.getByRole('link', { name: SMOKE_ENTITY_NAME }).first().waitFor({ timeout: 20000 });
+  } catch (error) {
+    const stored = await page.evaluate(async () => {
+      try {
+        const res = await fetch('/api/users/savedResearchEntities', { credentials: 'include' });
+        return `HTTP ${res.status} ${(await res.text()).slice(0, 300)}`;
+      } catch (fetchError) {
+        return `read failed: ${String(fetchError)}`;
+      }
+    });
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}\nServer saved-plan state at failure: ${stored}`,
+    );
+  }
 });
 await screenshot('05-account-saved');
 
@@ -241,7 +276,7 @@ await step('a zero-result search renders an honest empty state, not an error', a
   await submitSearch(SMOKE_ZERO_RESULT_QUERY);
   await assertTextIncludes(SMOKE_ZERO_RESULT_COPY);
   await page
-    .getByRole('button', { name: 'Browse all research homes', exact: true })
+    .getByRole('button', { name: 'Browse all research', exact: true })
     .waitFor({ timeout: 20000 });
   assert(
     (await page.getByRole('alert').count()) === 0,

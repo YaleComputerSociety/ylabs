@@ -2,7 +2,7 @@ import { Fellowship } from '../models/fellowship';
 import { Observation } from '../models/observation';
 import { Source } from '../models/source';
 import { ResearchEntity } from '../models/researchEntity';
-import { RoleAssignment } from '../models/roleAssignment';
+import { RoleAssignment, roleAssignmentReattachWrite } from '../models/roleAssignment';
 import {
   getResearchEntityRoster,
   type ResearchEntityRosterEntry,
@@ -21,11 +21,20 @@ import {
 } from '../utils/researchEntityDescriptionQuality';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { upsertSignal, type UpsertSignalInput } from './signalService';
-import { runStudentVisibilityGate } from './studentVisibilityGateService';
+import {
+  repairStageForReasons,
+  runStudentVisibilityGate,
+  SOURCE_DESCRIPTION_REPAIR_REASONS,
+} from './studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { isUncitableHostUrl } from '../utils/urlSafety';
 import { withResearchEntityWriteTransaction } from './researchEntityWriteTransaction';
+import { classifyRecoverabilityForRecordIds } from './visibilityRecoverabilityService';
+import type { RecoverabilityBucket } from '../scripts/visibilityRecoverabilityAuditCore';
 
 export type VisibilityRepairMode = 'dry-run' | 'apply';
+
+export const DEFAULT_REPAIRABLE_BUCKETS: RecoverabilityBucket[] = ['regate', 'materialize'];
 
 export interface VisibilityRepairQueueOptions {
   mode: VisibilityRepairMode;
@@ -36,6 +45,17 @@ export interface VisibilityRepairQueueOptions {
   retryBlocked?: boolean;
   recordIds?: string[];
   queueItemIds?: string[];
+  /**
+   * Recoverability buckets this run will attempt, defaulting to the two a repair can
+   * actually clear. The queue holds every withheld row, including rows whose blocker no
+   * lane can act on, so an unfiltered sweep spends most of its budget proving that again
+   * on prose that does not exist. `acquire` needs a crawl and `ceiling` needs a decision,
+   * neither of which this runner performs (#2821). Pass an explicit list to override,
+   * including all four to restore the old behaviour. The measured split is in
+   * docs/research-data-pipeline.md, "The release queue is routed by recoverability, not
+   * swept whole".
+   */
+  buckets?: RecoverabilityBucket[];
 }
 
 export interface VisibilityRepairQueueItemInput {
@@ -74,13 +94,36 @@ export interface VisibilityRepairAttempt {
   repairSource: string;
 }
 
+/** A dry run applies no patch, so the gate has nothing patched to re-decide. */
+export const RESOLVED_BY_GATE_DRY_RUN_NOTE =
+  'A dry run applies no patch, so the gate cannot be asked what it would promote. Read `patched` as the population this lane can act on, not as promotions, and take the promotion count from an apply run.';
+
 export interface VisibilityRepairQueueReport {
   mode: VisibilityRepairMode;
   scanned: number;
   attempted: number;
-  repaired: number;
+  /**
+   * Attempts whose patch cleared every blocker THIS LANE models. Not a promotion: the
+   * real gate re-decides the patched row against the full reason set and disagrees most
+   * of the time, which overstated the recoverable population by roughly 6x when a sizing
+   * decision was taken from it (#2440). `resolvedByGate` is the promotion count.
+   */
+  patched: number;
   blocked: number;
-  resolvedByGate: number;
+  /**
+   * Rows the gate moved into a public tier after the patch, or `null` in a dry run,
+   * where it is unknowable rather than zero (#2440). Reporting 0 there put the
+   * misleading number beside the honest-looking one in the only mode a sizing decision
+   * is ever taken from.
+   */
+  resolvedByGate: number | null;
+  /** Why `resolvedByGate` is `null`, so a reader is not left to infer it from the mode. */
+  resolvedByGateNote?: string;
+  /** Open queue items before recoverability routing, so the backlog stays visible. */
+  queuedBeforeRouting: number;
+  routedBuckets: RecoverabilityBucket[];
+  /** Items this run declined to attempt, by the bucket that routed them away. */
+  skippedByBucket: Record<string, number>;
   plans: VisibilityRepairPlan[];
   attempts: VisibilityRepairAttempt[];
 }
@@ -143,22 +186,21 @@ export function buildVisibilityRepairPiRoleAssignmentUpsert(
   metadata: { sourceUrl: string; sourceName: string; confidence: number },
   now = new Date(),
 ) {
+  const filter = {
+    personId,
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': researchEntityId,
+    role: 'PI',
+  };
   return {
-    filter: {
-      personId,
-      'target.kind': 'RESEARCH_ENTITY',
-      'target.id': researchEntityId,
-      role: 'PI',
-    },
+    filter,
     update: {
       $set: {
         personId,
         target: { kind: 'RESEARCH_ENTITY', id: researchEntityId },
         role: 'PI',
         state: 'CURRENT',
-        archived: false,
         confidence: metadata.confidence,
-        reviewStatus: 'UNREVIEWED',
         rosterProvenance: {
           sourceName: metadata.sourceName,
           sourceUrl: metadata.sourceUrl,
@@ -167,47 +209,15 @@ export function buildVisibilityRepairPiRoleAssignmentUpsert(
       },
       $setOnInsert: {
         startedAt: now,
-        evidenceClaimIds: [],
+        archived: false,
+        reviewStatus: 'UNREVIEWED',
       },
       $unset: { endedAt: '' },
     },
     options: { upsert: true },
+    reattach: roleAssignmentReattachWrite(filter, 'UNREVIEWED'),
   };
 }
-
-const sourceDescriptionReasons = new Set([
-  'missing_description',
-  'missing_card_description',
-  'thin_description',
-  'profile_fallback_only',
-  'missing_source_url',
-  'missing_official_source',
-  'application_source_only',
-]);
-
-const piReasons = new Set([
-  'missing_lead',
-  'duplicate_name_risk',
-  'duplicate_risk',
-  'profile_identity_risk',
-]);
-
-const actionReasons = new Set([
-  'missing_action_evidence',
-  'missing_application_route',
-  'missing_source_route',
-]);
-
-const suppressionReasons = new Set([
-  'archive_review',
-  'content_page_risk',
-  'exact_url_duplicate_risk',
-  'generic_directory_shell',
-  'inactive_at_yale',
-  'not_undergraduate_relevant',
-  'research_infrastructure_only',
-]);
-const reviewExceptionReasons = new Set(['formalization_only']);
 
 const stagePriority: Record<VisibilityRepairStage, number> = {
   source_description: 0,
@@ -217,7 +227,14 @@ const stagePriority: Record<VisibilityRepairStage, number> = {
   review_exception: 4,
 };
 
-const suppressibleReasons = new Set([
+// Deliberately narrower than `SUPPRESSION_REPAIR_REASONS`. That set answers "which
+// stage owns this row"; this one answers the separate question "may the queue hide
+// the row by itself". A reason that needs a human to confirm the row is really gone
+// stays out, so `attemptResearchRepair` blocks instead of suppressing. Widening this
+// authorizes unattended removal from the served surface and needs its own evidence.
+// `visibilityRepairStageOwnership.test.ts` pins it as a subset so it cannot drift
+// into disagreeing about stage membership the way the stage sets did (#2818).
+export const QUEUE_AUTO_SUPPRESSIBLE_REASONS: ReadonlySet<string> = new Set([
   'archive_review',
   'content_page_risk',
   'exact_url_duplicate_risk',
@@ -226,11 +243,20 @@ const suppressibleReasons = new Set([
   'not_undergraduate_relevant',
   'research_infrastructure_only',
 ]);
+const suppressibleReasons = QUEUE_AUTO_SUPPRESSIBLE_REASONS;
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
 const hasHttpUrl = (value: unknown): boolean => /^https?:\/\//i.test(textValue(value));
+
+/**
+ * The repair queue mints its own evidence, so it has to answer to the same refusal
+ * `appendObservations` applies: a URL on a host that can never be cited must not become
+ * the address a synthesized citation or access signal points at (#2805).
+ */
+const isCitableEvidenceUrl = (value: unknown): boolean =>
+  hasHttpUrl(value) && !isUncitableHostUrl(value);
 
 const uniqueStrings = (values: unknown[]): string[] =>
   Array.from(
@@ -816,6 +842,34 @@ const idValue = (value: unknown): string => {
 const leadMemberUserId = (member: Record<string, any>): string =>
   idValue(member.user?._id) || idValue(member.userId);
 
+/**
+ * The link kinds a person's own profile page is published at.
+ *
+ * `GOOGLE_SCHOLAR` and `ORCID` are deliberately absent. They are publication
+ * indexes rather than profile pages, and `profileSourceUrlForMember` falls through
+ * to any http URL, so passing them would let a repaired field cite a citation
+ * index as its source (#2154). `LAB_ABOUT` is absent for the same reason in the
+ * other direction: it names a group, not the person the lane is matching.
+ */
+const REPAIR_LEAD_PROFILE_LINK_KINDS = new Set(['YALE_OFFICIAL', 'PERSONAL_ACADEMIC']);
+
+/**
+ * The roster's typed `profileLinks` in the shape the repair lanes already read.
+ * Only the values are consumed (`objectValues`), so the key carries the kind and
+ * the index rather than the kind alone, which would drop a second link of the
+ * same kind.
+ */
+const repairLeadProfileUrls = (
+  profileLinks: ResearchEntityRosterEntry['profileLinks'] = [],
+): Record<string, string> =>
+  Object.fromEntries(
+    (Array.isArray(profileLinks) ? profileLinks : [])
+      .map((link, index) => [`${link?.kind}-${index}`, textValue(link?.url)] as const)
+      .filter(
+        ([key, url]) => Boolean(url) && REPAIR_LEAD_PROFILE_LINK_KINDS.has(key.split('-')[0]),
+      ),
+  );
+
 export const researchEntityLeadMembersFromRoster = (
   roster: ResearchEntityRosterEntry[],
 ): Array<Record<string, any>> =>
@@ -824,17 +878,25 @@ export const researchEntityLeadMembersFromRoster = (
     .filter((entry) => isLeadMember({ role: entry.role }))
     .map((entry) => {
       const personId = idValue(entry.personId);
+      // `email` and `profileLinks` are on the roster entry and were dropped here,
+      // which left `memberEmailLocalTokens` and the profile-URL resolution reading
+      // fields that never arrived: implemented, unit-tested, and inert in
+      // production (#2154). The prose lanes (`bio`, `researchInterests`, `topics`)
+      // stay unwired because `Researcher.profile` holds no such field to wire.
       return {
         role: entry.role,
         name: entry.name,
         userId: personId,
+        email: entry.email,
         user: {
           _id: personId,
           displayName: entry.name,
           netid: entry.netid,
+          email: entry.email,
           title: entry.title,
           imageUrl: entry.imageUrl,
           websiteUrl: entry.websiteUrl,
+          profileUrls: repairLeadProfileUrls(entry.profileLinks),
         },
       };
     });
@@ -917,14 +979,7 @@ function trustedActionLeadForEntity(
 }
 
 export function classifyVisibilityRepairStage(reasons: string[] = []): VisibilityRepairStage {
-  if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
-  if (reasons.includes('exact_url_duplicate_risk')) return 'suppression';
-  if (reasons.includes('generic_directory_shell')) return 'suppression';
-  if (reasons.some((reason) => sourceDescriptionReasons.has(reason))) return 'source_description';
-  if (reasons.some((reason) => piReasons.has(reason))) return 'pi_identity';
-  if (reasons.some((reason) => actionReasons.has(reason))) return 'action_evidence';
-  if (reasons.some((reason) => suppressionReasons.has(reason))) return 'suppression';
-  return 'review_exception';
+  return repairStageForReasons(reasons);
 }
 
 export function repairActionForStage(stage: VisibilityRepairStage, reasons: string[] = []): string {
@@ -1208,7 +1263,7 @@ function entityActionEvidenceSourceUrl(entity: Record<string, any>): string {
     entity.websiteUrl,
     entity.website,
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
-  ]).filter(hasHttpUrl);
+  ]).filter(isCitableEvidenceUrl);
   return (
     urls.find(isOfficialYaleProfileUrl) ||
     urls.find((url) => isDescriptionEligibleSourceUrl(url) && !isOrcidProfileUrl(url)) ||
@@ -1217,7 +1272,7 @@ function entityActionEvidenceSourceUrl(entity: Record<string, any>): string {
   );
 }
 
-function entityActionEvidenceSourceUrls(
+function entityActionEvidenceSourceUrlCandidates(
   entity: Record<string, any>,
   preferredSourceUrl = '',
 ): string[] {
@@ -1229,6 +1284,15 @@ function entityActionEvidenceSourceUrls(
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
     ...sourceUrlsForFieldProvenance(entity),
   ]).filter(hasHttpUrl);
+}
+
+function entityActionEvidenceSourceUrls(
+  entity: Record<string, any>,
+  preferredSourceUrl = '',
+): string[] {
+  return entityActionEvidenceSourceUrlCandidates(entity, preferredSourceUrl).filter(
+    isCitableEvidenceUrl,
+  );
 }
 
 async function createEntitySourceActionEvidenceRepair({
@@ -1248,16 +1312,29 @@ async function createEntitySourceActionEvidenceRepair({
     return { repaired: false, summary: [], repairSource: sourceUrl };
   }
 
+  // The evidence query reads an empty URL list as "unscoped", which is how an entity
+  // that stores no URL at all is repaired from its own entity-level evidence. An entity
+  // whose URLs were all REFUSED must not inherit that widening, or refusing an uncitable
+  // host would make this path more permissive than leaving the host in place (#2805).
+  const citableSourceUrls = entityActionEvidenceSourceUrls(entity, sourceUrl);
+  if (
+    citableSourceUrls.length === 0 &&
+    entityActionEvidenceSourceUrlCandidates(entity, sourceUrl).length > 0
+  ) {
+    return { repaired: false, summary: [], repairSource: sourceUrl };
+  }
+
   const observations = await deps.findEntityActionEvidenceObservationIds({
     researchEntityId: plan.recordId,
     sourceUrl,
-    sourceUrls: entityActionEvidenceSourceUrls(entity, sourceUrl),
+    sourceUrls: citableSourceUrls,
   });
   const evidenceIds = uniqueStrings(observations.map((observation) => observation.id));
   if (evidenceIds.length === 0) return { repaired: false, summary: [], repairSource: sourceUrl };
 
   const evidenceSourceUrl =
-    observations.find((observation) => hasHttpUrl(observation.sourceUrl))?.sourceUrl || sourceUrl;
+    observations.find((observation) => isCitableEvidenceUrl(observation.sourceUrl))?.sourceUrl ||
+    (isCitableEvidenceUrl(sourceUrl) ? sourceUrl : citableSourceUrls[0] || '');
   const derivationKey = `visibility-repair:entity-source-outreach:${plan.recordId}`;
 
   if (mode === 'apply') {
@@ -1314,7 +1391,7 @@ async function attemptResearchActionEvidenceRepair(
   const actionLead = trustedActionLeadForEntity(leadMembers, entity);
   const actionEvidenceSourceUrl =
     uniqueStrings([actionLead?.sourceUrl, entityActionEvidenceSourceUrl(entity)]).find(
-      hasHttpUrl,
+      isCitableEvidenceUrl,
     ) || '';
   const canRepair =
     quality.descriptionState === 'source_backed' &&
@@ -1590,10 +1667,10 @@ async function attemptResearchRepair(
   const currentQuality = buildResearchEntityQualitySummary({ entity, leadMembers });
   const currentRepairFlags = new Set(currentQuality.repairFlags);
   const staleSourceDescriptionBlockers = plan.blockerReasons.filter((reason) =>
-    sourceDescriptionReasons.has(reason),
+    SOURCE_DESCRIPTION_REPAIR_REASONS.has(reason),
   );
   const nonSourceDescriptionBlockers = plan.blockerReasons.filter(
-    (reason) => !sourceDescriptionReasons.has(reason),
+    (reason) => !SOURCE_DESCRIPTION_REPAIR_REASONS.has(reason),
   );
   const profileMatch = await findOfficialProfileUserMatch(entity, deps);
   const prospectiveLeadMembers = profileMatch
@@ -1735,7 +1812,7 @@ async function attemptResearchRepair(
       return !postPatchQuality.full.isUseful;
     }
     if (reason === 'missing_card_description') return !postPatchQuality.short.isUseful;
-    if (sourceDescriptionReasons.has(reason)) {
+    if (SOURCE_DESCRIPTION_REPAIR_REASONS.has(reason)) {
       return !patchedDescription;
     }
     return true;
@@ -1857,6 +1934,20 @@ export async function attemptVisibilityRepair(
     : attemptProgramRepair(plan, mode, deps);
 }
 
+/**
+ * Oldest first, by when the item was first queued.
+ *
+ * `lastSeenAt: -1` drained the newest end, and every gate run refreshes `lastSeenAt` on
+ * every open item, so the head of the queue was whatever the gate touched most recently -
+ * the same rows on every sweep. Measured on Development: 1,153 of 1,218 open items had
+ * never been attempted and 65 had, which reads as a queue nobody has run rather than a
+ * tail no run can reach (#2872).
+ *
+ * `_id` breaks ties so a run is deterministic and a resumed sweep does not re-read what
+ * the previous one finished.
+ */
+export const VISIBILITY_REPAIR_QUEUE_DRAIN_SORT = { firstSeenAt: 1, _id: 1 } as const;
+
 const defaultRepairDeps: RepairDeps = {
   async findOpenQueueItems(options) {
     const filter: Record<string, unknown> = { status: 'open' };
@@ -1870,7 +1961,7 @@ const defaultRepairDeps: RepairDeps = {
     filter.repairStatus = options.retryBlocked ? { $in: ['queued', 'blocked'] } : 'queued';
     if (!options.retryBlocked) filter.attemptCount = 0;
     const query = VisibilityReleaseQueueItem.find(filter)
-      .sort({ lastSeenAt: -1, _id: 1 })
+      .sort(VISIBILITY_REPAIR_QUEUE_DRAIN_SORT)
       .limit(Math.max(1, Math.min(1000, Math.floor(options.stage ? options.limit || 100 : 1000))))
       .lean();
     return query as unknown as VisibilityRepairQueueItemInput[];
@@ -1944,18 +2035,22 @@ const defaultRepairDeps: RepairDeps = {
       : null;
     const personId = (researcher as any)?._id;
     if (!entityObjectId || !personId) return;
-    const { filter, update, options } = buildVisibilityRepairPiRoleAssignmentUpsert(
+    const { filter, update, options, reattach } = buildVisibilityRepairPiRoleAssignmentUpsert(
       personId,
       entityObjectId,
       metadata,
     );
     await RoleAssignment.updateOne(filter, update, options);
+    await RoleAssignment.updateOne(reattach.filter, reattach.update);
   },
   async upsertSignal(input) {
     return upsertSignal(input);
   },
   async findActionEvidenceObservationIds({ researchEntityId, userId, sourceUrl }) {
-    const variants = urlVariants([sourceUrl]).filter(hasHttpUrl);
+    // The `Observation.create` below is the one write that does not go through
+    // `appendObservations`, so the refusal is repeated here rather than trusted to the
+    // callers that choose the URL (#2805).
+    const variants = urlVariants([sourceUrl]).filter(isCitableEvidenceUrl);
     const evidenceIds = new Set<string>();
     const userObjectId = toVisibilityRepairObjectId(userId);
     const canonicalSourceUrl = variants[0];
@@ -2045,7 +2140,7 @@ const defaultRepairDeps: RepairDeps = {
     const variants = urlVariants([
       sourceUrl,
       ...(Array.isArray(sourceUrls) ? sourceUrls : []),
-    ]).filter(hasHttpUrl);
+    ]).filter(isCitableEvidenceUrl);
     const sourceUrlFilter = variants.length > 0 ? { sourceUrl: { $in: variants } } : {};
     const observations = await Observation.find({
       entityType: { $in: ['researchEntity', 'researchGroup'] },
@@ -2066,7 +2161,7 @@ const defaultRepairDeps: RepairDeps = {
         sourceUrl: textValue(observation.sourceUrl),
         sourceName: textValue(observation.sourceName),
       }))
-      .filter((observation) => observation.id && hasHttpUrl(observation.sourceUrl));
+      .filter((observation) => observation.id && isCitableEvidenceUrl(observation.sourceUrl));
   },
   async findResearchEntityMembers(id) {
     const safeId = normalizeVisibilityRepairObjectId(id);
@@ -2100,10 +2195,49 @@ export async function runVisibilityRepairQueue(
   deps: RepairDeps = defaultRepairDeps,
 ): Promise<VisibilityRepairQueueReport> {
   const items = await deps.findOpenQueueItems(options);
-  const plans = buildVisibilityRepairPlans(items).slice(
-    0,
-    Math.max(1, Math.min(500, Math.floor(options.limit || 100))),
-  );
+  const allPlans = buildVisibilityRepairPlans(items);
+
+  // Route by recoverability before spending the limit. Filtering after the slice would
+  // still waste the budget on unattemptable rows, just more quietly: the sweep would
+  // report a small `scanned` and leave the repairable backlog untouched.
+  const buckets = new Set(options.buckets ?? DEFAULT_REPAIRABLE_BUCKETS);
+  const researchPlans = allPlans.filter((plan) => plan.collection === 'research');
+  const { byRecordId } = researchPlans.length
+    ? await classifyRecoverabilityForRecordIds(
+        researchPlans.map((plan) => plan.recordId),
+        {
+          // Classify the blockers this run will attempt, not the entity's stored
+          // reasons: a queue item outlives the gate run that wrote it.
+          blockersByRecordId: new Map(
+            researchPlans.map((plan) => [plan.recordId, plan.blockerReasons ?? []]),
+          ),
+        },
+      )
+    : { byRecordId: new Map<string, { bucket: RecoverabilityBucket }>() };
+
+  const bucketSkipped: Record<string, number> = {};
+  const routedPlans = allPlans.filter((plan) => {
+    // A reviewed cap is not a repair. `formalization_only` program items are capped at
+    // `limited_but_safe` on purpose, and because that is not a public tier the gate never
+    // resolves their queue rows, so they stay open forever and every sweep re-attempts
+    // them: they were the single largest blocked reason in a routed 500-item run.
+    // `acceptFormalizationReviewExceptions` is the script that closes them out.
+    if (plan.repairStage === 'review_exception') {
+      bucketSkipped.review_exception = (bucketSkipped.review_exception || 0) + 1;
+      return false;
+    }
+    // A non-research collection has no recoverability model, so it is not routed away.
+    if (plan.collection !== 'research') return true;
+    const verdict = byRecordId.get(plan.recordId);
+    // An unclassified row keeps its old behaviour rather than being silently dropped:
+    // a missing verdict means the entity is unreadable, not that it is unrepairable.
+    if (!verdict) return true;
+    if (buckets.has(verdict.bucket)) return true;
+    bucketSkipped[verdict.bucket] = (bucketSkipped[verdict.bucket] || 0) + 1;
+    return false;
+  });
+
+  const plans = routedPlans.slice(0, Math.max(1, Math.min(500, Math.floor(options.limit || 100))));
   const attempts: VisibilityRepairAttempt[] = [];
   const repairedByCollection = new Map<VisibilityReleaseQueueCollection, string[]>();
 
@@ -2131,8 +2265,9 @@ export async function runVisibilityRepairQueue(
     }
   }
 
-  let resolvedByGate = 0;
+  let resolvedByGate: number | null = null;
   if (options.mode === 'apply') {
+    resolvedByGate = 0;
     for (const [collection, recordIds] of repairedByCollection.entries()) {
       const gateReport = await deps.runGate(collection, recordIds, 'apply');
       resolvedByGate += gateReport.counts?.resolved || gateReport.counts?.promoted || 0;
@@ -2143,9 +2278,13 @@ export async function runVisibilityRepairQueue(
     mode: options.mode,
     scanned: plans.length,
     attempted: attempts.length,
-    repaired: attempts.filter((attempt) => attempt.status === 'repaired').length,
+    patched: attempts.filter((attempt) => attempt.status === 'repaired').length,
     blocked: attempts.filter((attempt) => attempt.status === 'blocked').length,
     resolvedByGate,
+    ...(resolvedByGate === null ? { resolvedByGateNote: RESOLVED_BY_GATE_DRY_RUN_NOTE } : {}),
+    queuedBeforeRouting: allPlans.length,
+    routedBuckets: [...buckets],
+    skippedByBucket: bucketSkipped,
     plans,
     attempts,
   };

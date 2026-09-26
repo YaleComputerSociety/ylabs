@@ -20,9 +20,9 @@ describe('NotFound', () => {
     renderNotFound();
 
     expect(
-      screen.getByRole('heading', { name: /we couldn't find that yale research page/i }),
+      screen.getByRole('heading', { name: /we couldn't find that y\/labs page/i }),
     ).toBeTruthy();
-    const link = screen.getByRole('link', { name: /explore yale research/i });
+    const link = screen.getByRole('link', { name: /explore research/i });
     expect(link.getAttribute('href')).toBe('/research');
   });
 });

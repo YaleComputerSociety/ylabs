@@ -119,7 +119,7 @@ describe('buildEvidenceCoverageImpact', () => {
           entityKey: 'peters-lab-fx1003',
           field: 'fullDescription',
           value:
-            'The Peters project page describes media studies research at Yale with enough official source context to explain the research home.',
+            'Studies media theory and the history of communication, including infrastructures of media and the intellectual history of communication research.',
           sourceName: 'official-profile-page',
           sourceUrl: 'https://filmstudies.yale.edu/people/john-durham-peters',
         },
@@ -144,7 +144,7 @@ describe('buildEvidenceCoverageImpact', () => {
           entityKey: 'peters-lab-fx1003',
           field: 'fullDescription',
           value:
-            'The Peters project page describes media studies research at Yale with enough official source context to explain the research home.',
+            'Studies media theory and the history of communication, including infrastructures of media and the intellectual history of communication research.',
           sourceName: 'official-profile-page',
           sourceUrl: 'https://filmstudies.yale.edu/people/john-durham-peters',
         },

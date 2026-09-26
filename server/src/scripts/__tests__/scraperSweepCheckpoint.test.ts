@@ -224,14 +224,14 @@ describe('scraper sweep checkpoint', () => {
       restart: false,
     });
     store.markDone(sourceStepId('yale-directory'), 'source', 0, now());
-    store.markDone(stageStepId('faculty-projection'), 'stage', 0, now());
+    store.markDone(stageStepId('visibility-gate'), 'stage', 0, now());
     store.markDone(stageStepId('search-rebuild'), 'stage', 0, now());
 
     expect(store.clearStageSteps(now()).sort()).toEqual([
-      stageStepId('faculty-projection'),
       stageStepId('search-rebuild'),
+      stageStepId('visibility-gate'),
     ]);
-    expect(store.isDone(stageStepId('faculty-projection'))).toBe(false);
+    expect(store.isDone(stageStepId('visibility-gate'))).toBe(false);
     expect(store.isDone(sourceStepId('yale-directory'))).toBe(true);
     expect(
       readSweepCheckpoint(checkpointPath)?.steps[stageStepId('search-rebuild')],

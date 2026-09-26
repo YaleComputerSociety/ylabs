@@ -2,14 +2,18 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildResearchDetailSources,
+  firstCitedResearchDetailSource,
   isCitableAccessSignal,
+  isDepartmentRosterProvenanceUrl,
   isFileShareSourceUrl,
   isIdentifierOrGrantDbSourceUrl,
   isLikelyOfficialPersonProfileUrl,
   isLikelyUnavailableSourceLink,
   isOrgEngagementSourceUrl,
+  isRosterNestedPersonPageUrl,
   isSuppressedResearchWebsiteCtaUrl,
   isUnavailableResearchWebsiteCtaUrl,
+  isUnreachableResearchWebsiteCtaUrl,
   officialProfileMirrorKey,
   prefersOrgEngagementOutreach,
   resolveDecisionProfileUrl,
@@ -25,6 +29,7 @@ const makeSource = (
   label: 'Official source',
   contexts: ['Profile source'],
   isLikelyUnavailable: false,
+  isPrivateNetworkOnly: false,
   ...overrides,
 });
 
@@ -104,7 +109,7 @@ describe('buildResearchDetailSources', () => {
     ]);
     expect(sources.map((source) => source.label)).toEqual([
       'Research website',
-      'Example Person page',
+      'Department profile',
     ]);
   });
 
@@ -384,7 +389,7 @@ describe('buildResearchDetailSources', () => {
       ],
     });
 
-    const profileRows = sources.filter((source) => source.label === 'Zeynep Erson page');
+    const profileRows = sources.filter((source) => source.label === 'School directory profile');
     expect(profileRows).toHaveLength(1);
     expect(profileRows[0].url).toBe('https://medicine.yale.edu/profile/zeynep-erson');
     expect(profileRows[0].contexts).toEqual(
@@ -424,33 +429,6 @@ describe('buildResearchDetailSources', () => {
     });
 
     expect(sources).toHaveLength(2);
-  });
-
-  it('dedupes known logistics evidence into the official source ledger', () => {
-    const sources = buildResearchDetailSources({
-      group: {
-        websiteUrl: 'https://example.yale.edu/join',
-        sourceUrls: [],
-      },
-      undergraduateLogistics: {
-        claims: [
-          {
-            claimType: 'COMPENSATION',
-            state: 'known',
-            evidence: { sourceUrl: 'https://example.yale.edu/join/' },
-          },
-          {
-            claimType: 'MODALITY',
-            state: 'conflicting_withheld',
-            evidence: { sourceUrl: 'https://private.example.test/conflict' },
-          },
-        ],
-      },
-    });
-
-    expect(sources).toHaveLength(1);
-    expect(sources[0].contexts).toEqual(['Profile website', 'Compensation logistics evidence']);
-    expect(JSON.stringify(sources)).not.toContain('private.example.test');
   });
 
   it('defaults every source to available when no liveness signal is joined', () => {
@@ -794,6 +772,60 @@ describe('isOrgEngagementSourceUrl', () => {
 });
 
 describe('resolveOutreachOfficialSource', () => {
+  it('never offers a cross-school mirror as the official page beside a claimed department profile (#2835)', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource('http://example.yale.edu/people/fixture-scholar'),
+        makeSource('https://medicine.yale.edu/profile/fixture-scholar'),
+      ],
+      ['http://example.yale.edu/people/fixture-scholar'],
+      false,
+      'FACULTY_RESEARCH_AREA',
+      { schools: ['Faculty of Arts and Sciences'] },
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  /**
+   * Superseded #2835's narrower rule, which demoted a second profile only when it
+   * was another school's mirror. The school it belongs to was never the reason: a
+   * second profile is the wrong KIND of thing for a slot that means "this
+   * research's own website", so a same-school one is refused too (#2854).
+   */
+  it('refuses a same-school directory profile beside a claimed profile', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource('http://example.yale.edu/people/fixture-scholar'),
+        makeSource('https://medicine.yale.edu/profile/fixture-scholar'),
+      ],
+      ['http://example.yale.edu/people/fixture-scholar'],
+      false,
+      'FACULTY_RESEARCH_AREA',
+      { schools: ['School of Medicine'] },
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  /**
+   * A roster leaf under a host's person-page prefix is the shared page, not a
+   * person's own, so claiming it must not suppress the row's genuine profile source
+   * (#2912).
+   */
+  it('keeps a genuine profile source beside a claimed roster page on a mapped prefix', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://medicine.yale.edu/profile/fixture-scholar')],
+      ['https://jackson.yale.edu/directory/faculty-affiliates'],
+      false,
+      'FACULTY_RESEARCH_AREA',
+      { schools: ['School of Medicine'] },
+      ['Fixture Scholar'],
+    );
+
+    expect(source?.url).toBe('https://medicine.yale.edu/profile/fixture-scholar');
+  });
+
   it('never promotes an ORCID-only home as the primary outreach CTA', () => {
     const source = resolveOutreachOfficialSource(
       [makeSource('https://orcid.org/0000-0000-0000-0000')],
@@ -841,6 +873,114 @@ describe('resolveOutreachOfficialSource', () => {
         makeSource('https://lab.example.yale.edu/contact'),
       ],
       [],
+      false,
+    );
+
+    expect(source?.url).toBe('https://lab.example.yale.edu/contact');
+  });
+
+  // The four refusals below are the shapes the corpus actually holds on the
+  // affected rows: two the mirror key collapses, two that only a categorical
+  // rule can reach.
+  it('treats a sub-path spelling of the claimed profile as already claimed (#2854)', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://medicine.yale.edu/bbs/profile/fixture-scholar/')],
+      ['https://medicine.yale.edu/profile/fixture-scholar/'],
+      false,
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('treats a trailing-slash spelling of the claimed profile as already claimed', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://sociology.example.yale.edu/profile/fixture-scholar/')],
+      ['https://sociology.example.yale.edu/profile/fixture-scholar'],
+      false,
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('refuses a renamed cohort spelling of the claimed profile', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource(
+          'http://english.yale.edu/people/tenured-and-tenure-track-faculty-professors-staff/fixture-scholar',
+        ),
+      ],
+      [
+        'https://english.yale.edu/people/tenured-and-tenure-track-faculty-professors/fixture-scholar',
+      ],
+      false,
+      'FACULTY_RESEARCH_AREA',
+      {},
+      ['Fixture Scholar'],
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('refuses a different cohort page for the same person', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://english.yale.edu/people/professors-emeritus/fixture-scholar')],
+      ['https://english.yale.edu/people/tenured-and-tenure-track-faculty-professors/other-scholar'],
+      false,
+      'FACULTY_RESEARCH_AREA',
+      {},
+      ['Other Scholar'],
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('still offers the lab site beside a cohort-nested claimed profile', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://english.yale.edu/fixture-lab')],
+      ['https://english.yale.edu/people/professors-emeritus/fixture-scholar'],
+      false,
+      'FACULTY_RESEARCH_AREA',
+      {},
+      ['Fixture Scholar'],
+    );
+
+    expect(source?.url).toBe('https://english.yale.edu/fixture-lab');
+  });
+
+  it('refuses a second path type for the same person, which no dedupe key collapses', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://sociology.example.yale.edu/people/fixture-scholar')],
+      ['https://sociology.example.yale.edu/profile/fixture-scholar'],
+      false,
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('refuses a second host for the same person, the joint-appointment case', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://medicine.yale.edu/profile/fixture-scholar/')],
+      ['https://eall.example.yale.edu/people/fixture-scholar'],
+      false,
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('still offers a person profile when the page claims none, because it is the only way in', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://medicine.yale.edu/profile/fixture-scholar/')],
+      [],
+      false,
+    );
+
+    expect(source?.url).toBe('https://medicine.yale.edu/profile/fixture-scholar/');
+  });
+
+  it("still offers the research's own website beside a claimed profile", () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://lab.example.yale.edu/contact')],
+      ['https://medicine.yale.edu/profile/fixture-scholar/'],
       false,
     );
 
@@ -952,9 +1092,190 @@ describe('resolveOutreachOfficialSource', () => {
 
     expect(source).toBeUndefined();
   });
+
+  it('never offers a research group host root as one person research official page (#2579)', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('http://het.yale.edu/')],
+      [],
+      false,
+      'FACULTY_RESEARCH_AREA',
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('refuses the group host root on a row still carrying the retired faculty type', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('http://het.yale.edu/index.html')],
+      [],
+      false,
+      'FACULTY_RESEARCH',
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('never offers a department audience recruitment page as one person research official page', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('http://economics.yale.edu/undergraduate/employment-opportunities')],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('never offers a press article as the official page once the website slot is empty (#2532)', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://www.wsj.com/personal-finance/example-24057ac4')],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('never offers a dated university news article as the official page (#2532)', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://news.yale.edu/2024/06/05/example-headline')],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('prefers a research home over a press article cited by the same row (#2532)', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource('https://news.yale.edu/2024/06/05/example-headline'),
+        makeSource('https://examplelab.yale.edu/'),
+      ],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source?.url).toBe('https://examplelab.yale.edu/');
+  });
+
+  it('keeps a research home whose own path merely reads like news (#2532)', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://examplelab.yale.edu/news/2024/update/')],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source?.url).toBe('https://examplelab.yale.edu/news/2024/update/');
+  });
+
+  it('prefers a page the person research owns over a department audience page', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource('http://economics.yale.edu/undergraduate/employment-opportunities'),
+        makeSource('https://examplecognitionlab.yale.edu/'),
+      ],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source?.url).toBe('https://examplecognitionlab.yale.edu/');
+  });
+
+  it('keeps the group host root for the collective row that owns it', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('http://het.yale.edu/')],
+      [],
+      false,
+      'CENTER',
+    );
+
+    expect(source?.url).toBe('http://het.yale.edu/');
+  });
+
+  it('keeps a lab own audience page however the lab organizes its site', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://belieflab.yale.edu/undergraduate/employment-opportunities')],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source?.url).toBe('https://belieflab.yale.edu/undergraduate/employment-opportunities');
+  });
 });
 
 describe('resolveDecisionProfileUrl', () => {
+  it('refuses a press host carrying a profile path token (#2532)', () => {
+    const url = resolveDecisionProfileUrl('https://theconversation.com/profiles/example-author-1', {
+      websiteUrl: '',
+      sourceUrls: ['https://theconversation.com/profiles/example-author-1'],
+    });
+
+    expect(url).toBeUndefined();
+  });
+
+  it('keeps the department profile when a press profile token also cites the row (#2532)', () => {
+    const url = resolveDecisionProfileUrl('https://theconversation.com/profiles/example-author-1', {
+      websiteUrl: '',
+      school: 'School of Medicine',
+      schools: ['School of Medicine'],
+      sourceUrls: [
+        'https://theconversation.com/profiles/example-author-1',
+        'https://medicine.yale.edu/profile/fixture-scholar/',
+      ],
+    });
+
+    expect(url).toBe('https://medicine.yale.edu/profile/fixture-scholar');
+  });
+
+  it('refuses a press host recorded as the lead official profile (#2532)', () => {
+    const url = resolveDecisionProfileUrl(
+      'https://nytimes.com/2024/06/05/example-headline.html',
+      {
+        websiteUrl: '',
+        sourceUrls: ['https://nytimes.com/2024/06/05/example-headline.html'],
+      },
+      'https://nytimes.com/2024/06/05/example-headline.html',
+    );
+
+    expect(url).toBeUndefined();
+  });
+
+  it('prefers the department profile over a cross-school directory mirror (#2835)', () => {
+    const url = resolveDecisionProfileUrl('https://orcid.org/0000-0002-0000-0000', {
+      websiteUrl: '',
+      school: 'Faculty of Arts and Sciences',
+      schools: ['Faculty of Arts and Sciences'],
+      sourceUrls: [
+        'https://orcid.org/0000-0002-0000-0000',
+        'https://medicine.yale.edu/profile/fixture-scholar/',
+        'http://example.yale.edu/people/fixture-scholar/',
+      ],
+    });
+
+    expect(url).toBe('http://example.yale.edu/people/fixture-scholar');
+  });
+
+  it('keeps the school directory profile when the row claims that school', () => {
+    const url = resolveDecisionProfileUrl('https://medicine.yale.edu/profile/fixture-scholar/', {
+      websiteUrl: '',
+      school: 'School of Medicine',
+      schools: ['School of Medicine', 'Faculty of Arts and Sciences'],
+      sourceUrls: [
+        'https://medicine.yale.edu/profile/fixture-scholar/',
+        'http://example.yale.edu/people/fixture-scholar/',
+      ],
+    });
+
+    expect(url).toBe('https://medicine.yale.edu/profile/fixture-scholar');
+  });
+
   it('prefers the corroborated lead profile over a mismatched entity website profile (#776)', () => {
     const url = resolveDecisionProfileUrl(
       'https://medicine.yale.edu/profile/david-song/',
@@ -1010,6 +1331,108 @@ describe('resolveDecisionProfileUrl', () => {
     expect(url).toBe('https://example.yale.edu/faculty/jane-doe');
   });
 
+  it('fills the profile slot from a host-root person page the row already cites (#2912)', () => {
+    const personPage = 'https://law.yale.edu/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(
+      personPage,
+      { websiteUrl: personPage, sourceUrls: [personPage] },
+      undefined,
+      ['Fixture Ashby'],
+    );
+
+    expect(url).toBe(personPage);
+  });
+
+  it('fills the profile slot from a www-prefixed citation on a mapped host (#2912)', () => {
+    const personPage = 'https://www.law.yale.edu/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(
+      personPage,
+      { websiteUrl: personPage, sourceUrls: [personPage] },
+      undefined,
+      ['Fixture Ashby'],
+    );
+
+    expect(url).toBe(personPage);
+  });
+
+  it("keeps the lead's own recorded profile ahead of a root-mapped personal site (#2912)", () => {
+    const personalSite = 'https://campuspress.yale.edu/fixture-ashby';
+    const leadOfficialProfile = 'https://wgss.yale.edu/people/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(
+      personalSite,
+      { websiteUrl: personalSite, sourceUrls: [personalSite] },
+      leadOfficialProfile,
+      ['Fixture Ashby'],
+    );
+
+    expect(url).toBe(leadOfficialProfile);
+  });
+
+  it('keeps a department profile ahead of a personal site on a root-mapped host (#2912)', () => {
+    const personalSite = 'https://campuspress.yale.edu/fixture-ashby';
+    const departmentProfile = 'https://wgss.yale.edu/people/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(
+      personalSite,
+      { websiteUrl: personalSite, sourceUrls: [personalSite, departmentProfile] },
+      undefined,
+      ['Fixture Ashby'],
+    );
+
+    expect(url).toBe(departmentProfile);
+  });
+
+  it('leaves the profile slot empty when a host-root page names nobody on the row (#2912)', () => {
+    const institutionalPage = 'https://law.yale.edu/ashby-center-global-policy';
+
+    const url = resolveDecisionProfileUrl(
+      institutionalPage,
+      { websiteUrl: institutionalPage, sourceUrls: [institutionalPage] },
+      undefined,
+      ['Fixture Ashby'],
+    );
+
+    expect(url).toBeUndefined();
+  });
+
+  it('leaves the profile slot empty when the row names no lead for a host-root page (#2912)', () => {
+    const personPage = 'https://law.yale.edu/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(personPage, {
+      websiteUrl: personPage,
+      sourceUrls: [personPage],
+    });
+
+    expect(url).toBeUndefined();
+  });
+
+  it('fills the profile slot when the lead display name carries a degree suffix (#2912)', () => {
+    const personPage = 'https://law.yale.edu/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(
+      personPage,
+      { websiteUrl: personPage, sourceUrls: [personPage] },
+      undefined,
+      ['Fixture Ashby, PhD'],
+    );
+
+    expect(url).toBe(personPage);
+  });
+
+  it('fills the profile slot from a mapped non-root prefix without a name match (#2912)', () => {
+    const personPage = 'https://jackson.yale.edu/directory/a-researcher';
+
+    const url = resolveDecisionProfileUrl(personPage, {
+      websiteUrl: personPage,
+      sourceUrls: [personPage],
+    });
+
+    expect(url).toBe(personPage);
+  });
+
   it('returns no decision profile while the lead identity is under review', () => {
     const url = resolveDecisionProfileUrl(
       'https://example.yale.edu/profile/jane-doe',
@@ -1036,6 +1459,66 @@ describe('resolveDecisionProfileUrl', () => {
     );
 
     expect(url).toBe('https://example.yale.edu/profile/jane-doe');
+  });
+
+  it('skips a department-scoped roster slug and serves the person their own profile', () => {
+    const url = resolveDecisionProfileUrl(
+      'https://ling.yale.edu/people/linguistics-faculty',
+      {
+        websiteUrl: 'https://sample-researcher.example.test/',
+        sourceUrls: [
+          'https://ling.yale.edu/profile/sample-researcher',
+          'https://ling.yale.edu/people/linguistics-faculty',
+          'https://sample-researcher.example.test/',
+        ],
+      },
+      undefined,
+    );
+
+    expect(url).toBe('https://ling.yale.edu/profile/sample-researcher');
+  });
+
+  it('offers no profile rather than a shared roster when the entity has no own profile', () => {
+    const url = resolveDecisionProfileUrl(
+      'https://sample-researcher.example.test/',
+      {
+        websiteUrl: 'https://sample-researcher.example.test/',
+        sourceUrls: [
+          'https://ling.yale.edu/people/linguistics-faculty',
+          'https://sample-researcher.example.test/',
+        ],
+      },
+      undefined,
+    );
+
+    expect(url).toBeUndefined();
+  });
+});
+
+describe('isDepartmentRosterProvenanceUrl', () => {
+  it('flags department-scoped and rank-scoped roster slugs, not person profiles', () => {
+    expect(
+      isDepartmentRosterProvenanceUrl('https://ling.yale.edu/people/linguistics-faculty'),
+    ).toBe(true);
+    expect(isDepartmentRosterProvenanceUrl('https://english.yale.edu/people/ladder-faculty')).toBe(
+      true,
+    );
+    expect(isDepartmentRosterProvenanceUrl('https://french.yale.edu/people/professors')).toBe(true);
+    expect(isDepartmentRosterProvenanceUrl('https://whc.yale.edu/people/our-people')).toBe(true);
+    expect(isDepartmentRosterProvenanceUrl('https://ling.yale.edu/profile/tom-example')).toBe(
+      false,
+    );
+    expect(isDepartmentRosterProvenanceUrl('https://ling.yale.edu/people/claire-example')).toBe(
+      false,
+    );
+  });
+
+  it('does not read a long article slug as a roster', () => {
+    expect(
+      isDepartmentRosterProvenanceUrl(
+        'https://law.yale.edu/yls-today/news/professor-alex-example-aims-to-foster-connection',
+      ),
+    ).toBe(false);
   });
 });
 
@@ -1124,13 +1607,76 @@ describe('officialProfileMirrorKey', () => {
     expect(officialProfileMirrorKey('https://medicine.yale.edu/lab/erson/join')).toBeNull();
     expect(officialProfileMirrorKey('https://orcid.org/0000-0000-0000-0000')).toBeNull();
   });
+
+  it('collapses the cohort-nested variants of one person page onto one key', () => {
+    const key = officialProfileMirrorKey(
+      'https://english.yale.edu/people/tenured-and-tenure-track-faculty-professors/ada-fixture',
+    );
+    expect(key).not.toBeNull();
+    expect(
+      officialProfileMirrorKey(
+        'http://english.yale.edu/people/tenured-and-tenure-track-faculty-professors-staff/ada-fixture',
+      ),
+    ).toBe(key);
+    expect(
+      officialProfileMirrorKey('https://english.yale.edu/people/professors-emeritus/ada-fixture'),
+    ).toBe(key);
+    expect(officialProfileMirrorKey('https://english.yale.edu/people/ada-fixture')).toBe(key);
+    expect(
+      officialProfileMirrorKey('https://english.yale.edu/people/professors-emeritus/bo-sample'),
+    ).not.toBe(key);
+  });
+});
+
+describe('isRosterNestedPersonPageUrl', () => {
+  it('accepts a person page nested under a rank-named cohort segment', () => {
+    expect(
+      isRosterNestedPersonPageUrl(
+        'https://english.yale.edu/people/tenured-and-tenure-track-faculty-professors/ada-fixture',
+      ),
+    ).toBe(true);
+    expect(
+      isRosterNestedPersonPageUrl('https://german.yale.edu/who-we-are/faculty-officers/bo-sample'),
+    ).toBe(true);
+    expect(
+      isRosterNestedPersonPageUrl(
+        'https://english.yale.edu/people/adjunct-professors-and-senior-lecturers-creative-writers/cy-placeholder',
+      ),
+    ).toBe(true);
+  });
+
+  it('refuses a roster page, a non-person subtree, and a flat path', () => {
+    expect(
+      isRosterNestedPersonPageUrl('https://english.yale.edu/people/professors-emeritus/faculty'),
+    ).toBe(false);
+    expect(isRosterNestedPersonPageUrl('https://english.yale.edu/people/news/ada-fixture')).toBe(
+      false,
+    );
+    expect(isRosterNestedPersonPageUrl('https://english.yale.edu/research/labs/ada-fixture')).toBe(
+      false,
+    );
+    expect(isRosterNestedPersonPageUrl('https://english.yale.edu/people/ada-fixture')).toBe(false);
+    expect(
+      isRosterNestedPersonPageUrl('https://example.com/people/faculty-officers/ada-fixture'),
+    ).toBe(false);
+  });
 });
 
 describe('isLikelyUnavailableSourceLink', () => {
-  it('flags UNAVAILABLE health or any status at or above 400', () => {
+  it('flags UNAVAILABLE health or a status asserting the resource is gone', () => {
     expect(isLikelyUnavailableSourceLink({ healthStatus: 'UNAVAILABLE' })).toBe(true);
-    expect(isLikelyUnavailableSourceLink({ httpStatusCode: 500 })).toBe(true);
+    expect(isLikelyUnavailableSourceLink({ httpStatusCode: 404 })).toBe(true);
+    expect(isLikelyUnavailableSourceLink({ httpStatusCode: 410 })).toBe(true);
   });
+
+  // Mirrors the server contract in server/src/services/__tests__/sourceLinkHealth.test.ts:
+  // access control, throttling, and outages are inconclusive and never hide a link.
+  it.each([401, 403, 429, 500, 503])(
+    'does not flag an inconclusive %i status',
+    (httpStatusCode) => {
+      expect(isLikelyUnavailableSourceLink({ httpStatusCode })).toBe(false);
+    },
+  );
 
   it('does not flag healthy, redirected, unknown, or missing health', () => {
     expect(isLikelyUnavailableSourceLink({ healthStatus: 'HEALTHY', httpStatusCode: 200 })).toBe(
@@ -1140,5 +1686,258 @@ describe('isLikelyUnavailableSourceLink', () => {
       false,
     );
     expect(isLikelyUnavailableSourceLink(undefined)).toBe(false);
+  });
+});
+
+describe('buildResearchDetailSources source attribution', () => {
+  const LAB = 'https://example.yale.edu/lab/fixture/';
+  const PROFILE = 'https://example.yale.edu/profile/fixture/';
+  const MIRROR = 'https://other.yale.edu/profile/fixture/';
+
+  it('says what each source contributed instead of labelling both the same', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [LAB, PROFILE] },
+      sourceFieldContributions: [
+        { sourceUrl: LAB, contributions: ['Methods', 'Research summary'] },
+        { sourceUrl: PROFILE, contributions: ['Lead identity', 'Undergrad access'] },
+      ],
+    });
+
+    const contextsFor = (fragment: string) =>
+      sources.find((source) => source.url.includes(fragment))?.contexts;
+    expect(contextsFor('/lab/fixture')).toEqual(['Methods', 'Research summary']);
+    expect(contextsFor('/profile/fixture')).toEqual(['Lead identity', 'Undergrad access']);
+  });
+
+  it('distinguishes two profiles of one person, which previously read identically', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [PROFILE, MIRROR] },
+      sourceFieldContributions: [
+        { sourceUrl: PROFILE, contributions: ['Lead identity'] },
+        { sourceUrl: MIRROR, contributions: ['Research summary'] },
+      ],
+    });
+
+    expect(sources).toHaveLength(2);
+    const contextsFor = (host: string) =>
+      sources.find((source) => source.url.includes(host))?.contexts;
+    expect(contextsFor('example.yale.edu')).toEqual(['Lead identity']);
+    expect(contextsFor('other.yale.edu')).toEqual(['Research summary']);
+  });
+
+  it('keeps the generic context for a citation no provenance names', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [PROFILE] },
+      sourceFieldContributions: [],
+    });
+
+    expect(sources[0].contexts).toEqual(['Profile source']);
+  });
+
+  it('leaves a website or evidence context alone, since those already say what they are', () => {
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: LAB, sourceUrls: [] },
+      sourceFieldContributions: [{ sourceUrl: LAB, contributions: ['Research summary'] }],
+    });
+
+    expect(sources[0].contexts).toEqual(['Profile website']);
+    expect(sources[0].label).toBe('Research website');
+  });
+
+  it('ignores an attribution entry with no usable label', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [PROFILE] },
+      sourceFieldContributions: [
+        { sourceUrl: PROFILE, contributions: [] },
+        { sourceUrl: PROFILE, contributions: ['  '] },
+      ],
+    });
+
+    expect(sources[0].contexts).toEqual(['Profile source']);
+  });
+
+  it('matches attribution across a trailing-slash difference, as the ledger key does', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: ['https://example.yale.edu/profile/fixture'] },
+      sourceFieldContributions: [{ sourceUrl: PROFILE, contributions: ['Lead identity'] }],
+    });
+
+    expect(sources[0].contexts).toEqual(['Lead identity']);
+  });
+});
+
+/**
+ * #2556. A host that resolves only into Yale's private address space is alive and
+ * unopenable at the same time, so the website CTA must not offer it while the
+ * citation itself stays listed as provenance.
+ */
+describe('isUnreachableResearchWebsiteCtaUrl', () => {
+  const PRIVATE_URL = 'https://internal.example.edu/lab/';
+  const PUBLIC_URL = 'https://medicine.yale.edu/lab/a-lab/';
+  const health = [
+    { url: PRIVATE_URL, healthStatus: 'UNKNOWN', privateAddressHost: true },
+    { url: PUBLIC_URL, healthStatus: 'HEALTHY', httpStatusCode: 200 },
+  ];
+
+  it('refuses a CTA whose host resolves only into private address space', () => {
+    expect(isUnreachableResearchWebsiteCtaUrl(PRIVATE_URL, health)).toBe(true);
+    expect(isUnreachableResearchWebsiteCtaUrl('http://www.internal.example.edu/lab', health)).toBe(
+      true,
+    );
+  });
+
+  // The page is not gone, and claiming so would be a different and false statement.
+  it('does not read a private-address host as unavailable', () => {
+    expect(isUnavailableResearchWebsiteCtaUrl(PRIVATE_URL, health)).toBe(false);
+  });
+
+  it('keeps a healthy public Yale host usable', () => {
+    expect(isUnreachableResearchWebsiteCtaUrl(PUBLIC_URL, health)).toBe(false);
+  });
+
+  it('keeps a merely inconclusive verdict usable', () => {
+    expect(
+      isUnreachableResearchWebsiteCtaUrl(PUBLIC_URL, [
+        { url: PUBLIC_URL, healthStatus: 'UNKNOWN', httpStatusCode: 403 },
+      ]),
+    ).toBe(false);
+  });
+
+  it('fails open with no health data at all', () => {
+    expect(isUnreachableResearchWebsiteCtaUrl(PRIVATE_URL)).toBe(false);
+    expect(isUnreachableResearchWebsiteCtaUrl(undefined, health)).toBe(false);
+  });
+
+  it('qualifies the source row instead of dropping the citation', () => {
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: PRIVATE_URL, sourceUrls: [PUBLIC_URL] },
+      sourceLinkHealth: health,
+    });
+    const privateRow = sources.find((source) => source.url.includes('internal.example.edu'));
+    expect(privateRow).toBeDefined();
+    expect(privateRow?.isPrivateNetworkOnly).toBe(true);
+    expect(privateRow?.isLikelyUnavailable).toBe(false);
+    const publicRow = sources.find((source) => source.url.includes('medicine.yale.edu'));
+    expect(publicRow).toBeDefined();
+    expect(publicRow?.isPrivateNetworkOnly).toBe(false);
+  });
+
+  it('never offers a private-address citation as the outreach official source', () => {
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: PRIVATE_URL },
+      sourceLinkHealth: health,
+    });
+    expect(
+      resolveOutreachOfficialSource(sources, [], false, 'LAB', { schools: [] }),
+    ).toBeUndefined();
+  });
+});
+
+describe('served attribution with no citation of its own (#3341)', () => {
+  const CITED = 'https://medicine.yale.edu/lab/fixture-lab';
+  const CONTRIBUTOR = 'https://medicine.yale.edu/profile/fixture-scholar';
+
+  const build = () =>
+    buildResearchDetailSources({
+      group: { sourceUrls: [CITED] },
+      sourceFieldContributions: [
+        { sourceUrl: CONTRIBUTOR, contributions: ['Research summary', 'Topics'] },
+      ],
+    });
+
+  it('gives the contributing URL a row instead of discarding the contribution', () => {
+    const sources = build();
+
+    expect(sources.map((source) => source.url)).toEqual([CITED, CONTRIBUTOR]);
+    const contributor = sources[1];
+    expect(contributor.isAttributionOnly).toBe(true);
+    expect(contributor.contexts).toEqual(expect.arrayContaining(['Research summary', 'Topics']));
+  });
+
+  it('never offers an attribution-only row as the official page', () => {
+    // The cited row is claimed, so the attribution-only row is the only candidate left.
+    expect(resolveOutreachOfficialSource(build(), [CITED, undefined], false)).toBeUndefined();
+  });
+
+  it('keeps an attribution-only row out of the profile resolver fallback', () => {
+    expect(firstCitedResearchDetailSource(build())?.url).toBe(CITED);
+  });
+
+  it('leaves a cited URL a full citation when a contribution also names it', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [CITED] },
+      sourceFieldContributions: [{ sourceUrl: CITED, contributions: ['Research summary'] }],
+    });
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0].isAttributionOnly).toBeUndefined();
+  });
+
+  it('applies the ordinary source refusals to a contributing URL', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [CITED] },
+      sourceFieldContributions: [
+        { sourceUrl: 'https://example.yale.edu/people/faculty', contributions: ['Topics'] },
+        { sourceUrl: 'https://api.nsf.gov/awards/123', contributions: ['Topics'] },
+        { sourceUrl: 'javascript:alert(1)', contributions: ['Topics'] },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([CITED]);
+  });
+
+  it('adds no row when a contribution carries no label', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [CITED] },
+      sourceFieldContributions: [{ sourceUrl: CONTRIBUTOR, contributions: [] }],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([CITED]);
+  });
+});
+
+describe('a contribution naming a mirror of a cited page (#3341)', () => {
+  const CITED = 'https://medicine.yale.edu/profile/fixture-scholar';
+  const MIRROR = 'https://medicine.yale.edu/bbs/profile/fixture-scholar';
+
+  it('attaches its labels to the cited row instead of losing them', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [CITED] },
+      sourceFieldContributions: [{ sourceUrl: MIRROR, contributions: ['Methods', 'Topics'] }],
+    });
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0].url).toBe(CITED);
+    expect(sources[0].isAttributionOnly).toBeUndefined();
+    expect(sources[0].contexts).toEqual(['Methods', 'Topics']);
+  });
+
+  it('still keys a cohort-renamed spelling onto the cited row', () => {
+    const cited =
+      'https://english.yale.edu/people/tenured-and-tenure-track-faculty-professors/fixture-scholar';
+    const renamed =
+      'http://english.yale.edu/people/tenured-and-tenure-track-faculty-professors-staff/fixture-scholar';
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [cited] },
+      sourceFieldContributions: [{ sourceUrl: renamed, contributions: ['Research summary'] }],
+    });
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0].contexts).toEqual(['Research summary']);
+  });
+
+  it('keeps a genuinely different page as its own attribution-only row', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [CITED] },
+      sourceFieldContributions: [
+        { sourceUrl: 'https://medicine.yale.edu/lab/fixture-lab', contributions: ['Topics'] },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([
+      CITED,
+      'https://medicine.yale.edu/lab/fixture-lab',
+    ]);
+    expect(sources[1].isAttributionOnly).toBe(true);
   });
 });

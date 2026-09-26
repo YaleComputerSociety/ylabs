@@ -2,13 +2,13 @@
 
 Last updated: 2026-05-15
 
-This document captures the current Yale Research interface direction and the next UX moves. It is verified against product docs and implementation files.
+This document captures the current y/labs interface direction and the next UX moves. It is verified against product docs and implementation files.
 
 Confirm UX claims against source files, tests, and durable docs before editing product behavior.
 
 ## Canonical Product Frame
 
-Yale Research is a research navigation product, not a simple lab-opening board. The UX should help a student move from curiosity to a credible, evidence-backed next step.
+y/labs is a research navigation product, not a simple lab-opening board. The UX should help a student move from curiosity to a credible, evidence-backed next step.
 
 The student-facing grammar is:
 
@@ -30,7 +30,7 @@ Current implementation anchors:
 - [`client/src/App.tsx`](../client/src/App.tsx): routes `/` to `/research`, exposes `/research`, `/research/:slug`, and `/programs`, and redirects retired `/listings` and `/fellowships` URLs.
 - [`client/src/components/Navbar.tsx`](../client/src/components/Navbar.tsx): primary navigation, including Research, Programs & Fellowships, and Dashboard.
 - [`client/src/pages/research.tsx`](../client/src/pages/research.tsx): `/research` browse page for labs, centers, programs, faculty research, and related groups.
-- [`client/src/components/research/ResearchFilterDisclosure.tsx`](../client/src/components/research/ResearchFilterDisclosure.tsx): Research search filter disclosure hosting the adaptive school, department, availability, compensation, and eligible-student-levels facets.
+- [`client/src/components/research/ResearchFilterDisclosure.tsx`](../client/src/components/research/ResearchFilterDisclosure.tsx): Research search filter disclosure hosting the adaptive type, school, and department facets.
 - [`client/src/pages/labDetail.tsx`](../client/src/pages/labDetail.tsx): `/research/:slug` detail page.
 - [`client/src/pages/home.tsx`](../client/src/pages/home.tsx): retained implementation module that is no longer reachable from the retired `/listings` route.
 - [`client/src/components/shared/BrowseCard.tsx`](../client/src/components/shared/BrowseCard.tsx): shared card treatment for listings, fellowships, and research groups.
@@ -46,28 +46,29 @@ The page should answer: "What research structures are out there, and which are w
 
 Primary UX ingredients:
 
-- Search by topic, method, entity name, department, and research area.
-- Narrow results by school and department through one compact Filters control.
+- Search by topic, method, entity name, and department.
+- Narrow results by research type, school, and department through one compact Filters control.
 - Cards that prioritize entity name, kind, discipline, short description, evidence, source routes, and compact planning-context signals.
 - Avoid making active openings the only success state.
 
 Research filter behavior:
 
-- School and department selections are URL-backed so reload, sharing, and browser navigation preserve them.
+- Type, school, and department selections are URL-backed (`type`, `school`, `department`) so reload, sharing, and browser navigation preserve them.
+  The type axis accepts only the canonical `researchEntityTypes` enum, so a typo or retired value is ignored rather than rendered as a confidently labelled empty result set; see `docs/decisions.md` 2026-09-22 (#2195).
 - Active selections appear as individually removable chips, with a clear-all action and an active count on the Filters control.
 - The control opens as a non-modal desktop disclosure and an accessible, focus-contained mobile sheet.
-- School and department facet choices come from positive counts for the current query, while an active value remains available even if a later distribution omits it.
+- Type, school, and department facet choices come from positive counts for the current query, while an active value remains available even if a later distribution omits it.
 - Missing, loading, or failed facet metadata must not disable base search, invent counts from total results, or expose hidden focusable controls.
 
 Current gap: the shared verdict adapter now prefers access-summary/pathway evidence, but filters and older labels still contain some "acceptance" and "accepting undergrads" language. Move progressively toward "Planning Context," "Evidence," and "Best Next Step."
 
-Research page language rule: `/research` should lead with research homes, profiles, evidence, source context, and best next steps. Avoid exposing cluster, version, ways-in counts, or metadata implementation labels in primary student-facing UI. Borrow Listings-style scanning only for hierarchy and action clarity; do not make `/research` feel like a job board.
+Research page language rule: `/research` should lead with research, profiles, evidence, source context, and best next steps. Avoid exposing cluster, version, ways-in counts, or metadata implementation labels in primary student-facing UI. Borrow Listings-style scanning only for hierarchy and action clarity; do not make `/research` feel like a job board.
 
 ### `/listings`
 
 Purpose: temporary compatibility surface for professor-created posted roles and old direct listing links.
 
-The page should answer: "Which specific posted roles exist right now?" It should not be the default student home or primary navigation item. Keep it available at `/listings` while professor workflows still depend on legacy APIs, but frame it as Posted Roles and point students back to Yale Research.
+The page should answer: "Which specific posted roles exist right now?" It should not be the default student home or primary navigation item. Keep it available at `/listings` while professor workflows still depend on legacy APIs, but frame it as Posted Roles and point students back to y/labs.
 
 ### `/research/:slug`
 

@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MATERIALIZER_DERIVED_FIELD_GROUPS,
+  withDerivedMaterializerFields,
+} from '../../scrapers/entityMaterializer';
+import {
+  REMATERIALIZE_TRACKED_FIELDS,
   assertRematerializeApplyAllowed,
   buildRematerializeFieldChanges,
+  collectRematerializeEntityReports,
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
   rematerializeChangeAffectsVisibilityGate,
+  rematerializeFailureMessage,
+  rematerializeSkipReasonForEntity,
   researchEntityFieldIsStranded,
   selectRematerializeRegateEntityIds,
 } from '../rematerializeResearchEntitiesCore';
@@ -66,9 +74,34 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
   });
 
   it('rejects an unsupported reclaim field', () => {
+    expect(() => parseRematerializeResearchEntitiesArgs(['--reclaim-stranded=name'])).toThrow(
+      '--reclaim-stranded only supports',
+    );
+  });
+
+  // Replaces the assertion that fullDescription was unsupported. The reclaim
+  // cohort is selected by the field being EMPTY, so no stored body can be
+  // displaced, which is the risk that kept it out (#1908).
+  it('reclaims a stranded full description and scopes the write to that field', () => {
+    const args = parseRematerializeResearchEntitiesArgs(['--reclaim-stranded=fullDescription']);
+    expect(args.reclaimStrandedField).toBe('fullDescription');
+    expect(args.onlyFields).toEqual(['fullDescription']);
+  });
+
+  // An empty stored short is NOT a row serving nothing: the card is derived at
+  // serve time from the body, so adopting a stored one replaces what students see.
+  it('still refuses to reclaim a stranded short description', () => {
     expect(() =>
-      parseRematerializeResearchEntitiesArgs(['--reclaim-stranded=fullDescription']),
+      parseRematerializeResearchEntitiesArgs(['--reclaim-stranded=shortDescription']),
     ).toThrow('--reclaim-stranded only supports');
+  });
+
+  it('keeps an explicit wider --only-fields scope on a reclaim run', () => {
+    const args = parseRematerializeResearchEntitiesArgs([
+      '--reclaim-stranded=fullDescription',
+      '--only-fields=fullDescription,shortDescription',
+    ]);
+    expect(args.onlyFields).toEqual(['fullDescription', 'shortDescription']);
   });
 
   it('defaults --only-fields to an empty scope', () => {
@@ -93,6 +126,77 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
     expect(() =>
       parseRematerializeResearchEntitiesArgs(['--slugs=a', '--only-fields=notAField']),
     ).toThrow('Unsupported --only-fields field');
+  });
+
+  it('excludes archived rows unless --include-archived is passed', () => {
+    expect(parseRematerializeResearchEntitiesArgs(['--slugs=a']).includeArchived).toBe(false);
+    expect(
+      parseRematerializeResearchEntitiesArgs(['--slugs=a', '--include-archived']).includeArchived,
+    ).toBe(true);
+  });
+});
+
+describe('rematerializeSkipReasonForEntity', () => {
+  it('skips an archived row by default and processes a live one', () => {
+    expect(rematerializeSkipReasonForEntity({ archived: true }, false)).toBe('archived-entity');
+    expect(rematerializeSkipReasonForEntity({ archived: false }, false)).toBeUndefined();
+    expect(rematerializeSkipReasonForEntity({}, false)).toBeUndefined();
+  });
+
+  it('processes an archived row when the operator opts in', () => {
+    expect(rematerializeSkipReasonForEntity({ archived: true }, true)).toBeUndefined();
+  });
+
+  it('skips a redirected row even when the operator opts into archived rows', () => {
+    expect(
+      rematerializeSkipReasonForEntity({ _id: 'shell', archived: true }, true, 'canonical'),
+    ).toBe('redirected-to-canonical');
+  });
+
+  it('processes a row whose redirect resolves back to itself', () => {
+    expect(
+      rematerializeSkipReasonForEntity({ _id: 'canonical', archived: false }, false, 'canonical'),
+    ).toBeUndefined();
+  });
+});
+
+describe('rematerializeFailureMessage', () => {
+  it('redacts contact data a write error echoed back from the document', () => {
+    const message = rematerializeFailureMessage(
+      new Error('ValidationError: contactUrl mailto:person@example.edu is not a valid url'),
+    );
+    expect(message).not.toContain('person@example.edu');
+    expect(message).toContain('[email redacted]');
+  });
+
+  it('keeps a non-sensitive write error readable', () => {
+    expect(rematerializeFailureMessage(new Error('E11000 duplicate key error'))).toContain(
+      'E11000 duplicate key error',
+    );
+  });
+});
+
+describe('collectRematerializeEntityReports', () => {
+  it('reports a failing slug and still processes the slugs after it', async () => {
+    const attempted: string[] = [];
+    const reports = await collectRematerializeEntityReports(['a', 'b', 'c'], async (slug) => {
+      attempted.push(slug);
+      if (slug === 'b') throw new Error('E11000 duplicate key error');
+      return { slug, found: true, entityId: slug, changes: [] };
+    });
+
+    expect(attempted).toEqual(['a', 'b', 'c']);
+    expect(reports.map((report) => report.slug)).toEqual(['a', 'b', 'c']);
+    expect(reports[1].error).toContain('E11000 duplicate key error');
+    expect(reports[1].found).toBe(false);
+    expect(reports.filter((report) => report.error)).toHaveLength(1);
+  });
+
+  it('keeps a failed slug out of the re-gate scope', async () => {
+    const reports = await collectRematerializeEntityReports(['a'], async () => {
+      throw new Error('boom');
+    });
+    expect(selectRematerializeRegateEntityIds(reports)).toEqual([]);
   });
 });
 
@@ -122,7 +226,13 @@ describe('observationValueIsMaterializable', () => {
 });
 
 describe('assertRematerializeApplyAllowed', () => {
-  const base = { slugs: ['a'], apply: true, confirmRematerialize: true, onlyFields: [] };
+  const base = {
+    slugs: ['a'],
+    apply: true,
+    confirmRematerialize: true,
+    onlyFields: [],
+    includeArchived: false,
+  };
 
   it('is a no-op for dry-run', () => {
     expect(() =>
@@ -241,5 +351,82 @@ describe('buildRematerializeFieldChanges', () => {
       {},
     );
     expect(changes).toEqual([]);
+  });
+
+  it('reports the entityType a rematerialization rewrites, not only its derived kind', () => {
+    const changes = buildRematerializeFieldChanges(
+      { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual' },
+      { entityType: 'LAB', kind: 'lab' },
+      {},
+    );
+    expect(changes).toEqual([
+      { field: 'entityType', before: 'FACULTY_RESEARCH_AREA', after: 'LAB' },
+      { field: 'kind', before: 'individual', after: 'lab' },
+    ]);
+  });
+
+  it('reports the served classification fields a rematerialization rewrites', () => {
+    const changes = buildRematerializeFieldChanges(
+      { school: 'Yale College', schools: ['Yale College'], departments: ['Astronomy'] },
+      {
+        school: 'Graduate School of Arts and Sciences',
+        schools: ['Graduate School of Arts and Sciences'],
+        departments: ['Astronomy', 'Physics'],
+      },
+      {},
+    );
+    expect(changes.map((change) => change.field)).toEqual(['school', 'schools', 'departments']);
+  });
+});
+
+describe('REMATERIALIZE_TRACKED_FIELDS', () => {
+  it('tracks every member of every derived field group the materializer writes together', () => {
+    for (const group of MATERIALIZER_DERIVED_FIELD_GROUPS) {
+      for (const field of group) {
+        expect(REMATERIALIZE_TRACKED_FIELDS).toContain(field);
+      }
+    }
+  });
+
+  it('omits the contact fields the served payload withholds', () => {
+    for (const field of ['contactEmail', 'contactName', 'contactRole']) {
+      expect(REMATERIALIZE_TRACKED_FIELDS).not.toContain(field);
+      expect(() =>
+        parseRematerializeResearchEntitiesArgs(['--slugs=a', `--only-fields=${field}`]),
+      ).toThrow(/Unsupported --only-fields field/);
+    }
+  });
+
+  it('accepts every tracked field as an --only-fields scope', () => {
+    for (const field of REMATERIALIZE_TRACKED_FIELDS) {
+      const args = parseRematerializeResearchEntitiesArgs(['--slugs=a', `--only-fields=${field}`]);
+      expect(args.onlyFields).toEqual([field]);
+    }
+  });
+
+  it('has no duplicate entries', () => {
+    expect(new Set(REMATERIALIZE_TRACKED_FIELDS).size).toBe(REMATERIALIZE_TRACKED_FIELDS.length);
+  });
+});
+
+describe('withDerivedMaterializerFields', () => {
+  it('writes a derived pair together whichever half the operator scoped', () => {
+    expect(withDerivedMaterializerFields(['entityType']).sort()).toEqual(['entityType', 'kind']);
+    expect(withDerivedMaterializerFields(['kind']).sort()).toEqual(['entityType', 'kind']);
+  });
+
+  it('writes the whole org-unit closure whichever member the operator scoped', () => {
+    const closure = ['departments', 'orgAffiliationLabels', 'school', 'schools'];
+    expect(withDerivedMaterializerFields(['departments']).sort()).toEqual(closure);
+    expect(withDerivedMaterializerFields(['school']).sort()).toEqual(closure);
+    expect(withDerivedMaterializerFields(['schools']).sort()).toEqual(closure);
+  });
+
+  it('leaves an unrelated scope alone and does not duplicate a complete group', () => {
+    expect(withDerivedMaterializerFields(['methods'])).toEqual(['methods']);
+    expect(withDerivedMaterializerFields(['kind', 'entityType']).sort()).toEqual([
+      'entityType',
+      'kind',
+    ]);
   });
 });

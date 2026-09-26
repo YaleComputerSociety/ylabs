@@ -7,6 +7,10 @@ import { initializeConnections } from '../db/connections';
 import { Signal } from '../models/signal';
 import { deriveAccessArtifactsForResearchGroup } from '../scrapers/accessMaterializer';
 import {
+  OBSERVATION_STORE_EMPTY_REASON,
+  observationStoreIsPopulated,
+} from '../scrapers/observationStoreAvailability';
+import {
   assertOperatorEnvironmentMatchesDatabase,
   databaseNameFromMongoUrl,
 } from './operatorDatabaseEnvironment';
@@ -134,7 +138,20 @@ export function assertReconcileNotCurrentlyAvailableApplyAllowed(args: {
   }
 }
 
-function assertConnectedToDevelopment(mongoUrl: string | undefined): void {
+/**
+ * The fence that makes this lane safe outside Development, and the reason a
+ * Production hand-run cannot retire a signal: it reads the database name out of
+ * the connection string and refuses before `initializeConnections`, so a
+ * non-Development target is never even connected to, let alone written.
+ *
+ * #2514 read this lane as a Production write hazard on the strength of the
+ * observation-store guard being absent on `main`. That guard is absent there, but
+ * it is the second fence, not the first; this one is on both branches and the
+ * measured Production exposure is zero rows rather than the eight the issue
+ * estimated. Exported so a test pins it, because an untested fence is what let a
+ * reader believe it was not there.
+ */
+export function assertConnectedToDevelopment(mongoUrl: string | undefined): void {
   if (!mongoUrl) throw new Error('MONGODBURL is required');
   assertOperatorEnvironmentMatchesDatabase('development', databaseNameFromMongoUrl(mongoUrl));
 }
@@ -158,7 +175,25 @@ interface ReconcilePlanResult {
   stillValid: StaleSignalPlan[];
 }
 
+/**
+ * This lane decides a signal is stale because re-derivation no longer produces
+ * it, and re-derivation reads observations. Without an observation store every
+ * signal looks stale, so the lane would retire the whole cohort on evidence it
+ * cannot see. Refusing is the only safe answer: an empty read must never become a
+ * deletion decision (#2458). Neither `--apply` nor the confirm flag helps here,
+ * because both are environment-blind - the same invocation is correct on
+ * Development and destructive against a database that holds no observations.
+ */
+export async function assertObservationStoreAvailableForReconcile(): Promise<void> {
+  if (await observationStoreIsPopulated()) return;
+  throw new Error(
+    `${SCRIPT_NAME} cannot run here: ${OBSERVATION_STORE_EMPTY_REASON}, so every NOT_CURRENTLY_AVAILABLE signal would look no longer derivable and be retired. Run it against a database that holds the observations the signals were derived from.`,
+  );
+}
+
 async function buildReconcilePlan(limit: number): Promise<ReconcilePlanResult> {
+  await assertObservationStoreAvailableForReconcile();
+
   const liveSignals = await Signal.find({
     type: 'NOT_CURRENTLY_AVAILABLE',
     archived: { $ne: true },

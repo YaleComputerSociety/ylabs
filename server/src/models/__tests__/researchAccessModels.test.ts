@@ -101,7 +101,7 @@ describe('research access models', () => {
     expect(doc.validateSync()).toBeUndefined();
   });
 
-  it('validates logistics signals folded into the same collection', () => {
+  it('refuses a retired undergraduate-logistics claim type', () => {
     const doc = new Signal({
       researchEntityId: oid(),
       type: 'COMPENSATION',
@@ -111,7 +111,7 @@ describe('research access models', () => {
       expiresAt: new Date('2027-05-07T12:00:00.000Z'),
     });
 
-    expect(doc.validateSync()).toBeUndefined();
+    expect(doc.validateSync()?.errors.type).toBeDefined();
   });
 
   it('validates source coverage metadata for scraper planning', () => {
@@ -122,7 +122,7 @@ describe('research access models', () => {
       coverage: {
         priority: 1,
         tier: 'PRIMARY_OFFICIAL',
-        artifactTypes: ['AccessSignal', 'Observation'],
+        artifactTypes: ['ResearchEntity', 'Observation'],
         evidenceCategories: ['JOIN_INSTRUCTIONS', 'UNDERGRAD_ROLE_LANGUAGE'],
         defaultConfidence: 'MEDIUM',
       },

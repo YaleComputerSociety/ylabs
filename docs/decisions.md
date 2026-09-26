@@ -2,7 +2,902 @@
 
 This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
-Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
+Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
+`docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
+
+## 2026-09-25: `beta` Requires Its Smoke Test Too, And Protection Here Is Rulesets (#3425)
+
+`beta` already required `test-and-build` and one approving review, through the `require CI on beta` ruleset created 2026-08-22.
+`main` already required `test-and-build`, `student-journey-smoke`, and `release-hold` through `protect main (production)`, created 2026-08-31.
+The only substantive change here is adding `student-journey-smoke` to the `beta` ruleset, which brings it in line with `main` and closes a gap that existed only because `beta`'s ruleset predates the smoke test being required anywhere.
+It was verified first: 30 of 30 recent runs successful, and triggered on every `pull_request` into `beta` with no path filter, because a required context that never reports blocks a pull request forever.
+
+The entry exists mostly to record the mistake that produced it, because the mistake is reusable.
+An audit concluded that `beta` had no protection at all, on the strength of `GET /repos/.../branches/beta/protection` returning `404 Branch not protected`.
+That endpoint reports only **classic** branch protection and says nothing about rulesets, so its 404 was a statement about the wrong instrument rather than about the branch.
+Acting on it added a redundant classic-protection layer on top of the rulesets, which has since been removed; the repository is back to rulesets as its single source of protection, which is where it should stay.
+A negative answer from an API is a measurement like any other, and this one belongs to the same family as every other instrument error recorded in this file: the number looked authoritative and was about something else.
+
+Two properties of the real configuration are worth stating because they read as sloppiness and are not.
+
+`--admin` in the documented merge command is load-bearing.
+`require CI on beta` demands one approving review, and a sole maintainer cannot approve their own pull request, so without the Admin role's unconditional bypass nothing merges at all.
+This is also why every pull request merged to date shows no approving review, and why that fact is not evidence of review being skipped in a team that had one.
+
+The bypass is unconditional, so it overrides a failing suite as readily as the review rule.
+That makes restraint the contract rather than the configuration: the flag is for the review requirement, the watchdog's bot flow, and a read-and-answered `Person identifier scan`, and never for a red `test-and-build`.
+`AGENTS.md` owns that rule.
+
+`Person identifier scan` stays advisory deliberately, because its prose-name rule is fuzzy by design and it cannot unpublish text GitHub already serves, so gating on it would buy nothing.
+
+## 2026-09-24: Evidence Sets A Field, A Lane Owns A Class Of Wrongness, An Operator Decides One Row (#3359)
+
+Three layers have governed this repository since the observation engine landed, without ever being written down, so each thread rediscovered them and some threads got them backwards.
+Ratified here and stated as a rule in `AGENTS.md`, which is the single owner of the rule; this entry is the only other place it is written down, and it holds the reasoning so the reasoning survives a later edit to the rule.
+
+1. The scraper asserts evidence, and it is first class.
+Evidence is the only thing that may set a field.
+2. Wrong output means fix the lane, not the row, because a bug affects a class and so should the fix.
+At that layer the operator's job is to notice and to measure rather than to patch rows.
+3. The operator acts only where evidence cannot decide: a refusal that a specific value is inadmissible, an archive, or a review verdict on one row.
+That is a judgement about that row, which is why `role-assignments:lead-edge-retirement-review-queue` was deliberately built read-only, throwing on `--apply` and on any `--confirm` flag, with no bulk-apply path (#3260).
+
+### One claim in the ratification does not hold, and is stated here in its verified form
+
+The contract was ratified saying that a direct field write with no backing observation "does not survive the next resolve, and the engine already enforces this".
+The engine does not enforce that.
+`projectFromLog` in `scrapers/entityMaterializer.ts` builds its `$set` by iterating the resolved map only, and the resolved map is keyed off observed fields, so a stored field that appears in neither `set` nor `unset` is untouched.
+The sole general clearing is `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`, which is two fields, `methods` and `inferredPiUserId`.
+Two integration tests pin the opposite for everything else: `entityMaterializerUnsetOnEmpty.integration.test.ts` asserts a directly seeded `shortDescription` and `researchAreas` survive a materialize, and `entityMaterializerDiffSkipEndToEnd.integration.test.ts` asserts an unbacked `websiteUrl` survives a no-op re-projection.
+
+The verified statement is stronger for the contract rather than weaker, because it condemns a direct write from both directions.
+Where rival observations exist for the field, the next resolve overwrites the write, so it sticks only behind a `manuallyLockedFields` entry.
+Where no observation exists at all, the write persists and no lane can ever reach it again, which is the stranded state that `purgeSameNameCollisionAreaGrafts.ts`, `repairUnbackedLabNamesCore.ts` and `scrapers/fieldRetraction.ts` exist to clean up after.
+Either way a direct field write is not durable correctness.
+
+### Layer 3 applies where the derived value cannot WIN on evidence, not only where deriving it needs judgement
+
+The obvious test is wrong, and it was run and refuted rather than reasoned about.
+`disambiguateSurnameLabNames` renames a row sharing a bare-surname lab name to `<lead name> Lab`, derived mechanically from the single PI the row's own edge names and gated on a surname match, a uniqueness check and a collision check.
+No human judgement enters the derivation, so the first reading was that it is an assertion and belongs to layer 1.
+
+Built that way and measured, the asserted name arrived from evidence on 0 of 4 rows and all 4 diverged: the assertion sits at 0.6 and the roster lanes assert `name` at 0.7 to 0.8, so it loses the resolve and the value reverts.
+
+Raising the confidence until it wins is choosing a number to force an outcome, and it would also be false: a lead's own name is not better evidence about what a research record is CALLED than the roster that names it.
+So the rename cannot be carried as evidence at any honest tier, and preferring it anyway is an operator act by definition.
+The refusal channel is right here even though the derivation is wholly mechanical, and the rule is `operator_judgement` rather than `superseded_by_better_source`, because the roster is not a worse source and a reason implying it was would be false.
+
+The test to apply, then, is not "does deriving this require judgement" but **"can the derived value win on evidence?"**
+If it cannot, it is layer 3 however mechanical the derivation.
+
+### Two boundaries the census found, without which the next one over-reports
+
+**A mint is not a field write.** `ensureResearchEntityForOwner` in `services/researchGroupService.ts` inserts a row that does not exist yet, via `$setOnInsert`.
+There is no field to back, because there is no row until the insert, so "convert the write to an observation" is the wrong question about it.
+The assertion belongs to whichever lane caused the mint, and the insert is the row coming into existence rather than a claim about it.
+This is a fourth category beside evidence-shaped, operator-shaped and derived-bookkeeping, and without it a census flags every insert in the tree.
+
+**A normalizer that runs at ingest and again in the projection is hygiene, not evidence.**
+`materializedFieldValue` composes the five name normalizers, and `observationFieldSanitizer` composes them again at ingest, so a name is cleaned on the way in and on every projection.
+The corollary settles a whole class: mapping a retired vocabulary spelling onto the canonical one is derived-bookkeeping, because no source can assert "this spelling is the current vocabulary".
+`consolidateFacultyResearchEntityType` is that shape, and so is `orgAffiliationLabels`, which `canonicalizeDepartments` computes from `departments` - which is why 1,135 of 1,135 served rows carrying it with no observation is correct behaviour rather than a defect.
+
+One note on how the census read, because it is the same lesson as the rest of it: the name cohort looked outstanding because what had been recorded was a reading of the scripts rather than of the materializer.
+The hygiene was already in both places before the census started.
+The instrument was wrong, not the corpus.
+
+### The deciding test: does the wrongness have a shape?
+
+If you can write a predicate for it, it is a lane bug and belongs to layer 2.
+If you can only tell by reading the page, it is an operator judgement and belongs to layer 3.
+This is the practically useful part of the contract, because it settles which layer owns a defect before any code is read.
+
+### The second test: run it twice
+
+Post-processing is legitimate and necessary, because the lanes are not perfect.
+The distinction that matters is not whether output is corrected after extraction, but whether the correction runs every pass or once.
+
+Post-processing that runs on every resolve is derivation, not repair.
+It reads evidence, applies a correction, and produces the same answer next time, so it is layer 1 working as intended rather than an exception to it, and it writes no field and needs no lock.
+A one-shot script that writes a value directly is the thing that rots, because it needs a `manuallyLockedFields` entry to survive the next resolve and the lock then freezes the row forever.
+Same intent, opposite outcome.
+
+So: run it twice.
+If the second run re-derives the same answer from evidence, it is a lane.
+If the second run is a no-op because the first wrote a field, it is a repair that will need a lock.
+
+### The four legitimate places to correct output, in this order
+
+Choosing among these is most of the skill.
+
+1. In the lane, fixing the parse or the extraction, which stops the wrong value existing at all.
+2. In the derivation path, as a cleaning, grounding or trust filter that runs every time the value is computed.
+Deterministic and idempotent, and it writes no field.
+`trustedAreaShellEntities` in `scripts/researchEntityPiDedupeCore.ts` is one: it excluded 301 topics carried by low-trust shell losers across the 134 applied merge groups, which is about 92% of an apparent topic loss being a guard working rather than failing (#3326, #3330).
+The residual 28 topics across 11 groups in that same measurement are not yet shown to be correctly filtered, so cite the 301 as a refusal and not as a clean bill of health.
+
+"Every time the value is computed" is the trap in form 2, because some values are never computed again.
+The projection writes only the fields it resolves, so a stored field no live observation asserts gets no planned value and a derivation wired into the resolve path cannot reach it, no matter how idempotent it is.
+That is the recurrence behind the one-off repair class: the ingest sanitizer was the right fix for the invisible format character (#2874) and the lost sentence-boundary space (#3096), and each still needed a script for the standing corpus, which is then load-bearing forever and reachable from nothing but itself.
+`planStoredTextNormalization` in `scrapers/storedTextNormalization.ts` is form 2 extended to that blind spot: it reads the stored value rather than a resolved one, applies the normalizers ingest applies, asserts nothing new, writes no field the projection planned, and needs no lock (#3408).
+Measured before any write, it corrects 1 of 4,601 live research entities and 0 of 6,416 researchers and 459 fellowships, so it is a recurrence guarantee rather than a backlog clear, and the near-zero count is the finding: the corpus is clean, so the next defect of this class needs no new script.
+A correction of this shape belongs there and not in `scripts/`.
+
+An entity-scoped refusal is the other half of the same blind spot, and it is a wiring failure rather than a missing predicate.
+`sanitizeResearchEntitySourceUrlsForMaterialization` refuses a citation per URL and takes no entity, so the two arms that depend on WHO is citing could not live in it: a faculty roster and a departmental programme page are real evidence about the department that publishes them and a graft only on a person.
+Both predicates already existed and were composed only inside `scripts/retireGraftedDirectoryUrlsCore.ts`, which is the same reachability failure as the text case and is why 1,274 live rows still stored 1,315 of these citations, 756 of them `student_ready` (#3428).
+`planDirectoryGraftCitationRetraction` in `scrapers/directoryGraftCitations.ts` is form 2 with an entity: it is a list-level stage in `projectFromLog` beside the #3000 stored-citation retraction, so it reads the list the projection just staged as well as the stored one and a live observation asserting the roster URL is re-filtered on every pass rather than retired.
+Two independent instruments agree on the cohort, which is what makes the number usable: the script's own planner reports 942 rows and the new stage reports 941 on the stored list alone, the one row being the script's separate `websiteUrl` arm, both counts taken while each still carried the roster-shaped stranding guard below.
+The stranding guard is the load-bearing part, and the first version of it was shaped by the wrong question.
+Written as "refuse when every retracted URL is a roster", it read as protective and was wrong in both directions a mixed list can take: a person-scoped row citing only a departmental programme page satisfied neither arm and was emptied, and so was a row citing one roster and one programme page (#3448).
+The rule the docblock actually stated is "never leave a row citing nothing unless every citation retracted was never a readable page", so the test is `every(isDirectoryLoaderUrl)` and not `every(isRoster)`.
+The magnitude of what it protects was measured rather than reasoned about (#2630): 333 of the cohort's rows cite a roster and nothing else, and the roster arm alone would strand 318 corpus-wide, so retracting a row's only citation trades a duplicate-URL block for a missing-evidence block.
+A CMS loader endpoint stays unprotected, because it was never a page at all, so correctly unsourced beats wrongly sourced.
+The rule lives in one place for the same reason the person-scope predicate does: both the projection stage and `scripts/retireGraftedDirectoryUrlsCore.ts` write this stored field, so each consumes `retractionWouldStrandAReadablePage` rather than restating it, and the two instruments cannot disagree about which rows they strand (#2579).
+Serve-time is the wrong layer for this one and that is a measurement too: the visibility gate groups rows on STORED `sourceUrls`, so the N people who cite the one page listing them all read as N duplicates of each other whatever the DTO hides.
+3. At serve time, as a withholding guard.
+Cheapest to change and it reaches students on deploy, and the repository already records a preference for landing serve-time fixes before repair passes.
+`dropDomainIncoherentUnsourcedResearchAreas` in `utils/researchAreaDomainCoherence.ts` is one: a pure function with no database access, wired into both chokepoints, `sanitizeServedResearchEntityCopyFields` for the detail path and `sanitizeResearchEntityIndexDocument` for the Meilisearch document, so live data was corrected with no Mongo backfill (#1640).
+Note where the guard sits before copying the pattern: it is serve-time only, no materialization lane calls it, and the index arm does write a search document even though it writes no entity field.
+4. A durable refusal, for "this specific value is inadmissible".
+This is the legitimate form of a one-shot correction.
+It is stored on the row as `fieldValueRefusals`, screened out of the observation set before `resolveAllFields` runs on every materialization pass, keyed on the value so it survives re-observation, idempotent on a repeat, and withdrawable through `withdrawnAt` with a recorded reason, which a lock is not.
+
+The one illegitimate form is a script that writes a field directly and locks it to make it stick.
+
+#3178 is the cleanest recorded contrast between form 4 and that illegitimate form.
+A bare clear of a dead `websiteUrl` did not hold, because the citation-promotion path in `entityMaterializer.ts` put the value straight back from the row's own citation on the next materialization, and until #3167 a `manuallyLockedFields` entry was the only thing that could stop it.
+Recording a refusal instead held with `manuallyLockedFields: []`: #3208 released the lock, materialized twice per row, and reported 7 of 7 fully clean, and #3225 repeated it for 7 more released locks with 0 dead values returning and 0 served `websiteUrl`s moving.
+
+### The fourth state: some rows are not fixable, and that is the answer
+
+Recording them by predicate with a count and a reason is finishing the work rather than deferring it.
+This ended several issues that would otherwise have stayed open as standing debt, so it is a completion state and not a euphemism for a deferral.
+
+Two live examples.
+The rows carrying a collective name on a person-scoped type were filed at 41 and measure 18 in the shape, of which 10 survive the evidence check, because the shape count is not the defect count and inferring a type from the row's own name is the exact inference that inflated the earlier figure (#3252, #3350).
+And the served rows whose name the person-identity refusal condemns while no substitute is available are not correctable by refusing the name, because `name` is the heading every serve path falls back to, so a refusal with no substitution is a blank heading that preserves the fabrication rather than removing it; that cohort measured 6 on Development (#2913, #3132).
+
+### Measured evidence: a layer-2 fix reaches a whole class from one change
+
+- A bare substring test matched `explor` inside `internet-explorer` in a browser-upgrade banner's URL, so the banner cleared the research-sentence vocabulary.
+88 of the 100 `empty-description` rows had been handed that single snippet, spending a fetch and an LLM call each to learn their page has no research prose (#1878, narrowed in #3190).
+- An empty array satisfies `Array.isArray`, so a roster read that discovered nobody was admitted as an authoritative snapshot rather than classified as unrecorded.
+It governed 25 rows, and 3 of those already carried a first-absence marker, so they were one repeat run away from `suppress_departed` (#3310, #3317).
+- The grant lanes minted a lab from a record that asserts a PI name and an abstract and never asserts an organization.
+Grant shells typed `LAB` went 364 to 122 on Development, with durability 15 of 15 and no locked fields (#3145, #3289).
+- A lead-role set written out thirteen times across two vocabularies meant only one of its four labels could ever match, penalizing 59 rows that hold a live `CO_PI`, `DIRECTOR` or `CO_DIRECTOR` edge and no `PI` edge (#3210, #3226).
+
+### Measured evidence: repair-as-bugfix has a failure signature here
+
+A repair could only make a field stick by writing `manuallyLockedFields`, which froze 125 field instances across 79 rows, and a frozen row never improves again.
+That is why a durable refusal had to be built as a capability rather than approximated with a lock.
+Building it drew the count down rather than sideways: lock instances went 113 to 105 across #3208 and 105 to 98 across #3225, each pass trading locks for refusals.
+Measured on Development on 2026-09-24: 98 lock instances across 52 rows, concentrated in `fullDescription` at 19, `shortDescription` at 18 and `websiteUrl` at 17.
+A lock that stands in for a capability the engine lacks is recorded as `engine_gap_workaround` in `fieldLockProvenance` and is revisitable through `research-entity:release-field-locks`; an operator's own decision never is (#2612).
+
+## 2026-09-24: Two Vocabularies Named `entityType` Are Separated By Type, Not By Convention (#210)
+
+An `Observation`'s SUBJECT type (`user`, `researchEntity`, ...) and the PRODUCT entity type (`LAB`, `CENTER`, ...) are both spelled `entityType` and are disjoint: measured on Development, 15,847 observations carry the product namespace as a value under `field: 'entityType'` across 13 values, overlapping the 8 subject values in 0 cases.
+
+Decision: separate them by type rather than by comment.
+`asResearchEntityType` is the single narrowing door from an untyped read into the product vocabulary, consumers take `ResearchEntityType` instead of `unknown`, and a guard test asserts the two vocabularies partition.
+Crossing them is now a compile error that names both value spaces.
+
+Decision: do NOT rename the subject values.
+Phase 6 carried that as a roughly 471k-row migration; the values are opaque lane labels, nothing resolves one to a Mongoose model, and with overlap 0 the rename corrects a spelling and changes no behaviour.
+
+Decision: ship the constraint without a data repair.
+Reading the product type correctly flips 13 of 18,387 active prose verdicts, and none of the 13 is on a `student_ready` row, so a repair would write against a student-facing corpus for zero student benefit.
+
+## 2026-09-24: A Materializer Lane Reports What It Wrote, Never What It Resolved (#210)
+
+The roster lane reported `fieldsWritten` as its count of resolved INPUTS, on every pass, including a pass that changed nothing, because the canonical writer returned `void` and the lane had no outcome to report.
+
+Decision: `materializeCanonicalMembership` returns a `CanonicalMembershipOutcome` naming what happened, including which refusal it took, and a lane reports `fieldsWritten` only for `created` or `updated`.
+Intent is reported separately as `fieldsPlanned`, and a dry run reports `fieldsWritten: 0` because it applies nothing.
+
+Decision: an update count is not a change signal on a timestamped collection.
+`role_assignments` is `timestamps: true`, so mongoose adds a fresh `updatedAt` to every `$set` and an existing document always reports one modification; `modifiedCount` can never read zero there.
+The outcome is read from a pre-image of the fields the write governs.
+
+Corollary: a retired collection's SHAPE can outlive its storage.
+`buildRosterMemberUpsert` built a `research_entity_members`-shaped update that its only caller unpacked in memory and never applied, and the test asserting that document was the only place four of its fields were ever observed.
+
+## 2026-09-23: An Entity Is Held Rather Than Served When Its Only Lead Edge Is Unsupportable (#3166)
+
+When a repair would leave a row with no lead edge its evidence supports, archive the edge and let the gate hold the row.
+Do not preserve an unsupportable edge in order to avoid the hold, and do not mint or substitute a lead to fill the slot.
+
+A student writing to a lead who is not there is a worse outcome than a row held on `missing_lead`, and `missing_lead` is the gate reason that exists for precisely this state.
+So the hold is the correct answer rather than a cost to be worked around, and a repair that drops a row off the served surface for this reason is complete rather than regressive.
+
+Two consequences follow.
+A repair that edits a roster must re-gate every entity it touched through the ordinary gate rather than writing a tier itself, so every other blocker still applies.
+And a repair whose effect is to demote a row a student can currently reach must say so in prose, naming the tier change, rather than reporting only a count of rows changed.
+
+## 2026-09-23: A Suppression Override Survives Only While The Row Records No Route In (#1898)
+
+A `studentVisibilityOverrideTier: 'suppressed'` written by the pre-#1802 launch-strictness pass claims one thing: that no official student action route, pathway, contact route, posted role, or access signal has been verified.
+So the override is stale exactly when the row now records a route in, and it still states something true when the row does not.
+That is a measurement, and it is the whole test.
+
+This replaces an earlier reading that treated `CORE_FACILITY` and `INITIATIVE` as standing product questions to be answered by type.
+Type is the wrong axis, because it asks what a row IS while the override claims what a student CANNOT do.
+A core facility that publishes an access route is reachable, and a lab that publishes none is not, so the deciding property sits on the row.
+Reachability decides, not kind.
+
+That type-based reading also rested on a mis-citation, recorded here so nobody restores it.
+Comments on #1898 attributed "a core facility is often a legitimate hold" to #1721, but #1721 is the `fullDescription` near-verbatim restatement guard and says nothing about core facilities or visibility holds; every other reference to it in this repository is that guard.
+No issue records a type-based hold for either kind.
+The two issues that do discuss cores point the other way: #1401 records `CORE_FACILITY` being dead-ended out of organizational ways-in, and #1925 records the research-scope gate over-suppressing instrumentation cores.
+The tracker's recorded direction is that cores are wrongly suppressed rather than legitimately held, which is where reachability lands too.
+
+The route-in test reads the gate's own `concrete_next_step` reason, which `studentVisibilityTier` pushes when the row has a posted opportunity, an access signal, or an actionable pathway.
+It is read positively, never as the absence of `missing_action_evidence`, so a row whose reasons were never computed keeps its override instead of being released on a silent array.
+
+A row held this way is not a backlog item waiting on taste.
+It is a row with nothing for a student to act on, and the thing that releases it is evidence of a way in, which is scraper and pathway work rather than a policy call.
+
+## 2026-09-23: Anonymous Traffic Is Deliberately Not Measured (#2333, #3103)
+
+`analytics_events` declares `netid` as `required: true` and carries no address, `ip`, or `remoteAddress` field, so a logged-out visit cannot be written at all rather than merely going unwritten.
+That was filed as a hole (#2333), because the product deliberately serves logged-out read-only discovery (#1657), which makes the one population the product supports on purpose the one population the instrument cannot see.
+
+Decision: the hole stays open on purpose, and no pseudonymous or anonymous identifier is introduced to close it.
+No session-scoped id, no cookie, no fingerprint.
+This is a student-facing public site whose audience is substantially undergraduates, and least collection is the right answer for it, so the required `netid` is the enforcement of that decision rather than an oversight to be repaired.
+A permissive branch in `normalizeAnalyticsEventNetid` would accept the sentinel netids `anonymous` and `unknown`, but no caller supplies either and neither Production nor Development holds a single row with one, so the sentinel is not a back door that is already in use.
+
+What the decision costs, named rather than hidden: there is no denominator for total traffic, so the rate at which a logged-out visitor becomes a signed-in one is unknowable from stored events, and any anonymous-traffic threshold has to be sized from something other than this collection.
+`server/src/middleware/rateLimiters.ts` already carries that consequence for the first-contact ceiling, which is sized by making saturation observable instead of by measuring per-address volume.
+
+What we owe instead is honesty about what the instrument cannot see, which is the serve-time half of #3103.
+No surface may label a signed-in count "Visitors", and the panel holding those counts states that the logged-out population is deliberately unmeasured, so a reader cannot take it for zero or for included.
+A client guard asserts both halves: the section names the signed-in population it counts, and no analytics surface renders the bare word "Visitors".
+
+This decision governs the first-party instrument only, and it is not a claim that the product collects nothing from a logged-out visitor.
+A third-party GA4 tag runs on every page load under none of these constraints, documented in the Third-Party Measurement section of `docs/research-journey-analytics.md`, and whether it belongs here at all is still open (#3102).
+Recording the first-party decision does not settle that one, and the two must not be read as one posture.
+
+The one thing that would change this decision is a product commitment to a consented, disclosed measurement, meaning a published statement of what is collected and a real opt-in, at which point the schema change follows the commitment rather than preceding it.
+Until then the correct read of a missing anonymous number is "not collected", not "zero".
+
+## 2026-09-23: The Undergraduate-Logistics Vertical Is Retired Rather Than Acquired A Fourth Time (#3088)
+
+#1362 asked for a corpus-wide acquisition run so the Planning-context section would stop rendering nothing.
+Measurement says acquisition cannot fill it, and this is the third time the same run has been proposed, so the answer is recorded here rather than re-derived.
+
+Measured on Development: the section renders on **4 of 3,302** served rows.
+Seven `Signal` rows exist across the five claim types in total, `STUDENT_LEVEL` 0, `COMPENSATION` 0, `TIME_COMMITMENT` 0, `MODALITY` 1 and `CURRENT_AVAILABILITY` 6, against 7,600 rows of `REACH_OUT_PLAUSIBLE` on the same collection.
+All **209** stored logistics observations are `active: false`, against 7,674 `websiteUrl` observations, so the lane's output does not survive between sweeps even where it once landed.
+Producer yield per claim type was 0 of 51, 0 of 21, 0 of 12, 1 of 4 and 5 of 121, which puts the acquisition ceiling at roughly 150 rows, about 3 percent, essentially all `CURRENT_AVAILABILITY`.
+Three of the five claim types project to zero.
+
+The zeros are the instrument reading the corpus rather than the instrument failing: the same queries return 7,600 and 7,674 on control fields, and the served-row count is taken from `getResearchGroupDetail` through the client's own render predicate rather than from a re-implemented one.
+
+It also decays with no scheduled refresh.
+Four of the five live signals expire within 9 to 30 days, and logistics emission requires either `--logistics-production` with `CONFIRM_LOGISTICS_ACQUISITION=true` or a hand-named allowlist of at most 25 labs, neither of which any scheduled path passes.
+The enums behind the browse filter were already measured inert twice independently (#1285, #1328, #1362), and the browse filter and its three `ResearchEntity` enum fields were retired ahead of this entry, leaving the filter keys accepted by the search controller as residue that parses into nothing.
+
+Decision: retire the vertical whole.
+The Planning-context render, the five claim types, the producer lane's logistics arm, the materializer, the public serve projection, the audit and rollback scripts, and the residual filter keys all come out together.
+Carrying a render, a producer, an audit and a filter that tell a student nothing is a cost with no student benefit, and a partial retirement leaves an enum with no producer, which is the shape that invited three acquisition proposals.
+
+The cost is real and is stated rather than discounted.
+A student loses a section that today tells them nothing on all but 4 rows, and the corpus loses the ability to express availability at all.
+If availability becomes a product commitment, it needs a route designed against the measured 3 percent ceiling rather than one that assumes the ceiling can be raised, and that is new work rather than a continuation of this one.
+
+Stored residue is expected and is not a defect.
+Removing a value from the `Signal.type` enum does not delete a document, so 7 `signals` rows and 209 already-inactive `observations` rows keep a name nothing declares; Mongoose validates writes rather than reads, and no surviving read path queries either name.
+`signals` indexes `type` generically, so no index there names a retired value, and `observations` has no index naming a retired field.
+The three logistics-specific `research_entities` indexes were a different matter, and the first version of this entry got it wrong by asserting they had gone with the earlier field retirement.
+They had not: that retirement unset the fields on every document and left `archived_1_undergraduateCurrentAvailability_1`, `archived_1_undergraduateCompensationModel_1` and `archived_1_undergraduateEligibleStudentLevels_1` physically present, which is the standing lesson that unsetting a field never drops its index.
+A Development cleanup was therefore warranted for exactly those three, and `retire:undergraduate-logistics-fields --apply` dropped all three on Development, verified by re-reading `research_entities.indexes()` rather than by trusting the script's own count.
+`ResearchEntity` no longer declares the fields, so `autoIndex` cannot rebuild them.
+Beta and Production keep their own copies of the three, because promotion copies documents rather than index definitions, so a promotion does not clear them and whoever runs one should drop them there as well.
+
+The 7 `signals` rows and 209 already-inactive `observations` rows are deliberately left in place, because they are unreachable from every read path and they are the evidence for this entry.
+
+## 2026-09-23: An Invalid Index Specification Is Its Own Failure Class, Not Index Drift (#3081)
+
+The `fellowships.sourceKey` unique index had never existed in any environment, and the reason was not the corpus.
+Its declaration mixed `sparse: true` with `partialFilterExpression`, which MongoDB refuses outright: "cannot mix \"partialFilterExpression\" and \"sparse\" options".
+The #2233 entry below records this drift as "a unique index that cannot build because a duplicate value exists", which was half the cause and the less important half.
+A duplicate value is a corpus problem a repair clears; an invalid specification can never build in any environment against any data, so no repair helps and waiting for one is the trap.
+
+Decision: the two classes are reported separately.
+`unbuildableIndexSpecReason` names the rejection for a single spec and `reportUnbuildableDeclaredIndexSpecs` reads every registered model, so `db:build-indexes` refuses before it builds anything and says the declaration is the defect.
+Only rejections this repository has actually hit are listed, because guessing at the server's validation rules would refuse specs MongoDB accepts.
+A test asserts no registered model declares such a spec, which is the guard that keeps the class from landing again; the build-blocked-by-corpus message now quotes the server's own reason per collection instead of asserting a cause.
+
+`sparse` is dropped rather than the partial filter, because `{ sourceKey: { $type: 'string' } }` already excludes every row `sparse` was for and additionally excludes an explicit null.
+`analytics.dedupeKey` already declares exactly that shape.
+
+Resolving the one colliding pair was a judgement, not a script.
+Both rows carried the same title, summary, description and `sourceUrl`, and the department page is the authority on its own awards: it offers exactly two research grants to French majors, one award each per year.
+So the corpus held one award twice rather than two awards that collided, and the two CommunityForce links are two listings of it, only one of which exposes an application cycle.
+The surviving row is the live one, which is also the rule `findFellowshipByNormalizedTitle` already resolves a re-scrape with, and it is the only row a gate can ever serve.
+`fellowships:repair-duplicate-source-keys` retires the other row's claim by unsetting `sourceKey`, so the document is preserved rather than deleted, and it refuses any group that no single live row decides instead of breaking the tie by timestamp.
+
+## 2026-09-22: A Resolver Refusal Count Is Made Usable, Not Driven To Zero (#2582)
+
+`sourceUrlToResearchHomeWebsiteUrl` refuses 271 of the 1,377 served `websiteUrl` values on Development, which reads like a 20 percent data-quality problem and mostly is not.
+With every refusal attributed to the arm that produced it, 52 are defects and 219 are one arm declining a host shape it was never taught.
+That arm is `isSpecificYaleResearchHomePath`, whose whole vocabulary is `lab|labs|project|group`: 170 refusals are a centre or a person's own page on a school subdomain such as `/research/centers/<name>`, 31 are a `www.<school>.yale.edu` legacy host, and 18 are a custom subdomain whose trailing label is not in `sharedTrailingHostLabel`.
+
+The obvious action on the raw count is a repair pass that clears the refused values.
+That pass would delete the served website of 219 entities that have a correct one, and a cleared row is indistinguishable from a row that never had one, so the loss would not be visible afterwards.
+
+Decision: publish the split rather than the total, and make the resolver itself the source of the reason.
+`researchHomeWebsiteUrlDecision` returns the refusing arm and, on the path-vocabulary arm, the host shape that also declined; `sourceUrlToResearchHomeWebsiteUrl` is its `url`, and `isCustomYaleResearchHomeSubdomain` is the null check on `customYaleResearchHomeSubdomainRefusal`.
+`yarn --cwd server research-entity:audit-website-url-refusals` reports `defects` alongside `refused`, so the number is usable as a standing audit whose target is zero defects rather than zero refusals.
+
+The reason has to come from the resolver rather than from a caller re-walking the same predicates, and the issue is the evidence: it attributed 41 refusals to `isBareDomainRootUrl` firing ahead of the subdomain rule, and this resolver never calls `isBareDomainRootUrl` at all.
+Those rows are refused because their host's trailing label is unrecognized, so reordering anything would have fixed nothing.
+A `faculty.som.yale.edu` host stays a defect on the same arm, because a faculty directory is never a research home; that is why the host shape is reported and not just the arm.
+
+Extending the path vocabulary per entity shape is still the right repair for the 219 and is deliberately not done here: it changes which URL every future materialization promotes, so it needs its own measurement.
+
+## 2026-09-22: An Identity Key Is Looked Up By Inverting Its Normalizer, Not By Storing A Second Copy (#3036)
+
+The decision below held the resolve-at-mint go-live until a normalized URL identity key was stored on the row, because `findEntityCandidatesByKey` had nothing to scan for the `website-url` namespace.
+A stored column turns out to buy none of the prevention it was supposed to unlock.
+
+`normalizeWebsiteUrlIdentityKey` drops only three things reversibly: the scheme, a leading `www.`, and a trailing slash.
+So the eight spellings that fold into a key can be enumerated and looked up against the stored `websiteUrl` directly.
+Measured on Development against the 101 entityKeys that actually reach the resolver, the enumeration finds all 32 folds a stored key would find and 0 that only a stored key would find.
+Corpus-wide the inverse recovers 1,756 of 1,763 live `websiteUrl` values; the 7 it cannot are 5 with a query string, 1 with a fragment, and 1 path-normalization case, and none of them is a resolver target.
+
+The column's cost is not the field, it is the maintenance obligation: more than twenty scripts write `websiteUrl`, and each would have to rewrite the derived key or the resolver folds a mint onto a URL the row no longer holds.
+That is the same objection #3027 raised against the alias ledger - a mapping every caller has to remember - moved from a side collection into a side column.
+
+Decision: resolve a normalized identity key by inverting its normalizer where the normalizer is invertible, and keep the encoder and the inverse adjacent so the coupling is visible.
+Store a derived key only for a namespace whose normalizer is lossy in a way enumeration cannot cover, and only after measuring that the stored form finds folds the enumeration does not.
+`profile-lab-url` and `org-name` are that case today and stay unresolved: both lower-case part of the value, and a `profile-lab-url` arm would add 5 folds.
+
+## 2026-09-22: Resolve-At-Mint Go-Live Is Held, Because The Flag Prevents Nothing (#2572)
+
+The go-live for C4's prevention half was ready to set `C4_RESOLVE_AT_MINT_ENTITIES` on Development, on the honest footing that it moves 0 served rows today and earns its value at the next sweep.
+Measurement says it earns nothing at the next sweep either.
+
+Retiring the canonical-alias ledger (#3027) removed the only resolver for the `website-url`, `profile-lab-url` and `org-name` keys, so `findEntityCandidatesByKey` resolves only `slug` for an entity and `source-key` for a fellowship.
+The mint path resolves both of those itself, and more broadly, before the resolver is reached, and the resolver only runs when that lookup returned nothing.
+The one shape that could still differ is an observed `slug` that does not equal its `entityKey`: of 8,175 active `slug` observations on Development, 0 differ, and of 356 active fellowship `sourceKey` observations, 0 differ.
+The instrument is not returning an empty set: the same comparison finds 8,088 distinct entityKeys where the two are equal.
+
+The 786-of-1,240 simulated prevention that justified the go-live does not measure the flag.
+`scoreDedupeStrategy` blocks on its own key set and its own union-find and never calls `resolveCanonical`, so it scores keys the shipped resolver cannot read.
+It is a ceiling for the dedupe idea, not a forecast for this flag.
+
+Decision: do not set the flag, by the runbook's own standard, which already refuses `C4_RESOLVE_AT_MINT_USERS` because setting it is a step that looks done and changes nothing.
+Superseded in part by the entry above: #3036 restored the `website-url` arm, so the flag now folds a measured 32 mints and the hold is no longer a reachability gap. Whether 32 is worth a resolver in the mint path is a product call.
+Three reachability cases in `entityMaterializerResolveAtMintEntities.integration.test.ts` pin the gap, one per key namespace and per resolver arm, and all three flip when a resolver is restored, so they are detectors rather than a record of the status quo.
+
+## 2026-09-24: One Served-Citation Policy, Four Paths (#3312)
+
+A whole-payload census over 3,355 served rows found eight paths carrying a url a health record judges gone, where "gone" is `UNAVAILABLE` plus a 404 or 410 and excludes the 50 status-less records, TLS failures and private addresses.
+Four of those paths were then decided separately, and two ended up opposite on a single rendered list: a dead `sourceUrls` entry was dropped while a dead `websiteUrl` was still added and marked, so the Sources list qualified one dead citation and silently hid another.
+
+Decision: the four rules below are settled together and live in one owner, `servedCitationPolicy`, which every surface asks.
+
+1. A dead **citation** stays, qualified. `sourceUrls`, `sourceFieldContributions`, and the `websiteUrl` entry as a citation remain in the Sources list marked unavailable.
+They are the record of what a page cited, and #2556 already stated it: "the citation itself survives in the Sources list, qualified, because it is real provenance".
+`researchDetailSources` sets `isLikelyUnavailable` per source from the health record and groups the unavailable ones last on purpose, so withholding the url starves the pathway built to qualify it: a source the payload never carries cannot be marked.
+Never silently dropped.
+2. A dead **access-signal** url is withheld, and the `excerpt` is kept.
+An access signal is an instruction telling a student how to get involved rather than provenance a reader may audit, so a student following it gets nowhere while the excerpt preserves what it said.
+The signal itself is not retired, because a 404 is not evidence a programme ended: a removed url is equally a renamed one, which is why `classifyYaleProfilePersonPresence` treats every non-2xx as indeterminate (#3144).
+3. The `websiteUrl` **call-to-action** is suppressed separately, which `isUnreachableResearchWebsiteCtaUrl` already does at render, while the same url still appears in Sources under rule 1.
+A broken button and a historical citation are different things about one url, and only the button is an offer.
+4. One owner. Every surface passes the KIND of citation it is serving rather than re-spelling the verdict test, and the provenance surfaces make the call even though the answer is currently always "keep", so a change to the policy reaches them instead of leaving them to agree by coincidence.
+
+The distinction that decides all four is provenance versus instruction, not per-field precedent.
+Absence of a verdict is never a verdict on any path: only a positive unavailable decides anything, because withholding on silence would empty the list.
+
+Two paths remain outside this policy and are tracked separately: `entityRelationships` and `affiliatedRelationships` each carry a citation with no health record reachable by any means, so nothing can tell live from dead there (#3295).
+That is the same shape that made access signals look like the only unqualifiable path, and an argument resting on "a client cannot qualify this" was withdrawn for access signals once it turned out the client looks health up by url against the entity's own `sourceLinkHealth`.
+
+## 2026-09-22: A Person's Card May Never Describe Another Organization (#2911)
+
+#2908 withheld a person-scoped row's long body when its subject was a third-party organization and deliberately stopped there, because the card is derived from the body when no stored short survives and refusing both risked a row with no prose at all.
+#2915 then withheld the card too, but only on a row whose body had already been refused.
+The remaining question was whether a card may describe another organization when the row's own body survives.
+
+Decision: no, and the card is judged on its own terms regardless of the body.
+
+The argument that settles it is not lexical.
+Of the 21 live Development rows whose stored card the subject rule refuses while their body survives, 11 carry prose that appears verbatim on more than one person: one school's mission statement on four rows, one imaging core's service line on three, one department's grant total on two, one collaborative's mission on two.
+Prose that two different people can both be described by describes neither of them.
+The rest are service and care copy rather than research at all: a clinic's screening offer, a day care centre's philosophy, a career-development office's mentorship resources.
+
+The worry #2908 stopped on does not materialise.
+Across all 4,756 live rows the change moves 17 browse card lines: 12 are replaced by a line derived from the row's own research-area chips or its own body, 5 lose the line, and 0 rows end with neither body nor card.
+A blank card line on a row that still serves a body is the accepted cost, and it is a smaller cost than a line that is false.
+
+One exemption is required and is not a lexical heuristic either.
+A first-person singular card is the person's own statement about their own role, and an organization's blurb never uses it: an organization writes "we provide" or "the core supports", never "I support".
+Without that exemption the subject rule refuses "As co-Director of the Rheumatology, Endocrine and Geriatrics Syndrome Core, I support and foster research ...", because the organization's own name carries a comma and so lands in the span the leading-adjunct arm reads.
+That was the single false positive in 21, a 4.8% rate against the 3.1% #2908 accepted for the body.
+
+Two residual gaps are recorded rather than fixed here, because both live in the body rule and would change what 32 already-refused rows serve.
+The leading-adjunct arm requires a comma, so "Housed under the Yale Bioimaging Institute the MR core is a revenue-neutral service provider" keeps its body and the card derived from it serves the same blurb the withhold just refused.
+And "The mission of the Cancer Outcomes, Public Policy and Effectiveness Research Center at Yale is to ..." is not in subject position by the rule's reading, so that body survives as well.
+
+## 2026-09-22: A Course-Credit Route Is A Department Fact, And The Cheap Attribution Recovers Nothing (#2214)
+
+`COURSE_SEQUENCE` was retired because a senior essay is done in a lab, so the for-credit route is an attribute of a lab engagement rather than a research home.
+That removed the wrong home for the fact without creating the right one: `COURSE_CREDIT_PATHWAY` is 0 of 11,945 stored signals, and the 13 `CREDIT_FORMALIZATION_POSSIBLE` signals that carried the fact are still `archived: false` on 13 `archived: true` hosts whose visibility tier was never set.
+The fact is orphaned, not moved.
+
+The surface is reachable, which is what makes this a real gap rather than a guard that cannot fire.
+`getResearchGroupDetail` serves every `archived: false` signal whose `type` is in `accessSignalTypes`, `COURSE_CREDIT_PATHWAY` is in that enum, and the client labels an unmapped signal type through its own titleizer, so a row minted on a live entity reaches a student.
+
+Three attributions were open: a signal on the `OrgUnit`, a signal on the lab labelled as departmental, or a signal only where the lab's own page corroborates it.
+The third was the cheap one and measurement kills it: of the 449 live entities in the 13 departments those retired rows covered, **0** name a for-credit route in their own stored prose, against a control pattern that matches 2,961 of 4,756 entities.
+Across the whole live corpus only 10 entities do, 8 of them served, and not one is in a covered department.
+Corroboration is a prose proxy rather than a re-crawl, so it understates, but a zero in exactly the target departments is not a rounding error.
+
+The second was already refused: asserting a departmental fact as a lab fact is the cross-graft error, and a `value` field recording that the evidence is departmental does not stop the card reading as a lab claim.
+
+Decision: the fact belongs to the department, so the attribution is a signal on the `OrgUnit` surfaced on a lab page as inherited department context with the department named as the source.
+That is new plumbing rather than a scraper repair, and the plumbing is the whole cost: `Signal` has no polymorphic target, only `researchEntityId`; all 14,210 `RoleAssignment` rows target `RESEARCH_ENTITY` and none targets `ORG_UNIT`; and `OrgUnit` reaches a student today only as a department-pill name through `configService`, never as a record with content.
+So re-acquiring the deleted department course pages is the last step, not the first, and a department-to-all-labs fan-out remains forbidden.
+
+## 2026-09-22: The Phase 0 Query-Cost Audit Is Retired, Not Narrowed (#2224)
+
+`model-refactor:query-cost` profiled 16 collections and 66 query-shape labels across the five Phase 0 hot surfaces.
+12 of those 16 collections are absent from Development, Beta and `Prod` alike, all three of which hold the same 25 collections, so 38 of the 43 shapes it could still measure returned 0 rows having examined 0 documents and 23 more were `fixture-unavailable` because the fixture they needed comes from an absent collection.
+Its `reviewRequired` verdict was therefore permanently true for structural reasons and could not be acted on.
+
+The zero is not an instrument error: the same run reads 3,377 rows from `research_entities` and 459 from `fellowships`, and flags a real blocking sort on the latter.
+
+The issue proposed removing only the `admin-access-review` shapes and recorded that the four access collections still existed in the frozen `Prod` snapshot as a reason to keep them, which measurement refuted.
+Narrowing the audit to the four surviving collections was also rejected: the live serve path reads `signals`, `role_assignments`, `research_plans`, `researchers`, `accounts` and `org_units`, none of which the audit ever profiled, so a narrowed version would report green over a hot path it never exercised, which is the worse failure.
+Decision: retire the audit whole, keep the source-inferred hot-path document as a historical record, and require a replacement to be written against the current read paths rather than carved out of this one.
+
+## 2026-09-22: `Fellowship` Owns The Program Card Bar (#2215)
+
+`isProgramLikeResearchEntity` keys on `kind === 'program'` and matched 0 of 4,743 live Development entities.
+No surviving `entityType` derives `program` after `COURSE_SEQUENCE` was retired (#2202), and the scraper records that do observe `kind: 'program'` are routed into the Fellowship lane rather than minting an entity, so only an operator lock on `kind` can produce a program-like `ResearchEntity`.
+That zero is real rather than an instrument error: neutering the predicate to `kind === 'lab'` returns 1,362 on the same query.
+
+Three options were open: delete the predicate and collapse the program branches, keep it as the operator-lock guard, or repoint it at `Fellowship`, where application-flow copy actually lives.
+Deleting it was refused because a zero count is also the shape of a guard that cannot fire, and the branch it selects is a real card bar rather than dead code.
+Decision: keep the `kind === 'program'` arm as the documented operator-lock entry point, and give the bar a live caller by having `Fellowship` apply it to its own browse-card line through `programLikeCardShortDescription`.
+
+The bar had been scoring nothing a student reads, and it found 66 of 154 served fellowship card lines failing, dominated by a stored `summary` that is the entire body and so reaches the browse card clamped mid-sentence.
+The lab bar is not a substitute: it fails 87 of the same 154, and 57 of those are `same-as-full`, which is legitimate program voice rather than a defect.
+A fellowship conflates two roles in one field, card line on browse and body on detail when no separate `description` exists, so the card line is served as its own `cardSummary` and `summary` stays as stored.
+A failing line is replaced by the first sentence of the program's own body that clears the bar and kept whole when none does, per the #1878 finding that dropping a card line lost more than keeping it.
+After the change 16 of 154 still fail, and that residual is the honest one: 12 have no body at all, so the bar's grounding flag is asking a question that does not apply to a source-asserted summary, and 4 have no sentence that fits the card.
+## 2026-09-22: The Description-Blocked Cohort Has No Code-Shaped Slice Left Above Six Rows (#1878)
+
+The card-length entry below resolved the largest slice of this cohort and named four leads for whoever picked it up next.
+All four were measured, and three of them have a deterministic ceiling of zero.
+Every count is Development, the only environment that scrapes, read through `planStudentVisibilityGate` and `buildResearchEntityPublicDescriptionRepresentation` rather than any stored column.
+The cohort is the rows the gate holds carrying `missing_card_description`, `thin_description` or `missing_description`, which read 787 on 2026-09-22.
+"Releasable" means carrying no hard blocker outside the description family, and that column is far below the row column because `citations_identify_no_person` at 287, `missing_lead` at 264, `duplicate_risk` at 115 and `exact_url_duplicate_risk` at 104 co-occur across the cohort.
+
+**The body that fails the quality bar is a chip echo we minted, so no re-ranking recovers it.**
+172 rows store a body the bar refuses, 127 of them releasable, and the single dominant flag is `area-echo-fallback` on 76 of those releasable rows.
+Read directly, those bodies are the row's own `researchAreas` chips restated as a sentence, and their `fieldProvenance.fullDescription` names the LLM lanes that wrote them: `lab-microsite-undergrad-llm` on 35, `lab-microsite-description-llm` on 24, `dept-faculty-roster` on 12.
+Zero of the 76 carry a non-served `fullDescription` observation that passes the bar, so there is no better value in the ledger for a confidence change or a rematerialize to find.
+The lead asked whether a body could be synthesized from the same source; the answer is that the same source is the chip list, so it cannot.
+This also makes the existing rewrite lane's grounding check vacuous on these rows: `runResearchDescriptionBackfill` takes its source text from the stored body, so it would ask an LLM to ground a research description in our own synthetic echo.
+
+**Deterministic extraction from the page a description-empty row already cites yields a curriculum vitae, not research prose.**
+The 2026-08-29 entry below established this for `FACULTY_RESEARCH_AREA` on a probe of 27 pages, and it reproduces at cohort scale across kinds.
+Of the 108 releasable rows storing no prose at all, 12 cite no URL and 7 fail to fetch; fetching the rest serially with a browser user agent and running the repository's own `extractOfficialResearchDescription` over them produces a body that passes the real serve invariant on 31.
+20 of those 31 are flagged by the repository's own hygiene detectors as a career biography, a high-confidence person bio, or person-centric prose, and hand-reading the remaining 11 finds a bibliography entry, a leadership-programme marketing blurb, a pull quote, and a truncated question stem.
+So the genuine deterministic yield is about 7 of 108, and a lane built on it would put a CV on the other two dozen cards, which is the refusal the 2026-09-22 entry above records for the profile JSON-LD `description`.
+The pages do carry the prose: 26 of the 31 extractions came from `medicine.yale.edu`, the host this issue named in 2026-08.
+What cannot be done is copy it, which is why synthesis rather than extraction is the sanctioned mechanism and why this cohort is an intake-and-synthesis cost rather than a ranking defect.
+
+**The card deriver's own ceiling is six rows, and it is now taken.**
+The standing-answer entry above measured deterministic card derivation at 12 of 100 and recorded the measurement rule that a deriver returning text overstated the gate's verdict fourfold.
+Re-measured after the card-length fix landed, the ceiling is single digits: substituting a derived line wherever the served card fails the gate's own card bar and the derived line clears it changes the card the gate judges on 4 rows, and none of them was already `student_ready`.
+Those are taken here, by `gateAcceptedDerivedCardSubstitute`.
+A stored card line inside the 200-character rendering preference is served without a quality check on purpose, because checking it broadly drops fluent lines to nothing, and the entry below records that as the reason 200 stays a rendering preference.
+That reason does not reach a substitution, which never returns empty for a non-empty line and never replaces a line the gate would have accepted, so the entry below should be read as unchanged in its refusal and narrowed in its "a line inside the preference is untouched" claim.
+Both serving paths call it, for the same reason both already call `storedShortPastRenderingPreferenceIsServable`: the DTO card field resolves its own line, so substituting in only one place would clear a row on copy the other never serves.
+Measured before and after through the real planner, back to back over the candidate rows with the two changed files swapped to their `beta` versions for the before run: 4 cards changed, `missing_card_description` fell from 4 to 0, 2 rows moved `operator_review` to `student_ready`, 0 moved the other way, and 0 lost the serve invariant.
+The two invariants were checked over all 4,756 non-archived rows in a single read: the substitution never returns a blank card and never replaces a line the gate accepts.
+A first reading of this diff said 6 and 3, and it was wrong because the two planner runs were ten minutes apart and a concurrent session rewrote descriptions in between, which put 5 unrelated rows in the diff including two whose card went blank.
+Attributing each changed row to the substitution by re-reading it, and then re-running the planner back to back over the candidate rows only, is what separated the effect from the drift; a corpus-wide planner diff across two runs cannot, and the counts here move with the corpus either way.
+
+One `#1832` fixture moved rather than broke, and the distinction matters because the recorded reason for keeping an ungrounded stored card over a derivable sentence was that the gate judged the stored card.
+The gate now substitutes too, so there is no divergence left to protect, and the wrong-topic graft that fixture pinned is replaced by a sentence grounded in the row's own body.
+`#1832`'s own protection is pinned by a new sibling case: when no derived sentence clears the bar, the ungrounded stored card is still kept rather than surrendered.
+
+Consequences.
+The remaining cohort is acquisition and synthesis work with a per-lead ceiling of zero for deterministic code, so the next bounded experiment is a cost-and-yield measurement of the grounded synthesis lanes on a sample, not another lane.
+The two producers that mint an unservable body should stop: a synthesis lane that emits a chip restatement as a `fullDescription` is writing a value the gate can never accept, and the card-synthesis prompt still bounds a card by words rather than characters.
+Neither releases a row on its own, so each needs its own measurement rather than a quiet edit, and the prompt change re-synthesizes gated rows on the next sweep because it moves `CARD_SYNTHESIS_PROMPT_HASH`.
+
+## 2026-09-22: An Empty Stored Body Is Reclaimable, An Empty Stored Card Is Not (#1908)
+
+A field that stores an empty string is not the same thing as a field that serves nothing, and the two description fields differ on exactly that point.
+Measured on Development: zero `student_ready` rows store an empty `fullDescription`, so an empty stored body always means the row shows no body; 26 `student_ready` rows store an empty `shortDescription` and 25 of them serve a card derived at serve time from the body.
+So `--reclaim-stranded=fullDescription` can only fill a gap, while the same reclaim on the card would replace copy students already read.
+That asymmetry, not the quality of the candidate values, is why the reclaim admits one field and refuses the other.
+
+The same issue also recorded a root cause that does not hold.
+It described a scrape-to-materialize trigger gap leaving a good description "stranded in the observation and never materialized".
+On every live row whose `fullDescription` is empty while a materializable observation exists, `fieldProvenance.fullDescription.observationId` is exactly the non-superseded observation the materializer plans today.
+The materializer did process that observation and stored an empty string; the plan is richer now because the sanitizer and quality predicates it consults have since changed.
+The general lesson is that provenance naming an observation is proof the materializer saw it, so a stranded value with provenance is a projection defect or a stale corpus, never a missing trigger.
+
+## 2026-09-22: Connecting Is Not A Schema-Mutating Act (#2233)
+
+`db/connections.ts` built one shared `mongoOptions` and never set `autoIndex`, which Mongoose defaults on, so a process that merely imported a model recreated that model's collection and built its full index set on connect.
+No read, no write and no materialize were needed, which is why a guard at any materialize entry point could never have fired.
+That mechanism produced three recorded incidents: a `data-migration` package recreating legacy collections whenever any of its scripts ran, an empty `listings` collection with two indexes on a model that was deleted for being empty everywhere, and an access-review projection reappearing with 0 documents and 9 indexes about an hour after it was deliberately dropped.
+It also made a write freeze unable to express what anyone wanted: "no writes except the sanctioned writer" and "nothing changes except the sanctioned writer" were different guarantees, because starting a process mutated the database without writing a document.
+
+The issue proposed `autoIndex: false`, and measuring it showed that alone does not fix it.
+`autoCreate` is a separate Mongoose default, so with `autoIndex: false` the dropped collection still reappears carrying its `_id_` index; and with `autoIndex: true` and `autoCreate: false` it reappears with all three, because building an index creates the namespace.
+Decision: set both to `false`.
+The measurement is pinned as a test rather than described, because the one-option version looks correct and is not.
+
+The tradeoff the issue framed as the real decision was that a deploy self-heals its own indexes today, so turning auto-build off converts a forgotten index into a silent performance cliff.
+Measured on Development, that self-healing already does not work: 2 of 136 declared indexes were absent from a database that has run with `autoIndex: true` for its whole life, one a unique index that cannot build because a duplicate value exists and one a text index that cannot build because MongoDB allows only one per collection and the declared spec had widened.
+Mongoose swallowed both failures.
+So the honest comparison is not loud-today against silent-tomorrow, it is silent-today against reported-tomorrow, which reverses the tradeoff.
+`reportMissingMongoIndexes` runs at boot and logs every declared index a live collection is missing.
+It is deliberately non-fatal: an unbuilt index is a performance problem, and refusing to boot on one would turn a slow query into an outage on the very deploy meant to surface it.
+It also skips any model whose collection is absent rather than probing it, because creating that collection is the behaviour being removed.
+
+`yarn --cwd server db:build-indexes` replaces the auto-build, dry-run by default, `--apply` to build, behind the standard production write guard.
+It is additive and never drops, and per the issue's naming hazard it must never be renamed to `syncIndexes`: two different things in this repository carry that name, the additive local index copies in `syncBetaToDevelopment.ts` and `promoteAcceptedBetaCopy.ts`, and Mongoose's `Model.syncIndexes()`, which drops any index the schema no longer declares.
+Removing an index stays a reviewed migration, never a side effect of an operator running a build.
+When a build fails, the command reports the failure, leaves the existing index alone, and exits non-zero.
+
+Scope is the shared `mongoOptions`, which covers the server boot and every script that goes through `initializeConnections`, and that is the path all three incidents took.
+Roughly fifteen scripts call `mongoose.connect` directly with their own options and still default `autoIndex` on; routing those through the shared options is a separate change.
+Tests are untouched on purpose: they connect with their own options and several depend on a unique index existing, so a global `mongoose.set` would have broken them.
+The change is a connection default, so it is inert until a process next connects; the two Development drifts it reports were not repaired here because a unique index blocked by a duplicate and a text index needing a drop are both reviewed migrations.
+
+## 2026-09-22: One Reference-Edge Auditor, And No `isArray` Flag To Get Wrong (#2294)
+
+The Beta launch scorecard and the canonical reference-integrity audit carried near-identical orphan counters plus a hand-passed `isArray` flag, and the flag drifted.
+The scorecard declared `signals.source.evidenceIds` scalar, so its `$lookup` on the schema-default empty array matched nothing and every signal carrying no evidence at all was counted as a broken reference.
+Measured on Development on 2026-09-22, that reported 1,826 of 1,830 reference failures, which is exactly the count of signals whose `source.evidenceIds` is `[]`, while the canonical audit read the same edge in the same database as 0.
+An operator could not tell the 4 genuine broken references from the 1,826 absent ones, which is when a launch gate stops being used.
+
+There is now one auditor, `server/src/scripts/referenceEdgeAudit.ts`, and both audits declare their edges against it.
+Counting per unwound reference is correct for a scalar field as well, because `$unwind` treats a non-array value as a single element, so the flag is gone rather than merely corrected.
+A missing field, a null, an empty string and an empty array all yield no reference, and therefore none of them can be read as a broken one.
+
+## 2026-09-22: The Materializer Write Path Validates, So A Schema Enum Is A Constraint Again (#2137)
+
+The scraper path writes the whole corpus through `Model.updateOne`, and Mongoose skips validators on updates unless asked, so every schema enum on every materialized field was documentation rather than a constraint.
+Creates were never in scope: `Model.create` runs full document validators, so the asymmetry was precise, and it is why a retired enum member can only have reached storage through an update.
+
+The 2026-08-28 entry below named the mechanism as "the materializer's no-validator `updateOne`/create path" and closed it for `PROGRAM` specifically, at the materialize entry, by skipping a row whose stored `entityType` is the retired type.
+A per-value guard does not generalize: measured on Development on 2026-09-22, 190 `research_entities` rows hold an `entityType` outside `researchEntityTypes`, across six retired members rather than one, and every one of them is archived.
+`PROGRAM` is 12 of the 190.
+
+The writer was re-asserting those values rather than merely tolerating them.
+`materializedFieldValue` fell back to the stored value whenever an observation carried an unrecognized `entityType`, and on these rows the stored value is itself retired, so a rematerialize planned a `$set` the model would reject.
+Dry-run materializing all 190 measured 84 plans carrying a value the schema omits, so turning validators on without fixing the fallback first would have thrown on 84 rows.
+That is the order the decision depends on: the fallback is now enum-aware and returns undefined rather than a value the schema rejects, which drops those 84 to 0, and only then does `runValidators: true` go on the projection write.
+A legacy value on an archived row is left untouched rather than rewritten or cleared; what changes is that no write re-asserts it.
+
+Scope is the projection write, not every write in the file.
+The membership, access, and fold-shell updates touch non-enum fields and gain nothing from validation, and widening the blast radius without a measured reason is how a fail-closed change becomes an outage.
+Update validators check only the paths present in the update, which is what keeps this bounded: the write asserts what the projection decided, never the whole stored document.
+
+Verified before landing by running Mongoose's own update validators over every planned projection in the corpus with a filter that matches no document, so the real validator path runs and nothing is written.
+The `ResearchEntity.kind` enum needs no reconciliation: it already reads the same `researchGroupKinds` constant the writer sanitizes against, and `kind` measured zero drift.
+
+## 2026-09-22: The Card Box Is A Rendering Preference, Not The Card's Length Bar (#1878)
+
+Card length had two owners that disagreed, and the disagreement deleted copy instead of shortening it.
+`shortDescriptionQuality` accepted a card line up to 280 characters or 44 words, and `sanitizeResearchEntityShortDescription` clamped the served line to whole sentences inside 200 characters and returned an empty string when the leading sentence alone was longer.
+Every card producer wrote to the looser bar, so the band between them was minted, stored, accepted by the gate, and then deleted at serve time.
+
+The band is where the whole population lived.
+Measured on Development, 651 non-archived rows carried a stored `shortDescription` over 200 characters and every one of them was at or under 280, which is the looser bar's fingerprint rather than a property of the prose.
+None of those 651 rows served its own card sentence.
+524 served their research-area chips restated as a sentence, the redundant headline #1680 exists to replace, and 391 of those were `student_ready`, so this was wrong copy in front of students rather than an opportunity cost.
+The rest served nothing.
+
+#2184's fail-closed arm said callers would fall back to a quality-checked derived card line.
+That fallback does not exist.
+The derived line is usually the same over-preference sentence taken from the same prose, so it arrives back at the same clamp and is deleted again, and the resolver lands on the chip summary or on nothing.
+An arm whose stated fallback cannot fire is the shape `skills/finishing-work/SKILL.md` calls an owner whose inputs never arrive.
+
+Resolution: 200 stays, as a rendering preference, and the 280 and 44 bounds move to `descriptionHygiene.ts` as `MAX_CARD_SHORT_DESCRIPTION_LENGTH`/`WORDS`, the single owner that `shortDescriptionQuality` now reads.
+`clampShortDescriptionToWholeSentences` still prefers a run of whole sentences inside 200, and when none fits it keeps the run that fits the card ceiling instead of deleting the line.
+Both ceilings bound that run rather than judging it afterwards: rejecting a whole run for the word count of its last sentence deletes a card line whose leading sentence fit both ceilings, which is the same failure in a new place.
+Only a leading sentence that is itself past the ceiling, in characters or in words, is still refused.
+A kept line past the preference is quality-checked because the fallbacks below are what it displaced, and without that check four Development rows that had been serving a passing chip summary were newly held on their own failing sentence.
+A line inside the preference is untouched, so this cannot drop the fluent stored card lines #1680 and #2184 intentionally keep.
+
+That check is `storedShortPastRenderingPreferenceIsServable`, and both serving paths run it.
+The gate reads `resolveServedShortDescription` while the card and blurb fields read `sanitizeResearchEntityShortDescription` through the DTO, so a check in only one place would let the list serve a failing line while the gate cleared the row on a chip summary no surface renders.
+It asks the bar the gate will use, which for a `kind: 'program'` row is `programCardShortDescriptionQuality` rather than the lab bar: the two carry different flags, not nested ones, so asking the lab bar about a program row both admits lines the gate then holds on and refuses lines it would accept.
+`kind` decides rather than `entityType`, because `INITIATIVE` covers `program`, `initiative` and `group` alike and cannot recover the marker `isProgramLikeResearchEntity` reads.
+
+The trade this accepts is a CSS one.
+A sentence longer than roughly 219 characters clamps at the card's fourth line on a desktop column and around 190 on a narrow mobile one, so some of these cards now end in a browser ellipsis.
+That is better than the alternative they replace: a chip echo of the chip row rendered beside it tells a student nothing, and the detail page carries the body in full either way.
+The producers are not corrected here and should be: the card-synthesis prompt bounds a card by words rather than characters, which is what puts a line in the band in the first place.
+Changing the prompt changes `CARD_SYNTHESIS_PROMPT_HASH` and re-synthesizes gated rows on the next sweep, so it is its own change with its own measurement.
+
+Measured effect on Development, one fixed row set read through the real gate planner and the real description representation before and after.
+588 rows moved from a chip summary or a blank card to their own prose, and none moved the other way.
+61 rows moved from `operator_review` to `student_ready`, and the single row that moved the other way did so on a `duplicate_risk` reason a concurrent writer added.
+Held rows carrying a description-family reason fell from 925 to 824.
+Reproduce the tier counts with `yarn --cwd server student-visibility:gate --collection=research --mode=dry-run` and read the served copy with `yarn --cwd server research-entity:served-scoreboard`.
+
+## 2026-09-22: Browse Separates Research Types On `entityType`, Not On A New Org Taxonomy (#2195)
+
+The browse filter panel now carries a Type axis beside School and Department.
+It reads the `entityType` facet the `researchentities` index and the `/research/search` route already served, and labels each value from `RESEARCH_ENTITY_TYPE_FILTER_LABELS`, one distinct label per canonical type.
+It deliberately does not reuse `entityKindLabel` for this, because a kind label is not a type label: `FACULTY_RESEARCH_AREA` and `FACULTY_PROJECT` are both kind `individual`, so a kind label would put two options with identical visible text in one select, and `FACULTY_PROJECT` would read "Group" while its own cards read "Faculty Research".
+The axis accepts exactly the canonical `researchEntityTypes` enum on the same grounds: a `?type=` value has to round-trip through the URL, so the retired `FACULTY_RESEARCH` and `INDIVIDUAL_RESEARCH` values that #2219 left stored in unmigrated environments are rejected as a filter value and dropped from the select, while the entity-page and card copy paths stay tolerant of them.
+Nothing new was modelled to get it: `entityType` was already a `filterableAttributes` entry and already present in the served `facetDistribution`, so the axis was reachable by every client except the one students use, and no Meilisearch reindex is needed to deliver it.
+
+The four-category non-academic taxonomy the issue asked for is refused, because three of its four types have no live rows.
+`COLLECTIONS_INITIATIVE`, `ARCHIVE_OR_MUSEUM_PROJECT`, and `DIGITAL_HUMANITIES_PROJECT` were retired by #2202 on the measurement that a student who opened one got a single outbound link and no person, roster, or affiliated lab.
+Only `CORE_FACILITY` survived, so there is no four-way distinction left to express.
+
+Attributing the school-less rows to a synthetic `Library / University-wide` school is refused on the grounds #2409 and #2940 established for the department and school axes.
+A facet value is an assertion about Yale's org chart, and no source says a core facility belongs to a school by that name, so minting one would re-import the category error those two changes removed.
+A core facility legitimately has no school, and the Type axis says what the row is rather than filling the school slot with a label nobody asserts.
+
+Whether the six types the corpus actually serves should collapse into coarser student-facing buckets, for example "Labs and faculty research" against "Facilities and shared resources", is left open.
+It is a product judgement about where `CENTER`, `INSTITUTE`, and `INITIATIVE` belong, and it cannot be settled by the corpus, so it is not worth guessing while the raw axis already separates the rows.
+
+Measurement, Development, read through the real search route rather than a reimplemented predicate.
+The public browse result set is 3,625 indexed rows and 3,348 served cards.
+Its served `entityType` distribution is `FACULTY_RESEARCH_AREA` 2,149, `LAB` 1,050, `CORE_FACILITY` 50, `CENTER` 45, `INITIATIVE` 40, `INSTITUTE` 14.
+So 149 served cards are organizational entities rather than labs or faculty research, and before this change no browse control separated them from the other 3,199.
+Walking every served card, 58 carry no school at all, and each of those 58 is a `CORE_FACILITY` (37), `CENTER` (10), `INSTITUTE` (9), or `INITIATIVE` (2).
+No `LAB` and no `FACULTY_RESEARCH_AREA` card is school-less, which is why the school-less cohort is a property of the type axis rather than a school-axis gap to backfill.
+
+## 2026-09-22: The Standing Answer For The Description-Blocked Population (#574, #1901)
+
+This replaces two open issues that had become less accurate than the corpus they described: #574, a north-star tracker whose every named child is closed and whose "~600 entities" is now 903, and #1901, a policy question whose three options are each already closed by a decision or by shipped code.
+The description-blocked population needs a standing answer rather than a tracker, because its size is a property of intake and of the gate rather than a goal anybody can drive to zero.
+Every count below is Development, the only environment that scrapes, measured 2026-09-22.
+
+The instrument is the real planner and never a stored column.
+`planStudentVisibilityGate` over the research collection, with blockers filtered by `isBlockingVisibilityReason`, reads 4,744 live rows, 3,293 planning `student_ready` and 1,451 held.
+The stored `studentVisibilityReasons` on the same rows read 814 description-held and 333 held by description alone against the planner's 903 and 387, so the stored column trails the gate's own fixes and understates the cohort by about a tenth.
+Control on the predicate: neutered it selects 0 of the 1,451 held rows and restored it selects 903.
+
+Description is the largest blocker family and the ranking is not close: 903 held rows carry a description blocker, against 515 for `duplicate_risk`, 425 for `missing_lead` and 305 for `citations_identify_no_person`.
+387 of the 903 are held by a description blocker and nothing else, and that is the releasable cohort; the remaining 516 also carry a blocker no description work touches, so counting all 903 as description-addressable overstates the releasable cohort by a factor of 2.3.
+
+Serve state partitions the 903 into three sub-populations, each with one owner, and a fourth cut runs across all three to record which rows no lane can work at all.
+
+**Serves nothing at all, 563 rows.**
+503 store nothing, 52 store a body the serve layer withholds, and 8 store a career biography that sanitizes to blank.
+`research-entity:fra-profile-synthesis` is the only lane with reach here, and #2939 is what gave it that reach: it admits an empty served description into scope and offers the official profile pages a resolved lead carries that the row does not itself cite.
+Its reach is a subset of the bucket rather than the whole of it, because the lane is `FACULTY_RESEARCH_AREA`-only by construction and rejects every other kind as out of scope.
+It selects 249 of the description-held `FACULTY_RESEARCH_AREA` rows.
+
+**Serves prose but the card fails, 319 rows.**
+256 are `FACULTY_RESEARCH_AREA` rows the synthesis lane deliberately leaves alone, since rewriting a description a student can already read is the #2183 churn.
+This is a card-derivation defect and not an evidence gap, which the 2026-09-21 entry below already states.
+100 rows are held by `missing_card_description` and nothing else, and 99 of those 100 serve prose.
+The ceiling on deterministic derivation for them is 12 rows: `deriveShortDescriptionFromFullDescription` emits a non-empty string on 51 of the 100, but substituting it makes the gate's own `cardDescriptionUseful` true on only 12.
+Read that as the measurement rule it is, because a deriver returning text is a proxy that overstated the gate's verdict fourfold here.
+
+**Serves a career biography, 21 rows.**
+The synthesis lane's original cohort, unchanged.
+
+563 plus 319 plus 21 is the 903, so the three buckets above are the whole cohort and nothing double-counts.
+
+**No candidate person page at all, 241 rows, all `FACULTY_RESEARCH_AREA`.**
+This is a cut across the three buckets rather than a fourth slice of the 903: 226 of the 241 serve and store nothing and therefore sit inside the 563, and the remaining 15 sit in the other two.
+No lane owns these and none can, because there is no page to read, so a row counted here is unworkable by whichever lane nominally holds its serve-state bucket.
+This is an intake gap rather than a conversion gap, it is tracked in #1878, and it is worked by naming the extractor for the hosts those rows cite rather than by any description lane.
+
+Three remedies are refused, standing, so a row this list leaves unconverted is a measured coverage floor and not an open question.
+
+A `researchAreas`-only card is refused, and not as a judgement call.
+`sanitizeServedResearchEntityCopyFields`, the one canonical serve-time sanitizer, already blanks a stored area echo, so no scraper, materializer or repair can store its way to such a card unless that sanitizer is loosened.
+The read path is the other half of the refusal, and there it is not automatic: `resolveServedShortDescription` mints `buildResearchAreasCardSummary` as its last fallback, on the already-sanitized record rather than before it, so a chip card can still reach a student without that sanitizer moving at all.
+361 served cards were nothing but chips when #2299 measured, and it closed the larger part of them by narrowing the DTO's read-time surrender of a stored card, which removed 227; what still mints one is a row with no servable stored card and no derivable sentence.
+That minted card is now grounding-checked on both halves (#2972): the chips are filtered to the ones the row's own body supports rather than taken in stored order, and when the body supports none the card is withheld rather than asserted, which the visibility gate reads as `missing_card_description`.
+Withholding cost 13 of 3,551 promoted Development rows their visibility and removed an unsupportable topic assertion from 46, measured through `getResearchGroupDetail` and `student-visibility:gate --dry-run` before and after; the other 33 keep their visibility because the gate clears them on a stored card the DTO separately refuses.
+So read this entry as a standing refusal to widen the chip card, on either side of the sanitizer, rather than as a claim that no student currently sees one.
+Loosening either side for coverage is the same trade the 2026-09-22 entry below refuses for a different module, the person-kind hygiene selection in `server/src/utils/researchHomeDescriptionSelection.ts`, which that entry records as load-bearing: description coverage is not a reason to weaken a hygiene rule, in either place.
+
+Suppressing a row for carrying no research prose is refused.
+The 2026-09-21 entry makes a `FACULTY_RESEARCH_AREA` first-class and never demotes or suppresses one for lacking an independent website, and lacking harvestable prose is the same kind of absence.
+The genuine exception is a row whose subject hosts no research at all, a teaching-only lecturer for instance, and that is a `classifyResearchEntityResearchScope` gap to close on the scope classifier rather than a description decision; it is unmeasured here.
+
+Ingesting the Yale profile JSON-LD `description` is refused by the 2026-09-22 entry immediately below, which measured it as a curriculum vitae.
+
+Consequences.
+The north-star framing is retired as a tracker rather than restated.
+The gate is correctness-only, so growth in intake dilutes description richness by construction, and a held-row count is therefore a reading rather than an aim; `corpus:snapshot` and `research-entity:served-scoreboard` are where that reading belongs, not a ranked blocker list in an issue body that is stale the week after it is written.
+#1901's three options are all closed, two of them by the decisions above and the third by being built instead of chosen, in #1937 and #2939.
+A count of this cohort is instrument-dependent and moves with the gate's own repairs, two of which landed the same day as this entry, so re-measure with the planner and name the instrument beside the number rather than quoting a figure from here.
+That is why the 2026-09-22 entry immediately below reads the same "description blocker and nothing else" predicate at 619 where this entry reads 387: both are Development, and 387 is the later reading, taken with the planner after those two repairs.
+Neither figure is load-bearing for the refusal that entry records, which holds at any cohort size.
+
+## 2026-09-22: Two Signals We Deliberately Do Not Act On (#2670, #2704)
+
+Both of these were investigated, measured, and refused.
+They are recorded here because the opportunity they point at keeps growing, so the refusal has to be easier to find than the temptation.
+Every count is Development, the only environment that scrapes.
+
+**An emeritus appointment, and the word retired, are not suppression signals.**
+146 rows carry an emeritus appointment and 33 of them describe active research work, so suppressing on the appointment would withhold about one row in five that a student should see.
+The word retired is worse, because it appears in research prose about retirement as a subject.
+`inactive_at_yale` therefore keeps exactly one producer, `entity.activeAtYaleCache === false`, and nothing derives it from a profile appointment string.
+Where a departed person is genuinely unservable, the evidence is a dead profile page rather than a title, which is the source-link-health path instead.
+Emeritus stays what it already is in the code, a description-quality signal, not a visibility one.
+
+**The Yale profile JSON-LD `description` is a CV, not a research description.**
+The `Person` block on a Yale profile page is real and machine-readable, and it is tempting because rows held by a description blocker and nothing else are the largest single-family cohort in the corpus, now 619 rows and still growing.
+Hand-read, roughly 2 to 4 of 16 of those `description` values read as research; the median is about 978 characters of appointments, degrees, society memberships, and awards, with no HTML to strip.
+Ingesting it would put a curriculum vitae on the order of 600 cards, which is the exact defect class the description hygiene rules exist to refuse.
+The block's `name` and `jobTitle` are safe and are already read.
+So is `description`, which is why the refusal is about adoption rather than about reading: `jsonLdDescriptions` in `server/src/utils/officialResearchDescription.ts` pushes it as a first-position entry in the shared candidate list, and `officialProfilePiBackfillScraper.ts` folds it into leadership-evidence text.
+What keeps a CV off a card is therefore the person-kind hygiene selection in `server/src/utils/researchHomeDescriptionSelection.ts`, not an absence of reads, so that selection is load-bearing and its filters must not be loosened to raise description coverage.
+Most of that weight sits one layer down, in `describesResearchFocus` in `server/src/utils/researchEntityDescriptionQuality.ts`, which the selection calls: a change to that shared predicate decides this refusal even though the refusal reads as belonging to the selection.
+It is a narrow predicate rather than a CV classifier, and a CV of appointment lines carries no research-focus phrase at all, so a single noun reading of "studies" inside a degree-level program title was by itself enough to promote a whole CV (#2670).
+`server/src/utils/__tests__/officialResearchDescription.test.ts` pins the refusal at the median CV shape, including that title.
+A future lane that wants those 619 rows should synthesize from research prose rather than promote this field.
+
+## 2026-09-21: `FACULTY_RESEARCH_AREA` Stays First-Class Alongside `LAB`, And Card Synthesis Precedes Crawl Scale-Out (#2881)
+
+This reaffirms the "Faculty are represented once" rule in the 2026-08-25 entry below and adds the corpus measurements that verify it, the discriminator that separates the two kinds, and the order in which coverage work should be done.
+Every count below is Development, the only environment that scrapes, measured 2026-09-21.
+
+A `FACULTY_RESEARCH_AREA` is a first-class entity, not a degraded `LAB`.
+It carries the same content contract and, measured, the same content: served `FACULTY_RESEARCH_AREA` rows average 805 characters of `fullDescription` and served `LAB` rows average 807, and both are non-empty on every served row.
+An independent `websiteUrl` is enrichment and a ranking input, never an eligibility bar.
+Gating on it would have withheld 1,559 of the 2,020 served `FACULTY_RESEARCH_AREA` rows whose prose reads as well as a lab's.
+
+The two kinds are near-disjoint by person, which is what makes both first-class rather than redundant.
+Across non-archived rows, 2,740 people lead a `FACULTY_RESEARCH_AREA` and 1,273 lead a `LAB`, and only 39 lead both; among served rows the overlap is zero.
+`LAB` is the path for faculty who have a named lab and `FACULTY_RESEARCH_AREA` is the path for those who do not, so together they are the faculty research map rather than two views of one population.
+
+The discriminator is organizational identity versus topical scope, and name shape already expresses it.
+Among served rows, 970 of 1,036 `LAB` names carry an organizational token such as lab, laboratory, group, center, or institute, against 2 of 2,020 `FACULTY_RESEARCH_AREA` names.
+An independent `websiteUrl` is a gradient rather than a boundary, at 72 percent against 23 percent, and roster size does not discriminate at all because 96 percent of served `LAB` rows are also lead-only.
+The typing rule should therefore be explicit rather than emergent, so a mis-typed row is detectable; the audit population is the 2 `FACULTY_RESEARCH_AREA` rows carrying an organizational token, the 66 `LAB` rows carrying none, and the 39 people who lead both.
+That rule is now expressed, in `researchEntityTypeNameContradiction` in `server/src/utils/researchHomeNameIdentityAuthority.ts`, and read by `research-entity:audit-kind-typing` (#2884).
+It has no caller in the visibility gate and must not acquire one, because a contradicting row may be mis-typed or mis-named and the name is the field already in doubt.
+The name it judges is the heading the route serves, through `researchEntityDisplayName`, and not the stored `name`: the two differ on 83 of 4,610 live typed Development rows, and judging `name` first flipped the verdict on 7 served rows, 6 of them contradictions reported as clean (#3252).
+Re-measured the day after this entry the three sets read 1, 61 and 42, and 16 of the 42 are already reachable by `research-entity:merge-eponymous-fra`, the lane the 2026-08-25 precedence names; the remaining 26 are what the audit exists to surface.
+
+Coverage is intake multiplied by conversion, and conversion is the binding constraint.
+598,939 observations over 43,469 keys yield 3,232 served rows, an end-to-end conversion of 7.4 percent, so doubling intake buys roughly 3,200 more served rows while doubling a ledger already growing about 265,000 documents a month.
+Conversion by kind is 64 percent for `FACULTY_RESEARCH_AREA`, 75 percent for `LAB`, 81 percent for `CENTER`, 89 percent for `CORE_FACILITY`, and 93 percent for `INSTITUTE`.
+Card synthesis and identity resolution therefore precede crawl scale-out for the faculty kinds.
+
+Crawling is the right instrument only where conversion is already high and the row count is implausibly low.
+That is `CENTER` at 57 served rows, `INSTITUTE` at 15, and `CORE_FACILITY` at 56, against a university with hundreds of each.
+`PROGRAM` has zero live `ResearchEntity` rows because programs are served from `fellowships` through a service alias, so the programs model is settled before any crawl targets programs, not after.
+
+Consequences.
+No `FACULTY_RESEARCH_AREA` is demoted, merged, or suppressed for lacking an independent URL.
+The gate's card-description expectations are the constraint to work on rather than the entity's right to exist, and `missing_card_description` on a row that already carries useful prose is a card-derivation defect rather than an evidence gap (#2276).
+Distributed crawling is an efficiency investment for a later phase, and the parts of it worth building first are the ones that make materialization cheaper to iterate: a content-addressed snapshot store, and a fetch stage separated from an extract stage so an extractor change is a re-run rather than a re-crawl.
+
+## 2026-09-18: Scraper Fetches Do Not Require Yale VPN (#2846)
+
+This supersedes the Yale VPN requirement recorded in the 2026-07-25 entry "Development Uses Atlas MongoDB And Local Meilisearch" below.
+That entry is left intact as the record of what was believed at the time.
+
+The requirement was never enumerated or enforced.
+No document listed which sources were Yale-only, no source carried a flag marking it as such, and no code detected VPN state, so the rule could not be checked in either direction.
+
+A paired measurement settled it.
+One fixed list of 525 served URLs spanning 373 `yale.edu` hosts was fetched from Yale network and from an off-campus cellular connection, minutes apart from the same machine, using the scraper User-Agent and its normal per-host pacing.
+Yale network returned 479 of 525 as 2xx and the off-campus connection returned 480.
+Both arms produced zero HTTP 429 responses and the same three HTTP 403 responses on the same hosts.
+Comparing per URL, 478 succeeded on both arms, 44 failed on both because the URL or the host is dead, 2 succeeded only off-campus, and 1 succeeded only on Yale network.
+
+That single host, `ensemble.yale.edu`, resolves to `10.9.65.60` and `10.9.65.107`.
+It sits behind an internal load balancer on private addresses, and a DNS census of all 373 hosts confirms it is the only such host.
+The Yale-network-dependent surface is therefore 1 host of 373, and the cause is private addressing rather than any policy that inspects the client.
+
+Bursts of HTTP 403 responses are rate limiting rather than address blocking, and they are not network-dependent.
+A full `dept-faculty-roster` run on Yale network produced 518 of them on the profile-enrichment path under concurrent load, while 60 profile pages fetched off-campus at the scraper's own pacing returned 60 of 60 as 2xx.
+The remedy is the per-host pacing in `hostConcurrencyLimiter`, which already carries overrides for the two hosts that need them.
+
+Consequences.
+An operator needs no Yale identity, VPN session, or campus wifi to run a fetch, so the requirement for two Yale-affiliated operators is retired.
+Network access no longer argues against a hosted scraping runner.
+The remaining obstacles to one are toolchain, input-file, Atlas access-list, and target-environment questions rather than network ones, and `docs/data-refresh-runbook.md` enumerates them.
+
+## 2026-09-15: Retire The Three Undergraduate Logistics Enums Entirely
+
+`undergraduateCurrentAvailability`, `undergraduateCompensationModel` and `undergraduateEligibleStudentLevels` each backed a browse facet and, for availability, a saved-plan and dashboard claim.
+No source publishes any of them.
+Across the served corpus availability held 3 real values and the other two held none, so a student who applied the facet narrowed the entire corpus to three rows, and every other branch of the derived access status was unreachable in practice.
+
+Decision: remove the vertical rather than keep the facets waiting for a producer, exactly as `#2527` did for `hasDocumentedWayIn`.
+The schema fields and their indexes, the Signal re-derivations in the browse-rank sweep, the Meilisearch filterable attributes, the filter params, the facet visibility thresholds, and the client controls are all gone.
+`hasUndergradHostingEvidence` is deliberately untouched: past hosting evidence is the one undergraduate access signal the corpus actually carries, and it still drives the saved-plan badge and its secondary ordering.
+
+Removing the schema declaration does not remove what is already stored.
+Mongoose ignores an undeclared field on read but never strips the value, and the public search hit spreads the raw Mongo row, so each environment keeps serving the frozen `"OPEN"`, `"UNKNOWN"` and `[]` values plus three physical indexes maintained on every write and used by nothing.
+`retire:undergraduate-logistics-fields` completes the retirement: it unsets all three fields, asserts that zero documents still carry one, and only then drops the three stale indexes, refusing each drop while a field is still populated so that a resurrected writer surfaces as a failure instead of being quietly erased.
+Until it has run against Development, `RETIRED_ACCESS_INDEX_FIELDS` keeps the stored values out of the Meilisearch documents.
+Removing the three `filterableAttributes` entries likewise leaves them advertised in each already-built index; `docs/meilisearch-reindex-runbook.md` owns clearing that residue, as it does for `#2527`.
+
+## 2026-09-12: Retire The Identified-Lead Ways-In Signal Producer (#2578)
+
+`deriveIdentifiedLeadWaysIn` minted two `REACH_OUT_PLAUSIBLE` derivation keys, `IDENTIFIED_FACULTY_LEAD` and `ORGANIZATIONAL_HOME`, for any eligible research home with an official non-grant page and one supporting observation.
+It exists because #530 and #1361 wanted a fallback that cleared the dominant `missing_action_evidence` blocker without manufacturing undergrad-access claims.
+
+It has no reachable reader, measured at `2275702f`.
+Beta and Production each hold 4183 live rows from it, all `confidence=LOW` with `confidenceScore` capped at 0.4 by `Math.min(0.4, ...)` in the derivation itself, so the confidence is structural rather than incidental.
+`signalCountsTowardAcceptance`, `accessSignalCount` in the gate, `reachOutPlausibleSignalCreditsActionEvidence`, and `countResearchEntityAlternateAccessPaths` all exclude the two keys by denylist.
+`researchEntityBrowseRankService` over-fetches every access signal but feeds only `hasUndergradHostingEvidenceFromSignals`, whose set is `PAST_UNDERGRADS`/`CURRENT_UNDERGRADS`/`FACULTY_SUPERVISES_STUDENT_PROJECTS`.
+`researchEntitySearchIndexService` reads no signals.
+On the client, `accessSignals` reach only `buildResearchDetailSources`, which drops anything `LOW` via `isCitableAccessSignal`, so 0 of 4183 contribute even a citation, and no code path renders a signal excerpt at all.
+The one reader that does see them is `researchEntityEvidenceCoverage`, where `hasAccess = accessSignals.length > 0` has no derivation-key filter; that feeds a scrape-run diagnostic report, is not served and gates nothing, and losing these rows makes `missing_access_evidence` correct rather than wrong.
+
+Decision: retire the producer rather than repair it.
+The excerpt it wrote, "explore its programs and affiliated people for a way in", restates the documented default action - `research-model.md` puts the student job-to-be-done as "discover a research home, then cold-email the professor", and `student-ready-definition.md` records that "reaching out is already the next step and the action".
+A fallback whose content is the default, and which every consumer denylists, is enrichment that enriches nothing.
+Reintroducing an access fallback later remains possible; it would need a reader first.
+
+The ordering matters and is not optional.
+Every one of the 4183 stored rows carries a synthesized excerpt, and the #1343 rule admits any `REACH_OUT_PLAUSIBLE` that has one, so `IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS` in `accessAcceptanceLevel.ts` is the only thing stopping those rows from lifting acceptance on 4174 entities.
+Deleting the denylist in the same change as the producer would therefore have promoted every retired row instead of retiring it.
+So the denylist stays, annotated, until `retire:identified-lead-ways-in` has archived the data in every environment; `assertAcceptanceDenylistStillGuards` fails the run from the data side if that order is ever reversed.
+
+The retirement archives rather than deletes, which is how every other signal withdrawal in this repo works and keeps readable what the corpus used to assert.
+The two derivation-key constants stay exported from `accessAcceptanceLevel.ts` alongside the denylist, so `REPOINTABLE_SIGNAL_DERIVATION_KEYS` in the superseded-citation repair lane keeps working and the open #2525 repair run stays whole in environments that still carry the rows; that pass goes vacuous once retirement completes there, and the constants go with the denylist in the follow-up.
+`officialNonGrantSourceUrl` is deliberately untouched: the visibility gate reads it directly as proof an entity has a way in.
+
+## 2026-09-11: Retire The `hasDocumentedWayIn` Browse Projection Entirely
+
+`#1519` derived `hasDocumentedWayIn` from `Signal`, stored it, indexed it, mirrored it to Meilisearch as a filterable attribute, and exposed a `documented=1` browse control over it, complete with a per-request disjunctive facet recompute so the client could see both the documented and undocumented buckets.
+`#1884` then retired the control and deliberately kept the server projection, so that the split could be re-exposed later.
+Nothing took it up.
+The result was a full server vertical whose only entry point was a hand-written API param no client sent: the derivation ran on every browse-rank sweep, and the facet recompute ran on requests, for a filter a student could not apply.
+
+Decision: remove the vertical rather than re-expose it, and treat the field as YAGNI rather than as a kept option.
+`#2527` removed the derivation, the schema field and its index declaration, the filterable attribute, the filter param, the facet distribution, and the reserved `documented_way_in` analytics kind.
+Re-exposing an access filter later remains possible; it would be a new product decision with its own evidence, not a revival of this field.
+
+The sparse positive way-in card signal is unaffected, because it reads the entity access summary rather than this boolean.
+`hasUndergradHostingEvidence` is deliberately untouched: it is still served in the saved-plan projection and drives student-facing copy.
+`EF-03` in `docs/research-student-journey-delivery-plan.md` therefore stays Active on the card signal, with its filter acceptance criterion marked Superseded.
+
+Removing the schema declaration does not remove what is already stored.
+Mongoose ignores an undeclared field on read but never strips the value, and it never drops an index it has stopped declaring, so each environment kept the field on thousands of documents plus a physical `archived_1_hasDocumentedWayIn_1` index maintained on every write and used by nothing.
+`retire:documented-way-in-field` completes the retirement per environment: it unsets the field, asserts that zero documents still carry it, and only then drops the stale index, refusing the drop while the field is still populated so that a resurrected writer surfaces as a failure instead of being quietly erased.
+Meilisearch keeps advertising the retired filterable attribute until each environment is reindexed, which is tracked separately.
+
+## 2026-09-10: The Admin Search-Query Report Counts Searches, Not Requests
+
+A search request carries no notion of intent, so the report used to count whatever the surfaces happened to send: a keystroke pause on the debounced programs surface, every page of a walk through one result set, and an operator's visibility-tier sweep, while the research surface sent nothing at all and a filter-only search reported as `(empty search)`.
+
+Decision: the server decides what a recorded search is, in one place, `server/src/services/siteSearchAnalytics.ts`.
+A recorded search is one signed-in student asking for something on the first page of results; typing states of one query fold into the query they settled on, and an identical repeat of a search collapses into the row it repeats on every surface.
+Whether an edit of the query folds is a declared property of the surface, because only a debounced surface mints keystroke snapshots.
+`docs/topic-matching-and-search-engagement.md` owns the rules and the reasoning.
+
+## 2026-09-05: Retire The `searchMatch` Per-Result Match Explanation
+
+`searchMatch` was read in four places and written in none.
+The server copied it off the Meilisearch hit in `researchGroupService`, allowlisted it onto the served DTO, and the client typed it, normalized it, and used it for the card's match reason, method labels, concept tags, and confidence value.
+No model, no index builder, and no search path ever set it, so `hit.searchMatch` was always `undefined` and a served search response carried it on zero rows.
+The field was inert rather than degraded: it never carried a wrong value, only no value, so there was nothing to tighten and the only two remedies were to add a producer or to remove the consumer.
+
+Decision: remove the consumer.
+A per-result "why did this match" affordance that resolves to the same constant for every result is not an explanation, and the honest state is to say nothing rather than to print `Yale research profile source.` under a "Why it might fit" heading.
+Producing it from Meilisearch's matched attributes remains possible later; it is a new feature with its own product decision, not a repair of this field.
+
+Two things this retirement is not.
+It is not a change to served student-facing copy: `ResearchHomeCard` rendered the match reason only in its `default` variant, and both call sites on `/research` pass `variant="compact"`, so the placeholder was unreachable in the running app.
+It is also not proof that the field was harmless: it kept a live path from the Meilisearch hit into the served DTO, and the DTO test that exercised it hand-constructed the object, so it verified the shape while the wiring was never connected.
+Tests that build their own input for a field with no producer cannot detect that the producer is missing; the replacement test asserts that a `searchMatch` on the input is absent from the DTO.
 
 ## 2026-08-29: A `FACULTY_RESEARCH_AREA` Research Description Is Synthesized From The Professor's Own Profile Page, Not Extracted
 
@@ -128,7 +1023,7 @@ Future work must not reintroduce a Fellowship-to-research projection or those tw
 
 ## 2026-08-25: Simple Directory First; Signals Are Factual Enrichment, Not An Access-Plausibility Tier
 
-Yale Research is a simple, high-quality directory of Yale research whose two co-equal priorities are good data and good search.
+y/labs is a simple, high-quality directory of Yale research whose two co-equal priorities are good data and good search.
 The student job is to find a professor and their work and reach out; the directory's job is to make that fast and trustworthy, not to compute pathways or score access.
 The durable core stays: `ResearchEntity` + `Researcher` + `RoleAssignment` (what exists, who it is, who leads it), official links, real descriptions, and Meilisearch discovery.
 
@@ -170,7 +1065,7 @@ Future work must not reintroduce a person page or cite a researcher-profile read
 
 ## 2026-08-24: Logged-Out Read-Only Discovery For Public Research And About Pages
 
-Yale Research is a discovery product, so its top-of-funnel pages are readable without a Yale CAS login rather than gated behind it.
+y/labs is a discovery product, so its top-of-funnel pages are readable without a Yale CAS login rather than gated behind it.
 A logged-out visitor can browse and search `/research`, open any public `/research/:slug`, and read `/about`, seeing only the public student-visibility tiers already served to authenticated students.
 Anonymous requests carry no authenticated principal, so the read controllers grant no operator authority and apply no personalization; logged-out browsing always uses the global Recommended order and never exposes non-public tiers or operator/admin fields.
 Every write and account surface stays behind auth: saved plans, private notes, compare, outreach tracking and drafting, program watch, profiles, analytics, admin, and the seed routes.
@@ -180,7 +1075,7 @@ This resolves the `Decide logged-out discovery` roadmap P0 in favor of public re
 
 ## 2026-08-23: External/National Programs Are Out Of Scope For Discovery
 
-Yale Research stays a Yale-focused directory: its north star is broad, accurate coverage of Yale research homes and Yale undergraduate access, not a national fellowship or REU aggregator.
+y/labs stays a Yale-focused directory: its north star is broad, accurate coverage of Yale research homes and Yale undergraduate access, not a national fellowship or REU aggregator.
 External and non-Yale awards (NSF REU sites at peer institutions, NIH summer programs, Goldwater, Beckman, Churchill, and similar) are out of scope for `/fellowships` and `/programs`, resolving the Tier 3 deferral that closed issue #675 left open.
 The only authoritative fellowship/program acquisition lane remains the Yale-internal `yale-college-fellowships-office` source.
 The orphaned `external-fellowship-llm-scraper` seed (issue #1280) had no scraper class, no orchestrator registration, and no coverage-registry entry, so it produced dead config and dishonest coverage reporting; it is retired rather than implemented.
@@ -201,9 +1096,9 @@ See [`research-model.md`](./research-model.md) for the current model.
 
 ## 2026-08-02: Make Research Coverage Source-Driven
 
-Yale Research does not host faculty-authored lab or opportunity submissions.
+y/labs does not host faculty-authored lab or opportunity submissions.
 Research homes, access evidence, postings, and official application routes come from authoritative-source ingestion, with official application URLs rendered only as outbound links.
-Missing professor coverage is repaired through bounded, targeted scraper runs against the professor's canonical research homes rather than by asking the professor to maintain a duplicate Yale Research record.
+Missing professor coverage is repaired through bounded, targeted scraper runs against the professor's canonical research homes rather than by asking the professor to maintain a duplicate y/labs record.
 Archived `ResearchEntity` rows are migration residue rather than catalog inventory and should be physically removed only through fail-closed cleanup that preserves source observations and resolves dependent references.
 
 ## 2026-08-01: Treat Graphify As A Local Generated Cache
@@ -219,11 +1114,13 @@ CI installs the pinned Graphify version, generates twice to verify deterministic
 
 The bibliographic ingestion implementations for OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref are removed, along with their CLI, scheduling, active source metadata, and source-seeding paths, so they cannot run through ordinary scraper operations.
 Historical `paper` source rows and observations are retained as read-only archived evidence and are never materialized, and the launch-trust release gate no longer enforces paper-quality or research-activity checks.
-Yale Research navigates to verified official Yale profile URLs and keeps ORCID and Google Scholar only as optional outbound identity links, not as a works feed, verification badge, or activity signal.
+y/labs navigates to verified official Yale profile URLs and keeps ORCID and Google Scholar only as optional outbound identity links, not as a works feed, verification badge, or activity signal.
 The confirmed Phase 3 scope also retires the curated official-profile scholarly-activity surface.
 Producers and consumers are retired as a hard cutover with no rollback opt-in: the `Paper` and `PaperAuthor` models and their readers are removed, and the stored `papers`/`paper_authors` collections remain only until a human-gated collection drop.
 
 ## 2026-07-25: Development Uses Atlas MongoDB And Local Meilisearch
+
+Its Yale VPN requirement is superseded by the 2026-09-18 entry "Scraper Fetches Do Not Require Yale VPN" above, and the paragraph below is kept only as the record of what was believed at the time.
 
 Development uses the Atlas `Development` database and local Docker Meilisearch so operators share a disposable integration dataset while keeping search iteration local.
 Development can be refreshed one way from accepted Beta through an allowlist-only, Atlas-Beta-to-Atlas-Development copy.
@@ -241,7 +1138,7 @@ The long-term automation target is an approved team-managed runner on the Yale n
 ## 2026-07-24: Refactor Around Research Navigation And Evidence
 
 The accepted target separates accounts, public people, role assignments, research entities, evidence claims, and private research plans while retaining bounded REST projections.
-Yale Research will own evidence-backed research navigation, not a mirrored professor-profile or publication product.
+y/labs will own evidence-backed research navigation, not a mirrored professor-profile or publication product.
 Migration proceeded through measured vertical cutovers, beginning with the read-only inventory in [`research-model-refactor.md`](./research-model-refactor.md).
 See [`research-model.md`](./research-model.md) for the current, landed model.
 
@@ -251,7 +1148,7 @@ Public research detail responses embed related entities as strict card summaries
 The server projects only card fields, caps each relationship direction, reports truncation, and leaves full-profile retrieval to navigation.
 
 Do not add application-level response compression without verifying the deployed web-service topology first.
-The Render web service is managed outside `render.yaml`, so this repository cannot guarantee or configure its edge compression.
+The Render web service is configured in the Render dashboard, not in this repository, so this repository cannot guarantee or configure its edge compression.
 Blanket compression around cookie-backed API responses would also increase BREACH, caching, buffering, and streaming review scope while potentially duplicating the platform edge.
 Prefer bounded public JSON DTOs, and configure compression at the deployment edge when its control-plane settings can be verified.
 
@@ -328,7 +1225,7 @@ Compatibility labels can exist during migration, but product language should mov
 
 ## 2026-05-07: North Star Is Research Navigation
 
-Yale Research is a research navigation product, not a simple lab-opening board.
+y/labs is a research navigation product, not a simple lab-opening board.
 Students should be able to move from curiosity to credible research homes, evidence, pathways, and next steps.
 
 ## 2026-05-07: Separate EntryPathway From PostedOpportunity

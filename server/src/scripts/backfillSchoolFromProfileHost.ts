@@ -4,12 +4,17 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import {
+  assertInferredSchoolObservation,
+  INFERRED_SCHOOL_CONFIDENCE,
+} from './orgUnitSchoolAssertion';
 import { ResearchEntity } from '../models/researchEntity';
 import { resetOrgUnitCanonicalizerCache } from '../scrapers/orgUnitCanonicalization';
 import { syncEntities } from '../services/meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  SCHOOL_PROFILE_HOST_BACKFILL_SOURCE,
   planSchoolProfileHostRow,
   summarizeSchoolProfileHost,
   type SchoolProfileHostPlanRow,
@@ -64,6 +69,9 @@ export function parseSchoolProfileHostArgs(argv: string[]): SchoolProfileHostCli
 }
 
 export interface SchoolProfileHostResult {
+  /** Rows whose school this pass asserted as evidence, and why any was not. */
+  schoolAssertionsRecorded: number;
+  schoolAssertionsSkipped: Record<string, number>;
   mode: 'dry-run' | 'apply';
   summary: SchoolProfileHostSummary;
   sampleChanges: SchoolProfileHostPlanRow[];
@@ -125,7 +133,25 @@ export async function runSchoolProfileHostBackfill(options: {
 
   const changedRows = rows.filter((row): row is SchoolProfileHostPlanRow => row !== null);
 
+  let schoolAssertionsRecorded = 0;
+  const schoolAssertionsSkipped: Record<string, number> = {};
   if (!options.dryRun && changedRows.length > 0) {
+    // Evidence first, then the eager projection. The observation is what makes the value
+    // survive a re-projection; the `$set` is what makes the row serve it this pass.
+    for (const row of changedRows) {
+      const assertion = await assertInferredSchoolObservation({
+        sourceName: SCHOOL_PROFILE_HOST_BACKFILL_SOURCE,
+        entityId: String(row.id),
+        entityKey: String(row.slug ?? ''),
+        school: String(row.afterSchool ?? ''),
+        evidenceUrl: String(row.evidenceUrl ?? ''),
+        confidence: INFERRED_SCHOOL_CONFIDENCE,
+      });
+      if (assertion.skipped)
+        schoolAssertionsSkipped[assertion.skipped] =
+          (schoolAssertionsSkipped[assertion.skipped] ?? 0) + 1;
+      else schoolAssertionsRecorded += 1;
+    }
     await ResearchEntity.bulkWrite(
       changedRows.map((row) => ({
         updateOne: { filter: { _id: row.id }, update: { $set: row.update } },
@@ -138,6 +164,8 @@ export async function runSchoolProfileHostBackfill(options: {
   }
 
   return {
+    schoolAssertionsRecorded,
+    schoolAssertionsSkipped,
     mode: options.dryRun ? 'dry-run' : 'apply',
     summary: summarizeSchoolProfileHost(rows),
     sampleChanges: changedRows.slice(0, 25),

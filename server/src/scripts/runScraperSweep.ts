@@ -11,8 +11,11 @@ import {
   resolveScraperEnvironment,
   type ScraperEnvironment,
 } from '../scrapers/scraperEnvironment';
+import { c4LosslessIngestEnabled } from '../scrapers/observationStore';
+import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency';
 import { DEFAULT_PER_HOST_CONCURRENCY } from '../scrapers/utils/hostConcurrencyLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { SOURCE_LINK_HEALTH_FRESHNESS_DAYS } from '../services/sourceLinkHealth';
 import {
   DEFAULT_EPONYMOUS_FRA_MERGE_MAX,
   SCRAPER_SWEEP_AUTO_MERGE_FRA_ENV,
@@ -26,6 +29,7 @@ import {
 import {
   DEFAULT_URL_IDENTITY_MERGE_MAX,
   isUrlIdentityDedupeStageEnabled,
+  type UrlIdentityDedupeStageDelta,
 } from './dedupeResearchEntitiesByPi';
 import { isSweepStageEnabledByDefault, isSweepStageOptedIn } from './sweepStageFlags';
 import {
@@ -78,8 +82,14 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'neh-funded-projects', phase: 'funding' },
   { name: 'federal-award-usaspending', phase: 'funding' },
   { name: 'doe-osti', phase: 'funding' },
+  // Identity work, but deliberately not in the `identity` phase: the aliases it resolves are
+  // minted by `dept-faculty-roster` during `discovery`, so running earlier would only ever
+  // resolve the previous sweep's keys. It leads `relationships` because the lanes below it read
+  // the person key it repairs.
+  { name: 'directory-alias-resolution', phase: 'relationships' },
   { name: 'official-profile-pi-backfill', phase: 'relationships' },
   { name: 'official-research-home-roster', phase: 'relationships' },
+  { name: 'lab-site-lead-verification', phase: 'relationships' },
   { name: 'center-affiliation-llm', phase: 'relationships' },
   { name: 'center-director-llm', phase: 'relationships' },
   { name: 'lab-microsite-description-llm', phase: 'content-access' },
@@ -155,10 +165,13 @@ export interface ScraperSweepRunRow {
 
 export interface DevelopmentPostRunStage {
   name:
-    | 'faculty-projection'
     | 'researcher-dedupe'
     | 'eponymous-fra-merge'
     | 'url-identity-dedupe'
+    | 'website-url-identity-dedupe'
+    | 'source-link-health'
+    | 'profile-link-health'
+    | 'dead-research-website-clear'
     | 'visibility-gate'
     | 'search-rebuild'
     | 'coverage-audit'
@@ -173,6 +186,8 @@ export interface DevelopmentPostRunStage {
   error?: string;
   mergeDelta?: EponymousFraLabMergeDelta;
   researcherDedupeDelta?: ResearcherDedupeStageDelta;
+  urlIdentityDedupeDelta?: UrlIdentityDedupeStageDelta;
+  profileLinkHealthDelta?: ProfileLinkHealthStageDelta;
 }
 
 export interface DevelopmentPostRunStageOptions {
@@ -219,6 +234,24 @@ const MERGE_RESIDUE_DELETION_STAGE_ARGS = [
   '--max-apply=5000',
 ];
 
+/**
+ * A source that ends `succeeded` having written no observation has learned nothing,
+ * and counting it in `succeeded` is how five sources went months without producing
+ * anything while the sweep summary read healthy (#2607). `runReport` already warns
+ * on exactly this; the summary is where the warning was being dropped.
+ *
+ * Reported rather than failed, because a single zero-observation run is legitimate when
+ * the work planner skipped every target. Escalation lives upstream in
+ * `scrapers/sourceYieldGuard.ts`, which fails the run itself once a source has emitted
+ * nothing on three consecutive runs; such a run arrives here with `runStatus: 'failure'`
+ * and `scraperSweepArtifactError` counts it in `failed`, not here.
+ */
+export function sourcesThatProducedNothing(rows: ScraperSweepRunRow[]): string[] {
+  return rows
+    .filter((row) => row.status === 'succeeded' && row.observationCount === 0)
+    .map((row) => row.sourceName);
+}
+
 export interface ScraperSweepSummary {
   mode: ScraperSweepMode;
   environment: ScraperSweepModeConfig['environment'];
@@ -230,6 +263,8 @@ export interface ScraperSweepSummary {
   succeeded: number;
   failed: number;
   notRun: number;
+  producedNothing: number;
+  producedNothingSources: string[];
   rows: ScraperSweepRunRow[];
   postRun?: {
     status: 'succeeded' | 'failed';
@@ -458,23 +493,7 @@ export function resolveSweepChildPerHostConcurrency(
   return Number.isInteger(override) && override >= 1 ? Math.min(override, shared) : shared;
 }
 
-export async function runWithBoundedConcurrency<T>(
-  items: T[],
-  concurrency: number,
-  worker: (item: T) => Promise<void>,
-): Promise<void> {
-  const queue = [...items];
-  const runners = Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, () =>
-    (async () => {
-      for (;;) {
-        const next = queue.shift();
-        if (next === undefined) return;
-        await worker(next);
-      }
-    })(),
-  );
-  await Promise.all(runners);
-}
+export { runWithBoundedConcurrency };
 
 export function validateScraperSweepManifest(registeredNames: string[]): void {
   const researchNames = RESEARCH_SWEEP_SOURCES.map((source) => source.name);
@@ -594,6 +613,19 @@ export function buildScraperSweepChildArgs(
     '--output',
     artifactPath,
   ];
+}
+
+/**
+ * The prune children inherit this process's environment and refuse to delete unless the
+ * materializer read scope is declared, because an absent flag is not proof it is off
+ * (#2944). The sweep is the process that materialized the rows it is about to prune, so
+ * its own resolved value is the declaration; leaving it unset would turn an opted-in
+ * prune stage into a green no-op that reclaims nothing.
+ */
+export function declareMaterializationReadScopeForChildren(
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  env.C4_LOSSLESS_INGEST = String(c4LosslessIngestEnabled(env));
 }
 
 export function buildPruneDeadObservationsChildArgs(artifactPath: string): string[] {
@@ -734,6 +766,44 @@ function spawnChild(
 interface PostRunStageDelta {
   mergeDelta?: EponymousFraLabMergeDelta;
   researcherDedupeDelta?: ResearcherDedupeStageDelta;
+  urlIdentityDedupeDelta?: UrlIdentityDedupeStageDelta;
+  profileLinkHealthDelta?: ProfileLinkHealthStageDelta;
+  deadResearchWebsiteDelta?: DeadResearchWebsiteStageDelta;
+}
+
+export interface DeadResearchWebsiteStageDelta {
+  plannedClears: number;
+  cleared: number;
+  deliberatelyExcludedTotal: number;
+  demotedRepairedRows: number;
+  completed: boolean;
+  stoppedAfter: string;
+}
+
+/**
+ * The stage declares a result contract, which is what makes an unreported death loud:
+ * a stage that exits successfully without a readable, valid artifact fails the sweep
+ * rather than silently recording no delta. `completed` is carried through so a partial
+ * run reads as partial in the sweep summary rather than as a run that found nothing.
+ */
+export function parseDeadResearchWebsiteResult(artifact: unknown): PostRunStageDelta {
+  const record = artifact as Record<string, unknown> | null;
+  if (!record || typeof record !== 'object' || record.plannedClears === undefined) {
+    throw new Error('dead-research-website-clear result is missing plannedClears');
+  }
+  if (typeof record.completed !== 'boolean') {
+    throw new Error('dead-research-website-clear result is missing a completed flag');
+  }
+  return {
+    deadResearchWebsiteDelta: {
+      plannedClears: Number(record.plannedClears ?? 0),
+      cleared: Number(record.cleared ?? 0),
+      deliberatelyExcludedTotal: Number(record.deliberatelyExcludedTotal ?? 0),
+      demotedRepairedRows: Number(record.demotedRepairedRows ?? 0),
+      completed: record.completed,
+      stoppedAfter: String(record.stoppedAfter ?? ''),
+    },
+  };
 }
 
 interface PostRunStageDefinition {
@@ -766,19 +836,122 @@ export function parseResearcherDedupeResult(artifact: unknown): PostRunStageDelt
       shellsMerged: Number(record.shellsMerged ?? 0),
       roleAssignmentsRepointed: Number(record.roleAssignmentsRepointed ?? 0),
       roleAssignmentsArchivedRedundant: Number(record.roleAssignmentsArchivedRedundant ?? 0),
+      rosterChangedEntities: Number(record.rosterChangedEntities ?? 0),
+      regatedEntities: Number(record.regatedEntities ?? 0),
       profileLinksAppended: Number(attributeUnion.profileLinksAppended ?? 0),
     },
   };
 }
 
+export function parseUrlIdentityDedupeResult(artifact: unknown): PostRunStageDelta {
+  const record = artifact as Record<string, unknown> | null;
+  const delta = record?.urlIdentityDedupeDelta;
+  if (!delta || typeof delta !== 'object') {
+    throw new Error('url-identity-dedupe result is missing a urlIdentityDedupeDelta object');
+  }
+  const counts = delta as Record<string, unknown>;
+  for (const field of ['plannedGroups', 'appliedGroups', 'archivedEntities'] as const) {
+    if (typeof counts[field] !== 'number' || !Number.isFinite(counts[field] as number)) {
+      throw new Error(`url-identity-dedupe result is missing a numeric ${field}`);
+    }
+  }
+  return { urlIdentityDedupeDelta: delta as UrlIdentityDedupeStageDelta };
+}
+
+export interface ProfileLinkHealthStageDelta {
+  linksDue: number;
+  attempted: number;
+  probed: number;
+  decisiveVerdicts: number;
+  statusesWritten: number;
+  hostsCompleted: number;
+  hostsPlanned: number;
+  linksStillDue: number;
+  complete: boolean;
+}
+
+const profileLinkHealthDeltaFrom = (artifact: unknown): ProfileLinkHealthStageDelta => {
+  const result = (artifact as { result?: Record<string, unknown> } | null)?.result;
+  const coverage = (result as { coverage?: Record<string, unknown> } | undefined)?.coverage;
+  if (!result || !coverage || typeof coverage !== 'object') {
+    throw new Error('profile-link-health result is missing a coverage object');
+  }
+  for (const field of [
+    'linksDue',
+    'attempted',
+    'probed',
+    'hostsPlanned',
+    'hostsCompleted',
+  ] as const) {
+    if (typeof coverage[field] !== 'number' || !Number.isFinite(coverage[field] as number)) {
+      throw new Error(`profile-link-health coverage is missing a numeric ${field}`);
+    }
+  }
+  return {
+    linksDue: Number(coverage.linksDue),
+    attempted: Number(coverage.attempted),
+    probed: Number(coverage.probed),
+    decisiveVerdicts: Number(result.decisiveVerdicts ?? 0),
+    statusesWritten: Number(result.statusesWritten ?? 0),
+    hostsCompleted: Number(coverage.hostsCompleted),
+    hostsPlanned: Number(coverage.hostsPlanned),
+    linksStillDue: Number(coverage.linksStillDue ?? 0),
+    complete: coverage.complete === true,
+  };
+};
+
+/**
+ * A partial run must not read as a finished one.
+ *
+ * The verifier died four times in one night on the host carrying most of the corpus,
+ * and with no parse contract the stage recorded only `failed` with no numbers, so
+ * nobody could tell a run that covered 90% from one that covered nothing. Throwing on
+ * an incomplete artifact is what keeps the sweep's resume from marking the stage done:
+ * `reconstructDevelopmentStageDelta` swallows the throw and re-runs it, which is cheap
+ * now that the staleness filter makes a re-run continue rather than start over (#3303).
+ */
+export function parseProfileLinkHealthResult(artifact: unknown): PostRunStageDelta {
+  const delta = profileLinkHealthDeltaFrom(artifact);
+  if (!delta.complete) {
+    throw new Error(
+      `profile-link-health stopped after ${delta.hostsCompleted} of ${delta.hostsPlanned} hosts with ${delta.linksStillDue} links still due`,
+    );
+  }
+  return { profileLinkHealthDelta: delta };
+}
+
+/**
+ * The same artifact read without the completeness contract, for the failure path.
+ * A stage that died still has to say how far it got, or the sweep reports a bare
+ * non-zero exit and the partial progress is invisible (#3303).
+ */
+export function partialProfileLinkHealthDelta(
+  artifactPath: string,
+): ProfileLinkHealthStageDelta | undefined {
+  try {
+    return profileLinkHealthDeltaFrom(JSON.parse(fs.readFileSync(artifactPath, 'utf8')));
+  } catch {
+    return undefined;
+  }
+}
+
+// Above the corpus size (about 4,600 non-archived entities) so a sweep re-probes
+// every row rather than silently truncating, while still satisfying the lane's
+// requirement that apply mode names an explicit limit.
+const SOURCE_LINK_HEALTH_STAGE_LIMIT = 10000;
+// Above the whole `YALE_OFFICIAL` population (5,242 links on Development) so the
+// stage is bounded without being a sample: a limit that truncates would leave the
+// same links unverified every run, since the read order is stable.
+const PROFILE_LINK_HEALTH_STAGE_LIMIT = 10000;
+// Re-probe only what has aged out, which is what makes the stage resumable: the
+// candidate list is otherwise the head of a stable read order, so a run that dies
+// partway re-probes the same links next time and never reaches the tail. Matches
+// `SOURCE_LINK_HEALTH_FRESHNESS_DAYS`, the window the entity-side lane already
+// treats a stored verdict as good for, so the two halves of the served surface do
+// not disagree about how old a fact may be (#3222).
+const PROFILE_LINK_STALE_AFTER_DAYS = SOURCE_LINK_HEALTH_FRESHNESS_DAYS;
+
 export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = [
-  {
-    name: 'faculty-projection',
-    command: 'research-entity:project-faculty',
-    artifactName: 'development-faculty-projection.json',
-    buildArgs: () => ['--apply', '--confirm-faculty-projection', '--concurrency', '12'],
-    isEnabled: () => true,
-  },
   {
     name: 'researcher-dedupe',
     command: 'researchers:dedupe-accountless-shells',
@@ -814,6 +987,87 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
       `--max-apply=${options.maxUrlIdentityMerges ?? DEFAULT_URL_IDENTITY_MERGE_MAX}`,
     ],
     isEnabled: (options) => Boolean(options.mergeUrlIdentityDuplicates),
+    parseResult: parseUrlIdentityDedupeResult,
+  },
+  // The sibling lane above keys on a Yale `/lab/<x>` or `/profile/<x>` PATH, which
+  // cannot express a lab that lives on its own domain, so a pair whose served
+  // `websiteUrl` is byte-identical on a custom lab host was unreachable by every
+  // unattended stage: none of the shared `websiteUrl` identity keys among served
+  // rows matched the path lane's loader (#2581). This lane keys on the whole
+  // normalized `websiteUrl`, so it covers exactly that gap.
+  {
+    name: 'website-url-identity-dedupe',
+    command: 'research-entity:dedupe-by-pi',
+    artifactName: 'development-website-url-identity-dedupe.json',
+    buildArgs: (options) => [
+      '--website-url-only',
+      '--apply',
+      '--confirm-research-entity-pi-dedupe',
+      '--limit=10000',
+      `--max-apply=${options.maxUrlIdentityMerges ?? DEFAULT_URL_IDENTITY_MERGE_MAX}`,
+    ],
+    isEnabled: (options) => Boolean(options.mergeUrlIdentityDuplicates),
+    parseResult: parseUrlIdentityDedupeResult,
+  },
+  // Ordered before `visibility-gate` on purpose: the gate reads `sourceLinkHealth`
+  // to decide whether a cited link still counts as a way in (#2531), so probing
+  // after the gate would leave every decision one cycle stale. This is also the
+  // only scheduled re-probe of research-entity links - without it a link
+  // harvested alive rots indefinitely, which is how 41 served rows came to cite a
+  // dead website while every scraper reported success (#2539).
+  {
+    name: 'source-link-health',
+    command: 'research-homes:backfill-source-link-health',
+    artifactName: 'development-source-link-health.json',
+    buildArgs: () => [
+      '--apply',
+      '--confirm-source-link-health',
+      `--limit=${SOURCE_LINK_HEALTH_STAGE_LIMIT}`,
+    ],
+    isEnabled: () => true,
+  },
+  // The sibling of the stage above, for the other half of the served surface. The
+  // one above re-probes RESEARCH-ENTITY links; a lead's `YALE_OFFICIAL` profile
+  // link is a separate field with a separate health record, and nothing re-probed
+  // it. `canonicalProfileLinkUrl` withholds a link only when its stored
+  // `healthStatus` is `UNAVAILABLE`, correctly failing open on an unprobed one, so
+  // the gate was reading a fact that nothing kept true: 3 served rows linked
+  // students to a profile that 404s, two of them recorded HEALTHY three weeks
+  // earlier, and 416 of 3,463 links had never been probed at all (#3222).
+  //
+  // The script only ever writes a settled verdict: a 403 or a 5xx is retried and
+  // then left alone rather than recorded, so a run that draws a WAF block partway
+  // through cannot un-retire a link an earlier decisive probe already judged. That
+  // is what makes this safe to run unattended against a host as large as
+  // medicine.yale.edu, which carries most of the corpus.
+  {
+    name: 'profile-link-health',
+    command: 'researchers:verify-official-profile-links',
+    artifactName: 'development-profile-link-health.json',
+    buildArgs: () => [
+      '--apply',
+      '--confirm-profile-link-verification',
+      `--limit=${PROFILE_LINK_HEALTH_STAGE_LIMIT}`,
+      `--stale-after-days=${PROFILE_LINK_STALE_AFTER_DAYS}`,
+    ],
+    isEnabled: () => true,
+    parseResult: parseProfileLinkHealthResult,
+  },
+  // Ordered after both link-health probes on purpose: this pass CONSUMES their verdicts,
+  // so its reach is bounded by theirs. A url nothing has probed is not known dead, and a
+  // verdict that arrives after this stage runs is cleared on the next sweep rather than
+  // this one. That is why the count never settles at zero, and why it is scheduled rather
+  // than run once (#3309).
+  //
+  // The profile verifier cannot currently finish its largest host, so the ceiling on this
+  // stage is that verifier's coverage rather than anything here (#3303).
+  {
+    name: 'dead-research-website-clear',
+    command: 'research-entity:clear-dead-research-websites',
+    artifactName: 'development-dead-research-website-clear.json',
+    buildArgs: () => ['--apply', '--confirm-clear-dead-research-websites'],
+    isEnabled: () => true,
+    parseResult: parseDeadResearchWebsiteResult,
   },
   {
     name: 'visibility-gate',
@@ -1015,6 +1269,15 @@ async function runDevelopmentPostRunStages(
       } catch (contractError) {
         error = sanitizeLogValue(contractError);
         console.error(`[post-run] ${planned.name} result contract failed: ${error}`);
+      }
+    }
+    if (error && planned.name === 'profile-link-health') {
+      const partial = partialProfileLinkHealthDelta(planned.artifactPath);
+      if (partial) {
+        delta = { profileLinkHealthDelta: partial };
+        console.error(
+          `[post-run] profile-link-health covered ${partial.probed} of ${partial.attempted} links across ${partial.hostsCompleted} of ${partial.hostsPlanned} hosts; ${partial.linksStillDue} still due`,
+        );
       }
     }
     if (ctx) {
@@ -1361,6 +1624,7 @@ export async function runScraperSweep(
 ): Promise<ScraperSweepSummary> {
   const config = MODE_CONFIG[options.mode];
   validateScraperSweepEnvironment(options.mode);
+  declareMaterializationReadScopeForChildren();
   const registeredNames = buildOrchestrator()
     .list()
     .map((source) => source.name);
@@ -1610,6 +1874,7 @@ export async function runScraperSweep(
       ctx,
     );
   }
+  const producedNothingSources = sourcesThatProducedNothing(rows);
   const summary: ScraperSweepSummary = {
     mode: options.mode,
     environment: config.environment,
@@ -1621,6 +1886,8 @@ export async function runScraperSweep(
     succeeded: rows.filter((row) => row.status === 'succeeded').length,
     failed: rows.filter((row) => row.status === 'failed').length,
     notRun: rows.filter((row) => row.status === 'not-run').length,
+    producedNothing: producedNothingSources.length,
+    producedNothingSources,
     rows,
     ...(postRun ? { postRun } : {}),
   };
@@ -1638,6 +1905,10 @@ export async function runScraperSweep(
         succeeded: summary.succeeded,
         failed: summary.failed,
         notRun: summary.notRun,
+        producedNothing: summary.producedNothing,
+        ...(summary.producedNothing > 0
+          ? { producedNothingSources: summary.producedNothingSources }
+          : {}),
         postRun: summary.postRun?.status,
       },
       null,

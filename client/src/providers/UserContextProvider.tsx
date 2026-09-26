@@ -36,7 +36,7 @@ const UserContextProvider = ({ children }: PropsWithChildren) => {
         setResearchAnalyticsEnabled(false);
         dispatch({
           type: 'FETCH_FAILURE',
-          error: 'Unable to reach Yale Labs right now. Please try again in a moment.',
+          error: 'Unable to reach y/labs right now. Please try again in a moment.',
         });
       });
   }, []);

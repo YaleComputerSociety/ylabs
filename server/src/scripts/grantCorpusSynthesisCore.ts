@@ -1,3 +1,4 @@
+import type { ResearchEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 import {
@@ -136,7 +137,7 @@ export function fullDescriptionObservationFilter(input: {
 export function entityHasBetterSourcedDescription(
   fullDescriptionObservations: FullDescriptionObservationLike[],
   researchAreas: unknown,
-  entityType: unknown,
+  entityType: ResearchEntityType | undefined,
 ): boolean {
   return fullDescriptionObservations.some(
     (observation) =>

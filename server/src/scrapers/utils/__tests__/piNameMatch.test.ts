@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
+  givenNamesAgree,
   givenNamesEquivalent,
+  givenNameTokensAgree,
   givenNameVariants,
   surnameCoreKey,
   surnameFetchRegex,
@@ -142,5 +144,52 @@ describe('surnameOnlyMatch', () => {
 
   it('is absent when no faculty carries the surname', () => {
     expect(surnameOnlyMatch(0)).toBe('absent');
+  });
+});
+
+describe('givenNameTokensAgree', () => {
+  it('accepts a short form of the same given name', () => {
+    expect(givenNameTokensAgree('phil', 'philip')).toBe(true);
+    expect(givenNameTokensAgree('chris', 'christopher')).toBe(true);
+    expect(givenNameTokensAgree('dana', 'dana')).toBe(true);
+  });
+
+  it('refuses an initial or a two-letter stub standing in for a name', () => {
+    expect(givenNameTokensAgree('a', 'alison')).toBe(false);
+    expect(givenNameTokensAgree('j', 'jacqueline')).toBe(false);
+    expect(givenNameTokensAgree('li', 'lisa')).toBe(false);
+    expect(givenNameTokensAgree('ann', 'anna')).toBe(false);
+  });
+
+  it('refuses two different names that merely share a stem', () => {
+    expect(givenNameTokensAgree('robin', 'roberta')).toBe(false);
+    expect(givenNameTokensAgree('dave', 'david')).toBe(false);
+  });
+
+  it('refuses two real given names that share a long prefix', () => {
+    expect(givenNameTokensAgree('sara', 'sarah')).toBe(false);
+    expect(givenNameTokensAgree('alex', 'alexandra')).toBe(false);
+    expect(givenNameTokensAgree('marc', 'marcus')).toBe(false);
+    expect(givenNameTokensAgree('jose', 'joseph')).toBe(false);
+    expect(givenNameTokensAgree('christina', 'christine')).toBe(false);
+  });
+});
+
+describe('givenNamesAgree', () => {
+  it('agrees on a pair carried by only the short-form table', () => {
+    expect(givenNameTokensAgree('phil', 'philip')).toBe(true);
+    expect(givenNamesEquivalent('phil', 'philip')).toBe(false);
+    expect(givenNamesAgree('phil', 'philip')).toBe(true);
+  });
+
+  it('agrees on a pair carried by only the nickname variant index', () => {
+    expect(givenNameTokensAgree('katie', 'katherine')).toBe(false);
+    expect(givenNamesEquivalent('katie', 'katherine')).toBe(true);
+    expect(givenNamesAgree('katie', 'katherine')).toBe(true);
+  });
+
+  it('refuses two genuinely different given names in neither table', () => {
+    expect(givenNamesAgree('haiqun', 'hung')).toBe(false);
+    expect(givenNamesAgree('amy', 'amelia')).toBe(false);
   });
 });

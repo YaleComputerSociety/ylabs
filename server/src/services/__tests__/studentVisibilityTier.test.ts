@@ -6,7 +6,9 @@ import {
   computeResearchEntityStudentVisibility,
   enforceStudentReadyDescriptionInvariant,
   hasProfileAreaShellDuplicateRisk,
+  isStudentReadyHardBlockerReason,
   isStudentReadySoftSignalReason,
+  PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
   recordHasNoUsablePublicDescription,
   researchEntityMeetsStudentReadyDefinition,
   STUDENT_READY_SOFT_SIGNAL_REASONS,
@@ -18,7 +20,9 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
     descriptionCoherent: true,
     entityContentMatchesCard: true,
     rightLeadAttached: true,
+    citationIdentifiesSubject: true,
     notDuplicate: true,
+    hasUsableName: true,
   };
 
   it('is student_ready when every correctness field holds', () => {
@@ -29,7 +33,9 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
     ['incoherent/boilerplate description', 'descriptionCoherent'],
     ['content about a different entity', 'entityContentMatchesCard'],
     ['wrong or missing lead', 'rightLeadAttached'],
+    ['no citation about this subject', 'citationIdentifiesSubject'],
     ['duplicate/suppressed shell', 'notDuplicate'],
+    ['placeholder name', 'hasUsableName'],
   ] as const)('is blocked when %s (%s is false)', (_label, field) => {
     expect(researchEntityMeetsStudentReadyDefinition({ ...correct, [field]: false })).toBe(false);
   });
@@ -71,6 +77,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
       'duplicate_risk',
       'exact_url_duplicate_risk',
       'lab_name_org_type_mismatch',
+      'unbacked_lab_name',
       'inactive_at_yale',
       'not_undergraduate_relevant',
     ]) {
@@ -206,6 +213,287 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toEqual(
       expect.arrayContaining(['exact_url_duplicate_risk', 'duplicate_risk']),
     );
+  });
+
+  // A record stored with name "n/a" reached student_ready because nothing in the
+  // gate treated an unusable name as a correctness failure. It was masked only by
+  // a displayName graft, so withholding the graft would have served "n/a" (#2367).
+  it('holds a placeholder-named record out of student_ready', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'placeholder-named',
+        name: 'n/a',
+        slug: 'ysm-faculty-fixture-placeholder',
+        shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-placeholder/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('unusable_name');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  // Same failure with a different furniture class: measured on Development, a live
+  // row was typed LAB, named "Google Scholar" from a profile page's link section,
+  // and student_ready. It has no rival name observation, so the materializer has
+  // nothing to re-derive to and only the gate can stop the card being titled with a
+  // citation index (#2285).
+  it('holds a record named after an external scholarly platform out of student_ready', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'platform-named',
+        name: 'Google Scholar',
+        slug: 'ysm-faculty-fixture-platform-named',
+        shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-platform-named/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('unusable_name');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  // The brand wearing a research-home head noun. Nothing scraped emits this shape:
+  // the refusal leaves the bare brand on `name`, and the bare-person-name derivation
+  // then appended the naming convention's suffix, so the row served a head noun the
+  // brand arm above could no longer see. Measured on Development: 2 live rows named
+  // "Google Scholar Lab", one student_ready (#2285).
+  it('holds a record whose name is a platform brand wearing a research-home head noun', () => {
+    for (const name of ['Google Scholar Lab', 'ORCID Faculty Research']) {
+      const result = computeResearchEntityStudentVisibility({
+        entity: {
+          _id: 'platform-label-named',
+          name,
+          slug: 'ysm-faculty-fixture-platform-label-named',
+          shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+          fullDescription:
+            'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+          sourceUrls: ['https://medicine.yale.edu/profile/fixture-platform-label-named/'],
+        },
+        leadMembers: [{ userId: 'yz53', role: 'pi' }],
+        accessSignalCount: 1,
+        actionablePathwayCount: 1,
+      });
+
+      expect(result.reasons).toContain('unusable_name');
+      expect(result.tier).toBe('operator_review');
+    }
+  });
+
+  // A fourth class, on the axis no name-shape arm can reach: the value is a real
+  // laboratory's name, so every naming rule reads it as a research home, and only the
+  // shared academic host the row cites says it belongs to the organization that
+  // publishes `~user` pages for its members rather than to this one member (#2360).
+  it('holds a person-scoped record named after a shared academic host it cites', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'shared-host-named',
+        name: 'Computer Systems Lab at Yale',
+        slug: 'nih-pi-fixture-shared-host-named',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: 'Studies asynchronous circuit design and formal verification methods.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering asynchronous circuit design.',
+        websiteUrl: 'https://csl.yale.edu/',
+        sourceUrls: ['https://csl.yale.edu/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('unusable_name');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  it('leaves a member own lab name on the same shared host at student_ready', () => {
+    // The row every name-axis candidate on #2360 regressed. A gate arm that held it
+    // would take a real research home off the served surface.
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'shared-host-tenant',
+        name: 'Analog and RF Circuits (ARC) Lab at Yale',
+        slug: 'nsf-pi-fixture-shared-host-tenant',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: 'Studies analog and mm-wave circuits for wireless sensing systems.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering analog and mm-wave circuit design.',
+        websiteUrl: 'https://csl.yale.edu/~atenant/',
+        sourceUrls: ['https://csl.yale.edu/~atenant/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unusable_name');
+  });
+
+  // A third furniture class, on the axis the placeholder and platform arms do not
+  // reach: the value names a real thing that is simply not this research record, and
+  // nothing on the row derives a name from it, so there is nothing to substitute
+  // (#2373/#2507).
+  it('holds a person-scoped record named after a professorship or a host name out of student_ready', () => {
+    for (const name of ['Rutherford Grange Professor of Economics', 'ExampleHolidays.org']) {
+      const result = computeResearchEntityStudentVisibility({
+        entity: {
+          _id: 'unrecoverable-named',
+          name,
+          entityType: 'FACULTY_RESEARCH_AREA',
+          kind: 'individual',
+          slug: 'ysm-faculty-fixture-unrecoverable',
+          shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+          fullDescription:
+            'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+          sourceUrls: ['https://medicine.yale.edu/profile/fixture-unrecoverable/'],
+        },
+        leadMembers: [{ userId: 'yz53', role: 'pi' }],
+        accessSignalCount: 1,
+        actionablePathwayCount: 1,
+      });
+
+      expect(result.reasons, name).toContain('unusable_name');
+      expect(result.tier, name).toBe('operator_review');
+    }
+  });
+
+  it('keeps serving a person-scoped record whose name the serve path can repair', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'bare-person-named',
+        name: 'Robin Roster',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        slug: 'ysm-faculty-fixture-bare-person',
+        shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-bare-person/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unusable_name');
+  });
+
+  it('still serves an organization legitimately named after the chair that endowed it', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'endowed-organization',
+        name: 'Rutherford Grange Professorship Fund',
+        entityType: 'CENTER',
+        kind: 'center',
+        slug: 'center-fixture-endowed',
+        shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+        sourceUrls: ['https://medicine.yale.edu/fixture-endowed/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'director' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unusable_name');
+  });
+
+  it('still serves a real research home whose name merely contains a platform brand', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'contains-brand',
+        name: 'Onofrey Lab GitHub',
+        slug: 'ysm-faculty-fixture-contains-brand',
+        shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-contains-brand/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unusable_name');
+  });
+
+  // `limited_but_safe` is launch-eligible in the launch-trust `public-safe` mode,
+  // so labelling a nameless record that way would report it as safe to publish
+  // instead of holding it (#2367).
+  it('does not label a placeholder-named record limited_but_safe', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'placeholder-named-limited',
+        name: 'n/a',
+        slug: 'ysm-faculty-fixture-placeholder-limited',
+        shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-placeholder-limited/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.computedTier).toBe('operator_review');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  // Every sibling identity floor re-clamps after the override, and an unusable
+  // name is a hard blocker: there is nothing to title the card with, so an
+  // operator override must not be able to publish it (#2367).
+  it('holds a placeholder-named record even under an operator override to publish', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'placeholder-named-overridden',
+        name: 'n/a',
+        slug: 'ysm-faculty-fixture-placeholder-override',
+        shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-placeholder-override/'],
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('unusable_name');
+  });
+
+  it('keeps a real name that merely contains a placeholder word student_ready-eligible', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'placeholder-word-real-name',
+        name: 'Unknown Pathogens Laboratory',
+        slug: 'ysm-faculty-fixture-unknown-pathogens',
+        shortDescription: 'Studies emerging pathogens that evade routine clinical identification.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering emerging pathogens that evade routine clinical identification.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-unknown-pathogens/'],
+      },
+      leadMembers: [{ userId: 'yz55', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unusable_name');
   });
 
   it('does not require a PI lead for source-backed program-like research guidance', () => {
@@ -766,6 +1054,89 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toContain('lab_name_org_type_mismatch');
   });
 
+  it('holds a lab-titled row out of student_ready when nothing it cites names a lab', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'unbacked-lab-name-fixture',
+        name: 'Fixture Lab',
+        slug: 'unbacked-lab-name-fixture',
+        kind: 'lab',
+        entityType: 'LAB',
+        shortDescription:
+          'The Fixture Lab investigates the molecular mechanisms of metabolic disease.',
+        fullDescription:
+          'The Fixture Lab studies how metabolic pathways are regulated and how their regulation contributes to disease, using molecular biology and biochemistry.',
+        sourceUrls: [
+          'https://example.edu/profile/example-person/',
+          'https://example.edu/people-department?page=4',
+        ],
+        fieldProvenance: {
+          fullDescription: { sourceUrl: 'https://example.edu/profile/example-person/' },
+        },
+      },
+      leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.tier).not.toBe('limited_but_safe');
+    expect(result.reasons).toContain('unbacked_lab_name');
+  });
+
+  it('leaves a lab-titled row alone when one of its citations names the lab', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'backed-lab-name-fixture',
+        name: 'Fixture Lab',
+        slug: 'backed-lab-name-fixture',
+        kind: 'lab',
+        entityType: 'LAB',
+        shortDescription:
+          'The Fixture Lab investigates the molecular mechanisms of metabolic disease.',
+        fullDescription:
+          'The Fixture Lab studies how metabolic pathways are regulated and how their regulation contributes to disease, using molecular biology and biochemistry.',
+        sourceUrls: [
+          'https://example.edu/profile/example-person/',
+          'https://fixturelab.example.edu/research',
+        ],
+      },
+      leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unbacked_lab_name');
+  });
+
+  it('leaves a lab-titled row alone when a source is recorded for its name', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'named-from-source-lab-fixture',
+        name: 'Fixture Lab',
+        slug: 'named-from-source-lab-fixture',
+        kind: 'lab',
+        entityType: 'LAB',
+        shortDescription:
+          'The Fixture Lab investigates the molecular mechanisms of metabolic disease.',
+        fullDescription:
+          'The Fixture Lab studies how metabolic pathways are regulated and how their regulation contributes to disease, using molecular biology and biochemistry.',
+        sourceUrls: ['https://example.edu/profile/example-person/'],
+        fieldProvenance: {
+          name: { sourceUrl: 'https://example.edu/profile/example-person/' },
+        },
+      },
+      leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unbacked_lab_name');
+  });
+
   it('promotes a legitimately named laboratory center whose eponym appears in its own description', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
@@ -810,6 +1181,47 @@ describe('computeResearchEntityStudentVisibility', () => {
     });
 
     expect(result.reasons).not.toContain('lab_name_org_type_mismatch');
+  });
+
+  it('reports card/content agreement for an off-entity description whose name is not lab-shaped, and disagreement for the same description under a lab-shaped name (#2421)', () => {
+    const offEntityDescription = {
+      shortDescription: 'The Quarry Ridge Sleep Institute supports circadian-rhythm research.',
+      fullDescription:
+        'The Quarry Ridge Sleep Institute coordinates 19 independent principal investigators across 11 departments and administers a shared chronobiology core facility.',
+      websiteUrl: 'https://example.edu/quarry-ridge-sleep',
+      sourceUrls: ['https://example.edu/quarry-ridge-sleep/get-involved'],
+    };
+    const counts = {
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    };
+
+    const orgNamed = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-coastal-sediment-off-entity',
+        name: 'Center for Coastal Sediment Dynamics',
+        slug: 'center-coastal-sediment-off-entity',
+        entityType: 'CENTER',
+        ...offEntityDescription,
+      },
+      ...counts,
+    });
+
+    const labNamed = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-lindqvist-lab-off-entity',
+        name: 'Lindqvist Lab',
+        slug: 'center-lindqvist-lab-off-entity',
+        entityType: 'CENTER',
+        ...offEntityDescription,
+      },
+      ...counts,
+    });
+
+    expect(orgNamed.reasons).not.toContain('lab_name_org_type_mismatch');
+    expect(labNamed.reasons).toContain('lab_name_org_type_mismatch');
   });
 
   it('keeps sparse faculty-area shells with a specific profile source in operator review', () => {
@@ -2169,5 +2581,226 @@ describe('recorded closure suppresses, and its absence does not (#2284)', () => 
       hasActionEvidence: true,
     } as never);
     expect(result.tier).toBe('suppressed');
+  });
+});
+
+describe('organizational dead end: soft reason, withheld CTA (#1359 under #1802)', () => {
+  const deadEndCenter = {
+    _id: 'yse-industrial-ecology',
+    name: 'Center for Industrial Ecology',
+    slug: 'yse-industrial-ecology',
+    entityType: 'CENTER',
+    shortDescription:
+      'Studies the flows of materials and energy through industrial systems to reduce environmental burdens.',
+    fullDescription:
+      'The Center for Industrial Ecology studies the flows of materials and energy through industrial and consumer systems, developing methods that reduce environmental burdens across the whole life cycle.',
+    sourceUrls: ['https://yse.yale.edu/research/industrial-ecology'],
+  };
+
+  // #1359 wanted these held out of student_ready; #1802 then made "unknown access
+  // evidence never blocks" a product invariant, which is why the dead-end flag is
+  // wired only into `limited_but_safe`. Both are satisfied by keeping the card and
+  // refusing the unbacked CTA in the materializer, so pin the split here: any
+  // future attempt to hard-gate this reason must fail these two tests together.
+  it('still publishes the card, because unknown access evidence never blocks (#1802)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: deadEndCenter,
+      leadMembers: [],
+      accessSignalCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toContain('missing_alternate_access_path');
+  });
+
+  it('keeps the dead-end reason soft and never a hard blocker', () => {
+    expect(isStudentReadySoftSignalReason('missing_alternate_access_path')).toBe(true);
+    expect(isStudentReadyHardBlockerReason('missing_alternate_access_path')).toBe(false);
+  });
+
+  it('does not report the dead end when a live linked entity backs the exemption', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: deadEndCenter,
+      leadMembers: [],
+      accessSignalCount: 1,
+      relatedEntityAccessPathCount: 2,
+    });
+
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
+  });
+
+  it('leaves a lead-requiring entity on its own missing_lead path, not this one', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: { ...deadEndCenter, entityType: 'LAB' },
+      leadMembers: [],
+      accessSignalCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.reasons).toContain('missing_lead');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
+  });
+});
+
+describe('organizational card exemption (#1872)', () => {
+  const organizationalHomeWithNoCard = (entityType: string) => ({
+    _id: `org-no-card-${entityType.toLowerCase()}`,
+    name: 'Yale Institute for Example Coastal Systems',
+    slug: 'institute-example-coastal',
+    entityType,
+    fullDescription:
+      'The Yale Institute for Example Coastal Systems convenes faculty and students across geology, ecology, and engineering to study coastal erosion, sediment transport, and shoreline adaptation, and it runs a visiting-scholar programme and an annual field season.',
+    websiteUrl: 'https://coastal.example.yale.edu',
+    sourceUrls: ['https://coastal.example.yale.edu'],
+  });
+
+  const gateFor = (entity: Record<string, unknown>) =>
+    computeResearchEntityStudentVisibility({
+      entity,
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+  it.each(['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'])(
+    'leaves a %s with a useful body and no lab-style card free of every hard blocker',
+    (entityType) => {
+      const result = gateFor(organizationalHomeWithNoCard(entityType));
+
+      expect(result.reasons).not.toContain('missing_card_description');
+      expect(result.reasons.filter(isStudentReadyHardBlockerReason)).toEqual([]);
+    },
+  );
+
+  it.each(['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'])(
+    'publishes a %s whose card is exempt rather than holding it with nothing recorded',
+    (entityType) => {
+      const result = gateFor(organizationalHomeWithNoCard(entityType));
+
+      expect(result.tier).toBe('student_ready');
+    },
+  );
+
+  it('still holds a lab-style home on missing_card_description in the same state', () => {
+    const result = gateFor({ ...organizationalHomeWithNoCard('LAB'), entityType: 'LAB' });
+
+    expect(result.reasons).toContain('missing_card_description');
+    expect(result.tier).not.toBe('student_ready');
+  });
+
+  it('holds an exempt row whose stored card is an exclusion clause rather than publishing it', () => {
+    const result = gateFor({
+      _id: 'program-exclusion-clause-card',
+      name: 'Yale Example Coastal Systems Summer Fellowship',
+      slug: 'program-example-coastal-exclusion',
+      kind: 'program',
+      entityType: 'PROGRAM',
+      fullDescription:
+        'The Yale Example Coastal Systems Summer Fellowship places Yale College students with faculty mentors for ten weeks of paid summer research on shoreline erosion, sediment transport, and community adaptation planning.',
+      shortDescription:
+        'Applications from students who have already received overlapping grant awards will not be considered.',
+      websiteUrl: 'https://coastal.example.yale.edu/fellowship',
+      sourceUrls: ['https://coastal.example.yale.edu/fellowship'],
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('missing_card_description');
+  });
+
+  it('records the public-description invariant when the card exemption hides the card blocker', () => {
+    const result = gateFor({
+      _id: 'program-news-body',
+      name: 'Yale Example Coastal Systems Summer Fellowship',
+      slug: 'program-example-coastal',
+      kind: 'program',
+      entityType: 'PROGRAM',
+      fullDescription: 'April 3, 2024 | News | Read more about the new director announcement.',
+      shortDescription:
+        'The fellowship supports undergraduates spending a summer on coastal-systems fieldwork with a faculty mentor.',
+      websiteUrl: 'https://coastal.example.yale.edu/fellowship',
+      sourceUrls: ['https://coastal.example.yale.edu/fellowship'],
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain(PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON);
+    expect(result.reasons.filter(isStudentReadyHardBlockerReason)).not.toEqual([]);
+  });
+
+  it('still holds an organizational home that has no usable body at all', () => {
+    const result = gateFor({
+      _id: 'org-no-body',
+      name: 'Yale Center for Example Nothing',
+      slug: 'center-example-nothing',
+      entityType: 'CENTER',
+      websiteUrl: 'https://nothing.example.yale.edu',
+    });
+
+    expect(result.reasons).toContain('missing_description');
+    expect(result.tier).not.toBe('student_ready');
+  });
+});
+
+describe('source_backed_description withheld on lost description grounding (#2879)', () => {
+  const entity = (descriptionGrounding?: unknown[]) => ({
+    _id: 'grounding-fixture',
+    name: 'Ferrant Lab',
+    slug: 'ferrant-lab-fixture',
+    kind: 'lab',
+    entityType: 'LAB',
+    websiteUrl: 'https://example.edu/labs/ferrant',
+    sourceUrls: ['https://example.edu/labs/ferrant'],
+    shortDescription:
+      'Studies how ribosome stalling reshapes the proteome using profiling and proteomics.',
+    fullDescription:
+      'The Ferrant lab studies how ribosome stalling reshapes the proteome, combining ribosome profiling with targeted proteomics in yeast and mammalian cells to map which transcripts stall and why.',
+    researchAreas: [],
+    ...(descriptionGrounding ? { descriptionGrounding } : {}),
+  });
+
+  const groundingRow = (verdict: string, checkedAt: Date) => [
+    {
+      field: 'fullDescription',
+      url: 'https://example.edu/labs/ferrant',
+      verdict,
+      checkedAt,
+    },
+  ];
+
+  const visibility = (descriptionGrounding?: unknown[]) =>
+    computeResearchEntityStudentVisibility({
+      entity: entity(descriptionGrounding),
+      leadMembers: [],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+      openPostedOpportunityCount: 0,
+    });
+
+  it('records the signal when nothing has re-checked the page', () => {
+    expect(visibility().reasons).toContain('source_backed_description');
+  });
+
+  it('withholds the signal on a fresh UNREACHABLE verdict, without changing the tier', () => {
+    const withGrounding = visibility(groundingRow('UNREACHABLE', new Date()));
+
+    expect(withGrounding.reasons).not.toContain('source_backed_description');
+    expect(withGrounding.tier).toBe(visibility().tier);
+  });
+
+  it('keeps the signal on every verdict that rests on a text comparison', () => {
+    for (const verdict of ['GROUNDED', 'REWORDED', 'UNSUPPORTED', 'UNKNOWN']) {
+      expect(visibility(groundingRow(verdict, new Date())).reasons).toContain(
+        'source_backed_description',
+      );
+    }
+  });
+
+  it('keeps the signal once an UNREACHABLE verdict has aged past its horizon', () => {
+    const stale = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000);
+
+    expect(visibility(groundingRow('UNREACHABLE', stale)).reasons).toContain(
+      'source_backed_description',
+    );
   });
 });

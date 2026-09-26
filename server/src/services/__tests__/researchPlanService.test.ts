@@ -4,6 +4,7 @@ import {
   boundSavedResearchEntitySummaryText,
   normalizeResearchPlanUpdate,
   researchPlanViewFromDoc,
+  savedResearchEntitySummary,
 } from '../researchPlanService';
 import {
   MAX_RESEARCH_PLAN_CHECKLIST_ITEMS,
@@ -23,6 +24,38 @@ describe('boundSavedResearchEntitySummaryText', () => {
   it('returns undefined for empty or non-string values', () => {
     expect(boundSavedResearchEntitySummaryText('', 10)).toBeUndefined();
     expect(boundSavedResearchEntitySummaryText(42, 10)).toBeUndefined();
+  });
+});
+
+describe('savedResearchEntitySummary', () => {
+  const entity = {
+    _id: '6a05677c7c6d4fba869fbb81',
+    slug: 'dept-econ-hollis-quintrell',
+    name: 'Hollis Quintrell Faculty Research',
+    kind: 'individual',
+    entityType: 'FACULTY_RESEARCH_AREA',
+    shortDescription:
+      "Marguerite Delacroix's research examines coral reef resilience under thermal stress.",
+  };
+
+  // The saved list is a card surface, so it must read the same string browse and the
+  // detail page read. It was the last serve path still calling the sanitizer with no
+  // lead names, which made the mismatched-person-name strip a no-op there (#2240).
+  it('runs the lead-name-aware guard so a saved card matches the browse card (#2240)', () => {
+    expect(savedResearchEntitySummary(entity, ['Hollis Quintrell']).shortDescription).toBe(
+      'This research examines coral reef resilience under thermal stress.',
+    );
+  });
+
+  it('keeps a saved card whose possessive names the row own lead (#2240)', () => {
+    const ownLead = {
+      ...entity,
+      shortDescription:
+        "Professor Quintrell's research examines coral reef resilience under thermal stress.",
+    };
+    expect(savedResearchEntitySummary(ownLead, ['Hollis Quintrell']).shortDescription).toBe(
+      ownLead.shortDescription,
+    );
   });
 });
 

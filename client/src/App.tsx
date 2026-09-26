@@ -43,7 +43,7 @@ const RouteFade = ({ children }: { children: ReactNode }) => {
 
 const App = () => {
   return (
-    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <Router>
       <ScrollToTop />
       <ConfigContextProvider>
         <FellowshipSearchContextProvider>
@@ -51,7 +51,7 @@ const App = () => {
             <div className="flex flex-col h-full overflow-hidden">
               <a
                 href="#main-content"
-                className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-brand focus:px-4 focus:py-2 focus:text-white focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-overlay focus:bg-brand focus:px-4 focus:py-2 focus:text-white focus:shadow-yr-overlay yr-focus-ring"
               >
                 Skip to main content
               </a>

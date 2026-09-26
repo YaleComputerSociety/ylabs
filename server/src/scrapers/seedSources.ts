@@ -17,7 +17,7 @@ import {
 } from '../scripts/scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { getSourceCoverage } from './sourceCoverageRegistry';
-import { RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES } from './retiredPaperPipeline';
+import { RETIRED_SOURCE_NAMES } from './sourceDispatch';
 import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -146,6 +146,23 @@ export function writeSeedSourcesOutput(report: unknown, output?: string): void {
 
 const SOURCES: SourceSeed[] = [
   {
+    // Not a scraper: the materializer's own inference from a row's stored prose,
+    // through the canonical vocabulary and its aliases. It is seeded because a
+    // provenance `sourceName` that resolves to no Source leaves the attribution
+    // dangling for every reader that joins on it, which is what
+    // `provenanceSourceNamesResolve` pins. `event` cadence because it runs when a
+    // row is materialized rather than on a crawl schedule, and the weight sits below
+    // every lane that READ an area off a page: inferring a facet from prose is
+    // weaker evidence than a source that named it (#3401).
+    name: 'description-derived-research-area',
+    displayName: 'Description-derived research area',
+    description:
+      "Research-area chips inferred from a research entity's own stored name and description via the canonical research-area vocabulary, rather than read from a page that named the area.",
+    baseUrl: '',
+    defaultWeight: 0.4,
+    cadence: 'event',
+  },
+  {
     name: 'manual-admin-edit',
     displayName: 'Manual admin edit',
     description: 'Authoritative override applied when an admin edits an entity in the dashboard.',
@@ -161,15 +178,6 @@ const SOURCES: SourceSeed[] = [
     baseUrl: '',
     defaultWeight: 1.0,
     isManualLock: true,
-    cadence: 'event',
-  },
-  {
-    name: 'ylabs-listing',
-    displayName: 'YLabs listing',
-    description:
-      'Legacy YLabs posted research role row materialized into PostedOpportunity records.',
-    baseUrl: '',
-    defaultWeight: 0.9,
     cadence: 'event',
   },
   {
@@ -198,6 +206,15 @@ const SOURCES: SourceSeed[] = [
     baseUrl: 'https://directory.yale.edu',
     defaultWeight: 0.9,
     cadence: 'nightly',
+  },
+  {
+    name: 'directory-alias-resolution',
+    displayName: 'Directory alias resolution',
+    description:
+      "Maps a roster's friendly email alias (first.last) to the netid the Yale directory holds for that person, so an alias-keyed observation can join to a person. Emits email only, keyed by the real netid, which is the shape the alias resolver already reads. Kept apart from yale-directory so the mapping can be audited and rolled back without touching the directory lane's own assertions.",
+    baseUrl: 'https://yalies.io',
+    defaultWeight: 0.9,
+    cadence: 'monthly',
   },
   {
     name: 'ysm-atoz-index',
@@ -261,6 +278,33 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'bbs-research-track',
+    displayName: 'BBS research-track directories',
+    description:
+      "Yale Combined Program in Biological and Biomedical Sciences nine research-track directories as curated topical evidence for biomedical PIs. Each track slug maps to a research-area label grafted onto the PI's existing canonical research home, cited to that PI's own BBS profile page; the track listing roots are crawl seeds only. Fails closed on contact.",
+    baseUrl: 'https://medicine.yale.edu/bbs/people/',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
+  },
+  {
+    name: 'department-research-areas',
+    displayName: 'Department research-overview pages',
+    description:
+      "Yale FAS science and quantitative department research-overview pages as curated topical evidence for their faculty, the FAS analogue of bbs-research-track. Each curated theme heading maps to a research-area label grafted onto the existing home of every faculty member listed under it, cited to that faculty member's own profile URL. Grafts topics only onto homes that uniquely resolve; never mints an entity and never emits contact.",
+    baseUrl: '',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
+  },
+  {
+    name: 'lab-microsite-description-llm',
+    displayName: 'Lab microsite LLM (description)',
+    description:
+      "LLM extraction over a research home's own microsite for research focus, questions, methods, and conservative research areas. Where the site declares itself a laboratory it also emits that record's branded name and its entityType/kind. Must not create access, route, or opportunity evidence.",
+    baseUrl: '',
+    defaultWeight: 0.6,
+    cadence: 'weekly',
+  },
+  {
     name: 'official-profile-pi-backfill',
     displayName: 'Official profile PI backfill',
     description:
@@ -268,14 +312,6 @@ const SOURCES: SourceSeed[] = [
     baseUrl: 'https://medicine.yale.edu/profile/',
     defaultWeight: 0.95,
     cadence: 'manual-repair',
-  },
-  {
-    name: 'lab-microsite-llm',
-    displayName: 'Lab microsite LLM extractor',
-    description: 'LLM extracts description, members, openness, undergrad fields from lab pages.',
-    baseUrl: '',
-    defaultWeight: 0.6,
-    cadence: 'weekly',
   },
   {
     name: 'center-affiliation-llm',
@@ -403,6 +439,15 @@ const SOURCES: SourceSeed[] = [
     enabled: false,
   },
   {
+    name: 'lab-site-lead-verification',
+    displayName: 'Lab-site lead verification',
+    description:
+      "Reads each research home's own website and records whether it names the researcher attached as lead. Writes a verdict only; never attaches, detaches, or suppresses a lead.",
+    baseUrl: '',
+    defaultWeight: 0.95,
+    cadence: 'weekly',
+  },
+  {
     name: 'centers-institutes-index',
     displayName: 'Yale centers/institutes index',
     description:
@@ -430,6 +475,96 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'lab-site-declared-lead-llm',
+    displayName: 'Lab site declared lead (LLM)',
+    description:
+      "LLM extraction over a lab site's own pages for the lead it declares for itself, so a lab website harvested off somebody else's profile is re-homed to the researcher who runs it rather than dropped.",
+    baseUrl: '',
+    defaultWeight: 0.9,
+    cadence: 'monthly',
+  },
+  {
+    name: 'lead-person-name-research-record',
+    displayName: 'Lead person name as a research-record name',
+    description:
+      "The person-scoped research-record name derived from the single lead the row's own PI edge names, for a row whose stored name asserts a laboratory that no observation asserts and no lab site backs. Emits name and displayName only. Carries no sourceUrl, because the evidence is the lead's own stored record rather than a page.",
+    baseUrl: '',
+    defaultWeight: 0.6,
+    cadence: 'monthly',
+  },
+  {
+    name: 'lead-pi-school-inheritance',
+    displayName: 'Lead PI org-unit inheritance',
+    description:
+      "The school and department a research home's own single lead PI already carries, delivered to a row that states neither. Emits school and departments only. Carries no sourceUrl, because the evidence is the lead's stored appointment record rather than a page, and citing the row's own profile link would attribute the claim to a page that does not make it.",
+    baseUrl: '',
+    defaultWeight: 0.6,
+    cadence: 'monthly',
+  },
+  {
+    name: 'school-profile-host-backfill',
+    displayName: 'School inheritance from a profile host',
+    description:
+      "The school implied by the host of a research home's own cited profile URL, delivered to a row that states none. Emits school, schools and departments only. DERIVED because a hostname places a page rather than stating an appointment.",
+    baseUrl: '',
+    defaultWeight: 0.65,
+    cadence: 'monthly',
+  },
+  {
+    name: 'school-host-mismatch-backfill',
+    displayName: 'School correction on a host mismatch',
+    description:
+      "Corrects a stored school that the row's own cited host contradicts, for the disjoint schools where a host is decisive. Emits school, schools and departments only.",
+    baseUrl: '',
+    defaultWeight: 0.65,
+    cadence: 'monthly',
+  },
+  {
+    name: 'coverage-synthesis-llm',
+    displayName: 'Coverage synthesis (LLM)',
+    description:
+      "LLM synthesis over a research home's already-harvested evidence to fill a coverage gap it can support. Emits description fields only, never access, route or opportunity evidence.",
+    baseUrl: '',
+    defaultWeight: 0.5,
+    cadence: 'monthly',
+  },
+  {
+    name: 'nih-nsf-pi-center-lab-conflation-repair',
+    displayName: 'NIH/NSF PI-centre-lab conflation repair',
+    description:
+      'Separates a grant-derived shell that conflated a principal investigator, a centre and a laboratory into one row. Records the corrected identity it can support from the grant record itself.',
+    baseUrl: '',
+    defaultWeight: 0.6,
+    cadence: 'monthly',
+  },
+  {
+    name: 'visibility-repair-queue',
+    displayName: 'Visibility repair queue',
+    description:
+      'Values the visibility repair queue can support from evidence a row already carries, recorded when it clears a release blocker. Emits sourceUrls and description fields only.',
+    baseUrl: '',
+    defaultWeight: 0.6,
+    cadence: 'monthly',
+  },
+  {
+    name: 'lab-site-search-discovery',
+    displayName: 'Lab site search discovery',
+    description:
+      "Web search for a researcher's own lab, research-group, or personal academic homepage, adopted only when the page itself identifies that researcher's research unit. Emits websiteUrl and sourceUrls.",
+    baseUrl: '',
+    defaultWeight: 0.75,
+    cadence: 'monthly',
+  },
+  {
+    name: 'lab-site-type-probe',
+    displayName: 'Lab site type probe',
+    description:
+      "Deterministic read of a research entity's own cited website for whether that site declares itself a laboratory, so a person-scoped row sitting on a lab site stops being typed and labelled faculty research. Emits entityType and kind only.",
+    baseUrl: '',
+    defaultWeight: 0.85,
+    cadence: 'monthly',
+  },
+  {
     name: 'research-area-source-extractor',
     displayName: 'Research-area source extractor',
     description:
@@ -440,6 +575,19 @@ const SOURCES: SourceSeed[] = [
   },
 ];
 
+/**
+ * The sources whose value is an operator decision rather than evidence, derived from
+ * the seeds rather than restated, so a new manual source cannot be missed by a reader.
+ *
+ * A repair must never reverse one of these. `manual-data-repair` and
+ * `manual-data-correction` are deliberately NOT here: those are a repair script's own
+ * prior write, and treating them as operator intent would stop any later repair from
+ * correcting a row an earlier one touched.
+ */
+export const OPERATOR_AUTHORED_SOURCE_NAMES: readonly string[] = SOURCES.filter(
+  (seed) => seed.isManualLock,
+).map((seed) => seed.name);
+
 const SOURCES_WITH_COVERAGE: SourceSeed[] = SOURCES.map((seed) => ({
   ...seed,
   coverage: getSourceCoverage(seed.name),
@@ -447,14 +595,7 @@ const SOURCES_WITH_COVERAGE: SourceSeed[] = SOURCES.map((seed) => ({
 
 export const ACTIVE_SOURCE_NAMES = SOURCES_WITH_COVERAGE.map((source) => source.name);
 
-export const RETIRED_SOURCE_NAMES = [
-  'yale-course-catalog',
-  'apify-google-scholar-bootstrap',
-  'apify-google-scholar',
-  'student-decision-llm',
-  'external-fellowship-llm-scraper',
-  ...RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES,
-];
+export { RETIRED_SOURCE_NAMES };
 
 export async function seedSources(options: SeedSourcesCliOptions) {
   const sources: SeedSourceRow[] = [];

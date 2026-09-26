@@ -15,7 +15,7 @@ describe('applyResearchEntityDedupeMergeGroup saved-plan relink', () => {
     await mongoose.connection
       .db!.collection('research_plans')
       .createIndex({ accountId: 1, 'target.kind': 1, 'target.id': 1 }, { unique: true });
-  });
+  }, 60000);
 
   afterAll(async () => {
     await mongoose.disconnect();
@@ -104,7 +104,7 @@ describe('applyResearchEntityDedupeMergeGroup field-merge carry', () => {
   beforeAll(async () => {
     replSet2 = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet2.getUri());
-  });
+  }, 60000);
 
   afterAll(async () => {
     await mongoose.disconnect();
@@ -197,7 +197,7 @@ describe('org-name dedupe archives the shell twin and redirects it to the surviv
     await mongoose.connection
       .db!.collection('research_plans')
       .createIndex({ accountId: 1, 'target.kind': 1, 'target.id': 1 }, { unique: true });
-  });
+  }, 60000);
 
   afterAll(async () => {
     await mongoose.disconnect();

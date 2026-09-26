@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://yalelabs.io/schemas/model-inventory-recovery-manifest-v1.json",
-  "title": "Yale Research model inventory recovery manifest",
+  "title": "y/labs model inventory recovery manifest",
   "type": "object",
   "additionalProperties": false,
   "required": [

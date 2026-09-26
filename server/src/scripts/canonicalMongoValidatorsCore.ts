@@ -75,6 +75,93 @@ export interface CanonicalMongoValidatorRollbackItem {
   command: Record<string, unknown>;
 }
 
+export type CanonicalValidatorPresenceState =
+  | 'collection-missing'
+  | 'validator-absent'
+  | 'validator-drifted';
+
+export interface CanonicalValidatorDriftFinding {
+  collectionName: string;
+  state: CanonicalValidatorPresenceState;
+  reasons: CanonicalMongoValidatorPlanReason[];
+}
+
+function storesJsonSchemaValidator(current: CurrentMongoCollectionValidation | undefined): boolean {
+  const validator = current?.validator;
+  if (!validator || typeof validator !== 'object') return false;
+  return Object.hasOwn(validator as Record<string, unknown>, '$jsonSchema');
+}
+
+/**
+ * A declaration is not presence. A whole-collection copy carries no collection
+ * options, so a promotion can leave a canonical collection with no
+ * `$jsonSchema` at all while the registry still declares one; that is the
+ * `validator-absent` state, reported separately from ordinary drift.
+ */
+export function findCanonicalValidatorDrift(
+  plan: readonly CanonicalMongoValidatorPlanItem[],
+  currentCollections: readonly CurrentMongoCollectionValidation[],
+): CanonicalValidatorDriftFinding[] {
+  const currentByName = new Map(
+    currentCollections.map((current) => [current.collectionName, current] as const),
+  );
+
+  return plan
+    .filter((item) => item.action !== 'noop')
+    .map((item) => {
+      const current = currentByName.get(item.collectionName);
+      const state: CanonicalValidatorPresenceState = !current?.exists
+        ? 'collection-missing'
+        : storesJsonSchemaValidator(current)
+          ? 'validator-drifted'
+          : 'validator-absent';
+      return { collectionName: item.collectionName, state, reasons: [...item.reasons] };
+    });
+}
+
+export type CanonicalMongoValidatorApplyFailureKind = 'missing-collmod-grant' | 'command-rejected';
+
+export interface CanonicalMongoValidatorApplyFailureFacts {
+  kind: CanonicalMongoValidatorApplyFailureKind;
+  failedCollection: string;
+  appliedCollections: readonly string[];
+  unattemptedCollections: readonly string[];
+  /**
+   * Collections whose planned write is known to be refused. A missing `collMod`
+   * grant is a database-wide privilege gap rather than a per-collection one, so
+   * every remaining planned collMod is refused too, not merely unattempted.
+   */
+  refusedCollections: readonly string[];
+}
+
+const MISSING_COLLMOD_GRANT_PATTERN = /not (?:allowed|authorized) to do action \[?collMod\]?/i;
+
+export function isMissingCollModGrantFailure(failureReason: string): boolean {
+  return MISSING_COLLMOD_GRANT_PATTERN.test(failureReason);
+}
+
+export function describeCanonicalMongoValidatorApplyFailure(args: {
+  failureReason: string;
+  failedCollection: string;
+  failedAction: CanonicalMongoValidatorPlanAction;
+  appliedCollections: readonly string[];
+  unattemptedCollections: readonly string[];
+  unattemptedCollModCollections: readonly string[];
+}): CanonicalMongoValidatorApplyFailureFacts {
+  const missingGrant =
+    args.failedAction === 'collMod' && isMissingCollModGrantFailure(args.failureReason);
+
+  return {
+    kind: missingGrant ? 'missing-collmod-grant' : 'command-rejected',
+    failedCollection: args.failedCollection,
+    appliedCollections: [...args.appliedCollections],
+    unattemptedCollections: [...args.unattemptedCollections],
+    refusedCollections: missingGrant
+      ? [args.failedCollection, ...args.unattemptedCollModCollections]
+      : [args.failedCollection],
+  };
+}
+
 const MONGO_COLLECTION_NAME_PATTERN = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 const MONGO_FIELD_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 

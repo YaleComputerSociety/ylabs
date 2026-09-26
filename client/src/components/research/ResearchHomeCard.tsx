@@ -6,6 +6,7 @@ import {
   buildResearchHomeContextLine,
   type ResearchCluster,
 } from '../../utils/researchDiscoveryAdapters';
+import ArrowRightIcon from '../shared/ArrowRightIcon';
 import { formatTitleCaseLabel } from '../../utils/displayText';
 import { sanitizeResearchEntityCopy } from '../../utils/researchEntityCopy';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/url';
@@ -22,17 +23,6 @@ interface ResearchHomeCardProps {
 
 const countLabel = (count: number, singular: string, plural: string): string =>
   `${count} ${count === 1 ? singular : plural}`;
-
-const contextLabelClass = (state?: string): string => {
-  switch (state) {
-    case 'complete':
-      return 'yr-pill-green';
-    case 'sparse':
-      return 'yr-pill-gold';
-    default:
-      return '';
-  }
-};
 
 const isInteractiveElement = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement && Boolean(target.closest('a, button'));
@@ -153,7 +143,7 @@ const ResearchHomeCard = ({
   const activateCard = () => {
     if (primaryProfileUrl) {
       onOpen?.(home);
-      navigate(primaryProfileUrl);
+      void navigate(primaryProfileUrl);
       return;
     }
 
@@ -166,7 +156,7 @@ const ResearchHomeCard = ({
 
   return (
     <article
-      className={`yr-card-interactive yr-fade-in rounded-md ${
+      className={`yr-card-interactive yr-fade-in flex h-full flex-col rounded-card ${
         isCompact ? 'p-3 sm:p-4' : 'p-4'
       } ${isCardClickable ? 'cursor-pointer' : ''}`}
       onClick={activateCardFromClick}
@@ -176,12 +166,12 @@ const ResearchHomeCard = ({
       <div className="flex flex-col gap-2">
         <div className="flex items-start justify-between gap-3">
           <h3
-            className={`${isCompact ? 'text-base' : 'text-lg'} min-w-0 font-semibold leading-tight text-gray-950`}
+            className={`${isCompact ? 'text-base' : 'text-lg'} min-w-0 font-semibold leading-tight text-ink`}
           >
             {singleLinkedEntity ? (
               <Link
                 to={`/research/${safeRouteSegment(singleLinkedEntity.slug)}`}
-                className="yr-link yr-focus-ring rounded-sm"
+                className="yr-link yr-focus-ring rounded-control"
                 onClick={(event) => {
                   event.stopPropagation();
                   onOpen?.(home);
@@ -196,18 +186,18 @@ const ResearchHomeCard = ({
         </div>
 
         {contextLine && (
-          <p className="text-xs font-medium leading-relaxed text-gray-500">{contextLine}</p>
+          <p className="text-xs font-medium leading-relaxed text-muted">{contextLine}</p>
         )}
 
         {leadName && (
-          <p className="text-xs font-medium leading-relaxed text-gray-600">
+          <p className="text-xs font-medium leading-relaxed text-muted">
             {leadRole}:{' '}
             {leadProfileLink?.external ? (
               <a
                 href={leadProfileLink.href}
                 target="_blank"
                 rel={EXTERNAL_LINK_REL}
-                className="yr-link yr-focus-ring rounded-sm"
+                className="yr-link yr-focus-ring rounded-control"
                 onClick={(event) => event.stopPropagation()}
               >
                 {leadName}
@@ -215,7 +205,7 @@ const ResearchHomeCard = ({
             ) : leadProfileLink ? (
               <Link
                 to={leadProfileLink.href}
-                className="yr-link yr-focus-ring rounded-sm"
+                className="yr-link yr-focus-ring rounded-control"
                 onClick={(event) => event.stopPropagation()}
               >
                 {leadName}
@@ -231,7 +221,7 @@ const ResearchHomeCard = ({
             {qualityLabels.map((label) => (
               <span
                 key={label}
-                className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-900"
+                className="rounded-card border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-900"
               >
                 {label}
               </span>
@@ -241,68 +231,59 @@ const ResearchHomeCard = ({
 
         <div className="flex flex-wrap gap-1.5">
           {metadataBadges.map((label) => (
-            <span key={label} className="yr-pill yr-pill-blue min-h-0 rounded px-2 py-0.5">
+            <span key={label} className="yr-pill yr-pill-blue yr-pill-compact px-2 py-0.5">
               {formatTitleCaseLabel(label)}
             </span>
           ))}
           {alwaysVisibleTopicBadges.map((label) => (
-            <span key={label} className="yr-pill yr-pill-blue min-h-0 rounded px-2 py-0.5">
+            <span key={label} className="yr-pill yr-pill-blue yr-pill-compact px-2 py-0.5">
               {formatTitleCaseLabel(label)}
             </span>
           ))}
           {desktopOnlyTopicBadges.map((label) => (
             <span
               key={label}
-              className="yr-pill yr-pill-blue hidden min-h-0 rounded px-2 py-0.5 sm:inline-flex"
+              className="yr-pill yr-pill-blue hidden yr-pill-compact px-2 py-0.5 sm:inline-flex"
             >
               {formatTitleCaseLabel(label)}
             </span>
           ))}
           {mobileMoreCount > 0 && (
-            <span className="yr-pill min-h-0 rounded px-2 py-0.5 sm:hidden">
+            <span className="yr-pill yr-pill-compact px-2 py-0.5 sm:hidden">
               +{mobileMoreCount} more
             </span>
           )}
           {desktopMoreCount > 0 && !isCompact && (
-            <span className="yr-pill hidden min-h-0 rounded px-2 py-0.5 sm:inline-flex">
+            <span className="yr-pill hidden yr-pill-compact px-2 py-0.5 sm:inline-flex">
               +{desktopMoreCount} more
             </span>
           )}
-          {!isCompact && home.contextLabel && (
-            <span
-              className={`yr-pill min-h-0 rounded px-2 py-0.5 ${contextLabelClass(home.contextState)}`}
-            >
+          {home.contextState === 'sparse' && home.contextLabel && (
+            <span className="yr-pill yr-pill-gold yr-pill-compact px-2 py-0.5">
               {home.contextLabel}
             </span>
           )}
         </div>
 
-        <p className={`${isCompact ? 'line-clamp-4' : ''} text-sm leading-relaxed text-gray-600`}>
+        <p className={`${isCompact ? 'line-clamp-4' : ''} text-sm leading-relaxed text-muted`}>
           {description}
         </p>
-
-        {!isCompact && home.matchReason && (
-          <p className="text-sm leading-relaxed text-gray-700">
-            <span className="font-semibold text-gray-950">Why it might fit:</span>{' '}
-            {home.matchReason}
-          </p>
-        )}
       </div>
 
       {!isCompact && (
-        <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
           {home.entityCount > 1 && (
-            <span className="yr-pill min-h-0 rounded px-2 py-1">
-              {countLabel(home.entityCount, 'research home', 'research homes')}
+            <span className="yr-pill yr-pill-compact px-2 py-1">
+              {countLabel(home.entityCount, 'research entry', 'research entries')}
             </span>
           )}
           {home.peopleCount > 1 && (
-            <span className="yr-pill min-h-0 rounded px-2 py-1">
+            <span className="yr-pill yr-pill-compact px-2 py-1">
               {countLabel(home.peopleCount, 'contact', 'contacts')}
             </span>
           )}
           {home.pathwayCount > 1 && (
-            <span className="yr-pill min-h-0 rounded px-2 py-1">
+            <span className="yr-pill yr-pill-compact px-2 py-1">
               {countLabel(home.pathwayCount, 'next step', 'next steps')}
             </span>
           )}
@@ -332,7 +313,7 @@ const ResearchHomeCard = ({
             </span>
           )}
           {secondaryAccessSignals.slice(0, isCompact ? 2 : undefined).map((badge) => (
-            <span key={badge} className="yr-pill yr-pill-green min-h-0 rounded px-2 py-0.5">
+            <span key={badge} className="yr-pill yr-pill-green yr-pill-compact px-2 py-0.5">
               {accessSignalLabel(badge)}
             </span>
           ))}
@@ -341,14 +322,14 @@ const ResearchHomeCard = ({
 
       {home.entities.length > 0 && !singleLinkedEntity && !isCompact && (
         <div className="mt-4 border-t border-[var(--yr-line)] pt-3">
-          <p className="yr-kicker mb-2 text-[0.68rem]">Research homes</p>
+          <p className="yr-kicker mb-2 text-[0.68rem]">Research entries</p>
           <div className="flex flex-col gap-1">
             {homeEntities.map((entity) => {
               if (!entity.slug) {
                 return (
                   <span
                     key={entity.id || entity.label}
-                    className="text-sm text-gray-700"
+                    className="text-sm text-ink-soft"
                     title="Research profile link is not available yet."
                   >
                     {entity.label}
@@ -374,7 +355,7 @@ const ResearchHomeCard = ({
       {showEvidenceFooter && (
         <div className="mt-4 border-t border-[var(--yr-line)] pt-3">
           <p className="yr-kicker mb-2 text-[0.68rem]">Evidence</p>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
             {primaryEvidenceUrl && (
               <a
                 href={primaryEvidenceUrl}
@@ -391,25 +372,22 @@ const ResearchHomeCard = ({
       )}
 
       {primaryLinkedEntity ? (
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-auto flex flex-wrap gap-2 border-t border-line pt-3">
           <Link
             to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
-            className={`yr-focus-ring inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-semibold transition active:scale-[0.98] ${
-              isCompact
-                ? 'border border-[var(--yr-blue)] bg-[var(--yr-blue)] text-white hover:bg-brand-navy'
-                : 'border border-blue-200 bg-[var(--yr-panel)] text-[var(--yr-blue)] hover:border-blue-300 hover:bg-[var(--yr-blue-soft)]'
-            }`}
+            className="yr-focus-ring yr-pressable inline-flex min-h-[44px] flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
             onClick={(event) => event.stopPropagation()}
           >
-            View profile →
+            View profile
+            <ArrowRightIcon />
           </Link>
         </div>
       ) : !primaryLinkedEntity && onSelect ? (
-        <div className="mt-4">
+        <div className="mt-auto pt-4">
           <button
             type="button"
             onClick={() => onSelect(home.label)}
-            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition active:scale-[0.98] hover:border-blue-300 hover:bg-[var(--yr-blue-soft)]"
+            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-blue-soft)]"
           >
             Search this area
           </button>

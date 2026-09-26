@@ -11,8 +11,10 @@ import {
 } from './operatorDatabaseEnvironment';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
-  STALE_ACCESS_SIGNAL_FIELDS,
+  RETIRED_ACCESS_SIGNAL_INDEX_NAMES,
+  RETIRED_ACCESS_SIGNAL_PATHS,
   assertStaleAccessSignalFieldsFullyUnset,
+  assertStaleAccessSignalIndexDropAllowed,
 } from './retireStaleAccessSignalFieldsCore';
 
 dotenv.config();
@@ -87,8 +89,13 @@ function assertConnectedToDevelopment(mongoUrl: string | undefined): void {
 
 async function countStaleFieldPresence(db: MongoDb): Promise<number> {
   return db.collection(COLLECTION).countDocuments({
-    $or: STALE_ACCESS_SIGNAL_FIELDS.map((field) => ({ [field]: { $exists: true } })),
+    $or: RETIRED_ACCESS_SIGNAL_PATHS.map((field) => ({ [field]: { $exists: true } })),
   });
+}
+
+async function findRetiredIndexNames(db: MongoDb): Promise<string[]> {
+  const present = new Set((await db.collection(COLLECTION).indexes()).map((index) => index.name));
+  return RETIRED_ACCESS_SIGNAL_INDEX_NAMES.filter((name) => present.has(name));
 }
 
 export interface RetireStaleAccessSignalFieldsResult {
@@ -98,6 +105,9 @@ export interface RetireStaleAccessSignalFieldsResult {
   presentAfter: number;
   matched: number;
   modified: number;
+  indexNames: readonly string[];
+  indexesPresentBefore: string[];
+  indexesDropped: string[];
 }
 
 export async function retireStaleAccessSignalFields(options: {
@@ -108,15 +118,17 @@ export async function retireStaleAccessSignalFields(options: {
   if (!db) throw new Error('MongoDB connection is not initialized');
 
   const presentBefore = await countStaleFieldPresence(db);
+  const indexesPresentBefore = await findRetiredIndexNames(db);
   let matched = 0;
   let modified = 0;
+  const indexesDropped: string[] = [];
 
   if (options.apply && presentBefore > 0) {
-    const unset = Object.fromEntries(STALE_ACCESS_SIGNAL_FIELDS.map((field) => [field, '']));
+    const unset = Object.fromEntries(RETIRED_ACCESS_SIGNAL_PATHS.map((field) => [field, '']));
     const result = await db
       .collection(COLLECTION)
       .updateMany(
-        { $or: STALE_ACCESS_SIGNAL_FIELDS.map((field) => ({ [field]: { $exists: true } })) },
+        { $or: RETIRED_ACCESS_SIGNAL_PATHS.map((field) => ({ [field]: { $exists: true } })) },
         { $unset: unset },
       );
     matched = result.matchedCount || 0;
@@ -124,15 +136,25 @@ export async function retireStaleAccessSignalFields(options: {
   }
 
   const presentAfter = await countStaleFieldPresence(db);
-  if (options.apply) assertStaleAccessSignalFieldsFullyUnset(presentAfter);
+  if (options.apply) {
+    assertStaleAccessSignalFieldsFullyUnset(presentAfter);
+    for (const indexName of indexesPresentBefore) {
+      assertStaleAccessSignalIndexDropAllowed(presentAfter);
+      await db.collection(COLLECTION).dropIndex(indexName);
+      indexesDropped.push(indexName);
+    }
+  }
 
   return {
     mode: options.apply ? 'apply' : 'dry-run',
-    fields: STALE_ACCESS_SIGNAL_FIELDS,
+    fields: RETIRED_ACCESS_SIGNAL_PATHS,
     presentBefore,
     presentAfter,
     matched,
     modified,
+    indexNames: RETIRED_ACCESS_SIGNAL_INDEX_NAMES,
+    indexesPresentBefore,
+    indexesDropped,
   };
 }
 

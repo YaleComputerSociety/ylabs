@@ -22,6 +22,6 @@ describe('LoginError', () => {
     expect(screen.getByRole('heading', { name: /we couldn't complete sign in/i })).toBeTruthy();
     const retryLink = screen.getByRole('link', { name: /try yale cas again/i });
     expect(retryLink.getAttribute('href')).toContain('/api/cas');
-    expect(screen.getByRole('link', { name: /return to yale research/i })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /return to y\/labs/i })).toBeTruthy();
   });
 });

@@ -1,11 +1,25 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Fellowship } from '../../models/fellowship';
 import { Observation } from '../../models/observation';
+import { ScrapeRun } from '../../models/scrapeRun';
 import { materializeEntity } from '../entityMaterializer';
+import { resetInvalidatedScrapeRunCache } from '../invalidatedScrapeRuns';
+
+// These cases mock the observation read rather than connecting to a database, so the
+// invalidated-run fence's own lookup has to be mocked too or it waits on a
+// connection that never arrives (#2469). Returning no invalidated runs is the
+// no-quarantine case these tests are about.
+beforeEach(() => {
+  resetInvalidatedScrapeRunCache();
+  vi.spyOn(ScrapeRun, 'find').mockReturnValue({
+    lean: vi.fn().mockResolvedValue([]),
+  } as any);
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
+  resetInvalidatedScrapeRunCache();
 });
 
 describe('fellowship materialization', () => {

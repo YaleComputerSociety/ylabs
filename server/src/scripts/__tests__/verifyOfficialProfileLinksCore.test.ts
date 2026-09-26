@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  decisiveVerdictCount,
   isDecisivelyDeadProbe,
   isDecisivelyLiveProbe,
+  isProfileLinkDueForVerification,
   isRetryableProbe,
-  givenNameTokensAgree,
   officialProfileLinkCandidates,
   officialProfileLinkHost,
   probeRetryDelayMs,
+  profileLinkVerificationCoverage,
   profileSlugNamesPerson,
   settledHealthStatusFor,
   storedHealthStatusFor,
@@ -201,34 +203,6 @@ describe('profileSlugNamesPerson', () => {
   });
 });
 
-describe('givenNameTokensAgree', () => {
-  it('accepts a short form of the same given name', () => {
-    expect(givenNameTokensAgree('phil', 'philip')).toBe(true);
-    expect(givenNameTokensAgree('chris', 'christopher')).toBe(true);
-    expect(givenNameTokensAgree('dana', 'dana')).toBe(true);
-  });
-
-  it('refuses an initial or a two-letter stub standing in for a name', () => {
-    expect(givenNameTokensAgree('a', 'alison')).toBe(false);
-    expect(givenNameTokensAgree('j', 'jacqueline')).toBe(false);
-    expect(givenNameTokensAgree('li', 'lisa')).toBe(false);
-    expect(givenNameTokensAgree('ann', 'anna')).toBe(false);
-  });
-
-  it('refuses two different names that merely share a stem', () => {
-    expect(givenNameTokensAgree('robin', 'roberta')).toBe(false);
-    expect(givenNameTokensAgree('dave', 'david')).toBe(false);
-  });
-
-  it('refuses two real given names that share a long prefix', () => {
-    expect(givenNameTokensAgree('sara', 'sarah')).toBe(false);
-    expect(givenNameTokensAgree('alex', 'alexandra')).toBe(false);
-    expect(givenNameTokensAgree('marc', 'marcus')).toBe(false);
-    expect(givenNameTokensAgree('jose', 'joseph')).toBe(false);
-    expect(givenNameTokensAgree('christina', 'christine')).toBe(false);
-  });
-});
-
 describe('officialProfileLinkCandidates', () => {
   it('puts an observed same-slug URL ahead of the constructed twin', () => {
     expect(
@@ -413,5 +387,162 @@ describe('probeRetryDelayMs', () => {
     expect(probeRetryDelayMs(1, 2000)).toBe(2000);
     expect(probeRetryDelayMs(2, 2000)).toBe(4000);
     expect(probeRetryDelayMs(3, 2000)).toBe(8000);
+  });
+});
+
+describe('isProfileLinkDueForVerification', () => {
+  const now = new Date('2026-09-24T12:00:00.000Z');
+  const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000);
+
+  // `--limit` truncates the head of a stable read order, so without this filter a
+  // bounded run re-probed the same first N links every time and the tail was
+  // permanently unreachable rather than merely sampled (#3222).
+  it('is always due when no staleness window is asked for, preserving the old behaviour', () => {
+    expect(isProfileLinkDueForVerification(daysAgo(0), 0, now)).toBe(true);
+    expect(isProfileLinkDueForVerification(undefined, 0, now)).toBe(true);
+  });
+
+  it('skips a decisively judged link inside the window and takes one that has aged out', () => {
+    expect(isProfileLinkDueForVerification(daysAgo(29), 30, now, 'HEALTHY')).toBe(false);
+    expect(isProfileLinkDueForVerification(daysAgo(29), 30, now, 'UNAVAILABLE')).toBe(false);
+    expect(isProfileLinkDueForVerification(daysAgo(30), 30, now, 'HEALTHY')).toBe(true);
+    expect(isProfileLinkDueForVerification(daysAgo(31), 30, now, 'HEALTHY')).toBe(true);
+  });
+
+  // The defect the window itself introduced: a link probed yesterday that came back
+  // 403 carries a fresh verifiedAt and a stored UNKNOWN, which is the absence of a
+  // verdict. Age-only, a 30-day window on the largest host reported 0 links due
+  // while 439 corpus-wide held no decisive status at all.
+  it('takes a recently probed link that still holds no decisive verdict', () => {
+    expect(isProfileLinkDueForVerification(daysAgo(1), 30, now, 'UNKNOWN')).toBe(true);
+    expect(isProfileLinkDueForVerification(daysAgo(1), 30, now, undefined)).toBe(true);
+  });
+
+  // The never-probed population is the whole point of the lane, so it must never be
+  // what a bounded run skips.
+  it('treats a link with no usable verifiedAt as due', () => {
+    expect(isProfileLinkDueForVerification(undefined, 30, now, 'HEALTHY')).toBe(true);
+    expect(isProfileLinkDueForVerification(null, 30, now, 'HEALTHY')).toBe(true);
+    expect(isProfileLinkDueForVerification('not a date', 30, now, 'HEALTHY')).toBe(true);
+  });
+
+  it('accepts an ISO string as well as a Date, which is what a lean read returns', () => {
+    expect(isProfileLinkDueForVerification(daysAgo(40).toISOString(), 30, now, 'HEALTHY')).toBe(
+      true,
+    );
+    expect(isProfileLinkDueForVerification(daysAgo(2).toISOString(), 30, now, 'HEALTHY')).toBe(
+      false,
+    );
+  });
+});
+
+describe('profileLinkVerificationCoverage', () => {
+  it('reports a run that finished every planned host as complete', () => {
+    expect(
+      profileLinkVerificationCoverage({
+        linksDue: 40,
+        attempted: 40,
+        probed: 40,
+        hostsPlanned: 3,
+        hostsCompleted: 3,
+      }),
+    ).toMatchObject({ complete: true, linksUnreached: 0, linksStillDue: 0 });
+  });
+
+  /**
+   * The defect #3303 records: a run that died after most of the work read exactly like
+   * one that died immediately, because completeness was inferred from the process
+   * exiting rather than from hosts finished.
+   */
+  it('reports a run that stopped partway as incomplete, and says how far it got', () => {
+    expect(
+      profileLinkVerificationCoverage({
+        linksDue: 3100,
+        attempted: 3100,
+        probed: 2800,
+        hostsPlanned: 4,
+        hostsCompleted: 3,
+      }),
+    ).toMatchObject({ complete: false, linksUnreached: 300, linksStillDue: 300 });
+  });
+
+  it('calls a bounded run complete while still reporting what a later run must pick up', () => {
+    expect(
+      profileLinkVerificationCoverage({
+        linksDue: 3100,
+        attempted: 500,
+        probed: 500,
+        hostsPlanned: 1,
+        hostsCompleted: 1,
+      }),
+    ).toMatchObject({ complete: true, linksUnreached: 0, linksStillDue: 2600 });
+  });
+
+  it('does not report negative remainders when a host yields more rows than planned', () => {
+    expect(
+      profileLinkVerificationCoverage({
+        linksDue: 5,
+        attempted: 5,
+        probed: 7,
+        hostsPlanned: 1,
+        hostsCompleted: 1,
+      }),
+    ).toMatchObject({ linksUnreached: 0, linksStillDue: 0 });
+  });
+});
+
+describe('decisiveVerdictCount', () => {
+  it('excludes a throttled probe, because probed is not the same as judged', () => {
+    const row = (verdict: 'healthy' | 'dead' | 'repaired' | 'inconclusive') => ({
+      researcherId: 'r',
+      host: 'example.yale.edu',
+      url: 'https://example.yale.edu/profile/example',
+      verdict,
+    });
+    expect(
+      decisiveVerdictCount([row('healthy'), row('dead'), row('repaired'), row('inconclusive')]),
+    ).toBe(3);
+    expect(decisiveVerdictCount([row('inconclusive'), row('inconclusive')])).toBe(0);
+  });
+});
+
+describe('an unsettled link backs off instead of blocking the next pass (#3303)', () => {
+  const now = new Date('2026-09-24T12:00:00Z');
+  const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000);
+
+  /**
+   * The signature this fixes: a throttled probe writes no status, so the link stays
+   * UNKNOWN, was always due, and every run re-probed the same links in the same order and
+   * stopped at the same wall. Identical counts across runs was the visible symptom.
+   */
+  it('defers a link probed an hour ago that did not settle', () => {
+    expect(isProfileLinkDueForVerification(hoursAgo(1), 7, now, 'UNKNOWN', 6)).toBe(false);
+  });
+
+  it('makes it due again once the window passes, so nothing is masked permanently', () => {
+    expect(isProfileLinkDueForVerification(hoursAgo(7), 7, now, 'UNKNOWN', 6)).toBe(true);
+  });
+
+  it('always probes a link never attempted, whatever the window', () => {
+    expect(isProfileLinkDueForVerification(undefined, 7, now, 'UNKNOWN', 6)).toBe(true);
+    expect(isProfileLinkDueForVerification('', 7, now, undefined, 6)).toBe(true);
+  });
+
+  it('keeps the old behaviour when the window is switched off', () => {
+    expect(isProfileLinkDueForVerification(hoursAgo(1), 7, now, 'UNKNOWN', 0)).toBe(true);
+  });
+
+  /**
+   * A settled verdict is still governed by staleAfterDays, not by the attempt window:
+   * the back-off must not shorten how long a real verdict is trusted.
+   */
+  it('leaves a settled verdict on the staleness rule', () => {
+    expect(isProfileLinkDueForVerification(hoursAgo(24), 7, now, 'HEALTHY', 6)).toBe(false);
+    expect(isProfileLinkDueForVerification(hoursAgo(24 * 8), 7, now, 'HEALTHY', 6)).toBe(true);
+    expect(isProfileLinkDueForVerification(hoursAgo(24 * 8), 7, now, 'UNAVAILABLE', 6)).toBe(true);
+  });
+
+  it('still probes everything when staleAfterDays is 0', () => {
+    expect(isProfileLinkDueForVerification(hoursAgo(1), 0, now, 'UNKNOWN', 6)).toBe(true);
   });
 });

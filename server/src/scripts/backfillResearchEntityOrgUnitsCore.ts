@@ -2,6 +2,7 @@ import {
   applyResearchEntityOrgUnitCanonicalization,
   type OrgUnitCanonicalizer,
   setOrgUnitCanonicalizerForTesting,
+  withAffiliationLabel,
 } from '../scrapers/orgUnitCanonicalization';
 
 export interface OrgUnitBackfillEntity {
@@ -11,6 +12,7 @@ export interface OrgUnitBackfillEntity {
   school?: unknown;
   departments?: unknown;
   schools?: unknown;
+  orgAffiliationLabels?: unknown;
 }
 
 export interface OrgUnitBackfillPlanRow {
@@ -26,6 +28,8 @@ export interface OrgUnitBackfillPlanRow {
   droppedDepartments: string[];
   beforeSchools: string[];
   afterSchools: string[];
+  beforeOrgAffiliationLabels: string[];
+  afterOrgAffiliationLabels: string[];
 }
 
 export interface OrgUnitBackfillSummary {
@@ -34,6 +38,7 @@ export interface OrgUnitBackfillSummary {
   departmentsDropped: number;
   schoolRewrites: number;
   departmentRewrites: number;
+  orgAffiliationLabelRewrites: number;
 }
 
 const asStringArray = (value: unknown): string[] =>
@@ -60,11 +65,43 @@ export async function planOrgUnitBackfillRow(
   const afterDepartments = asStringArray(set.departments);
   const beforeSchools = asStringArray(entity.schools);
   const afterSchools = asStringArray(set.schools);
+  const beforeOrgAffiliationLabels = asStringArray(entity.orgAffiliationLabels);
+  // `orgAffiliationLabels` is derived from the raw strings in `departments`, and
+  // this same job rewrites `departments` to canonical names - so a second run
+  // derives nothing and would write that emptiness over the labels the first run
+  // created. A derivation whose input is a field the same job rewrites is not
+  // idempotent, so an empty derivation is treated as "no information" rather than
+  // "no labels" (#2503).
+  //
+  // The asymmetry this accepts: the backfill can add labels but never remove one
+  // that a source has stopped publishing. That is the right trade for search text
+  // rather than a facet, and removal belongs to whatever re-resolves the
+  // observations rather than to a re-canonicalization pass.
+  //
+  // The emptiness test reads the labels `departments` alone derived. A school
+  // this pass fails closed on also joins `orgAffiliationLabels[]`, and counting
+  // it here would make an empty department derivation look non-empty, so a row
+  // whose departments are already canonical would have its stored labels
+  // replaced by the one cleared school value (#2277).
+  const derivedOrgAffiliationLabels = hasDepartments
+    ? asStringArray(canonicalization.departmentAffiliationLabels)
+    : [];
+  const baseOrgAffiliationLabels =
+    derivedOrgAffiliationLabels.length > 0
+      ? derivedOrgAffiliationLabels
+      : beforeOrgAffiliationLabels;
+  const afterOrgAffiliationLabels = withAffiliationLabel(
+    baseOrgAffiliationLabels,
+    canonicalization.clearedSchoolLabel,
+  );
 
   const update: Record<string, unknown> = {};
   if (hasSchool && set.school !== entity.school) update.school = set.school;
   if (hasDepartments && !sameStringArray(beforeDepartments, afterDepartments)) {
     update.departments = afterDepartments;
+  }
+  if (!sameStringArray(beforeOrgAffiliationLabels, afterOrgAffiliationLabels)) {
+    update.orgAffiliationLabels = afterOrgAffiliationLabels;
   }
   if (!sameStringArray(beforeSchools, afterSchools)) update.schools = afterSchools;
 
@@ -81,6 +118,8 @@ export async function planOrgUnitBackfillRow(
     droppedDepartments: canonicalization.droppedDepartments,
     beforeSchools,
     afterSchools,
+    beforeOrgAffiliationLabels,
+    afterOrgAffiliationLabels,
   };
 }
 
@@ -89,11 +128,13 @@ export function summarizeOrgUnitBackfill(rows: OrgUnitBackfillPlanRow[]): OrgUni
   let departmentsDropped = 0;
   let schoolRewrites = 0;
   let departmentRewrites = 0;
+  let orgAffiliationLabelRewrites = 0;
   for (const row of rows) {
     if (row.changed) changed += 1;
     departmentsDropped += row.droppedDepartments.length;
     if ('school' in row.update) schoolRewrites += 1;
     if ('departments' in row.update) departmentRewrites += 1;
+    if ('orgAffiliationLabels' in row.update) orgAffiliationLabelRewrites += 1;
   }
   return {
     scanned: rows.length,
@@ -101,6 +142,7 @@ export function summarizeOrgUnitBackfill(rows: OrgUnitBackfillPlanRow[]): OrgUni
     departmentsDropped,
     schoolRewrites,
     departmentRewrites,
+    orgAffiliationLabelRewrites,
   };
 }
 

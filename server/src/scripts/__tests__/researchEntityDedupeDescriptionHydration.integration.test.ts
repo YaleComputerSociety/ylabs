@@ -129,4 +129,40 @@ describe('dedupe merge description hydration (#2208)', () => {
     const survivor = await ResearchEntity.findById(survivorId).lean<PersistedEntity>();
     expect(survivor?.fullDescription).toBe(THIN_FULL);
   });
+
+  it('never promotes a funding shell paragraph onto the survivor under neverDemote either', async () => {
+    const survivorId = new mongoose.Types.ObjectId();
+    const fundingShellId = new mongoose.Types.ObjectId();
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    // Both twins sit at the lowest tier, so no candidate can demote and the merge
+    // commits: what is under test is which paragraph the survivor ends up with.
+    await db.collection('research_entities').insertMany([
+      {
+        ...entityDoc(survivorId, 'ysm-faculty-ada-lovelace', THIN_FULL),
+        studentVisibilityTier: 'suppressed',
+      },
+      {
+        ...entityDoc(fundingShellId, 'nih-pi-ada-lovelace', RICH_FULL),
+        studentVisibilityTier: 'suppressed',
+      },
+    ]);
+
+    const result = await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: survivorId.toHexString(),
+        duplicateEntityIds: [fundingShellId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [SHARED_URL],
+      },
+      { deleteDuplicates: false, relinkReferences: true, neverDemote: true },
+    );
+
+    expect((result as { deferredAsWouldDemote?: boolean }).deferredAsWouldDemote).not.toBe(true);
+    const survivor = await ResearchEntity.findById(survivorId).lean<PersistedEntity>();
+    const shell = await ResearchEntity.findById(fundingShellId).lean<PersistedEntity>();
+    expect(shell?.archived).toBe(true);
+    expect(survivor?.fullDescription).toBe(THIN_FULL);
+  });
 });

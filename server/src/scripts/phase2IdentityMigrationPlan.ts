@@ -19,6 +19,7 @@ import {
   assertHardenedIdentityCollisionProfile,
   assertPhase0IdentityCollisionAuditTargetAllowed,
 } from './phase0IdentityCollisionAudit';
+import { inspectTempArtifactParent } from '../utils/tempArtifactRoots';
 import { parsePhase0SummaryOnlyEnvironment } from './phase0SummaryOnlyAudit';
 import {
   buildPhase2IdentityMigrationPlan,
@@ -446,20 +447,11 @@ export function resolveCleanPhase2IdentityPlanSourceCommit(
 
 export function assertPhase2IdentityPlanOutputAvailable(output: string): string {
   const safeOutput = resolveSafeJsonReportOutputPath(output);
-  const parent = path.dirname(safeOutput);
-  let parentStat: fs.Stats;
-  let realParent: string;
-  try {
-    parentStat = fs.lstatSync(parent);
-    realParent = fs.realpathSync.native(parent);
-  } catch {
-    throw new Error('Unable to validate the private Phase 2 report location.');
-  }
-  if (
-    !parentStat.isDirectory() ||
-    parentStat.isSymbolicLink() ||
-    realParent !== path.resolve(parent)
-  ) {
+  const verdict = inspectTempArtifactParent(path.dirname(safeOutput));
+  if ('refusal' in verdict) {
+    if (verdict.refusal === 'component-missing') {
+      throw new Error('Unable to validate the private Phase 2 report location.');
+    }
     throw new Error('The Phase 2 report parent must be a real directory without symlinks.');
   }
   if (fs.existsSync(safeOutput)) {

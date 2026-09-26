@@ -8,6 +8,7 @@ import {
   hasTrailingResearchHomeDescription,
   normalizeResearchEntityNameDashes,
   normalizeResearchEntityNameSmartQuotes,
+  stripLeadingMicrositeBannerPrefix,
   stripResearchHomeNamePersonCredentials,
   stripTrailingResearchHomeDescription,
 } from '../researchEntityNameNormalization';
@@ -240,5 +241,43 @@ describe('hasResearchHomeNamePersonCredentials', () => {
     expect(hasResearchHomeNamePersonCredentials('Mark A Lemmon, PhD, FRS Lab')).toBe(true);
     expect(hasResearchHomeNamePersonCredentials('Regan Lab')).toBe(false);
     expect(hasResearchHomeNamePersonCredentials(undefined as unknown as string)).toBe(false);
+  });
+});
+
+describe('stripLeadingMicrositeBannerPrefix', () => {
+  it('drops the banner heading a microsite glued onto its own name', () => {
+    expect(
+      stripLeadingMicrositeBannerPrefix('CNCL @ Yale Cognitive and Neural Computation Lab'),
+    ).toBe('Cognitive and Neural Computation Lab');
+    expect(
+      stripLeadingMicrositeBannerPrefix('QBio @ Yale University Quantitative Biology Lab'),
+    ).toBe('Quantitative Biology Lab');
+    expect(stripLeadingMicrositeBannerPrefix('ABC @ Yale - The Example Laboratory')).toBe(
+      'The Example Laboratory',
+    );
+  });
+
+  it('keeps a name whose whole self IS the banner, leaving nothing to strip to', () => {
+    for (const name of ['GRAB Lab @ Yale', 'Example Lab @ Yale', 'ABC @ Yale']) {
+      expect(stripLeadingMicrositeBannerPrefix(name), name).toBe(name);
+    }
+  });
+
+  it('leaves a name that carries no banner untouched', () => {
+    for (const name of [
+      'Cognitive and Neural Computation Lab',
+      'The Clinical Affective Neuroscience & Development Lab (CANDLab)',
+      'Yale Rheumatology Clinical & Translational Research Laboratory',
+      'Relativistic Heavy Ion Group (RHIG)',
+      '',
+    ]) {
+      expect(stripLeadingMicrositeBannerPrefix(name), name).toBe(name);
+    }
+  });
+
+  it('does not strip to a remainder that names no research home', () => {
+    expect(stripLeadingMicrositeBannerPrefix('CNCL @ Yale Publications and Teaching')).toBe(
+      'CNCL @ Yale Publications and Teaching',
+    );
   });
 });

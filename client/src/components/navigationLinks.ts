@@ -5,7 +5,7 @@ export interface PrimaryNavLink {
 }
 
 export const primaryNavLinks: PrimaryNavLink[] = [
-  { key: 'research', label: 'Yale Research', to: '/research' },
+  { key: 'research', label: 'Research', to: '/research' },
   { key: 'programs', label: 'Programs & Fellowships', to: '/programs' },
   { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
 ];

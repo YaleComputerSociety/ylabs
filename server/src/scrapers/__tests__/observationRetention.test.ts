@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { Observation } from '../../models/observation';
 import { ScrapeRun } from '../../models/scrapeRun';
 import {
@@ -7,22 +7,54 @@ import {
   buildSupersededObservationPruneFilter,
   pruneDeadObservations,
   pruneSupersededObservations,
+  scanReferencedObservations,
+  supersededPruneIsProjectionNeutral,
 } from '../observationRetention';
+import { materializationReadScopeFilter } from '../entityMaterializer';
+import { clearC4Flags } from './c4FlagTestEnv';
 
 const NOW = new Date('2026-05-14T12:00:00Z');
 const CUTOFF = new Date('2026-04-14T12:00:00Z');
 
-function mockReferencedObservationRows(rows: Array<{ _id: unknown }> = []) {
-  return vi.spyOn(Observation.db, 'collection').mockReturnValue({
-    aggregate: vi.fn().mockReturnValue({
-      toArray: vi.fn().mockResolvedValue(rows),
-    }),
-  } as any);
+function mockReferencedObservationRows(
+  rows: Array<{ _id: unknown }> = [],
+  presentCollections?: string[],
+) {
+  vi.spyOn(Observation.db, 'listCollections').mockResolvedValue(
+    (presentCollections ?? OBSERVATION_REFERENCE_SPECS.map((spec) => spec.collection)).map(
+      (name) => ({ name, type: 'collection' }),
+    ) as any,
+  );
+  return vi.spyOn(Observation.db, 'collection').mockImplementation(
+    ((name: string) =>
+      ({
+        aggregate: vi.fn().mockReturnValue({
+          toArray: vi
+            .fn()
+            .mockResolvedValue(
+              presentCollections && !presentCollections.includes(name) ? [] : rows,
+            ),
+        }),
+      }) as any) as any,
+  );
 }
 
+const ALL_REFERENCE_SPEC_COVERAGE = (referencedObservations: number) =>
+  OBSERVATION_REFERENCE_SPECS.map((spec) => ({
+    collection: spec.collection,
+    field: spec.field,
+    collectionPresent: true,
+    referencedObservations,
+  }));
+
 describe('observation retention', () => {
+  beforeEach(() => {
+    clearC4Flags();
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
+    clearC4Flags();
   });
 
   it('builds a compact-retention filter that only targets old superseded observations', () => {
@@ -114,6 +146,8 @@ describe('observation retention', () => {
     expect(deleteMany).not.toHaveBeenCalled();
     expect(result).toEqual({
       apply: false,
+      projectionNeutral: true,
+      readScopeDeclared: false,
       eligibleCandidates: 42,
       protectedCandidates: 0,
       candidates: 42,
@@ -122,6 +156,7 @@ describe('observation retention', () => {
       keepRuns: 3,
       retainedRuns: 3,
       sourceName: undefined,
+      referenceSpecs: ALL_REFERENCE_SPEC_COVERAGE(0),
     });
   });
 
@@ -185,6 +220,57 @@ describe('observation retention', () => {
     });
   });
 
+  describe('coupling to the materializer read scope (C4_LOSSLESS_INGEST)', () => {
+    it('reads the materializer scope rather than restating that superseded means unprojected', () => {
+      expect(materializationReadScopeFilter()).toEqual({ superseded: false });
+      expect(supersededPruneIsProjectionNeutral()).toBe(true);
+
+      process.env.C4_LOSSLESS_INGEST = 'true';
+
+      expect(materializationReadScopeFilter()).not.toHaveProperty('superseded');
+      expect(supersededPruneIsProjectionNeutral()).toBe(false);
+    });
+
+    it('refuses to delete superseded observations while the materializer projects them', async () => {
+      process.env.C4_LOSSLESS_INGEST = 'true';
+      const deleteMany = vi.spyOn(Observation, 'deleteMany');
+
+      await expect(
+        pruneSupersededObservations({ now: NOW, olderThanDays: 30, keepRuns: 3, apply: true }),
+      ).rejects.toThrow(/C4_LOSSLESS_INGEST/);
+      await expect(pruneDeadObservations({ now: NOW, apply: true })).rejects.toThrow(
+        /C4_LOSSLESS_INGEST/,
+      );
+
+      expect(deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('reports the lost neutrality in a dry run instead of counting candidates as dead storage', async () => {
+      process.env.C4_LOSSLESS_INGEST = 'true';
+      vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([] as any);
+      mockReferencedObservationRows();
+      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(7 as any);
+      const deleteMany = vi.spyOn(Observation, 'deleteMany');
+
+      const compact = await pruneSupersededObservations({ now: NOW, apply: false });
+      const dead = await pruneDeadObservations({ now: NOW, apply: false });
+
+      expect(compact).toMatchObject({
+        projectionNeutral: false,
+        readScopeDeclared: true,
+        candidates: 7,
+        deleted: 0,
+      });
+      expect(dead).toMatchObject({
+        projectionNeutral: false,
+        readScopeDeclared: true,
+        candidates: 7,
+        deleted: 0,
+      });
+      expect(deleteMany).not.toHaveBeenCalled();
+    });
+  });
+
   describe('dead-observation prune (superseded and unreferenced, any age)', () => {
     it('targets every superseded observation up to now while protecting referenced ids and the last runs per source', async () => {
       vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([
@@ -208,6 +294,8 @@ describe('observation retention', () => {
       });
       expect(result).toEqual({
         apply: true,
+        projectionNeutral: true,
+        readScopeDeclared: false,
         eligibleCandidates: 10,
         protectedCandidates: 1,
         candidates: 9,
@@ -216,6 +304,7 @@ describe('observation retention', () => {
         keepRuns: 3,
         retainedRuns: 3,
         sourceName: undefined,
+        referenceSpecs: ALL_REFERENCE_SPEC_COVERAGE(1),
       });
     });
 
@@ -258,6 +347,19 @@ describe('observation retention', () => {
       expect(result).toMatchObject({ keepRuns: 0, retainedRuns: 0 });
     });
 
+    it('records that the read scope was undeclared so a refused apply cannot read as a clean corpus', async () => {
+      vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([] as any);
+      mockReferencedObservationRows();
+      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(3 as any);
+
+      const undeclared = await pruneDeadObservations({ now: NOW, apply: false });
+      expect(undeclared).toMatchObject({ projectionNeutral: true, readScopeDeclared: false });
+
+      process.env.C4_LOSSLESS_INGEST = 'false';
+      const declared = await pruneDeadObservations({ now: NOW, apply: false });
+      expect(declared).toMatchObject({ projectionNeutral: true, readScopeDeclared: true });
+    });
+
     it('never deletes in dry-run mode', async () => {
       vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([] as any);
       mockReferencedObservationRows();
@@ -268,6 +370,48 @@ describe('observation retention', () => {
 
       expect(deleteMany).not.toHaveBeenCalled();
       expect(result).toMatchObject({ apply: false, candidates: 3, deleted: 0 });
+    });
+  });
+
+  describe('a reference spec whose collection is absent (#210)', () => {
+    it('is reported as absent rather than as a collection that references nothing', async () => {
+      vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([] as any);
+      mockReferencedObservationRows(
+        [{ _id: 'referenced-observation' }],
+        ['observations', 'signals', 'research_entities'],
+      );
+      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(3 as any);
+
+      const scan = await scanReferencedObservations();
+
+      expect(scan.ids).toEqual(['referenced-observation']);
+      expect(
+        scan.specs.filter((spec) => !spec.collectionPresent).map((spec) => spec.collection),
+      ).toEqual(['faculty_members', 'papers', 'paper_authors', 'research_entity_members']);
+      for (const spec of scan.specs) {
+        expect(spec.referencedObservations).toBe(spec.collectionPresent ? 1 : 0);
+      }
+    });
+
+    it('carries the same coverage onto both prune reports', async () => {
+      vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([] as any);
+      mockReferencedObservationRows([{ _id: 'referenced-observation' }], ['observations']);
+      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(3 as any);
+
+      const superseded = await pruneSupersededObservations({ now: NOW, apply: false });
+      const dead = await pruneDeadObservations({ now: NOW, apply: false });
+
+      for (const result of [superseded, dead]) {
+        expect(result.referenceSpecs).toHaveLength(OBSERVATION_REFERENCE_SPECS.length);
+        expect(result.referenceSpecs.filter((spec) => spec.collectionPresent)).toEqual([
+          {
+            collection: 'observations',
+            field: 'supersededBy',
+            collectionPresent: true,
+            referencedObservations: 1,
+          },
+        ]);
+      }
     });
   });
 });

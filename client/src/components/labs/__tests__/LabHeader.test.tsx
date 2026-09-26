@@ -23,7 +23,6 @@ const baseGroup: ResearchGroup = {
   slug: 'lovelace-lab',
   name: 'Lovelace Computational Lab',
   kind: 'lab',
-  description: 'We study analytical engines.',
   websiteUrl: 'https://example.edu/lovelace',
   location: 'Watson Center, Room 200',
   departments: ['Computer Science', 'Mathematics'],
@@ -92,6 +91,52 @@ describe('LabHeader', () => {
       <LabHeader group={{ ...baseGroup, websiteUrl: 'https://rjohnwilliams.wordpress.com/' }} />,
     );
     const websiteLink = container.querySelector('a[href*="rjohnwilliams.wordpress.com"]');
+    expect(websiteLink).not.toBeNull();
+    expect(websiteLink?.textContent).toContain('Visit lab website');
+  });
+
+  // #2556: the host is alive and answers, but only from inside Yale's network, so a
+  // student off campus is sent to a dead end. The verdict recorded for it is
+  // `UNKNOWN`, which fails open, so nothing suppressed the CTA.
+  it('never renders a host that resolves only into private address space as the website CTA', () => {
+    const { container } = render(
+      <LabHeader
+        group={{
+          ...baseGroup,
+          websiteUrl: 'https://internal.example.edu/lab/',
+          sourceLinkHealth: [
+            {
+              url: 'https://internal.example.edu/lab/',
+              healthStatus: 'UNKNOWN',
+              privateAddressHost: true,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(container.querySelector('a[href*="internal.example.edu"]')).toBeNull();
+    expect(container.textContent).not.toContain('Visit lab website');
+  });
+
+  // The control: a public Yale host stays a rendered CTA, including when its own
+  // probe was merely inconclusive.
+  it('still renders a public Yale host as the website CTA', () => {
+    const { container } = render(
+      <LabHeader
+        group={{
+          ...baseGroup,
+          websiteUrl: 'https://medicine.yale.edu/lab/a-lab/',
+          sourceLinkHealth: [
+            {
+              url: 'https://medicine.yale.edu/lab/a-lab/',
+              healthStatus: 'UNKNOWN',
+              httpStatusCode: 403,
+            },
+          ],
+        }}
+      />,
+    );
+    const websiteLink = container.querySelector('a[href*="medicine.yale.edu/lab/a-lab"]');
     expect(websiteLink).not.toBeNull();
     expect(websiteLink?.textContent).toContain('Visit lab website');
   });

@@ -3,6 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   departmentFind: vi.fn(),
   researchAreaFind: vi.fn(),
+  orgUnitFind: vi.fn(),
+}));
+
+vi.mock('../../models/orgUnit', () => ({
+  OrgUnit: {
+    find: mocks.orgUnitFind,
+  },
 }));
 
 vi.mock('../../models/department', () => ({
@@ -49,6 +56,36 @@ describe('configService', () => {
     vi.clearAllMocks();
     invalidateConfigCache();
     mocks.researchAreaFind.mockReturnValue(leanChain([]));
+    mocks.orgUnitFind.mockReturnValue(leanChain([]));
+  });
+
+  it('serves the pill-eligible labels from the org-unit catalog, names and aliases alike', async () => {
+    mocks.departmentFind.mockReturnValue(leanChain([]));
+    mocks.orgUnitFind.mockReturnValue(
+      leanChain([
+        { name: 'Digestive Diseases', aliases: ['Gastroenterology'] },
+        { name: 'Physics', aliases: [] },
+      ]),
+    );
+
+    const config = await getConfig(true, {});
+
+    expect(config.departments.pillEligibleLabels).toEqual([
+      'Digestive Diseases',
+      'Gastroenterology',
+      'Physics',
+    ]);
+  });
+
+  it('asks the catalog only for the kinds a person department pill may name', async () => {
+    mocks.departmentFind.mockReturnValue(leanChain([]));
+
+    await getConfig(true, {});
+
+    expect(mocks.orgUnitFind).toHaveBeenCalledWith({
+      archived: { $ne: true },
+      kind: { $in: ['DEPARTMENT', 'SECTION'] },
+    });
   });
 
   it('includes department aliases in the public config payload', async () => {

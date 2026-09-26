@@ -1,10 +1,15 @@
-# Yale Research - Developer Guide
+# y/labs - Developer Guide
 
 > **Live site:** [yalelabs.io](https://yalelabs.io/) · **Beta:** [ylabs-gr4v.onrender.com](https://ylabs-gr4v.onrender.com) · **Repo:** [YaleComputerSociety/ylabs](https://github.com/YaleComputerSociety/ylabs)
 
+> This guide covers setup, architecture, and reference.
+> If you are new, start with [docs/onboarding.md](docs/onboarding.md), which sequences this guide into a first week.
+> For how work gets picked up and landed, read [CONTRIBUTING.md](CONTRIBUTING.md).
+> For the product and pipeline vocabulary used throughout this guide and the issue tracker, read [docs/glossary.md](docs/glossary.md).
+
 ## What Is This?
 
-Yale Research is a **Yale research discovery platform**. Students discover Yale research homes, source-backed evidence, planning context, and structured programs/fellowships. The product is not a listings board; the legacy Listings surface and public Pathways page are retired.
+y/labs is a **Yale research discovery platform**. Students discover Yale research, source-backed evidence, planning context, and structured programs/fellowships. The product is not a listings board; the legacy Listings surface and public Pathways page are retired.
 
 ---
 
@@ -81,18 +86,17 @@ node -v
 npm -v
 ```
 
-Enable Corepack and activate the Yarn version pinned by this repo:
+Enable Corepack. It reads the `packageManager` field in `package.json` and installs that exact Yarn version the first time you run a `yarn` command inside the repo, so you do not name a version yourself:
 
 ```bash
 corepack enable
-corepack prepare yarn@4.6.0 --activate
 yarn -v
 ```
 
 Expected versions:
 
 - `node` should be `v20.x` or newer.
-- `yarn` should be `4.6.0`.
+- `yarn` should match the `packageManager` field in `package.json`, which is the only place the version is pinned. Read it with `node -p "require('./package.json').packageManager"` rather than trusting a number written here, because a number written here goes stale on the next bump.
 
 ### 2. Install dependencies
 
@@ -110,17 +114,18 @@ cp server/.env.example server/.env
 
 Your local `.env` should point to:
 
-- `MONGODBURL` → the `Development` database on Atlas
+- `MONGODBURL` → the `Development` database on Atlas. This is the one the server actually boots on: `initializeConnections` throws `MONGODBURL is required` without it. The `DEVELOPMENT_MONGODBURL`, `BETA_MONGODBURL`, and `PRODUCTION_MONGODBURL` entries in the same file name the two ends of a cross-environment copy or comparison and are read by no request path, so setting only those leaves you with a server that cannot start.
 - `MEILISEARCH_HOST` → `http://localhost:7700`
 - `MEILISEARCH_API_KEY` → your local master key (e.g., `testkey`)
 - No `MEILISEARCH_INDEX_PREFIX` (local uses the bare `researchentities` index)
 
-For the client:
+For the client, copy its example too:
 
 ```bash
-# client/.env
-VITE_APP_SERVER=http://localhost:4000
+cp client/.env.example client/.env
 ```
+
+The default `VITE_APP_SERVER=http://localhost:4000` is correct for local work and is the only variable the client needs. The `VITE_SENTRY_*` entries are optional and commented out; with no DSN the client skips Sentry initialization rather than failing.
 
 Ask a project maintainer for the development MongoDB and API credentials. Do not commit `server/.env` or `client/.env`.
 
@@ -150,18 +155,20 @@ On Windows, install Docker Desktop on Windows and enable WSL integration for you
 yarn meili:seed
 ```
 
-This rebuilds the local Research index from MongoDB. Use `--strategy=swap` for beta/production rebuilds that serve live traffic. Semantic Research search is release-gated separately: Meilisearch must report embedded `researchentities` documents before `RESEARCH_SEARCH_SEMANTIC=true` should be used for Beta or production.
+This rebuilds the local Research index from MongoDB. Use `--strategy=swap` for beta/production rebuilds that serve live traffic.
+
+**`OPENAI_API_KEY` is optional for setup.** The rebuild configures a Meilisearch embedder only when that variable is set, and skips it silently otherwise, so seeding succeeds either way. Without a key you get a fully working keyword index and no semantic search; with one you also get embeddings. Semantic search is not behind a boolean flag: `isResearchEntitySearchEmbedderConfigured` asks Meilisearch whether the embedder exists on the index, so the capability follows the seed rather than an environment setting. A newcomer can complete every step below without an OpenAI key.
 Research relevance also depends on `researchentities` settings and documents: topic/name/tag fields are searched before description text, student-topic aliases are indexed in `studentSearchTerms`, and short aliases such as `ai`, `ml`, `nlp`, and `cv` disable typo expansion and search only topic-oriented fields.
 
 When a `/research` browse has no search query, results are ordered "best first" by a precomputed `browseRankScore` (completeness of the profile plus strength-weighted undergraduate access signals), falling back to recency. After importing or migrating data, populate the score with `yarn --cwd server research-homes:backfill-browse-rank --apply --confirm-browse-rank` (it runs in dry-run by default); ongoing scrape/materialize runs keep it fresh automatically.
 
-Organizational research homes (centers, institutes, initiatives, core facilities) have no single PI, so their scraped rosters initially list everyone as core faculty.
+Organizational research entities (centers, institutes, initiatives, core facilities) have no single PI, so their scraped rosters initially list everyone as core faculty.
 The `center-director-llm` scraper reads each home's official site and leadership pages, extracts the single named **director**, and the materializer resolves that name to a canonical `Researcher` before promoting them to a director (lead) member.
 New scrape/materialize runs apply this automatically; to fill in the existing corpus run `yarn --cwd server research-homes:backfill-center-directors --apply --confirm-center-directors --limit <n>` (dry-run by default, lists eligible homes without calling the LLM; apply needs `OPENAI_API_KEY`).
 
 Non-lead current-team context comes only from the disabled-by-default `official-research-home-roster` source and its reviewed entity/page/section allowlist.
-Run a bounded dry run with `yarn --cwd server scrape run --source official-research-home-roster --only <research-entity-key> --limit 1`, materialize only after reviewing the source output, and then run `yarn --cwd server research-homes:audit-rosters --strict`.
-Broad enablement requires a clean structural audit plus an attributable sampled review using `--sampled-precision-reviewed-by=<reviewer>`.
+Run a bounded dry run with `yarn --cwd server scrape run --source official-research-home-roster --only <research-entity-key> --limit 1` and materialize only after reviewing the source output.
+Broad enablement requires the structural and sampled-precision audit: `yarn --cwd server research-homes:audit-rosters --strict --sampled-precision-reviewed-by="<reviewer>"`, which reports `broadEnablementReady` and exits non-zero until both halves are satisfied (#2412).
 The public detail API returns at most 24 fresh verified roster members, grouped by coarse role, along with a `roster` disclosure whose status is `current`, `partial`, `withheld`, `no-verified-data`, or `optional-source-failure`.
 Failed, empty, stale, or ambiguous refreshes do not imply an empty team and do not archive the last verified roster.
 
@@ -176,11 +183,23 @@ Run these in two separate terminals.
 
 ### 7. Verify setup
 
+Cheap checks first, so a broken step is obvious before you spend twenty minutes on the suites:
+
 ```bash
-curl http://localhost:7700/health
-npx tsc --noEmit -p server/tsconfig.json
-yarn --cwd server test
-yarn --cwd client test:ci
+yarn meili:health   # {"status":"available"}
+yarn verify:fast    # format:check, lint, tsc on both projects
+```
+
+Then confirm the app actually serves data, which is the check that catches a wrong `MONGODBURL` or an unseeded index:
+
+- `yarn dev:server` boots with `Connected to database` and no `MONGODBURL is required`.
+- `yarn dev:client`, then `http://localhost:3000/research` renders cards with real descriptions rather than an empty list.
+- `http://localhost:4000/api/dev-login` gives you a session.
+
+The full suites take a while and are the last step rather than the first:
+
+```bash
+yarn test           # both suites, server then client
 ```
 
 ### Troubleshooting Yarn setup
@@ -206,7 +225,6 @@ nvm install 20
 nvm use 20
 nvm alias default 20
 corepack enable
-corepack prepare yarn@4.6.0 --activate
 yarn -v
 ```
 
@@ -245,6 +263,10 @@ The auth flow's verbose tracing (per-request deserialization, the find-or-create
 | `yarn build`                                                                                                                               | Full production build                                                                 |
 | `yarn start`                                                                                                                               | Run both servers in production mode                                                   |
 | `yarn clean:all`                                                                                                                           | Remove all node_modules                                                               |
+| `yarn test`                                                                                                                                | Both test suites, server then client, sequentially                                    |
+| `yarn test:server`                                                                                                                         | Server suite only                                                                     |
+| `yarn test:client`                                                                                                                         | Client suite only                                                                     |
+| `yarn serve:fresh`                                                                                                                         | Clean install, build, and serve (smoke check, not a test run)                          |
 | `yarn --cwd client test`                                                                                                                   | Run Vitest in watch mode                                                              |
 | `yarn --cwd client test:ci`                                                                                                                | Run Vitest once (used by CI)                                                          |
 | `yarn --cwd server test`                                                                                                                   | Run server Vitest tests                                                               |
@@ -378,9 +400,12 @@ User → Yale CAS SSO → passport.ts resolveLoginPrincipalForCas
 
 Authentication runs on the canonical `Account`; the legacy `User` model has been retired (#2014) and `userType` is derived per login and carried in the signed session rather than persisted. The classification cascade runs at login time only. Per-request session restore (`deserializeUser`) re-validates that the backing `Account` exists and is not archived plus the admin-grant check - no account creation and no Yalies/Directory calls - so a hiccup in those external sources can't fail already-authenticated requests. The CAS login callback (`/api/cas`) is exempt from the general API rate limiter so rate limiting cannot lock users out of login.
 
-The public browse surface (`/api/research`) is exempt from both the general and the write limiter (`POST /api/research/search` is a pure read despite its method) and are governed solely by `publicDiscoveryLimiter` (300 req / 15 min), sized for anonymous signed-session buckets and conservative IP fallback - debounced search-as-you-type, filters, infinite scroll, and detail views.
+The public browse surface (`/api/research`) carries no discovery limiter of its own: it rides the general limiter like every other `/api` route (`globalLimiter`, 1000 req / 15 min), and is exempt only from the write limiter, because `writeLimit` is opt-in per route and `POST /api/research/search` is a pure read despite its method.
+The general limiter is keyed per authenticated netid, then per anonymous identifier in the signed cookie session, so debounced search-as-you-type, filters, infinite scroll, and detail views all bill to the browsing session rather than to a shared address.
+That anonymous identifier lives in the caller's own cookie and is therefore resettable by a caller who discards cookies, which makes the general limiter an accident guard rather than an abuse control for anonymous traffic; `firstContactLimiter` is the per-IP control that meters those callers.
+See `skills/auth-security/SKILL.md` for what each limiter does and does not control (#2420).
 Anonymous bucket identifiers are initialized only for `/api` requests.
-For IP fallback, deployed runtimes require `TRUSTED_PROXY_CIDRS`; Express accepts forwarded visitor addresses only through peers in those explicitly validated address ranges.
+For the per-IP limiters (`firstContactLimiter`, `authLimiter`), deployed runtimes require `TRUSTED_PROXY_CIDRS`; Express accepts forwarded visitor addresses only through peers in those explicitly validated address ranges.
 The `PUT .../addView` view-telemetry routes are likewise exempt from the write limiter so ordinary browsing can't 429 a user's real mutations.
 Sessions last 30 days; the per-request admin-grant check is cached in-memory for 60s (invalidated immediately on grant/revoke).
 Public detail endpoints (research entity by slug, opportunity by id) and `/api/config` allow brief HTTP caching instead of the global `/api` no-store.
@@ -401,7 +426,7 @@ All mount under `/api`.
 
 | Prefix            | Description                                                                               | Auth                                                   |
 | ----------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `/research`       | Yale Research search/detail, including profile evidence and planning-context enrichment   | Varies                                                 |
+| `/research`       | y/labs search/detail, including profile evidence and planning-context enrichment   | Varies                                                 |
 | `/programs`       | Programs & Fellowships browse/search                                                      | Varies                                                 |
 | `/listings`       | Legacy authenticated reads, outreach, claims, and view tracking; authoring is retired    | Authenticated                                          |
 | `/fellowships`    | Compatibility alias around program/fellowship storage during migration                    | Varies                                                 |
@@ -421,14 +446,30 @@ Client-side tests run under **Vitest 3** with a `jsdom` environment. Server-side
 
 ### Running tests
 
+From the repo root:
+
+```bash
+yarn test                     # both suites, server then client
+yarn test:server              # server suite only
+yarn test:client              # client suite only
+```
+
+`yarn test` runs the two suites sequentially on purpose. Run in parallel they contend for the same Development data and fabricate failures that are not real.
+
+Per workspace, when you want watch mode or a single file:
+
 ```bash
 yarn --cwd client test        # watch mode - reruns on file changes
-yarn --cwd client test:ci     # single run - used by CI
+yarn --cwd client test:ci     # single run - what CI invokes
 yarn --cwd server test        # server Vitest tests
 npx tsc --noEmit -p server/tsconfig.json
 ```
 
 Tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`.
+
+The suites are large: 675 server files (about 10,911 tests) and 104 client files (about 1,141 tests). On a loaded machine both produce timeout failures that are not real, against the in-memory MongoDB on the server side and vitest workers on the client side. Before believing a local failure, re-run the single file with `TMPDIR=/tmp npx vitest run <path>` from that workspace; if it passes alone it was resource starvation, and CI on Linux is the authority.
+
+`yarn serve:fresh` (a clean install, build, and serve) is a smoke check, not a test run. It was previously named `yarn test`, which is why that name now runs the suites instead.
 
 ### What is tested
 
@@ -490,5 +531,5 @@ Client `tsc --noEmit` is still not part of CI; the client has known pre-existing
 | Search returns no results                      | Check Meilisearch is running: `curl http://localhost:7700/health`                                                                                                                                                                                                                                                                                                                              |
 | Meilisearch connection refused                 | Start Docker container or check `MEILISEARCH_HOST` in `.env`                                                                                                                                                                                                                                                                                                                                   |
 | CORS errors                                    | Add origin to `allowList` in `app.ts` or use dev mode                                                                                                                                                                                                                                                                                                                                          |
-| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Planning context appears inside Yale Research, research detail, and Dashboard planning.                                                                                                                                                                                                                                                           |
+| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Planning context appears inside y/labs, research detail, and Dashboard planning.                                                                                                                                                                                                                                                           |
 | A client needs planning/access data            | Use `/api/research/search` or research detail. Saved planning uses entity-owned `/api/users/savedResearchEntities` and `/api/users/savedResearchEntityPlans`. The legacy pathway-owned save endpoints and pathway search are removed; do not reintroduce them. |

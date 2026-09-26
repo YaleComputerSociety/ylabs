@@ -188,6 +188,67 @@ describe('deriveCanonicalResearchAreasFromPage', () => {
     expect(result.areas).not.toContain('Neuroscience');
   });
 
+  it('ignores a dated news teaser naming a topic the page is not about (#2734)', () => {
+    const html = `
+      <h1>Central Asia Initiative</h1>
+      <p>The initiative supports interdisciplinary study of the region's history and politics.</p>
+      <div class="view view--block-latest">
+        <div class="view__rows">
+          <div class="view__row view__row--1">
+            <article class="node-teaser node-teaser--story">
+              <header class="node-teaser__header">
+                <a href="/news/love-in-the-time-of-ai">
+                  <div class="node-teaser__heading">
+                    <span>Love in the Time of AI: What Translation, Poetry, and Machine Learning
+                    Teach Us About Human Connection</span>
+                  </div>
+                </a>
+              </header>
+            </article>
+          </div>
+        </div>
+      </div>`;
+    const result = deriveCanonicalResearchAreasFromPage(canonicalizer, html);
+    expect(result.areas).not.toContain('Machine Learning');
+    expect(result.labeledBacked).toBe(false);
+  });
+
+  it('ignores another subject named on a shared directory result row (#2734)', () => {
+    const html = `
+      <div class="view__content">
+        <div class="view__row view__row--45">
+          <article class="node-teaser node-teaser--faculty">
+            <div class="node-teaser__content">
+              <ul class="node-teaser__expertise">
+                <li>Immunology</li>
+                <li>Genomics</li>
+              </ul>
+            </div>
+          </article>
+        </div>
+      </div>
+      <div class="contact-section__listing-item">
+        <span>Professor of Medicine and of Neuroscience</span>
+      </div>
+      <p>Our group studies cancer biology in solid tumors.</p>`;
+    const result = deriveCanonicalResearchAreasFromPage(canonicalizer, html);
+    expect(result.areas).toEqual(['Cancer Biology']);
+  });
+
+  it('keeps a labeled research-area section that is not a listing item (#2734)', () => {
+    const html = `
+      <main>
+        <h3>Research Interests</h3>
+        <ul>
+          <li>Immunology</li>
+          <li>Genomics</li>
+        </ul>
+      </main>`;
+    const result = deriveCanonicalResearchAreasFromPage(canonicalizer, html);
+    expect(result.areas).toEqual(expect.arrayContaining(['Immunology', 'Genomics']));
+    expect(result.labeledBacked).toBe(true);
+  });
+
   it('recovers an ambiguous single-word area from a labeled item but not from bare prose', () => {
     const labeled = deriveCanonicalResearchAreasFromPage(
       canonicalizer,

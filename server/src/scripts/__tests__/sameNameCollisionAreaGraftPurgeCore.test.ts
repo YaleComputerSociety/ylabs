@@ -4,6 +4,8 @@ import {
   planAreaGraftRemoval,
   planGrantGraftRemoval,
   planWebsiteClear,
+  descriptionEchoesGraftedAreas,
+  planPoisonedDescriptionClear,
 } from '../sameNameCollisionAreaGraftPurgeCore';
 import { parseArgs } from '../purgeSameNameCollisionAreaGrafts';
 
@@ -156,5 +158,123 @@ describe('parseArgs', () => {
 
   it('rejects unknown arguments', () => {
     expect(() => parseArgs(['--nope'])).toThrow(/Unknown argument/);
+  });
+});
+
+describe('descriptionEchoesGraftedAreas', () => {
+  const graftedAreas = [
+    'Protein Structure and Dynamics',
+    'Heart Rate Variability and Autonomic Control',
+    'Pancreatic function and diabetes',
+    'Erythrocyte Function and Pathophysiology',
+    'Diabetes Research',
+  ];
+
+  it('fires while the stored card still echoes a grafted area', () => {
+    expect(
+      descriptionEchoesGraftedAreas({
+        description: 'Research on diabetes and pancreatic function in adults.',
+        graftedAreas,
+      }),
+    ).toBe(true);
+  });
+
+  it('refuses once the row has a correct card of its own', () => {
+    expect(
+      descriptionEchoesGraftedAreas({
+        description:
+          'Studies American political institutions and how intra- and inter-institutional dynamics impact societal inequality, focusing on elite behavior in the criminal legal system.',
+        graftedAreas,
+      }),
+    ).toBe(false);
+  });
+
+  it('never fires on an empty card or an empty graft list', () => {
+    expect(descriptionEchoesGraftedAreas({ description: '', graftedAreas })).toBe(false);
+    expect(
+      descriptionEchoesGraftedAreas({ description: 'Anything at all', graftedAreas: [] }),
+    ).toBe(false);
+  });
+
+  it('does not fire on a generic word the two merely share', () => {
+    expect(
+      descriptionEchoesGraftedAreas({
+        description: 'Research on the management and treatment of urban policy outcomes.',
+        graftedAreas: ['Diabetes Management and Education', 'Primary Care and Health Outcomes'],
+      }),
+    ).toBe(false);
+  });
+
+  it('reads a fabricated body the same way it reads a card', () => {
+    const fabricatedAreas = [
+      'Explainable Artificial Intelligence (XAI)',
+      'Polar Research and Ecology',
+      'Data Analysis with R',
+      'Machine Learning in Healthcare',
+    ];
+    expect(
+      descriptionEchoesGraftedAreas({
+        description:
+          'Research focuses on explainable artificial intelligence (XAI) and its applications in healthcare, particularly through the lens of polar ecology, employing data analysis techniques using R and machine learning methodologies.',
+        graftedAreas: fabricatedAreas,
+      }),
+    ).toBe(true);
+    expect(
+      descriptionEchoesGraftedAreas({
+        description:
+          'A historian of biomedical futures, writing about how people in the past imagined that science, technology and medicine would change their lives.',
+        graftedAreas: fabricatedAreas,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('planPoisonedDescriptionClear', () => {
+  const graftedAreas = [
+    'Explainable Artificial Intelligence (XAI)',
+    'Polar Research and Ecology',
+    'Data Analysis with R',
+    'Machine Learning in Healthcare',
+  ];
+  const fabricatedBody =
+    'Research focuses on explainable artificial intelligence (XAI) and its applications in healthcare, particularly through the lens of polar ecology, employing data analysis techniques using R and machine learning methodologies.';
+
+  it('clears a body that restates the areas this run removes', () => {
+    expect(
+      planPoisonedDescriptionClear({
+        requested: true,
+        current: fabricatedBody,
+        graftedAreas,
+      }),
+    ).toEqual({ cleared: true, from: fabricatedBody });
+  });
+
+  it('refuses a body the spec did not ask to clear', () => {
+    expect(
+      planPoisonedDescriptionClear({
+        requested: undefined,
+        current: fabricatedBody,
+        graftedAreas,
+      }).cleared,
+    ).toBe(false);
+  });
+
+  it('refuses a body that no longer restates them, so a re-run cannot empty a repaired row', () => {
+    const repairedBody =
+      'A historian of biomedical futures, writing about how people in the past imagined that science, technology and medicine would change their lives.';
+    expect(
+      planPoisonedDescriptionClear({
+        requested: true,
+        current: repairedBody,
+        graftedAreas,
+      }),
+    ).toEqual({ cleared: false, from: repairedBody });
+  });
+
+  it('refuses an empty body rather than reporting a clear that writes nothing', () => {
+    expect(planPoisonedDescriptionClear({ requested: true, current: '', graftedAreas })).toEqual({
+      cleared: false,
+      from: '',
+    });
   });
 });

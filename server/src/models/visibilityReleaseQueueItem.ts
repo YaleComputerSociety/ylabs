@@ -92,10 +92,6 @@ const visibilityReleaseQueueItemSchema = new mongoose.Schema(
       type: Date,
       required: false,
     },
-    nextAttemptAt: {
-      type: Date,
-      required: false,
-    },
     repairSource: {
       type: String,
       default: '',
@@ -137,6 +133,14 @@ const visibilityReleaseQueueItemSchema = new mongoose.Schema(
 );
 
 visibilityReleaseQueueItemSchema.index({ status: 1, collection: 1, lastSeenAt: -1 });
+// The repair runner drains oldest-first so a never-attempted tail is reachable, and it
+// filters on `repairStatus` and `attemptCount` before sorting (#2872).
+visibilityReleaseQueueItemSchema.index({
+  status: 1,
+  repairStatus: 1,
+  attemptCount: 1,
+  firstSeenAt: 1,
+});
 visibilityReleaseQueueItemSchema.index({ blockerReasons: 1, status: 1 });
 visibilityReleaseQueueItemSchema.index({ sourceNames: 1, status: 1 });
 visibilityReleaseQueueItemSchema.index({ repairStage: 1, repairStatus: 1, status: 1 });

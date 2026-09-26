@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { buildApiUrl } from '../utils/apiBaseUrl';
 import { isAsciiControlCode } from '../utils/asciiControl';
+import { navFocusRingSx } from '../utils/focusRing';
 
 const MAX_CAS_RETURN_PATH_LENGTH = 2048;
 
@@ -70,10 +71,7 @@ const SignInButton = ({ label = 'Sign in with Yale CAS' }: SignInButtonProps) =>
           backgroundColor: 'var(--yr-navy)',
           boxShadow: 'none',
         },
-        '&:focus-visible': {
-          outline: '2px solid rgba(24, 74, 155, 0.35)',
-          outlineOffset: '2px',
-        },
+        ...navFocusRingSx,
       }}
     >
       {label}

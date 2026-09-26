@@ -7,7 +7,6 @@ export type OrphanReferenceActivity = 'active' | 'archived';
 export type OrphanReferenceRecovery =
   | 'deterministic_relink'
   | 'rematerialize_access'
-  | 'rematerialize_logistics'
   | 'review_required'
   | 'record_archived_loss';
 
@@ -29,7 +28,6 @@ export interface OrphanReferenceOccurrence {
   ownerFingerprint: string;
   researchEntityId?: string;
   ownerDerivationKey?: string;
-  ownerClaimType?: string;
   provenance?: {
     sourceName?: string;
     sourceUrl?: string;
@@ -446,17 +444,6 @@ export function classifyOrphanReference(input: {
   const materializedEvidenceIds = (input.currentMaterializationEvidenceIds || [])
     .map(normalizeObservationRepairObjectId)
     .filter((id): id is string => Boolean(id));
-  if (occurrence.ownerClaimType && materializedEvidenceIds.length > 0) {
-    return {
-      ...occurrence,
-      handle,
-      recovery: 'rematerialize_logistics',
-      reason:
-        'The current logistics materializer derives the same claim from surviving source evidence.',
-      candidateCount: materializedEvidenceIds.length,
-      recommendedDecision: 'rematerialize',
-    };
-  }
   if (
     ACCESS_REFERENCE_COLLECTIONS.has(occurrence.ownerCollection) &&
     materializedEvidenceIds.length > 0
@@ -622,12 +609,7 @@ function allowedDecisionsForClassification(
 ): Set<OrphanReferenceDecision> {
   const common = new Set<OrphanReferenceDecision>(['defer_review']);
   if (classification.recovery === 'deterministic_relink') common.add('relink');
-  if (
-    classification.recovery === 'rematerialize_access' ||
-    classification.recovery === 'rematerialize_logistics'
-  ) {
-    common.add('rematerialize');
-  }
+  if (classification.recovery === 'rematerialize_access') common.add('rematerialize');
   if (classification.recovery === 'record_archived_loss') common.add('record_loss');
   if (
     classification.recovery === 'review_required' &&

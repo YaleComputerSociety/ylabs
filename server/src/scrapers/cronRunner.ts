@@ -6,6 +6,7 @@ import {
   acquireScrapeJobLock,
   heartbeatScrapeJobLock,
   releaseScrapeJobLock,
+  startScrapeJobLockHeartbeat,
 } from './scrapeJobLock';
 import { reclaimInferredPiLeads } from './inferredPiLeadReclaim';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
@@ -145,7 +146,7 @@ export async function runScraperCron(
       await deps.markSourceCrawled(input.sourceName, input.now ?? new Date());
     }
     const report = await deps.getScrapeRunReport(runId);
-    const exitCode = materializationResult.errors > 0 ? 1 : 0;
+    const exitCode = materializationResult.errors > 0 || report.run.status === 'failure' ? 1 : 0;
 
     await deps.releaseScrapeJobLock({
       environment: input.environment,
@@ -201,29 +202,17 @@ function startHeartbeat(
   deps: CronRunnerDependencies,
   ownerId: string,
 ): { stop: () => void } {
-  const intervalMs = input.heartbeatIntervalMs ?? 60 * 1000;
-  if (intervalMs <= 0) return { stop: () => undefined };
-
-  const timer = setInterval(() => {
-    deps
-      .heartbeatScrapeJobLock({
-        environment: input.environment,
-        sourceName: input.sourceName,
-        ownerId,
-        leaseMs: input.leaseMs,
-      })
-      .catch((error) => {
-        console.error(
-          `Failed to heartbeat scraper cron lock for ${input.sourceName}:`,
-          sanitizeLogValue(error),
-        );
-      });
-  }, intervalMs);
-  timer.unref?.();
-
-  return {
-    stop: () => clearInterval(timer),
-  };
+  return startScrapeJobLockHeartbeat(
+    {
+      environment: input.environment,
+      sourceName: input.sourceName,
+      ownerId,
+      leaseMs: input.leaseMs,
+      heartbeatIntervalMs: input.heartbeatIntervalMs,
+      label: 'scraper cron',
+    },
+    deps,
+  );
 }
 
 async function loadCronSource(

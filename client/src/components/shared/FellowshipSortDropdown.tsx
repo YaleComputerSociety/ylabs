@@ -56,7 +56,7 @@ const FellowshipSortDropdown = () => {
 
   return (
     <div className="relative" ref={outerRef}>
-      <div className="flex min-h-[44px] items-center overflow-hidden rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] text-sm">
+      <div className="flex min-h-[44px] items-center overflow-hidden rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] text-sm">
         <button
           ref={buttonRef}
           onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -68,10 +68,10 @@ const FellowshipSortDropdown = () => {
               }
             }, 100);
           }}
-          className="flex min-h-[44px] min-w-[150px] items-center justify-between px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset whitespace-nowrap"
+          className="flex min-h-[44px] min-w-[150px] items-center justify-between px-3 yr-focus-ring-inset whitespace-nowrap"
           style={{ color: '#374151' }}
         >
-          <span className="text-gray-500 mr-1">Sort:</span>
+          <span className="text-muted mr-1">Sort:</span>
           <span className="truncate">{currentLabel}</span>
           <svg
             className={`ml-2 h-4 w-4 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`}
@@ -85,10 +85,10 @@ const FellowshipSortDropdown = () => {
 
         {sortBy !== 'default' && (
           <>
-            <div className="w-px h-5 bg-gray-300" />
+            <div className="w-px h-5 bg-line-strong" />
             <button
               onClick={onToggleSortDirection}
-              className="flex min-h-[44px] min-w-[44px] items-center justify-center text-gray-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset"
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft yr-focus-ring-inset"
               aria-label={sortDirection === 'asc' ? 'Sort ascending' : 'Sort descending'}
               title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
             >
@@ -113,7 +113,7 @@ const FellowshipSortDropdown = () => {
       </div>
 
       {isDropdownOpen && (
-        <div className="absolute left-0 top-full mt-1 bg-[var(--yr-panel)] rounded-lg shadow-lg border border-[var(--yr-line-strong)] overflow-hidden z-50 min-w-[180px]">
+        <div className="absolute left-0 top-full mt-1 bg-[var(--yr-panel)] rounded-overlay shadow-yr-overlay border border-[var(--yr-line-strong)] overflow-hidden z-50 min-w-[180px]">
           <ul className="max-h-[250px] overflow-y-auto">
             {sortOptions.map((option, index) => (
               <li
@@ -129,7 +129,7 @@ const FellowshipSortDropdown = () => {
                 <span>{option.label}</span>
                 {sortBy === option.value && (
                   <svg
-                    className="h-4 w-4 text-blue-500"
+                    className="h-4 w-4 text-brand"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   officialProfileUrlFromMemberUser,
+  orcidRecordUrlFromMemberUser,
   principalInvestigatorLinkFromResearchEntity,
 } from '../principalInvestigatorLinks';
 
@@ -37,6 +38,33 @@ describe('principal investigator profile links', () => {
     });
     expect(
       principalInvestigatorLinkFromResearchEntity({ contactEmail: 'fixture.advisor@yale.edu' }),
+    ).toBeUndefined();
+  });
+});
+
+describe('orcidRecordUrlFromMemberUser', () => {
+  const ORCID = '9999-9006-9999-9068';
+
+  it('links the server-built record URL', () => {
+    expect(
+      orcidRecordUrlFromMemberUser({ orcid: ORCID, orcidUrl: `https://orcid.org/${ORCID}` }),
+    ).toBe(`https://orcid.org/${ORCID}`);
+  });
+
+  it('withholds a link when either half is missing', () => {
+    expect(orcidRecordUrlFromMemberUser({ orcid: ORCID })).toBeUndefined();
+    expect(
+      orcidRecordUrlFromMemberUser({ orcidUrl: `https://orcid.org/${ORCID}` }),
+    ).toBeUndefined();
+    expect(orcidRecordUrlFromMemberUser(undefined)).toBeUndefined();
+  });
+
+  it('refuses a record URL pointed at another host', () => {
+    expect(
+      orcidRecordUrlFromMemberUser({ orcid: ORCID, orcidUrl: `https://orcid.org.evil/${ORCID}` }),
+    ).toBeUndefined();
+    expect(
+      orcidRecordUrlFromMemberUser({ orcid: ORCID, orcidUrl: `javascript:alert(1)` }),
     ).toBeUndefined();
   });
 });

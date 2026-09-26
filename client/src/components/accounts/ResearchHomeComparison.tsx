@@ -20,7 +20,7 @@ import {
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
 import {
   isSuppressedResearchWebsiteCtaUrl,
-  isUnavailableResearchWebsiteCtaUrl,
+  isUnreachableResearchWebsiteCtaUrl,
   normalizeSourceUrl,
   sourceLabelForUrl,
 } from '../../utils/researchDetailSources';
@@ -68,7 +68,10 @@ const boundedDescription = (entity: ResearchEntity): string => {
   const raw = (entity.shortDescription || entity.fullDescription || '').trim();
   const cleaned = sanitizeResearchEntityCopy(raw, entity).trim();
   if (cleaned.length <= MAX_COMPARE_DESCRIPTION_LENGTH) return cleaned;
-  return `${cleaned.slice(0, MAX_COMPARE_DESCRIPTION_LENGTH).trimEnd()}…`;
+  const bounded = cleaned.slice(0, MAX_COMPARE_DESCRIPTION_LENGTH);
+  const lastWordBoundary = bounded.lastIndexOf(' ');
+  const wordSafe = lastWordBoundary > 0 ? bounded.slice(0, lastWordBoundary) : bounded;
+  return `${wordSafe.replace(/[\s,;:.-]+$/, '')}…`;
 };
 
 const officialLinks = (entity: ResearchEntity): Array<{ href: string; label: string }> => {
@@ -78,7 +81,10 @@ const officialLinks = (entity: ResearchEntity): Array<{ href: string; label: str
   for (const candidate of candidates) {
     const href = safeHttpUrl(candidate);
     if (!href) continue;
-    if (isSuppressedResearchWebsiteCtaUrl(href) || isUnavailableResearchWebsiteCtaUrl(href)) {
+    if (
+      isSuppressedResearchWebsiteCtaUrl(href) ||
+      isUnreachableResearchWebsiteCtaUrl(href, entity.sourceLinkHealth)
+    ) {
       continue;
     }
     const key = normalizeSourceUrl(href) || href;
@@ -90,7 +96,7 @@ const officialLinks = (entity: ResearchEntity): Array<{ href: string; label: str
   return links;
 };
 
-const UnknownCell = () => <span className="text-xs italic text-gray-400">Unknown</span>;
+const UnknownCell = () => <span className="text-xs italic text-muted">Unknown</span>;
 
 const ResearchHomeComparison = ({
   entities,
@@ -240,11 +246,11 @@ const ResearchHomeComparison = ({
 
   const renderReadyCell = (entity: ResearchEntity, field: string): ReactNode => {
     if (field === 'type') {
-      return <span className="text-sm text-gray-800">{entityKindLabel(entity)}</span>;
+      return <span className="text-sm text-ink">{entityKindLabel(entity)}</span>;
     }
     if (field === 'school') {
       return entity.school?.trim() ? (
-        <span className="text-sm text-gray-800">{entity.school.trim()}</span>
+        <span className="text-sm text-ink">{entity.school.trim()}</span>
       ) : (
         <UnknownCell />
       );
@@ -252,7 +258,7 @@ const ResearchHomeComparison = ({
     if (field === 'departments') {
       const labels = getUniqueDepartmentLabels(entity.departments);
       return labels.length > 0 ? (
-        <span className="text-sm text-gray-800">{labels.join(', ')}</span>
+        <span className="text-sm text-ink">{labels.join(', ')}</span>
       ) : (
         <UnknownCell />
       );
@@ -264,7 +270,7 @@ const ResearchHomeComparison = ({
           {areas.map((area) => (
             <li
               key={area}
-              className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-0.5 text-xs text-slate-700"
+              className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-0.5 text-xs text-ink-soft"
             >
               {area}
             </li>
@@ -277,7 +283,7 @@ const ResearchHomeComparison = ({
     if (field === 'description') {
       const description = boundedDescription(entity);
       return description ? (
-        <p className="text-sm leading-relaxed text-gray-700">{description}</p>
+        <p className="text-sm leading-relaxed text-ink-soft">{description}</p>
       ) : (
         <UnknownCell />
       );
@@ -292,7 +298,7 @@ const ResearchHomeComparison = ({
                 href={link.href}
                 target="_blank"
                 rel={EXTERNAL_LINK_REL}
-                className="text-xs text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                className="yr-link yr-focus-ring rounded-control text-xs"
               >
                 {link.label}
               </a>
@@ -308,10 +314,10 @@ const ResearchHomeComparison = ({
 
   const renderCell = (column: ComparisonColumn, field: string): ReactNode => {
     if (column.status === 'loading') {
-      return <span className="text-xs text-gray-400">Loading…</span>;
+      return <span className="text-xs text-muted">Loading…</span>;
     }
     if (column.status === 'error') {
-      return <span className="text-xs italic text-gray-400">Could not load</span>;
+      return <span className="text-xs italic text-muted">Could not load</span>;
     }
     return renderReadyCell(column.entity, field);
   };
@@ -320,7 +326,7 @@ const ResearchHomeComparison = ({
     { key: 'type', label: 'Type' },
     { key: 'school', label: 'School' },
     { key: 'departments', label: 'Department' },
-    { key: 'researchAreas', label: 'Research areas' },
+    { key: 'researchAreas', label: 'Topics' },
     { key: 'description', label: 'What they study' },
     { key: 'links', label: 'Official links' },
   ];
@@ -341,7 +347,7 @@ const ResearchHomeComparison = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="compare-research-homes-title"
-        className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-[var(--yr-panel)] shadow-2xl"
+        className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-overlay bg-[var(--yr-panel)] shadow-yr-modal"
         onKeyDown={handleDialogKeyDown}
         onClick={(event) => event.stopPropagation()}
       >
@@ -351,20 +357,20 @@ const ResearchHomeComparison = ({
               ref={titleRef}
               id="compare-research-homes-title"
               tabIndex={-1}
-              className="text-lg font-bold leading-tight text-gray-900 focus:outline-none"
+              className="text-lg font-bold leading-tight text-ink focus:outline-none"
             >
-              Compare research homes
+              Compare saved research
             </h2>
-            <p className="mt-1 text-sm text-gray-600">
-              Side-by-side facts pulled from each saved home. Blank facts show as unknown, never
-              guessed.
+            <p className="mt-1 text-sm text-muted">
+              Side-by-side facts pulled from each saved research page. Blank facts show as unknown,
+              never guessed.
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close comparison"
-            className="ml-4 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            className="yr-focus-ring ml-4 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -388,10 +394,7 @@ const ResearchHomeComparison = ({
           <table className="w-full min-w-[640px] border-collapse text-left">
             <thead>
               <tr>
-                <th
-                  scope="col"
-                  className="w-40 p-3 align-bottom text-xs font-semibold text-gray-500"
-                >
+                <th scope="col" className="w-40 p-3 align-bottom text-xs font-semibold text-muted">
                   <span className="sr-only">Field</span>
                 </th>
                 {columns.map((column) => (
@@ -402,17 +405,17 @@ const ResearchHomeComparison = ({
                   >
                     <Link
                       to={`/research/${safeRouteSegment(column.base.slug)}`}
-                      className="text-sm font-semibold text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                      className="yr-link yr-focus-ring rounded-control text-sm font-semibold"
                     >
                       {columnHeaderTitle(column)}
                     </Link>
                     {(notesByEntityId[column.base._id] || '').trim() && (
-                      <label className="mt-2 flex items-center gap-1.5 text-xs font-normal text-gray-600">
+                      <label className="mt-2 flex items-center gap-1.5 text-xs font-normal text-muted">
                         <input
                           type="checkbox"
                           checked={includedNoteIds.has(column.base._id)}
                           onChange={() => toggleIncludedNote(column.base._id)}
-                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="yr-focus-ring h-4 w-4 rounded-control border-[var(--yr-line-strong)] accent-brand"
                         />
                         Include my private note
                       </label>
@@ -426,7 +429,7 @@ const ResearchHomeComparison = ({
                 <tr key={row.key} className="align-top">
                   <th
                     scope="row"
-                    className="p-3 text-xs font-semibold uppercase tracking-wide text-gray-500"
+                    className="p-3 text-xs font-semibold uppercase tracking-wide text-muted"
                   >
                     {row.label}
                   </th>
@@ -441,7 +444,7 @@ const ResearchHomeComparison = ({
                 <tr className="align-top">
                   <th
                     scope="row"
-                    className="p-3 text-xs font-semibold uppercase tracking-wide text-gray-500"
+                    className="p-3 text-xs font-semibold uppercase tracking-wide text-muted"
                   >
                     Your private note
                   </th>
@@ -451,9 +454,9 @@ const ResearchHomeComparison = ({
                     return (
                       <td key={column.base._id} className="border-b border-[var(--yr-line)] p-3">
                         {included ? (
-                          <p className="text-xs italic text-gray-700">{note}</p>
+                          <p className="text-xs italic text-ink-soft">{note}</p>
                         ) : (
-                          <span className="text-xs italic text-gray-400">Not shown</span>
+                          <span className="text-xs italic text-muted">Not shown</span>
                         )}
                       </td>
                     );

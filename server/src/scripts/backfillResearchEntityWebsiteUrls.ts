@@ -8,6 +8,11 @@ import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN,
+  MAP_OR_PUBLICITY_PAGE_URL_PATTERN,
+  PRESS_AND_NEWS_HOST_URL_PATTERN,
+} from '../utils/researchHomeWebsiteUrl';
+import {
   resolveBackfillWebsiteUrl,
   type WebsiteUrlBackfillCandidateEntity,
 } from './backfillResearchEntityWebsiteUrlsCore';
@@ -27,6 +32,7 @@ export interface ResearchEntityWebsiteUrlBackfillOptions {
   limit: number;
   explicitLimit: boolean;
   confirm: boolean;
+  slugs: string[];
   output?: string;
 }
 
@@ -38,6 +44,7 @@ export function parseResearchEntityWebsiteUrlBackfillArgs(
     limit: 0,
     explicitLimit: false,
     confirm: false,
+    slugs: [],
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -45,6 +52,7 @@ export function parseResearchEntityWebsiteUrlBackfillArgs(
     if (arg === '--apply' || arg === '--mode=apply') options.dryRun = false;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
     else if (arg === '--confirm-research-entity-website-urls') options.confirm = true;
+    else if (arg.startsWith('--slug=')) options.slugs.push(parseSlug(arg.slice('--slug='.length)));
     else if (arg.startsWith('--limit=')) {
       options.limit = parsePositiveInt(arg.slice('--limit='.length));
       options.explicitLimit = true;
@@ -62,6 +70,12 @@ export function parseResearchEntityWebsiteUrlBackfillArgs(
     }
   }
   return options;
+}
+
+function parseSlug(value: string): string {
+  const slug = value.trim();
+  if (!slug) throw new Error('--slug requires a slug value');
+  return slug;
 }
 
 function parsePositiveInt(value: string | undefined): number {
@@ -99,20 +113,45 @@ export interface ResearchEntityWebsiteUrlBackfillResult {
 export async function runResearchEntityWebsiteUrlBackfill(options: {
   dryRun: boolean;
   limit?: number;
+  slugs?: string[];
 }): Promise<ResearchEntityWebsiteUrlBackfillResult> {
   const entities = await ResearchEntity.find(
     {
       archived: { $ne: true },
+      ...(options.slugs?.length ? { slug: { $in: options.slugs } } : {}),
       $or: [
         { websiteUrl: { $exists: false } },
         { websiteUrl: { $in: ['', null] } },
         { websiteUrl: { $not: /^https?:\/\//i } },
         { websiteUrl: PROFILE_PAGE_WEBSITE_URL_PATTERN },
         { websiteUrl: LISTING_PAGE_WEBSITE_URL_PATTERN },
+        { websiteUrl: MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN },
+        { websiteUrl: PRESS_AND_NEWS_HOST_URL_PATTERN },
+        { websiteUrl: MAP_OR_PUBLICITY_PAGE_URL_PATTERN },
       ],
     },
-    { _id: 1, slug: 1, name: 1, websiteUrl: 1, website: 1, sourceUrls: 1 },
+    {
+      _id: 1,
+      slug: 1,
+      name: 1,
+      displayName: 1,
+      entityType: 1,
+      kind: 1,
+      websiteUrl: 1,
+      website: 1,
+      sourceUrls: 1,
+    },
   ).lean();
+
+  // A mistyped scope otherwise reports `scanned: 0, updated: 0` and exits 0, which is
+  // indistinguishable from a repair that found nothing left to fix. An apply run has to
+  // prove it was exercised, so a scope that selects nothing is an error rather than a
+  // green run.
+  if (!options.dryRun && options.slugs?.length && entities.length === 0) {
+    throw new Error(
+      `Apply mode scoped to ${options.slugs.length} slug(s) selected no candidate rows.`,
+    );
+  }
 
   const result: ResearchEntityWebsiteUrlBackfillResult = {
     mode: options.dryRun ? 'dry-run' : 'apply',
@@ -184,12 +223,17 @@ async function main(): Promise<void> {
     const result = await runResearchEntityWebsiteUrlBackfill({
       dryRun: options.dryRun,
       limit: options.explicitLimit ? options.limit : undefined,
+      slugs: options.slugs,
     });
     const payload = {
       generatedAt: new Date().toISOString(),
       environment: guard.environment,
       db: guard.dbLabel,
-      options: { dryRun: options.dryRun, limit: options.explicitLimit ? options.limit : undefined },
+      options: {
+        dryRun: options.dryRun,
+        limit: options.explicitLimit ? options.limit : undefined,
+        slugCount: options.slugs.length,
+      },
       result,
     };
     if (options.output) {

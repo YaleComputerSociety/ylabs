@@ -32,7 +32,7 @@ const safeAuditBaseUrl = (raw, name) => {
   const isLocal = LOCAL_AUDIT_HOSTS.has(hostname);
   const isDeployed = DEPLOYED_AUDIT_HOSTS.has(hostname);
   if (!isLocal && !isDeployed) {
-    throw new Error(`${name} must point to localhost or a Yale Research deployment`);
+    throw new Error(`${name} must point to localhost or a y/labs deployment`);
   }
   if (isDeployed && parsed.protocol !== 'https:') {
     throw new Error(`${name} deployed origins must use HTTPS`);
@@ -143,7 +143,7 @@ const login = async () => {
 const searchResearch = async (query) => {
   await page.goto(`${clientBase}/research`, { waitUntil: 'domcontentloaded' });
   await waitForResearchSettled();
-  await page.getByLabel('Search Yale research').fill(query);
+  await page.getByLabel('Search y/labs').fill(query);
   await page.getByRole('button', { name: /^Search$/ }).click();
   await page.getByRole('heading', { name: `Results for ${query}` }).waitFor({ timeout: 20000 });
   await waitForResearchSettled();
@@ -217,8 +217,8 @@ await audit('retired practical-routes URL is not a product surface', async () =>
   await page.goto(`${clientBase}/${'pathways'}?q=${encodeURIComponent(researchQuery)}`, {
     waitUntil: 'domcontentloaded',
   });
-  await assertTextIncludes("We couldn't find that Yale Research page");
-  await assertTextIncludes('Explore Yale Research');
+  await assertTextIncludes("We couldn't find that y/labs page");
+  await assertTextIncludes('Explore research');
 });
 await screenshot('05-retired-practical-routes');
 

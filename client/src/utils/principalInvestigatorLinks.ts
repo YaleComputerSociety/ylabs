@@ -5,11 +5,8 @@ export interface PrincipalInvestigatorLink {
   external: boolean;
 }
 
-const PROFILE_URL_MAP_PRIORITY = [
+const DEPARTMENT_PROFILE_MAP_KEYS = [
   'official',
-  'medicine',
-  'ysm',
-  'ysph',
   'department',
   'departmental',
   'directory',
@@ -17,6 +14,19 @@ const PROFILE_URL_MAP_PRIORITY = [
   'faculty-directory',
   'people',
   'yale',
+];
+
+/**
+ * A school-wide directory publishes a profile for people appointed in other
+ * schools too, so its keys rank behind the departmental ones rather than ahead of
+ * them as they did until #2835. See `personProfileRanking.ts` for the same
+ * preference applied to the entity's own `sourceUrls`.
+ */
+const SCHOOL_DIRECTORY_PROFILE_MAP_KEYS = ['medicine', 'ysm', 'ysph', 'som', 'nursing'];
+
+const PROFILE_URL_MAP_PRIORITY = [
+  ...DEPARTMENT_PROFILE_MAP_KEYS,
+  ...SCHOOL_DIRECTORY_PROFILE_MAP_KEYS,
 ];
 
 const GENERIC_PERSON_DIRECTORY_SEGMENTS = new Set([
@@ -140,4 +150,22 @@ export const principalInvestigatorLinkFromResearchEntity = (
     values.website,
     ...(Array.isArray(values.sourceUrls) ? values.sourceUrls : []),
   ]);
+};
+
+/**
+ * Trusts only the server-built `orcidUrl`, and still checks the host, so a value that
+ * reaches the client from a stale cache or a hand-edited response cannot turn into a link
+ * to somewhere other than orcid.org.
+ */
+export const orcidRecordUrlFromMemberUser = (
+  user: { orcid?: string; orcidUrl?: string } | undefined,
+): string | undefined => {
+  if (!user?.orcid || !user.orcidUrl) return undefined;
+  const href = safeHttpUrl(user.orcidUrl);
+  if (!href) return undefined;
+  try {
+    return new URL(href).hostname.toLowerCase() === 'orcid.org' ? href : undefined;
+  } catch {
+    return undefined;
+  }
 };

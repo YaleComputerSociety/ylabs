@@ -156,4 +156,24 @@ describe('ResearchHomeComparison', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close comparison' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('truncates an over-long description on a word boundary', async () => {
+    const longDescription =
+      'The laboratory investigates autonomous robotic perception, developing vision algorithms and probabilistic mapping methods for mobile platforms operating in unstructured outdoor environments, and it evaluates those methods on field trials with undergraduate researchers contributing to sensor calibration and dataset annotation workflows.';
+    mockDetailBySlug({
+      'lab-a': { ...entityA, shortDescription: longDescription },
+      'lab-b': entityB,
+    });
+
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={vi.fn()} />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('link', { name: 'Lab A' });
+    await waitFor(() => expect(container.textContent).toContain('…'));
+    expect(container.textContent).toContain('sensor calibration and dataset…');
+    expect(container.textContent).not.toContain('dataset anno…');
+  });
 });

@@ -10,7 +10,6 @@ import {
   parseQueryInterpretationChips,
 } from '../researchDiscoveryAdapters';
 import type { ResearchEntity } from '../../types/researchEntity';
-import type { PathwaySearchHit } from '../../types/pathway';
 
 const entity = (overrides: Partial<ResearchEntity>): ResearchEntity => ({
   _id: overrides._id || 'entity-1',
@@ -36,36 +35,6 @@ const entity = (overrides: Partial<ResearchEntity>): ResearchEntity => ({
 });
 
 describe('pathway display helpers', () => {
-  const pathway = (overrides: Partial<PathwaySearchHit> = {}): PathwaySearchHit => ({
-    _id: 'pathway-1',
-    pathwayType: 'POSTED_ROLE',
-    status: 'ACTIVE',
-    evidenceStrength: 'DIRECT',
-    studentFacingLabel: 'Posted research role',
-    explanation: 'A posted role mentions undergraduate research.',
-    bestNextStep: 'Apply through the posted listing.',
-    bestNextStepCategory: 'apply',
-    confidence: 0.9,
-    sourceUrls: ['https://example.yale.edu/posting'],
-    researchEntity: {
-      _id: 'entity-1',
-      slug: 'mccormick-lab',
-      name: 'McCormick Lab',
-      departments: ['Neuroscience'],
-      researchAreas: ['Systems neuroscience'],
-    },
-    evidence: [
-      {
-        signalType: 'POSTED_OPENING',
-        confidence: 'HIGH',
-        confidenceScore: 1,
-        sourceUrl: 'https://example.yale.edu/posting',
-        excerpt: 'Posted listing: David A. McCormick',
-      },
-    ],
-    ...overrides,
-  });
-
   it('maps best-next-step categories to student-facing actions', () => {
     expect(getPathwayActionLabel('apply')).toBe('Apply');
     expect(getPathwayActionLabel('contact-program')).toBe('Contact program');

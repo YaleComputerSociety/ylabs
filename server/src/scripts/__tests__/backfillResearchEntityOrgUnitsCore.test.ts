@@ -48,6 +48,32 @@ describe('planOrgUnitBackfillRow', () => {
     expect(row.droppedDepartments).toEqual(['PRV Provost Administration']);
   });
 
+  it('keeps a stored affiliation label when the cleared school is all the pass derives', async () => {
+    useCanonicalizer();
+    const row = await planOrgUnitBackfillRow({
+      id: 'cleared-school-with-stored-labels',
+      school: 'Yale West Campus',
+      departments: ['Neuroscience'],
+      schools: ['Yale West Campus', 'Yale School of Medicine'],
+      orgAffiliationLabels: ['West Campus Institutes'],
+    });
+    expect(row.update.school).toBe('Yale School of Medicine');
+    expect(row.update.schools).toEqual(['Yale School of Medicine']);
+    expect(row.afterOrgAffiliationLabels).toEqual(['West Campus Institutes', 'Yale West Campus']);
+  });
+
+  it('carries the cleared school as a label when the row stored none', async () => {
+    useCanonicalizer();
+    const row = await planOrgUnitBackfillRow({
+      id: 'cleared-school-without-stored-labels',
+      school: 'Yale West Campus',
+      departments: ['Neuroscience'],
+      schools: ['Yale West Campus', 'Yale School of Medicine'],
+      orgAffiliationLabels: [],
+    });
+    expect(row.afterOrgAffiliationLabels).toEqual(['Yale West Campus']);
+  });
+
   it('reports no change when values are already canonical', async () => {
     useCanonicalizer();
     const row = await planOrgUnitBackfillRow({
@@ -127,5 +153,73 @@ describe('summarizeOrgUnitBackfill', () => {
     expect(summary.changed).toBe(1);
     expect(summary.departmentsDropped).toBe(1);
     expect(summary.departmentRewrites).toBe(1);
+  });
+});
+
+describe('planOrgUnitBackfillRow idempotency (#2503)', () => {
+  /**
+   * Applies a plan to the row it was computed from, the way the CLI's bulkWrite
+   * does, so a second plan sees the state a second run would actually see.
+   */
+  const applyPlan = (
+    entity: Record<string, unknown>,
+    update: Record<string, unknown>,
+  ): Record<string, unknown> => ({ ...entity, ...update });
+
+  it('is a no-op on a second run over its own output', async () => {
+    useCanonicalizer();
+    const entity: Record<string, unknown> = {
+      id: 'entity-1',
+      slug: 'lab-one',
+      school: 'YSM',
+      departments: ['NSCI', 'Yale Cancer Center', 'Yale Medicine'],
+      schools: [],
+      orgAffiliationLabels: [],
+    };
+
+    const first = await planOrgUnitBackfillRow(entity as never);
+    expect(first.changed).toBe(true);
+    expect(first.afterDepartments).toEqual(['Neuroscience']);
+    expect(first.afterOrgAffiliationLabels).toEqual(['Yale Cancer Center', 'Yale Medicine']);
+
+    const second = await planOrgUnitBackfillRow(applyPlan(entity, first.update) as never);
+
+    expect(second.changed).toBe(false);
+    expect(second.update).toEqual({});
+  });
+
+  it('never empties labels a previous run stored, which is the wipe this fixes', async () => {
+    useCanonicalizer();
+    // The shape after a first run: `departments` is already canonical, so the
+    // derivation yields no labels at all. Before the fix the plan wrote [] over
+    // them, wiping 1,620 rows' search text on Development.
+    const settled: Record<string, unknown> = {
+      id: 'entity-2',
+      slug: 'lab-two',
+      school: 'Yale School of Medicine',
+      departments: ['Neuroscience'],
+      schools: ['Yale School of Medicine'],
+      orgAffiliationLabels: ['Yale Cancer Center', 'Yale Medicine'],
+    };
+
+    const plan = await planOrgUnitBackfillRow(settled as never);
+
+    expect(plan.afterOrgAffiliationLabels).toEqual(['Yale Cancer Center', 'Yale Medicine']);
+    expect(plan.update).not.toHaveProperty('orgAffiliationLabels');
+    expect(plan.changed).toBe(false);
+  });
+
+  it('still stores labels on the first run, so the guard has not disabled the derivation', async () => {
+    useCanonicalizer();
+    const plan = await planOrgUnitBackfillRow({
+      id: 'entity-3',
+      slug: 'lab-three',
+      school: 'YSM',
+      departments: ['NSCI', 'Janeway Society'],
+      schools: [],
+      orgAffiliationLabels: [],
+    } as never);
+
+    expect(plan.update.orgAffiliationLabels).toEqual(['Janeway Society']);
   });
 });

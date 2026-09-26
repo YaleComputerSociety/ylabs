@@ -15,6 +15,7 @@
  * from the lab name). The slug is the unique identifier `EntityMaterializer` uses to
  * upsert the ResearchGroup.
  */
+import { RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD } from '../entityMaterializer';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
@@ -25,6 +26,11 @@ import {
 } from '../../utils/researchHomeDescriptionSelection';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
+import {
+  labSlugFromMicrositeUrl,
+  YSM_LAB_INDEX_HEALTH_ENTITY_KEY,
+  YSM_LAB_INDEX_HEALTH_FIELD,
+} from '../ysmLabDelistingReconciler';
 import { flattenHtmlToText } from '../utils/htmlText';
 import { canonicalPersonName } from '../utils/personNameCasing';
 import {
@@ -447,6 +453,33 @@ export function parseLabs(html: string): RawLab[] {
   return labs;
 }
 
+/**
+ * `discoveredLabSlugs` is compared against a stored `websiteUrl`, never against
+ * an entity slug, so it must be derived with the reconciler's own
+ * `labSlugFromMicrositeUrl`. Emitting the entity slug (`ysm-pitt`) put the two
+ * sides in different key spaces, which made every governed row read as absent
+ * from the index and reduced suppression to the microsite probe alone.
+ */
+export function buildYsmLabIndexHealthSnapshot(params: {
+  labs: Array<{ url: string }>;
+  narrowed: boolean;
+}): {
+  status: 'empty' | 'ok';
+  complete: boolean;
+  discoveredCount: number;
+  discoveredLabSlugs: string[];
+} {
+  const discoveredLabSlugs = Array.from(
+    new Set(params.labs.map((lab) => labSlugFromMicrositeUrl(lab.url)).filter(Boolean)),
+  );
+  return {
+    status: params.labs.length === 0 ? 'empty' : 'ok',
+    complete: params.labs.length > 0 && !params.narrowed,
+    discoveredCount: discoveredLabSlugs.length,
+    discoveredLabSlugs,
+  };
+}
+
 interface PiUserLookupOptions {
   allowUnknownExactName?: boolean;
 }
@@ -475,7 +508,19 @@ export function labToObservations(lab: RawLab, sourceUrl: string): ObservationIn
   return [
     { ...base, field: 'slug', value: lab.slug },
     { ...base, field: 'name', value: lab.name },
+    // `entityType` and not only `kind`: the materializer derives `kind` from the
+    // observed-or-stored `entityType` (`derivedResearchGroupKind`) and discards an
+    // observed `kind` outright, so this listing asserted no type at all. The type was
+    // stated only in `labDescriptionToObservations`, which needs a lab homepage fetch
+    // to succeed, so a lab whose homepage yielded no description was listed on an
+    // index OF LAB WEBSITES and still kept whatever type it already had. 24 keys hold
+    // a `kind: 'lab'` assertion from this lane with no type beside it (#3252).
+    //
+    // It belongs here rather than in the description arm because it is the same
+    // listing that supplies `name`: a name and its type read from one source stay
+    // consistent, where a type arriving from a different arm can contradict the name.
     { ...base, field: 'kind', value: 'lab' },
+    { ...base, field: 'entityType', value: 'LAB' },
     { ...base, field: 'school', value: 'Yale School of Medicine' },
     { ...base, field: 'websiteUrl', value: lab.url },
     { ...base, field: 'sourceUrls', value: [sourceUrl, lab.url] },
@@ -517,7 +562,7 @@ export function labResearchFacultyToObservations(
     confidenceOverride: 0.78,
   };
   const observations: ObservationInput[] = [
-    { ...base, field: 'researchGroupKey', value: lab.slug },
+    { ...base, field: RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD, value: lab.slug },
     { ...base, field: 'role', value: 'director' },
     { ...base, field: 'name', value: profile.name },
     {
@@ -724,6 +769,29 @@ export class YsmAtoZScraper implements IScraper {
       }
       await ctx.emit(observations);
       totalObs += observations.length;
+    }
+
+    // The index is authoritative for delisting only when this run saw ALL of it.
+    // Any narrowing flag makes every unvisited lab look absent, which is the
+    // mass-suppression shape the drop guard exists to stop - so report the
+    // narrowing rather than letting the reconciler infer completeness.
+    const indexNarrowed = only.length > 0 || Boolean(limitOption && limitOption > 0) || offset > 0;
+    const indexSnapshot = buildYsmLabIndexHealthSnapshot({ labs, narrowed: indexNarrowed });
+    await ctx.emit([
+      {
+        entityType: 'ysmLabIndexHealth',
+        entityKey: YSM_LAB_INDEX_HEALTH_ENTITY_KEY,
+        field: YSM_LAB_INDEX_HEALTH_FIELD,
+        value: indexSnapshot,
+        sourceUrl: PAGE_URL,
+        observedAt: new Date(),
+      },
+    ]);
+    totalObs += 1;
+    if (!indexSnapshot.complete) {
+      ctx.log(
+        `A-Z index snapshot marked incomplete (parsed=${labs.length}, narrowed=${indexNarrowed}); delisting detection will not act on this run`,
+      );
     }
 
     ctx.log(`Emitted ${totalObs} observations across ${work.length} labs`);

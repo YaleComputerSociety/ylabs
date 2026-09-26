@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   isPrivateAddress,
+  isPublicHostname,
   assertPublicHttpUrl,
+  classifyHostnameResolution,
   ssrfSafeAgents,
   SsrfBlockedError,
 } from '../ssrfGuard';
@@ -67,5 +69,46 @@ describe('ssrfGuard', () => {
     const agents = ssrfSafeAgents();
     expect(agents.httpAgent).toBeDefined();
     expect(agents.httpsAgent).toBeDefined();
+  });
+
+  describe('classifyHostnameResolution on IP literals', () => {
+    it('separates a private literal from a public one without touching DNS', async () => {
+      await expect(classifyHostnameResolution('127.0.0.1')).resolves.toEqual({
+        kind: 'private-address',
+      });
+      await expect(classifyHostnameResolution('10.1.2.3')).resolves.toEqual({
+        kind: 'private-address',
+      });
+      await expect(classifyHostnameResolution('8.8.8.8')).resolves.toEqual({ kind: 'public' });
+    });
+
+    it('leaves isPublicHostname answering exactly as before', async () => {
+      await expect(isPublicHostname('8.8.8.8')).resolves.toBe(true);
+      await expect(isPublicHostname('127.0.0.1')).resolves.toBe(false);
+    });
+  });
+
+  describe('SsrfBlockedError.reason', () => {
+    it('reports a private address as private, never as unresolvable', async () => {
+      for (const url of ['http://127.0.0.1/', 'http://10.1.2.3/', 'http://169.254.169.254/']) {
+        const error = await assertPublicHttpUrl(url).catch((e) => e);
+        expect(error, url).toBeInstanceOf(SsrfBlockedError);
+        expect(error.reason, url).toBe('private-address');
+      }
+    });
+
+    it('distinguishes the non-address refusals', async () => {
+      const cases: [string, string][] = [
+        ['not a url', 'invalid-url'],
+        ['ftp://8.8.8.8/', 'unsupported-scheme'],
+        ['http://user:pass@8.8.8.8/', 'credentials'],
+        ['http://8.8.8.8:8080/', 'port'],
+      ];
+      for (const [url, reason] of cases) {
+        const error = await assertPublicHttpUrl(url).catch((e) => e);
+        expect(error, url).toBeInstanceOf(SsrfBlockedError);
+        expect(error.reason, url).toBe(reason);
+      }
+    });
   });
 });

@@ -3,7 +3,7 @@
  */
 import mongoose from 'mongoose';
 import { studentVisibilityFields } from './studentVisibility';
-import { sourceLinkHealthStatuses } from '../services/sourceLinkHealth';
+import { sourceLinkHealthStatuses } from './storedVocabularies';
 
 const fellowshipSourceLinkHealthSchema = new mongoose.Schema(
   {
@@ -21,6 +21,10 @@ const fellowshipSourceLinkHealthSchema = new mongoose.Schema(
       type: Number,
       min: 100,
       max: 599,
+      required: false,
+    },
+    privateAddressHost: {
+      type: Boolean,
       required: false,
     },
     checkedAt: {
@@ -300,10 +304,14 @@ fellowshipSchema.index({ mentorMatching: 1 });
 fellowshipSchema.index({ archived: 1 });
 fellowshipSchema.index({ studentVisibilityTier: 1, archived: 1 });
 fellowshipSchema.index({ studentVisibilityComputedAt: -1 });
+fellowshipSchema.index({ studentVisibilityEvaluatedAt: -1 });
 fellowshipSchema.index({ deadline: 1 });
+// `sparse` is deliberately absent: MongoDB rejects a spec that mixes it with
+// `partialFilterExpression`, so declaring both built no index at all (#3081). The
+// partial filter subsumes what sparse was for, and excludes an explicit null too.
 fellowshipSchema.index(
   { sourceKey: 1 },
-  { unique: true, sparse: true, partialFilterExpression: { sourceKey: { $type: 'string' } } },
+  { unique: true, partialFilterExpression: { sourceKey: { $type: 'string' } } },
 );
 fellowshipSchema.index({ sourceName: 1, sourceLastVerifiedAt: -1 });
 

@@ -88,3 +88,33 @@ export function contentUnchanged(
 ): boolean {
   return !forceLlm && !!storedHash && storedHash === freshHash;
 }
+
+export function observationsCarryField(observations: ObservationInput[], field: string): boolean {
+  return observations.some(
+    (observation) =>
+      observation.field === field &&
+      typeof observation.value === 'string' &&
+      !!observation.value.trim(),
+  );
+}
+
+/**
+ * Recording the hash tells every later run "this content is handled", so it must
+ * only be recorded once the run produced the output a downstream gate reads.
+ * A run that obtained a `fullDescription` but no `shortDescription` left the
+ * student-visibility gate's `missing_card_description` blocker in place, and the
+ * card synthesis that failed is a separate retryable call - so the decision must
+ * stay open, like the suppression and crawl-incomplete guards that also withhold
+ * the hash (#2180, #2436).
+ *
+ * A run that produced no description at all still records the hash: re-reading
+ * unchanged content cannot yield a description it did not yield this time, so
+ * withholding there would re-spend the LLM every sweep with nothing to recover.
+ */
+export function descriptionHashObservations(
+  emitted: ObservationInput[],
+  hashObservations: ObservationInput[],
+): ObservationInput[] {
+  if (!observationsCarryField(emitted, 'fullDescription')) return hashObservations;
+  return observationsCarryField(emitted, 'shortDescription') ? hashObservations : [];
+}

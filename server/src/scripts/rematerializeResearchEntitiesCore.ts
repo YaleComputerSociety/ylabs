@@ -1,13 +1,30 @@
+import { sanitizeLogValue } from '../utils/logSanitizer';
+
 export interface RematerializeResearchEntitiesArgs {
   slugs: string[];
   apply: boolean;
   confirmRematerialize: boolean;
   reclaimStrandedField?: string;
   onlyFields: string[];
+  includeArchived: boolean;
   output?: string;
 }
 
-export const RECLAIMABLE_STRANDED_FIELDS = ['methods', 'researchAreas'] as const;
+/**
+ * `--reclaim-stranded` selects only rows where `researchEntityFieldIsStranded`
+ * holds, so every row it touches stores an empty value for the field. That is why
+ * `fullDescription` is reclaimable even though the corpus sweep over rows that
+ * already HOLD prose is not safe: the 43-of-96 rejection rate recorded on #1908
+ * was measured on rows whose stored body would be REPLACED, and an empty body has
+ * nothing to displace. Measured on Development, zero `student_ready` rows store an
+ * empty `fullDescription`, so an empty one always means nothing is served.
+ *
+ * `shortDescription` is deliberately NOT here. The same measurement found 26
+ * `student_ready` rows storing an empty short, 25 of which serve a card DERIVED at
+ * serve time from the body, so a stranded short is not a row serving nothing and
+ * adopting one would replace a card students already see.
+ */
+export const RECLAIMABLE_STRANDED_FIELDS = ['methods', 'researchAreas', 'fullDescription'] as const;
 
 export type ReclaimableStrandedField = (typeof RECLAIMABLE_STRANDED_FIELDS)[number];
 
@@ -22,6 +39,18 @@ function parseReclaimStrandedField(value: string | undefined): ReclaimableStrand
   return field as ReclaimableStrandedField;
 }
 
+/**
+ * The report is only as wide as this list, so a field the materializer rewrites and
+ * this list omits reads as unchanged rather than as unmeasured (#2536). `kind` is a
+ * pure function of `entityType`, so tracking the derived field without its source
+ * made every LAB-versus-FACULTY_RESEARCH_AREA drift report the shadow of the answer.
+ * A field belongs here when the materializer plans it and the product serves it;
+ * `inferredPiUserKey` is deliberately absent because it is planned but never
+ * persisted, so tracking it would report a change on every run forever, and
+ * `contactEmail`, `contactName` and `contactRole` are absent because
+ * `publicResearchDetailGroup` withholds them from every served payload, so tracking
+ * them would print a withheld contact into a report an operator pastes around.
+ */
 export const REMATERIALIZE_TRACKED_FIELDS = [
   'name',
   'displayName',
@@ -35,7 +64,12 @@ export const REMATERIALIZE_TRACKED_FIELDS = [
   'contactUrl',
   'sourceUrls',
   'inferredPiUserId',
+  'entityType',
   'kind',
+  'school',
+  'schools',
+  'departments',
+  'orgAffiliationLabels',
   'studentVisibilityTier',
 ] as const;
 
@@ -77,6 +111,7 @@ export function parseRematerializeResearchEntitiesArgs(
     apply: false,
     confirmRematerialize: false,
     onlyFields: [],
+    includeArchived: false,
   };
   let slugsProvided = false;
 
@@ -92,6 +127,10 @@ export function parseRematerializeResearchEntitiesArgs(
     }
     if (arg === '--confirm-rematerialize') {
       args.confirmRematerialize = true;
+      continue;
+    }
+    if (arg === '--include-archived') {
+      args.includeArchived = true;
       continue;
     }
     if (arg.startsWith('--slugs=')) {
@@ -139,6 +178,13 @@ export function parseRematerializeResearchEntitiesArgs(
 
   if (!slugsProvided && !args.reclaimStrandedField) {
     throw new Error('--slugs or --reclaim-stranded is required');
+  }
+  // A reclaim run selects its cohort by one field being empty, and an unscoped
+  // rematerialize over that cohort rewrites every tracked field - which is how a
+  // reclaim dropped a row's direct profile sourceUrl (#1908). Scope it to the
+  // field being reclaimed unless the operator asked for a wider scope.
+  if (args.reclaimStrandedField && args.onlyFields.length === 0) {
+    args.onlyFields = [args.reclaimStrandedField];
   }
   return args;
 }
@@ -204,6 +250,68 @@ export function rematerializeChangeAffectsVisibilityGate(
   changes: RematerializeFieldChange[],
 ): boolean {
   return changes.some((change) => change.field !== 'studentVisibilityTier');
+}
+
+export interface RematerializeEntityReport {
+  slug: string;
+  found: boolean;
+  entityId?: string;
+  studentVisibilityTierBefore?: unknown;
+  fieldsWritten?: number;
+  conflicts?: number;
+  changes: RematerializeFieldChange[];
+  skipped?: string;
+  error?: string;
+}
+
+/**
+ * An archived row has no served surface, so recomputing its fields cannot change
+ * what a student sees. A merged shell is archived and its identifiers resolve to a
+ * live canonical, so materializing it writes one document while the report diffs
+ * another (#2905). A redirected row stays skipped even when the operator opts into
+ * archived rows, because the write would land on the canonical while the diff and
+ * the re-gate scope are keyed on the requested row.
+ */
+export function rematerializeSkipReasonForEntity(
+  before: Record<string, unknown>,
+  includeArchived: boolean,
+  resolvedCanonicalEntityId?: string,
+): string | undefined {
+  if (before.archived === true && !includeArchived) return 'archived-entity';
+  if (resolvedCanonicalEntityId && before._id && resolvedCanonicalEntityId !== String(before._id)) {
+    return 'redirected-to-canonical';
+  }
+  return undefined;
+}
+
+export function rematerializeFailureMessage(error: unknown): string {
+  return sanitizeLogValue(error instanceof Error ? error.message : error);
+}
+
+/**
+ * Aborting the loop on the first throw leaves the corpus between its before and
+ * after states with nothing in the report saying where it stopped, so an operator
+ * cannot tell which slugs were written (#2905). Every slug is attempted and each
+ * failure is carried in the report instead.
+ */
+export async function collectRematerializeEntityReports(
+  slugs: string[],
+  processSlug: (slug: string) => Promise<RematerializeEntityReport>,
+): Promise<RematerializeEntityReport[]> {
+  const reports: RematerializeEntityReport[] = [];
+  for (const slug of slugs) {
+    try {
+      reports.push(await processSlug(slug));
+    } catch (error) {
+      reports.push({
+        slug,
+        found: false,
+        changes: [],
+        error: rematerializeFailureMessage(error),
+      });
+    }
+  }
+  return reports;
 }
 
 export interface RematerializeRegateCandidate {

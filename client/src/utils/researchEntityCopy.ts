@@ -1,3 +1,5 @@
+import { researchEntityTypes, type ResearchEntityType } from '../types/researchGroup';
+
 const KIND_LABELS: Record<string, string> = {
   lab: 'Lab',
   center: 'Center',
@@ -34,7 +36,7 @@ const effectiveEntityKind = (entity?: ResearchEntityCopyInput | null): string =>
   ENTITY_TYPE_TO_KIND[entity?.entityType || ''] || entity?.kind || '';
 
 const researchHomeLabel = (entity?: ResearchEntityCopyInput | null): string =>
-  KIND_LABELS[effectiveEntityKind(entity)]?.toLowerCase() || 'research home';
+  KIND_LABELS[effectiveEntityKind(entity)]?.toLowerCase() || 'research';
 
 const RELATIONSHIP_TYPE_LABELS: Record<string, string> = {
   AFFILIATED_LAB: 'Affiliated lab',
@@ -59,8 +61,25 @@ export const isFacultyResearchEntity = (entity?: ResearchEntityCopyInput | null)
       entity.entityType === 'INDIVIDUAL_RESEARCH'),
   );
 
+const LAB_STRUCTURE_MARKER = /\b(?:lab|labs|laboratory|laboratories)\b/i;
+
+/**
+ * A `displayName` claiming a lab on an entity whose `name` does not is a graft
+ * from a different research entity, not a better name, so the whole string is
+ * untrusted rather than trimmed - keeping part of it would keep its other
+ * corruptions too (a stripped initial, a colleague's surname).
+ */
+const displayNameGraftsLabStructure = (entity?: ResearchEntityCopyInput | null): boolean =>
+  isFacultyResearchEntity(entity) &&
+  Boolean(entity?.displayName) &&
+  Boolean(entity?.name) &&
+  LAB_STRUCTURE_MARKER.test(String(entity?.displayName)) &&
+  !LAB_STRUCTURE_MARKER.test(String(entity?.name));
+
 export const researchEntityDisplayName = (entity?: ResearchEntityCopyInput | null): string =>
-  String(entity?.displayName || entity?.name || '');
+  displayNameGraftsLabStructure(entity)
+    ? String(entity?.name || entity?.displayName || '')
+    : String(entity?.displayName || entity?.name || '');
 
 const FACULTY_RESEARCH_TITLE_SUFFIX = /\s*(?:[-–—]\s*)?(?:Faculty\s+)?Research$/i;
 
@@ -73,8 +92,39 @@ export const researchEntityTitle = (entity?: ResearchEntityCopyInput | null): st
 
 export const entityKindLabel = (entity?: ResearchEntityCopyInput | null): string => {
   if (isFacultyResearchEntity(entity)) return 'Faculty Research';
-  return KIND_LABELS[effectiveEntityKind(entity)] || 'Research Home';
+  return KIND_LABELS[effectiveEntityKind(entity)] || 'Research';
 };
+
+/**
+ * The Type filter axis needs one distinct label per stored type, which is a
+ * different job from `entityKindLabel`: two types can share a kind
+ * (`FACULTY_RESEARCH_AREA` and `FACULTY_PROJECT` are both `individual`), so a
+ * kind label would put two options with identical text in the same select. The
+ * axis also only accepts the canonical `researchEntityTypes` enum, never the
+ * retired values `ENTITY_TYPE_TO_KIND` still labels for unmigrated rows (#2219),
+ * because a filter value has to round-trip through the `?type=` URL param.
+ */
+const RESEARCH_ENTITY_TYPE_FILTER_LABELS: Record<ResearchEntityType, string> = {
+  LAB: 'Lab',
+  CENTER: 'Center',
+  INSTITUTE: 'Institute',
+  FACULTY_RESEARCH_AREA: 'Faculty Research',
+  FACULTY_PROJECT: 'Faculty Project',
+  INITIATIVE: 'Initiative',
+  CORE_FACILITY: 'Core Facility',
+};
+
+// `researchEntityTypes` rather than the label map's keys, so the accept-list has
+// one source, and `includes` rather than `Object.hasOwn`, which is ES2022 while
+// Vite's default `modules` build target floors at es2020 and esbuild does not
+// polyfill a built-in method: this runs on every browse facet response, so an
+// ES2022 built-in here takes the Research page down on Safari 14 rather than
+// degrading.
+export const isKnownResearchEntityType = (value?: string | null): boolean =>
+  researchEntityTypes.includes(value as ResearchEntityType);
+
+export const researchEntityTypeFilterLabel = (entityType: string): string =>
+  RESEARCH_ENTITY_TYPE_FILTER_LABELS[entityType as ResearchEntityType] || entityType;
 
 export const researchWebsiteLabel = (entity?: ResearchEntityCopyInput | null): string =>
   isFacultyResearchEntity(entity) ? 'research website' : `${researchHomeLabel(entity)} website`;
@@ -89,7 +139,7 @@ export const researchStructureLabel = (entity?: ResearchEntityCopyInput | null):
 
 export const decisionHeadingLabel = (entity?: ResearchEntityCopyInput | null): string =>
   isFacultyResearchEntity(entity)
-    ? 'What this faculty research area covers'
+    ? 'What this faculty research covers'
     : researchStructureLabel(entity) === 'lab'
       ? 'What this lab studies'
       : `What this ${researchStructureLabel(entity)} focuses on`;

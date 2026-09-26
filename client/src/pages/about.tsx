@@ -8,47 +8,49 @@ const About = () => {
   useDocumentTitle('About');
   return (
     <div className="yr-page flex min-h-screen flex-col items-center px-5 py-8 sm:px-8">
-      <div className="yr-panel max-w-5xl rounded-md p-5 text-center sm:p-8">
+      <div className="yr-panel max-w-5xl rounded-card p-5 text-center sm:p-8">
         <p className="yr-kicker mb-3">About the project</p>
-        <h1 className="mb-7 text-4xl font-semibold text-slate-950">Welcome to Yale Research</h1>
-        <p className="mb-10 text-lg leading-relaxed text-slate-700">
-          Yale Research is a{' '}
+        <h1 className="yr-display mb-7 text-4xl font-semibold leading-tight text-ink sm:text-5xl">
+          Welcome to y/labs
+        </h1>
+        <p className="mb-10 text-lg leading-relaxed text-ink-soft">
+          y/labs is a{' '}
           <a
             href={'https://yalecomputersociety.org/'}
             target="_blank"
             rel="noopener noreferrer"
-            className="yr-link rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            className="yr-link rounded-control yr-focus-ring"
           >
             Yale Computer Society
           </a>{' '}
-          product that gives students a single place to discover research homes at Yale, with
-          signals pointing to more information. The goal is to help undergraduates move from a topic
-          or method they care about to a credible research home without already knowing the right
-          lab or professor name.
+          project that puts research at Yale in one searchable place. Start from a topic, a method,
+          or a question you care about. You do not need to already know the lab or the professor by
+          name. Every profile points back to the official sources behind it, so you can judge the
+          fit yourself.
         </p>
-        <h2 className="mb-7 text-3xl font-semibold text-slate-950">Help improve Yale Research</h2>
-        <p className="mb-10 text-lg leading-relaxed text-slate-700">
-          We are continuing to connect source-backed openings with broader research homes and
-          pathways while improving the browsing experience. As you look around the site, please let
-          us know in the{' '}
+        <h2 className="yr-display mb-7 text-3xl font-semibold text-ink">Help improve y/labs</h2>
+        <p className="mb-10 text-lg leading-relaxed text-ink-soft">
+          We are still building. Right now we are widening y/labs coverage and pathways, tying more
+          openings back to the sources that support them, and smoothing out the browsing experience.
+          If something is broken, wrong, or annoying, or if there is something you want added, tell
+          us in the{' '}
           <a
             href={
               'https://docs.google.com/forms/d/e/1FAIpQLSf2BE6MBulJHWXhDDp3y4Nixwe6EH0Oo9X1pTo976-KrJKv5g/viewform?usp=dialog'
             }
             target="_blank"
             rel="noopener noreferrer"
-            className="yr-link rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            className="yr-link rounded-control yr-focus-ring"
           >
             feedback form
-          </a>{' '}
-          if there is anything that is broken, annoying, or that you would like to see added to the
-          site.
+          </a>
+          .
         </p>
         <a
           href="https://yalecomputersociety.org/"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control yr-focus-ring"
         >
           <img
             src="/assets/icons/ycs-icon.png"
@@ -62,11 +64,11 @@ const About = () => {
           href="https://github.com/YaleComputerSociety/ylabs"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control yr-focus-ring"
         >
           <img
             src="/assets/icons/github-icon.png"
-            alt="Yale Research GitHub"
+            alt="y/labs GitHub"
             width={40}
             height={40}
             className="inline-block mx-2"
@@ -76,7 +78,7 @@ const About = () => {
           href="https://www.hudsonrivertrading.com/"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control yr-focus-ring"
         >
           <img
             src="/assets/logos/HudsonRiverTrading.png"
@@ -90,7 +92,7 @@ const About = () => {
           href="https://www.minimax.com/"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control yr-focus-ring"
         >
           <img
             src="/assets/logos/MiniMax.png"
@@ -102,18 +104,18 @@ const About = () => {
         </a>
       </div>
       <div className="mt-16 max-w-6xl text-center">
-        <h2 className="mb-10 text-3xl font-semibold text-slate-950">Meet our team</h2>
+        <h2 className="yr-display mb-10 text-3xl font-semibold text-ink">Meet our team</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-16">
           {currentDevelopers.map((developer) => (
-            <div key={developer.name} className="yr-card rounded-md p-3">
+            <div key={developer.name} className="yr-card rounded-card p-3">
               <DeveloperCard developer={developer}></DeveloperCard>
             </div>
           ))}
         </div>
-        <h2 className="mb-10 text-3xl font-semibold text-slate-950">Yale Research alumni</h2>
+        <h2 className="yr-display mb-10 text-3xl font-semibold text-ink">y/labs alumni</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {pastDevelopers.map((developer) => (
-            <div key={developer.name} className="yr-card rounded-md p-3">
+            <div key={developer.name} className="yr-card rounded-card p-3">
               <DeveloperCard developer={developer}></DeveloperCard>
             </div>
           ))}

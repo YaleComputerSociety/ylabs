@@ -35,11 +35,14 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
       return (
         <main className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
           <section
-            className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 text-center shadow-sm"
+            className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 text-center shadow-yr-raised"
             role="alert"
             aria-labelledby="error-boundary-title"
           >
-            <h1 id="error-boundary-title" className="text-2xl font-semibold text-slate-900">
+            <h1
+              id="error-boundary-title"
+              className="yr-display text-2xl font-semibold text-slate-900"
+            >
               Something went wrong
             </h1>
             <p className="mt-4 text-slate-600">
@@ -48,14 +51,14 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
               <button
                 type="button"
-                className="rounded-md bg-brand px-5 py-3 font-semibold text-white transition-colors hover:bg-brand-navy"
+                className="rounded-md bg-brand px-5 py-3 font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                 onClick={this.handleReload}
               >
                 Refresh page
               </button>
               <button
                 type="button"
-                className="rounded-md border border-slate-300 px-5 py-3 font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                className="rounded-md border border-slate-300 px-5 py-3 font-semibold text-slate-700 transition-colors hover:bg-slate-50 yr-focus-ring"
                 onClick={this.handleHome}
               >
                 Go home

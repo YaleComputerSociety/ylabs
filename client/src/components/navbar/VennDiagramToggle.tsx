@@ -12,15 +12,15 @@ interface VennDiagramToggleProps {
 const VennDiagramToggle = ({ mode, setMode, compact = false }: VennDiagramToggleProps) => {
   return (
     <div className={`flex items-center ${compact ? 'gap-1' : 'gap-2'}`}>
-      {!compact && <span className="text-xs text-gray-500">Match:</span>}
-      <div className="flex bg-[var(--yr-panel-muted)] rounded-md p-0.5 gap-0.5">
+      {!compact && <span className="text-xs text-muted">Match:</span>}
+      <div className="flex bg-[var(--yr-panel-muted)] rounded-card p-0.5 gap-0.5">
         <button
           type="button"
           onClick={() => setMode('union')}
-          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium transition-colors ${
+          className={`flex items-center gap-1 px-1.5 py-0.5 rounded-control text-xs font-medium transition-colors yr-focus-ring ${
             mode === 'union'
-              ? 'bg-[var(--yr-panel)] shadow-sm text-green-600'
-              : 'text-gray-400 hover:text-gray-600'
+              ? 'bg-[var(--yr-panel)] shadow-yr-raised text-green-700'
+              : 'text-muted hover:text-ink-soft'
           }`}
           title="Any (OR) - Match any of the selected items"
         >
@@ -54,10 +54,10 @@ const VennDiagramToggle = ({ mode, setMode, compact = false }: VennDiagramToggle
         <button
           type="button"
           onClick={() => setMode('intersection')}
-          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium transition-colors ${
+          className={`flex items-center gap-1 px-1.5 py-0.5 rounded-control text-xs font-medium transition-colors yr-focus-ring ${
             mode === 'intersection'
-              ? 'bg-[var(--yr-panel)] shadow-sm text-blue-600'
-              : 'text-gray-400 hover:text-gray-600'
+              ? 'bg-panel shadow-yr-raised text-brand'
+              : 'text-muted hover:text-ink-soft'
           }`}
           title="All (AND) - Match all of the selected items"
         >

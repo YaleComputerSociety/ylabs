@@ -14,7 +14,6 @@ import {
 import { buildSourceHealthRows, type SourceHealthRow } from '../services/sourceHealthService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
-  buildArrayRefOrphanSamplePipeline,
   buildBetaDataQualityDiagnostics,
   buildBetaDataQualityOutput,
   buildBetaDataQualityRecommendedCommands,
@@ -22,11 +21,9 @@ import {
   buildBetaDataQualitySummary,
   buildDuplicateEntityPlanReviewSummary,
   buildDuplicateEntityReviewSummary,
-  buildMissingRequiredRefSamplePipeline,
   buildReferenceIntegritySummary,
   buildResearchEntityContentPageLeakSummary,
   buildSamePiDedupeReviewSummary,
-  buildScalarRefOrphanSamplePipeline,
   buildSuspiciousUserEmailScorecardSummary,
   classifyDuplicateEntityCluster,
   formatBetaDataQualityProgressEvent,
@@ -40,10 +37,9 @@ import {
   type BetaDataQualityOptions,
   type BetaDataQualityScorecard,
   type LinkCandidateInput,
-  type ReferenceAuditInput,
-  type ReferenceAuditSample,
   type SuspiciousUserEmailScorecardSummary,
 } from './betaDataQualityCore';
+import { auditReferenceEdge, type ReferenceEdge } from './referenceEdgeAudit';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../utils/ssrfGuard';
@@ -59,6 +55,93 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const ACTIVE_FILTER: Filter<Document> = { archived: { $ne: true } };
+const BETA_SCORECARD_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze([
+  {
+    name: 'observations.sourceId',
+    collectionName: 'observations',
+    localField: 'sourceId',
+    targetCollectionName: 'sources',
+    required: true,
+  },
+  {
+    name: 'scrape_runs.sourceId',
+    collectionName: 'scrape_runs',
+    localField: 'sourceId',
+    targetCollectionName: 'sources',
+    required: true,
+  },
+  {
+    name: 'research_entities.canonicalGroupId',
+    collectionName: 'research_entities',
+    localField: 'canonicalGroupId',
+    targetCollectionName: 'research_entities',
+    required: false,
+  },
+  {
+    name: 'research_entities.studentVisibilityReviewedByAccountId',
+    collectionName: 'research_entities',
+    localField: 'studentVisibilityReviewedByAccountId',
+    targetCollectionName: 'accounts',
+    required: false,
+  },
+  {
+    name: 'fellowships.studentVisibilityReviewedByAccountId',
+    collectionName: 'fellowships',
+    localField: 'studentVisibilityReviewedByAccountId',
+    targetCollectionName: 'accounts',
+    required: false,
+  },
+  {
+    name: 'signals.researchEntityId',
+    collectionName: 'signals',
+    localField: 'researchEntityId',
+    targetCollectionName: 'research_entities',
+    required: true,
+  },
+  {
+    name: 'signals.source.evidenceIds',
+    collectionName: 'signals',
+    localField: 'source.evidenceIds',
+    targetCollectionName: 'observations',
+    required: false,
+  },
+  {
+    name: 'research_entity_members.userId',
+    collectionName: 'research_entity_members',
+    localField: 'userId',
+    targetCollectionName: 'users',
+    required: false,
+    ownerFilter: ACTIVE_FILTER as Record<string, unknown>,
+  },
+  {
+    name: 'research_scholarly_links.userId',
+    collectionName: 'research_scholarly_links',
+    localField: 'userId',
+    targetCollectionName: 'users',
+    required: false,
+  },
+  {
+    name: 'research_scholarly_attributions.targetUserId',
+    collectionName: 'research_scholarly_attributions',
+    localField: 'targetUserId',
+    targetCollectionName: 'users',
+    required: false,
+  },
+  {
+    name: 'listings.researchEntityId',
+    collectionName: 'listings',
+    localField: 'researchEntityId',
+    targetCollectionName: 'research_entities',
+    required: false,
+  },
+  {
+    name: 'listings.createdByUserId',
+    collectionName: 'listings',
+    localField: 'createdByUserId',
+    targetCollectionName: 'users',
+    required: false,
+  },
+]);
 const OPEN_OPPORTUNITY_STATUSES = ['OPEN', 'ROLLING'];
 interface FieldIssueSample {
   collection: string;
@@ -233,11 +316,10 @@ export async function buildBetaDataQualityScorecard(
       emailHygiene.suspiciousUserEmails.productionCopyExclusion.sampledNeedsReviewBeforeCopy === 0,
     betaStudentAnalyticsEventCount: studentAnalyticsContamination.count,
     retentionCandidateCount: retention.candidates,
+    retentionProjectionNeutral: retention.projectionNeutral,
     liveLinkFailureCount: liveLinks.failed,
     coverageGaps: {
-      withoutPathways: coverage.withoutPathways,
-      withoutAccessSignals: coverage.withoutAccessSignals,
-      withoutContactRoutes: coverage.withoutContactRoutes,
+      withoutSignals: coverage.withoutSignals,
     },
   });
 
@@ -269,14 +351,14 @@ export async function buildBetaDataQualityScorecard(
 }
 
 async function buildCollectionCounts(): Promise<Record<string, number>> {
+  // `entry_pathways`, `contact_routes` and `posted_opportunities` were dropped with the
+  // rest of the dead access model (#2829). Counting a collection that does not exist
+  // reports 0, which is indistinguishable from a real emptiness a reader would act on.
   const collectionNames = [
     'users',
     'listings',
     'research_entities',
-    'entry_pathways',
     'signals',
-    'contact_routes',
-    'posted_opportunities',
     'observations',
     'scrape_runs',
     'sources',
@@ -290,416 +372,14 @@ async function buildCollectionCounts(): Promise<Record<string, number>> {
 async function buildReferenceIntegrity(
   includeSamples: boolean,
 ): Promise<ReturnType<typeof buildReferenceIntegritySummary>> {
-  const audits: Array<Promise<ReferenceAuditInput>> = [
-    referenceAudit(
-      'observations.sourceId',
-      'observations',
-      'sourceId',
-      'sources',
-      true,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'scrape_runs.sourceId',
-      'scrape_runs',
-      'sourceId',
-      'sources',
-      true,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'research_entities.canonicalGroupId',
-      'research_entities',
-      'canonicalGroupId',
-      'research_entities',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'research_entities.studentVisibilityReviewedByAccountId',
-      'research_entities',
-      'studentVisibilityReviewedByAccountId',
-      'accounts',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'fellowships.studentVisibilityReviewedByAccountId',
-      'fellowships',
-      'studentVisibilityReviewedByAccountId',
-      'accounts',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'entry_pathways.researchEntityId',
-      'entry_pathways',
-      'researchEntityId',
-      'research_entities',
-      true,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'entry_pathways.sourceEvidenceIds',
-      'entry_pathways',
-      'sourceEvidenceIds',
-      'observations',
-      false,
-      true,
-      includeSamples,
-    ),
-    referenceAudit(
-      'entry_pathways.review.reviewedByAccountId',
-      'entry_pathways',
-      'review.reviewedByAccountId',
-      'users',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'signals.researchEntityId',
-      'signals',
-      'researchEntityId',
-      'research_entities',
-      true,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'signals.entryPathwayId',
-      'signals',
-      'entryPathwayId',
-      'entry_pathways',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'signals.source.evidenceIds',
-      'signals',
-      'source.evidenceIds',
-      'observations',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'contact_routes.researchEntityId',
-      'contact_routes',
-      'researchEntityId',
-      'research_entities',
-      true,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'contact_routes.entryPathwayId',
-      'contact_routes',
-      'entryPathwayId',
-      'entry_pathways',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'contact_routes.personId',
-      'contact_routes',
-      'personId',
-      'users',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'contact_routes.review.reviewedByAccountId',
-      'contact_routes',
-      'review.reviewedByAccountId',
-      'users',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'contact_routes.sourceEvidenceId',
-      'contact_routes',
-      'sourceEvidenceId',
-      'observations',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'contact_routes.sourceEvidenceIds',
-      'contact_routes',
-      'sourceEvidenceIds',
-      'observations',
-      false,
-      true,
-      includeSamples,
-    ),
-    referenceAudit(
-      'posted_opportunities.entryPathwayId',
-      'posted_opportunities',
-      'entryPathwayId',
-      'entry_pathways',
-      true,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'posted_opportunities.researchEntityId',
-      'posted_opportunities',
-      'researchEntityId',
-      'research_entities',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'posted_opportunities.listingId',
-      'posted_opportunities',
-      'listingId',
-      'listings',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'posted_opportunities.review.reviewedByAccountId',
-      'posted_opportunities',
-      'review.reviewedByAccountId',
-      'users',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'posted_opportunities.sourceEvidenceIds',
-      'posted_opportunities',
-      'sourceEvidenceIds',
-      'observations',
-      false,
-      true,
-      includeSamples,
-    ),
-    referenceAudit(
-      'research_entity_members.userId',
-      'research_entity_members',
-      'userId',
-      'users',
-      false,
-      false,
-      includeSamples,
-      ACTIVE_FILTER,
-    ),
-    referenceAudit(
-      'research_scholarly_links.userId',
-      'research_scholarly_links',
-      'userId',
-      'users',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'research_scholarly_attributions.targetUserId',
-      'research_scholarly_attributions',
-      'targetUserId',
-      'users',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'listings.researchEntityId',
-      'listings',
-      'researchEntityId',
-      'research_entities',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'listings.createdByUserId',
-      'listings',
-      'createdByUserId',
-      'users',
-      false,
-      false,
-      includeSamples,
-    ),
-  ];
-
-  return buildReferenceIntegritySummary(await Promise.all(audits));
-}
-
-async function referenceAudit(
-  name: string,
-  collectionName: string,
-  localField: string,
-  targetCollectionName: string,
-  required: boolean,
-  isArray = false,
-  includeSamples = false,
-  ownerFilter: Filter<Document> = {},
-): Promise<ReferenceAuditInput> {
-  const missingRequired = required
-    ? await collection(collectionName).countDocuments({
-        ...ownerFilter,
-        $or: [{ [localField]: { $exists: false } }, { [localField]: null }],
-      })
-    : 0;
-  const orphanedPresentRefs = isArray
-    ? await countArrayRefOrphans(collectionName, localField, targetCollectionName, ownerFilter)
-    : await countScalarRefOrphans(collectionName, localField, targetCollectionName, ownerFilter);
-  return {
-    name,
-    required,
-    missingRequired,
-    orphanedPresentRefs,
-    ...(includeSamples
-      ? {
-          samples: await buildReferenceAuditSamples({
-            collectionName,
-            localField,
-            targetCollectionName,
-            required,
-            isArray,
-            ownerFilter,
-          }),
-        }
-      : {}),
-  };
-}
-
-async function buildReferenceAuditSamples(input: {
-  collectionName: string;
-  localField: string;
-  targetCollectionName: string;
-  required: boolean;
-  isArray: boolean;
-  ownerFilter: Filter<Document>;
-}): Promise<ReferenceAuditSample[]> {
-  const sampleLimit = 10;
-  const samples: ReferenceAuditSample[] = [];
-
-  if (input.required) {
-    const missingRows = await collection(input.collectionName)
-      .aggregate<{ id?: unknown; value?: unknown }>(
-        buildMissingRequiredRefSamplePipeline(input.localField, sampleLimit, input.ownerFilter),
-      )
-      .toArray();
-    samples.push(
-      ...missingRows.map((row) =>
-        buildReferenceAuditSample(input.collectionName, input.localField, row, 'missing_required'),
-      ),
-    );
+  const db = mongoose.connection.db;
+  if (!db) {
+    throw new Error('MongoDB connection is not initialized');
   }
-
-  const remainingLimit = sampleLimit - samples.length;
-  if (remainingLimit <= 0) {
-    return samples;
-  }
-
-  const orphanPipeline = input.isArray
-    ? buildArrayRefOrphanSamplePipeline(
-        input.localField,
-        input.targetCollectionName,
-        remainingLimit,
-        input.ownerFilter,
-      )
-    : buildScalarRefOrphanSamplePipeline(
-        input.localField,
-        input.targetCollectionName,
-        remainingLimit,
-        input.ownerFilter,
-      );
-  const orphanRows = await collection(input.collectionName)
-    .aggregate<{ id?: unknown; value?: unknown }>(orphanPipeline)
-    .toArray();
-
-  samples.push(
-    ...orphanRows.map((row) =>
-      buildReferenceAuditSample(
-        input.collectionName,
-        input.localField,
-        row,
-        'orphaned_present_ref',
-      ),
-    ),
+  const audits = await Promise.all(
+    BETA_SCORECARD_REFERENCE_EDGES.map((edge) => auditReferenceEdge(db, edge, { includeSamples })),
   );
-
-  return samples;
-}
-
-function buildReferenceAuditSample(
-  collectionName: string,
-  localField: string,
-  row: { id?: unknown; value?: unknown },
-  failureType: ReferenceAuditSample['failureType'],
-): ReferenceAuditSample {
-  return {
-    collection: collectionName,
-    field: localField,
-    id: stringifyId(row.id),
-    failureType,
-    value: stringifyId(row.value),
-  };
-}
-
-async function countScalarRefOrphans(
-  collectionName: string,
-  localField: string,
-  targetCollectionName: string,
-  ownerFilter: Filter<Document> = {},
-): Promise<number> {
-  return countFromAggregate(collectionName, [
-    { $match: { ...ownerFilter, [localField]: { $exists: true, $nin: [null, ''] } } },
-    {
-      $lookup: {
-        from: targetCollectionName,
-        localField,
-        foreignField: '_id',
-        as: '_refTarget',
-      },
-    },
-    { $match: { _refTarget: { $size: 0 } } },
-    { $count: 'count' },
-  ]);
-}
-
-async function countArrayRefOrphans(
-  collectionName: string,
-  localField: string,
-  targetCollectionName: string,
-  ownerFilter: Filter<Document> = {},
-): Promise<number> {
-  const pipeline: Document[] = [
-    { $project: { ref: { $ifNull: [`$${localField}`, []] } } },
-    { $unwind: '$ref' },
-    { $match: { ref: { $ne: null } } },
-    {
-      $lookup: {
-        from: targetCollectionName,
-        localField: 'ref',
-        foreignField: '_id',
-        as: '_refTarget',
-      },
-    },
-    { $match: { _refTarget: { $size: 0 } } },
-    { $count: 'count' },
-  ];
-  return countFromAggregate(
-    collectionName,
-    Object.keys(ownerFilter).length > 0 ? [{ $match: ownerFilter }, ...pipeline] : pipeline,
-  );
+  return buildReferenceIntegritySummary(audits);
 }
 
 async function buildUrlHygiene(includeSamples: boolean): Promise<FieldIssueSummary> {
@@ -716,14 +396,7 @@ async function buildUrlHygiene(includeSamples: boolean): Promise<FieldIssueSumma
         arrayFields: ['scholarCandidateProfileUrls'],
       },
       { collection: 'listings', scalarFields: [], arrayFields: ['websites'] },
-      { collection: 'entry_pathways', scalarFields: [], arrayFields: ['sourceUrls'] },
       { collection: 'signals', scalarFields: ['source.url'], arrayFields: [] },
-      { collection: 'contact_routes', scalarFields: ['url', 'sourceUrl'], arrayFields: [] },
-      {
-        collection: 'posted_opportunities',
-        scalarFields: ['applicationUrl'],
-        arrayFields: ['sourceUrls'],
-      },
       { collection: 'observations', scalarFields: ['sourceUrl'], arrayFields: [] },
     ],
     validator: (value, context) =>
@@ -743,7 +416,6 @@ async function buildEmailHygiene(includeSamples: boolean): Promise<
     specs: [
       { collection: 'users', scalarFields: ['email'], arrayFields: [] },
       { collection: 'listings', scalarFields: ['ownerEmail'], arrayFields: ['emails'] },
-      { collection: 'contact_routes', scalarFields: ['email'], arrayFields: [] },
       { collection: 'research_entities', scalarFields: ['contactEmail'], arrayFields: [] },
     ],
     validator: isInvalidOptionalEmail,
@@ -961,31 +633,27 @@ async function buildSourceHealthSummary(
   };
 }
 
+/**
+ * Access coverage is one number now, not three. `entry_pathways` and `contact_routes`
+ * were dropped with the dead access model (#2829), and reporting a separate
+ * `withPathways` / `withContactRoutes` computed from a missing collection returned
+ * "every entity lacks one", which reads as a catastrophic gap rather than as an absent
+ * concept. `Signal` is the surviving store, so it is the only one counted.
+ */
 async function buildResearchEntityCoverage(): Promise<{
   activeEntities: number;
-  withPathways: number;
-  withoutPathways: number;
-  withAccessSignals: number;
-  withoutAccessSignals: number;
-  withContactRoutes: number;
-  withoutContactRoutes: number;
+  withSignals: number;
+  withoutSignals: number;
 }> {
-  const [activeEntities, withoutPathways, withoutAccessSignals, withoutContactRoutes] =
-    await Promise.all([
-      collection('research_entities').countDocuments(ACTIVE_FILTER),
-      countEntitiesMissingChild('entry_pathways'),
-      countEntitiesMissingChild('signals'),
-      countEntitiesMissingChild('contact_routes'),
-    ]);
+  const [activeEntities, withoutSignals] = await Promise.all([
+    collection('research_entities').countDocuments(ACTIVE_FILTER),
+    countEntitiesMissingChild('signals'),
+  ]);
 
   return {
     activeEntities,
-    withPathways: activeEntities - withoutPathways,
-    withoutPathways,
-    withAccessSignals: activeEntities - withoutAccessSignals,
-    withoutAccessSignals,
-    withContactRoutes: activeEntities - withoutContactRoutes,
-    withoutContactRoutes,
+    withSignals: activeEntities - withoutSignals,
+    withoutSignals,
   };
 }
 
@@ -1261,9 +929,6 @@ async function collectLinkCandidateInputs(limit: number): Promise<LinkCandidateI
   const inputs: LinkCandidateInput[] = [];
   const specs = [
     { collection: 'research_entities', fields: ['websiteUrl', 'website', 'sourceUrls'] },
-    { collection: 'entry_pathways', fields: ['sourceUrls'] },
-    { collection: 'contact_routes', fields: ['url', 'sourceUrl'] },
-    { collection: 'posted_opportunities', fields: ['applicationUrl', 'sourceUrls'] },
     { collection: 'papers', fields: ['url', 'openAccessUrl', 'landingPageUrl', 'pdfUrl'] },
   ];
 

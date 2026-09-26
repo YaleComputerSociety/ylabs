@@ -5,6 +5,7 @@ import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
 import type { StudentVisibilityTier } from '../models/studentVisibility';
 import { VisibilityReleaseQueueItem } from '../models/visibilityReleaseQueueItem';
+import { classifyRecoverabilityForRecordIds } from './visibilityRecoverabilityService';
 import { buildSourceHealthReviewSummary } from '../scripts/sourceHealth';
 import { workPlannerSourcePolicies } from '../scrapers/workPlanner';
 import { buildSourceHealthRows, type SourceHealthRisk } from './sourceHealthService';
@@ -17,18 +18,28 @@ import { resolveSafeJsonReportOutputPath } from '../scripts/scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 
 export type QueueKind = 'blocking' | 'evidence' | 'review';
+import { gateScorecardArtifactPath, type GateScorecardName } from './gateScorecardArtifacts';
+import {
+  readStoredGateScorecards,
+  storedGateArtifact,
+  storedGateScorecardPathLabel,
+  storedScorecardSupersedesFile,
+  type StoredGateScorecard,
+} from './gateScorecardSnapshotStore';
+
 export type PromotionStatus = 'ready' | 'watch' | 'blocked';
 
-export const DEFAULT_DATA_QUALITY_SCORECARD_PATH = '/tmp/ylabs-beta-quality.json';
-export const DEFAULT_SCRAPER_INTEGRITY_SCORECARD_PATH = '/tmp/ylabs-scraper-integrity.json';
-export const DEFAULT_LAUNCH_TRUST_SCORECARD_PATH = '/tmp/ylabs-launch-trust-contract.json';
+export const DEFAULT_DATA_QUALITY_SCORECARD_PATH = gateScorecardArtifactPath('dataQuality');
+export const DEFAULT_SCRAPER_INTEGRITY_SCORECARD_PATH =
+  gateScorecardArtifactPath('scraperIntegrity');
+export const DEFAULT_LAUNCH_TRUST_SCORECARD_PATH = gateScorecardArtifactPath('launchTrust');
 export const DEFAULT_LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH =
-  '/tmp/ylabs-launch-review-exceptions.json';
-export const DEFAULT_LAUNCH_ACQUISITION_REPORT_PATH = '/tmp/ylabs-launch-acquisition-report.json';
-export const DEFAULT_BETA_REPAIR_QUEUE_REPORT_PATH =
-  '/tmp/ylabs-beta-repair-source-description.json';
+  gateScorecardArtifactPath('launchReviewExceptions');
+export const DEFAULT_LAUNCH_ACQUISITION_REPORT_PATH =
+  gateScorecardArtifactPath('launchAcquisition');
+export const DEFAULT_BETA_REPAIR_QUEUE_REPORT_PATH = gateScorecardArtifactPath('betaRepairQueue');
 export const DEFAULT_PROMOTION_COPY_DRY_RUN_REPORT_PATH =
-  '/tmp/ylabs-lane-a-promotion-dry-run.json';
+  gateScorecardArtifactPath('productionCopy');
 /**
  * Max age before a saved gate scorecard is treated as stale (status downgraded to "rerun",
  * never shown as a live verdict). This must be tight enough that a status that has materially
@@ -82,6 +93,30 @@ function readGateArtifactJson(safeArtifactPath: string): any {
     throw new Error(SAVED_ARTIFACT_READ_ERROR);
   }
   return JSON.parse(fs.readFileSync(safeArtifactPath, 'utf8'));
+}
+
+function gateArtifactGeneratedAt(artifact: unknown): string | undefined {
+  const value = (artifact as { generatedAt?: unknown } | undefined)?.generatedAt;
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * A stored row and an artifact file can both exist during the transition, so take
+ * whichever was generated later. The stored row wins on a tie, which is what makes
+ * a refresh that produced nothing replace the previous verdict rather than be
+ * masked by the file it failed to rewrite.
+ */
+export function chooseGateArtifact<T>(
+  fileArtifact: T | undefined,
+  stored: StoredGateScorecard | undefined,
+  now = new Date(),
+): T | undefined {
+  const storedArtifact = storedGateArtifact<T>(stored, GATE_SCORECARD_MAX_AGE_HOURS, now);
+  if (!storedArtifact) return fileArtifact;
+  if (!fileArtifact) return storedArtifact;
+  return storedScorecardSupersedesFile(stored, gateArtifactGeneratedAt(fileArtifact))
+    ? storedArtifact
+    : fileArtifact;
 }
 
 function betaTargetCommand(command: string): string {
@@ -275,6 +310,7 @@ export type LaunchAcquisitionGateArtifact =
       artifactPath: string;
       generatedAt?: string;
       scanned: number;
+      observationStorePopulated: boolean;
       piBlockers: number;
       actionBlockers: number;
       exactPiMatches: number;
@@ -304,7 +340,8 @@ export type BetaRepairQueueGateArtifact =
       ageHours?: number;
       mode: 'dry-run' | 'apply';
       scanned: number;
-      repaired: number;
+      patched: number;
+      resolvedByGate: number | null;
       blocked: number;
       blockedReasonCounts?: Array<{ reason: string; count: number }>;
       options?: Record<string, unknown>;
@@ -613,15 +650,24 @@ export function deriveRepairQueueGate(openCount: number, input?: BetaRepairQueue
   }
 
   const status =
-    input.repaired > 0 ? 'active' : input.blocked > 0 || openCount > 0 ? 'watch' : 'ready';
+    input.patched > 0 ? 'active' : input.blocked > 0 || openCount > 0 ? 'watch' : 'ready';
+
+  const patchClause =
+    input.mode === 'apply' ? `patched ${input.patched} rows` : `would patch ${input.patched} rows`;
+  const promotionClause =
+    input.resolvedByGate === null
+      ? 'It has no promotion count, so read the patch count as the population this lane can act on and take promotions from an apply run.'
+      : `The visibility gate then promoted ${input.resolvedByGate} of them, which is the only promotion count.`;
 
   return {
     status,
     command,
-    note: `Latest beta repair ${input.mode} found ${input.repaired} repairable rows and ${input.blocked} blocked rows.`,
+    note: `Latest beta repair ${input.mode} ${patchClause} and blocked ${input.blocked}. ${promotionClause}`,
     openCount,
+    mode: input.mode,
     scanned: input.scanned,
-    repairableCount: input.repaired,
+    patchedCount: input.patched,
+    ...(input.resolvedByGate === null ? {} : { promotedByGateCount: input.resolvedByGate }),
     blockedCount: input.blocked,
     ...(input.blockedReasonCounts?.length
       ? { blockedReasonCounts: input.blockedReasonCounts }
@@ -812,7 +858,9 @@ export function readBetaRepairQueueGateArtifact(
       ageHours,
       mode: parsed.mode,
       scanned: Number(parsed.scanned || 0),
-      repaired: Number(parsed.repaired || 0),
+      // An artifact written before #2440 renamed the counter still carries `repaired`.
+      patched: Number(parsed.patched ?? parsed.repaired ?? 0),
+      resolvedByGate: readArtifactPromotionCount(parsed.mode, parsed.resolvedByGate),
       blocked: Number(parsed.blocked || 0),
       ...normalizeBlockedReasonCounts(parsed.blockedReasonCounts),
       ...normalizeRepairArtifactOptions(parsed.options),
@@ -826,6 +874,16 @@ export function readBetaRepairQueueGateArtifact(
       error: SAVED_ARTIFACT_READ_ERROR,
     };
   }
+}
+
+// A dry run applies no patch, so it has nothing for the gate to re-decide. Artifacts
+// written before #2440 report `resolvedByGate: 0` in that mode, and reading the 0 back
+// would restore the very "the gate promotes nothing" claim the counter was split to
+// retire, so only an apply run can supply a promotion count.
+function readArtifactPromotionCount(mode: unknown, value: unknown): number | null {
+  if (mode !== 'apply') return null;
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return value;
 }
 
 function normalizeRepairArtifactOptions(value: unknown): { options?: Record<string, unknown> } {
@@ -1584,13 +1642,26 @@ export function readLaunchReviewExceptionsArtifact(
     const parsed = readGateArtifactJson(safeArtifactPath);
     if (
       typeof parsed?.reviewExceptionCount !== 'number' ||
-      typeof parsed?.planSummary !== 'object' ||
-      typeof parsed?.reviewDecisionValidation !== 'object'
+      typeof parsed?.planSummary !== 'object'
     ) {
       return {
         artifactStatus: 'invalid',
         artifactPath: safeArtifactPath,
-        error: 'reviewExceptionCount, planSummary, and reviewDecisionValidation are required',
+        error: 'reviewExceptionCount and planSummary are required',
+      };
+    }
+    // An absent `reviewDecisionValidation` is a run with no decisions to validate, not a
+    // malformed artifact: `--allow-empty-decisions` is the flag that says no decisions
+    // exist yet and that is acceptable, and the writer omits the key entirely in that
+    // case. Requiring it conflated the two and meant this gate never loaded a verdict
+    // from a sanctioned refresh (#3085). A present-but-not-an-object value is still
+    // malformed, because something wrote a shape the reader cannot count.
+    const decisionValidation = parsed.reviewDecisionValidation;
+    if (decisionValidation !== undefined && typeof decisionValidation !== 'object') {
+      return {
+        artifactStatus: 'invalid',
+        artifactPath: safeArtifactPath,
+        error: 'reviewDecisionValidation must be an object when present',
       };
     }
 
@@ -1622,10 +1693,10 @@ export function readLaunchReviewExceptionsArtifact(
       reviewExceptionCount: Number(parsed.reviewExceptionCount || 0),
       plannedCount: Number(parsed.planSummary.plannedCount || 0),
       planTruncated: Boolean(parsed.planSummary.planTruncated),
-      totalDecisions: Number(parsed.reviewDecisionValidation.totalDecisions || 0),
-      validDecisionCount: Number(parsed.reviewDecisionValidation.validDecisionCount || 0),
-      invalidDecisionCount: Number(parsed.reviewDecisionValidation.invalidDecisionCount || 0),
-      unreviewedPlanCount: Number(parsed.reviewDecisionValidation.unreviewedPlanCount || 0),
+      totalDecisions: Number(decisionValidation?.totalDecisions || 0),
+      validDecisionCount: Number(decisionValidation?.validDecisionCount || 0),
+      invalidDecisionCount: Number(decisionValidation?.invalidDecisionCount || 0),
+      unreviewedPlanCount: Number(decisionValidation?.unreviewedPlanCount || 0),
     };
   } catch {
     return {
@@ -1670,6 +1741,19 @@ export function deriveLaunchAcquisitionGate(input?: LaunchAcquisitionGateArtifac
       status: 'manual' as const,
       command,
       note: 'Launch acquisition report is not persisted in this branch yet; run the read-only report before applying repair lanes.',
+    };
+  }
+
+  // Every observation-derived verdict in the artifact is unavailable rather than
+  // negative when the report ran against a database with no observation store, so
+  // reporting `blocked` with "remaining rows need new source evidence" would blame
+  // the corpus for a missing evidence store (#2458).
+  if (!input.observationStorePopulated) {
+    return {
+      status: 'manual' as const,
+      command,
+      note: 'Launch acquisition report ran against a database with no observation store, so its source-evidence verdicts are unavailable rather than negative; rerun it against Development before drawing any conclusion.',
+      scanned: input.scanned,
     };
   }
 
@@ -1750,6 +1834,7 @@ export function readLaunchAcquisitionGateArtifact(
       artifactPath: safeArtifactPath,
       generatedAt,
       scanned: Number(parsed.scanned || 0),
+      observationStorePopulated: parsed.observationStorePopulated !== false,
       piBlockers: Number(parsed.piIdentity?.total || 0),
       actionBlockers: Number(parsed.actionEvidence?.total || 0),
       exactPiMatches: groupCount(piGroups, 'exactSingleUserMatch'),
@@ -1953,7 +2038,7 @@ async function buildQueueSummaries() {
 }
 
 async function buildReleaseQueueSummary() {
-  const [statusRows, blockerRows, sourceRows, samples] = await Promise.all([
+  const [statusRows, blockerRows, sourceRows, samples, openResearchItems] = await Promise.all([
     VisibilityReleaseQueueItem.aggregate([
       { $group: { _id: '$status', count: { $sum: 1 } } },
       { $sort: { count: -1, _id: 1 } },
@@ -1981,7 +2066,19 @@ async function buildReleaseQueueSummary() {
       .sort({ lastSeenAt: -1, _id: 1 })
       .limit(8)
       .lean(),
+    VisibilityReleaseQueueItem.find({ status: 'open', collection: 'research' })
+      .select('recordId')
+      .lean(),
   ]);
+
+  // The queue holds every withheld row, so `openCount` alone reads as a workable
+  // backlog when most of it is not, as the sweep measurement in
+  // docs/research-data-pipeline.md records. Classifying the open research items tells an
+  // operator which of them a repair could actually clear (#2821).
+  const { bucketCounts } = await classifyRecoverabilityForRecordIds(
+    openResearchItems.map((item: any) => String(item.recordId || '')),
+  );
+  const actionableCount = (bucketCounts.regate || 0) + (bucketCounts.materialize || 0);
 
   const statusCounts = statusRows.reduce<Record<string, number>>((acc, row: any) => {
     acc[row._id || 'unknown'] = row.count;
@@ -1991,6 +2088,8 @@ async function buildReleaseQueueSummary() {
   return {
     statusCounts,
     openCount: statusCounts.open || 0,
+    recoverability: bucketCounts,
+    actionableCount,
     topBlockers: blockerRows,
     sourcePressure: sourceRows,
     samples: samples.map((sample: any) => ({
@@ -2145,7 +2244,11 @@ export interface GateArtifactFreshness {
   maxAgeHours: number;
 }
 
-const GATE_ARTIFACT_SOURCES: Array<{ gate: string; envVar: string; defaultPath: string }> = [
+const GATE_ARTIFACT_SOURCES: Array<{
+  gate: GateScorecardName;
+  envVar: string;
+  defaultPath: string;
+}> = [
   {
     gate: 'dataQuality',
     envVar: 'BETA_DATA_QUALITY_SCORECARD_PATH',
@@ -2183,33 +2286,72 @@ const GATE_ARTIFACT_SOURCES: Array<{ gate: string; envVar: string; defaultPath: 
   },
 ];
 
+function storedGateArtifactFreshness(
+  stored: StoredGateScorecard,
+  maxAgeHours: number,
+  now: Date,
+): GateArtifactFreshness {
+  const base = {
+    gate: stored.gate,
+    path: storedGateScorecardPathLabel(stored.gate),
+    maxAgeHours,
+    exists: true,
+    generatedAt: stored.measuredAt.toISOString(),
+    ageMinutes: Math.max(0, Math.floor((now.getTime() - stored.measuredAt.getTime()) / 60000)),
+    db: stored.evaluated.artifactDatabase || stored.databaseName,
+    environment: stored.evaluated.artifactEnvironment || stored.environment,
+  };
+  if (!stored.summary) {
+    return { ...base, status: 'unreadable' as const };
+  }
+  return {
+    ...base,
+    status: base.ageMinutes > maxAgeHours * 60 ? ('stale' as const) : ('fresh' as const),
+  };
+}
+
 /**
  * Uniform provenance for every gate scorecard the board reads: where it came from, when it was
  * generated, against which DB, and whether it is now stale. This is what makes the board honest —
  * the UI can always show "Beta · 7 min ago" instead of presenting a possibly-stale verdict as live.
+ *
+ * A stored row is reported in place of the file whenever it is the newer measurement, so the strip
+ * does not report every gate as missing on a host whose temp directory a deploy has just wiped.
  */
-export function buildGateArtifactFreshness(now = new Date()): GateArtifactFreshness[] {
+export function buildGateArtifactFreshness(
+  now = new Date(),
+  storedRows: Map<GateScorecardName, StoredGateScorecard> = new Map(),
+): GateArtifactFreshness[] {
   const maxAgeHours = GATE_SCORECARD_MAX_AGE_HOURS;
   return GATE_ARTIFACT_SOURCES.map(({ gate, envVar, defaultPath }) => {
+    const stored = storedRows.get(gate);
     const configuredPath = process.env[envVar] || defaultPath;
     const path = resolveGateArtifactReadPath(configuredPath);
+    const storedFreshness = stored
+      ? storedGateArtifactFreshness(stored, maxAgeHours, now)
+      : undefined;
     if (!path) {
-      return {
-        gate,
-        path: UNSAFE_ARTIFACT_PATH,
-        maxAgeHours,
-        exists: false,
-        status: 'unreadable' as const,
-      };
+      return (
+        storedFreshness || {
+          gate,
+          path: UNSAFE_ARTIFACT_PATH,
+          maxAgeHours,
+          exists: false,
+          status: 'unreadable' as const,
+        }
+      );
     }
     const base = { gate, path, maxAgeHours };
     if (!fs.existsSync(path)) {
-      return { ...base, exists: false, status: 'missing' as const };
+      return storedFreshness || { ...base, exists: false, status: 'missing' as const };
     }
     try {
       const stat = fs.statSync(path);
       const parsed = readGateArtifactJson(path);
       const generatedAt = typeof parsed.generatedAt === 'string' ? parsed.generatedAt : undefined;
+      if (storedFreshness && storedScorecardSupersedesFile(stored, generatedAt)) {
+        return storedFreshness;
+      }
       const generatedAtTime = generatedAt ? new Date(generatedAt).getTime() : stat.mtime.getTime();
       const resolvedTime = Number.isNaN(generatedAtTime) ? stat.mtime.getTime() : generatedAtTime;
       const ageMinutes = Math.max(0, Math.floor((now.getTime() - resolvedTime) / 60000));
@@ -2226,33 +2368,63 @@ export function buildGateArtifactFreshness(now = new Date()): GateArtifactFreshn
         environment: typeof parsed.environment === 'string' ? parsed.environment : undefined,
       };
     } catch {
-      return { ...base, exists: true, status: 'unreadable' as const };
+      return storedFreshness || { ...base, exists: true, status: 'unreadable' as const };
     }
   });
 }
 
 export async function buildAdminOperatorBoard() {
-  const dataQualityArtifact = readDataQualityGateArtifact(
-    process.env.BETA_DATA_QUALITY_SCORECARD_PATH || DEFAULT_DATA_QUALITY_SCORECARD_PATH,
+  const now = new Date();
+  const storedScorecards = await readStoredGateScorecards();
+  const dataQualityArtifact = chooseGateArtifact(
+    readDataQualityGateArtifact(
+      process.env.BETA_DATA_QUALITY_SCORECARD_PATH || DEFAULT_DATA_QUALITY_SCORECARD_PATH,
+    ),
+    storedScorecards.get('dataQuality'),
+    now,
   );
-  const scraperIntegrityArtifact = readScraperIntegrityGateArtifact(
-    process.env.SCRAPER_INTEGRITY_SCORECARD_PATH || DEFAULT_SCRAPER_INTEGRITY_SCORECARD_PATH,
+  const scraperIntegrityArtifact = chooseGateArtifact(
+    readScraperIntegrityGateArtifact(
+      process.env.SCRAPER_INTEGRITY_SCORECARD_PATH || DEFAULT_SCRAPER_INTEGRITY_SCORECARD_PATH,
+    ),
+    storedScorecards.get('scraperIntegrity'),
+    now,
   );
-  const launchTrustArtifact = readLaunchTrustGateArtifact(
-    process.env.LAUNCH_TRUST_SCORECARD_PATH || DEFAULT_LAUNCH_TRUST_SCORECARD_PATH,
+  const launchTrustArtifact = chooseGateArtifact(
+    readLaunchTrustGateArtifact(
+      process.env.LAUNCH_TRUST_SCORECARD_PATH || DEFAULT_LAUNCH_TRUST_SCORECARD_PATH,
+    ),
+    storedScorecards.get('launchTrust'),
+    now,
   );
-  const launchReviewExceptionsArtifact = readLaunchReviewExceptionsArtifact(
-    process.env.LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH ||
-      DEFAULT_LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH,
+  const launchReviewExceptionsArtifact = chooseGateArtifact(
+    readLaunchReviewExceptionsArtifact(
+      process.env.LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH ||
+        DEFAULT_LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH,
+    ),
+    storedScorecards.get('launchReviewExceptions'),
+    now,
   );
-  const launchAcquisitionArtifact = readLaunchAcquisitionGateArtifact(
-    process.env.LAUNCH_ACQUISITION_REPORT_PATH || DEFAULT_LAUNCH_ACQUISITION_REPORT_PATH,
+  const launchAcquisitionArtifact = chooseGateArtifact(
+    readLaunchAcquisitionGateArtifact(
+      process.env.LAUNCH_ACQUISITION_REPORT_PATH || DEFAULT_LAUNCH_ACQUISITION_REPORT_PATH,
+    ),
+    storedScorecards.get('launchAcquisition'),
+    now,
   );
-  const betaRepairQueueArtifact = readBetaRepairQueueGateArtifact(
-    process.env.BETA_REPAIR_QUEUE_REPORT_PATH || DEFAULT_BETA_REPAIR_QUEUE_REPORT_PATH,
+  const betaRepairQueueArtifact = chooseGateArtifact(
+    readBetaRepairQueueGateArtifact(
+      process.env.BETA_REPAIR_QUEUE_REPORT_PATH || DEFAULT_BETA_REPAIR_QUEUE_REPORT_PATH,
+    ),
+    storedScorecards.get('betaRepairQueue'),
+    now,
   );
-  const promotionCopyArtifact = readPromotionCopyDryRunArtifact(
-    process.env.PROMOTION_COPY_DRY_RUN_REPORT_PATH || DEFAULT_PROMOTION_COPY_DRY_RUN_REPORT_PATH,
+  const promotionCopyArtifact = chooseGateArtifact(
+    readPromotionCopyDryRunArtifact(
+      process.env.PROMOTION_COPY_DRY_RUN_REPORT_PATH || DEFAULT_PROMOTION_COPY_DRY_RUN_REPORT_PATH,
+    ),
+    storedScorecards.get('productionCopy'),
+    now,
   );
   const [
     sourceFreshness,
@@ -2344,6 +2516,6 @@ export async function buildAdminOperatorBoard() {
       },
     },
     sourceFreshness,
-    artifactFreshness: buildGateArtifactFreshness(),
+    artifactFreshness: buildGateArtifactFreshness(now, storedScorecards),
   };
 }

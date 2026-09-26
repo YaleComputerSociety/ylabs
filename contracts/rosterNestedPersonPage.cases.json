@@ -1,0 +1,69 @@
+{
+  "$comment": "identifier-exempt: every person slug below is synthetic; only the hostnames and the cohort segments are real, because which path shapes a Yale department publishes a person's own page under is the thing under test. Shared behavioural contract for the cohort-nested person page shape (#3207). client/src/utils/researchDetailSources.ts refuses such a page as the detail page's outreach action once the lead card links a profile, and collapses its spellings onto one destination; server/src/scripts/auditPersonPageCitationMirrorsCore.ts carries an independent copy so a read-only audit can count the same shape without a server script importing browser code. The pressAndNewsHosts contract records what happens without this file: two copies drifted by six entries inside the pull request that introduced them, so the parity is pinned here and a divergence fails on both sides. #3358 added the flatNotAPerson list: the two copies had drifted on a FLAT roster leaf because notNested carried only nested cases, so the server keyed /people/professors where the client returned null. A flat case fails both halves immediately.",
+  "nested": [
+    "https://english.yale.edu/people/tenured-and-tenure-track-faculty-professors/ada-fixture",
+    "http://english.yale.edu/people/tenured-and-tenure-track-faculty-professors-staff/ada-fixture",
+    "https://english.yale.edu/people/professors-emeritus/ada-fixture",
+    "https://english.yale.edu/people/professors-professors-emeritus/ada-fixture",
+    "https://english.yale.edu/people/adjunct-professors-and-senior-lecturers-creative-writers/ada-fixture",
+    "https://english.yale.edu/people/professors-practice-creative-writers/ada-fixture",
+    "https://german.yale.edu/who-we-are/faculty-officers/ada-fixture",
+    "https://german.yale.edu/who-we-are/faculty/ada-fixture",
+    "https://environment.yale.edu/directory/faculty/ada-fixture",
+    "https://eeb.yale.edu/people/faculty/ada-fixture"
+  ],
+  "notNested": [
+    "https://english.yale.edu/people/ada-fixture",
+    "https://medicine.yale.edu/profile/ada-fixture",
+    "https://english.yale.edu/people/professors-emeritus/faculty",
+    "https://english.yale.edu/people/professors-emeritus/directory",
+    "https://english.yale.edu/people/news/ada-fixture",
+    "https://english.yale.edu/research/labs/ada-fixture",
+    "https://english.yale.edu/people/professors-emeritus/roster.pdf",
+    "https://example.com/people/faculty-officers/ada-fixture",
+    "https://english.yale.edu/people",
+    "https://english.yale.edu"
+  ],
+  "sameDestinationGroups": [
+    [
+      "https://english.yale.edu/people/tenured-and-tenure-track-faculty-professors/ada-fixture",
+      "http://english.yale.edu/people/tenured-and-tenure-track-faculty-professors-staff/ada-fixture",
+      "https://english.yale.edu/people/professors-emeritus/ada-fixture",
+      "https://english.yale.edu/people/ada-fixture"
+    ],
+    [
+      "https://medicine.yale.edu/profile/bo-sample",
+      "https://medicine.yale.edu/bbs/profile/bo-sample",
+      "https://www.medicine.yale.edu/cancer/profile/bo-sample"
+    ]
+  ],
+  "distinctDestinations": [
+    [
+      "https://english.yale.edu/people/professors-emeritus/ada-fixture",
+      "https://english.yale.edu/people/professors-emeritus/bo-sample"
+    ],
+    [
+      "https://english.yale.edu/people/professors-emeritus/ada-fixture",
+      "https://german.yale.edu/who-we-are/faculty/ada-fixture"
+    ]
+  ],
+  "flatNotAPerson": [
+    "https://english.yale.edu/people/professors",
+    "https://english.yale.edu/people/primary",
+    "https://english.yale.edu/people/emeriti",
+    "https://english.yale.edu/people/faculty",
+    "https://english.yale.edu/people/core-faculty",
+    "https://cogdevlab.yale.edu/people/joining-lab",
+    "https://example.yale.edu/people/previous",
+    "https://example.yale.edu/people/previous-members",
+    "https://example.yale.edu/people/prospective-students",
+    "https://example.yale.edu/profile/opportunities",
+    "https://example.yale.edu/people/alumni",
+    "https://example.yale.edu/people/contact"
+  ],
+  "flatIsAPerson": [
+    "https://english.yale.edu/people/ada-fixture",
+    "https://medicine.yale.edu/profile/bo-sample",
+    "https://medicine.yale.edu/bbs/profile/bo-sample"
+  ]
+}

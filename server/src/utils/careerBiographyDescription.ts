@@ -92,6 +92,10 @@ const CAREER_BIOGRAPHY_MARKERS: readonly RegExp[] = [
   /\bjoined\s+(?:the\s+)?(?:Yale|faculty|department|university)\b/i,
   /\bbefore\s+(?:coming|joining|arriving)\b/i,
   /\bwas\s+(?:appointed|named|promoted|recruited)\b/i,
+  // The nominalised form of the same fact, which the verb markers above miss:
+  // "trained at three universities before an appointment to the faculty in 2001"
+  // names no appointing verb at all (#2973).
+  /\bappointment\s+to\s+the\s+(?:[\p{L}][\p{L}'’.-]*\s+){0,4}faculty\b/iu,
   // "holds a joint appointment", but also "with a secondary appointment as ...".
   /\b(?:holds?|with|has)\s+(?:a\s+)?(?:joint|secondary|primary|additional|courtesy)\s+appointment\b/i,
   new RegExp(`\\bserved?\\s+as\\s+(?:an?|the)?\\s*[^.]{0,40}\\b(?:${CAREER_ROLE_NOUN})\\b`, 'i'),
@@ -175,6 +179,24 @@ function hasPersonSubjectLead(opening: string): boolean {
   if (PERSON_PRONOUN_SUBJECT.test(opening) || PERSON_TITLE_SUBJECT.test(opening)) return true;
   const named = PERSON_NAME_SUBJECT.exec(opening);
   return Boolean(named) && !RESEARCH_HOME_HEAD_NOUN_RE.test(named![1]);
+}
+
+/**
+ * Whether one sentence states a career fact on its own: where the subject
+ * trained, what they were appointed to, what they have been awarded.
+ *
+ * Deliberately the unconditional marker list only. The person-subject markers are
+ * excluded because "is <a role noun>" is how a good body orients the reader before
+ * describing the work ("Justin Willson is a historian of Byzantine and early
+ * Slavic art", "Ryan Rimmer, MD is a subspecialty-trained otolaryngologist"), and
+ * on Development 10 of the bodies whose credential opener is stripped lead with
+ * exactly that sentence. Judging a promoted opener on the whole predicate would
+ * withdraw those strips.
+ */
+export function isCareerFactSentence(sentence: unknown): boolean {
+  const text = textValue(sentence);
+  if (!text) return false;
+  return CAREER_BIOGRAPHY_MARKERS.some((marker) => marker.test(text));
 }
 
 export function isCareerBiographyDescription(value: unknown): boolean {

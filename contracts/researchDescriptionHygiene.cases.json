@@ -1,0 +1,250 @@
+{
+  "$comment": "Shared behavioural contract for the research-description hygiene invariant (#2433). server/src/utils/researchHomeCardSummary.ts and client/src/utils/researchTextNormalization.ts carry independent copies of the same predicates, and researchHomeCardSummary.ts:192 documents that the two sides must stay in sync so served card text is byte-identical. Nothing enforced that. Both test suites read THIS file and drive their own public entry points, so the invariant is pinned by behaviour rather than by source text - a legitimate refactor of either copy still passes, and any behavioural drift fails on both sides. Add a case here rather than to only one suite.",
+  "suppression": [
+    {
+      "name": "keeps a genuine research description",
+      "input": "The lab studies cortical circuit dynamics in behaving mice using two-photon imaging.",
+      "expect": "kept"
+    },
+    {
+      "name": "keeps a short but real research description",
+      "input": "Investigates how gut microbiota shape host immune development.",
+      "expect": "kept"
+    },
+    {
+      "name": "suppresses a research-home metadata blurb",
+      "input": "Research home focused on neuroscience.",
+      "expect": "suppressed"
+    },
+    {
+      "name": "suppresses a browse-page metadata blurb",
+      "input": "Browse Yale research homes connected to immunology.",
+      "expect": "suppressed"
+    },
+    {
+      "name": "suppresses the is-a-yale-research-home template",
+      "input": "Chen Lab is a Yale research home connected to molecular biophysics.",
+      "expect": "suppressed"
+    },
+    {
+      "name": "suppresses a dangling connected-to stub",
+      "input": "Research home connected to .",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isAcademicAppointmentDescription: suppresses a department-chair appointment line",
+      "input": "Department Chair and Professor of Immunobiology at Yale School of Medicine",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isAcademicAppointmentDescription: suppresses an is-a-Professor biography opener",
+      "input": "Jane Alden Doe is an Associate Professor of Molecular Biophysics and Biochemistry",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isAcademicAppointmentDescription: yields to a real research verb in the same text",
+      "input": "Jane Alden Doe is an Associate Professor of Immunobiology who studies T-cell development in the thymus.",
+      "expect": "kept"
+    },
+    {
+      "name": "isRoleOnlyTitleFragment: suppresses a bare director title",
+      "input": "Director of Graduate Studies",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isRoleOnlyTitleFragment: suppresses a bare professor title",
+      "input": "Associate Professor of Chemistry",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isRoleOnlyTitleFragment: suppresses an embedded course-director role",
+      "input": "Radiobiology course director for the graduate program",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isRoleOnlyTitleFragment: does not suppress past its 120-character length ceiling",
+      "input": "Director of the Center for Molecular Discovery, a facility that supports assay development, high-throughput screening, and medicinal chemistry for investigators across the university.",
+      "expect": "kept"
+    },
+    {
+      "name": "isIncompleteSentenceFragment: suppresses a lowercase sentence fragment",
+      "input": "focuses on the regulation of lipid metabolism",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isIncompleteSentenceFragment: suppresses an eduHQ scrape artifact",
+      "input": "Research summary eduHQ 4821",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isIncompleteSentenceFragment: suppresses a truncated trailing initial",
+      "input": "Collaborators include Smith J, Alvarez R, and Chen L.",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isIncompleteSentenceFragment: keeps a legitimate degree abbreviation ending",
+      "input": "The laboratory is directed by a physician-scientist holding an M.D. and a Ph.D.",
+      "expect": "kept"
+    },
+    {
+      "name": "hasRepeatedSourceChromePhrase: suppresses a doubled chrome phrase",
+      "input": "View Full Profile for details about ongoing projects and then View Full Profile again",
+      "expect": "suppressed"
+    },
+    {
+      "name": "hasRepeatedSourceChromePhrase: keeps a single chrome phrase occurrence in real prose",
+      "input": "The group develops single-molecule assays for chromatin remodelling in living cells.",
+      "expect": "kept"
+    },
+    {
+      "name": "isResearchSourceChromeText: suppresses an ORCID identifier line",
+      "input": "ORCID 0000-0002-1825-0097",
+      "expect": "suppressed"
+    },
+    {
+      "$comment": "The cases below isolate one SOURCE_CHROME_PATTERNS rule each. The combined 'ORCID 0000-...' case above is matched by both the ORCID rule and the bare-identifier rule, so deleting either one left it passing - a mutation check caught that, and an over-determined case pins nothing about the rule it is named for.",
+      "name": "isResearchSourceChromeText: suppresses the bare ORCID label with no identifier",
+      "input": "ORCID",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isResearchSourceChromeText: suppresses a bare ORCID identifier with no label",
+      "input": "0000-0002-1825-0097",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isResearchSourceChromeText: suppresses a Yale Co-Authors chrome line",
+      "input": "Yale Co-Authors",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isResearchSourceChromeText: suppresses a Streamline Icon chrome line",
+      "input": "Streamline Icon",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isResearchSourceChromeText: suppresses a bare Citations chrome line",
+      "input": "Citations",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isResearchSourceChromeText: suppresses a ResearchersView chrome artifact",
+      "input": "ResearchersView",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isResearchSourceChromeText: suppresses a View Lab Website chrome line",
+      "input": "View Lab Website",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isResearchSourceChromeText: suppresses a single Director of Department Cores line",
+      "input": "Director of Department Cores",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isResearchSourceChromeText: suppresses a bare Publications heading",
+      "input": "Publications",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isResearchSourceChromeText: suppresses a publications-timeline chrome line",
+      "input": "Publications Timeline",
+      "expect": "suppressed"
+    },
+    {
+      "name": "isResearchSourceChromeText: suppresses a related-publications chrome line",
+      "input": "View 12 Related Publications",
+      "expect": "suppressed"
+    },
+    {
+      "name": "empty input is suppressed",
+      "input": "",
+      "expect": "suppressed"
+    },
+    {
+      "name": "whitespace-only input is suppressed",
+      "input": "   \n  \t ",
+      "expect": "suppressed"
+    }
+  ],
+  "$cardComment": "Card-summary selection cases. These pin the pair the issue body does not name: researchHomeCardSummary.ts:192 declares itself a mirror of buildResearchHomeContextSummary in client/src/utils/researchDiscoveryAdapters.ts, and selectResearchDescriptionSummary plus its helpers and the sparse fallback strings are duplicated there too. Only the client short-circuits on a server-supplied cardDescription, which is by design (the server resolves it for list responses only), so these cases exercise the re-derivation path both sides share.",
+  "cardSummary": [
+    {
+      "name": "prefers a usable shortDescription when fullDescription is also usable",
+      "input": {
+        "shortDescription": "Studies how sleep consolidates spatial memory in rodents.",
+        "fullDescription": "The laboratory investigates hippocampal replay during slow-wave sleep and its role in spatial memory consolidation."
+      },
+      "expectState": "complete",
+      "expectText": "Studies how sleep consolidates spatial memory in rodents."
+    },
+    {
+      "name": "falls back to fullDescription when shortDescription is suppressed",
+      "input": {
+        "shortDescription": "Research home focused on neuroscience.",
+        "fullDescription": "The laboratory investigates hippocampal replay during slow-wave sleep."
+      },
+      "expectState": "complete",
+      "expectText": "The laboratory investigates hippocampal replay during slow-wave sleep."
+    },
+    {
+      "name": "rejects a weak my-lab shortDescription in favour of fullDescription",
+      "input": {
+        "shortDescription": "My lab focuses on memory.",
+        "fullDescription": "The laboratory investigates hippocampal replay during slow-wave sleep."
+      },
+      "expectState": "complete",
+      "expectText": "The laboratory investigates hippocampal replay during slow-wave sleep."
+    },
+    {
+      "name": "uses profile synthesis context when no usable description exists",
+      "input": {
+        "shortDescription": "Research home connected to .",
+        "profileSynthesisDescription": "Works on computational models of visual attention."
+      },
+      "expectState": "complete",
+      "expectText": "Works on computational models of visual attention."
+    },
+    {
+      "name": "sparse with department context and source links when nothing is usable",
+      "input": {
+        "shortDescription": "Director of Graduate Studies",
+        "departments": ["Immunobiology"],
+        "sourceUrls": ["https://example.edu/profile"]
+      },
+      "expectState": "sparse",
+      "expectText": "Limited public description. Open the profile to review source links and Immunobiology context."
+    },
+    {
+      "name": "sparse with department context and no source links",
+      "input": {
+        "shortDescription": "Director of Graduate Studies",
+        "departments": ["Immunobiology"]
+      },
+      "expectState": "sparse",
+      "expectText": "Limited public description. Use the Immunobiology context while this profile is reviewed."
+    },
+    {
+      "name": "sparse readable list joins school and departments",
+      "input": {
+        "departments": ["Immunobiology", "Molecular Biophysics"],
+        "school": "Yale School of Medicine"
+      },
+      "expectState": "sparse",
+      "expectText": "Limited public description. Use the Immunobiology, Molecular Biophysics, and Yale School of Medicine context while this profile is reviewed."
+    },
+    {
+      "name": "sparse with no metadata at all and no source links",
+      "input": {},
+      "expectState": "sparse",
+      "expectText": "Limited public description. This profile needs source review before fit can be assessed."
+    },
+    {
+      "name": "sparse with no metadata but with source links",
+      "input": { "sourceUrls": ["https://example.edu/profile"] },
+      "expectState": "sparse",
+      "expectText": "Limited public description. Open the profile to review source links before deciding fit."
+    }
+  ]
+}

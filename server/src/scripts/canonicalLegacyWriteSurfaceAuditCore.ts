@@ -57,19 +57,41 @@ export interface LegacyWriteSurfaceScan {
   actionableTotal: number;
 }
 
+/**
+ * Every legacy collection the #210 Phase 6 checklist names, not a subset.
+ * Scanning four of them reported "clean" while six checklist items were
+ * unscanned, so the audit could not distinguish retired storage from storage it
+ * had never looked for.
+ */
 export const RETIRED_LEGACY_COLLECTIONS = [
   'research_groups',
   'research_group_members',
+  'research_entity_members',
   'papers',
   'paper_authors',
+  'research_scholarly_links',
+  'research_scholarly_attributions',
+  'faculty_members',
+  'users',
+  'listings',
 ] as const;
 
 export const RETIRED_LEGACY_MODELS = [
   'ResearchGroup',
   'ResearchGroupMember',
+  'ResearchEntityMember',
   'Paper',
   'PaperAuthor',
+  'ResearchScholarlyLink',
+  'ResearchScholarlyAttribution',
+  'FacultyMember',
+  'User',
+  'Listing',
 ] as const;
+
+const RETIRED_PERSON_REF_FIELDS = ['facultyMemberId'] as const;
+
+const RETIRED_PUBLICATION_MIRROR_FIELDS = ['publications'] as const;
 
 const RETIRED_ACCESS_BOOLEANS = [
   'acceptingUndergrads',
@@ -98,14 +120,13 @@ const WRITE_METHODS = [
 export const LEGACY_WRITE_SURFACE_RULES: readonly LegacyWriteSurfaceRule[] = Object.freeze([
   {
     id: 'retiredCollectionAccess',
-    description:
-      'Raw driver access to a retired collection (research_groups, research_group_members, papers, paper_authors).',
+    description: `Raw driver access to a retired collection (${RETIRED_LEGACY_COLLECTIONS.join(', ')}).`,
     kind: 'collectionAccess',
     pattern: new RegExp(`\\.collection\\(\\s*['"](?:${RETIRED_LEGACY_COLLECTIONS.join('|')})['"]`),
   },
   {
     id: 'retiredModelWrite',
-    description: 'Write call on a retired Mongoose model (ResearchGroup(Member), Paper(Author)).',
+    description: `Write call on a retired Mongoose model (${RETIRED_LEGACY_MODELS.join(', ')}).`,
     kind: 'modelWrite',
     pattern: new RegExp(
       `\\b(?:${RETIRED_LEGACY_MODELS.join('|')})\\s*\\.\\s*(?:${WRITE_METHODS.join('|')})\\b`,
@@ -124,6 +145,22 @@ export const LEGACY_WRITE_SURFACE_RULES: readonly LegacyWriteSurfaceRule[] = Obj
       'Object-key write of the legacy ownership field researchGroupId (superseded by researchEntityId).',
     kind: 'fieldKey',
     pattern: /\bresearchGroupId\s*:/,
+  },
+  {
+    id: 'retiredPersonRefFieldKey',
+    description: `Object-key write of a retired person reference (${RETIRED_PERSON_REF_FIELDS.join(
+      ', ',
+    )}), superseded by RoleAssignment.personId. The sibling userId is deliberately not a rule: it remains the live reference to an authenticated Account.`,
+    kind: 'fieldKey',
+    pattern: new RegExp(`\\b(?:${RETIRED_PERSON_REF_FIELDS.join('|')})\\s*:`),
+  },
+  {
+    id: 'retiredPublicationMirrorFieldKey',
+    description: `Object-key write of a retired publication mirror (${RETIRED_PUBLICATION_MIRROR_FIELDS.join(
+      ', ',
+    )}) removed with the scholarly surface.`,
+    kind: 'fieldKey',
+    pattern: new RegExp(`\\b(?:${RETIRED_PUBLICATION_MIRROR_FIELDS.join('|')})\\s*:`),
   },
 ]);
 

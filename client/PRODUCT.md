@@ -1,4 +1,4 @@
-# Yale Research Product Context
+# y/labs Product Context
 
 The product model lives in the durable docs, not here.
 

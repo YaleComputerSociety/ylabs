@@ -23,7 +23,6 @@ const __filename = fileURLToPath(import.meta.url);
 const CLEANUP_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 const BLOCKED_SAMPLE_LIMIT = 50;
 const ELIGIBLE_SAMPLE_LIMIT = 50;
-const RESEARCH_ENTITY_REDIRECTS_COLLECTION = 'research_entity_redirects';
 
 export const SCRAPER_SWEEP_DELETE_MERGE_RESIDUE_ENV = 'SCRAPER_SWEEP_DELETE_MERGE_RESIDUE';
 
@@ -78,8 +77,6 @@ const LIVE_REFERENCE_SPECS: LiveReferenceSpec[] = [
  * (it keys the polymorphic `target.id`, never `researchEntityId`).
  *
  * Deliberately excluded:
- * - `research_entity_redirects` - a redirect whose `mergedEntityId` is gone is
- *   the point of a redirect, not an orphan.
  * - `research_plans` - account-owned saved planning. A plan pointing at a
  *   removed entity is student data and must not be deleted as a side effect.
  * - `observations` - append-only provenance, repaired by its own lane.
@@ -334,59 +331,14 @@ async function loadArchivedResearchEntityCandidates(
     }
   }
 
-  const redirectPresence = await loadRedirectPresence(archivedEntities, archivedIdMatchValues);
-
   return archivedEntities.map((entity: any) => ({
     id: stringId(entity._id),
     ...(entity.name ? { name: String(entity.name) } : {}),
     ...(entity.slug ? { slug: String(entity.slug) } : {}),
     ...(entity.entityType ? { entityType: String(entity.entityType) } : {}),
     liveReferences: references.get(stringId(entity._id)) || [],
-    redirectPresent: redirectPresence.has(stringId(entity._id)),
     hasCanonicalTombstone: Boolean(entity.canonicalGroupId),
   }));
-}
-
-async function loadRedirectPresence(
-  archivedEntities: Array<{ _id: unknown; slug?: unknown }>,
-  archivedIdMatchValues: (mongoose.Types.ObjectId | string)[],
-): Promise<Set<string>> {
-  const withRedirect = new Set<string>();
-  const db = mongoose.connection.db;
-  if (!db || archivedEntities.length === 0) return withRedirect;
-  if (!(await collectionExists(RESEARCH_ENTITY_REDIRECTS_COLLECTION))) return withRedirect;
-
-  const slugByEntityId = new Map<string, string>();
-  const slugToEntityIds = new Map<string, string[]>();
-  for (const entity of archivedEntities) {
-    const id = stringId(entity._id);
-    const slug = typeof entity.slug === 'string' ? entity.slug.trim() : '';
-    if (!slug) continue;
-    slugByEntityId.set(id, slug);
-    const bucket = slugToEntityIds.get(slug) || [];
-    bucket.push(id);
-    slugToEntityIds.set(slug, bucket);
-  }
-
-  const redirectRows = await db
-    .collection(RESEARCH_ENTITY_REDIRECTS_COLLECTION)
-    .find({
-      $or: [
-        { mergedEntityId: { $in: archivedIdMatchValues } },
-        ...(slugToEntityIds.size > 0 ? [{ mergedSlug: { $in: [...slugToEntityIds.keys()] } }] : []),
-      ],
-    })
-    .project({ mergedEntityId: 1, mergedSlug: 1 })
-    .toArray();
-
-  for (const row of redirectRows) {
-    const mergedEntityId = stringId(row.mergedEntityId);
-    if (mergedEntityId) withRedirect.add(mergedEntityId);
-    const mergedSlug = typeof row.mergedSlug === 'string' ? row.mergedSlug.trim() : '';
-    for (const id of slugToEntityIds.get(mergedSlug) || []) withRedirect.add(id);
-  }
-
-  return withRedirect;
 }
 
 async function deleteDependentArtifacts(eligibleIds: string[]): Promise<Record<string, number>> {
@@ -449,7 +401,7 @@ export async function cleanupArchivedResearchEntities(options: {
   );
   const plan = buildArchivedResearchEntityCleanupPlan({
     candidates,
-    requireRedirect: options.mergeResidueOnly === true,
+    mergeResidueOnly: options.mergeResidueOnly === true,
   });
 
   let deletedResearchEntities = 0;
@@ -507,7 +459,7 @@ async function main() {
   );
   const plan = buildArchivedResearchEntityCleanupPlan({
     candidates,
-    requireRedirect: options.mergeResidueOnly === true,
+    mergeResidueOnly: options.mergeResidueOnly === true,
   });
   assertCleanupArchivedResearchEntitiesApplyAllowed({
     apply: options.apply,

@@ -137,7 +137,9 @@ describe('Phase 0 ResearchEntity search baseline artifact writer', () => {
   });
 
   it('revalidates both protected profiles at the executable boundary', () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-search-executable-profile-'));
+    const directory = fs.mkdtempSync(
+      path.join(fs.realpathSync(os.tmpdir()), 'ylabs-search-executable-profile-'),
+    );
     const inventoryPath = path.join(directory, 'beta-inventory.env');
     const searchPath = path.join(directory, 'beta-search.env');
     const mongoCredentials = ['search-reader', 'unit-test-password'].join(':');
@@ -255,11 +257,25 @@ describe('Phase 0 ResearchEntity search baseline artifact writer', () => {
 
     try {
       expect(() => writePhase0ResearchSearchBaseline(fixtureReport(), output)).toThrow(
-        /real directories/,
+        /must write under/,
       );
       expect(fs.existsSync(path.join(outside, 'new'))).toBe(false);
     } finally {
       fs.rmSync(outside, { recursive: true });
     }
+  });
+
+  it('refuses a symlink parent that resolves inside the temporary root', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-phase0-search-inside-'));
+    const target = path.join(directory, 'target');
+    const linkedParent = path.join(directory, 'linked');
+    fs.mkdirSync(target, { mode: 0o700 });
+    fs.symlinkSync(target, linkedParent);
+    const output = path.join(linkedParent, 'new', 'baseline.json');
+
+    expect(() => writePhase0ResearchSearchBaseline(fixtureReport(), output)).toThrow(
+      /real directories/,
+    );
+    expect(fs.existsSync(path.join(target, 'new'))).toBe(false);
   });
 });

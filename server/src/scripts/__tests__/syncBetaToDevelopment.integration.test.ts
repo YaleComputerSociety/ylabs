@@ -229,8 +229,6 @@ describe('Beta to Development mirror against MongoDB', () => {
     for (const expected of [
       'research_entities',
       'research_entity_relationships',
-      'research_entity_redirects',
-      'canonical_aliases',
       'signals',
       'researchers',
       'role_assignments',
@@ -248,7 +246,8 @@ describe('Beta to Development mirror against MongoDB', () => {
 
     expect(await targetDb.collection('researchers').countDocuments()).toBe(1);
     expect(await targetDb.collection('role_assignments').countDocuments()).toBe(2);
-    expect(await targetDb.collection('canonical_aliases').countDocuments()).toBe(1);
+    expect(mirrored).not.toContain('canonical_aliases');
+    expect(mirrored).not.toContain('research_entity_redirects');
     expect(await targetDb.collection('org_units').countDocuments()).toBe(1);
     expect(await targetDb.collection('taxonomy_terms').countDocuments()).toBe(1);
     expect(

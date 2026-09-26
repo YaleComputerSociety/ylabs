@@ -43,6 +43,11 @@ import {
 } from '../canonicalResearchHomeResolver';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
+import {
+  GRANT_SHELL_ENTITY_TYPE,
+  GRANT_SHELL_KIND,
+  grantShellResearchRecordName,
+} from '../utils/grantShellIdentity';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -420,7 +425,7 @@ export function buildResearchGroupObservations(
 ): ObservationInput[] {
   const slug = canonicalResearchHomeSlug || piSlug(piUserId, group.piFirstName, group.piLastName);
   const piName = piDisplayName(group.awards[0] || ({} as NsfAward));
-  const labName = piName ? `${piName} Lab` : `NSF PI ${slug}`;
+  const recordName = grantShellResearchRecordName(piName, `NSF PI ${slug}`);
 
   const records = group.awards
     .map((a) => awardToRecord(a, 'pi'))
@@ -436,10 +441,11 @@ export function buildResearchGroupObservations(
           {
             ...base,
             field: 'name',
-            value: labName,
+            value: recordName,
             confidenceOverride: PI_DERIVED_LAB_NAME_CONFIDENCE,
           },
-          { ...base, field: 'kind', value: 'lab' },
+          { ...base, field: 'kind', value: GRANT_SHELL_KIND },
+          { ...base, field: 'entityType', value: GRANT_SHELL_ENTITY_TYPE },
         ]
       : []),
     { ...base, field: 'recentGrants', value: top },
@@ -461,42 +467,20 @@ export function buildResearchGroupObservations(
   return out;
 }
 
-async function buildCoPiObservations(
-  group: PiAwardsGroup,
-  researchGroupSlug: string,
-  sourceUrl: string,
-  deps: FederalPiResolverDeps,
-): Promise<ObservationInput[]> {
-  const out: ObservationInput[] = [];
-  const seenUserIds = new Set<string>();
-  for (const award of group.awards) {
-    const lines = Array.isArray(award.coPDPI) ? award.coPDPI : [];
-    for (const line of lines) {
-      const parsed = parseCoPdpiLine(line);
-      if (!parsed) continue;
-      const { first, last } = splitName(normalizeName(parsed.fullName));
-      // Only match co-PIs that exist as Yale Researchers — avoids creating noise
-      // from non-Yale collaborators we don't have rich metadata for.
-      const userId = await findUserForPi({ firstName: first, lastName: last }, deps);
-      if (!userId) continue;
-      if (seenUserIds.has(userId)) continue;
-      seenUserIds.add(userId);
-
-      const memberKey = `${researchGroupSlug}::copi::${userId}`;
-      const base = {
-        entityType: 'researchGroupMember' as const,
-        entityKey: memberKey,
-        sourceUrl,
-      };
-      out.push({ ...base, field: 'researchGroupSlug', value: researchGroupSlug });
-      out.push({ ...base, field: 'userId', value: userId });
-      out.push({ ...base, field: 'role', value: 'co-pi' });
-      out.push({ ...base, field: 'fullName', value: parsed.fullName });
-      if (parsed.email) out.push({ ...base, field: 'email', value: parsed.email });
-    }
-  }
-  return out;
-}
+/**
+ * These lanes no longer emit roster membership.
+ *
+ * A grant establishes that someone received funding. It does not establish that they
+ * are a member of a lab's roster, which is the same assertion #3145 refused one step
+ * further: grants enrich a research row and never mint one. The co-PI block here
+ * emitted `researchGroupMember` observations addressing the entity under
+ * `researchGroupSlug`, a name the materializer does not read, so all 465 of them were
+ * discarded and 93 member edges lay dormant (#3274).
+ *
+ * Aligning the field name would have activated those 93 rather than tidied a
+ * vocabulary, so the emission is removed instead. The award's funding evidence is
+ * unaffected: it reaches the row through the grant fields, never through a roster edge.
+ */
 
 // ---------------------------------------------------------------------------
 // Scraper class
@@ -621,15 +605,6 @@ export class NsfAwardScraper implements IScraper {
       );
       await ctx.emit(rgObs);
       totalObs += rgObs.length;
-
-      // 3d. Co-PI member observations — only when co-PI is a known canonical Researcher.
-      const slug =
-        canonicalResearchHomeSlug || piSlug(piUserId, group.piFirstName, group.piLastName);
-      const coPiObs = await buildCoPiObservations(group, slug, sourceUrl, resolverDeps);
-      if (coPiObs.length > 0) {
-        await ctx.emit(coPiObs);
-        totalObs += coPiObs.length;
-      }
     }
 
     ctx.log(

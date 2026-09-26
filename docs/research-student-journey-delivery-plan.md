@@ -5,7 +5,7 @@ Status: active delivery reference
 Last broadly verified: 2026-07-15 against Beta commit `0dbf9206` and the then-pending IM-01 implementation.
 Bibliographic boundary reconciled: 2026-07-28 against Beta commit `9a89b619`.
 
-This document is the durable execution map for the Yale Research student journey.
+This document is the durable execution map for the y/labs student journey.
 It complements [`product-context.md`](./product-context.md), [`research-model.md`](./research-model.md), [`decisions.md`](./decisions.md), and [`tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
 It does not replace those documents or reproduce local feature-request scratch files.
 
@@ -49,7 +49,7 @@ Progressive disclosure should keep early discovery quiet and move detail into th
 - Unknown means the product lacks sufficient evidence.
   It does not mean unavailable, closed, or unsuitable.
 - Identity, research focus, access, and availability are separate claims with separate evidence.
-- Yale Research does not ingest scholarly works or use publication-derived activity for search, ranking, visibility, or access claims.
+- y/labs does not ingest scholarly works or use publication-derived activity for search, ranking, visibility, or access claims.
   Reviewed official Yale, Google Scholar, and ORCID profiles remain outbound links.
 
 ### Progressive Disclosure
@@ -59,7 +59,7 @@ Progressive disclosure should keep early discovery quiet and move detail into th
   Access context may only break close relevance ties within a bounded server-owned rule.
 - Show at most one sparse, claim-specific, positive planning signal on an entity card.
 - Do not add a parallel results stream, persistent access controls, generic scores, or negative unknown labels.
-- The `Has hosted undergrads before` and `Documented way in` browse controls were retired from research discovery under issue `#1884`; their evidence remains server-owned - the `hasUndergradHostingEvidence` and `hasDocumentedWayIn` projections that still drive the sparse positive card signal - rather than a persistent access-oriented filter, and neither revives the retired unsupported undergraduate-evidence filter.
+- The `Has hosted undergrads before` and `Documented way in` browse controls were retired from research discovery under issue `#1884`, and issue `#2527` then removed the `hasDocumentedWayIn` projection behind the latter outright; the sparse positive card signal remains server-owned, derived from the entity access summary rather than a persistent access-oriented filter, and neither revives the retired unsupported undergraduate-evidence filter.
 
 ## Status Definitions
 
@@ -92,19 +92,23 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
   PR `#196` added one adaptive Research filter disclosure, query-scoped positive school and department choices, persistent selected values without invented counts, URL-backed removable chips, clear-one and clear-all actions, independent facet-error handling, a non-modal desktop disclosure, and a focus-contained mobile sheet with focused responsive and accessibility tests.
   Issue `#347` then exposed two already-server-supported browse filters in the same disclosure: a config-sourced research-area multi-select (add-via-dropdown plus removable chips, sourced from `useConfig().researchAreas` rather than Meilisearch facets) and a `Has hosted undergrads before` checkbox mapped to the server `verified-or-likely` acceptance level, both round-tripping through the URL (`researchAreas` CSV and `undergrad=1`), the in-page snapshot restore, the active-filter count, chips, and clear-all.
   The documented-way-in distribution remains separate EF-03 work and is not exposed as a filter.
-- **Subsequent state:** issue `#1884` then retired the research-area and hosts-undergrads browse controls (plus the entity-type filter) from research discovery, removing their state, URL params, chips, and analytics kinds along with the research-area field directory and zero-result area pivot; the `researchAreas` field and the standalone research-area pages remain. School and department stay the adaptive query-scoped discovery filters, so EF-02 stays Complete.
-- **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171), [#196](https://github.com/YaleComputerSociety/ylabs/pull/196), [#1884](https://github.com/YaleComputerSociety/ylabs/issues/1884).
+- **Subsequent state:** issue `#1884` then retired the research-area and hosts-undergrads browse controls (plus the entity-type filter) from research discovery, removing their state, URL params, chips, and analytics kinds along with the research-area field directory and zero-result area pivot; the `researchAreas` field and the standalone research-area pages remain. School and department stayed the adaptive query-scoped discovery filters, so EF-02 stays Complete.
+  Issue `#2195` then re-exposed an entity-type axis as a third adaptive control, a single-select Type filter backed by the `entityType` facet the index and the search route already served, round-tripping through a `type` URL param, the snapshot restore, the active-filter count, chips (in the disclosure and in the zero-result recovery panel), clear-all, and the reserved `research_type` analytics kind.
+  It differs from the `#1884` control in accepting only the canonical `researchEntityTypes` enum and in labelling each value per type rather than per kind; `docs/decisions.md` 2026-09-22 owns why, and records the coarse-bucket question it leaves open.
+- **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171), [#196](https://github.com/YaleComputerSociety/ylabs/pull/196), [#1884](https://github.com/YaleComputerSociety/ylabs/issues/1884), [#2195](https://github.com/YaleComputerSociety/ylabs/issues/2195).
 
 #### EF-03 - Sparse Documented-Way-In Signal
 
 - **Status:** Active.
 - **Depends on:** QA-01 qualifying-action policy and a bounded server summary plus distribution.
-- **Acceptance criteria:** the server returns at most one allowlisted positive signal per entity; the client renders no access label when the signal is absent; PI profiles, publications, provenance URLs, generic participation, and exploratory outreach never create the signal; a filter appears only when documented and undocumented homes both exist and the split is materially useful; no client-side access inference or reranking occurs.
+- **Acceptance criteria:** the server returns at most one allowlisted positive signal per entity; the client renders no access label when the signal is absent; PI profiles, publications, provenance URLs, generic participation, and exploratory outreach never create the signal; no client-side access inference or reranking occurs.
+  The former criterion that a filter appear when documented and undocumented homes both exist is **Superseded** by issue `#2527`: the access split is no longer offered as a browse filter at all.
 - **Validation evidence:** current Beta deliberately removed the prior parallel `Verified ways in` presentation in PR `#171`.
   The qualified-planning-context implementation adds a bounded, optional server projection with one deterministic signal per entity and deny-by-default policy tests.
   Issue `#1519` then added the query-scoped distribution and client presentation: a server `hasDocumentedWayIn` projection (derived by `hasDocumentedWayInFromSignals` from the same allowlist that backs the `Contact route` / `Undergrad evidence` / `Student project evidence` badges, excluding the `REACH_OUT_PLAUSIBLE` fallback and negative signals), a `hasDocumentedWayIn` Meilisearch filterable attribute and query-scoped boolean facet distribution, and a `documented=1` browse control that is facet-gated to appear only when the current query holds both documented and undocumented homes, round-trips through the URL, snapshot restore, active-filter count, removable chips, and clear-all, and fires the reserved `documented_way_in` analytics operation on apply and remove.
-  Issue `#1884` then retired the `documented=1` browse control - its state, URL param, chips, and `documented_way_in` analytics kind - from research discovery; the server `hasDocumentedWayIn` projection, its query-scoped Meilisearch facet distribution, and the sparse positive card signal remain, so EF-03 stays Active without an exposed browse filter.
-- **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171) establishes the baseline; [#1519](https://github.com/YaleComputerSociety/ylabs/issues/1519) adds the query-scoped distribution and the documented-way-in browse filter; [#1884](https://github.com/YaleComputerSociety/ylabs/issues/1884) removes that browse filter while keeping the server projection and card signal.
+  Issue `#1884` then retired the `documented=1` browse control - its state, URL param, chips, and `documented_way_in` analytics kind - from research discovery, keeping the server projection so the split could be re-exposed later.
+  Issue `#2527` closed that option: with no reader left for it in over a release, the `hasDocumentedWayIn` field, its `Signal` derivation, its Mongo index, its Meilisearch filterable attribute, and its query-scoped boolean facet distribution (disjunctive recompute and Mongo-fallback counts alike) were all removed. EF-03 stays Active on the sparse positive card signal, which is derived from the entity access summary and is unaffected.
+- **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171) establishes the baseline; [#1519](https://github.com/YaleComputerSociety/ylabs/issues/1519) adds the query-scoped distribution and the documented-way-in browse filter; [#1884](https://github.com/YaleComputerSociety/ylabs/issues/1884) removes that browse filter while keeping the server projection; [#2527](https://github.com/YaleComputerSociety/ylabs/issues/2527) removes the projection itself.
 
 #### EF-04 - Stable And Efficient Discovery Requests
 
@@ -151,7 +155,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Validation evidence:** representative 99-related-hub regression reduced the bounded payload from 1,938,003 bytes to 22,049 bytes, with projection and redaction tests.
 - **PRs:** [#167](https://github.com/YaleComputerSociety/ylabs/pull/167).
 
-#### EP-04 - Source-Backed Undergraduate Logistics - FR-16
+#### EP-04 - Source-Backed Undergraduate Logistics - FR-16 (Retired, #3088)
 
 - **Status:** Active.
 - **Depends on:** reviewed observation/materialization contracts, a bounded Beta acquisition run, and sampled false-positive acceptance before broad release.
@@ -165,14 +169,15 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Status:** Active.
 - **Depends on:** official roster acquisition, identity matching, current-role evidence, and public-person policy.
 - **Acceptance criteria:** detail pages may list graduate students, postdocs, staff, or other current members only from official, current, attributable roster evidence; roles and source context are explicit; stale or ambiguous people are withheld; the section does not turn names into unsolicited-contact recommendations.
-- **Validation evidence:** `officialResearchHomeRosterScraper.ts` adds a disabled-by-default reviewed-source adapter, stable-profile identity keys, publish-date and refresh freshness gates, complete-snapshot archival reconciliation, bounded role-grouped detail presentation, and `research-homes:audit-rosters` coverage/precision review.
+- **Validation evidence:** `officialResearchHomeRosterScraper.ts` adds a disabled-by-default reviewed-source adapter, stable-profile identity keys, publish-date and refresh freshness gates, complete-snapshot archival reconciliation, and bounded role-grouped detail presentation.
+The coverage and precision review is `yarn --cwd server research-homes:audit-rosters --strict --sampled-precision-reviewed-by=<reviewer>`, which reports `broadEnablementReady` (#2412).
 - **PRs:** [#200](https://github.com/YaleComputerSociety/ylabs/pull/200) is merged into Beta.
 - **Rollout note:** the initial allowlist is intentionally narrow and the source remains disabled until a sampled precision review accompanies a clean structural audit.
 
 #### EP-06 - Retired Activity Ordering And Rollups - FR-19 / FR-42.2
 
 - **Status:** Superseded.
-- **Superseding boundary:** Yale Research links to reviewed official Yale, Google Scholar, and ORCID profiles instead of maintaining an in-product scholarly activity feed or entity activity rollups.
+- **Superseding boundary:** y/labs links to reviewed official Yale, Google Scholar, and ORCID profiles instead of maintaining an in-product scholarly activity feed or entity activity rollups.
 - **Validation evidence:** PR `#158` completed historical contamination, duplicate, and current-versus-earlier guards.
   Phase 3 removes the paper readers, materializers, and audits as a hard cutover with no rollback opt-in; the publication-mirror half of #207 has deleted the `Paper` and `PaperAuthor` models and their readers, leaving stored collections only until a human-gated collection drop.
 - **PRs:** [#158](https://github.com/YaleComputerSociety/ylabs/pull/158), [#220](https://github.com/YaleComputerSociety/ylabs/pull/220), [#223](https://github.com/YaleComputerSociety/ylabs/pull/223).
@@ -348,7 +353,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 #### SM-07 - Faculty Posts A Real Opportunity - FR-32
 
 - **Status:** Retired.
-- **Current contract:** Yale Research does not host faculty-authored opportunities.
+- **Current contract:** y/labs does not host faculty-authored opportunities.
   See the source-driven catalog decision in [`decisions.md`](./decisions.md).
 
 #### SM-08 - Pending-Confirmation Path Forward - FR-35
@@ -442,7 +447,7 @@ Measurement must not add UI, delay navigation, expose private data, or redefine 
 1. **Qualified-action contract:** product and trust owners must accept the positive signal enum, required proof, and confidence/evidence threshold for QA-01.
 2. **Evidence and route review rollout:** operators must review application and contact-route claims before those records become a public positive action signal, record false-positive and rejection-reason metrics, and explicitly exclude PI-profile provenance.
 3. **Production refresh:** fellowship refresh remains disabled until Atlas restore evidence, rollback ownership, database target checks, and smoke acceptance are complete.
-4. **Deployment topology:** Render web-service settings are managed outside `render.yaml`; compression, durable scorecard storage, and deployment fingerprints require control-plane verification.
+4. **Deployment topology:** Render services are configured in the Render dashboard, not in this repository; compression, durable scorecard storage, and deployment fingerprints require control-plane verification.
 5. **Authenticated browser evidence:** CAS-preserving end-to-end checks require a valid test session and supported browser runner; never bypass CAS to manufacture evidence.
 
 ## Validation Support And Dispute Matrix

@@ -14,12 +14,11 @@ import {
   classifyDuplicateEntityCluster,
   buildDuplicateEntityPlanReviewSummary,
   buildDuplicateEntityReviewSummary,
-  buildArrayRefOrphanSamplePipeline,
   buildBetaDataQualitySummary,
   formatBetaDataQualityProgressEvent,
   buildMissingRequiredRefSamplePipeline,
   buildReferenceIntegritySummary,
-  buildScalarRefOrphanSamplePipeline,
+  buildRefOrphanSamplePipeline,
   isLikelyResearchEntityContentPageLeak,
   isInvalidObservationSourceUrl,
   isInvalidOptionalEmail,
@@ -164,28 +163,30 @@ describe('reference-integrity sample pipelines', () => {
       { $limit: 5 },
     ]);
 
-    expect(buildScalarRefOrphanSamplePipeline('review.reviewedByAccountId', 'users', 5)).toEqual(
+    expect(buildRefOrphanSamplePipeline('review.reviewedByAccountId', 'users', 5)).toEqual(
       expect.arrayContaining([
-        { $match: { 'review.reviewedByAccountId': { $exists: true, $nin: [null, ''] } } },
+        { $project: { ref: { $ifNull: ['$review.reviewedByAccountId', []] } } },
+        { $unwind: '$ref' },
+        { $match: { ref: { $nin: [null, ''] } } },
         expect.objectContaining({
           $lookup: expect.objectContaining({
             from: 'users',
-            localField: 'review.reviewedByAccountId',
+            localField: 'ref',
           }),
         }),
         { $match: { _refTarget: { $size: 0 } } },
-        { $project: { id: { $toString: '$_id' }, value: '$review.reviewedByAccountId' } },
+        { $project: { id: { $toString: '$_id' }, value: '$ref' } },
         { $limit: 5 },
       ]),
     );
   });
 
   it('builds sample pipelines for orphaned array refs', () => {
-    expect(buildArrayRefOrphanSamplePipeline('sourceEvidenceIds', 'observations', 3)).toEqual(
+    expect(buildRefOrphanSamplePipeline('sourceEvidenceIds', 'observations', 3)).toEqual(
       expect.arrayContaining([
         { $project: { ref: { $ifNull: ['$sourceEvidenceIds', []] } } },
         { $unwind: '$ref' },
-        { $match: { ref: { $ne: null } } },
+        { $match: { ref: { $nin: [null, ''] } } },
         expect.objectContaining({
           $lookup: expect.objectContaining({
             from: 'observations',
@@ -209,15 +210,12 @@ describe('reference-integrity sample pipelines', () => {
       },
     });
 
-    expect(buildScalarRefOrphanSamplePipeline('userId', 'users', 5, activeFilter)[0]).toEqual({
-      $match: {
-        archived: { $ne: true },
-        userId: { $exists: true, $nin: [null, ''] },
-      },
+    expect(buildRefOrphanSamplePipeline('userId', 'users', 5, activeFilter)[0]).toEqual({
+      $match: activeFilter,
     });
 
     expect(
-      buildArrayRefOrphanSamplePipeline('sourceEvidenceIds', 'observations', 3, activeFilter)[0],
+      buildRefOrphanSamplePipeline('sourceEvidenceIds', 'observations', 3, activeFilter)[0],
     ).toEqual({
       $match: activeFilter,
     });
@@ -658,15 +656,14 @@ describe('buildBetaDataQualitySummary', () => {
       suspiciousUserEmailCount: 8,
       retentionCandidateCount: 6,
       coverageGaps: {
-        withoutPathways: 7,
-        withoutAccessSignals: 8,
-        withoutContactRoutes: 9,
+        withoutSignals: 8,
       },
     });
 
     expect(summary.status).toBe('error');
     expect(summary.errorCount).toBe(4);
-    expect(summary.warnCount).toBe(9);
+    // Three coverage warnings collapsed into one when the dead access model went (#2829).
+    expect(summary.warnCount).toBe(7);
     expect(summary.errors.map((item) => item.name)).toEqual(
       expect.arrayContaining([
         'referenceIntegrity',
@@ -703,9 +700,7 @@ describe('buildBetaDataQualitySummary', () => {
       suspiciousUserEmailCount: 1,
       retentionCandidateCount: 0,
       coverageGaps: {
-        withoutPathways: 4,
-        withoutAccessSignals: 5,
-        withoutContactRoutes: 6,
+        withoutSignals: 5,
       },
     });
 
@@ -740,9 +735,7 @@ describe('buildBetaDataQualitySummary', () => {
       suspiciousUserEmailCount: 0,
       retentionCandidateCount: 0,
       coverageGaps: {
-        withoutPathways: 0,
-        withoutAccessSignals: 0,
-        withoutContactRoutes: 0,
+        withoutSignals: 0,
       },
     });
 
@@ -771,9 +764,7 @@ describe('buildBetaDataQualitySummary', () => {
       suspiciousUserEmailsProductionCopyExclusionComplete: true,
       retentionCandidateCount: 0,
       coverageGaps: {
-        withoutPathways: 4,
-        withoutAccessSignals: 5,
-        withoutContactRoutes: 6,
+        withoutSignals: 5,
       },
     });
 
@@ -808,9 +799,7 @@ describe('buildBetaDataQualitySummary', () => {
       betaStudentAnalyticsEventCount: 35,
       retentionCandidateCount: 0,
       coverageGaps: {
-        withoutPathways: 0,
-        withoutAccessSignals: 0,
-        withoutContactRoutes: 0,
+        withoutSignals: 0,
       },
     });
 
@@ -840,9 +829,7 @@ describe('buildBetaDataQualitySummary', () => {
       suspiciousUserEmailCount: 0,
       retentionCandidateCount: 0,
       coverageGaps: {
-        withoutPathways: 10,
-        withoutAccessSignals: 9,
-        withoutContactRoutes: 8,
+        withoutSignals: 9,
       },
     });
 
@@ -852,6 +839,41 @@ describe('buildBetaDataQualitySummary', () => {
     expect(summary.promotionBlockers).toEqual([]);
     expect(summary.promotionBlockersByOwner).toEqual([]);
     expect(shouldStrictModeFail(summary)).toBe(false);
+  });
+
+  it('stops calling superseded observations prunable when the materializer still reads them', () => {
+    const baseInput = {
+      referenceHardFailures: 0,
+      invalidUrlCount: 0,
+      expiredOpenOpportunityCount: 0,
+      sourceHealthErrors: 0,
+      sourceHealthWarnings: 0,
+      duplicateEntityClusterCount: 0,
+      missingShortDescriptionCount: 0,
+      weakShortDescriptionCount: 0,
+      suspiciousUserEmailCount: 0,
+      retentionCandidateCount: 2301,
+      coverageGaps: { withoutSignals: 0 },
+    };
+
+    const neutral = buildBetaDataQualitySummary({
+      ...baseInput,
+      retentionProjectionNeutral: true,
+    });
+    const projected = buildBetaDataQualitySummary({
+      ...baseInput,
+      retentionProjectionNeutral: false,
+    });
+
+    expect(
+      neutral.warnings.find((warning) => warning.name === 'retentionCandidates')?.message,
+    ).toMatch(/eligible for compact retention pruning/);
+    const projectedCheck = projected.warnings.find(
+      (warning) => warning.name === 'retentionCandidates',
+    );
+    expect(projectedCheck?.count).toBe(2301);
+    expect(projectedCheck?.message).not.toMatch(/eligible for compact retention pruning/);
+    expect(projectedCheck?.message).toMatch(/C4_LOSSLESS_INGEST/);
   });
 
   it('adds operator classification metadata and next commands to current promotion warnings', () => {
@@ -868,9 +890,7 @@ describe('buildBetaDataQualitySummary', () => {
       suspiciousUserEmailCount: 4,
       retentionCandidateCount: 0,
       coverageGaps: {
-        withoutPathways: 1825,
-        withoutAccessSignals: 1981,
-        withoutContactRoutes: 3056,
+        withoutSignals: 1981,
       },
     });
 
@@ -908,19 +928,19 @@ describe('buildBetaDataQualitySummary', () => {
           owner: 'content-quality operator',
         }),
         expect.objectContaining({
-          name: 'coverageWithoutPathways',
+          name: 'coverageWithoutSignals',
           classification: 'accepted_release_warning',
-          owner: 'pathway coverage operator',
+          owner: 'access coverage operator',
         }),
         expect.objectContaining({
-          name: 'coverageWithoutAccessSignals',
+          name: 'coverageWithoutSignals',
           classification: 'accepted_release_warning',
-          owner: 'pathway coverage operator',
+          owner: 'access coverage operator',
         }),
         expect.objectContaining({
-          name: 'coverageWithoutContactRoutes',
+          name: 'coverageWithoutSignals',
           classification: 'accepted_release_warning',
-          owner: 'contact coverage operator',
+          owner: 'access coverage operator',
         }),
         expect.objectContaining({
           name: 'suspiciousUserEmails',

@@ -1,6 +1,68 @@
-import assert from 'node:assert/strict';
+import nodeAssert from 'node:assert/strict';
 import fs from 'node:fs';
-import test from 'node:test';
+import {
+  ORCID_PATTERN,
+  orcidIsUnsafeForFixtures,
+  SYNTHETIC_ORCID_EXAMPLE,
+} from './orcidFixtureShape.mjs';
+import nodeTest, { after } from 'node:test';
+
+import {
+  DEFAULT_AUDIT_TIMEOUT_MS,
+  REGISTRY_UNAVAILABLE_EXIT_CODE,
+} from './dependency-audit-core.mjs';
+
+// Every policy below pins a rule by reading source and asserting against it. When
+// the code a policy pinned is retired, the pin list can be emptied while the test
+// body survives: the loop iterates zero times, no assertion runs, and the suite
+// still reports ok. That is a guard that reports health by construction, which is
+// worse than no guard at all because it occupies the slot of a real one.
+// `publication and scholarly audit artifacts use safe JSON output paths` sat empty
+// this way from #2141 until #2366. Counting executed assertions per test makes the
+// next one fail instead of passing quietly.
+const executedAssertions = new Map();
+let runningTest = null;
+
+const countAssertion = () => {
+  if (runningTest === null) return;
+  executedAssertions.set(runningTest, (executedAssertions.get(runningTest) ?? 0) + 1);
+};
+
+const assert = new Proxy(nodeAssert, {
+  apply: (target, thisArg, args) => {
+    countAssertion();
+    return Reflect.apply(target, thisArg, args);
+  },
+  get: (target, property) => {
+    const value = target[property];
+    if (typeof value !== 'function') return value;
+    return (...args) => {
+      countAssertion();
+      return value.apply(target, args);
+    };
+  },
+});
+
+const test = (name, implementation) =>
+  nodeTest(name, async (...args) => {
+    runningTest = name;
+    executedAssertions.set(name, executedAssertions.get(name) ?? 0);
+    try {
+      return await implementation(...args);
+    } finally {
+      runningTest = null;
+    }
+  });
+
+after(() => {
+  const vacuous = [...executedAssertions].filter(([, count]) => count === 0).map(([name]) => name);
+
+  nodeAssert.deepEqual(
+    vacuous,
+    [],
+    `these security policies executed zero assertions and therefore pass by construction, not by checking anything: ${vacuous.join('; ')}. Either repoint the policy at the code that replaced what it pinned, or delete it.`,
+  );
+});
 
 const packageJson = JSON.parse(
   fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
@@ -8,11 +70,6 @@ const packageJson = JSON.parse(
 const ciWorkflow = fs.readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
 const keepAliveWorkflow = fs.readFileSync(
   new URL('../.github/workflows/keep-alive.yml', import.meta.url),
-  'utf8',
-);
-const renderBlueprint = fs.readFileSync(new URL('../render.yaml', import.meta.url), 'utf8');
-const productionSecuritySmokeWorkflow = fs.readFileSync(
-  new URL('../.github/workflows/production-security-smoke.yml', import.meta.url),
   'utf8',
 );
 const postPromotionVerifyWorkflow = fs.readFileSync(
@@ -61,10 +118,6 @@ test('test fixtures do not contain known real Yale identifiers', () => {
   const denied = [
     'Toma_Tebaldi',
     'Toma Tebaldi',
-    '0000-0002-0625-1631',
-    '0000-0002-5529-3248',
-    '0000-0002-1825-0097',
-    '0000-0001-5109-3700',
     'yongli-zhang',
     'anna-arnal-estape',
     'james-e-hansen',
@@ -117,6 +170,20 @@ test('test fixtures do not contain known real Yale identifiers', () => {
         source.includes(value),
         false,
         `${file} contains real Yale identifier fixture: ${value}`,
+      );
+    }
+    // The four ORCIDs this list used to name are gone, superseded by a shape rule rather
+    // than kept as a second authority that drifts: each was checksum-valid and inside
+    // ORCID's allocated space, so the rule below catches all four and every value like
+    // them. A denylist catches the iDs somebody noticed; the shape catches the risk.
+    for (const [orcid] of source.matchAll(ORCID_PATTERN)) {
+      assert.equal(
+        orcidIsUnsafeForFixtures(orcid),
+        false,
+        `${file} contains an ORCID fixture that could be a real person's iD: ${orcid}. ` +
+          `It is checksum-valid and inside ORCID's allocated space. Use a value outside ` +
+          `that space instead, such as ${SYNTHETIC_ORCID_EXAMPLE}, which still passes the ` +
+          `checksum so it exercises a serve path that requires a valid iD.`,
       );
     }
   }
@@ -570,12 +637,19 @@ test('public research detail queries cap unauthenticated fan-out before serializ
 test('root package exposes a deploy security preflight', () => {
   assert.equal(
     packageJson.scripts['security:policy'],
-    'node --test scripts/security-preflight.test.mjs',
+    'node --test scripts/security-preflight.test.mjs scripts/dependency-audit.test.mjs scripts/check-no-secrets.test.mjs scripts/check-no-person-identifiers.test.mjs scripts/person-identifier-scan-workflow.test.mjs',
   );
   assert.equal(
     packageJson.scripts['security:preflight'],
-    'yarn security:policy && yarn security:secrets && yarn security:audit:production',
+    'yarn security:policy && yarn security:secrets && yarn security:identifiers && yarn security:audit:production',
   );
+  assert.equal(
+    packageJson.scripts['security:identifiers'],
+    'node scripts/check-no-person-identifiers.mjs',
+  );
+  // No repo file invokes install:all:immutable: its consumer is the Render
+  // dashboard build command, which docs/release-process.md prescribes. It looks
+  // dead to a caller search, so do not delete it on that evidence.
   assert.equal(
     packageJson.scripts['install:all:immutable'],
     'yarn install --immutable && cd server && yarn install --immutable && cd ../client && yarn install --immutable',
@@ -589,15 +663,109 @@ test('root package exposes the production security smoke used by deploy gates', 
   );
 });
 
+const parseDependencyAuditScript = (script) => {
+  const tokens = script.split(' ');
+  assert.deepEqual(tokens.slice(0, 2), ['node', 'scripts/run-dependency-audit.mjs']);
+  const separatorIndex = tokens.indexOf('--');
+  return {
+    directories: tokens.slice(2, separatorIndex),
+    auditArgs: tokens.slice(separatorIndex + 1),
+  };
+};
+
 test('production dependency audit covers root, server, and client workspaces', () => {
-  assert.equal(
-    packageJson.scripts['security:audit:production'],
-    [
-      'yarn npm audit --severity moderate --environment production',
-      'yarn --cwd server npm audit --severity moderate --environment production',
-      'yarn --cwd client npm audit --severity moderate --environment production',
-    ].join(' && '),
+  const audit = parseDependencyAuditScript(packageJson.scripts['security:audit:production']);
+
+  assert.deepEqual(audit.directories, ['.', 'server', 'client']);
+  assert.deepEqual(audit.auditArgs, ['--severity', 'moderate', '--environment', 'production']);
+});
+
+test('all-environment dependency audit covers every workspace recursively', () => {
+  const audit = parseDependencyAuditScript(packageJson.scripts['security:audit:all-environments']);
+
+  assert.deepEqual(audit.directories, ['.', 'server', 'client']);
+  assert.deepEqual(audit.auditArgs, ['--recursive', '--severity', 'moderate']);
+  assert.match(ciWorkflow, /run:\s*yarn security:audit:all-environments/);
+});
+
+test('the advisory verdict is published as an artifact, never as a merge-gating check', () => {
+  // The verdict distinguishes exit 1 (advisories found) from exit 75 (registry
+  // unreachable) for a merge consumer, but it must stay informational: a
+  // non-required check a consumer misread as passing would rebuild the
+  // exit-0-when-unreachable soft pass #2364 removed (ylabs#2381). An artifact
+  // cannot gate a merge by construction, and it needs no write-capable token,
+  // which the read-only-permissions policy above forbids anyway.
+  assert.match(ciWorkflow, /DEPENDENCY_AUDIT_VERDICT_FILE:/);
+  assert.match(ciWorkflow, /name:\s*Publish advisory verdict/);
+  assert.match(ciWorkflow, /uses:\s*actions\/upload-artifact@[0-9a-f]{40}/);
+  assert.match(ciWorkflow, /if:\s*always\(\)/);
+  // The emitter must never make writing the artifact load-bearing on the exit code.
+  const runner = fs.readFileSync(
+    new URL('../scripts/run-dependency-audit.mjs', import.meta.url),
+    'utf8',
   );
+  const core = fs.readFileSync(
+    new URL('../scripts/dependency-audit-core.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(runner, /writeAuditVerdict\(AUDIT_VERDICTS\.CLEAN\)/);
+  assert.match(runner, /writeAuditVerdict\(AUDIT_VERDICTS\.ADVISORIES_FOUND/);
+  assert.match(runner, /writeAuditVerdict\(AUDIT_VERDICTS\.REGISTRY_UNREACHABLE\b/);
+  assert.match(runner, /writeAuditVerdict\(AUDIT_VERDICTS\.REGISTRY_UNREACHABLE_OVERRIDDEN/);
+  // A failed artifact write must be swallowed, not allowed to change the verdict.
+  assert.match(core, /could not write audit verdict artifact/);
+});
+
+test('an unreachable advisory registry fails closed and stays bounded', () => {
+  const runner = fs.readFileSync(
+    new URL('../scripts/run-dependency-audit.mjs', import.meta.url),
+    'utf8',
+  );
+  const core = fs.readFileSync(
+    new URL('../scripts/dependency-audit-core.mjs', import.meta.url),
+    'utf8',
+  );
+
+  // #2366: an audit that green-lights on "we could not check" lies exactly when it
+  // matters, and an outage window is a plausible time to publish a bad package.
+  // beta promotes to production, so unreachable must never exit 0 by default. A
+  // no-mistakes "apply CI fixes" round already reverted this once to get a green
+  // build; this policy is what makes that revert fail the suite instead of shipping.
+  assert.equal(REGISTRY_UNAVAILABLE_EXIT_CODE, 75);
+  assert.notEqual(REGISTRY_UNAVAILABLE_EXIT_CODE, 0);
+  assert.match(runner, /process\.exit\(REGISTRY_UNAVAILABLE_EXIT_CODE\)/);
+  assert.match(runner, /advisory registry unreachable, verdict unknown/);
+  assert.doesNotMatch(runner, /inconclusive rather than failed/);
+
+  // The override must be an exact opt-in, never a truthiness check that a stray
+  // "false" or "0" in CI config would satisfy.
+  assert.match(runner, /process\.env\.DEPENDENCY_AUDIT_ALLOW_UNREACHABLE === '1'/);
+
+  // CI reaches the override through a repository variable, never a literal. A
+  // hardcoded "1" here would silently disable the gate for every future run, and
+  // an unset variable must leave it strict.
+  assert.match(
+    ciWorkflow,
+    /DEPENDENCY_AUDIT_ALLOW_UNREACHABLE: \$\{\{ vars\.ALLOW_UNREACHABLE_ADVISORY_AUDIT \}\}/,
+  );
+  assert.doesNotMatch(ciWorkflow, /DEPENDENCY_AUDIT_ALLOW_UNREACHABLE:\s*['"]?1['"]?\s*$/m);
+
+  // Yarn defaults to httpTimeout 60s and httpRetry 3, so one audit can burn three
+  // minutes on a dead registry and six workspace audits far longer. The runner caps
+  // both per invocation rather than in .yarnrc.yml, because a global httpTimeout
+  // would also cap install tarball fetches and make installs flaky on slow links.
+  assert.ok(DEFAULT_AUDIT_TIMEOUT_MS > 0 && DEFAULT_AUDIT_TIMEOUT_MS < 60_000);
+  assert.match(core, /YARN_HTTP_TIMEOUT: String\(timeoutMs\)/);
+  assert.match(core, /YARN_HTTP_RETRY: YARN_AUDIT_HTTP_RETRY/);
+  assert.doesNotMatch(yarnrc, /httpTimeout/);
+
+  // SIGKILL stays as a backstop for a yarn that ignores its own timeout, and
+  // resolving on the timer rather than on 'close' is what makes the bound real:
+  // a killed yarn's grandchildren can hold the stdio pipes open indefinitely.
+  assert.match(core, /timeoutMs = DEFAULT_AUDIT_TIMEOUT_MS/);
+  assert.match(core, /child\.kill\('SIGKILL'\)/);
+  assert.match(core, /settle\(\{ code: 1, output: output \+ notice \}\)/);
+  assert.match(core, /timeoutMs \+ KILL_GRACE_MS/);
 });
 
 test('CI runs immutable installs and the same deploy security preflight used locally', () => {
@@ -613,11 +781,39 @@ test('CI runs immutable installs and the same deploy security preflight used loc
   assert.match(ciWorkflow, /run:\s*yarn security:preflight/);
 });
 
+test('CI gates on ESLint errors, leaves warnings advisory, and lints before the suites', () => {
+  const lintRun = /^\s*run:\s*yarn lint\s*$/m;
+  assert.match(
+    ciWorkflow,
+    lintRun,
+    'ci.yml must run yarn lint so a lint error fails the required check (ylabs#3070)',
+  );
+
+  // Warnings stay advisory: --max-warnings would make the two standing
+  // unused-variable warnings blocking, which #3070 deliberately declined.
+  assert.doesNotMatch(ciWorkflow, /^\s*run:[^\n]*yarn lint[^\n]*--max-warnings/m);
+  assert.doesNotMatch(packageJson.scripts.lint, /--max-warnings/);
+
+  // A lint error is seconds to report and the suites are minutes, so the gate
+  // is worth nothing behind them.
+  const lintAt = ciWorkflow.search(lintRun);
+  const firstSuiteAt = ciWorkflow.search(/^\s*run:\s*yarn --cwd server test\s*$/m);
+  assert.ok(firstSuiteAt > 0, 'ci.yml must still run the server suite');
+  assert.ok(
+    lintAt > 0 && lintAt < firstSuiteAt,
+    'the lint step must run before the server suite',
+  );
+
+  // verify:fast is the documented pre-push predictor of CI's cheap gates, so a
+  // gate CI enforces and verify:fast omits would surprise every author.
+  assert.match(packageJson.scripts['verify:fast'], /yarn lint/);
+  assert.match(packageJson.scripts.verify, /verify:fast/);
+});
+
 test('GitHub workflows run with read-only repository token permissions', () => {
   for (const [name, workflow] of [
     ['ci', ciWorkflow],
     ['keep-alive', keepAliveWorkflow],
-    ['production-security-smoke', productionSecuritySmokeWorkflow],
     ['release-hold', releaseHoldWorkflow],
     ['post-promotion-verify', postPromotionVerifyWorkflow],
   ]) {
@@ -637,7 +833,7 @@ test('GitHub workflows run with read-only repository token permissions', () => {
 test('GitHub checkout steps do not persist repository credentials', () => {
   for (const [name, workflow] of [
     ['ci', ciWorkflow],
-    ['production-security-smoke', productionSecuritySmokeWorkflow],
+    ['post-promotion-verify', postPromotionVerifyWorkflow],
   ]) {
     const checkoutStep =
       /uses:\s*actions\/checkout@[^\n]+[\s\S]{0,160}?persist-credentials:\s*false/;
@@ -654,29 +850,40 @@ test('GitHub checkout steps do not persist repository credentials', () => {
   }
 });
 
-test('Render production cron builds install dependencies from lockfiles', () => {
-  assert.match(renderBlueprint, /buildCommand:\s*corepack enable && yarn install:all:immutable/);
+// The live-prod smoke now runs only on a promotion, so post-promotion-verify is
+// the sole workflow carrying these assertions. Deleting the standing schedule
+// left `security:smoke:production` reachable from this workflow and from an
+// operator's shell; the visibility-label guarantee it used to police lives in
+// server/src/services/__tests__/researchEntityDto.test.ts, which blocks a merge
+// instead of reporting after the fact.
+test('post-promotion verify checks live hardening headers and current API routes', () => {
+  assert.match(postPromotionVerifyWorkflow, /name:\s*Post-Promotion Verify/);
+  assert.match(postPromotionVerifyWorkflow, /branches:\s*\n\s*-\s*main/);
+  assert.match(postPromotionVerifyWorkflow, /yarn security:smoke:production/);
+  assert.match(postPromotionVerifyWorkflow, /SMOKE_API_BASE:/);
+  assert.match(postPromotionVerifyWorkflow, /SMOKE_APP_BASE:/);
+  assert.doesNotMatch(postPromotionVerifyWorkflow, /github\.sha/);
+  assert.match(postPromotionVerifyWorkflow, /run:\s*corepack enable/);
+  assert.match(postPromotionVerifyWorkflow, /yarn install --immutable/);
+  assert.match(postPromotionVerifyWorkflow, /yarn --cwd server install --immutable/);
+  assert.match(postPromotionVerifyWorkflow, /yarn --cwd client install --immutable/);
   assert.doesNotMatch(
-    renderBlueprint,
-    /buildCommand:\s*corepack enable && yarn install:all(?:\s|$)/,
+    postPromotionVerifyWorkflow,
+    /run:\s*[^\n]*yarn install:all(?::immutable)?(?:\s|$)/,
   );
 });
 
-test('production security smoke workflow checks live hardening headers and current API routes', () => {
-  assert.match(productionSecuritySmokeWorkflow, /name:\s*Production Security Smoke/);
-  assert.match(productionSecuritySmokeWorkflow, /schedule:/);
-  assert.match(productionSecuritySmokeWorkflow, /yarn security:smoke:production/);
-  assert.match(productionSecuritySmokeWorkflow, /SMOKE_API_BASE:/);
-  assert.match(productionSecuritySmokeWorkflow, /SMOKE_APP_BASE:/);
-  assert.doesNotMatch(productionSecuritySmokeWorkflow, /github\.sha/);
-  assert.match(productionSecuritySmokeWorkflow, /run:\s*corepack enable/);
-  assert.match(productionSecuritySmokeWorkflow, /yarn install --immutable/);
-  assert.match(productionSecuritySmokeWorkflow, /yarn --cwd server install --immutable/);
-  assert.match(productionSecuritySmokeWorkflow, /yarn --cwd client install --immutable/);
-  assert.doesNotMatch(
-    productionSecuritySmokeWorkflow,
-    /run:\s*[^\n]*yarn install:all(?::immutable)?(?:\s|$)/,
-  );
+test('no workflow reintroduces a standing schedule against production', () => {
+  const workflowDir = new URL('../.github/workflows/', import.meta.url);
+  for (const file of fs.readdirSync(workflowDir)) {
+    const workflow = fs.readFileSync(new URL(file, workflowDir), 'utf8');
+    if (!/yarn security:smoke:production/.test(workflow)) continue;
+    assert.doesNotMatch(
+      workflow,
+      /schedule:/,
+      `${file} must not run the production smoke on a schedule: an unread standing check prints production payloads into this public repository's Actions log`,
+    );
+  }
 });
 
 test('deployed runtime emits HSTS independent of proxy request shape', () => {
@@ -784,10 +991,6 @@ test('NIH Reporter matched user ids use safe serialization', () => {
     'utf8',
   );
 
-  assert.match(
-    source,
-    /import \{ serializedDocumentId \} from '\.\.\/\.\.\/utils\/idSerialization'/,
-  );
   assert.match(source, /const researcherId = resolution\.researcherId\.toString\(\)/);
   assert.match(source, /_id: researcherId,/);
   assert.doesNotMatch(source, /_id: String\(candidate\._id\)/);
@@ -991,7 +1194,13 @@ test('API body parsers have explicit abuse-resistant size and parameter limits',
   assert.doesNotMatch(source, /express\.urlencoded\(\{ extended: false \}\)/);
 });
 
-test('all API traffic is metered by a single per-user limiter with no anonymous discovery carve-out', () => {
+// Named for the wiring it pins, not for a metering guarantee. It asserts that one
+// limiter covers /api with no discovery carve-out and that the key function is the
+// netid-validating one. It does NOT assert that every caller is effectively
+// metered: the anonymous key is caller-resettable, so an earlier name claiming
+// "all API traffic is metered" asserted a property the measurement in #2420
+// contradicts.
+test('a single /api limiter is wired with no anonymous discovery carve-out', () => {
   const source = fs.readFileSync(new URL('../server/src/app.ts', import.meta.url), 'utf8');
 
   const limiterSource = fs.readFileSync(
@@ -1031,6 +1240,76 @@ test('all API traffic is metered by a single per-user limiter with no anonymous 
   // neither introduces an anonymous discovery carve-out.
   assert.match(limiterSource, /export const writeLimit = rateLimit\(\{/);
   assert.match(limiterSource, /export const authLimiter = rateLimit\(\{/);
+});
+
+test('no rate limiter declares a 5xx exemption that express-rate-limit never applies', () => {
+  const limiterSource = fs.readFileSync(
+    new URL('../server/src/middleware/rateLimiters.ts', import.meta.url),
+    'utf8',
+  );
+
+  // Brace-matched rather than read with a lazy `\n});` terminator, because a
+  // terminator truncates an options block at the first line-initial `});` and
+  // would then silently miss any property declared after it. Over-reading fails
+  // loudly; under-reading reports success.
+  const blocks = [];
+  const declaration = /export const (\w+) = rateLimit\(\{/g;
+  for (const match of limiterSource.matchAll(declaration)) {
+    const start = match.index + match[0].length;
+    let depth = 1;
+    let cursor = start;
+    while (cursor < limiterSource.length && depth > 0) {
+      if (limiterSource[cursor] === '{') depth += 1;
+      else if (limiterSource[cursor] === '}') depth -= 1;
+      cursor += 1;
+    }
+    assert.equal(depth, 0, `${match[1]} has an unbalanced rateLimit() options block`);
+    blocks.push({ name: match[1], options: limiterSource.slice(start, cursor - 1) });
+  }
+
+  // A limiter configured out of line would leave this scan reading nothing and
+  // reporting success, so the call sites and the readable blocks must agree.
+  // Counted over the source with line comments stripped, so a prose mention of
+  // the call does not read as one.
+  const callSites = limiterSource.replace(/^[ \t]*\/\/.*$/gm, '').match(/\brateLimit\(/g) ?? [];
+  assert.equal(
+    blocks.length,
+    callSites.length,
+    'every rateLimit() call must pass an inline options block this policy can read',
+  );
+
+  // express-rate-limit consults `requestWasSuccessful` only inside
+  // `if (config.skipFailedRequests || config.skipSuccessfulRequests)`, so a
+  // limiter that declares the predicate without one of those flags advertises an
+  // exemption that does not exist (#2990). Matched by anchored property name
+  // rather than by one formatting of it, so the shorthand, an explicit
+  // `requestWasSuccessful: requestWasSuccessful`, and an inline predicate all
+  // count.
+  const refunding = [];
+  for (const { name, options } of blocks) {
+    const declaresPredicate = /^\s*requestWasSuccessful\s*[,:]/m.test(options);
+    const consultsPredicate = /^\s*skip(?:Failed|Successful)Requests:\s*true\s*,?$/m.test(options);
+    assert.ok(
+      !declaresPredicate || consultsPredicate,
+      `${name} declares requestWasSuccessful but sets neither skipFailedRequests nor skipSuccessfulRequests, so the predicate is never consulted and every response counts`,
+    );
+    if (declaresPredicate) refunding.push(name);
+  }
+
+  // First contact meters the session mint, which `ensureAnonymousRateLimitId`
+  // performs before this limiter runs, so a failed response has already spent
+  // the resource and is deliberately not refunded. Compared as a set, because
+  // declaration order is not the invariant. Changing this also requires updating
+  // the rate-limit section of `skills/auth-security/SKILL.md`.
+  assert.deepEqual(
+    [...refunding].sort(),
+    ['authLimiter', 'globalLimiter', 'writeLimit'],
+    'the set of limiters that refund a 5xx changed; update the rate-limit section of skills/auth-security/SKILL.md to match',
+  );
+  const firstContact = blocks.find(({ name }) => name === 'firstContactLimiter');
+  assert.ok(firstContact, 'firstContactLimiter must be configured inline');
+  assert.doesNotMatch(firstContact.options, /requestWasSuccessful/);
+  assert.doesNotMatch(firstContact.options, /skip(?:Failed|Successful)Requests/);
 });
 
 test('API responses default to private no-store cache headers', () => {
@@ -1511,6 +1790,26 @@ test('scraper integrity report outputs are constrained to safe JSON artifact pat
   assert.match(integrityGate, /resolveSafeJsonReportOutputPath\(output\)/);
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(outputValue\)/);
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(output\)/);
+  assert.match(
+    guards,
+    /approvedTempRootFor\(resolved, \[tmpRoot, SHARED_TEMP_ROOT, projectTmpRoot\]\)/,
+  );
+});
+
+test('temporary artifact root comparisons resolve both sides before comparing', () => {
+  const roots = fs.readFileSync(
+    new URL('../server/src/utils/tempArtifactRoots.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(roots, /export function resolveRealPath/);
+  assert.match(roots, /fs\.realpathSync\.native\(existing\)/);
+  assert.match(roots, /const realTarget = resolveRealPath\(target\)/);
+  assert.match(roots, /const realRoot = resolveRealPath\(root\)/);
+  assert.match(roots, /hasPathPrefix\(realTarget, realRoot\)/);
+  assert.match(roots, /componentStat\.isSymbolicLink\(\) \|\| !componentStat\.isDirectory\(\)/);
+  assert.match(roots, /!hasPathPrefix\(resolveRealPath\(current\), realRoot\)/);
+  assert.doesNotMatch(roots, /fs\.realpathSync[^\n]*!== (?:target|parent|current|absolute)/);
 });
 
 test('scraper cache invalidation escapes and bounds regex prefixes', () => {
@@ -1901,7 +2200,12 @@ test('access materializer ObjectId handling is primitive-normalized', () => {
     source,
     /const researchEntityObjectId = toAccessMaterializerObjectId\(researchEntityId\)/,
   );
-  assert.match(source, /ResearchEntity\.findById\(researchEntityObjectId/);
+  // The `findById(researchEntityObjectId)` read this used to require lived only in
+  // `deriveIdentifiedLeadWaysInForEntity`, retired in #2578. The remaining entity
+  // read is `resolveResearchEntityId`, which queries by `slug` and then hands the
+  // result through `normalizeAccessMaterializerObjectId`, so the property this
+  // assertion protected is still asserted by the normalize/regex checks around it.
+  assert.match(source, /return normalizeAccessMaterializerObjectId\(group\?\._id\) \|\| null/);
   assert.match(source, /\{ entityId: researchEntityObjectId \}/);
   assert.doesNotMatch(source, /ObjectId\.isValid/);
   assert.doesNotMatch(source, /new mongoose\.Types\.ObjectId\(researchEntityId\)/);
@@ -1982,30 +2286,6 @@ test('LLM source-acquisition ObjectId filters are primitive-normalized', () => {
   }
 });
 
-test('profile description conflict repair plan ids are primitive-normalized', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/repairProfileDescriptionBackfillConflicts.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /PROFILE_DESCRIPTION_CONFLICT_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(
-    source,
-    /export function normalizeProfileDescriptionConflictObjectId\(value: unknown\): string \| undefined/,
-  );
-  assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
-  assert.match(
-    source,
-    /const keepObservationId = normalizeProfileDescriptionConflictObjectId\(plan\.keepObservationId\)/,
-  );
-  assert.match(source, /\.map\(\(id\) => normalizeProfileDescriptionConflictObjectId\(id\)\)/);
-  assert.doesNotMatch(
-    source,
-    /plan\.supersedeObservationIds\.map\(\(id\) => new mongoose\.Types\.ObjectId\(id\)\)/,
-  );
-  assert.doesNotMatch(source, /new mongoose\.Types\.ObjectId\(plan\.keepObservationId\)/);
-});
-
 test('archived artifact repair plan ids are primitive-normalized', () => {
   const source = fs.readFileSync(
     new URL('../server/src/scripts/repairArchivedEntityArtifacts.ts', import.meta.url),
@@ -2074,7 +2354,6 @@ test('maintenance and scraper id helpers do not execute duck-typed toHexString h
   const files = [
     '../server/src/scrapers/sources/labMicrositeDescriptionLLMExtractor.ts',
     '../server/src/scrapers/sources/officialProfilePiBackfillScraper.ts',
-    '../server/src/scripts/repairProfileDescriptionBackfillConflicts.ts',
     '../server/src/services/visibilityRepairQueueService.ts',
     '../server/src/scripts/staleObservationConflictReview.ts',
     '../server/src/scripts/crossSourceObservationConflictReview.ts',
@@ -2130,6 +2409,15 @@ test('manual fellowship recipient scraper inputs stay under safe local roots', (
   assert.match(source, /const tmpRoot = path\.resolve\(os\.tmpdir\(\)\)/);
   assert.match(source, /const projectTmpRoot = path\.resolve\(process\.cwd\(\), 'tmp'\)/);
   assert.match(source, /Manual recipient input root must be under system temp or \.\/tmp/);
+  assert.match(
+    source,
+    /approvedTempRootFor\(resolvedRoot, \[tmpRoot, SHARED_TEMP_ROOT, projectTmpRoot\]\)/,
+  );
+  assert.doesNotMatch(
+    source,
+    /DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR =\s*\n?\s*'\/tmp/,
+    'the default recipient input root must be derived from a resolved temp root',
+  );
   assert.match(
     source,
     /resolveSafeManualRecipientInputPath\(\s*manualRecipientCsvDir,\s*config\.programKey,\s*'\.csv'/,
@@ -2261,7 +2549,7 @@ test('source health operator commands quote unsafe stored identifiers', () => {
 
   assert.match(source, /MAX_SOURCE_HEALTH_DATE_LENGTH = 64/);
   assert.match(source, /MAX_SOURCE_HEALTH_COMMAND_ARG_LENGTH = 160/);
-  assert.match(source, /SAFE_BARE_COMMAND_ARG = \/\^\[A-Za-z0-9_\.\:-\]\+\$\//);
+  assert.match(source, /SAFE_BARE_COMMAND_ARG = \/\^\[A-Za-z0-9_\.:-\]\+\$\//);
   assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
   assert.match(source, /return serializedDocumentId\(value\) \|\| ''/);
   assert.doesNotMatch(source, /typeof \(value as any\)\.toHexString === 'function'/);
@@ -3023,7 +3311,347 @@ test('shared SSRF guard bounds public URL shape before outbound fetches', () => 
   assert.match(source, /hasUnsafePublicHttpUrlCharacter\(trimmed\)/);
   assert.match(source, /parsed = new URL\(trimmed\)/);
   assert.match(source, /if \(!isAllowedPublicHttpPort\(parsed\)\)/);
-  assert.match(source, /throw new SsrfBlockedError\('URL port is not allowed'\)/);
+  assert.match(source, /throw new SsrfBlockedError\('URL port is not allowed', 'port'\)/);
+});
+
+// #2709 gave every refusal a machine-readable reason so a caller can tell a name
+// that no longer exists from an address we refuse to reach. That distinction is
+// only safe while the security answer stays identical: both still throw, and only
+// a genuine NXDOMAIN/NODATA may read as `unresolvable`. A resolver failure or a
+// private resolution reported as `unresolvable` would let a DNS blip or a blocked
+// internal host retire a live citation.
+test('SSRF refusal reasons never soften the refusal itself', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/utils/ssrfGuard.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(
+    source,
+    /const NAME_DOES_NOT_EXIST_DNS_CODES = new Set\(\['ENOTFOUND', 'ENODATA'\]\)/,
+  );
+  assert.match(
+    source,
+    /const nameDoesNotExist = \(error: unknown\): boolean => \{[\s\S]*?NAME_DOES_NOT_EXIST_DNS_CODES\.has\(code\)/,
+  );
+  assert.match(source, /if \(records\.length === 0\) return \{ kind: 'unresolvable' \};/);
+
+  // #2725: `unresolvable` is the only verdict a caller acts on destructively, and
+  // Node reports ENOTFOUND for live names under resolver stress, so the first
+  // lookup may never produce it on its own. Both the early return for an
+  // inconclusive failure and the confirming second lookup are load-bearing.
+  assert.match(
+    source,
+    /return nameDoesNotExist\(error\)\s*\?\s*\{ kind: 'unresolvable' \}\s*:\s*\{ kind: 'resolver-failure' \};/,
+  );
+
+  // #2782: one 250ms re-ask proved too short to confirm anything - a resolver
+  // outage lasting seconds recorded 134 live hosts as dead. The negative must be
+  // re-asked with growing delays, and total patience must exceed a short outage.
+  const delays = source.match(/const NAME_LOOKUP_RETRY_DELAYS_MS = \[([^\]]*)\]/s)?.[1];
+  assert.ok(delays, 'NAME_LOOKUP_RETRY_DELAYS_MS declaration not found');
+  const parsed = delays
+    .split(',')
+    .map((part) => Number(part.replace(/_/g, '').trim()))
+    .filter((n) => Number.isFinite(n));
+  assert.ok(parsed.length >= 3, 'a claimed negative must be re-asked at least three times');
+  for (let i = 1; i < parsed.length; i += 1) {
+    assert.ok(parsed[i] > parsed[i - 1], 'each re-ask must wait longer than the last');
+  }
+  assert.ok(
+    parsed.reduce((a, b) => a + b, 0) >= 10_000,
+    'total patience before recording a death must exceed a short resolver outage',
+  );
+  assert.match(source, /if \(verdict\.kind !== 'unresolvable'\) return verdict;/);
+  assert.match(source, /await sleep\(delayMs\);/);
+  assert.match(
+    source,
+    /records\.every\(\(r\) => !isPrivateAddress\(r\.address\)\)\s*\?\s*\{ kind: 'public' \}\s*:\s*\{ kind: 'private-address' \}/,
+  );
+  assert.match(
+    source,
+    /isPrivateAddress\(clean\) \? \{ kind: 'private-address' \} : \{ kind: 'public' \}/,
+  );
+  assert.match(source, /if \(resolution\.kind !== 'public'\) \{\s*throw new SsrfBlockedError\(/);
+  assert.match(
+    source,
+    /export const isPublicHostname = async \(hostname: string\): Promise<boolean> =>\s*\(await classifyHostnameResolution\(hostname\)\)\.kind === 'public';/,
+  );
+});
+
+// The health classifier is the one caller that turns a refusal into a durable
+// verdict, so it is where a mistake becomes stored data. Only `unresolvable` may
+// become ENOTFOUND (and therefore UNAVAILABLE); every other refusal must stay
+// ERR_SSRF_BLOCKED and therefore UNKNOWN.
+// #2782: the guard that catches what no single retry can. A pass probing thousands
+// of unrelated hosts can tell a dead host from a broken resolver, and must halt
+// rather than keep recording deaths. Both properties are one edit from breaking.
+test('the resolver circuit breaker counts distinct hosts and trips open', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/scrapers/utils/resolverCircuitBreaker.ts', import.meta.url),
+    'utf8',
+  );
+
+  // Keyed by host, so one genuinely dead host retried in a loop cannot trip it.
+  assert.match(source, /private readonly failuresByHost = new Map<string, number>\(\);/);
+  assert.match(source, /this\.failuresByHost\.set\(host, this\.now\(\)\);/);
+  assert.match(source, /if \(this\.failuresByHost\.size < this\.threshold\) return;/);
+  assert.ok(
+    Number(source.match(/DEFAULT_RESOLVER_BREAKER_THRESHOLD = (\d+)/)?.[1]) > 1,
+    'a threshold of one would halt every pass on a single dead host',
+  );
+  // Trips open and stays open.
+  assert.match(source, /this\.tripped = true;/);
+  assert.match(
+    source,
+    /assertHealthy\(\): void \{\s*if \(!this\.tripped\) return;\s*throw new ResolverUnhealthyError/,
+  );
+  // A host that resolves stops counting against the resolver.
+  assert.match(
+    source,
+    /recordSuccess\(host: string\): void \{\s*this\.failuresByHost\.delete\(host\);/,
+  );
+
+  const wiring = fs.readFileSync(
+    new URL('../server/src/scripts/backfillSourceLinkHealth.ts', import.meta.url),
+    'utf8',
+  );
+  // Checked BEFORE the next probe, so a tripped breaker records nothing further.
+  assert.match(wiring, /deps\.resolverBreaker\?\.assertHealthy\(\);/);
+  assert.match(wiring, /if \(error instanceof ResolverUnhealthyError\) throw error;/);
+  assert.match(wiring, /deps\.resolverBreaker\?\.recordFailure\(hostOf\(url\)\);/);
+  assert.match(wiring, /deps\.resolverBreaker\?\.recordSuccess\(hostOf\(url\)\);/);
+});
+
+test('link-health maps only a non-resolving host to a dead-link error code', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/services/sourceLinkHealth.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(
+    source,
+    /error instanceof SsrfBlockedError && error\.reason === 'unresolvable'\s*\?\s*'ENOTFOUND'\s*:\s*'ERR_SSRF_BLOCKED'/,
+  );
+  assert.match(source, /DEAD_LINK_ERROR_CODES = new Set\(\[\s*'ENOTFOUND',/);
+  assert.match(source, /RESOURCE_GONE_HTTP_STATUS_CODES = new Set\(\[404, 410\]\)/);
+
+  // #2766: a throttled answer arrives as a status, so it must be re-asked with
+  // backoff, and a status that asserts the page is gone must never be re-asked.
+  // The retryable list is reused from the scraper fetch so the two cannot drift.
+  assert.match(
+    source,
+    /import \{ DEFAULT_RETRYABLE_STATUSES \} from '\.\.\/scrapers\/utils\/httpFetch';/,
+  );
+  assert.match(source, /!DEFAULT_RETRYABLE_STATUSES\.has\(result\.status\)\) break;/);
+  assert.match(
+    source,
+    /await delay\(probeStatusBackoffMs\(attemptIndex, result\.retryAfterMs\)\);/,
+  );
+  assert.ok(
+    !/DEFAULT_RETRYABLE_STATUSES[\s\S]{0,200}404/.test(source),
+    'a gone status must never be treated as retryable (#2766)',
+  );
+
+  // #2751: a certificate that does not cover the hostname is a fact about the
+  // server's TLS configuration, never about whether the page exists, and no retry
+  // changes that. Listing it retired six live Yale vanity hosts, three of them on
+  // student_ready rows, so it must never rejoin the dead set.
+  const deadSet = source.match(/const DEAD_LINK_ERROR_CODES = new Set\(\[[^\]]*\]\)/s)?.[0] ?? '';
+  assert.ok(deadSet, 'DEAD_LINK_ERROR_CODES declaration not found');
+  assert.ok(
+    !deadSet.includes('ERR_TLS_CERT_ALTNAME_INVALID'),
+    'a certificate name mismatch must not retire a link (#2751)',
+  );
+
+  // The reachability codes may retire a link, but only on a confirmed second
+  // attempt, so each must also be retryable. An entry in the dead set that is not
+  // retryable records a destructive verdict on one observation.
+  const retrySet = source.match(/const RETRYABLE_ERROR_CODES = new Set\(\[[^\]]*\]\)/s)?.[0] ?? '';
+  assert.ok(retrySet, 'RETRYABLE_ERROR_CODES declaration not found');
+  for (const code of ['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']) {
+    assert.ok(
+      deadSet.includes(code) === retrySet.includes(code),
+      `${code} must be confirmed by a retry before it retires a link (#2751)`,
+    );
+  }
+});
+
+// The SSRF policies above each pin one named scraper, which is how ten scrapers
+// came to use the guard with nothing requiring them to keep it. Enumerated
+// coverage cannot cover a file that does not exist yet, so a new scraper starts
+// unpinned by default. This walks the directory instead: every scraper that makes
+// an outbound request must route through the guard, or be an explicitly listed
+// fixed-endpoint API where there is no attacker-influenced URL to forge.
+//
+// This is a floor, not a proof. It shows a scraper reaches the guard; only the
+// per-scraper policies above show the guarded URL is the one that reaches axios.
+// Keep both.
+const SCRAPER_SOURCE_DIRECTORY = '../server/src/scrapers/sources';
+
+// Hosts baked into the source as constants. Adding an entry must stay a
+// deliberate review decision, so the host is asserted too: an allowlisted
+// scraper that grows a dynamic fetch fails here rather than silently opting out.
+const FIXED_ENDPOINT_SCRAPER_HOSTS = new Map([
+  ['doeOstiGrantScraper', 'https://www.osti.gov'],
+  ['federalAwardScraper', 'https://api.usaspending.gov'],
+  ['nehGrantScraper', 'https://apps.neh.gov'],
+  ['nihReporterScraper', 'https://api.reporter.nih.gov'],
+  ['nsfAwardScraper', 'https://api.nsf.gov'],
+  ['yaleDirectoryScraper', 'https://api.yalies.io'],
+]);
+
+const scraperSourceFiles = () =>
+  fs
+    .readdirSync(new URL(SCRAPER_SOURCE_DIRECTORY, import.meta.url))
+    .filter((name) => name.endsWith('.ts') && !name.includes('.test.'))
+    .map((name) => ({
+      name: name.replace(/\.ts$/, ''),
+      source: fs.readFileSync(
+        new URL(`${SCRAPER_SOURCE_DIRECTORY}/${name}`, import.meta.url),
+        'utf8',
+      ),
+    }));
+
+test('every scraper that makes outbound requests is bound by the SSRF guard', () => {
+  const scrapers = scraperSourceFiles();
+
+  // A matcher that silently finds nothing would pass this policy while checking
+  // nothing, so anchor it: the directory must be non-empty and most of it must
+  // make requests. Scraping the public web is what these files are for.
+  assert.ok(scrapers.length >= 25, `expected the scraper directory, found ${scrapers.length}`);
+
+  const requesting = scrapers.filter(({ source }) => /\baxios[.(]|\bfetch\(/.test(source));
+  assert.ok(
+    requesting.length >= 25,
+    `expected most scrapers to make requests, matched ${requesting.length}`,
+  );
+
+  const unguarded = [];
+  for (const { name, source } of requesting) {
+    const usesGuardDirectly = /assertPublicHttpUrl|ssrfSafeAgents/.test(source);
+    const delegatesToGuardedPolicy =
+      /fetchPageWithPolicy|from '\.\.\/utils\/httpFetch'|from '\.\.\/renderedFetch'/.test(source);
+    if (usesGuardDirectly || delegatesToGuardedPolicy) continue;
+
+    const fixedHost = FIXED_ENDPOINT_SCRAPER_HOSTS.get(name);
+    if (!fixedHost) {
+      unguarded.push(name);
+      continue;
+    }
+    assert.ok(
+      source.includes(fixedHost),
+      `${name} is allowlisted as a fixed-endpoint API but no longer pins ${fixedHost}; it must use the SSRF guard or update the allowlist`,
+    );
+  }
+
+  assert.deepEqual(
+    unguarded,
+    [],
+    `these scrapers make outbound requests without reaching the SSRF guard: ${unguarded.join(', ')}. Route the URL through assertPublicHttpUrl/ssrfSafeAgents or fetchPageWithPolicy, or add it to FIXED_ENDPOINT_SCRAPER_HOSTS if its endpoint is a source constant.`,
+  );
+});
+
+test('every scraper source module is registered for dispatch', () => {
+  const registry = fs.readFileSync(
+    new URL('../server/src/scrapers/registry.ts', import.meta.url),
+    'utf8',
+  );
+  const scrapers = scraperSourceFiles();
+  assert.ok(scrapers.length >= 25, `expected the scraper directory, found ${scrapers.length}`);
+
+  // An unregistered scraper does not throw; the sweep just never dispatches it, so
+  // its whole source silently stops being collected with no failing signal
+  // anywhere. That has bitten before, which is why it is pinned structurally.
+  const unregistered = scrapers
+    .map(({ name }) => name)
+    .filter((name) => !registry.includes(`./sources/${name}'`));
+
+  assert.deepEqual(
+    unregistered,
+    [],
+    `these scraper modules are not imported by registry.ts, so the orchestrator can never dispatch them and their source is silently never scraped: ${unregistered.join(', ')}`,
+  );
+});
+
+// Public read paths that use a state-changing verb. POST /search is a
+// Meilisearch query with a request body, not a mutation, so it is deliberately
+// anonymous: logged-out browsing is the product. Every other entry would be a
+// write reachable without a session.
+const ANONYMOUS_STATE_CHANGING_ROUTES = new Set(['researchGroups.ts POST /search']);
+
+test('no state-changing route is reachable without authentication', () => {
+  const routesDirectory = '../server/src/routes';
+  const routeFiles = fs
+    .readdirSync(new URL(routesDirectory, import.meta.url))
+    .filter((name) => name.endsWith('.ts') && name !== 'index.ts');
+  const mountIndex = fs.readFileSync(
+    new URL(`${routesDirectory}/index.ts`, import.meta.url),
+    'utf8',
+  );
+
+  assert.ok(routeFiles.length >= 8, `expected the routes directory, found ${routeFiles.length}`);
+
+  // Balanced-paren extraction, not a regex over the whole call. A lazy
+  // `[\s\S]*?` up to `\n);` runs past the end of a one-line route into the next
+  // one, so a route with no guard inherits the following route's isAuthenticated
+  // and reads as protected. That false pass is the whole risk this policy exists
+  // to remove, so the parse has to be exact.
+  const routeHandlerCalls = (source) => {
+    const calls = [];
+    const pattern = /router\.(get|post|put|patch|delete)\(/g;
+    let match;
+    while ((match = pattern.exec(source)) !== null) {
+      let depth = 0;
+      let index = match.index + match[0].length - 1;
+      for (; index < source.length; index += 1) {
+        if (source[index] === '(') depth += 1;
+        else if (source[index] === ')') {
+          depth -= 1;
+          if (depth === 0) break;
+        }
+      }
+      const body = source.slice(match.index, index + 1);
+      calls.push({ verb: match[1], path: body.match(/['"]([^'"]*)['"]/)?.[1] ?? '?', body });
+    }
+    return calls;
+  };
+
+  const anonymous = [];
+  let stateChangingRoutes = 0;
+
+  for (const file of routeFiles) {
+    const source = fs.readFileSync(new URL(`${routesDirectory}/${file}`, import.meta.url), 'utf8');
+
+    assert.ok(
+      mountIndex.includes(file.replace(/\.ts$/, '')),
+      `${file} is not mounted in routes/index.ts; an unmounted router is either dead code or a route served outside the reviewed mount table`,
+    );
+
+    // Guards apply router-wide via router.use as well as per route, so both count.
+    const routerWideAuth = /router\.use\([^;]*?(isAuthenticated|isAdmin|requireActiveAdmin)/s.test(
+      source,
+    );
+
+    for (const { verb, path, body } of routeHandlerCalls(source)) {
+      if (verb === 'get') continue;
+      stateChangingRoutes += 1;
+      const authenticated =
+        routerWideAuth || /isAuthenticated|isAdmin|requireActiveAdmin/.test(body);
+      const label = `${file} ${verb.toUpperCase()} ${path}`;
+      if (!authenticated && !ANONYMOUS_STATE_CHANGING_ROUTES.has(label)) anonymous.push(label);
+    }
+  }
+
+  assert.ok(
+    stateChangingRoutes >= 15,
+    `expected to find the state-changing routes, matched ${stateChangingRoutes}`,
+  );
+  assert.deepEqual(
+    anonymous,
+    [],
+    `these state-changing routes are reachable without a session: ${anonymous.join(', ')}. Add isAuthenticated, or add the route to ANONYMOUS_STATE_CHANGING_ROUTES if it is a read that merely uses a request body.`,
+  );
 });
 
 test('gate refresh scheduler bounds operator-controlled spawn cadence', () => {
@@ -3392,11 +4020,15 @@ test('public ResearchEntity DTO recursively redacts direct-contact text', () => 
   );
   assert.match(
     source,
-    /name:\s*publicResearchEntityName\(served\.name \|\| served\.displayName \|\| ''\)/,
+    /function servedPersonScopedDisplayName\(group: Record<string, any>, value: unknown\): string \{\s*const displayName = publicResearchEntityName\(value\);/,
   );
   assert.match(
     source,
-    /displayName:\s*group\.displayName === undefined\s*\?\s*undefined\s*:\s*publicResearchEntityName\(served\.displayName\)/,
+    /name:\s*publicResearchEntityName\(served\.name\) \|\|\s*servedPersonScopedDisplayName\(group, served\.displayName\)/,
+  );
+  assert.match(
+    source,
+    /displayName:\s*group\.displayName === undefined\s*\?\s*undefined\s*:\s*servedPersonScopedDisplayName\(group, served\.displayName\)/,
   );
   assert.match(source, /researchAreas:\s*publicResearchAreaArray\(served\.researchAreas\)/);
   assert.match(source, /const cleaned = publicTextString\(sanitizeResearchAreaLabel\(raw\)\)/);
@@ -3567,7 +4199,6 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/launchAcquisitionReport.ts',
     '../server/src/scripts/launchReviewExceptions.ts',
     '../server/src/scripts/migrateResearchEntities.ts',
-    '../server/src/scripts/repairProfileDescriptionBackfillConflicts.ts',
     '../server/src/scripts/migrateResearchEntityCollections.ts',
     '../server/src/scripts/scraperIntegrityDuplicateReview.ts',
     '../server/src/scripts/rebuildResearchEntitySearchIndex.ts',
@@ -4187,135 +4818,68 @@ test('client UI does not surface raw Axios error payload text', () => {
   }
 });
 
-test('public faculty profiles omit direct contact and office-location fields', () => {
+test('the public faculty profile shaper stays retired rather than re-exposing contact fields', () => {
+  // This replaced a 20-assertion pin on `normalizePublicProfile`'s field allowlist and
+  // truncation limits. That shaper, and every helper only it reached, was deleted once
+  // the `/profile/:netid` route it fed was confirmed gone (retired in #2091, #3238).
+  //
+  // Asserting the ABSENCE of the shaper is strictly stronger than asserting its
+  // allowlist was clean: an allowlist can be widened by a later edit and still satisfy
+  // a pin on its shape, whereas nothing can leak from a surface that does not exist.
+  // If a public profile surface is ever reintroduced this test fails, and the full
+  // field-allowlist pin has to come back with it rather than being quietly reinvented.
   const profileServiceSource = fs.readFileSync(
     new URL('../server/src/services/profileService.ts', import.meta.url),
     'utf8',
   );
 
-  assert.match(profileServiceSource, /Direct contact\/location fields are intentionally excluded/);
-  assert.doesNotMatch(profileServiceSource, /'email',\s*\n\s*'userType'/);
+  assert.doesNotMatch(profileServiceSource, /export const normalizePublicProfile/);
+  assert.doesNotMatch(profileServiceSource, /PUBLIC_PROFILE_BASE_FIELDS/);
+  assert.doesNotMatch(profileServiceSource, /physical_location:/);
+  assert.doesNotMatch(profileServiceSource, /building_desk:/);
   assert.doesNotMatch(profileServiceSource, /'physicalLocation'/);
   assert.doesNotMatch(profileServiceSource, /'buildingDesk'/);
-  const responseFieldsMatch = profileServiceSource.match(
-    /const PUBLIC_PROFILE_BASE_FIELDS = \[([\s\S]*?)\] as const;/,
-  );
-  assert.ok(responseFieldsMatch, 'public profile base field allowlist should exist');
-  const responseFields = responseFieldsMatch[1];
-  assert.doesNotMatch(responseFields, /'_id'/);
-  assert.doesNotMatch(responseFields, /'id'/);
-  assert.doesNotMatch(responseFields, /'userConfirmed'/);
-  assert.doesNotMatch(responseFields, /'createdAt'/);
-  assert.doesNotMatch(responseFields, /'updatedAt'/);
-  assert.doesNotMatch(responseFields, /'ownListings'/);
-  assert.doesNotMatch(responseFields, /'favListings'/);
-  assert.doesNotMatch(responseFields, /'favFellowships'/);
-  assert.doesNotMatch(responseFields, /'favPathways'/);
-  assert.match(profileServiceSource, /const MAX_PUBLIC_PROFILE_BASE_TEXT_LENGTH = 500/);
-  assert.match(profileServiceSource, /const MAX_PUBLIC_PROFILE_BASE_ARRAY_ITEMS = 50/);
-  assert.match(profileServiceSource, /const PUBLIC_PROFILE_BASE_TEXT_FIELDS = new Set<string>/);
-  assert.match(profileServiceSource, /const PUBLIC_PROFILE_BASE_ARRAY_FIELDS = new Set<string>/);
-  assert.match(
-    profileServiceSource,
-    /redactDirectContactInfo\(text\)\.slice\(0, MAX_PUBLIC_PROFILE_BASE_TEXT_LENGTH\)/,
-  );
-  assert.match(
-    profileServiceSource,
-    /\.slice\(0, MAX_PUBLIC_PROFILE_BASE_ARRAY_ITEMS\)[\s\S]*?\.map\(publicProfileText\)/,
-  );
-  assert.match(profileServiceSource, /if \(PUBLIC_PROFILE_BASE_TEXT_FIELDS\.has\(field\)\)/);
-  assert.match(profileServiceSource, /else if \(PUBLIC_PROFILE_BASE_ARRAY_FIELDS\.has\(field\)\)/);
-  assert.match(profileServiceSource, /else if \(field === 'profileVerified'\)/);
-  assert.match(profileServiceSource, /else if \(field === 'hIndex'\)/);
-  assert.match(profileServiceSource, /else if \(field === 'imageUrl'\)/);
-  assert.match(
-    profileServiceSource,
-    /const rawResearchInterestSummary =\s*user\.researchInterestSummary \|\|[\s\S]*?researchInterestContextSummary\(researchEntities\);/,
-  );
-  assert.match(
-    profileServiceSource,
-    /const researchInterestSummary = publicResearchSummaryText\(rawResearchInterestSummary\) \|\| ''/,
-  );
-  assert.doesNotMatch(
-    profileServiceSource,
-    /research_interest_summary: user\.researchInterestSummary/,
-  );
-  assert.doesNotMatch(profileServiceSource, /physical_location: user\.physicalLocation/);
-  assert.doesNotMatch(profileServiceSource, /building_desk: user\.buildingDesk/);
+
+  const routesDir = new URL('../server/src/routes/', import.meta.url);
+  const routeSources = fs
+    .readdirSync(routesDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
+    .map((entry) => fs.readFileSync(new URL(entry.name, routesDir), 'utf8'))
+    .join('\n');
+  assert.doesNotMatch(routeSources, /normalizePublicProfile/);
 });
 
-test('public profile scholarly links omit internal user and entity ids', () => {
+test('the retired scholarly-link serializer stays absent from the profile service', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/profileService.ts', import.meta.url),
     'utf8',
   );
-  const serializer = source.match(/export const scholarlyLinkToPublicLink = \([\s\S]*?\n\};/);
-  assert.ok(serializer, 'public scholarly-link serializer should exist');
-  assert.match(source, /const publicScholarlyLinkId = /);
-  assert.match(source, /const publicScholarlyExternalIds = /);
-  assert.match(
-    source,
-    /const publicScholarlyLinkText = \(value: unknown\): string \| undefined => \{/,
-  );
-  assert.match(
-    source,
-    /redactDirectContactInfo\(String\(value \|\| ''\)\.trim\(\)\)\.slice\(0, 500\)/,
-  );
-  assert.match(
-    source,
-    /const publicScholarlyLinkYear = \(value: unknown\): number \| undefined => \{/,
-  );
-  assert.match(source, /year < 1800 \|\| year > 2200/);
-  assert.match(
-    source,
-    /const publicScholarlyLinkConfidence = \(value: unknown\): number \| undefined => \{/,
-  );
-  assert.match(source, /confidence < 0 \|\| confidence > 1/);
-  assert.match(source, /const PUBLIC_SCHOLARLY_DESTINATION_KINDS = new Set/);
-  assert.match(source, /const PUBLIC_OPEN_ACCESS_STATUSES = new Set/);
-  assert.match(source, /const publicScholarlyDestinationKind = \(value: unknown\): string => \{/);
-  assert.match(source, /PUBLIC_SCHOLARLY_DESTINATION_KINDS\.has\(kind\) \? kind : 'OTHER'/);
-  assert.match(
-    source,
-    /const publicOpenAccessStatus = \(link: Record<string, any>\): string \| undefined => \{/,
-  );
-  assert.match(source, /PUBLIC_OPEN_ACCESS_STATUSES\.has\(status\) \? status : undefined/);
-  assert.match(source, /publicEntity\._id = publicId/);
-  assert.match(
-    serializer[0],
-    /destinationKind: publicScholarlyDestinationKind\(link\.destinationKind\)/,
-  );
-  assert.match(
-    serializer[0],
-    /publicScholarlyLinkText\(link\.freeFullTextLabel\) \|\| 'Free full text'/,
-  );
-  assert.match(serializer[0], /openAccessStatus: publicOpenAccessStatus\(link\)/);
-  assert.match(serializer[0], /year: publicScholarlyLinkYear\(link\.year\)/);
-  assert.match(serializer[0], /venue: publicScholarlyLinkText\(link\.venue\)/);
-  assert.match(serializer[0], /confidence,\s*observedAt/);
-  assert.match(
-    serializer[0],
-    /relationshipBasis: publicScholarlyLinkText\(options\.relationshipBasis\)/,
-  );
-  assert.match(serializer[0], /evidenceLabel: publicScholarlyLinkText\(options\.evidenceLabel\)/);
-  assert.doesNotMatch(source, /userId: userId \? String\(userId\) : undefined/);
-  assert.doesNotMatch(serializer[0], /userId:/);
-  assert.doesNotMatch(serializer[0], /researchEntityId:/);
-  assert.doesNotMatch(serializer[0], /String\(link\._id \|\| link\.id/);
-  assert.doesNotMatch(serializer[0], /externalIds: link\.externalIds \|\| \{\}/);
-  assert.doesNotMatch(serializer[0], /destinationKind: link\.destinationKind \|\| 'OTHER'/);
-  assert.doesNotMatch(
-    serializer[0],
-    /openAccessStatus: normalizeOpenAccessStatus\(link\) \|\| undefined/,
-  );
-  assert.doesNotMatch(
-    serializer[0],
-    /freeFullTextLabel:\s*freeFullTextUrl\s*\?\s*link\.freeFullTextLabel/,
-  );
-  assert.doesNotMatch(serializer[0], /year: link\.year/);
-  assert.doesNotMatch(serializer[0], /venue: link\.venue/);
-  assert.doesNotMatch(serializer[0], /relationshipBasis: options\.relationshipBasis/);
-  assert.doesNotMatch(serializer[0], /evidenceLabel: options\.evidenceLabel/);
+
+  // The scholarly-link mirror was retired in #2451 and its serve path in #2457.
+  // These stay negative assertions rather than being deleted: reintroducing any
+  // of them means reintroducing a serializer for untrusted external records, and
+  // that must come back with its redaction and id-omission pins, not without them.
+  for (const retired of [
+    'scholarlyLinkToPublicLink',
+    'isPublicResearchPaperLink',
+    'isDatasetLikeScholarlyLink',
+    'publicScholarlyLinkId',
+    'publicScholarlyExternalIds',
+    'publicScholarlyLinkText',
+    'publicScholarlyLinkYear',
+    'publicScholarlyLinkConfidence',
+    'publicScholarlyDestinationKind',
+    'publicOpenAccessStatus',
+    'cleanPublicSourceLabel',
+    'PUBLIC_SCHOLARLY_DESTINATION_KINDS',
+    'PUBLIC_OPEN_ACCESS_STATUSES',
+  ]) {
+    assert.doesNotMatch(
+      source,
+      new RegExp(`\\b${retired}\\b`),
+      `${retired} was retired with the scholarly-link mirror; restore its redaction pins if it returns`,
+    );
+  }
 });
 
 test('public URL normalization rejects local and private-network browser targets', () => {
@@ -4470,17 +5034,33 @@ test('scraper materializer logs sanitize untrusted exception values', () => {
   assert.doesNotMatch(source, /\(err as Error\)\?\.message \|\| err/);
 });
 
-test('scraper cron heartbeat logs sanitize lock exceptions', () => {
+// The heartbeat lives in scrapeJobLock.ts, which every writer shares, rather than
+// in cronRunner.ts where it used to be duplicated (#2498). Both files are still
+// pinned, because cronRunner keeps its own sanitized logging for the lead reclaim.
+test('scrape job lock heartbeat logs sanitize lock exceptions', () => {
   const source = fs.readFileSync(
+    new URL('../server/src/scrapers/scrapeJobLock.ts', import.meta.url),
+    'utf8',
+  );
+  const cronSource = fs.readFileSync(
     new URL('../server/src/scrapers/cronRunner.ts', import.meta.url),
     'utf8',
   );
 
   assert.match(source, /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/);
-  assert.match(source, /Failed to heartbeat scraper cron lock for \$\{input\.sourceName\}:/);
+  assert.match(
+    source,
+    /Failed to heartbeat \$\{input\.label \?\? 'scrape'\} job lock for \$\{input\.sourceName\}:/,
+  );
   assert.match(source, /sanitizeLogValue\(error\)/);
   assert.doesNotMatch(source, /error instanceof Error \? error\.message : error/);
   assert.doesNotMatch(source, /console\.error\([^;]*error\.message[^;]*\)/);
+
+  // cronRunner must not log a raw lock exception either; where its heartbeat
+  // comes from is a structural question the unit suite owns behaviorally.
+  assert.match(cronSource, /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/);
+  assert.doesNotMatch(cronSource, /error instanceof Error \? error\.message : error/);
+  assert.doesNotMatch(cronSource, /console\.error\([^;]*error\.message[^;]*\)/);
 });
 
 test('scraper run failure records and reports sanitize persisted errors', () => {
@@ -4641,10 +5221,8 @@ test('program maintenance artifacts use safe JSON paths and safe review inputs',
     programClassifications,
     /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/,
   );
-  assert.match(
-    programClassifications,
-    /updates\.push\(\{ id: serializedDocumentId\(row\._id\) \|\| '', title: row\.title, classification \}\)/,
-  );
+  assert.match(programClassifications, /serializedId: serializedDocumentId\(row\._id\) \|\| ''/);
+  assert.match(programClassifications, /id: item\.serializedId/);
   assert.doesNotMatch(programClassifications, /id: String\(row\._id\)/);
   assert.doesNotMatch(programClassifications, /String\(row\._id\)/);
 });
@@ -4700,39 +5278,6 @@ test('quality and coverage audit artifacts use safe JSON output paths', () => {
     assert.match(
       source,
       /return resolveSafeJsonReportOutputPath\(value\)/,
-      `${name} must validate --output while parsing CLI flags`,
-    );
-    assert.match(
-      source,
-      /const safeOutput = resolveSafeJsonReportOutputPath\(output\)/,
-      `${name} writer must revalidate output paths before file I/O`,
-    );
-    assert.doesNotMatch(
-      source,
-      /fs\.writeFileSync\(output,/,
-      `${name} must not write raw output paths`,
-    );
-    assert.doesNotMatch(
-      source,
-      /fs\.mkdirSync\(path\.dirname\(output\)/,
-      `${name} must not create raw output directories`,
-    );
-  }
-});
-
-test('publication and scholarly audit artifacts use safe JSON output paths', () => {
-  const files = [];
-
-  for (const [name, file] of files) {
-    const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
-    assert.match(
-      source,
-      /resolveSafeJsonReportOutputPath/,
-      `${name} must use the shared safe JSON report path resolver`,
-    );
-    assert.match(
-      source,
-      /options\.output = resolveSafeJsonReportOutputPath\(/,
       `${name} must validate --output while parsing CLI flags`,
     );
     assert.match(
@@ -4830,10 +5375,6 @@ test('repair and dedupe artifacts use safe JSON output paths', () => {
   const files = [
     ['archived entity artifact repair', '../server/src/scripts/repairArchivedEntityArtifacts.ts'],
     ['duplicate access signal repair', '../server/src/scripts/repairDuplicateAccessSignals.ts'],
-    [
-      'profile description conflict repair',
-      '../server/src/scripts/repairProfileDescriptionBackfillConflicts.ts',
-    ],
   ];
 
   for (const [name, file] of files) {
@@ -4924,7 +5465,7 @@ test('public research detail omits internal entity, relationship, and member ids
   assert.doesNotMatch(serviceSource, /researchEntityId: String\(researchEntityId \|\| ''\)/);
 
   const accessSignalSerializer = serviceSource.match(
-    /const publicAccessSignalForResearchDetail = \(signal: any\) => \(\{[\s\S]*?\n\}\);/,
+    /const publicAccessSignalForResearchDetail = \([^)]*\) => \(\{[\s\S]*?\n\}\);/,
   );
   assert.ok(accessSignalSerializer, 'public access-signal serializer should exist');
   assert.doesNotMatch(accessSignalSerializer[0], /_id:/);
@@ -5096,27 +5637,6 @@ test('public program and fellowship payloads omit direct email and phone fields'
   assert.doesNotMatch(fellowshipControllerSource, /sortBy = 'updatedAt'/);
   assert.match(programControllerSource, /const OPERATOR_PROGRAM_SORT_FIELDS = new Set/);
   assert.match(fellowshipServiceSource, /const OPERATOR_FELLOWSHIP_SORT_FIELDS = new Set/);
-});
-
-test('public scholarly link source labels are direct-contact redacted', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/profileService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    source,
-    /const cleanPublicSourceLabel = \(value: unknown\): string \| undefined => \{/,
-  );
-  assert.match(source, /redactDirectContactInfo\(value\)/);
-  assert.match(
-    source,
-    /displaySource:\s*cleanPublicSourceLabel\(link\.displaySource \|\| options\.sourceName \|\| link\.destinationKind\)/,
-  );
-  assert.match(
-    source,
-    /discoveredVia: normalizeDiscoveredVia\(\s*cleanPublicSourceLabel\(link\.discoveredVia \|\| options\.sourceName\),?\s*\)/,
-  );
 });
 
 test('research entity search index documents omit direct contact fields', () => {

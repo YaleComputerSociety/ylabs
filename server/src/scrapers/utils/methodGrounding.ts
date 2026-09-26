@@ -8,6 +8,8 @@
  * stopword differences, and it rejects content-free phrases ("research
  * methods", "various techniques") that carry no concrete technique.
  */
+import { sanitizeMethodChipLabel } from '../../utils/researchAreaLabelHygiene';
+
 const METHOD_TOKEN_STOPWORDS = new Set([
   'and',
   'the',
@@ -82,7 +84,7 @@ export function groundMethods(methods: unknown, sourceText: string, limit = 12):
   const grounded: string[] = [];
   for (const raw of methods) {
     if (typeof raw !== 'string') continue;
-    const method = raw.trim().replace(/\s+/g, ' ');
+    const method = sanitizeMethodChipLabel(raw);
     if (!method) continue;
     const dedupeKey = method.toLowerCase();
     if (seen.has(dedupeKey)) continue;

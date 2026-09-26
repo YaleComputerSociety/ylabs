@@ -13,13 +13,19 @@
  * quality helpers below are pure, but they transitively load Mongoose models at
  * module scope, so importing this module still requires mongoose to resolve.
  */
-import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
+import {
+  fullDescriptionQuality,
+  standaloneCardQuality,
+} from '../utils/researchEntityDescriptionQuality';
 import {
   isDemotablePersonBio,
   isHighConfidencePersonBio,
   scoreResearchHomeDescriptionCandidate,
+  type DescriptionEntityKind,
 } from '../utils/researchHomeDescriptionSelection';
 import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
+import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
+import { containsHtmlTagMarkup } from '../utils/descriptionHygiene';
 
 export interface ResolverObservation {
   field: string;
@@ -44,6 +50,15 @@ export interface ResolverOptions {
   agreementBonusPerExtraSource?: number;
   conflictThreshold?: number;
   now?: Date;
+  /**
+   * The voice this record's description is expected to be written in, from
+   * `descriptionEntityKindForResearchEntity`. Defaults to `organization`, which
+   * is what every caller got implicitly before: the prose bars below hardcoded
+   * it, so a faculty research profile had its own research paragraph charged the
+   * organization-only person-centric penalty and could never be promoted over
+   * whatever else its profile page published.
+   */
+  descriptionEntityKind?: DescriptionEntityKind;
 }
 
 const DEFAULTS = {
@@ -82,7 +97,41 @@ const PROSE_EXTENSION_BONUS = 1.25;
 // never win and the bio is restored on the next weekly re-scrape (#2200).
 // Demotion is conditional on a genuinely useful non-bio alternative existing, so
 // a sole bio is still served rather than blanked in favour of a worse value.
-const PERSON_BIO_DEMOTION_FIELDS = new Set(['fullDescription']);
+// `shortDescription` is served too (`researchEntityDto`), and the rationale above is
+// about what a research entity IS rather than about how long its copy is, so the card
+// was exempt purely by omission. Adding the field alone does not transfer the rule:
+// the promotion arm gates on `fullDescriptionQuality`, which a card line fails on
+// length, so the arm never licensed a demotion and the measured result was 2 rows
+// changed with one of them moving BACKWARDS onto a biography. The field list and the
+// card-length bar below have to land together (#2654).
+const PERSON_BIO_DEMOTION_FIELDS = new Set(['fullDescription', 'shortDescription']);
+
+// Fields whose value is a card line rather than a body, so "is this adoptable
+// research prose" has to be asked with the card bar.
+const CARD_PROSE_FIELDS = new Set(['shortDescription']);
+
+// The undergrad-access lane reads the lab's own page, so it is not
+// directory-synthesized in the sense above, but its declared job is access
+// evidence - undergrad count, openness, an evidence quote, a join URL - at a
+// deliberately low 0.5 weight. It emits a `fullDescription` only incidentally,
+// so when it wins that field the lab's research description is being chosen by
+// an access-signal extractor: measured on Development, it won `fullDescription`
+// on 45 served rows whose own microsite description lane had a value a median
+// 556 chars richer that passed every description-quality bar (#2266).
+//
+// Demotion is conditional on that richer alternative existing and clearing the
+// same bar the bio demotion promotes against, because the failure mode here is
+// adopting length rather than quality: 52 of the thin served rows have their
+// richest available value be a career biography, and those must keep losing. A
+// lab whose only description comes from this lane still serves it.
+const UNDERGRAD_SIGNAL_DESCRIPTION_SOURCES = new Set(['lab-microsite-undergrad-llm']);
+const UNDERGRAD_SIGNAL_DEMOTION_FIELDS = new Set(['fullDescription']);
+const MATERIAL_PROSE_ENRICHMENT_CHARS = 200;
+
+// The prose fields `isUsefulProseGroup` can judge: both have a quality bar, and
+// both are served (`researchEntityDto`). A field with no bar must not be listed,
+// because the demotion would then key on `typeof value !== 'string'` alone.
+const QUALITY_DEMOTION_FIELDS = new Set(['fullDescription', 'shortDescription']);
 
 // Scoped to the lanes written specifically to replace a served biography, rather
 // than to the field alone. `isHighConfidencePersonBio` also fires on genuine
@@ -221,8 +270,33 @@ function hasBioReplacingSynthesisSource(group: { sources: Set<string> }): boolea
   return false;
 }
 
-function isUsefulProseGroup(group: { value: unknown }): boolean {
-  return typeof group.value === 'string' && fullDescriptionQuality(group.value).isUseful;
+/**
+ * Memoized per group object because `fullDescriptionQuality` costs ~0.5 ms on a
+ * 1.5 KB body and the demotion rules below ask the same question of the same
+ * group several times per rank pass, once per rule plus once more for the group
+ * each rule would promote. Uncached, that doubled the runtime of the
+ * materializer integration suites and timed six of them out.
+ *
+ * A `RankedGroup` is built fresh inside every `rankFieldGroups` call and its
+ * `value` is never mutated afterwards, so identity is a sound cache key and
+ * nothing here outlives the pass that created it.
+ */
+const usefulProseGroupCache = new WeakMap<object, Map<string, boolean>>();
+
+function isUsefulProseGroup(field: string, group: { value: unknown }): boolean {
+  if (typeof group.value !== 'string') return false;
+  let byField = usefulProseGroupCache.get(group);
+  if (!byField) {
+    byField = new Map();
+    usefulProseGroupCache.set(group, byField);
+  }
+  const cached = byField.get(field);
+  if (cached !== undefined) return cached;
+  const useful = CARD_PROSE_FIELDS.has(field)
+    ? standaloneCardQuality(group.value).isUseful
+    : fullDescriptionQuality(group.value).isUseful;
+  byField.set(field, useful);
+  return useful;
 }
 
 // A curated override is a human decision about what this entity should say, so
@@ -247,11 +321,15 @@ function isDemotableBioProseGroup(group: RankedGroup): boolean {
  * recruiting pitch, a mission statement, and navigational copy) plus the
  * description-quality bar every other consumer applies.
  */
-function isServableResearchHomeProseGroup(group: RankedGroup): boolean {
+function isServableResearchHomeProseGroup(
+  field: string,
+  group: RankedGroup,
+  kind: DescriptionEntityKind,
+): boolean {
   return (
     typeof group.value === 'string' &&
-    scoreResearchHomeDescriptionCandidate(group.value, 'organization') === 0 &&
-    isUsefulProseGroup(group)
+    scoreResearchHomeDescriptionCandidate(group.value, kind) === 0 &&
+    isUsefulProseGroup(field, group)
   );
 }
 
@@ -283,7 +361,11 @@ function highestWeightedGroup(groups: RankedGroup[]): RankedGroup | undefined {
  * in the set, is what stops a bare grant abstract ranked second from being
  * promoted because a good description sat third.
  */
-function demotePersonBioProseGroups(field: string, groups: RankedGroup[]): void {
+function demotePersonBioProseGroups(
+  field: string,
+  groups: RankedGroup[],
+  kind: DescriptionEntityKind,
+): void {
   if (!PERSON_BIO_DEMOTION_FIELDS.has(field)) return;
   const bioGroups = groups.filter(isPersonBioProseGroup);
   if (bioGroups.length === 0 || bioGroups.length === groups.length) return;
@@ -291,7 +373,7 @@ function demotePersonBioProseGroups(field: string, groups: RankedGroup[]): void 
     (group) =>
       !isPersonBioProseGroup(group) &&
       hasBioReplacingSynthesisSource(group) &&
-      isUsefulProseGroup(group),
+      isUsefulProseGroup(field, group),
   );
   if (synthesisReplacementExists) {
     for (const group of bioGroups) group.demoted = true;
@@ -300,8 +382,126 @@ function demotePersonBioProseGroups(field: string, groups: RankedGroup[]): void 
   const demotable = bioGroups.filter(isDemotableBioProseGroup);
   if (demotable.length === 0) return;
   const promoted = highestWeightedGroup(groups.filter((group) => !demotable.includes(group)));
-  if (!promoted || !isServableResearchHomeProseGroup(promoted)) return;
+  if (!promoted || !isServableResearchHomeProseGroup(field, promoted, kind)) return;
   for (const group of demotable) group.demoted = true;
+}
+
+function isUndergradSignalProseGroup(group: { sources: Set<string> }): boolean {
+  if (group.sources.size === 0) return false;
+  for (const source of group.sources) {
+    if (!UNDERGRAD_SIGNAL_DESCRIPTION_SOURCES.has(source)) return false;
+  }
+  return true;
+}
+
+/**
+ * The bar an alternative must clear before it may displace the access-signal
+ * lane: the research-home candidate score and the shared description-quality
+ * bar, plus an explicit career-biography rejection.
+ *
+ * The biography check is not redundant with the research-home score. That score
+ * penalizes a person-centric *lead*, while a biography selected by career facts
+ * ("received her Ph.D. from ...", "joined the Yale faculty in ...") can open on
+ * the research home and still score 0. Keeping both means the demotion cannot
+ * trade a thin summary for a resume, which is the regression this cohort
+ * invites: the richest available value is a career biography on 52 of the thin
+ * served rows.
+ *
+ * Markup is rejected separately because it defeats the quality bar rather than
+ * failing it. A "Selected Publications" widget scraped as escaped HTML
+ * (`<span data-id="165184">Djebra Y</span>, ...`) reaches
+ * `fullDescriptionQuality` as an 842-char value with zero flags, because the
+ * citation-author-list detector matches `Name X, Name Y,` and the interposed
+ * `</span>` breaks that run. So the richest value on
+ * `faculty-research-area-chao-ma` is a bibliography that reports itself useful.
+ */
+function isAdoptableResearchProseGroup(
+  field: string,
+  group: RankedGroup,
+  kind: DescriptionEntityKind,
+): boolean {
+  return (
+    isServableResearchHomeProseGroup(field, group, kind) &&
+    !isCareerBiographyDescription(group.value as string) &&
+    !containsHtmlTagMarkup(group.value)
+  );
+}
+
+/**
+ * Runs after the bio demotion rather than before it, so it cannot change which
+ * groups that pass considers promotable, and it skips groups that pass already
+ * demoted - a displaced biography must never be what licenses this demotion.
+ */
+function demoteUndergradSignalProseGroups(
+  field: string,
+  groups: RankedGroup[],
+  kind: DescriptionEntityKind,
+): void {
+  if (!UNDERGRAD_SIGNAL_DEMOTION_FIELDS.has(field)) return;
+  // No separate curated exemption: `isUndergradSignalProseGroup` requires every
+  // contributing source to be the access lane, so a value a human also recorded
+  // is not a candidate for demotion in the first place.
+  const signalGroups = groups.filter(isUndergradSignalProseGroup);
+  if (signalGroups.length === 0 || signalGroups.length === groups.length) return;
+  const richestSignalLength = signalGroups.reduce(
+    (longest, group) => Math.max(longest, normalizedProse(group.value).length),
+    0,
+  );
+  const richerAdoptableExists = groups.some(
+    (group) =>
+      !group.demoted &&
+      !isUndergradSignalProseGroup(group) &&
+      normalizedProse(group.value).length >=
+        richestSignalLength + MATERIAL_PROSE_ENRICHMENT_CHARS &&
+      isAdoptableResearchProseGroup(field, group, kind),
+  );
+  if (!richerAdoptableExists) return;
+  for (const group of signalGroups) group.demoted = true;
+}
+
+/**
+ * Every demotion above names a source lane or a prose shape, so a value that no
+ * lane-specific rule happens to describe wins on weight alone and the quality
+ * bar is never consulted: `standaloneCardQuality` and `fullDescriptionQuality`
+ * run downstream of the choice, in the materializer's content gates, which is
+ * why a page greeting ("Welcome to our lab, where we...") or a bare interest
+ * list ("Medical Research Interests Airway Management; Asthma; Epithelium") is
+ * still served while a value that passes the bar sits one rank below it.
+ * Measured on Development: 122 served rows for `shortDescription` and 105 for
+ * `fullDescription`.
+ *
+ * Runs last so the lane-specific rules decide promotability first, and it is
+ * conditional on a surviving promotable group for the same reason they are: a
+ * row whose only value fails the bar must keep serving that value rather than be
+ * blanked, because `adjudicatedGroups` falls back to the full ranked list only
+ * when every group is demoted, and a caller walking the list needs a last
+ * resort. Curated groups are exempt because a human decision is never reordered
+ * by a text heuristic.
+ *
+ * The promotion arm asks `isAdoptableResearchProseGroup` of the single group
+ * that would BECOME rank 0, not of the set. The two arms are deliberately
+ * asymmetric - failing the quality bar loses a rank, winning one additionally
+ * requires the research-home score, a career-biography rejection and a markup
+ * rejection - and asking the set instead of the promoted group is the trap
+ * `demotePersonBioProseGroups` already documents: a good description ranked
+ * third licenses promoting an unvetted value ranked second. Measured here as a
+ * recruiting pitch at 0.5 taking the top slot because research prose sat at 0.2.
+ */
+function demoteUnusableProseGroups(
+  field: string,
+  groups: RankedGroup[],
+  kind: DescriptionEntityKind,
+): void {
+  if (!QUALITY_DEMOTION_FIELDS.has(field)) return;
+  const unusable = groups.filter(
+    (group) => !group.demoted && !isCuratedGroup(group) && !isUsefulProseGroup(field, group),
+  );
+  if (unusable.length === 0) return;
+  const promoted = highestWeightedGroup(
+    groups.filter((group) => !group.demoted && !unusable.includes(group)),
+  );
+  if (!promoted || !isAdoptableResearchProseGroup(field, promoted, kind)) return;
+  for (const group of unusable) group.demoted = true;
 }
 
 function nameHasResearchHomeHeadNoun(value: unknown): boolean {
@@ -349,13 +549,20 @@ function preferGenuineEntityNameGroups<T extends { value: unknown; sources: Set<
   // a "<PI> Lab" grant name is kept and a non-microsite affiliation name never
   // wins by default. A bare person name is never a good entity name, so it is
   // demoted whenever a head-noun alternative exists, regardless of source.
+  // Placeholder filler is never a genuine brand, so it neither wins nor suppresses
+  // the real names other sources offer. Without this a microsite "n/a" counted as
+  // the brand to prefer and every roster candidate was filtered out of the ranked
+  // list, leaving nothing for the materialize name repair to fall through to, so a
+  // stored placeholder could only be corrected by hand (#2367).
   const micrositeGenuineExists = groups.some(
     (group) =>
       hasMicrositeSource(group) &&
       !isBarePersonName(group.value) &&
-      !isFacultyResearchName(group.value),
+      !isFacultyResearchName(group.value) &&
+      !isPlaceholderEntityName(group.value),
   );
   const isLowQualityNameGroup = (group: T): boolean => {
+    if (isPlaceholderEntityName(group.value)) return true;
     if (
       micrositeGenuineExists &&
       (isSynthesizedNameGroup(group) || isFacultyResearchName(group.value))
@@ -416,7 +623,10 @@ function rankFieldGroups(
     field,
     preferExtractedProseGroups(field, Array.from(groups.values())),
   );
-  demotePersonBioProseGroups(field, rankable);
+  const descriptionKind = opts.descriptionEntityKind ?? 'organization';
+  demotePersonBioProseGroups(field, rankable, descriptionKind);
+  demoteUndergradSignalProseGroups(field, rankable, descriptionKind);
+  demoteUnusableProseGroups(field, rankable, descriptionKind);
   return rankable.sort(
     (a, b) => Number(a.demoted ?? false) - Number(b.demoted ?? false) || b.weight - a.weight,
   );

@@ -8,6 +8,7 @@ import {
   type DescriptionEntityKind,
 } from './researchHomeDescriptionSelection';
 import { extractElementTextWithBlockSeparators } from '../scrapers/utils/htmlText';
+import { removeProfilePublicityRegions } from '../scrapers/utils/profilePublicityRegions';
 
 export interface OfficialResearchDescription {
   fullDescription: string;
@@ -82,6 +83,10 @@ export function collectVisibleDescriptionCandidates(html: string): string[] {
   const $ = cheerio.load(html);
   const structuredDescriptions = jsonLdDescriptions($);
   $('script, style, noscript, svg, iframe, nav, header, footer, aside, form, button').remove();
+  // `CONTENT_BLOCK_SELECTORS` includes `section`, so a profile page's news region is a
+  // candidate block and each news item's own paragraph competes to become the served
+  // description (#3184).
+  removeProfilePublicityRegions($);
 
   const candidates: string[] = [
     ...structuredDescriptions,

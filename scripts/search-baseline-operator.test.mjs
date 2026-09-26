@@ -27,7 +27,7 @@ function betaMongoTestUrl() {
 }
 
 function withSearchProfile(profileName, body, callback) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-search-profile-'));
+  const directory = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ylabs-search-profile-'));
   fs.chmodSync(directory, 0o700);
   const fileName =
     profileName === 'beta-inventory' ? 'beta-search.env' : 'production-copy-search.env';

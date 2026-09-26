@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { parseArgs, parseScraperOptions } from '../../scrapers/cliHelpers';
 import { buildOrchestrator } from '../../scrapers/registry';
 import {
+  sourcesThatProducedNothing,
   DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS,
   FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS,
   FELLOWSHIP_SWEEP_SOURCES,
@@ -14,6 +15,7 @@ import {
   buildFellowshipPostRunStages,
   buildPruneDeadObservationsChildArgs,
   buildScraperSweepChildArgs,
+  declareMaterializationReadScopeForChildren,
   fellowshipCatalogRefreshBlocker,
   fellowshipPostRunArtifactError,
   isDeadObservationPruneSweepMode,
@@ -21,6 +23,9 @@ import {
   parseDevelopmentPostRunStageResult,
   parseEponymousFraMergeResult,
   parseResearcherDedupeResult,
+  parseUrlIdentityDedupeResult,
+  parseProfileLinkHealthResult,
+  partialProfileLinkHealthDelta,
   parseScraperSweepArgs,
   resolveDevelopmentPostRunOptions,
   resolveFellowshipPostRunOptions,
@@ -303,10 +308,32 @@ describe('runScraperSweep', () => {
     ).toMatch(/missing run.id/);
   });
 
+  it('declares only post-run stage commands that exist as server npm scripts', () => {
+    const packageJsonPath = path.join(__dirname, '..', '..', '..', 'package.json');
+    const declaredScripts = new Set(
+      Object.keys(
+        (
+          JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
+            scripts?: Record<string, string>;
+          }
+        ).scripts ?? {},
+      ),
+    );
+    const stageCommands = [
+      ...DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS,
+      ...FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS,
+    ].map((definition) => ({ name: definition.name, command: definition.command }));
+
+    expect(stageCommands.length).toBeGreaterThan(0);
+    expect(stageCommands.filter((stage) => !declaredScripts.has(stage.command))).toEqual([]);
+  });
+
   it('builds the complete Development post-run quality pipeline', () => {
     const stages = buildDevelopmentPostRunStages('/tmp/development-sweep');
     expect(stages.map((stage) => stage.name)).toEqual([
-      'faculty-projection',
+      'source-link-health',
+      'profile-link-health',
+      'dead-research-website-clear',
       'visibility-gate',
       'search-rebuild',
       'coverage-audit',
@@ -315,6 +342,36 @@ describe('runScraperSweep', () => {
       'trust-contract',
       'archived-cleanup',
     ]);
+    // The gate reads sourceLinkHealth to decide whether a cited link still counts
+    // as a way in, so probing after it would leave every decision a cycle stale.
+    expect(stages.findIndex((stage) => stage.name === 'source-link-health')).toBeLessThan(
+      stages.findIndex((stage) => stage.name === 'visibility-gate'),
+    );
+    expect(stages.find((stage) => stage.name === 'source-link-health')?.args).toEqual(
+      expect.arrayContaining([
+        'research-homes:backfill-source-link-health',
+        '--apply',
+        '--confirm-source-link-health',
+        '--limit=10000',
+      ]),
+    );
+    // The sibling lane, for the other half of the served surface: a lead's
+    // YALE_OFFICIAL profile link has its own health record, and nothing re-probed
+    // it, so 3 served rows linked students to a profile that 404s (#3222). The
+    // limit must exceed the whole population rather than sample it, since a
+    // truncating limit leaves the same links unverified every run.
+    expect(stages.find((stage) => stage.name === 'profile-link-health')?.args).toEqual(
+      expect.arrayContaining([
+        'researchers:verify-official-profile-links',
+        '--apply',
+        '--confirm-profile-link-verification',
+        '--limit=10000',
+        // Without a staleness window the candidate list is the head of a stable read
+        // order, so a run that dies partway re-probes the same links next sweep and
+        // never reaches the tail (#3222).
+        '--stale-after-days=30',
+      ]),
+    );
     expect(stages.find((stage) => stage.name === 'visibility-gate')?.args).toEqual(
       expect.arrayContaining([
         'student-visibility:gate',
@@ -332,9 +389,6 @@ describe('runScraperSweep', () => {
     );
     expect(stages.find((stage) => stage.name === 'archived-cleanup')?.args).not.toContain(
       '--apply',
-    );
-    expect(stages.find((stage) => stage.name === 'faculty-projection')?.args).toEqual(
-      expect.arrayContaining(['--apply', '--confirm-faculty-projection', '--concurrency', '12']),
     );
     expect(stages.find((stage) => stage.name === 'data-quality')?.args).toEqual(
       expect.arrayContaining(['--strict', '--include-samples', '--progress']),
@@ -382,8 +436,10 @@ describe('runScraperSweep', () => {
     });
     const names = stages.map((stage) => stage.name);
     expect(names).toEqual([
-      'faculty-projection',
       'eponymous-fra-merge',
+      'source-link-health',
+      'profile-link-health',
+      'dead-research-website-clear',
       'visibility-gate',
       'search-rebuild',
       'coverage-audit',
@@ -426,9 +482,11 @@ describe('runScraperSweep', () => {
     });
     const names = stages.map((stage) => stage.name);
     expect(names).toEqual([
-      'faculty-projection',
       'researcher-dedupe',
       'eponymous-fra-merge',
+      'source-link-health',
+      'profile-link-health',
+      'dead-research-website-clear',
       'visibility-gate',
       'search-rebuild',
       'coverage-audit',
@@ -454,7 +512,7 @@ describe('runScraperSweep', () => {
     const names = stages.map((stage) => stage.name);
     expect(names).toContain('researcher-dedupe');
     expect(names).not.toContain('eponymous-fra-merge');
-    expect(names.indexOf('researcher-dedupe')).toBe(1);
+    expect(names.indexOf('researcher-dedupe')).toBeLessThan(names.indexOf('visibility-gate'));
   });
 
   const sinceIso = '2026-08-26T00:00:00.000Z';
@@ -466,6 +524,7 @@ describe('runScraperSweep', () => {
       expect(options).toMatchObject({
         autoMergeEponymousFra: true,
         dedupeResearchers: true,
+        mergeUrlIdentityDuplicates: true,
         deleteMergeResidue: true,
         sinceIso,
       });
@@ -473,7 +532,11 @@ describe('runScraperSweep', () => {
       const names = stages.map((stage) => stage.name);
       expect(names).toContain('researcher-dedupe');
       expect(names).toContain('eponymous-fra-merge');
+      expect(names).toContain('url-identity-dedupe');
       expect(names.indexOf('researcher-dedupe')).toBeLessThan(names.indexOf('eponymous-fra-merge'));
+      expect(names.indexOf('eponymous-fra-merge')).toBeLessThan(
+        names.indexOf('url-identity-dedupe'),
+      );
       expect(stages.find((stage) => stage.name === 'archived-cleanup')?.args).toEqual(
         expect.arrayContaining([
           'research-entity:cleanup-archived',
@@ -521,6 +584,27 @@ describe('runScraperSweep', () => {
     expect(names).not.toContain('eponymous-fra-merge');
     expect(names).toContain('researcher-dedupe');
   });
+
+  it.each(['0', 'false', 'off'] as const)(
+    'disables only the url-identity dedupe stage when its env var is %s',
+    (disableValue) => {
+      const options = resolveDevelopmentPostRunOptions(
+        'development-full',
+        { SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES: disableValue },
+        sinceIso,
+      );
+      expect(options).toMatchObject({
+        autoMergeEponymousFra: true,
+        dedupeResearchers: true,
+        mergeUrlIdentityDuplicates: false,
+      });
+      const names = buildDevelopmentPostRunStages('/tmp/development-sweep', options).map(
+        (stage) => stage.name,
+      );
+      expect(names).not.toContain('url-identity-dedupe');
+      expect(names).toContain('eponymous-fra-merge');
+    },
+  );
 
   it('keeps the archived-cleanup stage report-only when merge-residue deletion is disabled', () => {
     const options = resolveDevelopmentPostRunOptions(
@@ -597,6 +681,11 @@ describe('runScraperSweep', () => {
       '--limit=10000',
       '--output=/tmp/fellowship-sweep/fellowship-classification-backfill.json',
     ]);
+    // The sweep must never opt out of the classification backfill's student-visibility guard
+    // (#2910): an unattended pass that demotes served program rows needs a human, not a flag.
+    expect(stages.flatMap((stage) => stage.args)).not.toContain(
+      '--confirm-student-visibility-loss',
+    );
     expect(stages.find((stage) => stage.name === 'link-labels-backfill')?.args).toEqual([
       '--cwd',
       'server',
@@ -825,9 +914,7 @@ describe('runScraperSweep', () => {
       mergeUrlIdentityDuplicates: true,
       maxUrlIdentityMerges: 300,
     }).map((stage) => stage.name);
-    expect(names.indexOf('url-identity-dedupe')).toBeGreaterThan(
-      names.indexOf('faculty-projection'),
-    );
+    expect(names.indexOf('url-identity-dedupe')).toBeLessThan(names.indexOf('visibility-gate'));
     expect(names.indexOf('url-identity-dedupe')).toBeLessThan(names.indexOf('search-rebuild'));
     const stage = buildDevelopmentPostRunStages('/tmp/development-sweep', {
       mergeUrlIdentityDuplicates: true,
@@ -842,6 +929,37 @@ describe('runScraperSweep', () => {
         '--max-apply=300',
       ]),
     );
+  });
+
+  it('runs the website-url identity lane alongside the path-keyed one under the same flag', () => {
+    expect(
+      buildDevelopmentPostRunStages('/tmp/development-sweep').map((stage) => stage.name),
+    ).not.toContain('website-url-identity-dedupe');
+    const stages = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      mergeUrlIdentityDuplicates: true,
+      maxUrlIdentityMerges: 300,
+    });
+    const names = stages.map((stage) => stage.name);
+    expect(names.indexOf('url-identity-dedupe')).toBeLessThan(
+      names.indexOf('website-url-identity-dedupe'),
+    );
+    expect(names.indexOf('website-url-identity-dedupe')).toBeLessThan(
+      names.indexOf('visibility-gate'),
+    );
+    expect(names.indexOf('website-url-identity-dedupe')).toBeLessThan(
+      names.indexOf('search-rebuild'),
+    );
+    const stage = stages.find((entry) => entry.name === 'website-url-identity-dedupe');
+    expect(stage?.args).toEqual(
+      expect.arrayContaining([
+        'research-entity:dedupe-by-pi',
+        '--website-url-only',
+        '--apply',
+        '--confirm-research-entity-pi-dedupe',
+        '--max-apply=300',
+      ]),
+    );
+    expect(stage?.args).not.toContain('--profile-lab-url-only');
   });
 
   it('extracts the eponymous merge delta and fails loud when it is absent', () => {
@@ -867,6 +985,43 @@ describe('runScraperSweep', () => {
       profileLinksAppended: 5,
     });
     expect(() => parseResearcherDedupeResult({})).toThrow(/missing byReason/);
+  });
+
+  it('makes every merge-applying development stage declare a result contract', () => {
+    const mergeApplying = DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.filter((definition) =>
+      /dedupe|merge/.test(definition.command),
+    );
+    expect(mergeApplying.map((definition) => definition.name)).toEqual([
+      'researcher-dedupe',
+      'eponymous-fra-merge',
+      'url-identity-dedupe',
+      'website-url-identity-dedupe',
+    ]);
+    expect(
+      mergeApplying
+        .filter((definition) => !definition.parseResult)
+        .map((definition) => definition.name),
+    ).toEqual([]);
+  });
+
+  it('reads the url-identity dedupe delta and fails loud when the stage reports nothing', () => {
+    expect(
+      parseUrlIdentityDedupeResult({
+        urlIdentityDedupeDelta: {
+          plannedGroups: 70,
+          appliedGroups: 68,
+          archivedEntities: 74,
+          deferredByCapGroups: 0,
+        },
+      }).urlIdentityDedupeDelta,
+    ).toMatchObject({ plannedGroups: 70, appliedGroups: 68, archivedEntities: 74 });
+    expect(() => parseUrlIdentityDedupeResult({})).toThrow(/missing a urlIdentityDedupeDelta/);
+    expect(() => parseUrlIdentityDedupeResult(null)).toThrow(/missing a urlIdentityDedupeDelta/);
+    expect(() =>
+      parseUrlIdentityDedupeResult({
+        urlIdentityDedupeDelta: { plannedGroups: 70, appliedGroups: 68 },
+      }),
+    ).toThrow(/missing a numeric archivedEntities/);
   });
 
   it('parses the resume, force-llm, and between-phases prune flags off by default', () => {
@@ -935,6 +1090,20 @@ describe('runScraperSweep', () => {
     ]);
   });
 
+  it('declares the read scope the prune children inherit, so an unset flag is not a green no-op', () => {
+    const unset: NodeJS.ProcessEnv = {};
+    declareMaterializationReadScopeForChildren(unset);
+    expect(unset.C4_LOSSLESS_INGEST).toBe('false');
+
+    const lossless: NodeJS.ProcessEnv = { C4_LOSSLESS_INGEST: 'true' };
+    declareMaterializationReadScopeForChildren(lossless);
+    expect(lossless.C4_LOSSLESS_INGEST).toBe('true');
+
+    const garbled: NodeJS.ProcessEnv = { C4_LOSSLESS_INGEST: 'yes' };
+    declareMaterializationReadScopeForChildren(garbled);
+    expect(garbled.C4_LOSSLESS_INGEST).toBe('false');
+  });
+
   it('omits the dead-data-prune post-run stage by default and appends it last when enabled', () => {
     expect(
       buildDevelopmentPostRunStages('/tmp/development-sweep').map((stage) => stage.name),
@@ -1000,5 +1169,174 @@ describe('runScraperSweep', () => {
       /not valid JSON/,
     );
     fs.rmSync(directory, { recursive: true, force: true });
+  });
+});
+
+describe('sourcesThatProducedNothing (#2607)', () => {
+  const row = (
+    sourceName: string,
+    status: 'succeeded' | 'failed' | 'not-run',
+    observationCount: number | undefined,
+  ) => ({ sourceName, status, observationCount }) as never;
+
+  it('names a source that succeeded while writing no observation', () => {
+    expect(
+      sourcesThatProducedNothing([
+        row('doe-osti', 'succeeded', 0),
+        row('nih-reporter', 'succeeded', 287),
+      ]),
+    ).toEqual(['doe-osti']);
+  });
+
+  it('reproduces the five silent sources from the 2026-09-13 sweep', () => {
+    const observed = sourcesThatProducedNothing([
+      row('yale-directory', 'succeeded', 733),
+      row('bbs-research-track', 'succeeded', 0),
+      row('department-research-areas', 'succeeded', 0),
+      row('department-undergrad-research', 'succeeded', 510),
+      row('neh-funded-projects', 'succeeded', 0),
+      row('federal-award-usaspending', 'succeeded', 0),
+      row('doe-osti', 'succeeded', 0),
+      row('undergrad-research-posting', 'failed', undefined),
+    ]);
+    expect(observed).toEqual([
+      'bbs-research-track',
+      'department-research-areas',
+      'neh-funded-projects',
+      'federal-award-usaspending',
+      'doe-osti',
+    ]);
+    expect(observed).toHaveLength(5);
+  });
+
+  it('does not count a failed or not-run source, which are already reported separately', () => {
+    expect(
+      sourcesThatProducedNothing([
+        row('undergrad-research-posting', 'failed', undefined),
+        row('openalex', 'not-run', undefined),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('fails the sweep step for a run the barren-streak guard marked failure', () => {
+    expect(
+      scraperSweepArtifactError('development-full', {
+        runId: 'run-barren',
+        runStatus: 'failure',
+        observationCount: 0,
+      }),
+    ).toMatch(/ScrapeRun status is failure, expected success/);
+  });
+});
+
+const profileLinkArtifact = (
+  coverage: Record<string, unknown>,
+  result: Record<string, unknown> = {},
+) => ({
+  result: {
+    decisiveVerdicts: 12,
+    statusesWritten: 9,
+    ...result,
+    coverage: {
+      linksDue: 100,
+      attempted: 100,
+      probed: 100,
+      hostsPlanned: 2,
+      hostsCompleted: 2,
+      linksUnreached: 0,
+      linksStillDue: 0,
+      complete: true,
+      ...coverage,
+    },
+  },
+});
+
+describe('parseProfileLinkHealthResult', () => {
+  it('reads coverage off a completed run', () => {
+    expect(parseProfileLinkHealthResult(profileLinkArtifact({}))).toEqual({
+      profileLinkHealthDelta: {
+        linksDue: 100,
+        attempted: 100,
+        probed: 100,
+        decisiveVerdicts: 12,
+        statusesWritten: 9,
+        hostsCompleted: 2,
+        hostsPlanned: 2,
+        linksStillDue: 0,
+        complete: true,
+      },
+    });
+  });
+
+  /**
+   * The point of the contract. A run that stopped partway must not be marked done by
+   * the sweep's resume, because the links after the stopping point are never reached
+   * otherwise (#3303).
+   */
+  it('refuses an incomplete run rather than recording it as a finished stage', () => {
+    expect(() =>
+      parseProfileLinkHealthResult(
+        profileLinkArtifact({
+          probed: 2800,
+          hostsCompleted: 3,
+          hostsPlanned: 4,
+          linksStillDue: 300,
+          complete: false,
+        }),
+      ),
+    ).toThrow(/stopped after 3 of 4 hosts with 300 links still due/);
+  });
+
+  it('refuses an artifact with no coverage object at all, which is the old shape', () => {
+    expect(() => parseProfileLinkHealthResult({ result: { probed: 10 } })).toThrow(
+      /missing a coverage object/,
+    );
+    expect(() => parseProfileLinkHealthResult(null)).toThrow(/missing a coverage object/);
+  });
+
+  it('refuses coverage whose counts are not numbers', () => {
+    expect(() => parseProfileLinkHealthResult(profileLinkArtifact({ probed: 'lots' }))).toThrow(
+      /missing a numeric probed/,
+    );
+  });
+});
+
+describe('partialProfileLinkHealthDelta', () => {
+  it('reports how far a died-partway run got, without the completeness contract', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-link-partial-'));
+    const artifactPath = path.join(directory, 'development-profile-link-health.json');
+    fs.writeFileSync(
+      artifactPath,
+      JSON.stringify(
+        profileLinkArtifact({
+          probed: 2800,
+          hostsCompleted: 3,
+          hostsPlanned: 4,
+          linksStillDue: 300,
+          complete: false,
+        }),
+      ),
+    );
+    expect(partialProfileLinkHealthDelta(artifactPath)).toMatchObject({
+      probed: 2800,
+      hostsCompleted: 3,
+      hostsPlanned: 4,
+      linksStillDue: 300,
+      complete: false,
+    });
+  });
+
+  it('returns undefined when nothing was written, which is the failure it replaces', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-link-missing-'));
+    expect(partialProfileLinkHealthDelta(path.join(directory, 'absent.json'))).toBeUndefined();
+  });
+});
+
+describe('the profile-link-health stage carries a result contract', () => {
+  it('parses its artifact, so a partial run cannot read as a finished stage', () => {
+    const stage = DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.find(
+      (definition) => definition.name === 'profile-link-health',
+    );
+    expect(stage?.parseResult).toBe(parseProfileLinkHealthResult);
   });
 });

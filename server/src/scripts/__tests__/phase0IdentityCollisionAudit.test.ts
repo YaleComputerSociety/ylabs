@@ -90,7 +90,9 @@ describe('phase0IdentityCollisionAudit CLI', () => {
   });
 
   it('revalidates the external profile instead of trusting forged environment flags', () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-identity-profile-'));
+    const directory = fs.mkdtempSync(
+      path.join(fs.realpathSync(os.tmpdir()), 'ylabs-identity-profile-'),
+    );
     fs.chmodSync(directory, 0o700);
     const profilePath = path.join(directory, 'beta-inventory.env');
     fs.writeFileSync(profilePath, `MONGODBURL=${atlasUrl('Beta')}\n`, { mode: 0o600 });

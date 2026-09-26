@@ -22,6 +22,7 @@ import {
   type Phase0IdentityAuditUser,
   type Phase0IdentityCollisionAuditArgs,
 } from './phase0IdentityCollisionAuditCore';
+import { inspectTempArtifactParent } from '../utils/tempArtifactRoots';
 import { parsePhase0SummaryOnlyEnvironment } from './phase0SummaryOnlyAudit';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
@@ -329,23 +330,15 @@ export function assertHardenedIdentityCollisionProfile(
 
 export function assertPhase0IdentityCollisionOutputAvailable(output: string): string {
   const safeOutput = resolveSafeJsonReportOutputPath(output);
-  const parent = path.dirname(safeOutput);
-  let parentStat: fs.Stats;
-  let realParent: string;
-  try {
-    parentStat = fs.lstatSync(parent);
-    realParent = fs.realpathSync.native(parent);
-  } catch {
-    throw new Error('Unable to validate the protected identity-collision output location.');
-  }
-  if (parentStat.isSymbolicLink()) {
-    throw new Error('The identity-collision output parent must not contain symlink components.');
-  }
-  if (!parentStat.isDirectory()) {
+  const verdict = inspectTempArtifactParent(path.dirname(safeOutput));
+  if ('refusal' in verdict) {
+    if (verdict.refusal === 'component-missing') {
+      throw new Error('Unable to validate the protected identity-collision output location.');
+    }
+    if (verdict.refusal === 'component-not-a-real-directory') {
+      throw new Error('The identity-collision output parent must not contain symlink components.');
+    }
     throw new Error('The identity-collision output parent must be a directory.');
-  }
-  if (realParent !== path.resolve(parent)) {
-    throw new Error('The identity-collision output parent must not contain symlink components.');
   }
   if (fs.existsSync(safeOutput)) {
     throw new Error(

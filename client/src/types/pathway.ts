@@ -8,8 +8,6 @@ export type PathwayBestNextStepCategory =
   | 'save-for-later'
   | 'check-back-later';
 
-export type PathwaySortBy = 'relevance' | 'confidence' | 'lastObservedAt' | 'deadline';
-
 export type PathwayActionability = 'ACTION_READY' | 'REFERENCE_ONLY';
 
 export interface PathwaySearchFilters {
@@ -74,11 +72,4 @@ export interface PathwaySearchHit {
   evidence: PathwayEvidenceSummary[];
   contactRoute?: PathwayContactRouteSummary;
   actionability?: PathwayActionability;
-}
-
-export interface PathwaySearchResponse {
-  hits: PathwaySearchHit[];
-  estimatedTotalHits: number;
-  page: number;
-  pageSize: number;
 }

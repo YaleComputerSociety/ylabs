@@ -4,7 +4,6 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../../db/connections';
 import { ResearchEntity } from '../../models/researchEntity';
-import { ResearchEntityRedirect } from '../../models/researchEntityRedirect';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { buildGroundTruthClusters, clusterPairs } from './fuzzyMatchMetrics';
 
@@ -17,10 +16,14 @@ export interface FuzzyGroundTruth {
   canonicalGroupRows: Array<{ entityId?: unknown; canonicalGroupId?: unknown }>;
 }
 
+/**
+ * `redirects` is retained as an empty array rather than removed from the shape: the
+ * merge-redirect ledger is retired (#3027) and every merge it recorded is now an
+ * archived row carrying a `canonicalGroupId`, which `canonicalGroupRows` already
+ * loads, so the second source would double-count the same positives.
+ */
 export async function loadFuzzyGroundTruth(): Promise<FuzzyGroundTruth> {
-  const redirects = (await ResearchEntityRedirect.find({})
-    .select('mergedEntityId canonicalEntityId')
-    .lean()) as Array<{ mergedEntityId?: unknown; canonicalEntityId?: unknown }>;
+  const redirects: FuzzyGroundTruth['redirects'] = [];
   const canonicalGroupRows = (
     (await ResearchEntity.find({ canonicalGroupId: { $ne: null } })
       .select('_id canonicalGroupId')

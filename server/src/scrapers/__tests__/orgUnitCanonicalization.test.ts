@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   applyResearchEntityOrgUnitCanonicalization,
+  buildDepartmentAncestorMap,
   buildDepartmentToSchoolMap,
   buildOrgUnitResolverIndex,
   createOrgUnitCanonicalizer,
@@ -36,6 +37,39 @@ const rows = [
 ];
 
 const index = buildOrgUnitResolverIndex(rows);
+
+const sectionCatalogRows = [
+  {
+    _id: 'school-of-medicine',
+    slug: 'yale-school-of-medicine',
+    name: 'Yale School of Medicine',
+    kind: 'SCHOOL' as const,
+  },
+  {
+    _id: 'department-internal-medicine',
+    slug: 'internal-medicine',
+    name: 'Internal Medicine',
+    kind: 'DEPARTMENT' as const,
+    parentOrgUnitId: 'school-of-medicine',
+  },
+  {
+    _id: 'section-digestive-diseases',
+    slug: 'digestive-diseases',
+    name: 'Digestive Diseases',
+    kind: 'SECTION' as const,
+    aliases: ['Section of Digestive Diseases'],
+    parentOrgUnitId: 'department-internal-medicine',
+  },
+];
+
+const sectionIndex = buildOrgUnitResolverIndex(sectionCatalogRows);
+
+const sectionCanonicalizer = () =>
+  createOrgUnitCanonicalizer(
+    sectionIndex,
+    buildDepartmentToSchoolMap(sectionCatalogRows),
+    buildDepartmentAncestorMap(sectionCatalogRows),
+  );
 
 afterEach(() => {
   resetOrgUnitCanonicalizerCache();
@@ -83,32 +117,72 @@ describe('resolveOrgUnitCanonical', () => {
 describe('createOrgUnitCanonicalizer', () => {
   const canonicalizer = createOrgUnitCanonicalizer(index);
 
-  it('canonicalizes a matched school and keeps an unmatched one raw', () => {
+  it('canonicalizes a matched school and clears an unmatched one', () => {
     expect(canonicalizer.canonicalizeSchool('School of Medicine')).toEqual({
       value: 'Yale School of Medicine',
       matched: true,
     });
     expect(canonicalizer.canonicalizeSchool('School of Wizardry')).toEqual({
-      value: 'School of Wizardry',
+      value: '',
       matched: false,
     });
     expect(canonicalizer.canonicalizeSchool('')).toEqual({ value: '', matched: false });
   });
 
-  it('canonicalizes matched departments, keeps unmatched raw, and dedupes', () => {
+  it('clears a campus or a center rather than offering it as a school facet value', () => {
+    expect(canonicalizer.canonicalizeSchool('Yale West Campus').value).toBe('');
+    expect(
+      canonicalizer.canonicalizeSchool(
+        'MacMillan Center for International and Area Studies at Yale',
+      ).value,
+    ).toBe('');
+  });
+
+  it('keeps an unresolved school raw when the catalog carries no school rows', () => {
+    const departmentOnly = createOrgUnitCanonicalizer(
+      buildOrgUnitResolverIndex(rows.filter((row) => row.kind !== 'SCHOOL')),
+    );
+    expect(departmentOnly.canonicalizeSchool('Yale West Campus')).toEqual({
+      value: 'Yale West Campus',
+      matched: false,
+    });
+  });
+
+  it('canonicalizes matched departments, dedupes, and routes an uncataloged value to affiliations', () => {
     const result = canonicalizer.canonicalizeDepartments([
       'NSCI',
       'YSM Neuro',
       'Molecular Biophysics & Biochemistry',
       'Underwater Basket Weaving',
     ]);
-    expect(result.values).toEqual([
-      'Neuroscience',
-      'Molecular Biophysics and Biochemistry',
-      'Underwater Basket Weaving',
-    ]);
+    expect(result.values).toEqual(['Neuroscience', 'Molecular Biophysics and Biochemistry']);
+    expect(result.affiliationLabels).toEqual(['Underwater Basket Weaving']);
     expect(result.unmatched).toEqual(['Underwater Basket Weaving']);
     expect(result.dropped).toEqual([]);
+  });
+
+  it('dedupes repeated affiliation labels', () => {
+    const result = canonicalizer.canonicalizeDepartments([
+      'Yale Medicine',
+      'yale medicine',
+      'Yale New Haven Health System',
+    ]);
+    expect(result.values).toEqual([]);
+    expect(result.affiliationLabels).toEqual(['Yale Medicine', 'Yale New Haven Health System']);
+  });
+
+  it('suspends fail-closed when the catalog carries no departments at all', () => {
+    const schoolsOnly = createOrgUnitCanonicalizer(
+      buildOrgUnitResolverIndex([
+        { slug: 'yale-school-of-medicine', name: 'Yale School of Medicine', kind: 'SCHOOL' },
+      ]),
+    );
+    const result = schoolsOnly.canonicalizeDepartments(['Chemistry', 'Yale Medicine']);
+    expect(result.values).toEqual(['Chemistry', 'Yale Medicine']);
+    expect(result.affiliationLabels).toEqual([]);
+    expect(
+      createOrgUnitCanonicalizer(new Map()).canonicalizeDepartments(['Chemistry']).values,
+    ).toEqual(['Chemistry']);
   });
 
   it('drops administrative org units from the department facet', () => {
@@ -136,7 +210,8 @@ describe('createOrgUnitCanonicalizer', () => {
       'School of Medicine',
       'NSCI',
     ]);
-    expect(result.values).toEqual(['Psychiatry', 'Neuroscience']);
+    expect(result.values).toEqual(['Neuroscience']);
+    expect(result.affiliationLabels).toEqual(['Psychiatry']);
     expect(result.unmatched).toEqual(['Psychiatry']);
     expect(result.dropped).toEqual(['Yale School of Medicine', 'YSM', 'School of Medicine']);
   });
@@ -147,9 +222,10 @@ describe('createOrgUnitCanonicalizer', () => {
     expect(result.dropped).toEqual(['Yale School of Medicine']);
   });
 
-  it('strips an HR org-code prefix from an unresolved department instead of showing raw', () => {
+  it('strips an HR org-code prefix from an uncataloged department before affiliating it', () => {
     const result = canonicalizer.canonicalizeDepartments(['MEDCCC Medical Oncology']);
-    expect(result.values).toEqual(['Medical Oncology']);
+    expect(result.values).toEqual([]);
+    expect(result.affiliationLabels).toEqual(['Medical Oncology']);
     expect(result.unmatched).toEqual(['Medical Oncology']);
     expect(result.dropped).toEqual([]);
   });
@@ -159,6 +235,59 @@ describe('denoiseOrgUnitValue', () => {
   it('strips a leading all-caps org code when a human name follows', () => {
     expect(denoiseOrgUnitValue('PRVAIT Henry Koerner Center')).toBe('Henry Koerner Center');
     expect(denoiseOrgUnitValue('EASBME BME Faculty')).toBe('BME Faculty');
+  });
+
+  it('keeps a legitimate acronym prefix, which is not an HR org code', () => {
+    // Every one of these was truncated by the old any-caps-token heuristic, and
+    // measurement found 57 such rewrites in the corpus against zero real HR codes
+    // (#2500). Grant mechanisms, agencies, medical acronyms, and program names.
+    expect(denoiseOrgUnitValue('MR Core')).toBe('MR Core');
+    expect(denoiseOrgUnitValue('PET Core')).toBe('PET Core');
+    expect(denoiseOrgUnitValue('DNA Damage and Genome Integrity')).toBe(
+      'DNA Damage and Genome Integrity',
+    );
+    expect(denoiseOrgUnitValue('SPORE in Lung Cancer')).toBe('SPORE in Lung Cancer');
+    expect(denoiseOrgUnitValue('VA Connecticut Healthcare System')).toBe(
+      'VA Connecticut Healthcare System',
+    );
+    expect(denoiseOrgUnitValue('LGBTQ Mental Health Initiative')).toBe(
+      'LGBTQ Mental Health Initiative',
+    );
+    expect(denoiseOrgUnitValue('K12 Calabresi Immuno-Oncology Training Program (IOTP)')).toBe(
+      'K12 Calabresi Immuno-Oncology Training Program (IOTP)',
+    );
+  });
+
+  it('never truncates a value onto a different real department name', () => {
+    // The wrong-attribution case: these landed on canonical department names, so
+    // served YSM cardiology rows claimed the School of Management's Operations
+    // department and a VA affiliation claimed YSM Neurosurgery.
+    expect(denoiseOrgUnitValue('YCRG Operations')).toBe('YCRG Operations');
+    expect(denoiseOrgUnitValue('VA Neurosurgery')).toBe('VA Neurosurgery');
+  });
+
+  it('still strips the enumerated Yale HR org codes it exists for', () => {
+    expect(denoiseOrgUnitValue('MEDCCC Medical Oncology')).toBe('Medical Oncology');
+    expect(denoiseOrgUnitValue('PRV Provost Administration')).toBe('Provost Administration');
+    expect(denoiseOrgUnitValue('DIVFIN Divinity General')).toBe('Divinity General');
+  });
+
+  it('leaves single-word clinical subspecialty names alone, which a length rule would not', () => {
+    // The discriminating set: real subspecialties written short. Any fix keyed on
+    // "too short" or "single word" rejects all of these.
+    for (const name of [
+      'Immunology',
+      'Rheumatology',
+      'Neuroradiology',
+      'Dermatopathology',
+      'Gastroenterology',
+      'Hepatology',
+      'Cytopathology',
+      'Neuropathology',
+      'Physiatry',
+    ]) {
+      expect(denoiseOrgUnitValue(name)).toBe(name);
+    }
   });
 
   it('leaves fully upper-case names and plain hyphenated names untouched', () => {
@@ -191,10 +320,22 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
     };
     const result = await applyResearchEntityOrgUnitCanonicalization(set);
     expect(set.school).toBe('Yale School of Medicine');
-    expect(set.departments).toEqual(['Neuroscience', 'Ghost Studies']);
+    expect(set.departments).toEqual(['Neuroscience']);
+    expect(set.orgAffiliationLabels).toEqual(['Ghost Studies']);
     expect(set.name).toBe('Some Lab');
     expect(result.unmatchedSchool).toBeUndefined();
     expect(result.unmatchedDepartments).toEqual(['Ghost Studies']);
+    expect(result.orgAffiliationLabels).toEqual(['Ghost Studies']);
+  });
+
+  it('leaves orgAffiliationLabels alone when only the school is written', async () => {
+    setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(index));
+    const set: Record<string, unknown> = { school: 'YSM' };
+    await applyResearchEntityOrgUnitCanonicalization(set, {
+      departments: ['Neuroscience'],
+      orgAffiliationLabels: ['Yale Medicine'],
+    });
+    expect(set.orgAffiliationLabels).toBeUndefined();
   });
 
   it('leaves the set untouched when neither field is present', async () => {
@@ -203,6 +344,110 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
     const result = await applyResearchEntityOrgUnitCanonicalization(set);
     expect(set).toEqual({ name: 'Some Lab' });
     expect(result.unmatchedDepartments).toEqual([]);
+  });
+
+  it('rolls a section up to its parent department so the department facet returns it', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = { departments: ['Section of Digestive Diseases'] };
+    await applyResearchEntityOrgUnitCanonicalization(set, { school: '' });
+    expect(set.departments).toEqual(['Digestive Diseases', 'Internal Medicine']);
+    expect(set.schools).toEqual(['Yale School of Medicine']);
+    expect(set.school).toBe('Yale School of Medicine');
+  });
+
+  it('replaces a campus school with the school the stated department belongs to', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = {
+      school: 'Yale West Campus',
+      departments: ['Internal Medicine'],
+    };
+    const result = await applyResearchEntityOrgUnitCanonicalization(set);
+    expect(set.school).toBe('Yale School of Medicine');
+    expect(set.schools).toEqual(['Yale School of Medicine']);
+    expect(result.unmatchedSchool).toBe('Yale West Campus');
+  });
+
+  it('keeps a cleared campus school findable as an affiliation label', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = {
+      school: 'Yale West Campus',
+      departments: ['Internal Medicine', 'West Campus Institutes'],
+    };
+    const result = await applyResearchEntityOrgUnitCanonicalization(set);
+    expect(set.school).toBe('Yale School of Medicine');
+    expect(set.orgAffiliationLabels).toEqual(['West Campus Institutes', 'Yale West Campus']);
+    expect(result.orgAffiliationLabels).toEqual(['West Campus Institutes', 'Yale West Campus']);
+  });
+
+  it('does not replace stored affiliation labels when only the cleared school is written', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = { school: 'Yale West Campus' };
+    const result = await applyResearchEntityOrgUnitCanonicalization(set, {
+      departments: ['Internal Medicine'],
+      orgAffiliationLabels: ['Yale Cancer Center'],
+    });
+    expect(set.orgAffiliationLabels).toBeUndefined();
+    expect(result.unmatchedSchool).toBe('Yale West Campus');
+  });
+
+  it('rewrites a stored non-canonical scalar school so it mirrors the derived schools[]', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = { departments: ['Internal Medicine'] };
+    await applyResearchEntityOrgUnitCanonicalization(set, { school: 'Yale West Campus' });
+    expect(set.schools).toEqual(['Yale School of Medicine']);
+    expect(set.school).toBe('Yale School of Medicine');
+  });
+
+  it('clears a stored campus out of schools[] when nothing derives a canonical school', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = {
+      school: 'Yale West Campus',
+      departments: ['West Campus Institutes'],
+    };
+    await applyResearchEntityOrgUnitCanonicalization(set, {
+      school: 'Yale West Campus',
+      schools: ['Yale West Campus'],
+    });
+    expect(set.school).toBe('');
+    expect(set.departments).toEqual([]);
+    expect(set.schools).toEqual([]);
+    expect(set.orgAffiliationLabels).toEqual(['West Campus Institutes', 'Yale West Campus']);
+  });
+
+  it('writes no schools[] at all when the row has none to clear', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = { school: 'Yale West Campus', departments: [] };
+    await applyResearchEntityOrgUnitCanonicalization(set, { school: 'Yale West Campus' });
+    expect(set.school).toBe('');
+    expect(set.schools).toBeUndefined();
+  });
+
+  it('keeps the stated department first and adds no duplicate when the source named both altitudes', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = {
+      departments: ['Internal Medicine', 'Digestive Diseases'],
+    };
+    await applyResearchEntityOrgUnitCanonicalization(set, { school: '' });
+    expect(set.departments).toEqual(['Internal Medicine', 'Digestive Diseases']);
+  });
+
+  it('is idempotent: a second pass over a rolled-up list adds nothing', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const first: Record<string, unknown> = { departments: ['Digestive Diseases'] };
+    await applyResearchEntityOrgUnitCanonicalization(first, { school: '' });
+    const second: Record<string, unknown> = { departments: first.departments };
+    await applyResearchEntityOrgUnitCanonicalization(second, { school: '' });
+    expect(second.departments).toEqual(['Digestive Diseases', 'Internal Medicine']);
+  });
+
+  it('heals a stored section-only list when the pass only touches school', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = { school: 'Yale School of Medicine' };
+    await applyResearchEntityOrgUnitCanonicalization(set, {
+      school: 'Yale School of Medicine',
+      departments: ['Digestive Diseases'],
+    });
+    expect(set.departments).toEqual(['Digestive Diseases', 'Internal Medicine']);
   });
 
   it('derives multi-school schools[] from the merged school + department parents', async () => {
@@ -228,7 +473,15 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
 
   it('does not overwrite an existing scalar school when departments derive a different primary', async () => {
     const deptToSchool = new Map([['Neuroscience', 'Yale School of Medicine']]);
-    setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(index, deptToSchool));
+    const withDivision = buildOrgUnitResolverIndex([
+      ...rows,
+      {
+        slug: 'faculty-of-arts-and-sciences',
+        name: 'Faculty of Arts and Sciences',
+        kind: 'DIVISION' as const,
+      },
+    ]);
+    setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(withDivision, deptToSchool));
     const set: Record<string, unknown> = { departments: ['NSCI'] };
     await applyResearchEntityOrgUnitCanonicalization(set, {
       school: 'Faculty of Arts and Sciences',
@@ -429,5 +682,140 @@ describe('buildDepartmentToSchoolMap', () => {
     expect(map.get('Internal Medicine')).toBe('School of Medicine');
     expect(map.get('Cardiovascular Medicine')).toBe('School of Medicine');
     expect(map.has('Mystery')).toBe(false);
+  });
+
+  it('reaches the school from a SECTION-kind unit', () => {
+    const map = buildDepartmentToSchoolMap(sectionCatalogRows);
+    expect(map.get('Digestive Diseases')).toBe('Yale School of Medicine');
+  });
+});
+
+describe('buildDepartmentAncestorMap', () => {
+  it('maps a section to its parent department and leaves a top-level department out', () => {
+    const map = buildDepartmentAncestorMap(sectionCatalogRows);
+    expect(map.get('Digestive Diseases')).toEqual(['Internal Medicine']);
+    expect(map.has('Internal Medicine')).toBe(false);
+  });
+
+  it('lists a deeper chain nearest ancestor first and stops at the school', () => {
+    const map = buildDepartmentAncestorMap([
+      ...sectionCatalogRows,
+      {
+        _id: 'sub',
+        slug: 'advanced-endoscopy',
+        name: 'Advanced Endoscopy',
+        kind: 'SECTION',
+        parentOrgUnitId: 'section-digestive-diseases',
+      },
+    ]);
+    expect(map.get('Advanced Endoscopy')).toEqual(['Digestive Diseases', 'Internal Medicine']);
+  });
+
+  it('reports no ancestors rather than looping on a parent cycle', () => {
+    const map = buildDepartmentAncestorMap([
+      {
+        _id: 'a',
+        slug: 'a',
+        name: 'A',
+        kind: 'SECTION',
+        parentOrgUnitId: 'b',
+      },
+      {
+        _id: 'b',
+        slug: 'b',
+        name: 'B',
+        kind: 'SECTION',
+        parentOrgUnitId: 'a',
+      },
+    ]);
+    expect(map.get('A')).toEqual(['B']);
+    expect(map.get('B')).toEqual(['A']);
+  });
+});
+
+const crossSchoolCatalogRows = [
+  {
+    _id: 'school-of-medicine',
+    slug: 'yale-school-of-medicine',
+    name: 'School of Medicine',
+    kind: 'SCHOOL' as const,
+  },
+  {
+    _id: 'faculty-of-arts-and-sciences',
+    slug: 'faculty-of-arts-and-sciences',
+    name: 'Faculty of Arts and Sciences',
+    kind: 'SCHOOL' as const,
+  },
+  {
+    _id: 'department-neuroscience',
+    slug: 'neuroscience',
+    name: 'Neuroscience',
+    kind: 'DEPARTMENT' as const,
+    parentOrgUnitId: 'school-of-medicine',
+  },
+  {
+    _id: 'department-psychology',
+    slug: 'psychology',
+    name: 'Psychology',
+    kind: 'DEPARTMENT' as const,
+    parentOrgUnitId: 'faculty-of-arts-and-sciences',
+  },
+];
+
+const crossSchoolCanonicalizer = () =>
+  createOrgUnitCanonicalizer(
+    buildOrgUnitResolverIndex(crossSchoolCatalogRows),
+    buildDepartmentToSchoolMap(crossSchoolCatalogRows),
+    buildDepartmentAncestorMap(crossSchoolCatalogRows),
+  );
+
+describe('cross-school organization primary school', () => {
+  it('serves no primary school for an institute whose departments span two schools', async () => {
+    setOrgUnitCanonicalizerForTesting(crossSchoolCanonicalizer());
+    const set: Record<string, unknown> = { departments: ['Neuroscience', 'Psychology'] };
+    const result = await applyResearchEntityOrgUnitCanonicalization(set, {
+      entityType: 'INSTITUTE',
+    });
+    expect(set.schools).toEqual(['School of Medicine', 'Faculty of Arts and Sciences']);
+    expect(set.school).toBe('');
+    expect(result.unresolvablePrimarySchool).toBe(true);
+  });
+
+  it('clears a stored primary school that only mirrors the first listed department', async () => {
+    setOrgUnitCanonicalizerForTesting(crossSchoolCanonicalizer());
+    const set: Record<string, unknown> = { departments: ['Neuroscience', 'Psychology'] };
+    await applyResearchEntityOrgUnitCanonicalization(set, {
+      entityType: 'INSTITUTE',
+      school: 'School of Medicine',
+      schools: ['School of Medicine', 'Faculty of Arts and Sciences'],
+    });
+    expect(set.school).toBe('');
+  });
+
+  it('keeps a primary school an institute asserts for itself', async () => {
+    setOrgUnitCanonicalizerForTesting(crossSchoolCanonicalizer());
+    const set: Record<string, unknown> = {
+      school: 'School of Medicine',
+      departments: ['Neuroscience', 'Psychology'],
+    };
+    const result = await applyResearchEntityOrgUnitCanonicalization(set, {
+      entityType: 'INSTITUTE',
+    });
+    expect(set.school).toBe('School of Medicine');
+    expect(result.unresolvablePrimarySchool).toBeUndefined();
+  });
+
+  it('still derives a primary school for a lab, whose first department is its own', async () => {
+    setOrgUnitCanonicalizerForTesting(crossSchoolCanonicalizer());
+    const set: Record<string, unknown> = { departments: ['Neuroscience', 'Psychology'] };
+    await applyResearchEntityOrgUnitCanonicalization(set, { entityType: 'LAB' });
+    expect(set.school).toBe('School of Medicine');
+  });
+
+  it('still derives a primary school for an institute sitting in one school', async () => {
+    setOrgUnitCanonicalizerForTesting(crossSchoolCanonicalizer());
+    const set: Record<string, unknown> = { departments: ['Neuroscience'] };
+    await applyResearchEntityOrgUnitCanonicalization(set, { entityType: 'INSTITUTE' });
+    expect(set.school).toBe('School of Medicine');
   });
 });

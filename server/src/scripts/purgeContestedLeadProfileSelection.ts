@@ -5,11 +5,12 @@ import {
 } from '../services/leadProfileIdentity';
 import type { ResearchEntityRosterEntry } from '../services/researchEntityMembershipAccessor';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
 export const CONTESTED_LEAD_ENTITY_SELECT =
   '_id slug name kind entityType websiteUrl website sourceUrls researchAreas description shortDescription fullDescription studentVisibilityTier';
 
-const LEAD_ROSTER_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+const LEAD_ROSTER_ROLES = LEAD_ROLE_LEGACY_LABELS;
 
 export interface ContestedLeadRow {
   id: string;

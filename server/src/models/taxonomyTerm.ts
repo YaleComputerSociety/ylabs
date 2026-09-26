@@ -21,8 +21,15 @@ export interface TaxonomyTermRecord {
   label: string;
   normalizedLabel: string;
   aliases: string[];
-  parentTermId?: mongoose.Types.ObjectId;
   reviewStatus: TaxonomyTermReviewStatus;
+  /**
+   * Who decided the review status, and why. Required by the writer rather than by the
+   * schema: 4,619 Development terms predate the writer and carry neither, so a schema
+   * requirement would make every one of them unwritable (#3377).
+   */
+  reviewedBy?: string;
+  reviewNote?: string;
+  reviewedAt?: Date;
   status: TaxonomyTermStatus;
   archived: boolean;
 }
@@ -93,24 +100,23 @@ export const taxonomyTermSchema = new mongoose.Schema<TaxonomyTermRecord>(
         message: `aliases must contain at most ${MAX_TAXONOMY_ALIASES} unique labels.`,
       },
     },
-    parentTermId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'TaxonomyTerm',
-      required: false,
-      validate: {
-        validator: function (
-          this: { _id: mongoose.Types.ObjectId },
-          value?: mongoose.Types.ObjectId,
-        ) {
-          return value === undefined || !value.equals(this._id);
-        },
-        message: 'parentTermId cannot reference the same TaxonomyTerm.',
-      },
-    },
     reviewStatus: {
       type: String,
       enum: [...taxonomyTermReviewStatuses],
       default: 'UNREVIEWED',
+    },
+    reviewedBy: {
+      type: String,
+      trim: true,
+      maxlength: 200,
+    },
+    reviewNote: {
+      type: String,
+      trim: true,
+      maxlength: 2000,
+    },
+    reviewedAt: {
+      type: Date,
     },
     status: {
       type: String,
@@ -128,7 +134,6 @@ export const taxonomyTermSchema = new mongoose.Schema<TaxonomyTermRecord>(
 );
 
 taxonomyTermSchema.index({ kind: 1, normalizedLabel: 1 }, { unique: true });
-taxonomyTermSchema.index({ parentTermId: 1, kind: 1, status: 1, archived: 1 });
 
 export const TaxonomyTerm =
   mongoose.models.TaxonomyTerm ||

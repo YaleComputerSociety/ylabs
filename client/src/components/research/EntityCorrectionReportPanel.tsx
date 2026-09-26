@@ -24,7 +24,7 @@ type CorrectionReport = {
 const CATEGORY_OPTIONS: { value: ReportCategory; label: string }[] = [
   { value: 'wrong_description', label: 'The description is wrong or misleading' },
   { value: 'wrong_lead', label: 'The wrong lead or PI is shown' },
-  { value: 'wrong_research_areas', label: 'The research areas are wrong' },
+  { value: 'wrong_research_areas', label: 'The topics are wrong' },
   { value: 'stale_availability', label: 'Availability is stale or incorrect' },
   { value: 'broken_link', label: 'A link is broken' },
   { value: 'not_my_lab', label: "This isn't my lab" },
@@ -93,29 +93,29 @@ export default function EntityCorrectionReportPanel({
   };
 
   return (
-    <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">
+    <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
         See something wrong?
       </h2>
-      <p className="mt-2 text-sm text-gray-700">
+      <p className="mt-2 text-sm text-ink-soft">
         This page is assembled from public sources and may be inaccurate. Signed-in members can flag
         an issue for our team to review.
       </p>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="yr-focus-ring mt-3 min-h-11 rounded-md border border-blue-600 px-4 py-2 text-sm font-semibold text-blue-700"
+        className="yr-focus-ring mt-3 min-h-11 rounded-control border border-line px-4 py-2 text-sm font-semibold text-brand"
       >
         Report an issue with this page
       </button>
       {reports.length > 0 && (
         <div className="mt-4" aria-label="Your report history">
-          <h3 className="text-sm font-semibold text-gray-900">Your reports for this page</h3>
+          <h3 className="text-sm font-semibold text-ink">Your reports for this page</h3>
           <ul className="mt-2 space-y-2">
             {reports.map((report) => (
               <li
                 key={report._id}
-                className="border-l-2 border-gray-300 pl-3 text-sm text-gray-700"
+                className="border-l-2 border-line-strong pl-3 text-sm text-ink-soft"
               >
                 <span className="font-medium">{CATEGORY_LABELS[report.category]}</span>:{' '}
                 {STATUS_LABELS[report.status]}
@@ -135,22 +135,22 @@ export default function EntityCorrectionReportPanel({
             if (event.key === 'Escape') setOpen(false);
           }}
         >
-          <form onSubmit={submit} className="w-full max-w-lg rounded-md bg-white p-6 shadow-xl">
-            <h2 id="report-title" className="text-lg font-semibold text-gray-900">
+          <form
+            onSubmit={(event) => void submit(event)}
+            className="w-full max-w-lg rounded-overlay bg-white p-6 shadow-yr-modal"
+          >
+            <h2 id="report-title" className="text-lg font-semibold text-ink">
               Report an issue
             </h2>
-            <p className="mt-1 text-sm text-gray-600">{entityName}</p>
-            <label
-              className="mt-4 block text-sm font-medium text-gray-800"
-              htmlFor="report-category"
-            >
+            <p className="mt-1 text-sm text-muted">{entityName}</p>
+            <label className="mt-4 block text-sm font-medium text-ink" htmlFor="report-category">
               What is wrong?
             </label>
             <select
               id="report-category"
               value={category}
               onChange={(event) => setCategory(event.target.value as ReportCategory)}
-              className="mt-1 min-h-11 w-full rounded-md border border-gray-400 px-3"
+              className="mt-1 min-h-11 w-full rounded-control border border-line-strong px-3"
             >
               {CATEGORY_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -158,7 +158,7 @@ export default function EntityCorrectionReportPanel({
                 </option>
               ))}
             </select>
-            <label className="mt-4 block text-sm font-medium text-gray-800" htmlFor="report-note">
+            <label className="mt-4 block text-sm font-medium text-ink" htmlFor="report-note">
               Add details (optional)
             </label>
             <textarea
@@ -167,14 +167,14 @@ export default function EntityCorrectionReportPanel({
               rows={5}
               value={note}
               onChange={(event) => setNote(event.target.value)}
-              className="mt-1 w-full rounded-md border border-gray-400 p-3"
+              className="mt-1 w-full rounded-card border border-line-strong p-3"
             />
-            <p className="mt-2 text-xs text-gray-500">
+            <p className="mt-2 text-xs text-muted">
               Your netid is included so our team can follow up. Reports are reviewed by a person and
               never publish content directly.
             </p>
             {feedback && (
-              <p role="status" className="mt-3 text-sm text-gray-800">
+              <p role="status" className="mt-3 text-sm text-ink">
                 {feedback}
               </p>
             )}
@@ -182,14 +182,14 @@ export default function EntityCorrectionReportPanel({
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="min-h-11 px-4 text-sm font-semibold text-gray-700"
+                className="min-h-11 px-4 text-sm font-semibold text-ink-soft yr-focus-ring"
               >
                 Close
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="min-h-11 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                className="min-h-11 rounded-control bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 yr-focus-ring"
               >
                 {submitting ? 'Submitting...' : 'Submit report'}
               </button>

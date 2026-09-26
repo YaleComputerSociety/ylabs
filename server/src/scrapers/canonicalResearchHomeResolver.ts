@@ -1,16 +1,13 @@
 import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
-import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
-import { canonicalRoleForLegacy } from '../models/canonicalRoleMapping';
+import { RoleAssignment } from '../models/roleAssignment';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
 
 const GRANT_SHELL_SLUG = /^(?:nih|nsf|federal|doe)-pi-/i;
 const GRANT_SOURCE_URL =
   /(?:reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov\/awardsearch|api\.nsf\.gov|usaspending\.gov|osti\.gov)/i;
-const LEAD_ROLES = ['pi', 'co-pi', 'director', 'co-director'];
-const CANONICAL_LEAD_ROLES = LEAD_ROLES.map((role) => canonicalRoleForLegacy(role)).filter(
-  (role): role is RoleAssignmentRole => Boolean(role),
-);
+const CANONICAL_LEAD_ROLES = LEAD_ROLE_CANONICAL_VALUES;
 
 export interface ResearchHomeCandidate {
   slug?: unknown;

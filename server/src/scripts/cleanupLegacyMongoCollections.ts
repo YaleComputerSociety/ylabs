@@ -6,15 +6,25 @@ import path from 'path';
 import { initializeConnections } from '../db/connections';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import {
+  RETIRED_POPULATED_COLLECTIONS,
+  assertRetiredCollectionsAreUnmodelled,
+  countBsonDocuments,
+  evaluateRetiredCollectionBackup,
+  type RetiredCollectionBackupCheck,
+} from './retiredCollectionDropCore';
+import '../models';
 
 dotenv.config();
 
 type MongoDb = NonNullable<typeof mongoose.connection.db>;
-type Mode = 'dry-run' | 'apply' | 'verify' | 'drop-legacy';
+type Mode = 'dry-run' | 'apply' | 'verify' | 'drop-legacy' | 'drop-retired-populated';
 
 export interface LegacyCleanupArgs {
   mode: Mode;
   confirmDropLegacy?: boolean;
+  confirmDropRetiredPopulated?: boolean;
+  backup?: string;
   output?: string;
 }
 
@@ -27,22 +37,59 @@ const EMPTY_LEGACY_COLLECTIONS = [
   'research_group_stats',
   'paper_group_links',
   // Retired models whose collections outlived them. `papers`/`paper_authors`
-  // are owned by retire:bibliographic-mirror and `student_applications` is the
-  // applications migration target above, so neither is listed here.
+  // and the two `research_scholarly_*` collections are owned by
+  // retire:bibliographic-mirror, and `student_applications` is the applications
+  // migration target above, so none of those are listed here.
   'faculty_members',
   'listings',
   'listingclaimrequests',
-  'research_scholarly_links',
-  'research_scholarly_attributions',
   'student_engagement_events',
   'student_outreaches',
   'student_profiles',
   'student_trackings',
   'saved_searches',
+  'grants',
+  'posted_opportunities',
+  'admin_access_review_projections',
+  'admin_access_review_projection_state',
+  // The frozen evidence claim-graph, retired once it had held zero rows in
+  // every environment since it was introduced. `student_applications` is the
+  // target of the applications migration above, whose source collection no
+  // longer exists in any environment, so the migration can never run again.
+  'evidence_claims',
+  'review_decisions',
+  'source_documents',
+  'student_applications',
 ];
+
+// Indexes left behind by retired schema fields. Mongoose never drops an index
+// it has stopped declaring, so removing the field alone leaves the physical
+// index maintained on every write and used by nothing.
+const RETIRED_INDEXES = [
+  {
+    collection: 'taxonomy_terms',
+    name: 'parentTermId_1_kind_1_status_1_archived_1',
+    key: { parentTermId: 1, kind: 1, status: 1, archived: 1 },
+    retiredField: 'parentTermId',
+  },
+  {
+    collection: 'research_entities',
+    name: 'archived_1_hasDocumentedWayIn_1',
+    key: { archived: 1, hasDocumentedWayIn: 1 },
+    retiredField: 'hasDocumentedWayIn',
+  },
+] as const;
 
 function parseRequiredOutputPath(value: string | undefined): string {
   return resolveSafeJsonReportOutputPath(value);
+}
+
+export function parseRequiredBackupPath(value: string | undefined): string {
+  const backup = value?.trim();
+  if (!backup || backup.startsWith('--')) {
+    throw new Error('--backup requires a directory holding the mongodump .bson files');
+  }
+  return path.resolve(backup);
 }
 
 export function parseLegacyCleanupArgs(argv: string[]): LegacyCleanupArgs {
@@ -60,6 +107,23 @@ export function parseLegacyCleanupArgs(argv: string[]): LegacyCleanupArgs {
     }
     if (arg === '--confirm-drop-legacy') {
       args.confirmDropLegacy = true;
+      continue;
+    }
+    if (arg === '--drop-retired-populated') {
+      args.mode = 'drop-retired-populated';
+      continue;
+    }
+    if (arg === '--confirm-drop-retired-populated') {
+      args.confirmDropRetiredPopulated = true;
+      continue;
+    }
+    if (arg === '--backup') {
+      args.backup = parseRequiredBackupPath(argv[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--backup=')) {
+      args.backup = parseRequiredBackupPath(arg.slice('--backup='.length));
       continue;
     }
     if (arg === '--verify') {
@@ -86,11 +150,14 @@ export function parseLegacyCleanupArgs(argv: string[]): LegacyCleanupArgs {
 }
 
 function legacyCleanupModeWrites(mode: Mode): boolean {
-  return mode === 'apply' || mode === 'drop-legacy';
+  return mode === 'apply' || mode === 'drop-legacy' || mode === 'drop-retired-populated';
 }
 
 export function assertLegacyCleanupWriteAllowed(
-  args: Pick<LegacyCleanupArgs, 'mode' | 'confirmDropLegacy'>,
+  args: Pick<
+    LegacyCleanupArgs,
+    'mode' | 'confirmDropLegacy' | 'confirmDropRetiredPopulated' | 'backup'
+  >,
   env: NodeJS.ProcessEnv = process.env,
   mongoUrl?: string,
 ) {
@@ -98,6 +165,19 @@ export function assertLegacyCleanupWriteAllowed(
     throw new Error(
       '--confirm-drop-legacy is required when --drop-legacy is set for legacy:cleanup',
     );
+  }
+
+  if (args.mode === 'drop-retired-populated') {
+    if (!args.confirmDropRetiredPopulated) {
+      throw new Error(
+        '--confirm-drop-retired-populated is required when --drop-retired-populated is set for legacy:cleanup',
+      );
+    }
+    if (!args.backup) {
+      throw new Error(
+        '--backup is required when --drop-retired-populated is set: these collections hold rows, so the drop is gated on a dump whose counts match',
+      );
+    }
   }
 
   return assertScriptApplyAllowed({
@@ -332,6 +412,63 @@ async function verify(db: MongoDb) {
   };
 }
 
+export function retiredIndexKeyMatches(
+  actual: Record<string, unknown> | undefined,
+  expected: Record<string, number>,
+): boolean {
+  if (!actual) return false;
+  const actualKeys = Object.keys(actual);
+  const expectedKeys = Object.keys(expected);
+  if (actualKeys.length !== expectedKeys.length) return false;
+  return expectedKeys.every(
+    (field, position) =>
+      actualKeys[position] === field && Number(actual[field]) === expected[field],
+  );
+}
+
+async function dropRetiredIndexes(db: MongoDb) {
+  const results: Array<{
+    collection: string;
+    name: string;
+    dropped: boolean;
+    reason?: string;
+  }> = [];
+
+  for (const retired of RETIRED_INDEXES) {
+    const { collection, name, key, retiredField } = retired;
+    if (!(await collectionExists(db, collection))) {
+      results.push({ collection, name, dropped: false, reason: 'collection absent' });
+      continue;
+    }
+
+    const indexes = await db.collection(collection).indexes();
+    const match = indexes.find((index) => index.name === name);
+    if (!match) {
+      results.push({ collection, name, dropped: false, reason: 'index absent' });
+      continue;
+    }
+    if (!retiredIndexKeyMatches(match.key as Record<string, unknown>, { ...key })) {
+      throw new Error(
+        `Refusing to drop ${collection}.${name}: index key ${JSON.stringify(match.key)} does not match the retired declaration`,
+      );
+    }
+
+    const populated = await db
+      .collection(collection)
+      .countDocuments({ [retiredField]: { $exists: true, $ne: null } }, { limit: 1 });
+    if (populated > 0) {
+      throw new Error(
+        `Refusing to drop ${collection}.${name}: retired field ${retiredField} is populated, so something began writing it`,
+      );
+    }
+
+    await db.collection(collection).dropIndex(name);
+    results.push({ collection, name, dropped: true });
+  }
+
+  return results;
+}
+
 async function dropLegacyCollections(db: MongoDb) {
   const before = await verify(db);
   if (!before.ok) {
@@ -352,12 +489,109 @@ async function dropLegacyCollections(db: MongoDb) {
     dropped.push({ name, dropped: await db.collection(name).drop() });
   }
 
+  const retiredIndexes = await dropRetiredIndexes(db);
+
   const after = await verify(db);
   if (!after.ok) {
     throw new Error(`Post-drop legacy cleanup verification failed: ${JSON.stringify(after)}`);
   }
 
-  return { before, dropped, after };
+  return { before, dropped, retiredIndexes, after };
+}
+
+function modelledCollectionNames(): string[] {
+  return mongoose.modelNames().map((name) => mongoose.model(name).collection.collectionName);
+}
+
+function readBackupCounts(backupDir: string): Record<string, number | undefined> {
+  const counts: Record<string, number | undefined> = {};
+  for (const collection of RETIRED_POPULATED_COLLECTIONS) {
+    const dump = path.join(backupDir, `${collection}.bson`);
+    if (!fs.existsSync(dump)) continue;
+    counts[collection] = countBsonDocuments(fs.readFileSync(dump));
+  }
+  return counts;
+}
+
+interface RetiredPopulatedReport {
+  liveCounts: Record<string, number>;
+  backup?: { dir: string; checks: RetiredCollectionBackupCheck[] };
+  dropped?: Array<{ name: string; rows: number; dropped: boolean; reason?: string }>;
+}
+
+async function countRetiredPopulatedCollections(db: MongoDb): Promise<Record<string, number>> {
+  const liveCounts: Record<string, number> = {};
+  for (const collection of RETIRED_POPULATED_COLLECTIONS) {
+    liveCounts[collection] = await countCollection(db, collection);
+  }
+  return liveCounts;
+}
+
+async function planRetiredPopulatedDrop(
+  db: MongoDb,
+  backupDir?: string,
+): Promise<RetiredPopulatedReport> {
+  const liveCounts = await countRetiredPopulatedCollections(db);
+  if (!backupDir) return { liveCounts };
+  return {
+    liveCounts,
+    backup: {
+      dir: backupDir,
+      checks: evaluateRetiredCollectionBackup({
+        liveCounts,
+        backupCounts: readBackupCounts(backupDir),
+      }).checks,
+    },
+  };
+}
+
+async function dropRetiredPopulatedCollections(
+  db: MongoDb,
+  backupDir: string,
+): Promise<RetiredPopulatedReport> {
+  assertRetiredCollectionsAreUnmodelled({
+    collections: RETIRED_POPULATED_COLLECTIONS,
+    modelledCollections: modelledCollectionNames(),
+  });
+
+  const liveCounts = await countRetiredPopulatedCollections(db);
+
+  const backup = evaluateRetiredCollectionBackup({
+    liveCounts,
+    backupCounts: readBackupCounts(backupDir),
+  });
+  if (!backup.ok) {
+    const failures = backup.checks
+      .filter((check) => !check.ok)
+      .map((check) => `${check.collection}: ${check.reason}`)
+      .join('; ');
+    throw new Error(
+      `Refusing to drop retired populated collections, backup is incomplete. ${failures}`,
+    );
+  }
+
+  const dropped: Array<{ name: string; rows: number; dropped: boolean; reason?: string }> = [];
+  for (const collection of RETIRED_POPULATED_COLLECTIONS) {
+    if (!(await collectionExists(db, collection))) {
+      dropped.push({ name: collection, rows: 0, dropped: false, reason: 'absent' });
+      continue;
+    }
+    dropped.push({
+      name: collection,
+      rows: liveCounts[collection],
+      dropped: await db.collection(collection).drop(),
+    });
+  }
+
+  const survivors: string[] = [];
+  for (const collection of RETIRED_POPULATED_COLLECTIONS) {
+    if (await collectionExists(db, collection)) survivors.push(collection);
+  }
+  if (survivors.length > 0) {
+    throw new Error(`Retired collections still present after drop: ${survivors.join(', ')}`);
+  }
+
+  return { liveCounts, backup: { dir: backupDir, checks: backup.checks }, dropped };
 }
 
 async function main() {
@@ -370,10 +604,17 @@ async function main() {
 
   let copy;
   let drop;
+  let retiredPopulated: RetiredPopulatedReport | undefined;
   if (mode === 'dry-run' || mode === 'apply') {
     copy = await copyApplications(db, mode === 'apply');
   } else if (mode === 'drop-legacy') {
     drop = await dropLegacyCollections(db);
+  } else if (mode === 'drop-retired-populated') {
+    retiredPopulated = await dropRetiredPopulatedCollections(db, args.backup as string);
+  }
+
+  if (mode === 'dry-run') {
+    retiredPopulated = await planRetiredPopulatedDrop(db, args.backup);
   }
 
   const verification = mode === 'drop-legacy' ? drop?.after : await verify(db);
@@ -387,6 +628,7 @@ async function main() {
       mode,
       copy,
       drop,
+      retiredPopulated,
       verification,
     },
     {

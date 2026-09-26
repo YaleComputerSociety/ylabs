@@ -1,35 +1,55 @@
+import { servedCitationIsWithheld } from './servedCitationPolicy';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { sanitizeResearchEntityShortDescription } from '../utils/descriptionHygiene';
-import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
+import {
+  MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS,
+  MAX_SERVED_RESEARCH_ENTITY_TEXT_LENGTH,
+  servedResearchEntityCardDescription,
+  servedResearchEntityCopy,
+} from './servedResearchEntityCard';
 import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
-import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
 import {
-  isUngroundedSynthesizedCard,
-  resolveServedShortDescription,
-} from '../utils/groundedCardSynthesis';
-import {
-  fullDescriptionAddsPropositionBeyondShort,
-  isFullDescriptionRestatementOfShortDescription,
-} from '../utils/researchEntityDescriptionQuality';
+  sanitizeMethodChipLabel,
+  sanitizeResearchAreaLabel,
+} from '../utils/researchAreaLabelHygiene';
 import {
   resolveResearchHomeCardSummary,
   type ResearchHomeCardSummary,
 } from '../utils/researchHomeCardSummary';
+import {
+  isDisallowedResearchEntitySourceUrl,
+  isInstitutionalPublicityPageUrl,
+  isMapOrDirectionsUrl,
+  isMultiTenantAcademicHostRootUrl,
+  isPressOrNewsHostUrl,
+  isUmbrellaPageCitedByPerson,
+  type ResearchEntityHostOwnerIdentity,
+} from '../utils/researchHomeWebsiteUrl';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
+import { personScopedResearchEntityNameNamesSomethingElseByUrlPath } from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import {
+  MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS,
+  SERVED_FIELD_CONTRIBUTION_LABEL_SET,
+} from '../utils/servedFieldContributionLabels';
 
-const MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS = 100;
+const MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS = MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS;
 const MAX_PUBLIC_RESEARCH_ENTITY_URLS = 50;
 const MAX_PUBLIC_RESEARCH_ENTITY_OBJECT_KEYS = 100;
-const MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH = 5000;
+const MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH = MAX_SERVED_RESEARCH_ENTITY_TEXT_LENGTH;
+
+export interface PublicResearchEntitySourceFieldContribution {
+  sourceUrl: string;
+  contributions: string[];
+}
 
 export interface PublicResearchEntitySourceLinkHealth {
   url: string;
   healthStatus: string;
   httpStatusCode?: number;
+  privateAddressHost?: boolean;
 }
 
 export interface PublicResearchEntityDto extends Record<string, unknown> {
@@ -91,97 +111,42 @@ const RESEARCH_ENTITY_DESCRIPTION_FIELDS = new Set([
   'profileSynthesisDescription',
 ]);
 
-const SERVED_COPY_TEXT_FIELDS = [
-  'shortDescription',
-  'fullDescription',
-  'profileSynthesisDescription',
-  'summary',
-] as const;
-
-const SERVED_COPY_NAME_FIELDS = ['name', 'displayName'] as const;
-const SERVED_COPY_ARRAY_FIELDS = ['researchAreas', 'profileResearchAreas'] as const;
-
 /**
- * Run the single canonical serve-time sanitizer over an entity's copy, name, and
- * research-area chip fields so the DTO applies the full guard union (text
- * re-voicing/relabel/fail-close, descriptionHygiene, doubled-suffix name collapse,
- * and research-area chip hygiene) from one place (#1269/#1374). Inputs are bounded
- * to the public caps first so the union never traverses past the DTO's array/text
- * limits on a polluted input; the sanitizer clamps copy to its own sentence/word
- * boundary after.
+ * The displayName a person-scoped record may serve, or nothing when the stored
+ * value names something else: an umbrella organization the person merely belongs
+ * to, or a different person's lab.
+ *
+ * This is the one name field clients prefer over `name` and the one field no
+ * faculty-directory source emits, so a graft on it outlives its own retirement
+ * and nothing ever overwrites it (#2351). Withholding it is always safe because
+ * `displayName` is only ever a branded alias of `name`, which every caller
+ * already falls back to.
  */
-function servedResearchEntityCopy(group: Record<string, any>): Record<string, any> {
-  const bounded: Record<string, any> = { ...group };
-  for (const field of SERVED_COPY_TEXT_FIELDS) {
-    if (typeof bounded[field] === 'string') {
-      bounded[field] = bounded[field].slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
-    }
-  }
-  for (const field of SERVED_COPY_NAME_FIELDS) {
-    if (typeof bounded[field] === 'string') {
-      bounded[field] = bounded[field].slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
-    }
-  }
-  for (const field of SERVED_COPY_ARRAY_FIELDS) {
-    if (Array.isArray(bounded[field])) {
-      bounded[field] = bounded[field].slice(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS);
-    }
-  }
-  return sanitizeServedResearchEntityCopyFields(bounded);
-}
-
-function publicShortDescriptionString(value: unknown): string {
-  const text = String(value || '').slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
-  return sanitizeResearchEntityShortDescription(text);
+function servedPersonScopedDisplayName(group: Record<string, any>, value: unknown): string {
+  const displayName = publicResearchEntityName(value);
+  if (!displayName) return '';
+  return personScopedResearchEntityNameNamesSomethingElseByUrlPath({
+    candidateName: displayName,
+    entityType: group.entityType,
+    kind: group.kind,
+    slug: group.slug,
+    websiteUrl: group.fieldProvenance?.displayName?.sourceUrl || group.websiteUrl || group.website,
+    recordCitedUrls: [group.websiteUrl, group.website, group.sourceUrls],
+  })
+    ? ''
+    : displayName;
 }
 
 /**
- * The self-contained card short for a research entity: the sanitized stored
- * shortDescription, or empty when it is a wrong-topic synthesized card that
- * would only be an improvement to discard. A "Studies X" card whose distinctive
- * topic tokens are absent from the entity's own fullDescription can be a
- * wrong-entity graft (#1212), but discarding it is only better when the
- * fallback (the sanitized full, itself already relabeled/hygiene-cleaned by
- * `servedResearchEntityCopy`) is a self-contained summary. When the full opens
- * with a bare-pronoun/CV-bio clause the fallback is strictly worse, so the
- * self-contained short is kept rather than surrendered to it (#1832). When this
- * returns empty, callers fall back via `servedShortDescriptionFallback`, which
- * is itself hygiene-guarded and never a raw bio.
+ * The research-area chips a student can actually read and filter on, which is a
+ * narrower list than the row stores: normalization, label hygiene, dedupe, the array
+ * cap and the prose-chip filter each remove some.
+ *
+ * Exported because the Corpus Quality panel has to count this list rather than the
+ * stored one. It counted stored values until #3379, which made the operator's own
+ * instrument report topic coverage no student had.
  */
-function groundedShortDescriptionString(shortValue: unknown, fullValue: unknown): string {
-  const shortDescription = publicShortDescriptionString(shortValue);
-  if (!shortDescription) return '';
-  if (isUngroundedSynthesizedCard(shortDescription, fullValue)) {
-    return publicShortDescriptionString(fullValue) ? '' : shortDescription;
-  }
-  return shortDescription;
-}
-
-/**
- * The guarded fallback served when no self-contained stored short survives
- * (#1832). Rather than serving the raw fullDescription verbatim - which leaked
- * bare-pronoun and CV-bio openers onto the card - derive a fresh self-contained
- * short from the entity's own full via the same canonical resolver the
- * detail-page gate uses (`resolveServedShortDescription`); when nothing derives
- * (a program whose admin copy is not a research summary), serve the full only
- * if it clears the shortDescription hygiene guard, so acceptable admin copy
- * survives while a bare-pronoun/CV opener fails closed to empty. This value is
- * assigned only to the served shortDescription and is deliberately kept out of
- * the fullDescription restatement-suppression check (#1721), which must compare
- * the full against a stored short, never against a short derived from that same
- * full.
- */
-function servedShortDescriptionFallback(served: Record<string, any>, entityType: unknown): string {
-  const derived = resolveServedShortDescription({
-    shortDescription: '',
-    fullDescription: served.fullDescription,
-    researchAreas: served.researchAreas,
-    entityType,
-  });
-  return derived || publicShortDescriptionString(served.fullDescription);
-}
-
-function publicResearchAreaArray(value: unknown): string[] {
+export function publicResearchAreaArray(value: unknown): string[] {
   const seen = new Set<string>();
   const labels: string[] = [];
   for (const raw of normalizeResearchAreaList(stringArray(value))) {
@@ -201,7 +166,7 @@ function publicMethodsArray(value: unknown, researchAreas: string[]): string[] {
   const seen = new Set<string>();
   const methods: string[] = [];
   for (const raw of stringArray(value)) {
-    const cleaned = publicTextString(raw);
+    const cleaned = publicTextString(sanitizeMethodChipLabel(raw));
     if (!cleaned) continue;
     const key = cleaned.toLowerCase();
     if (excluded.has(key) || seen.has(key)) continue;
@@ -229,13 +194,73 @@ function publicHttpUrlArray(value: unknown): string[] {
     .flatMap((item) => publicHttpUrl(item) ?? []);
 }
 
-function publicSourceLinkHealthArray(value: unknown): PublicResearchEntitySourceLinkHealth[] {
+/**
+ * Retained as the DTO's name for the policy question so existing callers and tests keep
+ * one entry point, but the decision itself now lives in `servedCitationPolicy`: every
+ * surface asks there, and the answer depends on what KIND of citation it is.
+ *
+ * It answers for an `instruction`, the only kind that is ever withheld. A `provenance`
+ * citation survives a dead verdict qualified (#2556), which is why #3292's filter on
+ * `sourceUrls` and `sourceFieldContributions` is gone from below: dropping the url
+ * starved the client pathway that marks a dead source unavailable and groups it last,
+ * and left this list qualifying a dead `websiteUrl` while hiding a dead `sourceUrls`
+ * entry (#3312).
+ */
+export function citationWithheldAsKnownDead(
+  storedSourceLinkHealth: unknown,
+  url: unknown,
+): boolean {
+  return servedCitationIsWithheld('instruction', storedSourceLinkHealth, url);
+}
+
+/**
+ * The single owner of which of a row's citations reach a student, for both the list
+ * and the detail payload.
+ *
+ * It lives at DTO output rather than in the caller's projection because the served
+ * citations are also an input to the name sanitizers this DTO runs: a person-scoped
+ * row named after the shared academic host it cites is only recognizable while that
+ * host root is still in the list. The research-detail projection used to filter first,
+ * which starved `servedPersonScopedDisplayName` of the very URL that condemns the
+ * graft and served the host organization's name as the card heading (#2360).
+ */
+function publicResearchEntitySourceUrls(
+  value: unknown,
+  hostOwnerIdentity: ResearchEntityHostOwnerIdentity,
+  storedSourceLinkHealth?: unknown,
+): string[] {
+  // These are `provenance`, so the policy keeps them even when the corpus knows the page
+  // is gone: the client marks a source unavailable from the health record and groups the
+  // unavailable ones last, and a url the payload never carries cannot be marked, so
+  // withholding it starves the pathway built to qualify it (#2556/#3312). The call is
+  // made rather than assumed, so a change to the policy reaches this surface instead of
+  // leaving it to agree by coincidence.
+  return publicHttpUrlArray(value).filter(
+    (url) =>
+      !isDisallowedResearchEntitySourceUrl(url, hostOwnerIdentity) &&
+      !servedCitationIsWithheld('provenance', storedSourceLinkHealth, url),
+  );
+}
+
+/**
+ * The single allowlist for a served source-link-health entry.
+ *
+ * Exported because the research-detail service had its own byte-identical copy,
+ * and `sourceLinkHealth` is an allowlist projection: a field added here silently
+ * vanished on the detail route, which is the surface a student actually reads. One
+ * owner is what keeps a new axis from reaching the browse payload and not the page
+ * (#2556).
+ */
+export function publicSourceLinkHealthArray(
+  value: unknown,
+): PublicResearchEntitySourceLinkHealth[] {
   if (!Array.isArray(value)) return [];
   return value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_URLS).flatMap((entry) => {
     const url = publicHttpUrl((entry as { url?: unknown })?.url);
     const healthStatus = (entry as { healthStatus?: unknown })?.healthStatus;
     if (!url || typeof healthStatus !== 'string') return [];
     const httpStatusCode = (entry as { httpStatusCode?: unknown })?.httpStatusCode;
+    const privateAddressHost = (entry as { privateAddressHost?: unknown })?.privateAddressHost;
     return [
       {
         url,
@@ -243,8 +268,39 @@ function publicSourceLinkHealthArray(value: unknown): PublicResearchEntitySource
         ...(typeof httpStatusCode === 'number' && Number.isFinite(httpStatusCode)
           ? { httpStatusCode }
           : {}),
+        ...(privateAddressHost === true ? { privateAddressHost: true } : {}),
       },
     ];
+  });
+}
+
+/**
+ * Re-validated at the DTO boundary rather than trusted from the caller: the label
+ * set is closed, so a field name that reached this far without a label is dropped
+ * instead of being served as an internal identifier.
+ */
+function publicSourceFieldContributionsArray(
+  value: unknown,
+  storedSourceLinkHealth?: unknown,
+): PublicResearchEntitySourceFieldContribution[] {
+  if (!Array.isArray(value)) return [];
+  // Also `provenance`: an entry says which stored fields a page supplied, so dropping it
+  // removes the only record of where a served value came from, and the client uses it to
+  // LABEL a source row it already has rather than to create one (#3312).
+  return value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_URLS).flatMap((entry) => {
+    const sourceUrl = publicHttpUrl((entry as { sourceUrl?: unknown })?.sourceUrl);
+    const raw = (entry as { contributions?: unknown })?.contributions;
+    if (!sourceUrl || !Array.isArray(raw)) return [];
+    if (servedCitationIsWithheld('provenance', storedSourceLinkHealth, sourceUrl)) return [];
+    const contributions = [
+      ...new Set(
+        raw.filter(
+          (label): label is string =>
+            typeof label === 'string' && SERVED_FIELD_CONTRIBUTION_LABEL_SET.has(label),
+        ),
+      ),
+    ].slice(0, MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS);
+    return contributions.length ? [{ sourceUrl, contributions }] : [];
   });
 }
 
@@ -280,21 +336,21 @@ function publicDepartmentArray(value: unknown): string[] {
 /** Strict card-only DTO used when embedding related entities in a detail response. */
 export function toPublicResearchEntitySummaryDto(
   group: Record<string, any>,
+  leadMemberNames: readonly string[] = [],
 ): PublicResearchEntitySummaryDto {
-  const served = servedResearchEntityCopy(group);
+  const served = servedResearchEntityCopy(group, leadMemberNames);
   const summaryEntityType =
     group.entityType === undefined
       ? mapResearchGroupKindToEntityType(group.kind)
       : group.entityType;
-  const blurbSource =
-    groundedShortDescriptionString(served.shortDescription || '', served.fullDescription) ||
-    servedShortDescriptionFallback(served, summaryEntityType);
-  const blurb = blurbSource.slice(0, 280);
+  const blurb = servedResearchEntityCardDescription(served, summaryEntityType).slice(0, 280);
 
   return {
     id: publicResearchEntityId(group),
     slug: publicTextString(group.slug || ''),
-    name: publicResearchEntityName(served.name || served.displayName || ''),
+    name:
+      publicResearchEntityName(served.name) ||
+      servedPersonScopedDisplayName(group, served.displayName),
     kind: group.kind === undefined ? undefined : publicTextString(group.kind),
     entityType:
       group.entityType === undefined
@@ -329,7 +385,6 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'fundingPrograms',
   'timeCommitmentHoursPerWeek',
   'lastObservedAt',
-  'searchMatch',
   'waysIn',
   'planningContext',
   'profileResearchAreas',
@@ -341,6 +396,7 @@ const OPERATOR_PUBLIC_RESEARCH_ENTITY_FIELDS = ['qualitySummary', 'studentVisibi
 export interface PublicResearchEntityDtoOptions {
   includeOperatorFields?: boolean;
   forList?: boolean;
+  leadMemberNames?: readonly string[];
 }
 
 const LIST_TRIMMED_DESCRIPTION_FIELDS = new Set(['fullDescription', 'profileSynthesisDescription']);
@@ -373,59 +429,73 @@ export function toPublicResearchEntityDto(
   const id = publicResearchEntityId(group);
   const kind = group.kind;
   const entityType = group.entityType || mapResearchGroupKindToEntityType(kind);
-  const served = servedResearchEntityCopy(group);
-  const groundedShort = groundedShortDescriptionString(
-    served.shortDescription,
-    served.fullDescription,
-  );
+  const served = servedResearchEntityCopy(group, options.leadMemberNames);
+  const servedCard = servedResearchEntityCardDescription(served, entityType);
+  const hostOwnerIdentity = {
+    name: served.name ?? group.name,
+    displayName: served.displayName ?? group.displayName,
+    entityType,
+    kind,
+  };
 
   const dto: PublicResearchEntityDto = {
     _id: id,
     id,
     slug: publicTextString(group.slug || ''),
-    name: publicResearchEntityName(served.name || served.displayName || ''),
+    name:
+      publicResearchEntityName(served.name) ||
+      servedPersonScopedDisplayName(group, served.displayName),
     displayName:
-      group.displayName === undefined ? undefined : publicResearchEntityName(served.displayName),
+      group.displayName === undefined
+        ? undefined
+        : servedPersonScopedDisplayName(group, served.displayName),
     kind,
     entityKind: kind,
     entityType,
     departments: publicDepartmentArray(group.departments),
     researchAreas: publicResearchAreaArray(served.researchAreas),
-    sourceUrls: publicHttpUrlArray(group.sourceUrls),
+    sourceUrls: publicResearchEntitySourceUrls(
+      group.sourceUrls,
+      hostOwnerIdentity,
+      group.sourceLinkHealth,
+    ),
   };
 
   for (const field of OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS) {
     if (options.forList && LIST_TRIMMED_DESCRIPTION_FIELDS.has(field)) continue;
     if (field === 'shortDescription') {
       if (group.shortDescription !== undefined || group.fullDescription !== undefined) {
-        dto.shortDescription = groundedShort || servedShortDescriptionFallback(served, entityType);
+        dto.shortDescription = servedCard;
       }
       continue;
     }
     if (group[field] !== undefined) {
       if (field === 'website' || field === 'websiteUrl') {
         const url = publicHttpUrl(group[field]);
-        if (url) dto[field] = url;
+        const ownedByThisEntity =
+          !isMultiTenantAcademicHostRootUrl(url, hostOwnerIdentity) &&
+          !isUmbrellaPageCitedByPerson(url, hostOwnerIdentity) &&
+          !isPressOrNewsHostUrl(url) &&
+          !isMapOrDirectionsUrl(url) &&
+          !isInstitutionalPublicityPageUrl(url);
+        if (url && ownedByThisEntity) dto[field] = url;
         continue;
       }
       if (RESEARCH_ENTITY_DESCRIPTION_FIELDS.has(field) && typeof group[field] === 'string') {
-        // A fullDescription that only near-verbatim restates the already-
-        // grounded short adds nothing on the detail page beyond the card, so
-        // it is suppressed here to protect already-materialized rows without
-        // a re-materialize (#1721); the write-time resolver guard covers new
-        // and re-materialized ones. The restatement predicate detects that one
-        // field was derived from the other, which is also true when the full
-        // carries an extra proposition, so suppressing on it alone deletes the
-        // source and keeps the lossy derivative - hence the second condition.
-        if (
-          field === 'fullDescription' &&
-          groundedShort &&
-          isFullDescriptionRestatementOfShortDescription(served[field], groundedShort) &&
-          !fullDescriptionAddsPropositionBeyondShort(served[field], groundedShort)
-        ) {
-          dto[field] = '';
-          continue;
-        }
+        // This used to blank a fullDescription that near-verbatim restates the
+        // grounded short. That existed to protect rows the write-time guard had
+        // not reached yet (#1721), on the premise that the resolver blanked such
+        // a body at materialization anyway. #2721 removed that premise: the
+        // materializer now KEEPS a restating body and reconsiders the card
+        // instead, so suppressing here discarded the stored body on exactly the
+        // rows that had just been re-materialized to hold it, after the
+        // visibility gate had admitted them on that body.
+        //
+        // The detail page then fell back to the card, so what a student read was
+        // the lossy line derived from the body rather than the body. The card is
+        // derivable from the body and the body is not derivable from the card, so
+        // when the two echo each other the body is the half to keep, consistent
+        // with the sibling guard in `observationStore`.
         dto[field] = String(served[field] || '');
         continue;
       }
@@ -456,6 +526,13 @@ export function toPublicResearchEntityDto(
     dto.sourceLinkHealth = publicSourceLinkHealthArray(group.sourceLinkHealth);
   }
 
+  if (group.sourceFieldContributions !== undefined) {
+    dto.sourceFieldContributions = publicSourceFieldContributionsArray(
+      group.sourceFieldContributions,
+      group.sourceLinkHealth,
+    );
+  }
+
   if (group.leadIdentityStatus === 'verified' || group.leadIdentityStatus === 'under_review') {
     dto.leadIdentityStatus = group.leadIdentityStatus;
   }
@@ -479,15 +556,31 @@ export function toPublicResearchEntityDto(
   return dto;
 }
 
+/**
+ * Per-hit lead names for a list response, keyed by the same `_id` string every
+ * browse/search path already writes onto its hits. Supplied separately from the
+ * per-entity options because the list paths resolve the whole page's roster in one
+ * batched read; a hit with no entry serves the same card it serves today (#2240).
+ */
+export interface ResearchEntitySearchAliasOptions extends PublicResearchEntityDtoOptions {
+  leadMemberNamesByEntityId?: ReadonlyMap<string, readonly string[]>;
+}
+
 export function addResearchEntitySearchAliases<T extends { hits: Record<string, any>[] }>(
   result: T,
-  options: PublicResearchEntityDtoOptions = {},
+  options: ResearchEntitySearchAliasOptions = {},
 ): Omit<T, 'hits'> & {
   researchEntities: PublicResearchEntityDto[];
 } {
-  const listOptions: PublicResearchEntityDtoOptions = { ...options, forList: true };
+  const { leadMemberNamesByEntityId, ...entityOptions } = options;
+  const listOptions: PublicResearchEntityDtoOptions = { ...entityOptions, forList: true };
   const researchEntities = disambiguateCollidingResearchEntityNames(
-    (result.hits || []).map((hit) => toPublicResearchEntityDto(hit, listOptions)),
+    (result.hits || []).map((hit) =>
+      toPublicResearchEntityDto(hit, {
+        ...listOptions,
+        leadMemberNames: leadMemberNamesByEntityId?.get(String(hit?._id || hit?.id || '')),
+      }),
+    ),
   );
   const { hits: _hits, ...rest } = result;
   return {

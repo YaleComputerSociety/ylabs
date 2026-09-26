@@ -350,3 +350,162 @@ describe('BbsResearchTrackScraper.run', () => {
     expect(graft?.value).toEqual(['Immunology', 'Microbiology']);
   });
 });
+
+/**
+ * The lane's URL index is built from `websiteUrl` plus every entry of `sourceUrls`,
+ * and its key set includes the PI's `/lab/` sites. Neither identifies a person, so a
+ * single row citing one of them was taken as the PI and the track landed on somebody
+ * else's row (#3342). The ambiguity fence cannot catch it: that refuses when SEVERAL
+ * rows are implicated, and this is the one-wrong-row case.
+ */
+describe('resolveBbsResearchHome on a borrowed URL (#3342)', () => {
+  const LAB_URL = 'https://medicine.yale.edu/lab/quokka/';
+  const linksWithLab = (profileSlug: string): BbsProfileLinks => ({
+    canonicalProfileUrl: `https://medicine.yale.edu/profile/${profileSlug}/`,
+    labUrls: [LAB_URL],
+  });
+
+  it('refuses a lab URL match on a row whose identity names somebody else', () => {
+    const index = buildBbsMatchIndex([
+      candidate({
+        _id: '222222222222222222222222',
+        slug: 'ysm-faculty-kaya-lindgren',
+        name: 'Kaya Lindgren Faculty Research',
+        matchUrls: [LAB_URL],
+        nameKey: 'kaya-lindgren',
+      }),
+    ]);
+
+    expect(resolveBbsResearchHome(linksWithLab('alex-rivera'), '', index).status).toBe('unmatched');
+  });
+
+  it('keeps a lab URL match when the row names the same person', () => {
+    const index = buildBbsMatchIndex([
+      candidate({
+        _id: '333333333333333333333333',
+        slug: 'dept-psych-alex-rivera',
+        name: 'Alex Rivera Faculty Research',
+        matchUrls: [LAB_URL],
+        nameKey: 'zzz',
+      }),
+    ]);
+
+    expect(resolveBbsResearchHome(linksWithLab('alex-rivera'), '', index)).toEqual({
+      status: 'matched',
+      entityId: '333333333333333333333333',
+    });
+  });
+
+  // Two rows can share a surname and be different people, and then the netid is the
+  // only thing that separates them.
+  it('refuses a shared surname whose netid differs', () => {
+    const index = buildBbsMatchIndex([
+      candidate({
+        _id: '444444444444444444444444',
+        slug: 'rivera-ar288',
+        name: 'Rivera Lab',
+        matchUrls: [LAB_URL],
+        nameKey: 'zzz',
+      }),
+    ]);
+
+    expect(resolveBbsResearchHome(linksWithLab('alex-rivera-ar447'), '', index).status).toBe(
+      'unmatched',
+    );
+  });
+
+  it('matches on a netid that agrees', () => {
+    const index = buildBbsMatchIndex([
+      candidate({
+        _id: '555555555555555555555555',
+        slug: 'rivera-ar447',
+        name: 'Rivera Lab',
+        matchUrls: [LAB_URL],
+        nameKey: 'zzz',
+      }),
+    ]);
+
+    expect(resolveBbsResearchHome(linksWithLab('alex-rivera-ar447'), '', index)).toEqual({
+      status: 'matched',
+      entityId: '555555555555555555555555',
+    });
+  });
+
+  // The name fallback runs on the same PI's name, so letting a declined row reach it
+  // would re-admit exactly what the URL arm just refused.
+  it('does not let the name fallback re-admit a row the borrowed-URL arm declined', () => {
+    const index = buildBbsMatchIndex([
+      candidate({
+        _id: '666666666666666666666666',
+        slug: 'ysm-faculty-kaya-lindgren',
+        name: 'Kaya Lindgren Faculty Research',
+        matchUrls: [LAB_URL],
+        nameKey: 'alex-rivera',
+      }),
+    ]);
+
+    expect(resolveBbsResearchHome(linksWithLab('alex-rivera'), 'alex-rivera', index).status).toBe(
+      'unmatched',
+    );
+  });
+
+  it('still prefers the PI own profile URL over any corroboration question', () => {
+    const index = buildBbsMatchIndex([
+      candidate({
+        _id: '777777777777777777777777',
+        slug: 'quokka-cognition-lab',
+        name: 'Quokka Cognition Lab',
+        matchUrls: ['https://medicine.yale.edu/profile/alex-rivera/'],
+        nameKey: 'zzz',
+      }),
+    ]);
+
+    expect(resolveBbsResearchHome(linksWithLab('alex-rivera'), '', index)).toEqual({
+      status: 'matched',
+      entityId: '777777777777777777777777',
+    });
+  });
+});
+
+// A row can cite another person's profile page among its `sourceUrls`, and there the
+// lane's strongest key points at the wrong person while the surnames agree.
+describe('resolveBbsResearchHome netid conflict on the profile arm (#3342)', () => {
+  it('refuses a profile-URL match whose netid names a different person', () => {
+    const index = buildBbsMatchIndex([
+      candidate({
+        _id: '888888888888888888888888',
+        slug: 'rivera-ar288',
+        name: 'Rivera Lab',
+        matchUrls: ['https://medicine.yale.edu/profile/alex-rivera-ar447/'],
+        nameKey: 'zzz',
+      }),
+    ]);
+    const links: BbsProfileLinks = {
+      canonicalProfileUrl: 'https://medicine.yale.edu/profile/alex-rivera-ar447/',
+      labUrls: [],
+    };
+
+    expect(resolveBbsResearchHome(links, '', index).status).toBe('unmatched');
+  });
+
+  it('is silent when the row carries no netid, so it only ever refuses on disagreement', () => {
+    const index = buildBbsMatchIndex([
+      candidate({
+        _id: '999999999999999999999999',
+        slug: 'rivera-lab',
+        name: 'Rivera Lab',
+        matchUrls: ['https://medicine.yale.edu/profile/alex-rivera-ar447/'],
+        nameKey: 'zzz',
+      }),
+    ]);
+    const links: BbsProfileLinks = {
+      canonicalProfileUrl: 'https://medicine.yale.edu/profile/alex-rivera-ar447/',
+      labUrls: [],
+    };
+
+    expect(resolveBbsResearchHome(links, '', index)).toEqual({
+      status: 'matched',
+      entityId: '999999999999999999999999',
+    });
+  });
+});

@@ -1,8 +1,8 @@
 /**
  * Client-side compatibility shape for canonical ResearchEntity records.
  *
- * Mirrors the server's `researchGroupSchema` in
- * `server/src/models/researchGroup.ts`. Kept narrow to what the UI consumes —
+ * Mirrors the server's `researchEntitySchema` in
+ * `server/src/models/researchEntity.ts`. Kept narrow to what the UI consumes —
  * fields that are server-only (e.g. `embedding`) are intentionally omitted.
  */
 
@@ -16,14 +16,17 @@ export type ResearchGroupKind =
   | 'individual'
   | 'solo';
 
-export type ResearchEntityType =
-  | 'LAB'
-  | 'CENTER'
-  | 'INSTITUTE'
-  | 'FACULTY_RESEARCH_AREA'
-  | 'FACULTY_PROJECT'
-  | 'INITIATIVE'
-  | 'CORE_FACILITY';
+export const researchEntityTypes = [
+  'LAB',
+  'CENTER',
+  'INSTITUTE',
+  'FACULTY_RESEARCH_AREA',
+  'FACULTY_PROJECT',
+  'INITIATIVE',
+  'CORE_FACILITY',
+] as const;
+
+export type ResearchEntityType = (typeof researchEntityTypes)[number];
 
 export interface ResearchPlanningContext {
   category: 'open_position' | 'official_application' | 'reviewed_route' | 'qualified_participation';
@@ -79,10 +82,16 @@ export interface RecentGrant {
   role?: 'pi' | 'copi';
 }
 
+export interface ResearchEntitySourceFieldContribution {
+  sourceUrl: string;
+  contributions: string[];
+}
+
 export interface ResearchEntitySourceLinkHealth {
   url: string;
   healthStatus?: string;
   httpStatusCode?: number;
+  privateAddressHost?: boolean;
 }
 
 export interface ResearchGroup {
@@ -134,6 +143,7 @@ export interface ResearchGroup {
   contactRole?: string;
   sourceUrls: string[];
   sourceLinkHealth?: ResearchEntitySourceLinkHealth[];
+  sourceFieldContributions?: ResearchEntitySourceFieldContribution[];
   confidenceByField?: Record<string, number>;
   /**
    * Names of fields the PI / admin has manually set; the materializer never

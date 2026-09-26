@@ -18,6 +18,7 @@ import {
   type LLMExtraction,
   type WorkPlanLoaderFn,
 } from '../sources/labMicrositeUndergradLLMExtractor';
+import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
 import type { ObservationInput, ScraperContext } from '../types';
 
 function makeContext(overrides: Partial<ScraperContext['options']> = {}): {
@@ -90,6 +91,10 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
     const callCardLLM = vi.fn<CardSynthesisLLMFn>();
 
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -141,6 +146,10 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
     } satisfies DescriptionExtraction);
 
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -193,6 +202,10 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
       methods: [],
     } satisfies DescriptionExtraction);
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -214,6 +227,57 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
     expect(hashObs).toBeDefined();
     expect(hashObs?.value).toBe(freshHash);
     expect(hashObs?.value).not.toBe(staleHash);
+  });
+
+  it('description extractor: full description without a synthesized card leaves the hash unwritten so the row stays eligible (#2436)', async () => {
+    const staleHash = contentHashGate.computeVersionedContentHash(
+      'previous-run-html',
+      DESCRIPTION_EXTRACTION_PROMPT_HASH,
+      DEFAULT_MODEL,
+    );
+    vi.spyOn(contentHashGate, 'loadStoredContentHash').mockResolvedValue(staleHash);
+
+    // Facility prose: usable as a full description, but no usable card can be
+    // derived from it, so the run ends with a full description and no card.
+    const proseText =
+      'The Ashford Lab is located in the Anlyan Center on the medical campus and was established in 1998 with support from several foundations and individual donors who continue to fund its operations today.';
+    const pageHtml = `<div><table><tr><td>${proseText}</td></tr></table></div>`;
+    const fetchPage = vi.fn().mockResolvedValue({
+      url: 'https://medicine.yale.edu/lab/ashford/',
+      html: pageHtml,
+    });
+    const callLLM = vi.fn().mockResolvedValue({
+      fullDescription: proseText,
+      shortDescription: '',
+      topics: [],
+      methods: [],
+    } satisfies DescriptionExtraction);
+    const callCardLLM = vi.fn().mockResolvedValue('');
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-ashford',
+          slug: 'ashford-lab',
+          name: 'Ashford Lab',
+          websiteUrl: 'https://medicine.yale.edu/lab/ashford/',
+        },
+      ],
+      fetchPage,
+      callLLM,
+      callCardLLM,
+    });
+
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.some((obs) => obs.field === 'fullDescription')).toBe(true);
+    expect(emitted.some((obs) => obs.field === 'shortDescription')).toBe(false);
+    expect(emitted.some((obs) => obs.field === 'sourceContentHash')).toBe(false);
   });
 
   it('description extractor: card model change re-extracts the same unchanged page', async () => {
@@ -241,6 +305,10 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
       methods: [],
     } satisfies DescriptionExtraction);
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       cardModel: 'gpt-5-mini-next',
       labFinder: async () => [

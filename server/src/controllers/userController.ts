@@ -3,7 +3,7 @@
  */
 import { Request, Response } from 'express';
 import {
-  getSavedResearchEntities as getSavedResearchEntitiesService,
+  getSavedResearchEntityList as getSavedResearchEntityListService,
   getSavedResearchEntitySlugs as getSavedResearchEntitySlugsService,
   getSavedResearchEntityPlans as getSavedResearchEntityPlansService,
   addSavedResearchEntities as addSavedResearchEntitiesService,
@@ -64,12 +64,17 @@ export const getSavedResearchEntityIds = async (request: Request, response: Resp
   }
 };
 
+/**
+ * A saved plan whose target is no longer servable is reported alongside the list
+ * rather than dropped from it. `Cache-Control: no-store` because the unavailable ids
+ * are the reader's own saved plans, so the response is per-account and must not be
+ * cached by a shared hop the way the entity summaries alone could be (#2174).
+ */
 export const getSavedResearchEntities = async (request: Request, response: Response) => {
   try {
     const currentUser = request.user as { netId?: string };
-    response.status(200).json({
-      savedResearchEntities: await getSavedResearchEntitiesService(currentUser.netId),
-    });
+    setPrivateAccountResponseHeaders(response);
+    response.status(200).json(await getSavedResearchEntityListService(currentUser.netId));
   } catch (error) {
     console.error('Saved research entity fetch failed:', sanitizeLogValue(error));
     sendAccountMutationError(response, error, 'Failed to fetch saved research entities');

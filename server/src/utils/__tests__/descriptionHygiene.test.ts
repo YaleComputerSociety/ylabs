@@ -12,10 +12,12 @@ import {
   hasContactBlockResidue,
   isBareLabelOrTopicEnumerationText,
   isCitationAuthorListDumpText,
+  stripHtmlTagMarkupForDetection,
   isCtaNewsTickerDumpText,
   isStudiesTemplateGlueMalformed,
   stripDirectoryResearcherNavChrome,
   stripGluedProfileRoleLabel,
+  stripLeadingAppointmentTitleBlock,
   stripGluedProfileSectionLabel,
   stripGluedResearchRoleTrackToken,
   isContentlessResearchProjectsBoilerplateText,
@@ -31,8 +33,11 @@ import {
   isResearchAreaEchoDescription,
   isResearchAreaTemplateLeakText,
   isRosterShapedText,
+  isStaleResearchAreaChipEnumeration,
   isStudiesResearchAreaEchoDescription,
   isStaffContactBlockText,
+  MAX_CARD_SHORT_DESCRIPTION_LENGTH,
+  MAX_CARD_SHORT_DESCRIPTION_WORDS,
   MAX_SHORT_DESCRIPTION_LENGTH,
   MID_SENTENCE_TRUNCATION_MIN_LENGTH,
   partitionSentencesLossless,
@@ -1440,6 +1445,60 @@ describe('descriptionHygiene "Studies <chips>" area echo (#1466)', () => {
   });
 });
 
+describe('isStaleResearchAreaChipEnumeration (#3095)', () => {
+  it('flags a chip-summary card naming a chip the row no longer carries', () => {
+    expect(
+      isStaleResearchAreaChipEnumeration('Studies Artificial Intelligence and Ecology.', [
+        'Ecology',
+      ]),
+    ).toBe(true);
+  });
+
+  it('does not flag a card whose every named item is still a chip, which is the echo', () => {
+    const card = 'Studies Linguistics, Semantics, and Political Theory.';
+    const chips = ['Linguistics', 'Semantics', 'Political Theory'];
+    expect(isStaleResearchAreaChipEnumeration(card, chips)).toBe(false);
+    expect(isStudiesResearchAreaEchoDescription(card, chips)).toBe(true);
+  });
+
+  it('does not flag prose that merely opens with the template verb and shares one chip name', () => {
+    expect(
+      isStaleResearchAreaChipEnumeration(
+        'Studies DNA repair and BRCA-related gene function as it relates to gamete aging.',
+        ['DNA repair', 'Reproductive biology'],
+      ),
+    ).toBe(false);
+    expect(
+      isStaleResearchAreaChipEnumeration(
+        'Studies computational social cognition, focusing on how minds understand each other.',
+        ['Computational Social Cognition'],
+      ),
+    ).toBe(false);
+  });
+
+  it('requires a surviving chip, so a card sharing nothing with the chip row is left alone', () => {
+    expect(
+      isStaleResearchAreaChipEnumeration('Studies Texas from the first.', ['Moroccan history']),
+    ).toBe(false);
+  });
+
+  it('consumes a chip whose own label contains "and" whole rather than reporting it stale', () => {
+    expect(
+      isStaleResearchAreaChipEnumeration(
+        'Studies Paleontology and Evolutionary Biology, and Planetary Science.',
+        ['Paleontology and Evolutionary Biology', 'Planetary Science'],
+      ),
+    ).toBe(false);
+  });
+
+  it('does not flag without a chip list at all', () => {
+    expect(isStaleResearchAreaChipEnumeration('Studies Ecology and Genetics.', [])).toBe(false);
+    expect(isStaleResearchAreaChipEnumeration('Studies Ecology and Genetics.', undefined)).toBe(
+      false,
+    );
+  });
+});
+
 describe('isBareLabelOrTopicEnumerationText provenance-independent bare-list shape', () => {
   it('flags a title/role dump with no chip overlap and no lead verb', () => {
     expect(
@@ -1854,6 +1913,59 @@ describe('stripGluedProfileSectionLabel profile-chrome concatenation (#1481)', (
       'Associate Professor of Medicine (General Medicine)Yale Liaison. Her research focuses on ethics in medicine.',
     );
   });
+
+  describe('space-separated section label (#2573)', () => {
+    it.each([
+      ['Biography', 'Biography Caroline T has been a member of the faculty since 1984.'],
+      ['Overview', 'Overview Clinical epidemiologic research on vaccine effectiveness.'],
+      ['Titles', 'Titles Assistant Professor of Emergency Medicine.'],
+    ])('drops a leading %s label separated by a single space', (_label, text) => {
+      const stripped = stripGluedProfileSectionLabel(text);
+      expect(stripped).not.toMatch(/^(?:Biography|Overview|Titles)\b/);
+      expect(stripped.endsWith('.')).toBe(true);
+    });
+
+    it('replaces a mid-string spaced label with a sentence break', () => {
+      expect(
+        stripGluedProfileSectionLabel(
+          'Assistant Professor Wellness Director, Internal Medicine Biography Dr. S grew up in Ohio.',
+        ),
+      ).toBe('Assistant Professor Wellness Director, Internal Medicine. Dr. S grew up in Ohio.');
+    });
+
+    it.each([
+      [
+        'a determiner before the label',
+        'The team summarised its findings in the Overview Section of the report.',
+      ],
+      [
+        'a preposition before the label',
+        'A complete list of Titles Held appears in the appendix of the report.',
+      ],
+      [
+        'a possessive before the label',
+        'She chairs our Overview Committee and reports to the dean each spring.',
+      ],
+      [
+        'a lower-case use in prose',
+        'She wrote a biography. Dr. Smith reviewed it for the journal.',
+      ],
+      [
+        'the excluded About token',
+        'About 40 percent of patients respond to the therapy in the first year.',
+      ],
+    ])('leaves prose untouched: %s', (_label, text) => {
+      expect(stripGluedProfileSectionLabel(text)).toBe(text);
+    });
+
+    it('never empties a body that was only a section label plus prose', () => {
+      expect(
+        sanitizeResearchEntityDescription(
+          'Biography She studies coastal erosion and sediment transport.',
+        ),
+      ).toBe('She studies coastal erosion and sediment transport.');
+    });
+  });
 });
 
 describe('repairMissingSpaceAfterSentence block-boundary glue (#1776)', () => {
@@ -1918,6 +2030,66 @@ describe('isCitationAuthorListDumpText citation-list fail-closed (#1481)', () =>
         'Physiological homology between Drosophila melanogaster and vertebrate cardiovascular systemsChoma MA, Suter MJ, Vakoc BJ, Bouma BE, Tearney GJ.',
       ),
     ).toBe('');
+  });
+
+  it('detects an author list whose run is broken by interposed element tags (#2416)', () => {
+    expect(
+      isCitationAuthorListDumpText(
+        'Nakamura L, <strong data-id="138470">Dubois A</strong>, Ferreira-Pinto A, Okonkwo B. <span data-type="title">A noncanonical DNA-binding mode promotes viral late gene transcription</span>. Nucleic Acids Research 2025, 53: gkaf1008.',
+      ),
+    ).toBe(true);
+  });
+
+  it('detects an author list whose entries are separated by self-closing break tags (#2416)', () => {
+    expect(
+      isCitationAuthorListDumpText(
+        'Nakamura L, <br/>Dubois A, <br/>Ferreira-Pinto A, <br/>Okonkwo B. <span data-type="title">A noncanonical DNA-binding mode promotes viral late gene transcription</span>. Nucleic Acids Research 2025, 53: gkaf1008.',
+      ),
+    ).toBe(true);
+  });
+
+  it('detects an author list whose surnames carry diacritics (#2416)', () => {
+    expect(
+      isCitationAuthorListDumpText(
+        'Ferreira-Pinto A, Sandström L, Weiß BJ, Okonkwo B. Structural basis of capsid assembly. Journal Of Virology 2025.',
+      ),
+    ).toBe(true);
+  });
+
+  it('leaves prose that uses a bare angle bracket as an inequality untouched (#2416)', () => {
+    expect(
+      isCitationAuthorListDumpText(
+        'The group studies how transcription rates change when promoter occupancy < 0.05 across differentiating cells.',
+      ),
+    ).toBe(false);
+  });
+
+  it('leaves marked-up research prose useful rather than reading its tags as a citation run (#2416)', () => {
+    expect(
+      isCitationAuthorListDumpText(
+        'The lab studies how <i>Amanita</i> species evolved new genes, reproductive systems and mitochondria.',
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('stripHtmlTagMarkupForDetection (#2416)', () => {
+  it('repairs the punctuation seam a removed tag would otherwise strand', () => {
+    expect(stripHtmlTagMarkupForDetection('<span data-id="1">Dubois A</span>, Nakamura L.')).toBe(
+      'Dubois A, Nakamura L.',
+    );
+  });
+
+  it('removes a self-closing tag written with no space before the slash', () => {
+    expect(
+      stripHtmlTagMarkupForDetection('<span data-id="1">Dubois A</span>, <br/>Nakamura L.'),
+    ).toBe('Dubois A, Nakamura L.');
+  });
+
+  it('returns text with no element markup unchanged apart from whitespace', () => {
+    expect(stripHtmlTagMarkupForDetection('Studies how p < 0.05 thresholds  mislead.')).toBe(
+      'Studies how p < 0.05 thresholds mislead.',
+    );
   });
 });
 
@@ -3026,12 +3198,26 @@ describe('sanitizeResearchEntityShortDescription length cap (#1745)', () => {
     expect(MAX_SHORT_DESCRIPTION_LENGTH).toBe(200);
   });
 
-  it('clamps an over-cap research blurb to the card-sized bound (#1951)', () => {
+  it('keeps a single over-preference sentence whole rather than deleting the card (#1878)', () => {
     const overCap =
       'Investigates the molecular and cellular mechanisms of neural circuit development and function, using genetics, imaging, and computational modeling to understand how the brain wires itself and adapts across the lifespan in health and disease.';
     expect(overCap.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
-    const cleaned = sanitizeResearchEntityShortDescription(overCap);
-    expect(cleaned.length).toBeLessThanOrEqual(MAX_SHORT_DESCRIPTION_LENGTH);
+    expect(overCap.length).toBeLessThanOrEqual(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+    expect(sanitizeResearchEntityShortDescription(overCap)).toBe(overCap);
+  });
+
+  it('still clamps to a whole sentence when one fits the rendering preference (#1951)', () => {
+    const leadSentence =
+      'Investigates the molecular and cellular mechanisms of neural circuit development.';
+    const overCap = `${leadSentence} It uses genetics, imaging, and computational modeling to understand how the brain wires itself and adapts across the lifespan in health and disease.`;
+    expect(overCap.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
+    expect(sanitizeResearchEntityShortDescription(overCap)).toBe(leadSentence);
+  });
+
+  it('refuses a sentence past the card ceiling rather than serving it (#1878)', () => {
+    const pastCeiling = `Investigates ${'the molecular and cellular mechanisms of neural circuit development, '.repeat(6)}across species.`;
+    expect(pastCeiling.length).toBeGreaterThan(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+    expect(sanitizeResearchEntityShortDescription(pastCeiling)).toBe('');
   });
 
   it('leaves an ordinary card blurb under the cap untouched', () => {
@@ -3078,12 +3264,12 @@ describe('short description whole-sentence cap (#2184)', () => {
     expect(clamped).not.toMatch(/…$/);
   });
 
-  it('fails closed instead of fabricating a fragment when no sentence fits the cap (#2184)', () => {
+  it('keeps the whole sentence instead of fabricating a fragment when none fits the cap (#2184/#1878)', () => {
     const ONE_LONG_SENTENCE =
       'Using multi pronged approaches including mouse genetics, cell culture models, genomics and microscopy, we tackle complex biological processes focusing on the contribution of cell-intrinsic and cell-extrinsic factors that drive regeneration.';
     expect(ONE_LONG_SENTENCE.length).toBeGreaterThan(200);
-    expect(clampShortDescriptionToWholeSentences(ONE_LONG_SENTENCE)).toBe('');
-    expect(sanitizeResearchEntityShortDescription(ONE_LONG_SENTENCE)).toBe('');
+    expect(clampShortDescriptionToWholeSentences(ONE_LONG_SENTENCE)).toBe(ONE_LONG_SENTENCE);
+    expect(clampShortDescriptionToWholeSentences(ONE_LONG_SENTENCE)).not.toMatch(/…$/);
   });
 
   it('leaves a short description within the cap untouched (#2184)', () => {
@@ -3101,9 +3287,30 @@ describe('short description whole-sentence cap (#2184)', () => {
 
     for (const oneLongSentence of [TITLE_LEAD, INITIAL_LEAD, MID_SENTENCE_ABBREVIATION]) {
       expect(oneLongSentence.length).toBeGreaterThan(200);
-      expect(clampShortDescriptionToWholeSentences(oneLongSentence)).toBe('');
-      expect(sanitizeResearchEntityShortDescription(oneLongSentence)).toBe('');
+      expect(oneLongSentence.length).toBeLessThanOrEqual(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+      expect(clampShortDescriptionToWholeSentences(oneLongSentence)).toBe(oneLongSentence);
     }
+  });
+
+  it('drops a trailing sentence that passes the word ceiling rather than the whole card line (#1878)', () => {
+    const LEAD =
+      'Investigates how city residents use buses and trains to reach work and school, and how the cost of a single ride and the time it takes shape the travel choice each rider makes on an ordinary weekday morning.';
+    const TAIL = 'The work is funded by the city.';
+    const wordsIn = (value: string) => value.split(/\s+/).filter(Boolean).length;
+    expect(LEAD.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
+    expect(LEAD.length).toBeLessThanOrEqual(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+    expect(wordsIn(LEAD)).toBeLessThanOrEqual(MAX_CARD_SHORT_DESCRIPTION_WORDS);
+    const source = `${LEAD} ${TAIL}`;
+    expect(source.length).toBeLessThanOrEqual(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+    expect(wordsIn(source)).toBeGreaterThan(MAX_CARD_SHORT_DESCRIPTION_WORDS);
+    expect(clampShortDescriptionToWholeSentences(source)).toBe(LEAD);
+    expect(sanitizeResearchEntityShortDescription(source)).toBe(LEAD);
+  });
+
+  it('refuses rather than cutting at an abbreviation when the sentence passes the card ceiling (#2184/#1878)', () => {
+    const pastCeiling = `Dr. Kwan integrates population genomics and field ecology ${'to understand how marine invertebrate populations adapt to warming coastal waters, '.repeat(3)}across seasons.`;
+    expect(pastCeiling.length).toBeGreaterThan(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+    expect(clampShortDescriptionToWholeSentences(pastCeiling)).toBe('');
   });
 
   it('keeps an abbreviation inside the sentence it clamps to (#2184)', () => {
@@ -3153,5 +3360,70 @@ describe('isCurriculumVitaePositionListingText', () => {
   it('is blank-safe', () => {
     expect(isCurriculumVitaePositionListingText('')).toBe(false);
     expect(isCurriculumVitaePositionListingText(undefined)).toBe(false);
+  });
+});
+
+describe('stripLeadingAppointmentTitleBlock', () => {
+  const GOOD_SENTENCE =
+    'An international leader in the clinical care of patients with breast cancer, this clinician-scientist joined Yale from another academic medical centre.';
+
+  it('drops an administrative title list glued onto the next sentence with no delimiter (#1815)', () => {
+    const glued = `Professor of Internal Medicine (Medical Oncology) Director, Clinical Trials Office; Chief Clinical Research Officer, Yale Cancer Center; Associate Director, Clinical Sciences, Yale Cancer Center ${GOOD_SENTENCE}`;
+    expect(stripLeadingAppointmentTitleBlock(glued)).toBe(GOOD_SENTENCE);
+  });
+
+  it('cuts at the honorific that opens the narrative', () => {
+    const narrative =
+      'Dr. Quill is a physician-scientist board certified in paediatrics who studies adolescent substance use in paediatric settings.';
+    const glued = `Associate Professor of Emergency Medicine Associate Director of Paediatric Programs, Yale Program in Addiction Medicine; Associate Professor on Term, Chronic Disease Epidemiology ${narrative}`;
+    expect(stripLeadingAppointmentTitleBlock(glued)).toBe(narrative);
+  });
+
+  it('cuts at an uncapitalised continuation and restores the sentence case', () => {
+    const glued =
+      'Associate Professor of Molecular, Cellular, and Developmental Biology this group seeks to understand why stem cells in mammals cannot repair damage beyond normal wear and tear.';
+    expect(stripLeadingAppointmentTitleBlock(glued)).toBe(
+      'This group seeks to understand why stem cells in mammals cannot repair damage beyond normal wear and tear.',
+    );
+  });
+
+  it('reaches the same title list through the served description sanitizer', () => {
+    const glued = `Professor of Internal Medicine (Medical Oncology) Director, Clinical Trials Office; Chief Clinical Research Officer, Yale Cancer Center ${GOOD_SENTENCE}`;
+    expect(sanitizeResearchEntityDescription(glued)).toBe(GOOD_SENTENCE);
+  });
+
+  it('leaves research prose that merely opens on a titled person alone', () => {
+    const prose =
+      'Professor Huang studies how information design, disclosure, and governance affect managerial incentives, firm decisions, and capital market outcomes.';
+    expect(stripLeadingAppointmentTitleBlock(prose)).toBe(prose);
+  });
+
+  it('leaves a title clause that carries its own verb alone', () => {
+    const prose =
+      'Professor of Chemistry and of Applied Physics, she is the principal investigator of a group that develops single-molecule spectroscopy for living cells.';
+    expect(stripLeadingAppointmentTitleBlock(prose)).toBe(prose);
+  });
+
+  it('drops a bare title lead that does end in a period, which no sentence-bounded strip claims', () => {
+    const narrative =
+      'The centre studies mineral metabolism in children and adults with inherited phosphate-wasting disorders.';
+    expect(
+      stripLeadingAppointmentTitleBlock(
+        `Director of the Yale Centre for Rare Bone Disease. ${narrative}`,
+      ),
+    ).toBe(narrative);
+  });
+
+  it('leaves a title-only fragment for the closers that already fail it', () => {
+    const titlesOnly =
+      'Professor of Internal Medicine (Medical Oncology) Director, Clinical Trials Office; Chief Clinical Research Officer';
+    expect(stripLeadingAppointmentTitleBlock(titlesOnly)).toBe(titlesOnly);
+  });
+
+  it('is idempotent and blank-safe', () => {
+    const glued = `Professor of Water Policy and Management ${GOOD_SENTENCE}`;
+    const once = stripLeadingAppointmentTitleBlock(glued);
+    expect(stripLeadingAppointmentTitleBlock(once)).toBe(once);
+    expect(stripLeadingAppointmentTitleBlock('')).toBe('');
   });
 });

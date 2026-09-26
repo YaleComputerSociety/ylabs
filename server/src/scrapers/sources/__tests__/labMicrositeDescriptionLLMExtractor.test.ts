@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
+import { NO_SURNAME_ROSTER } from '../../../utils/researchHomeNameIdentityAuthority';
 import {
   htmlToText,
   isRejectedDescriptionSourceUrl,
   usefulLabName,
   descriptionExtractionToObservations,
+  discoverResearchSubPageUrls,
+  researchSubPageCrawlUrls,
 } from '../labMicrositeDescriptionLLMExtractor';
 
 describe('isRejectedDescriptionSourceUrl', () => {
@@ -29,6 +32,57 @@ describe('isRejectedDescriptionSourceUrl', () => {
       true,
     );
     expect(isRejectedDescriptionSourceUrl('not-a-url')).toBe(true);
+  });
+
+  it('rejects a paginated listing page, whose pager evidence is in the query string (#2570)', () => {
+    expect(
+      isRejectedDescriptionSourceUrl(
+        'https://som.yale.edu/faculty-research/faculty-directory?page=1',
+      ),
+    ).toBe(true);
+    expect(isRejectedDescriptionSourceUrl('https://example.yale.edu/labs/page/3')).toBe(true);
+  });
+
+  it('rejects a hyphenated multi-person index named by its own last path segment (#2570)', () => {
+    expect(isRejectedDescriptionSourceUrl('https://example.yale.edu/about/staff-directory')).toBe(
+      true,
+    );
+    expect(isRejectedDescriptionSourceUrl('https://example.yale.edu/people/faculty-roster')).toBe(
+      true,
+    );
+  });
+
+  it('still accepts a person page nested BENEATH a directory segment (#2570)', () => {
+    expect(
+      isRejectedDescriptionSourceUrl(
+        'https://som.yale.edu/faculty-research/faculty-directory/tamsin-q-wrenfield',
+      ),
+    ).toBe(false);
+    expect(
+      isRejectedDescriptionSourceUrl(
+        'https://environment.yale.edu/directory/faculty/alder-m-hollowmere',
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects a binary document, which this lane can only read as HTML (#1918)', () => {
+    expect(
+      isRejectedDescriptionSourceUrl(
+        'https://science.example.edu/sites/default/files/files/2025%20STARS2%20Symposium.pdf',
+      ),
+    ).toBe(true);
+    expect(isRejectedDescriptionSourceUrl('https://www.cs.example.edu/homes/q/pubs/biog.pdf')).toBe(
+      true,
+    );
+    expect(isRejectedDescriptionSourceUrl('https://example.yale.edu/lab/overview.docx')).toBe(true);
+    expect(isRejectedDescriptionSourceUrl('https://example.yale.edu/lab/slides.pptx')).toBe(true);
+  });
+
+  it('keeps accepting a page whose path merely contains those letters', () => {
+    expect(isRejectedDescriptionSourceUrl('https://example.yale.edu/lab/pdf-viewer/')).toBe(false);
+    expect(isRejectedDescriptionSourceUrl('https://example.yale.edu/research/xlsx-tools')).toBe(
+      false,
+    );
   });
 
   it('rejects a department-wide undergrad research opportunities hub page (#1716)', () => {
@@ -75,6 +129,20 @@ describe('usefulLabName', () => {
     expect(usefulLabName('Alan Edwards, M.D., Yale University')).toBe('');
   });
 
+  // The placeholder vocabulary now lives in one shared predicate, so this source
+  // rejects the values it never used to (#2367).
+  it('rejects placeholder filler offered in place of a name', () => {
+    for (const value of ['n/a', 'N / A', 'none', 'unknown', 'null', 'TBD', 'untitled', '???']) {
+      expect(usefulLabName(value)).toBe('');
+    }
+  });
+
+  it('rejects a bare research-home label with no branding', () => {
+    for (const value of ['the lab', 'Lab', 'laboratory', 'Research']) {
+      expect(usefulLabName(value)).toBe('');
+    }
+  });
+
   it('keeps a genuine branded research-home name', () => {
     expect(usefulLabName('The Yale GRAB Lab')).toBe('The Yale GRAB Lab');
     expect(usefulLabName('David Spiegel Lab')).toBe('David Spiegel Lab');
@@ -90,11 +158,17 @@ describe('descriptionExtractionToObservations name identity authority (#2234)', 
 
   function nameValues(
     name: string,
-    context: { sourceUrl: string; entityKey?: string; entityType?: string; kind?: string },
+    context: {
+      sourceUrl: string;
+      entityKey?: string;
+      entityType?: string;
+      kind?: string;
+      recordCitedUrls?: unknown;
+    },
   ) {
     return descriptionExtractionToObservations(
       { fullDescription: PROSE, shortDescription: '', topics: [], methods: [], name },
-      context,
+      { ...context, knownPersonSurnames: NO_SURNAME_ROSTER },
     )
       .filter((o) => o.field === 'name' || o.field === 'displayName')
       .map((o) => o.value);
@@ -178,6 +252,37 @@ describe('descriptionExtractionToObservations name identity authority (#2234)', 
     ).toEqual(['Computational Biomechanics Laboratory', 'Computational Biomechanics Laboratory']);
   });
 
+  it('emits nothing when the name is that of a shared academic host the record cites', () => {
+    // #2360: the name is the brand of a 13-faculty cross-department laboratory, read
+    // off one member's faculty-directory page. Nothing in the string says so, and the
+    // shared host the row cites is what does.
+    expect(
+      nameValues('Computer Systems Lab at Yale', {
+        sourceUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/quilla-marrowbane/',
+        entityKey: 'nih-pi-quilla-marrowbane',
+        entityType: 'LAB',
+        recordCitedUrls: [
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/quilla-marrowbane/',
+          'https://csl.yale.edu/',
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  it('still emits a member own lab name harvested while citing that same shared host', () => {
+    const ownName = 'Analog and RF Circuits (ARC) Lab at Yale';
+    expect(
+      nameValues(ownName, {
+        sourceUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/quilla-marrowbane/',
+        entityKey: 'nsf-pi-quilla-marrowbane',
+        entityType: 'LAB',
+        recordCitedUrls: ['https://csl.yale.edu/~quilla/'],
+      }),
+    ).toEqual([ownName, ownName]);
+  });
+
   it('keeps refusing any name read off a person’s CMS profile page', () => {
     expect(
       nameValues('Some Research Home', {
@@ -186,5 +291,104 @@ describe('descriptionExtractionToObservations name identity authority (#2234)', 
         entityType: 'LAB',
       }),
     ).toEqual([]);
+  });
+});
+
+describe('descriptionExtractionToObservations third-party organization body (#2480)', () => {
+  const INSTITUTIONAL_BODY =
+    'The Northgate Measurement Based Care Collaborative is dedicated to implementation for systems, clinicians and clients, and advances measurement based care as an evidence-based practice through continued research.';
+  const OWN_PROSE =
+    'We study how cardiac tissue remodels after injury, combining live imaging with computational models to test how mechanical load reshapes the myocardium over time.';
+
+  const fields = (
+    fullDescription: string,
+    context: { sourceUrl: string; entityKey?: string; entityType?: string; kind?: string },
+  ) =>
+    descriptionExtractionToObservations(
+      {
+        fullDescription,
+        shortDescription: '',
+        topics: ['Mental Health Services'],
+        methods: [],
+        name: '',
+      },
+      { ...context, knownPersonSurnames: NO_SURNAME_ROSTER },
+    ).map((observation) => observation.field);
+
+  it('emits nothing for a person-scoped row when the page describes another organization', () => {
+    expect(
+      fields(INSTITUTIONAL_BODY, {
+        sourceUrl: 'https://example.edu/psychiatry/research/clinics-and-programs/mbccollab/',
+        entityKey: 'directory-faculty-robin-hansen',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toEqual([]);
+  });
+
+  it('still emits that body for the organization it describes', () => {
+    expect(
+      fields(INSTITUTIONAL_BODY, {
+        sourceUrl: 'https://example.edu/psychiatry/research/clinics-and-programs/mbccollab/',
+        entityKey: 'northgate-measurement-based-care-collaborative',
+        entityType: 'CENTER',
+      }),
+    ).toContain('fullDescription');
+  });
+
+  it("still emits a person-scoped row's own research prose", () => {
+    expect(
+      fields(OWN_PROSE, {
+        sourceUrl: 'https://example.edu/lab/hansen/',
+        entityKey: 'directory-faculty-robin-hansen',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toContain('fullDescription');
+  });
+});
+
+describe('a multi-project symposium booklet is never a lab description source (#1918)', () => {
+  const BOOKLET_URL =
+    'https://science.example.edu/sites/default/files/files/2025%20STARS2%20Symposium.pdf';
+  const GRAFTED = {
+    fullDescription:
+      'The Quill Lab investigates the molecular mechanisms of cancer development and progression, aiming to identify therapeutic targets.',
+    shortDescription:
+      'Investigates the molecular mechanisms of cancer development and progression.',
+    topics: ['Cancer Biology', 'Molecular mechanisms'],
+    methods: ['Molecular biology', 'Biochemistry'],
+    name: '',
+  };
+  const CONTEXT = {
+    entityKey: 'dept-chemistry-robin-quill',
+    entityType: 'LAB',
+    kind: 'individual',
+  };
+
+  it('emits no observation of any field when the source is the booklet', () => {
+    expect(
+      descriptionExtractionToObservations(GRAFTED, {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        ...CONTEXT,
+        sourceUrl: BOOKLET_URL,
+      }),
+    ).toEqual([]);
+  });
+
+  it('still emits from the lab’s own page, so the refusal is about the source and not the prose', () => {
+    const fields = descriptionExtractionToObservations(GRAFTED, {
+      knownPersonSurnames: NO_SURNAME_ROSTER,
+      ...CONTEXT,
+      sourceUrl: 'https://www.quilllab.example.com/',
+    }).map((observation) => observation.field);
+    expect(fields).toContain('fullDescription');
+    expect(fields).toContain('researchAreas');
+  });
+
+  it('never walks the crawl onto the booklet either, so it is not even fetched', () => {
+    const anchor = `<a href="${BOOKLET_URL}">Research</a>`;
+    expect(discoverResearchSubPageUrls(anchor, 'https://science.example.edu/programs/')).toEqual([
+      BOOKLET_URL,
+    ]);
+    expect(researchSubPageCrawlUrls(anchor, 'https://science.example.edu/programs/')).toEqual([]);
   });
 });

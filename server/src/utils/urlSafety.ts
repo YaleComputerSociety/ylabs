@@ -105,3 +105,61 @@ export function isSelfReferentialUrl(value: unknown): boolean {
     return false;
   }
 }
+
+/**
+ * Domains on which a hosting platform ASSIGNS the hostname to a deploy target
+ * rather than letting its owner choose one. A host here names a build or a
+ * session, not a published page, so it is never the durable address of whatever
+ * it happens to serve, and citing it records evidence at an address that stops
+ * existing on the next deploy.
+ *
+ * `ondigitalocean.app` is App Platform's generated default domain: the subdomain
+ * is `<app>-<random suffix>` and cannot be registered by hand, so every host on
+ * it is a build target. The rest hand out a fresh hostname per tunnel session.
+ *
+ * A platform whose default subdomain its owner PICKS is deliberately absent -
+ * github.io, netlify.app, vercel.app, onrender.com, wordpress.com - because
+ * there the platform hostname is often the only address a lab publishes, and
+ * refusing it would drop real evidence. Our own deploy hosts on such a platform
+ * are named individually in `SELF_REFERENTIAL_HOSTNAMES` instead (#2805).
+ */
+export const EPHEMERAL_DEPLOY_HOST_DOMAINS = [
+  'ondigitalocean.app',
+  'trycloudflare.com',
+  'ngrok.io',
+  'ngrok-free.app',
+  'ngrok.app',
+  'ngrok.dev',
+  'loca.lt',
+  'localhost.run',
+  'lhr.life',
+  'serveo.net',
+] as const;
+
+export function isEphemeralDeployHostname(hostname: string): boolean {
+  const clean = stripIpv6Brackets(hostname).toLowerCase().replace(/\.$/, '');
+  return EPHEMERAL_DEPLOY_HOST_DOMAINS.some(
+    (domain) => clean === domain || clean.endsWith(`.${domain}`),
+  );
+}
+
+export function isEphemeralDeployHostUrl(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_PUBLIC_HTTP_URL_LENGTH) return false;
+  try {
+    return isEphemeralDeployHostname(new URL(trimmed).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A host that can never be evidence, whoever is writing. Every path that mints a
+ * citation has to agree on this, so it lives in one place rather than being
+ * re-spelled per writer: `appendObservations` refuses these inputs and the
+ * visibility repair queue refuses to invent a citation at one (#2805).
+ */
+export function isUncitableHostUrl(value: unknown): boolean {
+  return isSelfReferentialUrl(value) || isEphemeralDeployHostUrl(value);
+}

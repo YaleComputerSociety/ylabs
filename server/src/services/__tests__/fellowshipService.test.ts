@@ -87,6 +87,34 @@ describe('fellowship public serializer', () => {
     expect(JSON.stringify(payload)).not.toContain('should stay restrained');
   });
 
+  it('serves a card line derived from the body when the stored summary is the whole body (#2215)', () => {
+    const offer =
+      'A Richter Summer Fellowship is awarded for independent study and research, not for mere travel, work or enrollment in a school.';
+    const wholeBody = `${offer} Richter Fellowships are ordinarily awarded to juniors, but first years, sophomores and graduate affiliates are eligible, and applicants submit a project proposal, a budget and a faculty recommendation before the March deadline.`;
+    const payload = publicFellowshipForStudent({
+      _id: '67d8928150621bcef434a1d5',
+      title: 'Richter Summer Fellowship',
+      summary: wholeBody,
+      description: wholeBody,
+    });
+
+    expect(payload.cardSummary).toBe(offer);
+    expect(payload.summary).toBe(wholeBody);
+  });
+
+  it('leaves the card line as stored when the summary already clears the program card bar', () => {
+    const offer =
+      'A Richter Summer Fellowship is awarded for independent study and research, not for mere travel, work or enrollment in a school.';
+    const payload = publicFellowshipForStudent({
+      _id: '67d8928150621bcef434a1d5',
+      title: 'Richter Summer Fellowship',
+      summary: offer,
+      description: `${offer} Applicants submit a project proposal, a budget and a faculty recommendation before the March deadline.`,
+    });
+
+    expect(payload.cardSummary).toBe(offer);
+  });
+
   it('clears isAcceptingApplications when the deadline has already passed', () => {
     const now = new Date('2026-08-22T00:00:00.000Z');
     const payload = publicFellowshipForStudent(

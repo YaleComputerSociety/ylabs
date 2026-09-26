@@ -2,6 +2,7 @@ import type { ResearcherProfileLinkHealthStatus } from '../models/researcher';
 import type { SourceLinkHealth } from '../services/sourceLinkHealth';
 import { isYaleOfficialProfileUrl } from './backfillResearcherOfficialProfileLinksCore';
 import { personPageNameTokensFromUrl } from '../scrapers/utils/personProfileEntityMatch';
+import { givenNameTokensAgree } from '../scrapers/utils/piNameMatch';
 
 export type OfficialProfileLinkVerdict = 'healthy' | 'repaired' | 'dead' | 'inconclusive';
 
@@ -91,88 +92,22 @@ export function officialProfileLinkHost(url: unknown): string | undefined {
   }
 }
 
+/**
+ * An apostrophe inside a surname is elided, not treated as a token boundary,
+ * because Yale's own slugs elide it: `O'Hern` is published at
+ * `/profile/corey-ohern`. Splitting on it yields `o` + `hern`, whose surname token
+ * matches no slug, so every apostrophe surname failed `profileSlugNamesPerson` and
+ * could never be repaired (#2522).
+ */
+const foldNameApostrophes = (value: string): string => value.replace(/['’ʼ]/g, '');
+
 const personNameTokens = (displayName: unknown): string[] =>
   typeof displayName === 'string'
-    ? displayName
+    ? foldNameApostrophes(displayName)
         .toLowerCase()
         .split(/[^a-z]+/i)
         .filter(Boolean)
     : [];
-
-const GIVEN_NAME_SHORT_FORM_GROUPS: readonly (readonly string[])[] = [
-  ['phil', 'philip', 'phillip'],
-  ['chris', 'christopher', 'christina', 'christine', 'christian'],
-  ['mike', 'michael'],
-  ['nick', 'nicholas'],
-  ['matt', 'matthew'],
-  ['greg', 'gregory'],
-  ['jeff', 'jeffrey', 'jeffery'],
-  ['steve', 'stephen', 'steven'],
-  ['tony', 'anthony'],
-  ['tom', 'thomas'],
-  ['tim', 'timothy'],
-  ['dan', 'daniel'],
-  ['ben', 'benjamin'],
-  ['sam', 'samuel', 'samantha'],
-  ['jim', 'james'],
-  ['jack', 'john'],
-  ['bill', 'william'],
-  ['bob', 'robert'],
-  ['rob', 'robert'],
-  ['rick', 'richard'],
-  ['ken', 'kenneth'],
-  ['andy', 'andrew'],
-  ['joe', 'joseph'],
-  ['pete', 'peter'],
-  ['ron', 'ronald'],
-  ['don', 'donald'],
-  ['fred', 'frederick'],
-  ['hank', 'henry'],
-  ['chuck', 'charles'],
-  ['charlie', 'charles'],
-  ['larry', 'lawrence'],
-  ['terry', 'terence'],
-  ['gabe', 'gabriel'],
-  ['liz', 'elizabeth'],
-  ['beth', 'elizabeth'],
-  ['betsy', 'elizabeth'],
-  ['kate', 'katherine', 'kathryn'],
-  ['kathy', 'katherine', 'kathryn'],
-  ['cathy', 'catherine'],
-  ['sue', 'susan'],
-  ['meg', 'margaret'],
-  ['maggie', 'margaret'],
-  ['peggy', 'margaret'],
-  ['jen', 'jennifer'],
-  ['jenny', 'jennifer'],
-  ['becky', 'rebecca'],
-  ['deb', 'deborah'],
-  ['debbie', 'deborah'],
-  ['pam', 'pamela'],
-  ['barb', 'barbara'],
-  ['abby', 'abigail'],
-];
-
-const GIVEN_NAME_SHORT_FORM_PAIRS: ReadonlySet<string> = new Set(
-  GIVEN_NAME_SHORT_FORM_GROUPS.flatMap(([shortForm, ...fullForms]) =>
-    fullForms.flatMap((fullForm) => [`${shortForm}:${fullForm}`, `${fullForm}:${shortForm}`]),
-  ),
-);
-
-/**
- * Whether two given-name tokens are the same name written short and long
- * (`phil`/`philip`, `chris`/`christopher`). The short forms are enumerated rather
- * than derived, because every generic rule that admits a short form also admits
- * two genuinely different names: a prefix rule reads `sara`/`sarah` and
- * `alex`/`alexandra` as one person, and a first-letter rule lets `a` stand in for
- * `alison`. Both are how a same-surname colleague gets claimed (#468), and this
- * lane overwrites a served identity link, so an unlisted short form must lose a
- * repair rather than win a wrong one.
- */
-export function givenNameTokensAgree(a: string, b: string): boolean {
-  if (a === b) return true;
-  return GIVEN_NAME_SHORT_FORM_PAIRS.has(`${a}:${b}`);
-}
 
 /**
  * Whether a candidate person-page slug names the same person as a display name.
@@ -200,7 +135,7 @@ export function profileSlugNamesPerson(candidateUrl: unknown, displayName: unkno
  * The person-page slug a department would mint from a display name.
  */
 export function personNameSlug(displayName: unknown): string {
-  return String(displayName ?? '')
+  return foldNameApostrophes(String(displayName ?? ''))
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -305,4 +240,136 @@ export function summarizeDepartmentLinkHealth(
   return [...byHost.values()].sort(
     (a, b) => b.dead + b.repaired - (a.dead + a.repaired) || b.total - a.total,
   );
+}
+
+/**
+ * Whether a link is due for a re-probe, given how long ago it was last verified.
+ *
+ * `--limit` truncates the head of a stable read order and the candidate list never
+ * skipped anything, so a bounded run re-probed the same first N links every time
+ * and could not advance past them: the tail was not merely sampled, it was
+ * permanently unreachable, and the never-probed population this lane exists to
+ * drain would sit there forever (#3222). Filtering on staleness is what turns
+ * `--limit` into a rate limiter instead of a blind spot, because a link verified
+ * by one run drops out of the next run's candidates.
+ *
+ * Age is not the only thing that makes a link due, and reading it that way made
+ * the window skip the exact population it was added to drain. A link probed
+ * yesterday that came back 403 carries a fresh `verifiedAt` and a stored status of
+ * `UNKNOWN`, which is the absence of a verdict rather than a verdict; treating it
+ * as fresh parked it for the whole window. Measured when this was age-only: a
+ * 30-day window on the largest host reported 0 links due while 439 links corpus-wide
+ * held no decisive status at all. So a link is due unless it is BOTH recent AND
+ * decisively judged.
+ *
+ * A link with no `verifiedAt` is always due too. That is the population with no
+ * recorded fact at all, so it is the last thing a bounded run should skip.
+ */
+/**
+ * Hours a link that did NOT settle waits before being probed again (#3303).
+ *
+ * `verifiedAt` is already stamped on every probe, settled or not, but an unsettled link
+ * was treated as always due, so a run that met a throttle wall on the largest host
+ * re-probed exactly the same links in the same order on the next pass and stopped in the
+ * same place. The links beyond the wall were never reached, and the `UNKNOWN` count came
+ * out identical run after run, which is the signature this fixes.
+ *
+ * The rule it must not break is the one below it: an `UNKNOWN` stored status is the
+ * absence of a probed fact, so it can never be treated as fresh indefinitely. This is a
+ * back-off, not a cache. After the window the link is due again, so nothing is
+ * permanently masked by a bot-blocked probe.
+ *
+ * The window has to be LONGER than the interval between runs of the stage, or it defers
+ * nothing: the next pass arrives after the window has already expired and re-probes the
+ * same wall. 20 hours suits a daily sweep, so consecutive days rotate through the links a
+ * throttled host refused rather than retrying the same head of the list. Measured on
+ * Development, all 297 remaining `UNKNOWN` links have been attempted at least once and
+ * none is unattempted, so this population is exactly the one the window governs.
+ */
+export const DEFAULT_UNSETTLED_RETRY_HOURS = 20;
+
+export function isProfileLinkDueForVerification(
+  verifiedAt: unknown,
+  staleAfterDays: number,
+  now: Date = new Date(),
+  storedHealthStatus?: unknown,
+  unsettledRetryHours: number = DEFAULT_UNSETTLED_RETRY_HOURS,
+): boolean {
+  if (staleAfterDays <= 0) return true;
+  const attempted = verifiedAt instanceof Date ? verifiedAt : new Date(String(verifiedAt ?? ''));
+  const neverAttempted = Number.isNaN(attempted.getTime());
+  const settled = storedHealthStatus === 'HEALTHY' || storedHealthStatus === 'UNAVAILABLE';
+
+  if (!settled) {
+    // Never attempted is always due: a back-off may only defer a link we have tried.
+    if (neverAttempted || unsettledRetryHours <= 0) return true;
+    const ageHours = (now.getTime() - attempted.getTime()) / 3_600_000;
+    return ageHours >= unsettledRetryHours;
+  }
+
+  if (neverAttempted) return true;
+  const ageDays = (now.getTime() - attempted.getTime()) / 86_400_000;
+  return ageDays >= staleAfterDays;
+}
+
+export interface ProfileLinkVerificationCoverage {
+  /** Links the staleness filter judged due, before `--limit` narrows them. */
+  linksDue: number;
+  /** Links this run set out to probe, after `--limit`. */
+  attempted: number;
+  probed: number;
+  hostsPlanned: number;
+  hostsCompleted: number;
+  /** Attempted links this run did not reach. Non-zero means it stopped early. */
+  linksUnreached: number;
+  /** Due links no run has reached yet, whether because of `--limit` or an early stop. */
+  linksStillDue: number;
+  complete: boolean;
+}
+
+/**
+ * Whether a run covered what it set out to cover, reported as numbers rather than
+ * as an exit code.
+ *
+ * The lane died four times in one night on the host that carries most of the corpus,
+ * and because the report was written once after the last host, a death at 90% wrote
+ * nothing and was indistinguishable from a death at 0%: the only way to tell was to
+ * read the corpus. `complete` is derived from hosts finished rather than from the
+ * process exiting, so a partial run is reportable as partial (#3303).
+ *
+ * `complete` deliberately does NOT mean "nothing is left due". A bounded run is
+ * complete when it finishes the hosts it planned, and `linksStillDue` carries what a
+ * later run must pick up. Conflating the two would make every rate-limited run look
+ * broken, which is how a real failure stops being read.
+ */
+export function profileLinkVerificationCoverage(input: {
+  linksDue: number;
+  attempted: number;
+  probed: number;
+  hostsPlanned: number;
+  hostsCompleted: number;
+}): ProfileLinkVerificationCoverage {
+  const linksUnreached = Math.max(0, input.attempted - input.probed);
+  return {
+    linksDue: input.linksDue,
+    attempted: input.attempted,
+    probed: input.probed,
+    hostsPlanned: input.hostsPlanned,
+    hostsCompleted: input.hostsCompleted,
+    linksUnreached,
+    linksStillDue: Math.max(0, input.linksDue - input.probed),
+    complete: input.hostsCompleted === input.hostsPlanned && linksUnreached === 0,
+  };
+}
+
+/**
+ * How many of a run's probes ended in a verdict that can be stored.
+ *
+ * A throttled 403 is retryable and settles nothing, so "probed" overstates progress
+ * on a host that rate-limits: the count of links verified is never the count of links
+ * that gained a verdict. Reported separately so a run that drew blocks reads as one
+ * (#3303).
+ */
+export function decisiveVerdictCount(rows: readonly OfficialProfileLinkRow[]): number {
+  return rows.filter((row) => row.verdict !== 'inconclusive').length;
 }

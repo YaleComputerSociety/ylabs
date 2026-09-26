@@ -19,10 +19,7 @@ import {
   candidateCrawlUrls,
   buildLLMPrompt,
   LAB_UNDERGRAD_RESPONSE_FORMAT,
-  LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT,
-  LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT,
   LAB_UNDERGRAD_SYSTEM_PROMPT,
-  logisticsAcquisitionAllowed,
   extractionToObservations,
   deriveCurrentUndergradCount,
   isHistoricalUndergradEvidence,
@@ -305,233 +302,6 @@ describe('LLM extraction contract', () => {
   });
 });
 
-describe('claim-specific undergraduate logistics extraction', () => {
-  it('emits isolated logistics observations only when the exact quote exists on a source page', () => {
-    const sourceUrl = 'https://smith.example.com/join';
-    const sourceText =
-      'Sophomores and juniors may apply. The role is paid. Expect 8 to 10 hours per week. Work is hybrid. Applications are currently open.';
-    const observations = extractionToObservations(
-      'smith-lab',
-      sourceUrl,
-      {
-        openToUndergrads: 'unclear',
-        currentUndergradCount: 0,
-        evidenceQuote: '',
-        evidenceSource: 'none',
-        joinPageUrl: sourceUrl,
-        eligibleStudentLevels: ['SOPHOMORE', 'JUNIOR'],
-        eligibilityQuote: 'Sophomores and juniors may apply.',
-        compensationModes: ['PAID'],
-        compensationQuote: 'The role is paid.',
-        timeCommitmentMinHours: 8,
-        timeCommitmentMaxHours: 10,
-        timeCommitmentQuote: 'Expect 8 to 10 hours per week.',
-        modalityModes: ['HYBRID'],
-        modalityQuote: 'Work is hybrid.',
-        currentAvailability: 'OPEN',
-        currentAvailabilityQuote: 'Applications are currently open.',
-        availabilityValidThrough: null,
-      },
-      new Date('2026-07-14T00:00:00.000Z'),
-      {
-        sourceUrls: [sourceUrl],
-        sourcePages: [{ url: sourceUrl, text: sourceText }],
-      },
-    );
-
-    expect(observations.map((row) => row.field)).toEqual(
-      expect.arrayContaining([
-        'undergraduateLogisticsStudentLevel',
-        'undergraduateLogisticsCompensation',
-        'undergraduateLogisticsTimeCommitment',
-        'undergraduateLogisticsModality',
-        'undergraduateLogisticsCurrentAvailability',
-      ]),
-    );
-    const compensation = observations.find(
-      (row) => row.field === 'undergraduateLogisticsCompensation',
-    );
-    expect(compensation).toMatchObject({
-      sourceUrl,
-      value: {
-        schemaVersion: 1,
-        claimType: 'COMPENSATION',
-        value: { modes: ['PAID'] },
-        evidenceQuote: 'The role is paid.',
-        quoteVerified: true,
-      },
-    });
-  });
-
-  it('does not emit a logistics claim when its quote is absent from fetched source text', () => {
-    const observations = extractionToObservations(
-      'smith-lab',
-      'https://smith.example.com/',
-      {
-        openToUndergrads: 'unclear',
-        currentUndergradCount: 0,
-        evidenceQuote: '',
-        evidenceSource: 'none',
-        joinPageUrl: null,
-        compensationModes: ['PAID'],
-        compensationQuote: 'This is a paid position.',
-      },
-      new Date('2026-07-14T00:00:00.000Z'),
-      {
-        sourcePages: [
-          { url: 'https://smith.example.com/', text: 'Undergraduate research information.' },
-        ],
-      },
-    );
-
-    expect(observations.some((row) => row.field === 'undergraduateLogisticsCompensation')).toBe(
-      false,
-    );
-  });
-
-  it('keeps an availability expiry when the normalized date occurs in its quote', () => {
-    const sourceUrl = 'https://smith.example.com/join';
-    const sourcePages = [
-      {
-        url: sourceUrl,
-        text: 'Applications are open through 2026-08-31.',
-      },
-    ];
-    const extraction: LLMExtraction = {
-      openToUndergrads: 'unclear',
-      currentUndergradCount: 0,
-      evidenceQuote: '',
-      evidenceSource: 'none',
-      joinPageUrl: sourceUrl,
-      currentAvailability: 'OPEN',
-      currentAvailabilityQuote: 'Applications are open through 2026-08-31.',
-      availabilityValidThrough: '2026-08-31',
-    };
-
-    const verified = extractionToObservations(
-      'smith-lab',
-      sourceUrl,
-      extraction,
-      new Date('2026-07-14T00:00:00.000Z'),
-      { sourcePages },
-    );
-    const unverified = extractionToObservations(
-      'smith-lab',
-      sourceUrl,
-      { ...extraction, availabilityValidThrough: '2026-08-30' },
-      new Date('2026-07-14T00:00:00.000Z'),
-      { sourcePages },
-    );
-
-    expect(
-      verified.find((row) => row.field === 'undergraduateLogisticsCurrentAvailability')?.value,
-    ).toMatchObject({ validThrough: '2026-08-31' });
-    expect(
-      unverified.find((row) => row.field === 'undergraduateLogisticsCurrentAvailability')?.value,
-    ).not.toHaveProperty('validThrough');
-
-    const humanReadable = extractionToObservations(
-      'smith-lab',
-      sourceUrl,
-      {
-        ...extraction,
-        currentAvailabilityQuote: 'Applications close August 15, 2026.',
-        availabilityValidThrough: '2026-08-15',
-      },
-      new Date('2026-07-14T00:00:00.000Z'),
-      {
-        sourcePages: [
-          {
-            url: sourceUrl,
-            text: 'Applications close August 15, 2026.',
-          },
-        ],
-      },
-    );
-    expect(
-      humanReadable.find((row) => row.field === 'undergraduateLogisticsCurrentAvailability')?.value,
-    ).toMatchObject({ validThrough: '2026-08-15' });
-  });
-
-  it('derives NOT_CURRENTLY_AVAILABLE from an explicit non-acceptance constraint quote when the LLM left availability UNKNOWN', () => {
-    const sourceUrl = 'https://smith.example.com/join';
-    const quote = 'We are not currently accepting undergraduate researchers.';
-    const observations = extractionToObservations(
-      'smith-lab',
-      sourceUrl,
-      {
-        openToUndergrads: 'unclear',
-        currentUndergradCount: 0,
-        evidenceQuote: '',
-        evidenceSource: 'none',
-        joinPageUrl: sourceUrl,
-        currentAvailability: 'UNKNOWN',
-        currentAvailabilityQuote: '',
-        explicitConstraintQuote: quote,
-      },
-      new Date('2026-07-14T00:00:00.000Z'),
-      { sourcePages: [{ url: sourceUrl, text: quote }] },
-    );
-
-    expect(
-      observations.find((row) => row.field === 'undergraduateLogisticsCurrentAvailability')?.value,
-    ).toMatchObject({
-      claimType: 'CURRENT_AVAILABILITY',
-      value: { status: 'NOT_CURRENTLY_AVAILABLE' },
-      evidenceQuote: quote,
-      quoteVerified: true,
-    });
-  });
-
-  it('does not derive availability from a contact-only constraint quote', () => {
-    const sourceUrl = 'https://smith.example.com/join';
-    const quote =
-      'I do not have bandwidth to respond to inquiries about undergraduate research opportunities.';
-    const observations = extractionToObservations(
-      'smith-lab',
-      sourceUrl,
-      {
-        openToUndergrads: 'unclear',
-        currentUndergradCount: 0,
-        evidenceQuote: '',
-        evidenceSource: 'none',
-        joinPageUrl: sourceUrl,
-        currentAvailability: 'UNKNOWN',
-        explicitConstraintQuote: quote,
-      },
-      new Date('2026-07-14T00:00:00.000Z'),
-      { sourcePages: [{ url: sourceUrl, text: quote }] },
-    );
-
-    expect(
-      observations.some((row) => row.field === 'undergraduateLogisticsCurrentAvailability'),
-    ).toBe(false);
-  });
-});
-
-describe('logisticsAcquisitionAllowed', () => {
-  it('requires an explicit bounded slug allowlist during staging', () => {
-    expect(logisticsAcquisitionAllowed({})).toBe(false);
-    expect(logisticsAcquisitionAllowed({ only: ['lab-a', 'LAB-A'] })).toBe(true);
-    expect(
-      logisticsAcquisitionAllowed({
-        only: Array.from({ length: 26 }, (_, index) => `lab-${index}`),
-      }),
-    ).toBe(false);
-  });
-
-  it('allows corpus-wide acquisition once production mode is confirmed', () => {
-    expect(logisticsAcquisitionAllowed({ logisticsProductionMode: true })).toBe(true);
-    expect(
-      logisticsAcquisitionAllowed({
-        only: Array.from({ length: 26 }, (_, index) => `lab-${index}`),
-        logisticsProductionMode: true,
-      }),
-    ).toBe(true);
-    expect(logisticsAcquisitionAllowed({ logisticsProductionMode: false })).toBe(false);
-  });
-});
-
 describe('sourceUrlForExtraction', () => {
   it('returns the page whose text contains the evidence quote', () => {
     const ext: LLMExtraction = {
@@ -563,7 +333,7 @@ describe('sourceUrlForExtraction', () => {
 describe('extractionToObservations', () => {
   const fixedDate = new Date('2026-04-27T12:00:00Z');
 
-  it('emits evidence-shaped access observations plus legacy compatibility on yes', () => {
+  it('emits an evidence-shaped access observation and no bare boolean on yes', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'yes',
       currentUndergradCount: 0,
@@ -575,11 +345,9 @@ describe('extractionToObservations', () => {
       sourceUrls: ['https://x.example/', 'https://x.example/join'],
       quoteSourceUrl: 'https://x.example/join',
     });
-    const accepting = obs.find((o) => o.field === 'acceptingUndergrads');
-    expect(accepting).toBeDefined();
-    expect(accepting!.value).toBe(true);
-    expect(accepting!.confidenceOverride).toBe(0.5);
+    expect(obs.find((o) => o.field === 'acceptingUndergrads')).toBeUndefined();
     const evidence = obs.find((o) => o.field === 'undergradAccessEvidence');
+    expect(evidence!.confidenceOverride).toBe(0.5);
     expect(evidence!.value).toMatchObject({
       openToUndergrads: 'yes',
       evidenceSource: 'explicit_text',
@@ -678,6 +446,60 @@ describe('extractionToObservations', () => {
     expect(short?.value).not.toBe(full?.value);
     expect(String(short?.value).length).toBeLessThan(String(full?.value).length);
     expect(short?.confidenceOverride).toBe(0.55);
+  });
+
+  describe('a crawled page is a crawl seed until it is shown to be about this entity (#2570)', () => {
+    const climateExtraction: LLMExtraction = {
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'none',
+      joinPageUrl: null,
+      researchSummary:
+        'The lab studies urban climate adaptation using satellite imagery and field sensors.',
+      methodsQuote: 'We combine satellite imagery with field sensors',
+      topicsQuote: 'urban climate adaptation',
+    };
+    const sourceTexts = [
+      'Research: We combine satellite imagery with field sensors to study urban climate adaptation.',
+    ];
+    const paltielIdentity = {
+      slug: 'dept-mgmt-rowan-ashgrove',
+      name: 'Rowan Ashgrove - Research',
+    };
+
+    const descriptionFieldsFrom = (quoteSourceUrl: string, entityIdentity?: object) =>
+      extractionToObservations(paltielIdentity.slug, quoteSourceUrl, climateExtraction, fixedDate, {
+        sourceTexts,
+        quoteSourceUrl,
+        entityIdentity,
+      })
+        .filter((o) => o.field === 'fullDescription' || o.field === 'shortDescription')
+        .map((o) => o.field);
+
+    it('refuses a paginated faculty index as a description source', () => {
+      expect(
+        descriptionFieldsFrom(
+          'https://som.yale.edu/faculty-research/faculty-directory?page=1',
+          paltielIdentity,
+        ),
+      ).toEqual([]);
+    });
+
+    it('refuses a person page belonging to somebody else', () => {
+      expect(
+        descriptionFieldsFrom(
+          'https://medicine.yale.edu/profile/juniper-fallowfield/',
+          paltielIdentity,
+        ),
+      ).toEqual([]);
+    });
+
+    it('still cites the entity own person page', () => {
+      expect(
+        descriptionFieldsFrom('https://medicine.yale.edu/profile/rowan-ashgrove/', paltielIdentity),
+      ).toEqual(['fullDescription']);
+    });
   });
 
   it('does not emit description observations when researchSummary is empty', () => {
@@ -818,7 +640,7 @@ describe('extractionToObservations', () => {
     expect(obs.find((o) => o.field === 'shortDescription')).toBeUndefined();
   });
 
-  it('emits acceptingUndergrads=false on no', () => {
+  it('emits a negative access evidence observation and no bare boolean on no', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'no',
       currentUndergradCount: 0,
@@ -827,15 +649,13 @@ describe('extractionToObservations', () => {
       joinPageUrl: null,
     };
     const obs = extractionToObservations('lab-bar', 'https://x.example/', ext, fixedDate);
-    const accepting = obs.find((o) => o.field === 'acceptingUndergrads');
-    expect(accepting!.value).toBe(false);
-    expect(accepting!.confidenceOverride).toBe(0.5);
-    expect(obs.find((o) => o.field === 'undergradAccessEvidence')!.value).toMatchObject({
-      openToUndergrads: 'no',
-    });
+    expect(obs.find((o) => o.field === 'acceptingUndergrads')).toBeUndefined();
+    const evidence = obs.find((o) => o.field === 'undergradAccessEvidence');
+    expect(evidence!.confidenceOverride).toBe(0.5);
+    expect(evidence!.value).toMatchObject({ openToUndergrads: 'no' });
   });
 
-  it('skips acceptingUndergrads observation entirely on unclear', () => {
+  it('skips the access evidence observation entirely on unclear', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'unclear',
       currentUndergradCount: 0,
@@ -844,7 +664,7 @@ describe('extractionToObservations', () => {
       joinPageUrl: null,
     };
     const obs = extractionToObservations('lab-baz', 'https://x.example/', ext, fixedDate);
-    expect(obs.find((o) => o.field === 'acceptingUndergrads')).toBeUndefined();
+    expect(obs.find((o) => o.field === 'undergradAccessEvidence')).toBeUndefined();
     expect(obs.find((o) => o.field === 'undergradEvidenceQuote')).toBeUndefined();
     // Only lastObservedAt
     expect(obs).toHaveLength(1);
@@ -1094,7 +914,7 @@ describe('selectLabsToProcess', () => {
       slug: 'lab-b',
       name: 'B',
       websiteUrl: 'https://b.example/',
-      manuallyLockedFields: ['acceptingUndergrads'],
+      manuallyLockedFields: ['undergradAccessEvidence'],
     },
     { _id: '3', slug: 'lab-c', name: 'C', websiteUrl: '', manuallyLockedFields: [] },
     {
@@ -1319,13 +1139,9 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(llmInput.userPrompt).toContain('We welcome undergraduate researchers');
     expect(llmInput.userPrompt).toContain('SUB-PAGE TEXT');
     expect(llmInput.userPrompt).toContain('Alice');
-    expect(llmInput.systemPrompt).toBe(LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT);
-    expect(llmInput.systemPrompt).not.toContain('eligibleStudentLevels');
-    expect(llmInput.responseFormat).toBe(LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT);
-    expect(
-      (llmInput.responseFormat as typeof LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT).json_schema.schema
-        .properties,
-    ).not.toHaveProperty('eligibleStudentLevels');
+    expect(llmInput.systemPrompt).toBe(LAB_UNDERGRAD_SYSTEM_PROMPT);
+    expect(llmInput.systemPrompt).toContain('undergradRoleQuote');
+    expect(llmInput.responseFormat).toBe(LAB_UNDERGRAD_RESPONSE_FORMAT);
 
     // Observations
     expect(result.entitiesObserved).toBe(1);
@@ -1339,7 +1155,6 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     const fields = emitted.map((o) => o.field).sort();
     expect(fields).toEqual(
       [
-        'acceptingUndergrads',
         'currentUndergradCount',
         'lastObservedAt',
         'sourceContentHash',
@@ -1347,10 +1162,9 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
         'undergradEvidenceQuote',
       ].sort(),
     );
-    const accepting = emitted.find((o) => o.field === 'acceptingUndergrads');
-    expect(accepting!.value).toBe(true);
-    expect(accepting!.confidenceOverride).toBe(0.5);
-    expect(accepting!.entityKey).toBe('smith-lab');
+    const evidence = emitted.find((o) => o.field === 'undergradAccessEvidence');
+    expect(evidence!.confidenceOverride).toBe(0.5);
+    expect(evidence!.entityKey).toBe('smith-lab');
     expect(emitted.find((o) => o.field === 'currentUndergradCount')!.value).toBe(3);
   });
 
@@ -1459,171 +1273,6 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       },
     });
     expect(logs.some((log) => log.includes('[fresh-lab] skipped by WorkPlanner'))).toBe(true);
-  });
-
-  it('keeps WorkPlanner freshness skips for cost control in confirmed production mode', async () => {
-    const fetchPage = vi.fn();
-    const callLLM = vi.fn();
-    const workPlanLoader: WorkPlanLoaderFn = async (lab, policy) => ({
-      entityType: policy.entityType,
-      entityKey: lab.slug,
-      sourceName: policy.sourceName,
-      fields: policy.targetFields.map((field) => ({
-        field,
-        shouldFetch: false,
-        reason: 'fresh' as const,
-        lastObservedAt: '2026-05-12T00:00:00.000Z',
-      })),
-      shouldFetch: false,
-    });
-
-    const scraper = newTestScraper({
-      fetchPage,
-      callLLM,
-      workPlanLoader,
-      labFinder: async () => [
-        {
-          _id: '1',
-          slug: 'fresh-lab',
-          name: 'Fresh Lab',
-          websiteUrl: 'https://fresh.example.com/',
-        },
-      ],
-      apiKey: 'sk-test',
-      env: { CONFIRM_LOGISTICS_ACQUISITION: 'true' },
-    });
-    const { ctx, emitted, logs } = makeContext({
-      exhaustive: true,
-      logisticsProductionMode: true,
-    });
-    await scraper.run(ctx);
-
-    expect(fetchPage).not.toHaveBeenCalled();
-    expect(callLLM).not.toHaveBeenCalled();
-    expect(emitted).toEqual([]);
-    expect(logs.some((log) => log.includes('[fresh-lab] skipped by WorkPlanner'))).toBe(true);
-  });
-
-  it('does not let a legacy heartbeat suppress bounded logistics acquisition', async () => {
-    const fetchPage = makeFetchPage({
-      'https://fresh.example.com/':
-        '<html><body><h1>Fresh Lab</h1><p>Undergraduate researchers are paid.</p></body></html>',
-    });
-    const callLLM = vi.fn(
-      async (): Promise<LLMExtraction> => ({
-        openToUndergrads: 'unclear',
-        currentUndergradCount: 0,
-        evidenceQuote: '',
-        evidenceSource: 'none',
-        joinPageUrl: null,
-        compensationModes: ['PAID'],
-        compensationQuote: 'Undergraduate researchers are paid.',
-      }),
-    );
-    const workPlanLoader = vi.fn();
-    const scraper = newTestScraper({
-      fetchPage,
-      callLLM,
-      workPlanLoader,
-      labFinder: async () => [
-        {
-          _id: '1',
-          slug: 'fresh-lab',
-          name: 'Fresh Lab',
-          websiteUrl: 'https://fresh.example.com/',
-        },
-      ],
-      apiKey: 'sk-test',
-    });
-    const { ctx, emitted } = makeContext({ only: ['fresh-lab'] });
-
-    await scraper.run(ctx);
-
-    expect(workPlanLoader).not.toHaveBeenCalled();
-    expect(fetchPage).toHaveBeenCalledWith('https://fresh.example.com/');
-    expect(callLLM).toHaveBeenCalledTimes(1);
-    expect(emitted.some((item) => item.field === 'undergraduateLogisticsCompensation')).toBe(true);
-  });
-
-  it('keeps corpus-wide logistics acquisition disabled without CONFIRM_LOGISTICS_ACQUISITION', async () => {
-    const fetchPage = makeFetchPage({
-      'https://fresh.example.com/':
-        '<html><body><h1>Fresh Lab</h1><p>Undergraduate researchers are paid.</p></body></html>',
-    });
-    const callLLM = vi.fn(
-      async (): Promise<LLMExtraction> => ({
-        openToUndergrads: 'unclear',
-        currentUndergradCount: 0,
-        evidenceQuote: '',
-        evidenceSource: 'none',
-        joinPageUrl: null,
-        compensationModes: ['PAID'],
-        compensationQuote: 'Undergraduate researchers are paid.',
-      }),
-    );
-    const scraper = newTestScraper({
-      fetchPage,
-      callLLM,
-      labFinder: async () => [
-        {
-          _id: '1',
-          slug: 'fresh-lab',
-          name: 'Fresh Lab',
-          websiteUrl: 'https://fresh.example.com/',
-        },
-      ],
-      apiKey: 'sk-test',
-      env: {},
-    });
-    const { ctx, emitted, logs } = makeContext({
-      exhaustive: true,
-      logisticsProductionMode: true,
-    });
-
-    await scraper.run(ctx);
-
-    expect(emitted.some((item) => item.field === 'undergraduateLogisticsCompensation')).toBe(false);
-    expect(logs.some((log) => log.includes('CONFIRM_LOGISTICS_ACQUISITION=true'))).toBe(true);
-  });
-
-  it('emits corpus-wide logistics once production mode is confirmed via environment', async () => {
-    const fetchPage = makeFetchPage({
-      'https://fresh.example.com/':
-        '<html><body><h1>Fresh Lab</h1><p>Undergraduate researchers are paid.</p></body></html>',
-    });
-    const callLLM = vi.fn(
-      async (): Promise<LLMExtraction> => ({
-        openToUndergrads: 'unclear',
-        currentUndergradCount: 0,
-        evidenceQuote: '',
-        evidenceSource: 'none',
-        joinPageUrl: null,
-        compensationModes: ['PAID'],
-        compensationQuote: 'Undergraduate researchers are paid.',
-      }),
-    );
-    const scraper = newTestScraper({
-      fetchPage,
-      callLLM,
-      labFinder: async () => [
-        {
-          _id: '1',
-          slug: 'fresh-lab',
-          name: 'Fresh Lab',
-          websiteUrl: 'https://fresh.example.com/',
-        },
-      ],
-      apiKey: 'sk-test',
-      env: { CONFIRM_LOGISTICS_ACQUISITION: 'true' },
-    });
-    const { ctx, emitted } = makeContext({
-      exhaustive: true,
-      logisticsProductionMode: true,
-    });
-
-    await scraper.run(ctx);
-
-    expect(emitted.some((item) => item.field === 'undergraduateLogisticsCompensation')).toBe(true);
   });
 
   it('can bypass WorkPlanner for full audit runs', async () => {
@@ -1847,7 +1496,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(result.fetchMetrics?.summary.byMode.http?.succeeded).toBe(1);
   });
 
-  it('continues logistics acquisition while preserving a legacy acceptance lock', async () => {
+  it('keeps emitting other observations while preserving a legacy acceptance lock', async () => {
     const fetchPage = makeFetchPage({
       'https://locked.yale.edu/': HOME_HTML.replace(
         '</body>',
@@ -1867,8 +1516,6 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
           evidenceQuote: 'We welcome undergraduate researchers.',
           evidenceSource: 'explicit_text',
           joinPageUrl: null,
-          compensationModes: ['PAID'],
-          compensationQuote: 'Undergraduate researchers are paid.',
         };
       },
     );
@@ -1878,7 +1525,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
         slug: 'locked-lab',
         name: 'Locked',
         websiteUrl: 'https://locked.yale.edu/',
-        manuallyLockedFields: ['acceptingUndergrads'],
+        manuallyLockedFields: ['undergradAccessEvidence'],
       },
     ];
 
@@ -1892,8 +1539,8 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     await scraper.run(ctx);
 
     expect(fetchPage).toHaveBeenCalledWith('https://locked.yale.edu/');
-    expect(emitted.some((item) => item.field === 'undergraduateLogisticsCompensation')).toBe(true);
-    expect(emitted.some((item) => item.field === 'acceptingUndergrads')).toBe(false);
+    expect(emitted.some((item) => item.field === 'undergradEvidenceQuote')).toBe(true);
+    expect(emitted.some((item) => item.field === 'undergradAccessEvidence')).toBe(false);
   });
 
   it('respects the --only filter (slug allowlist)', async () => {
@@ -1926,8 +1573,8 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
 
     expect(fetchPage).not.toHaveBeenCalledWith('https://a.example/');
     expect(fetchPage).toHaveBeenCalledWith('https://b.example/');
-    // openToUndergrads was 'unclear' → no acceptingUndergrads obs, only lastObservedAt
-    expect(emitted.find((o) => o.field === 'acceptingUndergrads')).toBeUndefined();
+    // openToUndergrads was 'unclear' → no access evidence obs, only lastObservedAt
+    expect(emitted.find((o) => o.field === 'undergradAccessEvidence')).toBeUndefined();
   });
 
   it('continues to the next lab when the LLM call throws', async () => {
@@ -2017,7 +1664,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(emitted.every((o) => o.entityKey !== 'gone-lab')).toBe(true);
     // present-lab got its observations
     expect(
-      emitted.some((o) => o.entityKey === 'present-lab' && o.field === 'acceptingUndergrads'),
+      emitted.some((o) => o.entityKey === 'present-lab' && o.field === 'undergradAccessEvidence'),
     ).toBe(true);
   });
 

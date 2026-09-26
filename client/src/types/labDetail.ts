@@ -14,12 +14,10 @@ export type LabMemberRole =
   | 'co-director'
   | 'core-faculty'
   | 'affiliated'
-  | 'alumni'
   | 'postdoc'
   | 'grad-student'
   | 'undergrad'
-  | 'staff'
-  | 'affiliate';
+  | 'staff';
 
 export interface LabMemberUser {
   _id?: string;
@@ -37,6 +35,8 @@ export interface LabMemberUser {
   profile_urls?: Record<string, string>;
   website?: string;
   websiteUrl?: string;
+  orcid?: string;
+  orcidUrl?: string;
   title?: string;
 }
 
@@ -70,41 +70,11 @@ export interface LabAccessSignal {
   observedAt?: string;
 }
 
-export type UndergraduateLogisticsClaimType =
-  | 'STUDENT_LEVEL'
-  | 'COMPENSATION'
-  | 'TIME_COMMITMENT'
-  | 'MODALITY'
-  | 'CURRENT_AVAILABILITY';
-
-export type UndergraduateLogisticsClaimState =
-  | 'known'
-  | 'unknown'
-  | 'stale_under_review'
-  | 'conflicting_withheld';
-
-export interface UndergraduateLogisticsClaim {
-  claimType: UndergraduateLogisticsClaimType;
-  state: UndergraduateLogisticsClaimState;
-  value?: {
-    levels?: string[];
-    modes?: string[];
-    minHours?: number;
-    maxHours?: number;
-    period?: 'WEEK';
-    status?: string;
-  };
-  evidence?: {
-    sourceUrl: string;
-    excerpt: string;
-    observedAt: string;
-    expiresAt: string;
-  };
-}
-
-export interface UndergraduateLogisticsPayload {
-  status: 'ready' | 'unavailable';
-  claims: UndergraduateLogisticsClaim[];
+export interface DepartmentCourseCreditRoute {
+  departmentName: string;
+  evidenceQuote: string;
+  sourceUrl: string;
+  observedAt?: string;
 }
 
 export interface LabEntityRelationship {
@@ -139,7 +109,7 @@ export interface LabDetailPayload {
   members: LabMember[];
   roster?: LabRosterDisclosure;
   accessSignals?: LabAccessSignal[];
-  undergraduateLogistics?: UndergraduateLogisticsPayload;
+  departmentCourseCreditRoutes?: DepartmentCourseCreditRoute[];
   entityRelationships?: LabEntityRelationship[];
   relatedResearchEntities?: LabRelatedResearchEntitySummary[];
   relatedResearchEntitiesMeta?: LabRelationshipCollectionMeta;

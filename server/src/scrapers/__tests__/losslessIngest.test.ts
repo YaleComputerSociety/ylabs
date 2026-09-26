@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearC4Flags } from './c4FlagTestEnv';
 import { Observation } from '../../models/observation';
 import { appendObservations, collapseLatestWins } from '../observationStore';
 import {
@@ -6,6 +7,10 @@ import {
   resolveFieldRanked,
   type ResolverObservation,
 } from '../confidenceResolver';
+
+// Each test states its own C4 flag position; none inherits one from the
+// ambient environment (#2063).
+beforeEach(clearC4Flags);
 
 const USEFUL_DESCRIPTION =
   'The laboratory investigates how gene regulatory networks control immune cell differentiation, ' +

@@ -21,9 +21,17 @@
  * and boilerplate; output must be grounded in the source, pass the quality bar,
  * and classify as genuine lab prose or it is rejected. Candidates are entities
  * the deterministic pass flags as inadequate (stub, off-topic, thin, empty, or
- * short==full). Requires an explicit --limit to bound generation; apply also
- * requires --confirm-llm-synthesis and is production blocked. It reports a
- * cost/quality projection from real token usage and before/after samples.
+ * short==full). A corpus run requires an explicit --limit to bound generation;
+ * a run scoped with one or more --record-id= processes every candidate in that
+ * claimed set and needs no --limit, and the report accounts for every claimed id
+ * that produced no processed row. Apply also requires --confirm-llm-synthesis,
+ * is production blocked, and writes durable fullDescription/shortDescription
+ * observations carrying the same sanitized pair the entity fields receive, so a
+ * later re-materialize resolves the synthesized prose instead of blanking it back
+ * to thin. A row fails closed when either sanitizer collapses its output to empty
+ * or the observation store drops either observation, so a counted update always
+ * means a field write backed by durable evidence. It reports a cost/quality
+ * projection from real token usage and before/after samples.
  *
  * LLM rewrite lane (--llm-rewrite): grounded rewrite of description-blocked
  * homes whose stored bio is CV/credential prose. The LLM is instructed to use
@@ -55,7 +63,10 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
+import {
+  asResearchEntityType,
+  mapResearchGroupKindToEntityType,
+} from '../models/researchAccessTypes';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
 import {
   sanitizeResearchEntityDescription,
@@ -67,6 +78,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { openAiChatSampling } from '../utils/openAiChatSampling';
+import { rankPersonProfileUrls } from '../utils/personProfileRanking';
 import type { ObservationInput } from '../scrapers/types';
 import {
   assessEntityDescription,
@@ -118,6 +130,12 @@ const MIN_SOURCE_CHARS = 150;
 const MIN_GROUNDING = 0.6;
 const SOURCE_NAME = 'lab-microsite-description-llm';
 const REWRITE_CONFIDENCE = 0.85;
+// The synthesis lane writes under the same source name as the rewrite lane, so an
+// unequal weight would let one lane silently outrank the other on the same field.
+const SYNTHESIS_CONFIDENCE = REWRITE_CONFIDENCE;
+const SYNTHESIS_OBSERVED_FIELD_COUNT = 2;
+// The card lane observes one field, `shortDescription`.
+const CARD_OBSERVED_FIELD_COUNT = 1;
 const MAX_REWRITE_PROMPT_SOURCE_CHARS = 12000;
 const MAX_REWRITE_PROMPT_NAME_CHARS = 240;
 
@@ -148,6 +166,7 @@ const STOPWORDS = new Set([
 ]);
 
 const SHORT_BACKFILL_BATCH_SIZE = 200;
+const SERVED_TIER = 'student_ready';
 
 export interface ResearchDescriptionBackfillOptions {
   dryRun: boolean;
@@ -157,6 +176,14 @@ export interface ResearchDescriptionBackfillOptions {
   llmRewrite: boolean;
   llmSynthesis: boolean;
   cardSynthesis: boolean;
+  /**
+   * Widen the card lane's scan from the `missing_card_description` blocker to every
+   * served row, so a row whose card is a career biography is reachable. It carries
+   * no blocker - it is `student_ready` on a complete card - so the blocker query
+   * cannot see it, and asking an operator to paste a slug list from a 25-minute
+   * corpus walk makes the lane unrunnable in practice (#3098).
+   */
+  servedCardBiographies: boolean;
   confirmShortDescriptions: boolean;
   confirmLlmSynthesis: boolean;
   confirmCardSynthesis: boolean;
@@ -178,6 +205,7 @@ export function parseResearchDescriptionBackfillArgs(
     llmRewrite: false,
     llmSynthesis: false,
     cardSynthesis: false,
+    servedCardBiographies: false,
     confirmShortDescriptions: false,
     confirmLlmSynthesis: false,
     confirmCardSynthesis: false,
@@ -190,6 +218,7 @@ export function parseResearchDescriptionBackfillArgs(
     else if (arg === '--llm-rewrite') options.llmRewrite = true;
     else if (arg === '--llm-synthesis') options.llmSynthesis = true;
     else if (arg === '--card-synthesis') options.cardSynthesis = true;
+    else if (arg === '--served-card-biographies') options.servedCardBiographies = true;
     else if (arg === '--confirm-research-descriptions') options.confirm = true;
     else if (arg === '--confirm-short-descriptions') options.confirmShortDescriptions = true;
     else if (arg === '--confirm-llm-synthesis') options.confirmLlmSynthesis = true;
@@ -349,17 +378,42 @@ export async function fetchGrantAbstract(entity: any): Promise<string> {
   return '';
 }
 
+const DESCRIPTION_PROVENANCE_FIELDS = new Set(['fullDescription', 'shortDescription']);
+
+/**
+ * The pages the entity's non-description evidence already cites. The lane's own
+ * description provenance is excluded on purpose: counting it would let whichever
+ * page wrote the current prose keep winning the next pass, which is how a stale
+ * cross-school mirror held the biography on rows whose department page was never
+ * read (#2835).
+ */
+function nonDescriptionProvenanceUrls(entity: any): string[] {
+  const provenance = entity?.fieldProvenance;
+  if (!provenance || typeof provenance !== 'object') return [];
+  return Object.entries(provenance as Record<string, { sourceUrl?: unknown }>)
+    .filter(([field]) => !DESCRIPTION_PROVENANCE_FIELDS.has(field))
+    .map(([, entry]) => entry?.sourceUrl)
+    .filter((url): url is string => typeof url === 'string');
+}
+
 function officialSourceUrl(entity: any): string {
-  const urls = [
-    entity.websiteUrl,
-    entity.website,
-    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
-  ].filter((u: unknown): u is string => typeof u === 'string' && /^https?:\/\//i.test(u));
-  return (
-    urls.find((u) => !/reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov|orcid\.org/i.test(u)) ||
-    urls[0] ||
-    ''
+  const httpUrl = (value: unknown): value is string =>
+    typeof value === 'string' && /^https?:\/\//i.test(value);
+  const isIdentifierUrl = (value: string): boolean =>
+    /reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov|orcid\.org/i.test(value);
+  const websiteUrls = [entity.websiteUrl, entity.website].filter(httpUrl);
+  const ownWebsite = websiteUrls.find((url) => !isIdentifierUrl(url));
+  if (ownWebsite) return ownWebsite;
+
+  const sourceUrls = (Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []).filter(httpUrl);
+  const [ranked] = rankPersonProfileUrls(
+    sourceUrls.filter((url: string) => !isIdentifierUrl(url)),
+    {
+      schools: [entity.school, ...(Array.isArray(entity.schools) ? entity.schools : [])],
+      provenanceUrls: nonDescriptionProvenanceUrls(entity),
+    },
   );
+  return ranked || websiteUrls[0] || sourceUrls[0] || '';
 }
 
 export interface ResearchDescriptionBackfillResult {
@@ -396,6 +450,9 @@ export async function runResearchDescriptionBackfill(options: {
       websiteUrl: 1,
       website: 1,
       sourceUrls: 1,
+      school: 1,
+      schools: 1,
+      fieldProvenance: 1,
     },
   ).lean();
 
@@ -741,6 +798,9 @@ interface SynthesisEntityDoc {
   websiteUrl?: unknown;
   website?: unknown;
   sourceUrls?: unknown;
+  school?: unknown;
+  schools?: unknown;
+  fieldProvenance?: unknown;
 }
 
 function stratifyByEntityType(
@@ -766,6 +826,40 @@ function stratifyByEntityType(
   return selected;
 }
 
+function accountClaimedScope(
+  recordIds: string[] | undefined,
+  docs: SynthesisEntityDoc[],
+  candidates: SynthesisEntityDoc[],
+  selected: SynthesisEntityDoc[],
+): ClaimedScopeAccounting | undefined {
+  const requested = Array.from(new Set(recordIds || []));
+  if (requested.length === 0) return undefined;
+  const idsOf = (rows: SynthesisEntityDoc[]) =>
+    new Set(rows.map((row) => serializedDocumentId(row._id) || String(row._id)));
+  const present = idsOf(docs);
+  const candidateIds = idsOf(candidates);
+  const selectedIds = idsOf(selected);
+  const unprocessed: ClaimedScopeAccounting['unprocessed'] = [];
+  for (const recordId of requested) {
+    if (selectedIds.has(recordId)) continue;
+    if (!present.has(recordId)) unprocessed.push({ recordId, reason: 'absent-or-archived' });
+    else if (!candidateIds.has(recordId)) unprocessed.push({ recordId, reason: 'not-a-candidate' });
+    else unprocessed.push({ recordId, reason: 'beyond-limit' });
+  }
+  return { requested: requested.length, selected: selectedIds.size, unprocessed };
+}
+
+export type UnprocessedClaimedRecordReason =
+  | 'absent-or-archived'
+  | 'not-a-candidate'
+  | 'beyond-limit';
+
+export interface ClaimedScopeAccounting {
+  requested: number;
+  selected: number;
+  unprocessed: Array<{ recordId: string; reason: UnprocessedClaimedRecordReason }>;
+}
+
 export interface LabDescriptionSynthesisResult {
   mode: 'dry-run' | 'apply';
   scanned: number;
@@ -774,6 +868,7 @@ export interface LabDescriptionSynthesisResult {
   synthesized: number;
   updated: number;
   skipped: Record<string, number>;
+  claimedScope?: ClaimedScopeAccounting;
   cost: {
     model: string;
     callCount: number;
@@ -798,35 +893,43 @@ export interface LabDescriptionSynthesisResult {
 
 export async function runLabDescriptionSynthesis(options: {
   dryRun: boolean;
-  limit: number;
+  limit?: number;
   projectedEntities: number;
+  recordIds?: string[];
   synthesizer?: LabDescriptionSynthesizer;
 }): Promise<LabDescriptionSynthesisResult> {
   const synthesize = options.synthesizer || defaultLabDescriptionSynthesizer;
-  const docs = (await ResearchEntity.find(
-    { archived: { $ne: true } },
-    {
-      _id: 1,
-      slug: 1,
-      name: 1,
-      displayName: 1,
-      entityType: 1,
-      kind: 1,
-      shortDescription: 1,
-      fullDescription: 1,
-      description: 1,
-      profileSynthesisDescription: 1,
-      researchAreas: 1,
-      websiteUrl: 1,
-      website: 1,
-      sourceUrls: 1,
-    },
-  )
+  const scopedIds = (options.recordIds || []).map((id) => new mongoose.Types.ObjectId(id));
+  const query: Record<string, unknown> = { archived: { $ne: true } };
+  if (scopedIds.length > 0) query._id = { $in: scopedIds };
+  const docs = (await ResearchEntity.find(query, {
+    _id: 1,
+    slug: 1,
+    name: 1,
+    displayName: 1,
+    entityType: 1,
+    kind: 1,
+    shortDescription: 1,
+    fullDescription: 1,
+    description: 1,
+    profileSynthesisDescription: 1,
+    researchAreas: 1,
+    websiteUrl: 1,
+    website: 1,
+    sourceUrls: 1,
+    school: 1,
+    schools: 1,
+    fieldProvenance: 1,
+  })
     .sort({ _id: 1 })
     .lean()) as SynthesisEntityDoc[];
 
   const candidates = docs.filter((doc) => isSynthesisCandidate(doc));
-  const selected = stratifyByEntityType([...candidates], options.limit);
+  const selected = options.limit
+    ? stratifyByEntityType([...candidates], options.limit)
+    : [...candidates];
+
+  const claimedScope = accountClaimedScope(options.recordIds, docs, candidates, selected);
 
   const skipped: Record<string, number> = {
     'no-source': 0,
@@ -834,6 +937,8 @@ export async function runLabDescriptionSynthesis(options: {
     ungrounded: 0,
     'low-quality': 0,
     'not-lab-focused': 0,
+    'sanitized-empty': 0,
+    'observation-dropped': 0,
     error: 0,
   };
   let attempted = 0;
@@ -843,6 +948,14 @@ export async function runLabDescriptionSynthesis(options: {
   let totalCompletionTokens = 0;
   let callCount = 0;
   const samples: LabDescriptionSynthesisResult['samples'] = [];
+
+  const source = options.dryRun ? null : await getSourceByName(SOURCE_NAME);
+  if (!options.dryRun && !source) {
+    throw new Error(
+      `Synthesis apply requires the '${SOURCE_NAME}' source row so the write is backed by a durable observation.`,
+    );
+  }
+  const synthesisRunId = new mongoose.Types.ObjectId().toString();
 
   for (const entity of selected) {
     let { sourceText, groundingAnchor } = buildSynthesisSources(entity);
@@ -875,6 +988,12 @@ export async function runLabDescriptionSynthesis(options: {
         skipped[verdict.reason ?? 'low-quality'] += 1;
         continue;
       }
+      const appliedFull = sanitizeResearchEntityDescription(output.fullDescription);
+      const appliedShort = sanitizeResearchEntityShortDescription(output.shortDescription);
+      if (!appliedFull || !appliedShort) {
+        skipped['sanitized-empty'] += 1;
+        continue;
+      }
       synthesized += 1;
       if (samples.length < SAMPLE_LIMIT * 2) {
         samples.push({
@@ -883,17 +1002,52 @@ export async function runLabDescriptionSynthesis(options: {
           grounding: Number(verdict.grounding.toFixed(2)),
           beforeFull: clip(String(entity.fullDescription || '')),
           beforeShort: clip(String(entity.shortDescription || '')),
-          afterFull: output.fullDescription,
-          afterShort: output.shortDescription,
+          afterFull: appliedFull,
+          afterShort: appliedShort,
         });
       }
-      if (!options.dryRun) {
+      if (!options.dryRun && source) {
+        const sourceUrl = officialSourceUrl(entity);
+        const entityId = serializedDocumentId(entity._id);
+        const appended = await appendObservations(
+          [
+            {
+              entityType: 'researchEntity',
+              entityId,
+              entityKey: entity.slug,
+              field: 'fullDescription',
+              value: appliedFull,
+              sourceUrl,
+              confidenceOverride: SYNTHESIS_CONFIDENCE,
+            },
+            {
+              entityType: 'researchEntity',
+              entityId,
+              entityKey: entity.slug,
+              field: 'shortDescription',
+              value: appliedShort,
+              sourceUrl,
+              confidenceOverride: SYNTHESIS_CONFIDENCE,
+            },
+          ],
+          {
+            sourceId: source._id,
+            sourceName: SOURCE_NAME,
+            scrapeRunId: synthesisRunId,
+            sourceWeight: SYNTHESIS_CONFIDENCE,
+            dryRun: false,
+          },
+        );
+        if (appended.inserted < SYNTHESIS_OBSERVED_FIELD_COUNT) {
+          skipped['observation-dropped'] += 1;
+          continue;
+        }
         await ResearchEntity.updateOne(
           { _id: entity._id },
           {
             $set: {
-              fullDescription: output.fullDescription,
-              shortDescription: output.shortDescription,
+              fullDescription: appliedFull,
+              shortDescription: appliedShort,
             },
           },
         );
@@ -923,6 +1077,7 @@ export async function runLabDescriptionSynthesis(options: {
     synthesized,
     updated,
     skipped,
+    ...(claimedScope ? { claimedScope } : {}),
     cost: {
       model: SYNTHESIS_MODEL,
       callCount,
@@ -938,11 +1093,20 @@ export async function runLabDescriptionSynthesis(options: {
   };
 }
 
+export function assertLlmSynthesisGenerationBounded(options: {
+  explicitLimit: boolean;
+  recordIds?: string[];
+}): void {
+  const scopedToClaimedSet = (options.recordIds || []).length > 0;
+  if (scopedToClaimedSet || options.explicitLimit) return;
+  throw new Error(
+    'LLM synthesis requires an explicit --limit to bound generation, or --record-id to scope it.',
+  );
+}
+
 async function runLlmSynthesisLane(options: ResearchDescriptionBackfillOptions): Promise<void> {
   const apply = !options.dryRun;
-  if (!options.explicitLimit) {
-    throw new Error('LLM synthesis requires an explicit --limit to bound generation.');
-  }
+  assertLlmSynthesisGenerationBounded(options);
   if (apply && !options.confirmLlmSynthesis) {
     throw new Error('LLM synthesis apply requires --confirm-llm-synthesis.');
   }
@@ -960,8 +1124,9 @@ async function runLlmSynthesisLane(options: ResearchDescriptionBackfillOptions):
   try {
     const result = await runLabDescriptionSynthesis({
       dryRun: options.dryRun,
-      limit: options.limit,
+      limit: options.explicitLimit ? options.limit : undefined,
       projectedEntities: options.projectedEntities,
+      recordIds: options.recordIds,
     });
     writeBackfillReport(
       options,
@@ -972,8 +1137,9 @@ async function runLlmSynthesisLane(options: ResearchDescriptionBackfillOptions):
         lane: 'llm-synthesis',
         options: {
           dryRun: options.dryRun,
-          limit: options.limit,
+          limit: options.explicitLimit ? options.limit : undefined,
           projectedEntities: options.projectedEntities,
+          recordIds: options.recordIds,
         },
         result,
       },
@@ -1026,7 +1192,17 @@ const CARD_SYNTHESIS_CONFIDENCE = 0.82;
 export interface CardSynthesisBackfillResult {
   mode: 'dry-run' | 'apply';
   scanned: number;
+  /**
+   * Rows whose card actually changed, which means rows whose observation was stored.
+   * It used to count every row the planner proposed a card for, including rows whose
+   * observation the store refused, and a field write with no backing observation does
+   * not survive the next resolve. So the count asserted a delivery that a re-read of
+   * the served surface disproved: an apply reporting 68 had moved 3 of the 4 rows in
+   * its replacement arm (#3158).
+   */
   updated: number;
+  /** Rows the observation store refused, which are neither written nor counted. */
+  observationDropped: number;
   summary: CardBackfillSummary;
   samples: Array<{
     slug?: string;
@@ -1041,6 +1217,7 @@ export async function runCardSynthesisBackfill(options: {
   dryRun: boolean;
   limit?: number;
   recordIds?: string[];
+  servedCardBiographies?: boolean;
   cardSynthesizer?: CardSynthesisLLMFn;
   cardModel?: string;
 }): Promise<CardSynthesisBackfillResult> {
@@ -1054,8 +1231,9 @@ export async function runCardSynthesisBackfill(options: {
   // (#1730/#1680 class) - otherwise a synthesized card can pass this script's
   // gate only to be rejected as sparse when actually served.
   const buildSynthesize = (doc: CardSynthesisEntityDoc): CardSynthesizeFn => {
-    const resolvedEntityType =
-      doc.entityType || (doc.kind ? mapResearchGroupKindToEntityType(doc.kind) : undefined);
+    const resolvedEntityType = asResearchEntityType(
+      doc.entityType || (doc.kind ? mapResearchGroupKindToEntityType(doc.kind) : undefined),
+    );
     return (fullDescription) =>
       apiKey
         ? synthesizeGroundedCardDescription({
@@ -1068,11 +1246,28 @@ export async function runCardSynthesisBackfill(options: {
   };
 
   const scopedIds = (options.recordIds || []).map((id) => new mongoose.Types.ObjectId(id));
-  const query: Record<string, unknown> = {
-    archived: { $ne: true },
-    studentVisibilityReasons: CARD_BLOCKER_REASON,
-  };
-  if (scopedIds.length > 0) query._id = { $in: scopedIds };
+  // Named rows are scoped to themselves rather than intersected with the card
+  // blocker, because the blocker is a selector for one cohort and not the definition
+  // of "needs a card". A served row whose card is a career biography carries no
+  // blocker at all - it is `student_ready` on a complete card - so intersecting made
+  // the whole #3098 cohort unreachable even when an operator named every row in it.
+  // The planner still decides per row, so widening the scope cannot widen the writes:
+  // a row whose card is acceptable returns `short-ok` and is not written.
+  const query: Record<string, unknown> = { archived: { $ne: true } };
+  if (scopedIds.length > 0) {
+    query._id = { $in: scopedIds };
+  } else if (options.servedCardBiographies) {
+    // Every served row, because the career-biography cohort carries no blocker and
+    // the planner is the selector: a row whose card is acceptable returns `short-ok`
+    // without calling the LLM, so scanning wide costs representation builds rather
+    // than generations.
+    query.$or = [
+      { studentVisibilityReasons: CARD_BLOCKER_REASON },
+      { studentVisibilityTier: SERVED_TIER },
+    ];
+  } else {
+    query.studentVisibilityReasons = CARD_BLOCKER_REASON;
+  }
   const docs = (await ResearchEntity.find(query, {
     _id: 1,
     slug: 1,
@@ -1087,6 +1282,9 @@ export async function runCardSynthesisBackfill(options: {
     websiteUrl: 1,
     website: 1,
     sourceUrls: 1,
+    school: 1,
+    schools: 1,
+    fieldProvenance: 1,
   })
     .sort({ _id: 1 })
     .lean()) as CardSynthesisEntityDoc[];
@@ -1121,6 +1319,7 @@ export async function runCardSynthesisBackfill(options: {
   const changed = rows.filter((row) => row.gainedCard && row.proposedShort);
 
   let updated = 0;
+  let observationDropped = 0;
   if (!options.dryRun && changed.length > 0) {
     const source = await getSourceByName(SOURCE_NAME);
     if (source) {
@@ -1129,7 +1328,7 @@ export async function runCardSynthesisBackfill(options: {
         const doc = docsById.get(row.id);
         if (!doc || !row.proposedShort) continue;
         const sourceUrl = officialSourceUrl(doc);
-        await appendObservations(
+        const appended = await appendObservations(
           [
             {
               entityType: 'researchEntity',
@@ -1149,6 +1348,17 @@ export async function runCardSynthesisBackfill(options: {
             dryRun: false,
           },
         );
+        // Fail closed on a refused observation, the way the synthesis lane above
+        // already does. The field write is what a student reads, but the observation
+        // is what makes it survive: the materializer resolves this field from
+        // observations, so a `$set` with no observation behind it is restored to the
+        // incumbent at the next resolve and the row silently reverts. Counting it was
+        // worse than losing it, because the count then asserted a delivery nothing
+        // had delivered (#3158).
+        if (appended.inserted < CARD_OBSERVED_FIELD_COUNT) {
+          observationDropped += 1;
+          continue;
+        }
         await ResearchEntity.updateOne(
           { _id: doc._id },
           { $set: { shortDescription: row.proposedShort } },
@@ -1162,6 +1372,7 @@ export async function runCardSynthesisBackfill(options: {
     mode: options.dryRun ? 'dry-run' : 'apply',
     scanned: rows.length,
     updated,
+    observationDropped,
     summary,
     samples: changed.slice(0, SAMPLE_LIMIT * 2).map((row) => ({
       slug: row.slug,
@@ -1200,6 +1411,7 @@ async function runCardSynthesisLane(options: ResearchDescriptionBackfillOptions)
       dryRun: options.dryRun,
       limit: options.explicitLimit ? options.limit : undefined,
       recordIds: options.recordIds,
+      servedCardBiographies: options.servedCardBiographies,
     });
     writeBackfillReport(
       options,

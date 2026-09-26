@@ -4,7 +4,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ScrapeSnapshot } from '../models/scrapeSnapshot';
-import { pruneDeadObservations } from '../scrapers/observationRetention';
+import {
+  observationReferenceCoverageWarning,
+  pruneDeadObservations,
+} from '../scrapers/observationRetention';
 import { applyObservationPruneEnvironmentGuards } from '../scrapers/scraperEnvironment';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -56,6 +59,15 @@ async function main(args: PruneDeadObservationsArgs): Promise<void> {
     ...(args.keepRuns !== undefined ? { keepRuns: args.keepRuns } : {}),
     ...(args.sourceName ? { sourceName: args.sourceName } : {}),
   });
+  if (!prune.projectionNeutral) {
+    console.warn(
+      '[prune-dead-observations] the materializer currently projects superseded rows (C4_LOSSLESS_INGEST), so these candidates are not dead storage and deletion is refused.',
+    );
+  }
+  const referenceCoverageWarning = observationReferenceCoverageWarning(prune.referenceSpecs);
+  if (referenceCoverageWarning) {
+    console.warn(`[prune-dead-observations] ${referenceCoverageWarning}`);
+  }
   const snapshotsAffected = args.dropSnapshotCache ? await dropSnapshotCache(apply) : undefined;
 
   const report = {

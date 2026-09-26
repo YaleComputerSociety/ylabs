@@ -11,12 +11,14 @@ import {
   isListingOrIndexUrl,
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../utils/researchHomeWebsiteUrl';
+import { personPagePrefixesForHost } from '../utils/yalePersonPagePrefix';
 
 export interface ResearchEntityPiDedupeRow {
   userId: string;
   normalizedName: string;
   piFirstName?: string;
   piLastName?: string;
+  primaryAppointmentProfileUrl?: string;
   entities: Array<{
     id: string;
     slug?: string;
@@ -27,12 +29,14 @@ export interface ResearchEntityPiDedupeRow {
     fullDescription?: string;
     shortDescription?: string;
     sourceUrls?: string[];
+    sourceLinkHealth?: unknown;
     departments?: string[];
     researchAreas?: string[];
     recentGrants?: unknown[];
     recentGrantCount?: number;
     fundingAgencies?: string[];
     piRoleCorroborated?: boolean;
+    identitySourceUrl?: string;
   }>;
 }
 
@@ -65,6 +69,13 @@ export interface MultiPersonEntityQuarantine {
   id: string;
   slug?: string;
   personIds: string[];
+}
+
+export interface ConflatedPersonProfileQuarantine {
+  canonicalEntityId: string;
+  canonicalSlug?: string;
+  duplicateSlugs: string[];
+  personProfileIdentities: string[];
 }
 
 export interface OfficialLabUrlDedupeRow {
@@ -131,6 +142,70 @@ export function mergedGrantEvidenceFromEntities(entities: ResearchEntityPiDedupe
   };
 }
 
+/**
+ * The observation fields a merge may re-key from an archived duplicate onto its survivor.
+ *
+ * Deliberately only the funding evidence. A grant enriches the row a person's profile
+ * owns and never asserts that row's identity (#3145), so re-keying a duplicate's `name`,
+ * `slug`, `kind`, `entityType` or `displayName` would move the fabricated "<person> Lab"
+ * claim that #3160 retired onto a row which had real evidence. Adding a field here
+ * grants its lane naming authority over the survivor, so a new entry needs evidence that
+ * the duplicate's lane was entitled to assert it.
+ */
+export const MERGE_RELINKABLE_OBSERVATION_FIELDS = [
+  'recentGrants',
+  'recentGrantCount',
+  'fundingAgencies',
+] as const;
+
+export interface StrandedObservationRelinkCandidate {
+  id: unknown;
+  entityKey?: string;
+  field?: string;
+  entityId?: unknown;
+}
+
+/**
+ * The funding observations a merge left stranded on an archived duplicate's key.
+ *
+ * The merge's reference relink is keyed on `entityId`, so an observation written with
+ * only an `entityKey` is never moved. Measured on Development, all 112 live funding
+ * observations sitting on the 32 archived merge shells carried no `entityId`, so the
+ * relink moved none of them, and the survivor loses that evidence on its next
+ * materialize pass: the pass projects from the observations the survivor's own key can
+ * reach, so a field write the materializer does not own cannot survive it (#3145).
+ */
+export function planStrandedFundingObservationRelink(args: {
+  survivorKey: string;
+  duplicateKeys: readonly (string | undefined)[];
+  observations: readonly StrandedObservationRelinkCandidate[];
+}): { survivorKey: string; ids: unknown[]; fields: string[] } | null {
+  const survivorKey = (args.survivorKey || '').trim();
+  if (!survivorKey) return null;
+  const duplicateKeys = new Set(
+    args.duplicateKeys
+      .map((key) => (key || '').trim())
+      .filter((key) => Boolean(key) && key !== survivorKey),
+  );
+  if (duplicateKeys.size === 0) return null;
+
+  const relinkable = args.observations.filter(
+    (observation) =>
+      duplicateKeys.has((observation.entityKey || '').trim()) &&
+      MERGE_RELINKABLE_OBSERVATION_FIELDS.includes(
+        (observation.field || '') as (typeof MERGE_RELINKABLE_OBSERVATION_FIELDS)[number],
+      ) &&
+      !observation.entityId,
+  );
+  if (relinkable.length === 0) return null;
+
+  return {
+    survivorKey,
+    ids: relinkable.map((observation) => observation.id),
+    fields: uniqueStrings(relinkable.map((observation) => String(observation.field || ''))),
+  };
+}
+
 function timeValue(value: Date | string | null | undefined): number {
   if (!value) return 0;
   const time = new Date(value).getTime();
@@ -153,6 +228,52 @@ function isFundingShellSlug(slug: string | undefined): boolean {
 
 export function isLowTrustAreaShellSlug(slug: string | undefined): boolean {
   return isAreaShellSlug(slug) || isFundingShellSlug(slug);
+}
+
+function rosterHost(value: string | undefined): string {
+  try {
+    return new URL((value || '').trim()).hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * The department roster a person's primary appointment lives on, taken from their own
+ * official profile URL. A cross-listed professor appears on a second school's roster
+ * too, so both rosters mint a research home for one person, and only the appointment
+ * roster describes the research they actually direct.
+ */
+export function primaryAppointmentRosterHost(
+  row: Pick<ResearchEntityPiDedupeRow, 'primaryAppointmentProfileUrl'>,
+): string {
+  const url = (row.primaryAppointmentProfileUrl || '').trim();
+  if (!url) return '';
+  if (!personProfileIdentityFromUrl(url)) return '';
+  return rosterHost(url);
+}
+
+export function entityMintedByPrimaryAppointmentRoster(
+  row: Pick<ResearchEntityPiDedupeRow, 'primaryAppointmentProfileUrl'>,
+  entity: ResearchEntityPiDedupeRow['entities'][number],
+): boolean {
+  const appointmentHost = primaryAppointmentRosterHost(row);
+  if (!appointmentHost) return false;
+  const mintedByHost = rosterHost(entity.identitySourceUrl);
+  return mintedByHost !== '' && mintedByHost === appointmentHost;
+}
+
+function primaryAppointmentRank(
+  row: Pick<ResearchEntityPiDedupeRow, 'primaryAppointmentProfileUrl'>,
+  entity: ResearchEntityPiDedupeRow['entities'][number],
+): number {
+  return entityMintedByPrimaryAppointmentRoster(row, entity) ? 1 : 0;
+}
+
+function withoutPrimaryAppointmentPreference(
+  row: ResearchEntityPiDedupeRow,
+): ResearchEntityPiDedupeRow {
+  return { ...row, primaryAppointmentProfileUrl: undefined };
 }
 
 function canonicalScore(entity: ResearchEntityPiDedupeRow['entities'][number]): number {
@@ -519,6 +640,8 @@ function buildGroupFromCluster(
   if (entities.length <= 1) return null;
 
   const canonical = [...entities].sort((a, b) => {
+    const byAppointment = primaryAppointmentRank(row, b) - primaryAppointmentRank(row, a);
+    if (byAppointment !== 0) return byAppointment;
     const byScore = scoreEntity(b) - scoreEntity(a);
     if (byScore !== 0) return byScore;
     return (a.slug || a.id).localeCompare(b.slug || b.id);
@@ -637,6 +760,8 @@ function buildProfileAreaShellDuplicateGroup(
   if (duplicateShells.length === 0 || concreteHomes.length === 0) return null;
 
   const canonical = [...concreteHomes].sort((a, b) => {
+    const byAppointment = primaryAppointmentRank(row, b) - primaryAppointmentRank(row, a);
+    if (byAppointment !== 0) return byAppointment;
     const byScore = canonicalScore(b) - canonicalScore(a);
     if (byScore !== 0) return byScore;
     return (a.slug || a.id).localeCompare(b.slug || b.id);
@@ -644,8 +769,10 @@ function buildProfileAreaShellDuplicateGroup(
   const duplicates = duplicateShells.filter((entity) => entity.id !== canonical.id);
   if (duplicates.length === 0) return null;
 
-  const group = buildGroupFromCluster(row, [canonical, ...duplicates], (entity) =>
-    entity.id === canonical.id ? Number.MAX_SAFE_INTEGER : canonicalScore(entity),
+  const group = buildGroupFromCluster(
+    withoutPrimaryAppointmentPreference(row),
+    [canonical, ...duplicates],
+    (entity) => (entity.id === canonical.id ? Number.MAX_SAFE_INTEGER : canonicalScore(entity)),
   );
   if (!group) return null;
   return {
@@ -684,6 +811,37 @@ export function buildResearchEntityPiDedupePlan(
       groups.filter((group): group is ResearchEntityPiDedupeGroup => !!group),
     );
   });
+}
+
+/**
+ * The duplicate ids from a same-lead dedupe plan, restricted so only a record the
+ * person is PI of can be CALLED a duplicate.
+ *
+ * Grouping a person's records by any lead role is what lets their real lab join the
+ * group holding their synthesized placeholder row. Left unconstrained the same
+ * widening does the reverse: measured on Development it newly flagged a cancer
+ * centre and two labs carrying their own sites, because someone who DIRECTS a
+ * research home and leads labs has all of them in one group and the dedupe picks a
+ * single canonical. Directing a research home is not duplicating it, so a
+ * non-PI-led home may only ever be the canonical.
+ *
+ * A name-only group carries no PI claim for its user, so it keeps deciding on its
+ * own evidence and is passed through untouched.
+ */
+export function piLedRestrictedDuplicateEntityIds(
+  group: ResearchEntityPiDedupeGroup,
+  isPiLed: (userId: string, entityId: string) => boolean,
+): string[] {
+  return (group.duplicateEntityIds || []).filter(
+    (entityId) => !group.normalizedName.startsWith('same-pi:') || isPiLed(group.userId, entityId),
+  );
+}
+
+export function samePiDuplicateEntityIdsRestrictedToPiLed(
+  groups: ResearchEntityPiDedupeGroup[],
+  isPiLed: (userId: string, entityId: string) => boolean,
+): string[] {
+  return groups.flatMap((group) => piLedRestrictedDuplicateEntityIds(group, isPiLed));
 }
 
 export function selectSamePiDuplicateRiskEntityIds(rows: ResearchEntityPiDedupeRow[]): Set<string> {
@@ -914,6 +1072,232 @@ export function normalizeWebsiteUrlIdentityKey(value: string | undefined): strin
   return `${host}${pathname}`;
 }
 
+const WEBSITE_URL_IDENTITY_KEY_SCHEMES = ['https://', 'http://'];
+const WEBSITE_URL_IDENTITY_KEY_HOST_PREFIXES = ['', 'www.'];
+
+/**
+ * Every stored `websiteUrl` spelling that `normalizeWebsiteUrlIdentityKey` folds into
+ * `key`, so a caller can look the key up with an equality query rather than storing a
+ * second normalized copy of the URL on the row (#3036).
+ *
+ * Changing `normalizeWebsiteUrlIdentityKey` requires changing this with it: they are an
+ * encoder and its inverse, and the inverse only recovers what the encoder drops
+ * reversibly - the scheme, a leading `www.`, and a trailing slash. A URL carrying a
+ * query string or a fragment cannot be recovered, because the encoder discards those
+ * without recording them; measured on Development, 7 of 1,763 live `websiteUrl` values
+ * are in that residue and none of them is a resolver target.
+ */
+export function websiteUrlIdentityKeyVariants(key: string): string[] {
+  const trimmed = key.trim();
+  if (!trimmed) return [];
+  const variants: string[] = [];
+  for (const scheme of WEBSITE_URL_IDENTITY_KEY_SCHEMES) {
+    for (const hostPrefix of WEBSITE_URL_IDENTITY_KEY_HOST_PREFIXES) {
+      variants.push(`${scheme}${hostPrefix}${trimmed}`);
+      variants.push(`${scheme}${hostPrefix}${trimmed}/`);
+    }
+  }
+  return variants;
+}
+
+const PERSON_PROFILE_URL_PATH = /\/(?:profile|people|person)\/([a-z0-9._-]+)$/i;
+
+const PERSON_PROFILE_URL_LEAF = /^[a-z0-9._-]+$/i;
+
+/**
+ * The person slug on a host that nests a category between its person-page prefix
+ * and the person, which `PERSON_PROFILE_URL_PATH` cannot see because it requires
+ * the slug to sit directly under `profile`, `people` or `person`. So
+ * `eeb.yale.edu/people/faculty/<person>` and
+ * `environment.yale.edu/directory/faculty/<person>` were invisible to the
+ * conflation refusal, and `directory` was not in the pattern at all (#2750).
+ *
+ * The prefixes come from `yalePersonPagePrefix`, which already owns this per host
+ * from stored citations that were then live-probed, rather than from a second list
+ * here that could disagree with it.
+ *
+ * A root-mapped host is deliberately excluded. Where the recorded prefix is empty
+ * the path asserts nothing about the leaf, so `law.yale.edu/<anything>` would read
+ * as somebody's profile; `isCorroboratedPersonPageUrl` refuses those on the same
+ * ground and asks for a name match instead, which this caller has no name to make.
+ * Widening here only ever refuses a merge, so a false identity costs a correct
+ * merge rather than producing a wrong one, which is why the safe half of #2750's
+ * suggestion is taken and the "allow any intermediate segment" half is not.
+ */
+function hostMappedPersonPageSlug(parsed: URL): string {
+  const entry = personPagePrefixesForHost(parsed.hostname);
+  if (!entry) return '';
+  const parts = parsed.pathname.split('/').filter(Boolean);
+  if (parts.length < 2) return '';
+  const leaf = parts[parts.length - 1];
+  if (!PERSON_PROFILE_URL_LEAF.test(leaf)) return '';
+  const prefix = parts.slice(0, -1).join('/').toLowerCase();
+  if (!prefix) return '';
+  const mapped = [...entry.current, ...(entry.legacy || [])].some(
+    (candidate) => candidate.toLowerCase() === prefix,
+  );
+  return mapped ? leaf : '';
+}
+
+const PERSON_PROFILE_CREDENTIAL_SUFFIX =
+  /-(?:phd|md|mph|ms|msc|mba|ma|dvm|rn|do|dds|scd|edd|jd|jr|sr|ii|iii|iv)$/;
+
+// A collection page, not a person. `/people/<x>` is a person on some directories and
+// a listing subpage on others, and a lab-microsite crawl puts both into `sourceUrls`.
+const PERSON_PROFILE_COLLECTION_TOKENS = new Set([
+  'about',
+  'alumni',
+  'contact',
+  'directory',
+  'faculty',
+  'group',
+  'home',
+  'index',
+  'lab',
+  'labs',
+  'member',
+  'members',
+  'news',
+  'our',
+  'affiliates',
+  'emeriti',
+  'fellows',
+  'instructors',
+  'investigators',
+  'leadership',
+  'lecturers',
+  'people',
+  'person',
+  'personnel',
+  'postdocs',
+  'profile',
+  'profiles',
+  'professor',
+  'professors',
+  'publications',
+  'research',
+  'researchers',
+  'scholars',
+  'staff',
+  'students',
+  'team',
+  'trainees',
+  'us',
+]);
+
+function personNameTokens(slug: string): string[] {
+  return slug
+    .split(/[-._]+/)
+    .filter((token) => token.length > 1 && !/^\d+$/.test(token))
+    .sort();
+}
+
+/**
+ * The person a `/profile/<slug>` style URL names, as an order-, initial- and
+ * credential-agnostic identity: `.../profile/ada-lovelace-phd` and
+ * `.../profile/ada-lovelace` are one person, so are `min-wu` and `wu-min`
+ * because directories publish the same person under both orders, and so are
+ * `ada-b-lovelace` and `ada-lovelace` because only one directory carries the
+ * middle initial. A trailing birth-death lifespan is dropped for the same reason
+ * (see `stripPersonNameLifespanSuffix`): only some directories publish it, and it
+ * names no additional person.
+ *
+ * A credential suffix is only stripped while two name tokens survive, because the
+ * abbreviation list collides with real surnames: `Ma`, `Do`, and `Ms` are surnames,
+ * so `/profile/lei-ma` must stay a person rather than decaying to '' and silently
+ * disabling the conflation refusal for whoever it names. A single surviving token is
+ * an identity for the same reason: a mononym directory slug such as `/profile/clark`
+ * names a person, and reading it as "names no person" would switch the refusal off
+ * for the very group that needs it.
+ *
+ * Returns '' only for a URL that names no person. That includes a collection page, so
+ * a `/people/lab-members` or `/people/our-team` subpage is not read as a person named
+ * "Lab Members". Unrecognised non-person slugs can still yield an identity, which
+ * only ever refuses a merge, so the residual error is a missed merge and never a
+ * wrong one.
+ */
+export function personProfileIdentityFromUrl(value: string | undefined): string {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return '';
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return '';
+  }
+  const match = parsed.pathname.replace(/\/+$/, '').match(PERSON_PROFILE_URL_PATH);
+  const rawSlug = match ? match[1] : hostMappedPersonPageSlug(parsed);
+  if (!rawSlug) return '';
+  let slug = rawSlug.toLowerCase();
+  for (;;) {
+    if (!PERSON_PROFILE_CREDENTIAL_SUFFIX.test(slug)) break;
+    const stripped = slug.replace(PERSON_PROFILE_CREDENTIAL_SUFFIX, '');
+    if (personNameTokens(stripped).length < 2) break;
+    slug = stripped;
+  }
+  const tokens = personNameTokens(slug);
+  if (tokens.length === 0) return '';
+  if (tokens.some((token) => PERSON_PROFILE_COLLECTION_TOKENS.has(token))) return '';
+  return tokens.join('-');
+}
+
+export function distinctPersonProfileIdentities(urls: readonly string[] | undefined): string[] {
+  const identities = new Set<string>();
+  for (const url of urls || []) {
+    const identity = personProfileIdentityFromUrl(url);
+    if (identity) identities.add(identity);
+  }
+  return Array.from(identities).sort();
+}
+
+/**
+ * Refuses on the group's pooled evidence rather than per entity, so a single row that
+ * cites two directors' profiles refuses its own group too. That is deliberate: the
+ * group carries only `mergedSourceUrls`, and a co-directed lab is exactly the shape
+ * this cannot tell apart from a lab plus one of its members. The cost is a missed
+ * merge for a co-directed lab, and the refusal is unconditional: it runs before the
+ * plan the decision template is built from, so a quarantined group never reaches an
+ * operator's `--accepted-decisions` file and no reviewed decision can override it.
+ * Merging one takes correcting the conflating evidence first - dropping the other
+ * person's profile URL from the row that should not cite it.
+ *
+ * A merge group whose evidence names two or more different people is not a
+ * duplicate pair: every member of a lab legitimately cites the lab's own URL, so a
+ * site-wide identity key clusters a member's profile row with the lab itself. It was a
+ * large fraction of the URL-keyed lanes on Development (#2724); read the current rate
+ * from `quarantinedConflatedPersonProfileGroups` in a dry-run report, as
+ * `docs/research-entity-pi-dedupe-runbook.md` describes. `multiPersonEntityQuarantine`
+ * cannot see it because it keys on RoleAssignment links, which these rows do not carry.
+ */
+export function groupConflatesDistinctPersonProfiles(
+  group: Pick<ResearchEntityPiDedupeGroup, 'mergedSourceUrls'>,
+): boolean {
+  return distinctPersonProfileIdentities(group.mergedSourceUrls).length > 1;
+}
+
+export function partitionPlanByPersonProfileConflation<
+  T extends Pick<
+    ResearchEntityPiDedupeGroup,
+    'mergedSourceUrls' | 'canonicalEntityId' | 'canonicalSlug' | 'duplicateSlugs'
+  >,
+>(groups: readonly T[]): { plan: T[]; quarantine: ConflatedPersonProfileQuarantine[] } {
+  const plan: T[] = [];
+  const quarantine: ConflatedPersonProfileQuarantine[] = [];
+  for (const group of groups) {
+    if (groupConflatesDistinctPersonProfiles(group)) {
+      quarantine.push({
+        canonicalEntityId: group.canonicalEntityId,
+        canonicalSlug: group.canonicalSlug,
+        duplicateSlugs: group.duplicateSlugs,
+        personProfileIdentities: distinctPersonProfileIdentities(group.mergedSourceUrls),
+      });
+      continue;
+    }
+    plan.push(group);
+  }
+  return { plan, quarantine };
+}
+
 const SPECIFIC_PROFILE_LAB_URL_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA']);
 
 const SPECIFIC_PROFILE_LAB_URL_PATH = /\/(lab|profile)\/([^/]+)$/i;
@@ -967,7 +1351,7 @@ const specificProfileLabUrlCanonicalScore = (
   (slugPersonSurname(entity.slug) === '' ? 15 : 0);
 
 /**
- * `clusterEntitiesBySharedLeadPersonName` unions transitively, so a bare-surname
+ * `clusterEntitiesBySharedLeadPersonIdentity` unions transitively, so a bare-surname
  * node ("Smith Lab") can bridge two entities with explicit, conflicting first
  * names ("John Smith Lab" and "Robert Smith Lab") into one cluster even though the
  * two people never share a name directly. Merging that cluster would collapse two
@@ -1005,11 +1389,11 @@ export function clusterHasConflictingLeadFirstNames(
  * `/profile/<x>` path - and folds them into one research home. The shared URL is a
  * strong same-entity key (one lab per lab page, one person per profile page), but a
  * URL match alone must not collapse two DIFFERENT people who happen to share a
- * surname or co-cite a page, so the same `clusterEntitiesBySharedLeadPersonName`
- * lead-name guard the websiteUrl lane uses still applies: "John Smith Lab" and
+ * surname or co-cite a page, so the same `clusterEntitiesBySharedLeadPersonIdentity`
+ * gate the websiteUrl lane uses still applies: "John Smith Lab" and
  * "Jane Smith Lab" stay split. A concrete LAB is preferred as canonical so a
  * FACULTY_RESEARCH_AREA facet on the same profile folds into the lab rather than the
- * reverse. Funding shells and non {LAB, FACULTY_RESEARCH_AREA, GROUP} types (a CENTER
+ * reverse. Funding shells and non {LAB, FACULTY_RESEARCH_AREA} types (a CENTER
  * or CORE_FACILITY the person merely belongs to) are excluded from this lane.
  */
 export function buildSpecificProfileLabUrlResearchEntityDedupePlan(
@@ -1029,21 +1413,14 @@ export function buildSpecificProfileLabUrlResearchEntityDedupePlan(
     ) {
       continue;
     }
-    for (const cluster of clusterEntitiesBySharedLeadPersonName(entities)) {
-      if (clusterHasConflictingLeadFirstNames(cluster)) continue;
-      const identitySurname = sharedNameSurname(cluster);
-      const identityConsistent = cluster.filter((entity) => {
-        const personSurname = slugPersonSurname(entity.slug);
-        return !personSurname || personSurname === identitySurname;
-      });
-      if (identityConsistent.length <= 1) continue;
+    for (const cluster of clusterEntitiesBySharedLeadPersonIdentity(entities)) {
       const group = buildGroupFromCluster(
         {
           userId: `profile-lab-url:${key}`,
           normalizedName: `profile-lab-url:${key}`,
-          entities: identityConsistent,
+          entities: cluster,
         },
-        identityConsistent,
+        cluster,
         specificProfileLabUrlCanonicalScore,
       );
       if (group) groups.push(group);
@@ -1090,7 +1467,25 @@ export function entitiesShareLeadPersonName(
   return true;
 }
 
-function clusterEntitiesBySharedLeadPersonName(
+function dropClusterMembersWhoseSlugNamesAnotherPerson(
+  cluster: ResearchEntityPiDedupeRow['entities'],
+): ResearchEntityPiDedupeRow['entities'] {
+  const identitySurname = sharedNameSurname(cluster);
+  return cluster.filter((entity) => {
+    const personSurname = slugPersonSurname(entity.slug);
+    return !personSurname || personSurname === identitySurname;
+  });
+}
+
+/**
+ * Every URL-keyed lane merges on the same claim - these rows are one person's
+ * research home - so the two refusals that make a transitively unioned cluster
+ * safe belong to the clustering itself rather than to one lane's call site. A
+ * lane that took the raw union-find components would collapse two distinct
+ * same-surname people through a first-name-less bridge row, which is exactly the
+ * defect the guards were written for (#1130, #2581).
+ */
+function clusterEntitiesBySharedLeadPersonIdentity(
   entities: ResearchEntityPiDedupeRow['entities'],
 ): ResearchEntityPiDedupeRow['entities'][] {
   const parent = new Map<string, string>();
@@ -1122,7 +1517,23 @@ function clusterEntitiesBySharedLeadPersonName(
     const root = find(id);
     components.set(root, [...(components.get(root) || []), byId.get(id)!]);
   }
-  return Array.from(components.values()).filter((cluster) => cluster.length > 1);
+  return Array.from(components.values())
+    .filter((cluster) => cluster.length > 1)
+    .filter((cluster) => !clusterHasConflictingLeadFirstNames(cluster))
+    .map(dropClusterMembersWhoseSlugNamesAnotherPerson)
+    .filter((cluster) => cluster.length > 1);
+}
+
+/**
+ * The entity types the `--org-name-only` lane owns. A URL shared between one of
+ * these and a person's research home is that person citing the organization's page,
+ * not one entity named twice, so a URL-keyed person lane must not pair the two: on
+ * Development the websiteUrl lane planned to archive a served `CORE_FACILITY` into a
+ * suppressed person row that had been minted under the facility's own name (#2581).
+ * Keyed on the org lane's own constant so the two lanes' vocabularies cannot drift.
+ */
+function isSharedOrganizationEntityType(entityType: string | undefined): boolean {
+  return (ORG_NAME_DEDUPE_ENTITY_TYPES as readonly string[]).includes(entityType || '');
 }
 
 function isDistinctiveNonFundingWebsiteHost(value: string | undefined): boolean {
@@ -1148,6 +1559,10 @@ function isDistinctiveNonFundingWebsiteHost(value: string | undefined): boolean 
  * rather than shared Yale evidence a funding-only shell could carry on its own
  * (issue #1147) - since the lead-name gate and the funding-slug canonical-score
  * penalty already keep the merge person-scoped and the concrete home canonical.
+ * A shared organizational home is dropped from the cluster rather than refusing the
+ * whole URL, for the reason `isSharedOrganizationEntityType` records: a centre's own
+ * page is legitimately cited by several people, so refusing the URL outright would
+ * also refuse the same-person duplicates citing it.
  */
 export function buildWebsiteUrlResearchEntityDedupePlan(
   rows: WebsiteUrlDedupeRow[],
@@ -1159,13 +1574,15 @@ export function buildWebsiteUrlResearchEntityDedupePlan(
   for (const row of rows) {
     const key = normalizeWebsiteUrlIdentityKey(row.websiteUrl);
     if (!key) continue;
-    const entities = row.entities.filter((entity) => entity.id);
+    const cited = row.entities.filter((entity) => entity.id);
+    if (cited.length <= 1) continue;
+    if (cited.some((entity) => isAreaShellSlug(entity.slug))) continue;
+    const entities = cited.filter((entity) => !isSharedOrganizationEntityType(entity.entityType));
     if (entities.length <= 1) continue;
-    if (entities.some((entity) => isAreaShellSlug(entity.slug))) continue;
     const hasFundingShellEntity = entities.some((entity) => isFundingShellSlug(entity.slug));
     if (hasFundingShellEntity && !isDistinctiveNonFundingWebsiteHost(row.websiteUrl)) continue;
 
-    for (const cluster of clusterEntitiesBySharedLeadPersonName(entities)) {
+    for (const cluster of clusterEntitiesBySharedLeadPersonIdentity(entities)) {
       const group = buildGroupFromCluster(
         {
           userId: `website-url:${key}`,

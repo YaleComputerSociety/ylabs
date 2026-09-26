@@ -27,6 +27,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import {
+  buildFetchAttemptMetrics,
   createScraplingRenderedFetcher,
   measureRenderedFetch,
   summarizeFetchMetrics,
@@ -36,6 +37,7 @@ import {
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import type {
   IScraper,
@@ -52,10 +54,16 @@ import {
   splitName,
 } from '../utils/scraperHelpers';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
+import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
 import {
-  isListingOrIndexUrl,
+  isInstitutionalAdvancementUrl,
+  isInstitutionalPublicityPageUrl,
+  isMapOrDirectionsUrl,
+  isOffsiteInstitutionPersonProfileUrl,
   isPersonProfileOrDirectoryUrl,
+  isSharedPeopleRosterUrl,
 } from '../../utils/researchHomeWebsiteUrl';
+import { personIdentityTokens } from '../../utils/researchHomeNameIdentityAuthority';
 import { extractOfficialResearchDescription } from '../../utils/officialResearchDescription';
 import {
   clampDescriptionLength,
@@ -73,11 +81,99 @@ import {
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { unwrapMicrosoftSafeLinksUrl } from '../../utils/safeLinksUrl';
+import { orgUnitMatchKey } from '../orgUnitCanonicalization';
 import { DEPARTMENT_ROSTER_HEALTH_FIELD } from '../facultyRosterDepartureReconciler';
+import {
+  isFacultyTitle,
+  isSubordinateResearchRank,
+  looksLikeNonResearchTitle,
+} from './yaleDirectoryScraper';
+import { rosterEntryIdentityKey, walkRosterLanePages } from '../utils/rosterLanePaging';
+import { runWithBoundedConcurrency } from '../utils/boundedConcurrency';
+import { evidenceAssertsALab } from '../utils/labClaimEvidence';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
-const MAX_PAGES_PER_DEPT = 20; // safety cap on pagination crawl
+
+/**
+ * How a lane obtained the page it extracted from, and how many pages it read.
+ *
+ * A `departmentRosterHealth` snapshot asserts who a roster listed *just now*, so
+ * the read has to be recorded rather than inferred. #3251 was filed because the
+ * only available evidence was the run-level `fetchMetrics`, which counted the
+ * rendered-browser branch alone and therefore read `0` for a run whose 112 HTML
+ * lanes all fetched. `readMode: 'none'` means no page was obtained in this run,
+ * which is the one case a departure decision must refuse.
+ */
+type LaneReadMode = 'html' | 'rendered' | 'data-endpoint' | 'none';
+
+interface LaneRead {
+  deptKey: string;
+  count: number;
+  status: string;
+  pagesRead: number;
+  readMode: LaneReadMode;
+}
+
+interface LaneOutcome extends LaneRead {
+  /**
+   * The lane came from a cross-listed programme config. Several configs share one
+   * `deptKey`, so a department's snapshot has to exclude its programme lanes one by
+   * one; looking the key up in a config map keeps only the LAST config carrying it
+   * and suppressed the department's own authoritative lanes with it (#3251).
+   */
+  crossListedProgramme: boolean;
+}
+
+/**
+ * Reduce several configs sharing one `deptKey` to the single outcome that
+ * department's snapshot reports.
+ *
+ * A department is `ok` only when every one of its configs succeeded. One config
+ * failing means part of the roster was never seen, and a partial view must not be
+ * authoritative about who is absent from the whole department.
+ */
+export function collapseLaneOutcomesByDepartment(outcomes: LaneOutcome[]): LaneOutcome[] {
+  const byDeptKey = new Map<string, LaneOutcome>();
+  for (const outcome of outcomes) {
+    const existing = byDeptKey.get(outcome.deptKey);
+    if (!existing) {
+      byDeptKey.set(outcome.deptKey, { ...outcome });
+      continue;
+    }
+    existing.count += outcome.count;
+    existing.pagesRead += outcome.pagesRead;
+    if (existing.status === 'ok' && outcome.status !== 'ok') existing.status = outcome.status;
+    if (existing.readMode === 'none' && outcome.readMode !== 'none') {
+      existing.readMode = outcome.readMode;
+    }
+  }
+  return Array.from(byDeptKey.values());
+}
+
+/**
+ * How many roster lanes read at once.
+ *
+ * This is not a politeness setting. The 118 lanes span 59 distinct hosts, 55 of
+ * them carrying exactly one lane, and `HostConcurrencyLimiter` caps each host
+ * independently at the fetch layer (2 requests with 400ms spacing for
+ * `medicine.yale.edu` and `ysph.yale.edu`, which carry 44 lanes between them).
+ * Because `resolveHostThrottle` only ever tightens, raising this cannot loosen
+ * any host's budget: extra lanes simply queue on the limiter.
+ */
+const DEFAULT_ROSTER_LANE_CONCURRENCY = 8;
+
+function resolveRosterLaneConcurrency(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.SCRAPER_ROSTER_LANE_CONCURRENCY);
+  return Number.isInteger(raw) && raw >= 1 ? raw : DEFAULT_ROSTER_LANE_CONCURRENCY;
+}
+
+function partition<T>(items: readonly T[], predicate: (item: T) => boolean): [T[], T[]] {
+  const matching: T[] = [];
+  const rest: T[] = [];
+  for (const item of items) (predicate(item) ? matching : rest).push(item);
+  return [matching, rest];
+}
 // Roster descriptions are keyword-synthesized directory one-liners, so they must
 // rank below any genuinely extracted research-home description (lab-microsite full
 // page 0.82, profile-page 0.55) during field resolution and only win as a fallback.
@@ -105,6 +201,24 @@ export interface FacultyEntry {
   email?: string;
   /** External lab / personal website URL discovered on the listing. */
   labUrl?: string;
+  /**
+   * What the page said about the lab-website slot, when `labUrl` is absent (#3135).
+   *
+   * `empty` is a positive claim: this parse looked at every link and none was even a
+   * candidate for a research website. `refused` says a candidate WAS present and a
+   * guard declined it, which is a judgement about a link the page still carries and
+   * the opposite of the page having dropped one.
+   *
+   * Absent means no claim, and no claim is what every parse that does not look for a
+   * lab URL leaves behind. Only `empty` may reach `assertsNoValueFor`, because field
+   * retraction cannot tell a refusal from a disappearance in the observation log and
+   * #2647 measured that conflating them retracts links the page still carries: 2 of 4
+   * planned retractions were refusals, one on a `student_ready` row.
+   *
+   * A parse that reads `labUrl` must set this, which
+   * `departmentRosterLabSlotAttestation.test.ts` enforces by scanning this file.
+   */
+  labSlotAttestation?: 'empty' | 'refused';
   /** ORCID extracted from an official Yale profile page. */
   orcid?: string;
   /** Short bio or research summary extracted from an official Yale profile page. */
@@ -173,6 +287,55 @@ export interface DeptConfig {
    * the person's real department is left to resolve from a better source.
    */
   affiliatesOnly?: boolean;
+  /**
+   * When true, this page is a school's own whole-faculty directory rather than a
+   * department roster, so `deptName` names the school and there is no department
+   * to report. It is a separate flag from `affiliatesOnly` because these people
+   * are the school's own faculty, not affiliates of a cross-cutting centre, and
+   * `schoolName` remains first-party evidence worth emitting.
+   *
+   * Stamping the school into the department slot is a category error rather than a
+   * thin value, and it costs real data (#2838). `primaryDepartment` is not
+   * latest-wins, so the school-name row competes with the department roster's own
+   * row for the same person: 246 researchers stored "Yale School of Public Health"
+   * as their home department, and for at least 42 of them a YSPH department page
+   * had already reported the real one. It also defeats the #2802 lead-PI
+   * inheritance, which needs a canonical department and cannot resolve a school,
+   * so every entity those people lead stays out of the department facet.
+   *
+   * A school-wide directory is still worth scraping: it is the person spine for a
+   * school whose department pages do not list everyone.
+   */
+  schoolWideDirectory?: boolean;
+  /**
+   * When true, `deptName` is a degree-granting interdisciplinary programme whose
+   * faculty hold their appointment in another department (e.g. Cognitive Science,
+   * Medieval Studies). The programme is a real label a student filters on, so
+   * `departments` is still emitted and unions onto the research entity, but
+   * `primaryDepartment` is withheld: a researcher stores a single home department
+   * and asserting the programme there overwrites the appointment the home
+   * department's own roster reported, which is the #1427 fabrication in a milder
+   * form. Applying five such lanes without this flag overwrote the home
+   * department of 110 researchers.
+   *
+   * A programme also publishes a mixed people directory rather than a faculty
+   * roster, so the flag additionally gates each row on a stated faculty rank via
+   * `programmeRosterRowStatesFacultyRank`.
+   *
+   * `schoolName` is withheld from the derived research entity for the same reason
+   * `primaryDepartment` is withheld from the person: a programme roster lists
+   * professors appointed in other schools (cogsci.yale.edu states four School of
+   * Medicine professorships, medieval.yale.edu five Divinity School ones), and
+   * `researchEntityPiDedupeCore` keeps one canonical `school`, so an FAS label
+   * emitted here can win for a YSM or Divinity appointment. A school-less entity
+   * is a supported state that `inheritSchoolFromLeadPi` fills from the lead's own
+   * home department.
+   *
+   * The lane also publishes no `departmentRosterHealth` snapshot, because a
+   * rank-gated partial view of a cross-listed population is not evidence that
+   * anybody left Yale.
+   */
+  crossListedProgramme?: boolean;
   /** Set when the page is JS-rendered and the extractor is intentionally a stub. */
   jsRenderedSkip?: boolean;
 }
@@ -236,6 +399,7 @@ export const mcdbExtractor: FacultyExtractor = (html, ctx) => {
     const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
     let email: string | undefined;
     let labUrl: string | undefined;
+    let labUrlCandidateRefused = false;
     card.find('.directory-listing-card__link').each((_j, a) => {
       const rawHref = $(a).attr('href') || '';
       if (/^mailto:/i.test(rawHref)) {
@@ -243,13 +407,25 @@ export const mcdbExtractor: FacultyExtractor = (html, ctx) => {
         return;
       }
       const href = unwrapMicrosoftSafeLinksUrl(rawHref);
-      if (/^https?:\/\//i.test(href) && !labUrl && !isGenericLabDirectoryUrl(href)) {
-        labUrl = href;
+      if (!/^https?:\/\//i.test(href) || labUrl) return;
+      if (isGenericLabDirectoryUrl(href)) {
+        labUrlCandidateRefused = true;
+        return;
       }
+      labUrl = href;
     });
     const bio =
       cleanText(card.find('.directory-listing-card__snippet').first().text()) || undefined;
-    out.push({ name, profileUrl, title, email, labUrl, bio, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({
+      name,
+      profileUrl,
+      title,
+      email,
+      labUrl,
+      ...(labUrl ? {} : { labSlotAttestation: labUrlCandidateRefused ? 'refused' : 'empty' }),
+      bio,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
   });
   return out;
 };
@@ -320,6 +496,7 @@ export const psychExtractor: FacultyExtractor = (html, ctx) => {
       undefined;
 
     let labUrl: string | undefined;
+    let labUrlCandidateRefused = false;
     row.find('a[href]').each((_j, a) => {
       if (labUrl) return;
       const link = $(a);
@@ -341,7 +518,10 @@ export const psychExtractor: FacultyExtractor = (html, ctx) => {
         return;
       }
       const absolute = absolutize(href, ctx.pageUrl);
-      if (isGenericLabDirectoryUrl(absolute)) return;
+      if (isGenericLabDirectoryUrl(absolute)) {
+        labUrlCandidateRefused = true;
+        return;
+      }
       labUrl = absolute;
     });
 
@@ -361,6 +541,7 @@ export const psychExtractor: FacultyExtractor = (html, ctx) => {
       email,
       ...(imageUrl ? { imageUrl } : {}),
       labUrl,
+      ...(labUrl ? {} : { labSlotAttestation: labUrlCandidateRefused ? 'refused' : 'empty' }),
       topics: topics.length > 0 ? topics : undefined,
       researchInterests: topics.length > 0 ? topics : undefined,
     });
@@ -597,7 +778,13 @@ export const csFacultyDataExtractor: FacultyDataExtractor = (payload, ctx) => {
         profileUrl && !isOfficialYaleUrl(profileUrl) && !isGenericLabDirectoryUrl(profileUrl)
           ? profileUrl
           : undefined;
-      out.push({ name, profileUrl, title, labUrl });
+      out.push({
+        name,
+        profileUrl,
+        title,
+        labUrl,
+        ...(labUrl ? {} : { labSlotAttestation: 'refused' as const }),
+      });
     }
   }
 
@@ -720,6 +907,7 @@ export const referenceCardExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...(labUrl ? {} : { labSlotAttestation: 'refused' as const }),
       profileUrl: destinationUrl,
       title,
       labUrl,
@@ -731,47 +919,115 @@ export const referenceCardExtractor: FacultyExtractor = (html, ctx) => {
 };
 
 /**
- * Yale School of Art "faculty & staff" page (art.yale.edu) - a Yale-CMS
- * "scrolling-list-module" component: several `<ul>` sections (Academic
- * Leadership, program areas, interdepartmental, Undergraduate, faculty
- * emeriti, Yale Norfolk School of Art, Administration and Staff, ...), each
- * `<li>` an `<a href="/<Slug>">Name</a>, Title` entry (#1334 Tier C - the
- * per-person links this issue originally reported missing are present on the
- * current page). The same person appears in several sections (e.g. a dean is
- * also on the Faculty Governing Board), so entries are deduped by destination
- * URL, keeping the longest title seen. "Administration and Staff" lists
- * non-research staff, not faculty, and is skipped.
- *   <div class="scrolling-list-module">
- *     <h4 class="scrolling-list-module__title">Academic Leadership</h4>
- *     <ul class="scrolling-list-module__list">
- *       <li class="scrolling-list-module__list-item">
- *         <a href="/KymberlyPinder">Kymberly Pinder</a>, Stavros Niarchos Foundation Dean
+ * A "Faculty & Labs" table where one row is one person and the single anchor is EITHER
+ * their lab site or their home-department profile, so the destination decides which field
+ * it lands in. The lane earns its place on the lab half: several rows point at off-Yale
+ * lab domains no department roster carries, while the people themselves are appointed
+ * elsewhere and arrive through their home department.
+ */
+export const facultyLabsTableExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('tr').each((_i, el) => {
+    const cells = $(el).find('td');
+    if (cells.length === 0) return;
+    const first = cells.first();
+    const link = first.find('a[href]').first();
+    const linkText = cleanText(link.text());
+    // A trailing asterisk is a roster footnote marker, not part of the name.
+    const name = normalizeName(linkText.replace(/\*+$/, ''));
+    const href = link.attr('href') || '';
+    if (!name || !href) return;
+
+    const destinationUrl = absolutize(href, ctx.pageUrl);
+    const title =
+      cleanText(first.text())
+        .replace(linkText, '')
+        .replace(/^[\s,*]+/, '')
+        .trim() || undefined;
+
+    out.push({
+      name,
+      ...(isPersonProfileOrDirectoryUrl(destinationUrl)
+        ? { profileUrl: destinationUrl, labSlotAttestation: 'refused' as const }
+        : { labUrl: destinationUrl }),
+      title,
+    });
+  });
+
+  return out;
+};
+
+/**
+ * Matches a roster section heading that lists non-research staff rather than
+ * faculty. Word-set rather than phrase matching because the School of Art
+ * renamed "Administration and Staff" to "Staff and Administration" in its 2026
+ * rebuild, and a phrase regex silently stopped skipping the section (#2759).
+ */
+const isNonResearchStaffHeading = (heading: string): boolean =>
+  /\b(?:staff|administration|administrative)\b/i.test(heading);
+
+/**
+ * Yale School of Art "faculty & staff" page (art.yale.edu) - one `<section>` per
+ * program area, each holding `<ul class="... people-list">` lists under
+ * sub-headings (Leadership, Full-Time Faculty, Part-Time Faculty, Visiting
+ * Critics), and each `<li>` an entry whose `<a>` wraps the name in a bare `<p>`
+ * and the title in `<p class="inline-block">` spans (#1334 Tier C, repointed
+ * past the retired `/about` path in #2759). The same person appears in several
+ * sections (e.g. a dean is also a program's director of graduate studies), so
+ * entries are deduped by destination URL, keeping the longest title seen. The
+ * "Staff and Administration" section lists non-research staff and is skipped.
+ *   <section id="academic-leadership">
+ *     <h3>Academic Leadership</h3>
+ *     <ul class="leadership people-list">
+ *       <li>
+ *         <a href="/people/faculty-and-staff/kymberly-pinder">
+ *           <p>Kymberly Pinder</p>
+ *           <p class="inline-block"><span>Stavros Niarchos Foundation Dean</span></p>
+ *         </a>
  *       </li>
  */
-export const scrollingListModuleExtractor: FacultyExtractor = (html, ctx) => {
+export const artPeopleListExtractor: FacultyExtractor = (html, ctx) => {
   const $ = cheerio.load(html);
   const byUrl = new Map<string, FacultyEntry>();
   const pageHost = hostnameOf(ctx.pageUrl);
 
-  $('.scrolling-list-module').each((_i, section) => {
-    const heading = cleanText($(section).find('.scrolling-list-module__title').first().text());
-    if (/administration and staff/i.test(heading)) return;
+  /**
+   * The heading governing one list, preferring the nearest preceding heading over
+   * the enclosing `<section>`'s first `h3`.
+   *
+   * A section holds several lists (Leadership, Full-Time, Part-Time, Visiting
+   * Critics), so its first `h3` gives every list in it the same verdict, and the
+   * lookup fails entirely when there is no `<section>` ancestor. Neither costs
+   * anything on today's markup, where the guard correctly drops all 25 staff-only
+   * people, but both would silently admit an administrator if the page were
+   * restructured, which is what this lane already got wrong once (#2683).
+   */
+  const listHeading = (list: cheerio.Cheerio<AnyNode>): string => {
+    let node = list.prev();
+    for (let step = 0; step < 4 && node.length > 0; step += 1) {
+      const text = cleanText(node.text());
+      if (text && text.length < 60) return text;
+      node = node.prev();
+    }
+    return cleanText(list.closest('section').find('h3').first().text());
+  };
 
-    $(section)
-      .find('.scrolling-list-module__list-item')
+  $('ul.people-list').each((_i, list) => {
+    if (isNonResearchStaffHeading(listHeading($(list)))) return;
+
+    $(list)
+      .children('li')
       .each((_j, el) => {
-        const item = $(el);
-        const link = item.find('a').first();
-        const name = normalizeName(cleanText(link.text()));
+        const link = $(el).find('a[href]').first();
         const href = link.attr('href') || '';
+        const name = normalizeName(cleanText(link.find('p').first().text()));
         if (!name || !href) return;
 
         const destinationUrl = absolutize(href, ctx.pageUrl);
-        const fullText = cleanText(item.text());
         const title =
-          (fullText.startsWith(name)
-            ? cleanText(fullText.slice(name.length).replace(/^[,;]\s*/, ''))
-            : '') || undefined;
+          cleanText(link.find('p.inline-block').text()).replace(/[,;]\s*$/, '') || undefined;
         // Mint a research home only when the destination is off-directory (a
         // personal or lab site); the faculty member's own art.yale.edu bio page
         // is cited as an official-profile source and left for enrichment/dedup.
@@ -786,11 +1042,96 @@ export const scrollingListModuleExtractor: FacultyExtractor = (html, ctx) => {
           }
           return;
         }
-        byUrl.set(destinationUrl, { name, profileUrl: destinationUrl, title, labUrl });
+        byUrl.set(destinationUrl, {
+          name,
+          profileUrl: destinationUrl,
+          title,
+          labUrl,
+          ...(labUrl ? {} : { labSlotAttestation: 'refused' as const }),
+        });
       });
   });
 
   return Array.from(byUrl.values());
+};
+
+/**
+ * The numeric WordPress post id inside a `data-bio-id` attribute.
+ *
+ * 272 of the roster's 277 anchors carry a leaked PHP concatenation as the
+ * attribute value, literally `data-bio-id="' . 19754 . '"`, so an exact-match read
+ * harvests the 5 well-formed rows and drops the rest. The id itself is intact, so
+ * the first digit run is read instead. Anything with a second digit run is refused
+ * rather than guessed at, because two numbers in one attribute means the shape
+ * changed and a wrong id fetches a stranger's page.
+ */
+function bioPostIdFromAttribute(value: string | undefined): string | undefined {
+  const runs = String(value || '').match(/\d+/g);
+  return runs?.length === 1 ? runs[0] : undefined;
+}
+
+/**
+ * David Geffen School of Drama "Who We Are" roster (drama.yale.edu). The school's
+ * `/faculty/` page, which is what Yale's A-Z catalog links, serves an empty
+ * `#main-content` and stays empty after full hydration, so this page is the only
+ * roster the school publishes (#2788).
+ *
+ * Every row names its person in the anchor text and its rank in a sibling `.role`,
+ * and the anchor's `href` is `#` because a click opens a modal. The person's own
+ * page is reachable all the same: `?p=<post id>` resolves to the public
+ * `/bios/<slug>/` permalink, and `canonicalProfileUrlFromHtml` rewrites the
+ * citation to that same-domain canonical during enrichment, so no bespoke
+ * per-person POST is needed and no row ever cites the shared roster page.
+ *
+ * Two layouts, both present on the page:
+ *   <div class="bio">                             leadership block
+ *     <h2 class="bio-name"><a class="chairPerson" data-bio-id="21100">Name</a></h2>
+ *     <div class="role-wrapper"><p class="role">Rank</p></div>
+ *   <div class="bio-modal-container">             accordion staff grid
+ *     <a class="chairPerson" data-bio-id="' . 3023 . '"> Name </a>
+ *     <span class="role">Rank</span>
+ *
+ * The accordion groups the grid by discipline and puts non-research people in
+ * their own panels ("Administrative Staff", "Production Staff"), which
+ * `isNonResearchStaffHeading` drops the way the School of Art lane drops its
+ * "Staff and Administration" section.
+ */
+export const dramaWhoWeAreExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const byPostId = new Map<string, FacultyEntry>();
+
+  const addEntry = (anchor: cheerio.Cheerio<AnyNode>, container: cheerio.Cheerio<AnyNode>) => {
+    const postId = bioPostIdFromAttribute(anchor.attr('data-bio-id'));
+    if (!postId || byPostId.has(postId)) return;
+    const name = normalizeName(cleanText(anchor.text()) || cleanText(anchor.attr('data-name')));
+    if (!name) return;
+    const title = cleanText(container.find('.role').first().text()) || undefined;
+    const imageUrl = imageUrlFromElement(container, ctx.pageUrl);
+    byPostId.set(postId, {
+      name,
+      profileUrl: absolutize(`/?p=${postId}`, ctx.pageUrl),
+      title,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
+  };
+
+  $('.bio').each((_i, el) => {
+    const block = $(el);
+    addEntry(block.find('a.chairPerson').first(), block);
+  });
+
+  $('.sow-accordion-panel').each((_i, el) => {
+    const panel = $(el);
+    if (isNonResearchStaffHeading(cleanText(panel.find('.sow-accordion-title').first().text()))) {
+      return;
+    }
+    panel.find('.bio-modal-container').each((_j, card) => {
+      const block = $(card);
+      addEntry(block.find('a.chairPerson').first(), block);
+    });
+  });
+
+  return Array.from(byPostId.values());
 };
 
 /**
@@ -1162,19 +1503,87 @@ export const facultyThumbnailExtractor: FacultyExtractor = (html, ctx) => {
   return out;
 };
 
+/**
+ * True when a config's `deptName` names the school the config already reports in
+ * `schoolName`, in full or by the short form Yale uses conversationally ("Divinity"
+ * for "Yale Divinity School"). Such a config has no department to report, so it
+ * belongs behind `schoolWideDirectory`; a guard test holds every config to this.
+ */
+export function rosterDeptNameNamesItsOwnSchool(dept: {
+  deptName: string;
+  schoolName: string;
+}): boolean {
+  const schoolForms = new Set<string>();
+  const add = (value: string): void => {
+    const key = orgUnitMatchKey(value);
+    if (key) schoolForms.add(key);
+  };
+  const school = dept.schoolName.trim();
+  add(school);
+  const withoutYale = school.replace(/^Yale\s+/i, '');
+  add(withoutYale);
+  add(withoutYale.replace(/\s+School$/i, ''));
+  add(withoutYale.replace(/^School\s+of\s+/i, ''));
+  // The candidate is normalized the same way, because the catalog stores schools
+  // without the "Yale" prefix while a roster config usually spells it out.
+  const candidate = dept.deptName.trim();
+  return (
+    schoolForms.has(orgUnitMatchKey(candidate)) ||
+    schoolForms.has(orgUnitMatchKey(candidate.replace(/^Yale\s+/i, '')))
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Default config (mutable so callers can swap or extend in tests if needed,
 // though the typical add-a-dept path is just a new entry below).
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
+  // Economics publishes a typed roster, and the four faculty-bearing tabs each
+  // need their own lane sharing this `deptKey` (#2834). The former single lane
+  // read `/people`, the whole-department directory: 240 rows led by 48 PhD
+  // students, 22 IDE students, 9 pre-doctoral fellows and 9 IDE alumni, and it
+  // never terminated inside the page cap. Reading further would have ingested
+  // more students rather than more faculty.
   {
     deptKey: 'econ',
     deptName: 'Economics',
     schoolName: 'Yale Faculty of Arts and Sciences',
-    url: 'https://economics.yale.edu/people',
+    url: 'https://economics.yale.edu/people-economics?person_type=2&interest=All',
     paginated: true,
     extractor: econExtractor,
+  },
+  {
+    deptKey: 'econ',
+    deptName: 'Economics',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://economics.yale.edu/people-economics?person_type=6&interest=All',
+    paginated: true,
+    extractor: econExtractor,
+  },
+  {
+    deptKey: 'econ',
+    deptName: 'Economics',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://economics.yale.edu/people-economics?person_type=59&interest=All',
+    paginated: true,
+    extractor: econExtractor,
+  },
+  // Affiliated Faculty are appointed in Management, Law, Public Health,
+  // Political Science and Computer Science, so this tab may carry the Economics
+  // label but must never assert the appointment: a parity read of `/people`
+  // found 38 faculty-ranked rows whose stated title is another department's.
+  // `crossListedProgramme` withholds `primaryDepartment` and the entity school
+  // and gates each row on a stated faculty rank, which also drops the 6
+  // non-faculty rows this tab carries.
+  {
+    deptKey: 'econ',
+    deptName: 'Economics',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://economics.yale.edu/people-economics?person_type=71&interest=All',
+    paginated: true,
+    extractor: econExtractor,
+    crossListedProgramme: true,
   },
   {
     deptKey: 'mcdb',
@@ -1353,7 +1762,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptName: 'American Studies',
     schoolName: 'Yale Faculty of Arts and Sciences',
     url: 'https://americanstudies.yale.edu/people/faculty',
-    paginated: false,
+    paginated: true,
     extractor: psychExtractor,
   },
   {
@@ -1361,7 +1770,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptName: 'African Studies',
     schoolName: 'MacMillan Center for International and Area Studies at Yale',
     url: 'https://macmillan.yale.edu/africa/people',
-    paginated: false,
+    paginated: true,
     extractor: econExtractor,
     emitPersonalResearchEntities: false,
   },
@@ -1479,7 +1888,11 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     schoolName: 'Yale Faculty of Arts and Sciences',
     url: 'https://classics.yale.edu/people/faculty',
     paginated: false,
-    extractor: viewsRowPersonExtractor,
+    // Migrated away from views-row: the page now serves 190 directory-listing-card
+    // elements and zero views-row, so the previous extractor returned no faculty at
+    // all. The other seven views-row departments were probed and have not migrated
+    // (#2617).
+    extractor: directoryListingCardExtractor,
   },
   {
     deptKey: 'nelc',
@@ -1504,6 +1917,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://ysph.yale.edu/school-of-public-health-faculty/directory-name/',
     paginated: false,
     extractor: ysphDirectoryExtractor,
+    schoolWideDirectory: true,
   },
   {
     deptKey: 'english',
@@ -1601,6 +2015,95 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     paginated: false,
     extractor: directoryListingCardExtractor,
   },
+  // Degree-granting interdisciplinary FAS programmes from Yale's A-Z catalog.
+  // Their faculty hold appointments elsewhere too, so these lanes mainly add the
+  // programme label a student filters on rather than minting people: each served
+  // near-zero rows beforehand while its page listed dozens of faculty already in
+  // the corpus. A programme whose roster is an affiliation rather than an
+  // appointment belongs on the `affiliatesOnly` path instead.
+  {
+    deptKey: 'archaeological-studies',
+    deptName: 'Archaeological Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://archaeology.yale.edu/people',
+    paginated: false,
+    extractor: viewsRowPersonExtractor,
+    crossListedProgramme: true,
+  },
+  // medieval.yale.edu/people and cogsci.yale.edu/people each 301 to one tab of a
+  // tabbed roster, so a config pointing at the bare `/people` path silently reads
+  // that tab alone: 31 of 50 medieval rows and 63 of 65 cognitive-science rows.
+  // The remaining tabs are separate paths rather than `?page=N`, so `paginated`
+  // cannot reach them and each needs its own lane. The tabs share their sibling's
+  // `deptKey` (the SOM lanes share `som` the same way) so one person listed on two
+  // tabs dedupes to one synthetic entity key instead of two.
+  {
+    deptKey: 'medieval-studies',
+    deptName: 'Medieval Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://medieval.yale.edu/people/core-faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+    crossListedProgramme: true,
+  },
+  {
+    deptKey: 'medieval-studies',
+    deptName: 'Medieval Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://medieval.yale.edu/people/affiliated-faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+    crossListedProgramme: true,
+  },
+  {
+    deptKey: 'medieval-studies',
+    deptName: 'Medieval Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://medieval.yale.edu/people/emeritus-faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+    crossListedProgramme: true,
+  },
+  {
+    deptKey: 'early-modern-studies',
+    deptName: 'Early Modern Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    // The only one of the five whose directory carries a pager: 108 rows across
+    // seven pages (16 a page, 12 on the last), of which 56 pass the rank gate, so
+    // reading page 0 alone would serve 16 rows and still report `ok`. The other
+    // four return page 0 again for any `?page=N`, so they must stay unpaginated.
+    url: 'https://earlymodern.yale.edu/people',
+    paginated: true,
+    extractor: directoryListingCardExtractor,
+    crossListedProgramme: true,
+  },
+  {
+    deptKey: 'cognitive-science',
+    deptName: 'Cognitive Science',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://cogsci.yale.edu/people/faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+    crossListedProgramme: true,
+  },
+  {
+    deptKey: 'cognitive-science',
+    deptName: 'Cognitive Science',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://cogsci.yale.edu/people/emeritus-faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+    crossListedProgramme: true,
+  },
+  {
+    deptKey: 'humanities',
+    deptName: 'Humanities',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://humanities.yale.edu/faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+    crossListedProgramme: true,
+  },
   {
     deptKey: 'divinity',
     deptName: 'Divinity',
@@ -1608,6 +2111,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://divinity.yale.edu/about/faculty-directory',
     paginated: false,
     extractor: directoryListingCardExtractor,
+    schoolWideDirectory: true,
   },
   {
     deptKey: 'chemistry',
@@ -1697,6 +2201,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://nursing.yale.edu/faculty-research/faculty-directory',
     paginated: false,
     extractor: nursingFacultyExtractor,
+    schoolWideDirectory: true,
   },
   {
     deptKey: 'law',
@@ -1707,6 +2212,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     // ?page=N pagination, so the static path walks the whole roster (#1348).
     paginated: true,
     extractor: lawPersonListingExtractor,
+    schoolWideDirectory: true,
   },
   {
     deptKey: 'west-campus',
@@ -1720,20 +2226,43 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptKey: 'art',
     deptName: 'Art',
     schoolName: 'Yale School of Art',
-    url: 'https://www.art.yale.edu/about/people/faculty-and-staff',
+    // The site dropped the `/about` path segment: the previous
+    // `/about/people/faculty-and-staff` now 404s, so this lane asserted coverage
+    // it did not have. The current page carries ~125 person links.
+    url: 'https://www.art.yale.edu/people/faculty-and-staff',
     paginated: false,
-    extractor: scrollingListModuleExtractor,
+    extractor: artPeopleListExtractor,
+    schoolWideDirectory: true,
   },
   {
     deptKey: 'school-of-music',
     deptName: 'Music',
     schoolName: 'Yale School of Music',
+    // #1344 read this roster as browser-rendered and left it skipped, so the school
+    // served no rows at all. The page ships all 64 `article.node--type-person` cards
+    // in static HTML and `nodePersonCardExtractor` parses every one with a title,
+    // profile URL and image, so the skip is what withheld them, not the markup.
+    // `renderedExtractor` stays as the fallback if the site moves behind hydration.
     url: 'https://music.yale.edu/meet-our-faculty',
     paginated: false,
     extractor: nodePersonCardExtractor,
     renderedExtractor: nodePersonCardExtractor,
     renderWaitSelector: 'article.node--type-person',
-    jsRenderedSkip: true,
+    schoolWideDirectory: true,
+  },
+  {
+    deptKey: 'drama',
+    deptName: 'David Geffen School of Drama',
+    schoolName: 'David Geffen School of Drama',
+    // The A-Z catalog links `/faculty/`, which serves an empty `#main-content` and
+    // stays empty after full hydration, so this page is the school's only roster
+    // (#2788). Its 163 faculty rows carry a rank and a headshot but no `href`: the
+    // person's page is reached through the `?p=<post id>` permalink the extractor
+    // builds, which the enrichment step rewrites to the `/bios/<slug>/` canonical.
+    url: 'https://www.drama.yale.edu/about-us/who-we-are/',
+    paginated: false,
+    extractor: dramaWhoWeAreExtractor,
+    schoolWideDirectory: true,
   },
   {
     deptKey: 'yibs',
@@ -1752,6 +2281,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://www.architecture.yale.edu/faculty',
     paginated: true,
     extractor: facultyThumbnailExtractor,
+    schoolWideDirectory: true,
   },
   {
     deptKey: 'ysm-cell-biology',
@@ -1884,6 +2414,18 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptName: 'Emergency Medicine',
     schoolName: 'Yale School of Medicine',
     url: 'https://medicine.yale.edu/emergencymed/people/',
+    paginated: false,
+    extractor: profileGridItemExtractor,
+    officialProfileOnly: true,
+  },
+  // The roster root above reads 11 people; this tab reads 20, all
+  // faculty-ranked. The sibling `/people/fellows/` is deliberately not a lane:
+  // its 16 rows are Instructors and Postdoctoral Fellows (#2834).
+  {
+    deptKey: 'ysm-emergency-medicine',
+    deptName: 'Emergency Medicine',
+    schoolName: 'Yale School of Medicine',
+    url: 'https://medicine.yale.edu/emergencymed/people/faculty/',
     paginated: false,
     extractor: profileGridItemExtractor,
     officialProfileOnly: true,
@@ -2058,6 +2600,14 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     paginated: false,
     extractor: profileGridItemExtractor,
     officialProfileOnly: true,
+    // Yale School of Public Health publishes Global Health under
+    // "Interdepartmental Foci", so it is a cross-cutting grouping rather than a
+    // home department, exactly like this lane's five siblings whose URLs say
+    // "concentration" or "track" and which already set this flag. This one's URL
+    // does not, which is how it was missed: 19 researchers whose own titles name
+    // Epidemiology, Environmental Health Sciences, Biostatistics or Nursing were
+    // stamped with Global Health as their department (#2866).
+    affiliatesOnly: true,
   },
   {
     deptKey: 'ysph-health-policy-management',
@@ -2095,9 +2645,9 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
   },
   {
     deptKey: 'judaic-studies',
-    deptName: 'Judaic Studies',
+    deptName: 'Jewish Studies',
     schoolName: 'Yale Faculty of Arts and Sciences',
-    url: 'https://judaicstudies.yale.edu/people',
+    url: 'https://jewishstudies.yale.edu/people/faculty',
     paginated: false,
     extractor: mcdbExtractor,
   },
@@ -2106,7 +2656,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptName: 'Council on East Asian Studies',
     schoolName: 'MacMillan Center for International and Area Studies at Yale',
     url: 'https://macmillan.yale.edu/eastasia/people',
-    paginated: false,
+    paginated: true,
     extractor: econExtractor,
     officialProfileOnly: true,
     affiliatesOnly: true,
@@ -2116,9 +2666,18 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptName: 'South Asian Studies Council',
     schoolName: 'MacMillan Center for International and Area Studies at Yale',
     url: 'https://macmillan.yale.edu/southasia/people?person_type=80&departments_target_id=All&academic_year_id=All',
-    paginated: false,
+    paginated: true,
     extractor: econExtractor,
     officialProfileOnly: true,
+    affiliatesOnly: true,
+  },
+  {
+    deptKey: 'cbb-computational-biology-biomedical-informatics',
+    deptName: 'Computational Biology & Biomedical Informatics',
+    schoolName: 'Yale School of Medicine',
+    url: 'https://cbb.yale.edu/faculty-labs',
+    paginated: false,
+    extractor: facultyLabsTableExtractor,
     affiliatesOnly: true,
   },
   {
@@ -2329,17 +2888,6 @@ function uniqueStrings(values: Array<string | undefined>): string[] {
   return out;
 }
 
-function pageUrlForIndex(baseUrl: string, pageIndex: number): string {
-  if (pageIndex === 0) return baseUrl;
-  try {
-    const u = new URL(baseUrl);
-    u.searchParams.set('page', String(pageIndex));
-    return u.toString();
-  } catch {
-    return baseUrl;
-  }
-}
-
 function sameOrSubdomain(hostname: string, rootHostname: string): boolean {
   return hostname === rootHostname || hostname.endsWith(`.${rootHostname}`);
 }
@@ -2364,21 +2912,74 @@ function normalizeUrlForDedupe(url: string): string {
   }
 }
 
+/** The registrable domain, so `www.art.yale.edu` and `art.yale.edu` compare equal. */
+function registrableDomain(hostname: string): string {
+  return hostname.toLowerCase().split('.').slice(-2).join('.');
+}
+
+/**
+ * A canonical URL is publisher-supplied, so it is a claim rather than a fact, and
+ * it is only trusted while it stays on the domain we actually fetched.
+ *
+ * The School of Art ships `<link rel="canonical">` and `og:url` pointing at its
+ * DigitalOcean build host (`ysoa-2025-...ondigitalocean.app`). Trusting that moved
+ * 62 of the lane's person citations onto an ephemeral deploy host that is not a
+ * Yale source and dies on the next redeploy, while `art.yale.edu` served the same
+ * page perfectly well (#2683). A cross-domain canonical is dropped rather than
+ * followed; a same-domain one is still honoured, which is the case it exists for
+ * (a `www` or path-normalising redirect).
+ */
 function canonicalProfileUrlFromHtml($: cheerio.CheerioAPI, fallbackUrl: string): string {
   const canonicalHref =
     $('link[rel="canonical"]').first().attr('href') ||
     $('meta[property="og:url"]').first().attr('content') ||
     '';
-  return canonicalHref ? absolutize(canonicalHref, fallbackUrl) : fallbackUrl;
+  if (!canonicalHref) return fallbackUrl;
+  const canonicalUrl = absolutize(canonicalHref, fallbackUrl);
+  try {
+    const claimed = registrableDomain(new URL(canonicalUrl).hostname);
+    const fetched = registrableDomain(new URL(fallbackUrl).hostname);
+    if (claimed !== fetched) return fallbackUrl;
+  } catch {
+    return fallbackUrl;
+  }
+  return canonicalUrl;
+}
+
+/**
+ * An anchor removed from the tab order is not reachable by a keyboard user, so it
+ * is a collapsed or hidden widget item rather than page content. YSPH renders its
+ * whole mega-menu this way - `navigation-panel-*` classes on plain `div`/`li`
+ * elements, no `<nav>` and no `role="navigation"` - which is how one nav entry
+ * under "Giving" became the `websiteUrl` of 517 people (#2460).
+ */
+/**
+ * `personal` only counts as a website signal in a website collocation. Bare
+ * `\bpersonal\b` matched the prose headline "A Personal Inspiration for Support of
+ * Cancer Research", which is how a donor story page read as someone's personal
+ * site (#2460).
+ */
+const WEBSITE_SIGNAL =
+  /\b(lab|laboratory|website|homepage|home page|research group|group site|personal (?:web)?site|personal page|personal homepage|personal web page)\b/i;
+
+function isCollapsedWidgetLink(link: cheerio.Cheerio<any>): boolean {
+  return (link.attr('tabindex') || '').trim() === '-1';
 }
 
 function isSiteChromeLink(link: cheerio.Cheerio<any>): boolean {
+  if (isCollapsedWidgetLink(link)) return true;
+  // A news or media item is ordinary in-tab page content, so neither the tab-order
+  // test above nor the chrome containers below can see it (#3184).
+  if (isInProfilePublicityRegion(link)) return true;
   return (
     link.closest(
       [
         'footer',
         'nav',
         '[role="navigation"]',
+        '[class*="navigation-panel"]',
+        '[class*="mega-menu"]',
+        '[class*="megamenu"]',
         '.site-header',
         '.site-footer',
         '.site-navigation',
@@ -2584,7 +3185,13 @@ async function fetchDeptData(
   return data;
 }
 
-function profileEnrichmentFromHtml(
+/**
+ * Exported for `departmentRosterLabSlotAttestation.test.ts`: this is the only place
+ * that can tell an empty lab-website slot from a refused candidate, so the whole
+ * `dept-faculty-roster` retraction contract rests on it and a guard that cannot
+ * reach it cannot hold it (#3135).
+ */
+export function profileEnrichmentFromHtml(
   html: string,
   profileUrl: string,
 ): Partial<
@@ -2594,6 +3201,7 @@ function profileEnrichmentFromHtml(
     | 'name'
     | 'email'
     | 'labUrl'
+    | 'labSlotAttestation'
     | 'title'
     | 'orcid'
     | 'bio'
@@ -2621,6 +3229,9 @@ function profileEnrichmentFromHtml(
       .trim() || undefined;
 
   let labUrl: string | undefined;
+  // Set only where a link cleared WEBSITE_SIGNAL and a guard then declined it, so a
+  // link that was never a candidate leaves the slot claimable as empty (#3135).
+  let labUrlCandidateRefused = false;
   const scholarCandidateProfileUrls: string[] = [];
   const profileHost = (() => {
     try {
@@ -2658,16 +3269,36 @@ function profileEnrichmentFromHtml(
     const aria = link.attr('aria-label') || '';
     const titleAttr = link.attr('title') || '';
     const signal = `${text} ${aria} ${titleAttr} ${parsed.hostname} ${parsed.pathname}`;
-    const hasWebsiteSignal =
-      /\b(lab|laboratory|website|personal|homepage|research group|group site)\b/i.test(signal);
+    const hasWebsiteSignal = WEBSITE_SIGNAL.test(signal);
     if (!hasWebsiteSignal) return;
+    if (isInstitutionalAdvancementUrl(absolute)) {
+      labUrlCandidateRefused = true;
+      return;
+    }
+    // The signal is exactly what a Locations card's `aria-label="Get <Name> Lab
+    // directions"` spells, so this destination has to be judged on its own shape
+    // rather than on the words the page wraps it in (#3184).
+    if (isMapOrDirectionsUrl(absolute) || isInstitutionalPublicityPageUrl(absolute)) {
+      labUrlCandidateRefused = true;
+      return;
+    }
 
     const candidateHost = parsed.hostname.toLowerCase();
     const isProfileSite = profileHost && candidateHost === profileHost;
     const isDirectoryPath = /\/(people|person|profile|faculty|directory)\//i.test(parsed.pathname);
-    if (isProfileSite && isDirectoryPath) return;
+    if (isProfileSite && isDirectoryPath) {
+      labUrlCandidateRefused = true;
+      return;
+    }
+    if (isOffsiteInstitutionPersonProfileUrl(absolute)) {
+      labUrlCandidateRefused = true;
+      return;
+    }
 
-    if (isGenericLabDirectoryUrl(absolute)) return;
+    if (isGenericLabDirectoryUrl(absolute)) {
+      labUrlCandidateRefused = true;
+      return;
+    }
     labUrl = absolute;
   });
 
@@ -2682,6 +3313,7 @@ function profileEnrichmentFromHtml(
     email,
     title,
     labUrl,
+    ...(labUrl ? {} : { labSlotAttestation: labUrlCandidateRefused ? 'refused' : 'empty' }),
     orcid: extractOrcidFromHtml($),
     bio,
     researchHomeDescription: officialProse?.fullDescription,
@@ -2713,6 +3345,29 @@ function extractGroundedProfileDescription(
   return { fullDescription, shortDescription };
 }
 
+/**
+ * What the lane as a whole can claim about an entity's lab-website slot (#3135).
+ *
+ * A refusal anywhere wins, because one guard declining a link the page still carries
+ * is enough to make an absence claim false. An `empty` needs a positive attestation
+ * from at least one side. No attestation from either side is no claim, which is the
+ * state when the profile page was never fetched, and it is deliberately not treated
+ * as empty: an unread page says nothing.
+ *
+ * A roster parse that never reads `labUrl` leaves no attestation and cannot have
+ * refused a candidate, so it correctly neither blocks nor supports the claim.
+ */
+function mergedLabSlotAttestation(
+  entry: Pick<FacultyEntry, 'labUrl' | 'labSlotAttestation'>,
+  enrichment: Pick<Partial<FacultyEntry>, 'labUrl' | 'labSlotAttestation'>,
+): FacultyEntry['labSlotAttestation'] {
+  if (entry.labUrl || enrichment.labUrl) return undefined;
+  const claims = [entry.labSlotAttestation, enrichment.labSlotAttestation];
+  if (claims.includes('refused')) return 'refused';
+  if (claims.includes('empty')) return 'empty';
+  return undefined;
+}
+
 function mergeProfileEnrichment(
   entry: FacultyEntry,
   enrichment: Partial<
@@ -2722,6 +3377,7 @@ function mergeProfileEnrichment(
       | 'name'
       | 'email'
       | 'labUrl'
+      | 'labSlotAttestation'
       | 'title'
       | 'orcid'
       | 'bio'
@@ -2746,6 +3402,7 @@ function mergeProfileEnrichment(
     title: entry.title || enrichment.title,
     email: entry.email || enrichment.email,
     labUrl: entry.labUrl || enrichment.labUrl,
+    labSlotAttestation: mergedLabSlotAttestation(entry, enrichment),
     orcid: entry.orcid || enrichment.orcid,
     bio: entry.bio || enrichment.bio,
     researchHomeDescription: entry.researchHomeDescription || enrichment.researchHomeDescription,
@@ -2777,6 +3434,121 @@ function mergeProfileEnrichment(
   };
 }
 
+// Leaf words that mark a page as a section or landing page rather than one
+// person's profile. `welcome` earns its place from live data: two Development
+// records cite a lab landing page (`wanglab.yale.edu/welcome`) as an official
+// profile link.
+const NON_PROFILE_SECTION_LEAF_TOKENS = new Set([
+  'about',
+  'leadership',
+  'welcome',
+  'index',
+  'home',
+  'contact',
+  'directory',
+  'staff',
+  'team',
+  'people',
+  'faculty',
+  'members',
+  'news',
+  'events',
+  'overview',
+]);
+
+// `personIdentityTokens` splits on non-alphanumerics without folding accents, so
+// "José Martínez" tokenizes as ['jos','mart','nez'] and shares nothing with a
+// roster row spelled "Jose Martinez". Folding first (the same NFKD form
+// `scrapers/utils/piNameMatch.ts` uses) keeps an accent-rendering difference
+// between the roster and the profile page from reading as a different person.
+function identityTokens(value: unknown): string[] {
+  if (typeof value !== 'string') return personIdentityTokens(value);
+  return personIdentityTokens(value.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''));
+}
+
+function profileUrlLeafTokens(profileUrl: string): string[] {
+  try {
+    const segments = new URL(profileUrl).pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+    const leaf = segments[segments.length - 1] || '';
+    return identityTokens(leaf.replace(/[-_]+/g, ' '));
+  } catch {
+    return [];
+  }
+}
+
+function profileUrlHostLabelTokens(profileUrl: string): string[] {
+  try {
+    const label = new URL(profileUrl).hostname.split('.')[0] || '';
+    return identityTokens(label.replace(/[-_]+/g, ' '));
+  } catch {
+    return [];
+  }
+}
+
+const surnameToken = (tokens: string[]): string => tokens.at(-1) || '';
+
+// A single shared token is a first-name collision away from another real person:
+// roster "Nancy Ruddle" and the dean page's "Nancy Brown" share `nancy`. The
+// surname is the discriminating token, so one name's surname must appear among
+// the other's tokens. Checking both directions absorbs a "Surname, Given" page
+// title and a stray trailing token the roster row carries, without letting a
+// shared given name alone through (#468 is the same rule for lead profiles).
+function namesShareSurname(rosterTokens: string[], otherTokens: string[]): boolean {
+  return (
+    otherTokens.includes(surnameToken(rosterTokens)) ||
+    rosterTokens.includes(surnameToken(otherTokens))
+  );
+}
+
+/**
+ * Whether a fetched page is the profile of the roster row's own person.
+ *
+ * `isOfficialYaleUrl` only checks the host, so any `*.yale.edu` page the roster
+ * markup happens to link reaches this lane - including a section page like
+ * `medicine.yale.edu/about/`, whose declared person is the dean rather than the
+ * faculty member (#2385 attributed four departmental sites to one dean this
+ * way). The page's own declared name is the only evidence that distinguishes
+ * "this person's profile" from "some other real Yale person's page", so a
+ * surname shared with the roster row is required before anything is merged.
+ *
+ * The URL is a fallback rather than the primary signal: a correct profile usually
+ * carries the person's name in its slug or host label, but a numeric or opaque
+ * slug is common enough that refusing on it alone would drop good enrichment.
+ */
+export function profileBelongsToRosterPerson(args: {
+  rosterName: unknown;
+  profileUrl: string;
+  profileDeclaredName: unknown;
+}): boolean {
+  const rosterTokens = identityTokens(args.rosterName);
+  if (rosterTokens.length === 0) return false;
+  const declaredTokens = identityTokens(args.profileDeclaredName);
+  if (declaredTokens.length > 0) return namesShareSurname(rosterTokens, declaredTokens);
+
+  const namesRosterPerson = (tokens: string[]): boolean =>
+    tokens.some((token) => rosterTokens.includes(token));
+  const leafTokens = profileUrlLeafTokens(args.profileUrl);
+  if (namesRosterPerson(leafTokens)) return true;
+  // A personal site is named by its host label rather than its path, so
+  // `konezny.sites.yale.edu/` names its person even though its leaf is empty.
+  if (namesRosterPerson(profileUrlHostLabelTokens(args.profileUrl))) return true;
+  if (leafTokens.some((token) => NON_PROFILE_SECTION_LEAF_TOKENS.has(token))) return false;
+  // With no declared name and no name in the URL, the page has named nobody, so
+  // the only remaining evidence is whether the URL is person-scoped at all. An
+  // OPAQUE leaf under a person-profile path is absence of evidence rather than
+  // evidence of another subject: on Development 22 of 3,804 official profile
+  // links are netid or concatenated-surname slugs (`/profile/pf93/`,
+  // `/profile/maria-rodriguezmartinez/`) that belong to exactly the person
+  // named, and refusing those would drop good enrichment for no safety gain. A
+  // section or department landing page (`/about/`, `/psychiatry/`) is different:
+  // it is not one person's page at all, which is how the dean page was read back
+  // as four departments' lead (#2385). The section-leaf list cannot enumerate
+  // Yale's section words, so the shape requirement carries the refusal and the
+  // list only adds the section pages that do sit under a person-profile path
+  // (`/faculty/leadership/`).
+  return isPersonProfileOrDirectoryUrl(args.profileUrl);
+}
+
 async function enrichEntryFromOfficialProfile(
   entry: FacultyEntry,
   sourceName: string,
@@ -2785,15 +3557,55 @@ async function enrichEntryFromOfficialProfile(
   log: ScraperContext['log'],
 ): Promise<FacultyEntry> {
   if (!entry.profileUrl || !isOfficialYaleUrl(entry.profileUrl)) return entry;
+  // A shared roster page is never one person's profile, so reading one back
+  // would attribute the whole department's prose to whichever row linked it.
+  if (isSharedPeopleRosterUrl(entry.profileUrl)) return entry;
 
   try {
     const html = await htmlFetcher(entry.profileUrl, useCache, sourceName);
     const enrichment = profileEnrichmentFromHtml(html, entry.profileUrl);
+    // The URL the guard judges is the canonical the page declares, not the seed the
+    // roster linked. A roster whose rows are opaque permalinks (`/?p=<post id>`)
+    // has no name anywhere in the seed URL, so the name-in-URL fallback can never
+    // fire and a page whose own title is not name-shaped - a nickname in curly
+    // quotes, a parenthetical middle name - is refused even though its canonical
+    // names the roster person. `canonicalProfileUrlFromHtml` has already dropped a
+    // cross-domain claim, so this is the page's same-domain self-identification.
+    const declaredProfileUrl = enrichment.profileUrl || entry.profileUrl;
+    if (
+      !profileBelongsToRosterPerson({
+        rosterName: entry.name,
+        profileUrl: declaredProfileUrl,
+        profileDeclaredName: enrichment.name,
+      })
+    ) {
+      // The citation is kept: it is what the roster asserted and is separately
+      // verifiable. Only the enrichment is dropped, because that is what would
+      // carry another person's name, title, email, bio and research topics.
+      log(
+        `[profile] refused enrichment, cited profile names someone else: ${sanitizeLogValue(declaredProfileUrl)}`,
+      );
+      return entry;
+    }
     return mergeProfileEnrichment(entry, enrichment);
   } catch (err: any) {
     log(`[profile] fetch failed: ${sanitizeLogValue(err)}`);
     return entry;
   }
+}
+
+/**
+ * Every roster lane mints `labUrl` from a page link, and only the official-profile
+ * lane checks its shape, so the refusal has to sit on the boundary both observation
+ * builders share rather than in each extractor. The extractor-level check stays
+ * where it exists because there it lets a later, genuine website link on the same
+ * page win instead of being blocked by the first off-site one.
+ */
+function withoutOffsiteInstitutionWebsite(entry: FacultyEntry): FacultyEntry {
+  if (!entry.labUrl || !isOffsiteInstitutionPersonProfileUrl(entry.labUrl)) return entry;
+  // Stripping a value the page still carries is a refusal, so the slot must stop
+  // being claimable as empty even if an earlier parse attested it (#3135).
+  return { ...entry, labUrl: undefined, labSlotAttestation: 'refused' };
 }
 
 const SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE: Record<string, string> = {
@@ -2803,6 +3615,67 @@ const SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE: Record<string, string> = {
 
 function namespacedDeptKey(deptKey: string): string {
   return SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE[deptKey] || deptKey;
+}
+
+/**
+ * A programme roster prints the office somebody holds in the programme where a
+ * department roster prints their rank: humanities.yale.edu/faculty subheads three
+ * rows "Chair of Humanities", "DUS of Humanities" and "DUS of Directed Studies",
+ * and cogsci.yale.edu one row "Assistant DUS". Yale fills a programme chair and a
+ * director of undergraduate or graduate studies from the ladder faculty, so the
+ * office states a faculty appointment even though it names no rank - the chair
+ * row's own profile page states an endowed professorship in English. Requiring a
+ * named rank dropped those rows, which is the inverse of the failure the gate was
+ * added for, and the profile page cannot rescue them: its structured title line
+ * repeats the roster subheading and the professorship appears only in prose.
+ */
+const FACULTY_HELD_PROGRAMME_OFFICE_PATTERNS: RegExp[] = [
+  /\bchair\b/i,
+  /\bd(?:u|g)s\b/i,
+  /\bdirector of (?:undergraduate|graduate) studies\b/i,
+];
+
+/**
+ * Whether a roster subheading asserts a faculty appointment. Strict: a subheading
+ * that states a subordinate research rank, a staff role, or no rank at all asserts
+ * nothing.
+ */
+function statesFacultyAppointment(title: string | undefined): boolean {
+  const cleaned = title ? stripInvisibleFormatCharacters(title).trim() : '';
+  if (!cleaned) return false;
+  if (isSubordinateResearchRank(cleaned) || looksLikeNonResearchTitle(cleaned)) return false;
+  return (
+    isFacultyTitle(cleaned) || FACULTY_HELD_PROGRAMME_OFFICE_PATTERNS.some((rx) => rx.test(cleaned))
+  );
+}
+
+/**
+ * A department's own roster lists that department's faculty, so every row is
+ * admitted. An interdisciplinary programme publishes a mixed people directory
+ * instead: earlymodern.yale.edu/people lists graduate students, a registrar, two
+ * library curators and a collections manager beside its professors, and
+ * humanities.yale.edu/faculty lists five postdoctoral associates. Admitting those
+ * rows stamps `userType: 'faculty'` and a programme department claim on somebody
+ * who holds neither, so a `crossListedProgramme` lane requires a stated faculty
+ * appointment the way the YSM directory lane does.
+ *
+ * A row with no title at all is still admitted: an absent rank is not a
+ * contradicted one, and dropping it would silently shrink a lane the day a site
+ * stops rendering subheadings. It carries no `userType` claim either, so what the
+ * lane records for such a row is the programme label alone.
+ */
+function programmeRosterRowStatesFacultyRank(entry: FacultyEntry): boolean {
+  return !entry.title?.trim() || statesFacultyAppointment(entry.title);
+}
+
+/**
+ * A row whose own subheading already decides the gate needs no profile fetch to
+ * reject it, and `mergeProfileEnrichment` keeps `entry.title` when the roster
+ * states one, so enrichment cannot change the verdict. Only an untitled row has to
+ * wait for the profile page, because there the enriched title is the verdict.
+ */
+function programmeRosterRowIsRejectableFromRosterAlone(entry: FacultyEntry): boolean {
+  return Boolean(entry.title?.trim()) && !programmeRosterRowStatesFacultyRank(entry);
 }
 
 function entryToUserObservations(
@@ -2831,9 +3704,13 @@ function entryToUserObservations(
   if (netid) obs.push({ ...rosterBase, field: 'netid', value: netid });
   if (first) obs.push({ ...rosterBase, field: 'fname', value: first });
   if (last) obs.push({ ...rosterBase, field: 'lname', value: last });
-  obs.push({ ...rosterBase, field: 'userType', value: 'faculty' });
-  if (!dept.affiliatesOnly) {
-    obs.push({ ...rosterBase, field: 'primaryDepartment', value: dept.deptName });
+  if (!dept.crossListedProgramme || statesFacultyAppointment(entry.title)) {
+    obs.push({ ...rosterBase, field: 'userType', value: 'faculty' });
+  }
+  if (!dept.affiliatesOnly && !dept.schoolWideDirectory) {
+    if (!dept.crossListedProgramme) {
+      obs.push({ ...rosterBase, field: 'primaryDepartment', value: dept.deptName });
+    }
     obs.push({ ...rosterBase, field: 'departments', value: [dept.deptName] });
   }
   if (personEmail) obs.push({ ...profileBase, field: 'email', value: personEmail });
@@ -2868,25 +3745,20 @@ function entryToUserObservations(
 }
 
 function isLikelyExplicitLabWebsite(entry: FacultyEntry): boolean {
-  const name = normalizeName(entry.name);
-  const url = entry.labUrl || '';
-  const searchable = `${name} ${url}`.toLowerCase();
-  return (
-    /\b(lab|laboratory|research[-\s]?group|group)\b/.test(searchable) || /lab[./-]/.test(searchable)
-  );
+  return evidenceAssertsALab(normalizeName(entry.name), entry.labUrl);
 }
 
 /**
- * Official-profile page that a lab-less research home may cite as its own
- * source. A roster listing root is never citable: it is shared by the whole
- * department, `isListingOrIndexUrl` rejects it downstream, and an entity whose
- * only URL is a generic directory root is suppressed as a directory shell.
+ * The person's own official profile page. A roster listing is never citable as
+ * one: it is shared by the whole department, so citing it makes every colleague's
+ * entity claim the same page as its profile, and an entity whose only URL is a
+ * generic directory root is suppressed as a directory shell.
  */
-function labLessResearchHomeCitationUrl(entry: FacultyEntry): string {
+function officialProfileCitationUrl(entry: FacultyEntry): string {
   if (entry.namePlaceholder) return '';
   const profileUrl = entry.profileSourceUrl || entry.profileUrl || '';
   if (!profileUrl || !isOfficialYaleUrl(profileUrl)) return '';
-  if (isListingOrIndexUrl(profileUrl)) return '';
+  if (isSharedPeopleRosterUrl(profileUrl)) return '';
   return profileUrl;
 }
 
@@ -2937,7 +3809,8 @@ export function entryToResearchEntityObservations(
 
   const evidence = rosterResearchHomeEvidence(entry);
   const { groundedDescription, topics } = evidence;
-  const labLessCitationUrl = entry.labUrl ? '' : labLessResearchHomeCitationUrl(entry);
+  const profileCitationUrl = officialProfileCitationUrl(entry);
+  const labLessCitationUrl = entry.labUrl ? '' : profileCitationUrl;
   const hasLabLessResearchEvidence =
     Boolean(labLessCitationUrl) && (Boolean(groundedDescription) || topics.length > 0);
   if (!entry.labUrl && !hasLabLessResearchEvidence) return [];
@@ -2956,20 +3829,33 @@ export function entryToResearchEntityObservations(
     entityKey: slug,
     sourceUrl: labLessCitationUrl || sourceUrl,
   };
+  // Only a positively attested empty slot is an absence. A refusal, and silence from
+  // a parse that never looked, both leave the claim unmade (#3135, #2647).
+  const labSlotIsEmpty = !entry.labUrl && entry.labSlotAttestation === 'empty';
+
   const observations: ObservationInput[] = [
-    { ...base, field: 'slug', value: slug },
+    {
+      ...base,
+      field: 'slug',
+      value: slug,
+      ...(labSlotIsEmpty ? { assertsNoValueFor: ['websiteUrl'] } : {}),
+    },
     { ...base, field: 'name', value: entityName },
     { ...base, field: 'kind', value: isExplicitLab ? 'lab' : 'individual' },
     { ...base, field: 'entityType', value: isExplicitLab ? 'LAB' : 'FACULTY_RESEARCH_AREA' },
-    { ...base, field: 'school', value: dept.schoolName },
-    ...(dept.affiliatesOnly
+    ...(dept.crossListedProgramme
+      ? []
+      : [{ ...base, field: 'school' as const, value: dept.schoolName }]),
+    ...(dept.affiliatesOnly || dept.schoolWideDirectory
       ? []
       : [{ ...base, field: 'departments' as const, value: [dept.deptName] }]),
     ...(entry.labUrl ? [{ ...base, field: 'websiteUrl' as const, value: entry.labUrl }] : []),
     {
       ...base,
       field: 'sourceUrls',
-      value: entry.labUrl ? [sourceUrl, entry.labUrl] : [labLessCitationUrl],
+      value: entry.labUrl
+        ? uniqueStrings([profileCitationUrl, sourceUrl, entry.labUrl].filter(Boolean))
+        : [labLessCitationUrl],
     },
     {
       ...base,
@@ -3028,6 +3914,54 @@ export class DepartmentRosterScraper implements IScraper {
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
   ) {}
 
+  /**
+   * Read a roster page and record the attempt.
+   *
+   * Until #3251 only the rendered-browser branch pushed a metric, so a run whose
+   * 112 HTML lanes each fetched reported `fetchMetrics.summary.total: 0`, and that
+   * zero was then read as "the fetch layer was never entered". The mode carries
+   * whether a cache hit was permitted, because `fetchHtml` serves a 24-hour
+   * snapshot cache when `--use-cache` is set and cannot say afterwards which it
+   * did: `http` is a read that could only have come off the wire.
+   *
+   * Per-row profile enrichment is deliberately still uncounted. It costs one
+   * request per faculty row, so counting it would store tens of thousands of
+   * attempts on a full run; the question this metric has to answer is whether the
+   * lane read its department's roster.
+   */
+  private async measuredHtmlFetch(
+    pageUrl: string,
+    ctx: ScraperContext,
+    fetchAttempts: ScraperFetchMetric[],
+  ): Promise<string> {
+    const fetchMode = ctx.options.useCache ? 'http-cache-allowed' : 'http';
+    const startedAt = Date.now();
+    try {
+      const html = await this.htmlFetcher(pageUrl, ctx.options.useCache, this.name);
+      fetchAttempts.push(
+        buildFetchAttemptMetrics({
+          fetchMode,
+          success: true,
+          startedAt,
+          blocked: false,
+          selectorBreakage: false,
+        }),
+      );
+      return html;
+    } catch (error) {
+      fetchAttempts.push(
+        buildFetchAttemptMetrics({
+          fetchMode,
+          success: false,
+          startedAt,
+          blocked: false,
+          selectorBreakage: false,
+        }),
+      );
+      throw error;
+    }
+  }
+
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const onlyFilter =
       ctx.options.only && ctx.options.only.length > 0
@@ -3042,7 +3976,6 @@ export class DepartmentRosterScraper implements IScraper {
     let totalObs = 0;
     let totalFaculty = 0;
     let totalLabs = 0;
-    const perDept: Array<{ deptKey: string; count: number; status: string }> = [];
     const fetchAttempts: ScraperFetchMetric[] = [];
     const seenUserKeys = new Set<string>();
     const seenLabKeys = new Set<string>();
@@ -3058,13 +3991,19 @@ export class DepartmentRosterScraper implements IScraper {
 
       for (const rawEntry of entries) {
         if (totalFaculty >= limit) break;
-        const entry = await enrichEntryFromOfficialProfile(
-          rawEntry,
-          this.name,
-          ctx.options.useCache,
-          this.htmlFetcher,
-          ctx.log,
+        if (dept.crossListedProgramme && programmeRosterRowIsRejectableFromRosterAlone(rawEntry)) {
+          continue;
+        }
+        const entry = withoutOffsiteInstitutionWebsite(
+          await enrichEntryFromOfficialProfile(
+            rawEntry,
+            this.name,
+            ctx.options.useCache,
+            this.htmlFetcher,
+            ctx.log,
+          ),
         );
+        if (dept.crossListedProgramme && !programmeRosterRowStatesFacultyRank(entry)) continue;
         const { observations: userObs, entityKey } = entryToUserObservations(
           entry,
           dept,
@@ -3086,7 +4025,15 @@ export class DepartmentRosterScraper implements IScraper {
           observations += labObs.length;
           labs++;
         }
-        if (labObs.length > 0 && typeof labKey === 'string' && labKey) {
+        // A programme lane reads cross-listed faculty from other departments, so
+        // letting it add to this key's discovered set credits the department with a
+        // roster it does not publish (#3251).
+        if (
+          labObs.length > 0 &&
+          typeof labKey === 'string' &&
+          labKey &&
+          !dept.crossListedProgramme
+        ) {
           const deptDiscovered = discoveredEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
           deptDiscovered.add(labKey);
           discoveredEntityKeysByDept.set(dept.deptKey, deptDiscovered);
@@ -3098,9 +4045,8 @@ export class DepartmentRosterScraper implements IScraper {
       return { faculty, labs, observations };
     };
 
-    for (const dept of this.configs) {
-      if (onlyFilter && !onlyFilter.has(dept.deptKey.toLowerCase())) continue;
-      if (totalFaculty >= limit) break;
+    const runLane = async (dept: DeptConfig): Promise<LaneRead | null> => {
+      if (totalFaculty >= limit) return null;
 
       if (dept.jsRenderedSkip && dept.dataUrl && dept.dataExtractor) {
         try {
@@ -3111,8 +4057,13 @@ export class DepartmentRosterScraper implements IScraper {
             totalObs += processed.observations;
             totalLabs += processed.labs;
             ctx.log(`[${dept.deptKey}] ${processed.faculty} faculty from data endpoint`);
-            perDept.push({ deptKey: dept.deptKey, count: processed.faculty, status: 'ok' });
-            continue;
+            return {
+              deptKey: dept.deptKey,
+              count: processed.faculty,
+              status: 'ok',
+              pagesRead: 1,
+              readMode: 'data-endpoint',
+            };
           }
           ctx.log(`[${dept.deptKey}] data endpoint returned no faculty; trying rendered page`);
         } catch (err: any) {
@@ -3122,18 +4073,16 @@ export class DepartmentRosterScraper implements IScraper {
 
       if (dept.jsRenderedSkip && !this.renderedFetcher) {
         ctx.log(`[${dept.deptKey}] skipped — JS-rendered, needs headless browser`);
-        perDept.push({ deptKey: dept.deptKey, count: 0, status: 'js-rendered-skip' });
-        continue;
+        return {
+          deptKey: dept.deptKey,
+          count: 0,
+          status: 'js-rendered-skip',
+          pagesRead: 0,
+          readMode: 'none',
+        };
       }
 
-      let deptCount = 0;
-      const maxPages = dept.paginated ? MAX_PAGES_PER_DEPT : 1;
-      let pagesFetched = 0;
-      let lastPageHadEntries = true;
-
       if (dept.jsRenderedSkip && this.renderedFetcher) {
-        if (totalFaculty >= limit) break;
-
         const rendered = await measureRenderedFetch(
           dept.url,
           'scrapling',
@@ -3141,12 +4090,16 @@ export class DepartmentRosterScraper implements IScraper {
           { selectorName: dept.renderWaitSelector },
         );
         fetchAttempts.push(rendered.metric);
-        pagesFetched++;
 
         if (!rendered.result || !rendered.result.html) {
           ctx.log(`[${dept.deptKey}] skipped — rendered page unavailable`);
-          perDept.push({ deptKey: dept.deptKey, count: 0, status: 'rendered-unavailable' });
-          continue;
+          return {
+            deptKey: dept.deptKey,
+            count: 0,
+            status: 'rendered-unavailable',
+            pagesRead: 0,
+            readMode: 'none',
+          };
         }
 
         let entries: FacultyEntry[];
@@ -3155,73 +4108,156 @@ export class DepartmentRosterScraper implements IScraper {
           entries = (dept.renderedExtractor || dept.extractor)(rendered.result.html, { pageUrl });
         } catch (err: any) {
           ctx.log(`[${dept.deptKey}] rendered extractor error: ${sanitizeLogValue(err)}`);
-          perDept.push({ deptKey: dept.deptKey, count: 0, status: 'rendered-extractor-error' });
-          continue;
+          return {
+            deptKey: dept.deptKey,
+            count: 0,
+            status: 'rendered-extractor-error',
+            pagesRead: 1,
+            readMode: 'rendered',
+          };
         }
 
         const processed = await processEntries(entries, dept, pageUrl);
         totalObs += processed.observations;
         totalLabs += processed.labs;
-        deptCount += processed.faculty;
 
-        ctx.log(`[${dept.deptKey}] ${deptCount} faculty across ${pagesFetched} rendered page(s)`);
-        perDept.push({
+        ctx.log(`[${dept.deptKey}] ${processed.faculty} faculty across 1 rendered page`);
+        return {
           deptKey: dept.deptKey,
-          count: deptCount,
-          status: deptCount === 0 ? 'empty' : 'ok',
-        });
-        continue;
+          count: processed.faculty,
+          status: processed.faculty === 0 ? 'empty' : 'ok',
+          pagesRead: 1,
+          readMode: 'rendered',
+        };
       }
 
-      for (let pageIdx = 0; pageIdx < maxPages && lastPageHadEntries; pageIdx++) {
-        if (totalFaculty >= limit) break;
-        const pageUrl = pageUrlForIndex(dept.url, pageIdx);
-        let html: string;
-        try {
-          html = await this.htmlFetcher(pageUrl, ctx.options.useCache, this.name);
-        } catch (err: any) {
-          ctx.log(`[${dept.deptKey}] fetch failed for configured page: ${sanitizeLogValue(err)}`);
-          break;
-        }
-        pagesFetched++;
-        let entries: FacultyEntry[];
-        try {
-          entries = dept.extractor(html, { pageUrl });
-        } catch (err: any) {
-          ctx.log(`[${dept.deptKey}] extractor error on configured page: ${sanitizeLogValue(err)}`);
-          break;
-        }
-        if (entries.length === 0) {
-          lastPageHadEntries = false;
-          break;
-        }
+      const walk = await walkRosterLanePages({
+        url: dept.url,
+        paginated: dept.paginated,
+        extractor: dept.extractor,
+        fetchHtml: (pageUrl) => this.measuredHtmlFetch(pageUrl, ctx, fetchAttempts),
+      });
+      if (walk.error) {
+        ctx.log(`[${dept.deptKey}] ${walk.stopReason}: ${sanitizeLogValue(walk.error)}`);
+      }
 
-        const processed = await processEntries(entries, dept, pageUrl);
+      // Skip a row this lane has already read before paying for its profile
+      // fetch. `enrichEntryFromOfficialProfile` costs one request per row and
+      // used to run ahead of the `seenUserKeys` dedupe, so a re-served page
+      // re-enriched everybody on it. This does not replace `seenUserKeys`: that
+      // one keys on the ENRICHED identity, which a profile page can change.
+      const seenRawKeys = new Set<string>();
+      let deptCount = 0;
+      for (const page of walk.pages) {
+        const unread = page.entries.filter((entry) => {
+          const key = rosterEntryIdentityKey(entry);
+          if (!key) return true;
+          if (seenRawKeys.has(key)) return false;
+          seenRawKeys.add(key);
+          return true;
+        });
+        if (unread.length === 0) continue;
+        const processed = await processEntries(unread, dept, page.pageUrl);
         totalObs += processed.observations;
         totalLabs += processed.labs;
         deptCount += processed.faculty;
-
-        // Drupal pagination returns the same first page when `?page=N` is past
-        // the end (some sites) — stop early when a page yields fewer entries
-        // than the previous one and we've already crawled at least 2 pages.
-        if (!dept.paginated) break;
       }
 
-      ctx.log(`[${dept.deptKey}] ${deptCount} faculty across ${pagesFetched} page(s)`);
-      perDept.push({
+      ctx.log(
+        `[${dept.deptKey}] ${deptCount} faculty across ${walk.pagesFetched} page(s), pager stopped on ${walk.stopReason}`,
+      );
+      return {
         deptKey: dept.deptKey,
         count: deptCount,
         status: deptCount === 0 ? 'empty' : 'ok',
-      });
-    }
+        pagesRead: walk.pagesFetched,
+        readMode: walk.pagesFetched > 0 ? 'html' : 'none',
+      };
+    };
 
-    const deptConfigByKey = new Map(this.configs.map((dept) => [dept.deptKey, dept]));
+    const selectedLanes = this.configs
+      .map((dept, index) => ({ dept, index }))
+      .filter(({ dept }) => !onlyFilter || onlyFilter.has(dept.deptKey.toLowerCase()));
+
+    // Outcomes land at their config index rather than being pushed, so the
+    // summary, the log order and every `departmentRosterHealth` snapshot stay
+    // identical whatever order the lanes finish in.
+    const outcomeByIndex = new Array<LaneOutcome | null>(this.configs.length).fill(null);
+    const runSelectedLane = async ({ dept, index }: { dept: DeptConfig; index: number }) => {
+      const read = await runLane(dept);
+      outcomeByIndex[index] = read
+        ? { ...read, crossListedProgramme: Boolean(dept.crossListedProgramme) }
+        : null;
+    };
+
+    // A rendered lane drives a headless browser, so those six run one at a time
+    // rather than starting six browsers. A `--limit` run is sequential too,
+    // because a shared budget consumed concurrently makes the cut arbitrary.
+    const [renderedLanes, htmlLanes] = partition(selectedLanes, ({ dept }) =>
+      Boolean(dept.jsRenderedSkip),
+    );
+    const laneConcurrency = Number.isFinite(limit) ? 1 : resolveRosterLaneConcurrency();
+    await runWithBoundedConcurrency(htmlLanes, laneConcurrency, runSelectedLane);
+    await runWithBoundedConcurrency(renderedLanes, 1, runSelectedLane);
+
+    const laneOutcomes = outcomeByIndex.filter(
+      (outcome): outcome is LaneOutcome => outcome !== null,
+    );
+    // One department is one roster-health snapshot, even when several configs
+    // share its `deptKey` (economics has four person-type pages, and 13 of the 125
+    // non-programme lanes collapse this way). A per-config snapshot published two
+    // contradictory rosters for one department in a single run, one `complete` and
+    // one not, and it is also what makes the field unsafe to supersede per
+    // department: `LATEST_WINS_FINGERPRINT_FIELDS` may only hold a field no source
+    // emits twice per (entity, field) per run.
+    // A programme lane publishes no snapshot at all. `reconcileFacultyRosterDeparturesFromRun`
+    // reads every snapshot's `deptName` as a department this run covered, so the
+    // programme name would either mark live researchers departed (as an authority
+    // over a rank-gated partial view of the population) or freeze the departure
+    // check for every cross-listed professor the label reaches (as a
+    // non-authority). Their home departments have their own authoritative lanes.
+    //
+    // Dropping the programme lanes BEFORE the collapse is load-bearing. The filter
+    // used to run after it against a `deptKey`-to-config map, which keeps only the
+    // LAST config carrying each key, so a department whose last-declared lane is a
+    // programme tab had every one of its own authoritative lanes suppressed too. Six
+    // departments published no snapshot at all on a full run and the departure lane
+    // never governed one of them, while their silence read as "this roster lists
+    // nobody" (#3251).
+    const authoritativeConfigByKey = new Map<string, DeptConfig>();
+    for (const dept of this.configs) {
+      if (!dept.crossListedProgramme && !authoritativeConfigByKey.has(dept.deptKey)) {
+        authoritativeConfigByKey.set(dept.deptKey, dept);
+      }
+    }
+    const perDept = collapseLaneOutcomesByDepartment(
+      laneOutcomes.filter(
+        (outcome) => !outcome.crossListedProgramme && authoritativeConfigByKey.has(outcome.deptKey),
+      ),
+    );
+    // Part of the roster reached only through profile pages makes the whole
+    // department a partial view, so ANY such lane withholds authority.
+    const officialProfileOnlyKeys = new Set(
+      this.configs
+        .filter((dept) => !dept.crossListedProgramme && dept.officialProfileOnly)
+        .map((dept) => dept.deptKey),
+    );
+    const snapshotObservedAt = new Date();
     const rosterHealthObservations: ObservationInput[] = perDept.map((deptResult) => {
-      const dept = deptConfigByKey.get(deptResult.deptKey);
+      const dept = authoritativeConfigByKey.get(deptResult.deptKey);
       const discoveredEntityKeys = Array.from(
         discoveredEntityKeysByDept.get(deptResult.deptKey) ?? new Set<string>(),
       );
-      const entityAuthoritative = deptResult.status === 'ok' && !dept?.officialProfileOnly;
+      // A department whose page was not read in this run is not authoritative
+      // about who its roster lists, whatever its lane status says. This is the
+      // half of #3251 that was real: the snapshot asserted "this is who the
+      // roster lists now" while recording nothing about whether anything had
+      // been read, so a consumer could not tell the two apart.
+      const readThisRun = deptResult.pagesRead > 0 && deptResult.readMode !== 'none';
+      const entityAuthoritative =
+        deptResult.status === 'ok' &&
+        !officialProfileOnlyKeys.has(deptResult.deptKey) &&
+        readThisRun;
       return {
         entityType: 'departmentRosterHealth' as const,
         entityKey: deptResult.deptKey,
@@ -3234,9 +4270,15 @@ export class DepartmentRosterScraper implements IScraper {
           complete: entityAuthoritative,
           discoveredCount: discoveredEntityKeys.length,
           discoveredEntityKeys,
+          read: {
+            pagesRead: deptResult.pagesRead,
+            readMode: deptResult.readMode,
+            cacheAllowed: Boolean(ctx.options.useCache),
+            readAt: snapshotObservedAt.toISOString(),
+          },
         },
         sourceUrl: dept?.url ?? this.name,
-        observedAt: new Date(),
+        observedAt: snapshotObservedAt,
       };
     });
     if (rosterHealthObservations.length > 0) {

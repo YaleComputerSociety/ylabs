@@ -8,8 +8,9 @@ export interface ArchivedEntityLiveReference {
 
 export type ArchivedResearchEntityDeferralReason =
   | 'has_live_references'
-  | 'missing_redirect'
-  | 'retired_entity_type';
+  | 'merged_shell_is_canonical_mapping'
+  | 'retired_entity_type'
+  | 'sole_surviving_record_of_slug';
 
 export interface ArchivedResearchEntityCandidate {
   id: string;
@@ -17,7 +18,6 @@ export interface ArchivedResearchEntityCandidate {
   slug?: string;
   entityType?: string;
   liveReferences: ArchivedEntityLiveReference[];
-  redirectPresent?: boolean;
   hasCanonicalTombstone?: boolean;
 }
 
@@ -54,14 +54,15 @@ export function isRetiredEntityTypeResidue(entityType: string | undefined): bool
 
 export function buildArchivedResearchEntityCleanupPlan(input: {
   candidates: ArchivedResearchEntityCandidate[];
-  requireRedirect?: boolean;
+  mergeResidueOnly?: boolean;
 }): ArchivedResearchEntityCleanupPlan {
   const eligible: string[] = [];
   const blocked: BlockedArchivedResearchEntity[] = [];
   const deferredByReason: Record<ArchivedResearchEntityDeferralReason, number> = {
     has_live_references: 0,
-    missing_redirect: 0,
+    merged_shell_is_canonical_mapping: 0,
     retired_entity_type: 0,
+    sole_surviving_record_of_slug: 0,
   };
 
   for (const candidate of input.candidates) {
@@ -81,18 +82,30 @@ export function buildArchivedResearchEntityCleanupPlan(input: {
       deferredByReason.retired_entity_type += 1;
       continue;
     }
-    // Deleting a merge shell erases its `canonicalGroupId` tombstone, so the
-    // public detail route can only keep redirecting the shell's slug if a
-    // `research_entity_redirects` row survives it. Fail closed in every mode:
-    // an unrecorded merge deleted here becomes a permanent 404.
-    const requiresRedirect =
-      input.requireRedirect === true || candidate.hasCanonicalTombstone === true;
-    if (requiresRedirect && candidate.redirectPresent !== true) {
-      blocked.push({ ...identity, reason: 'missing_redirect', references: [] });
-      deferredByReason.missing_redirect += 1;
+    // A merged shell IS the canonical mapping (#3027): its slug occupies the unique
+    // index so no re-scrape can re-mint the duplicate, and its `canonicalGroupId`
+    // routes that re-scraped evidence to the survivor. Deleting it frees the slug,
+    // so the next sweep of the still-live source mints the duplicate again. Never
+    // deletable, whatever a redirect row says.
+    if (candidate.hasCanonicalTombstone === true || input.mergeResidueOnly === true) {
+      blocked.push({ ...identity, reason: 'merged_shell_is_canonical_mapping', references: [] });
+      deferredByReason.merged_shell_is_canonical_mapping += 1;
       continue;
     }
-    eligible.push(candidate.id);
+    // The least-recorded row was the one this op would delete (#2795). This arm
+    // demanded a `research_entity_redirects` row; that ledger is retired (#3027), so
+    // it now tests the condition the redirect was standing in for. With no
+    // `canonicalGroupId`, nothing routes this slug, so the row itself is the only
+    // surviving record of what it was, and its name, citations and description are
+    // the material anyone would need to work out where it should point. Deleting it
+    // turns a fixable 404 into a permanent one, so the absence of a record is the
+    // strongest reason to refuse rather than a licence to delete.
+    //
+    // With the arm above this one, that makes no archived row deletable and
+    // `eligibleCount` 0 by construction. A genuine deletion needs its own safety
+    // argument rather than a loosened arm here.
+    blocked.push({ ...identity, reason: 'sole_surviving_record_of_slug', references: [] });
+    deferredByReason.sole_surviving_record_of_slug += 1;
   }
 
   return {

@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
+  partitionSearchCandidateIds,
   DEFAULT_RESEARCH_QUALITY_GOLDEN_QUERIES,
   buildResearchQualitySearchReviewRow,
   deriveResearchEntitySourceTitleFromUrls,
@@ -299,5 +300,52 @@ describe('researchQualitySearchReview CLI helpers', () => {
         output: '/tmp/ylabs-research-quality-search-review.json',
       },
     });
+  });
+});
+
+describe('partitionSearchCandidateIds', () => {
+  it('routes a slug to the slug lookup, which is what the search DTO actually returns', () => {
+    const { objectIdCandidates, slugCandidates } = partitionSearchCandidateIds([
+      'center-dissc',
+      'dept-ysph-fixture-scholar',
+    ]);
+
+    expect(objectIdCandidates).toEqual([]);
+    expect(slugCandidates).toEqual(['center-dissc', 'dept-ysph-fixture-scholar']);
+  });
+
+  it('routes a 24-hex id to the ObjectId lookup', () => {
+    const { objectIdCandidates, slugCandidates } = partitionSearchCandidateIds([
+      '6a058d6dba66f3c14bd85990',
+    ]);
+
+    expect(objectIdCandidates).toEqual(['6a058d6dba66f3c14bd85990']);
+    expect(slugCandidates).toEqual([]);
+  });
+
+  it('handles a mixed batch, so neither shape starves the other', () => {
+    const { objectIdCandidates, slugCandidates } = partitionSearchCandidateIds([
+      '6a058d6dba66f3c14bd85990',
+      'center-dissc',
+    ]);
+
+    expect(objectIdCandidates).toHaveLength(1);
+    expect(slugCandidates).toHaveLength(1);
+  });
+
+  it('drops blanks rather than querying on an empty string', () => {
+    const { objectIdCandidates, slugCandidates } = partitionSearchCandidateIds(['', '   ']);
+
+    expect(objectIdCandidates).toEqual([]);
+    expect(slugCandidates).toEqual([]);
+  });
+
+  it('does not mistake a 24-character slug for an ObjectId', () => {
+    const { objectIdCandidates, slugCandidates } = partitionSearchCandidateIds([
+      'dept-physics-fixture-xyz',
+    ]);
+
+    expect(objectIdCandidates).toEqual([]);
+    expect(slugCandidates).toHaveLength(1);
   });
 });

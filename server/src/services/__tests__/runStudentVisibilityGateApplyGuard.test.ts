@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   queueBulkWrite: vi.fn(),
   queueFind: vi.fn(),
   resolveArchived: vi.fn(),
+  clearArchivedVerdicts: vi.fn(async () => ({ modifiedCount: 0 })),
 }));
 
 vi.mock('../../models/researchEntity', async (importOriginal) => ({
@@ -17,6 +18,7 @@ vi.mock('../../models/researchEntity', async (importOriginal) => ({
   ResearchEntity: {
     find: mocks.find,
     bulkWrite: mocks.bulkWrite,
+    updateMany: mocks.clearArchivedVerdicts,
   },
 }));
 

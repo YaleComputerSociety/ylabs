@@ -14,10 +14,20 @@ interface DescriptionFailureClassCase {
   disposition: Disposition;
   expectContains?: string;
   expectNotContains?: string;
+  /**
+   * The record's lead display names. The mismatched-person-name strip is a
+   * structural no-op without them, so a class about a possessive person-name
+   * opener cannot be expressed on a nameless call (#2240).
+   */
+  leadMemberNames?: string[];
 }
 
-function servedField(entity: Record<string, any>, field: ServeField): string {
-  const out = sanitizeServedResearchEntityCopyFields(entity);
+function servedField(
+  entity: Record<string, any>,
+  field: ServeField,
+  leadMemberNames: string[] = [],
+): string {
+  const out = sanitizeServedResearchEntityCopyFields(entity, leadMemberNames);
   const value = out[field];
   return typeof value === 'string' ? value : '';
 }
@@ -160,7 +170,7 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     field: 'fullDescription',
     entity: { entityType: 'INDIVIDUAL_RESEARCH', kind: 'individual', displayName: 'Robin Hansen' },
     disposition: 'transformed',
-    expectContains: 'This research',
+    expectContains: "Hansen's research",
     expectNotContains: 'My research',
   },
   {
@@ -209,7 +219,7 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
       displayName: 'Robin Hansen',
     },
     disposition: 'transformed',
-    expectContains: 'This researcher studies',
+    expectContains: 'Robin Hansen studies',
     expectNotContains: 'I study',
   },
   {
@@ -297,6 +307,20 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
       'He has received the Best Economics PhD Advisor Award at Yale University in 2022 and 2023, and was a runner-up in 2024. Hansen is a fellow of the Econometric Society and has received several prestigious awards.',
   },
   {
+    id: 'third-party-organization-body',
+    issues: '#2480',
+    field: 'fullDescription',
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+      slug: 'directory-faculty-robin-hansen',
+    },
+    disposition: 'blank',
+    expectContains:
+      'The Office of Health Equity Research is the organizing center of health equity research at the medical school and coordinates its investigators.',
+  },
+  {
     id: 'fra-credential-title-lead',
     issues: '#1793',
     field: 'fullDescription',
@@ -307,8 +331,80 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     },
     disposition: 'transformed',
     expectContains:
-      'His research focuses on big data and data-driven policy analyses and solutions.',
+      "Robin Hansen's research focuses on big data and data-driven policy analyses and solutions.",
     expectNotContains: 'is a senior lecturer',
+  },
+  {
+    id: 'third-party-possessive-attribution',
+    issues: '#2063/#2240',
+    field: 'fullDescription',
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+    },
+    leadMemberNames: ['Robin Hansen'],
+    disposition: 'transformed',
+    expectContains: 'research examines coral reef resilience under thermal stress',
+    expectNotContains: 'Marguerite Delacroix',
+  },
+  {
+    id: 'own-lead-honorific-possessive',
+    issues: '#2240',
+    field: 'fullDescription',
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+    },
+    leadMemberNames: ['Robin Hansen'],
+    disposition: 'preserved',
+  },
+  {
+    id: 'organization-possessive-is-not-a-person',
+    issues: '#2240',
+    field: 'fullDescription',
+    entity: { entityType: 'LAB', kind: 'lab', displayName: 'Hansen Lab' },
+    leadMemberNames: ['Robin Hansen'],
+    disposition: 'preserved',
+  },
+  // Stripping the credential opener above is what LEAVES the pronoun leading the
+  // body, so these three classes are reachable on rows whose stored text never
+  // opened with a pronoun at all.
+  {
+    id: 'orphaned-third-person-possessive-lead',
+    issues: '#1871',
+    field: 'fullDescription',
+    entity: {
+      entityType: 'LAB',
+      kind: 'lab',
+      name: 'Analog and RF Circuits (ARC) Lab at Yale',
+    },
+    disposition: 'transformed',
+    expectContains: "This lab's research focuses on analog, RF, and mm-wave integrated circuits",
+    expectNotContains: 'His research',
+  },
+  {
+    id: 'orphaned-third-person-subject-lead',
+    issues: '#1871',
+    field: 'fullDescription',
+    entity: { entityType: 'CORE_FACILITY', kind: 'core_facility', name: 'Cellular Imaging Core' },
+    disposition: 'transformed',
+    expectContains: 'This researcher holds a joint appointment',
+    expectNotContains: 'She holds',
+  },
+  {
+    id: 'orphaned-first-person-adverb-lead',
+    issues: '#1871',
+    field: 'fullDescription',
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+    },
+    disposition: 'transformed',
+    expectContains: 'Robin Hansen currently focuses on',
+    expectNotContains: 'I currently focus',
   },
 ];
 
@@ -320,10 +416,14 @@ describe('research-entity description serve contract (#1269)', () => {
           ? (failureCase.expectContains as string)
           : SEED_TEXT[failureCase.id];
       const entity = withField(failureCase.field, failureCase.entity, rawText);
-      const served = servedField(entity, failureCase.field);
+      const served = servedField(entity, failureCase.field, failureCase.leadMemberNames);
 
       if (failureCase.disposition === 'blank') {
         expect(served).toBe('');
+        return;
+      }
+      if (failureCase.disposition === 'preserved') {
+        expect(served).toBe(rawText);
         return;
       }
       expect(served).not.toBe('');
@@ -344,6 +444,12 @@ describe('research-entity description serve contract (#1269)', () => {
 });
 
 const SEED_TEXT: Record<string, string> = {
+  'third-party-possessive-attribution':
+    "Marguerite Delacroix's research examines coral reef resilience under thermal stress across the Pacific basin.",
+  'own-lead-honorific-possessive':
+    "Dr. Hansen's research examines how memory forms in the developing brain using fMRI.",
+  'organization-possessive-is-not-a-person':
+    "The Yale Alzheimer's Disease Research Unit studies dementia biomarkers in ageing cohorts.",
   'doubled-synthesis-verb': 'Studies Studies neural circuits and memory formation.',
   'first-person-revoice':
     'I am a neuroscientist. My research examines how memory forms in the developing brain using fMRI.',
@@ -363,6 +469,12 @@ const SEED_TEXT: Record<string, string> = {
     'This primary research focus is mechanisms of disease. In particular, I am interested in the role of a specific pathway.',
   'fra-credential-title-lead':
     'Robin Hansen is a senior lecturer at the Jackson School of Global Affairs. His research focuses on big data and data-driven policy analyses and solutions.',
+  'orphaned-third-person-possessive-lead':
+    'His research focuses on analog, RF, and mm-wave integrated circuits for wireless and imaging systems.',
+  'orphaned-third-person-subject-lead':
+    'She holds a joint appointment and studies the epidemiology of vector-borne disease in the tropics.',
+  'orphaned-first-person-adverb-lead':
+    'I currently focus on the statistical genetics of complex traits and their shared architecture.',
 };
 
 describe('research-entity description serve contract - clean prose preserved', () => {
@@ -411,6 +523,21 @@ describe('research-entity serve contract - names and research-area chips (#1374)
     });
     expect(out.name).toBe('Systems Biology Institute');
     expect(out.displayName).toBe('Systems Biology Lab');
+  });
+
+  // Clients title the card with `displayName || name`, so filler stored on the
+  // alias would render as the card's heading even though `name` identifies the
+  // record. Withholding it makes every surface fall back to `name` (#2367).
+  it('withholds a placeholder displayName so the card falls back to name', () => {
+    const out = sanitizeServedResearchEntityCopyFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'ysm-faculty-fixture-loyal',
+      name: 'Loyal Lab',
+      displayName: 'n/a',
+    });
+    expect(out.displayName).toBe('');
+    expect(out.name).toBe('Loyal Lab');
   });
 
   it('splits a bare comma-delimited research-area blob into chips', () => {
@@ -480,5 +607,172 @@ describe('research-entity description serve contract - idempotent', () => {
       const twice = sanitizeServedResearchEntityCopyFields(once);
       expect(twice[field]).toBe(once[field]);
     }
+  });
+});
+
+describe("research-entity serve contract - another organization's body (#2480)", () => {
+  const INSTITUTIONAL_BODY =
+    'The Northgate Measurement Based Care Collaborative is dedicated to implementation for systems, clinicians and clients, and advances measurement based care as an evidence-based practice through continued research.';
+
+  it('withholds the body and serves the card on a person-scoped row', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      fullDescription: INSTITUTIONAL_BODY,
+      shortDescription: 'Studies mental health services and measurement based care.',
+    });
+    expect(served.fullDescription).toBe('');
+    expect(served.shortDescription).toBe(
+      'Studies mental health services and measurement based care.',
+    );
+  });
+
+  it('withholds a card that is itself the refused prose (#2915)', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      fullDescription: INSTITUTIONAL_BODY,
+      shortDescription:
+        'The Northgate Measurement Based Care Collaborative is dedicated to implementation for systems, clinicians and clients.',
+    });
+    expect(served.fullDescription).toBe('');
+    expect(served.shortDescription).toBe('');
+  });
+
+  it('withholds a card that restates the refused prose as its own subject (#2915)', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      fullDescription: INSTITUTIONAL_BODY,
+      shortDescription:
+        'The Office of Health Equity Research is the organizing center of health equity research at the medical school.',
+    });
+    expect(served.shortDescription).toBe('');
+  });
+
+  it('withholds a profile synthesis body on the same terms', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      entityType: 'LAB',
+      kind: 'lab',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Hansen Lab',
+      profileSynthesisDescription: INSTITUTIONAL_BODY,
+    });
+    expect(served.profileSynthesisDescription).toBe('');
+  });
+
+  it('leaves an organizational row describing itself alone', () => {
+    for (const entity of [
+      { entityType: 'CORE_FACILITY', kind: 'core-facility', name: 'Northgate Imaging Core' },
+      { entityType: 'CENTER', kind: 'center', name: 'Northgate Center for Health Equity' },
+      { entityType: 'INSTITUTE', kind: 'institute', name: 'Northgate Bioimaging Institute' },
+    ]) {
+      const served = sanitizeServedResearchEntityCopyFields({
+        ...entity,
+        fullDescription: INSTITUTIONAL_BODY,
+      });
+      expect(served.fullDescription, entity.entityType).toBe(INSTITUTIONAL_BODY);
+    }
+  });
+
+  it('keeps a person-scoped row whose own name IS the organization', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'northgate-measurement-based-care-collaborative',
+      name: 'Northgate Measurement Based Care Collaborative',
+      fullDescription: INSTITUTIONAL_BODY,
+    });
+    expect(served.fullDescription).toBe(INSTITUTIONAL_BODY);
+  });
+
+  it("keeps a core facility's own first-person prose on a person-scoped row", () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      fullDescription:
+        'We provide training and access to shared confocal microscopes, and support investigators designing quantitative imaging experiments.',
+    });
+    expect(served.fullDescription).toContain('confocal microscopes');
+  });
+
+  it('keeps a body that only mentions an organization in passing', () => {
+    for (const body of [
+      'Research in the Department of Psychiatry on adolescent sleep, mood regulation and the transition to college.',
+      'At the Northgate Primary Care Center, Robin Hansen provides care for children and teaches residents.',
+      'The clinical core of this research is patient-centred outcomes measurement in chronic disease.',
+    ]) {
+      const served = sanitizeServedResearchEntityCopyFields({
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        slug: 'directory-faculty-robin-hansen',
+        name: 'Robin Hansen - Research',
+        fullDescription: body,
+      });
+      expect(served.fullDescription, body).not.toBe('');
+    }
+  });
+
+  it('is idempotent', () => {
+    const entity = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      fullDescription: INSTITUTIONAL_BODY,
+      shortDescription: 'Studies mental health services and measurement based care.',
+    };
+    const once = sanitizeServedResearchEntityCopyFields(entity);
+    const twice = sanitizeServedResearchEntityCopyFields(once);
+    expect(twice.fullDescription).toBe(once.fullDescription);
+    expect(twice.shortDescription).toBe(once.shortDescription);
+  });
+});
+
+describe('research-entity serve contract - a withheld body changes nothing else (#2480)', () => {
+  it("keeps the row's research-area chips when its body is withheld", () => {
+    const entity = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      departments: ['Internal Medicine', 'Endocrinology'],
+      fullDescription:
+        'The Northgate Weight Management Center focuses on novel pharmacological therapeutics for obesity treatment in clinical trials of adults.',
+      shortDescription: 'Directs clinical trials and teaches residents in endocrinology.',
+      researchAreas: ['Obesity', 'Weight Loss'],
+    };
+    const served = sanitizeServedResearchEntityCopyFields(entity);
+    expect(served.fullDescription).toBe('');
+    expect(served.researchAreas).toEqual(['Obesity', 'Weight Loss']);
+    expect(served.shortDescription).toBe(
+      'Directs clinical trials and teaches residents in endocrinology.',
+    );
+  });
+
+  it("keeps the row's research-area chips when its card is withheld too (#2915)", () => {
+    const entity = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      fullDescription:
+        'The Northgate Measurement Based Care Collaborative is dedicated to implementation for systems, clinicians and clients, and advances measurement based care as an evidence-based practice through continued research.',
+      shortDescription:
+        'The Office of Health Equity Research is the organizing center of health equity research at the medical school.',
+      researchAreas: ['Health Equity'],
+    };
+    const served = sanitizeServedResearchEntityCopyFields(entity);
+    expect(served.fullDescription).toBe('');
+    expect(served.shortDescription).toBe('');
+    expect(served.researchAreas).toEqual(['Health Equity']);
   });
 });

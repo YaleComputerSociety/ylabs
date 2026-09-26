@@ -5,12 +5,6 @@
  * Meilisearch, Mongo, or Express.
  */
 
-export type CurrentAvailabilityFilterInput = 'OPEN' | 'ROLLING';
-
-export type CompensationFilterInput = 'PAID_OR_STIPEND' | 'COURSE_CREDIT';
-
-export type EligibleStudentLevelFilterInput = 'FIRST_YEAR' | 'SOPHOMORE' | 'JUNIOR' | 'SENIOR';
-
 export interface ResearchGroupFilterInput {
   kind?: string[];
   entityType?: string[];
@@ -18,10 +12,6 @@ export interface ResearchGroupFilterInput {
   departments?: string[];
   researchAreas?: string[];
   hostsUndergrads?: boolean;
-  hasDocumentedWayIn?: boolean;
-  currentAvailability?: CurrentAvailabilityFilterInput[];
-  compensation?: CompensationFilterInput[];
-  eligibleStudentLevels?: EligibleStudentLevelFilterInput[];
   studentVisibilityTier?: string[];
 }
 
@@ -86,25 +76,6 @@ export function buildResearchGroupFilterString(
   if (effectiveFilters.hostsUndergrads === true) {
     parts.push('hasUndergradHostingEvidence = true');
   }
-
-  if (effectiveFilters.hasDocumentedWayIn === true) {
-    parts.push('hasDocumentedWayIn = true');
-  }
-
-  const currentAvailabilityClause = effectiveFilters.currentAvailability
-    ? orEqualsClause('undergraduateCurrentAvailability', effectiveFilters.currentAvailability)
-    : null;
-  if (currentAvailabilityClause) parts.push(currentAvailabilityClause);
-
-  const compensationClause = effectiveFilters.compensation
-    ? orEqualsClause('undergraduateCompensationModel', effectiveFilters.compensation)
-    : null;
-  if (compensationClause) parts.push(compensationClause);
-
-  const eligibleStudentLevelsClause = effectiveFilters.eligibleStudentLevels
-    ? orEqualsClause('undergraduateEligibleStudentLevels', effectiveFilters.eligibleStudentLevels)
-    : null;
-  if (eligibleStudentLevelsClause) parts.push(eligibleStudentLevelsClause);
 
   const studentVisibilityClause = effectiveFilters.studentVisibilityTier
     ? orEqualsClause('studentVisibilityTier', effectiveFilters.studentVisibilityTier)

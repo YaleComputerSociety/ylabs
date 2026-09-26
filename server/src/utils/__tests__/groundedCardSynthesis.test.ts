@@ -2,17 +2,26 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   cardGroundingScore,
+  gateAcceptedDerivedCardSubstitute,
+  inflectionalStems,
+  researchAreasGroundedInFullDescription,
+  sharesAnInflectionalStem,
   isCardGroundedInFullDescription,
+  isSynthesizedCardGroundedInFullDescription,
+  synthesizedCardGroundingScore,
   isUngroundedSynthesizedCard,
   normalizeCardText,
   resolveGroundedCardDescription,
   resolveServedShortDescription,
+  resolveServedShortDescriptionOutcome,
   synthesizeGroundedCardDescription,
 } from '../groundedCardSynthesis';
 import {
   deriveShortDescriptionFromFullDescription,
+  programCardShortDescriptionQuality,
   shortDescriptionQuality,
 } from '../researchEntityDescriptionQuality';
+import { sanitizeServedResearchEntityCopyFields } from '../researchEntityDescriptionText';
 
 const RICH_FIRST_PERSON_FULL =
   'Our lab is broadly interested in the biology of aging and the ways that metabolism shapes lifespan across species. Over the past decade we have built a range of experimental systems, from yeast to zebrafish, and we continue to expand these tools while training the next generation of scientists.';
@@ -46,36 +55,46 @@ describe('isUngroundedSynthesizedCard', () => {
     'Focuses on Italian language pedagogy, literary translation, and medieval and Renaissance literature, with attention to how these texts are taught.';
 
   it('drops a synthesized card whose topic is absent from the full description (#1212 Wyrtzen)', () => {
-    expect(isUngroundedSynthesizedCard('Studies Texas from the first.', MOROCCO_FULL)).toBe(true);
+    expect(
+      isUngroundedSynthesizedCard({ card: 'Studies Texas from the first.', body: MOROCCO_FULL }),
+    ).toBe(true);
   });
 
   it('drops a synthesized card whose topic only partially grounds (#1212 Farina)', () => {
-    expect(isUngroundedSynthesizedCard('Studies Italian Cooking.', ITALIAN_PEDAGOGY_FULL)).toBe(
-      true,
-    );
+    expect(
+      isUngroundedSynthesizedCard({
+        card: 'Studies Italian Cooking.',
+        body: ITALIAN_PEDAGOGY_FULL,
+      }),
+    ).toBe(true);
   });
 
   it('keeps a synthesized card whose topics are all grounded in the full description', () => {
     expect(
-      isUngroundedSynthesizedCard(
-        'Studies colonial state formation across North Africa.',
-        MOROCCO_FULL,
-      ),
+      isUngroundedSynthesizedCard({
+        card: 'Studies colonial state formation across North Africa.',
+        body: MOROCCO_FULL,
+      }),
     ).toBe(false);
   });
 
   it('never touches a source-derived blurb that does not lead with a synthesis verb', () => {
     expect(
-      isUngroundedSynthesizedCard('The lab in Austin explores rodeo culture.', MOROCCO_FULL),
+      isUngroundedSynthesizedCard({
+        card: 'The lab in Austin explores rodeo culture.',
+        body: MOROCCO_FULL,
+      }),
     ).toBe(false);
   });
 
   it('keeps a synthesized card when there is no full description to verify against', () => {
-    expect(isUngroundedSynthesizedCard('Studies Texas from the first.', '')).toBe(false);
+    expect(isUngroundedSynthesizedCard({ card: 'Studies Texas from the first.', body: '' })).toBe(
+      false,
+    );
   });
 
   it('keeps a synthesized card whose topic is too short to verify', () => {
-    expect(isUngroundedSynthesizedCard('Studies AI.', MOROCCO_FULL)).toBe(false);
+    expect(isUngroundedSynthesizedCard({ card: 'Studies AI.', body: MOROCCO_FULL })).toBe(false);
   });
 });
 
@@ -117,6 +136,57 @@ describe('synthesizeGroundedCardDescription', () => {
       'Studies the biology of aging and how metabolism shapes lifespan across species.',
     );
     expect(shortDescriptionQuality(card, RICH_FIRST_PERSON_FULL).isUseful).toBe(true);
+  });
+
+  /**
+   * A card compresses a body, and compression re-inflects. Every distinctive token here
+   * is a plural or gerund of a word the body uses in another form, so the card invents no
+   * vocabulary, yet a raw substring grader scores each one as absent (#3282).
+   */
+  const RE_INFLECTED_BODY =
+    'Our laboratory studies the mechanism by which a single history of chronic stress alters ' +
+    'one physical property of the hippocampus. We uphold a preregistered protocol and we ' +
+    'analyze each interaction between cortisol and neuronal structure across the dataset.';
+  const RE_INFLECTED_CARD =
+    'Studies mechanisms, histories of chronic stress, physical properties, and interactions ' +
+    'between cortisol and neuronal structure in the hippocampus.';
+
+  it('accepts a synthesized card whose tokens are inflections of the body it was written from', async () => {
+    const callLLM = vi.fn().mockResolvedValue(RE_INFLECTED_CARD);
+    const card = await synthesizeGroundedCardDescription({
+      fullDescription: RE_INFLECTED_BODY,
+      callLLM,
+    });
+    expect(card).toBe(RE_INFLECTED_CARD);
+  });
+
+  it('scores that card above the bar only once inflection is counted', () => {
+    expect(
+      synthesizedCardGroundingScore(RE_INFLECTED_CARD, RE_INFLECTED_BODY),
+    ).toBeGreaterThanOrEqual(0.9);
+    expect(cardGroundingScore(RE_INFLECTED_CARD, RE_INFLECTED_BODY)).toBeLessThan(0.9);
+  });
+
+  /**
+   * The stem arm is scoped to a card being judged as it is written. The shared grader also
+   * decides research-area chip grounding and feeds `isUngroundedSynthesizedCard`, which the
+   * serve-time surrender arm reads, so widening it would move stored-card verdicts corpus
+   * wide. Pinning both directions keeps the two questions separate.
+   */
+  it('leaves the shared stored-card grader untouched', () => {
+    expect(isSynthesizedCardGroundedInFullDescription(RE_INFLECTED_CARD, RE_INFLECTED_BODY)).toBe(
+      true,
+    );
+    expect(isCardGroundedInFullDescription(RE_INFLECTED_CARD, RE_INFLECTED_BODY)).toBe(false);
+  });
+
+  it('still fails closed on invented vocabulary under the stem arm', () => {
+    expect(
+      isSynthesizedCardGroundedInFullDescription(
+        'Studies quantum gravity near black hole thermodynamics.',
+        RE_INFLECTED_BODY,
+      ),
+    ).toBe(false);
   });
 
   it('fails closed when the model hallucinates content not in the source', async () => {
@@ -338,15 +408,43 @@ describe('resolveServedShortDescription bare researchArea-chip-echo residual (#1
     expect(resolved).toBe(short);
   });
 
-  it('keeps a chip-echo short when there is no richer full to compress instead', () => {
+  // Until #3097 this returned the echo, on the reasoning that keeping it beat
+  // returning nothing when no richer body exists to compress. The serve path blanks
+  // that value (asserted below), so what was kept never reached a student, and the
+  // visibility gate resolving its card here read a card no surface renders.
+  it('reports no card for a chip-echo short, matching what the serve path does with it', () => {
     const short = 'Studies Moral Philosophy, Second-Fixtureal Ethics, and Moral Reasoning.';
-    const resolved = resolveServedShortDescription({
-      shortDescription: short,
+    const researchAreas = ['Moral Philosophy', 'Second-Fixtureal Ethics', 'Moral Reasoning'];
+    const served = sanitizeServedResearchEntityCopyFields(
+      {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        shortDescription: short,
+        fullDescription: 'A short bio.',
+        researchAreas,
+      },
+      [],
+    );
+    expect(served.shortDescription).toBe('');
+    expect(
+      resolveServedShortDescription({
+        shortDescription: short,
+        fullDescription: 'A short bio.',
+        researchAreas,
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe('');
+  });
+
+  it('withholds rather than empties when the chips the echo restated are ungrounded', () => {
+    const outcome = resolveServedShortDescriptionOutcome({
+      shortDescription: 'Studies Moral Philosophy, Second-Fixtureal Ethics, and Moral Reasoning.',
       fullDescription: 'A short bio.',
       researchAreas: ['Moral Philosophy', 'Second-Fixtureal Ethics', 'Moral Reasoning'],
       entityType: 'FACULTY_RESEARCH_AREA',
     });
-    expect(resolved).toBe(short);
+    expect(outcome.card).toBe('');
+    expect(outcome.topicCardWithheld).toBe(true);
   });
 });
 
@@ -467,5 +565,361 @@ describe('resolveGroundedCardDescription rejects researcher-voice "Studies" on p
     expect(resolved).toBe(
       'Studies Biostatistics, Public Health, Cancer Research, and Clinical Trials.',
     );
+  });
+});
+
+describe('resolveServedShortDescription keeps a stored card line past the rendering preference (#1878)', () => {
+  const STORED_CARD_LINE =
+    'Uses machine learning, natural language processing, and large language models to analyze patient-generated and clinical data, revealing social barriers, communication dynamics, and patient goals in care.';
+  const FULL =
+    'The group applies machine learning, natural language processing, and large language models to patient-generated and clinical data. That work reveals social barriers, communication dynamics, and patient goals that shape how people experience care, and it builds tools clinicians can act on.';
+  const RESEARCH_AREAS = ['Machine Learning', 'Medical Informatics', 'Data Mining'];
+
+  it('serves the row own card sentence rather than a research-area chip summary', () => {
+    expect(STORED_CARD_LINE.length).toBeGreaterThan(200);
+    const resolved = resolveServedShortDescription({
+      shortDescription: STORED_CARD_LINE,
+      fullDescription: FULL,
+      researchAreas: RESEARCH_AREAS,
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(resolved).toBe(STORED_CARD_LINE);
+    expect(resolved).not.toBe('Studies Machine Learning, Medical Informatics, and Data Mining.');
+  });
+
+  it('leaves the card complete once the stored line survives, so the gate stops reporting missing_card_description', () => {
+    const resolved = resolveServedShortDescription({
+      shortDescription: STORED_CARD_LINE,
+      fullDescription: FULL,
+      researchAreas: RESEARCH_AREAS,
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(
+      shortDescriptionQuality(resolved, FULL, RESEARCH_AREAS, {
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }).isUseful,
+    ).toBe(true);
+  });
+
+  it('falls through rather than serving a kept line the card bar rejects', () => {
+    expect(STORED_CARD_LINE.length).toBeGreaterThan(200);
+    const resolved = resolveServedShortDescription({
+      shortDescription: STORED_CARD_LINE,
+      fullDescription: STORED_CARD_LINE,
+      researchAreas: RESEARCH_AREAS,
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(
+      shortDescriptionQuality(STORED_CARD_LINE, STORED_CARD_LINE, RESEARCH_AREAS, {
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }).flags,
+    ).toContain('same-as-full');
+    expect(resolved).not.toBe(STORED_CARD_LINE);
+  });
+});
+
+describe('resolveServedShortDescription judges a kept program card line by the program bar (#1878)', () => {
+  const PROGRAM_FULL =
+    'The fellowship funds a summer of mentored laboratory research for Yale undergraduates in the life sciences, pairing each student with a faculty host. Applications will be reviewed by the selection committee, which announces awards before the term ends.';
+  const NON_OFFER_PROGRAM_LINE =
+    'Applications will be reviewed by the selection committee, which meets after the deadline closes each spring, and the committee announces its awards to the students it has chosen before the academic term ends.';
+  const PROGRAM_AREAS = ['Molecular Biology', 'Neuroscience'];
+
+  it('drops a program line the program bar rejects even though the lab bar accepts it', () => {
+    expect(NON_OFFER_PROGRAM_LINE.length).toBeGreaterThan(200);
+    expect(
+      shortDescriptionQuality(NON_OFFER_PROGRAM_LINE, PROGRAM_FULL, PROGRAM_AREAS, {
+        entityType: 'INITIATIVE',
+      }).isUseful,
+    ).toBe(true);
+    expect(
+      programCardShortDescriptionQuality(NON_OFFER_PROGRAM_LINE, PROGRAM_FULL).flags,
+    ).toContain('non-offer-clause');
+    expect(
+      resolveServedShortDescription({
+        shortDescription: NON_OFFER_PROGRAM_LINE,
+        fullDescription: PROGRAM_FULL,
+        researchAreas: PROGRAM_AREAS,
+        entityType: 'INITIATIVE',
+        kind: 'program',
+      }),
+    ).not.toBe(NON_OFFER_PROGRAM_LINE);
+  });
+
+  it('keeps a program line the program bar accepts and only the lab bar rejects', () => {
+    const OFFER_LINE =
+      'The fellowship funds a summer of mentored laboratory research for Yale undergraduates in the life sciences, pairing each student with a faculty host who supervises the whole project from start to finish.';
+    const restatingFull = OFFER_LINE;
+    expect(OFFER_LINE.length).toBeGreaterThan(200);
+    expect(
+      shortDescriptionQuality(OFFER_LINE, restatingFull, PROGRAM_AREAS, {
+        entityType: 'INITIATIVE',
+      }).isUseful,
+    ).toBe(false);
+    expect(programCardShortDescriptionQuality(OFFER_LINE, restatingFull).isUseful).toBe(true);
+    expect(
+      resolveServedShortDescription({
+        shortDescription: OFFER_LINE,
+        fullDescription: restatingFull,
+        researchAreas: PROGRAM_AREAS,
+        entityType: 'INITIATIVE',
+        kind: 'program',
+      }),
+    ).toBe(OFFER_LINE);
+  });
+});
+
+describe('the manufactured chip card prefers chips the body supports (#2972)', () => {
+  const BODY =
+    'The group develops radioisotopes bound to steroid hormones and evaluates them as imaging agents for receptor-positive tumours.';
+
+  it('drops a chip the body never mentions and keeps the ones it does', () => {
+    const card = resolveServedShortDescription({
+      shortDescription: '',
+      fullDescription: BODY,
+      researchAreas: ['Cardiology', 'Hormones', 'Radioisotopes'],
+      entityType: 'LAB',
+    });
+
+    expect(card).toContain('Hormones');
+    expect(card).toContain('Radioisotopes');
+    expect(card).not.toContain('Cardiology');
+  });
+
+  it('does not reorder or filter when the row has no body to ground against', () => {
+    const card = resolveServedShortDescription({
+      shortDescription: '',
+      fullDescription: '',
+      researchAreas: ['Cardiology', 'Hormones'],
+      entityType: 'LAB',
+    });
+
+    expect(card).toContain('Cardiology');
+    expect(card).toContain('Hormones');
+  });
+
+  it('withholds the card rather than asserting a topic when the body supports no chip', () => {
+    const outcome = resolveServedShortDescriptionOutcome({
+      shortDescription: '',
+      fullDescription: BODY,
+      researchAreas: ['Cardiology', 'Dentistry'],
+      entityType: 'LAB',
+    });
+
+    expect(outcome).toEqual({ card: '', topicCardWithheld: true });
+  });
+
+  it('does not withhold when the row has no carding chip to refuse in the first place', () => {
+    const outcome = resolveServedShortDescriptionOutcome({
+      shortDescription: '',
+      fullDescription: 'He joined the faculty in 2009.',
+      researchAreas: [],
+      entityType: 'LAB',
+    });
+
+    expect(outcome).toEqual({ card: '', topicCardWithheld: false });
+  });
+
+  it('does not withhold when a chip the body supports still yields a card', () => {
+    const outcome = resolveServedShortDescriptionOutcome({
+      shortDescription: '',
+      fullDescription: BODY,
+      researchAreas: ['Cardiology', 'Radioisotopes'],
+      entityType: 'LAB',
+    });
+
+    expect(outcome.topicCardWithheld).toBe(false);
+    expect(outcome.card).toContain('Radioisotopes');
+  });
+});
+
+describe('resolveServedShortDescription swaps a gate-refused card line for a derived one (#1878)', () => {
+  const FULL =
+    'The group studies how coastal wetlands buffer storm surge, combining field sensor networks with hydrodynamic models of tidal marshes. Fieldwork in three estuaries feeds a simulation suite that projects marsh response under sea-level rise scenarios.';
+  const UNGROUNDED_STORED_LINE = 'Studies Photonics.';
+  const RESEARCH_AREAS = ['Photonics', 'Coastal Ecology'];
+  const DERIVED_LINE =
+    'The group studies how coastal wetlands buffer storm surge, combining field sensor networks with hydrodynamic models of tidal marshes.';
+
+  it('serves the derived line the gate accepts instead of the stored line it refuses', () => {
+    expect(UNGROUNDED_STORED_LINE.length).toBeLessThan(200);
+    expect(
+      shortDescriptionQuality(UNGROUNDED_STORED_LINE, FULL, RESEARCH_AREAS, { entityType: 'LAB' })
+        .flags,
+    ).toContain('ungrounded-topic-short');
+    expect(
+      gateAcceptedDerivedCardSubstitute({
+        shortDescription: UNGROUNDED_STORED_LINE,
+        fullDescription: FULL,
+        researchAreas: RESEARCH_AREAS,
+        entityType: 'LAB',
+        kind: 'lab',
+      }),
+    ).toBe(DERIVED_LINE);
+    expect(
+      resolveServedShortDescription({
+        shortDescription: UNGROUNDED_STORED_LINE,
+        fullDescription: FULL,
+        researchAreas: RESEARCH_AREAS,
+        entityType: 'LAB',
+        kind: 'lab',
+      }),
+    ).toBe(DERIVED_LINE);
+  });
+
+  it('leaves the card complete, so the gate stops reporting missing_card_description', () => {
+    const resolved = resolveServedShortDescription({
+      shortDescription: UNGROUNDED_STORED_LINE,
+      fullDescription: FULL,
+      researchAreas: RESEARCH_AREAS,
+      entityType: 'LAB',
+      kind: 'lab',
+    });
+    expect(
+      shortDescriptionQuality(resolved, FULL, RESEARCH_AREAS, { entityType: 'LAB' }).isUseful,
+    ).toBe(true);
+  });
+
+  it('never substitutes for a stored line the gate already accepts', () => {
+    const PASSING_STORED_LINE =
+      'Studies how coastal wetlands buffer storm surge using field sensor networks and tidal-marsh models.';
+    expect(
+      shortDescriptionQuality(PASSING_STORED_LINE, FULL, RESEARCH_AREAS, { entityType: 'LAB' })
+        .isUseful,
+    ).toBe(true);
+    expect(
+      gateAcceptedDerivedCardSubstitute({
+        shortDescription: PASSING_STORED_LINE,
+        fullDescription: FULL,
+        researchAreas: RESEARCH_AREAS,
+        entityType: 'LAB',
+        kind: 'lab',
+      }),
+    ).toBe('');
+    expect(
+      resolveServedShortDescription({
+        shortDescription: PASSING_STORED_LINE,
+        fullDescription: FULL,
+        researchAreas: RESEARCH_AREAS,
+        entityType: 'LAB',
+        kind: 'lab',
+      }),
+    ).toBe(PASSING_STORED_LINE);
+  });
+
+  it('never returns an empty card in place of a non-empty stored line', () => {
+    const NO_DERIVABLE_FULL = 'Photonics.';
+    expect(
+      shortDescriptionQuality(UNGROUNDED_STORED_LINE, NO_DERIVABLE_FULL, RESEARCH_AREAS, {
+        entityType: 'LAB',
+      }).isUseful,
+    ).toBe(false);
+    expect(
+      gateAcceptedDerivedCardSubstitute({
+        shortDescription: UNGROUNDED_STORED_LINE,
+        fullDescription: NO_DERIVABLE_FULL,
+        researchAreas: RESEARCH_AREAS,
+        entityType: 'LAB',
+        kind: 'lab',
+      }),
+    ).toBe('');
+  });
+
+  it('asks the program bar on a program row, so it cannot substitute against the wrong bar', () => {
+    const PROGRAM_FULL =
+      'The fellowship funds a summer of mentored laboratory research for Yale undergraduates in the life sciences, pairing each student with a faculty host. Applications will be reviewed by the selection committee, which announces awards before the term ends.';
+    const PROGRAM_AREAS = ['Molecular Biology', 'Neuroscience'];
+    const PROGRAM_LINE =
+      'The fellowship funds a summer of mentored laboratory research for Yale undergraduates in the life sciences, pairing each student with a faculty host.';
+    expect(programCardShortDescriptionQuality(PROGRAM_LINE, PROGRAM_FULL).isUseful).toBe(true);
+    expect(
+      gateAcceptedDerivedCardSubstitute({
+        shortDescription: PROGRAM_LINE,
+        fullDescription: PROGRAM_FULL,
+        researchAreas: PROGRAM_AREAS,
+        entityType: 'INITIATIVE',
+        kind: 'program',
+      }),
+    ).toBe('');
+  });
+});
+
+describe('sharesAnInflectionalStem', () => {
+  it('matches a word to its own inflections', () => {
+    for (const [inflected, base] of [
+      ['Hormones', 'hormone'],
+      ['cells', 'cell'],
+      ['therapies', 'therapy'],
+      ['viruses', 'virus'],
+      ['diseases', 'disease'],
+      ['neurons', 'neuron'],
+      ['policies', 'policy'],
+      ['imaging', 'image'],
+      ['modeling', 'model'],
+      ['nursing', 'nurse'],
+      ['modeled', 'model'],
+    ] as [string, string][]) {
+      expect(sharesAnInflectionalStem(inflected, base), `${inflected} ~ ${base}`).toBe(true);
+    }
+  });
+
+  it('does not cross a derivational boundary', () => {
+    // The 0-of-128 hand-read that justifies this arm covered inflectional variants
+    // only. "biological" and "biology" are different words, and grounding a chip on
+    // one because the body says the other is the false positive this must not make.
+    for (const [left, right] of [
+      ['biological', 'biology'],
+      ['statistical', 'statistics'],
+      ['chemist', 'chemistry'],
+      ['analytical', 'analysis'],
+      ['genetic', 'gene'],
+    ] as [string, string][]) {
+      expect(sharesAnInflectionalStem(left, right), `${left} !~ ${right}`).toBe(false);
+    }
+  });
+
+  it('leaves a short acronym alone rather than stemming it into a common word', () => {
+    expect(sharesAnInflectionalStem('aids', 'aid')).toBe(false);
+    expect(sharesAnInflectionalStem('ions', 'ion')).toBe(false);
+  });
+
+  it('does not strip a plural that is part of the word', () => {
+    expect([...inflectionalStems('stress')]).toEqual(['stress']);
+    expect([...inflectionalStems('virus')]).toEqual(['virus']);
+    expect([...inflectionalStems('analysis')]).toEqual(['analysis']);
+  });
+});
+
+describe('researchAreasGroundedInFullDescription', () => {
+  // Chosen so neither chip grounds through the verbatim arm. That arm compares
+  // against the body with its spaces removed, so "hormone signalling" would ground
+  // "Hormones" by accident and the fixture would pass with the stem arm deleted.
+  const BODY =
+    'This work concerns hormone regulation in the pancreas and follows a single cell by live imaging.';
+
+  it('grounds a chip that differs from the body only by its inflection', () => {
+    expect(researchAreasGroundedInFullDescription(['Hormones', 'Cells'], BODY)).toEqual([
+      'Hormones',
+      'Cells',
+    ]);
+  });
+
+  it('still refuses a chip the body does not support in any inflection', () => {
+    expect(researchAreasGroundedInFullDescription(['Hormones', 'Mitochondria'], BODY)).toEqual([
+      'Hormones',
+    ]);
+  });
+
+  it('keeps the verbatim arm, which grounds a compound token the body writes with a space', () => {
+    expect(
+      researchAreasGroundedInFullDescription(
+        ['Cell-Biology'],
+        'This work concerns cell biology and the cytoskeleton.',
+      ),
+    ).toEqual(['Cell-Biology']);
+  });
+
+  it('returns chips unfiltered when the row has no body to ground against', () => {
+    expect(researchAreasGroundedInFullDescription(['Hormones'], '')).toEqual(['Hormones']);
   });
 });

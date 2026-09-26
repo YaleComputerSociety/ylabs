@@ -29,6 +29,12 @@ import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
 import { classifyProgram } from '../../services/programClassifier';
+import { readCourseCreditRouteFromHtml } from '../utils/courseCreditRouteEvidence';
+import {
+  ORG_UNIT_COURSE_CREDIT_ROUTE_FIELD,
+  resolveOrgUnitSlugForDepartmentName,
+} from '../orgUnitSignalMaterializer';
+import { evidenceAssertsALab, personScopedResearchRecordIdentity } from '../utils/labClaimEvidence';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
 
@@ -74,6 +80,72 @@ export interface DepartmentUndergradResearchScraperDeps {
   pageConfigs?: DepartmentUndergradResearchPageConfig[];
   fetchHtml?: FetchHtml;
 }
+
+/**
+ * Department pages that document a for-credit route and are not already in the
+ * config list above. Recovered from the deleted `courseBasedResearchPathwayScraper`
+ * (`d0faf255^`), which read them to mint a `COURSE_SEQUENCE` research entity per
+ * page; #2202 retired that wrong home, and #2214 puts the fact on the department
+ * instead. These are fetched for the course-credit arm only and emit no
+ * research-entity observation, so adding them does not change what this lane
+ * already writes. All 13 were probed live and returned 200.
+ */
+export const COURSE_CREDIT_ROUTE_SEED_PAGES: Array<{
+  key: string;
+  url: string;
+  department: string;
+}> = [
+  {
+    key: 'psychology-directed-research',
+    url: 'https://psychology.yale.edu/what-directed-research-course',
+    department: 'Psychology',
+  },
+  {
+    key: 'history-senior-essay',
+    url: 'https://history.yale.edu/undergraduate/senior-essay',
+    department: 'History',
+  },
+  {
+    key: 'mcdb-senior-research',
+    url: 'https://mcdb.yale.edu/undergraduate/undergrad-degree-programs',
+    department: 'Molecular, Cellular & Developmental Biology',
+  },
+  {
+    key: 'mbb-senior-requirement',
+    url: 'https://mbb.yale.edu/undergraduate-education/programs-study-requirements',
+    department: 'Molecular Biophysics & Biochemistry',
+  },
+  {
+    key: 'chemistry-independent-research',
+    url: 'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/independent-research-opportunities',
+    department: 'Chemistry',
+  },
+  {
+    key: 'astronomy-senior-project',
+    url: 'https://astronomy.yale.edu/undergraduate-program/guidelines-senior-projects-astronomy-ba-and-astrophysics-bs-majors',
+    department: 'Astronomy',
+  },
+  {
+    key: 'economics-senior-essay',
+    url: 'https://economics.yale.edu/undergraduate/senior-essay',
+    department: 'Economics',
+  },
+  {
+    key: 'wgss-senior-essay',
+    url: 'https://wgss.yale.edu/undergraduate-program/requirements-wgss-major',
+    department: "Women's, Gender, & Sexuality Studies",
+  },
+  {
+    key: 'linguistics-senior-essay',
+    url: 'https://ling.yale.edu/undergraduate-studies/program-requirements',
+    department: 'Linguistics',
+  },
+  {
+    key: 'hshm-senior-project',
+    url: 'https://hshm.yale.edu/undergraduate-major/senior-project',
+    department: 'History of Science and Medicine',
+  },
+];
 
 export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradResearchPageConfig[] =
   [
@@ -531,11 +603,15 @@ export function parsePhysicsUndergradResearchPage(
     const description = stripLeadingContactChrome(body);
     const fullDescription = conciseText(description || body);
 
+    const identity = personScopedResearchRecordIdentity(
+      name,
+      evidenceAssertsALab(name, websiteUrl, body),
+    );
     records.push({
       entityKey: facultyEntityKey(config, name),
-      name: `${name} Lab`,
-      kind: 'lab',
-      entityType: 'LAB',
+      name: identity.name,
+      kind: identity.kind,
+      entityType: identity.entityType,
       department: config.department,
       school: config.school,
       sourceUrl: config.url,
@@ -715,7 +791,6 @@ export function departmentUndergradResearchRecordsToObservations(
         value: { openToUndergrads: 'yes', evidenceSource: 'department_undergrad_research_page' },
         confidenceOverride: 0.8,
       },
-      { ...base, field: 'acceptingUndergrads', value: true, confidenceOverride: 0.75 },
     ];
 
     if (record.evidenceQuote && isPlausibleUndergradEvidenceQuote(record.evidenceQuote)) {
@@ -798,6 +873,47 @@ export class DepartmentUndergradResearchScraper implements IScraper {
     this.fetchHtml = deps.fetchHtml || defaultFetchHtml;
   }
 
+  /**
+   * Emits the department's for-credit route as an `orgUnit` observation. Returns
+   * false and emits nothing when the page does not say it or when the org chart
+   * does not know the department, because a signal that cannot cite a page which
+   * states the fact is exactly the fabrication the evidence-first rule forbids.
+   */
+  private async emitCourseCreditRoute(
+    ctx: ScraperContext,
+    departmentName: string,
+    sourceUrl: string,
+    html: string,
+  ): Promise<boolean> {
+    let reading: ReturnType<typeof readCourseCreditRouteFromHtml> = null;
+    try {
+      reading = readCourseCreditRouteFromHtml(html, sourceUrl);
+    } catch (err: unknown) {
+      ctx.log(`Course-credit read failed for ${sourceUrl}: ${sanitizeLogValue(err)}`);
+      return false;
+    }
+    if (!reading) return false;
+    const orgUnitSlug = await resolveOrgUnitSlugForDepartmentName(departmentName);
+    if (!orgUnitSlug) {
+      ctx.log(`No OrgUnit resolves "${departmentName}"; course-credit route not emitted.`);
+      return false;
+    }
+    await ctx.emit([
+      {
+        entityType: 'orgUnit',
+        entityKey: orgUnitSlug,
+        field: ORG_UNIT_COURSE_CREDIT_ROUTE_FIELD,
+        value: {
+          schemaVersion: 1,
+          evidenceQuote: reading.evidenceQuote,
+          supportingQuoteCount: reading.supportingQuoteCount,
+        },
+        sourceUrl,
+      },
+    ]);
+    return true;
+  }
+
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const only =
       ctx.options.only && ctx.options.only.length > 0
@@ -819,6 +935,7 @@ export class DepartmentUndergradResearchScraper implements IScraper {
     let failedPages = 0;
     const summaries: string[] = [];
     const fetchAttempts: ScraperFetchMetric[] = [];
+    let courseCreditRoutes = 0;
 
     const pages = this.pageConfigs.filter((page) => !only || only.has(page.key.toLowerCase()));
     for (const page of pages) {
@@ -868,7 +985,33 @@ export class DepartmentUndergradResearchScraper implements IScraper {
       if (observations.length > 0) await ctx.emit(observations);
       totalObs += observations.length;
       totalEntities += selected.length;
+      const routeEmitted = await this.emitCourseCreditRoute(ctx, page.department, page.url, html);
+      if (routeEmitted) {
+        totalObs += 1;
+        courseCreditRoutes += 1;
+      }
       summaries.push(`${page.key}=${selected.length}`);
+    }
+
+    for (const seed of COURSE_CREDIT_ROUTE_SEED_PAGES) {
+      if (only && !only.has(seed.key.toLowerCase())) continue;
+      if (pages.some((page) => page.url === seed.url)) continue;
+      ctx.log(`Fetching ${seed.url} for a department course-credit route`);
+      let seedHtml: string;
+      try {
+        seedHtml = await this.fetchHtml(seed.url, ctx.options.useCache);
+      } catch (err: unknown) {
+        ctx.log(`[${seed.key}] course-credit fetch failed: ${sanitizeLogValue(err)}`);
+        summaries.push(`${seed.key}=course-credit-fetch-failed`);
+        continue;
+      }
+      if (await this.emitCourseCreditRoute(ctx, seed.department, seed.url, seedHtml)) {
+        totalObs += 1;
+        courseCreditRoutes += 1;
+        summaries.push(`${seed.key}=course-credit`);
+      } else {
+        summaries.push(`${seed.key}=no-course-credit-evidence`);
+      }
     }
 
     if (attemptedPages > 0 && failedPages === attemptedPages) {
@@ -882,7 +1025,7 @@ export class DepartmentUndergradResearchScraper implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: totalEntities,
-      notes: `Department undergraduate research evidence rows: ${summaries.join(', ')}${failureNote}`,
+      notes: `Department undergraduate research evidence rows: ${summaries.join(', ')}${failureNote}; course-credit routes: ${courseCreditRoutes}`,
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }

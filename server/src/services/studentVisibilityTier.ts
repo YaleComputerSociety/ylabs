@@ -5,12 +5,31 @@ import {
   sanitizeCatalogDescription,
 } from '../utils/descriptionHygiene';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
+import { servedDescriptionCitationIsGone } from './descriptionGrounding';
+import {
+  buildResearchEntityPublicDescriptionRepresentation,
+  type ResearchEntityPublicDescriptionRepresentation,
+} from './researchEntityPublicDescription';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
 import { detectProfileIdentityRisk } from './leadProfileIdentity';
+import { hasLiveSourceCitation } from './sourceLinkHealth';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
+import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
+import {
+  isPersonScopedResearchEntity,
+  isPlaceholderEntityName,
+  isUnrecoverablePersonScopedEntityName,
+  isExternalScholarlyPlatformLinkLabelName,
+  entityKeyPersonTokens,
+  nameNamesACitedSharedAcademicHost,
+} from '../utils/researchHomeNameIdentityAuthority';
+import {
+  PERMANENTLY_CLOSED_SUPPRESSION_REASON,
+  hasRecordedClosureEvidence,
+} from '../utils/researchEntityYaleStatus';
+import { hasOrganizationalAlternateAccessPath } from '../utils/organizationalAccessPath';
 
 export interface StudentVisibilityResult {
   tier: StudentVisibilityTier;
@@ -27,6 +46,13 @@ export interface ResearchEntityStudentVisibilityInput {
   duplicateRisk?: boolean;
   exactUrlDuplicateRisk?: boolean;
   contentPageRisk?: boolean;
+  /**
+   * Every citation on this person-scoped row is one that many other person rows
+   * cite byte-identically, so none of them is evidence about this person. Derived
+   * corpus-wide by `selectSharedCitationOnlyEntityIds`, like the duplicate-risk
+   * flags above, because it cannot be seen from one row (#2464).
+   */
+  citationsSharedAcrossPersonRows?: boolean;
   relatedEntityAccessPathCount?: number;
 }
 
@@ -155,64 +181,9 @@ function missingFacultyResearchAreaFacetSignal(entity: Record<string, any>): boo
 // also be lead-exempt here or the class is stranded on missing_lead forever
 // despite carrying that signal (issue #1367).
 //
-// A type only belongs here if the entity itself is a usable way in. The
-// collections, archive/museum, and digital-humanities types were lead-exempt on
-// that theory and turned out to publish 144 student-ready pages with no lead, no
-// roster, no affiliated labs, and no contact email, so they were retired (#2202).
-// CORE_FACILITY stays because it routes to labs on 38 of 57 rows.
-const ORGANIZATIONAL_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY']);
-
-/**
- * Organizational research homes (centers, institutes, initiatives, and core
- * facilities) are institutionally contactable: the entity itself, via its
- * official page and its affiliated labs, is the way in, so a single named
- * individual lead is NOT required for student visibility. (Many real Yale
- * centers are dean- or committee-led and never publish a single "director".) A
- * named director is still surfaced when known, but its absence should not hide a
- * well-described, source-backed organizational home from students.
- */
-function isOrganizationalResearchEntity(entity: Record<string, any>): boolean {
-  return ORGANIZATIONAL_ENTITY_TYPES.has(textValue(entity.entityType).toUpperCase());
-}
-
-const organizationalEngagementUrlPathPatterns = [
-  /\/(?:people|staff|team|members?|membership|our-people|who-we-are|leadership)(?:\/|$)/i,
-  /\/(?:get-involved|getinvolved|join(?:-us)?|participate|volunteer|opportunities|apply|how-to-apply|admissions)(?:\/|$)/i,
-  /\/(?:programs?|education|academics|training|courses?|fellowships?|internships?|research-opportunities|for-students|students)(?:\/|$)/i,
-  // Student-research engagement tokens carried mid-segment (e.g.
-  // /undergraduate-program/undergraduate-research-in-x, /research-internship-program,
-  // /research/undergraduate-research-opportunities, /undergraduates/senior-essay,
-  // /what-directed-research-course). The segment-anchored patterns above miss these
-  // even though the page itself is the student's way in. Directed/independent-research
-  // and independent-study pages are the for-credit course pathway's own way in.
-  /(?:^|[/-])(?:undergraduate-research|undergraduate-study|undergraduate-program|undergraduates|undergraduate|undergrad|directed-research|independent-research|independent-study|research-internship|research-opportunit(?:y|ies)|research-assistantships?|research-experience|for-undergraduates?)(?:[/-]|$)/i,
-];
-
-function isOrganizationalEngagementUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    const path = url.pathname.replace(/\/+$/g, '') || '/';
-    if (path === '/') return false;
-    return organizationalEngagementUrlPathPatterns.some((pattern) => pattern.test(path));
-  } catch {
-    return false;
-  }
-}
-
-function hasOrganizationalEngagementLink(entity: Record<string, any>): boolean {
-  return entityUrls(entity).some(isOrganizationalEngagementUrl);
-}
-
-function hasOrganizationalAlternateAccessPath({
-  entity,
-  relatedEntityAccessPathCount,
-}: {
-  entity: Record<string, any>;
-  relatedEntityAccessPathCount: number;
-}): boolean {
-  if (relatedEntityAccessPathCount > 0) return true;
-  return hasOrganizationalEngagementLink(entity);
-}
+// The set and the predicate now live in `utils/researchEntityOrganizational`, so
+// the lead exemption, the card exemption, and the research-scope classification
+// read one owner.
 
 function memberUserRecord(member: Record<string, any>): Record<string, any> {
   if (member.user && typeof member.user === 'object') return member.user;
@@ -300,6 +271,63 @@ function isLabNameOrgTypeMismatch(entity: Record<string, any>): boolean {
   return !labNameCoherentWithDescription(entity);
 }
 
+/**
+ * Read on host and path together, and with a trailing word boundary rather than a
+ * delimiter, because real lab hosts concatenate (`hatlab.yale.edu`,
+ * `zilmlab.yale.edu`) so a delimited token test misses them. The boundary is what
+ * keeps `labor-economics` and a surname like Labov out.
+ */
+function urlNamesALaboratory(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return /lab(?:oratory|s)?\b/i.test(`${url.hostname}${url.pathname}`);
+  } catch {
+    return false;
+  }
+}
+
+function citedUrls(entity: Record<string, any>): string[] {
+  const provenanceUrls = Object.values(entity.fieldProvenance || {}).map((entry: any) =>
+    textValue(entry?.sourceUrl),
+  );
+  return [...entityUrls(entity), ...provenanceUrls].filter((value) => hasHttpUrl(value));
+}
+
+/**
+ * A row whose heading claims a laboratory that nothing it cites names, and whose
+ * `name` no source is recorded for.
+ *
+ * `student_ready` is the claim that a card will not mislead a student, and a title
+ * is the loudest claim a card makes. These rows were minted from a person's own
+ * profile page: the name was composed at mint time rather than read off a source,
+ * so `fieldProvenance.name` is empty, and no cited page - profile, department
+ * listing or grant record - names a lab either. What a student reads as "the X Lab
+ * runs research you could join" is, on the evidence, one professor's directory
+ * entry.
+ *
+ * Kept out of `student_ready` rather than suppressed, on the same terms as
+ * `lab_name_org_type_mismatch`: the person is usually real and the row becomes
+ * legitimate again the moment the name is reconciled with the evidence. The
+ * durable remedy is #3350's substitution - swap the lead-derived person-scoped
+ * name for the unbacked lab name at the observation - which this guard does not
+ * perform and does not wait for.
+ *
+ * The absence of a lab-named URL is the discriminator rather than the presence of
+ * a person-page one, because a paginated department listing
+ * (`/people-economics?page=4`) is not recognised as a person page by any shared
+ * URL predicate while being the weakest evidence of a lab there is. Measured on
+ * Development: 77 live rows, 58 of them served, and exactly 1 of the 58 has a live
+ * `name` observation after all, so the row-local reading agrees with the
+ * observation log on 57 of 58.
+ */
+function isUnbackedLabNameShell(entity: Record<string, any>): boolean {
+  if (textValue(entity.entityType).toUpperCase() !== 'LAB') return false;
+  if (!/\blab(?:oratory)?$/i.test(textValue(entity.name || entity.displayName))) return false;
+  if (hasAnyHttpUrl([entity.websiteUrl, entity.website])) return false;
+  if (entity.fieldProvenance?.name) return false;
+  return !citedUrls(entity).some(urlNamesALaboratory);
+}
+
 function isNonOwnerGrantShell({
   entity,
   leadMembers,
@@ -348,45 +376,11 @@ function isUncorroboratedGrantOnlyEntity(entity: Record<string, any>): boolean {
   return urls.every(isGrantOrOrcidSourceUrl);
 }
 
-/**
- * The recorded-closure marker. Written into `studentVisibilitySuppressionReason`
- * alongside the existing `research_infrastructure_only` convention, so no new
- * field is required (#2284).
- *
- * Why a recorded marker rather than a detector: nothing in the model could
- * express "this stopped existing", and nothing available can infer it either.
- * Measured on the two known-closed rows:
- *
- *  - `rudnick-lab-rudnickg` — link health HEALTHY/200 on both recorded links. A
- *    departed PI's Yale profile keeps returning 200 long after the lab is gone,
- *    so link death cannot express closure and the one instrument that looks like
- *    it should catch this actively reports the row as fine.
- *  - `dept-astronomy-debra-fischer` — still observed by `dept-faculty-roster` on
- *    2026-08-28, listed on `astronomy.yale.edu/people/faculty`, with a HEALTHY
- *    PRIMARY_IDENTITY profile link verified 2026-08-31. The PI has relocated to
- *    NASA. **Every Yale-derived signal says she is present**, because Yale's own
- *    page is stale, so no detector built from Yale sources can ever catch this
- *    class. It needs external evidence (an ORCID employment end date) or a human
- *    report.
- *
- * THIS GATE FAILS OPEN, DELIBERATELY, AND MUST STAY THAT WAY. Absence of closure
- * evidence is not evidence of closure: roughly 4,500 live rows carry no closure
- * evidence either way, so treating "unobserved" as "closed" would suppress most
- * of the corpus. Only a positively recorded marker suppresses. Do not "correct"
- * this toward fail-closed — that is the opposite of the right default here, and
- * it is the mirror of the inert-guard work in #2258.
- *
- * Deliberately NOT `NOT_CURRENTLY_AVAILABLE`, which is a live availability value
- * meaning "not recruiting right now". A student reads "not taking students this
- * term" and "this lab no longer exists" very differently, and collapsing them
- * would be its own defect.
- */
-export const PERMANENTLY_CLOSED_SUPPRESSION_REASON = 'permanently_closed';
-
-export const hasRecordedClosureEvidence = (entity: Record<string, any>): boolean =>
-  textValue(entity.studentVisibilitySuppressionReason).includes(
-    PERMANENTLY_CLOSED_SUPPRESSION_REASON,
-  );
+// The recorded-closure marker and its predicate moved to
+// `utils/researchEntityYaleStatus.ts` (#1923), which documents them, because the
+// Yale-status derivation now reads the same marker so a recorded closure survives
+// re-materialization. Re-exported here so existing import sites keep working.
+export { PERMANENTLY_CLOSED_SUPPRESSION_REASON, hasRecordedClosureEvidence };
 
 const FORMALIZATION_PROGRAM_KINDS = new Set([
   'FELLOWSHIP_FUNDING',
@@ -480,6 +474,61 @@ const withOverride = (
 };
 
 export const BLANK_PUBLIC_DESCRIPTION_REASON = 'blank_public_description';
+
+/**
+ * Whether this row's served copy satisfies the card half of `descriptionCoherent`.
+ *
+ * Exported so a lane that REPLACES a description can ask the gate's own question
+ * before and after its write instead of asking a narrower one. The card is scored
+ * relative to the body (`shortDescriptionQuality`), so a write that improves the
+ * body can invalidate a byte-identical card and remove a served row from the
+ * served surface while `invariant.pass` stays true - which is why
+ * `researchEntityServesPublicDetail` alone cannot see the loss (#2954).
+ */
+export function researchEntityDescriptionServesRequiredCard(
+  entity: Record<string, any>,
+  publicDescription: ResearchEntityPublicDescriptionRepresentation,
+): boolean {
+  const cardIsOptional =
+    isProgramLikeResearchEntity(entity) || isOrganizationalResearchEntity(entity);
+  const servedCardIsPresent = Boolean(textValue(publicDescription.servedCard));
+  return (
+    publicDescription.invariant.cardDescriptionUseful || (cardIsOptional && !servedCardIsPresent)
+  );
+}
+
+/**
+ * The description half of the `student_ready` definition, as one predicate: the
+ * public-description invariant passes AND the required research-focus card is
+ * present and useful. This is `ResearchEntityStudentReadyCorrectness.descriptionCoherent`,
+ * and it is the only part of that definition a description write can move, so a
+ * description lane comparing it before and after its own write is asking the gate
+ * whether the write costs the row its place on the served surface.
+ */
+export function researchEntityDescriptionIsCoherent(
+  entity: Record<string, any>,
+  leadMemberNames: readonly string[] = [],
+): boolean {
+  const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
+    entity,
+    leadMemberNames,
+  });
+  return (
+    publicDescription.invariant.pass &&
+    researchEntityDescriptionServesRequiredCard(entity, publicDescription)
+  );
+}
+
+// `descriptionCoherent` reads `publicDescription.invariant.pass` directly, so an
+// invariant failure is a tier INPUT and must carry a recorded reason on every
+// row it holds - not only on a row an override pushed to `student_ready`. Three
+// of the four invariant reasons are already mirrored by a recorded blocker
+// (`missing_description`/`thin_description`/`profile_fallback_only` for the body,
+// `missing_card_description` for the card), but `missing_public_full_description`
+// is not when the card exemption suppresses the card blocker: a program-like row
+// whose body fails quality while its card short passes reads `source_backed`,
+// so nothing recorded why the row was held (#2818).
+export const PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON = 'public_description_invariant_failed';
 
 const PUBLIC_DESCRIPTION_INVARIANT_FIELDS = [
   'fullDescription',
@@ -579,7 +628,9 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'missing_card_description',
   'thin_description',
   'blank_public_description',
+  PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
   'missing_lead',
+  'unusable_name',
   'duplicate_name_risk',
   'duplicate_risk',
   'exact_url_duplicate_risk',
@@ -594,9 +645,16 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'grant_only_no_current_yale_source',
   'permanently_closed',
   'lab_name_org_type_mismatch',
+  'unbacked_lab_name',
   'inactive_at_yale',
   'archive_review',
   'not_undergraduate_relevant',
+  'all_citations_dead',
+  // The other half of `citationIdentifiesSubject`, and blocking on the same terms
+  // as `all_citations_dead`: a row whose every citation is shared across person
+  // rows has no evidence about its own subject (#2464). Left unclassified it read
+  // as non-blocking, so a row held by it alone would count as unexplained.
+  'citations_identify_no_person',
 ]);
 
 export const isStudentReadyHardBlockerReason = (reason: string): boolean =>
@@ -621,18 +679,30 @@ export interface ResearchEntityStudentReadyCorrectness {
   // (b) The right person/lead is attached: a lead-requiring entity has a
   // resolved lead, with no identity conflict or wrong-person mis-attribution.
   rightLeadAttached: boolean;
+  // (b') At least one citation is evidence about this row's own subject. A page
+  // about one person is cited by about one person row; a directory index or a
+  // fundraising page is cited by hundreds, so a row whose every citation is
+  // shared that widely has no per-person evidence behind it at all (#2464).
+  citationIdentifiesSubject: boolean;
   // (c) Not a duplicate of an already-known entity. Suppressed shells (generic
   // directory / biography / non-owner grant / off-scope) are removed one tier
   // earlier, at `suppressed`.
   notDuplicate: boolean;
+  // (d) The record's `name` identifies something rather than being placeholder
+  // filler ("n/a", "unknown"), which leaves nothing to title the card with and
+  // cannot be rescued by `displayName`, only ever a branded alias of `name`.
+  // Absence is a different failure and is deliberately not claimed here; see
+  // `computeResearchEntityStudentVisibility`.
+  hasUsableName: boolean;
 }
 
 /**
  * THE definition of `student_ready`, in one place: an entity is `student_ready`
  * IFF what we show is CORRECT and COHERENT - a real coherent non-boilerplate
- * description about THIS entity, the right active lead/identity, and not a
- * duplicate/shell. Enrichment (next step, action evidence, facet signal,
- * source-backing, alternate access path, source-url projection) never gates -
+ * description about THIS entity, the right active lead/identity, a name that
+ * identifies something, and not a duplicate/shell. Enrichment (next step,
+ * action evidence, facet signal, source-backing, alternate access path,
+ * source-url projection) never gates -
  * the student can always reach out to the professor. See
  * docs/student-ready-definition.md. Change the gate here, not in scattered
  * conditionals.
@@ -644,7 +714,9 @@ export function researchEntityMeetsStudentReadyDefinition(
     correctness.descriptionCoherent &&
     correctness.entityContentMatchesCard &&
     correctness.rightLeadAttached &&
-    correctness.notDuplicate
+    correctness.citationIdentifiesSubject &&
+    correctness.notDuplicate &&
+    correctness.hasUsableName
   );
 }
 
@@ -657,6 +729,7 @@ export function computeResearchEntityStudentVisibility({
   duplicateRisk = false,
   exactUrlDuplicateRisk = false,
   contentPageRisk = false,
+  citationsSharedAcrossPersonRows = false,
   relatedEntityAccessPathCount = 0,
 }: ResearchEntityStudentVisibilityInput): StudentVisibilityResult {
   const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
@@ -671,6 +744,30 @@ export function computeResearchEntityStudentVisibility({
     isProgramLikeResearchEntity(entity) || isOrganizationalResearchEntity(entity);
   const requiresLead = !organizationalLeadExempt;
   const missingRequiredLead = requiresLead && quality.leadState !== 'lead_attached';
+  // An organizational or program-like home is described by what it is and does,
+  // not by a lab-style research focus, so the card is a bonus rather than a
+  // requirement for it (#1872). This mirrors the same exemption in
+  // `researchEntityPublicDescription`; the two must agree or the gate publishes a
+  // row the detail route then refuses. A body is still required: a row with no
+  // useful description is held by `missing_description` or `thin_description`
+  // regardless of this exemption.
+  // The exemption is about card ABSENCE, not card quality: a card that IS present
+  // is served verbatim by `resolveServedShortDescription`, so an exclusion clause
+  // or administrative chrome stored as the short still reaches students and must
+  // still hold the row (#1425/#1596). `quality.cardState` cannot answer this on
+  // its own - it folds the body verdict in, and it applies the exemption only to
+  // program-like homes (`assessResearchEntityDescriptionQuality`'s `isProgramLike`
+  // arm), so reading it raw as a tier input while the matching
+  // `missing_card_description` push was exempted held 7 organizational rows at
+  // `operator_review` with no blocker recorded at all (#2818). This predicate and
+  // the reason push below must stay the same expression: a tier input that no
+  // reason records is invisible to every histogram and unreachable by every
+  // repair lane. It lives in `researchEntityDescriptionServesRequiredCard` so a
+  // description lane can ask the same question of its own write (#2954).
+  const hasRequiredResearchFocusCard = researchEntityDescriptionServesRequiredCard(
+    entity,
+    publicDescription,
+  );
   // The org/program lead exemption assumes the entity itself is an alternate
   // "way in" via its own page and programs. That premise only holds when the
   // entity actually surfaces a reachable next step: a linked related/affiliated
@@ -697,12 +794,50 @@ export function computeResearchEntityStudentVisibility({
   const nonOwnerGrantShell = isNonOwnerGrantShell({ entity, leadMembers, hasActionEvidence });
   const uncorroboratedGrantOnly = isUncorroboratedGrantOnlyEntity(entity);
   const labNameOrgTypeMismatch = isLabNameOrgTypeMismatch(entity);
+  const unbackedLabName = isUnbackedLabNameShell(entity);
   const missingFacetSignal = missingFacultyResearchAreaFacetSignal(entity);
   const profileIdentityRisk = detectProfileIdentityRisk({ entity, leadMembers });
   const researchScope = classifyResearchEntityResearchScope(entity);
   const outsideResearchScope = !researchScope.researchHomeEligible;
+  // Keyed on `name` alone: `displayName` is only ever a branded alias of `name`,
+  // so a placeholder `name` leaves nothing to title the card with once a graft on
+  // the alias is withheld at serve time (#2367). Absence is deliberately NOT
+  // checked here: `name` is `required` on the schema and 0 records store an empty
+  // one, so a blank-name arm could never fire.
+  // An external platform's brand is unusable on the same terms as filler: it titles
+  // the card with a place a person's work is indexed rather than with a research
+  // home. It is checked here as well as at ingest and in the materializer because a
+  // row whose only name observation IS the brand has no rival to be re-derived to,
+  // so the name survives and the card would still be titled "Google Scholar"
+  // (#2285).
+  // A named professorship and a bare host name are unusable on the same terms, and
+  // for the same reason they cannot be handled at serve time the way a bare person
+  // name is: nothing on the row derives a research-record name from them, so there
+  // is no substitution to make and a blank heading would be worse than a held row.
+  // Scoped to person-scoped records because an organization may legitimately be
+  // named after the chair that endowed it (#2373/#2507).
+  // A shared academic host organization's name is unusable on the same terms, and
+  // reaches this list for the same reason the brand does: the materializer refuses
+  // the value but keeps a refused `name` when no ranked candidate passes, so a row
+  // whose only name observation IS the host organization's would go on titling its
+  // card with a 13-faculty umbrella's name while the serve paths withhold only the
+  // alias (#2360). Held rather than blanked, because nothing on the row derives a
+  // research-record name from a host's.
+  const namesASharedHostOrganization =
+    isPersonScopedResearchEntity(entity) &&
+    nameNamesACitedSharedAcademicHost({
+      harvestedName: entity.name,
+      recordCitedUrls: [entity.websiteUrl, entity.website, entity.sourceUrls],
+      identityTokens: entityKeyPersonTokens(entity.slug),
+    });
+  const hasUsableName =
+    !isPlaceholderEntityName(entity.name) &&
+    !isExternalScholarlyPlatformLinkLabelName(entity.name) &&
+    !namesASharedHostOrganization &&
+    !(isPersonScopedResearchEntity(entity) && isUnrecoverablePersonScopedEntityName(entity.name));
 
   if (entity.activeAtYaleCache === false) reasons.push('inactive_at_yale');
+  if (!hasUsableName) reasons.push('unusable_name');
   if (outsideResearchScope) reasons.push('non_research_entity', ...researchScope.reasons);
   if (
     textValue(entity.studentVisibilitySuppressionReason).includes('research_infrastructure_only')
@@ -714,12 +849,20 @@ export function computeResearchEntityStudentVisibility({
   if (exactUrlDuplicateRisk) reasons.push('exact_url_duplicate_risk');
   if (duplicateRisk || exactUrlDuplicateRisk) reasons.push('duplicate_risk');
   if (contentPageRisk) reasons.push('content_page_risk');
-  if (quality.descriptionState === 'source_backed') reasons.push('source_backed_description');
+  // `source_backed_description` is the one signal that claims a source backs the copy,
+  // and `descriptionState` derives it from copy QUALITY alone - nothing in it consults
+  // the cited page. So a description whose citation had died kept asserting the claim
+  // forever, because nothing re-checked it (#2879). A fresh `UNREACHABLE` verdict from
+  // the re-check lane withdraws the signal and nothing else: the tier is unchanged,
+  // because a page that went away does not make the prose it once carried wrong.
+  if (quality.descriptionState === 'source_backed' && !servedDescriptionCitationIsGone(entity)) {
+    reasons.push('source_backed_description');
+  }
   if (quality.descriptionState === 'profile_synthesis') reasons.push('profile_fallback_only');
   if (quality.descriptionState === 'thin') reasons.push('thin_description');
   if (quality.descriptionState === 'missing') reasons.push('missing_description');
-  if (quality.repairFlags.includes('missing_card_description'))
-    reasons.push('missing_card_description');
+  if (!hasRequiredResearchFocusCard) reasons.push('missing_card_description');
+  if (!publicDescription.invariant.pass) reasons.push(PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON);
   if (profileIdentityRisk) reasons.push('profile_identity_risk');
   if (requiresLead && quality.leadState !== 'lead_attached') reasons.push('missing_lead');
   if (organizationalDeadEnd) reasons.push('missing_alternate_access_path');
@@ -729,7 +872,9 @@ export function computeResearchEntityStudentVisibility({
   if (nonOwnerGrantShell) reasons.push('non_owner_grant_shell');
   if (uncorroboratedGrantOnly) reasons.push('grant_only_no_current_yale_source');
   if (labNameOrgTypeMismatch) reasons.push('lab_name_org_type_mismatch');
+  if (unbackedLabName) reasons.push('unbacked_lab_name');
   if (missingFacetSignal) reasons.push('missing_facet_signal');
+  if (citationsSharedAcrossPersonRows) reasons.push('citations_identify_no_person');
 
   if (hasActionEvidence) reasons.push('concrete_next_step');
   else reasons.push('missing_action_evidence');
@@ -742,12 +887,24 @@ export function computeResearchEntityStudentVisibility({
   // A missing source url / alternate access path never gates: it is a soft
   // enrichment signal (a projection gap the materializer closes), and reach-out
   // to the professor is the universal next step.
+  const hasAnyLiveCitation = hasLiveSourceCitation(entity);
+  if (!hasAnyLiveCitation) reasons.push('all_citations_dead');
+
   const studentReadyCorrectness: ResearchEntityStudentReadyCorrectness = {
-    descriptionCoherent: publicDescription.invariant.pass && quality.cardState === 'complete',
-    entityContentMatchesCard: !labNameOrgTypeMismatch,
+    descriptionCoherent: publicDescription.invariant.pass && hasRequiredResearchFocusCard,
+    // Folded in beside the org-type mismatch rather than added as a new
+    // correctness field, because it is the same question asked of the other half
+    // of the title: a heading claiming a laboratory the row cites no evidence for
+    // does not match the content underneath it either.
+    entityContentMatchesCard: !labNameOrgTypeMismatch && !unbackedLabName,
     rightLeadAttached:
       (!requiresLead || quality.leadState === 'lead_attached') && !profileIdentityRisk,
+    // A citation cannot identify this subject if the entity has no citation that
+    // resolves. Folded in here rather than added as a new blocker because it is the
+    // same correctness question: does a real source stand behind this card (#2635).
+    citationIdentifiesSubject: !citationsSharedAcrossPersonRows && hasAnyLiveCitation,
     notDuplicate: !duplicateRisk,
+    hasUsableName,
   };
 
   let computedTier: StudentVisibilityTier = 'operator_review';
@@ -774,7 +931,9 @@ export function computeResearchEntityStudentVisibility({
     !profileIdentityRisk &&
     !quality.repairFlags.includes('missing_source_url') &&
     !labNameOrgTypeMismatch &&
-    !duplicateRisk
+    !unbackedLabName &&
+    !duplicateRisk &&
+    hasUsableName
   ) {
     computedTier = 'limited_but_safe';
   }
@@ -786,7 +945,7 @@ export function computeResearchEntityStudentVisibility({
     return {
       tier: result.computedTier,
       computedTier: result.computedTier,
-      reasons: Array.from(new Set([...result.reasons, 'public_description_invariant_failed'])),
+      reasons: Array.from(new Set([...result.reasons, PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON])),
     };
   }
   // A recorded closure outranks every later hold, including an operator override
@@ -815,6 +974,18 @@ export function computeResearchEntityStudentVisibility({
       tier: 'operator_review',
       computedTier: result.computedTier,
       reasons: Array.from(new Set([...result.reasons, 'missing_lead'])),
+    };
+  }
+  // A record whose `name` is filler rather than an identity can never be
+  // published to students, even by an explicit operator override: there is
+  // nothing to title the card with, so publishing it would serve a card headed
+  // "n/a". The way to publish such a row is to give it a real name, not to
+  // override past the missing one.
+  if (!hasUsableName && (result.tier === 'student_ready' || result.tier === 'limited_but_safe')) {
+    return {
+      tier: 'operator_review',
+      computedTier: result.computedTier,
+      reasons: Array.from(new Set([...result.reasons, 'unusable_name'])),
     };
   }
   // A contested-identity entity mixes different people's identities, so it can

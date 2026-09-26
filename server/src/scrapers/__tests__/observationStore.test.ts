@@ -33,50 +33,44 @@ const PERSON_VOICED_RESEARCH =
   "Dr. Sauler's research investigates mechanisms of lung injury and repair, using single-cell genomics of human lung tissue to define the cellular drivers of emphysema.";
 
 describe('buildObservationFingerprint', () => {
-  it('makes logistics updates latest-wins within a source but distinct across sources', () => {
+  it('makes an inferred-director rephrasing supersede the prior run instead of rivalling it', () => {
     const base = {
       entityType: 'researchEntity',
-      entityKey: 'smith-lab',
+      entityKey: 'smith-center',
+      sourceName: 'center-director-llm',
     };
-    const logisticsFields = [
-      'undergraduateLogisticsStudentLevel',
-      'undergraduateLogisticsCompensation',
-      'undergraduateLogisticsTimeCommitment',
-      'undergraduateLogisticsModality',
-      'undergraduateLogisticsCurrentAvailability',
+    const directorFields = [
+      'inferredDirectorName',
+      'inferredDirectorUserName',
+      'inferredDirectorTitle',
+      'inferredDirectorRole',
+      'inferredDirectorProfileUrl',
     ];
 
-    for (const field of logisticsFields) {
-      const oldValue = buildObservationFingerprint({
+    for (const field of directorFields) {
+      const firstRun = buildObservationFingerprint({ ...base, field, value: 'Director' });
+      const rephrased = buildObservationFingerprint({
         ...base,
         field,
-        sourceName: 'lab-microsite-undergrad-llm',
-        value: { revision: 1 },
-      });
-      const newValue = buildObservationFingerprint({
-        ...base,
-        field,
-        sourceName: 'lab-microsite-undergrad-llm',
-        value: { revision: 2 },
+        value: 'Director and Professor',
       });
 
-      expect(oldValue).toBe(newValue);
+      expect(firstRun).toBe(rephrased);
     }
 
-    const otherSource = buildObservationFingerprint({
+    const rivalSource = buildObservationFingerprint({
       ...base,
-      field: 'undergraduateLogisticsCurrentAvailability',
-      sourceName: 'manual-admin-edit',
-      value: { status: 'NOT_CURRENTLY_AVAILABLE' },
+      field: 'inferredDirectorTitle',
+      sourceName: 'ysm-faculty-directory',
+      value: 'Director',
     });
-    const extractorSource = buildObservationFingerprint({
+    const llmSource = buildObservationFingerprint({
       ...base,
-      field: 'undergraduateLogisticsCurrentAvailability',
-      sourceName: 'lab-microsite-undergrad-llm',
-      value: { status: 'NOT_CURRENTLY_AVAILABLE' },
+      field: 'inferredDirectorTitle',
+      value: 'Director',
     });
 
-    expect(otherSource).not.toBe(extractorSource);
+    expect(rivalSource).not.toBe(llmSource);
   });
 
   it('makes sourceContentHash latest-wins so each run supersedes the prior hash', () => {
@@ -343,7 +337,7 @@ describe('isRegressiveProseRefresh', () => {
         field: 'fullDescription',
         incomingValue: areaEcho,
         existingValue: USEFUL_DESCRIPTION,
-        incomingContext: { researchAreas, entityType: 'researchEntity' },
+        incomingContext: { researchAreas },
       }),
     ).toBe(true);
   });
@@ -375,6 +369,56 @@ describe('selfDefeatingCardRestatesFullDescription', () => {
         fullContext: USEFUL_DESCRIPTION,
       }),
     ).toBe(false);
+  });
+});
+
+describe('appendObservations deploy-host citation refusal (#2805)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const append = (sourceUrl: string) =>
+    appendObservations(
+      [
+        {
+          entityType: 'user',
+          entityKey: 'dept:art:example-person',
+          field: 'profileUrls',
+          value: { departmental: `${sourceUrl}` },
+          sourceUrl,
+        },
+      ],
+      {
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'dept-faculty-roster',
+        sourceWeight: 0.8,
+        dryRun: false,
+      },
+      { loadActiveProse: async () => undefined },
+    );
+
+  it('refuses a citation to a platform-assigned deploy host', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany');
+
+    const result = await append(
+      'https://ysoa-2025-nuxt-production-fqvp7.ondigitalocean.app/people/faculty-and-staff/example-person',
+    );
+
+    expect(insertMany).not.toHaveBeenCalled();
+    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+  });
+
+  it('still writes the same observation cited to the Yale page that serves it', async () => {
+    const insertMany = vi
+      .spyOn(Observation, 'insertMany')
+      .mockResolvedValue([{ _id: 'new-1', observationFingerprint: 'fp:profile' }] as any);
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
+
+    const result = await append('https://www.art.yale.edu/people/faculty-and-staff/example-person');
+
+    expect(insertMany).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ inserted: 1, skipped: 0, superseded: 0 });
   });
 });
 
@@ -721,7 +765,7 @@ describe('appendObservations', () => {
       .mockResolvedValue([
         { _id: 'new-1', observationFingerprint: 'fp:researchEntity:name' },
       ] as any);
-    const bulkWrite = vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({
       modifiedCount: 0,
     } as any);
 
@@ -1093,9 +1137,10 @@ describe('observation entity identity (#2177)', () => {
 });
 
 describe('isWeakerProseRefresh (#2232)', () => {
-  // The observation log only ever carries an ObservedEntityType, never the
-  // product entityType, so this is the context the real write path supplies.
-  const ctx = { entityType: 'researchEntity' };
+  // The observation log carries only an ObservedEntityType, never the product
+  // entityType, so the write path supplies no entityType at all (#210). This is
+  // that context.
+  const ctx = {};
   const refresh = (incomingValue: string, existingValue: string) =>
     isWeakerProseRefresh({
       field: 'fullDescription',
@@ -1109,8 +1154,8 @@ describe('isWeakerProseRefresh (#2232)', () => {
     // Both pass the subtractive quality bar, which is why the pre-existing guard
     // cannot see this at all - it is the Horsley regression that served from May
     // to August.
-    expect(fullDescriptionQuality(MISSION, [], 'researchEntity').isUseful).toBe(true);
-    expect(fullDescriptionQuality(RESEARCH, [], 'researchEntity').isUseful).toBe(true);
+    expect(fullDescriptionQuality(MISSION, []).isUseful).toBe(true);
+    expect(fullDescriptionQuality(RESEARCH, []).isUseful).toBe(true);
     expect(
       isRegressiveProseRefresh({
         field: 'fullDescription',
@@ -1170,7 +1215,7 @@ describe('isWeakerProseRefresh (#2232)', () => {
     // observation log cannot tell one from a lab. Scoring the person-centric term
     // here would charge this -100 against the mission statement's -20 and freeze
     // the mission in place - the inverse of the guard's purpose.
-    expect(fullDescriptionQuality(PERSON_VOICED_RESEARCH, [], 'researchEntity').flags).toEqual([]);
+    expect(fullDescriptionQuality(PERSON_VOICED_RESEARCH, []).flags).toEqual([]);
     expect(prosePreferenceScore(PERSON_VOICED_RESEARCH)).toBeGreaterThan(
       prosePreferenceScore(MISSION),
     );
@@ -1258,12 +1303,8 @@ describe('appendObservations weaker-prose write path (#2232)', () => {
     ];
     const areaEchoIncumbent =
       'The lab studies cancer biology, immunology, genomics, proteomics, and metabolomics in human tissue samples.';
-    expect(fullDescriptionQuality(areaEchoIncumbent, undefined, 'researchEntity').isUseful).toBe(
-      true,
-    );
-    expect(
-      fullDescriptionQuality(areaEchoIncumbent, researchAreas, 'researchEntity').isUseful,
-    ).toBe(false);
+    expect(fullDescriptionQuality(areaEchoIncumbent, undefined).isUseful).toBe(true);
+    expect(fullDescriptionQuality(areaEchoIncumbent, researchAreas).isUseful).toBe(false);
 
     const result = await appendObservations(
       [
@@ -1351,9 +1392,7 @@ describe('appendObservations weaker-prose write path (#2232)', () => {
     const fullParaphrase =
       'Studies cellular signaling and translational biomarkers to improve immune-related patient care across a range of inflammatory diseases.';
     expect(
-      shortDescriptionQuality(USEFUL_SHORT_DESCRIPTION, fullParaphrase, undefined, {
-        entityType: 'researchEntity',
-      }).isUseful,
+      shortDescriptionQuality(USEFUL_SHORT_DESCRIPTION, fullParaphrase, undefined).isUseful,
     ).toBe(true);
     expect(
       selfDefeatingCardRestatesFullDescription('shortDescription', USEFUL_SHORT_DESCRIPTION, {

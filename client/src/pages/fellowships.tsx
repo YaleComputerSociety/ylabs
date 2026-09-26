@@ -50,12 +50,10 @@ const SectionHeader = ({
 }) => (
   <div className="mb-4 mt-10 border-t border-[var(--yr-line)] pt-5 first:mt-0 first:border-t-0 first:pt-0">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
-      <span className="yr-pill yr-pill-blue min-h-0 rounded px-2.5 py-1">{count}</span>
+      <h2 className="yr-display text-2xl font-semibold text-ink">{title}</h2>
+      <span className="yr-pill yr-pill-blue yr-pill-compact px-2.5 py-1">{count}</span>
     </div>
-    {description && (
-      <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{description}</p>
-    )}
+    {description && <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">{description}</p>}
   </div>
 );
 
@@ -84,15 +82,15 @@ const QuickFilterEmptyState = ({
         };
 
   return (
-    <div className="yr-card rounded-md px-6 py-10 text-center text-slate-600">
-      <h2 className="text-lg font-semibold text-slate-950">{copy.title}</h2>
+    <div className="yr-card rounded-card px-6 py-10 text-center text-muted">
+      <h2 className="text-lg font-semibold text-ink">{copy.title}</h2>
       <p className="mx-auto mt-2 max-w-2xl text-sm leading-6">{copy.body}</p>
       <div className="mt-5 flex flex-wrap justify-center gap-2">
         {nextCycleCount > 0 && (
           <button
             type="button"
             onClick={onViewNextCycle}
-            className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-4 text-sm font-semibold text-[var(--yr-blue)] transition hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-card border border-line-brand bg-brand-soft px-4 text-sm font-semibold text-brand transition hover:bg-panel yr-focus-ring"
           >
             View Next Cycle
           </button>
@@ -100,7 +98,7 @@ const QuickFilterEmptyState = ({
         <button
           type="button"
           onClick={onClearFilter}
-          className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-slate-700 transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="inline-flex min-h-[44px] items-center justify-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-ink-soft transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
         >
           Clear filter
         </button>
@@ -110,15 +108,13 @@ const QuickFilterEmptyState = ({
 };
 
 const StatusSummary = ({ summary }: { summary: ProgramJourneySummary }) => (
-  <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-[var(--yr-line)] bg-[var(--yr-line)] sm:grid-cols-3 lg:grid-cols-6">
+  <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-[var(--yr-line)] bg-[var(--yr-line)] sm:grid-cols-3 lg:grid-cols-6">
     {journeySections.map((section) => (
       <div key={section.key} className={`bg-[var(--yr-panel)] px-4 py-3 ${section.tileClassName}`}>
         <dt className="yr-kicker text-[0.68rem]">{section.tileLabel}</dt>
         <dd className="mt-2 flex min-h-[3rem] flex-col justify-end gap-1">
-          <span className="text-2xl font-semibold text-slate-950">{summary[section.key]}</span>
-          <span className="text-xs font-medium leading-tight text-slate-600">
-            {section.tileDetail}
-          </span>
+          <span className="yr-num text-2xl font-semibold text-ink">{summary[section.key]}</span>
+          <span className="text-xs font-medium leading-tight text-muted">{section.tileDetail}</span>
         </dd>
       </div>
     ))}
@@ -177,7 +173,7 @@ const journeySections: Array<{
     key: 'fundingAfterMentor',
     title: 'Funding After You Have a Mentor',
     description:
-      'Funding records that usually require a research home, adviser, proposal, or lab fit first.',
+      'Funding records that usually require a research placement, adviser, proposal, or lab fit first.',
     tileLabel: 'Funding after mentor',
     tileDetail: 'Need a mentor or plan first',
     tileClassName: '',
@@ -311,7 +307,7 @@ const Fellowships = () => {
   };
 
   useEffect(() => {
-    reloadFavorites();
+    void reloadFavorites();
   }, []);
 
   useEffect(() => {
@@ -459,7 +455,7 @@ const Fellowships = () => {
     return {
       key: `f-${group.label}`,
       label: `${group.label}: ${display}`,
-      colorClass: 'bg-[var(--yr-panel-muted)] text-gray-700 border border-[var(--yr-line-strong)]',
+      colorClass: 'bg-[var(--yr-panel-muted)] text-ink-soft border border-[var(--yr-line-strong)]',
       onRemove: group.clear,
     };
   });
@@ -683,19 +679,20 @@ const Fellowships = () => {
           <div className="grid gap-6 border-b border-[var(--yr-line)] pb-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-end">
             <div className="max-w-3xl">
               <p className="yr-kicker">Program planning</p>
-              <h1 className="mt-2 text-3xl font-semibold leading-tight text-slate-950 sm:text-4xl">
+              <h1 className="yr-display mt-2 text-4xl font-semibold leading-tight text-ink sm:text-5xl">
                 Programs & Fellowships
               </h1>
-              <p className="mt-3 text-base leading-7 text-slate-600">
+              <p className="mt-3 text-base leading-7 text-muted">
                 Track structured applications, recurring research programs, center internships, and
                 fellowship cycles alongside your research search. Some records fund a project after
-                you find a research home; others directly organize mentor matching or summer work.
+                you find a research placement; others directly organize mentor matching or summer
+                work.
               </p>
             </div>
             <div className="flex flex-col gap-2 border-l border-[var(--yr-line)] pl-0 sm:flex-row lg:flex-col lg:pl-5">
               <Link
                 to="/dashboard?tab=programs"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-4 text-sm font-semibold text-[var(--yr-blue)] transition hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-card border border-line-brand bg-brand-soft px-4 text-sm font-semibold text-brand transition hover:bg-panel yr-focus-ring"
               >
                 Saved programs
               </Link>
@@ -703,7 +700,7 @@ const Fellowships = () => {
                 href="https://yale.communityforce.com/Funds/Search.aspx#4371597136646D517975544F5976596D4E73384E69673D3D"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-slate-700 transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-ink-soft transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
               >
                 All Yale fellowships
               </a>
@@ -717,11 +714,11 @@ const Fellowships = () => {
 
         <div className="grid gap-6 xl:grid-cols-[20rem_minmax(0,1fr)] xl:items-start xl:gap-8">
           <aside className="space-y-3 xl:sticky xl:top-6">
-            <div className="yr-panel flex flex-col gap-3 rounded-md p-3 sm:flex-row sm:flex-wrap sm:items-end xl:flex-col xl:items-stretch">
+            <div className="yr-panel flex flex-col gap-3 rounded-card p-3 sm:flex-row sm:flex-wrap sm:items-end xl:flex-col xl:items-stretch">
               <div className="min-w-0 basis-full flex-1 sm:min-w-[220px]">
                 <label
                   htmlFor="program-search"
-                  className="mb-1 block text-xs font-semibold text-slate-700"
+                  className="mb-1 block text-xs font-semibold text-ink-soft"
                 >
                   Search programs and fellowships
                 </label>
@@ -737,7 +734,7 @@ const Fellowships = () => {
                     }
                   }}
                   placeholder="Try a topic, program, deadline, or funding source"
-                  className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-base text-slate-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="min-h-[44px] w-full rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-base text-ink-soft focus:border-transparent yr-focus-ring"
                 />
               </div>
               <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto xl:flex-col xl:items-stretch">
@@ -774,7 +771,7 @@ const Fellowships = () => {
             />
             {isAdmin && (
               <div
-                className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
+                className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
                 aria-label="Trust tier filters"
               >
                 <div className="flex flex-wrap gap-2">
@@ -786,10 +783,10 @@ const Fellowships = () => {
                         type="button"
                         aria-pressed={isActive}
                         onClick={() => toggleTrustTierFilter(option.value)}
-                        className={`min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+                        className={`min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors yr-focus-ring ${
                           isActive
-                            ? 'border-slate-900 bg-slate-900 text-white'
-                            : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-slate-700 hover:bg-[var(--yr-panel-muted)]'
+                            ? 'border-brand bg-brand text-white'
+                            : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-ink-soft hover:bg-[var(--yr-panel-muted)]'
                         }`}
                       >
                         {option.label}
@@ -809,8 +806,8 @@ const Fellowships = () => {
             {isLoading && fellowships.length === 0 ? (
               <LoadingSpinner size="lg" />
             ) : noResults ? (
-              <div className="yr-card rounded-md px-6 py-10 text-center text-slate-600">
-                <h2 className="text-lg font-semibold text-slate-950">No program records found</h2>
+              <div className="yr-card rounded-card px-6 py-10 text-center text-muted">
+                <h2 className="text-lg font-semibold text-ink">No program records found</h2>
                 <p className="mt-2 text-sm">
                   Try adjusting the search or checking the official Yale program and fellowship
                   source.
@@ -826,11 +823,11 @@ const Fellowships = () => {
             ) : (
               <>
                 {showNoLiveWindowsNotice && (
-                  <div className="mb-6 rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-5 py-4">
-                    <h2 className="text-base font-semibold text-blue-950">
+                  <div className="mb-6 rounded-card border border-line-brand bg-brand-soft px-5 py-4">
+                    <h2 className="text-base font-semibold text-brand-navy">
                       No programs are currently accepting applications
                     </h2>
-                    <p className="mt-1 max-w-3xl text-sm leading-6 text-blue-900">
+                    <p className="mt-1 max-w-3xl text-sm leading-6 text-brand-navy">
                       Every tracked program and fellowship has closed its most recent application
                       window. Use the recurring records below to plan for the next cycle: review
                       eligibility, line up a mentor, and prepare materials now so you are ready when

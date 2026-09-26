@@ -6,7 +6,7 @@ import {
 
 export const orgUnitSchemaVersion = defineCanonicalSchemaVersion({ currentVersion: 1 });
 
-export const orgUnitKinds = ['SCHOOL', 'DEPARTMENT', 'DIVISION', 'OFFICE'] as const;
+export const orgUnitKinds = ['SCHOOL', 'DEPARTMENT', 'SECTION', 'DIVISION', 'OFFICE'] as const;
 export type OrgUnitKind = (typeof orgUnitKinds)[number];
 
 export const orgUnitStatuses = ['ACTIVE', 'INACTIVE', 'UNKNOWN'] as const;

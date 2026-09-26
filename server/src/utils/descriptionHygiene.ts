@@ -554,6 +554,37 @@ export function containsHtmlTagMarkup(text: unknown): boolean {
   return htmlTagMarkupPattern.test(String(text || ''));
 }
 
+const anyHtmlTagPattern = /<\/?[a-z][a-z0-9]*(?:\s[^<>]*)?\/?>/gi;
+
+/**
+ * The text with literal HTML-element markup removed, for shape detectors that
+ * match on an uninterrupted run of prose. A scraped citation widget wraps each
+ * author in its own element, so the interposed tags break every such run and a
+ * detector reads the value as ordinary prose (#2416).
+ *
+ * Gated on `containsHtmlTagMarkup` so a value whose only angle brackets are
+ * inequalities ("expression < 0.05") is returned untouched; only a value
+ * already carrying a closing tag or a name=value attribute is stripped, and for
+ * that value the broader tag pattern here also reaches the bare and
+ * self-closing tags (`<i>`, `<strong>`, `<br/>`) sitting alongside them - a
+ * citation widget separates its entries with those. Inside such a value the
+ * broad pattern can also swallow a bare `<`...`>` span of prose, which is
+ * acceptable precisely because the stripped copy is never served.
+ *
+ * Removing a tag leaves the surrounding whitespace, which would strand a space
+ * ahead of the citation comma the detectors key on, so the punctuation seam is
+ * repaired the same way the strippers above repair theirs. Detection only: the
+ * stripped copy is never a value to serve, because markup fails
+ * `sanitizeResearchEntityDescription` closed.
+ */
+export function stripHtmlTagMarkupForDetection(text: unknown): string {
+  const value = String(text || '');
+  if (!containsHtmlTagMarkup(value)) return normalizeHygieneWhitespace(value);
+  return normalizeHygieneWhitespace(
+    value.replace(anyHtmlTagPattern, ' ').replace(/\s+([.,;:!?])/g, '$1'),
+  );
+}
+
 const gluedProfileRoleLabelPattern =
   /(?<=[A-Za-z])(?:YSM|FAS|YSE|SOM|STEM|SEAS|WGSS)\s+Researchers?\b/g;
 
@@ -628,22 +659,50 @@ const gluedProfileSectionLabelPattern = new RegExp(
   'g',
 );
 
+// "About" is excluded: spaced and capitalised it opens ordinary prose ("About
+// 40 percent of patients...", "About the collaboration..."), so unlike the
+// other labels its spaced form is not self-evidently a section header.
+const SPACED_PROFILE_SECTION_LABEL_TOKENS = PROFILE_SECTION_LABEL_TOKENS.filter(
+  (token) => token !== 'About',
+);
+
+// A determiner or preposition immediately before the label means it is being
+// used as an ordinary noun in prose ("the Overview Section", "of Titles Held"),
+// not standing in for a stripped section header.
+const PROSE_FUNCTION_WORDS_BEFORE_LABEL =
+  '(?:the|a|an|of|in|on|for|with|this|that|its|our|their|his|her|and|or|to|no)';
+
+const spacedProfileSectionLabelPattern = new RegExp(
+  `(?:^|(?<=[a-z0-9)]))(?<!\\b${PROSE_FUNCTION_WORDS_BEFORE_LABEL})\\s*(?:${SPACED_PROFILE_SECTION_LABEL_TOKENS.join('|')})\\s+(?=[A-Z])`,
+  'g',
+);
+
 /**
  * Repair a profile-page section-header label ("Titles", "Biography",
  * "Overview", "About", "Education & Training", "Specializations") that a
- * whole-block DOM extraction glued directly onto the surrounding text with no
- * separator ("TitlesAssociate Professor...", "...Medicine)BiographyDavid
- * Fink, PhD..."), a residual of #808/#931/#1077 distinct from the labels
- * those covered (#1481). A label glued to the very start of the text is
- * simply dropped; one glued mid-string is replaced with a sentence break,
- * since it was standing in for the page's own paragraph break between two
- * unrelated blocks of prose. Anchored on the no-space boundary on both sides
- * so a legitimately spaced occurrence of these common words in prose is
- * untouched.
+ * whole-block DOM extraction left in the surrounding text, either glued on with
+ * no separator ("TitlesAssociate Professor...", "...Medicine)BiographyDavid
+ * Fink, PhD...") or separated by the single space the flattening step collapsed
+ * the page's paragraph break into ("Biography Caroline T has been a member...",
+ * "...Internal Medicine Biography Dr. S grew up..."). A residual of
+ * #808/#931/#1077 distinct from the labels those covered (#1481), and of #2573
+ * for the spaced form.
+ *
+ * A label at the very start of the text is dropped; one mid-string is replaced
+ * with a sentence break, since it was standing in for the page's own paragraph
+ * break between two unrelated blocks of prose.
+ *
+ * The spaced form is anchored on a following capital and, mid-string, on a
+ * preceding lower-case or digit, so a label ending a sentence of prose is left
+ * alone. "About" is excluded from the spaced form because spaced and
+ * capitalised it opens ordinary prose.
  */
 export function stripGluedProfileSectionLabel(text: string): string {
   const value = String(text || '');
-  const stripped = value.replace(gluedProfileSectionLabelPattern, (match, offset: number) =>
+  const deglued = value.replace(gluedProfileSectionLabelPattern, (match, offset: number) =>
+    offset === 0 ? '' : '. ',
+  );
+  const stripped = deglued.replace(spacedProfileSectionLabelPattern, (match, offset: number) =>
     offset === 0 ? '' : '. ',
   );
   if (stripped === value) return value;
@@ -668,7 +727,7 @@ export function repairMissingSpaceAfterSentence(text: string): string {
   return repaired === value ? value : repaired;
 }
 
-const citationAuthorInitialsListPattern = /(?:[A-Z][a-zA-Z'-]+\s+[A-Z]{1,3},\s*){3,}/;
+const citationAuthorInitialsListPattern = /(?:\p{Lu}[\p{L}'’-]+\s+\p{Lu}{1,3},\s*){3,}/u;
 
 /**
  * A raw citation author-initials list ("Choma MA, Suter MJ, Vakoc BJ, Bouma
@@ -677,9 +736,18 @@ const citationAuthorInitialsListPattern = /(?:[A-Z][a-zA-Z'-]+\s+[A-Z]{1,3},\s*)
  * isPublicationsListDumpText's labeled case). The "Lastname INITIALS," shape
  * repeated three or more times in a row is a bibliographic-citation signature
  * that essentially never occurs in ordinary research prose.
+ *
+ * Matched against a markup-stripped copy, and over any-script letters rather
+ * than ASCII only, because BOTH were needed to reach a real value: a scraped
+ * publications widget wraps some authors in their own element and spells others
+ * with a diacritic, and either interruption alone ends the run below the
+ * three-author bar. Over the 29,199 live description observations on
+ * Development each change on its own newly matched nothing, and together they
+ * newly matched one value, a pure bibliography entry that reported zero quality
+ * flags (#2416).
  */
 export function isCitationAuthorListDumpText(text: unknown): boolean {
-  return citationAuthorInitialsListPattern.test(normalizeHygieneWhitespace(String(text || '')));
+  return citationAuthorInitialsListPattern.test(stripHtmlTagMarkupForDetection(text));
 }
 
 const CV_MONTH =
@@ -1271,8 +1339,31 @@ export function isNonSelfContainedShortDescription(text: string): boolean {
  * on a narrow mobile column and ~219 on a desktop 3-column layout, so 200
  * keeps a short from clamping on the card it renders on rather than letting an
  * over-long blurb get cut mid-idea in the browser.
+ *
+ * It is a rendering PREFERENCE, not the card's hard bar. The hard bar is
+ * `MAX_CARD_SHORT_DESCRIPTION_LENGTH` below, and confusing the two is what made
+ * this constant delete copy instead of shortening it (#1878).
  */
 export const MAX_SHORT_DESCRIPTION_LENGTH = 200;
+
+/**
+ * The card's HARD length ceiling, and the single owner of it: the `too-long`
+ * arm of `shortDescriptionQuality`/`programCardShortDescriptionQuality` reads
+ * these, so nothing else may carry a second copy of the numbers.
+ *
+ * They live here rather than beside the quality bar because the whole-sentence
+ * clamp below also has to know them, and `researchEntityDescriptionQuality.ts`
+ * imports this module rather than the other way round.
+ *
+ * Two owners of one bar is exactly what #1878 was: card producers wrote to this
+ * 280-character ceiling and the 200-character rendering preference above then
+ * deleted anything in the 201-280 band outright. Measured on Development, every
+ * one of the 651 stored card lines over 200 characters sat inside that band, and
+ * none of them reached a student: 391 `student_ready` rows served a
+ * research-area chip summary in place of their own card sentence.
+ */
+export const MAX_CARD_SHORT_DESCRIPTION_LENGTH = 280;
+export const MAX_CARD_SHORT_DESCRIPTION_WORDS = 44;
 
 /**
  * A truncation artifact a producer already baked into a stored short (a source
@@ -1358,8 +1449,7 @@ const MIN_CLAMPED_SHORT_DESCRIPTION_WORDS = 8;
  * `shortDescriptionQuality` rejects any value ending in one as a fragment - so
  * clamping a long short description manufactured exactly the string the card
  * gate forbids, gating the entity on its own truncation (#2184). Keep whole
- * sentences only, and fail closed to an empty string rather than inventing a
- * fragment: callers fall back to a quality-checked derived card line.
+ * sentences only, and never invent a fragment.
  *
  * Sentences are taken from the abbreviation-aware tiling rather than from a
  * bare terminal-punctuation scan, because that scan treats the period of a
@@ -1367,6 +1457,19 @@ const MIN_CLAMPED_SHORT_DESCRIPTION_WORDS = 8;
  * as the entire card line. The kept text must also carry at least as many words
  * as `shortDescriptionQuality` demands of a card, so this clamp can never emit a
  * line the card gate would turn around and reject as too short.
+ *
+ * When no run of whole sentences fits the rendering preference, the leading
+ * sentence is kept whole as long as the card's hard ceiling accepts it. #2184
+ * dropped it instead and said callers fall back to a quality-checked derived
+ * card line; measured on Development that fallback does not exist, because the
+ * derived line is this same over-preference sentence and arrives back here to be
+ * dropped again. What a student actually got was the row's research-area chips
+ * restated as a sentence - the redundant headline #1680 exists to replace - or
+ * an empty card, on 651 rows (#1878). A sentence that renders past the
+ * `line-clamp-4` box degrades to a CSS ellipsis; a chip echo of the chip row
+ * beside it tells the student nothing at all, so the long sentence is the better
+ * of the two. Only a leading sentence that is itself past the hard ceiling - in
+ * characters or in words - is still refused.
  */
 export function clampShortDescriptionToWholeSentences(
   text: string,
@@ -1374,16 +1477,45 @@ export function clampShortDescriptionToWholeSentences(
 ): string {
   const value = normalizeHygieneWhitespace(text);
   if (value.length <= maxLength) return value;
+  return (
+    leadingWholeSentencesWithin(value, maxLength) ||
+    leadingWholeSentencesWithin(
+      value,
+      MAX_CARD_SHORT_DESCRIPTION_LENGTH,
+      MAX_CARD_SHORT_DESCRIPTION_WORDS,
+    )
+  );
+}
+
+function countHygieneWords(value: string): number {
+  return value.split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * The longest run of leading whole sentences that fits `limit` (and `wordLimit`
+ * when given), or '' when the run carries fewer words than a card needs - which
+ * is also what a run cut at a leading abbreviation ("J. Rivera ...") looks like,
+ * so the caller retrying at a higher limit is what keeps that name in its own
+ * sentence.
+ *
+ * Both ceilings bound the run rather than judging it afterwards: rejecting a
+ * whole run for the word count of its last sentence deleted a card line whose
+ * leading sentence fit both ceilings, which is the #1878 failure the ceiling
+ * retry exists to end.
+ */
+function leadingWholeSentencesWithin(
+  value: string,
+  limit: number,
+  wordLimit = Number.POSITIVE_INFINITY,
+): string {
   let kept = '';
   for (const sentence of partitionSentencesForFiltering(value)) {
-    const candidate = kept + sentence;
-    if (normalizeHygieneWhitespace(candidate).length > maxLength) break;
-    kept = candidate;
+    const candidate = normalizeHygieneWhitespace(kept + sentence);
+    if (candidate.length > limit || countHygieneWords(candidate) > wordLimit) break;
+    kept += sentence;
   }
   const clamped = normalizeHygieneWhitespace(kept);
-  const words = clamped.split(/\s+/).filter(Boolean);
-  if (words.length < MIN_CLAMPED_SHORT_DESCRIPTION_WORDS) return '';
-  return clamped;
+  return countHygieneWords(clamped) < MIN_CLAMPED_SHORT_DESCRIPTION_WORDS ? '' : clamped;
 }
 
 function countMatches(text: string, pattern: RegExp): number {
@@ -1612,6 +1744,43 @@ export function isCtaNewsTickerDumpText(text: string): boolean {
     welcomeGreetingPattern.test(normalized),
   ].filter(Boolean).length;
   return promotionalSignals >= 2;
+}
+
+const donationCallToActionPattern =
+  /\b(?:click\s+(?:here\s+)?to\s+(?:donate|give)|donate\s+(?:now|today|here|to\b)|give\s+(?:now|today)|making?\s+a\s+(?:gift|donation)|ways\s+to\s+give|tax[- ]deductible)\b/i;
+
+const philanthropicFundSubjectPatterns = [
+  /\b(?:raise|raises|raised|raising)\s+(?:funds|money)\b/i,
+  /\bfund\s+(?:was|has\s+been)\s+created\b/i,
+  /\buse\s+(?:the\s+)?funds\s+to\b/i,
+  /\b(?:relief|scholarship|memorial|emergency|disaster)\s+fund\b/i,
+  /\b(?:donations?|gifts?)\s+(?:will|can|help|support)\b/i,
+  /\b(?:100|all)\s*%\s+of\s+(?:your\s+)?(?:gift|donation|contribution)/i,
+];
+
+/**
+ * A philanthropic fundraising appeal: prose whose subject is a fund and the act
+ * of giving to it, not what a research home studies. A Yale CMS landing page
+ * frequently leads with the unit's current appeal, and `describesResearchFocus`
+ * accepts it because the fund's purpose names a research topic.
+ *
+ * A donation call to action in the opening sentence ("Click here to donate to
+ * the ... Relief Fund.") is decisive on its own. Elsewhere in the passage two
+ * independent signals are required, because genuine research prose routinely
+ * records a founding gift ("established with a generous gift from ...",
+ * "shortly after ... donated his papers to Yale") and must not be refused
+ * (#2957).
+ */
+export function isPhilanthropicFundAppealText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  const [opening] = partitionSentencesForFiltering(normalized);
+  if (opening && donationCallToActionPattern.test(opening)) return true;
+  const signals = [
+    donationCallToActionPattern.test(normalized),
+    ...philanthropicFundSubjectPatterns.map((pattern) => pattern.test(normalized)),
+  ].filter(Boolean).length;
+  return signals >= 2;
 }
 
 function lastSentenceBoundary(text: string): number {
@@ -1975,35 +2144,146 @@ export function isStudiesResearchAreaEchoDescription(
   text: string,
   researchAreas: readonly unknown[] | null | undefined,
 ): boolean {
+  const reading = readStudiesResearchAreaEnumeration(text, researchAreas);
+  return Boolean(reading && reading.namedChips.length > 0 && reading.unmatchedItems.length === 0);
+}
+
+export interface StudiesResearchAreaEnumerationReading {
+  namedChips: string[];
+  unmatchedItems: string[];
+}
+
+/**
+ * Split a "Studies <A>, <B>, and <C>." sentence against a chip list, greedily and
+ * longest-chip-first, and report what the list named that the chip row still carries
+ * and what it named that the chip row does not.
+ *
+ * Shared by the two readings of the same shape. Fully consumed means the card is the
+ * chip row restated (#1466); partly consumed means the card was derived from a chip
+ * set that has since moved (#3095). Returns null when the text is not this shape at
+ * all, which is different from a shape that matched nothing.
+ */
+export function readStudiesResearchAreaEnumeration(
+  text: string,
+  researchAreas: readonly unknown[] | null | undefined,
+): StudiesResearchAreaEnumerationReading | null {
   const normalized = normalizeHygieneWhitespace(text);
-  if (!normalized) return false;
-  if (!Array.isArray(researchAreas) || researchAreas.length === 0) return false;
-  if (!studiesLeadSingleSentencePattern.test(normalized)) return false;
+  if (!normalized) return null;
+  if (!Array.isArray(researchAreas) || researchAreas.length === 0) return null;
+  if (!studiesLeadSingleSentencePattern.test(normalized)) return null;
   const body = normalized
     .replace(synthesisVerbLeadPattern, '')
     .replace(/[.!?]+$/, '')
     .trim();
-  if (!body) return false;
-  const areaKeys = researchAreas
-    .map((area) => (typeof area === 'string' ? area.trim().toLowerCase() : ''))
+  if (!body) return null;
+  const chipsByLengthDescending = researchAreas
+    .map((area) => (typeof area === 'string' ? area.trim() : ''))
     .filter(Boolean)
-    .sort((a, b) => b.length - a.length);
-  if (areaKeys.length === 0) return false;
+    .sort((left, right) => right.length - left.length);
+  if (chipsByLengthDescending.length === 0) return null;
 
-  let remaining = body.toLowerCase();
-  let matchedAny = false;
+  const namedChips: string[] = [];
+  const unmatchedItems: string[] = [];
+  let remaining = body;
   while (remaining.length > 0) {
     const delimiterMatch = remaining.match(areaListDelimiterPattern);
     if (delimiterMatch) {
       remaining = remaining.slice(delimiterMatch[0].length);
       continue;
     }
-    const areaMatch = areaKeys.find((key) => remaining.startsWith(key));
-    if (!areaMatch) return false;
-    remaining = remaining.slice(areaMatch.length);
-    matchedAny = true;
+    const chip = chipsByLengthDescending.find((candidate) =>
+      remaining.toLowerCase().startsWith(candidate.toLowerCase()),
+    );
+    if (chip) {
+      namedChips.push(chip);
+      remaining = remaining.slice(chip.length);
+      continue;
+    }
+    // Nothing the chip row still carries starts here, so take one delimiter-bounded
+    // item as an unmatched name rather than abandoning the read: a card derived from
+    // a chip set that later moved names a mixture of the two.
+    const nextDelimiter = /,\s*and\s+|,\s*|\s+and\s+|,?\s*including\s+/i.exec(remaining);
+    const item = (nextDelimiter ? remaining.slice(0, nextDelimiter.index) : remaining).trim();
+    if (item) unmatchedItems.push(item);
+    remaining = nextDelimiter ? remaining.slice(nextDelimiter.index) : '';
   }
-  return matchedAny;
+  return { namedChips, unmatchedItems };
+}
+
+const CHIP_NAME_MAX_WORDS = 6;
+
+/**
+ * Words a chip label does not contain. A chip is a noun phrase, so a function word
+ * means the fragment is prose, and prose that merely opens with the template verb is
+ * the false positive that matters: #3091's first pass at this class counted 201 rows
+ * and every sampled one read like "Studies DNA repair and BRCA-related gene function
+ * as it relates to gamete aging", which is a sentence rather than a chip list.
+ *
+ * Deliberately a separate list from the audit instrument's, which counts this class.
+ * A detector that shares its predicate with the fix agrees with it by construction
+ * and can no longer measure it.
+ */
+const CHIP_LABEL_DISQUALIFYING_WORDS = new Set([
+  'a',
+  'an',
+  'as',
+  'at',
+  'by',
+  'for',
+  'from',
+  'how',
+  'in',
+  'including',
+  'into',
+  'is',
+  'it',
+  'its',
+  'of',
+  'on',
+  'that',
+  'the',
+  'their',
+  'to',
+  'using',
+  'which',
+  'with',
+  'within',
+]);
+
+const readsLikeAResearchAreaChipLabel = (fragment: string): boolean => {
+  const trimmed = fragment.trim();
+  if (!trimmed || !/^[A-Z0-9]/.test(trimmed)) return false;
+  const words = trimmed.split(/\s+/);
+  if (words.length > CHIP_NAME_MAX_WORDS) return false;
+  return !words.some((word) =>
+    CHIP_LABEL_DISQUALIFYING_WORDS.has(word.replace(/[^A-Za-z]/g, '').toLowerCase()),
+  );
+};
+
+/**
+ * A stored card in the chip-summary shape that names at least one chip the row still
+ * carries and at least one it no longer does.
+ *
+ * `buildResearchAreasCardSummary` writes the card from the chips as they were; when a
+ * later pass removes, renames or narrows one of them, nothing re-derives the card, so
+ * the headline keeps asserting a topic the chip row beside it no longer shows (#3095).
+ * `isStudiesResearchAreaEchoDescription` cannot see it, because that requires the
+ * whole list to still be chips.
+ *
+ * Deliberately conservative in both halves, so this is a floor rather than a ceiling.
+ * A surviving chip is required, because without one nothing distinguishes a stale chip
+ * list from prose that merely opens with the same verb; and every named item must read
+ * like a chip label for the same reason. A card whose every chip was dropped is
+ * therefore not caught here.
+ */
+export function isStaleResearchAreaChipEnumeration(
+  text: string,
+  researchAreas: readonly unknown[] | null | undefined,
+): boolean {
+  const reading = readStudiesResearchAreaEnumeration(text, researchAreas);
+  if (!reading) return false;
+  if (reading.namedChips.length === 0 || reading.unmatchedItems.length === 0) return false;
+  return reading.unmatchedItems.every(readsLikeAResearchAreaChipLabel);
 }
 
 const LABEL_ENUMERATION_LEAD_PATTERN =
@@ -2285,6 +2565,91 @@ export function stripLeadingRoleTitleHeaderSentences(text: string): string {
   return normalizeHygieneWhitespace(kept.join(''));
 }
 
+const APPOINTMENT_TITLE_QUALIFIER =
+  '(?:Assistant|Associate|Adjunct|Clinical|Visiting|Research|Senior|Deputy|Interim|Acting|Emeritus|Emerita|Full|Distinguished|Term|Program|Medical|Site|Course|Track|Section|Executive|Vice|Co)(?:\\s+|-)';
+
+const APPOINTMENT_TITLE_NOUN =
+  '(?:Professor|Lecturer|Instructor|Director|Chief|Chair|Chairman|Chairwoman|Dean|Head|Officer)';
+
+const bareAppointmentTitleOpenerPattern = new RegExp(
+  `^(?:${APPOINTMENT_TITLE_QUALIFIER})*${APPOINTMENT_TITLE_NOUN}\\b\\s*(?:of\\b|for\\b|in\\b|on\\b|and\\b|&|,|;|:|\\()`,
+);
+
+// A narrative clause opener: an honorific naming the subject, or a determiner or
+// pronoun followed by a lower-case word. The following lower-case word is what
+// separates a clause opener from a title list's own capitalised words ("Director
+// of The Anlyan Center"), and no bare lower-case token may anchor the seam
+// because a title list is full of them ("Water Policy and Management").
+//
+// The determiner set is case-sensitive because a sentence opener is capitalised.
+// The second, case-insensitive set is the subset that never appears as a function
+// word inside an appointment title, so an uncapitalised continuation ("...and
+// Developmental Biology this group seeks to understand...") still has a seam;
+// "the", "a" and "an" are deliberately absent from it for the opposite reason.
+const narrativeClauseOpenerPattern =
+  /(?:^|[\s.;])(?:(?:Dr|Drs|Prof)\.\s+[A-Z]|(?:An?|The|This|These|His|Her|Their|My|Our|Its|He|She|They|We|I)\s+[a-z]|(?:[Tt]his|[Tt]hese|[Oo]ur|[Ww]e|[Mm]y)\s+[a-z])/g;
+
+const appointmentTitleBlockProseVerbPattern =
+  /\b(?:is|are|was|were|has|have|had|studies|focuses|focused|works|worked|serves|served|received|obtained|completed|joined|leads|led|directs|directed|holds|held|teaches|earned|investigates|examines|explores|develops|aims|seeks)\b/i;
+
+const MAX_APPOINTMENT_TITLE_BLOCK_LENGTH = 400;
+const MIN_SURVIVING_NARRATIVE_LENGTH = 60;
+
+/**
+ * Drop a leading administrative/appointment title list that a whole-block DOM
+ * extraction glued straight onto the following narrative with no delimiter
+ * ("Professor of Internal Medicine (Medical Oncology) Director, Clinical Trials
+ * Office; ... Yale Cancer Center An international leader in the clinical care
+ * of...") (#1815).
+ *
+ * The glue is not in the source page: each title and the bio are separate
+ * paragraphs, and the flattening step collapses a paragraph break to a single
+ * space by design (#851, so a proper noun is never split on casing). The cost is
+ * that the title list and the first real sentence become one run-on, so every
+ * sentence-bounded lead strip in this file (`stripLeadingRoleTitleHeaderSentences`,
+ * `stripLeadingAdministrativeLocationSentences`) sees a single segment and either
+ * deletes the good sentence with the chrome or declines. This recovers the
+ * boundary the page had rather than guessing one: the seam is a narrative clause
+ * opener, and the run before it must read as a bare title list with no finite
+ * verb of its own.
+ *
+ * A title run that does end in a period is dropped on the same terms, because
+ * the two sentence-bounded strips above key on a title clause carrying a verb
+ * ("serves as", "is a Professor ... at") and so decline a bare one; 1 of the 15
+ * Development rows this reaches was served with a closed title sentence ahead of
+ * its prose.
+ *
+ * Fails closed - returns the text unchanged - unless the text opens on a bare
+ * appointment title, the dropped run carries no prose verb, and a substantial
+ * narrative with a verb survives, so a title-only description is left for the
+ * closers that already fail it (`isRoleOnlyTitleFragment`,
+ * `isAcademicAppointmentDescription`) rather than truncated to a fragment here.
+ */
+export function stripLeadingAppointmentTitleBlock(text: string): string {
+  const value = normalizeHygieneWhitespace(text);
+  if (!value || !bareAppointmentTitleOpenerPattern.test(value)) return value;
+  narrativeClauseOpenerPattern.lastIndex = 0;
+  for (
+    let match = narrativeClauseOpenerPattern.exec(value);
+    match;
+    match = narrativeClauseOpenerPattern.exec(value)
+  ) {
+    const seam = match.index + (/^[\s.;]/.test(match[0]) ? 1 : 0);
+    if (seam <= 0 || seam > MAX_APPOINTMENT_TITLE_BLOCK_LENGTH) continue;
+    const droppedRun = value.slice(0, seam).trim();
+    if (appointmentTitleBlockProseVerbPattern.test(droppedRun)) return value;
+    const narrative = value.slice(seam).trim();
+    if (
+      narrative.length < MIN_SURVIVING_NARRATIVE_LENGTH ||
+      !appointmentTitleBlockProseVerbPattern.test(narrative)
+    ) {
+      continue;
+    }
+    return narrative.charAt(0).toUpperCase() + narrative.slice(1);
+  }
+  return value;
+}
+
 /**
  * Research-entity description sanitizer (write- and read-time), stricter than
  * sanitizeCatalogDescription/sanitizeStoredCatalogDescription: a faculty/lab
@@ -2301,14 +2666,16 @@ export function stripLeadingRoleTitleHeaderSentences(text: string): string {
  */
 export function sanitizeResearchEntityDescription(text: string, maxLength = 2000): string {
   const redacted = redactDirectContactInfo(String(text || ''));
-  const stripped = stripLeadingAdministrativeLocationSentences(
-    stripTrailingSourceLayoutLabelSection(
-      stripGluedProfileSectionLabel(
-        stripGluedResearchRoleTrackToken(
-          stripDirectoryResearcherNavChrome(
-            stripGluedProfileRoleLabel(
-              stripTrailingContactAddress(
-                sanitizeCatalogDescription(repairMissingSpaceAfterSentence(redacted)),
+  const stripped = stripLeadingAppointmentTitleBlock(
+    stripLeadingAdministrativeLocationSentences(
+      stripTrailingSourceLayoutLabelSection(
+        stripGluedProfileSectionLabel(
+          stripGluedResearchRoleTrackToken(
+            stripDirectoryResearcherNavChrome(
+              stripGluedProfileRoleLabel(
+                stripTrailingContactAddress(
+                  sanitizeCatalogDescription(repairMissingSpaceAfterSentence(redacted)),
+                ),
               ),
             ),
           ),

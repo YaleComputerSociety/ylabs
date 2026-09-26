@@ -1,0 +1,183 @@
+# Meilisearch reindex runbook
+
+How to rebuild the research-entity search index for an environment, and how to confirm it worked.
+
+Read this before running anything against Beta or Production.
+
+## When a reindex is required
+
+The index stores a snapshot of each entity, so a code change that alters what gets indexed does nothing to rows already in the index.
+Until the index is rebuilt, the old documents keep being served.
+
+`#2396` is the current example.
+`studentSearchTerms` was derived from unsanitized descriptions, so entities were findable by topic aliases that no served copy supports: a student searched a term, got a hit, opened the card, and the term was nowhere on the page.
+The code fix landed in `e9fa5754`, but **Beta and Production keep serving the bad aliases until they are reindexed**.
+Dev has already been rebuilt.
+
+A second, unrelated reason is now pending on the same run.
+`#2527` removed the `hasDocumentedWayIn` filterable attribute, and `#2540` unset the stored field and dropped its Mongo index in all three environments, but a removed `filterableAttributes` entry survives in an already-built index.
+So Beta and Production still advertise `hasDocumentedWayIn` as filterable until they are rebuilt.
+That residue is inert rather than harmful, since nothing sends the filter and the field is absent from every document; the next reindex clears it as a side effect.
+
+The 2026-09-15 undergraduate-logistics retirement adds three more attributes of the same shape.
+`undergraduateCurrentAvailability`, `undergraduateCompensationModel` and `undergraduateEligibleStudentLevels` were removed from `filterableAttributes`, so all three survive as advertised-but-inert entries in every already-built index until it is rebuilt.
+These three differ from `hasDocumentedWayIn` in one way that matters: the stored Mongo fields are still populated until `retire:undergraduate-logistics-fields` has run, so `RETIRED_ACCESS_INDEX_FIELDS` in `researchEntitySearchIndexService.ts` is what keeps the frozen values out of the rebuilt documents in the meantime.
+The rest of the vertical was retired on 2026-09-23 (#3088), which adds no Meilisearch attribute to remove, because the five claim types were never filterable or sortable.
+A rebuild therefore does not need to wait for that retirement, and running it first does not reintroduce the values.
+
+## Where to run it
+
+Development is the only environment you rebuild from your own machine.
+Its Meilisearch is the local Docker container in `compose.yaml`, bound to `127.0.0.1:7700`.
+
+**Beta and Production are Render private services, so run their reindex from the Render shell for that service, not from a laptop.**
+The Meilisearch private service is addressed as `http://<meili-private-service>:7700`, which only resolves inside Render's network.
+`scripts/run-data-profile.mjs` says the same thing from the other direction: its `beta-operator` profile refuses any materialize command with "Materialize the run from the Beta Render shell so it updates Beta Meilisearch."
+A local run against a private host cannot connect, so it fails rather than half-finishing, but it also means a local attempt is wasted effort.
+
+## Which command per environment
+
+Three routes exist and they are not interchangeable.
+Use the one that matches the environment.
+
+| Environment         | Command                                            | Notes                                                                                                                                               |
+| ------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Development (local) | `yarn development:search:rebuild`                  | Wraps `meili:rebuild-research-entities --clear --confirm-meili-rebuild` through the development data profile. This is the route that works locally. |
+| Beta                | `node scripts/reindex-search-index.mjs beta`       | Run from the Beta Render shell. Dry run. Add `--apply` to rebuild.                                                                                  |
+| Production          | `node scripts/reindex-search-index.mjs production` | Run from the Production Render shell. Dry run. Add `--apply` to rebuild. Run Beta first.                                                            |
+
+`reindex:meili`'s own error text points at "the development sweep search-rebuild stage" for local rebuilds.
+That is a description of the pipeline stage, not a command you can type; `yarn development:search:rebuild` is the command.
+
+Do not use `meili:rebuild-research-entities` directly against Beta or Production.
+It rebuilds the model index but does not reconcile retired indexes, and it does not cross-check the Mongo target against the environment.
+
+## Required environment variables
+
+Set all four in the shell that runs the command.
+They come from the Render dashboard for the target service.
+
+| Variable                   | Shape                                                  | Why                                                                                                                                                               |
+| -------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MONGODBURL`               | `mongodb+srv://<user>:<password>@<cluster>/<database>` | The database the index is rebuilt **from**. Cross-checked against the environment; a mismatch is refused.                                                         |
+| `MEILISEARCH_HOST`         | `http://<meili-private-service>:7700`                  | The instance to rebuild. Must not be empty or the rebuild targets localhost. This is Render's internal address, which is why the run happens in the Render shell. |
+| `MEILISEARCH_API_KEY`      | the master or admin key                                | Write access. Without it the rebuild fails **after** clearing.                                                                                                    |
+| `MEILISEARCH_INDEX_PREFIX` | e.g. `beta` or `prod`, with **no** trailing underscore | Namespaces the indexes. An empty prefix is refused so a remote rebuild cannot clobber the unprefixed local index.                                                 |
+
+The trailing underscore matters, and getting it wrong fails quietly rather than loudly.
+The code appends the separator itself: `resolveIndexName` in `server/src/utils/meiliClient.ts:27-29` builds `${prefix}_${name}`, and `reindexMeiliForEnvironment.ts:54` builds `ownedPrefix` the same way, over the base name `researchentities`.
+So `MEILISEARCH_INDEX_PREFIX=beta` gives `beta_researchentities`, which is the index the app reads, while `MEILISEARCH_INDEX_PREFIX=beta_` gives `beta__researchentities`, a different index nobody serves from.
+A rebuild with the wrong prefix reports success while search keeps returning the stale index.
+
+The wrapper reports **every** missing variable at once with its expected shape, rather than one failed run per gap.
+It never echoes `MONGODBURL` or `MEILISEARCH_API_KEY` back to the terminal, since you may be sharing a screen; it reports the host, the database name, and whether the key is present.
+
+## Procedure
+
+Beta first, verify, then Production.
+If Beta's verification does not come back clean, **do not run Production**.
+
+### 1. Beta dry run
+
+```bash
+node scripts/reindex-search-index.mjs beta
+```
+
+Read the output before going further.
+It prints the resolved environment, Meili host, index prefix, and Mongo target, and then `reindex:meili` prints the authoritative preflight including the live document count and which indexes it would retire.
+Nothing has changed at this point.
+
+Confirm the document count looks right for Beta.
+A count far below expectation means you are pointed at the wrong database — stop.
+
+### 2. Beta apply
+
+```bash
+node scripts/reindex-search-index.mjs beta --apply
+```
+
+There is a five second pause before it starts, so Ctrl-C is available.
+The index is cleared and rebuilt, and retired indexes are deleted.
+Unrecognized prefixed indexes are left in place and reported for manual review rather than deleted.
+
+### 3. Verify Beta
+
+See [Verification](#verification).
+Only continue if it is clean.
+
+### 4. Production dry run, then apply
+
+```bash
+node scripts/reindex-search-index.mjs production
+node scripts/reindex-search-index.mjs production --apply
+```
+
+### 5. Verify Production
+
+Same checks as Beta.
+
+## Verification
+
+Success looks like: the run reports a non-zero document count reindexed, and topic searches no longer return entities whose served copy does not support the term.
+
+For `#2396` specifically, search a broad topic term and open the top results:
+
+1. Search a term like `neuroscience`. Every result's card should actually be about that topic. Before the fix, entities matched on aliases derived from copy the serve path blanks, so a result could be someone in an unrelated field entirely.
+2. Search a second unrelated term such as `psychology` and repeat the check.
+3. For any result that still looks wrong, open the entity page. If the term appears nowhere in the served copy, the index still holds a stale document and the rebuild did not cover that row — capture the slug and file it rather than re-running blindly.
+
+The failure this checks for is a **search hit whose page does not support the search term**, so the check has to compare the query against the served card, not against the index.
+
+The document count is the other half of the check, and it has an expected value rather than just "non-zero".
+Beta and Production each hold 6440 `research_entities` documents as of 2026-09-11, so a count far below that means the rebuild covered only part of the corpus or is pointed at the wrong database.
+
+For the retired attributes, confirm the settings rather than a search result, because an inert filterable attribute changes no query output:
+
+```bash
+curl -s -H "Authorization: Bearer $MEILISEARCH_API_KEY" \
+  "$MEILISEARCH_HOST/indexes/${MEILISEARCH_INDEX_PREFIX}_researchentities/settings" \
+  | grep -oE 'hasDocumentedWayIn|undergraduateCurrentAvailability|undergraduateCompensationModel|undergraduateEligibleStudentLevels'
+```
+
+No output is the pass. Any match names a retired attribute the rebuilt index still carries.
+
+## Safety properties you are relying on
+
+`reindex:meili` fails closed on four preconditions, and the wrapper surfaces those failures rather than bypassing them:
+
+1. The environment must resolve to `beta` or `production`.
+2. `MEILISEARCH_HOST` must be non-empty.
+3. `MEILISEARCH_INDEX_PREFIX` must be non-empty, so a remote rebuild cannot clobber the unprefixed local index.
+4. The Mongo target must match the resolved environment.
+
+It also refuses to run when the database reports **zero** non-archived entities, which is the guard against clearing a live index because a Mongo copy had not landed yet.
+
+The rebuild is idempotent and re-runnable.
+Running it twice is safe.
+
+## A reindex reflects the promoted corpus; it never refreshes it
+
+Beta and Production hold the materialized corpus but **zero observations** — the promotion path copies materialized collections, not the evidence store.
+Development has the observations; the other two have none.
+
+This does not affect the reindex.
+`reindexMeiliForEnvironment.ts`, `rebuildResearchEntitySearchIndex.ts`, and `researchEntitySearchIndexService.ts` do not reference the `Observation` model at all.
+They read `research_entities`, which is fully populated in Beta and Production, so a reindex there reads exactly the data it should.
+
+It does affect anything you might be tempted to run _alongside_ it.
+Materialization cannot do useful work in Beta or Production, because `materializeEntity` early-returns when the observation set is empty (`server/src/scrapers/entityMaterializer.ts:3846`).
+
+So if a procedure ever tells you to "re-materialize, then reindex" against Beta or Production, **the re-materialize half is a silent no-op** and the reindex is the only step that does anything.
+The practical consequence for an operator: after such a sequence, an index whose content looks unchanged is the **expected** result, not a failed reindex.
+Judge the reindex by the document count it reports and by the verification queries above, never by whether entity copy changed.
+
+To actually change what the index contains, the corpus has to change first — materialize on Development, promote, then reindex.
+
+See #2458 for the full inventory of code paths that read an empty `observations` collection in Beta and Production, two of which produce a wrong decision rather than declining.
+
+## Open questions
+
+Two things this runbook does not yet answer, because they need an owner decision rather than a guess:
+
+- **Does the reindex need a maintenance window?** The index is cleared before it is rebuilt, so there is a window where searches return few or no results. How long depends on document count and page size (`--page-size`, default 250). If that window matters for students, the rebuild should be scheduled rather than run ad hoc, or changed to build into a new index and swap.
+- **Is a partial rebuild possible?** Today it is all-documents: `reindex:meili` clears and rebuilds. If only some rows are stale, a targeted rebuild would be cheaper and would remove the empty-index window, but no such path exists yet.

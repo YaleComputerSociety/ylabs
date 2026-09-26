@@ -1,4 +1,5 @@
 import { Signal } from '../models/signal';
+import { observationStoreIsPopulated } from '../scrapers/observationStoreAvailability';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
@@ -53,6 +54,7 @@ interface LaunchAcquisitionReportDeps {
   findUsersByUrls: (urls: string[]) => Promise<Array<Record<string, any>>>;
   countUndergraduateAccessObservations: (entity: Record<string, any>) => Promise<number>;
   countAccessRecords: (id: string) => Promise<AccessRecordCounts>;
+  observationStorePopulated: () => Promise<boolean>;
 }
 
 interface LaunchAcquisitionSample {
@@ -78,6 +80,7 @@ interface PiIdentityGroups {
 
 interface ActionEvidenceGroups {
   noSourceObservations: LaunchAcquisitionGroup;
+  observationStoreUnavailable: LaunchAcquisitionGroup;
   sourceObservationsWithoutUndergradAccess: LaunchAcquisitionGroup;
   untrustedExternalRouteEvidence: LaunchAcquisitionGroup;
   sourceBackedRouteNotLaunchMaterialized: LaunchAcquisitionGroup;
@@ -117,6 +120,12 @@ export interface LaunchAcquisitionReport {
   generatedAt: string;
   stages: LaunchAcquisitionStage[];
   scanned: number;
+  /**
+   * False in a database that carries the materialized corpus without the
+   * observations behind it, which makes every observation-derived verdict in this
+   * report unavailable rather than negative (#2458).
+   */
+  observationStorePopulated: boolean;
   bySource: Record<
     string,
     { piIdentity: number; actionEvidence: number; sourceDescription: number }
@@ -365,6 +374,7 @@ const buildPiGroups = (): PiIdentityGroups => ({
 
 const buildActionGroups = (): ActionEvidenceGroups => ({
   noSourceObservations: newGroup(),
+  observationStoreUnavailable: newGroup(),
   sourceObservationsWithoutUndergradAccess: newGroup(),
   untrustedExternalRouteEvidence: newGroup(),
   sourceBackedRouteNotLaunchMaterialized: newGroup(),
@@ -447,6 +457,7 @@ async function classifyActionItem(
   deps: LaunchAcquisitionReportDeps,
   groups: ActionEvidenceGroups,
   sampleLimit: number,
+  observationStorePopulated: boolean,
 ): Promise<void> {
   const label = textValue(entity.displayName || entity.name || item.label);
   const [sourceObservationCount, undergraduateObservationCount, accessCounts] = await Promise.all([
@@ -454,6 +465,22 @@ async function classifyActionItem(
     deps.countUndergraduateAccessObservations(entity),
     deps.countAccessRecords(item.recordId),
   ]);
+
+  // Without an observation store, "no source observations" is unavailable rather
+  // than false, and the early return below would suppress the three verdicts that
+  // do not depend on observations. Reporting the condition instead of a false
+  // diagnosis is the whole point: an empty read must not become a decision
+  // (#2458).
+  if (!observationStorePopulated) {
+    addGroup(groups.observationStoreUnavailable, item, label, sampleLimit);
+    if (hasUntrustedExternalRouteEvidence(entity)) {
+      addGroup(groups.untrustedExternalRouteEvidence, item, label, sampleLimit);
+    }
+    if (accessCounts.accessSignals > 0) {
+      addGroup(groups.sourceBackedRouteNotLaunchMaterialized, item, label, sampleLimit);
+    }
+    return;
+  }
 
   if (sourceObservationCount === 0) {
     addGroup(groups.noSourceObservations, item, label, sampleLimit);
@@ -705,6 +732,7 @@ const defaultDeps: LaunchAcquisitionReportDeps = {
     });
     return { accessSignals };
   },
+  observationStorePopulated: observationStoreIsPopulated,
 };
 
 function normalizeReportLimit(limit: number | undefined): number {
@@ -738,6 +766,7 @@ export async function buildLaunchAcquisitionReport(
   const sourceDescriptionGroups = stages.includes('source_description')
     ? buildSourceDescriptionGroups()
     : undefined;
+  const observationStorePopulated = await deps.observationStorePopulated();
   let piTotal = 0;
   let actionTotal = 0;
   let sourceDescriptionTotal = 0;
@@ -761,7 +790,14 @@ export async function buildLaunchAcquisitionReport(
     }
     if (item.repairStage === 'action_evidence' && actionGroups) {
       actionTotal += 1;
-      await classifyActionItem(item, entity, deps, actionGroups, sampleLimit);
+      await classifyActionItem(
+        item,
+        entity,
+        deps,
+        actionGroups,
+        sampleLimit,
+        observationStorePopulated,
+      );
     }
     if (item.repairStage === 'source_description' && sourceDescriptionGroups) {
       sourceDescriptionTotal += 1;
@@ -774,6 +810,7 @@ export async function buildLaunchAcquisitionReport(
     generatedAt: new Date().toISOString(),
     stages,
     scanned: items.length,
+    observationStorePopulated,
     bySource,
     manifest,
     ...(piGroups ? { piIdentity: { total: piTotal, groups: piGroups } } : {}),

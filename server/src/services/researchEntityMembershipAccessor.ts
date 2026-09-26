@@ -13,6 +13,7 @@ import {
 } from '../models/roleAssignment';
 import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { servableOrcid } from '../utils/orcid';
 
 export interface ResearchEntityRosterEntry {
   researchEntityId: mongoose.Types.ObjectId;
@@ -26,6 +27,7 @@ export interface ResearchEntityRosterEntry {
   primaryDepartment?: string;
   imageUrl?: string;
   websiteUrl?: string;
+  orcid?: string;
   role: string;
   roleCanonical: RoleAssignmentRole;
   state: string;
@@ -65,6 +67,7 @@ interface RosterEntryBuildContext {
       accountId?: mongoose.Types.ObjectId;
       profile?: ResearcherDisplayProfile;
       profileLinks?: ResearcherProfileLink[];
+      identifiers?: { orcid?: string };
     }
   >;
   accountsById: Map<string, { netid?: string; email?: string }>;
@@ -103,6 +106,9 @@ const buildRosterEntry = (
       : {}),
     ...(person.profile?.imageUrl ? { imageUrl: person.profile.imageUrl } : {}),
     ...(person.profile?.websiteUrl ? { websiteUrl: person.profile.websiteUrl } : {}),
+    ...(servableOrcid(person.identifiers?.orcid)
+      ? { orcid: servableOrcid(person.identifiers?.orcid) }
+      : {}),
     role: legacyRole,
     roleCanonical,
     state: assignment.state,
@@ -155,16 +161,51 @@ const collapseRosterEntriesByPerson = (
   return order.map((personKey) => bestByPerson.get(personKey) as ResearchEntityRosterEntry);
 };
 
+export interface ResearchEntityRosterScope {
+  /**
+   * Restrict the roster to the people holding one of these roles somewhere in the
+   * requested entities, keeping every row those people hold. A caller that only reads
+   * one role band can skip the rest of the corpus's rows without changing what it
+   * reads, because `collapseRosterEntriesByPerson` resolves per person: a person with
+   * no row in the band cannot resolve into it, and a person with one needs all of
+   * their rows for the collapse to land on the same row an unscoped read lands on.
+   */
+  peopleHoldingCanonicalRoles?: readonly RoleAssignmentRole[];
+}
+
+const peopleHoldingRolesInEntities = async (
+  entityIds: mongoose.Types.ObjectId[],
+  roles: readonly RoleAssignmentRole[],
+): Promise<mongoose.Types.ObjectId[]> => {
+  const roleAssignments = await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': { $in: entityIds },
+    role: { $in: roles },
+    archived: { $ne: true },
+  })
+    .select('personId')
+    .lean();
+  return uniqueObjectIds(roleAssignments.map((assignment: any) => assignment.personId));
+};
+
 export async function getResearchEntityRosterByEntityId(
   entityIds: unknown[],
+  scope: ResearchEntityRosterScope = {},
 ): Promise<Map<string, ResearchEntityRosterEntry[]>> {
   const byEntityId = new Map<string, ResearchEntityRosterEntry[]>();
   const normalizedEntityIds = uniqueObjectIds(entityIds.map(normalizeEntityObjectId));
   if (normalizedEntityIds.length === 0) return byEntityId;
 
+  const scopedRoles = scope.peopleHoldingCanonicalRoles;
+  const scopedPersonIds = scopedRoles?.length
+    ? await peopleHoldingRolesInEntities(normalizedEntityIds, scopedRoles)
+    : undefined;
+  if (scopedPersonIds && scopedPersonIds.length === 0) return byEntityId;
+
   const assignments = await RoleAssignment.find({
     'target.kind': 'RESEARCH_ENTITY',
     'target.id': { $in: normalizedEntityIds },
+    ...(scopedPersonIds ? { personId: { $in: scopedPersonIds } } : {}),
     archived: { $ne: true },
   }).lean();
   if (assignments.length === 0) return byEntityId;
@@ -172,7 +213,7 @@ export async function getResearchEntityRosterByEntityId(
   const personIds = uniqueObjectIds(assignments.map((assignment: any) => assignment.personId));
   const people = personIds.length
     ? await Researcher.find({ _id: { $in: personIds }, archived: { $ne: true } })
-        .select('_id displayName accountId profile profileLinks')
+        .select('_id displayName accountId profile profileLinks identifiers.orcid')
         .lean()
     : [];
 
@@ -183,6 +224,7 @@ export async function getResearchEntityRosterByEntityId(
       accountId?: mongoose.Types.ObjectId;
       profile?: ResearcherDisplayProfile;
       profileLinks?: ResearcherProfileLink[];
+      identifiers?: { orcid?: string };
     }
   >(people.map((person: any) => [person._id.toString(), person]));
 

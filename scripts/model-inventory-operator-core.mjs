@@ -1,6 +1,6 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { assertTempArtifactParent } from './tempArtifactRoots.mjs';
 
 export const INVENTORY_PROFILES = Object.freeze({
   'beta-inventory': Object.freeze({
@@ -135,13 +135,7 @@ export function resolveSecureInventoryOutputPath(output) {
     throw new Error('--output must be an absolute .json path.');
   }
 
-  const parent = path.dirname(resolved);
-  assertPathHasNoSymlinkComponents(parent, 'The output parent directory');
-  const tempRoot = fs.realpathSync.native(path.resolve(os.tmpdir()));
-  const realParent = fs.realpathSync.native(parent);
-  if (!hasPathPrefix(realParent, tempRoot)) {
-    throw new Error(`--output must be under the system temp directory ${tempRoot}.`);
-  }
+  assertTempArtifactParent(path.dirname(resolved), 'The output parent directory');
   if (fs.existsSync(resolved)) {
     throw new Error('--output already exists; preserved inventory evidence is never overwritten.');
   }

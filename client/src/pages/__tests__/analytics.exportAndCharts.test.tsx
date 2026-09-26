@@ -85,7 +85,7 @@ const userRow = {
   lastActive: '2026-05-17T00:00:00.000Z',
 };
 
-const mockEndpoints = () => {
+const mockEndpoints = (funnelOverride?: unknown) => {
   mockedAxios.get.mockImplementation((url: string) => {
     switch (url) {
       case '/analytics':
@@ -104,10 +104,21 @@ const mockEndpoints = () => {
             queries: [
               {
                 query: 'machine learning',
+                filterSummary: '',
+                surface: 'research_entity',
                 totalSearches: 3,
                 uniqueSearchers: 1,
                 zeroResultSearches: 0,
                 searchers: [{ netid: 'analyst01', userType: 'undergraduate', searchCount: 3 }],
+              },
+              {
+                query: '',
+                filterSummary: 'yearOfStudy: Senior',
+                surface: 'program',
+                totalSearches: 2,
+                uniqueSearchers: 1,
+                zeroResultSearches: 0,
+                searchers: [{ netid: 'analyst02', userType: 'undergraduate', searchCount: 2 }],
               },
             ],
             limit: 25,
@@ -115,11 +126,21 @@ const mockEndpoints = () => {
         });
       case '/analytics/funnel':
         return Promise.resolve({
-          data: {
+          data: funnelOverride ?? {
             overallConversionRate: 0.25,
             stages: [
-              { key: 'visitors', label: 'Visitors', count: 40, conversionRate: 1 },
-              { key: 'applications', label: 'Outreach Clicked', count: 10, conversionRate: 0.25 },
+              {
+                key: 'research_searches',
+                label: 'Searched research',
+                count: 40,
+                conversionRate: 1,
+              },
+              {
+                key: 'qualified_actions',
+                label: 'Used a qualified route',
+                count: 10,
+                conversionRate: 0.25,
+              },
             ],
           },
         });
@@ -147,9 +168,45 @@ describe('Analytics charts and CSV export', () => {
       expect(screen.getByRole('group', { name: 'Active research entities by type' })).toBeTruthy();
     });
     expect(screen.getByRole('group', { name: 'Student action counts' })).toBeTruthy();
-    expect(screen.getByRole('group', { name: /Visitors by type/ })).toBeTruthy();
-    expect(screen.getAllByText('Outreach Clicked')).toHaveLength(1);
+    expect(screen.getByRole('group', { name: /Signed-in visitors by type/ })).toBeTruthy();
+    expect(screen.getAllByText('Used a qualified route')).toHaveLength(1);
     expect(screen.getByText('Lab')).toBeTruthy();
+  });
+
+  it('names a student-action stage only from the served funnel, never from the client', async () => {
+    mockEndpoints({
+      overallConversionRate: 0.25,
+      visitorCount: 486,
+      searcherCount: 100,
+      viewerCount: 50,
+      applicantCount: 7,
+    });
+    render(<Analytics />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('group', { name: 'Active research entities by type' })).toBeTruthy();
+    });
+
+    expect(screen.queryByRole('group', { name: 'Student action counts' })).toBeNull();
+    expect(screen.getByText('No student actions returned.')).toBeTruthy();
+    expect(screen.queryByText('Searched')).toBeNull();
+    expect(screen.queryByText('Viewed Opportunities')).toBeNull();
+    expect(screen.queryAllByText('Visitors')).toHaveLength(0);
+  });
+
+  it('names the signed-in population it counts and the logged-out population it cannot', async () => {
+    mockEndpoints();
+    render(<Analytics />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('group', { name: 'Active research entities by type' })).toBeTruthy();
+    });
+
+    expect(screen.getByRole('heading', { name: 'Signed-In Visitor Statistics' })).toBeTruthy();
+    expect(screen.getByText(/Logged-out browsing is deliberately not measured/)).toBeTruthy();
+    expect(screen.getByText(/unknown rather than zero/)).toBeTruthy();
+    expect(screen.queryAllByText('Visitors')).toHaveLength(0);
+    expect(screen.queryAllByText('Visitor Statistics')).toHaveLength(0);
   });
 
   it('exports the user activity and search query tables as CSV', async () => {
@@ -178,5 +235,18 @@ describe('Analytics charts and CSV export', () => {
 
     exportButtons.forEach((button) => fireEvent.click(button));
     expect(createObjectURL).toHaveBeenCalledTimes(2);
+  });
+
+  it('names the surface and the filters behind a search with no query text', async () => {
+    mockEndpoints();
+    render(<Analytics />);
+
+    await waitFor(() => {
+      expect(screen.getByText('machine learning')).toBeTruthy();
+    });
+
+    expect(screen.getByText('Research entries')).toBeTruthy();
+    expect(screen.getByText('Filters only - Year: Senior')).toBeTruthy();
+    expect(screen.queryByText('(empty search)')).toBeNull();
   });
 });

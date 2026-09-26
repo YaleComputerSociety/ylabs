@@ -17,6 +17,7 @@ vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
 }));
 
 import {
+  artPeopleListExtractor,
   DepartmentRosterScraper,
   DEFAULT_DEPT_CONFIGS,
   econExtractor,
@@ -25,7 +26,9 @@ import {
   viewsRowPersonExtractor,
   viewsTableRowExtractor,
   directoryListingCardExtractor,
+  dramaWhoWeAreExtractor,
   nodePersonCardExtractor,
+  profileBelongsToRosterPerson,
   fieldCollectionPersonExtractor,
   facultyThumbnailExtractor,
   profileGridItemExtractor,
@@ -34,7 +37,7 @@ import {
   lawPersonListingExtractor,
   nursingFacultyExtractor,
   referenceCardExtractor,
-  scrollingListModuleExtractor,
+  rosterDeptNameNamesItsOwnSchool,
   jacksonPersonCardExtractor,
   ysphDirectoryExtractor,
   csJsRenderedStub,
@@ -43,6 +46,7 @@ import {
   chemEnvFacultyExtractor,
   type DeptConfig,
   type FacultyEntry,
+  type FacultyExtractor,
 } from '../sources/departmentRosterScraper';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -629,6 +633,7 @@ describe('official Yale profile-card extractor coverage', () => {
     expect(out).toEqual([
       {
         name: 'Ada Lovelace',
+        labSlotAttestation: 'empty',
         profileUrl: 'https://math.yale.edu/profile/ada-lovelace',
         title: 'Professor of Mathematics',
         email: 'ada.lovelace@yale.edu',
@@ -646,6 +651,7 @@ describe('official Yale profile-card extractor coverage', () => {
     expect(out).toEqual([
       {
         name: 'Deb Margolin',
+        labSlotAttestation: 'empty',
         profileUrl: 'https://tdps.yale.edu/profile/deb-margolin',
         title: 'Professor in the Practice',
         email: 'devon.roster@yale.edu',
@@ -700,6 +706,7 @@ describe('Wright Laboratory lab-site profile coverage', () => {
     expect(out).toEqual([
       {
         name: 'Robin Roster',
+        labSlotAttestation: 'empty',
         profileUrl: 'https://wlab.yale.edu/profile/robin-roster',
         title: 'Assistant Professor of Physics',
         email: undefined,
@@ -708,6 +715,7 @@ describe('Wright Laboratory lab-site profile coverage', () => {
       },
       {
         name: 'Sky Sample',
+        labSlotAttestation: 'empty',
         profileUrl: 'https://wlab.yale.edu/profile/sky-sample',
         title: 'Professor of Physics',
         email: undefined,
@@ -737,6 +745,95 @@ describe('Wright Laboratory lab-site profile coverage', () => {
       emitPersonalResearchEntities: false,
       officialProfileOnly: true,
     });
+  });
+
+  it('never lets a public health lane claim an interdepartmental focus as a department', () => {
+    // The six departments Yale School of Public Health publishes. Everything else
+    // it lists faculty under is an "Interdepartmental Focus", a concentration or a
+    // track, so a lane pointed at one must not stamp its deptName as a home
+    // department. #2866: ysph-global-health was the only one of six such lanes
+    // missing the flag, because its URL alone does not say "concentration".
+    const publishedDepartments = new Set([
+      'Biostatistics',
+      'Chronic Disease Epidemiology',
+      'Environmental Health Sciences',
+      'Epidemiology of Microbial Diseases',
+      'Health Policy & Management',
+      'Social & Behavioral Sciences',
+    ]);
+    const offenders = DEFAULT_DEPT_CONFIGS.filter(
+      (config) =>
+        config.schoolName === 'Yale School of Public Health' &&
+        !publishedDepartments.has(config.deptName) &&
+        !config.affiliatesOnly &&
+        !config.schoolWideDirectory,
+    ).map((config) => config.deptKey);
+    expect(offenders).toEqual([]);
+  });
+
+  it('never lets a config claim its own school as a department unless it is a school-wide directory', () => {
+    const offenders = DEFAULT_DEPT_CONFIGS.filter(
+      (config) => rosterDeptNameNamesItsOwnSchool(config) && !config.schoolWideDirectory,
+    ).map((config) => config.deptKey);
+    expect(offenders).toEqual([]);
+  });
+
+  it('flags every school-wide faculty directory so it reports no department', () => {
+    const schoolWide = DEFAULT_DEPT_CONFIGS.filter((config) => config.schoolWideDirectory).map(
+      (config) => config.deptKey,
+    );
+    expect(schoolWide.sort()).toEqual([
+      'architecture',
+      'art',
+      'divinity',
+      'drama',
+      'law',
+      'nursing',
+      'school-of-music',
+      'ysph',
+    ]);
+  });
+
+  it('never flags a config whose deptName is a real department', () => {
+    const wronglyFlagged = DEFAULT_DEPT_CONFIGS.filter(
+      (config) => config.schoolWideDirectory && !rosterDeptNameNamesItsOwnSchool(config),
+    ).map((config) => config.deptKey);
+    expect(wronglyFlagged).toEqual([]);
+  });
+});
+
+describe('rosterDeptNameNamesItsOwnSchool', () => {
+  it('recognizes the full name, the Yale-prefixed name, and the short form', () => {
+    expect(
+      rosterDeptNameNamesItsOwnSchool({
+        deptName: 'Yale School of Public Health',
+        schoolName: 'Yale School of Public Health',
+      }),
+    ).toBe(true);
+    expect(
+      rosterDeptNameNamesItsOwnSchool({ deptName: 'Divinity', schoolName: 'Yale Divinity School' }),
+    ).toBe(true);
+    expect(
+      rosterDeptNameNamesItsOwnSchool({
+        deptName: 'Public Health',
+        schoolName: 'Yale School of Public Health',
+      }),
+    ).toBe(true);
+  });
+
+  it('leaves a real department alone', () => {
+    expect(
+      rosterDeptNameNamesItsOwnSchool({
+        deptName: 'Biostatistics',
+        schoolName: 'Yale School of Public Health',
+      }),
+    ).toBe(false);
+    expect(
+      rosterDeptNameNamesItsOwnSchool({
+        deptName: 'History',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+      }),
+    ).toBe(false);
   });
 });
 
@@ -872,6 +969,7 @@ describe('psychExtractor', () => {
     expect(out).toEqual([
       {
         name: 'Harper Astro',
+        labSlotAttestation: 'empty',
         title: 'Professor of Astronomy',
         email: 'harper.astro@yale.edu',
         profileUrl: 'https://astronomy.yale.edu/people/harper-astro',
@@ -1128,11 +1226,13 @@ describe('referenceCardExtractor', () => {
       },
       {
         name: 'Jordan Fixture',
+        labSlotAttestation: 'refused',
         profileUrl: 'https://westcampus.yale.edu/profile/jordan-fixture-phd',
         title: 'Professor of Molecular Biophysics',
       },
       {
         name: 'Casey Fixture',
+        labSlotAttestation: 'refused',
         profileUrl: 'https://medicine.yale.edu/profile/casey-fixture/',
         title: 'Professor of Immunobiology',
       },
@@ -1159,48 +1259,60 @@ describe('referenceCardExtractor', () => {
   });
 });
 
-describe('scrollingListModuleExtractor', () => {
-  const SCROLLING_LIST_MODULE_HTML = `
-    <div class="scrolling-list-module">
-      <h4 class="scrolling-list-module__title">Academic Leadership</h4>
-      <ul class="scrolling-list-module__list">
-        <li class="scrolling-list-module__list-item">
-          <a href="/RobinFixture">Robin Fixture</a>, Dean; Professor of Painting
+describe('artPeopleListExtractor', () => {
+  const ART_PEOPLE_LIST_HTML = `
+    <section id="academic-leadership">
+      <h3>Academic Leadership</h3>
+      <ul class="leadership people-list">
+        <li>
+          <a href="/people/faculty-and-staff/robin-fixture">
+            <p>Robin Fixture</p>
+            <p class="inline-block"><span class="text-gray italic">Dean</span><span class="text-gray italic">; </span></p>
+            <p class="inline-block"><span class="text-gray italic">Professor of Painting</span></p>
+          </a>
         </li>
       </ul>
-    </div>
-    <div class="scrolling-list-module">
-      <h4 class="scrolling-list-module__title">painting / printmaking</h4>
-      <ul class="scrolling-list-module__list">
-        <li class="scrolling-list-module__list-item">
-          <strong>Full-Time Faculty</strong>
+    </section>
+    <section id="painting-printmaking">
+      <h3>Painting/Printmaking</h3>
+      <h4>Full-Time Faculty</h4>
+      <ul class="faculty people-list">
+        <li>
+          <a href="/people/faculty-and-staff/robin-fixture">
+            <p>Robin Fixture</p>
+            <p class="inline-block"><span class="text-gray italic">Dean</span></p>
+          </a>
         </li>
-        <li class="scrolling-list-module__list-item">
-          <a href="/RobinFixture">Robin Fixture</a>, Dean
-        </li>
-        <li class="scrolling-list-module__list-item">
-          <a href="https://jordanfixture.example/">Jordan Fixture</a>, Professor
-        </li>
-      </ul>
-    </div>
-    <div class="scrolling-list-module">
-      <h4 class="scrolling-list-module__title">Administration and Staff</h4>
-      <ul class="scrolling-list-module__list">
-        <li class="scrolling-list-module__list-item">
-          <a href="/CaseyFixture">Casey Fixture</a>, Office Manager
+        <li>
+          <a href="https://jordanfixture.example/">
+            <p>Jordan Fixture</p>
+            <p class="inline-block"><span class="text-gray italic">Professor</span></p>
+          </a>
         </li>
       </ul>
-    </div>`;
+    </section>
+    <section id="staff-and-administration">
+      <h3>Staff and Administration</h3>
+      <ul class="leadership people-list">
+        <li>
+          <a href="/people/faculty-and-staff/casey-fixture">
+            <p>Casey Fixture</p>
+            <p class="inline-block"><span class="text-gray italic">Office Manager</span></p>
+          </a>
+        </li>
+      </ul>
+    </section>`;
 
-  it('extracts scrolling-list-module faculty, dedupes across sections, and skips Administration and Staff', () => {
-    const out = scrollingListModuleExtractor(SCROLLING_LIST_MODULE_HTML, {
-      pageUrl: 'https://art.example.invalid/about/people/faculty-and-staff',
+  it('extracts people-list faculty, dedupes across sections, and skips Staff and Administration', () => {
+    const out = artPeopleListExtractor(ART_PEOPLE_LIST_HTML, {
+      pageUrl: 'https://art.example.invalid/people/faculty-and-staff',
     });
 
     expect(out).toEqual([
       {
         name: 'Robin Fixture',
-        profileUrl: 'https://art.example.invalid/RobinFixture',
+        labSlotAttestation: 'refused',
+        profileUrl: 'https://art.example.invalid/people/faculty-and-staff/robin-fixture',
         title: 'Dean; Professor of Painting',
         labUrl: undefined,
       },
@@ -1213,13 +1325,121 @@ describe('scrollingListModuleExtractor', () => {
     ]);
   });
 
+  it('still skips the non-research staff section when the heading words are reordered', () => {
+    const legacyHeadingOrder = ART_PEOPLE_LIST_HTML.replace(
+      '<h3>Staff and Administration</h3>',
+      '<h3>Administration and Staff</h3>',
+    );
+
+    const out = artPeopleListExtractor(legacyHeadingOrder, {
+      pageUrl: 'https://art.example.invalid/people/faculty-and-staff',
+    });
+
+    expect(out.map((entry) => entry.name)).toEqual(['Robin Fixture', 'Jordan Fixture']);
+  });
+
   it('is wired to the Yale School of Art directory', () => {
     const art = DEFAULT_DEPT_CONFIGS.find((c) => c.deptKey === 'art');
     expect(art).toBeDefined();
-    expect(art?.url).toBe('https://www.art.yale.edu/about/people/faculty-and-staff');
+    expect(art?.url).toBe('https://www.art.yale.edu/people/faculty-and-staff');
     expect(art?.schoolName).toBe('Yale School of Art');
-    expect(art?.extractor).toBe(scrollingListModuleExtractor);
+    expect(art?.extractor).toBe(artPeopleListExtractor);
     expect(art?.paginated).toBeFalsy();
+  });
+});
+
+describe('dramaWhoWeAreExtractor', () => {
+  // The live page emits 272 of its 277 anchors with a leaked PHP concatenation as
+  // `data-bio-id` and an empty `data-name`, so an exact-match read of either
+  // attribute harvests 5 rows and drops the rest (#1855). The fixture keeps both
+  // attribute shapes for that reason.
+  const DRAMA_WHO_WE_ARE_HTML = `
+    <div class="bio">
+      <h2 class="bio-name">
+        <a role="button" href="#" data-bio-id="21100" data-name="Robin Fixture" class="chairPerson">Robin Fixture</a>
+      </h2>
+      <div class="role-wrapper"><p class="role">Dean</p></div>
+      <img src="/uploads/robin.jpg">
+    </div>
+    <div class="sow-accordion-panel">
+      <h4 class="sow-accordion-title">Acting</h4>
+      <div class="bio-modal-container">
+        <a role="button" href="#" data-bio-id="' . 3023 . '" data-name="" class="chairPerson"> Jordan Fixture </a>
+        <span class="role">Professor in the Practice of Acting</span>
+        <img src="/uploads/jordan.jpg">
+      </div>
+      <div class="bio-modal-container">
+        <a role="button" href="#" data-bio-id="21100" data-name="" class="chairPerson"> Robin Fixture </a>
+        <span class="role">Lecturer in Acting</span>
+      </div>
+      <div class="bio-modal-container">
+        <a role="button" href="#" data-bio-id="' . 4077 . ' 9912" data-name="" class="chairPerson"> Ambiguous Fixture </a>
+        <span class="role">Lecturer in Acting</span>
+      </div>
+    </div>
+    <div class="sow-accordion-panel">
+      <h4 class="sow-accordion-title">Administrative Staff</h4>
+      <div class="bio-modal-container">
+        <a role="button" href="#" data-bio-id="' . 5150 . '" data-name="" class="chairPerson"> Casey Fixture </a>
+        <span class="role">Office Manager</span>
+      </div>
+    </div>
+    <div class="sow-accordion-panel">
+      <h4 class="sow-accordion-title">Production Staff</h4>
+      <div class="bio-modal-container">
+        <a role="button" href="#" data-bio-id="' . 6260 . '" data-name="" class="chairPerson"> Quinn Fixture </a>
+        <span class="role">Technical Director</span>
+      </div>
+    </div>`;
+
+  const pageUrl = 'https://drama.example.invalid/about-us/who-we-are/';
+
+  it('reads the leaked-concatenation bio id and the anchor text the empty data-name loses', () => {
+    const out = dramaWhoWeAreExtractor(DRAMA_WHO_WE_ARE_HTML, { pageUrl });
+
+    expect(out).toEqual([
+      {
+        name: 'Robin Fixture',
+        profileUrl: 'https://drama.example.invalid/?p=21100',
+        title: 'Dean',
+        imageUrl: 'https://drama.example.invalid/uploads/robin.jpg',
+      },
+      {
+        name: 'Jordan Fixture',
+        profileUrl: 'https://drama.example.invalid/?p=3023',
+        title: 'Professor in the Practice of Acting',
+        imageUrl: 'https://drama.example.invalid/uploads/jordan.jpg',
+      },
+    ]);
+  });
+
+  it('refuses an id whose attribute holds two numbers rather than guessing which is the person', () => {
+    const out = dramaWhoWeAreExtractor(DRAMA_WHO_WE_ARE_HTML, { pageUrl });
+
+    expect(out.map((entry) => entry.name)).not.toContain('Ambiguous Fixture');
+  });
+
+  it('drops the administrative and production panels the way the art lane drops its staff section', () => {
+    const out = dramaWhoWeAreExtractor(DRAMA_WHO_WE_ARE_HTML, { pageUrl });
+    const names = out.map((entry) => entry.name);
+
+    expect(names).not.toContain('Casey Fixture');
+    expect(names).not.toContain('Quinn Fixture');
+  });
+
+  it('emits one row per person when the leadership block repeats inside a discipline panel', () => {
+    const out = dramaWhoWeAreExtractor(DRAMA_WHO_WE_ARE_HTML, { pageUrl });
+
+    expect(out.filter((entry) => entry.name === 'Robin Fixture')).toHaveLength(1);
+  });
+
+  it('is wired to the school-wide drama roster', () => {
+    const drama = DEFAULT_DEPT_CONFIGS.find((c) => c.deptKey === 'drama');
+    expect(drama).toBeDefined();
+    expect(drama?.url).toBe('https://www.drama.yale.edu/about-us/who-we-are/');
+    expect(drama?.schoolName).toBe('David Geffen School of Drama');
+    expect(drama?.extractor).toBe(dramaWhoWeAreExtractor);
+    expect(drama?.schoolWideDirectory).toBe(true);
   });
 });
 
@@ -1631,6 +1851,7 @@ describe('csFacultyDataExtractor', () => {
         profileUrl:
           'https://engineering.yale.edu/academic-study/departments/computer-science/faculty/grace-hopper',
         labUrl: undefined,
+        labSlotAttestation: 'refused',
       },
       {
         name: 'David Van Dijk',
@@ -1749,11 +1970,13 @@ describe('DepartmentRosterScraper.run', () => {
     expect(configsByKey.get('american-studies')).toMatchObject({
       deptName: 'American Studies',
       url: 'https://americanstudies.yale.edu/people/faculty',
+      paginated: true,
       extractor: psychExtractor,
     });
     expect(configsByKey.get('african-studies')).toMatchObject({
       deptName: 'African Studies',
       url: 'https://macmillan.yale.edu/africa/people',
+      paginated: true,
       extractor: econExtractor,
       emitPersonalResearchEntities: false,
     });
@@ -1852,13 +2075,20 @@ describe('DepartmentRosterScraper.run', () => {
       extractor: viewsTableRowExtractor,
     });
     expect(configsByKey.get('judaic-studies')).toMatchObject({
-      deptName: 'Judaic Studies',
-      url: 'https://judaicstudies.yale.edu/people',
+      deptName: 'Jewish Studies',
+      url: 'https://jewishstudies.yale.edu/people/faculty',
       extractor: mcdbExtractor,
     });
     expect(configsByKey.get('council-east-asian-studies')).toMatchObject({
       deptName: 'Council on East Asian Studies',
       url: 'https://macmillan.yale.edu/eastasia/people',
+      paginated: true,
+      extractor: econExtractor,
+      affiliatesOnly: true,
+    });
+    expect(configsByKey.get('south-asian-studies-council')).toMatchObject({
+      deptName: 'South Asian Studies Council',
+      paginated: true,
       extractor: econExtractor,
       affiliatesOnly: true,
     });
@@ -1932,6 +2162,68 @@ describe('DepartmentRosterScraper.run', () => {
     expect(emitted.find((o) => o.field === 'primaryDepartment')?.value).toBe('Physics');
   });
 
+  // #2437: `isOfficialYaleUrl` only checks the HOST, so any *.yale.edu page the
+  // roster markup links reaches the enrichment fetch. medicine.yale.edu/about/
+  // declares the DEAN; #2385 attributed four departmental sites to one dean that
+  // way. `title` is the observable enrichment field here: when the guard refuses,
+  // nothing from the page is merged, but the citation the roster asserted is kept.
+  it("refuses a foreign page's enrichment and still keeps the citation", async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Robin Roster', profileUrl: 'https://medicine.yale.edu/about/' },
+    ]);
+    const htmlFetcher = vi.fn(
+      async () =>
+        '<html><head><meta property="og:title" content="Nancy Brown" /></head>' +
+        '<body><main><h1>Nancy Brown</h1><p class="professional-title">Dean of the School of Medicine</p></main></body></html>',
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'deanery',
+        deptName: 'Internal Medicine',
+        schoolName: 'Yale School of Medicine',
+        url: 'https://medicine.yale.edu/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+        emitPersonalResearchEntities: false,
+        officialProfileOnly: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.field === 'lname')?.value).toBe('Roster');
+    expect(emitted.find((o) => o.field === 'title')).toBeUndefined();
+    expect(emitted.find((o) => o.field === 'profileUrls')?.value).toEqual({
+      departmental: 'https://medicine.yale.edu/about/',
+    });
+  });
+
+  it('never fetches a shared roster page as an individual profile', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Robin Roster', profileUrl: 'https://medicine.yale.edu/people/faculty' },
+    ]);
+    const htmlFetcher = vi.fn(async (_url: string) => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'roster-loop',
+        deptName: 'Pediatrics',
+        schoolName: 'Yale School of Medicine',
+        url: 'https://medicine.example.invalid/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+        emitPersonalResearchEntities: false,
+        officialProfileOnly: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx } = makeContext();
+    await scraper.run(ctx);
+
+    const fetched = htmlFetcher.mock.calls.map(([requestedUrl]) => requestedUrl);
+    expect(fetched).not.toContain('https://medicine.yale.edu/people/faculty');
+  });
+
   it('suppresses department claims for an affiliates-only institute roster', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       {
@@ -1961,6 +2253,403 @@ describe('DepartmentRosterScraper.run', () => {
     expect(emitted.find((o) => o.field === 'primaryDepartment')).toBeUndefined();
     expect(emitted.find((o) => o.field === 'departments')).toBeUndefined();
     expect(emitted.find((o) => o.field === 'userType')?.value).toBe('faculty');
+  });
+
+  it('withholds primaryDepartment but still emits the programme label for a cross-listed programme', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Robin Roster',
+        profileUrl: 'https://psychology.yale.edu/people/robin-roster',
+        title: 'Professor of Psychology',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'cognitive-science',
+        deptName: 'Cognitive Science',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://cogsci.yale.edu/people',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const personObs = emitted.filter((o) => o.entityType === 'user');
+    expect(personObs.find((o) => o.field === 'primaryDepartment')).toBeUndefined();
+    expect(personObs.find((o) => o.field === 'departments')?.value).toEqual(['Cognitive Science']);
+    expect(personObs.find((o) => o.field === 'userType')?.value).toBe('faculty');
+  });
+
+  it('admits only stated faculty ranks from a cross-listed programme directory', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Robin Roster',
+        profileUrl: 'https://earlymodern.yale.edu/profile/robin-roster',
+        title: 'Professor of English',
+      },
+      {
+        name: 'Sam Student',
+        profileUrl: 'https://earlymodern.yale.edu/profile/sam-student',
+        title: 'Graduate School Student',
+      },
+      {
+        name: 'Kit Curator',
+        profileUrl: 'https://earlymodern.yale.edu/profile/kit-curator',
+        title: 'Curator; Yale Library Special Collections',
+      },
+      {
+        name: 'Ali Postdoc',
+        profileUrl: 'https://earlymodern.yale.edu/profile/ali-postdoc',
+        title: 'Postdoctoral Associate',
+      },
+      {
+        name: 'Wren Untitled',
+        profileUrl: 'https://earlymodern.yale.edu/profile/wren-untitled',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'early-modern-studies',
+        deptName: 'Early Modern Studies',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://earlymodern.yale.edu/people',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const admittedNames = emitted
+      .filter((o) => o.entityType === 'user' && o.field === 'fname')
+      .map((o) => o.value);
+    expect(admittedNames).toEqual(['Robin', 'Wren']);
+    expect(
+      emitted.filter((o) => o.entityType === 'user' && o.field === 'departments'),
+    ).toHaveLength(2);
+  });
+
+  it('walks every page of a paginated cross-listed programme directory', async () => {
+    const pages = new Map<string, FacultyEntry[]>([
+      ['https://earlymodern.yale.edu/people', [{ name: 'Robin Roster', title: 'Professor' }]],
+      [
+        'https://earlymodern.yale.edu/people?page=1',
+        [{ name: 'Ada Second', title: 'Assistant Professor' }],
+      ],
+    ]);
+    const cannedExtractor = vi.fn(
+      (_html: string, ctxArg: { pageUrl: string }): FacultyEntry[] =>
+        pages.get(ctxArg.pageUrl) ?? [],
+    );
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const earlyModern = DEFAULT_DEPT_CONFIGS.find(
+      (dept) => dept.deptKey === 'early-modern-studies',
+    );
+    expect(earlyModern).toBeDefined();
+    const scraper = new DepartmentRosterScraper(
+      [{ ...earlyModern!, extractor: cannedExtractor }],
+      null,
+      htmlFetcher,
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const admittedNames = emitted
+      .filter((o) => o.entityType === 'user' && o.field === 'fname')
+      .map((o) => o.value);
+    expect(admittedNames).toEqual(['Robin', 'Ada']);
+  });
+
+  it('admits a programme officer whose roster subheading states an office instead of a rank', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Robin Chair',
+        profileUrl: 'https://humanities.yale.edu/profile/robin-chair',
+        title: 'Chair of Humanities',
+      },
+      {
+        name: 'Ada Dus',
+        profileUrl: 'https://humanities.yale.edu/profile/ada-dus',
+        title: 'DUS of Directed Studies',
+      },
+      {
+        name: 'Sam Staff',
+        profileUrl: 'https://humanities.yale.edu/profile/sam-staff',
+        title: 'Assistant Program Director, Education',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'humanities',
+        deptName: 'Humanities',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://humanities.yale.edu/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const admittedNames = emitted
+      .filter((o) => o.entityType === 'user' && o.field === 'fname')
+      .map((o) => o.value);
+    expect(admittedNames).toEqual(['Robin', 'Ada']);
+  });
+
+  it('fetches no profile page for a programme row its own subheading already rejects', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Ali Postdoc',
+        profileUrl: 'https://earlymodern.yale.edu/profile/ali-postdoc',
+        title: 'Postdoctoral Associate',
+      },
+      {
+        name: 'Robin Ladder',
+        profileUrl: 'https://earlymodern.yale.edu/profile/robin-ladder',
+        title: 'Professor of English',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async (_url: string) => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'early-modern-studies',
+        deptName: 'Early Modern Studies',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://earlymodern.yale.edu/people',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx } = makeContext();
+    await scraper.run(ctx);
+
+    const fetchedUrls = htmlFetcher.mock.calls.map(([requestedUrl]) => requestedUrl);
+    expect(fetchedUrls).not.toContain('https://earlymodern.yale.edu/profile/ali-postdoc');
+    expect(fetchedUrls).toContain('https://earlymodern.yale.edu/profile/robin-ladder');
+  });
+
+  it('claims no faculty rank for a programme row that states no rank at all', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Wren Untitled', profileUrl: 'https://earlymodern.yale.edu/profile/wren-untitled' },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'early-modern-studies',
+        deptName: 'Early Modern Studies',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://earlymodern.yale.edu/people',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const personObs = emitted.filter((o) => o.entityType === 'user');
+    expect(personObs.find((o) => o.field === 'fname')?.value).toBe('Wren');
+    expect(personObs.find((o) => o.field === 'departments')?.value).toEqual([
+      'Early Modern Studies',
+    ]);
+    expect(personObs.find((o) => o.field === 'userType')).toBeUndefined();
+  });
+
+  it('withholds the school claim on a research entity derived from a programme roster', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Robin Roster',
+        title: 'Professor of Psychiatry',
+        labUrl: 'https://roster-lab.example.org',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'cognitive-science',
+        deptName: 'Cognitive Science',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://cogsci.yale.edu/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(entityObs.length).toBeGreaterThan(0);
+    expect(entityObs.find((o) => o.field === 'school')).toBeUndefined();
+    expect(entityObs.find((o) => o.field === 'departments')?.value).toEqual(['Cognitive Science']);
+  });
+
+  it('publishes no roster-health snapshot for a programme lane', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Robin Roster', title: 'Professor of English' },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'medieval-studies',
+        deptName: 'Medieval Studies',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://medieval.yale.edu/people/core-faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+      {
+        deptKey: 'italian',
+        deptName: 'Italian Language and Literature',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://italian.yale.edu/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const rosterHealth = emitted.filter((o) => o.entityType === 'departmentRosterHealth');
+    expect(rosterHealth.map((o) => o.entityKey)).toEqual(['italian']);
+  });
+
+  it('records on each snapshot what its department lane actually read', async () => {
+    const entry: FacultyEntry = { name: 'Test Faculty', email: 'tf123@yale.edu' };
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [entry]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'italian',
+        deptName: 'Italian Language and Literature',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://italian.yale.edu/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+      {
+        deptKey: 'cs',
+        deptName: 'Computer Science',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://cs.yale.edu/people',
+        paginated: false,
+        extractor: cannedExtractor,
+        jsRenderedSkip: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const readByDept = new Map(
+      emitted
+        .filter((o) => o.entityType === 'departmentRosterHealth')
+        .map((o) => [o.entityKey, (o.value as any).read]),
+    );
+    expect(readByDept.get('italian')).toEqual({
+      pagesRead: 1,
+      readMode: 'html',
+      cacheAllowed: false,
+      readAt: expect.any(String),
+    });
+    // A lane that needs a browser it does not have read nothing, and says so, so
+    // the departure lane can refuse to judge absence on it (#3251).
+    expect(readByDept.get('cs')).toEqual({
+      pagesRead: 0,
+      readMode: 'none',
+      cacheAllowed: false,
+      readAt: expect.any(String),
+    });
+    const cs = emitted.find(
+      (o) => o.entityType === 'departmentRosterHealth' && o.entityKey === 'cs',
+    );
+    expect((cs?.value as any).complete).toBe(false);
+  });
+
+  it('publishes for a department whose last-declared lane is a programme tab', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Test Faculty', email: 'tf123@yale.edu', title: 'Professor of Economics' },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    // Read from the shipped configs rather than a fixture: the defect is a property
+    // of their declaration order, so a hand-built pair cannot reproduce it.
+    const sharedKeys = DEFAULT_DEPT_CONFIGS.filter((dept) => dept.deptKey === 'econ').map(
+      (dept) => ({ ...dept, extractor: cannedExtractor, renderedExtractor: cannedExtractor }),
+    );
+    expect(sharedKeys.length).toBeGreaterThan(1);
+    expect(sharedKeys[sharedKeys.length - 1].crossListedProgramme).toBe(true);
+
+    const scraper = new DepartmentRosterScraper(sharedKeys, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const rosterHealth = emitted.filter((o) => o.entityType === 'departmentRosterHealth');
+    expect(rosterHealth.map((o) => o.entityKey)).toEqual(['econ']);
+    expect((rosterHealth[0].value as any).deptName).not.toBe('');
+    expect((rosterHealth[0].value as any).read.pagesRead).toBeGreaterThan(0);
+  });
+
+  it('publishes one snapshot per department when several configs share its key', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Test Faculty', email: 'tf123@yale.edu' },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const econPage = (personType: number): DeptConfig => ({
+      deptKey: 'econ',
+      deptName: 'Economics',
+      schoolName: 'Yale Faculty of Arts and Sciences',
+      url: `https://economics.yale.edu/people-economics?person_type=${personType}`,
+      paginated: false,
+      extractor: cannedExtractor,
+    });
+    const scraper = new DepartmentRosterScraper(
+      [econPage(2), econPage(6), econPage(59)],
+      null,
+      htmlFetcher,
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const rosterHealth = emitted.filter((o) => o.entityType === 'departmentRosterHealth');
+    expect(rosterHealth.map((o) => o.entityKey)).toEqual(['econ']);
+    expect((rosterHealth[0].value as any).read.pagesRead).toBe(3);
+  });
+
+  it('reads every tab of a tabbed programme roster', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => []);
+    const htmlFetcher = vi.fn(async (_url: string) => '<html><body></body></html>');
+    const tabbedConfigs = DEFAULT_DEPT_CONFIGS.filter((dept) =>
+      ['medieval-studies', 'cognitive-science'].includes(dept.deptKey),
+    ).map((dept) => ({ ...dept, extractor: cannedExtractor }));
+    const scraper = new DepartmentRosterScraper(tabbedConfigs, null, htmlFetcher);
+    const { ctx } = makeContext();
+    await scraper.run(ctx);
+
+    expect(htmlFetcher.mock.calls.map(([requestedUrl]) => requestedUrl)).toEqual([
+      'https://medieval.yale.edu/people/core-faculty',
+      'https://medieval.yale.edu/people/affiliated-faculty',
+      'https://medieval.yale.edu/people/emeritus-faculty',
+      'https://cogsci.yale.edu/people/faculty',
+      'https://cogsci.yale.edu/people/emeritus-faculty',
+    ]);
   });
 
   it('suppresses department claims on a derived research entity for an affiliates-only roster', async () => {
@@ -2031,7 +2720,13 @@ describe('DepartmentRosterScraper.run', () => {
     expect(result.entitiesObserved).toBe(2); // 1 user + 1 lab
     expect(result.notes).toContain('econ=1');
     expect(result.notes).toContain('cs=js-rendered-skip');
-    expect(result.fetchMetrics?.summary.total).toBe(0);
+    // This assertion read `toBe(0)` until #3251, pinning the gap that made the
+    // defect unmeasurable: the econ lane reads one roster page here, and only the
+    // rendered-browser branch pushed an attempt, so a run that fetched reported
+    // that it had not.
+    expect(result.fetchMetrics?.summary.total).toBe(1);
+    expect(result.fetchMetrics?.summary.succeeded).toBe(1);
+    expect(result.fetchMetrics?.summary.byMode?.http?.total).toBe(1);
 
     // user observations include netid and email
     const userObs = emitted.filter((o) => o.entityType === 'user');
@@ -2252,6 +2947,7 @@ describe('DepartmentRosterScraper.run', () => {
         'https://fernlab.example.org/',
       );
       expect(entityObs.find((o) => o.field === 'sourceUrls')?.value).toEqual([
+        'https://www.art.yale.edu/FernLabowner',
         'https://www.art.yale.edu/about/people/faculty-and-staff',
         'https://fernlab.example.org/',
       ]);
@@ -3297,9 +3993,119 @@ describe('DepartmentRosterScraper.run', () => {
       'https://campuspress.yale.edu/leahboustan/',
     );
     expect(entityObs.find((o) => o.field === 'sourceUrls')?.value).toEqual([
+      'https://economics.yale.edu/people/lee-economics',
       'https://economics.yale.edu/people',
       'https://campuspress.yale.edu/leahboustan/',
     ]);
+  });
+
+  it("never adopts another institution's faculty profile linked from a Yale profile (#2512)", async () => {
+    const profileHtml = `
+      <html><head>
+        <link rel="canonical" href="https://economics.yale.edu/people/sample-economist" />
+      </head><body>
+        <main>
+          <h1>Sample Economist</h1>
+          <div class="person-title">Professor of Economics</div>
+          <a href="mailto:sample.economist@yale.edu">sample.economist@yale.edu</a>
+          <div class="node__website-link">
+            <a href="https://econ.example-university.edu/profile/sample-economist">Personal website</a>
+          </div>
+        </main>
+      </body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === 'https://economics.yale.edu/people/sample-economist') return profileHtml;
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'econ',
+        deptName: 'Economics',
+        schoolName: 'FAS',
+        url: 'https://economics.yale.edu/people',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Sample Economist',
+            profileUrl: 'https://economics.yale.edu/people/sample-economist',
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.entityType === 'user' && o.field === 'website')).toBeUndefined();
+    expect(
+      emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl'),
+    ).toBeUndefined();
+    expect(
+      emitted.find((o) => o.entityType === 'user' && o.field === 'profileUrls')?.value,
+    ).toEqual({ departmental: 'https://economics.yale.edu/people/sample-economist' });
+  });
+
+  it("never adopts another institution's nested faculty-directory profile from a roster row (#2512)", async () => {
+    const htmlFetcher = vi.fn(async () => '<html><body>listing</body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'econ',
+        deptName: 'Economics',
+        schoolName: 'FAS',
+        url: 'https://economics.yale.edu/people',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Sample Economist',
+            profileUrl: 'https://economics.yale.edu/people/sample-economist',
+            labUrl:
+              'https://www.business.example-university.edu/faculty/directory/sample_economist.aspx',
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.entityType === 'user' && o.field === 'website')).toBeUndefined();
+    expect(
+      emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl'),
+    ).toBeUndefined();
+  });
+
+  it('still adopts a genuine off-Yale lab site supplied by a roster row', async () => {
+    const htmlFetcher = vi.fn(async () => '<html><body>listing</body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'econ',
+        deptName: 'Economics',
+        schoolName: 'FAS',
+        url: 'https://economics.yale.edu/people',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Sample Economist',
+            profileUrl: 'https://economics.yale.edu/people/sample-economist',
+            labUrl: 'https://sample-economist-lab.example.test/',
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.entityType === 'user' && o.field === 'website')?.value).toBe(
+      'https://sample-economist-lab.example.test/',
+    );
+    expect(
+      emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl')?.value,
+    ).toBe('https://sample-economist-lab.example.test/');
   });
 
   it('registers the first Math/Physics/Statistics/Astronomy roster batch', () => {
@@ -3335,6 +4141,14 @@ describe('DepartmentRosterScraper.run', () => {
       expect(config?.dataExtractor).toBe(csFacultyDataExtractor);
       expect(config?.jsRenderedSkip).toBe(true);
     }
+
+    const schoolOfMusic = configsByKey.get('school-of-music');
+    expect(schoolOfMusic?.schoolName).toBe('Yale School of Music');
+    expect(schoolOfMusic?.extractor).toBe(nodePersonCardExtractor);
+    // Not skipped: the roster ships its person cards in static HTML, and #1344's
+    // `jsRenderedSkip` was the reason the school served no rows at all.
+    expect(schoolOfMusic?.jsRenderedSkip).toBeUndefined();
+    expect(schoolOfMusic?.renderedExtractor).toBe(nodePersonCardExtractor);
 
     const chemEnv = configsByKey.get('chemical-environmental-engineering');
     expect(chemEnv?.schoolName).toBe('Yale School of Engineering & Applied Science');
@@ -3698,5 +4512,508 @@ describe('DepartmentRosterScraper.run', () => {
     expect(psychExt).toHaveBeenCalledTimes(1);
 
     getSpy.mockRestore();
+  });
+});
+
+describe('profileBelongsToRosterPerson (#2437)', () => {
+  it('accepts a profile whose declared name shares a surname with the roster row', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'Robin Roster',
+        profileUrl: 'https://medicine.yale.edu/profile/robin-roster/',
+        profileDeclaredName: 'Robin Roster, MD',
+      }),
+    ).toBe(true);
+  });
+
+  // The dean case from #2385: a real Yale person on a real *.yale.edu page that
+  // is not this row's profile. Host-level checks cannot tell these apart.
+  it('refuses a page that declares a different real person', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'Robin Roster',
+        profileUrl: 'https://medicine.yale.edu/about/',
+        profileDeclaredName: 'Nancy Brown',
+      }),
+    ).toBe(false);
+  });
+
+  // A colleague who merely shares a GIVEN name is the same wrong-subject merge as
+  // the dean page: the roster row's own surname has to be on the page.
+  it('refuses a page whose declared name shares only a given name', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'Nancy Ruddle',
+        profileUrl: 'https://medicine.yale.edu/about/',
+        profileDeclaredName: 'Nancy Brown',
+      }),
+    ).toBe(false);
+  });
+
+  // An accent-rendering difference between the roster row and the profile page is
+  // still the same person, so folding keeps legitimate enrichment.
+  it('accepts a declared name that differs from the roster row only by accents', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'Jose Martinez',
+        profileUrl: 'https://medicine.yale.edu/profile/jm88/',
+        profileDeclaredName: 'José Martínez',
+      }),
+    ).toBe(true);
+  });
+
+  // The namePlaceholder path is the ONE case where a wrong fetch RENAMES the row
+  // rather than only gap-filling it, because mergeProfileEnrichment adopts the
+  // fetched name when the roster row is a slug placeholder. A slug placeholder
+  // still carries the person's tokens, so the guard can still judge it.
+  it('refuses a foreign page for a slug-placeholder roster row', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'robin-roster',
+        profileUrl: 'https://medicine.yale.edu/about/',
+        profileDeclaredName: 'Nancy Brown',
+      }),
+    ).toBe(false);
+  });
+
+  it('accepts a slug-placeholder row whose own profile declares the same person', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'robin-roster',
+        profileUrl: 'https://architecture.yale.edu/faculty/123-robin-roster',
+        profileDeclaredName: 'Robin Roster',
+      }),
+    ).toBe(true);
+  });
+
+  // Falls back to the URL leaf only when the page declares no usable name, so an
+  // opaque-slug profile is not refused merely for being opaque.
+  it('falls back to the URL leaf when the page declares no name', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'Robin Roster',
+        profileUrl: 'https://ling.yale.edu/people/robin-roster',
+        profileDeclaredName: undefined,
+      }),
+    ).toBe(true);
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'Robin Roster',
+        profileUrl: 'https://medicine.yale.edu/about/',
+        profileDeclaredName: undefined,
+      }),
+    ).toBe(false);
+  });
+
+  // An OPAQUE leaf is absence of evidence, not evidence of another subject. On
+  // Development 22 of 3,804 official profile links are netid or concatenated
+  // surname slugs belonging to exactly the person named, so refusing them would
+  // drop good enrichment for no safety gain.
+  it('allows an opaque netid or concatenated-surname slug', () => {
+    for (const opaque of [
+      'https://medicine.yale.edu/profile/pf93/',
+      'https://medicine.yale.edu/profile/SED7/',
+      'https://medicine.yale.edu/profile/maria-rodriguezmartinez/',
+    ]) {
+      expect(
+        profileBelongsToRosterPerson({
+          rosterName: 'Peter Fonagy',
+          profileUrl: opaque,
+          profileDeclaredName: undefined,
+        }),
+      ).toBe(true);
+    }
+  });
+
+  // A SECTION leaf is positive evidence the page is not one person's profile.
+  it('refuses a section or landing-page leaf when no name is declared', () => {
+    for (const section of [
+      'https://medicine.yale.edu/about/',
+      'https://medicine.yale.edu/about/leadership/',
+      'https://wanglab.yale.edu/welcome',
+      'https://konezny.sites.yale.edu/welcome',
+    ]) {
+      expect(
+        profileBelongsToRosterPerson({
+          rosterName: 'Robin Roster',
+          profileUrl: section,
+          profileDeclaredName: undefined,
+        }),
+      ).toBe(false);
+    }
+  });
+
+  // A department or section landing page names nobody and is not person-scoped, so
+  // it cannot be enumerated as a section word - the URL shape has to carry it.
+  it('refuses a department landing page whose leaf is not a known section word', () => {
+    for (const landing of [
+      'https://medicine.yale.edu/psychiatry/',
+      'https://medicine.yale.edu/specialties/vascular/',
+      'https://medicine.yale.edu/education/',
+    ]) {
+      expect(
+        profileBelongsToRosterPerson({
+          rosterName: 'Robin Roster',
+          profileUrl: landing,
+          profileDeclaredName: undefined,
+        }),
+      ).toBe(false);
+    }
+  });
+
+  // A personal Yale site is named by its host label, not its path.
+  it('accepts a personal site whose host label names the roster person', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'Paul Konezny',
+        profileUrl: 'https://konezny.sites.yale.edu/',
+        profileDeclaredName: undefined,
+      }),
+    ).toBe(true);
+  });
+
+  it('refuses when the roster row carries no usable identity tokens', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: '',
+        profileUrl: 'https://medicine.yale.edu/profile/robin-roster/',
+        profileDeclaredName: 'Robin Roster',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('collapsed mega-menu nav links are never a person websiteUrl (#2460)', () => {
+  const COLLAPSED_NAV_PROFILE_HTML = `
+    <html><body>
+      <main>
+        <h1 class="person-title">Avery Marlowe</h1>
+        <div class="professional-title">Professor of Epidemiology</div>
+      </main>
+      <div class="navigation-panel-sub-panel__body navigation-panel-sub-panel__body--nested">
+        <ul>
+          <li class="navigation-panel-sub-panel__body-list-item">
+            <div class="navigation-panel-item">
+              <a href="/about/charitable-opportunities/donors-make-a-difference/example-prevention-research-fund/"
+                 class="navigation-panel-item__option-text"
+                 aria-label="Navigate to A Personal Inspiration for Support of Cancer Research page"
+                 tabindex="-1">
+                <span>A Personal Inspiration for Support of Cancer Research</span>
+              </a>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </body></html>`;
+
+  const GENUINE_LAB_PROFILE_HTML = `
+    <html><body><main>
+      <h1 class="person-title">Avery Marlowe</h1>
+      <div class="professional-title">Professor of Epidemiology</div>
+      <p>Avery Marlowe studies the transmission dynamics of waterborne pathogens in
+      urban water systems, combining longitudinal cohort surveillance with mechanistic
+      transmission models to identify where interventions change health outcomes.</p>
+      <p>Visit the <a href="https://marlowelab.example.org/">Marlowe Lab website</a>.</p>
+    </main></body></html>`;
+
+  const ADVANCEMENT_LINK_PROFILE_HTML = `
+    <html><body><main>
+      <h1 class="person-title">Avery Marlowe</h1>
+      <div class="professional-title">Professor of Epidemiology</div>
+      <p>Avery Marlowe studies the transmission dynamics of waterborne pathogens in
+      urban water systems, combining longitudinal cohort surveillance with mechanistic
+      transmission models to identify where interventions change health outcomes.</p>
+      <p>Support the <a href="https://sph.yale.edu/giving/research-fund/">lab website fund</a>.</p>
+    </main></body></html>`;
+
+  const rosterConfig = (): DeptConfig[] => [
+    {
+      deptKey: 'sph',
+      deptName: 'Epidemiology',
+      schoolName: 'Example School of Public Health',
+      url: 'https://sph.yale.edu/faculty/directory-name/',
+      paginated: false,
+      extractor: vi.fn((): FacultyEntry[] => [
+        { name: 'Avery Marlowe', profileUrl: 'https://sph.yale.edu/profile/avery-marlowe/' },
+      ]),
+    },
+  ];
+
+  it('does not lift a collapsed nav donor-story link into websiteUrl', async () => {
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.includes('/profile/') ? COLLAPSED_NAV_PROFILE_HTML : '<html><body></body></html>',
+    );
+    const scraper = new DepartmentRosterScraper(rosterConfig(), null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const websiteUrl = emitted.find(
+      (o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl',
+    );
+    expect(websiteUrl).toBeUndefined();
+    expect(
+      emitted.some((o) => JSON.stringify(o.value ?? '').includes('donors-make-a-difference')),
+    ).toBe(false);
+  });
+
+  it('still lifts a genuine lab link that is real page content', async () => {
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.includes('/profile/') ? GENUINE_LAB_PROFILE_HTML : '<html><body></body></html>',
+    );
+    const scraper = new DepartmentRosterScraper(rosterConfig(), null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(
+      emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl')?.value,
+    ).toBe('https://marlowelab.example.org/');
+  });
+
+  // Pins the chrome guard on its own: this destination passes every URL-shape
+  // check, so only its collapsed-nav placement can refuse it.
+  it('refuses a collapsed nav link whose destination looks like a genuine lab site', async () => {
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.includes('/profile/')
+        ? `<html><body>
+             <main>
+               <h1 class="person-title">Avery Marlowe</h1>
+               <div class="professional-title">Professor of Epidemiology</div>
+             </main>
+             <div class="navigation-panel-sub-panel__body">
+               <ul><li class="navigation-panel-sub-panel__body-list-item">
+                 <div class="navigation-panel-item">
+                   <a href="https://someotherlab.example.org/" tabindex="-1">Lab website</a>
+                 </div>
+               </li></ul>
+             </div>
+           </body></html>`
+        : '<html><body></body></html>',
+    );
+    const scraper = new DepartmentRosterScraper(rosterConfig(), null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(
+      emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl'),
+    ).toBeUndefined();
+  });
+
+  it('refuses an advancement link even when it is real page content', async () => {
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.includes('/profile/') ? ADVANCEMENT_LINK_PROFILE_HTML : '<html><body></body></html>',
+    );
+    const scraper = new DepartmentRosterScraper(rosterConfig(), null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(
+      emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl'),
+    ).toBeUndefined();
+  });
+});
+
+describe('canonical profile url host guard (#2683)', () => {
+  const page = (canonical: string) =>
+    `<html><head><link rel="canonical" href="${canonical}"></head><body>
+       <ul class="people-list faculty"><li>
+         <a href="/people/faculty-and-staff/example-person"><p>Example Person</p>
+         <p class="inline-block"><span>Professor of Example</span></p></a>
+       </li></ul></body></html>`;
+
+  const extract = (canonical: string) =>
+    artPeopleListExtractor(page(canonical), {
+      pageUrl: 'https://www.art.yale.edu/people/faculty-and-staff',
+    } as never);
+
+  // The School of Art ships a canonical pointing at its DigitalOcean build host,
+  // which moved 62 person citations onto an ephemeral deploy host.
+  it('ignores a canonical on another domain and keeps the fetched host', () => {
+    const [entry] = extract(
+      'https://ysoa-2025-nuxt-production-fqvp7.ondigitalocean.app/people/faculty-and-staff',
+    );
+    expect(entry.profileUrl).toContain('www.art.yale.edu');
+    expect(entry.profileUrl).not.toContain('ondigitalocean');
+  });
+
+  it('still honours a canonical on the same registrable domain', () => {
+    const [entry] = extract('https://art.yale.edu/people/faculty-and-staff');
+    expect(entry.profileUrl).toContain('art.yale.edu');
+  });
+
+  it('reads the name and every title span', () => {
+    const [entry] = extract('https://art.yale.edu/people/faculty-and-staff');
+    expect(entry.name).toBe('Example Person');
+    expect(entry.title).toContain('Professor of Example');
+  });
+
+  it('excludes a Staff and Administration section', () => {
+    const html = `<html><body>
+      <h3>Staff and Administration</h3>
+      <ul class="leadership people-list"><li>
+        <a href="/people/faculty-and-staff/example-admin"><p>Example Admin</p>
+        <p class="inline-block"><span>Registrar</span></p></a>
+      </li></ul></body></html>`;
+    expect(
+      artPeopleListExtractor(html, {
+        pageUrl: 'https://www.art.yale.edu/people/faculty-and-staff',
+      } as never),
+    ).toEqual([]);
+  });
+});
+
+describe('DepartmentRosterScraper lane execution', () => {
+  const rowsHtml = (...names: string[]) =>
+    names.map((name) => `<a href="/profile/${name}">${name}</a>`).join('');
+
+  // Resolves hrefs against the page like the real extractors do, so the
+  // official-profile enrichment path actually fires on these rows.
+  const anchorExtractor: FacultyExtractor = (html, ctx) =>
+    Array.from(html.matchAll(/href="(\/profile\/([^"]+))"/g)).map((match) => ({
+      name: match[2] as string,
+      profileUrl: new URL(match[1] as string, ctx.pageUrl).toString(),
+    }));
+
+  const laneConfig = (overrides: Partial<DeptConfig> = {}): DeptConfig => ({
+    deptKey: 'lane',
+    deptName: 'Lane Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://lane.yale.edu/people',
+    extractor: anchorExtractor,
+    ...overrides,
+  });
+
+  it('stops a re-serving pager instead of reading to the page cap', async () => {
+    // Drupal re-serves page 0 for an out-of-range ?page=N. The old loop only
+    // stopped on an empty page, so this lane fetched all 20 pages.
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url.includes('/profile/')) return '<html><body>a profile</body></html>';
+      return url.includes('page=1') ? rowsHtml('cal', 'dee') : rowsHtml('ann', 'bob');
+    });
+    const scraper = new DepartmentRosterScraper(
+      [laneConfig({ paginated: true })],
+      null,
+      htmlFetcher,
+    );
+    const { ctx } = makeContext();
+
+    const result = await scraper.run(ctx);
+
+    const rosterFetches = htmlFetcher.mock.calls.filter(
+      (call) => !String(call[0]).includes('/profile/'),
+    );
+    // Pages 0 and 1 are real; pages 2 and 3 both re-serve page 0 and end the
+    // walk. The old loop read all 20 pages because only an empty page stopped it.
+    expect(rosterFetches).toHaveLength(4);
+    expect(result.notes).toContain('lane=4');
+  });
+
+  it('fetches a roster row profile once even when a page is re-served', async () => {
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url.includes('/profile/')) return '<html><body>a profile</body></html>';
+      return rowsHtml('ann');
+    });
+    const scraper = new DepartmentRosterScraper(
+      [laneConfig({ paginated: true })],
+      null,
+      htmlFetcher,
+    );
+    const { ctx } = makeContext();
+
+    await scraper.run(ctx);
+
+    const profileFetches = htmlFetcher.mock.calls.filter((call) =>
+      String(call[0]).includes('/profile/ann'),
+    );
+    expect(profileFetches).toHaveLength(1);
+  });
+
+  it('reports lanes in config order however they finish', async () => {
+    // The slow lane is declared first, so a pushed-on-completion result order
+    // would put the fast one ahead of it.
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url.startsWith('https://slow.')) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return rowsHtml('sloane');
+      }
+      return rowsHtml('faye');
+    });
+    const scraper = new DepartmentRosterScraper(
+      [
+        laneConfig({ deptKey: 'slow', url: 'https://slow.yale.edu/people' }),
+        laneConfig({ deptKey: 'fast', url: 'https://fast.yale.edu/people' }),
+      ],
+      null,
+      htmlFetcher,
+    );
+    const { ctx } = makeContext();
+
+    const result = await scraper.run(ctx);
+
+    expect(result.notes).toBe('Departments: slow=1, fast=1');
+  });
+
+  it('reads independent lanes concurrently', async () => {
+    let inFlight = 0;
+    let peakInFlight = 0;
+    const htmlFetcher = vi.fn(async () => {
+      inFlight++;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      inFlight--;
+      return rowsHtml('ann');
+    });
+    const configs = Array.from({ length: 4 }, (_unused, index) =>
+      laneConfig({ deptKey: `lane-${index}`, url: `https://lane${index}.yale.edu/people` }),
+    );
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx } = makeContext();
+
+    await scraper.run(ctx);
+
+    expect(peakInFlight).toBeGreaterThan(1);
+  });
+
+  it('runs lanes one at a time when a limit has to be shared', async () => {
+    // A budget consumed concurrently makes the cut arbitrary, so a limited run
+    // stays sequential and its result stays reproducible.
+    let inFlight = 0;
+    let peakInFlight = 0;
+    const htmlFetcher = vi.fn(async () => {
+      inFlight++;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      inFlight--;
+      return rowsHtml('ann', 'bob');
+    });
+    const configs = Array.from({ length: 4 }, (_unused, index) =>
+      laneConfig({ deptKey: `lane-${index}`, url: `https://lane${index}.yale.edu/people` }),
+    );
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx } = makeContext({ limit: 3 });
+
+    const result = await scraper.run(ctx);
+
+    expect(peakInFlight).toBe(1);
+    expect(result.entitiesObserved).toBeLessThanOrEqual(6);
+  });
+
+  it('honours the only filter without running the other lanes', async () => {
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.includes('/profile/') ? '<html><body>a profile</body></html>' : rowsHtml('ann'),
+    );
+    const scraper = new DepartmentRosterScraper(
+      [
+        laneConfig({ deptKey: 'wanted', url: 'https://wanted.yale.edu/people' }),
+        laneConfig({ deptKey: 'skipped', url: 'https://skipped.yale.edu/people' }),
+      ],
+      null,
+      htmlFetcher,
+    );
+    const { ctx } = makeContext({ only: ['wanted'] });
+
+    const result = await scraper.run(ctx);
+
+    expect(result.notes).toBe('Departments: wanted=1');
+    expect(htmlFetcher.mock.calls.some((call) => String(call[0]).includes('skipped.'))).toBe(false);
   });
 });

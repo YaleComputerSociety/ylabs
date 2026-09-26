@@ -1,7 +1,7 @@
 /**
  * Account dashboard workspace for saved research plans.
  *
- * Renders the student's saved research homes (canonical ResearchPlan, served by
+ * Renders the student's saved research (canonical ResearchPlan, served by
  * /users/savedResearchEntities and /users/savedResearchEntityPlans) so a saved
  * plan can be opened, annotated, and removed rather than only counted.
  */
@@ -19,6 +19,10 @@ import {
 import ResearchHomeComparison from './ResearchHomeComparison';
 import ResearchPlanStageControl from './ResearchPlanStageControl';
 import {
+  createResearchAnalyticsInteractionId,
+  trackResearchEvent,
+} from '../../utils/researchAnalytics';
+import {
   DEFAULT_RESEARCH_PLAN_STAGE,
   isActiveResearchPlanStage,
   normalizeResearchPlanStage,
@@ -28,7 +32,6 @@ import {
 
 interface SavedResearchPlansProps {
   onCountChange?: (count: number) => void;
-  onOpenCountChange?: (count: number) => void;
 }
 
 interface SavedResearchEntity {
@@ -40,9 +43,33 @@ interface SavedResearchEntity {
   departments?: string[];
   school?: string;
   shortDescription?: string;
-  undergraduateCurrentAvailability?: string;
   hasUndergradHostingEvidence?: boolean;
 }
+
+/**
+ * A saved plan the list cannot show, reported by the server rather than dropped, so
+ * a student can tell an entry they removed from one the corpus stopped
+ * serving (#2174). `REMOVED` is terminal; `UNAVAILABLE` can be reversed by a repair
+ * or a re-gate, so its plan and private notes are worth keeping.
+ */
+interface UnavailableSavedResearchEntity {
+  _id: string;
+  reason: 'REMOVED' | 'UNAVAILABLE';
+}
+
+/**
+ * Neither line claims the entry cannot be opened, because the gate behind
+ * these reasons is name-agnostic while the detail page resolves lead names, so a
+ * held row can still serve its own page (#2597). What is true of every row here is
+ * that the student directory is not listing it, which is what the copy says.
+ * `REMOVED` promises nothing about the note: the plan row survives until removal,
+ * but with the target gone no surface can ever read the note back.
+ */
+const UNAVAILABLE_REASON_TEXT: Record<UnavailableSavedResearchEntity['reason'], string> = {
+  REMOVED: 'No longer in the directory, and it will not come back. Remove it to clear this item.',
+  UNAVAILABLE:
+    'Held back from the student directory right now. Your note is kept, and this item will reappear here once the directory lists it again.',
+};
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -70,20 +97,14 @@ const entitySubtitle = (entity: SavedResearchEntity): string => {
   return parts.join(' · ');
 };
 
-const accessBadgeClass = (tone: UndergraduateAccessStatus['tone']): string => {
-  switch (tone) {
-    case 'open':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-800';
-    case 'evidence':
-      return 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]';
-    default:
-      return 'border-[var(--yr-line)] bg-[var(--yr-panel-muted)] text-gray-500';
-  }
+const ACCESS_BADGE_CLASS: Record<UndergraduateAccessStatus['tone'], string> = {
+  evidence: 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]',
 };
 
-const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchPlansProps) => {
+const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const { favIds: savedSlugs, setFavorite } = useFavorites('researchPlans');
   const [entities, setEntities] = useState<SavedResearchEntity[]>([]);
+  const [unavailable, setUnavailable] = useState<UnavailableSavedResearchEntity[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [stages, setStages] = useState<Record<string, ResearchPlanStage>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -94,9 +115,12 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
   const [isComparing, setIsComparing] = useState(false);
   const noteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
+  // The count is how many plans the owner has, not how many of them are servable:
+  // reporting only the servable ones is what let the dashboard read "0 research
+  // plans" beside a notice about a saved item it was holding back (#2174).
   useEffect(() => {
-    onCountChange?.(savedSlugs.length);
-  }, [savedSlugs.length, onCountChange]);
+    onCountChange?.(savedSlugs.length + unavailable.length);
+  }, [savedSlugs.length, unavailable.length, onCountChange]);
 
   useEffect(() => {
     let active = true;
@@ -110,6 +134,8 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
         if (!active) return;
         const loadedEntities: SavedResearchEntity[] =
           entityResponse.data.savedResearchEntities || [];
+        const loadedUnavailable: UnavailableSavedResearchEntity[] =
+          entityResponse.data.unavailableSavedResearchEntities || [];
         const plans = (planResponse.data.savedResearchEntityPlans || {}) as Record<
           string,
           { privateNotes?: string; stage?: string }
@@ -121,12 +147,14 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
           loadedStages[entity._id] = normalizeResearchPlanStage(plans[entity._id]?.stage);
         }
         setEntities(loadedEntities);
+        setUnavailable(loadedUnavailable);
         setNotes(loadedNotes);
         setStages(loadedStages);
       } catch {
         if (!active) return;
         console.error('Error fetching saved research plans.');
         setEntities([]);
+        setUnavailable([]);
         setNotes({});
         setStages({});
       } finally {
@@ -148,6 +176,13 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
         data: { plan: { privateNotes: note } },
       });
       setSaveStatuses((statuses) => ({ ...statuses, [entityId]: 'saved' }));
+      void trackResearchEvent({
+        eventType: 'research_plan_update',
+        entityType: 'research_entity',
+        entityId,
+        payload: { field: 'note_presence' },
+        dedupeKey: createResearchAnalyticsInteractionId('plan'),
+      });
     } catch {
       console.error('Error saving research plan note.');
       setSaveStatuses((statuses) => ({ ...statuses, [entityId]: 'error' }));
@@ -178,6 +213,13 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
           data: { plan: { stage: nextStage } },
         });
         setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'saved' }));
+        void trackResearchEvent({
+          eventType: 'research_plan_update',
+          entityType: 'research_entity',
+          entityId,
+          payload: { field: 'stage' },
+          dedupeKey: createResearchAnalyticsInteractionId('plan'),
+        });
       } catch {
         console.error('Error saving research plan stage.');
         setStages((current) => ({ ...current, [entityId]: previousStage }));
@@ -189,6 +231,14 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
 
   const unsavePlan = (slug: string) => {
     void setFavorite(slug, false);
+  };
+
+  // Keyed by entity id rather than slug: an unavailable target has no slug the list
+  // can trust, and the remove endpoint accepts either.
+  const removeUnavailablePlan = async (entityId: string) => {
+    if (await setFavorite(entityId, false)) {
+      setUnavailable((current) => current.filter((item) => item._id !== entityId));
+    }
   };
 
   const visibleEntities = useMemo(
@@ -229,16 +279,6 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
     [visibleEntities, stageOf, accessStatuses],
   );
 
-  const currentlyOpenCount = useMemo(
-    () =>
-      visibleEntities.filter((entity) => accessStatuses.get(entity._id)?.isCurrentlyOpen).length,
-    [visibleEntities, accessStatuses],
-  );
-
-  useEffect(() => {
-    onOpenCountChange?.(currentlyOpenCount);
-  }, [currentlyOpenCount, onOpenCountChange]);
-
   const selectableIds = useMemo(
     () => new Set(visibleEntities.map((entity) => entity._id)),
     [visibleEntities],
@@ -273,16 +313,56 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
   return (
     <section className="mb-8">
       <div className="mb-2">
-        <h2 className="text-2xl font-bold text-gray-800">Saved research plans</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Open a saved research home to find its official profile and reach out, keep private notes,
-          or remove it from your plans.
+        <h2 className="yr-display text-2xl font-semibold text-ink">Saved research plans</h2>
+        <p className="mt-1 text-sm text-muted">
+          Open saved research to find its official profile and reach out, keep private notes, or
+          remove it from your plans.
         </p>
       </div>
 
+      {unavailable.length > 0 && (
+        <div
+          className="mb-4 rounded-card border border-amber-200 bg-amber-50 px-4 py-3"
+          role="status"
+          aria-live="polite"
+        >
+          <h3 className="text-sm font-semibold text-amber-900">
+            {unavailable.length === 1
+              ? '1 saved item is not showing below'
+              : `${unavailable.length} saved items are not showing below`}
+          </h3>
+          <ul className="mt-2 space-y-2">
+            {unavailable.map((item, index) => {
+              const ordinal = unavailable.length > 1 ? `Saved item ${index + 1}` : null;
+              return (
+                <li
+                  key={item._id}
+                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1"
+                >
+                  <p className="text-sm text-amber-900">
+                    {ordinal && <span className="font-semibold">{ordinal}: </span>}
+                    {UNAVAILABLE_REASON_TEXT[item.reason]}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void removeUnavailablePlan(item._id)}
+                    aria-label={
+                      ordinal ? `Remove ${ordinal.toLowerCase()} from my plans` : undefined
+                    }
+                    className="inline-flex min-h-[44px] items-center text-sm font-medium text-amber-900 underline hover:text-amber-950 yr-focus-ring"
+                  >
+                    Remove from my plans
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       {visibleEntities.length >= MIN_COMPARE_ENTITIES && (
-        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-4 py-3">
-          <p className="text-sm text-gray-700">
+        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-4 py-3">
+          <p className="text-sm text-ink-soft">
             {selectedCount === 0
               ? 'Select 2 to 4 saved homes to compare them side by side.'
               : `${selectedCount} selected to compare`}
@@ -291,21 +371,21 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
             type="button"
             onClick={() => setIsComparing(true)}
             disabled={!canCompare}
-            className="inline-flex min-h-[44px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-[44px] items-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             Compare{selectedCount > 0 ? ` (${selectedCount})` : ''}
           </button>
           {selectedCount === 1 && (
-            <span className="text-xs text-gray-500">Select at least 2 to compare.</span>
+            <span className="text-xs text-muted">Select at least 2 to compare.</span>
           )}
           {atCompareLimit && (
-            <span className="text-xs text-gray-500">You can compare up to 4 at once.</span>
+            <span className="text-xs text-muted">You can compare up to 4 at once.</span>
           )}
           {selectedCount > 0 && (
             <button
               type="button"
               onClick={() => setSelectedForCompare([])}
-              className="text-xs font-medium text-gray-600 underline hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+              className="text-xs font-medium text-muted underline hover:text-ink yr-focus-ring"
             >
               Clear selection
             </button>
@@ -325,7 +405,7 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
             return (
               <li key={entity._id} className="mb-2">
                 <div
-                  className={`rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 ${
+                  className={`rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 ${
                     isClosed ? 'opacity-60' : ''
                   }`}
                 >
@@ -338,36 +418,31 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                           disabled={atCompareLimit && !selectedForCompare.includes(entity._id)}
                           onChange={() => toggleCompareSelection(entity._id)}
                           aria-label={`Select ${entityDisplayName(entity)} to compare`}
-                          className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="mt-0.5 h-4 w-4 flex-shrink-0 rounded-control border-line-strong accent-brand yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
                         />
                       )}
                       <div className="min-w-0">
-                        <p className="text-xs font-semibold text-blue-700">
-                          {kindLabel(entity.kind)}
-                        </p>
-                        <h3 className="truncate text-sm font-semibold text-gray-900">
+                        <p className="text-xs font-semibold text-brand">{kindLabel(entity.kind)}</p>
+                        <h3 className="truncate text-sm font-semibold text-ink">
                           <Link
                             to={`/research/${safeRouteSegment(entity.slug)}`}
-                            className="hover:text-blue-700 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                            className="hover:text-brand focus-visible:rounded-control yr-focus-ring"
                           >
                             {entityDisplayName(entity)}
                           </Link>
                         </h3>
                         {entitySubtitle(entity) && (
-                          <p className="truncate text-xs text-gray-500">{entitySubtitle(entity)}</p>
+                          <p className="truncate text-xs text-muted">{entitySubtitle(entity)}</p>
                         )}
                         {accessStatus && (
                           <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
                             <span
-                              className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-semibold ${accessBadgeClass(
-                                accessStatus.tone,
-                              )}`}
+                              className={`inline-flex items-center rounded-card border px-2 py-0.5 text-xs font-semibold ${
+                                ACCESS_BADGE_CLASS[accessStatus.tone]
+                              }`}
                             >
                               {accessStatus.label}
                             </span>
-                            {accessStatus.tone === 'muted' && accessStatus.detail && (
-                              <span className="text-xs text-gray-500">{accessStatus.detail}</span>
-                            )}
                           </p>
                         )}
                       </div>
@@ -379,17 +454,17 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                           setEditingId((current) => (current === entity._id ? null : entity._id))
                         }
                         aria-expanded={isEditing}
-                        className={`inline-flex min-h-[44px] items-center rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
+                        className={`inline-flex min-h-[44px] items-center rounded-control border px-3 py-2 text-xs font-semibold transition-colors yr-focus-ring ${
                           note
                             ? 'border-yellow-300 bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
-                            : 'border-[var(--yr-line)] text-gray-600 hover:bg-[var(--yr-panel-muted)]'
+                            : 'border-[var(--yr-line)] text-muted hover:bg-[var(--yr-panel-muted)]'
                         }`}
                       >
                         {isEditing ? 'Hide notes' : note ? 'Notes' : 'Add note'}
                       </button>
                       <Link
                         to={`/research/${safeRouteSegment(entity.slug)}`}
-                        className="inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-3 py-2 text-xs font-semibold text-[var(--yr-blue)] hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                        className="yr-pressable inline-flex min-h-[44px] items-center rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-xs font-semibold text-brand hover:bg-panel yr-focus-ring"
                       >
                         Open
                       </Link>
@@ -397,7 +472,7 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                         type="button"
                         onClick={() => unsavePlan(entity.slug)}
                         aria-label={`Remove ${entityDisplayName(entity)} from saved plans`}
-                        className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line)] px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600"
+                        className="inline-flex min-h-[44px] items-center rounded-control border border-[var(--yr-line)] px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 yr-focus-ring"
                       >
                         Unsave
                       </button>
@@ -405,7 +480,7 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                   </div>
 
                   <div className="mt-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                    <span className="text-xs font-medium text-gray-600">Outreach stage</span>
+                    <span className="text-xs font-medium text-muted">Outreach stage</span>
                     <ResearchPlanStageControl
                       stage={stage}
                       onChange={(nextStage) => void changeStage(entity._id, nextStage)}
@@ -415,7 +490,7 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                   </div>
 
                   {!isEditing && note && (
-                    <p className="mt-2 truncate text-xs italic text-gray-500">Note: {note}</p>
+                    <p className="mt-2 truncate text-xs italic text-muted">Note: {note}</p>
                   )}
 
                   {isEditing && (
@@ -430,13 +505,13 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                         }}
                         onBlur={() => flushNoteSave(entity._id)}
                         maxLength={MAX_PLAN_NOTES_LENGTH}
-                        placeholder="Add a private note about this research home..."
+                        placeholder="Add a private note about this research..."
                         rows={2}
-                        className="w-full rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="w-full rounded-control border border-[var(--yr-line)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                       />
                       <p
                         className={`mt-1 text-xs ${
-                          status === 'error' ? 'text-red-700' : 'text-gray-500'
+                          status === 'error' ? 'text-red-700' : 'text-muted'
                         }`}
                         role={status === 'error' ? 'alert' : 'status'}
                         aria-live="polite"
@@ -456,21 +531,21 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
             );
           })}
         </ul>
-      ) : (
-        <div className="rounded-md border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5 text-center">
-          <h3 className="text-base font-semibold text-gray-950">No saved research plans yet</h3>
-          <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-gray-600">
-            Save a lab, center, or faculty research home while browsing and it will show up here to
-            open, annotate, and revisit.
+      ) : unavailable.length === 0 ? (
+        <div className="rounded-card border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5 text-center">
+          <h3 className="text-base font-semibold text-ink">No saved research plans yet</h3>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-muted">
+            Save a lab, center, or faculty research profile while browsing and it will show up here
+            to open, annotate, and revisit.
           </p>
           <Link
             to="/research"
-            className="mt-4 inline-flex min-h-[44px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
+            className="yr-pressable mt-4 inline-flex min-h-[44px] items-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
           >
             Explore Research
           </Link>
         </div>
-      )}
+      ) : null}
 
       {isComparing && canCompare && (
         <ResearchHomeComparison

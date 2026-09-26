@@ -86,6 +86,7 @@ interface EntityRow {
   school?: unknown;
   departments?: unknown;
   schools?: unknown;
+  orgAffiliationLabels?: unknown;
 }
 
 export async function runOrgUnitBackfill(options: {
@@ -104,7 +105,7 @@ export async function runOrgUnitBackfill(options: {
   };
 
   const query = ResearchEntity.find(filter)
-    .select('_id slug name school departments schools')
+    .select('_id slug name school departments schools orgAffiliationLabels')
     .sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);
   const entities = (await query.lean()) as EntityRow[];
@@ -120,6 +121,7 @@ export async function runOrgUnitBackfill(options: {
         ? { departments: entity.departments }
         : {}),
       schools: entity.schools,
+      orgAffiliationLabels: entity.orgAffiliationLabels,
     });
     rows.push(row);
   }

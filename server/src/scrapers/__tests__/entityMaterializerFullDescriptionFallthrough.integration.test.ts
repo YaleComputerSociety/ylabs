@@ -184,6 +184,33 @@ describe('materializeEntity falls through to the best quality-passing fullDescri
     expect(persisted?.shortDescription ?? '').toBe('');
   });
 
+  it('keeps the stored body when the winner blanks and no candidate passes (#2958)', async () => {
+    await seedEntity({
+      name: 'Park Laboratory',
+      fullDescription: CLEAN_WINNER_FULL,
+      shortDescription: GROUNDED_CARD,
+    });
+    await seedFull(PUBLICATIONS_DUMP_FULL, 'ysm-atoz-index', 0.95, '2026-02-01T00:00:00Z');
+    await seedFull(
+      APPOINTMENT_ONLY_ALT,
+      'official-profile-pi-backfill',
+      0.7,
+      '2026-01-01T00:00:00Z',
+    );
+
+    await materializeEntity(
+      'researchEntity',
+      { entityKey: 'fallthrough-fixture' },
+      { synthesizeCardDescription: capturingSynthesizer([]) },
+    );
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'fallthrough-fixture',
+    }).lean<PersistedEntity>();
+    expect(persisted?.fullDescription).toBe(CLEAN_WINNER_FULL);
+    expect(persisted?.shortDescription).toBe(GROUNDED_CARD);
+  });
+
   it('does not displace a useful top-confidence winner with a lower-ranked observation', async () => {
     await seedEntity({ name: 'Park Laboratory' });
     await seedFull(

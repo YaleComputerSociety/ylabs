@@ -123,11 +123,11 @@ const CombinedFilterDropdown = ({
         aria-expanded={isOpen}
         aria-haspopup={mobileSheet ? 'dialog' : undefined}
         onClick={() => (isOpen ? closeFilters(mobileSheet) : setIsOpen(true))}
-        className="flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm transition-colors hover:bg-[var(--yr-panel-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap"
+        className="flex min-h-[44px] items-center rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring whitespace-nowrap"
         style={{ color: '#374151' }}
       >
         <svg
-          className="h-4 w-4 text-gray-500 mr-2"
+          className="h-4 w-4 text-muted mr-2"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -141,12 +141,12 @@ const CombinedFilterDropdown = ({
         </svg>
         <span>Filters</span>
         {totalFilters > 0 && (
-          <span className="ml-2 bg-blue-500 text-white text-xs font-medium px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+          <span className="ml-2 bg-brand text-white text-xs font-medium px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
             {totalFilters}
           </span>
         )}
         <svg
-          className={`ml-2 h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`ml-2 h-4 w-4 text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 20 20"
           fill="currentColor"
@@ -178,19 +178,19 @@ const CombinedFilterDropdown = ({
           }}
           className={
             mobileSheet
-              ? 'fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full overflow-hidden rounded-t-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-lg sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[340px] sm:max-w-[calc(100vw-2rem)] sm:rounded-md'
-              : 'absolute left-0 top-full z-50 mt-1 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-lg'
+              ? 'fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full overflow-hidden rounded-t-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[340px] sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay'
+              : 'absolute left-0 top-full z-50 mt-1 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay'
           }
         >
           {mobileSheet && (
             <div className="flex items-center justify-between border-b border-[var(--yr-line)] px-3 py-2 sm:hidden">
-              <h2 className="text-base font-semibold text-slate-900">Filters</h2>
+              <h2 className="text-base font-semibold text-ink">Filters</h2>
               <button
                 type="button"
                 aria-label="Close filters"
                 data-mobile-only="true"
                 onClick={() => closeFilters()}
-                className="flex h-11 w-11 items-center justify-center rounded-md text-2xl text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex h-11 w-11 items-center justify-center rounded-control text-2xl text-muted yr-focus-ring"
               >
                 <span aria-hidden="true">×</span>
               </button>
@@ -203,10 +203,10 @@ const CombinedFilterDropdown = ({
                 type="button"
                 aria-pressed={activeTabKey === tab.key}
                 onClick={() => setActiveTabKey(tab.key)}
-                className={`relative flex min-h-[44px] flex-1 items-center justify-center px-2 py-2.5 text-xs font-medium transition-colors whitespace-nowrap ${
+                className={`relative flex min-h-[44px] flex-1 items-center justify-center px-2 py-2.5 text-xs font-medium transition-colors whitespace-nowrap yr-focus-ring-inset ${
                   activeTabKey === tab.key
-                    ? 'text-blue-600 bg-[var(--yr-panel)] border-b-2 border-blue-500 -mb-px'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-[var(--yr-panel-muted)]'
+                    ? 'text-brand bg-panel border-b-2 border-brand -mb-px'
+                    : 'text-muted hover:text-ink hover:bg-[var(--yr-panel-muted)]'
                 }`}
               >
                 <span>{tab.label}</span>
@@ -214,8 +214,8 @@ const CombinedFilterDropdown = ({
                   <span
                     className={`ml-1 text-xs px-1.5 py-0.5 rounded-full ${
                       activeTabKey === tab.key
-                        ? 'bg-[var(--yr-blue-soft)] text-blue-700'
-                        : 'bg-[var(--yr-panel-muted)] text-gray-600'
+                        ? 'bg-brand-soft text-brand'
+                        : 'bg-[var(--yr-panel-muted)] text-muted'
                     }`}
                   >
                     {tab.selected.length}
@@ -244,14 +244,14 @@ const CombinedFilterDropdown = ({
                 value={getSearch(activeTab.key)}
                 onChange={(e) => setSearch(activeTab.key, e.target.value)}
                 placeholder={`Search ${activeTab.label.toLowerCase()}...`}
-                className="w-full px-3 py-2 border border-[var(--yr-line)] rounded-md text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-[var(--yr-line)] rounded-control text-base mb-3 yr-focus-ring focus:border-transparent"
               />
             )}
 
             {activeTab.selected.length > 0 && activeTab.searchable && (
               <button
                 onClick={() => activeTab.setSelected([])}
-                className="text-xs text-blue-600 hover:text-blue-800 mb-2 font-medium"
+                className="text-xs text-brand hover:text-brand-navy mb-2 font-medium yr-focus-ring"
                 onMouseDown={(e) => e.preventDefault()}
               >
                 Clear selected ({activeTab.selected.length})
@@ -268,10 +268,10 @@ const CombinedFilterDropdown = ({
                 return (
                   <label
                     key={option}
-                    className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${
+                    className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-control px-3 py-2 text-sm transition-colors yr-focus-ring-inset ${
                       isSelected
-                        ? 'bg-[var(--yr-blue-soft)] text-blue-900'
-                        : 'hover:bg-[var(--yr-panel-muted)] text-gray-700'
+                        ? 'bg-brand-soft text-brand'
+                        : 'hover:bg-[var(--yr-panel-muted)] text-ink-soft'
                     }`}
                   >
                     <input
@@ -285,11 +285,9 @@ const CombinedFilterDropdown = ({
                       className="peer sr-only"
                     />
                     <span
-                      className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
-                        isSelected
-                          ? 'bg-blue-500 border-blue-500'
-                          : 'border-[var(--yr-line-strong)]'
-                      } peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2`}
+                      className={`w-4 h-4 rounded-control border flex-shrink-0 flex items-center justify-center transition-colors ${
+                        isSelected ? 'bg-brand border-brand' : 'border-[var(--yr-line-strong)]'
+                      } yr-focus-ring-peer`}
                       aria-hidden="true"
                     >
                       {isSelected && (
@@ -310,7 +308,7 @@ const CombinedFilterDropdown = ({
                     </span>
                     {colors ? (
                       <span
-                        className={`${colors.bg} ${colors.text} text-xs rounded px-2 py-1 truncate`}
+                        className={`${colors.bg} ${colors.text} text-xs rounded-card px-2 py-1 truncate`}
                       >
                         {optionLabel}
                       </span>
@@ -321,10 +319,10 @@ const CombinedFilterDropdown = ({
                 );
               })}
               {getFilteredOptions(activeTab).length === 0 && (
-                <p className="px-3 py-2 text-sm text-gray-500">No options found</p>
+                <p className="px-3 py-2 text-sm text-muted">No options found</p>
               )}
               {activeTab.maxDisplay && activeTab.options.length > activeTab.maxDisplay && (
-                <p className="px-3 py-2 text-xs text-gray-400 text-center">
+                <p className="px-3 py-2 text-xs text-muted text-center">
                   Showing first {activeTab.maxDisplay}. Type to search more...
                 </p>
               )}
@@ -335,7 +333,7 @@ const CombinedFilterDropdown = ({
             <div className="border-t border-[var(--yr-line)] px-3 py-2 bg-[var(--yr-panel-muted)]">
               <button
                 onClick={handleClearAll}
-                className="w-full text-sm text-gray-600 hover:text-gray-900 py-1.5 rounded-md hover:bg-[var(--yr-panel-muted)] transition-colors"
+                className="w-full text-sm text-muted hover:text-ink py-1.5 rounded-card hover:bg-[var(--yr-panel-muted)] transition-colors yr-focus-ring"
                 onMouseDown={(e) => e.preventDefault()}
               >
                 Clear all filters ({totalFilters})

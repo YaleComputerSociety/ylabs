@@ -21,6 +21,54 @@ import {
 } from '../researchEntitySearchIndexService';
 
 describe('researchEntitySearchIndexService', () => {
+  it('drops a person-scoped displayName that names an umbrella organization (#2351)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-affiliation-graft',
+      slug: 'dept-econ-rafferty-duchamp',
+      name: 'Rafferty Duchamp Faculty Research',
+      displayName: 'Yale School of Management',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      archived: false,
+    });
+
+    expect(doc).not.toHaveProperty('displayName');
+    // The indexed name is now the served title, so the synthesized suffix is gone.
+    // This test's subject is the dropped umbrella-org displayName, not the suffix.
+    expect(doc?.name).toBe('Rafferty Duchamp');
+  });
+
+  // `displayName` is searchable, so filler left in the index keyword matches a
+  // record whose served title is its real `name` (#2367).
+  it('drops a placeholder displayName so filler cannot match the record', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-placeholder-alias',
+      slug: 'ysm-faculty-fixture-loyal',
+      name: 'Loyal Lab',
+      displayName: 'n/a',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      archived: false,
+    });
+
+    expect(doc).not.toHaveProperty('displayName');
+    expect(doc?.name).toBe('Loyal Lab');
+  });
+
+  it('keeps an organization-shaped record own organization displayName in the index', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-center',
+      slug: 'center-customer-insights',
+      name: 'Yale Center for Customer Insights',
+      displayName: 'Yale Center for Customer Insights',
+      kind: 'center',
+      entityType: 'CENTER',
+      archived: false,
+    });
+
+    expect(doc?.displayName).toBe('Yale Center for Customer Insights');
+  });
+
   it('builds Meilisearch-ready research entity documents without internal fields', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-1',
@@ -117,6 +165,26 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc).not.toHaveProperty('opennessLastSignalAt');
   });
 
+  it('strips the retired undergraduate-logistics projections still stored on old rows', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-undergrad-logistics',
+      name: 'Undergraduate Logistics Lab',
+      archived: false,
+      undergraduateCurrentAvailability: 'OPEN',
+      undergraduateCompensationModel: 'PAID_OR_STIPEND',
+      undergraduateEligibleStudentLevels: ['FIRST_YEAR'],
+      hasUndergradHostingEvidence: true,
+    });
+
+    expect(doc).toMatchObject({
+      id: 'entity-undergrad-logistics',
+      hasUndergradHostingEvidence: true,
+    });
+    expect(doc).not.toHaveProperty('undergraduateCurrentAvailability');
+    expect(doc).not.toHaveProperty('undergraduateCompensationModel');
+    expect(doc).not.toHaveProperty('undergraduateEligibleStudentLevels');
+  });
+
   it('splits bare comma-delimited research-area blobs so facets do not surface jammed lists', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-area-facet',
@@ -174,10 +242,40 @@ describe('researchEntitySearchIndexService', () => {
         'ai',
         'artificial intelligence',
         'machine learning',
-        'computer vision',
       ]),
     });
+    // The sanitizer drops `Computer Vision` here as a domain-incoherent unsourced
+    // area, leaving the served row with no research areas at all, so the aliases
+    // must come off the surviving description and not off the dropped chip (#2396).
+    expect(doc).not.toHaveProperty('researchAreas');
+    expect(doc?.studentSearchTerms ?? []).not.toEqual(expect.arrayContaining(['computer vision']));
     expect(buildStudentSearchTerms({ name: 'Ailong Airway Lab' })).toEqual([]);
+  });
+
+  it('indexes a person-scoped lab under the name the serve path substitutes (#2373)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-bare-person-lab',
+      slug: 'dept-econ-robin-roster',
+      name: 'Robin Roster',
+      kind: 'lab',
+      entityType: 'LAB',
+      archived: false,
+    });
+
+    expect(doc?.name).toBe('Robin Roster Lab');
+  });
+
+  it('leaves a branded person-scoped lab name unchanged in the index', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-branded-lab',
+      slug: 'dept-seas-cogitorium',
+      name: 'The Cogitorium',
+      kind: 'lab',
+      entityType: 'LAB',
+      archived: false,
+    });
+
+    expect(doc?.name).toBe('The Cogitorium');
   });
 
   it('surfaces computational-vision labs under the "computer vision" bigram query (#787)', () => {
@@ -281,6 +379,50 @@ describe('researchEntitySearchIndexService', () => {
 
     expect(doc?.studentSearchTerms ?? []).not.toEqual(
       expect.arrayContaining(['climate change', 'cardiology']),
+    );
+  });
+
+  it('does not derive topic aliases from a description the sanitizer blanks (#2396)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-synthetic-metadata-description',
+      name: 'Comparative Literature Program',
+      departments: ['Comparative Literature'],
+      fullDescription: 'Research home focused on neuroscience and psychology.',
+      archived: false,
+    });
+
+    expect(doc?.fullDescription).toBe('');
+    expect(doc?.studentSearchTerms ?? []).toEqual([]);
+  });
+
+  it('does not derive topic aliases from an endowed-chair title the sanitizer strips (#2396)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-endowed-chair',
+      name: 'Doe Faculty Research',
+      fullDescription: 'Jane Doe is the Alton Sterling Professor of Psychology at Yale.',
+      archived: false,
+    });
+
+    expect(doc?.fullDescription ?? '').not.toContain('Professor of Psychology');
+    expect(doc?.studentSearchTerms ?? []).not.toEqual(
+      expect.arrayContaining(['psychology', 'psychiatry', 'cognitive science']),
+    );
+  });
+
+  it('still derives topic aliases from copy that survives sanitization (#2396)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-surviving-copy',
+      name: 'Cortical Circuits Lab',
+      departments: ['Neuroscience'],
+      researchAreas: ['Neuroscience'],
+      fullDescription:
+        'The lab records from cortical circuits in behaving mice to map how neural populations encode decisions.',
+      archived: false,
+    });
+
+    expect(doc?.fullDescription).toContain('cortical circuits');
+    expect(doc?.studentSearchTerms).toEqual(
+      expect.arrayContaining(['neuroscience', 'neurology', 'neural', 'brain']),
     );
   });
 
@@ -848,5 +990,106 @@ describe('rebuildResearchEntitySearchIndex archived exclusion', () => {
       expect.arrayContaining([active._id.toString(), explicitlyLive._id.toString()]),
     );
     expect(indexedIds).toHaveLength(2);
+  });
+});
+
+describe('indexed title equals the served title (#2701 vocabulary, search relevance)', () => {
+  it('strips the synthesized Faculty Research suffix from the indexed name', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '000000000000000000000001',
+      name: 'Fixture Scholar Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+
+    expect(doc?.name).toBe('Fixture Scholar');
+  });
+
+  it('normalizes displayName too, because it is also searchable', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '000000000000000000000002',
+      name: 'Fixture Scholar Faculty Research',
+      displayName: 'Fixture Scholar Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+
+    expect(doc?.displayName).toBe('Fixture Scholar');
+  });
+
+  it('leaves a real lab name untouched', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '000000000000000000000003',
+      name: 'Fixture Scholar Lab',
+      entityType: 'LAB',
+    });
+
+    expect(doc?.name).toBe('Fixture Scholar Lab');
+  });
+
+  it('leaves a centre whose own name ends in Research untouched', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '000000000000000000000004',
+      name: 'Fixture Centre for Cancer Research',
+      entityType: 'CENTER',
+    });
+
+    expect(doc?.name).toBe('Fixture Centre for Cancer Research');
+  });
+
+  it('never empties the indexed name', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '000000000000000000000005',
+      name: 'Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+
+    expect(doc?.name).toBe('Research');
+  });
+});
+
+describe('first-person revoice parity with the detail path (#3418)', () => {
+  it('indexes the third-person copy a student is shown, not the harvested first person', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '6a0000000000000000000001',
+      slug: 'faculty-row',
+      name: 'Ada Lovelace Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      researchAreas: ['Numerical Analysis'],
+      fullDescription:
+        'Most recently, I have been heavily involved in allocation policy. During my career, I have been extensively involved in clinical research.',
+      shortDescription: 'My research interests focus on pain care.',
+    } as any);
+    expect(doc?.fullDescription).toBe(
+      'Most recently, Ada Lovelace has been heavily involved in allocation policy. During their career, Lovelace has been extensively involved in clinical research.',
+    );
+    expect(doc?.shortDescription).toBe("Ada Lovelace's research interests focus on pain care.");
+    expect(doc?.fullDescription).not.toMatch(/\bI have\b/);
+    expect(doc?.shortDescription).not.toMatch(/\bMy\b/);
+  });
+
+  it('gives a lab its own name in the indexed copy', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '6a0000000000000000000002',
+      slug: 'lab-row',
+      name: 'Lovelace Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      researchAreas: ['Cytokinesis'],
+      fullDescription: 'Our goal is to map cytokinesis.',
+    } as any);
+    expect(doc?.fullDescription).toBe("The Lovelace Lab's goal is to map cytokinesis.");
+  });
+
+  it('is idempotent, so a description already revoiced upstream is unchanged', () => {
+    const already = "Ada Lovelace's research interests focus on pain care.";
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '6a0000000000000000000003',
+      slug: 'already-revoiced',
+      name: 'Ada Lovelace Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      shortDescription: already,
+    } as any);
+    expect(doc?.shortDescription).toBe(already);
   });
 });

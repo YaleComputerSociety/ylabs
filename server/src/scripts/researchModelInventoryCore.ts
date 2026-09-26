@@ -16,8 +16,9 @@
  * folded AccessSignal and
  * UndergraduateLogisticsClaim into a type-based Signal, and froze the heavy
  * evidence claim-graph (EvidenceClaim, SourceDocument, ReviewDecision) as
- * unwired do-not-build-on contracts. The live evidence path is Observation ->
- * Signal. The `target` column below records where each current collection is
+ * unwired do-not-build-on contracts. Those three were retired outright once
+ * they had held zero rows in every environment since they were introduced. The
+ * live evidence path is Observation -> Signal. The `target` column below records where each current collection is
  * headed under that ratified model; the `phase` column is retained historical
  * sequencing from the earlier phased contract.
  */
@@ -285,32 +286,11 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     target: 'Observation (retained; the live Observation -> Signal pipeline covers the product)',
   },
   {
-    collection: 'evidence_claims',
-    model: 'EvidenceClaim',
-    group: 'evidence',
-    phase: 5,
-    target: 'FROZEN evidence claim-graph (exists, unwired, do-not-build-on); deferred',
-  },
-  {
     collection: 'sources',
     model: 'Source',
     group: 'evidence',
     phase: 5,
-    target: 'Source (retained source registry); the SourceDocument claim-graph is frozen',
-  },
-  {
-    collection: 'source_documents',
-    model: 'SourceDocument',
-    group: 'evidence',
-    phase: 5,
-    target: 'FROZEN evidence claim-graph (exists, unwired, do-not-build-on); deferred',
-  },
-  {
-    collection: 'review_decisions',
-    model: 'ReviewDecision',
-    group: 'evidence',
-    phase: 5,
-    target: 'FROZEN evidence claim-graph (exists, unwired, do-not-build-on); deferred',
+    target: 'Source (retained source registry)',
   },
   {
     collection: 'research_plans',
@@ -460,19 +440,21 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
   },
   {
     collection: 'canonical_aliases',
-    model: 'CanonicalAlias',
-    group: 'canonical-domain',
+    model: 'CanonicalAlias (retired)',
+    group: 'legacy-residue',
     phase: null,
     target:
-      'CanonicalAlias (retained): resolve-at-mint identity aliasing, written and read by entityMaterializer through canonicalAliasService',
+      'retired in #3027: a merged identity is reached through its archived row canonicalGroupId tombstone, so no side ledger records the mapping',
+    expectPresent: false,
   },
   {
     collection: 'research_entity_redirects',
-    model: 'ResearchEntityRedirect',
-    group: 'canonical-domain',
+    model: 'ResearchEntityRedirect (retired)',
+    group: 'legacy-residue',
     phase: null,
     target:
-      'ResearchEntityRedirect (retained): preserves archived-entity slugs so a merged or archived research home still resolves',
+      'retired in #3027: a merged identity is kept as an archived row carrying a canonicalGroupId tombstone, whose slug occupies the unique index, so no side ledger records the mapping',
+    expectPresent: false,
   },
   {
     collection: 'entitycorrectionreports',
@@ -710,6 +692,30 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
     field: 'researchGroupId',
     meaning: 'Legacy entity reference',
     target: 'researchEntityId before Listing retirement',
+  },
+  {
+    collection: 'research_entities',
+    field: 'hasDocumentedWayIn',
+    meaning: 'Retired documented-way-in browse projection',
+    target: 'Nothing: removed outright by #2527, unset by retire:documented-way-in-field',
+  },
+  {
+    collection: 'research_entities',
+    field: 'undergraduateCurrentAvailability',
+    meaning: 'Retired undergraduate availability browse projection',
+    target: 'Nothing: no source populates it, unset by retire:undergraduate-logistics-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'undergraduateCompensationModel',
+    meaning: 'Retired undergraduate compensation browse projection',
+    target: 'Nothing: no source populates it, unset by retire:undergraduate-logistics-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'undergraduateEligibleStudentLevels',
+    meaning: 'Retired undergraduate class-year browse projection',
+    target: 'Nothing: no source populates it, unset by retire:undergraduate-logistics-fields',
   },
 ];
 

@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
       return { toString: () => id };
     });
   }),
-  getSavedResearchEntities: vi.fn(),
+  getSavedResearchEntityList: vi.fn(),
   getSavedResearchEntitySlugs: vi.fn(),
   getSavedResearchEntityPlans: vi.fn(),
   addSavedResearchEntities: vi.fn(),
@@ -41,7 +41,7 @@ vi.mock('../../services/userService', () => ({
 }));
 
 vi.mock('../../services/researchPlanService', () => ({
-  getSavedResearchEntities: mocks.getSavedResearchEntities,
+  getSavedResearchEntityList: mocks.getSavedResearchEntityList,
   getSavedResearchEntitySlugs: mocks.getSavedResearchEntitySlugs,
   getSavedResearchEntityPlans: mocks.getSavedResearchEntityPlans,
   addSavedResearchEntities: mocks.addSavedResearchEntities,
@@ -296,15 +296,20 @@ describe('userController', () => {
       user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
       body: { accountOwner: 'other-student' },
     } as any;
-    mocks.getSavedResearchEntities.mockResolvedValue([]);
+    mocks.getSavedResearchEntityList.mockResolvedValue({
+      savedResearchEntities: [],
+      unavailableSavedResearchEntities: [],
+    });
     mocks.getSavedResearchEntityPlans.mockResolvedValue({});
 
-    await getSavedResearchEntities(req, privateResponseDouble());
+    const savedResponse = privateResponseDouble();
+    await getSavedResearchEntities(req, savedResponse);
     const plansResponse = privateResponseDouble();
     await getSavedResearchEntityPlans(req, plansResponse);
 
-    expect(mocks.getSavedResearchEntities).toHaveBeenCalledWith('student123');
+    expect(mocks.getSavedResearchEntityList).toHaveBeenCalledWith('student123');
     expect(mocks.getSavedResearchEntityPlans).toHaveBeenCalledWith('student123');
+    expectPrivateNoStore(savedResponse);
     expectPrivateNoStore(plansResponse);
   });
 

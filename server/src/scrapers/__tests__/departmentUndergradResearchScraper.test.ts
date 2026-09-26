@@ -27,6 +27,17 @@ const PHYSICS_HTML = `
 </main>
 `;
 
+const PHYSICS_NO_LAB_HTML = `
+<main>
+  <h1>Undergraduate Research</h1>
+  <h2>Active Research in the Yale Physics Department</h2>
+  <h3>Rowan Contact</h3>
+  <p>Contact: Rowan Contact (rowan.contact@yale.edu)</p>
+  <p>Website: <a href="https://physics.yale.edu/people/rowan-contact">https://physics.yale.edu/people/rowan-contact</a></p>
+  <p>Undergraduate students can join measurements of neutrino oscillation parameters using existing detector data.</p>
+</main>
+`;
+
 const CHEM_HTML = `
 <main>
   <h1>Undergraduate Research</h1>
@@ -288,6 +299,26 @@ function buildContext(
 }
 
 describe('departmentUndergradResearchScraper', () => {
+  it('does not name a lab for a heading whose page evidence never mentions one (#3145)', () => {
+    const records = parsePhysicsUndergradResearchPage(PHYSICS_NO_LAB_HTML, {
+      key: 'physics',
+      url: 'https://physics.yale.edu/undergrad',
+      department: 'Physics',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'physics-project-list',
+    });
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      entityKey: 'dept-physics-rowan-contact',
+      name: 'Rowan Contact Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      undergradAccessEvidence: true,
+    });
+    expect(records[0].name).not.toMatch(/\bLab$/);
+  });
+
   it('parses Physics project rows into source-backed lab access records', () => {
     const records = parsePhysicsUndergradResearchPage(PHYSICS_HTML, {
       key: 'physics',

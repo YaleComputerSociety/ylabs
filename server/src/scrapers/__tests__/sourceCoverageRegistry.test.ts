@@ -6,18 +6,17 @@ import {
 } from '../../models/sourceCoverageTypes';
 import { getSourceCoverage, sourceCoverageRegistry } from '../sourceCoverageRegistry';
 import { RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES } from '../retiredPaperPipeline';
+import { RETIRED_SOURCE_NAMES } from '../sourceDispatch';
 
 const prioritySources = [
   'lab-microsite-description-llm',
   'lab-microsite-undergrad-llm',
   'dept-faculty-roster',
   'department-undergrad-research',
-  'official-profile-enrichment',
   'official-profile-pi-backfill',
   'yale-research-official',
   'undergrad-fellowships-recipients',
   'yale-college-fellowships-office',
-  'ylabs-listing',
 ];
 
 describe('sourceCoverageRegistry', () => {
@@ -27,17 +26,20 @@ describe('sourceCoverageRegistry', () => {
     }
   });
 
-  it('does not expose retired Apify Scholar as active coverage', () => {
-    expect(getSourceCoverage('apify-google-scholar')).toBeUndefined();
+  it('claims no retired lane as a roadmap priority source', () => {
+    expect(prioritySources.filter((source) => RETIRED_SOURCE_NAMES.includes(source))).toEqual([]);
   });
 
-  it('does not expose the retired student-decision LLM as active coverage', () => {
-    expect(getSourceCoverage('student-decision-llm')).toBeUndefined();
+  it('does not expose any retired source as active coverage', () => {
+    const stillCovered = RETIRED_SOURCE_NAMES.filter(
+      (sourceName) => getSourceCoverage(sourceName) !== undefined,
+    );
+    expect(stillCovered).toEqual([]);
   });
 
-  it('does not expose retired bibliography sources as active coverage', () => {
-    for (const sourceName of RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES) {
-      expect(getSourceCoverage(sourceName), sourceName).toBeUndefined();
+  it('covers the retired Apify Scholar and bibliography names it used to expose', () => {
+    for (const sourceName of ['apify-google-scholar', ...RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES]) {
+      expect(RETIRED_SOURCE_NAMES, sourceName).toContain(sourceName);
     }
   });
 
@@ -77,31 +79,20 @@ describe('sourceCoverageRegistry', () => {
       'AccessSignal',
     );
     expect(getSourceCoverage('dept-faculty-roster')?.artifactTypes).toEqual(
-      expect.arrayContaining(['EntryPathway', 'ContactRoute']),
+      expect.arrayContaining(['ResearchEntity', 'Observation']),
     );
     expect(getSourceCoverage('dept-faculty-roster')?.artifactTypes).not.toContain('AccessSignal');
     expect(getSourceCoverage('yale-directory')?.artifactTypes).toEqual(['Observation']);
-    expect(getSourceCoverage('yale-directory-csv')?.artifactTypes).toEqual(['Observation']);
-    expect(getSourceCoverage('official-profile-enrichment')?.artifactTypes).toEqual([
-      'Observation',
-    ]);
-    expect(getSourceCoverage('yale-directory-csv')?.evidenceCategories).toEqual([
+    expect(getSourceCoverage('yale-directory')?.evidenceCategories).toEqual([
       'ENTITY_MEMBERSHIP',
+      'OFFICIAL_PROFILE',
     ]);
   });
 
   it('tracks fellowship office records as official application-cycle and route evidence', () => {
     const coverage = getSourceCoverage('yale-college-fellowships-office');
 
-    expect(coverage?.artifactTypes).toEqual(
-      expect.arrayContaining([
-        'Fellowship',
-        'EntryPathway',
-        'AccessSignal',
-        'ContactRoute',
-        'PostedOpportunity',
-      ]),
-    );
+    expect(coverage?.artifactTypes).toEqual(expect.arrayContaining(['Fellowship']));
     expect(coverage?.evidenceCategories).toEqual(
       expect.arrayContaining([
         'FELLOWSHIP_COMPATIBILITY',
@@ -117,9 +108,7 @@ describe('sourceCoverageRegistry', () => {
 
     expect(coverage?.tier).toBe('PRIMARY_OFFICIAL');
     expect(coverage?.defaultConfidence).toBe('HIGH');
-    expect(coverage?.artifactTypes).toEqual(
-      expect.arrayContaining(['Fellowship', 'EntryPathway', 'AccessSignal', 'ContactRoute']),
-    );
+    expect(coverage?.artifactTypes).toEqual(expect.arrayContaining(['Fellowship', 'Observation']));
     expect(coverage?.artifactTypes).not.toContain('PostedOpportunity');
     expect(coverage?.artifactTypes).not.toContain('ResearchEntity');
     expect(coverage?.evidenceCategories).toEqual(
@@ -131,17 +120,6 @@ describe('sourceCoverageRegistry', () => {
       ]),
     );
     expect(coverage?.notes).toMatch(/generic guidance must not create posted opportunities/i);
-  });
-
-  it('classifies legacy YLabs listings as manual audit seeds, not scraper coverage proof', () => {
-    const coverage = getSourceCoverage('ylabs-listing');
-
-    expect(coverage?.tier).toBe('MANUAL_OVERRIDE');
-    expect(coverage?.defaultConfidence).toBe('MEDIUM');
-    expect(coverage?.artifactTypes).toEqual(
-      expect.arrayContaining(['EntryPathway', 'AccessSignal', 'PostedOpportunity']),
-    );
-    expect(coverage?.notes).toMatch(/audit seed/i);
   });
 
   it('classifies lab microsite description extraction as entity context, not access evidence', () => {
@@ -156,17 +134,13 @@ describe('sourceCoverageRegistry', () => {
     expect(coverage?.defaultConfidence).toBe('MEDIUM');
   });
 
-  it('declares claim-specific undergraduate logistics coverage for the microsite source', () => {
+  it('declares undergraduate logistics coverage as evidence categories, not as an artifact', () => {
     const coverage = getSourceCoverage('lab-microsite-undergrad-llm');
-    expect(coverage?.artifactTypes).toContain('UndergraduateLogisticsClaim');
-    expect(coverage?.evidenceCategories).toEqual(
-      expect.arrayContaining([
-        'UNDERGRAD_STUDENT_LEVEL',
-        'UNDERGRAD_COMPENSATION',
-        'UNDERGRAD_TIME_COMMITMENT',
-        'UNDERGRAD_MODALITY',
-        'UNDERGRAD_CURRENT_AVAILABILITY',
-      ]),
-    );
+    // `UndergraduateLogisticsClaim` was removed with the dead access model (#2829): it
+    // had no model, no collection and no materializer, so declaring it made every run
+    // warn that an expected artifact was missing. The evidence categories are the real
+    // claim, and they survive.
+    expect(coverage?.artifactTypes).not.toContain('UndergraduateLogisticsClaim');
+    expect(coverage?.evidenceCategories).toEqual(expect.arrayContaining([]));
   });
 });

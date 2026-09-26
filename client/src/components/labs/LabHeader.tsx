@@ -1,6 +1,6 @@
 /**
  * Hero header for a lab detail page: name, kind badge, school, location,
- * departments, research areas, website link.
+ * departments, topics, website link.
  *
  * Pure presentational — takes a ResearchGroup, no fetching or context.
  */
@@ -11,7 +11,7 @@ import { useConfig } from '../../hooks/useConfig';
 import { ensureHttpPrefix } from '../../utils/url';
 import {
   isSuppressedResearchWebsiteCtaUrl,
-  isUnavailableResearchWebsiteCtaUrl,
+  isUnreachableResearchWebsiteCtaUrl,
 } from '../../utils/researchDetailSources';
 import {
   entityKindLabel,
@@ -46,7 +46,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
   const websiteHref =
     group.websiteUrl &&
     !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
-    !isUnavailableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth)
+    !isUnreachableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth)
       ? ensureHttpPrefix(group.websiteUrl)
       : '';
   const websiteDedupeKey = normalizeActionUrl(websiteHref);
@@ -70,7 +70,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
   const websiteLinkLabel = researchWebsiteCtaLabel(group);
 
   return (
-    <div className="yr-panel flex flex-col gap-4 rounded-md p-4 sm:p-6">
+    <div className="yr-panel flex flex-col gap-4 rounded-card p-4 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
         <span className="yr-pill yr-pill-blue">{kindLabel}</span>
         {group.school && <span className="yr-pill">{group.school}</span>}
@@ -79,11 +79,11 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="yr-kicker mb-2">Research profile</p>
-          <h1 className="text-3xl font-semibold leading-tight text-slate-950">
+          <h1 className="yr-display text-3xl font-semibold leading-tight text-ink sm:text-4xl">
             {researchEntityTitle(group)}
           </h1>
           {group.location && (
-            <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600">
+            <p className="mt-2 flex items-center gap-1.5 text-sm text-muted">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 width="14"
@@ -110,7 +110,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
           {departmentLabels.map((dept, i) => (
             <span
               key={dept}
-              className={`text-xs rounded-md px-2 py-1 ${
+              className={`text-xs rounded-card px-2 py-1 ${
                 i === 0 ? 'yr-pill yr-pill-blue' : 'yr-pill'
               }`}
             >
@@ -122,12 +122,12 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
 
       {showProfileResearchAreas && (
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted">
             PI research interests
           </p>
           <div className="flex flex-wrap gap-1.5">
             {visibleProfileResearchAreas.map((area) => (
-              <span key={area} className="yr-pill rounded-md">
+              <span key={area} className="yr-pill ">
                 {formatTitleCaseLabel(area)}
               </span>
             ))}
@@ -140,7 +140,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
           href={websiteHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="yr-link inline-flex min-h-[44px] w-fit items-center gap-1.5 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          className="yr-link yr-focus-ring inline-flex min-h-[44px] w-fit items-center gap-1.5 rounded-control text-sm font-semibold"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"

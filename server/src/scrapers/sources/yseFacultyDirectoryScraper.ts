@@ -30,6 +30,9 @@ import { normalizeOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
+import mongoose from 'mongoose';
+import { isKnownDeadSourceUrl } from '../../services/sourceLinkHealth';
+import { ResearchEntity } from '../../models/researchEntity';
 import {
   isLikelyPersonSpecificYaleEmail,
   netidFromEmail,
@@ -309,8 +312,13 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
   if (first) obs.push({ ...base, field: 'fname', value: first });
   if (last) obs.push({ ...base, field: 'lname', value: last });
   obs.push({ ...base, field: 'userType', value: 'faculty' });
-  obs.push({ ...base, field: 'primaryDepartment', value: SCHOOL_NAME });
-  obs.push({ ...base, field: 'departments', value: [SCHOOL_NAME] });
+  // A school-wide directory knows the school, never the department, so it must
+  // not fill either department slot: #2838 fixed seven roster lanes that did
+  // this, and the same claim from here reached 53 served rows whose department
+  // pill reads "Yale School of the Environment". `primaryDepartment` is not
+  // latest-wins, so the manufactured claim competes with a real department
+  // roster's own claim and defeats `inheritSchoolFromLeadPi`.
+  // The school still arrives: `schoolName` on the entity carries it.
   if (profile.email) obs.push({ ...base, field: 'email', value: profile.email });
   if (profile.title) obs.push({ ...base, field: 'title', value: profile.title });
   obs.push({ ...base, field: 'profileUrls', value: { departmental: profile.profileUrl } });
@@ -343,8 +351,22 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
 export function facultyToResearchEntityObservations(
   profile: YseFacultyProfile,
   fallbackUserKey: string,
+  labUrlIsKnownDead: (url: string) => boolean = () => false,
 ): ObservationInput[] {
-  const hasLab = Boolean(profile.labUrl);
+  // A link's presence is not evidence that a lab exists. `hasLab` used to be
+  // `Boolean(profile.labUrl)`, so a profile that still links a site the corpus
+  // has already probed and found gone kept minting a LAB named "<Person> Lab",
+  // and the websiteUrl retraction #3393 added could never stick: this lane
+  // re-asserted the dead URL on the next run, and the clearing pass withdrew it
+  // again, indefinitely. Measured on Development, 33 rows served a
+  // directory-asserted "<name> Lab" with an empty websiteUrl, 13 of them with the
+  // dead verdict still recorded against a non-directory URL.
+  //
+  // Only a positive dead verdict withdraws the lab. `isKnownDeadSourceUrl` is
+  // UNAVAILABLE or a gone HTTP status, never UNKNOWN, so a host that merely
+  // failed to resolve once keeps its lab rather than losing its identity to a
+  // transient probe.
+  const hasLab = Boolean(profile.labUrl) && !labUrlIsKnownDead(profile.labUrl!);
   if (!hasLab && profile.researchAreas.length === 0 && !profile.description) return [];
 
   const slug = `yse-faculty-${profile.slug}`.slice(0, 100);
@@ -412,11 +434,42 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
   return html;
 }
 
+/**
+ * The stored link-health verdicts for the rows this run is about to observe, keyed
+ * by entity slug.
+ *
+ * Injected so a test can supply verdicts without a database, and so the lane
+ * reads verdicts rather than probing: the link-health lane owns probing, and a
+ * second prober here would both duplicate the fetches and disagree with the
+ * verdicts the rest of the engine reads.
+ */
+export type StoredLinkHealthLoader = (slugs: string[]) => Promise<Map<string, unknown>>;
+
+async function loadStoredLinkHealthBySlug(slugs: string[]): Promise<Map<string, unknown>> {
+  const byslug = new Map<string, unknown>();
+  if (slugs.length === 0) return byslug;
+  // No connection means no verdicts, which is the same state as a site nobody has
+  // probed yet: the lab is kept. Returning empty rather than throwing keeps the
+  // lane's identity decision independent of whether a caller opened a database,
+  // and keeps the fail-open direction the same in both cases.
+  if (mongoose.connection.readyState !== 1) return byslug;
+  const rows = await ResearchEntity.find({ slug: { $in: slugs } })
+    .select('slug sourceLinkHealth')
+    .lean();
+  for (const row of rows as Array<{ slug?: string; sourceLinkHealth?: unknown }>) {
+    if (row.slug) byslug.set(row.slug, row.sourceLinkHealth);
+  }
+  return byslug;
+}
+
 export class YseFacultyDirectoryScraper implements IScraper {
   readonly name = SOURCE_KEY;
   readonly displayName = 'YSE faculty directory and individual profiles';
 
-  constructor(private readonly htmlFetcher: HtmlFetcher = fetchHtml) {}
+  constructor(
+    private readonly htmlFetcher: HtmlFetcher = fetchHtml,
+    private readonly linkHealthLoader: StoredLinkHealthLoader = loadStoredLinkHealthBySlug,
+  ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const limitOption = ctx.options.limit;
@@ -435,7 +488,15 @@ export class YseFacultyDirectoryScraper implements IScraper {
     let facultyCount = 0;
     let entityCount = 0;
     let labCount = 0;
+    let withdrawnLabCount = 0;
     let areaCount = 0;
+
+    // One read for the whole run rather than one per profile: the verdicts this
+    // consults are written by the link-health lane, so they are already stored and
+    // this lane must not re-probe.
+    const storedLinkHealthBySlug = await this.linkHealthLoader(
+      limited.map((faculty) => `yse-faculty-${faculty.slug}`),
+    );
 
     for (const faculty of limited) {
       let profileHtml: string;
@@ -452,25 +513,29 @@ export class YseFacultyDirectoryScraper implements IScraper {
       totalObs += userObs.length;
       facultyCount += 1;
 
-      const entityObs = facultyToResearchEntityObservations(profile, entityKey);
+      const entityObs = facultyToResearchEntityObservations(profile, entityKey, (url) =>
+        isKnownDeadSourceUrl(storedLinkHealthBySlug.get(`yse-faculty-${profile.slug}`), url),
+      );
       if (entityObs.length > 0) {
         await ctx.emit(entityObs);
         totalObs += entityObs.length;
         entityCount += 1;
-        if (profile.labUrl) labCount += 1;
+        if (entityObs.some((obs) => obs.field === 'websiteUrl')) labCount += 1;
+        else if (profile.labUrl) withdrawnLabCount += 1;
         if (profile.researchAreas.length > 0) areaCount += 1;
       }
     }
 
     ctx.log(
       `Emitted ${totalObs} observations across ${facultyCount} faculty / ${entityCount} entities ` +
-        `(${labCount} with lab sites, ${areaCount} with research areas)`,
+        `(${labCount} with lab sites, ${withdrawnLabCount} whose linked lab site is known dead, ` +
+        `${areaCount} with research areas)`,
     );
 
     return {
       observationCount: totalObs,
       entitiesObserved: facultyCount + entityCount,
-      notes: `YSE faculty: ${facultyCount} researchers, ${entityCount} research homes (${labCount} labs, ${areaCount} with areas)`,
+      notes: `YSE faculty: ${facultyCount} researchers, ${entityCount} research homes (${labCount} labs, ${withdrawnLabCount} dead lab links withdrawn, ${areaCount} with areas)`,
     };
   }
 }
