@@ -32,6 +32,10 @@ import {
   PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
 } from './studentVisibilityTier';
 import {
+  loadKnownPersonSurnameRoster,
+  loadResearchEntityLeadPersonNames,
+} from '../utils/researchHomeNameIdentityRoster';
+import {
   buildResearchEntityPiDedupePlan,
   piLedRestrictedDuplicateEntityIds,
   samePiDuplicateEntityIdsRestrictedToPiLed,
@@ -1894,6 +1898,13 @@ async function planResearchEntityGateUpdates(
     return map;
   };
   const leadsByEntityId = buildLeadsByEntityId(leadRows);
+  // Two corpus loads for the whole pass rather than one per record, which is what
+  // `loadResearchEntityLeadPersonNames` exists for: the name-identity authority needs
+  // the surname vocabulary and this record's own lead to tell a foreign eponym from a
+  // self-naming one, and judging 4,600 records one lookup at a time would be a second
+  // query per row (#3499).
+  const knownPersonSurnames = await loadKnownPersonSurnameRoster();
+  const leadPersonNameByEntityId = await loadResearchEntityLeadPersonNames();
   const duplicateReferenceLeadsByEntityId = needsDuplicateReferenceCorpus
     ? buildLeadsByEntityId(duplicateReferenceLeadRows)
     : leadsByEntityId;
@@ -2060,6 +2071,8 @@ async function planResearchEntityGateUpdates(
         exactUrlDuplicateRiskEntityIds.has(recordId),
       citationsSharedAcrossPersonRows: sharedCitationOnlyEntityIds.has(recordId),
       relatedEntityAccessPathCount: alternateAccessPathCounts.get(recordId) || 0,
+      knownPersonSurnames,
+      leadPersonName: leadPersonNameByEntityId.get(recordId) || '',
     });
     return {
       collection: 'research' as const,
