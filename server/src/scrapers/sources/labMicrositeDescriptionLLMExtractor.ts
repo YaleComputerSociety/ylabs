@@ -34,7 +34,7 @@ import {
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
 import { extractLabHomepageDescription } from './ysmAtoZScraper';
-import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
+import { extractElementTextWithBlockSeparators, plainTextContent } from '../utils/htmlText';
 import {
   institutionalEvidenceHosts,
   isInstitutionSectionLandingUrl,
@@ -488,7 +488,7 @@ function discoverSubPageUrlsByAnchor(
   const found: string[] = [];
   const seen = new Set<string>([withoutTrailingSlash(pageUrl.split('#')[0])]);
   $('a[href]').each((_i, el) => {
-    const text = textValue($(el).text());
+    const text = textValue(plainTextContent(el));
     if (!text || !anchorPattern.test(text)) return;
     try {
       const absolute = new URL($(el).attr('href') || '', pageUrl).toString().split('#')[0];
