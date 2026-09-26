@@ -8,6 +8,8 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import mongoose from 'mongoose';
+import axios from 'axios';
+import { setCached } from '../snapshotCache';
 import {
   FederalAwardScraper,
   awardToRecord,
@@ -24,6 +26,9 @@ import {
   type UsaspendingAward,
 } from '../sources/federalAwardScraper';
 import type { ObservationInput, ScraperContext } from '../types';
+
+vi.mock('axios', () => ({ default: { post: vi.fn() } }));
+vi.mock('../snapshotCache', () => ({ getCached: vi.fn(), setCached: vi.fn() }));
 
 const DOE_AWARD: UsaspendingAward = {
   'Award ID': 'DESC0004168',
@@ -485,6 +490,22 @@ describe('FederalAwardScraper.run', () => {
     expect(emitted).toHaveLength(0);
     expect(result.notes).toMatch(/^USAspending unreachable; failed closed/);
     expect(result.notes).toContain('DOE 0 (fetch failed), DOD 0 (fetch failed)');
+  });
+
+  it('fails closed and says so when the response envelope drops its results array', async () => {
+    vi.mocked(axios.post).mockResolvedValue({ data: { detail: 'unexpected error' } });
+    const scraper = new FederalAwardScraper({
+      resolveResearcherId: fakeUserFinder([]) as any,
+      agencies: ONE_AGENCY,
+      timePeriod: TIME_PERIOD,
+    });
+    const { ctx, emitted } = buildContext({ useCache: true });
+    const result = await scraper.run(ctx);
+    expect(emitted).toHaveLength(0);
+    expect(setCached).not.toHaveBeenCalled();
+    expect(result.notes).toMatch(/^USAspending unreachable; failed closed/);
+    expect(result.notes).toContain('DOE 0 (fetch failed)');
+    expect(result.notes).not.toContain(NO_PI_FIELD_NOTE);
   });
 
   it('fails closed and says so when the response no longer carries Description', async () => {

@@ -285,8 +285,11 @@ async function fetchAgencyPage(
     results?: UsaspendingAward[];
     page_metadata?: { hasNext?: boolean };
   };
+  if (!Array.isArray(data.results)) {
+    throw new Error('USAspending response carried no "results" array');
+  }
   const payload: FetchAgencyPageResult = {
-    awards: Array.isArray(data.results) ? data.results : [],
+    awards: data.results,
     hasNext: Boolean(data.page_metadata?.hasNext),
   };
   if (useCache) await setCached(sourceName, cacheKey, payload);
