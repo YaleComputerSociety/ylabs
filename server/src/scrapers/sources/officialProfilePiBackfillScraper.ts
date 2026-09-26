@@ -1428,6 +1428,42 @@ function homeNamesAnotherPersonsLab(
 }
 
 /**
+ * Which arm refuses this home, or `null` when none does.
+ *
+ * Three arms answer three different questions, and a run that reports only "refused"
+ * cannot say which one fired. That is not cosmetic: a silent refusal is
+ * indistinguishable from a profile that linked nothing contentious, so absence of a
+ * graft in the observation log is evidence about the corpus rather than about the
+ * guard (#3537).
+ *
+ * The reason is the single source of truth and the boolean below is derived from it, so
+ * the two cannot drift.
+ */
+export type ProfileLinkedHomeRefusal =
+  | 'names-another-persons-lab'
+  | 'institutional-home-on-a-grant-shell'
+  | 'institutional-home-on-a-person-keyed-shell';
+
+export function profileLinkedHomeRefusal(
+  entity: Record<string, any>,
+  home: OfficialProfileResearchHome | undefined,
+  personName: unknown,
+): ProfileLinkedHomeRefusal | null {
+  if (!home) return null;
+  if (home.entityType === 'LAB') {
+    return homeNamesAnotherPersonsLab(entity, home, personName)
+      ? 'names-another-persons-lab'
+      : null;
+  }
+  if (GRANT_DERIVED_PI_SHELL_SLUG_RE.test(textValue(entity.slug))) {
+    return 'institutional-home-on-a-grant-shell';
+  }
+  return entityKeyNamesOnlyThisPerson({ slug: entity.slug, personName })
+    ? 'institutional-home-on-a-person-keyed-shell'
+    : null;
+}
+
+/**
  * The #1484 guard, widened to every shell whose key names nobody but the person
  * whose profile is being read.
  *
@@ -1442,10 +1478,7 @@ export function isInstitutionalHomeMismatchedWithPersonScopedShell(
   home: OfficialProfileResearchHome | undefined,
   personName: unknown,
 ): boolean {
-  if (!home) return false;
-  if (home.entityType === 'LAB') return homeNamesAnotherPersonsLab(entity, home, personName);
-  if (GRANT_DERIVED_PI_SHELL_SLUG_RE.test(textValue(entity.slug))) return true;
-  return entityKeyNamesOnlyThisPerson({ slug: entity.slug, personName });
+  return profileLinkedHomeRefusal(entity, home, personName) !== null;
 }
 
 export function entityResearchHomeToObservations(
@@ -3250,6 +3283,8 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       .slice(0, limit);
     let emitted = 0;
     let observed = 0;
+    let homesAdopted = 0;
+    const homesRefusedByReason: Record<string, number> = {};
     let fetchAttempts = 0;
 
     for (const entity of entities) {
@@ -3424,14 +3459,25 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
             requireEmail: false,
             expectedPeople: entity.leadUsers,
           });
-          const [home] = identity ? extractOfficialProfileResearchHomes(html, profileUrl) : [];
-          const homeIsAdmissible =
-            identity &&
-            home &&
-            !(await websiteUrlOwnedByAnotherEntity(home.url, entity)) &&
-            !isInstitutionalHomeMismatchedWithPersonScopedShell(entity, home, identity.displayName);
-          if (homeIsAdmissible) {
+          const [home] = extractOfficialProfileResearchHomes(html, profileUrl);
+          // Named so the run can report WHY a home was withheld. A silent refusal is
+          // indistinguishable from a guard that never ran: this lane withholds by
+          // emitting nothing, so absence of a graft in the observation log is evidence
+          // about the corpus rather than about the guard, and neither the #1484 nor the
+          // #3529 arm could be told apart from a profile that simply linked nothing
+          // contentious (#3537).
+          const homeRefusal: string | null = !home
+            ? null
+            : !identity
+              ? 'no-profile-identity'
+              : (await websiteUrlOwnedByAnotherEntity(home.url, entity))
+                ? 'website-owned-by-another-entity'
+                : profileLinkedHomeRefusal(entity, home, identity.displayName);
+          if (homeRefusal) {
+            homesRefusedByReason[homeRefusal] = (homesRefusedByReason[homeRefusal] ?? 0) + 1;
+          } else if (identity && home) {
             observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
+            homesAdopted += 1;
           }
         }
 
@@ -3448,10 +3494,24 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       }
     }
 
+    const refusalSummary = Object.entries(homesRefusedByReason)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([reason, count]) => `${reason}=${count}`)
+      .join(', ');
+    // Logged as well as returned, because `notes` is a single line on the run record and
+    // the per-reason breakdown is what tells a reader which arm fired.
+    ctx.log('Profile-linked research homes', {
+      adopted: homesAdopted,
+      refused: homesRefusedByReason,
+    });
+
     return {
       observationCount: emitted,
       entitiesObserved: observed,
-      notes: `Processed ${entities.length} official profile records.`,
+      notes:
+        `Processed ${entities.length} official profile records; ` +
+        `adopted ${homesAdopted} profile-linked research homes` +
+        (refusalSummary ? `, refused ${refusalSummary}.` : ', refused none.'),
     };
   }
 }
