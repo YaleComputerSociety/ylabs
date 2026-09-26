@@ -12,7 +12,7 @@
  * Flags for `run`:
  *   --dry-run       Don't write Observations (just log what would be inserted)
  *   --use-cache     Memoize external fetches in ScrapeSnapshot collection (dev only)
- *   --release       Production mode (cache off, errors surface)
+ *   --release       Production mode (caches off, errors surface)
  *   --limit <n>     Cap the number of entities the scraper processes
  *   --offset <n>    Skip the first n entities after source-specific ordering
  *   --only <keys>   Comma-separated source-specific keys/netids to process
@@ -28,6 +28,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { buildOrchestrator } from './registry';
 import { installScraperHostConcurrencyInterceptor } from './utils/hostConcurrencyLimiter';
+import { installScraperHttpValidatorCache } from './utils/httpValidatorCache';
 import { materializeFromRun } from './entityMaterializer';
 import { ScrapeRun } from '../models/scrapeRun';
 import { getScrapeRunReport } from './runReport';
@@ -169,6 +170,7 @@ async function warnWhenSourceIsBeingWritten(
 export async function main(): Promise<void> {
   installScraperHostConcurrencyInterceptor();
   const { command, flags } = parseArgs(process.argv);
+  if (!flags.release) installScraperHttpValidatorCache();
 
   if (command === 'help' || command === '--help' || command === '-h') {
     console.log(`
