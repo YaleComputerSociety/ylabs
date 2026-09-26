@@ -59,6 +59,48 @@ The assertion that carries signal is that every drop is attributable to a named 
 Apply the same shape to any new case.
 Assert that the difference between stored and served is explained, not that it is absent.
 
+## Supplying topic-query relevance judgements
+
+Retrieval quality cannot be derived from the corpus.
+It needs a human judgement about what a query should return, and that judgement lives in `topicQueryJudgements.json`.
+
+```bash
+yarn journey:eval --case=topic-query-relevance
+yarn journey:eval --case=topic-query-relevance --judgements=/tmp/my-judgements.json
+```
+
+A judgement states a **predicate** a relevant result satisfies rather than listing the rows it expects.
+
+```json
+{
+  "query": "neuroscience",
+  "note": "why this query is worth judging",
+  "topK": 10,
+  "minRelevant": 8,
+  "relevantWhen": {
+    "anyTopicMatches": ["neuro", "brain", "cognit"],
+    "anyDepartmentMatches": ["Neuroscience", "Psychology"],
+    "anyTextMatches": ["synap"]
+  }
+}
+```
+
+A served card counts as relevant when any supplied matcher hits, compared case-insensitively as a substring.
+`anyTopicMatches` reads `researchAreas`, `anyDepartmentMatches` reads `departments`, and `anyTextMatches` reads the name, display name, short description, card description, topics, and departments together.
+The case reports `precisionAtK` and the rank of the first relevant result, and asserts `relevant >= minRelevant`.
+
+Set `expectNoResults` instead of a matcher to judge the zero-result path, which keeps a legitimately empty search distinguishable from a broken one.
+
+Two rules the format enforces, both rejected at parse time rather than producing a misleading score: a judgement must assert something, so one with neither `expectNoResults` nor a matcher is an error; and `minRelevant` must lie within `0..topK`, so a floor that can never be met is an error.
+A query that returns nothing to judge is inconclusive rather than passing, and a missing judgements file makes the whole case inconclusive, because a retrieval score over an empty query set is a green signal that means nothing.
+
+Judgements never name a row. A faculty research profile slug is person-bearing, so a checked-in file pairing one with "expected in the top 10 but not served" would be a defect judgement beside a person identifier in a public repository, which `docs/person-identifier-convention.md` rules out and which editing the file later would not remove.
+A row list would also rot, because rows merge, archive, and are reminted, decaying into false failures that say nothing about retrieval.
+Keep a private or experimental set outside the repository and point at it with `--judgements`.
+
+Write the matchers as tightly as the judgement really is.
+Permissive substring lists inflate `precisionAtK`, so a high score against a loose judgement measures the judgement rather than the retrieval.
+
 ## Adding a case
 
 Add one object to `journeyCases` in `journeyEvalCases.ts`.

@@ -235,3 +235,60 @@ export function summarizeInvariants(results: readonly InvariantResult[]): Journe
     inconclusiveInvariantIds: inconclusive.map((result) => result.id),
   };
 }
+
+export interface QueryRelevanceScore {
+  query: string;
+  served: number;
+  judged: number;
+  relevant: number;
+  precisionAtK: number;
+  firstRelevantRank: number | null;
+}
+
+export function scoreQueryRelevance(
+  query: string,
+  relevanceByRank: readonly boolean[],
+  topK: number,
+  servedTotal: number,
+): QueryRelevanceScore {
+  const judgedFlags = relevanceByRank.slice(0, topK);
+  const relevant = judgedFlags.filter(Boolean).length;
+  const firstRelevantIndex = judgedFlags.indexOf(true);
+
+  return {
+    query,
+    served: servedTotal,
+    judged: judgedFlags.length,
+    relevant,
+    precisionAtK: asRate(relevant, judgedFlags.length),
+    firstRelevantRank: firstRelevantIndex === -1 ? null : firstRelevantIndex + 1,
+  };
+}
+
+export function checkQueryRelevance(
+  score: QueryRelevanceScore,
+  minRelevant: number,
+): InvariantResult {
+  const id = `query-relevance:${score.query}`;
+  const title = `A search for "${score.query}" returns at least ${minRelevant} relevant results in its top ${score.judged || 'K'}`;
+
+  if (score.judged === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The query returned nothing to judge, so a relevance score over it would be a green signal over an empty population',
+      { ...score, minRelevant },
+    );
+  }
+
+  return buildInvariant(id, title, score.relevant >= minRelevant, { ...score, minRelevant });
+}
+
+export function checkExpectedNoResults(query: string, servedTotal: number): InvariantResult {
+  return buildInvariant(
+    `query-returns-nothing:${query}`,
+    `A search for "${query}" legitimately returns nothing rather than erroring`,
+    servedTotal === 0,
+    { query, served: servedTotal },
+  );
+}

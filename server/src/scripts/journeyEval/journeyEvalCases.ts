@@ -2,6 +2,10 @@ import { dropDomainIncoherentUnsourcedResearchAreas } from '../../utils/research
 import { normalizeResearchAreaList } from '../../utils/researchAreaHygiene';
 import {
   attributeTopicDrops,
+  buildInconclusiveInvariant,
+  checkExpectedNoResults,
+  checkQueryRelevance,
+  scoreQueryRelevance,
   buildInvariant,
   buildRate,
   checkFacetAgreement,
@@ -15,6 +19,11 @@ import {
   type RateResult,
   type TopicDropObservation,
 } from './journeyEvalMetrics';
+import {
+  DEFAULT_TOP_K,
+  type RelevanceMatchers,
+  type TopicQueryJudgement,
+} from './journeyEvalJudgements';
 
 export interface ServedBrowseResult {
   researchEntities?: unknown[];
@@ -37,6 +46,7 @@ export type ReadStoredRowsFn = (rowKeys: string[]) => Promise<Map<string, Record
 
 export interface JourneyEvalContext {
   browse: BrowseFn;
+  topicQueryJudgements: TopicQueryJudgement[] | null;
   readStoredRows: ReadStoredRowsFn;
   readCorpusFingerprint: () => Promise<CorpusFingerprint>;
   window: number;
@@ -276,10 +286,96 @@ const sortedBrowseKeepsOrder: JourneyCase = {
   },
 };
 
+const matchesAny = (values: readonly string[], needles: readonly string[] | undefined): boolean => {
+  if (!needles || needles.length === 0) return false;
+  const haystack = values.map((value) => value.toLowerCase());
+  return needles.some((needle) => {
+    const lowered = needle.toLowerCase();
+    return haystack.some((value) => value.includes(lowered));
+  });
+};
+
+const stringList = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+
+const cardText = (row: Record<string, unknown>): string[] =>
+  [row.name, row.displayName, row.shortDescription, row.cardDescription]
+    .filter((value): value is string => typeof value === 'string')
+    .concat(stringList(row.researchAreas), stringList(row.departments));
+
+const isRelevant = (row: Record<string, unknown>, matchers: RelevanceMatchers): boolean =>
+  matchesAny(stringList(row.researchAreas), matchers.anyTopicMatches) ||
+  matchesAny(stringList(row.departments), matchers.anyDepartmentMatches) ||
+  matchesAny(cardText(row), matchers.anyTextMatches);
+
+const topicQueryRelevance: JourneyCase = {
+  id: 'topic-query-relevance',
+  title: 'A search for a topic returns results about that topic',
+  run: async (context) => {
+    const judgements = context.topicQueryJudgements;
+    if (!judgements || judgements.length === 0) {
+      return {
+        invariants: [
+          buildInconclusiveInvariant(
+            'topic-query-relevance-has-judgements',
+            'The relevance case has a judgement set to score against',
+            'No judgement was supplied, so any retrieval score would be a green signal over an empty query set',
+            { judgements: 0 },
+          ),
+        ],
+        rates: [],
+      };
+    }
+
+    const invariants: InvariantResult[] = [];
+    const rates: RateResult[] = [];
+
+    for (const judgement of judgements) {
+      const topK = judgement.topK ?? DEFAULT_TOP_K;
+      const result = await context.browse({ query: judgement.query, page: 1, pageSize: topK });
+      const rows = servedRows(result);
+      const servedTotal = result.estimatedTotalHits ?? rows.length;
+
+      invariants.push(
+        checkNotDegraded(
+          `query-is-not-degraded:${judgement.query}`,
+          `A search for "${judgement.query}" does not fall back to a degraded search path`,
+          result.degraded,
+        ),
+      );
+
+      if (judgement.expectNoResults) {
+        invariants.push(checkExpectedNoResults(judgement.query, servedTotal));
+        continue;
+      }
+
+      const matchers = judgement.relevantWhen ?? {};
+      const score = scoreQueryRelevance(
+        judgement.query,
+        rows.map((row) => isRelevant(row, matchers)),
+        topK,
+        servedTotal,
+      );
+      invariants.push(checkQueryRelevance(score, judgement.minRelevant ?? topK));
+      rates.push(
+        buildRate(
+          `precision-at-${topK}:${judgement.query}`,
+          `Relevant results in the top ${topK} for "${judgement.query}"`,
+          score.relevant,
+          score.judged,
+        ),
+      );
+    }
+
+    return { invariants, rates, notes: { judgementsScored: judgements.length } };
+  },
+};
+
 export const journeyCases: readonly JourneyCase[] = [
   coldBrowseCardContract,
   topicDropAttribution,
   facetCountAgreement,
   paginationServesDistinctRows,
   sortedBrowseKeepsOrder,
+  topicQueryRelevance,
 ];
