@@ -304,6 +304,25 @@ const observedEntries = (value: unknown): unknown[] => (Array.isArray(value) ? v
 const entryValue = (entry: unknown): unknown =>
   entry && typeof entry === 'object' && 'url' in entry ? (entry as { url: unknown }).url : entry;
 
+/**
+ * Whether one observation asserts the refused value. An array observation matches when any
+ * one entry does, because a citation list asserts each URL in it, and a whole-array refusal
+ * still matches its own array.
+ */
+export function observationAssertsRefusedValue(
+  field: string,
+  valueKey: string,
+  observation: { value?: unknown },
+): boolean {
+  return (
+    fieldValueRefusalKey(field, observation.value) === valueKey ||
+    (Array.isArray(observation.value) &&
+      observedEntries(observation.value).some(
+        (entry) => fieldValueRefusalKey(field, entryValue(entry)) === valueKey,
+      ))
+  );
+}
+
 const CITATION_EVIDENCE_FIELDS: ReadonlySet<string> = new Set(['sourceUrls']);
 
 const lanesAssertingValue = (
@@ -315,22 +334,14 @@ const lanesAssertingValue = (
   for (const observation of observations) {
     const lane = typeof observation.sourceName === 'string' ? observation.sourceName.trim() : '';
     if (!lane) continue;
-    const matches =
-      fieldValueRefusalKey(field, observation.value) === valueKey ||
-      (Array.isArray(observation.value) &&
-        observedEntries(observation.value).some(
-          (entry) => fieldValueRefusalKey(field, entryValue(entry)) === valueKey,
-        ));
-    if (matches) lanes.add(lane);
+    if (observationAssertsRefusedValue(field, valueKey, observation)) lanes.add(lane);
   }
   return [...lanes].sort();
 };
 
 /**
  * Every lane whose observation asserted the refused value, sorted so a re-run compares
- * equal. An array observation matches when any one entry does, because a citation list
- * asserts each URL in it, and a whole-array refusal still matches its own array. A lane
- * that only cited the value is credited only when no lane asserted it at a field, so a
+ * equal. A lane that only cited the value is credited only when no lane asserted it at a field, so a
  * citation never charges a lane for a value another lane produced.
  */
 export function attributeRefusedValueLanes(

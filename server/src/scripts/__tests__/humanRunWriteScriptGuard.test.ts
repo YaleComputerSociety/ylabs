@@ -30,6 +30,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
   'taxonomy:review-term': 'records a curated review of one taxonomy term',
   'programs:accept-formalization-exceptions': 'records reviewed exceptions',
   'launch:review-exceptions': 'records reviewed launch exceptions',
+  'lane:benchmark-capture':
+    'freezes a new lane benchmark, a deliberate one-time act per scope; the replay is the sweep stage',
   'db:build-indexes': 'builds declared indexes, a reviewed schema operation',
   'research-entity:rematerialize': 're-derives rows on demand through the engine itself',
   'observations:catch-up-materialize': 'drains the materialize backlog through the engine itself',

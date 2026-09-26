@@ -6,6 +6,7 @@
  */
 import { ScrapeSnapshot } from '../models/scrapeSnapshot';
 import { escapeRegex } from '../utils/regex';
+import { benchmarkCacheRead, benchmarkCacheWrite } from './snapshotBenchmarkMode';
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_REQUEST_KEY_PREFIX_LENGTH = 512;
@@ -14,6 +15,8 @@ export async function getCached<T = unknown>(
   sourceName: string,
   requestKey: string,
 ): Promise<T | null> {
+  const benchmark = benchmarkCacheRead(sourceName, requestKey);
+  if (benchmark.handled) return benchmark.payload as T | null;
   const row = await ScrapeSnapshot.findOne({ sourceName, requestKey }).lean();
   if (!row) return null;
   if ((row as any).expiresAt && new Date((row as any).expiresAt).getTime() < Date.now()) {
@@ -29,6 +32,7 @@ export async function setCached<T = unknown>(
   payload: T,
   ttlMs: number = DEFAULT_TTL_MS,
 ): Promise<void> {
+  if (benchmarkCacheWrite(sourceName, requestKey, payload)) return;
   const expiresAt = new Date(Date.now() + ttlMs);
   await ScrapeSnapshot.updateOne(
     { sourceName, requestKey },

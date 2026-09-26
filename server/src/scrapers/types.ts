@@ -55,6 +55,7 @@ export interface ScraperOptions {
   explain?: boolean;
   explainLimit?: number;
   triggeredBy?: 'cli' | 'cron' | 'admin';
+  benchmarkRun?: boolean;
 }
 
 export interface ScraperResult {

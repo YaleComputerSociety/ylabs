@@ -146,6 +146,11 @@ const EXCLUDED_BETA_COLLECTIONS = [
   // copied gate scorecard presents one environment's promotion verdict as the
   // other's, and each row names the database its audit measured.
   'gate_scorecard_snapshots',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a
+  // lane benchmark is a frozen input captured here, and its scorecards are its history.
+  'lane_benchmarks',
+  'lane_benchmark_pages',
+  'lane_scorecard_snapshots',
   'listingclaimrequests',
   'observation_reference_repair_audits',
   'research_plans',
