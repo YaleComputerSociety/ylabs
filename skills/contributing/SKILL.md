@@ -40,6 +40,17 @@ Iterate on canonical product surfaces instead of creating student-facing version
 5. **An added `schema.index(...)` does not build itself.** `db/connections.ts` sets `autoIndex: false` and `autoCreate: false`, so connecting is not a schema-mutating act (#2233): shipping an index no longer builds it on the next boot. Build it deliberately with `yarn --cwd server db:build-indexes` (dry-run, reports what is missing) then `--apply`. The command is additive and never drops, so **removing** an index is still a reviewed migration with its own issue. Boot logs the drift, so a forgotten build is loud rather than a silent slow query.
 6. **Narrowing or widening an existing index needs a drop first.** MongoDB allows one text index per collection and refuses a changed spec under the same name, so a widened index fails to build. The build command reports the failure and leaves the old index alone rather than dropping it for you. Measured on Development: two declared indexes had been failing to build silently for the database's whole life under `autoIndex: true`, one a unique index blocked by a duplicate value and one a text index blocked by that one-per-collection rule.
 
+## Adding a script that writes
+
+A new entry script under `server/src/scripts` that calls `assertScriptApplyAllowed` must be one of three things, or CI fails (`server/src/scripts/__tests__/humanRunWriteScriptGuard.test.ts`, #3524).
+
+1. A sweep stage: register its npm command in `DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `runScraperSweep.ts`, so it runs every sweep rather than when someone remembers.
+2. A lane or projection change instead of a script, when the correction has a shape a predicate can express.
+3. A standing operator tool, added to `OPERATOR_TOOLS` with its reason, only when it records a judgement about one row or operates infrastructure.
+
+`humanRunWriteScripts.pending.json` lists the legacy one-offs awaiting conversion.
+Converting or deleting one means removing it from that list and lowering `PENDING_CONVERSION_CEILING`, which is what keeps the count moving in one direction.
+
 ## General implementation rules
 
 - The evidence-first design contract is stated once in `AGENTS.md` under Implementation Rules, with the reasoning and the measurements in `docs/decisions.md`. Read it before adding a repair script, a direct field write on `ResearchEntity`, or a bulk-apply path to a review surface, and do not restate it here.
