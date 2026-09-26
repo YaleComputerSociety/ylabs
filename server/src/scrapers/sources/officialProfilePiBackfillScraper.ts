@@ -1398,8 +1398,8 @@ const GRANT_DERIVED_PI_SHELL_SLUG_RE = /^(?:nih-pi-|nsf-pi-)/;
 /**
  * Whether a home this profile links, already typed `LAB`, is somebody else's lab.
  *
- * The institutional guard below returns early on a `LAB` home, on the reasoning that a
- * home classified as a lab is the PI's own. That is an assumption rather than a test,
+ * The institutional guard below used to return early on a `LAB` home, on the reasoning
+ * that a home classified as a lab is the PI's own. That is an assumption rather than a test,
  * and it is the one this lane cannot afford to make: it asserts `name` at 0.96, above
  * every roster lane's 0.7 to 0.8, so a colleague's lab adopted here wins the resolve
  * outright. The same page shape is where the graft came from on the sibling lane - 78 of
@@ -3429,11 +3429,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
             identity &&
             home &&
             !(await websiteUrlOwnedByAnotherEntity(home.url, entity)) &&
-            !isInstitutionalHomeMismatchedWithPersonScopedShell(
-              entity,
-              home,
-              identity.displayName,
-            );
+            !isInstitutionalHomeMismatchedWithPersonScopedShell(entity, home, identity.displayName);
           if (homeIsAdmissible) {
             observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
           }
