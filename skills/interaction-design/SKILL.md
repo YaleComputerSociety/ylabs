@@ -124,11 +124,12 @@ One of those should lead.
 - **What does a student scan first on a card?**
 Name, or department, or topic chips, or the description?
 The current order is an assumption, not a finding.
-- **Does the undergraduate access signal ever appear?**
-`ResearchHomeCard` has `ACCESS_SIGNAL_LABELS`, `ACCESS_SIGNAL_PRIORITY`, and `ELEVATED_ACCESS_SIGNALS`, so the design exists.
-On a sample of cards read from the rendered page it did not appear on any of them.
-If the corpus rarely carries the evidence then the card is well designed for a signal nobody sees, and the fix is coverage rather than layout.
-Measure it with `yarn --cwd server research-entity:served-scoreboard` before touching the card.
+- ~~**Does the undergraduate access signal ever appear?**~~ **Answered, and the guess recorded here was wrong.**
+It appeared on 0 of 24 browse cards, and the cause was neither coverage nor layout.
+`ResearchHomeCard` derived its badges only from `pathways`, and the browse response from `/api/research/search` carries no `pathways` and no `wayInBadges` field, so the signals were always empty and the block that renders them was never entered.
+The same response does carry the evidence, in the entity shape, so the card could not see data that had already reached it.
+Fixed in #3555 by deriving from the entity fields as a fallback: 13 of 24 cards now show it, matching the payload exactly.
+The lesson for this file is that "the design exists and nothing renders" has a third explanation besides coverage and layout, which is a shape mismatch between the DTO and the component, and it is invisible to every test because the component is correct for its inputs and the inputs never arrive.
 - **Is admitting coverage gaps a trust gain or a trust cost?**
 See §5.
 

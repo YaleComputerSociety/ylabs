@@ -411,6 +411,36 @@ const hasContactRoute = (pathway: PathwaySearchHit): boolean =>
 const pathwayEvidenceTypes = (pathways: PathwaySearchHit[]): string[] =>
   pathways.flatMap((pathway) => pathway.evidence || []).map((item) => item.signalType);
 
+/**
+ * The browse card's fallback, for the surface where `pathways` is absent.
+ *
+ * `buildWayInBadges` derives every badge from a pathway hit, and the browse
+ * response from `/api/research/search` carries no `pathways` and no
+ * `wayInBadges` field, so on `/research` the signals were always empty and the
+ * block that renders them was never entered: 0 of 24 cards, measured. The same
+ * response does carry the underlying evidence, just in the entity shape, so the
+ * derivation is possible without a server change or a reindex. See #3555.
+ *
+ * `Contact route` is deliberately absent: the browse payload carries no contact
+ * field, so it cannot be derived here honestly. It stays a detail-surface badge.
+ */
+export const buildWayInBadgesFromEntity = (entity: ResearchEntity | undefined): string[] => {
+  if (!entity) return [];
+
+  const badges: string[] = [];
+  const hasUndergradEvidence =
+    Boolean(entity.undergradEvidenceQuote?.trim()) ||
+    (entity.pastUndergradAdvisees?.length ?? 0) > 0 ||
+    (entity.typicalUndergradRoles?.length ?? 0) > 0;
+  const hasStudentProjectEvidence =
+    entity.offersIndependentStudy === true || (entity.independentStudyCourses?.length ?? 0) > 0;
+
+  if (hasUndergradEvidence) badges.push('Undergrad evidence');
+  if (hasStudentProjectEvidence) badges.push('Student project evidence');
+
+  return badges;
+};
+
 export const buildWayInBadges = (
   entity: ResearchEntity | undefined,
   pathways: PathwaySearchHit[],
