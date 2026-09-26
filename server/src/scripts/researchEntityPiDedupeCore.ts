@@ -1,5 +1,10 @@
 import { sanitizeProfileResearchTerms } from '../utils/profileResearchTerms';
 import {
+  isAreaShellSlug,
+  isFundingShellSlug,
+  isLowTrustAreaShellSlug,
+} from '../utils/researchEntityShellSlug';
+import {
   concreteLabWebsiteForEntity,
   entityCarriesConcreteWebsite,
   isCenterOrInstituteEntity,
@@ -210,24 +215,6 @@ function timeValue(value: Date | string | null | undefined): number {
   if (!value) return 0;
   const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : 0;
-}
-
-function isAreaShellSlug(slug: string | undefined): boolean {
-  return (slug || '').toLowerCase().startsWith('faculty-research-area-');
-}
-
-function isFundingShellSlug(slug: string | undefined): boolean {
-  const value = (slug || '').toLowerCase();
-  return (
-    value.startsWith('nih-pi-') ||
-    value.startsWith('nsf-pi-') ||
-    value.startsWith('federal-pi-') ||
-    value.startsWith('doe-pi-')
-  );
-}
-
-export function isLowTrustAreaShellSlug(slug: string | undefined): boolean {
-  return isAreaShellSlug(slug) || isFundingShellSlug(slug);
 }
 
 function rosterHost(value: string | undefined): string {

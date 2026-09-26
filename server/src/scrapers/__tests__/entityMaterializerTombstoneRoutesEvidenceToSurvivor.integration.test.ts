@@ -90,7 +90,6 @@ describe('a merged shell tombstone routes re-scraped evidence to the survivor', 
       'faculty-research-area-example-lead',
       'https://examplelead.yale.edu/',
     );
-    await seedObservation('faculty-research-area-example-lead', 'researchAreas', ['Biophysics']);
 
     const result = await materializeEntity('researchEntity', {
       entityKey: 'faculty-research-area-example-lead',
@@ -102,10 +101,8 @@ describe('a merged shell tombstone routes re-scraped evidence to the survivor', 
 
     const survivorDoc = await ResearchEntity.findById(survivor._id).lean<{
       websiteUrl?: string;
-      researchAreas?: string[];
     }>();
     expect(survivorDoc?.websiteUrl).toBe('https://examplelead.yale.edu/');
-    expect(survivorDoc?.researchAreas).toContain('Biophysics');
 
     const shell = await ResearchEntity.findOne({
       slug: 'faculty-research-area-example-lead',

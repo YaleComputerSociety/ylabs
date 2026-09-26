@@ -214,6 +214,15 @@ A deferred group re-plans on every subsequent run, because the plan builder does
 
 Every merge stamps the collapsed shell with `canonicalGroupId`, pointing at the survivor. That archived row IS the durable mapping (#3027): its slug keeps occupying the unique index so a re-scrape of the still-live source cannot re-mint the duplicate, and the materializer follows the tombstone to write that evidence into the survivor. The separate `research_entity_redirects` ledger it used to also write was retired.
 Because this mapping lives in its own collection rather than on the shell row, it survives deletion of the shell.
+
+The survivor resolves over the union of its own observations and those of every row whose tombstone chain reaches it (#3560).
+Evidence is not re-keyed, so a materialize entered through the survivor's key and one entered through any loser's key read the same set and project the same row, and a lane that later emits under a loser's key still lands on the survivor.
+Two filters apply to a loser's observations only.
+Identity, lead and visibility fields (`SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS` in `entityMaterializer.ts`, for example `name`, `slug`, `entityType`, `school`, `lead`, the `inferredPi*` and `inferredDirector*` fields, and `studentVisibility*`) stay the survivor's own, so a loser cannot re-open the merge decision on every resolve.
+A low-trust shell loser (`isLowTrustAreaShellSlug`: `faculty-research-area-`, `nih-pi-`, `nsf-pi-`, `federal-pi-`, `doe-pi-`) contributes no `researchAreas` or description prose unless the survivor is itself such a shell, which mirrors the merge plan's `trustedAreaShellEntities` guard (#604, #3330).
+Merge-time unions onto the survivor are therefore durable only where the loser's evidence backs them through these filters; a carried topic from a low-trust shell is refused again on the next resolve by design.
+Access signals for a survivor with merged-in rows derive from the same filtered union, so a loser's access evidence reaches the survivor from either entry point.
+
 The redirect is written from the shared merge primitive (`applyResearchEntityDedupeMergeGroup`), so both the pipeline stage and the manual `research-entity:dedupe-by-pi` CLI produce it, and re-recording the same merge upserts the same row (keyed on the globally unique `mergedSlug`), so it stays idempotent.
 
 `materializeEntity` consults the redirect before minting: when a re-scrape resolves a source whose slug or original id has a redirect, it resolves straight to the live canonical entity, following `canonicalGroupId` and redirect chains, and materializes the observations into the canonical rather than re-creating the shell.

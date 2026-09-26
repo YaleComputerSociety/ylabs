@@ -90,6 +90,7 @@ describe('a redirected shell slug is never planned onto the live canonical', () 
     for (const [field, value] of [
       ['slug', SHELL_SLUG],
       ['name', 'Yale Imaging Shell Renamed'],
+      ['websiteUrl', 'https://research.yale.edu/imaging-shell'],
     ] as const) {
       await Observation.create({
         entityType: 'researchEntity',
@@ -115,10 +116,10 @@ describe('a redirected shell slug is never planned onto the live canonical', () 
 
     expect(String(result.entityId)).toBe(canonicalId.toHexString());
     expect(result.plannedSet).toBeDefined();
-    expect(Object.keys(result.plannedSet as Record<string, unknown>)).not.toContain('slug');
-    expect(Object.keys(result.plannedSet as Record<string, unknown>)).not.toContain(
-      'fieldProvenance.slug',
-    );
+    const plannedFields = Object.keys(result.plannedSet as Record<string, unknown>);
+    expect(plannedFields).not.toContain('slug');
+    expect(plannedFields).not.toContain('fieldProvenance.slug');
+    expect(plannedFields).not.toContain('name');
   });
 
   it('leaves both slugs intact on apply instead of colliding with the unique index', async () => {

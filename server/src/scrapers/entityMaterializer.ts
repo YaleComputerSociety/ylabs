@@ -88,7 +88,11 @@ import {
   getSourceByName,
 } from './observationStore';
 import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/meiliSyncService';
-import { resolveResearchEntityCanonicalByTombstone } from '../services/researchEntityCanonicalTombstone';
+import {
+  listResearchEntityMergedInRows,
+  resolveResearchEntityCanonicalByTombstone,
+} from '../services/researchEntityCanonicalTombstone';
+import { isLowTrustAreaShellSlug } from '../utils/researchEntityShellSlug';
 import {
   deriveCanonicalKeys,
   resolveCanonical,
@@ -99,7 +103,7 @@ import {
 import { websiteUrlIdentityKeyVariants } from '../scripts/researchEntityPiDedupeCore';
 import { isSweepStageEnabledByDefault } from '../scripts/sweepStageFlags';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
-import { materializeAccessForResearchGroup } from './accessMaterializer';
+import { materializeAccessForResearchGroup, type AccessObservation } from './accessMaterializer';
 import {
   sanitizeObservationField,
   withHarvestTextDefectsCorrected,
@@ -3605,6 +3609,138 @@ export async function entityKeyAnchoredObservationsExcludedByEntityIdScope(
   });
 }
 
+// A merged-in row's evidence enriches the survivor but never re-states who the
+// survivor is: its name, type, lead and visibility are the survivor's own, so a
+// loser's identity observations would re-open the merge decision on every resolve.
+const SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS = new Set([
+  'name',
+  'slug',
+  'displayName',
+  'entityType',
+  'kind',
+  'archived',
+  'school',
+  'sourceCategory',
+  'affiliatedNames',
+  'lead',
+  'leadVerification',
+  'officialProfileLeadEvidence',
+  'inferredPiUserKey',
+  'inferredPiUserId',
+  'inferredDirectorName',
+  'inferredDirectorUserName',
+  'inferredDirectorRole',
+  'inferredDirectorTitle',
+  'inferredDirectorProfileUrl',
+  'studentVisibilityTier',
+  'studentVisibilityOverrideTier',
+  'studentVisibilitySuppressionReason',
+  'studentVisibilityReviewNote',
+]);
+
+// Mirrors the merge plan's `trustedAreaShellEntities` guard (#604, #3330): an area
+// or funding shell's topics and prose must not graft onto a real research row.
+const LOW_TRUST_SHELL_GUARDED_RESEARCH_ENTITY_FIELDS = new Set([
+  'researchAreas',
+  'fullDescription',
+  'shortDescription',
+  'description',
+]);
+
+export interface MergedSurvivorEvidence {
+  observations: any[];
+  mergedInKeys: string[];
+}
+
+/**
+ * Resolves a live survivor over its own observations plus those of every row whose
+ * tombstone chain reaches it (#3560), so a survivor-key and a loser-key materialize
+ * read the same evidence set. Evidence is not re-keyed; each observation keeps the
+ * trust of the row that emitted it.
+ */
+export async function mergedSurvivorEvidence(
+  entityType: ObservedEntityType,
+  survivor: { _id?: unknown; slug?: unknown },
+  loadedObservations: any[],
+): Promise<MergedSurvivorEvidence> {
+  const survivorId = toMaterializerObjectId(survivor._id);
+  if (!survivorId) return { observations: loadedObservations, mergedInKeys: [] };
+  const mergedInRows = await listResearchEntityMergedInRows(survivorId);
+  if (mergedInRows.length === 0) return { observations: loadedObservations, mergedInKeys: [] };
+
+  const survivorSlug = textValue(survivor.slug);
+  const loserSlugById = new Map(mergedInRows.map((row) => [String(row._id), textValue(row.slug)]));
+  const loserSlugs = new Set([...loserSlugById.values()].filter(Boolean));
+  const allowedEntityIds = new Set([String(survivorId), ...loserSlugById.keys()]);
+
+  const alreadyIncluded = new Set(loadedObservations.map((observation) => String(observation._id)));
+  const candidates = await Observation.find({
+    entityType,
+    ...materializationReadScopeFilter(),
+    $or: [
+      { entityKey: { $in: [survivorSlug, ...loserSlugs].filter(Boolean) } },
+      { entityId: { $in: mergedInRows.map((row) => row._id) } },
+    ],
+  }).lean();
+  const added = candidates.filter(
+    (observation: any) =>
+      !alreadyIncluded.has(String(observation._id)) &&
+      (!observation.entityId || allowedEntityIds.has(String(observation.entityId))),
+  );
+  const { kept } = partitionObservationsByInvalidatedRun(added, await invalidatedScrapeRunIds());
+
+  const loserOrigin = (observation: any): { slug: string } | undefined => {
+    const entityId = observation.entityId ? String(observation.entityId) : '';
+    if (entityId && loserSlugById.has(entityId)) return { slug: loserSlugById.get(entityId) || '' };
+    if (entityId === String(survivorId)) return undefined;
+    const entityKey = textValue(observation.entityKey);
+    if (entityKey && entityKey !== survivorSlug && loserSlugs.has(entityKey)) {
+      return { slug: entityKey };
+    }
+    return undefined;
+  };
+  const survivorIsLowTrustShell = isLowTrustAreaShellSlug(survivorSlug);
+  // The resolver breaks an exact weight tie by array order, so the union is put in
+  // one fixed order rather than the entry key's own observations first.
+  const entryPointIndependentOrder = [...loadedObservations, ...kept].sort((a: any, b: any) =>
+    String(a._id).localeCompare(String(b._id)),
+  );
+  const observations = entryPointIndependentOrder.filter((observation: any) => {
+    const loser = loserOrigin(observation);
+    if (!loser) return true;
+    const field = String(observation.field || '');
+    if (SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS.has(field)) return false;
+    return !(
+      !survivorIsLowTrustShell &&
+      isLowTrustAreaShellSlug(loser.slug) &&
+      LOW_TRUST_SHELL_GUARDED_RESEARCH_ENTITY_FIELDS.has(field)
+    );
+  });
+
+  return {
+    observations,
+    mergedInKeys: [...loserSlugById.keys(), ...loserSlugs],
+  };
+}
+
+async function observationsMergedIntoLiveSurvivor(
+  entityType: ObservedEntityType,
+  identifier: { entityId?: string; entityKey?: string },
+): Promise<any[]> {
+  const entityId = toMaterializerObjectId(identifier.entityId);
+  const lookup = entityId
+    ? { _id: entityId }
+    : identifier.entityKey
+      ? { slug: identifier.entityKey }
+      : null;
+  if (!lookup) return [];
+  const survivor = (await ResearchEntity.findOne({ ...lookup, archived: { $ne: true } })
+    .select('_id slug')
+    .lean()) as { _id?: unknown; slug?: unknown } | null;
+  if (!survivor) return [];
+  return (await mergedSurvivorEvidence(entityType, survivor, [])).observations;
+}
+
 const ACCOUNT_NETID_PATTERN = /^[a-z0-9][a-z0-9._-]{1,63}$/;
 
 function normalizedAccountNetid(value: unknown): string | undefined {
@@ -5443,6 +5579,9 @@ export async function materializeEntity(
   }
 
   let obs = withheldFiltered;
+  if (obs.length === 0 && isResearchEntityObservationType(entityType)) {
+    obs = await observationsMergedIntoLiveSurvivor(entityType, identifier);
+  }
   if (obs.length === 0) {
     return {
       entityType,
@@ -5647,6 +5786,25 @@ export async function materializeEntity(
     if (excludedByKeyScope.length > 0) obs = [...obs, ...excludedByKeyScope];
   }
 
+  let mergedInKeys: string[] = [];
+  if (isResearchEntityObservationType(entityType) && entityDoc && entityDoc.archived !== true) {
+    const merged = await mergedSurvivorEvidence(entityType, entityDoc, obs);
+    obs = merged.observations;
+    mergedInKeys = merged.mergedInKeys;
+    if (obs.length === 0) {
+      return {
+        entityType,
+        entityId: materializerDocumentId(entityDoc._id),
+        entityKey: identifier.entityKey,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved: {},
+        skipped: 'merged-into-canonical',
+      };
+    }
+  }
+
   const storedLockedFields: string[] = (entityDoc && entityDoc.manuallyLockedFields) || [];
   // `reviseRevisitableFieldLocks` asks what this projection would produce if the
   // named locks were not there, which is the only way to learn whether the engine
@@ -5681,7 +5839,13 @@ export async function materializeEntity(
   // keyed on the value it named and the next candidate was a different shared page
   // (#3481). Screening here is what stops that repair needing a second pass.
   const ownEntityKeys = new Set(
-    [entityIdString, identifier.entityKey, identifier.entityId]
+    [
+      entityIdString,
+      identifier.entityKey,
+      identifier.entityId,
+      isResearchEntityObservationType(entityType) ? textValue(entityDoc?.slug) : '',
+      ...mergedInKeys,
+    ]
       .map((value) => String(value || ''))
       .filter(Boolean),
   );
@@ -5956,10 +6120,13 @@ export async function materializeEntity(
       await materializeInferredDirectorMembership(entityIdString, materializationObs);
       await inheritSchoolFromLeadPi(entityIdString, { manuallyLockedFields });
     }
-    const accessResult = await materializeAccessForResearchGroup({
-      researchEntityId: entityIdString,
-      entityKey: identifier.entityKey,
-    });
+    const accessResult = await materializeAccessForResearchGroup(
+      {
+        researchEntityId: entityIdString,
+        entityKey: identifier.entityKey,
+      },
+      mergedInKeys.length > 0 ? (obs as AccessObservation[]) : undefined,
+    );
     postMaterializationMetrics = {
       entryPathways: 0,
       accessSignals: accessResult.accessSignals,
