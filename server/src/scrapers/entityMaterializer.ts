@@ -207,6 +207,11 @@ import {
   valueIsRefused,
 } from '../utils/researchEntityFieldValueRefusals';
 import {
+  loadDescriptionSourceCiters,
+  screenDescriptionsOnSharedPages,
+} from './descriptionOwnershipResolverScreen';
+import { ownershipGuardedCitedUrls } from './descriptionSourceOwnership';
+import {
   isPersonOrGrantShellSlug,
   personPageNameTokensFromUrl,
   personProfileNameTokensFromUrl,
@@ -5668,7 +5673,46 @@ export async function materializeEntity(
     entityType,
   );
 
-  const resolverObs: ResolverObservation[] = materializationObs.map((o: any) => ({
+  // #3500 bars a shared page at ingest, so no lane stores a new one. It cannot reach
+  // what is already stored, and the resolver ranks every live observation, so a
+  // pre-guard shared-page candidate can still win the field. Measured while clearing
+  // the standing corpus, 4 of 46 rows whose borrowed description was refused
+  // rematerialized straight onto another borrowed description, because a refusal is
+  // keyed on the value it named and the next candidate was a different shared page
+  // (#3481). Screening here is what stops that repair needing a second pass.
+  const ownEntityKeys = new Set(
+    [entityIdString, identifier.entityKey, identifier.entityId]
+      .map((value) => String(value || ''))
+      .filter(Boolean),
+  );
+  const ownershipCandidates = materializationObs.map((o: any) => ({
+    entityType: entityType as string,
+    field: o.field,
+    value: o.value,
+    sourceUrl: o.sourceUrl,
+  }));
+  const ownershipCiters = await loadDescriptionSourceCiters(
+    ownershipGuardedCitedUrls(ownershipCandidates),
+  );
+  const ownershipScreen = screenDescriptionsOnSharedPages(
+    ownershipCandidates.map((candidate, index) => ({
+      ...(materializationObs[index] as any),
+      entityType: candidate.entityType,
+    })),
+    ownershipCiters,
+    ownEntityKeys,
+  );
+  if (ownershipScreen.dropped.length > 0) {
+    console.log(
+      `[description-ownership] ${entityType} ${entityIdString || identifier.entityKey || ''}: dropped ${
+        ownershipScreen.dropped.length
+      } description candidate(s) citing a page other rows own: ${ownershipScreen.dropped
+        .map((entry) => `${entry.field}/${entry.foreignCiters} other citers`)
+        .join(', ')}`,
+    );
+  }
+
+  const resolverObs: ResolverObservation[] = ownershipScreen.kept.map((o: any) => ({
     field: o.field,
     value: o.value,
     sourceName: o.sourceName,
