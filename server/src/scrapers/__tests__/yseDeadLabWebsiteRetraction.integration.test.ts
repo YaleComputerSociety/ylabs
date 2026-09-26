@@ -76,7 +76,10 @@ function profileHtml(options: { bare: boolean }): string {
 
 type LinkState = 'live' | 'dead' | 'refused';
 
-async function runLane(link: LinkState, options: { bare?: boolean } = {}): Promise<ObservationInput[]> {
+async function runLane(
+  link: LinkState,
+  options: { bare?: boolean } = {},
+): Promise<ObservationInput[]> {
   const html = profileHtml({ bare: options.bare === true });
   const fetcher = async (url: string) => {
     if (url === DIRECTORY_URL) return DIRECTORY_HTML;
@@ -196,7 +199,10 @@ describe('a YSE lab withdrawn on a dead link stops serving its websiteUrl (#3452
     expect(before?.entityType).toBe('FACULTY_RESEARCH_AREA');
     expect(before?.websiteUrl).toBe(LAB_URL);
 
-    const result = await reconcileFieldRetractions({ sourceName: SOURCE_NAME, probeValue: deadProbe });
+    const result = await reconcileFieldRetractions({
+      sourceName: SOURCE_NAME,
+      probeValue: deadProbe,
+    });
     expect(result.outcome).toBe('reconciled');
     expect(result.counts.retractedObservations).toBe(1);
 
@@ -213,7 +219,10 @@ describe('a YSE lab withdrawn on a dead link stops serving its websiteUrl (#3452
   it('waits for a second dead read before retracting', async () => {
     await runLane('live');
     await runLane('dead');
-    const result = await reconcileFieldRetractions({ sourceName: SOURCE_NAME, probeValue: deadProbe });
+    const result = await reconcileFieldRetractions({
+      sourceName: SOURCE_NAME,
+      probeValue: deadProbe,
+    });
     expect(result.counts.retractedObservations).toBe(0);
     expect((await storedRow())?.websiteUrl).toBe(LAB_URL);
   }, 120000);
@@ -223,7 +232,10 @@ describe('a YSE lab withdrawn on a dead link stops serving its websiteUrl (#3452
     const refusedRead = await runLane('refused');
     expect(refusedRead.some((o) => o.assertsNoValueFor)).toBe(false);
     await runLane('refused');
-    const result = await reconcileFieldRetractions({ sourceName: SOURCE_NAME, probeValue: deadProbe });
+    const result = await reconcileFieldRetractions({
+      sourceName: SOURCE_NAME,
+      probeValue: deadProbe,
+    });
     expect(result.counts.retractedObservations).toBe(0);
     expect(await liveWebsiteUrlObservations()).toHaveLength(1);
   }, 120000);
@@ -246,7 +258,10 @@ describe('a YSE lab withdrawn on a dead link stops serving its websiteUrl (#3452
     expect((await storedRow())?.websiteUrl).toBe(LAB_URL);
     await runLane('dead', { bare: true });
     await runLane('dead', { bare: true });
-    const result = await reconcileFieldRetractions({ sourceName: SOURCE_NAME, probeValue: deadProbe });
+    const result = await reconcileFieldRetractions({
+      sourceName: SOURCE_NAME,
+      probeValue: deadProbe,
+    });
     expect(result.counts.retractedObservations).toBe(1);
     const after = await storedRow();
     expect(after?.entityType).toBe('FACULTY_RESEARCH_AREA');
