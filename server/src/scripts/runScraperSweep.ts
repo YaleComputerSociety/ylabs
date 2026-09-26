@@ -304,6 +304,9 @@ export interface FellowshipPostRunStageOptions {
   pruneDeadObservations?: boolean;
 }
 
+// An exhaustive mode never passes --use-cache: it persists every fetched payload to
+// scrape_snapshots for 24h, and one full sweep wrote more cache than the Development
+// Atlas quota holds (#3536). Only the --limit modes may cache.
 const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
   'development-plan': {
     environment: 'development',
@@ -329,7 +332,7 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     writes: true,
     autoMaterialize: true,
     stopOnFailure: false,
-    scraperFlags: ['--ignore-work-planner', '--exhaustive', '--use-cache', '--auto-materialize'],
+    scraperFlags: ['--ignore-work-planner', '--exhaustive', '--auto-materialize'],
     confirmationFlag: '--confirm-development-full-sweep',
     defaultConcurrency: 8,
   },
@@ -339,7 +342,7 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     writes: true,
     autoMaterialize: true,
     stopOnFailure: false,
-    scraperFlags: ['--exhaustive', '--use-cache', '--auto-materialize'],
+    scraperFlags: ['--exhaustive', '--auto-materialize'],
     confirmationFlag: '--confirm-development-incremental-sweep',
     defaultConcurrency: 8,
   },
@@ -349,7 +352,7 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     writes: true,
     autoMaterialize: true,
     stopOnFailure: false,
-    scraperFlags: ['--ignore-work-planner', '--exhaustive', '--use-cache', '--auto-materialize'],
+    scraperFlags: ['--ignore-work-planner', '--exhaustive', '--auto-materialize'],
     confirmationFlag: '--confirm-fellowship-sweep',
     defaultConcurrency: 8,
   },
@@ -375,6 +378,10 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
 };
 
 const SWEEP_MODE_VALUES = new Set(Object.keys(MODE_CONFIG));
+
+export function scraperSweepModes(): ScraperSweepMode[] {
+  return Object.keys(MODE_CONFIG) as ScraperSweepMode[];
+}
 const LOCAL_MEILI_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 
 function parseConcurrencyValue(raw: string): number {

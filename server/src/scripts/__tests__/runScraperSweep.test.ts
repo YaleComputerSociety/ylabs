@@ -33,6 +33,7 @@ import {
   resolveSweepChildPerHostConcurrency,
   runWithBoundedConcurrency,
   scraperSweepArtifactError,
+  scraperSweepModes,
   sweepFellowshipRefreshTarget,
   sweepSourcesForMode,
   validateScraperSweepEnvironment,
@@ -258,7 +259,7 @@ describe('runScraperSweep', () => {
     expect(developmentArgs).toContain('--exhaustive');
     expect(developmentArgs).not.toContain('--limit');
     expect(developmentArgs).toContain('--auto-materialize');
-    expect(developmentArgs).toContain('--use-cache');
+    expect(developmentArgs).not.toContain('--use-cache');
     expect(developmentArgs).toContain('--ignore-work-planner');
 
     const incrementalArgs = buildScraperSweepChildArgs(
@@ -267,10 +268,39 @@ describe('runScraperSweep', () => {
       '/tmp/yale-directory.json',
     );
     expect(incrementalArgs).toContain('--exhaustive');
-    expect(incrementalArgs).toContain('--use-cache');
+    expect(incrementalArgs).not.toContain('--use-cache');
     expect(incrementalArgs).toContain('--auto-materialize');
     expect(incrementalArgs).not.toContain('--ignore-work-planner');
     expect(incrementalArgs).not.toContain('--limit');
+  });
+
+  it('never lets an exhaustive mode write the fetch cache, and caches only bounded modes', () => {
+    const argsByMode = scraperSweepModes().map((mode) => ({
+      mode,
+      args: buildScraperSweepChildArgs(mode, 'yale-directory', '/tmp/yale-directory.json'),
+    }));
+    const exhaustiveModes = argsByMode.filter(({ args }) => args.includes('--exhaustive'));
+    const cachingModes = argsByMode.filter(({ args }) => args.includes('--use-cache'));
+
+    expect(exhaustiveModes.map(({ mode }) => mode).sort()).toEqual([
+      'beta-fetch',
+      'development-full',
+      'development-incremental',
+      'fellowship-development-full',
+    ]);
+    for (const { mode, args } of exhaustiveModes) {
+      expect({ mode, usesCache: args.includes('--use-cache') }).toEqual({
+        mode,
+        usesCache: false,
+      });
+    }
+    for (const { mode, args } of cachingModes) {
+      expect({ mode, bounded: args.includes('--limit') }).toEqual({ mode, bounded: true });
+    }
+    expect(cachingModes.map(({ mode }) => mode).sort()).toEqual([
+      'development-plan',
+      'development-sample',
+    ]);
   });
 
   it('rejects incomplete runs and Development materialization errors', () => {
