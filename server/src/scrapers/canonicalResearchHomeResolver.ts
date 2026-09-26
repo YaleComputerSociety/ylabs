@@ -4,9 +4,9 @@ import { RoleAssignment } from '../models/roleAssignment';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
 
-const GRANT_SHELL_SLUG = /^(?:nih|nsf|federal|doe)-pi-/i;
+const GRANT_SHELL_SLUG = /^(?:nih|nsf|federal|doe|neh)-pi-/i;
 const GRANT_SOURCE_URL =
-  /(?:reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov\/awardsearch|api\.nsf\.gov|usaspending\.gov|osti\.gov)/i;
+  /(?:reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov\/awardsearch|api\.nsf\.gov|usaspending\.gov|osti\.gov|(?:awardsearch|apps|securegrants)\.neh\.gov)/i;
 const CANONICAL_LEAD_ROLES = LEAD_ROLE_CANONICAL_VALUES;
 
 export interface ResearchHomeCandidate {

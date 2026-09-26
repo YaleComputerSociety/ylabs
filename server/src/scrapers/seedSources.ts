@@ -405,8 +405,8 @@ const SOURCES: SourceSeed[] = [
     name: 'neh-funded-projects',
     displayName: 'NEH funded projects',
     description:
-      'Pulls Yale-awardee NEH funded projects from open-data bulk files; humanities/social-science analogue of the NIH/NSF grant lanes.',
-    baseUrl: 'https://apps.neh.gov/open/data',
+      'Pulls Yale-awardee NEH funded projects from NEH Award Search and enriches an existing research row for a resolved Project Director; humanities/social-science analogue of the NIH/NSF grant lanes. Never mints a row.',
+    baseUrl: 'https://awardsearch.neh.gov/',
     defaultWeight: 0.9,
     cadence: 'weekly',
   },

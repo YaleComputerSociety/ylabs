@@ -3495,7 +3495,7 @@ const SCRAPER_SOURCE_DIRECTORY = '../server/src/scrapers/sources';
 const FIXED_ENDPOINT_SCRAPER_HOSTS = new Map([
   ['doeOstiGrantScraper', 'https://www.osti.gov'],
   ['federalAwardScraper', 'https://api.usaspending.gov'],
-  ['nehGrantScraper', 'https://apps.neh.gov'],
+  ['nehGrantScraper', 'https://awardsearch.neh.gov'],
   ['nihReporterScraper', 'https://api.reporter.nih.gov'],
   ['nsfAwardScraper', 'https://api.nsf.gov'],
   ['yaleDirectoryScraper', 'https://api.yalies.io'],
