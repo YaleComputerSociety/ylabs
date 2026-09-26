@@ -45,6 +45,16 @@ vi.mock('../researchEntityMembershipAccessor', async (importOriginal) => ({
   getResearchEntityRosterByEntityId: mocks.roster,
 }));
 
+// The corpus read the name-identity arm of the gate needs (#3499), stubbed on the same
+// terms as the model reads above: this suite mocks the persistence layer, so a real
+// `Researcher` query here buffers until it times out. Empty is the deliberately weaker
+// input the arm documents, and it is the right stub for a suite about the apply guard
+// rather than about naming.
+vi.mock('../../utils/researchHomeNameIdentityRoster', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/researchHomeNameIdentityRoster')>()),
+  loadKnownPersonSurnameRoster: async () => new Set<string>(),
+}));
+
 import { runStudentVisibilityGate } from '../studentVisibilityGateService';
 
 const leadlessLabEntities = (count: number) =>

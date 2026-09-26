@@ -341,6 +341,170 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('unusable_name');
   });
 
+  // The class the shared-host arm alone could not reach, and the largest of them: the
+  // name is a real laboratory eponymous for somebody who is demonstrably not this
+  // record's lead, so it is that person's home rather than this one's. 81 of the 90
+  // rows whose stored `name` the authority condemns are this shape and none had a gate
+  // blocker before (#3499).
+  it('holds a person-scoped record named after another person eponymous lab', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'foreign-eponym-named',
+        name: 'Quimby Lab',
+        slug: 'ysm-faculty-fixture-sloan',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: 'Studies vascular remodelling after ischaemic injury in model systems.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering vascular remodelling after ischaemic injury.',
+        websiteUrl: 'https://medicine.yale.edu/lab/quimby/',
+        sourceUrls: ['https://medicine.yale.edu/lab/quimby/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      knownPersonSurnames: new Set(['quimby', 'sloan']),
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('unusable_name');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  it('leaves the lead own eponymous lab at student_ready', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'own-eponym-named',
+        name: 'Sloan Lab',
+        slug: 'ysm-faculty-fixture-sloan',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: 'Studies vascular remodelling after ischaemic injury in model systems.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering vascular remodelling after ischaemic injury.',
+        websiteUrl: 'https://medicine.yale.edu/lab/sloan/',
+        sourceUrls: ['https://medicine.yale.edu/lab/sloan/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      knownPersonSurnames: new Set(['quimby', 'sloan']),
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unusable_name');
+  });
+
+  it('holds a person-scoped record named after an umbrella organization it does not lead', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'umbrella-named',
+        name: 'Yale Center for Synthetic Carbon Capture',
+        slug: 'ysm-faculty-fixture-sloan',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        shortDescription: 'Studies mineral carbonation pathways for atmospheric carbon removal.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering mineral carbonation pathways.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-sloan/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('unusable_name');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  // The roster is a corpus load, so a caller that judges one record omits it. What it
+  // costs was measured rather than assumed, and it is narrower than "the eponym arm
+  // goes quiet": an eponym the row's own URL path corroborates is still refused without
+  // any roster, because the page itself says whose lab it is. The roster is what decides
+  // an eponym NO cited URL corroborates, which is the case below, and corpus-wide it is
+  // the difference between the arm reaching 11 of the 90 condemned rows and 87 of them.
+  it('needs the surname roster only for an eponym no cited url corroborates', () => {
+    const base = {
+      _id: 'foreign-eponym-uncorroborated',
+      name: 'Quimby Lab',
+      slug: 'ysm-faculty-fixture-sloan',
+      entityType: 'LAB' as const,
+      kind: 'lab',
+      shortDescription: 'Studies vascular remodelling after ischaemic injury in model systems.',
+      fullDescription:
+        'Source-backed research profile with enough detail for student display, covering vascular remodelling after ischaemic injury.',
+      websiteUrl: 'https://medicine.yale.edu/profile/fixture-sloan/',
+      sourceUrls: ['https://medicine.yale.edu/profile/fixture-sloan/'],
+    };
+    const withoutRoster = computeResearchEntityStudentVisibility({
+      entity: base,
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+    expect(withoutRoster.reasons).not.toContain('unusable_name');
+
+    const withRoster = computeResearchEntityStudentVisibility({
+      entity: base,
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      knownPersonSurnames: new Set(['quimby', 'sloan']),
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+    expect(withRoster.reasons).toContain('unusable_name');
+  });
+
+  // An eponym the row's own cited page corroborates needs no roster at all, which is
+  // why omitting the roster is a narrowing rather than a switch-off.
+  it('refuses another person eponymous lab corroborated by the cited url with no roster', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'foreign-eponym-url-corroborated',
+        name: 'Quimby Lab',
+        slug: 'ysm-faculty-fixture-sloan',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: 'Studies vascular remodelling after ischaemic injury in model systems.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering vascular remodelling after ischaemic injury.',
+        websiteUrl: 'https://medicine.yale.edu/lab/quimby/',
+        sourceUrls: ['https://medicine.yale.edu/lab/quimby/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('unusable_name');
+  });
+
+  // The row the eponym arm must not touch: no lead resolves, so there is no person for
+  // "another person's lab" to be measured against, and the slug carries research words
+  // rather than the surname. Judging it anyway condemns a lab for its OWN eponym and
+  // shuts the lead-attachment lanes over exactly the population they recover, because
+  // they refuse a row a second hard blocker also holds (#1930/#3499).
+  it('leaves a leadless eponymous lab held by missing_lead alone', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'leadless-eponym-named',
+        name: 'Quimby Lab',
+        slug: 'synthetic-eponymous-neonatal-lab',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: 'Studies neonatal care quality improvement across community nurseries.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement across community hospital nurseries.',
+        websiteUrl: 'https://medicine.yale.edu/lab/quimby/',
+        sourceUrls: ['https://medicine.yale.edu/lab/quimby/'],
+      },
+      leadMembers: [],
+      knownPersonSurnames: new Set(['quimby']),
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('missing_lead');
+    expect(result.reasons).not.toContain('unusable_name');
+  });
+
   // A third furniture class, on the axis the placeholder and platform arms do not
   // reach: the value names a real thing that is simply not this research record, and
   // nothing on the row derives a name from it, so there is nothing to substitute
