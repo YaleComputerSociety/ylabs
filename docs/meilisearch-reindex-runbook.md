@@ -107,9 +107,12 @@ Only continue if it is clean.
 
 ### 4. Production dry run, then apply
 
+The apply needs `CONFIRM_PROD_SCRAPE=true` in the environment.
+The dry run does not, so a missing confirmation is reported by the apply rather than discovered by it.
+
 ```bash
 node scripts/reindex-search-index.mjs production
-node scripts/reindex-search-index.mjs production --apply
+CONFIRM_PROD_SCRAPE=true node scripts/reindex-search-index.mjs production --apply
 ```
 
 ### 5. Verify Production
@@ -143,12 +146,17 @@ No output is the pass. Any match names a retired attribute the rebuilt index sti
 
 ## Safety properties you are relying on
 
-`reindex:meili` fails closed on four preconditions, and the wrapper surfaces those failures rather than bypassing them:
+`reindex:meili` fails closed on five preconditions, and the wrapper surfaces those failures rather than bypassing them:
 
 1. The environment must resolve to `beta` or `production`.
 2. `MEILISEARCH_HOST` must be non-empty.
 3. `MEILISEARCH_INDEX_PREFIX` must be non-empty, so a remote rebuild cannot clobber the unprefixed local index.
 4. The Mongo target must match the resolved environment.
+5. A production rebuild requires `CONFIRM_PROD_SCRAPE=true`, that exact string.
+
+The fifth one is the one that bites, because it is checked last.
+The preflight and the index reconcile plan print first, so a production run without it looks like it is working and then refuses at the write.
+The wrapper now reports it alongside the other missing variables before anything starts, which is why `node scripts/reindex-search-index.mjs production --apply` is preferable to the raw `yarn` invocation.
 
 It also refuses to run when the database reports **zero** non-archived entities, which is the guard against clearing a live index because a Mongo copy had not landed yet.
 

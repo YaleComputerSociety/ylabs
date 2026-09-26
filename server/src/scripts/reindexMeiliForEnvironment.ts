@@ -38,7 +38,7 @@ export interface ReindexMeiliPreflight {
 }
 
 export const MODEL_INDEX_BASE_NAMES = ['researchentities'] as const;
-export const RETIRED_INDEX_BASE_NAMES = ['listings', 'papers'] as const;
+export const RETIRED_INDEX_BASE_NAMES = ['listings', 'papers', 'pathways'] as const;
 
 export interface IndexReconcilePlan {
   prefix: string;
