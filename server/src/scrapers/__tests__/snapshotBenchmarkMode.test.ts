@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { assertPublicHttpUrl, SsrfBlockedError } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
 import {
-  BenchmarkReplayMissError,
   BenchmarkReplayNetworkError,
   beginBenchmarkCapture,
   beginBenchmarkReplay,
@@ -49,10 +48,13 @@ describe('snapshot benchmark mode', () => {
     expect(finishBenchmarkReplay()).toEqual({ pagesServed: 1, pagesMissed: 0, networkBlocks: 0 });
   });
 
-  it('treats a page the capture never saw as a miss, not a fetch', async () => {
+  it('treats a page the capture never saw as a counted miss, not a fetch', async () => {
     beginBenchmarkReplay([]);
-    await expect(getCached('lane-a', 'unseen')).rejects.toBeInstanceOf(BenchmarkReplayMissError);
-    expect(finishBenchmarkReplay().pagesMissed).toBe(1);
+    expect(await getCached('lane-a', 'unseen')).toBeNull();
+    await expect(axios.get('https://example.invalid/unseen')).rejects.toBeInstanceOf(
+      BenchmarkReplayNetworkError,
+    );
+    expect(finishBenchmarkReplay()).toEqual({ pagesServed: 0, pagesMissed: 1, networkBlocks: 1 });
   });
 
   it('blocks the network during replay and restores it afterwards', async () => {
