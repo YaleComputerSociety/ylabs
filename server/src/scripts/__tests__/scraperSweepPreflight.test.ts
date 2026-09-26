@@ -13,6 +13,7 @@ import {
   runSweepPreflight,
   type CanaryChildRunner,
 } from '../scraperSweepPreflight';
+import { parseScrapeCanaryArgs } from '../scrapeCanary';
 
 const config = {
   clusterQuotaMb: 5120,
@@ -175,6 +176,30 @@ describe('sweep preflight', () => {
     });
     expect(report.status).toBe('passed');
     expect(report.storage?.ok).toBe(true);
+  });
+
+  it('threads a force-llm sweep into each canary child, as the real child runs', async () => {
+    const outputDirectory = tempDirectory();
+    const calls: string[][] = [];
+    const runner: CanaryChildRunner = async (_command, args) => {
+      calls.push(args);
+      return { status: 0 };
+    };
+    await runSweepPreflight({
+      mongoUrl,
+      sourceNames: ['llm-lane'],
+      outputDirectory,
+      repoRoot: outputDirectory,
+      childRunner: runner,
+      forceLlm: true,
+      config,
+    });
+    const canaryArgs = calls[0].slice(calls[0].indexOf('scrape:canary') + 1);
+    expect(parseScrapeCanaryArgs(canaryArgs)).toMatchObject({
+      sourceName: 'llm-lane',
+      limit: 5,
+      forceLlm: true,
+    });
   });
 
   it('fails closed when storage cannot be measured', async () => {

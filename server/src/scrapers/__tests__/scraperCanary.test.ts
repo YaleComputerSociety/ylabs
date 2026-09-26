@@ -103,4 +103,39 @@ describe('runScraperCanary', () => {
     });
     expect(report.verdict).toBe('inconclusive');
   });
+
+  it('does not fail a silent lane whose planner skipped every target, as the real run would not', async () => {
+    const report = await runScraperCanary({
+      scraper: {
+        name: 'fixture-lane',
+        displayName: 'Fixture lane',
+        run: async () => ({
+          observationCount: 0,
+          entitiesObserved: 0,
+          metrics: {
+            workPlanner: { planned: 5, fetched: 0, skippedManualLock: 3, skippedNoIdentifier: 2 },
+          } as never,
+        }),
+      },
+      source,
+      readPriorRuns: barrenPriorRuns,
+      log: () => {},
+    });
+    expect(report.verdict).toBe('inconclusive');
+  });
+
+  it('forwards forceLlm to the lane so content-hash gated lanes re-extract', async () => {
+    let seen: ScraperContext['options'] | undefined;
+    await runScraperCanary({
+      scraper: scraperThat(async (ctx) => {
+        seen = ctx.options;
+      }),
+      source,
+      forceLlm: true,
+      readPriorRuns: noPriorRuns,
+      log: () => {},
+    });
+    expect(seen?.forceLlm).toBe(true);
+    expect(seen?.dryRun).toBe(true);
+  });
 });

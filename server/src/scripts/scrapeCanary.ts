@@ -8,12 +8,14 @@ export interface ScrapeCanaryCliOptions {
   sourceName: string;
   limit: number;
   output: string;
+  forceLlm: boolean;
 }
 
 export function parseScrapeCanaryArgs(argv: string[]): ScrapeCanaryCliOptions {
   let sourceName: string | undefined;
   let limit = 5;
   let output: string | undefined;
+  let forceLlm = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const value = argv[index + 1];
@@ -29,13 +31,15 @@ export function parseScrapeCanaryArgs(argv: string[]): ScrapeCanaryCliOptions {
     } else if (arg === '--output') {
       output = value;
       index += 1;
+    } else if (arg === '--force-llm') {
+      forceLlm = true;
     } else {
       throw new Error(`Unknown scrape canary argument: ${arg}`);
     }
   }
   if (!sourceName) throw new Error('--source is required');
   if (!output) throw new Error('--output is required');
-  return { sourceName, limit, output };
+  return { sourceName, limit, output, forceLlm };
 }
 
 async function main(): Promise<number> {
@@ -73,6 +77,7 @@ async function main(): Promise<number> {
       scraper,
       source,
       limit: options.limit,
+      forceLlm: options.forceLlm,
       refusedWrites: refusal.refusedOperations,
       readPriorRuns: (sourceId) => readPriorRunYieldFacts({ sourceId, currentRunId: null }),
     });

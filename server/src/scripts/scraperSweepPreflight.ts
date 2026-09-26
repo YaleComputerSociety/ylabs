@@ -156,6 +156,7 @@ export function buildScrapeCanaryChildArgs(
   sourceName: string,
   limit: number,
   artifactPath: string,
+  options: { forceLlm?: boolean } = {},
 ): string[] {
   return [
     '--cwd',
@@ -167,6 +168,7 @@ export function buildScrapeCanaryChildArgs(
     String(limit),
     '--output',
     artifactPath,
+    ...(options.forceLlm ? ['--force-llm'] : []),
   ];
 }
 
@@ -215,6 +217,7 @@ export async function runSweepCanaries(input: {
   repoRoot: string;
   config: Pick<SweepPreflightConfig, 'canaryLimit' | 'canaryTimeoutMs' | 'canaryConcurrency'>;
   childRunner: CanaryChildRunner;
+  forceLlm?: boolean;
   env?: NodeJS.ProcessEnv;
 }): Promise<SweepCanaryOutcome[]> {
   const directory = path.join(input.outputDirectory, 'preflight');
@@ -230,7 +233,9 @@ export async function runSweepCanaries(input: {
       fs.rmSync(artifactPath, { force: true });
       const child = await input.childRunner(
         'yarn',
-        buildScrapeCanaryChildArgs(sourceName, input.config.canaryLimit, artifactPath),
+        buildScrapeCanaryChildArgs(sourceName, input.config.canaryLimit, artifactPath, {
+          forceLlm: input.forceLlm,
+        }),
         {
           cwd: input.repoRoot,
           env: input.env ?? process.env,
@@ -312,6 +317,7 @@ export async function runSweepPreflight(input: {
   outputDirectory: string;
   repoRoot: string;
   childRunner: CanaryChildRunner;
+  forceLlm?: boolean;
   config?: SweepPreflightConfig;
   now?: () => Date;
   connect?: (mongoUrl: string) => Promise<Connection>;
@@ -347,6 +353,7 @@ export async function runSweepPreflight(input: {
     repoRoot: input.repoRoot,
     config,
     childRunner: input.childRunner,
+    forceLlm: input.forceLlm,
   });
 
   const report = summarizeSweepPreflight({

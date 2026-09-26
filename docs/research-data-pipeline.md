@@ -89,8 +89,10 @@ The preflight has two checks, and either failing stops the sweep before any sour
   A measurement that cannot be taken, for example a credential without `listDatabases`, fails closed.
 - **A write-free canary per source.** Each source still to run gets a `scrape:canary --source <name> --limit 5` child (`SCRAPER_SWEEP_CANARY_LIMIT`), eight at a time (`SCRAPER_SWEEP_CANARY_CONCURRENCY`), each killed after 150 s (`SCRAPER_SWEEP_CANARY_TIMEOUT_MS`).
   The canary runs the lane in process with a dry-run, uncached context whose `emit` only counts, so it opens no `ScrapeRun` and writes no observation, unlike `scrape run --dry-run`, which records a run row.
+  A `--force-llm` sweep passes `--force-llm` to each canary too, so content-hash gated LLM lanes re-extract exactly as their real run will.
   It is write-free by construction rather than by convention: before anything connects, `installMongoWriteRefusal` (`scrapers/utils/mongoWriteRefusal.ts`) replaces every driver write path (collection and database write methods, write commands, `$out` and `$merge` pipelines, client bulk writes, index and collection creation) with a refusal, so a lane that writes outside `emit` is refused rather than trusted.
   A lane that throws fails the preflight, and so does a lane that emits nothing when its prior runs were already barren, because the real run would then fail the barren-streak guard below.
+  The canary classifies its own zero-yield run with the lane's returned metrics and options, the same facts the orchestrator uses, so a bounded run whose work planner skipped every target stays `inconclusive` rather than predicting a barren failure.
   A lane that emits nothing with a productive history, times out, or is refused a write is reported `inconclusive` and does not stop the sweep, because a bounded run cannot tell those apart from a healthy lane.
 
 A canary cannot catch a failure that only appears at full scale, such as the `official-profile-pi-backfill` observation sort that overflowed memory on the whole corpus (#3543).

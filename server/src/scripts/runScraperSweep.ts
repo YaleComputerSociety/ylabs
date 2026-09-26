@@ -1783,6 +1783,7 @@ export async function runScraperSweep(
       outputDirectory,
       repoRoot,
       childRunner,
+      forceLlm: options.forceLlm,
       now,
     });
     console.log(formatSweepPreflightReport(preflight));

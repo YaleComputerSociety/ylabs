@@ -6,7 +6,13 @@ import {
   type YieldExpectationSource,
 } from './sourceYieldGuard';
 import { MongoWriteRefusedError } from './utils/mongoWriteRefusal';
-import type { IScraper, ObservationInput, ScraperContext, ScraperOptions } from './types';
+import type {
+  IScraper,
+  ObservationInput,
+  ScraperContext,
+  ScraperOptions,
+  ScraperResult,
+} from './types';
 
 export const DEFAULT_SCRAPER_CANARY_LIMIT = 5;
 
@@ -33,13 +39,14 @@ export interface ScraperCanaryInput {
   scraper: IScraper;
   source: ScraperCanarySource;
   limit?: number;
+  forceLlm?: boolean;
   readPriorRuns: (sourceId: string) => Promise<RunYieldFacts[]>;
   refusedWrites?: () => string[];
   log?: (message: string) => void;
   now?: () => number;
 }
 
-export function scraperCanaryOptions(limit: number): ScraperOptions {
+export function scraperCanaryOptions(limit: number, forceLlm = false): ScraperOptions {
   return {
     dryRun: true,
     useCache: false,
@@ -47,6 +54,7 @@ export function scraperCanaryOptions(limit: number): ScraperOptions {
     limit,
     ignoreWorkPlanner: true,
     triggeredBy: 'cli',
+    ...(forceLlm ? { forceLlm } : {}),
   };
 }
 
@@ -71,7 +79,7 @@ export async function runScraperCanary(input: ScraperCanaryInput): Promise<Scrap
     sourceId: input.source._id,
     sourceName: input.source.name,
     sourceWeight: input.source.defaultWeight,
-    options: scraperCanaryOptions(limit),
+    options: scraperCanaryOptions(limit, input.forceLlm),
     emit: async (emitted: ObservationInput | ObservationInput[]) => {
       const batch = Array.isArray(emitted) ? emitted : [emitted];
       observationCount += batch.length;
@@ -102,8 +110,9 @@ export async function runScraperCanary(input: ScraperCanaryInput): Promise<Scrap
     refusedWrites: refusedWrites(),
   });
 
+  let result: ScraperResult;
   try {
-    await input.scraper.run(ctx);
+    result = await input.scraper.run(ctx);
   } catch (error) {
     if (isWriteRefusal(error)) {
       return report(
@@ -127,7 +136,7 @@ export async function runScraperCanary(input: ScraperCanaryInput): Promise<Scrap
   const barren = resolveBarrenStreakFailure({
     sourceName: input.source.name,
     source: input.source,
-    currentRun: { status: 'success', observationCount: 0 },
+    currentRun: { observationCount: 0, metrics: result.metrics, options: ctx.options },
     priorRunsNewestFirst: await input.readPriorRuns(input.source._id),
   });
   if (barren) {
