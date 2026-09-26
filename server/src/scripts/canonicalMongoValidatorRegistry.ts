@@ -1,3 +1,19 @@
+/**
+ * Declares the desired canonical MongoDB validators. It does not apply them.
+ *
+ * As of #752, closed as declined, no environment carries any of these
+ * validators: `model-refactor:validators-assert --environment development`
+ * reports all six as `validator-absent`. The declaration is kept reviewed and
+ * pre-flighted rather than enforced, because the measured non-conforming count
+ * is zero everywhere, so applying `strict`/`error` would refuse nothing today
+ * while turning a future malformed bulk write into a mid-sweep hard failure.
+ *
+ * So a green `canonicalMongoValidatorRegistry.test.ts` is not evidence that any
+ * collection is validated. The fingerprint gate governs this file; only
+ * `model-refactor:validators-assert` reads the database. Applying validators
+ * later means updating `CANONICAL_MONGO_VALIDATOR_ENFORCEMENT` below, which the
+ * registry test asserts explicitly.
+ */
 import type mongoose from 'mongoose';
 import {
   Account,
@@ -38,11 +54,12 @@ interface CanonicalModelValidatorContract {
   schemaVersion: CanonicalSchemaVersionContract;
   propertyOverrides?: Readonly<Record<string, MongoJsonSchemaProperty>>;
   /**
-   * Per-collection strict-flip override. Omitted means the collection stays
-   * on the shared moderate/error default; only set this once an audit for
-   * that specific collection comes back clean (see #727 and
+   * Per-collection strict-flip override for the declaration. Omitted means the
+   * collection stays on the shared moderate/error default; only set this once an
+   * audit for that specific collection comes back clean (see #727 and
    * docs/canonical-mongodb-validator-runbook.md). Never flip every
-   * collection at once by changing the shared defaults instead.
+   * collection at once by changing the shared defaults instead. Setting it here
+   * changes what would be applied, never what any database currently enforces.
    */
   validationLevel?: CanonicalValidationLevel;
   validationAction?: CanonicalValidationAction;
@@ -172,3 +189,16 @@ export const CANONICAL_MONGO_VALIDATORS: readonly CanonicalCollectionValidator[]
 export const CANONICAL_MONGO_VALIDATOR_COLLECTIONS: readonly string[] = Object.freeze(
   CANONICAL_MONGO_VALIDATORS.map(({ collectionName }) => collectionName),
 );
+
+export type CanonicalMongoValidatorEnforcementState = 'declared-not-applied' | 'applied';
+
+/**
+ * The recorded answer to "is this registry a declaration or an enforcement?".
+ * Anyone who applies the validators has to change this value, which makes the
+ * registry test fail until the decision is restated rather than letting a green
+ * suite quietly change meaning. The strict-readiness report prints it beside
+ * what the database actually carries, so the two can disagree out loud.
+ */
+export const CANONICAL_MONGO_VALIDATOR_ENFORCEMENT: {
+  readonly state: CanonicalMongoValidatorEnforcementState;
+} = Object.freeze({ state: 'declared-not-applied' });

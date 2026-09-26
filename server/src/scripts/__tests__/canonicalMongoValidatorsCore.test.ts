@@ -6,6 +6,7 @@ import {
   canonicalMongoValidatorFingerprint,
   describeCanonicalMongoValidatorApplyFailure,
   findCanonicalValidatorDrift,
+  storesJsonSchemaValidator,
   isMissingCollModGrantFailure,
   planCanonicalMongoValidators,
 } from '../canonicalMongoValidatorsCore';
@@ -438,5 +439,16 @@ describe('findCanonicalValidatorDrift', () => {
     expect(
       findCanonicalValidatorDrift(planCanonicalMongoValidators(desired, current), current),
     ).toEqual([]);
+  });
+});
+
+describe('storesJsonSchemaValidator', () => {
+  it('counts a stored $jsonSchema and nothing else as an applied validator', () => {
+    expect(storesJsonSchemaValidator({ $jsonSchema: { bsonType: 'object' } })).toBe(true);
+    expect(storesJsonSchemaValidator(undefined)).toBe(false);
+    expect(storesJsonSchemaValidator({})).toBe(false);
+    expect(storesJsonSchemaValidator([])).toBe(false);
+    expect(storesJsonSchemaValidator('$jsonSchema')).toBe(false);
+    expect(storesJsonSchemaValidator({ deletedAt: { $exists: true } })).toBe(false);
   });
 });
