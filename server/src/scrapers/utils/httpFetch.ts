@@ -125,15 +125,43 @@ function hostOf(url: string): string {
 
 export const POLICY_FETCH_BENCHMARK_NAMESPACE = 'policy-fetch';
 
+export class HttpStatusError extends Error {
+  constructor(readonly status: number) {
+    super(`Request failed with status code ${status}`);
+    this.name = 'HttpStatusError';
+  }
+}
+
+interface FrozenFailedPage {
+  failedStatus: number;
+}
+
+function isFrozenFailedPage(payload: unknown): payload is FrozenFailedPage {
+  return typeof (payload as FrozenFailedPage).failedStatus === 'number';
+}
+
 export async function fetchPageWithPolicy(
   url: string,
   options: FetchPageWithPolicyOptions = {},
 ): Promise<FetchedHttpPage> {
   const benchmarkKey = `page:v1:${url}`;
   const frozen = benchmarkCacheRead(POLICY_FETCH_BENCHMARK_NAMESPACE, benchmarkKey);
-  if (frozen.handled && frozen.payload) return frozen.payload as FetchedHttpPage;
+  if (frozen.handled && frozen.payload) {
+    if (isFrozenFailedPage(frozen.payload)) throw new HttpStatusError(frozen.payload.failedStatus);
+    return frozen.payload as FetchedHttpPage;
+  }
   if (isBenchmarkReplayActive()) refuseBenchmarkReplayNetwork();
-  const page = await fetchPageLive(url, options);
+  let page: FetchedHttpPage;
+  try {
+    page = await fetchPageLive(url, options);
+  } catch (error) {
+    if (error instanceof HttpStatusError) {
+      benchmarkCacheWrite(POLICY_FETCH_BENCHMARK_NAMESPACE, benchmarkKey, {
+        failedStatus: error.status,
+      } satisfies FrozenFailedPage);
+    }
+    throw error;
+  }
   benchmarkCacheWrite(POLICY_FETCH_BENCHMARK_NAMESPACE, benchmarkKey, page);
   return page;
 }
@@ -185,7 +213,7 @@ async function fetchPageLive(
       await sleep(retryDelay);
       continue;
     }
-    throw new Error(`Request failed with status code ${result.status}`);
+    throw new HttpStatusError(result.status);
   }
   throw lastError ?? new Error('fetchPageWithPolicy exhausted retries');
 }

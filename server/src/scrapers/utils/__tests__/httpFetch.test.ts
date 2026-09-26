@@ -262,6 +262,31 @@ describe('fetchPageWithPolicy under a benchmark', () => {
     }
   });
 
+  it('freezes a failed status during capture and replays the same failure as a served page', async () => {
+    beginBenchmarkCapture();
+    const live = vi.fn(() => Promise.resolve({ status: 404, data: '', finalUrl: '' }));
+    await expect(
+      fetchPageWithPolicy('https://lab.example.edu/people', options(live)),
+    ).rejects.toThrow('Request failed with status code 404');
+    const pages = finishBenchmarkCapture();
+    expect(pages).toHaveLength(1);
+
+    beginBenchmarkReplay(pages);
+    const replayRequest = vi.fn(() => ok());
+    try {
+      await expect(
+        fetchPageWithPolicy('https://lab.example.edu/people', options(replayRequest)),
+      ).rejects.toThrow('Request failed with status code 404');
+      expect(replayRequest).not.toHaveBeenCalled();
+    } finally {
+      expect(finishBenchmarkReplay()).toMatchObject({
+        pagesServed: 1,
+        pagesMissed: 0,
+        networkBlocks: 0,
+      });
+    }
+  });
+
   it('refuses a page the capture never saw instead of fetching it', async () => {
     beginBenchmarkReplay([]);
     const replayRequest = vi.fn(() => ok());
