@@ -18,6 +18,7 @@ Flags:
 
 Strategies scored: C0 (status-quo baseline over the stored collection), C1 (prevention-first identity clustering, basic vs rich keys), C2 (decide-late quality-preferring resolution over the full retained log), and C3 (hybrid of C1 and C2).
 Dedup accuracy is scored against the durable merge records (an archived row's `canonicalGroupId` tombstone) as labeled positives. The separate `research_entity_redirects` ledger was retired in #3027.
+`scoreDedupe` keys a merge as an unordered pair, so a correct merge is credited whichever member the prediction chose as canonical.
 
 ## Fuzzy-match labeled set
 
@@ -31,6 +32,12 @@ yarn fuzzy:labeled-set
 The CLI builds the ground-truth clusters from the durable merge records (the `canonicalGroupId` transitive closure, with researcher-dedupe records kept in a separate namespace) and prints a JSON report of cluster counts, positive within-cluster pairs, and a cluster-size histogram.
 
 `fuzzyMatchMetrics.ts` holds the pure, dependency-free primitives the report and the matcher share: `buildGroundTruthClusters` and `clusterPairs` for labeled positives, `buildLabeledNegatives` for same-name-different-person hard negatives drawn from the quarantines, and `pairwiseMetrics` (precision, recall, F1), `pairCompleteness`, and `clusterBcubed` for scoring predictions.
+
+Every metric reports the population it was computed over, because a precision without its coverage cannot be read.
+`pairwiseMetrics` returns `predicted`, `judged`, `unlabeled`, and `judgedShare`, and brackets its point precision with `precisionLowerBound` (every unlabeled pair wrong) and `precisionUpperBound` (every unlabeled pair right).
+An unlabeled pair is excluded from the point precision rather than counted as a false positive, since under partial labels it may be a correct but unjudged merge.
+`clusterBcubed` averages precision over predicted elements and recall over truth elements, and returns `truthCoverage`, so a matcher that clusters nothing no longer reads as perfectly precise.
+A ratio with a zero denominator is `null`, never `0`, so a run with no data cannot be mistaken for a total failure or plotted as a regression.
 
 ## Fuzzy residual matcher
 

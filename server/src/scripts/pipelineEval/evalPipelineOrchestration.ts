@@ -9,6 +9,7 @@ import { planStudentVisibilityGate } from '../../services/studentVisibilityGateS
 import { resolveSafeJsonReportOutputPath } from '../scriptWriteGuards';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { buildChurnMetrics, scoreAccuracy, type ScorableEntity } from './pipelineEvalMetrics';
+import { ratioOrNull, type MetricRatio } from './metricRatio';
 import {
   scoreDescriptionStrategy,
   scoreDedupeStrategy,
@@ -284,7 +285,7 @@ async function main() {
   let gate:
     | {
         scored: number;
-        tierMatchRate: number;
+        tierMatchRate: MetricRatio;
         notReady: number;
         descriptionAddressable: number;
         duplicateBlocked: number;
@@ -319,7 +320,7 @@ async function main() {
     }
     gate = {
       scored: plans.length,
-      tierMatchRate: plans.length === 0 ? 0 : Number((tierMatch / plans.length).toFixed(4)),
+      tierMatchRate: ratioOrNull(tierMatch, plans.length),
       notReady,
       descriptionAddressable,
       duplicateBlocked,
@@ -409,7 +410,10 @@ async function main() {
             avoidedMints: c1.avoidedMints,
             predictedNewMergePairs: c1.predictedNewMergePairs,
           },
-          recallDelta: Number((c1.recall - c1Basic.recall).toFixed(4)),
+          recallDelta:
+            c1.recall === null || c1Basic.recall === null
+              ? null
+              : Number((c1.recall - c1Basic.recall).toFixed(4)),
           avoidedMintsDelta: c1.avoidedMints - c1Basic.avoidedMints,
         },
         dedupe: {

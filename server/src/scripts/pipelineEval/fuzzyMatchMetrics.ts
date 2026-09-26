@@ -1,3 +1,5 @@
+import { harmonicMean, ratioOrNull, type MetricRatio } from './metricRatio';
+
 export interface IdEdge {
   from: string;
   to: string;
@@ -125,15 +127,19 @@ export function buildLabeledNegatives(quarantines: SameNameQuarantineLike[]): Se
 }
 
 export interface PairwiseMetrics {
-  precision: number;
-  recall: number;
-  f1: number;
+  precision: MetricRatio;
+  precisionLowerBound: MetricRatio;
+  precisionUpperBound: MetricRatio;
+  recall: MetricRatio;
+  f1: MetricRatio;
   tp: number;
   fp: number;
   fn: number;
+  predicted: number;
+  judged: number;
+  unlabeled: number;
+  judgedShare: MetricRatio;
 }
-
-const ratio = (n: number, d: number): number => (d === 0 ? 0 : Number((n / d).toFixed(4)));
 
 export function pairwiseMetrics(
   predicted: Iterable<string>,
@@ -149,26 +155,44 @@ export function pairwiseMetrics(
   }
   let fn = 0;
   for (const p of positives) if (!predictedSet.has(p)) fn += 1;
-  const precision = ratio(tp, tp + fp);
-  const recall = ratio(tp, tp + fn);
-  const f1 =
-    precision + recall === 0
-      ? 0
-      : Number(((2 * precision * recall) / (precision + recall)).toFixed(4));
-  return { precision, recall, f1, tp, fp, fn };
+  const judged = tp + fp;
+  const unlabeled = predictedSet.size - judged;
+  const precision = ratioOrNull(tp, judged);
+  const recall = ratioOrNull(tp, tp + fn);
+  return {
+    precision,
+    precisionLowerBound: ratioOrNull(tp, predictedSet.size),
+    precisionUpperBound: ratioOrNull(tp + unlabeled, predictedSet.size),
+    recall,
+    f1: harmonicMean(precision, recall),
+    tp,
+    fp,
+    fn,
+    predicted: predictedSet.size,
+    judged,
+    unlabeled,
+    judgedShare: ratioOrNull(judged, predictedSet.size),
+  };
 }
 
-export function pairCompleteness(candidatePairs: Iterable<string>, positives: Set<string>): number {
+export function pairCompleteness(
+  candidatePairs: Iterable<string>,
+  positives: Set<string>,
+): MetricRatio {
   const candidateSet = new Set(candidatePairs);
   let covered = 0;
   for (const p of positives) if (candidateSet.has(p)) covered += 1;
-  return ratio(covered, positives.size);
+  return ratioOrNull(covered, positives.size);
 }
 
 export interface BcubedMetrics {
-  precision: number;
-  recall: number;
-  f1: number;
+  precision: MetricRatio;
+  recall: MetricRatio;
+  f1: MetricRatio;
+  predictedElements: number;
+  truthElements: number;
+  truthElementsPredicted: number;
+  truthCoverage: MetricRatio;
 }
 
 function clusterIndex(clusters: string[][]): Map<string, Set<string>> {
@@ -180,30 +204,42 @@ function clusterIndex(clusters: string[][]): Map<string, Set<string>> {
   return index;
 }
 
+function overlap(a: Set<string>, b: Set<string>): number {
+  let shared = 0;
+  for (const member of a) if (b.has(member)) shared += 1;
+  return shared;
+}
+
 export function clusterBcubed(
   predictedClusters: string[][],
   truthClusters: string[][],
 ): BcubedMetrics {
   const predicted = clusterIndex(predictedClusters);
   const truth = clusterIndex(truthClusters);
-  const elements = new Set<string>([...predicted.keys(), ...truth.keys()]);
-  if (elements.size === 0) return { precision: 0, recall: 0, f1: 0 };
 
   let precisionSum = 0;
-  let recallSum = 0;
-  for (const element of elements) {
-    const predMembers = predicted.get(element) ?? new Set([element]);
+  for (const [element, predMembers] of predicted) {
     const truthMembers = truth.get(element) ?? new Set([element]);
-    let correct = 0;
-    for (const member of predMembers) if (truthMembers.has(member)) correct += 1;
-    precisionSum += correct / predMembers.size;
-    recallSum += correct / truthMembers.size;
+    precisionSum += overlap(predMembers, truthMembers) / predMembers.size;
   }
-  const precision = Number((precisionSum / elements.size).toFixed(4));
-  const recall = Number((recallSum / elements.size).toFixed(4));
-  const f1 =
-    precision + recall === 0
-      ? 0
-      : Number(((2 * precision * recall) / (precision + recall)).toFixed(4));
-  return { precision, recall, f1 };
+
+  let recallSum = 0;
+  let truthElementsPredicted = 0;
+  for (const [element, truthMembers] of truth) {
+    if (predicted.has(element)) truthElementsPredicted += 1;
+    const predMembers = predicted.get(element) ?? new Set([element]);
+    recallSum += overlap(predMembers, truthMembers) / truthMembers.size;
+  }
+
+  const precision = ratioOrNull(precisionSum, predicted.size);
+  const recall = ratioOrNull(recallSum, truth.size);
+  return {
+    precision,
+    recall,
+    f1: harmonicMean(precision, recall),
+    predictedElements: predicted.size,
+    truthElements: truth.size,
+    truthElementsPredicted,
+    truthCoverage: ratioOrNull(truthElementsPredicted, truth.size),
+  };
 }

@@ -16,6 +16,7 @@ import {
   specificProfileLabUrlIdentityKey,
   normalizeOrgDedupeName,
 } from '../researchEntityPiDedupeCore';
+import { ratioOrNull, type MetricRatio } from './metricRatio';
 import { scoreAccuracy, type AccuracyMetrics, type ScorableEntity } from './pipelineEvalMetrics';
 
 export interface EvalEntity {
@@ -237,7 +238,7 @@ function scorableFromProjection(
 
 export interface DescriptionProjectionResult {
   accuracy: AccuracyMetrics;
-  activeOnlyCardCompleteRate: number;
+  activeOnlyCardCompleteRate: MetricRatio;
   entitiesWithObservations: number;
   changedFromActiveOnly: number;
   cardRecovered: number;
@@ -370,7 +371,7 @@ export interface DedupeStrategyResult {
   entitiesConsidered: number;
   groundTruthMergedPairs: number;
   groundTruthCaught: number;
-  recall: number;
+  recall: MetricRatio;
   droppedGenericKeys: number;
   predictedClusters: number;
   predictedNewMergePairs: number;
@@ -465,10 +466,7 @@ export function scoreDedupeStrategy(
     entitiesConsidered: allEntities.length,
     groundTruthMergedPairs: groundTruthPairs.length,
     groundTruthCaught,
-    recall:
-      groundTruthPairs.length === 0
-        ? 0
-        : Number((groundTruthCaught / groundTruthPairs.length).toFixed(4)),
+    recall: ratioOrNull(groundTruthCaught, groundTruthPairs.length),
     droppedGenericKeys,
     predictedClusters: multiClusterCount,
     predictedNewMergePairs,

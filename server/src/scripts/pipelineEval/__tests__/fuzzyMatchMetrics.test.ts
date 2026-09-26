@@ -73,6 +73,41 @@ describe('pairwiseMetrics', () => {
     expect(m.precision).toBeCloseTo(0.6667, 3);
     expect(m.recall).toBeCloseTo(0.6667, 3);
     expect(m.f1).toBeCloseTo(0.6667, 3);
+    expect(m.predicted).toBe(3);
+    expect(m.judged).toBe(3);
+    expect(m.unlabeled).toBe(0);
+    expect(m.judgedShare).toBe(1);
+  });
+
+  it('reports unlabeled predictions instead of letting them vanish from precision', () => {
+    const positives = new Set([pairKey('a', 'b')]);
+    const negatives = new Set([pairKey('x', 'y')]);
+    const predicted = [pairKey('a', 'b'), pairKey('p', 'q'), pairKey('r', 's'), pairKey('t', 'u')];
+    const m = pairwiseMetrics(predicted, positives, negatives);
+    expect(m.precision).toBe(1);
+    expect(m.predicted).toBe(4);
+    expect(m.judged).toBe(1);
+    expect(m.unlabeled).toBe(3);
+    expect(m.judgedShare).toBe(0.25);
+    expect(m.precisionLowerBound).toBe(0.25);
+    expect(m.precisionUpperBound).toBe(1);
+  });
+
+  it('returns null rather than 0 when there is nothing to score', () => {
+    const m = pairwiseMetrics([], new Set(), new Set());
+    expect(m.precision).toBeNull();
+    expect(m.recall).toBeNull();
+    expect(m.f1).toBeNull();
+    expect(m.judgedShare).toBeNull();
+  });
+
+  it('keeps precision null when every prediction is unlabeled', () => {
+    const m = pairwiseMetrics([pairKey('p', 'q')], new Set([pairKey('a', 'b')]), new Set());
+    expect(m.precision).toBeNull();
+    expect(m.recall).toBe(0);
+    expect(m.f1).toBeNull();
+    expect(m.precisionLowerBound).toBe(0);
+    expect(m.precisionUpperBound).toBe(1);
   });
 });
 
@@ -81,6 +116,10 @@ describe('pairCompleteness', () => {
     const positives = new Set([pairKey('a', 'b'), pairKey('c', 'd'), pairKey('e', 'f')]);
     const candidates = [pairKey('a', 'b'), pairKey('c', 'd'), pairKey('g', 'h')];
     expect(pairCompleteness(candidates, positives)).toBeCloseTo(0.6667, 3);
+  });
+
+  it('is null when there are no positives to cover', () => {
+    expect(pairCompleteness([pairKey('a', 'b')], new Set())).toBeNull();
   });
 });
 
@@ -106,5 +145,32 @@ describe('clusterBcubed', () => {
     expect(m.precision).toBe(1);
     expect(m.recall).toBe(1);
     expect(m.f1).toBe(1);
+    expect(m.truthCoverage).toBe(1);
+  });
+
+  it('does not score an empty prediction as perfectly precise', () => {
+    const m = clusterBcubed([], [['a', 'b']]);
+    expect(m.precision).toBeNull();
+    expect(m.recall).toBe(0.5);
+    expect(m.f1).toBeNull();
+    expect(m.truthElementsPredicted).toBe(0);
+    expect(m.truthCoverage).toBe(0);
+  });
+
+  it('averages precision over predicted elements and recall over truth elements', () => {
+    const m = clusterBcubed([['a', 'b'], ['z']], [['a', 'b', 'c']]);
+    expect(m.predictedElements).toBe(3);
+    expect(m.truthElements).toBe(3);
+    expect(m.truthElementsPredicted).toBe(2);
+    expect(m.truthCoverage).toBeCloseTo(0.6667, 3);
+    expect(m.precision).toBe(1);
+    expect(m.recall).toBeCloseTo(0.5556, 3);
+  });
+
+  it('returns null metrics for two empty clusterings', () => {
+    const m = clusterBcubed([], []);
+    expect(m.precision).toBeNull();
+    expect(m.recall).toBeNull();
+    expect(m.truthCoverage).toBeNull();
   });
 });
