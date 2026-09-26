@@ -133,6 +133,14 @@ It was empty before this change for the same reason `running` is unreliable: the
 Match on PID, never on a command-string pattern.
 A pattern like `dept-faculty-roster` also matches an unrelated process that carries the source name inside an `--intent` or issue-slug argument, and #2469 killed a live gate run that way.
 
+## Exhaustive runs: bound every corpus-wide read
+
+An exhaustive lane run hands its read queries the whole corpus, so a query shape that works on a bounded run can fail on the sweep.
+Mongo refuses an in-memory sort over 32 MB, and a sort that no index serves (an `$or` of per-entity `$in` lists, or `{ lastObservedAt: -1, _id: 1 }` on `research_entities`) sorts whole documents.
+#3543 lost `official-profile-pi-backfill` on the Development sweep that way: the live entity set is about 38 MB and the observation lookup failed nine seconds in.
+Chunk per-entity `$in` lookups, give each entity its own evidence rather than one limit shared across entities, and sort an unlimited selection in process instead of in the database.
+`allowDiskUse` hides the crash but keeps a shared limit, which silently starves the entities that sort last.
+
 ## Infrastructure files
 
 - `cli.ts` - CLI entrypoint (`scrape run`, `scrape materialize`, `scrape report`, etc.)

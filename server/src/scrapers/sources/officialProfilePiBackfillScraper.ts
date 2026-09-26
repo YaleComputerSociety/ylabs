@@ -1,4 +1,5 @@
 import axios from 'axios';
+import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Observation } from '../../models/observation';
@@ -2427,6 +2428,30 @@ function applyFiniteCandidateLimit<T extends { limit(value: number): T }>(
   return query;
 }
 
+export function sortByMostRecentlyObserved<T extends Record<string, any>>(entities: T[]): T[] {
+  return [...entities].sort((left, right) => {
+    const leftAt = observedAtMillis(left.lastObservedAt);
+    const rightAt = observedAtMillis(right.lastObservedAt);
+    if (leftAt !== rightAt) return rightAt - leftAt;
+    return idValue(left._id).localeCompare(idValue(right._id));
+  });
+}
+
+async function recentlyObservedResearchEntities(
+  filter: Record<string, any>,
+  fields: string,
+  limit: number,
+): Promise<Array<Record<string, any>>> {
+  const query = ResearchEntity.find(filter).select(`${fields} lastObservedAt`);
+  if (!Number.isFinite(limit)) {
+    return sortByMostRecentlyObserved((await query.lean()) as Array<Record<string, any>>);
+  }
+  return (await query
+    .sort({ lastObservedAt: -1, _id: 1 })
+    .limit(Math.max(limit * 20, 100))
+    .lean()) as Array<Record<string, any>>;
+}
+
 async function currentLeadRosterEntriesByEntity(
   entityIds: unknown[],
   roles: string[],
@@ -2629,17 +2654,11 @@ async function selectProfileDescriptionTargets(
           },
         };
 
-  const entities = (await applyFiniteCandidateLimit(
-    ResearchEntity.find({
-      archived: { $ne: true },
-      ...identityFilter,
-    })
-      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
-      .sort({ lastObservedAt: -1, _id: 1 }),
+  const entities = await recentlyObservedResearchEntities(
+    { archived: { $ne: true }, ...identityFilter },
+    '_id slug name displayName website websiteUrl sourceUrls school schools departments',
     limit,
-    20,
-    100,
-  ).lean()) as Array<Record<string, any>>;
+  );
 
   const entitiesWithLeadUsers = await annotateEntitiesWithLeadUsers(entities);
   const entitiesWithObservationUrls =
@@ -2708,39 +2727,125 @@ async function annotateEntitiesWithLeadUsers(
   }));
 }
 
-async function annotateEntitiesWithSourceObservationUrls(
+export const OBSERVATION_LOOKUP_ENTITY_CHUNK_SIZE = 250;
+export const SOURCE_OBSERVATION_URLS_PER_ENTITY = 20;
+
+type ObservationEntityScope = {
+  entityIds: string[];
+  entityKeys: string[];
+};
+
+export function observationEntityScopeChunks(
+  entities: Array<Record<string, any>>,
+  chunkSize: number = OBSERVATION_LOOKUP_ENTITY_CHUNK_SIZE,
+): ObservationEntityScope[] {
+  const scopes: ObservationEntityScope[] = [];
+  for (let offset = 0; offset < entities.length; offset += chunkSize) {
+    const chunk = entities.slice(offset, offset + chunkSize);
+    const entityIds = uniqueStrings(chunk.map((entity) => idValue(entity._id || entity.id))).filter(
+      (id) => /^[a-f0-9]{24}$/i.test(id),
+    );
+    const entityKeys = uniqueStrings(chunk.map((entity) => textValue(entity.slug)));
+    if (entityIds.length > 0 || entityKeys.length > 0) scopes.push({ entityIds, entityKeys });
+  }
+  return scopes;
+}
+
+function observationEntityScopeClauses(scope: ObservationEntityScope): Array<Record<string, any>> {
+  return [
+    ...(scope.entityIds.length
+      ? [{ entityId: { $in: scope.entityIds.map((id) => new mongoose.Types.ObjectId(id)) } }]
+      : []),
+    ...(scope.entityKeys.length ? [{ entityKey: { $in: scope.entityKeys } }] : []),
+  ];
+}
+
+export type SourceObservationUrlGroup = {
+  entityId?: unknown;
+  entityKey?: unknown;
+  sourceUrl?: unknown;
+  lastObservedAt?: unknown;
+};
+
+function observedAtMillis(value: unknown): number {
+  const millis = value instanceof Date ? value.getTime() : new Date(String(value ?? '')).getTime();
+  return Number.isFinite(millis) ? millis : 0;
+}
+
+export function sourceObservationUrlsByEntityKey(
+  groups: SourceObservationUrlGroup[],
+  perEntityLimit: number = SOURCE_OBSERVATION_URLS_PER_ENTITY,
+): Map<string, string[]> {
+  const latestByEntityKey = new Map<string, Map<string, number>>();
+  for (const group of groups) {
+    const sourceUrl = textValue(group.sourceUrl);
+    if (!sourceUrl) continue;
+    const observedAt = observedAtMillis(group.lastObservedAt);
+    for (const key of uniqueStrings([idValue(group.entityId), textValue(group.entityKey)])) {
+      const latestByUrl = latestByEntityKey.get(key) || new Map<string, number>();
+      latestByUrl.set(sourceUrl, Math.max(latestByUrl.get(sourceUrl) ?? 0, observedAt));
+      latestByEntityKey.set(key, latestByUrl);
+    }
+  }
+
+  const urlsByEntityKey = new Map<string, string[]>();
+  for (const [key, latestByUrl] of latestByEntityKey) {
+    urlsByEntityKey.set(
+      key,
+      Array.from(latestByUrl.entries())
+        .sort(([leftUrl, leftAt], [rightUrl, rightAt]) =>
+          rightAt !== leftAt ? rightAt - leftAt : leftUrl.localeCompare(rightUrl),
+        )
+        .slice(0, perEntityLimit)
+        .map(([url]) => url),
+    );
+  }
+  return urlsByEntityKey;
+}
+
+async function sourceObservationUrlGroupsForScope(
+  scope: ObservationEntityScope,
+): Promise<SourceObservationUrlGroup[]> {
+  return (await Observation.aggregate([
+    {
+      $match: {
+        entityType: 'researchEntity',
+        superseded: { $ne: true },
+        sourceUrl: /^https?:\/\//i,
+        $or: observationEntityScopeClauses(scope),
+      },
+    },
+    {
+      $group: {
+        _id: { entityId: '$entityId', entityKey: '$entityKey', sourceUrl: '$sourceUrl' },
+        lastObservedAt: { $max: '$observedAt' },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        entityId: '$_id.entityId',
+        entityKey: '$_id.entityKey',
+        sourceUrl: '$_id.sourceUrl',
+        lastObservedAt: 1,
+      },
+    },
+  ])) as SourceObservationUrlGroup[];
+}
+
+export async function annotateEntitiesWithSourceObservationUrls(
   entities: Array<Record<string, any>>,
 ): Promise<Array<Record<string, any>>> {
   if (entities.length === 0) return entities;
 
-  const entityIds = uniqueStrings(
-    entities.map((entity) => idValue(entity._id || entity.id)),
-  ).filter((id) => /^[a-f0-9]{24}$/i.test(id));
-  const entityKeys = uniqueStrings(entities.map((entity) => textValue(entity.slug)));
-  if (entityIds.length === 0 && entityKeys.length === 0) return entities;
+  const scopes = observationEntityScopeChunks(entities);
+  if (scopes.length === 0) return entities;
 
-  const rows = await Observation.find({
-    entityType: 'researchEntity',
-    superseded: { $ne: true },
-    sourceUrl: /^https?:\/\//i,
-    $or: [
-      ...(entityIds.length ? [{ entityId: { $in: entityIds } }] : []),
-      ...(entityKeys.length ? [{ entityKey: { $in: entityKeys } }] : []),
-    ],
-  })
-    .select('entityId entityKey sourceUrl observedAt')
-    .sort({ observedAt: -1 })
-    .limit(Math.max(entities.length * 20, 200))
-    .lean();
-
-  const urlsByEntity = new Map<string, string[]>();
-  for (const row of rows as Array<Record<string, any>>) {
-    const sourceUrl = textValue(row.sourceUrl);
-    if (!sourceUrl) continue;
-    for (const key of [idValue(row.entityId), textValue(row.entityKey)].filter(Boolean)) {
-      urlsByEntity.set(key, [...(urlsByEntity.get(key) || []), sourceUrl]);
-    }
+  const groups: SourceObservationUrlGroup[] = [];
+  for (const scope of scopes) {
+    groups.push(...(await sourceObservationUrlGroupsForScope(scope)));
   }
+  const urlsByEntity = sourceObservationUrlsByEntityKey(groups);
 
   return entities.map((entity) => ({
     ...entity,
@@ -2752,37 +2857,33 @@ async function annotateEntitiesWithSourceObservationUrls(
   }));
 }
 
-async function annotateProfileDescriptionPreferredSourceEvidence(
+export async function annotateProfileDescriptionPreferredSourceEvidence(
   entities: Array<Record<string, any>>,
 ): Promise<Array<Record<string, any>>> {
   if (entities.length === 0) return entities;
 
-  const entityIds = uniqueStrings(
-    entities.map((entity) => idValue(entity._id || entity.id)),
-  ).filter((id) => /^[a-f0-9]{24}$/i.test(id));
-  const entityKeys = uniqueStrings(entities.map((entity) => textValue(entity.slug)));
-  if (entityIds.length === 0 && entityKeys.length === 0) return entities;
-
-  const evidenceRows = await Observation.find({
-    entityType: 'researchEntity',
-    superseded: { $ne: true },
-    sourceName: { $in: PROFILE_DESCRIPTION_PREFERRED_SOURCE_NAMES },
-    field: { $in: PROFILE_DESCRIPTION_FIELDS },
-    $or: [
-      ...(entityIds.length ? [{ entityId: { $in: entityIds } }] : []),
-      ...(entityKeys.length ? [{ entityKey: { $in: entityKeys } }] : []),
-    ],
-  })
-    .select('entityId entityKey sourceName')
-    .lean();
+  const scopes = observationEntityScopeChunks(entities);
+  if (scopes.length === 0) return entities;
 
   const sourceNamesByEntity = new Map<string, Set<string>>();
-  for (const row of evidenceRows as Array<Record<string, any>>) {
-    const sourceName = textValue(row.sourceName);
-    if (!sourceName) continue;
-    for (const key of [idValue(row.entityId), textValue(row.entityKey)].filter(Boolean)) {
-      if (!sourceNamesByEntity.has(key)) sourceNamesByEntity.set(key, new Set());
-      sourceNamesByEntity.get(key)!.add(sourceName);
+  for (const scope of scopes) {
+    const evidenceRows = await Observation.find({
+      entityType: 'researchEntity',
+      superseded: { $ne: true },
+      sourceName: { $in: PROFILE_DESCRIPTION_PREFERRED_SOURCE_NAMES },
+      field: { $in: PROFILE_DESCRIPTION_FIELDS },
+      $or: observationEntityScopeClauses(scope),
+    })
+      .select('entityId entityKey sourceName')
+      .lean();
+
+    for (const row of evidenceRows as Array<Record<string, any>>) {
+      const sourceName = textValue(row.sourceName);
+      if (!sourceName) continue;
+      for (const key of [idValue(row.entityId), textValue(row.entityKey)].filter(Boolean)) {
+        if (!sourceNamesByEntity.has(key)) sourceNamesByEntity.set(key, new Set());
+        sourceNamesByEntity.get(key)!.add(sourceName);
+      }
     }
   }
 
@@ -2817,17 +2918,11 @@ async function selectResearchHomeProfileTargets(
           ],
         };
 
-  const entities = (await applyFiniteCandidateLimit(
-    ResearchEntity.find({
-      archived: { $ne: true },
-      ...targetFilter,
-    })
-      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
-      .sort({ lastObservedAt: -1, _id: 1 }),
+  const entities = await recentlyObservedResearchEntities(
+    { archived: { $ne: true }, ...targetFilter },
+    '_id slug name displayName website websiteUrl sourceUrls school schools departments',
     limit,
-    20,
-    100,
-  ).lean()) as Array<Record<string, any>>;
+  );
   if (entities.length === 0) return [];
 
   const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
@@ -2901,17 +2996,11 @@ async function selectLeadDirectWebsiteTargets(
           studentVisibilityTier: { $ne: 'suppressed' },
         };
 
-  const entities = (await applyFiniteCandidateLimit(
-    ResearchEntity.find({
-      archived: { $ne: true },
-      ...targetFilter,
-    })
-      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
-      .sort({ lastObservedAt: -1, _id: 1 }),
+  const entities = await recentlyObservedResearchEntities(
+    { archived: { $ne: true }, ...targetFilter },
+    '_id slug name displayName website websiteUrl sourceUrls school schools departments',
     limit,
-    20,
-    100,
-  ).lean()) as Array<Record<string, any>>;
+  );
   if (entities.length === 0) return [];
 
   const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
@@ -2998,19 +3087,11 @@ async function selectSourceUrlWebsiteTargets(
           studentVisibilityTier: { $ne: 'suppressed' },
         };
 
-  const entities = (await applyFiniteCandidateLimit(
-    ResearchEntity.find({
-      archived: { $ne: true },
-      ...targetFilter,
-    })
-      .select(
-        '_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls school schools departments',
-      )
-      .sort({ lastObservedAt: -1, _id: 1 }),
+  const entities = await recentlyObservedResearchEntities(
+    { archived: { $ne: true }, ...targetFilter },
+    '_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls school schools departments',
     limit,
-    20,
-    100,
-  ).lean()) as Array<Record<string, any>>;
+  );
   if (entities.length === 0) return [];
 
   const entitiesWithObservationUrls = await annotateEntitiesWithSourceObservationUrls(entities);
