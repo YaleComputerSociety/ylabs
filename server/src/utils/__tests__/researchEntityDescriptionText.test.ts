@@ -1751,6 +1751,62 @@ describe('revoiceFirstPersonResearchLead', () => {
     ).toBe("This research group's science goal is to characterize exoplanet atmospheres.");
   });
 
+  it('converts a possessive in front of a noun that names the row, wherever it sits (#3481)', () => {
+    const lab = { name: 'Akar Lab', entityType: 'LAB', kind: 'lab' };
+    // `our` here is neither at a sentence start nor after a comma, which is the position
+    // every anchored possessive rule missed.
+    expect(
+      revoiceFirstPersonResearchLead(
+        'Publications from our laboratory have been highlighted.',
+        lab,
+      ),
+    ).toBe('Publications from the Akar Lab have been highlighted.');
+    expect(
+      revoiceFirstPersonResearchLead('All our methods are concentrated on imaging.', lab),
+    ).toBe("All the Akar Lab's methods are concentrated on imaging.");
+  });
+
+  it('collapses a noun that IS the row rather than serving a doubled possessive (#3481)', () => {
+    const lab = { name: 'Foxman Lab', entityType: 'LAB', kind: 'lab' };
+    expect(revoiceFirstPersonResearchLead('Work in our lab continues.', lab)).toBe(
+      'Work in the Foxman Lab continues.',
+    );
+    // A department is not the row, so the possessive is kept.
+    expect(revoiceFirstPersonResearchLead('Our department supports this.', lab)).toBe(
+      "The Foxman Lab's department supports this.",
+    );
+  });
+
+  it('converts an object pronoun only where the verb names the row as acted upon (#3481)', () => {
+    const lab = { name: 'Akar Lab', entityType: 'LAB', kind: 'lab' };
+    expect(
+      revoiceFirstPersonResearchLead('Integrative tools allow us to undertake this.', lab),
+    ).toBe('Integrative tools allow the Akar Lab to undertake this.');
+    // An unscoped object pronoun is as often the reader, so a verb outside the set is
+    // left alone rather than guessed at.
+    expect(revoiceFirstPersonResearchLead('The data tells us that risk rises.', lab)).toBe(
+      'The data tells us that risk rises.',
+    );
+  });
+
+  it('leaves a collective first person about the field completely alone (#3481)', () => {
+    const faculty = {
+      name: 'Ada Lovelace Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+    };
+    // The closed noun list is the guard: no abstraction is in it, so a sentence about
+    // the field cannot become a sentence about the row. 52 served rows carry this shape.
+    for (const body of [
+      'This work advances our understanding of neurodegeneration.',
+      'This research expands our knowledge of the immune system.',
+      'To see how these processes break down we must understand the biology.',
+      'These findings improve our ability to predict outcomes.',
+    ]) {
+      expect(revoiceFirstPersonResearchLead(body, faculty)).toBe(body);
+    }
+  });
+
   it('names the lead in full on first mention and by surname after it (#3368)', () => {
     const faculty = {
       name: 'David Mulligan Faculty Research',

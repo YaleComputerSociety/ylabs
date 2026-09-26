@@ -1392,6 +1392,28 @@ const firstPersonLeadRevoiceRules = (
       return `${lead}${subject} ${phrase}`;
     },
   ],
+  /**
+   * A possessive in front of a noun that names the row, wherever it sits. "Publications
+   * from our laboratory have been highlighted" is the position every anchored possessive
+   * rule missed: `our` is neither at a sentence start nor after a comma, so 712 served
+   * rows still addressed a student in the first person after the subject rules had run.
+   *
+   * Unanchored on purpose, which is safe only because the noun sets are closed.
+   */
+  [
+    new RegExp(`\\b(?:my|our)\\s+${ENTITY_SELF_NOUN}\\b`, 'gi'),
+    (_match: string, offset: number, full: string) =>
+      nominativeLead(forms, isAtSentenceStart(offset, full), _match),
+  ],
+  [
+    new RegExp(`\\b(?:my|our)\\s+(${ENTITY_POSSESSED_NOUN})\\b`, 'gi'),
+    (_match: string, noun: string, offset: number, full: string) =>
+      `${possessiveLead(forms, isAtSentenceStart(offset, full), pluralAwareDemonstrative(noun, isAtSentenceStart(offset, full)))} ${noun}`,
+  ],
+  [
+    new RegExp(`\\b(${ENTITY_OBJECT_PRONOUN_VERB})\\s+(?:us|me)\\b`, 'gi'),
+    (_match: string, verb: string) => `${verb} ${nominativeLead(forms, false, 'this researcher')}`,
+  ],
 ];
 
 const ABSTRACT_SINGULAR_ANTECEDENT_NOUN_PATTERN =
@@ -1510,6 +1532,37 @@ function pluralAwareDemonstrative(noun: string, capitalized: boolean): string {
   const word = isPlural ? 'these' : 'this';
   return capitalized ? `${word[0].toUpperCase()}${word.slice(1)}` : word;
 }
+
+/**
+ * Nouns that ARE the row, so `our laboratory` collapses to the entity itself. Keeping
+ * the noun would serve "the Foxman Lab's laboratory", the doubling #1781 already had to
+ * strip once elsewhere.
+ */
+const ENTITY_SELF_NOUN =
+  '(?:lab|laboratory|labs|group|team|center|centre|program|programme|institute|facility|core)';
+
+/**
+ * Nouns the row HAS, so the possessive is kept: `our methods` becomes "the Foxman Lab's
+ * methods". `department` belongs here and not above, because a row's department is not
+ * the row.
+ *
+ * These two lists are the guard, not a companion denylist. A collective "our" takes an
+ * abstract head noun - "our understanding", "our knowledge", "our ability" - and none of
+ * those is in either list, so an unanchored rule still cannot turn a sentence about the
+ * field into a sentence about the row. 52 served rows carry that collective shape and
+ * every one must survive untouched; widening these lists toward an abstraction is how
+ * they would stop (#3481).
+ */
+const ENTITY_POSSESSED_NOUN =
+  '(?:research|work|studies|study|project|projects|patient|patients|student|students|faculty|department|collaborator|collaborators|finding|findings|publication|publications|approach|effort|efforts|mission|goal|goals|focus|service|services|method|methods|modality|data|sample|samples|tool|tools|pipeline|interest|interests)';
+
+/**
+ * A first-person object pronoun whose verb names the row as the thing acted upon:
+ * "tools that allow us to undertake a systems biology approach". Scoped to this closed
+ * verb set because an unscoped `us` is as often the reader or the field ("tells us that
+ * ...") as it is the row.
+ */
+const ENTITY_OBJECT_PRONOUN_VERB = '(?:allow|allows|enable|enables|let|lets|permit|permits)';
 
 const GENERIC_POSSESSIVE_LEAD_PATTERN = /(^|[.!?]\s+|,\s+)(?:my|our)\s+(\w+)\b/gi;
 
