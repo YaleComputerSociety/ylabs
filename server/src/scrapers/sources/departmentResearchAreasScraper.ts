@@ -77,7 +77,9 @@ export interface DepartmentResearchAreaPage {
  * The initial STEM department set. Each `overviewUrl` is the department's curated
  * research-theme page, deliberately distinct from its `/people` faculty index
  * (the index is a roster, not a topical taxonomy). Add a department by appending
- * a row - the scraper class is closed for modification.
+ * a row - the scraper class is closed for modification. MB&B, Statistics & Data
+ * Science, EEB and Applied Physics were removed in #3532 because they no longer
+ * publish a research-theme overview; re-add one only once such a page exists.
  */
 export const DEPARTMENT_RESEARCH_AREA_PAGES: DepartmentResearchAreaPage[] = [
   {
@@ -91,7 +93,7 @@ export const DEPARTMENT_RESEARCH_AREA_PAGES: DepartmentResearchAreaPage[] = [
     deptKey: 'chemistry',
     deptName: 'Chemistry',
     schoolName: 'Yale Faculty of Arts and Sciences',
-    overviewUrl: 'https://chem.yale.edu/research',
+    overviewUrl: 'https://chem.yale.edu/research-areas',
     peopleIndexUrl: 'https://chem.yale.edu/people/faculty',
   },
   {
@@ -102,39 +104,11 @@ export const DEPARTMENT_RESEARCH_AREA_PAGES: DepartmentResearchAreaPage[] = [
     peopleIndexUrl: 'https://mcdb.yale.edu/people/faculty',
   },
   {
-    deptKey: 'mbb',
-    deptName: 'Molecular Biophysics & Biochemistry',
-    schoolName: 'Yale Faculty of Arts and Sciences',
-    overviewUrl: 'https://mbb.yale.edu/research',
-    peopleIndexUrl: 'https://mbb.yale.edu/people/faculty',
-  },
-  {
     deptKey: 'astronomy',
     deptName: 'Astronomy',
     schoolName: 'Yale Faculty of Arts and Sciences',
     overviewUrl: 'https://astronomy.yale.edu/research',
     peopleIndexUrl: 'https://astronomy.yale.edu/people/faculty',
-  },
-  {
-    deptKey: 'applied-physics',
-    deptName: 'Applied Physics',
-    schoolName: 'Yale School of Engineering & Applied Science',
-    overviewUrl: 'https://appliedphysics.yale.edu/research',
-    peopleIndexUrl: 'https://appliedphysics.yale.edu/people',
-  },
-  {
-    deptKey: 'statistics',
-    deptName: 'Statistics & Data Science',
-    schoolName: 'Yale Faculty of Arts and Sciences',
-    overviewUrl: 'https://statistics.yale.edu/research',
-    peopleIndexUrl: 'https://statistics.yale.edu/people/faculty',
-  },
-  {
-    deptKey: 'eeb',
-    deptName: 'Ecology and Evolutionary Biology',
-    schoolName: 'Yale Faculty of Arts and Sciences',
-    overviewUrl: 'https://eeb.yale.edu/research',
-    peopleIndexUrl: 'https://eeb.yale.edu/people/faculty',
   },
 ];
 
@@ -284,6 +258,158 @@ export function parseDepartmentResearchThemes(html: string, pageUrl: string): Re
   });
 
   return themes;
+}
+
+const THEME_HEADING_SELECTOR = 'h2, h3, h4';
+const PROFILE_COLLECTION_SELECTOR = '[data-collection-source="profile"]';
+const PROFILE_CARD_SELECTOR = '.directory-listing-card';
+const FACULTY_REFERENCE_FIELD_SELECTOR = '.field-name-field-faculty';
+const COLLECTION_HEADING_SELECTOR = '.component-wrapper__heading';
+const NON_FACULTY_COLLECTION_HEADING = /\b(?:staff|see also|students?|alumni)\b/i;
+const FACULTY_TITLE = /\b(?:professor|lecturer|instructor)\b/i;
+const MAX_THEME_PAGE_PAGINATION = 10;
+const PAGE_CHROME_SELECTOR =
+  'nav, header, footer, aside, [role="navigation"], [role="complementary"], [role="contentinfo"], .sidebar';
+const NON_THEME_PATH = /^\/(?:posts?|news|events?|calendar)(?:\/|$)/i;
+
+export interface OverviewThemeLink {
+  label: string;
+  themeUrls: string[];
+}
+
+function hostOf(value: string): string | null {
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isThemePageUrl(candidate: string, overviewUrl: string, excluded: Set<string>): boolean {
+  if (!/^https?:\/\//i.test(candidate)) return false;
+  if (hostOf(candidate) !== hostOf(overviewUrl)) return false;
+  if (isFacultyProfileUrl(candidate) || isListingOrIndexUrl(candidate)) return false;
+  const key = normalizeMatchUrl(candidate);
+  if (!key || excluded.has(key)) return false;
+  const path = new URL(candidate).pathname.replace(/\/+$/, '');
+  return path !== '' && !NON_THEME_PATH.test(path);
+}
+
+/**
+ * Current department sites (YaleSites cards, legacy Drupal views) list only the
+ * theme headings on the overview and link each one to a theme page that carries
+ * the faculty listing. Collect each topic heading with its same-host theme page
+ * links: the heading's own link plus the calls to action in its section.
+ */
+export function parseOverviewThemeLinks(
+  html: string,
+  page: Pick<DepartmentResearchAreaPage, 'overviewUrl' | 'peopleIndexUrl'>,
+): OverviewThemeLink[] {
+  if (!html) return [];
+  const $ = cheerio.load(html);
+  const excluded = new Set(
+    [page.overviewUrl, page.peopleIndexUrl].map((url) => normalizeMatchUrl(url)).filter(Boolean),
+  );
+  const byLabel = new Map<string, Set<string>>();
+
+  $(THEME_HEADING_SELECTOR).each((_i, heading) => {
+    if ($(heading).closest(PAGE_CHROME_SELECTOR).length > 0) return;
+    const label = stripResearchSectionLabelPrefix($(heading).text());
+    if (!isResearchAreaThemeLabel(label)) return;
+    const anchors = $(heading)
+      .find('a[href]')
+      .add($(heading).nextUntil(THEME_HEADING_SELECTOR).find('a[href]'))
+      .add($(heading).nextUntil(THEME_HEADING_SELECTOR).filter('a[href]'));
+    anchors.each((_j, anchor) => {
+      const href = $(anchor).attr('href') || '';
+      if (!href) return;
+      const absolute = absolutize(href, page.overviewUrl);
+      if (!isThemePageUrl(absolute, page.overviewUrl, excluded)) return;
+      if (!byLabel.has(label)) byLabel.set(label, new Set());
+      byLabel.get(label)!.add(normalizeMatchUrl(absolute));
+    });
+  });
+
+  return Array.from(byLabel.entries()).map(([label, urls]) => ({
+    label,
+    themeUrls: Array.from(urls),
+  }));
+}
+
+export interface ThemePageListing {
+  faculty: DeptFacultyRef[];
+  listedProfileUrls: string[];
+}
+
+/**
+ * Read the faculty a theme page lists in its structured faculty listing (a
+ * YaleSites profile-directory collection or a Drupal faculty reference field).
+ * Theme listings also carry graduate students, postdocs and administrative
+ * staff, so a YaleSites card counts only when its role reads as a faculty
+ * title. Prose mentions elsewhere on the page are ignored, and only profiles on
+ * the department's own host are citable. `listedProfileUrls` holds every listed
+ * card, faculty or not, so pagination can tell an exhausted pager from a page
+ * of students.
+ */
+export function parseThemePageListing(html: string, pageUrl: string): ThemePageListing {
+  if (!html) return { faculty: [], listedProfileUrls: [] };
+  const $ = cheerio.load(html);
+  const host = hostOf(pageUrl);
+  const faculty = new Map<string, DeptFacultyRef>();
+  const listed = new Set<string>();
+  const add = (anchor: AnyNode) => {
+    const ref = facultyRefFromAnchor($, anchor, pageUrl);
+    if (!ref || hostOf(ref.profileUrl) !== host) return;
+    const key = normalizeMatchUrl(ref.profileUrl);
+    if (key && !faculty.has(key)) faculty.set(key, ref);
+  };
+
+  $(PROFILE_COLLECTION_SELECTOR).each((_i, collection) => {
+    const heading = text(
+      $(collection)
+        .closest('.component-wrapper__inner')
+        .find(COLLECTION_HEADING_SELECTOR)
+        .first()
+        .text(),
+    );
+    if (NON_FACULTY_COLLECTION_HEADING.test(heading)) return;
+    $(collection)
+      .find(PROFILE_CARD_SELECTOR)
+      .each((_j, card) => {
+        $(card)
+          .find('.directory-listing-card__heading-link[href]')
+          .each((_k, anchor) => {
+            const key = normalizeMatchUrl(absolutize($(anchor).attr('href') || '', pageUrl));
+            if (key) listed.add(key);
+          });
+        const role = text($(card).find('.directory-listing-card__subheading').text());
+        if (!FACULTY_TITLE.test(role)) return;
+        $(card)
+          .find('.directory-listing-card__heading-link[href]')
+          .each((_k, anchor) => add(anchor));
+      });
+  });
+  $(FACULTY_REFERENCE_FIELD_SELECTOR)
+    .find('a[href]')
+    .each((_i, anchor) => {
+      const key = normalizeMatchUrl(absolutize($(anchor).attr('href') || '', pageUrl));
+      if (key) listed.add(key);
+      add(anchor);
+    });
+
+  return { faculty: Array.from(faculty.values()), listedProfileUrls: Array.from(listed) };
+}
+
+export function nextThemePageUrl(html: string, pageUrl: string): string | null {
+  if (!html) return null;
+  const $ = cheerio.load(html);
+  const href = $('.pager a[rel="next"], .pager__item--next a[href], li.pager-next a[href]')
+    .first()
+    .attr('href');
+  if (!href) return null;
+  const next = absolutize(href, pageUrl);
+  if (hostOf(next) !== hostOf(pageUrl) || next === pageUrl) return null;
+  return next;
 }
 
 export interface DeptFacultyThemeAreas {
@@ -525,21 +651,22 @@ export class DepartmentResearchAreasScraper implements IScraper {
     let ambiguous = 0;
     let unresolved = 0;
     let facultyConsidered = 0;
+    let fetchFailures = 0;
 
     for (const page of this.pages) {
       if (onlyFilter && !onlyFilter.has(page.deptKey.toLowerCase())) continue;
       if (grafted >= limit) break;
 
-      let html: string | null = null;
-      try {
-        html = await this.fetchPage(page.overviewUrl, ctx.options.useCache);
-      } catch (error) {
-        ctx.log(`[${page.deptKey}] overview page fetch failed: ${sanitizeLogValue(error)}`);
+      const html = await this.fetchOrLog(ctx, page, page.overviewUrl, 'overview page');
+      if (html === null) {
+        fetchFailures += 1;
         continue;
       }
       if (!html) continue;
 
-      const themes = parseDepartmentResearchThemes(html, page.overviewUrl);
+      const linked = await this.linkedThemes(ctx, page, html);
+      fetchFailures += linked.fetchFailures;
+      const themes = [...parseDepartmentResearchThemes(html, page.overviewUrl), ...linked.themes];
       const facultyAreas = aggregateFacultyThemeAreas(themes);
       ctx.log(
         `[${page.deptKey}] ${themes.length} themes, ${facultyAreas.size} faculty with topical evidence`,
@@ -578,7 +705,60 @@ export class DepartmentResearchAreasScraper implements IScraper {
       entitiesObserved: grafted,
       notes:
         `Grafted department research-area themes onto ${grafted} existing homes; ` +
-        `${ambiguous} held (ambiguous home), ${unresolved} unresolved of ${facultyConsidered} listed faculty.`,
+        `${ambiguous} held (ambiguous home), ${unresolved} unresolved of ${facultyConsidered} listed faculty; ` +
+        `${fetchFailures} page fetches failed.`,
     };
+  }
+
+  private async fetchOrLog(
+    ctx: ScraperContext,
+    page: DepartmentResearchAreaPage,
+    url: string,
+    what: string,
+  ): Promise<string | null> {
+    try {
+      return (await this.fetchPage(url, ctx.options.useCache)) ?? '';
+    } catch (error) {
+      ctx.log(`[${page.deptKey}] ${what} fetch failed (${url}): ${sanitizeLogValue(error)}`);
+      return null;
+    }
+  }
+
+  private async linkedThemes(
+    ctx: ScraperContext,
+    page: DepartmentResearchAreaPage,
+    overviewHtml: string,
+  ): Promise<{ themes: ResearchTheme[]; fetchFailures: number }> {
+    const themes: ResearchTheme[] = [];
+    let fetchFailures = 0;
+    for (const link of parseOverviewThemeLinks(overviewHtml, page)) {
+      const faculty = new Map<string, DeptFacultyRef>();
+      for (const themeUrl of link.themeUrls) {
+        const visited = new Set<string>();
+        const chainProfiles = new Set<string>();
+        let pageUrl: string | null = themeUrl;
+        while (pageUrl && !visited.has(pageUrl) && visited.size < MAX_THEME_PAGE_PAGINATION) {
+          visited.add(pageUrl);
+          const html = await this.fetchOrLog(ctx, page, pageUrl, 'theme page');
+          if (html === null) {
+            fetchFailures += 1;
+            break;
+          }
+          const listing = parseThemePageListing(html, pageUrl);
+          const seenInChain = chainProfiles.size;
+          for (const url of listing.listedProfileUrls) chainProfiles.add(url);
+          for (const ref of listing.faculty) {
+            const key = normalizeMatchUrl(ref.profileUrl);
+            if (key && !faculty.has(key)) faculty.set(key, ref);
+          }
+          if (chainProfiles.size === seenInChain) break;
+          pageUrl = nextThemePageUrl(html, pageUrl);
+        }
+      }
+      if (faculty.size > 0) {
+        themes.push({ label: link.label, prose: '', faculty: Array.from(faculty.values()) });
+      }
+    }
+    return { themes, fetchFailures };
   }
 }

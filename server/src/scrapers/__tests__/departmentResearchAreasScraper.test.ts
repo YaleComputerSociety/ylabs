@@ -7,7 +7,10 @@ import {
   deptAreaGraftObservations,
   isFacultyProfileUrl,
   isResearchAreaThemeLabel,
+  nextThemePageUrl,
   parseDepartmentResearchThemes,
+  parseOverviewThemeLinks,
+  parseThemePageListing,
   resolveDeptFacultyHome,
   type DeptAreaCandidateEntity,
   type DeptFacultyThemeAreas,
@@ -62,20 +65,12 @@ function makeContext(options: Partial<ScraperContext['options']> = {}): {
 }
 
 describe('DEPARTMENT_RESEARCH_AREA_PAGES registry', () => {
-  it('wires at least the initial STEM set with a research-overview URL distinct from the people index', () => {
+  it('wires only departments that publish a research-overview URL distinct from the people index', () => {
     const keys = DEPARTMENT_RESEARCH_AREA_PAGES.map((page) => page.deptKey);
-    for (const expected of [
-      'physics',
-      'chemistry',
-      'mcdb',
-      'mbb',
-      'astronomy',
-      'applied-physics',
-      'statistics',
-      'eeb',
-    ]) {
-      expect(keys).toContain(expected);
-    }
+    expect(keys).toEqual(['physics', 'chemistry', 'mcdb', 'astronomy']);
+    expect(
+      DEPARTMENT_RESEARCH_AREA_PAGES.find((page) => page.deptKey === 'chemistry')?.overviewUrl,
+    ).toBe('https://chem.yale.edu/research-areas');
     for (const page of DEPARTMENT_RESEARCH_AREA_PAGES) {
       expect(page.overviewUrl).toMatch(/^https:\/\//);
       expect(page.peopleIndexUrl).toMatch(/^https:\/\//);
@@ -146,6 +141,182 @@ describe('parseDepartmentResearchThemes', () => {
     expect(themes[0].faculty.map((f) => f.profileUrl)).toEqual([
       'https://physics.yale.edu/people/ada-byron',
     ]);
+  });
+});
+
+const YALESITES_OVERVIEW = 'https://dept.yale.edu/research';
+
+function yaleSitesOverviewHtml(): string {
+  return (
+    `<html><body><header><nav><h2>Research</h2><a href="/research/header-theme">Header</a></nav></header>` +
+    `<main>` +
+    `<div class="text-with-image__content"><h2 class="text-with-image__heading">Quantum Physics</h2>` +
+    `<div class="text-with-image__text"><p>Theme prose.</p></div>` +
+    `<div class="text-with-image__ctas"><a class="link" href="/research/quantum-physics">Research Page</a></div></div>` +
+    `<div class="text-with-image__content"><h2 class="text-with-image__heading">Nuclear Physics</h2>` +
+    `<div class="text-with-image__ctas"><a href="/nuclear-experimental">Experimental</a>` +
+    `<a href="/nuclear-theoretical#top">Theoretical</a></div></div>` +
+    `<ul><li class="custom-card"><h2 class="custom-card__heading"><a href="/research/cell-biology">Cell Biology</a></h2></li>` +
+    `<li class="custom-card"><h2 class="custom-card__heading"><a href="/research">Genetics</a></h2></li>` +
+    `<li class="custom-card"><h2 class="custom-card__heading"><a href="https://elsewhere.edu/theme">Offsite Theme</a></h2></li></ul>` +
+    `<h2>Our Research in the News</h2><a href="/posts/2026-01-01-a-story">Story</a>` +
+    `</main>` +
+    `<footer><h2>Helpful Links</h2><a href="/academics">Academics</a></footer>` +
+    `</body></html>`
+  );
+}
+
+const PROFESSOR = 'Professor of Physics';
+
+type Card = string | { slug: string; role: string };
+
+function titleCase(slug: string): string {
+  return slug
+    .split('-')
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function collectionHtml(heading: string, cards: Card[]): string {
+  const items = cards
+    .map((card) => (typeof card === 'string' ? { slug: card, role: PROFESSOR } : card))
+    .map(
+      ({ slug, role }) =>
+        `<li class="directory-listing-card"><h3 class="directory-listing-card__heading">` +
+        `<a class="directory-listing-card__heading-link" href="/profile/${slug}">${titleCase(slug)}</a></h3>` +
+        `<div class="directory-listing-card__subheading"><div>${role}</div></div>` +
+        `<a class="directory-listing-card__link" href="mailto:${slug}@example.edu">Email</a></li>`,
+    )
+    .join('');
+  return (
+    `<div class="component-wrapper__inner"><h2 class="component-wrapper__heading">${heading}</h2>` +
+    `<section><div class="card-collection" data-collection-source="profile"><ul>${items}</ul></div></section></div>`
+  );
+}
+
+function profileCollectionHtml(cards: Card[], nextHref?: string, extra = ''): string {
+  const pager = nextHref
+    ? `<nav class="pager"><ul><li class="pager__item pager__item--next"><a class="pager__link" href="${nextHref}" rel="next">Next</a></li></ul></nav>`
+    : '';
+  return (
+    `<html><body><main>` +
+    `<p>Mentioned in prose: <a href="/profile/prose-mention">Prose Mention</a></p>` +
+    collectionHtml('Group Members', cards) +
+    extra +
+    pager +
+    `<a href="https://social.example/profile/dept-account">Dept Account</a>` +
+    `</main></body></html>`
+  );
+}
+
+describe('parseOverviewThemeLinks', () => {
+  it('follows each topic heading to its same-host theme pages and skips chrome, self links, offsite and news', () => {
+    const links = parseOverviewThemeLinks(yaleSitesOverviewHtml(), {
+      overviewUrl: YALESITES_OVERVIEW,
+      peopleIndexUrl: 'https://dept.yale.edu/people/faculty',
+    });
+    expect(links).toEqual([
+      { label: 'Quantum Physics', themeUrls: ['https://dept.yale.edu/research/quantum-physics'] },
+      {
+        label: 'Nuclear Physics',
+        themeUrls: [
+          'https://dept.yale.edu/nuclear-experimental',
+          'https://dept.yale.edu/nuclear-theoretical',
+        ],
+      },
+      { label: 'Cell Biology', themeUrls: ['https://dept.yale.edu/research/cell-biology'] },
+    ]);
+  });
+
+  it('reads legacy Drupal h4 theme headings', () => {
+    const html =
+      `<html><body><div id="block-system-main"><table><tr>` +
+      `<td><h4><a href="/research/research-home/exoplanets">Exoplanets</a></h4></td>` +
+      `</tr></table></div><div class="region sidebar"><nav><h2>Research</h2>` +
+      `<a href="/research/research-home/exoplanets">Exoplanets</a></nav></div></body></html>`;
+    expect(
+      parseOverviewThemeLinks(html, {
+        overviewUrl: 'https://astro.yale.edu/research',
+        peopleIndexUrl: 'https://astro.yale.edu/people/faculty',
+      }),
+    ).toEqual([
+      {
+        label: 'Exoplanets',
+        themeUrls: ['https://astro.yale.edu/research/research-home/exoplanets'],
+      },
+    ]);
+  });
+});
+
+describe('parseThemePageListing', () => {
+  it('reads only faculty-titled cards in the structured profile listing on the department host', () => {
+    const listing = parseThemePageListing(
+      profileCollectionHtml([
+        'jane-doe',
+        { slug: 'sam-lee', role: 'Assistant Professor of Physics' },
+        { slug: 'grad-one', role: 'Graduate Student' },
+        { slug: 'postdoc-one', role: 'Postdoctoral Associate' },
+        { slug: 'untitled-one', role: '' },
+      ]),
+      'https://dept.yale.edu/research/quantum-physics',
+    );
+    expect(listing.faculty).toEqual([
+      { name: 'Jane Doe', profileUrl: 'https://dept.yale.edu/profile/jane-doe' },
+      { name: 'Sam Lee', profileUrl: 'https://dept.yale.edu/profile/sam-lee' },
+    ]);
+    expect(listing.listedProfileUrls).toHaveLength(5);
+  });
+
+  it('skips staff and cross-reference collections even when a card carries a faculty title', () => {
+    const listing = parseThemePageListing(
+      profileCollectionHtml(
+        ['jane-doe'],
+        undefined,
+        collectionHtml('Support Staff', [
+          { slug: 'admin-one', role: 'Senior Administrative Assistant' },
+        ]) + collectionHtml('See Also', ['other-dept-professor']),
+      ),
+      'https://dept.yale.edu/research/quantum-physics',
+    );
+    expect(listing.faculty.map((ref) => ref.name)).toEqual(['Jane Doe']);
+  });
+
+  it('reads a Drupal faculty reference field', () => {
+    const html =
+      `<html><body><p><a href="/people/prose-mention">Prose Mention</a></p>` +
+      `<div class="field field-name-field-faculty"><div class="field-label">Faculty:</div>` +
+      `<div class="field-items"><div class="field-item"><a href="/people/ada-byron">Ada Byron</a></div></div></div>` +
+      `</body></html>`;
+    expect(
+      parseThemePageListing(html, 'https://astro.yale.edu/research/research-home/exoplanets')
+        .faculty,
+    ).toEqual([{ name: 'Ada Byron', profileUrl: 'https://astro.yale.edu/people/ada-byron' }]);
+  });
+
+  it('emits nothing from a page with no faculty listing', () => {
+    expect(
+      parseThemePageListing(
+        '<html><body><main><a href="/profile/jane-doe">Jane Doe</a></main></body></html>',
+        'https://dept.yale.edu/research/quantum-physics',
+      ).faculty,
+    ).toEqual([]);
+  });
+});
+
+describe('nextThemePageUrl', () => {
+  it('follows a same-host rel=next pager link', () => {
+    expect(
+      nextThemePageUrl(
+        profileCollectionHtml(['jane-doe'], '?page=1'),
+        'https://dept.yale.edu/research/quantum-physics',
+      ),
+    ).toBe('https://dept.yale.edu/research/quantum-physics?page=1');
+    expect(
+      nextThemePageUrl(
+        profileCollectionHtml(['jane-doe']),
+        'https://dept.yale.edu/research/quantum-physics',
+      ),
+    ).toBeNull();
   });
 });
 
@@ -301,6 +472,84 @@ describe('DepartmentResearchAreasScraper.run', () => {
     expect(graft?.sourceUrl).toBe('https://physics.yale.edu/people/jane-doe');
     expect(emitted.every((o) => o.sourceUrl !== PHYSICS_URL)).toBe(true);
     expect(result.notes).toMatch(/1 held \(ambiguous home\)/);
+  });
+
+  it('crawls linked theme pages across pagination and labels faculty with the overview heading', async () => {
+    const themeUrl = 'https://dept.yale.edu/research/quantum-physics';
+    const pages: Record<string, string> = {
+      [YALESITES_OVERVIEW]: yaleSitesOverviewHtml(),
+      [themeUrl]: profileCollectionHtml(['jane-doe'], '?page=1'),
+      [`${themeUrl}?page=1`]: profileCollectionHtml(
+        [{ slug: 'grad-one', role: 'Graduate Student' }],
+        '?page=2',
+      ),
+      [`${themeUrl}?page=2`]: profileCollectionHtml(['sam-lee'], '?page=3'),
+      [`${themeUrl}?page=3`]: profileCollectionHtml(['sam-lee'], '?page=4'),
+      'https://dept.yale.edu/research/cell-biology': profileCollectionHtml(['jane-doe']),
+    };
+    const fetched: string[] = [];
+    const scraper = new DepartmentResearchAreasScraper(
+      {
+        fetchPage: async (url) => {
+          fetched.push(url);
+          if (!(url in pages)) throw new Error('Request failed with status code 404');
+          return pages[url];
+        },
+        entityFinder: async () => [
+          candidate({
+            _id: '111111111111111111111111',
+            matchUrls: ['https://dept.yale.edu/profile/jane-doe'],
+          }),
+          candidate({ _id: '222222222222222222222222', slug: 'sam', nameKey: 'sam-lee' }),
+          candidate({ _id: '333333333333333333333333', slug: 'grad', nameKey: 'grad-one' }),
+        ],
+      },
+      [
+        {
+          ...page,
+          deptKey: 'dept',
+          overviewUrl: YALESITES_OVERVIEW,
+          peopleIndexUrl: 'https://dept.yale.edu/people/faculty',
+        },
+      ],
+    );
+    const { ctx, emitted, logs } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(fetched).toContain(`${themeUrl}?page=3`);
+    expect(fetched).not.toContain(`${themeUrl}?page=4`);
+    const byEntity = Object.fromEntries(emitted.map((o) => [o.entityId, o]));
+    expect(byEntity['111111111111111111111111']?.value).toEqual([
+      'Quantum Physics',
+      'Cell Biology',
+    ]);
+    expect(byEntity['111111111111111111111111']?.sourceUrl).toBe(
+      'https://dept.yale.edu/profile/jane-doe',
+    );
+    expect(byEntity['222222222222222222222222']?.value).toEqual(['Quantum Physics']);
+    expect(byEntity['333333333333333333333333']).toBeUndefined();
+    expect(
+      emitted.every((o) => o.sourceUrl !== YALESITES_OVERVIEW && o.sourceUrl !== themeUrl),
+    ).toBe(true);
+    expect(result.notes).toMatch(/2 page fetches failed/);
+    expect(logs.some((line) => line.includes('theme page fetch failed'))).toBe(true);
+  });
+
+  it('skips a department whose overview cannot be fetched and still reports the failure', async () => {
+    const scraper = new DepartmentResearchAreasScraper(
+      {
+        fetchPage: async () => {
+          throw new Error('Request failed with status code 403');
+        },
+        entityFinder: async () => [],
+      },
+      [page],
+    );
+    const { ctx, emitted, logs } = makeContext();
+    const result = await scraper.run(ctx);
+    expect(emitted).toHaveLength(0);
+    expect(result.notes).toMatch(/1 page fetches failed/);
+    expect(logs[0]).toMatch(/\[physics\] overview page fetch failed/);
   });
 
   it('emits nothing when no listed faculty resolves', async () => {
