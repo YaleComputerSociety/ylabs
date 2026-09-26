@@ -378,6 +378,69 @@ describe('YsmFacultyDirectoryScraper.run', () => {
   });
 });
 
+describe('YsmFacultyDirectoryScraper.run support-staff mint gate (#3410)', () => {
+  // The damaging path, not the predicate: a lab assistant's profile carries the PI's
+  // lab link and the PI's MeSH keywords, so every positive mint condition is met and
+  // the row was minted with the PI's lab name, website, and later the PI's lab prose.
+  it('mints no research entity from a research-support profile that links its PI lab', async () => {
+    const html = directoryHtml([
+      { id: 'T', items: [{ url: '/profile/support-person/', text: 'Person, Support' }] },
+    ]);
+    const supportProfile = profileHtml({
+      fullName: 'Support Person',
+      workdayTitle: 'Laboratory Assistant 3',
+      email: 'support.person@yale.edu',
+      meshKeywords: ['Microbiome'],
+      labWebsite: { name: 'Principal Lab', url: 'https://medicine.yale.edu/lab/principal/' },
+    });
+    const profileUrl = 'https://medicine.yale.edu/profile/support-person/';
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return html;
+      if (url === profileUrl) return supportProfile;
+      throw new Error(`unexpected url ${url}`);
+    });
+    const scraper = new YsmFacultyDirectoryScraper(fetcher);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(emitted.filter((o) => o.entityType === 'researchEntity')).toEqual([]);
+    expect(result.notes).toMatch(/1 research-support staff skipped/);
+
+    // The person is still a person: their own observations keep flowing, which is
+    // both the sibling screens' stated contract and the evidence the retirement pass
+    // reads to judge the row.
+    const userObs = emitted.filter((o) => o.entityType === 'user');
+    expect(userObs.length).toBeGreaterThan(0);
+    expect(userObs.map((o) => o.field)).toContain('title');
+    expect(userObs.every((o) => o.sourceUrl === profileUrl)).toBe(true);
+  });
+
+  it('still mints from a faculty profile that states a support role alongside it', async () => {
+    const html = directoryHtml([
+      { id: 'L', items: [{ url: '/profile/dual-role/', text: 'Role, Dual' }] },
+    ]);
+    const dualProfile = profileHtml({
+      fullName: 'Dual Role',
+      workdayTitle: 'Special Collections Librarian, Lecturer in American Religious History',
+      email: 'dual.faculty@yale.edu',
+      meshKeywords: ['Religion'],
+    });
+    const profileUrl = 'https://medicine.yale.edu/profile/dual-role/';
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return html;
+      if (url === profileUrl) return dualProfile;
+      throw new Error(`unexpected url ${url}`);
+    });
+    const scraper = new YsmFacultyDirectoryScraper(fetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.filter((o) => o.field === 'slug').map((o) => o.value)).toEqual([
+      'ysm-faculty-dual-role',
+    ]);
+  });
+});
+
 describe('facultyToResearchEntityObservations affiliated-organization guard (#2234)', () => {
   const SHARMA: RawYsmFaculty = {
     name: 'Sharma, Priya',

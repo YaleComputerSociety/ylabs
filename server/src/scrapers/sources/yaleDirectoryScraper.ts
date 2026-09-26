@@ -172,6 +172,103 @@ export function isFacultyTitle(title: string | undefined | null): boolean {
 }
 
 /**
+ * Whether the title names a faculty appointment ANYWHERE in it, asking the faculty
+ * vocabulary directly rather than through `isFacultyTitle`.
+ *
+ * `isFacultyTitle` is a classifier and must stay one: it short-circuits on
+ * `looksLikeNonResearchTitle` so that a staff title cannot be read as faculty on a
+ * stray keyword. That short-circuit is wrong for an irreversible decision about a
+ * person who states an appointment, because `'Associate Professor of Medicine;
+ * Clinical Program Manager'` loses its faculty reading to `\bmanager\b`. This
+ * predicate therefore asks only "is a faculty appointment stated", and it is a
+ * one-way guard: the answer is used to SPARE a row, never to accept one (#3410).
+ */
+export function statesAnyFacultyAppointment(title: string | undefined | null): boolean {
+  const clean = classifiableTitle(title);
+  if (!clean) return false;
+  const lower = clean.toLowerCase();
+  return FACULTY_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+/**
+ * Support and technical ranks held inside somebody else's research group: the
+ * people who run an instrument, a collection, a counselling clinic or a codebase
+ * for a lab they do not own.
+ *
+ * Kept apart from `SUBORDINATE_RESEARCH_RANK_PATTERNS`, which enumerates academic
+ * ranks, and from `NON_FACULTY_TITLE_PATTERNS`, which is the reason this list
+ * cannot simply be folded into it: that list short-circuits `isFacultyTitle`, so
+ * `librarian` sitting in it would refuse a Special Collections Librarian who is
+ * also a Lecturer in American Religious History. Measured against all 5,573
+ * distinct stored titles in the corpus, every title this vocabulary puts at risk
+ * is that shape - a faculty appointment stated alongside a support role - which
+ * is why the predicate yields to a stated faculty appointment (#3410).
+ *
+ * That measurement is also the answer to the reasonable objection that the last four
+ * entries are administrative rather than research-support, and so belong in
+ * `NON_FACULTY_TITLE_PATTERNS`. Moving them there costs exactly one stored title its
+ * faculty reading: a Lecturer in Dramaturgy who is also co-editor of an alumni
+ * magazine. A real lecturer misread as staff is the more expensive error, so they
+ * stay here, where a stated faculty appointment still wins.
+ */
+const RESEARCH_SUPPORT_STAFF_TITLE_PATTERNS: RegExp[] = [
+  // `technician` and `technologist` are matched on their own below, so the compound
+  // patterns state only what they add.
+  /\b(?:lab|laboratory)\s+(?:assistant|aide|supervisor|support)\b/i,
+  /\b(?:clinical|medical|materials|pathology|histology|autopsy|dental|surgical)\s+(?:assistant|aide)\b/i,
+  /\btechnologist\b/i,
+  /\btechnician\b/i,
+  /\bresearch aide\b/i,
+  /\bgenetic counsel(?:o|le)r\b/i,
+  /\blibrarian\b/i,
+  /\bsoftware (?:engineer|developer)\b/i,
+  /\bbusiness (?:systems )?analyst\b/i,
+  /\bbusiness development\b/i,
+  // The advancement role, not the word: a bare `alumni` also refuses "Director,
+  // Alumni Research Program", and three of the six non-faculty titles containing it
+  // are not person titles at all (a scholarship, a speaker series).
+  /\balumni (?:affairs|engagement|relations|magazine)\b|\bdevelopment and alumni\b/i,
+  /\bregistrar\b/i,
+];
+
+/**
+ * Whether a title names a research-support or technical staff role rather than
+ * somebody who owns research of their own.
+ *
+ * The mint gate asked only `looksLikeNonResearchTitle` and
+ * `isSubordinateResearchRank`, and a `Laboratory Assistant 3` matches neither:
+ * the staff list covers coaches, facilities and managers, and the subordinate
+ * list has `research assistant`, which does not match *Laboratory* Assistant. So
+ * a lab technician minted a research entity carrying their PI's lab name, website
+ * and - once the microsite lane followed that website - the PI's lab prose, which
+ * survived the graft repair that withdrew the website (#3410).
+ */
+export function isResearchSupportStaffTitle(title: string | undefined | null): boolean {
+  const clean = classifiableTitle(title);
+  if (!clean) return false;
+  if (!RESEARCH_SUPPORT_STAFF_TITLE_PATTERNS.some((rx) => rx.test(clean))) return false;
+  return !isFacultyTitle(clean);
+}
+
+/**
+ * Every title screen that disqualifies a person profile from minting a research entity
+ * of its own, as one predicate.
+ *
+ * Sole owner on purpose. Four lanes ask this question, and a lane that asks a subset
+ * re-mints exactly the rows the retirement pass archives, which is the defect #3410
+ * was: the YSM mint asked two of the three, and the roster and YSE mints asked none.
+ * A lane added later that cites a person profile as a row's identity must call this
+ * rather than restate it.
+ */
+export function ownsNoResearchEntityByTitle(title: string | undefined | null): boolean {
+  return (
+    looksLikeNonResearchTitle(title) ||
+    isSubordinateResearchRank(title) ||
+    isResearchSupportStaffTitle(title)
+  );
+}
+
+/**
  * Pure helper: does this Yalies record represent faculty (as opposed to a student)?
  * Strict — must match a faculty keyword AND not match any non-research staff pattern.
  * The previous loose "(has title AND no year)" heuristic swept in athletic coaches,

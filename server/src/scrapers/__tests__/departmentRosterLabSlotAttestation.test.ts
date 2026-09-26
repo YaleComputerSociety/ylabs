@@ -14,7 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  entryToResearchEntityObservations,
+  rosterResearchEntityMint,
   mcdbExtractor,
   profileEnrichmentFromHtml,
   psychExtractor,
@@ -147,7 +147,7 @@ describe('the observation the lane emits', () => {
   } as never;
 
   const observationsFor = (entry: Record<string, unknown>) =>
-    entryToResearchEntityObservations(
+    rosterResearchEntityMint(
       {
         name: 'Ada Fixture',
         profileUrl: PROFILE_URL,
@@ -160,7 +160,7 @@ describe('the observation the lane emits', () => {
       dept,
       'https://mcdb.yale.edu/people/faculty',
       'dept-mcdb-ada-fixture',
-    );
+    ).observations;
 
   const absenceAssertions = (entry: Record<string, unknown>) =>
     observationsFor(entry)
@@ -247,7 +247,7 @@ describe('a lab URL the corpus has already refused (#3452)', () => {
 
   const fieldsFor = (labUrlIsUnusable?: (url: string) => boolean) =>
     Object.fromEntries(
-      entryToResearchEntityObservations(
+      rosterResearchEntityMint(
         {
           name: 'Ada Fixture',
           profileUrl: PROFILE_URL,
@@ -261,7 +261,7 @@ describe('a lab URL the corpus has already refused (#3452)', () => {
         'https://mcdb.yale.edu/people/faculty',
         'dept-mcdb-ada-fixture',
         labUrlIsUnusable,
-      ).map((observation) => [observation.field, observation.value]),
+      ).observations.map((observation) => [observation.field, observation.value]),
     );
 
   it('withdraws the lab identity, not only the websiteUrl', () => {
@@ -284,5 +284,112 @@ describe('a lab URL the corpus has already refused (#3452)', () => {
     const byField = fieldsFor();
     expect(byField.name).toBe('Ada Fixture Lab');
     expect(byField.entityType).toBe('LAB');
+  });
+});
+
+/**
+ * The roster research-entity mint is a second path to the #3410 defect: the new title
+ * screen reached `statesFacultyAppointment`, which gates cross-listed-programme
+ * admission, while this mint applied no title screen at all. So a support-staff entry
+ * with a lab link on an ordinary department roster still minted the PI's lab as its own.
+ */
+describe('the roster research-entity mint and a stated title (#3410)', () => {
+  const dept = {
+    deptKey: 'mcdb',
+    deptName: 'Molecular, Cellular and Developmental Biology',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    rosterUrl: 'https://mcdb.yale.edu/people/faculty',
+  } as never;
+
+  const mintFor = (title: string | undefined) =>
+    rosterResearchEntityMint(
+      {
+        name: 'Ada Fixture',
+        profileUrl: PROFILE_URL,
+        title,
+        labUrl: 'https://principal-lab.example.org/',
+        researchHomeDescription:
+          'The group studies the assembly of cytoskeletal fixtures in dividing cells, using live imaging and targeted genetic perturbation.',
+        researchHomeShortDescription: 'Studies cytoskeletal fixture assembly in dividing cells.',
+        topics: ['Cell Biology'],
+      } as never,
+      dept,
+      'https://mcdb.yale.edu/people/faculty',
+      'dept-mcdb-ada-fixture',
+    ).observations;
+
+  it('mints nothing for a research-support title', () => {
+    expect(mintFor('Laboratory Assistant 3')).toEqual([]);
+  });
+
+  it('mints nothing for a subordinate rank or a non-research staff role', () => {
+    expect(mintFor('Postdoctoral Associate')).toEqual([]);
+    expect(mintFor('Building Maintenance Supervisor')).toEqual([]);
+  });
+
+  it('still mints for a faculty title', () => {
+    expect(mintFor('Professor of Fixtures').length).toBeGreaterThan(0);
+  });
+
+  // Absence of a title is absence of evidence, and most roster rows carry none.
+  it('still mints when the entry states no title at all', () => {
+    expect(mintFor(undefined).length).toBeGreaterThan(0);
+    expect(mintFor('   ').length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * A title screen refusing a research row is not the roster dropping the person, and an entry
+ * that would have minted nothing anyway is neither. Both have to be told apart,
+ * because the call site records the first as still discovered on this roster and the
+ * departure lane reads a missing discovered key as absence (#3410).
+ */
+describe('rosterResearchEntityMint refusedByTitle', () => {
+  const dept = {
+    deptKey: 'mcdb',
+    deptName: 'Molecular, Cellular and Developmental Biology',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    rosterUrl: 'https://mcdb.yale.edu/people/faculty',
+  } as never;
+
+  const mint = (entry: Record<string, unknown>) =>
+    rosterResearchEntityMint(
+      {
+        name: 'Ada Fixture',
+        profileUrl: PROFILE_URL,
+        labUrl: 'https://principal-lab.example.org/',
+        researchHomeDescription:
+          'The group studies the assembly of cytoskeletal fixtures in dividing cells, using live imaging and targeted genetic perturbation.',
+        researchHomeShortDescription: 'Studies cytoskeletal fixture assembly in dividing cells.',
+        topics: ['Cell Biology'],
+        ...entry,
+      } as never,
+      dept,
+      'https://mcdb.yale.edu/people/faculty',
+      'dept-mcdb-ada-fixture',
+    );
+
+  it('reports a title refusal only when the entry would otherwise have minted', () => {
+    const refused = mint({ title: 'Laboratory Assistant 3' });
+    expect(refused.observations).toEqual([]);
+    expect(refused.refusedByTitle).toBe(true);
+  });
+
+  it('does not report a title refusal for an entry with no research evidence at all', () => {
+    const empty = mint({
+      title: 'Laboratory Assistant 3',
+      labUrl: undefined,
+      researchHomeDescription: undefined,
+      researchHomeShortDescription: undefined,
+      topics: [],
+    });
+    expect(empty.observations).toEqual([]);
+    expect(empty.refusedByTitle).toBe(false);
+  });
+
+  it('reports no refusal for a faculty title that mints', () => {
+    const minted = mint({ title: 'Professor of Fixtures' });
+    expect(minted.observations.length).toBeGreaterThan(0);
+    expect(minted.refusedByTitle).toBe(false);
   });
 });

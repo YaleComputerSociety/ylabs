@@ -257,6 +257,36 @@ describe('facultyToResearchEntityObservations', () => {
     expect(obs.find((o) => o.field === 'fullDescription')?.confidenceOverride).toBe(0.55);
   });
 
+  // The retirement pass's population is lane-agnostic, so this lane has to ask the
+  // same title screens the YSM and roster mints ask or it keeps minting rows the pass
+  // then archives (#3410).
+  it('mints no research entity for a title that owns no research', () => {
+    const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
+    for (const title of [
+      'Laboratory Assistant 3',
+      'Postdoctoral Associate',
+      'Building Maintenance Supervisor',
+    ]) {
+      expect(
+        facultyToResearchEntityObservations({ ...profile, title }, 'yse:jordan-rivers'),
+      ).toEqual([]);
+    }
+  });
+
+  it('still mints for a faculty title and when no title is stated', () => {
+    const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
+    expect(
+      facultyToResearchEntityObservations(
+        { ...profile, title: 'Professor of Hydrology' },
+        'yse:jordan-rivers',
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(
+      facultyToResearchEntityObservations({ ...profile, title: undefined }, 'yse:jordan-rivers')
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
   it('keys the lead PI on the person-specific email so an existing professor resolves by email', () => {
     const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
     const obs = facultyToResearchEntityObservations(profile, 'yse:jordan-rivers');
@@ -351,6 +381,53 @@ describe('YseFacultyDirectoryScraper.run', () => {
     expect(everySource).not.toContain(DIRECTORY_URL);
     expect(everySource).toContain(RIVERS.profileUrl);
     expect(everySource).toContain(MEADOW.profileUrl);
+  });
+
+  // The whole run, not just the mint: a support-staff profile carrying a lab link it
+  // does not own still describes a real person, so the lane must emit the person and
+  // no research entity (#3410).
+  it('emits the person but no research entity for a support-staff profile carrying a lab link', async () => {
+    const staffSlug = 'quinn-instrument';
+    const staffUrl = `https://environment.yale.edu/directory/faculty/${staffSlug}`;
+    const directory = `
+<html><body><main>
+  <li><article class="profile__item">
+    <div class="profile__segment--name"><h2><a href="/directory/faculty/${staffSlug}">Quinn Instrument</a></h2></div>
+  </article></li>
+</main></body></html>
+`;
+    const staffProfile = `
+<html><body><main class="main-content">
+  <section class="profile flexhero">
+    <h1>Quinn Instrument</h1>
+    <div class="intro-text profile__position"><p><span class="semijoin">Laboratory Assistant 3</span></p></div>
+    <aside>
+      <div class="profile__info">
+        <div class="eyebrow">Links</div>
+        <ul><li><a href="https://riverslab.example.org" rel="nofollow">Lab Website</a></li></ul>
+      </div>
+    </aside>
+  </section>
+  <div class="grid-container">
+    <div class="cell medium-8">
+      <div class="wysiwyg">
+        <p>Runs the wetland isotope facility and maintains its instrumentation for the group.</p>
+      </div>
+    </div>
+  </div>
+</main></body></html>
+`;
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return directory;
+      if (url === staffUrl) return staffProfile;
+      throw new Error(`unexpected url ${url}`);
+    });
+    const scraper = new YseFacultyDirectoryScraper(fetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.some((o) => o.entityType === 'researchEntity')).toBe(false);
+    expect(emitted.some((o) => o.entityType === 'user')).toBe(true);
   });
 });
 
