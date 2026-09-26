@@ -72,6 +72,32 @@ describe('runScraperSweep', () => {
     }
   });
 
+  it('keeps the undergrad posting lane registered and seeded but out of the sweep', () => {
+    const registeredNames = buildOrchestrator()
+      .list()
+      .map((source) => source.name);
+    expect(MANUAL_ONLY_SWEEP_SOURCES).toContain('undergrad-research-posting');
+    expect(RESEARCH_SWEEP_SOURCES.map((source) => source.name)).not.toContain(
+      'undergrad-research-posting',
+    );
+    expect(registeredNames).toContain('undergrad-research-posting');
+    expect(ACTIVE_SOURCE_NAMES).toContain('undergrad-research-posting');
+  });
+
+  it('refuses the undergrad posting lane put back into the sweep manifest', () => {
+    const registeredNames = buildOrchestrator()
+      .list()
+      .map((source) => source.name);
+    RESEARCH_SWEEP_SOURCES.push({ name: 'undergrad-research-posting', phase: 'content-access' });
+    try {
+      expect(() => validateScraperSweepManifest(registeredNames)).toThrow(
+        /manual-only sources must stay out of the sweep manifest: undergrad-research-posting/,
+      );
+    } finally {
+      RESEARCH_SWEEP_SOURCES.pop();
+    }
+  });
+
   it('refuses a manual-only source that is no longer registered', () => {
     const registeredNames = buildOrchestrator()
       .list()

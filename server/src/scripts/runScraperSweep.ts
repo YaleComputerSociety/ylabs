@@ -93,7 +93,6 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'center-director-llm', phase: 'relationships' },
   { name: 'lab-microsite-description-llm', phase: 'content-access' },
   { name: 'lab-microsite-undergrad-llm', phase: 'content-access' },
-  { name: 'undergrad-research-posting', phase: 'content-access' },
   { name: 'research-area-source-extractor', phase: 'content-access' },
   { name: 'ysm-mesh-keyword', phase: 'content-access' },
 ];
@@ -103,6 +102,8 @@ const MANUAL_ONLY_SWEEP_SOURCE_REASONS: Record<string, string> = {
     'backward-looking recipients source with no clean public feed; run from curated input',
   'federal-award-usaspending':
     'USAspending publishes no principal-investigator field, so the lane acquires nothing by construction and would trip the barren-streak guard on every sweep (#3542, #3547)',
+  'undergrad-research-posting':
+    'no official public page publishes postings in the shape the lane reads, so its page list is empty and it would trip the barren-streak guard on every sweep (#3550, #3553); return it to the sweep when a replacement page is configured (#3551)',
 };
 
 export const MANUAL_ONLY_SWEEP_SOURCES: string[] = Object.keys(MANUAL_ONLY_SWEEP_SOURCE_REASONS);
