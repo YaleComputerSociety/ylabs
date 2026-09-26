@@ -9,10 +9,12 @@ import {
   normalizeLabSlug,
   passesYsmLabIndexDropGuard,
   snapshotDiscoveredLabSlugs,
-  suppressionReasonIsWritable,
-  withPermanentClosureReason,
   YSM_LAB_INDEX_DROP_GUARD_MIN_FRACTION,
 } from '../ysmLabDelistingReconciler';
+import {
+  suppressionReasonIsWritable,
+  withPermanentClosureReason,
+} from '../../utils/researchEntityYaleStatus';
 
 describe('normalizeLabSlug / labSlugFromMicrositeUrl', () => {
   it('folds the casing and separator drift that produced false delistings (#2511)', () => {

@@ -177,7 +177,7 @@ export function lockedFieldAssertsNoValue(storedValue: unknown): boolean {
  * Locks that gate a write lane `materializeEntity` does not run, so no
  * materialization can report what releasing them would do.
  *
- * `ysmLabDelistingReconciler.suppressionReasonIsWritable` and
+ * `researchEntityYaleStatus.suppressionReasonIsWritable` and
  * `researchEntityYaleStatus.yaleStatusCacheIsWritable` read the lock list and
  * update the row themselves. A dry-run projection asked to ignore such a lock
  * answers for the projection only, so it reports agreement while the lane the lock

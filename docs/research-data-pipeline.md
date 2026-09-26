@@ -490,7 +490,7 @@ It asks two questions per lock, in order, and both have to answer yes.
 May the engine be asked?
 `isRevisitableFieldLockOnEntity` says yes on a positive `engine_gap_workaround` record, and on a lock that holds no value, which is a hand-rolled retraction and therefore a workaround by construction rather than by guess.
 A lock that pins a value and carries no record stays `unknown` and stays shut: the rule is still that a lock re-opens on evidence it was a workaround, never on the absence of a record.
-A lock on `studentVisibilitySuppressionReason`, `activeAtYaleCache` or `yaleStatusCache` is refused outright and reported as `keep_gates_other_writer`, because those locks hold `ysmLabDelistingReconciler` and the roster-departure reconciler shut rather than holding a projection shut.
+A lock on `studentVisibilitySuppressionReason`, `activeAtYaleCache` or `yaleStatusCache` is refused outright and reported as `keep_gates_other_writer`, because those locks hold `ysmLabDelistingReconciler`, the roster-departure reconciler, and the operator lane `research-entity:record-departure` shut rather than holding a projection shut.
 Those lanes read the lock list and update the row themselves, so a materialization asked to ignore one of their locks answers for the projection only and reports agreement while the lane it actually gates stays unexercised - and those lanes are what flip a row between student-visible and suppressed.
 Releasing one of them needs an operation that exercises the reconcilers; `fieldLockGatesNonMaterializerWriteLane` names the fields, and a new lane that gates on a lock means adding its field there.
 

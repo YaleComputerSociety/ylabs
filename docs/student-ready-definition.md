@@ -142,6 +142,19 @@ Do not record a departure by setting `activeAtYaleCache: false` alone.
 That is how the one relocation repair ever attempted was lost: `holmes-ah724` came back to `activeAtYaleCache: true` and is now held out of the directory only by the unrelated grant-only rule from #2281, one added `yale.edu` url away from returning to `operator_review`.
 An operator lock on `activeAtYaleCache`/`yaleStatusCache` also holds (4 rows use it), but it records no reason, so prefer the marker.
 
+`yarn --cwd server research-entity:record-departure --slug <slug> --note "<evidence>"` is the command that records one, dry-run by default and `--apply` to write.
+It exists because the procedure has more steps than the marker: the write, a re-gate so the tier actually moves, and a re-read of the served surface, and doing it by hand is what lost `holmes-ah724`.
+The note is required and is the evidence, because a marker without one records that somebody decided rather than why, and a later reader cannot tell a relocation from a mistake.
+It must not contain a comma: `studentVisibilitySuppressionReason` is a comma-joined list that other writers append to, so a comma inside a note splits it into entries that are not reasons.
+The note rides on the marker, so the stored entry reads `permanently_closed: <evidence>` rather than the bare token: read the marker through `hasRecordedClosureEvidence`, which matches the token and the note-carrying form alike, never by comparing an entry to `permanently_closed` for equality.
+The tier's own blocker reason stays the bare `permanently_closed` whichever form is stored, so the note never reaches the gate's reason vocabulary.
+It takes exactly one slug, because a reported departure is a judgement about one row and the note is that row's evidence.
+A row that already carries a closure marker is skipped rather than given a second one, and an operator lock on the reason field or on `activeAtYaleCache`/`yaleStatusCache` stops the write the way it stops every other lane.
+Skipping the write does not skip the re-gate: an `--apply` run re-gates the row whenever it exists, so a marker left behind by an interrupted run or written by hand is finished by pointing the command at that slug again.
+The command reports `stillServed`, which is the only line that answers the question: it re-reads `getResearchGroupDetail`, the same call the public detail route makes, so a `false` is the student's 404 rather than a write counter.
+Applied on Development on 2026-09-25 for one relocated `FACULTY_RESEARCH_AREA` lead in Mechanical Engineering & Materials Science, reported by the repository owner: `student_ready` to `suppressed`, the detail route 404s, and the row is gone from the search route.
+Every Yale-hosted page for that row still asserted the Yale appointment, including the PI's own `yale.edu` lab site, which is why the operator report was the only available evidence.
+
 The reset has one owner, and it is not the materializer.
 `hasEvidencelessInactiveYaleStatus` is evaluated inside `materializeEntity`, which is reached per observation key, so a row the corpus holds no observations for is never offered to it and its unevidenced cache is permanent (#2684).
 Moving that branch outside the materialization early-return would not fix it, because nothing enumerates such a row at all; the owner has to be an entity-enumerating pass, which is `yarn --cwd server research:backfill-yale-status-cache`.
