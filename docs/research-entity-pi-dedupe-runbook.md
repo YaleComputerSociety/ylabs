@@ -217,7 +217,10 @@ Because this mapping lives in its own collection rather than on the shell row, i
 
 The survivor resolves over the union of its own observations and those of every row whose tombstone chain reaches it (#3560).
 Evidence is not re-keyed, so a materialize entered through the survivor's key and one entered through any loser's key read the same set and project the same row, and a lane that later emits under a loser's key still lands on the survivor.
-Two filters apply to a loser's observations only.
+Three filters apply to a loser's observations only.
+A loser only fills a gap: its observation of a field is dropped when the survivor has its own observation of that field or already stores a value for it, and a loser's `description`, `shortDescription` or `fullDescription` is dropped when the survivor holds any of the three (#3581).
+Without that rule a loser out-voted the survivor, either because a newer same-source loser row collapsed the survivor's statement away in `collapseLatestWins` or because a higher-confidence loser source won the field outright; a Development dry run showed 211 survivors losing every stored department that way.
+Gating on the stored value stays idempotent, because a field no admissible evidence reaches is left untouched on the next resolve, and accumulating fields such as `recentGrants` still union.
 Identity, lead and visibility fields (`SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS` in `entityMaterializer.ts`, for example `name`, `slug`, `entityType`, `school`, `lead`, the `inferredPi*` and `inferredDirector*` fields, and `studentVisibility*`) stay the survivor's own, so a loser cannot re-open the merge decision on every resolve.
 A low-trust shell loser (`isLowTrustAreaShellSlug`: `faculty-research-area-`, `nih-pi-`, `nsf-pi-`, `federal-pi-`, `doe-pi-`) contributes no `researchAreas` or description prose unless the survivor is itself such a shell, which mirrors the merge plan's `trustedAreaShellEntities` guard (#604, #3330).
 Merge-time unions onto the survivor are therefore durable only where the loser's evidence backs them through these filters; a carried topic from a low-trust shell is refused again on the next resolve by design.

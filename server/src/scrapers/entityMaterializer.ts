@@ -85,6 +85,7 @@ import {
   appendObservations,
   c4LosslessIngestEnabled,
   collapseLatestWins,
+  isAdditiveLatestWinsListField,
   getSourceByName,
 } from './observationStore';
 import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/meiliSyncService';
@@ -3647,6 +3648,20 @@ const LOW_TRUST_SHELL_GUARDED_RESEARCH_ENTITY_FIELDS = new Set([
   'description',
 ]);
 
+// The card and the body are one statement, so a loser card beside the survivor's own
+// body would serve a summary of a different page.
+const MERGED_SURVIVOR_PROSE_FIELDS = new Set([
+  'description',
+  'shortDescription',
+  'fullDescription',
+]);
+
+function storedFieldHasValue(value: unknown): boolean {
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return value === true;
+}
+
 export interface MergedSurvivorEvidence {
   observations: any[];
   mergedInKeys: string[];
@@ -3660,7 +3675,7 @@ export interface MergedSurvivorEvidence {
  */
 export async function mergedSurvivorEvidence(
   entityType: ObservedEntityType,
-  survivor: { _id?: unknown; slug?: unknown },
+  survivor: { _id?: unknown; slug?: unknown; [field: string]: unknown },
   loadedObservations: any[],
 ): Promise<MergedSurvivorEvidence> {
   const survivorId = toMaterializerObjectId(survivor._id);
@@ -3705,11 +3720,37 @@ export async function mergedSurvivorEvidence(
   const entryPointIndependentOrder = [...loadedObservations, ...kept].sort((a: any, b: any) =>
     String(a._id).localeCompare(String(b._id)),
   );
+  // A loser's observation is another page's statement about another row, so it may
+  // fill an empty field the survivor has no evidence for but never displace what the
+  // survivor holds: in one ranking a newer same-source loser row collapses the
+  // survivor's away, a higher-confidence loser source wins outright, and a loser's
+  // school-level roster label sanitizes a stored department to nothing (#3581).
+  // Gating on the stored value stays idempotent, because a field no evidence
+  // reaches is left untouched on the next resolve.
+  const survivorHeldFields = new Set(
+    entryPointIndependentOrder
+      .filter((observation: any) => !loserOrigin(observation))
+      .map((observation: any) => String(observation.field || '')),
+  );
+  const storedSurvivor =
+    typeof (survivor as { toObject?: unknown }).toObject === 'function'
+      ? (survivor as unknown as { toObject: () => Record<string, unknown> }).toObject()
+      : survivor;
+  for (const [field, value] of Object.entries(storedSurvivor)) {
+    if (storedFieldHasValue(value)) survivorHeldFields.add(field);
+  }
   const observations = entryPointIndependentOrder.filter((observation: any) => {
     const loser = loserOrigin(observation);
     if (!loser) return true;
     const field = String(observation.field || '');
     if (SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS.has(field)) return false;
+    if (survivorHeldFields.has(field) && !isAdditiveLatestWinsListField(field)) return false;
+    if (
+      MERGED_SURVIVOR_PROSE_FIELDS.has(field) &&
+      [...MERGED_SURVIVOR_PROSE_FIELDS].some((proseField) => survivorHeldFields.has(proseField))
+    ) {
+      return false;
+    }
     return !(
       !survivorIsLowTrustShell &&
       isLowTrustAreaShellSlug(loser.slug) &&
