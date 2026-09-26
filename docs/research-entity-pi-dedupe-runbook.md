@@ -218,9 +218,10 @@ Because this mapping lives in its own collection rather than on the shell row, i
 The survivor resolves over the union of its own observations and those of every row whose tombstone chain reaches it (#3560).
 Evidence is not re-keyed, so a materialize entered through the survivor's key and one entered through any loser's key read the same set and project the same row, and a lane that later emits under a loser's key still lands on the survivor.
 Two filters apply to a loser's observations only.
-Identity, lead and visibility fields (`name`, `entityType`, `kind`, `school`, the `inferredPi*` and `inferredDirector*` fields, `studentVisibility*`) stay the survivor's own, so a loser cannot re-open the merge decision on every resolve.
+Identity, lead and visibility fields (`SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS` in `entityMaterializer.ts`, for example `name`, `slug`, `entityType`, `school`, `lead`, the `inferredPi*` and `inferredDirector*` fields, and `studentVisibility*`) stay the survivor's own, so a loser cannot re-open the merge decision on every resolve.
 A low-trust shell loser (`isLowTrustAreaShellSlug`: `faculty-research-area-`, `nih-pi-`, `nsf-pi-`, `federal-pi-`, `doe-pi-`) contributes no `researchAreas` or description prose unless the survivor is itself such a shell, which mirrors the merge plan's `trustedAreaShellEntities` guard (#604, #3330).
 Merge-time unions onto the survivor are therefore durable only where the loser's evidence backs them through these filters; a carried topic from a low-trust shell is refused again on the next resolve by design.
+Access signals for a survivor with merged-in rows derive from the same filtered union, so a loser's access evidence reaches the survivor from either entry point.
 
 The redirect is written from the shared merge primitive (`applyResearchEntityDedupeMergeGroup`), so both the pipeline stage and the manual `research-entity:dedupe-by-pi` CLI produce it, and re-recording the same merge upserts the same row (keyed on the globally unique `mergedSlug`), so it stays idempotent.
 
