@@ -3700,7 +3700,12 @@ export async function mergedSurvivorEvidence(
     return undefined;
   };
   const survivorIsLowTrustShell = isLowTrustAreaShellSlug(survivorSlug);
-  const observations = [...loadedObservations, ...kept].filter((observation: any) => {
+  // The resolver breaks an exact weight tie by array order, so the union is put in
+  // one fixed order rather than the entry key's own observations first.
+  const entryPointIndependentOrder = [...loadedObservations, ...kept].sort((a: any, b: any) =>
+    String(a._id).localeCompare(String(b._id)),
+  );
+  const observations = entryPointIndependentOrder.filter((observation: any) => {
     const loser = loserOrigin(observation);
     if (!loser) return true;
     const field = String(observation.field || '');

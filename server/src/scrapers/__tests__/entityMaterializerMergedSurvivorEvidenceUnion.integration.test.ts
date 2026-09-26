@@ -212,6 +212,18 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     expect((await projectSurvivor(survivor._id)).researchAreas).toContain('Synaptic Plasticity');
   });
 
+  it('resolves an exact tie between survivor and loser topics the same from both entry points', async () => {
+    const survivor = await seedMerge('ysm-faculty-example-lead');
+    await seedObservation('ysm-faculty-example-lead', 'researchAreas', ['Synaptic Plasticity']);
+
+    await materializeEntity('researchEntity', { entityKey: 'ysm-faculty-example-lead' });
+    const viaLoser = await projectSurvivor(survivor._id);
+    await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+    const viaSurvivor = await projectSurvivor(survivor._id);
+
+    expect(viaSurvivor).toEqual(viaLoser);
+  });
+
   it('derives a loser access signal onto the survivor from the survivor key', async () => {
     const survivor = await seedMerge('ysm-faculty-example-lead');
     await seedObservation('ysm-faculty-example-lead', 'offersIndependentStudy', true);
