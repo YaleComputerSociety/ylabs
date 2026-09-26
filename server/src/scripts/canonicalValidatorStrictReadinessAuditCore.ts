@@ -31,16 +31,6 @@ export type CanonicalValidatorAppliedState =
 
 export const NO_VALIDATOR_APPLIED_LEVEL = 'not-applied' as const;
 
-/**
- * MongoDB omits `options.validator` for a collection that carries none, and a
- * `collMod` that disables one leaves `{}` behind, so neither shape is an applied
- * validator.
- */
-export function storesJsonSchemaValidator(validator: unknown): boolean {
-  if (!validator || typeof validator !== 'object' || Array.isArray(validator)) return false;
-  return Object.keys(validator).length > 0;
-}
-
 export interface StrictReadinessCollectionFact {
   collectionName: string;
   exists: boolean;
@@ -220,18 +210,23 @@ function declaredVersusAppliedStatement(input: {
 }): string {
   const { databaseName, declaredCollections, validatorAppliedInDatabase } = input;
   const notAppliedCount = input.declaredButNotAppliedCollectionNames.length;
-  const readinessCaveat =
-    'Every readiness number below describes an apply that has not happened, not a rule the database is enforcing.';
+  const decidedNotApplied = input.enforcementDecision === 'declared-not-applied';
 
-  if (declaredCollections === 0) {
-    return 'No canonical validator is declared, so there is nothing to apply.';
+  /**
+   * An applied validator contradicts a `declared-not-applied` decision whether
+   * or not every collection carries one, so the contradiction is keyed on the
+   * applied count rather than on the all-applied case.
+   */
+  if (decidedNotApplied && validatorAppliedInDatabase > 0) {
+    const applied =
+      notAppliedCount === 0
+        ? `All ${declaredCollections} declared canonical validators are applied on ${databaseName}`
+        : `${validatorAppliedInDatabase} of ${declaredCollections} declared canonical validators are applied on ${databaseName}, and MongoDB refuses nothing forbidden by the ${notAppliedCount} that are not: ${input.declaredButNotAppliedCollectionNames.join(', ')}`;
+    return `${applied}. The recorded decision still says declared-not-applied, which contradicts this database: update CANONICAL_MONGO_VALIDATOR_ENFORCEMENT.`;
   }
+
   if (notAppliedCount === 0) {
-    const contradiction =
-      input.enforcementDecision === 'declared-not-applied'
-        ? ` The recorded decision still says declared-not-applied, which now contradicts ${databaseName}: update CANONICAL_MONGO_VALIDATOR_ENFORCEMENT.`
-        : '';
-    return `All ${declaredCollections} declared canonical validators are applied on ${databaseName}, so MongoDB refuses writes they forbid.${contradiction}`;
+    return `All ${declaredCollections} declared canonical validators are applied on ${databaseName}, so MongoDB refuses writes they forbid.`;
   }
 
   const names = input.declaredButNotAppliedCollectionNames.join(', ');
@@ -239,12 +234,12 @@ function declaredVersusAppliedStatement(input: {
     validatorAppliedInDatabase === 0
       ? `None of the ${declaredCollections} declared canonical validators is applied on ${databaseName}: MongoDB stores no $jsonSchema for ${names}, so it refuses nothing they forbid.`
       : `${validatorAppliedInDatabase} of ${declaredCollections} declared canonical validators are applied on ${databaseName}. MongoDB refuses nothing forbidden by the ${notAppliedCount} that are not: ${names}.`;
-  const decision =
-    input.enforcementDecision === 'declared-not-applied'
-      ? 'That is the recorded decision (declared-not-applied), not a regression.'
-      : 'The recorded decision says applied, so this gap is a regression: something stripped or never applied these validators.';
+  const decision = decidedNotApplied
+    ? 'That is the recorded decision (declared-not-applied), not a regression.'
+    : 'The recorded decision says applied, so this gap is a regression: something stripped or never applied these validators.';
 
-  return `${lead} ${decision} ${readinessCaveat}`;
+  const caveatScope = validatorAppliedInDatabase === 0 ? 'those collections' : names;
+  return `${lead} ${decision} Every readiness number below describes, for ${caveatScope}, an apply that has not happened rather than a rule the database is enforcing.`;
 }
 
 export interface StrictReadinessArgs {

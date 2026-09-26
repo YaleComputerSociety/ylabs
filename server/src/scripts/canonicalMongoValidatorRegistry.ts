@@ -201,10 +201,4 @@ export type CanonicalMongoValidatorEnforcementState = 'declared-not-applied' | '
  */
 export const CANONICAL_MONGO_VALIDATOR_ENFORCEMENT: {
   readonly state: CanonicalMongoValidatorEnforcementState;
-  readonly decidedIn: string;
-  readonly assertCommand: string;
-} = Object.freeze({
-  state: 'declared-not-applied',
-  decidedIn: '#752 (declined) and #3396',
-  assertCommand: 'yarn --cwd server model-refactor:validators-assert --environment development',
-});
+} = Object.freeze({ state: 'declared-not-applied' });

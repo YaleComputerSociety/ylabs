@@ -30,10 +30,10 @@ import {
 import {
   buildStrictReadinessReport,
   parseStrictReadinessArgs,
-  storesJsonSchemaValidator,
   type CurrentValidatorLevelForReadiness,
   type StrictReadinessCollectionFact,
 } from './canonicalValidatorStrictReadinessAuditCore';
+import { storesJsonSchemaValidator } from './canonicalMongoValidatorsCore';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import fs from 'fs';
 

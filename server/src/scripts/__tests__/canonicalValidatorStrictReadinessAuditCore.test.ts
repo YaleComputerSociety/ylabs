@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   buildStrictReadinessReport,
   parseStrictReadinessArgs,
-  storesJsonSchemaValidator,
   type StrictReadinessCollectionFact,
 } from '../canonicalValidatorStrictReadinessAuditCore';
 
@@ -170,6 +169,10 @@ describe('declaredVersusApplied', () => {
       '1 of 2 declared canonical validators are applied on Development',
     );
     expect(partial.declaredVersusApplied.statement).toContain('taxonomy_terms');
+    expect(partial.declaredVersusApplied.statement).toContain(
+      'update CANONICAL_MONGO_VALIDATOR_ENFORCEMENT',
+    );
+    expect(partial.declaredVersusApplied.statement).not.toContain('not a regression');
 
     const fullyApplied = buildStrictReadinessReport({
       environment: 'development',
@@ -185,16 +188,6 @@ describe('declaredVersusApplied', () => {
     expect(fullyApplied.declaredVersusApplied.statement).toContain(
       'update CANONICAL_MONGO_VALIDATOR_ENFORCEMENT',
     );
-  });
-});
-
-describe('storesJsonSchemaValidator', () => {
-  it('counts a stored $jsonSchema and nothing else as an applied validator', () => {
-    expect(storesJsonSchemaValidator({ $jsonSchema: { bsonType: 'object' } })).toBe(true);
-    expect(storesJsonSchemaValidator(undefined)).toBe(false);
-    expect(storesJsonSchemaValidator({})).toBe(false);
-    expect(storesJsonSchemaValidator([])).toBe(false);
-    expect(storesJsonSchemaValidator('$jsonSchema')).toBe(false);
   });
 });
 
