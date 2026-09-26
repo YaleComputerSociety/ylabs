@@ -43,6 +43,7 @@ import {
 } from './scraperSweepCheckpoint';
 import { SweepRunLogger } from './scraperSweepLogging';
 import { PRUNE_DEAD_OBSERVATIONS_CONFIRM_FLAG } from './pruneDeadObservationsCore';
+import { formatSweepPreflightReport, runSweepPreflight } from './scraperSweepPreflight';
 
 export type ScraperSweepMode =
   | 'development-plan'
@@ -130,6 +131,7 @@ export interface ScraperSweepCliOptions {
   restart?: boolean;
   forceLlm?: boolean;
   pruneBetweenPhases?: boolean;
+  skipPreflight?: boolean;
 }
 
 export type ScraperSweepPhase = ScraperSweepSource['phase'];
@@ -405,6 +407,7 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
   let restart = false;
   let forceLlm = false;
   let pruneBetweenPhases = false;
+  let skipPreflight = false;
   const confirmations = new Set<string>();
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -419,6 +422,10 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
     }
     if (arg === '--prune-between-phases') {
       pruneBetweenPhases = true;
+      continue;
+    }
+    if (arg === '--skip-preflight') {
+      skipPreflight = true;
       continue;
     }
     if (arg.startsWith('--concurrency=')) {
@@ -473,7 +480,12 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
     ...(restart ? { restart } : {}),
     ...(forceLlm ? { forceLlm } : {}),
     ...(pruneBetweenPhases ? { pruneBetweenPhases } : {}),
+    ...(skipPreflight ? { skipPreflight } : {}),
   };
+}
+
+export function isSweepPreflightEnabled(options: ScraperSweepCliOptions): boolean {
+  return options.mode === 'development-full' && !options.skipPreflight;
 }
 
 export function orderedScraperSweepPhases(
@@ -749,13 +761,17 @@ export function defaultScraperSweepOutputDirectory(
 export interface ScraperSweepChildResult {
   status: number | null;
   error?: Error;
+  timedOut?: boolean;
 }
 
 interface ChildRunnerOptions {
   cwd: string;
   env: NodeJS.ProcessEnv;
   logPath?: string;
+  timeoutMs?: number;
 }
+
+const CHILD_KILL_GRACE_MS = 10_000;
 
 type ChildRunner = (
   command: string,
@@ -771,17 +787,40 @@ function spawnChild(
   return new Promise((resolve) => {
     const logFd = options.logPath ? fs.openSync(options.logPath, 'a') : undefined;
     let settled = false;
+    let timedOut = false;
+    const timers: NodeJS.Timeout[] = [];
     const finish = (result: ScraperSweepChildResult) => {
       if (settled) return;
       settled = true;
+      for (const timer of timers) clearTimeout(timer);
       if (logFd !== undefined) fs.closeSync(logFd);
-      resolve(result);
+      resolve(timedOut ? { ...result, timedOut } : result);
     };
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env,
       stdio: logFd === undefined ? 'inherit' : ['ignore', logFd, logFd],
+      detached: options.timeoutMs !== undefined,
     });
+    if (options.timeoutMs !== undefined && child.pid !== undefined) {
+      const killGroup = (signal: NodeJS.Signals) => {
+        try {
+          process.kill(-child.pid!, signal);
+        } catch {
+          child.kill(signal);
+        }
+      };
+      const killOnParentExit = () => killGroup('SIGKILL');
+      process.once('exit', killOnParentExit);
+      child.once('close', () => process.removeListener('exit', killOnParentExit));
+      timers.push(
+        setTimeout(() => {
+          timedOut = true;
+          killGroup('SIGTERM');
+          timers.push(setTimeout(() => killGroup('SIGKILL'), CHILD_KILL_GRACE_MS));
+        }, options.timeoutMs),
+      );
+    }
     child.on('error', (error) => finish({ status: null, error }));
     child.on('close', (code) => finish({ status: code }));
   });
@@ -1727,6 +1766,29 @@ export async function runScraperSweep(
     if (invalidated.length > 0) {
       console.log(
         `Re-running ${invalidated.length} post-run stage(s) because at least one source still has to run: ${invalidated.join(', ')}`,
+      );
+    }
+  }
+
+  if (isSweepPreflightEnabled(options)) {
+    const pendingSources = sweepSources
+      .map((source) => source.name)
+      .filter((name) => !store.isDone(sourceStepId(name)));
+    console.log(
+      `Running sweep preflight: storage headroom plus a write-free canary for ${pendingSources.length} source(s) (skip with --skip-preflight)`,
+    );
+    const preflight = await runSweepPreflight({
+      mongoUrl: process.env.MONGODBURL || '',
+      sourceNames: pendingSources,
+      outputDirectory,
+      repoRoot,
+      childRunner,
+      now,
+    });
+    console.log(formatSweepPreflightReport(preflight));
+    if (preflight.status === 'failed') {
+      throw new Error(
+        `sweep preflight failed before any source ran (${preflight.failures.length} failure(s)); report at ${path.join(outputDirectory, 'preflight.json')}`,
       );
     }
   }

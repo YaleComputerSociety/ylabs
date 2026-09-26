@@ -208,6 +208,7 @@
     "e2e:seed-smoke": "tsx src/scripts/seedE2eSmokeData.ts",
     "scrape": "tsx src/scrapers/cli.ts",
     "scrape:sweep": "tsx src/scripts/runScraperSweep.ts",
+    "scrape:canary": "tsx src/scripts/scrapeCanary.ts",
     "scrape:seed-sources": "tsx src/scrapers/seedSources.ts",
     "start": "node ../scripts/ensure-server-build-fresh.mjs && node build/index.js",
     "test": "cross-env NODE_ENV=test ./node_modules/.bin/vitest run",
