@@ -10,6 +10,7 @@ import {
   urlsToResolve,
   type OrganizationIdentityWebsite,
 } from '../retireOrganizationIdentityWebsiteGraftsCore';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 
 const CENTER_CANONICAL = 'https://example.edu/demo-school/demo-unit/equity-center/';
 const CENTER_VANITY = 'https://equity-center.example.edu';
@@ -197,6 +198,65 @@ describe('planOrganizationIdentityWebsiteGraft', () => {
         resolveAliases,
       ),
     ).toBeNull();
+  });
+
+  it('plans nothing once the value is refused, which is what makes a second run a no-op', () => {
+    const refusedRow = personRow(CENTER_VANITY, {
+      fieldValueRefusals: {
+        websiteUrl: [
+          {
+            valueKey: fieldValueRefusalKey('websiteUrl', CENTER_VANITY),
+            rule: 'wrong_owner',
+            refusedBy: 'observations:retire-organization-identity-websites',
+            refusedAt: new Date('2020-01-01T00:00:00.000Z'),
+            note: 'the organization owns this page',
+          },
+        ],
+      },
+    });
+    expect(
+      planOrganizationIdentityWebsiteGraft(refusedRow, organizations, resolveAliases),
+    ).toBeNull();
+  });
+
+  it('still plans when the refusal names a different value, so one refusal is not a field lock', () => {
+    const refusedRow = personRow(CENTER_VANITY, {
+      fieldValueRefusals: {
+        websiteUrl: [
+          {
+            valueKey: fieldValueRefusalKey('websiteUrl', 'https://example.edu/unrelated-page/'),
+            rule: 'wrong_owner',
+            refusedBy: 'observations:retire-organization-identity-websites',
+            refusedAt: new Date('2020-01-01T00:00:00.000Z'),
+            note: 'a different page entirely',
+          },
+        ],
+      },
+    });
+    expect(
+      planOrganizationIdentityWebsiteGraft(refusedRow, organizations, resolveAliases),
+    ).not.toBeNull();
+  });
+
+  it('plans again once the refusal is withdrawn, which a lock could never allow', () => {
+    const withdrawnRow = personRow(CENTER_VANITY, {
+      fieldValueRefusals: {
+        websiteUrl: [
+          {
+            valueKey: fieldValueRefusalKey('websiteUrl', CENTER_VANITY),
+            rule: 'wrong_owner',
+            refusedBy: 'observations:retire-organization-identity-websites',
+            refusedAt: new Date('2020-01-01T00:00:00.000Z'),
+            note: 'the organization owns this page',
+            withdrawnAt: new Date('2020-02-01T00:00:00.000Z'),
+            withdrawnReason: 'the owner row was archived',
+          },
+        ],
+      },
+    });
+    expect(
+      planOrganizationIdentityWebsiteGraft(withdrawnRow, organizations, resolveAliases),
+    ).not.toBeNull();
   });
 
   it('refuses the organization row itself', () => {
