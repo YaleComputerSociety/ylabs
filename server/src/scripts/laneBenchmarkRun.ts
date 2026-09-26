@@ -9,16 +9,26 @@ import type { PlannedObservation } from './laneScorecardCore';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Lanes whose output is a function of the pages they fetch, read through `getCached`, over
- * the default axios instance. An LLM lane is excluded because one run of it is not
- * repeatable, and a rendered-page lane because its fetch bypasses the cache (#3526).
+ * Lanes whose output is a function of the pages they fetch, through `getCached` or
+ * `fetchPageWithPolicy`, and the model responses they receive over the default axios instance
+ * (#3526, #3587). A rendered-page lane is excluded because its fetch bypasses the cache, and so
+ * are the two center LLM lanes, whose raw `axios.get` page fetch is frozen by neither.
  */
 export const BENCHMARKABLE_LANES: ReadonlySet<string> = new Set([
   'dept-faculty-roster',
   'ysm-faculty-directory',
   'official-profile-pi-backfill',
   'ysm-atoz-index',
+  'lab-microsite-undergrad-llm',
+  'lab-microsite-description-llm',
 ]);
+
+const RUN_CLOCK_FIELDS_BY_LANE: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['lab-microsite-undergrad-llm', new Set(['lastObservedAt'])],
+]);
+
+export const runClockFieldsFor = (sourceName: string): ReadonlySet<string> =>
+  RUN_CLOCK_FIELDS_BY_LANE.get(sourceName) ?? new Set();
 
 const EXPLAIN_EVERYTHING = 10_000_000;
 

@@ -1,5 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fetchPageWithPolicy, HostRateLimiter, type HttpRequestFn } from '../httpFetch';
+import {
+  fetchPageWithPolicy,
+  HostRateLimiter,
+  POLICY_FETCH_BENCHMARK_NAMESPACE,
+  type HttpRequestFn,
+} from '../httpFetch';
+import {
+  BenchmarkReplayNetworkError,
+  beginBenchmarkCapture,
+  beginBenchmarkReplay,
+  finishBenchmarkCapture,
+  finishBenchmarkReplay,
+} from '../../snapshotBenchmarkMode';
 
 const passthroughAssert = async (url: string) => ({ toString: () => url });
 const noSleep = vi.fn(async () => {});
@@ -221,5 +233,45 @@ describe('fetchPageWithPolicy', () => {
       fetchPageWithPolicy('https://lab.example.edu/x', { ...base, request, maxRetries: 1 }),
     ).rejects.toThrow('ETIMEDOUT');
     expect(request).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('fetchPageWithPolicy under a benchmark', () => {
+  const options = (request: HttpRequestFn) => ({
+    assertUrl: passthroughAssert,
+    request,
+    sleep: noSleep,
+    jitter: noJitter,
+  });
+
+  it('records a page during capture and serves it on replay without a request', async () => {
+    beginBenchmarkCapture();
+    const live = vi.fn(() => ok('<html>frozen</html>'));
+    await fetchPageWithPolicy('https://lab.example.edu/x', options(live));
+    const pages = finishBenchmarkCapture();
+    expect(pages.map((page) => page.sourceName)).toEqual([POLICY_FETCH_BENCHMARK_NAMESPACE]);
+
+    beginBenchmarkReplay(pages);
+    const replayRequest = vi.fn(() => ok('<html>live</html>'));
+    try {
+      const page = await fetchPageWithPolicy('https://lab.example.edu/x', options(replayRequest));
+      expect(page.html).toBe('<html>frozen</html>');
+      expect(replayRequest).not.toHaveBeenCalled();
+    } finally {
+      expect(finishBenchmarkReplay()).toMatchObject({ pagesServed: 1, pagesMissed: 0 });
+    }
+  });
+
+  it('refuses a page the capture never saw instead of fetching it', async () => {
+    beginBenchmarkReplay([]);
+    const replayRequest = vi.fn(() => ok());
+    try {
+      await expect(
+        fetchPageWithPolicy('https://lab.example.edu/unseen', options(replayRequest)),
+      ).rejects.toBeInstanceOf(BenchmarkReplayNetworkError);
+      expect(replayRequest).not.toHaveBeenCalled();
+    } finally {
+      expect(finishBenchmarkReplay()).toMatchObject({ pagesServed: 0, pagesMissed: 1 });
+    }
   });
 });

@@ -11,6 +11,12 @@
 import axios from 'axios';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { HostConcurrencyLimiter, hostnameForLimiter } from './hostConcurrencyLimiter';
+import {
+  BenchmarkReplayNetworkError,
+  benchmarkCacheRead,
+  benchmarkCacheWrite,
+  isBenchmarkReplayActive,
+} from '../snapshotBenchmarkMode';
 
 export interface FetchedHttpPage {
   url: string;
@@ -117,9 +123,24 @@ function hostOf(url: string): string {
   return hostnameForLimiter(url) ?? url;
 }
 
+export const POLICY_FETCH_BENCHMARK_NAMESPACE = 'policy-fetch';
+
 export async function fetchPageWithPolicy(
   url: string,
   options: FetchPageWithPolicyOptions = {},
+): Promise<FetchedHttpPage> {
+  const benchmarkKey = `page:v1:${url}`;
+  const frozen = benchmarkCacheRead(POLICY_FETCH_BENCHMARK_NAMESPACE, benchmarkKey);
+  if (frozen.handled && frozen.payload) return frozen.payload as FetchedHttpPage;
+  if (isBenchmarkReplayActive()) throw new BenchmarkReplayNetworkError();
+  const page = await fetchPageLive(url, options);
+  benchmarkCacheWrite(POLICY_FETCH_BENCHMARK_NAMESPACE, benchmarkKey, page);
+  return page;
+}
+
+async function fetchPageLive(
+  url: string,
+  options: FetchPageWithPolicyOptions,
 ): Promise<FetchedHttpPage> {
   const assertUrl = options.assertUrl ?? assertPublicHttpUrl;
   const safeUrl = (await assertUrl(url)).toString();
