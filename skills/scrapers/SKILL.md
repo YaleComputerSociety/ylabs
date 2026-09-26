@@ -140,6 +140,7 @@ Mongo refuses an in-memory sort over 32 MB, and a sort that no index serves (an 
 #3543 lost `official-profile-pi-backfill` on the Development sweep that way: the live entity set is about 38 MB and the observation lookup failed nine seconds in.
 Chunk per-entity `$in` lookups, give each entity its own evidence rather than one limit shared across entities, and sort an unlimited selection in process instead of in the database.
 `allowDiskUse` hides the crash but keeps a shared limit, which silently starves the entities that sort last.
+The rule covers read-only audits too: #3574 lost the sweep's `data-quality` stage because `auditStudentReadyPublicDescriptions` sorted about 32 MB of unprojected `student_ready` documents by `name`, so it now streams them unsorted through a cursor in bounded chunks and orders its samples in process.
 
 ## Exhaustive runs: one page must not end the lane
 
