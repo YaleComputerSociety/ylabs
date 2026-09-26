@@ -741,6 +741,23 @@ describe('studentVisibilityGateService', () => {
       }
     });
 
+    it('releases the index-published row when the same-lead relation names the twin canonical', () => {
+      for (const [indexTier, twinTier] of [
+        ['student_ready', 'suppressed'],
+        ['suppressed', 'student_ready'],
+        ['suppressed', 'suppressed'],
+      ]) {
+        expect([
+          ...selectDuplicateGroupSurvivorEntityIds({
+            entities: [indexPublishedLab(indexTier), directoryTwin(twinTier)],
+            leadRows,
+            duplicateRelationGroups: [['directory-shared-lead', 'atoz-shared-lead']],
+            duplicateRiskEntityIds: new Set(['atoz-shared-lead', 'directory-shared-lead']),
+          }),
+        ]).toEqual(['atoz-shared-lead']);
+      }
+    });
+
     it('still calls one of the pair a duplicate when neither home is index-published', () => {
       const unindexedLab = {
         ...indexPublishedLab('suppressed'),

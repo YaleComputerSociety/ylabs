@@ -803,15 +803,22 @@ const exactDuplicateGroupByCanonicalPreference = (
   });
 };
 
-type ExactDuplicateUrlIdGroup = { url: string; memberIds: string[] };
+type ExactDuplicateUrlIdGroup = { memberIds: string[]; indexVouchedIds: string[] };
 
-const exactUrlDuplicateGroupEntityIds = (entities: any[]): ExactDuplicateUrlIdGroup[] =>
-  exactDuplicateUrlGroups(entities)
-    .map(({ url, members }) => ({
-      url,
-      memberIds: uniqueStrings(members.map((entity) => studentVisibilityGateEntityIdKey(entity))),
-    }))
+const exactUrlDuplicateGroupEntityIds = (entities: any[]): ExactDuplicateUrlIdGroup[] => {
+  const authority = indexUrlAuthorityOver(entities);
+  return exactDuplicateUrlGroups(entities)
+    .map((group) => {
+      const indexVouchesFor = indexVouchesForMemberInUrlContest(group, authority);
+      const idsOf = (members: any[]) =>
+        uniqueStrings(members.map((entity) => studentVisibilityGateEntityIdKey(entity)));
+      return {
+        memberIds: idsOf(group.members),
+        indexVouchedIds: idsOf(group.members.filter(indexVouchesFor)),
+      };
+    })
     .filter(({ memberIds }) => memberIds.length > 1);
+};
 
 export function selectExactUrlDuplicateRiskEntityIds(
   entities: any[],
@@ -880,7 +887,7 @@ const duplicateClusterByReleasePreference = (
   memberIds: string[],
   entityById: Map<string, any>,
   leadCountsByEntityId: Map<string, number>,
-  assertsIndexUrlOwnership: (entityId: string) => boolean,
+  indexVouchesFor: (entityId: string) => boolean,
 ): string[] =>
   [...memberIds].sort((a, b) => {
     // A row with no lead and no lead exemption is held by `missing_lead` whatever
@@ -891,7 +898,7 @@ const duplicateClusterByReleasePreference = (
       Number(canClearLeadRequirement(entityById.get(a), leadCountsByEntityId.get(a) || 0));
     if (byLeadReachability !== 0) return byLeadReachability;
     const byIndexUrlAuthority =
-      Number(assertsIndexUrlOwnership(b)) - Number(assertsIndexUrlOwnership(a));
+      Number(indexVouchesFor(b)) - Number(indexVouchesFor(a));
     if (byIndexUrlAuthority !== 0) return byIndexUrlAuthority;
     const byScore =
       exactDuplicateCanonicalScore(entityById.get(b), leadCountsByEntityId) -
@@ -955,12 +962,7 @@ export function selectDuplicateGroupSurvivorEntityIds({
   const urlJoinedClusterRoots = new Set(
     urlGroups.map(({ memberIds }) => rootById.get(memberIds[0])),
   );
-  const sharedUrlsByClusterRoot = new Map<string, Set<string>>();
-  for (const { url, memberIds } of urlGroups) {
-    const root = rootById.get(memberIds[0]);
-    if (!root) continue;
-    sharedUrlsByClusterRoot.set(root, new Set([...(sharedUrlsByClusterRoot.get(root) || []), url]));
-  }
+  const indexVouchedIds = new Set(urlGroups.flatMap((group) => group.indexVouchedIds));
   const membersByRoot = new Map<string, string[]>();
   for (const [id, root] of rootById) {
     membersByRoot.set(root, [...(membersByRoot.get(root) || []), id]);
@@ -970,15 +972,11 @@ export function selectDuplicateGroupSurvivorEntityIds({
   for (const [root, memberIds] of membersByRoot) {
     if (memberIds.length < 2 || !urlJoinedClusterRoots.has(root)) continue;
     if (memberIds.some((id) => !duplicateRiskEntityIds.has(id))) continue;
-    const clusterSharedUrls = sharedUrlsByClusterRoot.get(root) || new Set<string>();
     const released = duplicateClusterByReleasePreference(
       memberIds,
       entityById,
       leadCountsByEntityId,
-      (entityId) => {
-        const authorityUrl = researchHomeUrlUnderIndexAuthority(entityById.get(entityId));
-        return !!authorityUrl && clusterSharedUrls.has(authorityUrl);
-      },
+      (entityId) => indexVouchedIds.has(entityId),
     )[0];
     if (released) survivorIds.add(released);
   }
