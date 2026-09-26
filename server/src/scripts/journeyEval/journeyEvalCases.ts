@@ -1,18 +1,20 @@
 import { dropDomainIncoherentUnsourcedResearchAreas } from '../../utils/researchAreaDomainCoherence';
 import { normalizeResearchAreaList } from '../../utils/researchAreaHygiene';
+import { maxReachableResearchSearchPage } from '../../services/researchSearchPagination';
 import {
   attributeTopicDrops,
   buildInconclusiveInvariant,
-  checkExpectedNoResults,
-  checkQueryRelevance,
-  scoreQueryRelevance,
   buildInvariant,
   buildRate,
+  checkExpectedNoResults,
   checkFacetAgreement,
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
+  checkQueryRelevance,
   checkSortOrdering,
   checkTopicDropAttribution,
+  resolvePagesToWalk,
+  scoreQueryRelevance,
   type CorpusFingerprint,
   type FacetAgreementObservation,
   type InvariantResult,
@@ -243,16 +245,23 @@ const paginationServesDistinctRows: JourneyCase = {
   id: 'pagination-serves-distinct-rows',
   title: 'Paging through browse never serves the same row twice',
   run: async (context) => {
+    const reachablePages = maxReachableResearchSearchPage(context.window);
+    const pagesToWalk = resolvePagesToWalk(context.pagesChecked, reachablePages);
     const corpusBefore = await context.readCorpusFingerprint();
     const pages: string[][] = [];
-    for (let page = 1; page <= context.pagesChecked; page += 1) {
+    for (let page = 1; page <= pagesToWalk; page += 1) {
       const result = await context.browse({ page, pageSize: context.window });
       pages.push(servedRows(result).map(rowKey).filter(Boolean));
     }
     const corpusAfter = await context.readCorpusFingerprint();
 
     return {
-      invariants: [checkNoRepeatedRowsAcrossPages(pages, corpusBefore, corpusAfter)],
+      invariants: [
+        checkNoRepeatedRowsAcrossPages(pages, corpusBefore, corpusAfter, {
+          pagesRequested: context.pagesChecked,
+          reachablePages,
+        }),
+      ],
       rates: [],
     };
   },

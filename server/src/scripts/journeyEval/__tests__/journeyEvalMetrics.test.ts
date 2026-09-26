@@ -6,6 +6,7 @@ import {
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
   checkSortOrdering,
+  resolvePagesToWalk,
   checkTopicDropAttribution,
   corpusFingerprintMoved,
   summarizeInvariants,
@@ -90,7 +91,31 @@ describe('corpusFingerprintMoved', () => {
   });
 });
 
+describe('resolvePagesToWalk', () => {
+  it('never walks past the reachable depth bound', () => {
+    expect(resolvePagesToWalk(60, 50)).toBe(50);
+    expect(resolvePagesToWalk(3, 50)).toBe(3);
+  });
+
+  it('always walks at least one page', () => {
+    expect(resolvePagesToWalk(0, 50)).toBe(1);
+    expect(resolvePagesToWalk(3, 0)).toBe(1);
+  });
+});
+
 describe('checkNoRepeatedRowsAcrossPages', () => {
+  it('records a walk the depth bound truncated', () => {
+    const result = checkNoRepeatedRowsAcrossPages([['a']], steadyCorpus, steadyCorpus, {
+      pagesRequested: 60,
+      reachablePages: 50,
+    });
+
+    expect(result.status).toBe('pass');
+    expect(result.detail.walkTruncatedByDepthBound).toBe(true);
+    expect(result.detail.pagesWalked).toBe(1);
+    expect(result.detail.reachablePages).toBe(50);
+  });
+
   it('passes when every page serves distinct rows over a steady corpus', () => {
     const result = checkNoRepeatedRowsAcrossPages(
       [
@@ -103,6 +128,7 @@ describe('checkNoRepeatedRowsAcrossPages', () => {
 
     expect(result.status).toBe('pass');
     expect(result.detail.distinctRowsServed).toBe(4);
+    expect(result.detail.pagesWalked).toBe(2);
   });
 
   it('fails on a repeat when the corpus did not move', () => {
