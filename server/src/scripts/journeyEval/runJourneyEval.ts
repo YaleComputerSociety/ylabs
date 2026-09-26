@@ -7,6 +7,7 @@ import { initializeConnections } from '../../db/connections';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from '../scriptWriteGuards';
 import { journeyCases, type BrowseRequest, type JourneyEvalContext } from './journeyEvalCases';
+import { parseTopicQueryJudgements, type TopicQueryJudgement } from './journeyEvalJudgements';
 import { summarizeInvariants, type InvariantResult, type RateResult } from './journeyEvalMetrics';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,12 +15,23 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 const RESEARCH_ENTITY_COLLECTION = 'research_entities';
+const DEFAULT_JUDGEMENTS_PATH = path.resolve(__dirname, 'topicQueryJudgements.json');
+
+function loadTopicQueryJudgements(explicitPath?: string): TopicQueryJudgement[] | null {
+  const judgementsPath = explicitPath ?? DEFAULT_JUDGEMENTS_PATH;
+  if (!fs.existsSync(judgementsPath)) {
+    console.error(`No judgements file at ${judgementsPath}, so the relevance case is inconclusive`);
+    return null;
+  }
+  return parseTopicQueryJudgements(JSON.parse(fs.readFileSync(judgementsPath, 'utf8'))).queries;
+}
 
 interface JourneyEvalArgs {
   window: number;
   facetValues: number;
   pages: number;
   cases?: string[];
+  judgements?: string;
   output?: string;
 }
 
@@ -36,6 +48,9 @@ function parseArgs(argv: string[]): JourneyEvalArgs {
         .split(',')
         .map((value) => value.trim())
         .filter(Boolean);
+    else if (token.startsWith('--judgements='))
+      args.judgements = token.slice('--judgements='.length);
+    else if (token.startsWith('--judgments=')) args.judgements = token.slice('--judgments='.length);
     else if (token.startsWith('--output=')) args.output = token.slice('--output='.length);
   }
   return args;
@@ -48,6 +63,7 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
   const collection = database.collection(RESEARCH_ENTITY_COLLECTION);
 
   return {
+    topicQueryJudgements: loadTopicQueryJudgements(args.judgements),
     window: args.window,
     facetValuesChecked: args.facetValues,
     pagesChecked: args.pages,
