@@ -11,7 +11,7 @@
  *
  * Every rule here fails closed, because this rewrites student-facing citations.
  */
-import { planFieldLock } from '../utils/researchEntityFieldLocks';
+import { planFieldValueRefusal, valueIsRefused } from '../utils/researchEntityFieldValueRefusals';
 
 export type VanityRepairRefusal =
   | 'not-cert-mismatch'
@@ -81,6 +81,7 @@ export interface VanityRepairTargetRow {
   websiteUrl?: unknown;
   website?: unknown;
   manuallyLockedFields?: unknown;
+  fieldValueRefusals?: unknown;
 }
 
 export interface VanityRepairRowChange {
@@ -88,35 +89,38 @@ export interface VanityRepairRowChange {
   websiteUrl?: string;
   website?: string;
   /**
-   * The `$set` fragment that locks `websiteUrl` and records why, from
-   * `planFieldLock`. One value rather than a bare field list, so the reason cannot
-   * be dropped on the way to the write.
+   * The `$set` fragment that refuses the VANITY url at `websiteUrl` and records why,
+   * from `planFieldValueRefusal`. One value rather than a bare field name, so the rule
+   * and the reason cannot be dropped on the way to the write.
    */
-  fieldLockUpdate?: Record<string, unknown>;
+  fieldValueRefusalUpdate?: Record<string, unknown>;
   changedFields: string[];
 }
 
 const asStrings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 
-export const VANITY_REPAIR_LOCKED_BY = 'repair-vanity-host-citations';
+export const VANITY_REPAIR_REFUSED_BY = 'repair-vanity-host-citations';
 
-export const VANITY_REPAIR_LOCK_NOTE =
-  'websiteUrl is re-derived from the profile page the row still cites, so a plain write is undone on the next materialize; revisit once the engine derives the canonical destination itself (#2542, #2612).';
+export const VANITY_REPAIR_REFUSAL_NOTE =
+  'the vanity host redirects to this destination, and the row still cites the vanity url, so `resolveBackfillWebsiteUrl` re-derives it and a plain write is undone on the next materialize; refusing the vanity VALUE holds without freezing the field, so the destination stays open to a better research home (#2542, #3167).';
 
 /**
  * Rewrites only the fields that hold the vanity url and leaves every other
  * citation untouched.
  *
- * A `websiteUrl` rewrite also takes `manuallyLockedFields`, because
- * `resolveBackfillWebsiteUrl` clears a person-profile page precisely because the
- * row cites it, so the next materialize would undo the repair. The
- * promotion-regression repair locks for the same reason, and for the same reason
- * this records the lock as an `engine_gap_workaround` rather than as a bare field
- * name: what forces it is a capability the engine lacks, not a standing operator
- * preference for this URL, so it must be re-openable once the engine agrees
- * (#2612). A lock written with no reason reads as `unknown`, which is never
- * revisited, so it would freeze the row's `websiteUrl` for good.
+ * A `websiteUrl` rewrite also REFUSES the vanity url, because
+ * `resolveBackfillWebsiteUrl` re-derives it from the citation the row still holds, so
+ * the next materialize would undo the repair.
+ *
+ * This used an `engine_gap_workaround` lock, and the docblock said what forced it: "the
+ * engine's inability to be told a cited value is wrong". `fieldValueRefusals` is exactly
+ * that capability. Refusing is strictly better than locking here, and not merely
+ * equivalent: the lock froze the whole field, so the row could never take a better
+ * research home again, while a refusal names ONE value. The vanity url stops winning and
+ * the destination this lane just wrote stays open to improvement. It also survives
+ * re-observation, because it is keyed on the value rather than on the field's state, and
+ * it can be withdrawn with a reason if the redirect ever changes.
  */
 export function planVanityRepairRow(
   row: VanityRepairTargetRow,
@@ -144,14 +148,21 @@ export function planVanityRepairRow(
 
   if (change.websiteUrl !== undefined) {
     const locked = asStrings(row.manuallyLockedFields);
-    if (!locked.includes('websiteUrl')) {
-      change.fieldLockUpdate = planFieldLock(locked, {
+    // An operator lock still wins: the whole point of separating the two is that a lock
+    // is a standing instruction and a refusal is not, so this must not write over one.
+    if (
+      !locked.includes('websiteUrl') &&
+      !valueIsRefused(row.fieldValueRefusals, 'websiteUrl', vanityUrl)
+    ) {
+      change.fieldValueRefusalUpdate = planFieldValueRefusal(row.fieldValueRefusals, {
         field: 'websiteUrl',
-        reason: 'engine_gap_workaround',
-        lockedBy: VANITY_REPAIR_LOCKED_BY,
-        note: VANITY_REPAIR_LOCK_NOTE,
+        value: vanityUrl,
+        rule: 'superseded_by_better_source',
+        refusedBy: VANITY_REPAIR_REFUSED_BY,
+        note: VANITY_REPAIR_REFUSAL_NOTE,
+        evidenceUrl: destinationUrl,
       });
-      changedFields.push('manuallyLockedFields');
+      changedFields.push('fieldValueRefusals');
     }
   }
   return change;

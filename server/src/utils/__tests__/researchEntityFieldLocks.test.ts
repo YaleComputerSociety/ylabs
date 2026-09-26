@@ -254,10 +254,21 @@ const HELPER = 'utils/researchEntityFieldLocks.ts';
 // value instead, which carries a reason and stays withdrawable where a lock carries
 // neither (#3362). Its release path still routes through `planFieldLockRelease`, so the
 // hand-assembled check below continues to cover it.
-const KNOWN_WRITERS = [
-  'scripts/repairPromotionRegressedWebsiteUrlsCore.ts',
-  'scripts/repairVanityHostCitationsCore.ts',
-];
+/**
+ * Empty, and that is the finding rather than an omission.
+ *
+ * These two entries were `repairPromotionRegressedWebsiteUrlsCore.ts` and
+ * `repairVanityHostCitationsCore.ts`, the last two places in the repository where a repair
+ * made its write durable by locking a field. Both now record a `fieldValueRefusals` entry
+ * instead, so no server source outside this helper's own module writes a lock at all.
+ *
+ * The guard keeps both teeth for the next one: nothing may assemble a lock list by hand,
+ * and nothing may call `planFieldLock` without being listed here, which forces a future
+ * lock to be argued for in this file rather than added quietly in a script.
+ */
+const KNOWN_WRITERS: string[] = [];
+
+const LOCK_HELPER_MODULE = 'utils/researchEntityFieldLocks.ts';
 
 function serverSourceFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -309,5 +320,14 @@ describe('no server source assembles a lock list by hand', () => {
     for (const writer of KNOWN_WRITERS) {
       expect(fs.readFileSync(path.join(SERVER_SRC, writer), 'utf8')).toContain('planFieldLock(');
     }
+  });
+
+  it('has no lock writer left outside the helper, so a new one has to be declared here', () => {
+    const callers = files.filter(
+      (file) =>
+        file !== LOCK_HELPER_MODULE &&
+        fs.readFileSync(path.join(SERVER_SRC, file), 'utf8').includes('planFieldLock('),
+    );
+    expect(callers).toEqual(KNOWN_WRITERS);
   });
 });
