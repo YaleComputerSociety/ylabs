@@ -1878,6 +1878,15 @@ const addPublicMemberLeadEmail = (target: Record<string, any>, role: string, val
   target.email = email;
 };
 
+const withPublicMemberLeadEmail = (
+  user: Record<string, any>,
+  role: string,
+  email: unknown,
+): Record<string, any> => {
+  addPublicMemberLeadEmail(user, role, email);
+  return user;
+};
+
 const addPublicMemberOrcid = (target: Record<string, any>, value: unknown) => {
   const orcid = servableOrcid(value);
   if (!orcid) return;
@@ -1910,7 +1919,7 @@ function publicMemberKeyForResearchDetail(
     .slice(0, 160);
 }
 
-function publicMemberUserForResearchDetail(user: any, role = ''): any {
+function publicMemberUserForResearchDetail(user: any): any {
   const publicUser: Record<string, any> = {};
   const imageUrl = user?.imageUrl || user?.image_url || '';
   const primaryDepartment = user?.primaryDepartment || user?.primary_department || '';
@@ -1932,7 +1941,6 @@ function publicMemberUserForResearchDetail(user: any, role = ''): any {
     }
   }
   addPublicMemberOrcid(publicUser, user?.orcid ?? user?.identifiers?.orcid);
-  addPublicMemberLeadEmail(publicUser, role, user?.email);
 
   return publicUser;
 }
@@ -3039,10 +3047,14 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       : undefined;
     return {
       ...member,
-      user: {
-        ...publicMemberUserForResearchDetail(member.user, member.role),
-        publicKey: publicMemberKeyForResearchDetail(member.user, member.role, row?.identityKey),
-      },
+      user: withPublicMemberLeadEmail(
+        {
+          ...publicMemberUserForResearchDetail(member.user),
+          publicKey: publicMemberKeyForResearchDetail(member.user, member.role, row?.identityKey),
+        },
+        member.role,
+        member.user?.email,
+      ),
       ...(rosterEvidence ? { rosterEvidence } : {}),
     };
   });
