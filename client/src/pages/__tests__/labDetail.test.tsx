@@ -1023,7 +1023,7 @@ describe('LabDetail page', () => {
     expect(screen.getByText('How to get involved')).toBeTruthy();
   });
 
-  it('offers the lead email as a card side link carrying the intro draft, not as the primary CTA', async () => {
+  it('offers the lead email as a plain card side link, not as the primary CTA', async () => {
     renderLabDetail({
       ...basePayload,
       members: [
@@ -1046,16 +1046,8 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Email the PI' })).toBeNull();
     const emailLink = screen.getByRole('link', { name: 'Email Jordan Researcher' });
     expect(emailLink.textContent).toBe('jordan.researcher@example.test');
-    const href = emailLink.getAttribute('href') || '';
-    expect(href.startsWith('mailto:jordan.researcher@example.test?')).toBe(true);
-    const mailto = new URL(href);
-    expect(mailto.searchParams.get('subject')).toBe(
-      `Interest in undergraduate research with ${DEFAULT_ENTITY_NAME}`,
-    );
-    const body = mailto.searchParams.get('body') || '';
-    expect(body).toContain('Dear Jordan Researcher,');
-    expect(body).toContain(DEFAULT_ENTITY_NAME);
-    expect(body).toContain('Neuroscience');
+    // No prefilled subject or body: the address alone is the action.
+    expect(emailLink.getAttribute('href')).toBe('mailto:jordan.researcher@example.test');
   });
 
   it('offers a working mailto email link without recording outreach', async () => {
