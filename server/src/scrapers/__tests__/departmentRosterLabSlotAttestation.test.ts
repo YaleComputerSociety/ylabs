@@ -234,3 +234,55 @@ describe('every parse that reads a lab URL states what it saw', () => {
     expect(silent).toEqual([]);
   });
 });
+
+describe('a lab URL the corpus has already refused (#3452)', () => {
+  const dept = {
+    deptKey: 'mcdb',
+    deptName: 'Molecular, Cellular and Developmental Biology',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    rosterUrl: 'https://mcdb.yale.edu/people/faculty',
+  } as never;
+
+  const HOST_LAB = 'https://medicine.yale.edu/lab/host-pi/';
+
+  const fieldsFor = (labUrlIsUnusable?: (url: string) => boolean) =>
+    Object.fromEntries(
+      entryToResearchEntityObservations(
+        {
+          name: 'Ada Fixture',
+          profileUrl: PROFILE_URL,
+          labUrl: HOST_LAB,
+          researchHomeDescription:
+            'The group studies the assembly of cytoskeletal fixtures in dividing cells, using live imaging and targeted genetic perturbation.',
+          researchHomeShortDescription: 'Studies cytoskeletal fixture assembly in dividing cells.',
+          topics: ['Cell Biology'],
+        } as never,
+        dept,
+        'https://mcdb.yale.edu/people/faculty',
+        'dept-mcdb-ada-fixture',
+        labUrlIsUnusable,
+      ).map((observation) => [observation.field, observation.value]),
+    );
+
+  it('withdraws the lab identity, not only the websiteUrl', () => {
+    // The dominant recorded rule is `wrong_owner`: the roster row links a lab this
+    // person works in rather than runs. Before this the refusal withheld the
+    // websiteUrl while the name, kind, and entityType kept asserting the lab.
+    const byField = fieldsFor((url) => url === HOST_LAB);
+    expect(byField.name).toBe('Ada Fixture Faculty Research');
+    expect(byField.kind).toBe('individual');
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+  });
+
+  it('keeps the lab when the refusal names a different URL', () => {
+    const byField = fieldsFor((url) => url === 'https://unrelated.example/');
+    expect(byField.name).toBe('Ada Fixture Lab');
+    expect(byField.entityType).toBe('LAB');
+  });
+
+  it('keeps the lab when nothing is refused, so silence never costs an identity', () => {
+    const byField = fieldsFor();
+    expect(byField.name).toBe('Ada Fixture Lab');
+    expect(byField.entityType).toBe('LAB');
+  });
+});

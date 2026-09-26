@@ -30,9 +30,12 @@ import { normalizeOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
-import mongoose from 'mongoose';
-import { isKnownDeadSourceUrl } from '../../services/sourceLinkHealth';
-import { ResearchEntity } from '../../models/researchEntity';
+import {
+  labUrlUnusabilityFor,
+  loadLabUrlEvidenceBySlug,
+  type LabUrlEvidenceLoader,
+  type LabUrlIsUnusable,
+} from '../utils/labUrlEvidence';
 import {
   isLikelyPersonSpecificYaleEmail,
   netidFromEmail,
@@ -351,7 +354,7 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
 export function facultyToResearchEntityObservations(
   profile: YseFacultyProfile,
   fallbackUserKey: string,
-  labUrlIsKnownDead: (url: string) => boolean = () => false,
+  labUrlIsUnusable: LabUrlIsUnusable = () => false,
 ): ObservationInput[] {
   // A link's presence is not evidence that a lab exists. `hasLab` used to be
   // `Boolean(profile.labUrl)`, so a profile that still links a site the corpus
@@ -362,11 +365,10 @@ export function facultyToResearchEntityObservations(
   // directory-asserted "<name> Lab" with an empty websiteUrl, 13 of them with the
   // dead verdict still recorded against a non-directory URL.
   //
-  // Only a positive dead verdict withdraws the lab. `isKnownDeadSourceUrl` is
-  // UNAVAILABLE or a gone HTTP status, never UNKNOWN, so a host that merely
-  // failed to resolve once keeps its lab rather than losing its identity to a
-  // transient probe.
-  const hasLab = Boolean(profile.labUrl) && !labUrlIsKnownDead(profile.labUrl!);
+  // Withdrawal needs a positive verdict, never silence: see
+  // `labUrlIsUnusableForResearchHome` for which verdicts count and why an absent
+  // one keeps the lab.
+  const hasLab = Boolean(profile.labUrl) && !labUrlIsUnusable(profile.labUrl!);
   if (!hasLab && profile.researchAreas.length === 0 && !profile.description) return [];
 
   const slug = `yse-faculty-${profile.slug}`.slice(0, 100);
@@ -434,41 +436,13 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
   return html;
 }
 
-/**
- * The stored link-health verdicts for the rows this run is about to observe, keyed
- * by entity slug.
- *
- * Injected so a test can supply verdicts without a database, and so the lane
- * reads verdicts rather than probing: the link-health lane owns probing, and a
- * second prober here would both duplicate the fetches and disagree with the
- * verdicts the rest of the engine reads.
- */
-export type StoredLinkHealthLoader = (slugs: string[]) => Promise<Map<string, unknown>>;
-
-async function loadStoredLinkHealthBySlug(slugs: string[]): Promise<Map<string, unknown>> {
-  const byslug = new Map<string, unknown>();
-  if (slugs.length === 0) return byslug;
-  // No connection means no verdicts, which is the same state as a site nobody has
-  // probed yet: the lab is kept. Returning empty rather than throwing keeps the
-  // lane's identity decision independent of whether a caller opened a database,
-  // and keeps the fail-open direction the same in both cases.
-  if (mongoose.connection.readyState !== 1) return byslug;
-  const rows = await ResearchEntity.find({ slug: { $in: slugs } })
-    .select('slug sourceLinkHealth')
-    .lean();
-  for (const row of rows as Array<{ slug?: string; sourceLinkHealth?: unknown }>) {
-    if (row.slug) byslug.set(row.slug, row.sourceLinkHealth);
-  }
-  return byslug;
-}
-
 export class YseFacultyDirectoryScraper implements IScraper {
   readonly name = SOURCE_KEY;
   readonly displayName = 'YSE faculty directory and individual profiles';
 
   constructor(
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
-    private readonly linkHealthLoader: StoredLinkHealthLoader = loadStoredLinkHealthBySlug,
+    private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -494,7 +468,7 @@ export class YseFacultyDirectoryScraper implements IScraper {
     // One read for the whole run rather than one per profile: the verdicts this
     // consults are written by the link-health lane, so they are already stored and
     // this lane must not re-probe.
-    const storedLinkHealthBySlug = await this.linkHealthLoader(
+    const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
       limited.map((faculty) => `yse-faculty-${faculty.slug}`),
     );
 
@@ -513,8 +487,10 @@ export class YseFacultyDirectoryScraper implements IScraper {
       totalObs += userObs.length;
       facultyCount += 1;
 
-      const entityObs = facultyToResearchEntityObservations(profile, entityKey, (url) =>
-        isKnownDeadSourceUrl(storedLinkHealthBySlug.get(`yse-faculty-${profile.slug}`), url),
+      const entityObs = facultyToResearchEntityObservations(
+        profile,
+        entityKey,
+        labUrlUnusabilityFor(labUrlEvidenceBySlug, `yse-faculty-${profile.slug}`),
       );
       if (entityObs.length > 0) {
         await ctx.emit(entityObs);

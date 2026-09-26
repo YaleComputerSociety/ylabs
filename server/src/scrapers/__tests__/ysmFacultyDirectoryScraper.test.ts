@@ -558,3 +558,68 @@ describe('facultyToResearchEntityObservations foreign-lab and affiliation eviden
     expect(byField.websiteUrl).toBe('https://www.hairlab.example.org/');
   });
 });
+
+describe('a lab URL the corpus has already refused (#3452)', () => {
+  const REFUSES_RIVERS_LAB = (url: string) => url === 'https://riverslab.example.org';
+
+  it('withdraws the lab identity, not only the websiteUrl', () => {
+    // `classifyProfileLabWebsite` reads the page and sees an own research home, so
+    // before this the refusal withheld the websiteUrl while the name, kind, and
+    // entityType kept asserting the lab.
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        meshKeywords: ['Climate Policy'],
+        labWebsite: { name: 'Rivers Lab', url: 'https://riverslab.example.org' },
+      }),
+      RIVERS,
+    )!;
+    const obs = facultyToResearchEntityObservations(
+      profile,
+      'ysm:jordan-rivers',
+      NO_SURNAME_ROSTER,
+      REFUSES_RIVERS_LAB,
+    );
+    const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
+    expect(byField.name).toBe('Jordan Rivers Faculty Research');
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(byField.kind).toBe('individual');
+    expect(byField.websiteUrl).toBeUndefined();
+    expect(byField.sourceUrls).toEqual([RIVERS.profileUrl]);
+  });
+
+  it('keeps the lab when the refusal names a different URL', () => {
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        meshKeywords: ['Climate Policy'],
+        labWebsite: { name: 'Rivers Lab', url: 'https://riverslab.example.org' },
+      }),
+      RIVERS,
+    )!;
+    const obs = facultyToResearchEntityObservations(
+      profile,
+      'ysm:jordan-rivers',
+      NO_SURNAME_ROSTER,
+      (url) => url === 'https://some-other-site.example/',
+    );
+    expect(Object.fromEntries(obs.map((o) => [o.field, o.value])).entityType).toBe('LAB');
+  });
+
+  it('keeps the lab when nothing is refused, so silence never costs an identity', () => {
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        meshKeywords: ['Climate Policy'],
+        labWebsite: { name: 'Rivers Lab', url: 'https://riverslab.example.org' },
+      }),
+      RIVERS,
+    )!;
+    const obs = facultyToResearchEntityObservations(
+      profile,
+      'ysm:jordan-rivers',
+      NO_SURNAME_ROSTER,
+    );
+    expect(Object.fromEntries(obs.map((o) => [o.field, o.value])).entityType).toBe('LAB');
+  });
+});
