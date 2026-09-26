@@ -52,8 +52,9 @@ yarn fuzzy:residual-report --sample=800
 ```
 
 Flags: `--sample=<N>` draws a seeded sample (`--seed=<s>`), and `--limit=<N>` takes the first N.
-Archived entities are loaded by default, because merge losers are archived and leaving them out understates recall; `--live-only` excludes them.
+Archived entities are always loaded, because merge losers are archived and leaving them out understates recall.
 `autoBandRecallByProvenance` reports recall separately for each label provenance.
+The buckets do not partition the positives: a transitive pair whose two members were merged into the same canonical by different provenances is in the total and in no bucket.
 
 `fuzzyResidualMatcher.ts` generates candidate pairs by blocking on surname metaphone, significant org tokens, department, and research area, plus embedding cosine ANN, then scores each pair.
 The scorer sums per-feature Fellegi-Sunter weights only for comparable features (both sides carry the data), applies hard vetoes for conflicting first names and incompatible entity types, and assigns each pair an `auto`, `review`, or `discard` band via two probability thresholds.

@@ -29,21 +29,14 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 interface Args {
   sample?: number;
   limit?: number;
-  includeArchived: boolean;
   seed: string;
 }
 
-/**
- * Archived rows are in by default because merge losers are archived: leaving them out drops
- * most labeled positives from the loaded set and understates recall (#3514).
- */
-export function parseArgs(argv: string[]): Args {
-  const args: Args = { includeArchived: true, seed: DEFAULT_EVAL_SAMPLE_SEED };
+function parseArgs(argv: string[]): Args {
+  const args: Args = { seed: DEFAULT_EVAL_SAMPLE_SEED };
   for (const token of argv) {
     if (token.startsWith('--sample=')) args.sample = Number(token.slice('--sample='.length));
     else if (token.startsWith('--limit=')) args.limit = Number(token.slice('--limit='.length));
-    else if (token === '--include-archived') args.includeArchived = true;
-    else if (token === '--live-only') args.includeArchived = false;
     else if (token.startsWith('--seed=')) args.seed = token.slice('--seed='.length).trim();
   }
   if (!args.seed) throw new Error('--seed must not be empty');
@@ -89,17 +82,16 @@ async function main() {
   await initializeConnections();
   const dbLabel = mongoose.connection.db?.databaseName ?? 'unknown';
 
-  const match = args.includeArchived ? {} : { archived: { $ne: true } };
   let docs: Record<string, any>[];
   if (args.sample && Number.isFinite(args.sample)) {
     const ids = (
-      (await ResearchEntity.find(match).select('_id').lean()) as Array<{ _id: unknown }>
+      (await ResearchEntity.find({}).select('_id').lean()) as Array<{ _id: unknown }>
     ).map((doc) => String(doc._id));
     docs = (await ResearchEntity.find({ _id: { $in: seededSample(ids, args.sample, args.seed) } })
       .select(SELECT)
       .lean()) as Record<string, any>[];
   } else {
-    const query = ResearchEntity.find(match).select(SELECT).lean();
+    const query = ResearchEntity.find({}).select(SELECT).lean();
     if (args.limit && Number.isFinite(args.limit)) query.limit(args.limit);
     docs = (await query) as Record<string, any>[];
   }
@@ -113,14 +105,6 @@ async function main() {
     groundTruth.canonicalGroupRows,
   );
   const allPositives = clusterPairs(positiveClusters);
-  const inScopePositives = new Set(
-    [...allPositives].filter((key) => {
-      const [a, b] = key.split('|');
-      return loadedIds.has(a) && loadedIds.has(b);
-    }),
-  );
-
-  const inScopeNegatives = buildLabeledNegatives(buildInScopeQuarantines(entities));
   const inScope = (pairs: Set<string>): Set<string> =>
     new Set(
       [...pairs].filter((key) => {
@@ -128,6 +112,9 @@ async function main() {
         return loadedIds.has(a) && loadedIds.has(b);
       }),
     );
+  const inScopePositives = inScope(allPositives);
+
+  const inScopeNegatives = buildLabeledNegatives(buildInScopeQuarantines(entities));
   const positivesByProvenance = groundTruthPairsByProvenance(
     groundTruth.canonicalGroupRows,
     AUTOMATED_MERGE_ARCHIVE_REASONS,
@@ -148,7 +135,6 @@ async function main() {
         ? `first:${args.limit}`
         : 'all',
     seed: args.sample ? args.seed : undefined,
-    includeArchived: args.includeArchived,
     entitiesLoaded: entities.length,
     candidatePairs: candidatePairs.size,
     autoBandPairs: autoPairs.size,
@@ -164,7 +150,7 @@ async function main() {
         return [provenance, { inScopePositives: positives.size, recall: metrics.recall }];
       }),
     ),
-    note: 'Report-only. Precision is measured against same-name-different-PI hard negatives drawn from the loaded set. Archived rows are loaded by default because merge losers are archived; --live-only understates recall. autoBandRecallByProvenance splits recall by who decided each label: automated labels come from the engine being measured and unattributed ones cannot be told apart. No merges are applied.',
+    note: 'Report-only. Precision is measured against same-name-different-PI hard negatives drawn from the loaded set. Archived rows are always loaded because merge losers are archived and leaving them out understates recall. autoBandRecallByProvenance splits recall by who decided each label: automated labels come from the engine being measured and unattributed ones cannot be told apart. Buckets do not partition inScopePositives, because a transitive pair whose members were merged by different provenances belongs to no bucket. No merges are applied.',
   };
   console.log(JSON.stringify(report, null, 2));
 }
