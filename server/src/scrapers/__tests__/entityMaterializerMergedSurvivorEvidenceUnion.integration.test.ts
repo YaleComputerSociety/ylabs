@@ -440,7 +440,12 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
       'nsf-award-search',
     );
     await seedObservation('ysm-faculty-example-lead', 'recentGrantCount', 1, 'nsf-award-search');
-    await seedObservation('ysm-faculty-example-lead', 'fundingAgencies', ['NSF'], 'nsf-award-search');
+    await seedObservation(
+      'ysm-faculty-example-lead',
+      'fundingAgencies',
+      ['NSF'],
+      'nsf-award-search',
+    );
 
     await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
     const stored = await ResearchEntity.findById(survivor._id).lean<{
