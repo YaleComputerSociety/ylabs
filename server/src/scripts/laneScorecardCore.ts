@@ -47,19 +47,30 @@ function labelsBySlug(labels: readonly BenchmarkLabel[]): Map<string, BenchmarkL
   return bySlug;
 }
 
+const LANE_STAMPED_INSTANT_KEY = 'readAt';
+
+const withoutWallClock = (key: string, value: unknown): unknown =>
+  key === LANE_STAMPED_INSTANT_KEY ? 'instant' : value;
+
 /**
  * Order-independent, so a lane that emits the same values in a different order replays to
- * the same fingerprint, and any change in what it emits changes it.
+ * the same fingerprint, and any change in what it emits changes it. A `readAt` key is
+ * masked because it is the moment the lane read the page, as in the roster health record's
+ * `read.readAt`, and that clock would make every replay differ. Any other date, including a
+ * page-stated one serialized as a full instant, still counts.
  */
 export function plannedOutputFingerprint(observations: readonly PlannedObservation[]): string {
   const lines = observations
     .map((observation) =>
-      JSON.stringify([
-        text(observation.entityType),
-        text(observation.entityKey) || idText(observation.entityId),
-        text(observation.field),
-        observation.value ?? null,
-      ]),
+      JSON.stringify(
+        [
+          text(observation.entityType),
+          text(observation.entityKey) || idText(observation.entityId),
+          text(observation.field),
+          observation.value ?? null,
+        ],
+        withoutWallClock,
+      ),
     )
     .sort();
   return crypto.createHash('sha256').update(lines.join('\n')).digest('hex');

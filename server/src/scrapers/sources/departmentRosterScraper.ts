@@ -4344,9 +4344,11 @@ export class DepartmentRosterScraper implements IScraper {
     const snapshotObservedAt = new Date();
     const rosterHealthObservations: ObservationInput[] = perDept.map((deptResult) => {
       const dept = authoritativeConfigByKey.get(deptResult.deptKey);
+      // Sorted because the set fills in fetch-completion order, which would
+      // otherwise make identical replays emit different values.
       const discoveredEntityKeys = Array.from(
         discoveredEntityKeysByDept.get(deptResult.deptKey) ?? new Set<string>(),
-      );
+      ).sort();
       // A department whose page was not read in this run is not authoritative
       // about who its roster lists, whatever its lane status says. This is the
       // half of #3251 that was real: the snapshot asserted "this is who the
