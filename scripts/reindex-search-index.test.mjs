@@ -66,6 +66,33 @@ test('every missing environment variable is reported at once, with its expected 
   assert.equal(missingReindexEnvVars({ ...fullEnv, MEILISEARCH_INDEX_PREFIX: '   ' }).length, 1);
 });
 
+test('a production apply reports the write confirmation up front, not after the plan prints', () => {
+  const productionApply = { environment: 'production', apply: true };
+
+  const missing = missingReindexEnvVars(fullEnv, productionApply);
+  assert.deepEqual(
+    missing.map(({ name }) => name),
+    ['CONFIRM_PROD_SCRAPE'],
+  );
+  assert.match(describeMissingEnvVars(missing), /CONFIRM_PROD_SCRAPE/);
+
+  // Only the exact string counts, because that is what the guard compares.
+  assert.equal(
+    missingReindexEnvVars({ ...fullEnv, CONFIRM_PROD_SCRAPE: 'yes' }, productionApply).length,
+    1,
+  );
+  assert.deepEqual(
+    missingReindexEnvVars({ ...fullEnv, CONFIRM_PROD_SCRAPE: 'true' }, productionApply),
+    [],
+  );
+});
+
+test('the write confirmation is required only for a production apply', () => {
+  assert.deepEqual(missingReindexEnvVars(fullEnv, { environment: 'production', apply: false }), []);
+  assert.deepEqual(missingReindexEnvVars(fullEnv, { environment: 'beta', apply: true }), []);
+  assert.deepEqual(missingReindexEnvVars(fullEnv), []);
+});
+
 test('the plan never echoes credentials', () => {
   const plan = summarizeReindexPlan({ environment: 'beta', apply: true, env: fullEnv });
 

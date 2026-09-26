@@ -23,7 +23,7 @@ try {
 
 const env = { ...process.env, SCRAPER_ENV: options.environment };
 
-const missing = missingReindexEnvVars(env);
+const missing = missingReindexEnvVars(env, options);
 if (missing.length > 0) {
   fail(describeMissingEnvVars(missing));
 }
@@ -55,7 +55,7 @@ child.on('close', (code) => {
     );
   } else {
     console.error(
-      `\nreindex:meili exited ${code}. Nothing was rebuilt unless the output above says otherwise. The four preconditions it enforces are listed in docs/meilisearch-reindex-runbook.md.`,
+      `\nreindex:meili exited ${code}. Nothing was rebuilt unless the output above says otherwise. The preconditions it enforces are listed in docs/meilisearch-reindex-runbook.md.`,
     );
   }
   process.exit(code ?? 1);

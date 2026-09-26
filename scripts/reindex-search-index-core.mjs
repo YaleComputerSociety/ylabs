@@ -75,8 +75,33 @@ export function parseReindexArgs(argv) {
   return { environment, apply };
 }
 
-export function missingReindexEnvVars(env) {
-  return REQUIRED_REINDEX_ENV_VARS.filter(({ name }) => !String(env[name] || '').trim());
+// Required only for a production apply. `assertScriptApplyAllowed` refuses a
+// production write without it, and it fires AFTER the preflight and the index
+// reconcile plan have printed, so a run without it reads as working and then
+// stops at the last moment. That is the one-error-per-run discovery this module
+// exists to remove, so the requirement is reported up front with the others.
+export const PRODUCTION_APPLY_ENV_VARS = Object.freeze([
+  {
+    name: 'CONFIRM_PROD_SCRAPE',
+    example: 'true  (that exact string; any other value counts as unset)',
+    why: 'Production writes are confirmed by the operator, not by this wrapper. reindex:meili refuses the rebuild without it.',
+    requiredValue: 'true',
+  },
+]);
+
+export function requiredReindexEnvVars({ environment, apply } = {}) {
+  if (environment === 'production' && apply) {
+    return [...REQUIRED_REINDEX_ENV_VARS, ...PRODUCTION_APPLY_ENV_VARS];
+  }
+  return [...REQUIRED_REINDEX_ENV_VARS];
+}
+
+export function missingReindexEnvVars(env, options = {}) {
+  return requiredReindexEnvVars(options).filter(({ name, requiredValue }) => {
+    const value = String(env[name] || '').trim();
+    if (!value) return true;
+    return requiredValue !== undefined && value !== requiredValue;
+  });
 }
 
 export function describeMissingEnvVars(missing) {
