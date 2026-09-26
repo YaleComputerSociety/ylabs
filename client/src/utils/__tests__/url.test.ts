@@ -96,8 +96,20 @@ describe('safeMailtoHref', () => {
         body: 'Hello,\nI reviewed your profile.',
       }),
     ).toBe(
-      'mailto:advisor@yale.edu?subject=Research+inquiry&body=Hello%2C%0AI+reviewed+your+profile.',
+      'mailto:advisor@yale.edu?subject=Research%20inquiry&body=Hello%2C%0AI%20reviewed%20your%20profile.',
     );
+  });
+
+  it('percent-encodes a space rather than using the form-encoded plus', () => {
+    // A `+` is a space only in a form-encoded query string. RFC 6068 mailto hfields require
+    // percent-encoding, and a client that follows it shows literal plus signs between every word.
+    const href = safeMailtoHref('advisor@yale.edu', {
+      subject: 'two words',
+      body: 'three short words',
+    });
+    expect(href).not.toContain('+');
+    expect(href).toContain('subject=two%20words');
+    expect(href).toContain('body=three%20short%20words');
   });
 
   it('rejects mailto values with injected headers, multiple recipients, or invalid addresses', () => {
