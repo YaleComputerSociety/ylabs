@@ -103,7 +103,7 @@ import {
 import { websiteUrlIdentityKeyVariants } from '../scripts/researchEntityPiDedupeCore';
 import { isSweepStageEnabledByDefault } from '../scripts/sweepStageFlags';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
-import { materializeAccessForResearchGroup } from './accessMaterializer';
+import { materializeAccessForResearchGroup, type AccessObservation } from './accessMaterializer';
 import {
   sanitizeObservationField,
   withHarvestTextDefectsCorrected,
@@ -6115,10 +6115,13 @@ export async function materializeEntity(
       await materializeInferredDirectorMembership(entityIdString, materializationObs);
       await inheritSchoolFromLeadPi(entityIdString, { manuallyLockedFields });
     }
-    const accessResult = await materializeAccessForResearchGroup({
-      researchEntityId: entityIdString,
-      entityKey: identifier.entityKey,
-    });
+    const accessResult = await materializeAccessForResearchGroup(
+      {
+        researchEntityId: entityIdString,
+        entityKey: identifier.entityKey,
+      },
+      mergedInKeys.length > 0 ? (obs as AccessObservation[]) : undefined,
+    );
     postMaterializationMetrics = {
       entryPathways: 0,
       accessSignals: accessResult.accessSignals,

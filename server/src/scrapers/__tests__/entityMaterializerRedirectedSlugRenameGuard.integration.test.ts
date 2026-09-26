@@ -90,6 +90,7 @@ describe('a redirected shell slug is never planned onto the live canonical', () 
     for (const [field, value] of [
       ['slug', SHELL_SLUG],
       ['name', 'Yale Imaging Shell Renamed'],
+      ['websiteUrl', 'https://research.yale.edu/imaging-shell'],
     ] as const) {
       await Observation.create({
         entityType: 'researchEntity',
@@ -114,7 +115,8 @@ describe('a redirected shell slug is never planned onto the live canonical', () 
     );
 
     expect(String(result.entityId)).toBe(canonicalId.toHexString());
-    const plannedFields = Object.keys(result.plannedSet ?? {});
+    expect(result.plannedSet).toBeDefined();
+    const plannedFields = Object.keys(result.plannedSet as Record<string, unknown>);
     expect(plannedFields).not.toContain('slug');
     expect(plannedFields).not.toContain('fieldProvenance.slug');
     expect(plannedFields).not.toContain('name');

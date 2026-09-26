@@ -27,6 +27,7 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { Signal } from '../../models/signal';
 import { materializeEntity } from '../entityMaterializer';
 
 type ProjectedSurvivor = {
@@ -60,6 +61,7 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     for (const name of ['observations', 'research_entities', 'role_assignments']) {
       await db.collection(name).deleteMany({});
     }
+    await Signal.deleteMany({});
   });
 
   const seedObservation = async (
@@ -208,6 +210,18 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
 
     expect((await projectSurvivor(survivor._id)).researchAreas).toContain('Synaptic Plasticity');
+  });
+
+  it('derives a loser access signal onto the survivor from the survivor key', async () => {
+    const survivor = await seedMerge('ysm-faculty-example-lead');
+    await seedObservation('ysm-faculty-example-lead', 'offersIndependentStudy', true);
+
+    await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+
+    const signalTypes = (await Signal.find({ researchEntityId: survivor._id }).lean()).map(
+      (signal) => signal.type,
+    );
+    expect(signalTypes).toContain('CREDIT_FORMALIZATION_POSSIBLE');
   });
 
   it('leaves the shell archived and unwritten', async () => {
