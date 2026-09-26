@@ -147,7 +147,9 @@ A verdict is exactly one of the following, applied in this order so that each ro
 
 `backsHostedBadgeWording` answers the narrower question of whether the quote shows the row has hosted undergraduates, which is what the badge text asserts, as opposed to only saying it is open to them.
 
-The case reports three rates, none of which gates: `undergrad-evidence-quote-precision` over rows whose page could be read, the same precision counting an unreadable page as wrong, and `undergrad-evidence-backs-hosted-badge-wording`.
+Every run reports three population rates: the share of served rows carrying a quote, the share of quotes from the judged lane, and the share citing a source page.
+With judgements supplied it adds three precision rates: `undergrad-evidence-quote-precision` over rows whose page could be read, the same precision counting an unreadable page as wrong, and `undergrad-evidence-backs-hosted-badge-wording`.
+None of the six gates.
 The report's `notes.score` carries the verdict counts and a 95% Wilson interval for each, because a precision over 50 rows is a range rather than a point.
 A judgement records the fingerprint of the quote it judged, and a drawn row whose served quote has since changed is counted as `judgementForAChangedQuote` rather than scored, so a verdict never silently transfers to a different quote.
 
