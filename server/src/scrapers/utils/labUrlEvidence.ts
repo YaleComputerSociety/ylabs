@@ -46,10 +46,25 @@ export function labUrlIsUnusableForResearchHome(
   evidence: LabUrlEvidence | undefined,
   url: unknown,
 ): boolean {
+  return labUrlVerdictFromEvidence(evidence, url) !== 'usable';
+}
+
+/**
+ * `dead` is kept apart from `refused` because only deadness says the value serves
+ * nothing; a refusal is a judgement about a link that may still answer (#2647).
+ */
+export type LabUrlVerdict = 'usable' | 'refused' | 'dead';
+
+export type LabUrlVerdictFor = (url: string) => LabUrlVerdict;
+
+export function labUrlVerdictFromEvidence(
+  evidence: LabUrlEvidence | undefined,
+  url: unknown,
+): LabUrlVerdict {
   const value = typeof url === 'string' ? url.trim() : '';
-  if (!value || !evidence) return false;
-  if (valueIsRefused(evidence.fieldValueRefusals, 'websiteUrl', value)) return true;
-  return isKnownDeadSourceUrl(evidence.sourceLinkHealth, value);
+  if (!value || !evidence) return 'usable';
+  if (valueIsRefused(evidence.fieldValueRefusals, 'websiteUrl', value)) return 'refused';
+  return isKnownDeadSourceUrl(evidence.sourceLinkHealth, value) ? 'dead' : 'usable';
 }
 
 /**
@@ -57,7 +72,7 @@ export function labUrlIsUnusableForResearchHome(
  *
  * The lanes read verdicts first: the link-health lane owns probing and the refusal
  * record owns ownership, so a lane probes only where both are silent
- * (`labUrlUnusabilityWithProbeFor`) and never overrules a stored answer.
+ * (`labUrlVerdictWithProbeFor`) and never overrules a stored answer.
  *
  * No connection reads as no verdicts, which is the same state as a row nobody has
  * examined, so a lane's identity decision does not depend on whether its caller
@@ -122,17 +137,17 @@ export const probeLabUrlIsPositivelyDead: LabUrlProber = async (url) => {
  * the lab on the next run (#3452). Where the corpus holds no refusal and no verdict
  * for this exact URL the lane asks the link itself; a stored answer always wins.
  */
-export async function labUrlUnusabilityWithProbeFor(
+export async function labUrlVerdictWithProbeFor(
   evidenceBySlug: Map<string, LabUrlEvidence>,
   slug: string,
   candidateUrl: string | undefined,
   probe: LabUrlProber,
-): Promise<LabUrlIsUnusable> {
+): Promise<LabUrlVerdictFor> {
   const evidence = evidenceBySlug.get(slug);
-  const stored = (url: string) => labUrlIsUnusableForResearchHome(evidence, url);
+  const stored = (url: string) => labUrlVerdictFromEvidence(evidence, url);
   const candidate = candidateUrl?.trim() ?? '';
-  if (!candidate || stored(candidate)) return stored;
+  if (!candidate || stored(candidate) !== 'usable') return stored;
   if (findSourceLinkHealth(evidence?.sourceLinkHealth, candidate)) return stored;
   const probedDead = await probe(candidate);
-  return (url: string) => stored(url) || (probedDead && url.trim() === candidate);
+  return (url: string) => (probedDead && url.trim() === candidate ? 'dead' : stored(url));
 }

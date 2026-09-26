@@ -31,12 +31,12 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import {
-  labUrlUnusabilityWithProbeFor,
+  labUrlVerdictWithProbeFor,
   loadLabUrlEvidenceBySlug,
   probeLabUrlIsPositivelyDead,
   type LabUrlEvidenceLoader,
-  type LabUrlIsUnusable,
   type LabUrlProber,
+  type LabUrlVerdictFor,
 } from '../utils/labUrlEvidence';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -357,7 +357,7 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
 export function facultyToResearchEntityObservations(
   profile: YseFacultyProfile,
   fallbackUserKey: string,
-  labUrlIsUnusable: LabUrlIsUnusable = () => false,
+  labUrlVerdict: LabUrlVerdictFor = () => 'usable',
 ): ObservationInput[] {
   // A link's presence is not evidence that a lab exists. `hasLab` used to be
   // `Boolean(profile.labUrl)`, so a profile that still links a site the corpus
@@ -371,7 +371,14 @@ export function facultyToResearchEntityObservations(
   // Withdrawal needs a positive verdict, never silence: see
   // `labUrlIsUnusableForResearchHome` for which verdicts count and why an absent
   // one keeps the lab.
-  const hasLab = Boolean(profile.labUrl) && !labUrlIsUnusable(profile.labUrl!);
+  const linkedLabVerdict = profile.labUrl ? labUrlVerdict(profile.labUrl) : undefined;
+  const hasLab = linkedLabVerdict === 'usable';
+  // A withdrawal on a dead link must also withdraw the websiteUrl this lane asserted
+  // before it knew, or that observation stays live and the row keeps serving the dead
+  // site under a "Faculty Research" name (#3452). Only deadness is stated: a refusal is
+  // a judgement about a link that may still answer, which #2647 keeps out of
+  // retraction, and field retraction re-probes a sole-holder value before retiring it.
+  const labLinkIsDead = linkedLabVerdict === 'dead';
   if (!hasLab && profile.researchAreas.length === 0 && !profile.description) return [];
   // The same three title screens the YSM and department-roster mints ask, because
   // this lane cites the person's profile as the row's identity and so mints the same
@@ -391,7 +398,12 @@ export function facultyToResearchEntityObservations(
   };
 
   const obs: ObservationInput[] = [
-    { ...base, field: 'slug', value: slug },
+    {
+      ...base,
+      field: 'slug',
+      value: slug,
+      ...(labLinkIsDead ? { assertsNoValueFor: ['websiteUrl'] } : {}),
+    },
     { ...base, field: 'name', value: entityName },
     { ...base, field: 'kind', value: hasLab ? 'lab' : 'individual' },
     { ...base, field: 'entityType', value: hasLab ? 'LAB' : 'FACULTY_RESEARCH_AREA' },
@@ -500,7 +512,7 @@ export class YseFacultyDirectoryScraper implements IScraper {
       const entityObs = facultyToResearchEntityObservations(
         profile,
         entityKey,
-        await labUrlUnusabilityWithProbeFor(
+        await labUrlVerdictWithProbeFor(
           labUrlEvidenceBySlug,
           `yse-faculty-${profile.slug}`,
           ownsNoResearchEntityByTitle(profile.title) ? undefined : profile.labUrl,

@@ -441,10 +441,8 @@ describe('a linked lab site the corpus knows is dead (#3452)', () => {
     // LAB named "<Person> Lab" and the websiteUrl retraction could never stick:
     // this lane re-asserted the URL on the next run.
     const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
-    const obs = facultyToResearchEntityObservations(
-      profile,
-      'yse:jordan-rivers',
-      (url) => url === 'https://riverslab.example.org/',
+    const obs = facultyToResearchEntityObservations(profile, 'yse:jordan-rivers', (url) =>
+      url === 'https://riverslab.example.org/' ? 'dead' : 'usable',
     );
     const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
     expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
@@ -452,14 +450,28 @@ describe('a linked lab site the corpus knows is dead (#3452)', () => {
     expect(byField.name).toBe('Jordan Rivers Faculty Research');
     expect(byField.sourceUrls).toEqual([RIVERS.profileUrl]);
     expect(obs.some((o) => o.field === 'websiteUrl')).toBe(false);
+    expect(obs.find((o) => o.field === 'slug')?.assertsNoValueFor).toEqual(['websiteUrl']);
+  });
+
+  it('withdraws the lab on a refusal but states no absence, because a refused link may still answer', () => {
+    const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
+    const obs = facultyToResearchEntityObservations(profile, 'yse:jordan-rivers', () => 'refused');
+    const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(obs.some((o) => o.field === 'websiteUrl')).toBe(false);
+    expect(obs.some((o) => o.assertsNoValueFor)).toBe(false);
+  });
+
+  it('states no absence for a profile with no lab link at all', () => {
+    const profile = { ...extractProfile(PROFILE_WITH_LAB, RIVERS), labUrl: undefined };
+    const obs = facultyToResearchEntityObservations(profile, 'yse:jordan-rivers', () => 'dead');
+    expect(obs.some((o) => o.assertsNoValueFor)).toBe(false);
   });
 
   it('keeps the lab when the verdict is about a different URL', () => {
     const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
-    const obs = facultyToResearchEntityObservations(
-      profile,
-      'yse:jordan-rivers',
-      (url) => url === 'https://some-other-site.example.org/',
+    const obs = facultyToResearchEntityObservations(profile, 'yse:jordan-rivers', (url) =>
+      url === 'https://some-other-site.example.org/' ? 'dead' : 'usable',
     );
     const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
     expect(byField.entityType).toBe('LAB');
@@ -480,7 +492,9 @@ describe('a linked lab site the corpus knows is dead (#3452)', () => {
       researchAreas: [],
       description: '',
     };
-    expect(facultyToResearchEntityObservations(bare, 'yse:jordan-rivers', () => true)).toEqual([]);
+    expect(facultyToResearchEntityObservations(bare, 'yse:jordan-rivers', () => 'dead')).toEqual(
+      [],
+    );
   });
 });
 
@@ -513,6 +527,8 @@ describe('a lab link whose verdict the link-health lane has since dropped (#3452
     expect(fields.name).toBe('Jordan Rivers Faculty Research');
     expect(fields.sourceUrls).toEqual([RIVERS.profileUrl]);
     expect(fields.websiteUrl).toBeUndefined();
+    const slugObs = emitted.find((o) => o.entityKey === RIVERS_SLUG && o.field === 'slug');
+    expect(slugObs?.assertsNoValueFor).toEqual(['websiteUrl']);
   });
 
   it('keeps the lab when the probe does not positively show the link is gone', async () => {

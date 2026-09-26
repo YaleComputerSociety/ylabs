@@ -151,6 +151,12 @@ export interface SourceFieldRetractionContract {
  * that edge strands the real lab, which `observations:retarget-foreign-lab-websites`
  * exists to repair rather than retract.
  *
+ * `yse-faculty-directory` qualifies for one case only. It emits `slug` and
+ * `sourceUrls` for every entity it mints, and states `assertsNoValueFor:
+ * ['websiteUrl']` only when it withdrew a lab because the linked site is known or
+ * probed dead (#3452). A refused link and an empty slot state nothing, because
+ * `extractLabUrl` can decline a link the page still carries.
+ *
  * `ysm-atoz-index` does not qualify either, for the opposite reason: a delisted
  * lab vanishes from the index entirely, so it emits no witness and no partial
  * read ever occurs. That cohort is `ysmLabDelistingReconciler`'s.
@@ -161,6 +167,12 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
     retractableFields: ['websiteUrl'],
     notes:
       'Reads one official profile per entity and emits slug plus sourceUrls unconditionally. It states assertsNoValueFor: [websiteUrl] only when the profile carries no lab link at all, so a classifyProfileLabWebsite refusal of a link the page still carries retracts nothing (#2647).',
+  },
+  'yse-faculty-directory': {
+    witnessFields: ['slug', 'sourceUrls'],
+    retractableFields: ['websiteUrl'],
+    notes:
+      'Emits slug and sourceUrls on every entity it mints. It states assertsNoValueFor: [websiteUrl] only when it withdrew the lab because the linked site is dead on a stored or probed verdict, so the websiteUrl it asserted before it knew stops being live (#3452). A refused link and an empty lab slot state nothing.',
   },
   'dept-faculty-roster': {
     witnessFields: ['slug', 'sourceUrls'],

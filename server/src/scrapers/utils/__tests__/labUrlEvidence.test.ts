@@ -9,7 +9,8 @@ vi.mock('../../../services/sourceLinkHealth', async (importOriginal) => ({
 import {
   labUrlIsUnusableForResearchHome,
   labUrlUnusabilityFor,
-  labUrlUnusabilityWithProbeFor,
+  labUrlVerdictFromEvidence,
+  labUrlVerdictWithProbeFor,
   probeLabUrlIsPositivelyDead,
   type LabUrlEvidence,
 } from '../labUrlEvidence';
@@ -66,6 +67,20 @@ describe('labUrlIsUnusableForResearchHome', () => {
   });
 });
 
+describe('labUrlVerdictFromEvidence', () => {
+  it('names a refusal apart from deadness, and a refusal wins when both are recorded', () => {
+    const deadHealth = [{ url: LAB_URL, healthStatus: 'UNAVAILABLE' }];
+    expect(
+      labUrlVerdictFromEvidence(
+        { ...refusing('wrong_owner'), sourceLinkHealth: deadHealth },
+        LAB_URL,
+      ),
+    ).toBe('refused');
+    expect(labUrlVerdictFromEvidence({ sourceLinkHealth: deadHealth }, LAB_URL)).toBe('dead');
+    expect(labUrlVerdictFromEvidence(undefined, LAB_URL)).toBe('usable');
+  });
+});
+
 describe('labUrlUnusabilityFor', () => {
   it('scopes the predicate to one row, so a verdict cannot leak across rows', () => {
     const map = new Map<string, LabUrlEvidence>([['dept-x-someone', refusing('wrong_owner')]]);
@@ -74,69 +89,59 @@ describe('labUrlUnusabilityFor', () => {
   });
 });
 
-describe('labUrlUnusabilityWithProbeFor', () => {
+describe('labUrlVerdictWithProbeFor', () => {
   const SLUG = 'yse-faculty-someone';
   const evidenceFor = (evidence: LabUrlEvidence) => new Map([[SLUG, evidence]]);
 
   it('probes only where neither a refusal nor a verdict covers the URL', async () => {
     const probe = vi.fn(async () => true);
-    const unusable = await labUrlUnusabilityWithProbeFor(new Map(), SLUG, LAB_URL, probe);
+    const verdict = await labUrlVerdictWithProbeFor(new Map(), SLUG, LAB_URL, probe);
     expect(probe).toHaveBeenCalledWith(LAB_URL);
-    expect(unusable(LAB_URL)).toBe(true);
+    expect(verdict(LAB_URL)).toBe('dead');
   });
 
   it('keeps the lab when the probe is not a positive dead verdict', async () => {
-    const unusable = await labUrlUnusabilityWithProbeFor(
-      new Map(),
-      SLUG,
-      LAB_URL,
-      async () => false,
-    );
-    expect(unusable(LAB_URL)).toBe(false);
+    const verdict = await labUrlVerdictWithProbeFor(new Map(), SLUG, LAB_URL, async () => false);
+    expect(verdict(LAB_URL)).toBe('usable');
   });
 
   it('scopes a probed verdict to the URL that was probed', async () => {
-    const unusable = await labUrlUnusabilityWithProbeFor(
-      new Map(),
-      SLUG,
-      LAB_URL,
-      async () => true,
-    );
-    expect(unusable('https://www.othersite.example/')).toBe(false);
+    const verdict = await labUrlVerdictWithProbeFor(new Map(), SLUG, LAB_URL, async () => true);
+    expect(verdict('https://www.othersite.example/')).toBe('usable');
   });
 
   it.each([
-    ['HEALTHY', false],
-    ['UNKNOWN', false],
-    ['UNAVAILABLE', true],
+    ['HEALTHY', 'usable'],
+    ['UNKNOWN', 'usable'],
+    ['UNAVAILABLE', 'dead'],
   ])('lets a stored %s verdict answer without probing', async (healthStatus, expected) => {
-    const probe = vi.fn(async () => !expected);
-    const unusable = await labUrlUnusabilityWithProbeFor(
+    const probe = vi.fn(async () => expected === 'usable');
+    const verdict = await labUrlVerdictWithProbeFor(
       evidenceFor({ sourceLinkHealth: [{ url: LAB_URL, healthStatus }] }),
       SLUG,
       LAB_URL,
       probe,
     );
     expect(probe).not.toHaveBeenCalled();
-    expect(unusable(LAB_URL)).toBe(expected);
+    expect(verdict(LAB_URL)).toBe(expected);
   });
 
   it('lets a stored refusal answer without probing', async () => {
     const probe = vi.fn(async () => false);
-    const unusable = await labUrlUnusabilityWithProbeFor(
+    const verdict = await labUrlVerdictWithProbeFor(
       evidenceFor(refusing('wrong_owner')),
       SLUG,
       LAB_URL,
       probe,
     );
     expect(probe).not.toHaveBeenCalled();
-    expect(unusable(LAB_URL)).toBe(true);
+    expect(verdict(LAB_URL)).toBe('refused');
   });
 
   it('does not probe when there is no lab link to decide', async () => {
     const probe = vi.fn(async () => true);
-    await labUrlUnusabilityWithProbeFor(new Map(), SLUG, undefined, probe);
-    await labUrlUnusabilityWithProbeFor(new Map(), SLUG, '  ', probe);
+    await labUrlVerdictWithProbeFor(new Map(), SLUG, undefined, probe);
+    await labUrlVerdictWithProbeFor(new Map(), SLUG, '  ', probe);
     expect(probe).not.toHaveBeenCalled();
   });
 });
