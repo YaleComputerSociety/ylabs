@@ -21,6 +21,7 @@ A benchmark is frozen once captured: the command refuses an id that already exis
 
 Only lanes whose output is a function of the pages they fetch and the model answers they receive can be benchmarked, and `BENCHMARKABLE_LANES` in `server/src/scripts/laneBenchmarkRun.ts` lists them.
 Pages are frozen at `getCached` and at `fetchPageWithPolicy`.
+A `fetchPageWithPolicy` fetch that failed with an HTTP status is frozen as that status, so a sub-page that answered 404 at capture answers 404 on replay rather than counting as a miss.
 A rendered-page lane is excluded because its fetch bypasses both, and so are the two center LLM lanes, which fetch with a raw `axios.get`.
 
 An LLM lane is benchmarkable because capture also freezes every model call (#3587).
