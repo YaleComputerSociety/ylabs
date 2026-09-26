@@ -356,7 +356,7 @@ describe('assertFraProfileSynthesisApplyAllowed', () => {
         parseFraProfileSynthesisArgs(['--apply', '--confirm-fra-profile-synthesis']),
         { ...DEVELOPMENT, mongoUrl: 'mongodb://cluster0.example.net/Production' },
       ),
-    ).toThrow(/requires Mongo database "Development"/);
+    ).toThrow(/does not match Mongo database "Production"/);
   });
 
   it('allows a confirmed apply on a renamed development database', () => {
