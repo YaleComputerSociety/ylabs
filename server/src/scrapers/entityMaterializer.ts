@@ -1040,6 +1040,12 @@ const grantIdentity = (value: unknown): string => {
   return id ? `id:${id.toLowerCase()}` : `record:${JSON.stringify(grant)}`;
 };
 
+const RESEARCH_ENTITY_GRANT_EVIDENCE_FIELDS = new Set([
+  'recentGrants',
+  'recentGrantCount',
+  'fundingAgencies',
+]);
+
 export function aggregateResearchEntityGrantEvidence(observations: MaterializerObservationLike[]): {
   recentGrants?: unknown[];
   recentGrantCount?: number;
@@ -1047,12 +1053,7 @@ export function aggregateResearchEntityGrantEvidence(observations: MaterializerO
 } {
   const latest = new Map<string, MaterializerObservationLike>();
   for (const observation of observations) {
-    if (
-      observation.field !== 'recentGrants' &&
-      observation.field !== 'recentGrantCount' &&
-      observation.field !== 'fundingAgencies'
-    )
-      continue;
+    if (!RESEARCH_ENTITY_GRANT_EVIDENCE_FIELDS.has(String(observation.field))) continue;
     const key = `${observation.sourceName || ''}:${observation.field}`;
     const current = latest.get(key);
     if (
@@ -3647,6 +3648,23 @@ const LOW_TRUST_SHELL_GUARDED_RESEARCH_ENTITY_FIELDS = new Set([
   'description',
 ]);
 
+// The card and the body are one statement, so a loser card beside the survivor's own
+// body would serve a summary of a different page.
+const MERGED_SURVIVOR_PROSE_FIELDS = new Set([
+  'description',
+  'shortDescription',
+  'fullDescription',
+]);
+
+// A stored `false` or `0` is also the schema default, so only provenance shows it was observed.
+function storedFieldHasValue(value: unknown, hasProvenance: boolean): boolean {
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'number') return hasProvenance && Number.isFinite(value);
+  if (typeof value === 'boolean') return value || hasProvenance;
+  return false;
+}
+
 export interface MergedSurvivorEvidence {
   observations: any[];
   mergedInKeys: string[];
@@ -3660,7 +3678,7 @@ export interface MergedSurvivorEvidence {
  */
 export async function mergedSurvivorEvidence(
   entityType: ObservedEntityType,
-  survivor: { _id?: unknown; slug?: unknown },
+  survivor: { _id?: unknown; slug?: unknown; [field: string]: unknown },
   loadedObservations: any[],
 ): Promise<MergedSurvivorEvidence> {
   const survivorId = toMaterializerObjectId(survivor._id);
@@ -3705,11 +3723,88 @@ export async function mergedSurvivorEvidence(
   const entryPointIndependentOrder = [...loadedObservations, ...kept].sort((a: any, b: any) =>
     String(a._id).localeCompare(String(b._id)),
   );
+  // A loser's observation is another page's statement about another row, so it may
+  // fill an empty field the survivor has no evidence for but never displace what the
+  // survivor holds: in one ranking a newer same-source loser row collapses the
+  // survivor's away, a higher-confidence loser source wins outright, and a loser's
+  // school-level roster label sanitizes a stored department to nothing (#3581).
+  // A stored value a loser observation backs is that loser's own fill, not the
+  // survivor's, so it stays open to later observations from the same loser only: a
+  // survivor merged from several same-source rosters otherwise swaps a primary
+  // department for a secondary program whenever a different roster is read last.
+  // A field cleared when no evidence reaches it is gated on observations only, since
+  // gating it on its own stored fill would clear it on one resolve and refill it on
+  // the next.
+  const survivorHeldFields = new Set(
+    entryPointIndependentOrder
+      .filter((observation: any) => !loserOrigin(observation))
+      .map((observation: any) => String(observation.field || '')),
+  );
+  const storedSurvivor =
+    typeof (survivor as { toObject?: unknown }).toObject === 'function'
+      ? (
+          survivor as unknown as {
+            toObject: (options: { flattenMaps: boolean }) => Record<string, unknown>;
+          }
+        ).toObject({ flattenMaps: true })
+      : survivor;
+  const storedProvenance = objectRecord(storedSurvivor.fieldProvenance);
+  const provenanceObservationId = (field: string) =>
+    String(objectRecord(storedProvenance[field]).observationId ?? '');
+  const provenanceObservationIds = Object.keys(storedProvenance)
+    .map(provenanceObservationId)
+    .filter((id) => mongoose.isValidObjectId(id));
+  const backingLoserSlugByObservationId = new Map<string, string>();
+  if (provenanceObservationIds.length > 0) {
+    const provenanceObservations = await Observation.find({
+      _id: { $in: provenanceObservationIds },
+    })
+      .select('_id entityId entityKey')
+      .lean();
+    for (const observation of provenanceObservations as any[]) {
+      const loser = loserOrigin(observation);
+      if (loser) backingLoserSlugByObservationId.set(String(observation._id), loser.slug);
+    }
+  }
+  const backingLoserSlugByField = new Map<string, string>();
+  for (const [field, value] of Object.entries(storedSurvivor)) {
+    if (CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS.includes(field)) continue;
+    const backingLoserSlug = backingLoserSlugByObservationId.get(provenanceObservationId(field));
+    if (backingLoserSlug !== undefined) {
+      backingLoserSlugByField.set(field, backingLoserSlug);
+      continue;
+    }
+    if (storedFieldHasValue(value, storedProvenance[field] !== undefined)) {
+      survivorHeldFields.add(field);
+    }
+  }
+  const proseBackingLoserSlug = [...MERGED_SURVIVOR_PROSE_FIELDS]
+    .map((proseField) => backingLoserSlugByField.get(proseField))
+    .find((slug) => slug !== undefined);
   const observations = entryPointIndependentOrder.filter((observation: any) => {
     const loser = loserOrigin(observation);
     if (!loser) return true;
     const field = String(observation.field || '');
     if (SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS.has(field)) return false;
+    if (survivorHeldFields.has(field) && !RESEARCH_ENTITY_GRANT_EVIDENCE_FIELDS.has(field)) {
+      return false;
+    }
+    if (
+      MERGED_SURVIVOR_PROSE_FIELDS.has(field) &&
+      [...MERGED_SURVIVOR_PROSE_FIELDS].some((proseField) => survivorHeldFields.has(proseField))
+    ) {
+      return false;
+    }
+    const backingLoserSlug = MERGED_SURVIVOR_PROSE_FIELDS.has(field)
+      ? proseBackingLoserSlug
+      : backingLoserSlugByField.get(field);
+    if (
+      backingLoserSlug !== undefined &&
+      backingLoserSlug !== loser.slug &&
+      !RESEARCH_ENTITY_GRANT_EVIDENCE_FIELDS.has(field)
+    ) {
+      return false;
+    }
     return !(
       !survivorIsLowTrustShell &&
       isLowTrustAreaShellSlug(loser.slug) &&
