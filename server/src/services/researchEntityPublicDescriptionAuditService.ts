@@ -138,9 +138,7 @@ export function buildPublicDescriptionAuditReport({
   });
 }
 
-async function* studentReadyEntityChunks(
-  chunkSize: number,
-): AsyncGenerator<Array<Record<string, any>>> {
+async function* studentReadyEntityChunks(): AsyncGenerator<Array<Record<string, any>>> {
   // Deliberately unprojected. This audit exists to reproduce the live serve
   // verdict, and the gate fails closed on any field it cannot see, so a
   // `.select()` here silently inflates the violation count instead of erroring:
@@ -152,11 +150,11 @@ async function* studentReadyEntityChunks(
   // in-memory sort limit on Development, so ordering happens in process.
   const cursor = ResearchEntity.find(STUDENT_READY_PUBLIC_DESCRIPTION_AUDIT_FILTER)
     .lean()
-    .cursor({ batchSize: chunkSize });
+    .cursor({ batchSize: PUBLIC_DESCRIPTION_AUDIT_ENTITY_CHUNK_SIZE });
   let chunk: Array<Record<string, any>> = [];
   for await (const entity of cursor) {
     chunk.push(entity as Record<string, any>);
-    if (chunk.length >= chunkSize) {
+    if (chunk.length >= PUBLIC_DESCRIPTION_AUDIT_ENTITY_CHUNK_SIZE) {
       yield chunk;
       chunk = [];
     }
@@ -189,15 +187,13 @@ async function leadMembersByEntityIdFor(
 export async function auditStudentReadyPublicDescriptions({
   includeSamples = false,
   sampleLimit = 25,
-  chunkSize = PUBLIC_DESCRIPTION_AUDIT_ENTITY_CHUNK_SIZE,
 }: {
   includeSamples?: boolean;
   sampleLimit?: number;
-  chunkSize?: number;
 } = {}): Promise<PublicDescriptionAuditReport> {
   let scanned = 0;
   const violations: PublicDescriptionViolation[] = [];
-  for await (const entities of studentReadyEntityChunks(chunkSize)) {
+  for await (const entities of studentReadyEntityChunks()) {
     scanned += entities.length;
     violations.push(
       ...publicDescriptionViolations(entities, await leadMembersByEntityIdFor(entities)),
