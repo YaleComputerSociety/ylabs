@@ -484,13 +484,24 @@ describe('a linked lab site the corpus knows is dead (#3452)', () => {
     expect(Object.fromEntries(obs.map((o) => [o.field, o.value])).entityType).toBe('LAB');
   });
 
-  it('still demotes and retracts when a dead lab link was the only reason to mint', () => {
+  it('mints nothing new when a dead lab link was the only reason to mint', () => {
     const bare = {
       ...extractProfile(PROFILE_WITH_LAB, RIVERS),
       researchAreas: [],
       description: '',
     };
-    const obs = facultyToResearchEntityObservations(bare, 'yse:jordan-rivers', () => 'dead');
+    expect(facultyToResearchEntityObservations(bare, 'yse:jordan-rivers', () => 'dead')).toEqual(
+      [],
+    );
+  });
+
+  it('still demotes and retracts an existing row whose dead lab link was its only content', () => {
+    const bare = {
+      ...extractProfile(PROFILE_WITH_LAB, RIVERS),
+      researchAreas: [],
+      description: '',
+    };
+    const obs = facultyToResearchEntityObservations(bare, 'yse:jordan-rivers', () => 'dead', true);
     const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
     expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
     expect(byField.kind).toBe('individual');

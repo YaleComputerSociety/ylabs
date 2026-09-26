@@ -346,7 +346,8 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
  * only cited source is the
  * profile page (the profile page is not a research-home websiteUrl). Returns [] for
  * a profile with no lab site, no research areas, and no research description so
- * nothing empty is minted, unless its linked lab site is dead.
+ * nothing empty is minted, unless the row already exists and its linked lab site is
+ * dead.
  *
  * The lead PI is keyed on the person-specific email when present: YSE profile
  * emails are firstname.lastname aliases, not netids, and the materializer
@@ -358,6 +359,7 @@ export function facultyToResearchEntityObservations(
   profile: YseFacultyProfile,
   fallbackUserKey: string,
   labUrlVerdict: LabUrlVerdictFor = () => 'usable',
+  rowAlreadyExists = false,
 ): ObservationInput[] {
   // A link's presence is not evidence that a lab exists. `hasLab` used to be
   // `Boolean(profile.labUrl)`, so a profile that still links a site the corpus
@@ -379,10 +381,17 @@ export function facultyToResearchEntityObservations(
   // a judgement about a link that may still answer, which #2647 keeps out of
   // retraction, and field retraction re-probes a sole-holder value before retiring it.
   const labLinkIsDead = linkedLabVerdict === 'dead';
-  // A dead withdrawal still mints, even for a profile with no areas and no
-  // description: this lane may already have asserted the LAB identity, and only a
-  // fresh read from it demotes that identity and carries the websiteUrl retraction.
-  if (!hasLab && !labLinkIsDead && profile.researchAreas.length === 0 && !profile.description) {
+  // A dead withdrawal still re-reads a row that already exists, even for a profile
+  // with no areas and no description: this lane may have asserted the LAB identity,
+  // and only a fresh read from it demotes that identity and carries the websiteUrl
+  // retraction. A row that does not exist yet has nothing to demote, so it stays unminted.
+  const carriesDeadWithdrawal = labLinkIsDead && rowAlreadyExists;
+  if (
+    !hasLab &&
+    !carriesDeadWithdrawal &&
+    profile.researchAreas.length === 0 &&
+    !profile.description
+  ) {
     return [];
   }
   // The same three title screens the YSM and department-roster mints ask, because
@@ -523,6 +532,7 @@ export class YseFacultyDirectoryScraper implements IScraper {
           ownsNoResearchEntityByTitle(profile.title) ? undefined : profile.labUrl,
           this.labUrlProber,
         ),
+        labUrlEvidenceBySlug.has(`yse-faculty-${profile.slug}`),
       );
       if (entityObs.length > 0) {
         await ctx.emit(entityObs);

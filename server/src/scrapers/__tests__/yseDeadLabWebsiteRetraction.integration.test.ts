@@ -35,7 +35,7 @@ import { appendObservations } from '../observationStore';
 import { reconcileFieldRetractions } from '../fieldRetraction';
 import { YseFacultyDirectoryScraper } from '../sources/yseFacultyDirectoryScraper';
 import type { ObservationInput, ScraperContext } from '../types';
-import type { LabUrlEvidence } from '../utils/labUrlEvidence';
+import { loadLabUrlEvidenceBySlug, type LabUrlEvidence } from '../utils/labUrlEvidence';
 
 const SOURCE_NAME = 'yse-faculty-directory';
 const SOURCE_ID = new mongoose.Types.ObjectId();
@@ -86,28 +86,26 @@ async function runLane(
     if (url === PROFILE_URL) return html;
     throw new Error(`unexpected url ${url}`);
   };
-  const evidence = async () =>
-    new Map<string, LabUrlEvidence>(
-      link === 'refused'
-        ? [
-            [
-              ENTITY_KEY,
+  const refusedEvidence = () =>
+    new Map<string, LabUrlEvidence>([
+      [
+        ENTITY_KEY,
+        {
+          fieldValueRefusals: {
+            websiteUrl: [
               {
-                fieldValueRefusals: {
-                  websiteUrl: [
-                    {
-                      valueKey: fieldValueRefusalKey('websiteUrl', LAB_URL),
-                      rule: 'wrong_owner',
-                      refusedBy: 'research-entity:refuse-field-value',
-                      refusedAt: new Date('2026-09-24T00:00:00Z'),
-                    },
-                  ],
-                },
+                valueKey: fieldValueRefusalKey('websiteUrl', LAB_URL),
+                rule: 'wrong_owner',
+                refusedBy: 'research-entity:refuse-field-value',
+                refusedAt: new Date('2026-09-24T00:00:00Z'),
               },
             ],
-          ]
-        : [],
-    );
+          },
+        },
+      ],
+    ]);
+  const evidence = async (slugs: string[]) =>
+    link === 'refused' ? refusedEvidence() : loadLabUrlEvidenceBySlug(slugs);
   const prober = async (url: string) => link === 'dead' && url === LAB_URL;
   const scraper = new YseFacultyDirectoryScraper(fetcher, evidence, prober);
 
