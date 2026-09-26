@@ -31,12 +31,12 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import {
-  labUrlUnusabilityWithProbeFor,
+  labUrlVerdictWithProbeFor,
   loadLabUrlEvidenceBySlug,
   probeLabUrlIsPositivelyDead,
   type LabUrlEvidenceLoader,
-  type LabUrlIsUnusable,
   type LabUrlProber,
+  type LabUrlVerdictFor,
 } from '../utils/labUrlEvidence';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -346,7 +346,8 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
  * only cited source is the
  * profile page (the profile page is not a research-home websiteUrl). Returns [] for
  * a profile with no lab site, no research areas, and no research description so
- * nothing empty is minted.
+ * nothing empty is minted, unless the row already exists and its linked lab site is
+ * dead.
  *
  * The lead PI is keyed on the person-specific email when present: YSE profile
  * emails are firstname.lastname aliases, not netids, and the materializer
@@ -357,7 +358,8 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
 export function facultyToResearchEntityObservations(
   profile: YseFacultyProfile,
   fallbackUserKey: string,
-  labUrlIsUnusable: LabUrlIsUnusable = () => false,
+  labUrlVerdict: LabUrlVerdictFor = () => 'usable',
+  rowAlreadyExists = false,
 ): ObservationInput[] {
   // A link's presence is not evidence that a lab exists. `hasLab` used to be
   // `Boolean(profile.labUrl)`, so a profile that still links a site the corpus
@@ -371,8 +373,27 @@ export function facultyToResearchEntityObservations(
   // Withdrawal needs a positive verdict, never silence: see
   // `labUrlIsUnusableForResearchHome` for which verdicts count and why an absent
   // one keeps the lab.
-  const hasLab = Boolean(profile.labUrl) && !labUrlIsUnusable(profile.labUrl!);
-  if (!hasLab && profile.researchAreas.length === 0 && !profile.description) return [];
+  const linkedLabVerdict = profile.labUrl ? labUrlVerdict(profile.labUrl) : undefined;
+  const hasLab = linkedLabVerdict === 'usable';
+  // A withdrawal on a dead link must also withdraw the websiteUrl this lane asserted
+  // before it knew, or that observation stays live and the row keeps serving the dead
+  // site under a "Faculty Research" name (#3452). Only deadness is stated: a refusal is
+  // a judgement about a link that may still answer, which #2647 keeps out of
+  // retraction, and field retraction re-probes a sole-holder value before retiring it.
+  const labLinkIsDead = linkedLabVerdict === 'dead';
+  // A dead withdrawal still re-reads a row that already exists, even for a profile
+  // with no areas and no description: this lane may have asserted the LAB identity,
+  // and only a fresh read from it demotes that identity and carries the websiteUrl
+  // retraction. A row that does not exist yet has nothing to demote, so it stays unminted.
+  const carriesDeadWithdrawal = labLinkIsDead && rowAlreadyExists;
+  if (
+    !hasLab &&
+    !carriesDeadWithdrawal &&
+    profile.researchAreas.length === 0 &&
+    !profile.description
+  ) {
+    return [];
+  }
   // The same three title screens the YSM and department-roster mints ask, because
   // this lane cites the person's profile as the row's identity and so mints the same
   // class of row: somebody who works in another person's group, carrying that
@@ -391,7 +412,12 @@ export function facultyToResearchEntityObservations(
   };
 
   const obs: ObservationInput[] = [
-    { ...base, field: 'slug', value: slug },
+    {
+      ...base,
+      field: 'slug',
+      value: slug,
+      ...(labLinkIsDead ? { assertsNoValueFor: ['websiteUrl'] } : {}),
+    },
     { ...base, field: 'name', value: entityName },
     { ...base, field: 'kind', value: hasLab ? 'lab' : 'individual' },
     { ...base, field: 'entityType', value: hasLab ? 'LAB' : 'FACULTY_RESEARCH_AREA' },
@@ -500,12 +526,13 @@ export class YseFacultyDirectoryScraper implements IScraper {
       const entityObs = facultyToResearchEntityObservations(
         profile,
         entityKey,
-        await labUrlUnusabilityWithProbeFor(
+        await labUrlVerdictWithProbeFor(
           labUrlEvidenceBySlug,
           `yse-faculty-${profile.slug}`,
           ownsNoResearchEntityByTitle(profile.title) ? undefined : profile.labUrl,
           this.labUrlProber,
         ),
+        labUrlEvidenceBySlug.has(`yse-faculty-${profile.slug}`),
       );
       if (entityObs.length > 0) {
         await ctx.emit(entityObs);

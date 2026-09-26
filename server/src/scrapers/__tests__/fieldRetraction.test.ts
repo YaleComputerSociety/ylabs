@@ -629,7 +629,11 @@ describe('sources that cannot attest an absence (#3261)', () => {
   });
 
   it('does not claim it of the sources that do attest', () => {
-    for (const source of ['ysm-faculty-directory', 'dept-faculty-roster']) {
+    for (const source of [
+      'ysm-faculty-directory',
+      'dept-faculty-roster',
+      'yse-faculty-directory',
+    ]) {
       expect(sourceCannotAttestAbsence(source)).toBe(false);
       expect(fieldRetractionContractFor(source)).toBeDefined();
     }
