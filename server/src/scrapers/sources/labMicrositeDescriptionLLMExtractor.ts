@@ -647,6 +647,73 @@ function expandDescriptionSourceUrls(values: unknown[]): string[] {
   return uniqueStrings(values).flatMap(descriptionSourceUrlVariants);
 }
 
+/**
+ * A site's own search results, which is a page about a query rather than about an
+ * entity.
+ *
+ * It is reachable without any row citing it, which is why it needs its own test.
+ * `descriptionSourceUrlVariants` rewrites `/people/<slug>` into `/profile/<slug>` on the
+ * same host; where that path does not exist the host answers with a redirect into its
+ * search, carrying the slug forward as the query. The resolved URL then passes
+ * `personProfileSourceMatchesEntity`, because the entity's own name IS in the query
+ * string, so the one guard that re-checks a redirect waves it through (#3494).
+ *
+ * Keyed on the query rather than on the path, because the path is the host's choice:
+ * `/search`, `/site-search` and a bare `/` with `?s=` are all the same page.
+ */
+const SEARCH_QUERY_KEYS = /^(?:q|s|query|search|search_term|searchterm|keywords?|term)$/i;
+
+export function isSiteSearchResultUrl(value: unknown): boolean {
+  const raw = textValue(value);
+  if (!raw) return false;
+  try {
+    const url = new URL(raw);
+    for (const key of url.searchParams.keys()) {
+      if (SEARCH_QUERY_KEYS.test(key)) return true;
+    }
+    return /(?:^|\/)(?:search|site-?search)(?:\/|$)/i.test(url.pathname) && url.search.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A page that cannot identify a single entity, so reading a description off it would key
+ * one organisation's prose onto whichever row happened to cite it.
+ *
+ * `isInstitutionSectionLandingUrl` already existed and was already loaded into this lane's
+ * identity corpus; it guarded the NAME a page may assert and nothing consulted it when the
+ * lane chose which page to FETCH. So the lane spent a fetch and a paid extraction first
+ * and discarded the result afterwards. Measured on Development while running #3438's
+ * refusal pass: of 36 entities the lane read and found no prose on, only 3 had read the
+ * page the row's own provenance names, and one school's `/research/` landing page was read
+ * for three separate rows (#3494).
+ *
+ * The cost is the smaller half. A section landing page carries real research prose, so on
+ * a row where the grounding check passes, prose about a school can be keyed onto one
+ * person - which is #2180's failure from a crawled subpage, reached through the primary
+ * URL instead.
+ *
+ * `isSharedEvidenceUrl` is deliberately NOT consulted, and the measurement is why. It asks
+ * whether several rows cite a page, which is the right question for a NAME: a page two
+ * rows cite cannot name either of them. It is the wrong question for a description,
+ * because a professor's own profile page is legitimately cited by both their lab row and
+ * their faculty-research row and is the correct description source for both. Added here it
+ * refused 1,223 of 9,336 candidate URLs and stripped every candidate from 414 rows, 35 of
+ * them served, including real lab microsite pages under `/lab/<name>/`. The two acts are
+ * not interchangeable, the same way refusing an adoption and clearing a stored value are
+ * not (#3462).
+ */
+export function isNonIdentifyingDescriptionSourceUrl(
+  url: string,
+  corpus: Pick<PageAttributionIdentityCorpus, 'institutionalHosts'>,
+): boolean {
+  return (
+    isSiteSearchResultUrl(url) ||
+    isInstitutionSectionLandingUrl(url, corpus.institutionalHosts ?? EMPTY_SET)
+  );
+}
+
 function candidateUrlsForDoc(doc: CandidateDescriptionLabDoc): string[] {
   // Drop a person page whose name belongs to a different professor than this
   // entity, so a mis-picked source URL (e.g. Keith Baker's people page ending up
@@ -1468,6 +1535,10 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           (url) =>
             !isRejectedDescriptionSourceUrl(url) &&
             !isKnownUnavailableSourceUrl(url, lab.sourceLinkHealth) &&
+            // Before the fetch, not after: the page that identifies no single entity is
+            // the one this lane used to pay a fetch and a generation for and then throw
+            // away (#3494).
+            !isNonIdentifyingDescriptionSourceUrl(url, identityCorpus) &&
             personProfileSourceMatchesEntity(url, lab),
         );
         let page: FetchedDescriptionPage | null = null;
@@ -1490,6 +1561,18 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           );
         }
         if (!page?.html) return;
+
+        // The resolved URL is re-checked as well as the requested one, because the
+        // redirect is how this page shape arrives: a `/profile/<slug>` path the host does
+        // not have answers with its own search results, carrying the slug forward as the
+        // query, and `personProfileSourceMatchesEntity` below then waves it through
+        // because the entity's name IS in the query string (#3494).
+        if (isNonIdentifyingDescriptionSourceUrl(page.url, identityCorpus)) {
+          ctx.log(
+            `[${lab.slug || 'candidate'}] skipping description extraction: resolved source ${page.url} identifies no single entity.`,
+          );
+          return;
+        }
 
         // A candidate URL can redirect to a different professor's page; re-check
         // the resolved URL so a redirect never keys a description onto the wrong
@@ -1520,6 +1603,12 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           { includeAboutPages: kind === 'organization' },
         )) {
           if (isKnownUnavailableSourceUrl(researchUrl, lab.sourceLinkHealth)) continue;
+          // A crawl follows the page's own nav, and a school microsite's nav links its
+          // school-wide `/research` landing page, so the same shape arrives here too. Not
+          // counted as `crawlIncomplete`: the page was refused rather than unread, and
+          // treating a refusal as a failed read would withhold the positive-absence
+          // attestation this lane now makes (#3438).
+          if (isNonIdentifyingDescriptionSourceUrl(researchUrl, identityCorpus)) continue;
           let researchPage: FetchedDescriptionPage | null = null;
           try {
             researchPage = await this.fetchPage(researchUrl);
