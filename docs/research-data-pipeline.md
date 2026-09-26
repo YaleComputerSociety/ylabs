@@ -691,6 +691,13 @@ Every other rule names a condition a later reader can re-derive - a dead page ca
 `planFieldValueRefusal` enforces it rather than the CLI's argument parser, so every writer inherits the fence.
 `fieldLockProvenance.operator_decision` still has no writer and keeps none: a judgement recorded as a lock cannot be revisited and, as the 2026-09-24 census showed, carries no reason at all in practice.
 
+A refusal also names the lane that produced the refused value, which is what turns a refusal count into a lane's precision.
+`sourceName` is the lane an operator declared at refusal time (#3506).
+`attributedSourceNames` is derived: the `refusal-lane-attribution` Development sweep stage (`yarn --cwd server refusals:attribute-lanes`, #3521) reads the observation log and records every lane that asserted the refused value, and it never overwrites a declared `sourceName`.
+The join reads observations by `entityKey` as well as `entityId`, because almost every research-entity observation is keyed only by the row slug, and for a URL-valued field it reads the `sourceUrls` citations as well, because a refused `websiteUrl` is usually a promoted citation rather than a value any lane observed at `websiteUrl`.
+Measured on Development before the first run, those two choices move attribution from 73 to 229 of 277 refusals.
+A stored attribution only grows, so `observations:prune-dead` removing the evidence never un-attributes a refusal, and a second run plans nothing.
+
 ### Grant-corpus research synthesis and PI-to-school inheritance
 
 Grant-backed PIs (especially YSM/YSPH faculty whose `medicine.yale.edu/profile/*` pages are WAF-403-blocked) can be given real research coverage from the sanctioned government grant data we already ingest.

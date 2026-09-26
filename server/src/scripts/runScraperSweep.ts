@@ -173,6 +173,7 @@ export interface DevelopmentPostRunStage {
     | 'profile-link-health'
     | 'dead-research-website-clear'
     | 'organization-identity-website-retire'
+    | 'refusal-lane-attribution'
     | 'visibility-gate'
     | 'search-rebuild'
     | 'coverage-audit'
@@ -1087,6 +1088,17 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     command: 'observations:retire-organization-identity-websites',
     artifactName: 'development-organization-identity-website-retire.json',
     buildArgs: () => ['--apply', '--confirm-retire-organization-identity-websites'],
+    isEnabled: () => true,
+  },
+  {
+    // After every stage that records a refusal, so a refusal written this sweep is
+    // attributed this sweep. It writes only the derived `attributedSourceNames` on a
+    // refusal, never a field a student sees, and plans nothing once the corpus is
+    // attributed (#3521).
+    name: 'refusal-lane-attribution',
+    command: 'refusals:attribute-lanes',
+    artifactName: 'development-refusal-lane-attribution.json',
+    buildArgs: () => ['--apply', '--confirm-attribute-refusal-lanes'],
     isEnabled: () => true,
   },
   {

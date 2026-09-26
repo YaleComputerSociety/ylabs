@@ -103,6 +103,11 @@ export const fieldValueRefusalSchema = new mongoose.Schema(
     // refusal is countable but not attributable, so no lane's precision has a
     // denominator (#3506).
     sourceName: { type: String, required: false },
+    // Derived by the `refusal-lane-attribution` sweep stage from the observation log,
+    // kept apart from the declared `sourceName` so a reader can tell the two apart, and
+    // plural because every lane that asserted a refused value produced it (#3521).
+    attributedSourceNames: { type: [String], default: undefined },
+    attributedAt: { type: Date, required: false },
     refusedBy: { type: String, default: '' },
     refusedAt: { type: Date, required: false },
     note: { type: String, default: '', maxlength: 2000 },
