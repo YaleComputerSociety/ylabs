@@ -45,6 +45,9 @@ Each manual-only source records its reason next to its name in `runScraperSweep.
 - `undergrad-fellowships-recipients` is a backward-looking recipients source with no clean public feed.
 - `federal-award-usaspending` can never acquire, because USAspending publishes no principal-investigator field: across the 293 Yale DOE, NASA and DoD awards its request returns, 1 description embeds a PI name and that name resolves ambiguously, so every sweep failed it on the barren-streak guard below (#3542, #3547).
   A manual run is still the way to re-check whether the source starts carrying PI data.
+- `undergrad-research-posting` can never acquire today, because its only configured page never existed and no official public Yale page publishes postings in the shape it reads, so its page list is empty (#3550).
+  Development holds 5 runs for it, all `failure` with 0 observations, so every sweep failed it on the barren-streak guard below (#3553).
+  It returns to the research sweep when a real page is configured, and #3551 tracks a possible replacement source.
 
 `department-undergrad-research` dual-writes (its `program` records materialize as `Fellowship` while its `lab` records materialize as `ResearchEntity` access-evidence); it lives in the research engine because access-evidence is research-side.
 The registered sources in each engine are grouped into ordered phases that run in sequence in the order the phases first appear in the manifest: `identity`, `discovery`, `funding`, `relationships`, and `content-access`.
