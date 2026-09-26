@@ -56,6 +56,7 @@ export interface FieldValueRefusal {
   valueKey: string;
   rule: FieldValueRefusalRule;
   sourceName?: string;
+  attributedSourceNames?: string[];
   refusedBy: string;
   refusedAt: Date;
   note: string;
@@ -276,4 +277,78 @@ export function refusedResolverObservations<T extends RefusableResolverObservati
     else kept.push(observation);
   }
   return { kept, refused };
+}
+
+const URL_EVIDENCE_FIELDS = ['websiteUrl', 'website', 'sourceUrls'];
+
+export interface LaneAttributableObservation {
+  field: string;
+  value: unknown;
+  sourceName?: unknown;
+}
+
+/**
+ * A refused URL is usually promoted from a citation rather than observed at the field it
+ * was refused on, so the lane that produced it is the one that cited it. Measured on
+ * Development, reading only the refused field attributed 73 of 277 refusals and reading
+ * the citation fields as well attributed 229 (#3521).
+ */
+export function refusalLaneEvidenceFields(field: string): string[] {
+  return URL_VALUED_FIELDS.has(field)
+    ? [field, ...URL_EVIDENCE_FIELDS.filter((f) => f !== field)]
+    : [field];
+}
+
+const observedEntries = (value: unknown): unknown[] => (Array.isArray(value) ? value : [value]);
+
+const entryValue = (entry: unknown): unknown =>
+  entry && typeof entry === 'object' && 'url' in entry ? (entry as { url: unknown }).url : entry;
+
+const CITATION_EVIDENCE_FIELDS: ReadonlySet<string> = new Set(['sourceUrls']);
+
+const lanesAssertingValue = (
+  field: string,
+  valueKey: string,
+  observations: readonly LaneAttributableObservation[],
+): string[] => {
+  const lanes = new Set<string>();
+  for (const observation of observations) {
+    const lane = typeof observation.sourceName === 'string' ? observation.sourceName.trim() : '';
+    if (!lane) continue;
+    const matches =
+      fieldValueRefusalKey(field, observation.value) === valueKey ||
+      (Array.isArray(observation.value) &&
+        observedEntries(observation.value).some(
+          (entry) => fieldValueRefusalKey(field, entryValue(entry)) === valueKey,
+        ));
+    if (matches) lanes.add(lane);
+  }
+  return [...lanes].sort();
+};
+
+/**
+ * Every lane whose observation asserted the refused value, sorted so a re-run compares
+ * equal. An array observation matches when any one entry does, because a citation list
+ * asserts each URL in it, and a whole-array refusal still matches its own array. A lane
+ * that only cited the value is credited only when no lane asserted it at a field, so a
+ * citation never charges a lane for a value another lane produced.
+ */
+export function attributeRefusedValueLanes(
+  field: string,
+  valueKey: string,
+  observations: readonly LaneAttributableObservation[],
+): string[] {
+  const evidenceFields = new Set(refusalLaneEvidenceFields(field));
+  const evidence = observations.filter((observation) => evidenceFields.has(observation.field));
+  const direct = lanesAssertingValue(
+    field,
+    valueKey,
+    evidence.filter((observation) => !CITATION_EVIDENCE_FIELDS.has(observation.field)),
+  );
+  if (direct.length > 0) return direct;
+  return lanesAssertingValue(
+    field,
+    valueKey,
+    evidence.filter((observation) => CITATION_EVIDENCE_FIELDS.has(observation.field)),
+  );
 }

@@ -59,6 +59,7 @@
     "research-entity:consolidate-faculty-type": "tsx src/scripts/consolidateFacultyResearchEntityType.ts",
     "research-entity:queue-non-owner-lead-edge-review": "tsx src/scripts/queueNonOwnerLeadEdgeReview.ts",
     "research-entity:clear-dead-research-websites": "tsx src/scripts/clearDeadResearchWebsites.ts",
+    "refusals:attribute-lanes": "tsx src/scripts/attributeFieldValueRefusalLanes.ts",
     "research-entity:retype-grant-minted-lab-shells": "tsx src/scripts/retypeGrantMintedLabShells.ts",
     "research-entity:retract-undergrad-lane-fabricated-labs": "tsx src/scripts/retractUndergradLaneFabricatedLabs.ts",
     "research-entity:promote-faculty-research": "tsx src/scripts/promoteFacultyResearchToLab.ts",
