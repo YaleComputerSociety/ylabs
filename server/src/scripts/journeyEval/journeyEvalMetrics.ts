@@ -127,6 +127,14 @@ export const corpusFingerprintMoved = (
 ): boolean =>
   before.rowCount !== after.rowCount || before.latestUpdatedAt !== after.latestUpdatedAt;
 
+export const resolvePagesToWalk = (pagesRequested: number, reachablePages: number): number =>
+  Math.max(1, Math.min(Math.max(1, Math.floor(pagesRequested) || 1), Math.max(1, reachablePages)));
+
+export interface PageWalkDepth {
+  pagesRequested: number;
+  reachablePages: number;
+}
+
 const PAGE_DISTINCTNESS_ID = 'no-row-repeats-across-pages';
 const PAGE_DISTINCTNESS_TITLE = 'Paging through browse never serves the same row twice';
 
@@ -134,6 +142,7 @@ export function checkNoRepeatedRowsAcrossPages(
   pages: ReadonlyArray<readonly string[]>,
   corpusBefore: CorpusFingerprint,
   corpusAfter: CorpusFingerprint,
+  depth?: PageWalkDepth,
 ): InvariantResult {
   const seen = new Set<string>();
   let repeated = 0;
@@ -145,10 +154,17 @@ export function checkNoRepeatedRowsAcrossPages(
   }
 
   const detail = {
-    pages: pages.length,
+    pagesWalked: pages.length,
     rowsServed: pages.reduce((total, page) => total + page.length, 0),
     distinctRowsServed: seen.size,
     repeatedRowCount: repeated,
+    ...(depth
+      ? {
+          pagesRequested: depth.pagesRequested,
+          reachablePages: depth.reachablePages,
+          walkTruncatedByDepthBound: depth.pagesRequested > depth.reachablePages,
+        }
+      : {}),
   };
 
   if (repeated > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {

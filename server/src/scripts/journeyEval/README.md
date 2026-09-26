@@ -59,6 +59,16 @@ The assertion that carries signal is that every drop is attributable to a named 
 Apply the same shape to any new case.
 Assert that the difference between stored and served is explained, not that it is absent.
 
+## What this harness does not cover
+
+The cases call `searchResearchGroupsViaMeili` directly rather than the HTTP route, so real Meilisearch, real Mongo, the ranking, the filters, the visibility gate, and the index-time guards are all exercised, but everything the Express layer adds is not: the oversized-request rejection, parameter coercion, the `includeFacets` policy, JSON serialization, auth, and rate limits.
+`scripts/e2e-student-journey-smoke.mjs` covers the HTTP and browser path instead, against a synthetic corpus, so the two are complementary and neither is end to end on its own.
+
+One consequence is worth knowing, because it decides how the pagination case is written.
+The service **clamps** a page past the reachable depth, while the controller answers past the bound with an empty page carrying `depthLimited: true`, deliberately, so an infinite-scroll client terminates instead of appending the same rows forever.
+A harness walking the service past the bound would therefore re-request the last reachable page, which the served route never does, so the pagination case stops at `maxReachableResearchSearchPage(window)` and reports `walkTruncatedByDepthBound` rather than walking into behaviour a student cannot reach.
+That clamp is harmless at the current corpus size, because the clamped offset already sits past the end of the data and returns empty, but it stops being harmless once the served corpus passes `RESEARCH_SEARCH_MAX_REACHABLE_RECORDS`.
+
 ## Supplying topic-query relevance judgements
 
 Retrieval quality cannot be derived from the corpus.
