@@ -4,9 +4,9 @@
  * Yale FAS science and quantitative departments each publish a
  * department-authored "Research" / "Research Areas" overview page that groups
  * the department's faculty into a small set of curated topical themes, usually
- * with a paragraph of descriptive prose per theme and the faculty listed under
- * it (physics.yale.edu/research, chem.yale.edu/research, mcdb.yale.edu/research,
- * ...). Each theme is a human-curated topical grouping that maps directly onto a
+ * with a paragraph of descriptive prose per theme and the faculty listed either
+ * under it or on the same-host theme page it links to (physics.yale.edu/research,
+ * chem.yale.edu/research-areas, mcdb.yale.edu/research, ...). Each theme is a human-curated topical grouping that maps directly onto a
  * research-area browse facet - the class of evidence #1717/#1700/#1412 flag as
  * missing on much of the FAS science corpus.
  *
@@ -60,6 +60,8 @@ const RESEARCH_AREA_CONFIDENCE = 0.7;
 const MAX_CANDIDATE_SCAN = 4000;
 const MAX_THEME_LABEL_WORDS = 8;
 const MAX_THEME_LABEL_CHARS = 80;
+const NON_TOPIC_THEME_HEADING =
+  /^(?:our\s+)?research$|\b(?:undergraduate|graduate|facilit(?:y|ies)|centers?|institutes?|seminars?|colloqui(?:a|um)|people|faculty|staff|students?|programs?|opportunit(?:y|ies)|admissions?|contact)\b/i;
 
 export interface DepartmentResearchAreaPage {
   /** Department key, also used to filter with `--only` (e.g. `--only physics,chemistry`). */
@@ -129,7 +131,8 @@ function absolutize(href: string, base: string): string {
 /**
  * A theme heading is a real research-area chip only when it reads as a concise
  * topic: not a bare section label ("Research Areas"), not page furniture ("In
- * the News"), not prose, and inside a sane word/char budget. Mirrors the shared
+ * the News"), not a program, audience or facility heading ("Undergraduate
+ * Research", "Facilities"), not prose, and inside a sane word/char budget. Mirrors the shared
  * area-label hygiene (#1613/#1734) so a heading that is not a topic never
  * becomes a chip.
  */
@@ -143,6 +146,7 @@ export function isResearchAreaThemeLabel(value: unknown): boolean {
   if (isResearchSectionLabel(cleaned)) return false;
   if (isProseNotTopicPhrase(cleaned)) return false;
   if (isPageSectionHeadingPhrase(cleaned)) return false;
+  if (NON_TOPIC_THEME_HEADING.test(cleaned)) return false;
   if (isFullProseParagraph(cleaned)) return false;
   return true;
 }

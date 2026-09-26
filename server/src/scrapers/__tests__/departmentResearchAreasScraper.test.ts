@@ -94,6 +94,11 @@ describe('isResearchAreaThemeLabel', () => {
     expect(isResearchAreaThemeLabel('Selected Publications')).toBe(false);
     expect(isResearchAreaThemeLabel('Our faculty study a wide range of topics.')).toBe(false);
     expect(isResearchAreaThemeLabel('Overview:')).toBe(false);
+    expect(isResearchAreaThemeLabel('Research')).toBe(false);
+    expect(isResearchAreaThemeLabel('Undergraduate Research')).toBe(false);
+    expect(isResearchAreaThemeLabel('Graduate Program')).toBe(false);
+    expect(isResearchAreaThemeLabel('Facilities')).toBe(false);
+    expect(isResearchAreaThemeLabel('Research Centers')).toBe(false);
     expect(isResearchAreaThemeLabel('')).toBe(false);
   });
 });
@@ -160,6 +165,9 @@ function yaleSitesOverviewHtml(): string {
     `<li class="custom-card"><h2 class="custom-card__heading"><a href="/research">Genetics</a></h2></li>` +
     `<li class="custom-card"><h2 class="custom-card__heading"><a href="https://elsewhere.edu/theme">Offsite Theme</a></h2></li></ul>` +
     `<h2>Our Research in the News</h2><a href="/posts/2026-01-01-a-story">Story</a>` +
+    `<h2>Research</h2><a href="/research/overview">Overview</a>` +
+    `<h2>Undergraduate Research</h2><a href="/academics/undergraduate-research">Get Involved</a>` +
+    `<h3>Facilities</h3><a href="/facilities">Our Facilities</a>` +
     `</main>` +
     `<footer><h2>Helpful Links</h2><a href="/academics">Academics</a></footer>` +
     `</body></html>`
