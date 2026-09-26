@@ -172,6 +172,7 @@ export interface DevelopmentPostRunStage {
     | 'source-link-health'
     | 'profile-link-health'
     | 'dead-research-website-clear'
+    | 'organization-identity-website-retire'
     | 'visibility-gate'
     | 'search-rebuild'
     | 'coverage-audit'
@@ -1068,6 +1069,25 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     buildArgs: () => ['--apply', '--confirm-clear-dead-research-websites'],
     isEnabled: () => true,
     parseResult: parseDeadResearchWebsiteResult,
+  },
+  {
+    // Ordered with the other clear stage and ahead of the gate. It is safe to run every
+    // sweep because it is idempotent by construction rather than by a marker: it skips a
+    // row whose value is already in `fieldValueRefusals`, so a second run plans nothing
+    // because the corpus is clean. Measured immediately after its first apply: 5 rows
+    // repaired, then 0 planned (#3484).
+    //
+    // This is the stage that makes the correction stop being a one-off. The lane's
+    // decision is relational - does another row, whose name denotes an organization, own
+    // this same resolved page - so it cannot become a per-URL refusal arm the way the
+    // four scripts in #3469 could, and a pass over rows is the only shape it can take.
+    // Registering that pass here is the difference between a repair someone must remember
+    // and engine behaviour that runs on every sweep.
+    name: 'organization-identity-website-retire',
+    command: 'observations:retire-organization-identity-websites',
+    artifactName: 'development-organization-identity-website-retire.json',
+    buildArgs: () => ['--apply', '--confirm-retire-organization-identity-websites'],
+    isEnabled: () => true,
   },
   {
     name: 'visibility-gate',
