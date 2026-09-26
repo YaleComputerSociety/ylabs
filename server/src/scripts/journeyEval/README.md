@@ -148,8 +148,14 @@ A verdict is exactly one of the following, applied in this order so that each ro
 `backsHostedBadgeWording` answers the narrower question of whether the quote shows the row has hosted undergraduates, which is what the badge text asserts, as opposed to only saying it is open to them.
 
 Every run reports three population rates: the share of served rows carrying a quote, the share of quotes from the judged lane, and the share citing a source page.
-With judgements supplied it adds three precision rates: `undergrad-evidence-quote-precision` over rows whose page could be read, the same precision counting an unreadable page as wrong, and `undergrad-evidence-backs-hosted-badge-wording`.
-None of the six gates.
+With judgements supplied it adds three precision rates, and none of the six gates.
+
+- `undergrad-evidence-badge-precision` is `correct` over every verdict except `stale_or_unreachable`. It answers whether the browse badge's input is right, so it is the number to read against the badge decision on #3569.
+- `undergrad-evidence-lane-grounding-precision` is `correct` over `correct` plus `not_grounded`. It isolates whether the lane quotes its page at all, which is the lane's own scorecard number.
+- `undergrad-evidence-backs-hosted-badge-wording` is the share of readable judged quotes that show the row has hosted undergraduates.
+
+`stale_or_unreachable` is excluded from every denominator and reported separately in `notes.score.verdicts` as a link-health count.
+All three are precision against the cited source, which makes them a floor on how often the served claim is true rather than a recall figure, and they judge the served output rather than replaying the model.
 The report's `notes.score` carries the verdict counts and a 95% Wilson interval for each, because a precision over 50 rows is a range rather than a point.
 A judgement records the fingerprint of the quote it judged, and a drawn row whose served quote has since changed is counted as `judgementForAChangedQuote` rather than scored, so a verdict never silently transfers to a different quote.
 

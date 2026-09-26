@@ -566,16 +566,16 @@ const undergradEvidenceQuotePrecision: JourneyCase = {
     }
     rates.push(
       buildRate(
-        'undergrad-evidence-quote-precision',
-        'Judged quotes that are grounded on their cited page and state an undergraduate access fact about the row',
+        'undergrad-evidence-badge-precision',
+        'Readable judged quotes that are grounded, about the row, and state an undergraduate access fact',
         score.correct,
         score.verifiable,
       ),
       buildRate(
-        'undergrad-evidence-quote-precision-unverifiable-as-wrong',
-        'The same precision, counting a quote whose cited page could not be read as wrong',
+        'undergrad-evidence-lane-grounding-precision',
+        'Judged quotes that are correct among those judged correct or not grounded',
         score.correct,
-        score.judged,
+        score.laneGroundingJudged,
       ),
       buildRate(
         'undergrad-evidence-backs-hosted-badge-wording',

@@ -384,10 +384,11 @@ export interface UndergradEvidenceJudgementScore {
   verdicts: Record<UndergradEvidenceVerdict, number>;
   verifiable: number;
   correct: number;
-  precision: number;
-  precisionInterval: ProportionInterval | null;
-  precisionCountingUnverifiableAsWrong: number;
-  precisionCountingUnverifiableAsWrongInterval: ProportionInterval | null;
+  badgePrecision: number;
+  badgePrecisionInterval: ProportionInterval | null;
+  laneGroundingJudged: number;
+  laneGroundingPrecision: number;
+  laneGroundingPrecisionInterval: ProportionInterval | null;
   badgeWordingJudged: number;
   badgeWordingBacked: number;
   badgeWordingPrecision: number;
@@ -440,6 +441,7 @@ export function scoreUndergradEvidenceJudgements(
   const judged = Object.values(verdicts).reduce((total, count) => total + count, 0);
   const verifiable = judged - verdicts.stale_or_unreachable;
   const correct = verdicts.correct;
+  const laneGroundingJudged = correct + verdicts.not_grounded;
 
   return {
     population: fingerprintByRow.size,
@@ -452,10 +454,11 @@ export function scoreUndergradEvidenceJudgements(
     verdicts,
     verifiable,
     correct,
-    precision: asRate(correct, verifiable),
-    precisionInterval: wilsonInterval(correct, verifiable),
-    precisionCountingUnverifiableAsWrong: asRate(correct, judged),
-    precisionCountingUnverifiableAsWrongInterval: wilsonInterval(correct, judged),
+    badgePrecision: asRate(correct, verifiable),
+    badgePrecisionInterval: wilsonInterval(correct, verifiable),
+    laneGroundingJudged,
+    laneGroundingPrecision: asRate(correct, laneGroundingJudged),
+    laneGroundingPrecisionInterval: wilsonInterval(correct, laneGroundingJudged),
     badgeWordingJudged,
     badgeWordingBacked,
     badgeWordingPrecision: asRate(badgeWordingBacked, badgeWordingJudged),

@@ -156,6 +156,7 @@ describe('scoreUndergradEvidenceJudgements', () => {
         judge(drawn[1], 'correct', false),
         judge(drawn[2], 'not_grounded', false),
         judge(drawn[3], 'stale_or_unreachable'),
+        judge(drawn[4], 'about_another_entity', false),
         judge(syntheticKeys.find((key) => !drawn.includes(key)) as string, 'correct'),
       ],
       'seed-a',
@@ -163,14 +164,16 @@ describe('scoreUndergradEvidenceJudgements', () => {
     );
 
     expect(score.drawn).toBe(5);
-    expect(score.judged).toBe(4);
-    expect(score.unjudged).toBe(1);
+    expect(score.judged).toBe(5);
+    expect(score.unjudged).toBe(0);
     expect(score.judgementsOutsideTheDraw).toBe(1);
-    expect(score.verifiable).toBe(3);
+    expect(score.verifiable).toBe(4);
     expect(score.correct).toBe(2);
-    expect(score.precision).toBe(0.6667);
-    expect(score.precisionCountingUnverifiableAsWrong).toBe(0.5);
-    expect(score.badgeWordingJudged).toBe(3);
+    expect(score.badgePrecision).toBe(0.5);
+    expect(score.laneGroundingJudged).toBe(3);
+    expect(score.laneGroundingPrecision).toBe(0.6667);
+    expect(score.verdicts.stale_or_unreachable).toBe(1);
+    expect(score.badgeWordingJudged).toBe(4);
     expect(score.badgeWordingBacked).toBe(1);
   });
 
@@ -184,7 +187,7 @@ describe('scoreUndergradEvidenceJudgements', () => {
 
     expect(score.judgementForAChangedQuote).toBe(1);
     expect(score.judged).toBe(0);
-    expect(score.precisionInterval).toBeNull();
+    expect(score.badgePrecisionInterval).toBeNull();
   });
 });
 
@@ -349,7 +352,7 @@ describe('undergrad-evidence-quote-precision case', () => {
     });
     const outcome = await precisionCase!.run(buildContext({ undergradEvidenceJudgements: judged }));
     const precision = outcome.rates.find(
-      (rate) => rate.id === 'undergrad-evidence-quote-precision',
+      (rate) => rate.id === 'undergrad-evidence-badge-precision',
     );
 
     expect(precision).toMatchObject({ numerator: 3, denominator: 4, rate: 0.75 });
