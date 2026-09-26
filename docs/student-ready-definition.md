@@ -107,6 +107,12 @@ A faculty directory or a department roster reads a person's page instead, where 
 Every name in the set must be a source the coverage registry knows, because a name no scraper materializes matches no provenance and the authority it looks like it grants covers nothing.
 The assertion is about a research home's own address, so a row that is not a concrete research home gets no authority however its `websiteUrl` was provenanced.
 
+Which authority counts depends on whether any member publishes the contested URL as its own home.
+When one does, only an index that published that very URL settles the contest, so authority over a different address never outranks the row that owns this one.
+When nobody does, the members collide on a citation none of them owns, typically the shared lead's profile page, and a member whose own home an authoritative index published is the canonical.
+Without that rule the already-public bonus decided those pairs, so the canonical was whichever twin the previous gate pass had served: measured on Development after the 2026-09-26 sweep, 2 index-published labs had lost the slot to their directory-minted twins after a transient demotion, and re-running the gate could never hand it back (#3575).
+It only chooses the canonical, so every such group still calls all but one member a duplicate.
+
 Before the canonical is chosen at all, a member that merely READ the URL is dropped from the group (#1896).
 A `sourceUrls` citation is usually good same-entity evidence and stays so: a row with no research home of its own that cites a site is a strong candidate to be that site, and several pinned cases depend on that reading.
 The narrow exception is a row that already publishes a DIFFERENT research home and neither publishes this URL nor serves any field provenanced to it.

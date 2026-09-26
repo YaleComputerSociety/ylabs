@@ -662,8 +662,8 @@ describe('studentVisibilityGateService', () => {
       fullDescription:
         'Radiation dosimetry, treatment planning optimization, and artificial intelligence applied to radiotherapy.',
       shortDescription: 'Studies radiation dosimetry and treatment planning.',
-      websiteUrl: 'https://medicine.yale.edu/lab/owner/index.aspx',
-      sourceUrls: ['https://medicine.yale.edu/profile/an-owner/'],
+      websiteUrl: 'https://medicine.yale.edu/profile/an-owner/',
+      sourceUrls: ['https://medicine.yale.edu/lab/owner/index.aspx'],
       fieldProvenance: { websiteUrl: { sourceName: 'ysm-faculty-directory' } },
     };
     const leadRows = [
@@ -689,6 +689,86 @@ describe('studentVisibilityGateService', () => {
         duplicateRiskEntityIds,
       }),
     ]).toEqual(['atoz-owner']);
+  });
+
+  describe('a same-lead pair colliding only on a profile page neither publishes', () => {
+    const sharedProfileUrl = 'https://medicine.yale.edu/profile/a-shared-lead/';
+    const indexPublishedLab = (studentVisibilityTier: string) => ({
+      _id: 'atoz-shared-lead',
+      slug: 'ysm-shared-lead',
+      name: 'Shared Lead Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      studentVisibilityTier,
+      fullDescription:
+        'Epigenetic regulation of anti-tumor immunity studied with mouse models and single-cell sequencing.',
+      shortDescription: 'Studies epigenetic regulation of anti-tumor immunity.',
+      websiteUrl: 'https://medicine.yale.edu/lab/shared-lead/',
+      sourceUrls: ['https://medicine.yale.edu/lab/shared-lead/', sharedProfileUrl],
+      fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+    });
+    const directoryTwin = (studentVisibilityTier: string) => ({
+      _id: 'directory-shared-lead',
+      slug: 'ysm-faculty-a-shared-lead',
+      name: 'A Shared Lead Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      studentVisibilityTier,
+      fullDescription:
+        'Epigenetic regulation of anti-tumor immunity studied with mouse models and single-cell sequencing.',
+      shortDescription: 'Studies epigenetic regulation of anti-tumor immunity.',
+      websiteUrl: 'https://shared-lead-lab.example.io/home/',
+      sourceUrls: [sharedProfileUrl, 'https://shared-lead-lab.example.io/home/'],
+      fieldProvenance: { websiteUrl: { sourceName: 'ysm-faculty-directory' } },
+    });
+    const leadRows = [
+      { researchEntityId: 'atoz-shared-lead', userId: 'user-shared-lead' },
+      { researchEntityId: 'directory-shared-lead', userId: 'user-shared-lead' },
+    ];
+
+    it('keeps the index-published row canonical whichever twin was public before', () => {
+      for (const [indexTier, twinTier] of [
+        ['student_ready', 'suppressed'],
+        ['suppressed', 'student_ready'],
+        ['suppressed', 'suppressed'],
+      ]) {
+        expect([
+          ...selectExactUrlDuplicateRiskEntityIds(
+            [indexPublishedLab(indexTier), directoryTwin(twinTier)],
+            leadRows,
+          ),
+        ]).toEqual(['directory-shared-lead']);
+      }
+    });
+
+    it('still calls one of the pair a duplicate when neither home is index-published', () => {
+      const unindexedLab = {
+        ...indexPublishedLab('suppressed'),
+        fieldProvenance: { websiteUrl: { sourceName: 'dept-faculty-roster' } },
+      };
+      expect([
+        ...selectExactUrlDuplicateRiskEntityIds(
+          [unindexedLab, directoryTwin('student_ready')],
+          leadRows,
+        ),
+      ]).toEqual(['atoz-shared-lead']);
+    });
+
+    it('still calls one of two index-published rows a duplicate over the shared profile', () => {
+      const secondIndexedLab = {
+        ...directoryTwin('student_ready'),
+        websiteUrl: 'https://medicine.yale.edu/lab/shared-lead-second/',
+        fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+      };
+      expect(
+        [
+          ...selectExactUrlDuplicateRiskEntityIds(
+            [indexPublishedLab('suppressed'), secondIndexedLab],
+            leadRows,
+          ),
+        ].length,
+      ).toBe(1);
+    });
   });
 
   it('calls an address-authority row a duplicate in a group formed by a url it does not own', () => {
