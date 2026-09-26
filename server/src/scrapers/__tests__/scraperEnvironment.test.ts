@@ -99,7 +99,7 @@ describe('assertScraperEnvironmentMatchesMongoTarget', () => {
         mongoUrl: 'mongodb://localhost/Development',
         env: { SCRAPER_ENV: 'beta' },
       }),
-    ).toThrow('requires Mongo database "Beta"');
+    ).toThrow('does not match Mongo database "Development"');
   });
 
   it('allows explicit custom database names', () => {
@@ -113,6 +113,59 @@ describe('assertScraperEnvironmentMatchesMongoTarget', () => {
         },
       }),
     ).not.toThrow();
+  });
+
+  it('accepts the real production database name, which is Prod', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'production',
+        mongoUrl: 'mongodb://localhost/Prod',
+        env: { SCRAPER_ENV: 'production' },
+      }),
+    ).not.toThrow();
+  });
+
+  it('accepts Production too, so an environment named either way passes', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'production',
+        mongoUrl: 'mongodb://localhost/Production',
+        env: { SCRAPER_ENV: 'production' },
+      }),
+    ).not.toThrow();
+  });
+
+  it('blocks a production profile pointed at Beta', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'production',
+        mongoUrl: 'mongodb://localhost/Beta',
+        env: { SCRAPER_ENV: 'production' },
+      }),
+    ).toThrow('does not match Mongo database "Beta"');
+  });
+
+  it('blocks a production profile pointed at the production copy', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'production',
+        mongoUrl: 'mongodb://localhost/ProductionCopy',
+        env: { SCRAPER_ENV: 'production' },
+      }),
+    ).toThrow('does not match Mongo database "ProductionCopy"');
+  });
+
+  it('honours a production override and rejects Prod when one is declared', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'production',
+        mongoUrl: 'mongodb://localhost/Prod',
+        env: {
+          SCRAPER_ENV: 'production',
+          SCRAPER_PRODUCTION_DB_NAME: 'ProdRestore',
+        },
+      }),
+    ).toThrow('requires Mongo database "ProdRestore"');
   });
 });
 

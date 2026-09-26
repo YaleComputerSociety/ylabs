@@ -72,7 +72,7 @@ describe('assertReindexMeiliEnvironment', () => {
           MONGODBURL: 'mongodb+srv://user:pass@cluster.example.net/Production',
         },
       }),
-    ).toThrow('requires Mongo database "Beta"');
+    ).toThrow('does not match Mongo database "Production"');
   });
 
   it('accepts a coherent production target', () => {

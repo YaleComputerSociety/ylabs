@@ -6,6 +6,7 @@
  */
 import type { ScraperOptions } from './types';
 import { c4LosslessIngestDeclared } from './observationStore';
+import { operatorEnvironmentForDatabaseName } from '../scripts/operatorDatabaseEnvironment';
 
 export type ScraperEnvironment = 'development' | 'beta' | 'production' | 'test';
 
@@ -60,20 +61,18 @@ export function resolveMongoDatabaseName(mongoUrl: string | undefined): string |
   }
 }
 
-function expectedDatabaseName(
+function declaredDatabaseNameOverride(
   environment: ScraperEnvironment,
   env: NodeJS.ProcessEnv,
 ): string | undefined {
-  if (environment === 'development') {
-    return env.SCRAPER_DEVELOPMENT_DB_NAME || 'Development';
-  }
-  if (environment === 'beta') {
-    return env.SCRAPER_BETA_DB_NAME || 'Beta';
-  }
-  if (environment === 'production') {
-    return env.SCRAPER_PRODUCTION_DB_NAME || 'Production';
-  }
+  if (environment === 'development') return env.SCRAPER_DEVELOPMENT_DB_NAME || undefined;
+  if (environment === 'beta') return env.SCRAPER_BETA_DB_NAME || undefined;
+  if (environment === 'production') return env.SCRAPER_PRODUCTION_DB_NAME || undefined;
   return undefined;
+}
+
+function guardedEnvironments(environment: ScraperEnvironment): boolean {
+  return environment === 'development' || environment === 'beta' || environment === 'production';
 }
 
 export function assertScraperEnvironmentMatchesMongoTarget(args: {
@@ -82,21 +81,29 @@ export function assertScraperEnvironmentMatchesMongoTarget(args: {
   env?: NodeJS.ProcessEnv;
 }): void {
   if (!args.mongoUrl) return;
+  if (!guardedEnvironments(args.environment)) return;
 
   const env = args.env || process.env;
-  const expected = expectedDatabaseName(args.environment, env);
-  if (!expected) return;
-
+  const declared = declaredDatabaseNameOverride(args.environment, env);
   const actual = resolveMongoDatabaseName(args.mongoUrl);
+
   if (!actual) {
     throw new Error(
-      `SCRAPER_ENV=${args.environment} requires MONGODBURL to include the explicit database name "${expected}".`,
+      `SCRAPER_ENV=${args.environment} requires MONGODBURL to include an explicit database name.`,
     );
   }
-  if (actual !== expected) {
-    throw new Error(
-      `SCRAPER_ENV=${args.environment} requires Mongo database "${expected}", but MONGODBURL resolves to "${actual}".`,
-    );
+
+  if (declared) {
+    if (actual !== declared) {
+      throw new Error(
+        `SCRAPER_ENV=${args.environment} requires Mongo database "${declared}", but MONGODBURL resolves to "${actual}".`,
+      );
+    }
+    return;
+  }
+
+  if (operatorEnvironmentForDatabaseName(actual) !== args.environment) {
+    throw new Error(`SCRAPER_ENV=${args.environment} does not match Mongo database "${actual}".`);
   }
 }
 
