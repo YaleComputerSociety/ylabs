@@ -107,7 +107,7 @@ const LabMemberCard = ({
 
   const isExternalLink = Boolean(profileUrl);
   const isInteractive = isExternalLink;
-  const baseClassName = `group flex items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
+  const baseClassName = `group flex items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition-colors ${singleColumn ? 'gap-2' : 'gap-3'}`;
   const linkClassName = `${baseClassName} hover:border-line-brand hover:bg-brand-soft yr-focus-ring`;
   const identityBody = (
     <>
