@@ -245,7 +245,7 @@ const AdminDepartments = () => {
         <input
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
-          placeholder="Filter departments..."
+          placeholder="Filter departments…"
           className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
         />
         <div className="text-xs text-muted mt-1">{filtered.length} departments</div>
@@ -268,7 +268,7 @@ const AdminDepartments = () => {
               {isLoading ? (
                 <tr>
                   <td colSpan={6} className="text-center py-8 text-muted">
-                    Loading...
+                    Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (

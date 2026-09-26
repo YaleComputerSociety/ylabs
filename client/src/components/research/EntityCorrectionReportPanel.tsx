@@ -189,7 +189,7 @@ export default function EntityCorrectionReportPanel({
                 disabled={submitting}
                 className="min-h-11 rounded-control bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 yr-focus-ring"
               >
-                {submitting ? 'Submitting...' : 'Submit report'}
+                {submitting ? 'Submitting…' : 'Submit report'}
               </button>
             </div>
           </form>

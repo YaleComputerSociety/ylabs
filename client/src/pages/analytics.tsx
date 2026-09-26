@@ -466,7 +466,7 @@ const Analytics = () => {
   if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
-        <div className="text-xl">Loading analytics...</div>
+        <div className="text-xl">Loading analytics…</div>
       </div>
     );
   }
@@ -981,7 +981,7 @@ const Analytics = () => {
               className="inline-flex min-h-[44px] items-center justify-center self-start rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy yr-focus-ring disabled:cursor-not-allowed disabled:bg-line-strong md:self-auto"
               disabled={isAuditLoading}
             >
-              {isAuditLoading ? 'Refreshing...' : 'Refresh Log'}
+              {isAuditLoading ? 'Refreshing…' : 'Refresh Log'}
             </button>
           </div>
 
@@ -1068,7 +1068,7 @@ const Analytics = () => {
                   {isAuditLoading && auditEvents.events.length === 0 ? (
                     <tr>
                       <td className="px-4 py-6 text-center text-muted" colSpan={5}>
-                        Loading audit log...
+                        Loading audit log…
                       </td>
                     </tr>
                   ) : auditEvents.events.length > 0 ? (

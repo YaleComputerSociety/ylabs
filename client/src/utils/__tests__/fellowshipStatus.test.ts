@@ -68,7 +68,7 @@ describe('fellowshipStatus', () => {
 
     expect(status.kind).toBe('closingSoon');
     expect(status.label).toBe('Closing soon');
-    expect(status.detail).toBe('19 days left');
+    expect(status.detail).toBe('19\u00a0days left');
     expect(status.isCurrentlyRelevant).toBe(true);
     expect(status.isApplicationWindowOpen).toBe(true);
   });

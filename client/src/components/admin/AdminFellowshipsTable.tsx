@@ -194,7 +194,7 @@ const AdminFellowshipsTable = () => {
       <div className="flex flex-wrap gap-4 items-center">
         <input
           type="text"
-          placeholder="Search fellowships..."
+          placeholder="Search fellowships…"
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
           className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring w-64"
@@ -269,7 +269,7 @@ const AdminFellowshipsTable = () => {
             {isLoading ? (
               <tr>
                 <td colSpan={TABLE_COLUMNS.length + 2} className="px-4 py-8 text-center text-muted">
-                  Loading...
+                  Loading…
                 </td>
               </tr>
             ) : fellowships.length === 0 ? (
@@ -706,7 +706,7 @@ const FellowshipEditModal = ({
               onChange={(e) => formDispatch({ type: 'SET_RESTRICTIONS', payload: e.target.value })}
               rows={3}
               className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
-              placeholder="Any restrictions on how funds can be used..."
+              placeholder="Any restrictions on how funds can be used…"
             />
           </div>
           <div>
@@ -720,7 +720,7 @@ const FellowshipEditModal = ({
               }
               rows={4}
               className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
-              placeholder="Any other relevant details..."
+              placeholder="Any other relevant details…"
             />
           </div>
           <div>
@@ -901,31 +901,31 @@ const FellowshipEditModal = ({
                 label="Year of Study"
                 values={yearOfStudy}
                 onChange={(v) => formDispatch({ type: 'SET_YEAR_OF_STUDY', payload: v })}
-                placeholder="e.g. Freshman, Sophomore..."
+                placeholder="e.g. Freshman, Sophomore…"
               />
               <ArrayFieldEditor
                 label="Term of Award"
                 values={termOfAward}
                 onChange={(v) => formDispatch({ type: 'SET_TERM_OF_AWARD', payload: v })}
-                placeholder="e.g. Fall, Spring, Summer..."
+                placeholder="e.g. Fall, Spring, Summer…"
               />
               <ArrayFieldEditor
                 label="Purpose"
                 values={purpose}
                 onChange={(v) => formDispatch({ type: 'SET_PURPOSE', payload: v })}
-                placeholder="e.g. Research, Study Abroad..."
+                placeholder="e.g. Research, Study Abroad…"
               />
               <ArrayFieldEditor
                 label="Global Regions"
                 values={globalRegions}
                 onChange={(v) => formDispatch({ type: 'SET_GLOBAL_REGIONS', payload: v })}
-                placeholder="e.g. North America, Europe..."
+                placeholder="e.g. North America, Europe…"
               />
               <ArrayFieldEditor
                 label="Citizenship Status"
                 values={citizenshipStatus}
                 onChange={(v) => formDispatch({ type: 'SET_CITIZENSHIP_STATUS', payload: v })}
-                placeholder="e.g. US Citizen, International..."
+                placeholder="e.g. US Citizen, International…"
               />
             </div>
           </div>

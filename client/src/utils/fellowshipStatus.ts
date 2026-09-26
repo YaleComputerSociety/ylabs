@@ -205,7 +205,8 @@ export const getFellowshipApplicationStatus = (
       ...base,
       kind: 'closingSoon',
       label: daysUntilDeadline <= 1 ? 'Due soon' : 'Closing soon',
-      detail: daysUntilDeadline <= 1 ? 'Due today or tomorrow' : `${daysUntilDeadline} days left`,
+      detail:
+        daysUntilDeadline <= 1 ? 'Due today or tomorrow' : `${daysUntilDeadline}\u00a0days left`,
       isCurrentlyRelevant: true,
       isApplicationWindowOpen,
     };

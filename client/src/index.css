@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 :root {
+  color-scheme: light;
   --yr-blue: #00356b;
   --yr-navy: #0b1f3a;
   --yr-page: #fbfaf7;
@@ -57,6 +58,10 @@ body,
 
 body {
   margin: 0;
+  /* Suppresses the 300ms double-tap-zoom wait on touch, and the grey tap flash
+     that iOS paints over our own pressed state. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   font-family: var(--yr-font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -78,6 +83,11 @@ code {
 
   p {
     text-wrap: pretty;
+  }
+
+  /* An in-page anchor otherwise lands the heading under the sticky header. */
+  :target {
+    scroll-margin-top: 6rem;
   }
 
   /* Proportional digits in Inter change width between rows, so a column of

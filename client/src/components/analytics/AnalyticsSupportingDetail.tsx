@@ -459,7 +459,7 @@ const AnalyticsSupportingDetail = ({
             <h2 className="yr-display text-2xl font-semibold text-ink">High-Impact Diagnostics</h2>
             <p className="text-sm text-muted">{selectedRangeLabel} snapshot</p>
           </div>
-          {isImpactLoading && <span className="text-sm text-muted">Loading diagnostics...</span>}
+          {isImpactLoading && <span className="text-sm text-muted">Loading diagnostics…</span>}
         </div>
 
         {impactError && (
@@ -784,7 +784,7 @@ const AnalyticsSupportingDetail = ({
               className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy yr-focus-ring disabled:cursor-not-allowed disabled:bg-line-strong"
               disabled={isUserActivityLoading}
             >
-              {isUserActivityLoading ? 'Refreshing...' : 'Refresh Users'}
+              {isUserActivityLoading ? 'Refreshing…' : 'Refresh Users'}
             </button>
           </div>
         </div>
@@ -961,7 +961,7 @@ const AnalyticsSupportingDetail = ({
                     {isUserActivityLoading && userActivity.users.length === 0 ? (
                       <tr>
                         <td className="px-4 py-6 text-center text-muted" colSpan={8}>
-                          Loading user activity...
+                          Loading user activity…
                         </td>
                       </tr>
                     ) : userActivity.users.length > 0 ? (
@@ -1041,7 +1041,7 @@ const AnalyticsSupportingDetail = ({
               )}
 
               {selectedNetid && isSelectedUserLoading && (
-                <p className="text-sm text-muted">Loading recent events...</p>
+                <p className="text-sm text-muted">Loading recent events…</p>
               )}
 
               {selectedNetid && selectedUserError && (

@@ -432,31 +432,31 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 label="Year of Study"
                 values={yearOfStudy}
                 onChange={(v) => dispatch({ type: 'SET_YEAR_OF_STUDY', payload: v })}
-                placeholder="e.g. Freshman, Sophomore..."
+                placeholder="e.g. Freshman, Sophomore…"
               />
               <TagInput
                 label="Term of Award"
                 values={termOfAward}
                 onChange={(v) => dispatch({ type: 'SET_TERM_OF_AWARD', payload: v })}
-                placeholder="e.g. Fall, Spring, Summer..."
+                placeholder="e.g. Fall, Spring, Summer…"
               />
               <TagInput
                 label="Purpose"
                 values={purpose}
                 onChange={(v) => dispatch({ type: 'SET_PURPOSE', payload: v })}
-                placeholder="e.g. Research, Study Abroad..."
+                placeholder="e.g. Research, Study Abroad…"
               />
               <TagInput
                 label="Global Regions"
                 values={globalRegions}
                 onChange={(v) => dispatch({ type: 'SET_GLOBAL_REGIONS', payload: v })}
-                placeholder="e.g. North America, Europe..."
+                placeholder="e.g. North America, Europe…"
               />
               <TagInput
                 label="Citizenship Status"
                 values={citizenshipStatus}
                 onChange={(v) => dispatch({ type: 'SET_CITIZENSHIP_STATUS', payload: v })}
-                placeholder="e.g. US Citizen, International..."
+                placeholder="e.g. US Citizen, International…"
               />
             </div>
           </div>
@@ -481,7 +481,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
               disabled={isSaving}
               className="px-4 py-2 text-sm bg-brand text-white rounded-md hover:bg-brand-navy disabled:opacity-50 transition-colors yr-focus-ring"
             >
-              {isSaving ? 'Saving...' : 'Save Changes'}
+              {isSaving ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
         </div>

@@ -339,7 +339,7 @@ const ResearchFilterDisclosure = ({
         </div>
         {isApplying && (
           <p role="status" className="mt-1 text-xs text-muted">
-            Applying filters...
+            Applying filters…
           </p>
         )}
         <div className="mt-4 min-w-0 space-y-4">
@@ -413,7 +413,7 @@ const ResearchFilterDisclosure = ({
                   <h3 className="truncate text-base font-semibold text-ink">Research filters</h3>
                   {isApplying && (
                     <p role="status" className="mt-0.5 text-xs text-muted">
-                      Applying filters...
+                      Applying filters…
                     </p>
                   )}
                 </div>

@@ -1306,7 +1306,7 @@ describe('Research page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     expect(
       within(screen.getByRole('dialog', { name: 'Research filters' })).getByRole('status'),
-    ).toHaveTextContent('Applying filters...');
+    ).toHaveTextContent('Applying filters…');
     expect(screen.getByText('Filter options will appear when this search finishes.')).toBeTruthy();
     expect(screen.queryByLabelText('Filter by school')).toBeNull();
 
