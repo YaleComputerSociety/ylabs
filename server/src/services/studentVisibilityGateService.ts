@@ -897,8 +897,7 @@ const duplicateClusterByReleasePreference = (
       Number(canClearLeadRequirement(entityById.get(b), leadCountsByEntityId.get(b) || 0)) -
       Number(canClearLeadRequirement(entityById.get(a), leadCountsByEntityId.get(a) || 0));
     if (byLeadReachability !== 0) return byLeadReachability;
-    const byIndexUrlAuthority =
-      Number(indexVouchesFor(b)) - Number(indexVouchesFor(a));
+    const byIndexUrlAuthority = Number(indexVouchesFor(b)) - Number(indexVouchesFor(a));
     if (byIndexUrlAuthority !== 0) return byIndexUrlAuthority;
     const byScore =
       exactDuplicateCanonicalScore(entityById.get(b), leadCountsByEntityId) -
