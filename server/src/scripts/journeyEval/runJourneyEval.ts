@@ -42,6 +42,23 @@ function loadUndergradEvidenceJudgements(
   return parseUndergradEvidenceJudgements(JSON.parse(fs.readFileSync(explicitPath, 'utf8')));
 }
 
+export function resolveUndergradSampleOutPath(value: string): string {
+  const samplePath = resolveSafeJsonReportOutputPath(value, '--undergrad-sample-out');
+  if (fs.existsSync(samplePath))
+    throw new Error(
+      `--undergrad-sample-out already exists at ${samplePath}, and a sample file may carry hand-entered verdicts, so choose a new path`,
+    );
+  return samplePath;
+}
+
+export function writeUndergradSampleTemplate(
+  samplePath: string,
+  sample: UndergradEvidenceJudgementSet,
+): string {
+  fs.writeFileSync(samplePath, JSON.stringify(sample, null, 2), { flag: 'wx' });
+  return samplePath;
+}
+
 const DEFAULT_UNDERGRAD_SAMPLE_SEED = '3569';
 const DEFAULT_UNDERGRAD_SAMPLE_SIZE = 50;
 
@@ -99,9 +116,11 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
   if (!database) throw new Error('MongoDB connection is not initialized');
   const collection = database.collection(RESEARCH_ENTITY_COLLECTION);
 
-  const undergradSampleOut = args.undergradSampleOut;
-  if (undergradSampleOut !== undefined) {
-    resolveSafeJsonReportOutputPath(undergradSampleOut, '--undergrad-sample-out');
+  const undergradSamplePath =
+    args.undergradSampleOut !== undefined
+      ? resolveUndergradSampleOutPath(args.undergradSampleOut)
+      : undefined;
+  if (undergradSamplePath !== undefined) {
     if (!Number.isInteger(args.undergradSampleSize) || args.undergradSampleSize <= 0)
       throw new Error('--undergrad-sample-size must be a positive integer');
   }
@@ -109,19 +128,13 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
   return {
     topicQueryJudgements: loadTopicQueryJudgements(args.judgements),
     undergradEvidenceJudgements: loadUndergradEvidenceJudgements(args.undergradJudgements),
-    ...(undergradSampleOut !== undefined
+    ...(undergradSamplePath !== undefined
       ? {
           undergradEvidenceSampleRequest: {
             seed: args.undergradSampleSeed,
             sampleSize: args.undergradSampleSize,
-            write: async (sample: UndergradEvidenceJudgementSet) => {
-              const samplePath = resolveSafeJsonReportOutputPath(
-                undergradSampleOut,
-                '--undergrad-sample-out',
-              );
-              fs.writeFileSync(samplePath, JSON.stringify(sample, null, 2));
-              return samplePath;
-            },
+            write: async (sample: UndergradEvidenceJudgementSet) =>
+              writeUndergradSampleTemplate(undergradSamplePath, sample),
           },
         }
       : {}),

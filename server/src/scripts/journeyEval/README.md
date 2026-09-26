@@ -132,6 +132,8 @@ yarn journey:eval --case=undergrad-evidence-quote-precision \
 The first writes a template, which is itself a valid judgements file: one entry per drawn row carrying `rowKey`, `quoteFingerprint`, the served `quote`, and the cited `sourceUrl`, with no verdict.
 Fill in `verdict`, and optionally `backsHostedBadgeWording` and `note`, then pass the file back.
 The template names rows and carries their quotes, so it is person-bearing and must stay outside the repository; `--undergrad-sample-out` accepts only a path under `$TMPDIR` or `./tmp`.
+The draw refuses a `--undergrad-sample-out` path that already exists, so re-running it can never replace a file that already carries verdicts.
+A served row whose quote differs from its stored row is left out of the population and the provenance rates and counted as `skippedStaleIndex`, because its stored provenance describes a different quote than the one served.
 
 The flag is separate from `--judgements`, which feeds the topic relevance case a differently shaped file.
 

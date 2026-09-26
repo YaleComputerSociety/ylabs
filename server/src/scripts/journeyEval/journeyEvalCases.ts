@@ -449,14 +449,17 @@ const undergradEvidenceQuotePrecision: JourneyCase = {
     const attribution: QuoteAttributionObservation[] = [];
     const laneRows: Array<{ row: Record<string, unknown>; sourceUrl: string }> = [];
     let citingAPage = 0;
+    let skippedStaleIndex = 0;
     for (const row of quoted) {
       const storedRow = stored.get(rowKey(row));
       const provenance = storedQuoteProvenance(storedRow);
-      attribution.push({
-        servedVersionMatchesStored:
-          Boolean(storedRow) && storedRow?.undergradEvidenceQuote === row.undergradEvidenceQuote,
-        storedSourceName: provenance.sourceName,
-      });
+      const servedVersionMatchesStored =
+        Boolean(storedRow) && storedRow?.undergradEvidenceQuote === row.undergradEvidenceQuote;
+      attribution.push({ servedVersionMatchesStored, storedSourceName: provenance.sourceName });
+      if (!servedVersionMatchesStored) {
+        skippedStaleIndex += 1;
+        continue;
+      }
       if (provenance.sourceUrl) citingAPage += 1;
       if (provenance.sourceName === lane) laneRows.push({ row, sourceUrl: provenance.sourceUrl });
     }
@@ -485,15 +488,15 @@ const undergradEvidenceQuotePrecision: JourneyCase = {
       ),
       buildRate(
         'undergrad-evidence-quotes-from-the-judged-lane',
-        `Served undergraduate evidence quotes whose provenance is ${lane}`,
+        `Served undergraduate evidence quotes matching their stored row whose provenance is ${lane}`,
         laneRows.length,
-        quoted.length,
+        quoted.length - skippedStaleIndex,
       ),
       buildRate(
         'undergrad-evidence-quotes-citing-a-page',
-        'Served undergraduate evidence quotes whose provenance cites a source page',
+        'Served undergraduate evidence quotes matching their stored row whose provenance cites a source page',
         citingAPage,
-        quoted.length,
+        quoted.length - skippedStaleIndex,
       ),
     ];
     const notes: Record<string, unknown> = {
@@ -501,6 +504,7 @@ const undergradEvidenceQuotePrecision: JourneyCase = {
       servedRowsWalked: walk.rows.length,
       estimatedTotalHits: walk.estimatedTotalHits,
       population: population.length,
+      skippedStaleIndex,
       populationFingerprint,
       corpusMovedDuringWalk: corpusFingerprintMoved(corpusBefore, corpusAfter),
     };

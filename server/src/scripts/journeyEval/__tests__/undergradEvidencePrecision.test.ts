@@ -1,3 +1,6 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { describe, expect, it } from 'vitest';
 import { journeyCases, type JourneyEvalContext } from '../journeyEvalCases';
 import {
@@ -13,6 +16,7 @@ import {
   wilsonInterval,
   type CorpusFingerprint,
 } from '../journeyEvalMetrics';
+import { resolveUndergradSampleOutPath, writeUndergradSampleTemplate } from '../runJourneyEval';
 
 const LANE = 'lab-microsite-undergrad-llm';
 const still: CorpusFingerprint = { rowCount: 10, latestUpdatedAt: '2026-01-01T00:00:00.000Z' };
@@ -282,6 +286,42 @@ describe('undergrad-evidence-quote-precision case', () => {
     );
   });
 
+  it('leaves a row whose served quote differs from its stored row out of the lane population', async () => {
+    const staleKey = servedRows[1].slug;
+    const staleStoredRows = new Map(storedRows);
+    staleStoredRows.set(staleKey, {
+      ...(storedRows.get(staleKey) as Record<string, unknown>),
+      undergradEvidenceQuote: 'a newer synthetic quote the index has not served yet',
+    });
+    let template:
+      | Parameters<NonNullable<JourneyEvalContext['undergradEvidenceSampleRequest']>['write']>[0]
+      | null = null;
+    const outcome = await precisionCase!.run(
+      buildContext({
+        readStoredRows: async (keys) =>
+          new Map(keys.map((key) => [key, staleStoredRows.get(key) as Record<string, unknown>])),
+        undergradEvidenceSampleRequest: {
+          seed: 'seed-a',
+          sampleSize: syntheticKeys.length,
+          write: async (sample) => {
+            template = sample;
+            return '/tmp/synthetic-template.json';
+          },
+        },
+      }),
+    );
+    const lanePopulation = servedRows.filter(
+      (row, index) => row.undergradEvidenceQuote && index % 3 !== 0,
+    ).length;
+
+    expect(outcome.notes?.skippedStaleIndex).toBe(1);
+    expect(outcome.notes?.population).toBe(lanePopulation - 1);
+    expect(template!.judgements.map((judgement) => judgement.rowKey)).not.toContain(staleKey);
+    expect(
+      outcome.rates.find((rate) => rate.id === 'undergrad-evidence-quotes-citing-a-page'),
+    ).toMatchObject({ numerator: 29, denominator: 29 });
+  });
+
   it('writes a template that scores as a precision once it carries verdicts', async () => {
     let template:
       | Parameters<NonNullable<JourneyEvalContext['undergradEvidenceSampleRequest']>['write']>[0]
@@ -314,5 +354,40 @@ describe('undergrad-evidence-quote-precision case', () => {
 
     expect(precision).toMatchObject({ numerator: 3, denominator: 4, rate: 0.75 });
     expect(outcome.invariants.every((result) => result.status === 'pass')).toBe(true);
+  });
+});
+
+describe('undergraduate sample template file', () => {
+  it('refuses to draw over a file that may already carry verdicts', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'undergrad-sample-'));
+    const samplePath = path.join(directory, 'judgements.json');
+    const judged = JSON.stringify({
+      seed: 's',
+      sampleSize: 1,
+      judgements: [{ verdict: 'correct' }],
+    });
+    fs.writeFileSync(samplePath, judged);
+
+    expect(() => resolveUndergradSampleOutPath(samplePath)).toThrow(/already exists/);
+    expect(() =>
+      writeUndergradSampleTemplate(samplePath, {
+        lane: LANE,
+        seed: 's',
+        sampleSize: 1,
+        judgements: [],
+      }),
+    ).toThrow();
+    expect(fs.readFileSync(samplePath, 'utf8')).toBe(judged);
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+
+  it('writes a template to a new path', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'undergrad-sample-'));
+    const samplePath = resolveUndergradSampleOutPath(path.join(directory, 'judgements.json'));
+    const sample = { lane: LANE, seed: 's', sampleSize: 1, judgements: [] };
+
+    expect(writeUndergradSampleTemplate(samplePath, sample)).toBe(samplePath);
+    expect(JSON.parse(fs.readFileSync(samplePath, 'utf8'))).toEqual(sample);
+    fs.rmSync(directory, { recursive: true, force: true });
   });
 });
