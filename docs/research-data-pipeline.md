@@ -55,10 +55,15 @@ The sweep modes fix the environment, database, write posture, and confirmation f
 | `development-plan` | development / Development | no | no | none (dry-run, `--limit 100 --use-cache`) |
 | `development-sample` | development / Development | yes | yes | none (`--limit 100 --use-cache`) |
 | `development-full` | development / Development | yes | yes | `--confirm-development-full-sweep` (`--exhaustive --ignore-work-planner`) |
-| `development-incremental` | development / Development | yes | yes | `--confirm-development-incremental-sweep` (`--exhaustive --use-cache`) |
+| `development-incremental` | development / Development | yes | yes | `--confirm-development-incremental-sweep` (`--exhaustive`) |
 | `fellowship-development-full` | development / Development | yes | yes | `--confirm-fellowship-sweep` (fellowship engine only, `--exhaustive --ignore-work-planner`) |
 | `beta-plan` | beta / Beta | no | no | none (dry-run, stop-on-failure) |
 | `beta-fetch` | beta / Beta | yes | no (Render materializes) | `--confirm-beta-release-candidate` (`--exhaustive`, stop-on-failure) |
+
+Only the two `--limit 100` modes pass `--use-cache`.
+An exhaustive mode always fetches live and writes no `scrape_snapshots` rows, because the cache persists every fetched payload for 24 hours and one cached `development-full` sweep wrote about 3.5 GB of it, pushed the Development Atlas cluster over its space quota, and failed 19 sources (#3536).
+A live read is also what an exhaustive refresh is for: with the cache on, a run within a day of the last one re-read the previous day's pages, and department roster snapshots recorded `cacheAllowed: true`.
+To re-run one failed source cheaply, run it by hand and pass `--use-cache` yourself; that bounds the cache to one source.
 
 Development modes require a local Meilisearch host and an empty `MEILISEARCH_INDEX_PREFIX`; the sweep refuses a non-local Development Meili target.
 Beta modes fetch observations into the `Beta` database and emit per-source `betaRenderCommands` (dry-run materialize plan plus apply) so the Beta Render service materializes the recorded run ID; local Beta runs never materialize.

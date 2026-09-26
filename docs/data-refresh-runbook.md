@@ -348,7 +348,7 @@ Run the full Development sweep below only for the optional fetch-once-and-mirror
 yarn scrape:development:all:full
 ```
 
-The full command runs every source in the canonical sweep manifest with `--exhaustive`, reuses the fetch cache with `--use-cache`, bypasses freshness skips for coverage measurement, and materializes each successful run into Atlas Development.
+The full command runs every source in the canonical sweep manifest with `--exhaustive`, fetches every page live without the `--use-cache` fetch cache, bypasses freshness skips for coverage measurement, and materializes each successful run into Atlas Development.
 `--exhaustive` disables the default candidate caps inside the LLM and backfill scrapers as well as omitting the shared `--limit`.
 This can take hours and can make many paid API calls.
 Only run it after the bounded sample succeeds.
@@ -372,7 +372,7 @@ For routine recurring refreshes, run the incremental sweep instead of the full s
 yarn scrape:development:all:incremental
 ```
 
-The incremental command runs the same sources exhaustively, reuses the fetch cache, materializes into Atlas Development, and runs the same post-run stages as the full command.
+The incremental command runs the same sources exhaustively and live, materializes into Atlas Development, and runs the same post-run stages as the full command.
 It differs by honoring WorkPlanner freshness skips instead of re-fetching every entity, so already-fresh entities are skipped and routine sweeps stay cheap.
 Reserve the full sweep for periodic deep coverage refreshes where you intentionally re-fetch every eligible entity.
 
