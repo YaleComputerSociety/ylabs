@@ -4,6 +4,7 @@ import { CheckIcon } from '../shared/icons';
 
 import {
   buildWayInBadges,
+  buildWayInBadgesFromEntity,
   buildResearchHomeContextLine,
   type ResearchCluster,
 } from '../../utils/researchDiscoveryAdapters';
@@ -91,9 +92,14 @@ const ResearchHomeCard = ({
     home.entities.length === 1 && primaryLinkedEntity && homeEntities.length === 1
       ? primaryLinkedEntity
       : null;
-  const wayInBadges = home.wayInBadges?.length
+  const pathwayBadges = home.wayInBadges?.length
     ? home.wayInBadges
     : buildWayInBadges(home.entities[0], home.pathways || []);
+  // The browse response carries no pathways, so fall back to the entity's own
+  // evidence fields rather than rendering nothing. See #3555.
+  const wayInBadges = pathwayBadges.length
+    ? pathwayBadges
+    : buildWayInBadgesFromEntity(home.entities[0]);
   const orderedAccessSignals = orderAccessSignals(wayInBadges);
   const leadAccessSignal = orderedAccessSignals.find((signal) =>
     ELEVATED_ACCESS_SIGNALS.has(signal),
