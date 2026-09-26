@@ -1229,6 +1229,82 @@ Their `Source` rows outlived the decision, still carrying `enabled: true` and a 
 All eight now sit in `RETIRED_SOURCE_NAMES` and carry the retirement marker, alongside `lab-microsite-llm` and `ylabs-listing`, the three one-time `root-yale-*-json` imports, and the `holdfix-second-opinion*`, `official-profile-enrichment`, `research-entity-cache-backfill`, and `yale-directory-csv` lanes whose writing code is no longer in the tree.
 Retirement changes the row only; their stored observations and scrape runs stay as evidence of what they once asserted.
 
+### Research entities minted from a support-staff profile (#3410)
+
+A person profile mints a research entity only if its stated title owns research.
+Three screens decide that, and the scrapers skill owns their separation; `isResearchSupportStaffTitle` was the missing third, so a lab technician's profile minted a research entity carrying the PI's lab name, the PI's lab website, and - once the microsite lane followed that website - the PI's lab prose.
+
+The rows already minted are the residue, and the mint-side screen is inert against them.
+`yarn --cwd server research-entity:retire-staff-minted-entities` archives them.
+
+The population is derived, never listed: a live row whose identity citation (`fieldProvenance.slug.sourceUrl`) is a page about exactly one person, and for whom EVERY live `title` observation any lane states for that page is refused by one of the three screens.
+`slug` provenance only, and live observations only.
+A `name` fallback fires for 255 live rows but adds nothing here, because both mints write `slug` and `name` from the same base, and where it does fire the `name` is by definition a value another lane wrote.
+A superseded or rolled-back title is a claim the lane has withdrawn, so it cannot archive a row; filtering to live changes no verdict on Development and moves 33 identity pages into `no-stored-title`, which refuses.
+
+Unanimity, not recency, because several lanes write a `user` `title` against the same profile URL and none of them owns the question.
+On Development 1,343 identity pages carry more than one live title and 20 disagree about whether the person owns research, in both directions: a roster subheading that appends a second appointment to a professorship can read as refused, and `official-profile-pi-backfill` stores award names as titles, which read as owning research.
+One title saying the person owns research is `title-evidence-disagrees` and keeps the row, because a kept defect is re-readable and an archived professor is not.
+
+**The pass retires two classes only**: a research-support or technical title, and a non-research staff role.
+A trainee rank is deliberately not in the population, even though every mint lane still refuses one.
+With a faculty-keyword yield, whether a trainee row archived would turn on whether `FACULTY_KEYWORDS` happens to spell the rank the way `SUBORDINATE_RESEARCH_RANK_PATTERNS` does, `postdoc` yes and `post-doc` no, so `'Postdoctoral Fellow'` would have been spared while `'Post-Doctoral Fellow'` was archived.
+No irreversible archive should turn on a hyphen.
+That residue is pre-#2304 trainee data rather than the research-support class this pass exists for, and retiring it needs its own issue and its own predicate.
+`subordinate_research_rank` is therefore not a reason this pass can report.
+
+Any title that states a faculty appointment anywhere yields, and this is the one place the retirement side is deliberately stricter than the mint gate.
+`staffMintedEntityReasonFor` asks `statesAnyFacultyAppointment` on the WHOLE title, before any screen, and refuses the row as `title-owns-research`.
+That predicate reads `FACULTY_KEYWORDS` directly rather than going through `isFacultyTitle`, and the difference is the point: `isFacultyTitle` is a classifier, so it short-circuits on `looksLikeNonResearchTitle` to stop a staff title reading as faculty on a stray keyword, and that short-circuit costs `'Associate Professor of Medicine; Clinical Program Manager'` its faculty reading to `\bmanager\b`.
+The yield is a one-way guard, used only to spare a row and never to accept one, so it can afford to be broader than the classifier.
+
+Four narrower yields were tried before this one and each had a corpus counterexample.
+Do not reintroduce any of them.
+A `FACULTY_KEYWORDS` list filtered keyword-by-keyword against `isSubordinateResearchRank` left `associate research scientist` unarchivable, because every title that phrase matches contains the faculty keyword `research scientist`.
+A clause split on `;` and `,` then archived `'Visiting Assistant Professor'` and `'Visiting Fellow and Lecturer in Law'`, because a refused phrase sharing a clause with the appointment, or joined by `and`, defeated the yield; it also manufactured a yield out of `'Research Assistant, Professor Doe Laboratory'`.
+`isFacultyTitle` on the whole title then archived `'Associate Professor of Medicine; Clinical Program Manager'`, `'Clinical Professor and Nurse Practitioner'` and `'Lecturer and Program Coordinator'` through the short-circuit above.
+A predicate whose counterexamples keep arriving is the wrong kind of predicate for an irreversible bulk archive, so the blunt rule stands and the population narrows to match it.
+The mint screens are unchanged and do not yield, because a research row withheld at mint is restored by the next run while an archive is not.
+"Exactly one person" is load-bearing: the person-scoped path shape alone admits `/people/faculty` and `/people/core-faculty`, which are shared rosters, so whichever person's title happened to sit beside that URL would speak for every row minted from it.
+`isSharedPeopleRosterUrl` refuses that shape.
+On Development the pass reads 2,150 identity-bearing rows.
+What it plans is deliberately not recorded here: the counts measured before the faculty-appointment yield described the population the yield then narrowed, and a stale breakdown on this page reads as a target.
+Take the plan and its reason breakdown from a dry run against Development.
+The reason is re-derived from the stored title on every run, so a second run reaches the same verdict rather than going blind once the first has written, and what makes the second run a no-op is that the row query is live-only rather than any plan state.
+Every uncertainty refuses instead of archiving, and each refusal is counted: a citation that is not a person profile, a page with no stored title, a title that owns research, a `manuallyLockedFields` entry, a visibility override tier, or an operator- or manual-named `fieldProvenance.sourceName` (operator intent outranks a derived verdict, and it is not only the lock list: an admin edit leaves that empty), a row carrying a `websiteUrl` or `website` that its identity page did not supply (it must read both fields, because 1,695 live rows populate the first against 454 the second), and a `RoleAssignment` edge attaching somebody other than the person the identity page names.
+
+That last refusal compares people rather than counting edges, and the difference decides whether the pass reaches the defect at all.
+An edge attaching the very person whose profile minted the row is the same lane restating its own mint: the `PI` edge on the row that opened #3410 cites that person's own profile page as its provenance.
+Counting edges refused 95 of 157 candidates and left every served defect in place; comparing people refuses 5, each attaching somebody else.
+
+The website floor needed the same correction for the same reason.
+Both mint gates write the row's `websiteUrl` FROM the lab link on the person's own profile, so that website *is* the graft being retired and is exactly what the microsite lane followed to write the PI's lab prose.
+Refusing on any website at all spared 22 of the 34 rows that carry one, which is the defect rather than a floor, so the refusal compares the website's provenance against the identity page and fires on 11 rows whose website came from somewhere else.
+The join is `researchers.profileLinks.url`, and a row whose identity page matches no person has no self to compare against, so every edge on it reads as foreign and it refuses.
+
+It is dry-run by default; `--apply` additionally requires `--confirm-staff-minted-entity-retirement`, routes through `assertScriptApplyAllowed` so a production-looking target needs `SCRAPER_ENV=production` plus `CONFIRM_PROD_SCRAPE=true`, and is bounded by `--max-apply` (default 200).
+It archives with the `research-entity:retire-staff-minted-entities` attribution through `archivedEntityUpdate`, so the stale visibility verdict is cleared in the same write, and it deletes the Meilisearch documents for what it archived.
+It supersedes nothing and deletes nothing: the row and its observations stay as evidence of what the lane once asserted.
+The `--output` report is resolved and written **before** the archive, and it records the pre-apply tier of exactly the rows the run touches, because a peer session writes Development concurrently and a post-hoc corpus-wide tier delta cannot be attributed to this run without it.
+
+**What this pass does not reach.** Its population is rows whose identity citation is a page about exactly one person, which is what licenses a stored title to decide the row's fate.
+A department-roster entry that carries an explicit lab website cites the roster page rather than the person's profile (`base.sourceUrl` falls back to the roster URL once `entry.labUrl` is set), and no configured roster URL satisfies `isPersonProfileIdentityUrl`, so those rows are out of population by construction.
+They are not unprotected: the same website makes them `has-foreign-website` had they been in it, because the website's provenance is the roster page rather than an identity page.
+Reaching them needs a join from the roster entry to the person's profile that this pass deliberately does not make, and #3410 records it as remaining work rather than implying the pass covers it.
+
+The mint-side screen is asked by the three lanes that cite a person profile as a row's identity and harvest that person's title: `ysm-faculty-directory`, `dept-faculty-roster`, and `yse-faculty-directory`.
+`bbs-research-track` cites a person's YSM profile too but harvests no title, so it cannot ask the screen; its rows remain reachable by this pass through the YSM lane's title observation for the same URL, which makes a refused person listed on a track page archived and then re-observed under the same `ysm-faculty-<slug>` key on the next sweep.
+Re-observation is not resurrection: `findEntityDocByIdentifier` resolves the write target by slug with no archived filter and nothing on that path sets `archived: false`, so the row keeps its archived state while its fields are refreshed, and a student never sees it again.
+Measured rather than assumed: the lane has observed 338 research-entity keys and exactly 1 of the rows the pass planned before the faculty-appointment yield narrowed it was one of them, so the cost is wasted writes on a single archived row, and #3410 records it as remaining work.
+A lane added later that mints a research entity from a person profile has to ask the screen, or the pass will archive rows that lane keeps re-minting.
+
+**A known cost in the roster drop guard.** The roster lane still adds a title-refused entry's key to its discovered set, because `loadRosterObservedEntityKeys` remembers every key the lane ever emitted, so dropping the key would read as `absent` to `classifyEntityRunSignal` and let the departure lane mark somebody as having left Yale for holding a support title.
+That set is also the drop guard's numerator, while `countRosterGovernedEntities` counts live rows only, so the numerator now includes keys with no live row and the ratio reads high after `research-entity:retire-staff-minted-entities --apply` archives the roster-keyed rows it plans.
+The effect is that a real roster breakage is slightly harder to detect, which is the lesser harm next to publishing a false claim that a person left.
+Closing it needs a live-row join before the key is added, and the roster lane holds no `ResearchEntity` read at all today, so that is a separate change rather than a tightening of this one.
+
+This is a stored-data operation: merging the screen changes nothing a student sees.
+
 ### Source dispatch and the freshness worklist (#2619)
 
 `server/src/scrapers/sourceDispatch.ts` sorts every `Source` row into `sweep-registered`, `script-driven`, `retired`, or `unowned`.

@@ -2124,6 +2124,45 @@ describe('DepartmentRosterScraper.run', () => {
     ).toBe(true);
   });
 
+  // The whole lane read, not just the mint: a support-staff roster entry carrying the
+  // PI's lab link mints no research row of its own, while the professor beside it still does
+  // (#3410).
+  it('mints no research row for a title-refused roster entry on an HTML-read lane', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Ada Fixture',
+        profileUrl: 'https://mcdb.yale.edu/profile/ada-fixture',
+        title: 'Laboratory Assistant 3',
+        labUrl: 'https://principal-lab.example.org/',
+      },
+      {
+        name: 'Blake Principal',
+        profileUrl: 'https://mcdb.yale.edu/profile/blake-principal',
+        title: 'Professor of Fixtures',
+        labUrl: 'https://blake-lab.example.org/',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body><main>roster</main></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'mcdb',
+        deptName: 'Molecular, Cellular and Developmental Biology',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://mcdb.yale.edu/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const mintedSlugs = emitted
+      .filter((o) => o.entityType === 'researchEntity' && o.field === 'slug')
+      .map((o) => o.value);
+    expect(mintedSlugs).toEqual(['dept-mcdb-blake-principal']);
+  });
+
   it('emits official-profile person observations without minting a lab entity when officialProfileOnly is set', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       {

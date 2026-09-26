@@ -31,6 +31,49 @@ When a normalizing helper already exists in the module, use it rather than writi
 A grader whose threshold looks miscalibrated is usually measuring the wrong thing.
 Check what the score counts before proposing to lower the bar, and scope any widening to the question being asked: #3282 widened grounding only for a card being judged as it is written, because the same score also decides research-area chip grounding and feeds the serve-time surrender arm, where widening it would have weakened stale-card detection instead.
 
+## Core rule: a title decides whether a profile may mint a research entity at all
+
+Three screens in `sources/yaleDirectoryScraper.ts` disqualify a person profile from minting a research entity, and a mint gate asks all three.
+They are separate lists on purpose, and the separation is load-bearing rather than tidy.
+
+- `looksLikeNonResearchTitle` is staff, admin, ops and athletics. It also short-circuits `isFacultyTitle`, so anything added here stops being faculty everywhere, including in the Yalies lane.
+- `isSubordinateResearchRank` is academic ranks held inside somebody else's group (postdoc, research associate, graduate student). These people stay researchers and keep their lab membership; they simply own no research of their own (#2304).
+- `isResearchSupportStaffTitle` is support and technical roles held inside somebody else's group: lab and clinical assistants, technicians, technologists, a laboratory supervisor, a research aide, a genetic counselor, a librarian, a software engineer, a business systems analyst, a registrar (#3410).
+
+Ask all three, through `ownsNoResearchEntityByTitle` unless you have a reason not to.
+A lane that asks a subset re-mints exactly the rows `research-entity:retire-staff-minted-entities` archives, and that is what #3410 was: the YSM mint asked two of the three, the department-roster and YSE mints asked none.
+
+Three call sites, two of which do not use the helper and say why:
+
+- `dept-faculty-roster` and `yse-faculty-directory` call `ownsNoResearchEntityByTitle`.
+- `ysm-faculty-directory` asks the three individually, because two of them run before person enrichment and the support screen runs after it: a support-staff profile still describes a real person, and its stored title is the evidence the retirement pass reads.
+- the retirement pass restates them in `staffMintedEntityReasonFor`, because it has to name *which* screen refused in order to report by reason.
+
+`bbs-research-track` also mints against a person's YSM profile URL and asks none of the three, because it harvests no title to screen: it reads a graduate-programme PI listing. Its rows are still reachable by the retirement pass, since the identity URL carries the YSM lane's title observation, so a refused person listed on a track page is archived and then re-observed under the same `ysm-faculty-<slug>` key. Re-observation does not un-archive the row: the materializer resolves the target by slug and nothing on that path writes `archived: false`, so the row stays out of the served corpus. Measured rather than assumed: the lane has observed 338 keys and 1 of the rows the pass planned before the faculty-appointment yield narrowed it is one of them. #3410 records it as remaining work.
+
+`isResearchSupportStaffTitle` **yields to a stated faculty appointment**, and that is the whole reason it is not folded into `looksLikeNonResearchTitle`.
+Measured against all 5,573 distinct stored titles in the corpus, every title the vocabulary puts at risk is a conjoined appointment - a Special Collections Librarian who is also a Lecturer in American Religious History - and putting `librarian` in the short-circuiting list would refuse exactly those people.
+
+The retirement pass retires two of the three classes only: a research-support or technical title, and a non-research staff role.
+A trainee rank is still refused at MINT by all four lanes, which is #2304 and stays, but it is deliberately out of the retirement population, so `subordinate_research_rank` is not a reason the pass can report.
+The reason is that with a faculty-keyword yield a trainee row's fate would turn on whether `FACULTY_KEYWORDS` spells the rank the way `SUBORDINATE_RESEARCH_RANK_PATTERNS` does - `postdoc` yes, `post-doc` no - so `'Postdoctoral Fellow'` was spared while `'Post-Doctoral Fellow'` was archived, and no irreversible archive should turn on a hyphen.
+The pre-#2304 trainee residue needs its own issue and its own predicate.
+
+`staffMintedEntityReasonFor` asks `statesAnyFacultyAppointment` on the WHOLE title before any screen, so a title that names an appointment anywhere refuses as `title-owns-research`.
+That predicate reads `FACULTY_KEYWORDS` directly rather than calling `isFacultyTitle`, and the difference matters: `isFacultyTitle` short-circuits on `looksLikeNonResearchTitle` so a staff title cannot read as faculty on a stray keyword, and that same short-circuit costs `'Associate Professor of Medicine; Clinical Program Manager'` its faculty reading to `\bmanager\b`.
+The yield is one-way, used only to spare a row and never to accept one, so it can be broader than the classifier.
+Do not give the mint screens the same yield: a research row withheld at mint is restored by the next run, an archive is not, so the asymmetry is the point rather than an inconsistency to tidy.
+
+Do not narrow that yield, and specifically do not reintroduce any of the four mechanisms already tried, each of which had a corpus counterexample.
+Filtering `FACULTY_KEYWORDS` keyword-by-keyword against `isSubordinateResearchRank` left `associate research scientist` unarchivable, because every title that phrase matches contains the faculty keyword `research scientist`.
+Splitting the title into clauses on `;` and `,` then archived `'Visiting Assistant Professor'` and `'Visiting Fellow and Lecturer in Law'`, because a refused phrase sharing a clause with the appointment, or joined by `and`, defeated the yield.
+`isFacultyTitle` on the whole title then archived `'Clinical Professor and Nurse Practitioner'` and `'Lecturer and Program Coordinator'` through the short-circuit above.
+An irreversible archive governed by a predicate whose counterexamples keep arriving is the worse outcome, which is why the rule is now blunt and the population is narrow.
+
+A missing screen mints a whole class, and the class is expensive: the row inherits the PI's lab name and lab website from the lab-website slot on the subordinate's profile, and once it carries that website the microsite lane writes the PI's lab prose against it.
+The graft repair that later withdraws the name and website does **not** retract the prose, so the row keeps serving another lab's description.
+So when a wrong row turns out to be a whole title class, extend the screen and then retire the rows the screen would now refuse; do not patch the row.
+
 ## Safety rules (write guards)
 
 - Non-production environments default to dry-run. Set `ALLOW_NON_PROD_SCRAPER_WRITES=true` to write to a dev DB.
@@ -116,7 +159,7 @@ A pattern like `dept-faculty-roster` also matches an unrelated process that carr
   `replaceAsciiControls` cannot catch them, because a format character is not a control, and neither can a `\s+` collapse, which in JavaScript covers U+00A0 and U+FEFF but no zero-width character.
   The strip walks arrays and plain objects, so prose nested in a structured field (a `recentGrants` abstract) is covered too, and it leaves anything with its own prototype (a `Date`, an `ObjectId`) untouched.
   Fix an invisible-character defect there, never in the classifier that missed the row, with one exception the sanitizer cannot cover: a classifier that runs BEFORE ingest decides whether a row becomes an observation at all, so it has to strip for itself.
-  Those are the shared title predicates in `sources/yaleDirectoryScraper.ts` (`isFacultyTitle`, `looksLikeNonResearchTitle`, `isSubordinateResearchRank`, `classifyUserType`) and the key derivations in `utils/scraperHelpers.ts` (`slugify`, `normalizeName`), which strip at their own head.
+  Those are the shared title predicates in `sources/yaleDirectoryScraper.ts` (`isFacultyTitle`, `looksLikeNonResearchTitle`, `isSubordinateResearchRank`, `isResearchSupportStaffTitle`, `classifyUserType`) and the key derivations in `utils/scraperHelpers.ts` (`slugify`, `normalizeName`), which strip at their own head.
   `slugify` in particular has to, because NFKD does not decompose U+00AD: the soft hyphen survives into `[^a-z0-9]+` and becomes a dash, so the same person keys as `robin-read-er` on a hyphenated page and `robin-reader` everywhere else and the two entity keys never join.
   Add the strip to a shared predicate, never to a per-scraper call site.
   U+200C/U+200D are the one part of the family removed conditionally, only between two ASCII letters, because outside a Latin word they carry meaning: U+200D joins an emoji sequence, and Persian, Hindi and Malayalam orthography uses both to select ligature forms.
@@ -590,7 +633,7 @@ When running the probes by hand, state the roster size next to what the lane rea
 
 Report yield at person level against the corpus, never at row or URL level.
 The four paginated lanes hid 320 unread rows but only 9 people absent by name, so the honest gain there was label reach rather than acquisition.
-Filter candidate rows through the same rank test the lanes use (`isFacultyTitle` minus `isSubordinateResearchRank` and `looksLikeNonResearchTitle`) before calling anything a faculty gap: a raw name diff over discovered people pages returned 1,713 absent names, of which 381 stated a faculty rank and the rest were students, research scientists and staff.
+Filter candidate rows through the same rank test the lanes use (`isFacultyTitle` minus `isSubordinateResearchRank`, `looksLikeNonResearchTitle` and `isResearchSupportStaffTitle`) before calling anything a faculty gap: a raw name diff over discovered people pages returned 1,713 absent names, of which 381 stated a faculty rank and the rest were students, research scientists and staff.
 A baselined department that is now covered reads as `staleUncoveredBaselineEntries` and alarms `departments:audit-catalog-drift`, which masks the real roster drift the audit exists to surface.
 
 #### The other roster gate: `research-homes:audit-rosters`

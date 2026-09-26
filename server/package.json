@@ -40,6 +40,7 @@
     "research-entity:archive-detachment-bypassing-leads": "tsx src/scripts/archiveDetachmentBypassingLeadEdges.ts",
     "research-entity:retire-program-entities": "tsx src/scripts/retireProgramResearchEntities.ts",
     "research-entity:retire-dead-citation-entities": "tsx src/scripts/retireDeadCitationResearchEntities.ts",
+    "research-entity:retire-staff-minted-entities": "tsx src/scripts/retireStaffMintedResearchEntities.ts",
     "research-entity:audit-manual-edit-decay": "tsx src/scripts/auditManualEditDecayReversal.ts",
     "research-entity:recheck-description-grounding": "tsx src/scripts/recheckDescriptionGrounding.ts",
     "research-entity:purge-contested-lead-profiles": "tsx src/scripts/purgeContestedLeadProfileEnrichment.ts",

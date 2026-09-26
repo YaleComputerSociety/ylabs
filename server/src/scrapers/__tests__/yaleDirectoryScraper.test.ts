@@ -9,6 +9,7 @@ import {
   classifyUserType,
   isFacultyPerson,
   isFacultyTitle,
+  isResearchSupportStaffTitle,
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
   personToObservations,
@@ -452,6 +453,69 @@ describe('isSubordinateResearchRank (#2304)', () => {
   it('keeps a trainee inside the researcher-identity vocabulary', () => {
     expect(isFacultyTitle('Postdoctoral Associate')).toBe(true);
     expect(looksLikeNonResearchTitle('Postdoctoral Associate')).toBe(false);
+  });
+});
+
+describe('isResearchSupportStaffTitle (#3410)', () => {
+  it("refuses support and technical roles held inside somebody else's group", () => {
+    for (const title of [
+      'Laboratory Assistant 3',
+      'Laboratory Assistant School of Public Health',
+      'Lab Technician',
+      'Clinical Laboratory Supervisor',
+      'Clinical Assistant 1, PET Radiochemistry',
+      'Clinical Technologist Genetics',
+      'Pathology Assistant',
+      'Materials Assistant 3',
+      'Media Technician',
+      'Research Aide',
+      'Genetic Counselor 2',
+      'Librarian 4',
+      'Research and Education Librarian',
+      'Software Engineer III',
+      'IT, Business Systems Analyst 4',
+      'Director, Outreach Business Development',
+      'Director of Alumni Engagement',
+      'Registrar, Yale School of Public Health',
+    ]) {
+      expect(isResearchSupportStaffTitle(title)).toBe(true);
+    }
+  });
+
+  // The whole reason this vocabulary is not in NON_FACULTY_TITLE_PATTERNS: that list
+  // short-circuits isFacultyTitle, so a conjoined appointment would lose its faculty
+  // reading. Every title the corpus holds that this predicate puts at risk is this
+  // shape, so the yield is the calibration rather than a nicety.
+  it('yields to a faculty appointment stated alongside the support role', () => {
+    for (const title of [
+      'Special Collections Librarian Divinity Library, Lecturer in American Religious History',
+      'Biomedical Sciences Research Support Librarian and Lecturer in Epidemiology',
+      'Assistant Professor Adjunct of Technical Design and Production and Electro Mechanical Laboratory Supervisor',
+      'Lecturer in Dramaturgy and Dramatic Criticism; Co-Editor, Alumni Magazine',
+    ]) {
+      expect(isResearchSupportStaffTitle(title)).toBe(false);
+      expect(isFacultyTitle(title)).toBe(true);
+    }
+  });
+
+  it('leaves research-entity owners and the other two screens alone', () => {
+    for (const title of [
+      'Professor of Molecular Biophysics and Biochemistry',
+      'Research Scientist',
+      'Director, Yale Cancer Center',
+      'Postdoctoral Associate',
+    ]) {
+      expect(isResearchSupportStaffTitle(title)).toBe(false);
+    }
+  });
+
+  it('does not fire on an absent title, which is a separate decision', () => {
+    expect(isResearchSupportStaffTitle(undefined)).toBe(false);
+    expect(isResearchSupportStaffTitle('')).toBe(false);
+  });
+
+  it('reads a support title through the invisible format characters a CMS emits', () => {
+    expect(isResearchSupportStaffTitle('Labora\u00adtory Assis\u00adtant 3')).toBe(true);
   });
 });
 

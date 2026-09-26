@@ -53,6 +53,7 @@ import {
 } from '../utils/scraperHelpers';
 import {
   classifyUserType,
+  isResearchSupportStaffTitle,
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
 } from './yaleDirectoryScraper';
@@ -574,6 +575,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     let researchersEnriched = 0;
     let entityCount = 0;
     let subordinateRankSkipped = 0;
+    let supportStaffSkipped = 0;
     let labCount = 0;
     let withdrawnLabCount = 0;
     let areaCount = 0;
@@ -593,7 +595,9 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       if (looksLikeNonResearchTitle(profile.title)) continue;
       // A trainee works in somebody else's lab, so their profile mints no
       // research home of their own and cannot inherit their PI's lab name
-      // (#2304, the mint-side cause of the #2285 grafts).
+      // (#2304, the mint-side cause of the #2285 grafts). A lab technician,
+      // instrument technologist or research librarian works in somebody else's
+      // lab for the same reason, and matched neither screen before #3410.
       if (isSubordinateResearchRank(profile.title)) {
         subordinateRankSkipped += 1;
         continue;
@@ -604,6 +608,16 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       const { observations: userObs, entityKey } = facultyToUserObservations(profile);
       await ctx.emit(userObs);
       totalObs += userObs.length;
+
+      // After the person observations, not before them, because a support-staff
+      // profile still describes a real person: their title is the evidence the
+      // retirement pass keys on, so screening ahead of the emit would stop
+      // refreshing the very claim that judges the row (#3410). The two screens above
+      // still skip person enrichment, which predates this change.
+      if (isResearchSupportStaffTitle(profile.title)) {
+        supportStaffSkipped += 1;
+        continue;
+      }
 
       const entityObs = facultyToResearchEntityObservations(
         profile,
@@ -625,7 +639,8 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       `Emitted ${totalObs} observations across ${researchersEnriched} researchers / ${entityCount} entities ` +
         `(${labCount} with lab sites, ${withdrawnLabCount} whose linked lab site the corpus refuses, ` +
         `${areaCount} with research areas) of ${profilesScanned} profiles scanned; ` +
-        `${subordinateRankSkipped} skipped as subordinate research ranks`,
+        `${subordinateRankSkipped} skipped as subordinate research ranks, ` +
+        `${supportStaffSkipped} skipped as research-support staff`,
     );
 
     return {
@@ -634,7 +649,8 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       notes:
         `YSM faculty directory: ${researchersEnriched} researchers with research content, ` +
         `${entityCount} research homes (${labCount} labs, ${areaCount} with areas) of ${profilesScanned} profiles scanned, ` +
-        `${subordinateRankSkipped} subordinate ranks skipped`,
+        `${subordinateRankSkipped} subordinate ranks skipped, ` +
+        `${supportStaffSkipped} research-support staff skipped`,
     };
   }
 }

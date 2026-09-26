@@ -93,6 +93,7 @@ import {
   isFacultyTitle,
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
+  ownsNoResearchEntityByTitle,
 } from './yaleDirectoryScraper';
 import { rosterEntryIdentityKey, walkRosterLanePages } from '../utils/rosterLanePaging';
 import { runWithBoundedConcurrency } from '../utils/boundedConcurrency';
@@ -3645,6 +3646,12 @@ const FACULTY_HELD_PROGRAMME_OFFICE_PATTERNS: RegExp[] = [
  * Whether a roster subheading asserts a faculty appointment. Strict: a subheading
  * that states a subordinate research rank, a staff role, or no rank at all asserts
  * nothing.
+ *
+ * Deliberately NOT extended with `isResearchSupportStaffTitle` (#3410). The entity mint
+ * asks `ownsNoResearchEntityByTitle` directly, so adding it here would change nothing
+ * about minting and would instead reject a cross-listed-programme row from the roster
+ * lane outright and withhold its `userType` stamp, which is person-level behaviour
+ * that change did not set out to alter.
  */
 function statesFacultyAppointment(title: string | undefined): boolean {
   const cleaned = title ? stripInvisibleFormatCharacters(title).trim() : '';
@@ -3797,6 +3804,37 @@ export function rosterResearchHomeEvidence(entry: FacultyEntry): RosterResearchH
 }
 
 /**
+ * The roster research-entity mint, plus whether a stated title was the ONLY reason it emitted
+ * nothing. The call site needs that distinction: it records a title-refused entry as
+ * still discovered on this roster, and an entry that would have minted nothing
+ * anyway must not be recorded, because that inflates the roster-drop guard.
+ */
+export function rosterResearchEntityMint(
+  entry: FacultyEntry,
+  dept: DeptConfig,
+  sourceUrl: string,
+  ownerEntityKey: string,
+  labUrlIsUnusable: LabUrlIsUnusable = () => false,
+): { observations: ObservationInput[]; refusedByTitle: boolean } {
+  const observations = entryToResearchEntityObservationsUnscreened(
+    entry,
+    dept,
+    sourceUrl,
+    ownerEntityKey,
+    labUrlIsUnusable,
+  );
+  // The screen sits at this choke point rather than at the one call site, so a
+  // future caller cannot mint a research row for somebody who owns no research. A roster
+  // entry's subheading is the person's stated title, and a stated title that fails a
+  // screen refuses; absence of a title is absence of evidence and still mints
+  // (#3410).
+  if (observations.length > 0 && ownsNoResearchEntityByTitle(entry.title)) {
+    return { observations: [], refusedByTitle: true };
+  }
+  return { observations, refusedByTitle: false };
+}
+
+/**
  * A faculty member with no off-directory lab website is still a research home:
  * a school whose faculty publish research on their own official profile and
  * never run a separate lab site (Art, Architecture) otherwise materializes
@@ -3806,7 +3844,9 @@ export function rosterResearchHomeEvidence(entry: FacultyEntry): RosterResearchH
  */
 /**
  * The research-entity slug this lane mints for a roster row, exported so the run
- * loop can read the corpus's verdicts for the same keys before the loop starts.
+ * loop can read the corpus's verdicts for the same keys before the loop starts, and
+ * so the loop can record that the roster still lists a person whose stated title
+ * refuses them an entity of their own (#3410).
  * Sharing the formula is the point: a second copy would drift and the lookup would
  * silently miss.
  */
@@ -3817,7 +3857,7 @@ export function rosterResearchEntitySlug(entry: FacultyEntry, dept: DeptConfig):
   return `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
 }
 
-export function entryToResearchEntityObservations(
+function entryToResearchEntityObservationsUnscreened(
   entry: FacultyEntry,
   dept: DeptConfig,
   sourceUrl: string,
@@ -4012,7 +4052,11 @@ export class DepartmentRosterScraper implements IScraper {
       entries: FacultyEntry[],
       dept: DeptConfig,
       sourceUrl: string,
-    ): Promise<{ faculty: number; labs: number; observations: number }> => {
+    ): Promise<{
+      faculty: number;
+      labs: number;
+      observations: number;
+    }> => {
       let faculty = 0;
       let labs = 0;
       let observations = 0;
@@ -4048,15 +4092,16 @@ export class DepartmentRosterScraper implements IScraper {
         await ctx.emit(userObs);
         observations += userObs.length;
 
-        const labObs = dept.officialProfileOnly
-          ? []
-          : entryToResearchEntityObservations(
+        const mint = dept.officialProfileOnly
+          ? { observations: [] as ObservationInput[], refusedByTitle: false }
+          : rosterResearchEntityMint(
               entry,
               dept,
               sourceUrl,
               entityKey,
               labUrlUnusabilityFor(labUrlEvidenceBySlug, rosterResearchEntitySlug(entry, dept)),
             );
+        const labObs = mint.observations;
         const labKey = labObs[0]?.entityKey;
         if (labObs.length > 0 && labKey && !seenLabKeys.has(labKey)) {
           seenLabKeys.add(labKey);
@@ -4067,14 +4112,29 @@ export class DepartmentRosterScraper implements IScraper {
         // A programme lane reads cross-listed faculty from other departments, so
         // letting it add to this key's discovered set credits the department with a
         // roster it does not publish (#3251).
-        if (
-          labObs.length > 0 &&
-          typeof labKey === 'string' &&
-          labKey &&
-          !dept.crossListedProgramme
-        ) {
+        //
+        // A title screen refusing a research row is not the roster dropping the person, and
+        // the two must not be conflated: `loadRosterObservedEntityKeys` remembers
+        // every key this lane ever emitted, so a previously minted row whose key
+        // stops appearing in the discovered set reads as `absent` to
+        // `classifyEntityRunSignal` and the departure lane can mark somebody as
+        // having left Yale for holding a support title (#3410).
+        //
+        // The cost is accepted rather than unnoticed: this set is also the roster
+        // drop guard's numerator, while `countRosterGovernedEntities` counts live
+        // rows only, so a refused key with no live row makes the ratio read high and
+        // a real roster breakage slightly harder to detect. Asserting that somebody
+        // left Yale is the worse error. Closing it needs a live-row join this lane
+        // cannot do, because it holds no `ResearchEntity` read at all.
+        const discoveredKey =
+          typeof labKey === 'string' && labKey
+            ? labKey
+            : mint.refusedByTitle
+              ? rosterResearchEntitySlug(entry, dept)
+              : '';
+        if (discoveredKey && !dept.crossListedProgramme) {
           const deptDiscovered = discoveredEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
-          deptDiscovered.add(labKey);
+          deptDiscovered.add(discoveredKey);
           discoveredEntityKeysByDept.set(dept.deptKey, deptDiscovered);
         }
         faculty++;

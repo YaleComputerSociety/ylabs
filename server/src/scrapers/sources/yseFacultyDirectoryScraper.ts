@@ -42,6 +42,7 @@ import {
   normalizeName,
   splitName,
 } from '../utils/scraperHelpers';
+import { ownsNoResearchEntityByTitle } from './yaleDirectoryScraper';
 
 const DIRECTORY_URL = 'https://environment.yale.edu/directory/faculty';
 const SOURCE_KEY = 'yse-faculty-directory';
@@ -370,6 +371,12 @@ export function facultyToResearchEntityObservations(
   // one keeps the lab.
   const hasLab = Boolean(profile.labUrl) && !labUrlIsUnusable(profile.labUrl!);
   if (!hasLab && profile.researchAreas.length === 0 && !profile.description) return [];
+  // The same three title screens the YSM and department-roster mints ask, because
+  // this lane cites the person's profile as the row's identity and so mints the same
+  // class of row: somebody who works in another person's group, carrying that
+  // person's lab link as their own (#3410). The person observations the caller emits
+  // are unaffected: a support-staff profile still describes a real person.
+  if (ownsNoResearchEntityByTitle(profile.title)) return [];
 
   const slug = `yse-faculty-${profile.slug}`.slice(0, 100);
   const entityName = hasLab ? `${profile.name} Lab` : `${profile.name} Faculty Research`;
