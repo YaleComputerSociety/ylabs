@@ -3,6 +3,7 @@
  */
 import type { ObservedEntityType } from '../models/observation';
 import type { WorkPlannerMetrics } from './workPlanner';
+import type { HttpValidatorCacheStats } from './utils/httpValidatorCache';
 
 export interface ObservationInput {
   entityType: ObservedEntityType;
@@ -99,6 +100,7 @@ export type ScraperFetchMetric<TFetchMode extends string = ScraperFetchMode> =
 
 export interface ScraperFetchMetrics<TFetchMode extends string = ScraperFetchMode> {
   attempts: ScraperFetchAttemptMetrics<TFetchMode>[];
+  httpCache?: HttpValidatorCacheStats;
   summary: {
     total: number;
     succeeded: number;

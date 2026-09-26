@@ -1110,6 +1110,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/http-cache-semantics@npm:^4.2.0":
+  version: 4.2.0
+  resolution: "@types/http-cache-semantics@npm:4.2.0"
+  checksum: 10c0/82dd33cbe7d4843f1e884a251c6a12d385b62274353b9db167462e7fbffdbb3a83606f9952203017c5b8cabbd7b9eef0cf240a3a9dedd20f69875c9701939415
+  languageName: node
+  linkType: hard
+
 "@types/keygrip@npm:*":
   version: 1.0.6
   resolution: "@types/keygrip@npm:1.0.6"
@@ -2663,7 +2670,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"http-cache-semantics@npm:^4.1.1":
+"http-cache-semantics@npm:^4.1.1, http-cache-semantics@npm:^4.2.0":
   version: 4.2.0
   resolution: "http-cache-semantics@npm:4.2.0"
   checksum: 10c0/45b66a945cf13ec2d1f29432277201313babf4a01d9e52f44b31ca923434083afeca03f18417f599c9ab3d0e7b618ceb21257542338b57c54b710463b4a53e37
@@ -4103,6 +4110,7 @@ __metadata:
     "@types/cookie-session": "npm:^2.0.48"
     "@types/cors": "npm:^2.8.12"
     "@types/express": "npm:4.17.13"
+    "@types/http-cache-semantics": "npm:^4.2.0"
     "@types/node": "npm:20"
     "@types/passport": "npm:^1.0.17"
     axios: "npm:^1.18.0"
@@ -4113,6 +4121,7 @@ __metadata:
     dotenv: "npm:^16.3.1"
     express: "npm:^4.22.2"
     express-rate-limit: "npm:^8.5.2"
+    http-cache-semantics: "npm:^4.2.0"
     meilisearch: "npm:^0.57.0"
     mongodb: "npm:~6.20.0"
     mongodb-memory-server: "npm:^11.2.0"

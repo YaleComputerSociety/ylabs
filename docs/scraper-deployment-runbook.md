@@ -85,6 +85,10 @@ SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
 Rules:
 
 - Use `--use-cache` only outside production.
+- Every non-`--release` CLI run already sends conditional requests through the disk-backed HTTP validator cache (`server/src/scrapers/utils/httpValidatorCache.ts`, #3557), so an unchanged page costs a `304` instead of a full download while the lane still parses and emits it.
+  It writes nothing to Mongo, unlike `--use-cache`.
+  Knobs: `SCRAPER_HTTP_CACHE=off` disables it, `SCRAPER_HTTP_CACHE_DIR` moves it (default under `$XDG_CACHE_HOME`, else `~/.cache`, at `ylabs/scraper-http-cache`), and `SCRAPER_HTTP_CACHE_MAX_MB` bounds it (default 512).
+  Read `fetchMetrics.httpCache` on the `ScrapeRun` for `revalidations`, `notModified`, `bytesSaved`, and `bytesDownloaded`.
 - Start with `--limit`, `--only`, `--since`, or source-specific caps.
 - Use `--output <path>` on `yarn --cwd server scrape run` when a bounded dry-run or write should produce a saved report artifact. If a run was already completed without `--output`, use `yarn --cwd server scrape report --run <scrapeRunId> --output <path>`. Saved scraper CLI artifacts include command, target `environment`, `db`, parsed `options`, and the command-specific report payload.
 - Use `yarn --cwd server scrape materialize --run <scrapeRunId> --dry-run --output <path>` for a saved materialization review artifact before any standalone materialization write. Standalone write materialization requires `--confirm-materialize` in addition to the existing environment write guards. The materialize artifact includes the materialization result, optional visibility-gate result, ScrapeRun report, command, target `environment`, `db`, and parsed `options`.
@@ -616,6 +620,7 @@ Use these controls before spending cloud or API money:
 - Use `--limit`, `--only`, `--since`, and source-specific caps during the first pass.
 - Keep LLM sources gated until the exact target list is accepted.
 - Use `--use-cache` for development reruns only.
+- Prefer the default HTTP validator cache over `--use-cache` for reruns: it saves transfer without consuming the Development database quota (#3536).
 - Complete the tracked WorkPlanner cost-control work before unattended recurring paid/broad jobs.
 - `lab-microsite-description-llm` and `lab-microsite-undergrad-llm` skip the paid LLM call when a per-entity `sourceContentHash` observation matches the fresh page bytes, so repeat runs (including `--exhaustive` sweeps that bypass WorkPlanner freshness) do not re-pay for unchanged pages.
   Pass `--force-llm` only when intentionally re-extracting a source whose hash is up to date.

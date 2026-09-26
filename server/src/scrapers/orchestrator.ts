@@ -11,6 +11,7 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { appendObservations, getSourceByName } from './observationStore';
 import { readPriorRunYieldFacts, resolveBarrenStreakFailure } from './sourceYieldGuard';
+import { withHttpCacheFetchMetrics, withHttpValidatorCacheScope } from './utils/httpValidatorCache';
 import type {
   IScraper,
   ScraperContext,
@@ -130,7 +131,8 @@ export class ScraperOrchestrator {
     };
 
     try {
-      const result = (await scraper.run(ctx)) as ScraperResult;
+      const cached = await withHttpValidatorCacheScope(() => scraper.run(ctx));
+      const result = withHttpCacheFetchMetrics(cached.value as ScraperResult, cached.stats);
       const evidenceCoverageImpact =
         options.dryRun && options.dbReview
           ? await buildEvidenceCoverageImpactReportForObservations(previewObservations)
