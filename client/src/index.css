@@ -24,6 +24,7 @@
   --yr-blue-soft: #e6edf5;
   --yr-blue-border: color-mix(in srgb, #00356b 22%, white);
   --yr-gold-soft: #fff7e6;
+  --yr-gold-deep: #5d4722;
   --yr-green: #23705b;
   --yr-green-soft: #e5f4ee;
   --yr-shadow-raised: 0 1px 2px rgba(11, 31, 58, 0.04), 0 1px 1px rgba(11, 31, 58, 0.03);
@@ -257,7 +258,7 @@ code {
   .yr-pill-gold {
     border-color: color-mix(in srgb, var(--yr-gold) 24%, white);
     background: var(--yr-gold-soft);
-    color: #5d4722;
+    color: var(--yr-gold-deep);
   }
 
   .yr-pill-green {

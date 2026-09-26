@@ -125,7 +125,7 @@ const CombinedFilterDropdown = ({
         aria-haspopup={mobileSheet ? 'dialog' : undefined}
         onClick={() => (isOpen ? closeFilters(mobileSheet) : setIsOpen(true))}
         className="flex min-h-[44px] items-center rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring whitespace-nowrap"
-        style={{ color: '#374151' }}
+        style={{ color: 'var(--yr-ink-soft)' }}
       >
         <TagIcon className="h-4 w-4 text-muted mr-2" />
         <span>Filters</span>

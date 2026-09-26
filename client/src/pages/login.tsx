@@ -113,7 +113,7 @@ const Login = () => {
           )}
           <div className="mt-5 flex min-h-[44px] items-center">
             {isLoading ? (
-              <PulseLoader color="#00356b" size={10} />
+              <PulseLoader color="var(--yr-blue)" size={10} />
             ) : isAuthenticated ? (
               <Navigate to={getRedirectPath()} replace />
             ) : (

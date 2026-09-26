@@ -70,7 +70,7 @@ const FellowshipSortDropdown = () => {
             }, 100);
           }}
           className="flex min-h-[44px] min-w-[150px] items-center justify-between px-3 yr-focus-ring-inset whitespace-nowrap"
-          style={{ color: '#374151' }}
+          style={{ color: 'var(--yr-ink-soft)' }}
         >
           <span className="text-muted mr-1">Sort:</span>
           <span className="truncate">{currentLabel}</span>

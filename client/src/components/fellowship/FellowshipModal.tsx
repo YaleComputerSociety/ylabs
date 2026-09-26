@@ -302,7 +302,10 @@ const FellowshipModal = ({
         <div className="flex-shrink-0 border-b border-[var(--yr-line)]">
           <div
             className="h-1 w-full"
-            style={{ background: 'linear-gradient(90deg, #0055A4 0%, #3b82f6 50%, #93c5fd 100%)' }}
+            style={{
+              background:
+                'linear-gradient(90deg, var(--yr-navy) 0%, var(--yr-blue) 50%, var(--yr-blue-soft) 100%)',
+            }}
           />
           <div className="px-6 py-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
