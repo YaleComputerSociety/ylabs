@@ -15,7 +15,7 @@ const LITERAL_FORWARD_GLYPH = /[→➔➜⟶›»]/;
 /** The arrow path itself, which should exist in exactly one place. */
 const ARROW_PATH = /d="m12 5 7 7-7 7"|d="M5 12h14"/;
 
-const ARROW_ICON = 'components/shared/ArrowRightIcon.tsx';
+const ARROW_ICON = 'components/shared/icons.tsx';
 
 const componentFiles = (dir: string): string[] =>
   readdirSync(dir).flatMap((entry) => {
@@ -47,7 +47,7 @@ describe('shared glyph guard', () => {
     expect(sitesWhere((line) => LITERAL_FORWARD_GLYPH.test(line))).toEqual([]);
   });
 
-  it('draws the arrow path in exactly one component', () => {
+  it('draws the arrow path only in the icon set', () => {
     expect(sitesWhere((line, file) => ARROW_PATH.test(line) && file !== ARROW_ICON)).toEqual([]);
   });
 });

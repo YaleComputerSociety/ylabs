@@ -231,8 +231,15 @@ Demote the CTA to a text link in `brand` with the shared arrow, which is what th
 - A forward affordance is an icon, never a typed character.
 A literal `→` inherits the font's weight and metrics, so the same affordance rendered at a different size and stroke depending on which card you were looking at.
 `components/shared/ArrowRightIcon.tsx` is the only place the arrow path exists, and `src/__tests__/sharedGlyphGuard.test.ts` keeps it that way.
-- There is no icon set here: 42 inline `<svg>` elements are hand-rolled across 21 files, so a new glyph has nothing to match and stroke weights cannot be consistent by construction.
-Reuse an existing glyph, or extract one to `components/shared/` as `ArrowRightIcon` was, rather than drawing another.
+- Every icon comes from `components/shared/icons.tsx`, and nothing draws an SVG inline.
+The set shares one coordinate system (`0 0 24 24`), one stroke weight, and one sizing mechanism (a `size` prop), because none of those is enforceable at a call site.
+Before it, 40 inline SVG elements across 20 files drew 25 glyphs at five stroke widths and three viewBoxes, and three affordances had two drawings each: the close X as both a pair of `<line>` elements and a `<path>`, the check as a stroked path, a 20x20 solid path and a `<polyline>` at stroke widths 2 and 3, and the chevron as two different solid paths.
+Three stroke icons also carried no `strokeWidth` at all and so rendered at the SVG default of 1, visibly thinner than every sibling.
+- Add a glyph to the set rather than inline, and reuse one before adding.
+`src/__tests__/iconSetGuard.test.ts` fails on an inline SVG anywhere else, and pins that the set keeps one viewBox and one stroke weight.
+- `components/navbar/VennDiagramToggle.tsx` is the one exemption, and it is an illustration rather than an icon: two overlapping circles on a 24x16 canvas whose fill and stroke follow the selected match mode.
+Normalising it into the set would mean redrawing it.
+It does still hardcode three hex colours, which §2 forbids; that is tracked separately rather than quietly folded in here.
 - Every control also has a pressed state, which comes from a base rule on `button` rather than from a component class.
 This client has no button component: all of its buttons are styled ad hoc with utilities, and `bg-brand` alone is repeated 30 times, so there is no primitive to put the rule in.
 Keying it on the element reaches every button at once, and a call site that wants its own press behaviour still wins, because a utility beats `@layer base`.

@@ -2,6 +2,7 @@
  * Active filter chips display with remove functionality.
  */
 import React, { useRef, useEffect } from 'react';
+import { CloseIcon } from './icons';
 
 export interface QuickFilterDef {
   label: string;
@@ -87,22 +88,7 @@ const ActiveFilters = ({
                   >
                     {option.icon}
                     {option.label}
-                    {isActive && (
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="10"
-                        height="10"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    )}
+                    {isActive && <CloseIcon size={10} />}
                   </button>
                 );
               })}
@@ -146,14 +132,7 @@ const ActiveFilters = ({
                 onClick={onClearAll}
                 className="yr-focus-ring inline-flex min-h-[44px] items-center gap-1 rounded-control px-2 text-xs text-muted transition-colors hover:text-ink"
               >
-                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
+                <CloseIcon className="h-3 w-3" />
                 Clear all
               </button>
             )}

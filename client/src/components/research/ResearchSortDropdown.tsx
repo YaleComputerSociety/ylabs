@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { ArrowUpIcon, CheckIcon, ChevronDownIcon } from '../shared/icons';
 
 export type ResearchSortField = 'relevance' | 'name' | 'lastObservedAt';
 
@@ -90,15 +91,9 @@ const ResearchSortDropdown = ({
         >
           <span className="mr-1 text-muted">Sort:</span>
           <span className="truncate">{currentLabel}</span>
-          <svg
-            aria-hidden="true"
+          <ChevronDownIcon
             className={`ml-2 h-4 w-4 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`}
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-          </svg>
+          />
         </button>
 
         {sortBy !== 'relevance' && (
@@ -115,22 +110,12 @@ const ResearchSortDropdown = ({
               }
               title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                aria-hidden="true"
+              <ArrowUpIcon
                 className={`transition-transform duration-200 ${
                   sortOrder === 'asc' ? 'rotate-0' : 'rotate-180'
                 }`}
-              >
-                <path
-                  d="M12 5l7 7-1.41 1.41L13 8.83V19h-2V8.83L6.41 13.41 5 12l7-7z"
-                  fill="currentColor"
-                />
-              </svg>
+                size={14}
+              />
             </button>
           </>
         )}
@@ -153,22 +138,7 @@ const ResearchSortDropdown = ({
                 }`}
               >
                 <span>{option.label}</span>
-                {sortBy === option.value && (
-                  <svg
-                    aria-hidden="true"
-                    className="h-4 w-4 text-brand"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                )}
+                {sortBy === option.value && <CheckIcon className="h-4 w-4 text-brand" />}
               </li>
             ))}
           </ul>

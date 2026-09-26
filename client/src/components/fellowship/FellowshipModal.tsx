@@ -21,6 +21,7 @@ import {
 import { trackResearchEvent } from '../../utils/researchAnalytics';
 import FavoriteButton from '../shared/FavoriteButton';
 import LongText from '../shared/LongText';
+import { CloseIcon, ExternalLinkIcon, GlobeIcon, MailIcon } from '../shared/icons';
 
 interface FellowshipModalProps {
   fellowship: Fellowship;
@@ -351,21 +352,7 @@ const FellowshipModal = ({
                     aria-label={applicationActionLabel}
                     title={applicationActionLabel}
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                      <polyline points="15 3 21 3 21 9" />
-                      <line x1="10" y1="14" x2="21" y2="3" />
-                    </svg>
+                    <ExternalLinkIcon size={18} />
                   </a>
                 )}
                 {contactEmailHref && (
@@ -383,20 +370,7 @@ const FellowshipModal = ({
                     className={iconActionClass}
                     title="Email contact"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <rect x="2" y="4" width="20" height="16" rx="2" />
-                      <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-                    </svg>
+                    <MailIcon size={18} />
                   </a>
                 )}
                 <FavoriteButton
@@ -412,20 +386,7 @@ const FellowshipModal = ({
                   className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft yr-focus-ring"
                   aria-label="Close"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
+                  <CloseIcon className="h-5 w-5" />
                 </button>
               </div>
             </div>
@@ -543,21 +504,7 @@ const FellowshipModal = ({
                           }
                           className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-control px-2 text-sm text-brand hover:text-brand-navy hover:underline yr-focus-ring"
                         >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="flex-shrink-0"
-                          >
-                            <rect x="2" y="4" width="20" height="16" rx="2" />
-                            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-                          </svg>
+                          <MailIcon className="flex-shrink-0" size={14} />
                           <span className="truncate">{fellowship.contactEmail}</span>
                         </a>
                       )}
@@ -606,22 +553,7 @@ const FellowshipModal = ({
                           }}
                           className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-control px-2 text-sm text-brand hover:text-brand-navy hover:underline yr-focus-ring"
                         >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="flex-shrink-0"
-                          >
-                            <circle cx="12" cy="12" r="10" />
-                            <line x1="2" y1="12" x2="22" y2="12" />
-                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                          </svg>
+                          <GlobeIcon className="flex-shrink-0" size={14} />
                           <span className="truncate">{link.label || link.url}</span>
                         </a>
                       ))}
@@ -893,20 +825,7 @@ const FellowshipModal = ({
                         : applicationStatus.kind === 'notOpenYet'
                           ? 'Track Opening Date'
                           : 'Open Fellowship Source'}
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        className="ml-2"
-                      >
-                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                        <polyline points="15 3 21 3 21 9" />
-                        <line x1="10" y1="14" x2="21" y2="3" />
-                      </svg>
+                      <ExternalLinkIcon className="ml-2" size={16} />
                     </a>
                   </div>
                 )}

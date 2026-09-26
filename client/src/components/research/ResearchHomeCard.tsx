@@ -1,5 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { memo, type MouseEvent } from 'react';
+import { CheckIcon } from '../shared/icons';
 
 import {
   buildWayInBadges,
@@ -297,18 +298,7 @@ const ResearchHomeCard = ({
         >
           {leadAccessSignal && (
             <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--yr-green)]">
-              <svg
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                className="h-4 w-4 shrink-0"
-                aria-hidden="true"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M16.704 5.29a1 1 0 010 1.42l-7.5 7.5a1 1 0 01-1.42 0l-3.5-3.5a1 1 0 011.42-1.42l2.79 2.8 6.79-6.8a1 1 0 011.42 0z"
-                  clipRule="evenodd"
-                />
-              </svg>
+              <CheckIcon className="h-4 w-4 shrink-0" />
               {accessSignalLabel(leadAccessSignal)}
             </span>
           )}

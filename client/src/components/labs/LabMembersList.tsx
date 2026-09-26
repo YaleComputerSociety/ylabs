@@ -12,6 +12,7 @@ import { canonicalizeResearcherDepartmentLabel } from '../../utils/researcherDep
 import { DepartmentNameRecord } from '../../utils/departmentNames';
 import { cannotOwnResearchHome } from '../../utils/leadRoleDisplay';
 import { orcidRecordUrlFromMemberUser } from '../../utils/principalInvestigatorLinks';
+import { ExternalLinkIcon } from '../shared/icons';
 
 interface LabMembersListProps {
   members: LabMember[];
@@ -64,26 +65,6 @@ const ROLE_ORDER: Record<LabMemberRole, number> = {
   undergrad: 8,
   staff: 9,
 };
-
-const ExternalLinkIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="14"
-    height="14"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-    className="flex-shrink-0 text-muted transition-colors group-hover:text-brand"
-  >
-    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-    <polyline points="15 3 21 3 21 9" />
-    <line x1="10" y1="14" x2="21" y2="3" />
-  </svg>
-);
 
 const LabMemberCard = ({
   user,
@@ -175,7 +156,12 @@ const LabMemberCard = ({
           </p>
         )}
       </div>
-      {isExternalLink && <ExternalLinkIcon />}
+      {isExternalLink && (
+        <ExternalLinkIcon
+          className="flex-shrink-0 text-muted transition-colors group-hover:text-brand"
+          size={14}
+        />
+      )}
     </>
   );
   const identityCard =
