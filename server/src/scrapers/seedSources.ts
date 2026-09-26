@@ -290,7 +290,7 @@ const SOURCES: SourceSeed[] = [
     name: 'department-research-areas',
     displayName: 'Department research-overview pages',
     description:
-      "Yale FAS science and quantitative department research-overview pages as curated topical evidence for their faculty, the FAS analogue of bbs-research-track. Each curated theme heading maps to a research-area label grafted onto the existing home of every faculty member listed under it, cited to that faculty member's own profile URL. Grafts topics only onto homes that uniquely resolve; never mints an entity and never emits contact.",
+      "Yale FAS science department research-overview pages as curated topical evidence for their faculty, the FAS analogue of bbs-research-track. Each curated theme heading maps to a research-area label grafted onto the existing home of every faculty member listed under it, either inline or on the same-host theme page the heading links to, cited to that faculty member's own profile URL. Grafts topics only onto homes that uniquely resolve; never mints an entity and never emits contact.",
     baseUrl: '',
     defaultWeight: 0.8,
     cadence: 'weekly',
