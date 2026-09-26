@@ -13,6 +13,49 @@ export interface RedirectRecord {
 export interface CanonicalGroupRecord {
   entityId?: unknown;
   canonicalGroupId?: unknown;
+  archivedReason?: unknown;
+}
+
+export const labelProvenances = ['automated', 'other_attributed', 'unattributed'] as const;
+export type LabelProvenance = (typeof labelProvenances)[number];
+
+/**
+ * Who decided a merge label. `automated` is a merge a script in the engine made, so a matcher
+ * scored against it is scored against the system being measured; `unattributed` predates
+ * archive attribution and cannot be told apart. Neither is operator-adjudicated truth.
+ */
+export function labelProvenance(
+  archivedReason: unknown,
+  automatedReasons: readonly string[],
+): LabelProvenance {
+  const reason = idString(archivedReason);
+  if (!reason) return 'unattributed';
+  return automatedReasons.includes(reason) ? 'automated' : 'other_attributed';
+}
+
+/**
+ * Positive pairs for each provenance, each built only from that provenance's merge edges, so
+ * a recall over `other_attributed` never borrows a pair a script decided.
+ */
+export function groundTruthPairsByProvenance(
+  canonicalGroupRows: readonly CanonicalGroupRecord[],
+  automatedReasons: readonly string[],
+): Record<LabelProvenance, Set<string>> {
+  const edges: Record<LabelProvenance, IdEdge[]> = {
+    automated: [],
+    other_attributed: [],
+    unattributed: [],
+  };
+  for (const row of canonicalGroupRows) {
+    const from = idString(row.entityId);
+    const to = idString(row.canonicalGroupId);
+    if (from && to) edges[labelProvenance(row.archivedReason, automatedReasons)].push({ from, to });
+  }
+  return {
+    automated: clusterPairs(clustersFromEdges(edges.automated)),
+    other_attributed: clusterPairs(clustersFromEdges(edges.other_attributed)),
+    unattributed: clusterPairs(clustersFromEdges(edges.unattributed)),
+  };
 }
 
 export interface ResearcherDedupeRecord {

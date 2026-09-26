@@ -8,7 +8,11 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { buildFuzzyResidualPlan, type MatcherEntity } from './fuzzyResidualMatcher';
 import { normalizeToken } from './fuzzyMatchFeatures';
 import { loadFuzzyGroundTruth } from './fuzzyMatchLabeledSet';
+import { AUTOMATED_MERGE_ARCHIVE_REASONS } from '../../models/entityArchival';
+import { DEFAULT_EVAL_SAMPLE_SEED, seededSample } from './seededSample';
 import {
+  groundTruthPairsByProvenance,
+  labelProvenances,
   buildGroundTruthClusters,
   buildLabeledNegatives,
   clusterPairs,
@@ -26,15 +30,23 @@ interface Args {
   sample?: number;
   limit?: number;
   includeArchived: boolean;
+  seed: string;
 }
 
-function parseArgs(argv: string[]): Args {
-  const args: Args = { includeArchived: false };
+/**
+ * Archived rows are in by default because merge losers are archived: leaving them out drops
+ * most labeled positives from the loaded set and understates recall (#3514).
+ */
+export function parseArgs(argv: string[]): Args {
+  const args: Args = { includeArchived: true, seed: DEFAULT_EVAL_SAMPLE_SEED };
   for (const token of argv) {
     if (token.startsWith('--sample=')) args.sample = Number(token.slice('--sample='.length));
     else if (token.startsWith('--limit=')) args.limit = Number(token.slice('--limit='.length));
     else if (token === '--include-archived') args.includeArchived = true;
+    else if (token === '--live-only') args.includeArchived = false;
+    else if (token.startsWith('--seed=')) args.seed = token.slice('--seed='.length).trim();
   }
+  if (!args.seed) throw new Error('--seed must not be empty');
   return args;
 }
 
@@ -80,12 +92,12 @@ async function main() {
   const match = args.includeArchived ? {} : { archived: { $ne: true } };
   let docs: Record<string, any>[];
   if (args.sample && Number.isFinite(args.sample)) {
-    const projection = Object.fromEntries(SELECT.split(' ').map((f) => [f, 1]));
-    docs = (await ResearchEntity.aggregate([
-      { $match: match },
-      { $sample: { size: args.sample } },
-      { $project: { ...projection, _id: 1 } },
-    ])) as Record<string, any>[];
+    const ids = (
+      (await ResearchEntity.find(match).select('_id').lean()) as Array<{ _id: unknown }>
+    ).map((doc) => String(doc._id));
+    docs = (await ResearchEntity.find({ _id: { $in: seededSample(ids, args.sample, args.seed) } })
+      .select(SELECT)
+      .lean()) as Record<string, any>[];
   } else {
     const query = ResearchEntity.find(match).select(SELECT).lean();
     if (args.limit && Number.isFinite(args.limit)) query.limit(args.limit);
@@ -109,6 +121,17 @@ async function main() {
   );
 
   const inScopeNegatives = buildLabeledNegatives(buildInScopeQuarantines(entities));
+  const inScope = (pairs: Set<string>): Set<string> =>
+    new Set(
+      [...pairs].filter((key) => {
+        const [a, b] = key.split('|');
+        return loadedIds.has(a) && loadedIds.has(b);
+      }),
+    );
+  const positivesByProvenance = groundTruthPairsByProvenance(
+    groundTruth.canonicalGroupRows,
+    AUTOMATED_MERGE_ARCHIVE_REASONS,
+  );
 
   const { plan, candidatePairs } = buildFuzzyResidualPlan(entities);
   const autoPairs = new Set(
@@ -120,10 +143,11 @@ async function main() {
     generatedAt: new Date().toISOString(),
     db: dbLabel,
     selection: args.sample
-      ? `random-sample:${args.sample}`
+      ? `seeded-sample:${args.sample}`
       : args.limit
         ? `first:${args.limit}`
         : 'all',
+    seed: args.sample ? args.seed : undefined,
     includeArchived: args.includeArchived,
     entitiesLoaded: entities.length,
     candidatePairs: candidatePairs.size,
@@ -133,7 +157,14 @@ async function main() {
     inScopeNegatives: inScopeNegatives.size,
     blockingPairCompleteness: pairCompleteness(candidatePairs, inScopePositives),
     autoBandVsPositives: pairwiseMetrics(autoPairs, inScopePositives, inScopeNegatives),
-    note: 'Report-only. Precision is measured against same-name-different-PI hard negatives drawn from the loaded set. Use --include-archived for a true recall estimate (merge losers are often archived). No merges are applied.',
+    autoBandRecallByProvenance: Object.fromEntries(
+      labelProvenances.map((provenance) => {
+        const positives = inScope(positivesByProvenance[provenance]);
+        const metrics = pairwiseMetrics(autoPairs, positives, new Set());
+        return [provenance, { inScopePositives: positives.size, recall: metrics.recall }];
+      }),
+    ),
+    note: 'Report-only. Precision is measured against same-name-different-PI hard negatives drawn from the loaded set. Archived rows are loaded by default because merge losers are archived; --live-only understates recall. autoBandRecallByProvenance splits recall by who decided each label: automated labels come from the engine being measured and unattributed ones cannot be told apart. No merges are applied.',
   };
   console.log(JSON.stringify(report, null, 2));
 }

@@ -6,18 +6,21 @@ It never writes to live collections; description strategies draw text from the r
 Run it against a data-profile DB (Development) from `server/`:
 
 ```bash
-yarn eval:pipeline --sample=800 --llm --gate --trial=2 --output="$TMPDIR/pipeline-eval.json"
+yarn eval:pipeline --sample=800 --llm --gate --trials=3 --output="$TMPDIR/pipeline-eval.json"
 ```
 
 Flags:
 
-- `--scope=all` or `--scope=school:<name>` scopes the accuracy sample; `--sample=<N>` draws a random sample; `--limit=<N>` takes the first N.
+- `--scope=all` or `--scope=school:<name>` scopes the accuracy sample; `--sample=<N>` draws a seeded sample, the same rows every run for the same `--seed=<s>` (default `pipeline-eval`); `--limit=<N>` takes the first N.
 - `--llm` enables gpt-5-mini card synthesis in the decide-late strategies (same path as the materializer); omit for a fully deterministic run.
 - `--gate` recomputes student visibility via the real gate (dry-run) and breaks the not-ready backlog down by which lever addresses it (description vs duplicate vs lead).
+- `--trials=<N>` (with `--llm`) runs the LLM path N times and reports the spread of the C2 and C3 card-complete rates, because one LLM run is not repeatable and a difference smaller than the spread is not known to be real. The old `--trial=<N>` only labelled a run and is now refused.
 - `--concurrency=<N>` bounds synthesis concurrency; `--output=<path>` writes the JSON report under `$TMPDIR` or `./tmp`.
 
 Strategies scored: C0 (status-quo baseline over the stored collection), C1 (prevention-first identity clustering, basic vs rich keys), C2 (decide-late quality-preferring resolution over the full retained log), and C3 (hybrid of C1 and C2).
 Dedup accuracy is scored against the durable merge records (an archived row's `canonicalGroupId` tombstone) as labeled positives. The separate `research_entity_redirects` ledger was retired in #3027.
+Those labels are split by who decided the merge, from the archived row's `archivedReason`: `automated` (an archiver in `AUTOMATED_MERGE_ARCHIVE_REASONS`), `other_attributed`, and `unattributed`.
+Measured on Development on 2026-09-26, 2,735 of 3,183 merge rows were unattributed, 447 automated and 1 other, so almost no label is operator-adjudicated: recall against `automated` labels measures agreement with the engine's own past merges, not truth.
 `scoreDedupe` keys a merge as an unordered pair, so a correct merge is credited whichever member the prediction chose as canonical.
 
 ## Fuzzy-match labeled set
@@ -48,7 +51,9 @@ It is additive and never auto-merges; nothing is written to live collections.
 yarn fuzzy:residual-report --sample=800
 ```
 
-Flags: `--sample=<N>` draws a random sample, `--limit=<N>` takes the first N, and `--include-archived` includes archived entities for a truer recall estimate since merge losers are often archived.
+Flags: `--sample=<N>` draws a seeded sample (`--seed=<s>`), and `--limit=<N>` takes the first N.
+Archived entities are loaded by default, because merge losers are archived and leaving them out understates recall; `--live-only` excludes them.
+`autoBandRecallByProvenance` reports recall separately for each label provenance.
 
 `fuzzyResidualMatcher.ts` generates candidate pairs by blocking on surname metaphone, significant org tokens, department, and research area, plus embedding cosine ANN, then scores each pair.
 The scorer sums per-feature Fellegi-Sunter weights only for comparable features (both sides carry the data), applies hard vetoes for conflicting first names and incompatible entity types, and assigns each pair an `auto`, `review`, or `discard` band via two probability thresholds.

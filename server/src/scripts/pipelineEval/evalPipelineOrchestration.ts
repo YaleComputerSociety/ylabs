@@ -10,6 +10,7 @@ import { resolveSafeJsonReportOutputPath } from '../scriptWriteGuards';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { buildChurnMetrics, scoreAccuracy, type ScorableEntity } from './pipelineEvalMetrics';
 import { ratioOrNull, type MetricRatio } from './metricRatio';
+import { DEFAULT_EVAL_SAMPLE_SEED, seededSample } from './seededSample';
 import {
   scoreDescriptionStrategy,
   scoreDedupeStrategy,
@@ -31,12 +32,20 @@ interface EvalArgs {
   llm: boolean;
   gate: boolean;
   concurrency: number;
-  trial: number;
+  trials: number;
+  seed: string;
   output?: string;
 }
 
 function parseArgs(argv: string[]): EvalArgs {
-  const args: EvalArgs = { scope: 'all', llm: false, gate: false, concurrency: 6, trial: 1 };
+  const args: EvalArgs = {
+    scope: 'all',
+    llm: false,
+    gate: false,
+    concurrency: 6,
+    trials: 1,
+    seed: DEFAULT_EVAL_SAMPLE_SEED,
+  };
   for (const token of argv) {
     if (token.startsWith('--scope=')) args.scope = token.slice('--scope='.length);
     else if (token.startsWith('--limit=')) args.limit = Number(token.slice('--limit='.length));
@@ -45,9 +54,19 @@ function parseArgs(argv: string[]): EvalArgs {
     else if (token === '--gate') args.gate = true;
     else if (token.startsWith('--concurrency='))
       args.concurrency = Number(token.slice('--concurrency='.length));
-    else if (token.startsWith('--trial=')) args.trial = Number(token.slice('--trial='.length));
+    else if (token.startsWith('--trials=')) args.trials = Number(token.slice('--trials='.length));
+    else if (token.startsWith('--trial='))
+      throw new Error(
+        '--trial=N only labelled a run; use --trials=N with --llm to run the LLM path N times',
+      );
+    else if (token.startsWith('--seed=')) args.seed = token.slice('--seed='.length).trim();
     else if (token.startsWith('--output=')) args.output = token.slice('--output='.length);
   }
+  if (!Number.isInteger(args.trials) || args.trials < 1) throw new Error('--trials must be >= 1');
+  if (args.trials > 1 && !args.llm) {
+    throw new Error('--trials repeats the LLM path; without --llm every trial is identical');
+  }
+  if (!args.seed) throw new Error('--seed must not be empty');
   return args;
 }
 
@@ -68,7 +87,7 @@ async function runWithConcurrency<T>(
 }
 
 const ENTITY_FIELDS =
-  'slug name entityType kind fullDescription shortDescription researchAreas sourceUrls websiteUrl studentVisibilityTier canonicalGroupId archived inferredPiUserId departments';
+  'slug name entityType kind fullDescription shortDescription researchAreas sourceUrls websiteUrl studentVisibilityTier canonicalGroupId archivedReason archived inferredPiUserId departments';
 
 function scopeFilter(args: EvalArgs): Record<string, unknown> {
   if (args.scope.startsWith('school:')) {
@@ -92,6 +111,7 @@ function toEvalEntity(doc: Record<string, any>): EvalEntity {
     websiteUrl: doc.websiteUrl,
     studentVisibilityTier: doc.studentVisibilityTier,
     canonicalGroupId: doc.canonicalGroupId ? String(doc.canonicalGroupId) : null,
+    archivedReason: typeof doc.archivedReason === 'string' ? doc.archivedReason : undefined,
     archived: Boolean(doc.archived),
     inferredPiUserId: doc.inferredPiUserId ? String(doc.inferredPiUserId) : null,
     departments: doc.departments,
@@ -180,12 +200,14 @@ async function main() {
   const liveMatch = { ...filter, archived: { $ne: true } };
   let liveDocs: Record<string, any>[];
   if (args.sample && Number.isFinite(args.sample)) {
-    const projection = Object.fromEntries(ENTITY_FIELDS.split(' ').map((f) => [f, 1]));
-    liveDocs = (await ResearchEntity.aggregate([
-      { $match: liveMatch },
-      { $sample: { size: args.sample } },
-      { $project: { ...projection, _id: 1 } },
-    ])) as Record<string, any>[];
+    const ids = (
+      (await ResearchEntity.find(liveMatch).select('_id').lean()) as Array<{ _id: unknown }>
+    ).map((doc) => String(doc._id));
+    liveDocs = (await ResearchEntity.find({
+      _id: { $in: seededSample(ids, args.sample, args.seed) },
+    })
+      .select(ENTITY_FIELDS)
+      .lean()) as Record<string, any>[];
   } else {
     const liveQuery = ResearchEntity.find(liveMatch).select(ENTITY_FIELDS).lean();
     if (args.limit && Number.isFinite(args.limit)) liveQuery.limit(args.limit);
@@ -204,29 +226,40 @@ async function main() {
   const obsByEntity = await loadDescriptionObservations(liveSlugs, liveIds);
   const loadMs = Date.now() - loadStart;
 
-  const synthCache: SynthesisCache | undefined = args.llm ? new Map() : undefined;
-  let synthTargets = 0;
-  let synthResolvedNonEmpty = 0;
-  let synthErrors = 0;
-  let synthMs = 0;
-  if (args.llm && synthCache) {
+  const runSynthesis = async (): Promise<{
+    cache: SynthesisCache | undefined;
+    targets: number;
+    resolvedNonEmpty: number;
+    errors: number;
+    ms: number;
+  }> => {
+    if (!args.llm) return { cache: undefined, targets: 0, resolvedNonEmpty: 0, errors: 0, ms: 0 };
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error('--llm requires OPENAI_API_KEY');
+    const cache: SynthesisCache = new Map();
     const targets = collectSynthesisTargets(liveEntities, obsByEntity);
-    synthTargets = targets.length;
-    const synthStart = Date.now();
+    let resolvedNonEmpty = 0;
+    let errors = 0;
+    const start = Date.now();
     await runWithConcurrency(targets, args.concurrency, async (target) => {
       try {
         const short = await synthesizeCardShort(target, apiKey);
-        synthCache.set(target.fullText, short);
-        if (short) synthResolvedNonEmpty += 1;
+        cache.set(target.fullText, short);
+        if (short) resolvedNonEmpty += 1;
       } catch {
-        synthErrors += 1;
-        synthCache.set(target.fullText, '');
+        errors += 1;
+        cache.set(target.fullText, '');
       }
     });
-    synthMs = Date.now() - synthStart;
-  }
+    return { cache, targets: targets.length, resolvedNonEmpty, errors, ms: Date.now() - start };
+  };
+
+  const firstSynthesis = await runSynthesis();
+  const synthCache = firstSynthesis.cache;
+  const synthTargets = firstSynthesis.targets;
+  const synthResolvedNonEmpty = firstSynthesis.resolvedNonEmpty;
+  const synthErrors = firstSynthesis.errors;
+  const synthMs = firstSynthesis.ms;
 
   // C0 - status quo baseline: score the stored collection as-is.
   const c0Start = Date.now();
@@ -259,6 +292,30 @@ async function main() {
   const c3Start = Date.now();
   const c3 = scoreDescriptionStrategy(survivorLive, obsByEntity, synthCache);
   const c3Ms = Date.now() - c3Start;
+
+  const trialRates = [
+    {
+      c2CardCompleteRate: c2.accuracy.cardCompleteRate,
+      c3CardCompleteRate: c3.accuracy.cardCompleteRate,
+      synthesizedNonEmpty: synthResolvedNonEmpty,
+    },
+  ];
+  for (let trial = 2; trial <= args.trials; trial += 1) {
+    const synthesis = await runSynthesis();
+    trialRates.push({
+      c2CardCompleteRate: scoreDescriptionStrategy(liveEntities, obsByEntity, synthesis.cache)
+        .accuracy.cardCompleteRate,
+      c3CardCompleteRate: scoreDescriptionStrategy(survivorLive, obsByEntity, synthesis.cache)
+        .accuracy.cardCompleteRate,
+      synthesizedNonEmpty: synthesis.resolvedNonEmpty,
+    });
+  }
+  const spread = (values: MetricRatio[]) => {
+    const known = values.filter((value): value is number => value !== null);
+    return known.length === 0
+      ? { min: null, max: null, values }
+      : { min: Math.min(...known), max: Math.max(...known), values };
+  };
 
   const DESCRIPTION_BLOCKERS = new Set([
     'thin_description',
@@ -352,11 +409,11 @@ async function main() {
 
   const report = {
     generatedAt: new Date().toISOString(),
-    trial: args.trial,
     db: dbLabel,
     scope: args.scope,
+    seed: args.sample ? args.seed : undefined,
     selection: args.sample
-      ? `random-sample:${args.sample}`
+      ? `seeded-sample:${args.sample}`
       : args.limit
         ? `first:${args.limit}`
         : 'all',
@@ -384,7 +441,18 @@ async function main() {
       'C2/C3 differ from C0 by resolving descriptions over the FULL retained set (active + superseded), quality-preferring; C0 is the stored materialized collection.',
       'studentReady counts reflect the STORED tier and are not recomputed for C2/C3 (tier needs gate roster/signal context); the description-axis metric is cardCompleteRate + cardRecovered.',
       'C1 dedup precision has no labeled negative set; newMergeSamePi vs newMergeDifferentPiOrUnknown is an approximate precision proxy for predicted-new merges.',
+      'C1 recall is split by who decided each merge label: automated labels were made by the engine being measured, and unattributed ones predate archive attribution, so neither is operator-adjudicated truth.',
     ],
+    trials:
+      args.trials > 1
+        ? {
+            count: args.trials,
+            c2CardCompleteRate: spread(trialRates.map((trial) => trial.c2CardCompleteRate)),
+            c3CardCompleteRate: spread(trialRates.map((trial) => trial.c3CardCompleteRate)),
+            synthesizedNonEmpty: trialRates.map((trial) => trial.synthesizedNonEmpty),
+            note: 'An LLM run is not repeatable, so a C2/C3 difference smaller than this spread is not known to be real. Strategies below report trial 1.',
+          }
+        : undefined,
     gateBlockerBreakdown: gate,
     strategies: {
       C0: {
@@ -421,6 +489,7 @@ async function main() {
           groundTruthMergedPairs: c1.groundTruthMergedPairs,
           groundTruthCaught: c1.groundTruthCaught,
           recall: c1.recall,
+          groundTruthByProvenance: c1.groundTruthByProvenance,
           avoidedMints: c1.avoidedMints,
           predictedClusters: c1.predictedClusters,
           predictedNewMergePairs: c1.predictedNewMergePairs,
