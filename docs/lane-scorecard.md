@@ -43,8 +43,8 @@ Every capture and replay still goes through the orchestrator, so each one leaves
 - `labeledEntityEmitted` is the part of that population a frozen refusal could have judged: a value on a row that carries a refusal at a field this observation is evidence for.
 - `knownWrong` is how many of those a refusal names.
 - `outputFingerprint` hashes the planned values regardless of order, so two rows with the same fingerprint emitted exactly the same thing.
-A full timestamp inside a value is masked first, because a lane can stamp the moment it read a page into a value, as the `dept-faculty-roster` health record does, and that clock alone made every replay of that lane differ.
-A date a page states has no time of day and still counts.
+A `readAt` key inside a value is masked first, because it is the moment the lane read the page, as in the `dept-faculty-roster` health record's `read.readAt`, and that clock alone made every replay of that lane differ.
+Every other date still counts, including a page-stated deadline serialized as a full instant.
 Fingerprints stored before this masking landed are not comparable with later ones.
 
 The ratio to watch is `knownWrong / labeledEntityEmitted`, never `1 - knownWrong / emitted`.

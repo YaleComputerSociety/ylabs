@@ -108,6 +108,13 @@ describe('plannedOutputFingerprint', () => {
     );
   });
 
+  it('still counts a page-stated deadline serialized as a full instant', () => {
+    const opening = (deadline: string) => ({ ...a, value: { deadline } });
+    expect(plannedOutputFingerprint([opening('2026-09-01T00:00:00.000Z')])).not.toBe(
+      plannedOutputFingerprint([opening('2026-09-02T00:00:00.000Z')]),
+    );
+  });
+
   it('changes when a planned value changes', () => {
     expect(plannedOutputFingerprint([a, b])).not.toBe(
       plannedOutputFingerprint([a, { ...b, value: 'B2' }]),

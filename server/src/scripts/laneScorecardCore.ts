@@ -47,17 +47,17 @@ function labelsBySlug(labels: readonly BenchmarkLabel[]): Map<string, BenchmarkL
   return bySlug;
 }
 
-const WALL_CLOCK_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const LANE_STAMPED_INSTANT_KEY = 'readAt';
 
-const withoutWallClock = (_key: string, value: unknown): unknown =>
-  typeof value === 'string' && WALL_CLOCK_INSTANT.test(value) ? 'instant' : value;
+const withoutWallClock = (key: string, value: unknown): unknown =>
+  key === LANE_STAMPED_INSTANT_KEY ? 'instant' : value;
 
 /**
  * Order-independent, so a lane that emits the same values in a different order replays to
- * the same fingerprint, and any change in what it emits changes it. A full instant is
- * masked because a lane can stamp when it read a page into a value, as the roster health
- * record's `read.readAt` does, and that clock would make every replay differ. A page-stated
- * date carries no time of day, so it still counts.
+ * the same fingerprint, and any change in what it emits changes it. A `readAt` key is
+ * masked because it is the moment the lane read the page, as in the roster health record's
+ * `read.readAt`, and that clock would make every replay differ. Any other date, including a
+ * page-stated one serialized as a full instant, still counts.
  */
 export function plannedOutputFingerprint(observations: readonly PlannedObservation[]): string {
   const lines = observations
