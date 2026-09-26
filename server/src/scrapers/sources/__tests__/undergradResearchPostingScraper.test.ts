@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  DEFAULT_UNDERGRAD_RESEARCH_POSTING_PAGES,
+  NO_CONFIGURED_POSTING_PAGES_NOTE,
   UndergradResearchPostingScraper,
   parseUndergradResearchPostingsPage,
   undergradResearchPostingObservations,
@@ -9,7 +11,7 @@ import type { ObservationInput, ScraperContext } from '../../types';
 
 const CONFIG = {
   key: 'test-board',
-  url: 'https://science.yalecollege.yale.edu/research-opportunities/current-openings',
+  url: 'https://postings.example.yale.edu/undergraduate-research',
   blockSelector: 'article',
 };
 
@@ -204,5 +206,96 @@ describe('UndergradResearchPostingScraper.run source concurrency', () => {
     expect(parallel.emittedKeys).toEqual(serial.emittedKeys);
     expect(parallel.result.entitiesObserved).toBe(serial.result.entitiesObserved);
     expect(parallel.result.observationCount).toBe(serial.result.observationCount);
+  });
+});
+
+describe('UndergradResearchPostingScraper.run page failures (#3550)', () => {
+  const makeCtx = (emitted: ObservationInput[][]): ScraperContext =>
+    ({
+      scrapeRunId: 'run',
+      sourceId: 'src',
+      sourceName: 'undergrad-research-posting',
+      sourceWeight: 1,
+      options: { dryRun: true, useCache: false, release: false, sourceConcurrency: 1 },
+      emit: vi.fn(async (obs: ObservationInput | ObservationInput[]) => {
+        emitted.push(Array.isArray(obs) ? obs : [obs]);
+      }),
+      log: vi.fn(),
+    }) as unknown as ScraperContext;
+
+  const notFound = () =>
+    Object.assign(new Error('Request failed with status code 404'), {
+      response: { status: 404 },
+    });
+
+  const movedPage = {
+    key: 'moved-board',
+    url: 'https://postings.example.yale.edu/moved',
+    blockSelector: 'article',
+  };
+  const livePage = {
+    key: 'live-board',
+    url: 'https://postings.example.yale.edu/live',
+    blockSelector: 'article',
+  };
+
+  const resolveSmithLab = async (name: string) =>
+    name === 'Smith Lab'
+      ? { entityId: '64f000000000000000000009', slug: 'smith-lab', name: 'Smith Lab' }
+      : null;
+
+  it('configures no page by default and says so instead of fetching an invented source', async () => {
+    expect(DEFAULT_UNDERGRAD_RESEARCH_POSTING_PAGES).toEqual([]);
+    const emitted: ObservationInput[][] = [];
+    const fetchHtml = vi.fn(async () => COMPLETE_POSTING_HTML);
+    const scraper = new UndergradResearchPostingScraper({ fetchHtml, now: () => NOW });
+
+    const result = await scraper.run(makeCtx(emitted));
+
+    expect(fetchHtml).not.toHaveBeenCalled();
+    expect(emitted).toEqual([]);
+    expect(result.observationCount).toBe(0);
+    expect(result.notes).toBe(NO_CONFIGURED_POSTING_PAGES_NOTE);
+  });
+
+  it('records a failed page in the notes and still emits from the pages that load', async () => {
+    const emitted: ObservationInput[][] = [];
+    const scraper = new UndergradResearchPostingScraper({
+      pageConfigs: [movedPage, livePage],
+      fetchHtml: async (url) => {
+        if (url === movedPage.url) throw notFound();
+        return COMPLETE_POSTING_HTML;
+      },
+      resolveHiringHome: resolveSmithLab,
+      now: () => NOW,
+    });
+
+    const result = await scraper.run(makeCtx(emitted));
+
+    expect(result.entitiesObserved).toBe(1);
+    expect(emitted.flat().filter((o) => o.field === 'postedOpening')).toHaveLength(1);
+    expect(result.notes).toContain('moved-board=fetch-failed(404)');
+    expect(result.notes).toContain('live-board=1');
+    expect(result.notes).toContain('1 page(s) skipped after fetch/parse failure');
+    expect(result.fetchMetrics?.summary).toMatchObject({ total: 2, succeeded: 1, failed: 1 });
+    expect(result.fetchMetrics?.attempts.find((a) => !a.success)).toMatchObject({
+      target: movedPage.url,
+      statusCode: 404,
+    });
+  });
+
+  it('fails the run when every attempted page fails, rather than reporting an empty success', async () => {
+    const scraper = new UndergradResearchPostingScraper({
+      pageConfigs: [movedPage],
+      fetchHtml: async () => {
+        throw notFound();
+      },
+      resolveHiringHome: resolveSmithLab,
+      now: () => NOW,
+    });
+
+    await expect(scraper.run(makeCtx([]))).rejects.toThrow(
+      /Every attempted undergraduate research posting page failed \(1\/1\): moved-board=fetch-failed\(404\)/,
+    );
   });
 });

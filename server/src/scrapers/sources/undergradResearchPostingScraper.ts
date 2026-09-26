@@ -20,7 +20,14 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
-import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import { buildFetchAttemptMetrics, summarizeFetchMetrics } from '../renderedFetch';
+import type {
+  IScraper,
+  ObservationInput,
+  ScraperContext,
+  ScraperFetchMetric,
+  ScraperResult,
+} from '../types';
 import { ResearchEntity } from '../../models/researchEntity';
 import { slugify } from '../utils/scraperHelpers';
 import {
@@ -29,6 +36,7 @@ import {
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { fetchFailureMessage, fetchFailureStatusCode } from '../utils/fetchFailure';
 
 export const UNDERGRAD_RESEARCH_POSTING_SOURCE = 'undergrad-research-posting';
 
@@ -73,14 +81,15 @@ export interface UndergradResearchPostingScraperDeps {
  * (like the official research-home roster): an operator confirms each page is
  * reliably public and enables it on Development after verifying the live
  * capture, per docs/scraper-deployment-runbook.md.
+ *
+ * Empty on purpose (#3550): the one page configured by #1568 never existed, and
+ * no official public Yale page publishes postings in this shape. Add a page only
+ * after confirming a live capture, never a guessed URL.
  */
-export const DEFAULT_UNDERGRAD_RESEARCH_POSTING_PAGES: UndergradResearchPostingPageConfig[] = [
-  {
-    key: 'yale-college-research-opportunities',
-    url: 'https://science.yalecollege.yale.edu/research-opportunities/current-openings',
-    blockSelector: 'article, .opportunity, .listing, .views-row, li',
-  },
-];
+export const DEFAULT_UNDERGRAD_RESEARCH_POSTING_PAGES: UndergradResearchPostingPageConfig[] = [];
+
+export const NO_CONFIGURED_POSTING_PAGES_NOTE =
+  'Undergraduate research postings: no source page is configured, because no official public Yale page publishes per-posting title, hiring entity, deadline, and apply route (#3550); emitted nothing';
 
 function normalizeText(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
@@ -302,10 +311,16 @@ export class UndergradResearchPostingScraper implements IScraper {
       ctx.options.only && ctx.options.only.length > 0
         ? new Set(ctx.options.only.map((value) => value.trim().toLowerCase()).filter(Boolean))
         : null;
+    if (this.pageConfigs.length === 0) {
+      ctx.log(NO_CONFIGURED_POSTING_PAGES_NOTE);
+      return { observationCount: 0, entitiesObserved: 0, notes: NO_CONFIGURED_POSTING_PAGES_NOTE };
+    }
     let totalObs = 0;
     let totalEntities = 0;
     let unresolved = 0;
+    let failedPages = 0;
     const summaries: string[] = [];
+    const fetchAttempts: ScraperFetchMetric[] = [];
 
     const pages = this.pageConfigs.filter((page) => !only || only.has(page.key.toLowerCase()));
     const concurrency = resolveSourceConcurrency(
@@ -314,8 +329,41 @@ export class UndergradResearchPostingScraper implements IScraper {
     );
     await mapWithConcurrency(pages, concurrency, async (page) => {
       ctx.log(`Fetching ${page.url}`);
-      const html = await this.fetchHtml(page.url, ctx.options.useCache);
-      const postings = parseUndergradResearchPostingsPage(html, page, this.now());
+      const startedAt = performance.now();
+      let html: string;
+      try {
+        html = await this.fetchHtml(page.url, ctx.options.useCache);
+      } catch (err: unknown) {
+        failedPages += 1;
+        const statusCode = fetchFailureStatusCode(err);
+        fetchAttempts.push({
+          ...buildFetchAttemptMetrics({ fetchMode: 'http', success: false, startedAt }),
+          target: page.url,
+          statusCode,
+          errorMessage: fetchFailureMessage(err),
+        });
+        ctx.log(`[${page.key}] fetch failed, skipping page: ${fetchFailureMessage(err)}`);
+        summaries.push(`${page.key}=fetch-failed${statusCode ? `(${statusCode})` : ''}`);
+        return;
+      }
+      const fetchMetric = buildFetchAttemptMetrics({ fetchMode: 'http', success: true, startedAt });
+      let postings: RawUndergradResearchPosting[];
+      try {
+        postings = parseUndergradResearchPostingsPage(html, page, this.now());
+      } catch (err: unknown) {
+        failedPages += 1;
+        fetchAttempts.push({
+          ...fetchMetric,
+          success: false,
+          selectorBreakage: true,
+          target: page.url,
+          errorMessage: fetchFailureMessage(err),
+        });
+        ctx.log(`[${page.key}] parse failed, skipping page: ${fetchFailureMessage(err)}`);
+        summaries.push(`${page.key}=parse-failed`);
+        return;
+      }
+      fetchAttempts.push({ ...fetchMetric, target: page.url });
       let emitted = 0;
       for (const posting of postings) {
         const home = await this.resolveHiringHome(posting.hiringHome);
@@ -333,10 +381,19 @@ export class UndergradResearchPostingScraper implements IScraper {
       summaries.push(`${page.key}=${emitted}`);
     });
 
+    if (pages.length > 0 && failedPages === pages.length) {
+      throw new Error(
+        `Every attempted undergraduate research posting page failed (${failedPages}/${pages.length}): ${summaries.join(', ')}`,
+      );
+    }
+
+    const failureNote =
+      failedPages > 0 ? ` (${failedPages} page(s) skipped after fetch/parse failure)` : '';
     return {
       observationCount: totalObs,
       entitiesObserved: totalEntities,
-      notes: `Undergraduate research postings: ${summaries.join(', ')}; unresolved hiring homes: ${unresolved}`,
+      notes: `Undergraduate research postings: ${summaries.join(', ')}${failureNote}; unresolved hiring homes: ${unresolved}`,
+      fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }
 }
