@@ -52,7 +52,6 @@ import {
   sourceLedgerKey,
 } from '../utils/researchDetailSources';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeMailtoHref, safeRouteSegment } from '../utils/url';
-import { composeStudentIntroEmailDraft } from '../utils/introEmailComposer';
 import { officialProfileUrlFromMemberUser } from '../utils/principalInvestigatorLinks';
 import { formatTitleCaseLabel } from '../utils/displayText';
 import {
@@ -457,15 +456,7 @@ const DecisionSummary = ({
   const piAffiliation = [(canonicalPiDepartment || '').trim(), (group.school || '').trim()]
     .filter(Boolean)
     .join(' · ');
-  const introEmailDraft = composeStudentIntroEmailDraft({
-    entityName: researchEntityTitle(group),
-    leadName: piName,
-    researchAreas: topics,
-  });
-  const piMailtoHref = safeMailtoHref(piEmail, {
-    subject: introEmailDraft.subject,
-    body: introEmailDraft.body,
-  });
+  const piMailtoHref = safeMailtoHref(piEmail);
   const hasActionablePath =
     Boolean(piMailtoHref) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
   const hasEvidenceDetail = Boolean(grantSummary) || Boolean(pastAdvisees);
@@ -591,7 +582,6 @@ const DecisionSummary = ({
                   singleColumn
                   entityDepartments={group.departments}
                   resolveMemberProfileUrl={() => leadCardProfileUrl}
-                  resolveMemberEmailHref={() => piMailtoHref || undefined}
                 />
               </div>
             </div>
@@ -1005,21 +995,6 @@ const LabDetail = () => {
     leadIdentityUnderReview || principalInvestigators.length !== 1;
   const resolveLeadOfficialProfileUrl = (member: LabMember): string | undefined =>
     officialProfileUrlFromMemberUser(member.user as unknown as Record<string, unknown>);
-  /**
-   * Carries a composed intro draft onto the lead card's email line, so the subject and body
-   * scaffolded in #1431 survive now that the email is a side link rather than the primary CTA.
-   * Composed per member rather than once per page, so a multi-lead card greets its own lead.
-   */
-  const resolveLeadIntroEmailHref = (member: LabMember): string | undefined => {
-    const email = member.user?.email;
-    if (!email) return undefined;
-    const draft = composeStudentIntroEmailDraft({
-      entityName: researchEntityTitle(group),
-      leadName: memberPersonName(member),
-      researchAreas: detailTopics(group, 5),
-    });
-    return safeMailtoHref(email, { subject: draft.subject, body: draft.body }) || undefined;
-  };
   const leadProfilesLinkedInline =
     showDedicatedPrincipalInvestigatorSection &&
     !leadIdentityUnderReview &&
@@ -1177,7 +1152,6 @@ const LabDetail = () => {
                   members={principalInvestigators}
                   entityDepartments={group.departments}
                   resolveMemberProfileUrl={resolveLeadOfficialProfileUrl}
-                  resolveMemberEmailHref={resolveLeadIntroEmailHref}
                 />
               )}
             </section>

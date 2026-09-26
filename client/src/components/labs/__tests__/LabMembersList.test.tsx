@@ -361,20 +361,6 @@ describe('LabMembersList lead email line', () => {
     expect(link.getAttribute('href')).toBe('mailto:ada.fixture@example.test');
   });
 
-  it('prefers a caller-supplied drafted href over a bare mailto', () => {
-    render(
-      <ConfigContext.Provider value={defaultConfigContext}>
-        <LabMembersList
-          members={[leadMember]}
-          resolveMemberEmailHref={() => 'mailto:ada.fixture@example.test?subject=Drafted'}
-        />
-      </ConfigContext.Provider>,
-    );
-    expect(screen.getByRole('link', { name: 'Email Ada Fixture' }).getAttribute('href')).toBe(
-      'mailto:ada.fixture@example.test?subject=Drafted',
-    );
-  });
-
   it('renders no email line when the member has no email', () => {
     render(
       <ConfigContext.Provider value={defaultConfigContext}>

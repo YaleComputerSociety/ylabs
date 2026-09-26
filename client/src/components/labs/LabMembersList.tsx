@@ -24,7 +24,6 @@ interface LabMembersListProps {
   singleColumn?: boolean;
   entityDepartments?: Array<string | undefined | null>;
   resolveMemberProfileUrl?: (member: LabMember) => string | undefined;
-  resolveMemberEmailHref?: (member: LabMember) => string | undefined;
 }
 
 const ROLE_LABELS: Record<LabMemberRole, string> = {
@@ -80,7 +79,6 @@ const LabMemberCard = ({
   pillEligibleLabels,
   entityDepartments,
   profileUrl,
-  emailHref,
 }: {
   user: LabMember['user'];
   role: LabMemberRole;
@@ -89,7 +87,6 @@ const LabMemberCard = ({
   pillEligibleLabels: readonly string[];
   entityDepartments: Array<string | undefined | null>;
   profileUrl?: string;
-  emailHref?: string;
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const fullName = user.displayName || `${user.fname} ${user.lname}`.trim();
@@ -106,8 +103,7 @@ const LabMemberCard = ({
     ? NEUTRAL_NON_OWNER_ROLE_PILL
     : ROLE_PILL_CLASSES[role];
   const orcidUrl = orcidRecordUrlFromMemberUser(user);
-  // Prefers the caller's href so the intro-email draft composed for this page survives (#1431).
-  const resolvedEmailHref = emailHref || safeMailtoHref(user.email);
+  const resolvedEmailHref = safeMailtoHref(user.email);
 
   const isExternalLink = Boolean(profileUrl);
   const isInteractive = isExternalLink;
@@ -219,7 +215,6 @@ const LabMembersList = ({
   singleColumn = false,
   entityDepartments = [],
   resolveMemberProfileUrl,
-  resolveMemberEmailHref,
 }: LabMembersListProps) => {
   const { departments, departmentPillEligibleLabels } = useConfig();
   if (!members || members.length === 0) {
@@ -268,7 +263,6 @@ const LabMembersList = ({
             pillEligibleLabels={departmentPillEligibleLabels}
             entityDepartments={entityDepartments}
             profileUrl={safeHttpUrl(resolveMemberProfileUrl?.(member))}
-            emailHref={resolveMemberEmailHref?.(member)}
           />
         );
       })}
