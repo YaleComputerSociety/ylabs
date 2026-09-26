@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
@@ -336,5 +336,53 @@ describe('LabMembersList', () => {
 
     expect(container.textContent).not.toContain('EASAPP');
     expect(container.textContent).not.toContain('Research Unit');
+  });
+});
+
+describe('LabMembersList lead email line', () => {
+  const leadMember = {
+    role: 'pi' as const,
+    user: {
+      fname: 'Ada',
+      lname: 'Fixture',
+      displayName: 'Ada Fixture',
+      email: 'ada.fixture@example.test',
+    },
+  };
+
+  it('shows the lead email as a side link beside the card', () => {
+    render(
+      <ConfigContext.Provider value={defaultConfigContext}>
+        <LabMembersList members={[leadMember]} />
+      </ConfigContext.Provider>,
+    );
+    const link = screen.getByRole('link', { name: 'Email Ada Fixture' });
+    expect(link.textContent).toBe('ada.fixture@example.test');
+    expect(link.getAttribute('href')).toBe('mailto:ada.fixture@example.test');
+  });
+
+  it('prefers a caller-supplied drafted href over a bare mailto', () => {
+    render(
+      <ConfigContext.Provider value={defaultConfigContext}>
+        <LabMembersList
+          members={[leadMember]}
+          resolveMemberEmailHref={() => 'mailto:ada.fixture@example.test?subject=Drafted'}
+        />
+      </ConfigContext.Provider>,
+    );
+    expect(screen.getByRole('link', { name: 'Email Ada Fixture' }).getAttribute('href')).toBe(
+      'mailto:ada.fixture@example.test?subject=Drafted',
+    );
+  });
+
+  it('renders no email line when the member has no email', () => {
+    render(
+      <ConfigContext.Provider value={defaultConfigContext}>
+        <LabMembersList
+          members={[{ ...leadMember, user: { ...leadMember.user, email: undefined } }]}
+        />
+      </ConfigContext.Provider>,
+    );
+    expect(screen.queryByRole('link', { name: 'Email Ada Fixture' })).toBeNull();
   });
 });
