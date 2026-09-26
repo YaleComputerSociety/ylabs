@@ -25,7 +25,6 @@ import {
   personProfileIdentityFromUrl,
   specificProfileLabUrlIdentityKey,
   ORG_NAME_DEDUPE_ENTITY_TYPES,
-  isLowTrustAreaShellSlug,
   MERGE_RELINKABLE_OBSERVATION_FIELDS,
   planStrandedFundingObservationRelink,
   type MultiPersonEntityQuarantine,
@@ -37,6 +36,7 @@ import {
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
 } from './researchEntityPiDedupeCore';
+import { isLowTrustAreaShellSlug } from '../utils/researchEntityShellSlug';
 import {
   buildArchivedEntityArtifactRepairPlan,
   type ArchivedEntityArtifact,

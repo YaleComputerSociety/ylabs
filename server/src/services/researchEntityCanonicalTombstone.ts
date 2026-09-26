@@ -57,6 +57,46 @@ export async function resolveResearchEntityCanonicalByTombstone(
   return walkResearchEntityTombstoneChain(shell, { findById: findEntityById });
 }
 
+export interface MergedInResearchEntityRow {
+  _id: mongoose.Types.ObjectId;
+  slug?: string;
+}
+
+/**
+ * Lists every archived row whose tombstone chain resolves to `survivorId`, walking
+ * the chain in reverse. Only archived rows are traversed, so a live row that some
+ * shell points at is another survivor and is never folded into this one.
+ */
+export async function listResearchEntityMergedInRows(
+  survivorId: string | mongoose.Types.ObjectId,
+  maxHops: number = MAX_RESEARCH_ENTITY_TOMBSTONE_HOPS,
+): Promise<MergedInResearchEntityRow[]> {
+  if (!mongoose.Types.ObjectId.isValid(String(survivorId))) return [];
+  const root = new mongoose.Types.ObjectId(String(survivorId));
+  const visited = new Set<string>([String(root)]);
+  const mergedIn: MergedInResearchEntityRow[] = [];
+  let frontier: mongoose.Types.ObjectId[] = [root];
+
+  for (let hop = 0; hop < maxHops && frontier.length > 0; hop += 1) {
+    const rows = (await ResearchEntity.find({
+      canonicalGroupId: { $in: frontier },
+      archived: true,
+    })
+      .select('_id slug')
+      .lean()) as MergedInResearchEntityRow[];
+    frontier = [];
+    for (const row of rows) {
+      const id = String(row._id);
+      if (visited.has(id)) continue;
+      visited.add(id);
+      mergedIn.push(row);
+      frontier.push(row._id);
+    }
+  }
+
+  return mergedIn;
+}
+
 export interface ResearchEntityCanonicalLookup {
   slug?: string;
   entityId?: string | mongoose.Types.ObjectId;
