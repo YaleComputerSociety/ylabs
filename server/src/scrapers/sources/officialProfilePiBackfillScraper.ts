@@ -13,7 +13,11 @@ import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 import { normalizeOrcid } from '../../utils/orcid';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
-import { entityKeyNamesOnlyThisPerson } from '../../utils/researchHomeNameIdentityAuthority';
+import {
+  claimsAnotherPersonsLabByUrlPath,
+  entityKeyNamesOnlyThisPerson,
+  researchHomeIdentityTokens,
+} from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
 import { isNavMenuChromeTitle } from '../../utils/titleHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
@@ -1388,9 +1392,40 @@ export function extractOfficialProfileResearchHomes(
 // institute, program, or initiative the PI directs alongside their own grants)
 // is a separate organization, not that PI's personal lab, so attaching its
 // kind/entityType/website/description here would mint the exact "<PI> Lab"
-// CENTER hybrid this guard exists to prevent (issue #1484). A home already
-// classified as a lab is the PI's own and is never blocked.
+// CENTER hybrid this guard exists to prevent (issue #1484).
 const GRANT_DERIVED_PI_SHELL_SLUG_RE = /^(?:nih-pi-|nsf-pi-)/;
+
+/**
+ * Whether a home this profile links, already typed `LAB`, is somebody else's lab.
+ *
+ * The institutional guard below used to return early on a `LAB` home, on the reasoning
+ * that a home classified as a lab is the PI's own. That is an assumption rather than a test,
+ * and it is the one this lane cannot afford to make: it asserts `name` at 0.96, above
+ * every roster lane's 0.7 to 0.8, so a colleague's lab adopted here wins the resolve
+ * outright. The same page shape is where the graft came from on the sibling lane - 78 of
+ * the 90 rows whose stored name the authority condemns were harvested from a faculty
+ * profile that linked a lab belonging to someone else (#3529).
+ *
+ * The URL-path corroboration rather than the roster one, and for a reason rather than
+ * for convenience: the value being judged IS a lab's own site, so its path carries the
+ * eponym whenever there is one to carry ("The Quimby Lab" at `/lab/quimby/`), and the
+ * roster variant would add a corpus load to a per-profile check to cover a shape this
+ * lane does not produce.
+ *
+ * The profile person's name unioned with the entity key's tokens, because either can
+ * establish whose record this is and the authority's own identity helper unions them.
+ */
+function homeNamesAnotherPersonsLab(
+  entity: Record<string, any>,
+  home: OfficialProfileResearchHome,
+  personName: unknown,
+): boolean {
+  return claimsAnotherPersonsLabByUrlPath({
+    harvestedName: home.name,
+    websiteUrl: home.url,
+    identityTokens: researchHomeIdentityTokens({ personName, slug: entity.slug }),
+  });
+}
 
 /**
  * The #1484 guard, widened to every shell whose key names nobody but the person
@@ -1407,7 +1442,8 @@ export function isInstitutionalHomeMismatchedWithPersonScopedShell(
   home: OfficialProfileResearchHome | undefined,
   personName: unknown,
 ): boolean {
-  if (!home || home.entityType === 'LAB') return false;
+  if (!home) return false;
+  if (home.entityType === 'LAB') return homeNamesAnotherPersonsLab(entity, home, personName);
   if (GRANT_DERIVED_PI_SHELL_SLUG_RE.test(textValue(entity.slug))) return true;
   return entityKeyNamesOnlyThisPerson({ slug: entity.slug, personName });
 }
@@ -3388,15 +3424,15 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
             requireEmail: false,
             expectedPeople: entity.leadUsers,
           });
-          if (!identity) continue;
-          const [home] = extractOfficialProfileResearchHomes(html, profileUrl);
-          if (home && (await websiteUrlOwnedByAnotherEntity(home.url, entity))) continue;
-          if (
-            isInstitutionalHomeMismatchedWithPersonScopedShell(entity, home, identity.displayName)
-          ) {
-            continue;
+          const [home] = identity ? extractOfficialProfileResearchHomes(html, profileUrl) : [];
+          const homeIsAdmissible =
+            identity &&
+            home &&
+            !(await websiteUrlOwnedByAnotherEntity(home.url, entity)) &&
+            !isInstitutionalHomeMismatchedWithPersonScopedShell(entity, home, identity.displayName);
+          if (homeIsAdmissible) {
+            observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
           }
-          observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
         }
 
         if (observations.length === 0) continue;

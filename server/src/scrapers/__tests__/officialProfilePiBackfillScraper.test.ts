@@ -3838,6 +3838,50 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(emitted).toHaveLength(0);
   });
 
+  it('keeps the PI evidence of a default run when the profile-linked home is refused', async () => {
+    vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const emitted: ObservationInput[] = [];
+    const shell = {
+      _id: 'entity-1',
+      name: 'Morgan Fixture Lab',
+      slug: 'nih-pi-morgan-fixture',
+      sourceUrls: ['https://medicine.yale.edu/profile/morgan-fixture/'],
+      leadUserProfileUrls: ['https://medicine.yale.edu/profile/morgan-fixture/'],
+      leadUsers: [{ fname: 'Morgan', lname: 'Fixture', email: 'morgan.fixture@yale.edu' }],
+    };
+    const scraper = new OfficialProfilePiBackfillScraper(
+      vi.fn(async () => yalePrefixedLeadershipProfileHtml),
+      vi.fn(async () => [shell]),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => [shell]),
+    );
+
+    const result = await scraper.run({
+      ...contextFor(emitted),
+      options: { dryRun: true, useCache: false, release: false, only: [] },
+    });
+
+    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'researchEntity',
+          entityKey: 'nih-pi-morgan-fixture',
+          field: 'inferredPiUserKey',
+          value: 'morgan.fixture',
+        }),
+      ]),
+    );
+    expect(emitted.map((o) => o.field)).not.toContain('entityType');
+    expect(emitted.map((o) => o.value)).not.toContain(
+      'https://medicine.yale.edu/internal-medicine/livercenter/',
+    );
+  });
+
   it('still attaches a lab-classified profile-linked home to a grant-derived PI shell', async () => {
     vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
       select: vi.fn().mockReturnThis(),
@@ -4396,6 +4440,74 @@ describe('officialProfilePiBackfillScraper', () => {
         isInstitutionalHomeMismatchedWithPersonScopedShell(
           { slug: 'center-program-in-addiction-medicine' },
           centre,
+          'David Fiellin',
+        ),
+      ).toBe(false);
+    });
+
+    // The `LAB` early return was an assumption rather than a test: a profile links a
+    // colleague's lab as readily as its own, and this lane asserts `name` at 0.96, above
+    // every roster lane, so the adopted value wins the resolve outright (#3529).
+    const anotherPersonsLab = {
+      ...centre,
+      name: 'Quimby Lab',
+      rawName: 'The Quimby Lab',
+      url: 'https://medicine.yale.edu/lab/quimby/',
+      entityType: 'LAB' as const,
+      kind: 'lab' as const,
+    };
+
+    it('refuses a lab home whose eponym its own url says is another person', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          anotherPersonsLab,
+          'David Fiellin',
+        ),
+      ).toBe(true);
+    });
+
+    it('still adopts the profile person own eponymous lab', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          {
+            ...anotherPersonsLab,
+            name: 'Fiellin Lab',
+            url: 'https://medicine.yale.edu/lab/fiellin/',
+          },
+          'David Fiellin',
+        ),
+      ).toBe(false);
+    });
+
+    it('adopts a lab home when the entity key names the person and the profile name is absent', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          {
+            ...anotherPersonsLab,
+            name: 'Fiellin Lab',
+            url: 'https://medicine.yale.edu/lab/fiellin/',
+          },
+          undefined,
+        ),
+      ).toBe(false);
+    });
+
+    // A topical lab name carries no eponym for a url path to corroborate, so there is
+    // nothing to refuse and the home is adopted. Stated as a test because the opposite
+    // reading - refusing whatever the identity tokens do not match - would condemn every
+    // lab that is not named after its own PI.
+    it('adopts a topical lab home no url path contradicts', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          {
+            ...anotherPersonsLab,
+            name: 'Vascular Biology and Therapeutics Lab',
+            url: 'https://medicine.yale.edu/lab/vascular-biology/',
+          },
           'David Fiellin',
         ),
       ).toBe(false);
