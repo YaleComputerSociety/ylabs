@@ -284,6 +284,38 @@ describe('BbsResearchTrackScraper.run', () => {
     expect(result.notes).toMatch(/1 ambiguous row/);
   });
 
+  it('counts a row reached only through a lab URL naming someone else apart from an absent row', async () => {
+    const labUrl = 'https://medicine.yale.edu/lab/quokka/';
+    const pages: Record<string, string> = {
+      'https://medicine.yale.edu/bbs/people/immunology/': trackListingHtml([
+        { slug: 'alex-rivera', label: 'Rivera, Alex' },
+      ]),
+      'https://medicine.yale.edu/bbs/profile/alex-rivera/': bbsProfileHtml({
+        canonicalSlug: 'alex-rivera',
+        labUrls: [labUrl],
+      }),
+    };
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => pages[url] ?? '',
+      entityFinder: async () => [
+        candidate({
+          _id: '222222222222222222222222',
+          slug: 'ysm-faculty-kaya-lindgren',
+          name: 'Kaya Lindgren Faculty Research',
+          matchUrls: [labUrl],
+          nameKey: 'kaya-lindgren',
+        }),
+      ],
+    });
+
+    const { ctx, emitted } = makeContext({ only: ['immunology'] });
+    const result = await scraper.run(ctx);
+
+    expect(emitted).toHaveLength(0);
+    expect(result.notes).toMatch(/0 have no existing research row/);
+    expect(result.notes).toMatch(/1 cite a lab URL only on a row naming someone else/);
+  });
+
   it('unions track areas for a PI listed under more than one track', async () => {
     const pages: Record<string, string> = {
       'https://medicine.yale.edu/bbs/people/immunology/': trackListingHtml([
@@ -339,7 +371,7 @@ describe('resolveBbsResearchHome on a borrowed URL (#3342)', () => {
       }),
     ]);
 
-    expect(resolveBbsResearchHome(linksWithLab('alex-rivera'), '', index).status).toBe('unmatched');
+    expect(resolveBbsResearchHome(linksWithLab('alex-rivera'), '', index).status).toBe('refused');
   });
 
   it('keeps a lab URL match when the row names the same person', () => {
@@ -408,7 +440,7 @@ describe('resolveBbsResearchHome on a borrowed URL (#3342)', () => {
     ]);
 
     expect(resolveBbsResearchHome(linksWithLab('alex-rivera'), 'alex-rivera', index).status).toBe(
-      'unmatched',
+      'refused',
     );
   });
 

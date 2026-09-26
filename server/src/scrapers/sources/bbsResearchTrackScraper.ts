@@ -397,6 +397,7 @@ export function buildBbsMatchIndex(candidates: BbsCandidateEntity[]): BbsMatchIn
 export type BbsHomeResolution =
   | { status: 'matched'; entityId: string }
   | { status: 'ambiguous' }
+  | { status: 'refused' }
   | { status: 'unmatched' };
 
 /**
@@ -443,7 +444,7 @@ export function resolveBbsResearchHome(
   // A borrowed URL that names nobody on this row is a refusal, not a fall-through to
   // the name fallback: the name key that would be tried next is the same PI's name,
   // and letting it through would re-admit the row the URL arm just declined.
-  if (matchedOnCitedUrl.size > 0) return { status: 'unmatched' };
+  if (matchedOnCitedUrl.size > 0) return { status: 'refused' };
 
   if (nameKey) {
     const byName = index.entityIdByNameKey.get(nameKey);
@@ -619,6 +620,7 @@ export class BbsResearchTrackScraper implements IScraper {
     let grafted = 0;
     let noExistingRow = 0;
     let ambiguous = 0;
+    let citedByAnotherPerson = 0;
     let processed = 0;
 
     for (const pi of pis.values()) {
@@ -637,6 +639,11 @@ export class BbsResearchTrackScraper implements IScraper {
 
       if (resolution.status === 'ambiguous') {
         ambiguous += 1;
+        continue;
+      }
+
+      if (resolution.status === 'refused') {
+        citedByAnotherPerson += 1;
         continue;
       }
 
@@ -662,6 +669,7 @@ export class BbsResearchTrackScraper implements IScraper {
       notes:
         `rows enriched: ${grafted} of ${pis.size} track PIs; not attached: ` +
         `${noExistingRow} have no existing research row (a track listing never mints one, #3561), ` +
+        `${citedByAnotherPerson} cite a lab URL only on a row naming someone else, ` +
         `${ambiguous} ambiguous row.`,
     };
   }
