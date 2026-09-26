@@ -146,6 +146,8 @@ An operator lock on `activeAtYaleCache`/`yaleStatusCache` also holds (4 rows use
 It exists because the procedure has more steps than the marker: the write, a re-gate so the tier actually moves, and a re-read of the served surface, and doing it by hand is what lost `holmes-ah724`.
 The note is required and is the evidence, because a marker without one records that somebody decided rather than why, and a later reader cannot tell a relocation from a mistake.
 It must not contain a comma: `studentVisibilitySuppressionReason` is a comma-joined list that other writers append to, so a comma inside a note splits it into entries that are not reasons.
+The note rides on the marker, so the stored entry reads `permanently_closed: <evidence>` rather than the bare token: read the marker through `hasRecordedClosureEvidence`, which matches the token and the note-carrying form alike, never by comparing an entry to `permanently_closed` for equality.
+The tier's own blocker reason stays the bare `permanently_closed` whichever form is stored, so the note never reaches the gate's reason vocabulary.
 It takes exactly one slug, because a reported departure is a judgement about one row and the note is that row's evidence.
 A row that already carries a closure marker is skipped rather than given a second one, and an operator lock on the reason field or on `activeAtYaleCache`/`yaleStatusCache` stops the write the way it stops every other lane.
 Skipping the write does not skip the re-gate: an `--apply` run re-gates the row whenever it exists, so a marker left behind by an interrupted run or written by hand is finished by pointing the command at that slug again.
