@@ -47,19 +47,30 @@ function labelsBySlug(labels: readonly BenchmarkLabel[]): Map<string, BenchmarkL
   return bySlug;
 }
 
+const WALL_CLOCK_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+const withoutWallClock = (_key: string, value: unknown): unknown =>
+  typeof value === 'string' && WALL_CLOCK_INSTANT.test(value) ? 'instant' : value;
+
 /**
  * Order-independent, so a lane that emits the same values in a different order replays to
- * the same fingerprint, and any change in what it emits changes it.
+ * the same fingerprint, and any change in what it emits changes it. A full instant is
+ * masked because a lane can stamp when it read a page into a value, as the roster health
+ * record's `read.readAt` does, and that clock would make every replay differ. A page-stated
+ * date carries no time of day, so it still counts.
  */
 export function plannedOutputFingerprint(observations: readonly PlannedObservation[]): string {
   const lines = observations
     .map((observation) =>
-      JSON.stringify([
-        text(observation.entityType),
-        text(observation.entityKey) || idText(observation.entityId),
-        text(observation.field),
-        observation.value ?? null,
-      ]),
+      JSON.stringify(
+        [
+          text(observation.entityType),
+          text(observation.entityKey) || idText(observation.entityId),
+          text(observation.field),
+          observation.value ?? null,
+        ],
+        withoutWallClock,
+      ),
     )
     .sort();
   return crypto.createHash('sha256').update(lines.join('\n')).digest('hex');

@@ -90,6 +90,24 @@ describe('plannedOutputFingerprint', () => {
     expect(plannedOutputFingerprint([a, b])).toBe(plannedOutputFingerprint([b, a]));
   });
 
+  it('ignores the instant a lane stamps into a value', () => {
+    const health = (readAt: string) => ({
+      entityType: 'departmentRosterHealth',
+      entityKey: 'dept',
+      field: 'rosterHealth',
+      value: { status: 'ok', read: { pagesRead: 3, readAt } },
+    });
+    expect(plannedOutputFingerprint([health('2026-09-26T21:40:01.123Z')])).toBe(
+      plannedOutputFingerprint([health('2026-09-26T21:52:47.906Z')]),
+    );
+  });
+
+  it('still counts a date the page stated', () => {
+    expect(plannedOutputFingerprint([{ ...a, value: '2026-09-01' }])).not.toBe(
+      plannedOutputFingerprint([{ ...a, value: '2026-09-02' }]),
+    );
+  });
+
   it('changes when a planned value changes', () => {
     expect(plannedOutputFingerprint([a, b])).not.toBe(
       plannedOutputFingerprint([a, { ...b, value: 'B2' }]),
