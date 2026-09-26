@@ -45,7 +45,7 @@ const TagInput = ({
 
   return (
     <div className="mb-3">
-      <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
+      <label className="block text-xs font-semibold text-muted mb-1">{label}</label>
       <div className="flex flex-wrap gap-1 mb-1.5">
         {values.map((v) => (
           <span
@@ -223,12 +223,12 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
       <div className="bg-[var(--yr-panel)] rounded-overlay shadow-yr-modal w-full max-w-3xl mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
-            <h3 className="text-lg font-bold text-gray-900">Edit Fellowship</h3>
-            <p className="text-xs text-gray-500">ID: {fellowship.id}</p>
+            <h3 className="text-lg font-bold text-ink">Edit Fellowship</h3>
+            <p className="text-xs text-muted">ID: {fellowship.id}</p>
           </div>
           <button
             onClick={onClose}
-            className="text-muted hover:text-gray-600 text-2xl leading-none yr-focus-ring"
+            className="text-muted hover:text-ink-soft text-2xl leading-none yr-focus-ring"
           >
             &times;
           </button>
@@ -238,7 +238,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <div className="mb-3">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                <label className="block text-xs font-semibold text-muted mb-1">
                   Title <span className="text-red-700">*</span>
                 </label>
                 <input
@@ -249,7 +249,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
               </div>
 
               <div className="mb-3">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Summary</label>
+                <label className="block text-xs font-semibold text-muted mb-1">Summary</label>
                 <textarea
                   value={summary}
                   onChange={(e) => dispatch({ type: 'SET_SUMMARY', payload: e.target.value })}
@@ -259,9 +259,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
               </div>
 
               <div className="mb-3">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">
-                  Description
-                </label>
+                <label className="block text-xs font-semibold text-muted mb-1">Description</label>
                 <textarea
                   value={description}
                   onChange={(e) => dispatch({ type: 'SET_DESCRIPTION', payload: e.target.value })}
@@ -271,7 +269,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
               </div>
 
               <div className="mb-3">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                <label className="block text-xs font-semibold text-muted mb-1">
                   Application Information
                 </label>
                 <textarea
@@ -285,9 +283,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
               </div>
 
               <div className="mb-3">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">
-                  Eligibility
-                </label>
+                <label className="block text-xs font-semibold text-muted mb-1">Eligibility</label>
                 <textarea
                   value={eligibility}
                   onChange={(e) => dispatch({ type: 'SET_ELIGIBILITY', payload: e.target.value })}
@@ -305,7 +301,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
 
             <div>
               <div className="mb-3">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                <label className="block text-xs font-semibold text-muted mb-1">
                   Accepting Applications
                 </label>
                 <select
@@ -324,7 +320,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
               </div>
 
               <div className="mb-3">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                <label className="block text-xs font-semibold text-muted mb-1">
                   Application Open Date
                 </label>
                 <input
@@ -338,7 +334,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
               </div>
 
               <div className="mb-3">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Deadline</label>
+                <label className="block text-xs font-semibold text-muted mb-1">Deadline</label>
                 <input
                   type="datetime-local"
                   value={deadline}
@@ -364,7 +360,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
               </div>
 
               <div className="mb-3">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                <label className="block text-xs font-semibold text-muted mb-1">
                   Application Link
                 </label>
                 <input
@@ -378,9 +374,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
               </div>
 
               <div className="mb-3">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">
-                  Award Amount
-                </label>
+                <label className="block text-xs font-semibold text-muted mb-1">Award Amount</label>
                 <input
                   value={awardAmount}
                   onChange={(e) => dispatch({ type: 'SET_AWARD_AMOUNT', payload: e.target.value })}
@@ -390,9 +384,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
               </div>
 
               <div className="mb-3">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">
-                  Contact Name
-                </label>
+                <label className="block text-xs font-semibold text-muted mb-1">Contact Name</label>
                 <input
                   value={contactName}
                   onChange={(e) => dispatch({ type: 'SET_CONTACT_NAME', payload: e.target.value })}
@@ -401,9 +393,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
               </div>
 
               <div className="mb-3">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">
-                  Contact Email
-                </label>
+                <label className="block text-xs font-semibold text-muted mb-1">Contact Email</label>
                 <input
                   type="email"
                   value={contactEmail}
@@ -436,7 +426,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
           </div>
 
           <div className="border-t pt-3 mt-3">
-            <h4 className="text-xs font-bold text-gray-700 mb-2">Categories & Filters</h4>
+            <h4 className="text-xs font-bold text-ink-soft mb-2">Categories & Filters</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
               <TagInput
                 label="Year of Study"

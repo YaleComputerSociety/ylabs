@@ -189,10 +189,10 @@ const AdminDepartments = () => {
   return (
     <div>
       <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised p-4 border border-[var(--yr-line)] mb-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Add New Department</h3>
+        <h3 className="text-sm font-semibold text-ink-soft mb-3">Add New Department</h3>
         <div className="flex flex-wrap gap-2 items-end">
           <div className="w-28">
-            <label className="block text-xs text-gray-500 mb-1">Abbreviation</label>
+            <label className="block text-xs text-muted mb-1">Abbreviation</label>
             <input
               value={newDraft.abbr}
               onChange={(e) =>
@@ -203,7 +203,7 @@ const AdminDepartments = () => {
             />
           </div>
           <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs text-gray-500 mb-1">Full Name</label>
+            <label className="block text-xs text-muted mb-1">Full Name</label>
             <input
               value={newDraft.name}
               onChange={(e) =>
@@ -217,7 +217,7 @@ const AdminDepartments = () => {
             />
           </div>
           <div className="min-w-[200px]">
-            <label className="block text-xs text-gray-500 mb-1">Category</label>
+            <label className="block text-xs text-muted mb-1">Category</label>
             <select
               value={newDraft.category}
               onChange={(e) =>
@@ -256,24 +256,24 @@ const AdminDepartments = () => {
           <table className="min-w-full text-sm">
             <thead>
               <tr className="bg-[var(--yr-panel-muted)] border-b">
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Abbr</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Display Name</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Category</th>
-                <th className="text-center py-3 px-4 font-semibold text-gray-700">Active</th>
-                <th className="text-center py-3 px-4 font-semibold text-gray-700">Actions</th>
+                <th className="text-left py-3 px-4 font-semibold text-ink-soft">Abbr</th>
+                <th className="text-left py-3 px-4 font-semibold text-ink-soft">Name</th>
+                <th className="text-left py-3 px-4 font-semibold text-ink-soft">Display Name</th>
+                <th className="text-left py-3 px-4 font-semibold text-ink-soft">Category</th>
+                <th className="text-center py-3 px-4 font-semibold text-ink-soft">Active</th>
+                <th className="text-center py-3 px-4 font-semibold text-ink-soft">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-8 text-gray-500">
+                  <td colSpan={6} className="text-center py-8 text-muted">
                     Loading...
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-8 text-gray-500">
+                  <td colSpan={6} className="text-center py-8 text-muted">
                     No departments found
                   </td>
                 </tr>
@@ -311,7 +311,7 @@ const AdminDepartments = () => {
                         dept.name
                       )}
                     </td>
-                    <td className="py-2 px-4 text-xs text-gray-500">{dept.displayName}</td>
+                    <td className="py-2 px-4 text-xs text-muted">{dept.displayName}</td>
                     <td className="py-2 px-4">
                       {editingId === dept._id && editDraft ? (
                         <select
@@ -334,7 +334,7 @@ const AdminDepartments = () => {
                         <span
                           className={`px-2 py-0.5 rounded text-xs font-medium ${
                             CATEGORY_COLORS[dept.primaryCategory] ||
-                            'bg-[var(--yr-panel-muted)] text-gray-700'
+                            'bg-[var(--yr-panel-muted)] text-ink-soft'
                           }`}
                         >
                           {dept.primaryCategory}
@@ -375,7 +375,7 @@ const AdminDepartments = () => {
                             </button>
                             <button
                               onClick={() => dispatch({ type: 'CANCEL_EDIT' })}
-                              className="min-h-[44px] text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400 yr-focus-ring"
+                              className="yr-secondary-action min-h-[44px] rounded px-2 py-1 text-xs yr-focus-ring"
                             >
                               Cancel
                             </button>

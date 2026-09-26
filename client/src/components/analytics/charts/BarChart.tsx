@@ -83,7 +83,7 @@ const BarChart = ({
   const format = valueFormatter ?? defaultFormatter;
 
   if (data.length === 0) {
-    return <p className="text-sm text-gray-500">{emptyMessage ?? 'No data to chart.'}</p>;
+    return <p className="text-sm text-muted">{emptyMessage ?? 'No data to chart.'}</p>;
   }
 
   const maxValue = data.reduce((max, datum) => Math.max(max, datum.value), 0);

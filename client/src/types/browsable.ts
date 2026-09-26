@@ -149,12 +149,12 @@ export function getItemSubtitleColor(item: BrowsableItem): string {
   const status = getFellowshipCycleStatus(item.data);
   if (status.category === 'nextCycle') return 'text-sky-700 font-medium';
   const { deadline } = item.data;
-  if (!deadline) return 'text-gray-500';
+  if (!deadline) return 'text-muted';
   const d = new Date(deadline);
   if (d < new Date()) return 'text-red-700';
   const daysUntil = Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
   if (daysUntil <= 14) return 'text-amber-700 font-medium';
-  return 'text-gray-500';
+  return 'text-muted';
 }
 
 /**

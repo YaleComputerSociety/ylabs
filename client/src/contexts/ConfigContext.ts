@@ -60,13 +60,13 @@ export const defaultConfigContext: ConfigContextType = {
   departmentPillEligibleLabels: [],
   getResearchAreaByName: () => undefined,
   getColorForResearchArea: () => ({
-    bg: 'bg-gray-200',
-    text: 'text-gray-800',
-    border: 'border-gray-300',
+    bg: 'bg-panel-muted',
+    text: 'text-ink',
+    border: 'border-line-strong',
   }),
   getDepartmentByAbbr: () => undefined,
   getDepartmentByName: () => undefined,
-  getDepartmentColor: () => 'bg-gray-100',
+  getDepartmentColor: () => 'bg-panel-muted',
   getDepartmentsByCategory: () => [],
   refreshConfig: async () => {},
 };

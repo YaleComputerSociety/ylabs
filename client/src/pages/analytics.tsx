@@ -475,10 +475,8 @@ const Analytics = () => {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
         <div className="max-w-md rounded-card border border-red-200 bg-[var(--yr-panel)] p-6 text-center shadow-yr-raised">
-          <h1 className="yr-display mb-3 text-2xl font-semibold text-gray-900">
-            Analytics unavailable
-          </h1>
-          <p className="mb-5 text-sm text-gray-600">{error || 'Failed to load analytics data'}</p>
+          <h1 className="yr-display mb-3 text-2xl font-semibold text-ink">Analytics unavailable</h1>
+          <p className="mb-5 text-sm text-muted">{error || 'Failed to load analytics data'}</p>
           <button
             type="button"
             onClick={() => void fetchAnalytics()}
@@ -564,19 +562,17 @@ const Analytics = () => {
           <div className="border-b border-[var(--yr-line)] p-5 lg:flex lg:items-start lg:justify-between lg:gap-8">
             <div className="max-w-3xl">
               <p className="yr-kicker">Primary dashboard question</p>
-              <h1 className="yr-display mt-2 text-3xl font-semibold leading-tight text-slate-950 sm:text-4xl">
+              <h1 className="yr-display mt-2 text-3xl font-semibold leading-tight text-ink sm:text-4xl">
                 Research Discovery Health
               </h1>
-              <p className="mt-3 text-base leading-7 text-slate-600">
+              <p className="mt-3 text-base leading-7 text-muted">
                 Are students finding credible research next steps, and where should admins
                 intervene?
               </p>
             </div>
             <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end lg:mt-0">
               <label className="block sm:w-56">
-                <span className="mb-1 block text-xs font-semibold uppercase text-gray-500">
-                  Range
-                </span>
+                <span className="mb-1 block text-xs font-semibold uppercase text-muted">Range</span>
                 <select
                   value={analyticsRange}
                   onChange={(event) => setAnalyticsRange(event.target.value as AnalyticsRange)}
@@ -588,7 +584,7 @@ const Analytics = () => {
                     </option>
                   ))}
                 </select>
-                <span className="mt-1 block text-xs text-gray-500">
+                <span className="mt-1 block text-xs text-muted">
                   Scopes usage metrics. Corpus and account snapshots show current state.
                 </span>
               </label>
@@ -667,8 +663,8 @@ const Analytics = () => {
           </div>
 
           <div className="border-t border-[var(--yr-line)] p-5">
-            <h2 className="text-lg font-semibold text-gray-900">Decision Readout</h2>
-            <div className="mt-3 space-y-3 text-sm leading-6 text-gray-600">
+            <h2 className="yr-display text-2xl font-semibold text-ink">Decision Readout</h2>
+            <div className="mt-3 space-y-3 text-sm leading-6 text-muted">
               <p>
                 Start with search success and the official next-step rate: they show whether
                 discovery intent becomes visible next-step behavior.
@@ -684,16 +680,16 @@ const Analytics = () => {
                 </a>
                 .
               </p>
-              <p className="text-gray-500">Last updated: {lastUpdated || 'Not refreshed yet'}</p>
+              <p className="text-muted">Last updated: {lastUpdated || 'Not refreshed yet'}</p>
             </div>
           </div>
         </section>
 
         <section className="mb-10">
-          <div className="mb-4 flex flex-col gap-2 border-b border-slate-200 pb-2 md:flex-row md:items-end md:justify-between">
+          <div className="mb-4 flex flex-col gap-2 border-b border-line pb-2 md:flex-row md:items-end md:justify-between">
             <div>
-              <h2 className="yr-display text-2xl font-semibold text-gray-800">Admin Access</h2>
-              <p className="text-sm text-gray-500">
+              <h2 className="yr-display text-2xl font-semibold text-ink">Admin Access</h2>
+              <p className="text-sm text-muted">
                 Current admin authority comes from active admin grants, not profile user type.
               </p>
             </div>
@@ -714,7 +710,7 @@ const Analytics = () => {
             onSubmit={requestGrantAdminAccess}
           >
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase text-gray-500">
+              <span className="mb-1 block text-xs font-semibold uppercase text-muted">
                 Grant admin NetID
               </span>
               <input
@@ -725,7 +721,7 @@ const Analytics = () => {
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase text-gray-500">
+              <span className="mb-1 block text-xs font-semibold uppercase text-muted">
                 Admin grant note
               </span>
               <input
@@ -738,7 +734,7 @@ const Analytics = () => {
             </label>
             <button
               ref={grantReviewButtonRef}
-              className="inline-flex min-h-[44px] items-center justify-center self-end rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="inline-flex min-h-[44px] items-center justify-center self-end rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring disabled:cursor-not-allowed disabled:bg-line-strong"
               type="submit"
               disabled={adminAccessActionNetid !== null}
             >
@@ -783,30 +779,30 @@ const Analytics = () => {
             </div>
           )}
 
-          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-yr-raised">
+          <div className="overflow-hidden rounded-lg border border-line bg-white shadow-yr-raised">
             <ScrollableTableRegion label="Access grants">
               <table className="min-w-full">
                 <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                  <tr className="border-b bg-panel-muted">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
                       NetID
                     </th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
                       Person
                     </th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
                       Source
                     </th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
                       Granted
                     </th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
                       Granted By
                     </th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
                       Status
                     </th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
                       Actions
                     </th>
                   </tr>
@@ -819,17 +815,17 @@ const Analytics = () => {
                       return (
                         <tr
                           key={`${grant.netid}-${grant.status}`}
-                          className="border-b hover:bg-gray-50"
+                          className="border-b hover:bg-panel-muted"
                         >
-                          <td className="px-4 py-3 font-medium text-gray-900">{grant.netid}</td>
-                          <td className="px-4 py-3 text-gray-700">
+                          <td className="px-4 py-3 font-medium text-ink">{grant.netid}</td>
+                          <td className="px-4 py-3 text-ink-soft">
                             {name || grant.user?.email || '-'}
                           </td>
-                          <td className="px-4 py-3 text-gray-700">{grant.source}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
+                          <td className="px-4 py-3 text-ink-soft">{grant.source}</td>
+                          <td className="px-4 py-3 text-sm text-muted">
                             {formatDateTime(grant.grantedAt)}
                           </td>
-                          <td className="px-4 py-3 text-gray-700">{grant.grantedBy || '-'}</td>
+                          <td className="px-4 py-3 text-ink-soft">{grant.grantedBy || '-'}</td>
                           <td className="px-4 py-3">
                             <span
                               className={`rounded-md px-2 py-1 text-xs font-semibold ${
@@ -843,12 +839,12 @@ const Analytics = () => {
                           </td>
                           <td className="px-4 py-3">
                             {grant.status !== 'active' ? (
-                              <span className="text-sm text-gray-500">-</span>
+                              <span className="text-sm text-muted">-</span>
                             ) : isCurrentAdmin ? (
                               <button
                                 type="button"
                                 disabled
-                                className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-500 yr-focus-ring-inset"
+                                className="rounded-md border border-line px-3 py-1 text-xs font-semibold text-muted yr-focus-ring-inset"
                               >
                                 Current session
                               </button>
@@ -871,7 +867,7 @@ const Analytics = () => {
                     })
                   ) : (
                     <tr>
-                      <td className="px-4 py-6 text-center text-gray-500" colSpan={7}>
+                      <td className="px-4 py-6 text-center text-muted" colSpan={7}>
                         No admin grants returned.
                       </td>
                     </tr>
@@ -882,8 +878,8 @@ const Analytics = () => {
           </div>
 
           <div className="mt-6">
-            <h3 className="text-lg font-semibold text-gray-800">Admin access history</h3>
-            <p className="mb-3 text-sm text-gray-500">
+            <h3 className="text-lg font-semibold text-ink">Admin access history</h3>
+            <p className="mb-3 text-sm text-muted">
               Every grant and revoke, newest first, from the recorded grant history.
             </p>
             {adminAccessHistory.length > 0 ? (
@@ -902,17 +898,15 @@ const Analytics = () => {
                     >
                       {entry.action}
                     </span>
-                    <span className="font-medium text-gray-900">{entry.subjectNetid}</span>
-                    <span className="text-gray-600"> by {entry.actorNetid || '-'}</span>
-                    <span className="ml-2 text-xs text-gray-500">{formatDateTime(entry.at)}</span>
-                    {entry.note && (
-                      <p className="mt-1 text-xs italic text-gray-600">{entry.note}</p>
-                    )}
+                    <span className="font-medium text-ink">{entry.subjectNetid}</span>
+                    <span className="text-muted"> by {entry.actorNetid || '-'}</span>
+                    <span className="ml-2 text-xs text-muted">{formatDateTime(entry.at)}</span>
+                    {entry.note && <p className="mt-1 text-xs italic text-muted">{entry.note}</p>}
                   </li>
                 ))}
               </ol>
             ) : (
-              <p className="text-sm text-gray-500">No admin access history recorded yet.</p>
+              <p className="text-sm text-muted">No admin access history recorded yet.</p>
             )}
           </div>
           {pendingAdminGrantNetid && (
@@ -930,14 +924,14 @@ const Analytics = () => {
                 className="w-full max-w-lg rounded-overlay bg-white p-6 shadow-yr-modal"
                 role="dialog"
               >
-                <h3 id="admin-grant-confirm-title" className="text-lg font-bold text-gray-900">
+                <h3 id="admin-grant-confirm-title" className="text-lg font-bold text-ink">
                   Confirm admin grant
                 </h3>
-                <p id="admin-grant-confirm-description" className="mt-2 text-sm text-gray-700">
+                <p id="admin-grant-confirm-description" className="mt-2 text-sm text-ink-soft">
                   Grant admin authority to <strong>{pendingAdminGrantNetid}</strong>. Enter the
                   target NetID again to confirm this deliberate access change.
                 </p>
-                <label className="mt-4 block text-sm font-semibold text-gray-700">
+                <label className="mt-4 block text-sm font-semibold text-ink-soft">
                   Confirm target NetID
                   <input
                     autoComplete="off"
@@ -973,12 +967,10 @@ const Analytics = () => {
         </section>
 
         <section className="mb-10">
-          <div className="mb-4 flex flex-col gap-2 border-b border-slate-200 pb-2 md:flex-row md:items-end md:justify-between">
+          <div className="mb-4 flex flex-col gap-2 border-b border-line pb-2 md:flex-row md:items-end md:justify-between">
             <div>
-              <h2 className="yr-display text-2xl font-semibold text-gray-800">
-                Admin Action Audit Log
-              </h2>
-              <p className="text-sm text-gray-500">
+              <h2 className="yr-display text-2xl font-semibold text-ink">Admin Action Audit Log</h2>
+              <p className="text-sm text-muted">
                 Append-only record of privileged operator mutations. Filter by actor, action, or
                 target.
               </p>
@@ -986,7 +978,7 @@ const Analytics = () => {
             <button
               type="button"
               onClick={() => void fetchAuditEvents()}
-              className="inline-flex min-h-[44px] items-center justify-center self-start rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy yr-focus-ring disabled:cursor-not-allowed disabled:bg-slate-300 md:self-auto"
+              className="inline-flex min-h-[44px] items-center justify-center self-start rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy yr-focus-ring disabled:cursor-not-allowed disabled:bg-line-strong md:self-auto"
               disabled={isAuditLoading}
             >
               {isAuditLoading ? 'Refreshing...' : 'Refresh Log'}
@@ -995,7 +987,7 @@ const Analytics = () => {
 
           <div className="grid grid-cols-1 gap-4 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 lg:grid-cols-3">
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
                 Actor NetID
               </span>
               <input
@@ -1007,7 +999,7 @@ const Analytics = () => {
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
                 Action
               </span>
               <select
@@ -1024,7 +1016,7 @@ const Analytics = () => {
               </select>
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
                 Target Type
               </span>
               <select
@@ -1050,24 +1042,24 @@ const Analytics = () => {
             </div>
           )}
 
-          <div className="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-yr-raised">
+          <div className="mt-4 overflow-hidden rounded-lg border border-line bg-white shadow-yr-raised">
             <ScrollableTableRegion label="Audit events">
               <table className="min-w-full">
                 <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                  <tr className="border-b bg-panel-muted">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
                       When
                     </th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
                       Actor
                     </th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
                       Action
                     </th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
                       Target
                     </th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
                       Details
                     </th>
                   </tr>
@@ -1075,26 +1067,26 @@ const Analytics = () => {
                 <tbody>
                   {isAuditLoading && auditEvents.events.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-6 text-center text-gray-500" colSpan={5}>
+                      <td className="px-4 py-6 text-center text-muted" colSpan={5}>
                         Loading audit log...
                       </td>
                     </tr>
                   ) : auditEvents.events.length > 0 ? (
                     auditEvents.events.map((event: AdminAuditEvent) => (
-                      <tr key={event.id} className="border-b align-top hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-600">
+                      <tr key={event.id} className="border-b align-top hover:bg-panel-muted">
+                        <td className="px-4 py-3 text-sm text-muted">
                           {formatDateTime(event.timestamp)}
                         </td>
-                        <td className="px-4 py-3 font-medium text-gray-900">{event.actorNetid}</td>
-                        <td className="px-4 py-3 text-gray-700">
+                        <td className="px-4 py-3 font-medium text-ink">{event.actorNetid}</td>
+                        <td className="px-4 py-3 text-ink-soft">
                           {auditActionLabel(event.action)}
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">
+                        <td className="px-4 py-3 text-sm text-muted">
                           {event.targetType ? (
                             <>
-                              <span className="font-medium text-gray-700">{event.targetType}</span>
+                              <span className="font-medium text-ink-soft">{event.targetType}</span>
                               {event.targetId && (
-                                <span className="block break-all text-xs text-gray-500">
+                                <span className="block break-all text-xs text-muted">
                                   {event.targetId}
                                 </span>
                               )}
@@ -1103,24 +1095,24 @@ const Analytics = () => {
                             '-'
                           )}
                         </td>
-                        <td className="px-4 py-3 text-xs text-gray-600">
+                        <td className="px-4 py-3 text-xs text-muted">
                           {event.summary?.status && (
                             <span className="mr-2 rounded-md bg-brand-soft px-2 py-0.5 font-semibold text-brand">
                               {event.summary.status}
                             </span>
                           )}
                           {event.summary?.fields && event.summary.fields.length > 0 && (
-                            <span className="text-gray-500">{event.summary.fields.join(', ')}</span>
+                            <span className="text-muted">{event.summary.fields.join(', ')}</span>
                           )}
                           {event.summary?.note && (
-                            <p className="mt-1 italic text-gray-600">{event.summary.note}</p>
+                            <p className="mt-1 italic text-muted">{event.summary.note}</p>
                           )}
                         </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td className="px-4 py-6 text-center text-gray-500" colSpan={5}>
+                      <td className="px-4 py-6 text-center text-muted" colSpan={5}>
                         No admin actions recorded for these filters.
                       </td>
                     </tr>
@@ -1130,7 +1122,7 @@ const Analytics = () => {
             </ScrollableTableRegion>
           </div>
 
-          <div className="mt-3 flex flex-col gap-2 text-sm text-gray-500 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-3 flex flex-col gap-2 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
             <span>
               Page {auditEvents.page} of {auditEvents.totalPages} - {auditEvents.total} total
               actions
@@ -1140,7 +1132,7 @@ const Analytics = () => {
                 type="button"
                 onClick={() => setAuditPage((page) => Math.max(1, page - 1))}
                 disabled={isAuditLoading || auditEvents.page <= 1}
-                className="inline-flex min-h-[44px] items-center rounded-card border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-[44px] items-center rounded-card border border-[var(--yr-line-strong)] px-3 py-2 text-ink-soft transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Previous
               </button>
@@ -1148,7 +1140,7 @@ const Analytics = () => {
                 type="button"
                 onClick={() => setAuditPage((page) => Math.min(auditEvents.totalPages, page + 1))}
                 disabled={isAuditLoading || auditEvents.page >= auditEvents.totalPages}
-                className="inline-flex min-h-[44px] items-center rounded-card border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-[44px] items-center rounded-card border border-[var(--yr-line-strong)] px-3 py-2 text-ink-soft transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Next
               </button>

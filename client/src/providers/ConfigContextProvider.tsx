@@ -162,16 +162,16 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
       if (abbr) {
         const deptConfig = departmentAbbrMap.get(abbr);
         if (deptConfig) {
-          return departmentColorKeyToTailwind[deptConfig.colorKey] || 'bg-gray-100';
+          return departmentColorKeyToTailwind[deptConfig.colorKey] || 'bg-panel-muted';
         }
       }
 
       const byName = departmentNameMap.get(dept.toLowerCase());
       if (byName) {
-        return departmentColorKeyToTailwind[byName.colorKey] || 'bg-gray-100';
+        return departmentColorKeyToTailwind[byName.colorKey] || 'bg-panel-muted';
       }
 
-      return 'bg-gray-100';
+      return 'bg-panel-muted';
     },
     [departmentAbbrMap, departmentNameMap],
   );

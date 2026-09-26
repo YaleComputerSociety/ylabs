@@ -73,6 +73,52 @@ const headingsWithoutDisplayClass = (): string[] => {
   return sites;
 };
 
+const HEADING_OPEN = /<(h[1-4])\b/;
+const EXPLICIT_SIZE = /\btext-(?:xs|sm|base|lg|xl|2xl|3xl|4xl|5xl|6xl|7xl|\[)/;
+
+/** A visually hidden heading has no rendered size to set. */
+const SCREEN_READER_ONLY = /\bsr-only\b/;
+
+/**
+ * A size may legitimately arrive from somewhere this check cannot read: a
+ * `.yr-*` component class that sets its own `font-size`, or a shared constant.
+ * Both are better than an inline literal, so neither counts as missing.
+ *
+ * The first version of this check read a fixed three-line window and flagged 16
+ * sites, every one of them legitimate: a className four lines under its tag, a
+ * `sectionHeadingClass` constant, and `.yr-kicker`. A detector that reports 16
+ * findings and 0 defects gets suppressed rather than obeyed, so it now reads to
+ * the end of the opening tag and only judges a literal className.
+ */
+const COMPONENT_CLASS = /\byr-[a-z-]+\b/;
+const LITERAL_CLASS_NAME = /className="([^"]*)"/;
+
+const headingsWithNoSize = (): string[] => {
+  const sites: string[] = [];
+  for (const file of sourceFiles(SRC)) {
+    const lines = readFileSync(file, 'utf8').split('\n');
+    lines.forEach((line, index) => {
+      if (!HEADING_OPEN.test(line)) return;
+
+      const tag: string[] = [];
+      for (let cursor = index; cursor < Math.min(index + 12, lines.length); cursor += 1) {
+        tag.push(lines[cursor]);
+        if (/>/.test(lines[cursor].replace(/=>/g, ''))) break;
+      }
+      const opening = tag.join(' ');
+
+      const literal = LITERAL_CLASS_NAME.exec(opening);
+      if (!literal) return; // the className is an expression, so its size is not readable here
+      if (SCREEN_READER_ONLY.test(literal[1])) return;
+      if (COMPONENT_CLASS.test(literal[1]) && !/\byr-display\b/.test(literal[1])) return;
+      if (EXPLICIT_SIZE.test(literal[1])) return;
+
+      sites.push(`${relative(SRC, file)}:${index + 1}`);
+    });
+  }
+  return sites;
+};
+
 describe('display type guard', () => {
   it('sets the display class in the serif stack with tightened tracking', () => {
     const css = readFileSync(join(SRC, 'index.css'), 'utf8');
@@ -101,5 +147,14 @@ describe('display type guard', () => {
 
   it('gives every display-size text the display class or tabular figures', () => {
     expect(untrackedDisplaySites()).toEqual([]);
+  });
+
+  /**
+   * A heading with no size class renders at the browser's default for its tag,
+   * which is outside this scale entirely and is invisible in review because the
+   * text still looks like a heading. One `h4` was doing this.
+   */
+  it('gives every heading an explicit size', () => {
+    expect(headingsWithNoSize()).toEqual([]);
   });
 });

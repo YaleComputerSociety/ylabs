@@ -32,8 +32,8 @@ const DeveloperCard = ({ developer }: DeveloperCardProps) => {
         height={500}
       />
       <h3 className="text-xl font-semibold">{developer.name}</h3>
-      <p className="text-gray-700">{developer.position}</p>
-      <p className="text-gray-700 mb-1">{developer.location}</p>
+      <p className="text-ink-soft">{developer.position}</p>
+      <p className="text-ink-soft mb-1">{developer.location}</p>
       {hasProfileLinks && (
         <div className="mt-2 flex flex-wrap justify-center gap-1">
           {websiteHref && (
