@@ -409,7 +409,10 @@ async function main() {
             avoidedMints: c1.avoidedMints,
             predictedNewMergePairs: c1.predictedNewMergePairs,
           },
-          recallDelta: Number((c1.recall - c1Basic.recall).toFixed(4)),
+          recallDelta:
+            c1.recall === null || c1Basic.recall === null
+              ? null
+              : Number((c1.recall - c1Basic.recall).toFixed(4)),
           avoidedMintsDelta: c1.avoidedMints - c1Basic.avoidedMints,
         },
         dedupe: {

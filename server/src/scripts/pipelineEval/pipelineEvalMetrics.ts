@@ -1,6 +1,8 @@
 import type { ResearchEntityType } from '../../models/researchAccessTypes';
 import { assessResearchEntityDescriptionQuality } from '../../utils/researchEntityDescriptionQuality';
 import { isProgramLikeResearchEntity } from '../../utils/researchEntityProgramLike';
+import { pairKey } from './fuzzyMatchMetrics';
+import { harmonicMean, ratioOrNull, type MetricRatio } from './metricRatio';
 
 export interface ScorableEntity {
   slug?: string;
@@ -21,9 +23,9 @@ export interface AccuracyMetrics {
   fullUseful: number;
   shortUseful: number;
   cardComplete: number;
-  cardCompleteRate: number;
+  cardCompleteRate: MetricRatio;
   studentReady: number;
-  studentReadyRate: number;
+  studentReadyRate: MetricRatio;
   byTier: Record<string, number>;
 }
 
@@ -35,16 +37,13 @@ export interface ChurnMetrics {
   releaseQueueItems: number;
   referenceRepairAudits: number;
   mintedThenMerged: number;
-  mintedThenMergedRate: number;
+  mintedThenMergedRate: MetricRatio;
 }
 
 export interface GroundTruthPair {
   mergedKey: string;
   canonicalKey: string;
 }
-
-const rate = (numerator: number, denominator: number): number =>
-  denominator === 0 ? 0 : Number((numerator / denominator).toFixed(4));
 
 export function scoreAccuracy(entities: ScorableEntity[]): AccuracyMetrics {
   const byTier: Record<string, number> = {};
@@ -79,9 +78,9 @@ export function scoreAccuracy(entities: ScorableEntity[]): AccuracyMetrics {
     fullUseful,
     shortUseful,
     cardComplete,
-    cardCompleteRate: rate(cardComplete, entityCount),
+    cardCompleteRate: ratioOrNull(cardComplete, entityCount),
     studentReady,
-    studentReadyRate: rate(studentReady, entityCount),
+    studentReadyRate: ratioOrNull(studentReady, entityCount),
     byTier,
   };
 }
@@ -103,7 +102,7 @@ export function buildChurnMetrics(input: {
     releaseQueueItems: input.releaseQueueItems,
     referenceRepairAudits: input.referenceRepairAudits,
     mintedThenMerged,
-    mintedThenMergedRate: rate(mintedThenMerged, input.liveEntityCount + mintedThenMerged),
+    mintedThenMergedRate: ratioOrNull(mintedThenMerged, input.liveEntityCount + mintedThenMerged),
   };
 }
 
@@ -111,26 +110,23 @@ export interface DedupeScore {
   groundTruthPairs: number;
   predictedPairs: number;
   truePositives: number;
-  precision: number;
-  recall: number;
-  f1: number;
+  precision: MetricRatio;
+  recall: MetricRatio;
+  f1: MetricRatio;
 }
 
 export function scoreDedupe(
   predicted: GroundTruthPair[],
   groundTruth: GroundTruthPair[],
 ): DedupeScore {
-  const key = (pair: GroundTruthPair): string => `${pair.mergedKey}=>${pair.canonicalKey}`;
+  const key = (pair: GroundTruthPair): string => pairKey(pair.mergedKey, pair.canonicalKey);
   const truthSet = new Set(groundTruth.map(key));
   const predictedSet = new Set(predicted.map(key));
   let truePositives = 0;
   for (const p of predictedSet) if (truthSet.has(p)) truePositives += 1;
-  const precision = rate(truePositives, predictedSet.size);
-  const recall = rate(truePositives, truthSet.size);
-  const f1 =
-    precision + recall === 0
-      ? 0
-      : Number(((2 * precision * recall) / (precision + recall)).toFixed(4));
+  const precision = ratioOrNull(truePositives, predictedSet.size);
+  const recall = ratioOrNull(truePositives, truthSet.size);
+  const f1 = harmonicMean(precision, recall);
   return {
     groundTruthPairs: truthSet.size,
     predictedPairs: predictedSet.size,
