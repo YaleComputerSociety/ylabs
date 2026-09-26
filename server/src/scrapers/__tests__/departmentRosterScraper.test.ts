@@ -2623,6 +2623,45 @@ describe('DepartmentRosterScraper.run', () => {
     expect((cs?.value as any).complete).toBe(false);
   });
 
+  it('lists discovered entity keys in a stable sorted order', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Zoe Zephyr',
+        title: 'Professor of Italian',
+        labUrl: 'https://zephyr-lab.example.org',
+      },
+      {
+        name: 'Mia Middle',
+        title: 'Professor of Italian',
+        labUrl: 'https://middle-lab.example.org',
+      },
+      {
+        name: 'Ada Alpha',
+        title: 'Professor of Italian',
+        labUrl: 'https://alpha-lab.example.org',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'italian',
+        deptName: 'Italian Language and Literature',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://italian.yale.edu/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const snapshot = emitted.find((o) => o.entityType === 'departmentRosterHealth');
+    const keys = (snapshot?.value as any).discoveredEntityKeys as string[];
+    expect(keys).toHaveLength(3);
+    expect(keys).toEqual([...keys].sort());
+  });
+
   it('publishes for a department whose last-declared lane is a programme tab', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       { name: 'Test Faculty', email: 'tf123@yale.edu', title: 'Professor of Economics' },
