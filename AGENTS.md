@@ -147,6 +147,8 @@ A dry run applies no patch, so it reports `resolvedByGate: null` with a note rat
 - The scoreboard is the instrument for both reads, per-fix verification and cross-environment drift: `yarn --cwd server research-entity:served-scoreboard`, documented in `docs/served-corpus-scoreboard.md`.
 - Is the corpus getting better over time? Read the Corpus Quality panel on `/analytics`, or take a measurement with `yarn --cwd server corpus:snapshot`, documented in `docs/corpus-quality-panel.md`.
 Do not answer a coverage or quality question with a throwaway script when a stored measurement already exists.
+- Is one lane getting better? Replay it on its frozen benchmark with `yarn --cwd server lane:scorecard`, documented in `docs/lane-scorecard.md`.
+The other instruments move when the corpus moves; this one moves only when lane code does.
 - What browse actually serves is a third question, and `yarn --cwd server journey:eval` answers it through the real search route, documented in `server/src/scripts/journeyEval/README.md`.
 The panel counts stored values, so a field the serving path withholds reads as present there; take a served number from the route.
 A browse defect belongs in that harness as a case rather than in a new audit script, and its README carries the two rules that keep a case useful: assert that a stored-to-served difference is attributable to a named guard rather than absent, and never gate on a rate.

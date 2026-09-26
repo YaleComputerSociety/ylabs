@@ -16,6 +16,13 @@ export { Source } from './source';
 export { VisibilityReleaseQueueItem } from './visibilityReleaseQueueItem';
 export { CorpusQualitySnapshot, CORPUS_QUALITY_SNAPSHOT_COLLECTION } from './corpusQualitySnapshot';
 export { GateScorecardSnapshot, GATE_SCORECARD_SNAPSHOT_COLLECTION } from './gateScorecardSnapshot';
+export {
+  LaneBenchmark,
+  LaneBenchmarkPage,
+  LANE_BENCHMARK_COLLECTION,
+  LANE_BENCHMARK_PAGE_COLLECTION,
+} from './laneBenchmark';
+export { LaneScorecardSnapshot, LANE_SCORECARD_SNAPSHOT_COLLECTION } from './laneScorecardSnapshot';
 export { Observation, type ObservedEntityType } from './observation';
 export { ScrapeRun } from './scrapeRun';
 export { ScrapeSnapshot } from './scrapeSnapshot';
