@@ -3838,6 +3838,50 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(emitted).toHaveLength(0);
   });
 
+  it('keeps the PI evidence of a default run when the profile-linked home is refused', async () => {
+    vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const emitted: ObservationInput[] = [];
+    const shell = {
+      _id: 'entity-1',
+      name: 'Morgan Fixture Lab',
+      slug: 'nih-pi-morgan-fixture',
+      sourceUrls: ['https://medicine.yale.edu/profile/morgan-fixture/'],
+      leadUserProfileUrls: ['https://medicine.yale.edu/profile/morgan-fixture/'],
+      leadUsers: [{ fname: 'Morgan', lname: 'Fixture', email: 'morgan.fixture@yale.edu' }],
+    };
+    const scraper = new OfficialProfilePiBackfillScraper(
+      vi.fn(async () => yalePrefixedLeadershipProfileHtml),
+      vi.fn(async () => [shell]),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => [shell]),
+    );
+
+    const result = await scraper.run({
+      ...contextFor(emitted),
+      options: { dryRun: true, useCache: false, release: false, only: [] },
+    });
+
+    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'researchEntity',
+          entityKey: 'nih-pi-morgan-fixture',
+          field: 'inferredPiUserKey',
+          value: 'morgan.fixture',
+        }),
+      ]),
+    );
+    expect(emitted.map((o) => o.field)).not.toContain('entityType');
+    expect(emitted.map((o) => o.value)).not.toContain(
+      'https://medicine.yale.edu/internal-medicine/livercenter/',
+    );
+  });
+
   it('still attaches a lab-classified profile-linked home to a grant-derived PI shell', async () => {
     vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
       select: vi.fn().mockReturnThis(),

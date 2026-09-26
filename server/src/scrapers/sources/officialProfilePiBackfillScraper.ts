@@ -3424,15 +3424,19 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
             requireEmail: false,
             expectedPeople: entity.leadUsers,
           });
-          if (!identity) continue;
-          const [home] = extractOfficialProfileResearchHomes(html, profileUrl);
-          if (home && (await websiteUrlOwnedByAnotherEntity(home.url, entity))) continue;
-          if (
-            isInstitutionalHomeMismatchedWithPersonScopedShell(entity, home, identity.displayName)
-          ) {
-            continue;
+          const [home] = identity ? extractOfficialProfileResearchHomes(html, profileUrl) : [];
+          const homeIsAdmissible =
+            identity &&
+            home &&
+            !(await websiteUrlOwnedByAnotherEntity(home.url, entity)) &&
+            !isInstitutionalHomeMismatchedWithPersonScopedShell(
+              entity,
+              home,
+              identity.displayName,
+            );
+          if (homeIsAdmissible) {
+            observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
           }
-          observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
         }
 
         if (observations.length === 0) continue;
