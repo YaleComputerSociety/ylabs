@@ -3459,17 +3459,17 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
             requireEmail: false,
             expectedPeople: entity.leadUsers,
           });
-          const [home] = identity ? extractOfficialProfileResearchHomes(html, profileUrl) : [];
+          const [home] = extractOfficialProfileResearchHomes(html, profileUrl);
           // Named so the run can report WHY a home was withheld. A silent refusal is
           // indistinguishable from a guard that never ran: this lane withholds by
           // emitting nothing, so absence of a graft in the observation log is evidence
           // about the corpus rather than about the guard, and neither the #1484 nor the
           // #3529 arm could be told apart from a profile that simply linked nothing
           // contentious (#3537).
-          const homeRefusal: string | null = !identity
-            ? 'no-profile-identity'
-            : !home
-              ? null
+          const homeRefusal: string | null = !home
+            ? null
+            : !identity
+              ? 'no-profile-identity'
               : (await websiteUrlOwnedByAnotherEntity(home.url, entity))
                 ? 'website-owned-by-another-entity'
                 : profileLinkedHomeRefusal(entity, home, identity.displayName);

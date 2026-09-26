@@ -4532,10 +4532,6 @@ describe('officialProfilePiBackfillScraper', () => {
       ).toBe(false);
     });
 
-    // A topical lab name carries no eponym for a url path to corroborate, so there is
-    // nothing to refuse and the home is adopted. Stated as a test because the opposite
-    // reading - refusing whatever the identity tokens do not match - would condemn every
-    // lab that is not named after its own PI.
     // The three arms answer three different questions, so each names itself. Pinned
     // because a single "refused" label is what made the earlier version unable to say
     // which one fired (#3537).
@@ -4562,6 +4558,10 @@ describe('officialProfilePiBackfillScraper', () => {
       ).toBeNull();
     });
 
+    // A topical lab name carries no eponym for a url path to corroborate, so there is
+    // nothing to refuse and the home is adopted. Stated as a test because the opposite
+    // reading - refusing whatever the identity tokens do not match - would condemn every
+    // lab that is not named after its own PI.
     it('adopts a topical lab home no url path contradicts', () => {
       expect(
         isInstitutionalHomeMismatchedWithPersonScopedShell(
