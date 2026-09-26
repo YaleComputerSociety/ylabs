@@ -21,12 +21,18 @@
  * materialization restores the graft. `isPromotableWebsiteUrl` has no arm that can
  * refuse this, because whether a page is an organization's identity page is a fact
  * about the corpus rather than about the URL's shape, and every guard there is a pure
- * URL predicate. So the clear is paired with an `engine_gap_workaround` lock on
- * `websiteUrl`, the same mechanism `repairVanityHostCitations` and
- * `repairPromotionRegressedWebsiteUrls` use for the same engine gap (#2542, #2612):
- * the lock asserts the absence, and it is revisitable the moment the engine can
- * retract a field it no longer has evidence for. The locked slot is also why a second
- * run plans nothing.
+ * URL predicate.
+ *
+ * So the clear is paired with a `fieldValueRefusals` record, rule `wrong_owner`. This
+ * lane used an `engine_gap_workaround` lock for the same purpose, and its own docblock
+ * called that revisitable "the moment the engine can retract a field it no longer has
+ * evidence for". `fieldValueRefusals` is that moment: it is keyed on the VALUE, so the
+ * borrowed page may stay in `website` and `sourceUrls` and still never be promoted, and
+ * the engine honours it on both paths - `refusedResolverObservations` drops refused
+ * observations before `resolveAllFields`, and the citation-promotion path checks
+ * `valueIsRefused`. A refusal also carries its rule and its reason and can be withdrawn,
+ * which a lock cannot, and it leaves the field open so a real research home still wins.
+ * The recorded refusal is also why a second run plans nothing.
  *
  * Dry-run is the default and apply needs an explicit confirm flag. Clearing a
  * borrowed URL is not a neutral subtraction: the collision can be the only thing
@@ -36,9 +42,9 @@
  * An apply therefore does two different things, and the report separates them because
  * verification is a re-read of the served surface. `plannedFilledSlotRows` are rows
  * whose slot holds the borrowed page: a student stops seeing a website there.
- * `plannedEmptySlotLockRows` are rows a previous unlocked apply already cleared, where
+ * `plannedEmptySlotRefusalRows` are rows a previous bare clear already emptied, where
  * the page is only queued to be promoted back: nothing on the served surface changes,
- * and the whole effect is the lock that stops the next materialization restoring it.
+ * and the whole effect is the refusal that stops the next materialization restoring it.
  *
  * Run:
  *   yarn --cwd server observations:retire-organization-identity-websites
@@ -62,7 +68,7 @@ import {
 import { syncEntity } from '../services/meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { planFieldLock } from '../utils/researchEntityFieldLocks';
+import { planFieldValueRefusal } from '../utils/researchEntityFieldValueRefusals';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   canonicalWebsitePageKey,
@@ -83,8 +89,8 @@ const SCRIPT_NAME = 'observations:retire-organization-identity-websites';
 const ROLLBACK_REASON =
   "organization identity page as a person website: the organization is its own research entity, so the page is that entity's identity rather than this person's research home (#2535)";
 const ORGANIZATION_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
-const WEBSITE_URL_LOCK_NOTE =
-  "the organization's identity page stays in this row's `website` field and `sourceUrls`, and `resolveBackfillWebsiteUrl` promotes the first promotable candidate back into an empty slot, so an unlocked clear is undone on the next materialization; revisit once the engine can retract a field it no longer has evidence for (#2542).";
+const WEBSITE_URL_REFUSAL_NOTE =
+  "the organization's identity page stays in this row's `website` field and `sourceUrls`, and `resolveBackfillWebsiteUrl` promotes the first promotable candidate back into an empty slot, so a bare clear is undone on the next materialization; refusing the VALUE holds because the resolver screen drops refused observations and the citation-promotion path checks `valueIsRefused`, and unlike a lock it leaves the field open for a real research home (#2542, #3167).";
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
@@ -138,7 +144,7 @@ function parseSlugList(value: string | undefined): string[] {
 /**
  * `storedWebsiteUrl` is what the row serves right now, and it is what separates the two
  * things an apply does. A row whose slot holds the borrowed page loses a link a student
- * can see; a row whose slot is already empty only gains the lock that stops the page
+ * can see; a row whose slot is already empty only gains the refusal that stops the page
  * being promoted back into it, and re-reading the served surface shows no change for
  * that row. Reporting one merged count makes the operator verify against the wrong
  * number.
@@ -151,6 +157,7 @@ interface PlannedRow {
   studentVisibilityTier?: string;
   storedWebsiteUrl: string;
   manuallyLockedFields: string[];
+  fieldValueRefusals: unknown;
   plan: OrganizationIdentityWebsiteGraftPlan;
 }
 
@@ -202,13 +209,13 @@ export async function loadPlannedRows(only: string[]): Promise<PlannedRow[]> {
     await loadOrganizationIdentityWebsites(),
   );
   // Not filtered on a non-empty `websiteUrl`: a row a previous apply cleared without
-  // locking still re-promotes the borrowed page from `sourceUrls`, and the lane has to
+  // clearing alone still re-promotes the borrowed page from `sourceUrls`, and the lane has to
   // converge it rather than go blind on it (see `effectiveWebsiteUrl`).
   const filter: Record<string, unknown> = { archived: { $ne: true } };
   if (only.length > 0) filter.slug = { $in: only };
   const rows = await ResearchEntity.find(filter)
     .select(
-      '_id slug name displayName entityType kind websiteUrl website sourceUrls studentVisibilityTier manuallyLockedFields',
+      '_id slug name displayName entityType kind websiteUrl website sourceUrls studentVisibilityTier manuallyLockedFields fieldValueRefusals',
     )
     .lean();
 
@@ -231,6 +238,7 @@ export async function loadPlannedRows(only: string[]): Promise<PlannedRow[]> {
       manuallyLockedFields: Array.isArray(row.manuallyLockedFields)
         ? row.manuallyLockedFields.filter((entry: unknown) => typeof entry === 'string')
         : [],
+      fieldValueRefusals: row.fieldValueRefusals,
       plan,
     });
   }
@@ -313,30 +321,32 @@ async function applyRepair(
 ): Promise<{
   rowsRepaired: number;
   servedSlotsCleared: number;
-  emptySlotsLocked: number;
+  emptySlotRefusalsRecorded: number;
   observationsSuperseded: number;
   regatedEntities: number;
 }> {
   let rowsRepaired = 0;
   let servedSlotsCleared = 0;
-  let emptySlotsLocked = 0;
+  let emptySlotRefusalsRecorded = 0;
   for (const row of planned) {
     const result = await ResearchEntity.updateOne(
       { _id: new mongoose.Types.ObjectId(row.entityId) },
       {
         $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' },
-        $set: planFieldLock(row.manuallyLockedFields, {
+        $set: planFieldValueRefusal(row.fieldValueRefusals, {
           field: 'websiteUrl',
-          reason: 'engine_gap_workaround',
-          lockedBy: SCRIPT_NAME,
-          note: WEBSITE_URL_LOCK_NOTE,
+          value: row.plan.graftedWebsiteUrl,
+          rule: 'wrong_owner',
+          refusedBy: SCRIPT_NAME,
+          note: WEBSITE_URL_REFUSAL_NOTE,
+          evidenceUrl: row.plan.graftedWebsiteUrl,
         }),
       },
     );
     if (result.modifiedCount > 0) {
       rowsRepaired += 1;
       if (servesGraftedWebsiteUrl(row)) servedSlotsCleared += 1;
-      else emptySlotsLocked += 1;
+      else emptySlotRefusalsRecorded += 1;
     }
   }
 
@@ -379,7 +389,7 @@ async function applyRepair(
   return {
     rowsRepaired,
     servedSlotsCleared,
-    emptySlotsLocked,
+    emptySlotRefusalsRecorded,
     observationsSuperseded,
     regatedEntities,
   };
@@ -413,7 +423,7 @@ async function main() {
     }
     if (planned.length > args.maxApply) {
       throw new Error(
-        `Apply would clear ${plannedFilledSlots.length} served website slots and lock ${
+        `Apply would clear ${plannedFilledSlots.length} served website slots and refuse ${
           planned.length - plannedFilledSlots.length
         } already-empty slots, ${planned.length} rows in total, above --max-apply=${args.maxApply}.`,
       );
@@ -425,7 +435,7 @@ async function main() {
     : {
         rowsRepaired: 0,
         servedSlotsCleared: 0,
-        emptySlotsLocked: 0,
+        emptySlotRefusalsRecorded: 0,
         observationsSuperseded: 0,
         regatedEntities: 0,
       };
@@ -437,7 +447,7 @@ async function main() {
     mode: args.apply ? 'apply' : 'dry-run',
     plannedRows: planned.length,
     plannedFilledSlotRows: plannedFilledSlots.length,
-    plannedEmptySlotLockRows: planned.length - plannedFilledSlots.length,
+    plannedEmptySlotRefusalRows: planned.length - plannedFilledSlots.length,
     plannedStudentVisibleRowsLosingWebsite: plannedFilledSlots.filter(
       (row) => row.studentVisibilityTier === 'student_ready',
     ).length,
@@ -450,7 +460,7 @@ async function main() {
     regateCandidates: regateEntityIds.length,
     rowsRepaired: applied.rowsRepaired,
     servedSlotsCleared: applied.servedSlotsCleared,
-    emptySlotsLocked: applied.emptySlotsLocked,
+    emptySlotRefusalsRecorded: applied.emptySlotRefusalsRecorded,
     observationsSuperseded: applied.observationsSuperseded,
     regatedEntities: applied.regatedEntities,
     byOwnerEntityType: planned.reduce<Record<string, number>>((acc, row) => {
