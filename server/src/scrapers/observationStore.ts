@@ -27,6 +27,14 @@ import { offTopicResearchHomeDemotionScore } from '../utils/researchHomeDescript
 import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
 import { containsHtmlTagMarkup } from '../utils/descriptionHygiene';
 import type { ObservationInput } from './types';
+import {
+  DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS,
+  OWNERSHIP_GUARDED_DESCRIPTION_FIELDS,
+  OWNERSHIP_GUARDED_ENTITY_TYPE,
+  ownershipGuardedCitedUrls,
+  refusesDescriptionOnSharedPage,
+} from './descriptionSourceOwnership';
+import { normalizeEvidenceUrl } from './utils/sharedEvidenceUrls';
 
 export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
 
@@ -45,6 +53,8 @@ export function c4LosslessIngestEnabled(env: NodeJS.ProcessEnv = process.env): b
 export function c4LosslessIngestDeclared(env: NodeJS.ProcessEnv = process.env): boolean {
   return String(env.C4_LOSSLESS_INGEST ?? '').trim() !== '';
 }
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function entityKeyForProse(obs: { entityId?: string; entityKey?: string }): string {
   return obs.entityId || obs.entityKey || '';
@@ -352,6 +362,58 @@ interface AppendContext {
   dryRun: boolean;
 }
 
+/**
+ * For each cited URL in the batch that the ownership bar could apply to, the set of
+ * entity keys that already hold a live description observation citing it.
+ *
+ * Keys rather than a count, so the caller can exclude the row being written without a
+ * second read: re-asserting a page this row already cites must never look like a
+ * foreign citer.
+ */
+async function loadForeignDescriptionCiters(
+  inputs: readonly ObservationInput[],
+): Promise<Map<string, Set<string>>> {
+  const urls = ownershipGuardedCitedUrls(inputs);
+  const byUrl = new Map<string, Set<string>>();
+  if (urls.length === 0) return byUrl;
+
+  // Filtered by HOST and normalized in JS, never matched on the normalized string.
+  // `normalizeEvidenceUrl` drops a query string, a trailing slash and a `www.`, so a
+  // stored `.../directory-name/` never equals its own normalized form and an `$in` on
+  // normalized values reads zero citers for a page twenty rows cite.
+  const hosts = new Set<string>();
+  for (const url of urls) {
+    try {
+      hosts.add(new URL(url).hostname);
+    } catch {
+      continue;
+    }
+  }
+  if (hosts.size === 0) return byUrl;
+  const wanted = new Set(urls);
+  const rows = await Observation.find(
+    {
+      entityType: OWNERSHIP_GUARDED_ENTITY_TYPE,
+      field: { $in: [...OWNERSHIP_GUARDED_DESCRIPTION_FIELDS] },
+      superseded: { $ne: true },
+      $or: [...hosts].map((host) => ({
+        sourceUrl: { $regex: `^https?://(www\\.)?${escapeRegExp(host)}(/|$|\\?)`, $options: 'i' },
+      })),
+    },
+    { sourceUrl: 1, entityKey: 1, entityId: 1 },
+  ).lean();
+  for (const row of rows as any[]) {
+    const url = normalizeEvidenceUrl(row.sourceUrl);
+    if (!wanted.has(url)) continue;
+    const key = entityKeyForProse(row);
+    if (!key) continue;
+    const existing = byUrl.get(url) ?? new Set<string>();
+    existing.add(key);
+    byUrl.set(url, existing);
+  }
+  return byUrl;
+}
+
 export async function appendObservations(
   inputs: ObservationInput[],
   ctx: AppendContext,
@@ -376,9 +438,32 @@ export async function appendObservations(
     if (isUncitableHostUrl(obs.sourceUrl)) rejectedUncitableHost += 1;
     else candidateInputs.push(obs);
   }
+  // A page several rows already cite as their description cannot be the description
+  // of this one either. The judgement sits here for the same reason the uncitable-host
+  // refusal above does: it was written into one extractor (#3162) and the lanes it did
+  // not reach kept storing unowned descriptions afterwards (#3481).
+  //
+  // One aggregation per batch, over the distinct cited URLs the bar could apply to, so
+  // widening the guard costs a single read rather than one per observation.
+  const foreignCitersByUrl = await loadForeignDescriptionCiters(candidateInputs);
+  const ownershipRejected: ObservationInput[] = [];
+  const ownedInputs: ObservationInput[] = [];
+  for (const obs of candidateInputs) {
+    const url = normalizeEvidenceUrl(obs.sourceUrl);
+    const citers = foreignCitersByUrl.get(url);
+    const foreign = citers ? [...citers].filter((key) => key !== entityKeyForProse(obs)).length : 0;
+    if (refusesDescriptionOnSharedPage(obs, foreign)) ownershipRejected.push(obs);
+    else ownedInputs.push(obs);
+  }
+  if (ownershipRejected.length > 0) {
+    console.warn(
+      `[observation-store] ${ctx.sourceName} asserted ${ownershipRejected.length} description(s) citing a page at least ${DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS} other entities already cite; refused at ingest (#3481).`,
+    );
+  }
+
   const sanitizedInputs: ObservationInput[] = [];
   let rejectedFurniture = 0;
-  for (const obs of candidateInputs) {
+  for (const obs of ownedInputs) {
     const sanitized = sanitizeObservationField(obs.entityType, obs.field, obs.value);
     if (sanitized.rejected) {
       rejectedFurniture += 1;
