@@ -25,6 +25,8 @@
  * Usage:
  *   yarn --cwd server research-entity:refuse-field-value --slug=<slug> \
  *     --field=websiteUrl --value=<url> --rule=wrong_owner --note='why'
+ *   Pass --source-name=<lane> when a lane emitted the refused value, so the refusal
+ *   divides by lane and that lane's precision has a denominator.
  *   yarn --cwd server research-entity:refuse-field-value --slug=<slug> \
  *     --field=websiteUrl --value=<url> --rule=wrong_owner --apply \
  *     --confirm-field-value-refusal
@@ -66,6 +68,7 @@ export interface RefuseFieldValueArgs {
   field: string;
   value: string;
   rule: FieldValueRefusalRule;
+  sourceName?: string;
   note: string;
   /** Who made the judgement, required when the rule is `operator_judgement`. */
   decidedBy?: string;
@@ -99,6 +102,8 @@ export function parseRefuseFieldValueArgs(argv: string[]): RefuseFieldValueArgs 
       args.decidedBy = arg.slice('--decided-by='.length).trim();
     else if (arg.startsWith('--evidence-url='))
       args.evidenceUrl = arg.slice('--evidence-url='.length).trim();
+    else if (arg.startsWith('--source-name='))
+      args.sourceName = arg.slice('--source-name='.length).trim();
     else if (arg.startsWith('--rule=')) args.rule = arg.slice('--rule='.length).trim() as never;
     else throw new Error(`Unknown ${SCRIPT_NAME} argument: ${arg}`);
   }
@@ -163,6 +168,7 @@ async function main(): Promise<void> {
           field: args.field,
           value: args.value,
           rule: args.rule,
+          ...(args.sourceName ? { sourceName: args.sourceName } : {}),
           refusedBy: args.decidedBy ? `${SCRIPT_NAME} (${args.decidedBy})` : SCRIPT_NAME,
           note: args.note,
           evidenceUrl: args.evidenceUrl,

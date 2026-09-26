@@ -98,6 +98,11 @@ export const fieldValueRefusalSchema = new mongoose.Schema(
   {
     valueKey: { type: String, required: true },
     rule: { type: String, required: true },
+    // Names the lane that emitted the refused value, which `refusedBy` does not:
+    // that names the operator or script that recorded the refusal. Without this a
+    // refusal is countable but not attributable, so no lane's precision has a
+    // denominator (#3506).
+    sourceName: { type: String, required: false },
     refusedBy: { type: String, default: '' },
     refusedAt: { type: Date, required: false },
     note: { type: String, default: '', maxlength: 2000 },

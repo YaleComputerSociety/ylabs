@@ -55,6 +55,7 @@ export type FieldValueRefusalRule = PerRowFieldValueRefusalRule | ResearchHomeWe
 export interface FieldValueRefusal {
   valueKey: string;
   rule: FieldValueRefusalRule;
+  sourceName?: string;
   refusedBy: string;
   refusedAt: Date;
   note: string;
@@ -171,6 +172,7 @@ export interface FieldValueRefusalDeclaration {
   field: string;
   value: unknown;
   rule: FieldValueRefusalRule;
+  sourceName?: string;
   refusedBy: string;
   note?: string;
   evidenceUrl?: string;
@@ -210,9 +212,11 @@ export function planFieldValueRefusal(
   if (existing.some((refusal) => refusal.valueKey === valueKey && !refusal.withdrawnAt)) {
     return { [fieldValueRefusalsPath(field)]: existing };
   }
+  const sourceName = declaration.sourceName?.trim();
   const refusal: FieldValueRefusal = {
     valueKey,
     rule,
+    ...(sourceName ? { sourceName } : {}),
     refusedBy: refusedBy.trim(),
     refusedAt: declaration.refusedAt ?? new Date(),
     note: declaration.note ?? '',
