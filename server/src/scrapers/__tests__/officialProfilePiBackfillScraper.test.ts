@@ -12,6 +12,7 @@ import {
   identityToResearchEntityPiObservations,
   identityToUserObservations,
   isInstitutionalHomeMismatchedWithPersonScopedShell,
+  profileLinkedHomeRefusal,
   generatedOfficialProfileUrlCandidatesForPerson,
   leadDirectResearchHomeUrlsForEntity,
   leadDirectResearchHomeUrlsForUser,
@@ -3910,6 +3911,42 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
     expect(emitted.find((o) => o.field === 'entityType')?.value).toBe('LAB');
     expect(emitted.find((o) => o.field === 'name')?.value).toBe('Hayden Fixture Lab');
+    expect(result.notes).toContain('adopted 1 profile-linked research homes');
+    expect(result.notes).toContain('refused none');
+  });
+
+  // A refusal that emits nothing is indistinguishable from a profile that linked nothing
+  // contentious, so absence in the observation log is evidence about the corpus rather
+  // than about the guard. The run has to say which arm fired (#3537).
+  it('reports which arm withheld a profile-linked research home', async () => {
+    vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const emitted: ObservationInput[] = [];
+    const shell = {
+      _id: 'entity-1',
+      name: 'Morgan Fixture Lab',
+      slug: 'nih-pi-morgan-fixture',
+      sourceUrls: ['https://medicine.yale.edu/profile/morgan-fixture/'],
+      leadUserProfileUrls: ['https://medicine.yale.edu/profile/morgan-fixture/'],
+      leadUsers: [{ fname: 'Morgan', lname: 'Fixture', email: 'morgan.fixture@yale.edu' }],
+    };
+    const scraper = new OfficialProfilePiBackfillScraper(
+      vi.fn(async () => yalePrefixedLeadershipProfileHtml),
+      vi.fn(async () => [shell]),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => [shell]),
+    );
+
+    const result = await scraper.run({
+      ...contextFor(emitted),
+      options: { dryRun: true, useCache: false, release: false, only: [] },
+    });
+
+    expect(result.notes).toContain('adopted 0 profile-linked research homes');
+    expect(result.notes).toContain('institutional-home-on-a-grant-shell=1');
   });
 
   it('does not promote navigation programs when the profile only names an unlinked lab', () => {
@@ -4499,6 +4536,32 @@ describe('officialProfilePiBackfillScraper', () => {
     // nothing to refuse and the home is adopted. Stated as a test because the opposite
     // reading - refusing whatever the identity tokens do not match - would condemn every
     // lab that is not named after its own PI.
+    // The three arms answer three different questions, so each names itself. Pinned
+    // because a single "refused" label is what made the earlier version unable to say
+    // which one fired (#3537).
+    it('names which arm refused the home', () => {
+      expect(
+        profileLinkedHomeRefusal(
+          { slug: 'ysm-faculty-david-fiellin' },
+          anotherPersonsLab,
+          'David Fiellin',
+        ),
+      ).toBe('names-another-persons-lab');
+      expect(profileLinkedHomeRefusal({ slug: 'nih-pi-david-fiellin' }, centre, undefined)).toBe(
+        'institutional-home-on-a-grant-shell',
+      );
+      expect(
+        profileLinkedHomeRefusal({ slug: 'ysm-faculty-david-fiellin' }, centre, 'David Fiellin'),
+      ).toBe('institutional-home-on-a-person-keyed-shell');
+      expect(
+        profileLinkedHomeRefusal(
+          { slug: 'center-program-in-addiction-medicine' },
+          centre,
+          'David Fiellin',
+        ),
+      ).toBeNull();
+    });
+
     it('adopts a topical lab home no url path contradicts', () => {
       expect(
         isInstitutionalHomeMismatchedWithPersonScopedShell(
