@@ -510,7 +510,7 @@ Chunk per-entity `$in` lookups, give each entity its own evidence rather than on
   Entries are keyed by the final URL after redirects; a `304` whose final URL differs from the stored one is not trusted, and the request is re-sent without validators.
   `Cache-Control: no-store`, non-textual bodies, non-`GET` requests, requests carrying `Authorization`, `Cookie` or caller-set conditional headers, and pages with no validator are never stored, and `Set-Cookie` is never written to disk.
   It lives on the runner's local disk, never in Mongo: `SCRAPER_HTTP_CACHE_DIR` (default `$XDG_CACHE_HOME/ylabs/scraper-http-cache`, else `~/.cache/ylabs/scraper-http-cache`), bounded by `SCRAPER_HTTP_CACHE_MAX_MB` (default 512, least recently used evicted first), and disabled with `SCRAPER_HTTP_CACHE=off`.
-  `--release` bypasses it, both by not installing it in the CLI and through the orchestrator's run scope.
+  `--release` bypasses it: the CLI never installs the interceptor for a release run.
   The orchestrator attributes counters to the run through `AsyncLocalStorage` and records them as `fetchMetrics.httpCache` (`revalidations`, `notModified`, `bytesSaved`, `bytesDownloaded`, `stored`, `refetched`, `storeErrors`) on the `ScrapeRun`; when the cache saw activity, a lane that reports no fetch attempts gets an empty `attempts` list beside it, which the run report reads the same as absent.
 - `runReport.ts` - structured report for a completed scrape run
 - `sourceYieldGuard.ts` - fails a run whose source has emitted zero observations on `BARREN_RUN_STREAK_FAILURE_THRESHOLD` (3) consecutive runs, so a dead acquisition lane cannot read as `success` (#2607).

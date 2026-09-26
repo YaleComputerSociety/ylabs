@@ -83,15 +83,19 @@ describe('attachHttpValidatorCache', () => {
     const body = '<html><body>synthetic lab page</body></html>';
     routes.set('/page', etagRoute(body, '"v1"'));
 
-    const first = await client.get(`${origin}/page`, { responseType: 'text' });
-    const second = await client.get(`${origin}/page`, { responseType: 'text' });
+    const { value, stats } = await withHttpValidatorCacheScope(async () => {
+      const first = await client.get(`${origin}/page`, { responseType: 'text' });
+      const second = await client.get(`${origin}/page`, { responseType: 'text' });
+      return { first, second };
+    });
+    const { first, second } = value;
 
     expect(seen.map((request) => request.ifNoneMatch)).toEqual([undefined, '"v1"']);
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(second.data).toBe(body);
     expect(second.headers['etag']).toBe('"v1"');
-    expect(handle.globalStats()).toMatchObject({
+    expect(stats).toMatchObject({
       revalidations: 1,
       notModified: 1,
       stored: 1,
@@ -180,28 +184,17 @@ describe('attachHttpValidatorCache', () => {
     });
     routes.set('/post', etagRoute('<p>posted</p>', '"p1"'));
 
-    await client.get(`${origin}/image`);
-    await client.get(`${origin}/image`);
-    await client.get(`${origin}/no-validators`);
-    await client.get(`${origin}/no-validators`);
-    await client.post(`${origin}/post`, 'x');
-    await client.get(`${origin}/post`);
+    const { stats } = await withHttpValidatorCacheScope(async () => {
+      await client.get(`${origin}/image`);
+      await client.get(`${origin}/image`);
+      await client.get(`${origin}/no-validators`);
+      await client.get(`${origin}/no-validators`);
+      await client.post(`${origin}/post`, 'x');
+      await client.get(`${origin}/post`);
+    });
 
     expect(seen.every((request) => request.ifNoneMatch === undefined)).toBe(true);
-    expect(handle.globalStats().stored).toBe(1);
-  });
-
-  it('bypasses the cache entirely inside a release scope', async () => {
-    routes.set('/page', etagRoute('<p>release</p>', '"r1"'));
-
-    const { stats } = await withHttpValidatorCacheScope({ bypass: true }, async () => {
-      await client.get(`${origin}/page`);
-      await client.get(`${origin}/page`);
-    });
-    await client.get(`${origin}/page`);
-
-    expect(seen.map((request) => request.ifNoneMatch)).toEqual([undefined, undefined, undefined]);
-    expect(stats).toEqual(emptyHttpValidatorCacheStats());
+    expect(stats.stored).toBe(1);
   });
 
   it('attributes counters to the run scope that made the request', async () => {
@@ -209,7 +202,7 @@ describe('attachHttpValidatorCache', () => {
     routes.set('/page', etagRoute(body, '"s1"'));
     await client.get(`${origin}/page`);
 
-    const { stats } = await withHttpValidatorCacheScope({ bypass: false }, async () => {
+    const { stats } = await withHttpValidatorCacheScope(async () => {
       await client.get(`${origin}/page`);
     });
 
@@ -228,11 +221,13 @@ describe('attachHttpValidatorCache', () => {
     expect(seen).toHaveLength(1);
 
     const agents = ssrfSafeAgents();
-    await expect(
-      client.get(localhostUrl, { httpAgent: agents.httpAgent, httpsAgent: agents.httpsAgent }),
-    ).rejects.toThrow(/Blocked private or non-public address/);
+    const { stats } = await withHttpValidatorCacheScope(async () => {
+      await expect(
+        client.get(localhostUrl, { httpAgent: agents.httpAgent, httpsAgent: agents.httpsAgent }),
+      ).rejects.toThrow(/Blocked private or non-public address/);
+    });
     expect(seen).toHaveLength(1);
-    expect(handle.globalStats().notModified).toBe(0);
+    expect(stats.notModified).toBe(0);
   });
 
   it('keys a redirected page by its final URL and refetches when the redirect target changes', async () => {
@@ -261,9 +256,11 @@ describe('attachHttpValidatorCache', () => {
     ]);
 
     target = '/other';
-    const moved = await client.get(`${origin}/old`, { responseType: 'text' });
+    const { value: moved, stats } = await withHttpValidatorCacheScope(() =>
+      client.get(`${origin}/old`, { responseType: 'text' }),
+    );
     expect(moved.data).toBe('<p>other page</p>');
-    expect(handle.globalStats().refetched).toBe(1);
+    expect(stats.refetched).toBe(1);
     expect(seen.filter((request) => request.path === '/other').map((r) => r.ifNoneMatch)).toEqual([
       '"shared"',
       undefined,

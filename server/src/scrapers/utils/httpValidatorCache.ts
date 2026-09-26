@@ -49,17 +49,15 @@ export function hasHttpValidatorCacheActivity(stats: HttpValidatorCacheStats): b
 }
 
 interface HttpCacheScope {
-  bypass: boolean;
   stats: HttpValidatorCacheStats;
 }
 
 const scopeStorage = new AsyncLocalStorage<HttpCacheScope>();
 
 export async function withHttpValidatorCacheScope<T>(
-  options: { bypass: boolean },
   run: () => Promise<T>,
 ): Promise<{ value: T; stats: HttpValidatorCacheStats }> {
-  const scope: HttpCacheScope = { bypass: options.bypass, stats: emptyHttpValidatorCacheStats() };
+  const scope: HttpCacheScope = { stats: emptyHttpValidatorCacheStats() };
   const value = await scopeStorage.run(scope, run);
   return { value, stats: scope.stats };
 }
@@ -337,7 +335,6 @@ export interface HttpValidatorCacheOptions {
 
 export interface HttpValidatorCacheHandle {
   detach(): void;
-  globalStats(): HttpValidatorCacheStats;
 }
 
 export function attachHttpValidatorCache(
@@ -347,10 +344,8 @@ export function attachHttpValidatorCache(
   const { store } = options;
   const maxEntryBytes = options.maxEntryBytes ?? DEFAULT_HTTP_CACHE_MAX_ENTRY_BYTES;
   const now = options.now ?? (() => new Date());
-  const globalStats = emptyHttpValidatorCacheStats();
 
   const bump = (field: keyof HttpValidatorCacheStats, amount = 1): void => {
-    globalStats[field] += amount;
     const scoped = scopeStorage.getStore();
     if (scoped) scoped.stats[field] += amount;
   };
@@ -362,7 +357,7 @@ export function attachHttpValidatorCache(
 
   const requestId = instance.interceptors.request.use(async (config) => {
     const cacheConfig = config as ConfigWithCacheState;
-    if (cacheConfig[SKIP_KEY] || scopeStorage.getStore()?.bypass) return config;
+    if (cacheConfig[SKIP_KEY]) return config;
     if ((config.method ?? 'get').toLowerCase() !== 'get') return config;
     if (!TEXTUAL_RESPONSE_TYPES.has(config.responseType)) return config;
     const requestHeaders = plainHeaders(config.headers);
@@ -524,7 +519,6 @@ export function attachHttpValidatorCache(
       instance.interceptors.request.eject(requestId);
       instance.interceptors.response.eject(responseId);
     },
-    globalStats: () => ({ ...globalStats }),
   };
 }
 

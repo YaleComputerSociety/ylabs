@@ -131,9 +131,7 @@ export class ScraperOrchestrator {
     };
 
     try {
-      const cached = await withHttpValidatorCacheScope({ bypass: options.release }, () =>
-        scraper.run(ctx),
-      );
+      const cached = await withHttpValidatorCacheScope(() => scraper.run(ctx));
       const result = withHttpCacheFetchMetrics(cached.value as ScraperResult, cached.stats);
       const evidenceCoverageImpact =
         options.dryRun && options.dbReview
