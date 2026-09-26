@@ -8,12 +8,14 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import mongoose from 'mongoose';
+import axios from 'axios';
+import { setCached } from '../snapshotCache';
 import {
   FederalAwardScraper,
   awardToRecord,
   awardPublicUrl,
   extractPiName,
-  federalPiSlug,
+  NO_PI_FIELD_NOTE,
   fundingAgenciesForGroup,
   groupAwardsByPi,
   maxStartDate,
@@ -25,10 +27,13 @@ import {
 } from '../sources/federalAwardScraper';
 import type { ObservationInput, ScraperContext } from '../types';
 
+vi.mock('axios', () => ({ default: { post: vi.fn() } }));
+vi.mock('../snapshotCache', () => ({ getCached: vi.fn(), setCached: vi.fn() }));
+
 const DOE_AWARD: UsaspendingAward = {
   'Award ID': 'DESC0004168',
   'Recipient Name': 'YALE UNIV',
-  Description: 'TAS::89 0222::TAS; NEW; RELATIVISTIC HEAVY ION PHYSICS;  PI - JOHN HARRIS',
+  Description: 'TAS::89 0222::TAS; NEW; RELATIVISTIC HEAVY ION PHYSICS;  PI - AVERY PLACEHOLDER',
   'Start Date': '2024-08-26',
   'End Date': '2027-03-31',
   'Award Amount': 19150000,
@@ -39,7 +44,7 @@ const DOE_AWARD: UsaspendingAward = {
 const DOE_AWARD_OLDER: UsaspendingAward = {
   ...DOE_AWARD,
   'Award ID': 'DESC0000001',
-  Description: 'NUCLEAR STRUCTURE; PI - JOHN HARRIS',
+  Description: 'NUCLEAR STRUCTURE; PI - AVERY PLACEHOLDER',
   'Start Date': '2021-01-01',
   'Award Amount': 500000,
   generated_internal_id: 'ASST_NON_DESC0000001_089',
@@ -48,7 +53,7 @@ const DOE_AWARD_OLDER: UsaspendingAward = {
 const NASA_AWARD: UsaspendingAward = {
   'Award ID': 'NNX00AA00A',
   'Recipient Name': 'YALE UNIV',
-  Description: 'EXOPLANET RADIAL VELOCITY; PRINCIPAL INVESTIGATOR - JOHN HARRIS',
+  Description: 'EXOPLANET RADIAL VELOCITY; PRINCIPAL INVESTIGATOR - AVERY PLACEHOLDER',
   'Start Date': '2023-05-01',
   'End Date': '2026-04-30',
   'Award Amount': 750000,
@@ -73,27 +78,27 @@ const entry = (award: UsaspendingAward, agencyAbbreviation = 'DOE'): FederalAwar
 
 describe('extractPiName', () => {
   it('extracts a "PI - NAME" inline principal investigator', () => {
-    expect(extractPiName('RELATIVISTIC HEAVY ION PHYSICS;  PI - JOHN HARRIS')).toEqual({
-      firstName: 'John',
-      lastName: 'Harris',
+    expect(extractPiName('RELATIVISTIC HEAVY ION PHYSICS;  PI - AVERY PLACEHOLDER')).toEqual({
+      firstName: 'Avery',
+      lastName: 'Placeholder',
     });
   });
   it('extracts a "PRINCIPAL INVESTIGATOR - NAME" form', () => {
-    expect(extractPiName('EXOPLANETS; PRINCIPAL INVESTIGATOR - MARIA LOPEZ')).toEqual({
-      firstName: 'Maria',
-      lastName: 'Lopez',
+    expect(extractPiName('EXOPLANETS; PRINCIPAL INVESTIGATOR - JORDAN EXAMPLE')).toEqual({
+      firstName: 'Jordan',
+      lastName: 'Example',
     });
   });
   it('handles a colon separator and a middle initial', () => {
-    expect(extractPiName('COMBUSTION STUDY; PI: JANE Q DOE')).toEqual({
-      firstName: 'Jane Q',
-      lastName: 'Doe',
+    expect(extractPiName('COMBUSTION STUDY; PI: RILEY Q SAMPLE')).toEqual({
+      firstName: 'Riley Q',
+      lastName: 'Sample',
     });
   });
   it('stops the name at a trailing stop-word', () => {
-    expect(extractPiName('PI - JOHN HARRIS AND COLLABORATORS')).toEqual({
-      firstName: 'John',
-      lastName: 'Harris',
+    expect(extractPiName('PI - AVERY PLACEHOLDER AND COLLABORATORS')).toEqual({
+      firstName: 'Avery',
+      lastName: 'Placeholder',
     });
   });
   it('returns null when there is no inline PI', () => {
@@ -102,7 +107,7 @@ describe('extractPiName', () => {
     expect(extractPiName(undefined)).toBeNull();
   });
   it('returns null for a single-token (surname-only) PI', () => {
-    expect(extractPiName('PI - HARRIS')).toBeNull();
+    expect(extractPiName('PI - PLACEHOLDER')).toBeNull();
   });
   it('does not match "PI" embedded without a separator', () => {
     expect(extractPiName('PIPELINE CORROSION STUDY OF ALLOYS')).toBeNull();
@@ -185,12 +190,6 @@ describe('sortGrantsByRecency / maxStartDate', () => {
   });
 });
 
-describe('federalPiSlug', () => {
-  it('keys the shell slug on the resolved user id', () => {
-    expect(federalPiSlug('507f1f77bcf86cd799439011')).toBe('federal-pi-507f1f77bcf86cd799439011');
-  });
-});
-
 function fakeUserFinder(users: Array<{ _id: string; fname: string; lname: string }>) {
   return async (name: string) => {
     const lower = name.toLowerCase();
@@ -227,7 +226,7 @@ function buildContext(overrides: Partial<ScraperContext['options']> = {}) {
 
 const ONE_AGENCY = [{ toptierName: 'Department of Energy', abbreviation: 'DOE' }];
 const TIME_PERIOD = { start_date: '2020-01-01', end_date: '2026-01-01' };
-const HARRIS = { _id: '507f1f77bcf86cd799439013', fname: 'John', lname: 'Harris' };
+const PLACEHOLDER_PI = { _id: '507f1f77bcf86cd799439013', fname: 'Avery', lname: 'Placeholder' };
 
 describe('FederalAwardScraper.run', () => {
   it('paginates one agency until hasNext is false', async () => {
@@ -237,7 +236,7 @@ describe('FederalAwardScraper.run', () => {
       .mockResolvedValueOnce({ awards: [NASA_AWARD], hasNext: false });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      resolveResearcherId: fakeUserFinder([HARRIS]) as any,
+      resolveResearcherId: fakeUserFinder([PLACEHOLDER_PI]) as any,
       researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,
@@ -284,8 +283,8 @@ describe('FederalAwardScraper.run', () => {
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
       resolveResearcherId: fakeUserFinder([
-        { _id: 'a', fname: 'John', lname: 'Harris' },
-        { _id: 'b', fname: 'John', lname: 'Harris' },
+        { _id: 'a', fname: 'Avery', lname: 'Placeholder' },
+        { _id: 'b', fname: 'Avery', lname: 'Placeholder' },
       ]) as any,
       researchHomeResolver: vi.fn(),
       agencies: ONE_AGENCY,
@@ -296,40 +295,32 @@ describe('FederalAwardScraper.run', () => {
     expect(emitted).toHaveLength(0);
   });
 
-  it('mints a federal-pi shell for a matched PI with no research home', async () => {
+  it('mints nothing for a matched PI with no existing research row, and says so', async () => {
     const fetchAgencyPage = vi.fn().mockResolvedValueOnce({ awards: [DOE_AWARD], hasNext: false });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      resolveResearcherId: fakeUserFinder([HARRIS]) as any,
+      resolveResearcherId: fakeUserFinder([PLACEHOLDER_PI]) as any,
       researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,
     });
     const { ctx, emitted } = buildContext();
-    await scraper.run(ctx);
-
-    const rg = emitted.filter((o) => o.entityType === 'researchEntity');
-    expect(rg.every((o) => o.entityKey === `federal-pi-${HARRIS._id}`)).toBe(true);
-    expect(rg.find((o) => o.field === 'slug')?.value).toBe(`federal-pi-${HARRIS._id}`);
-    expect(rg.find((o) => o.field === 'kind')?.value).toBe('individual');
-    const nameObs = rg.find((o) => o.field === 'name');
-    expect(nameObs?.value).toBe('John Harris Faculty Research');
-    expect(nameObs?.confidenceOverride).toBe(0.3);
-    expect(rg.find((o) => o.field === 'inferredPiUserId')?.value).toBe(HARRIS._id);
-    expect(rg.find((o) => o.field === 'inferredPiUserId')?.confidenceOverride).toBe(0.7);
-    expect(rg.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['DOE']);
-    expect(rg.find((o) => o.field === 'recentGrantCount')?.value).toBe(1);
+    const result = await scraper.run(ctx);
+    expect(emitted).toHaveLength(0);
+    expect(result.observationCount).toBe(0);
+    expect(result.notes).toMatch(/1 have no existing research row/);
+    expect(result.notes).toContain(NO_PI_FIELD_NOTE);
   });
 
   it('enriches one resolved canonical home and preserves its identity fields', async () => {
     const fetchAgencyPage = vi.fn().mockResolvedValueOnce({ awards: [DOE_AWARD], hasNext: false });
     const researchHomeResolver = vi
       .fn()
-      .mockResolvedValue({ status: 'canonical', slug: 'dept-physics-john-harris' });
+      .mockResolvedValue({ status: 'canonical', slug: 'dept-physics-row' });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
       resolveResearcherId: fakeUserFinder([
-        { _id: '507f1f77bcf86cd799439011', fname: 'John', lname: 'Harris' },
+        { _id: '507f1f77bcf86cd799439011', fname: 'Avery', lname: 'Placeholder' },
       ]) as any,
       researchHomeResolver,
       agencies: ONE_AGENCY,
@@ -340,7 +331,7 @@ describe('FederalAwardScraper.run', () => {
 
     expect(researchHomeResolver).toHaveBeenCalledWith('507f1f77bcf86cd799439011');
     const rg = emitted.filter((o) => o.entityType === 'researchEntity');
-    expect(rg.every((o) => o.entityKey === 'dept-physics-john-harris')).toBe(true);
+    expect(rg.every((o) => o.entityKey === 'dept-physics-row')).toBe(true);
     expect(rg.find((o) => o.field === 'slug')).toBeUndefined();
     expect(rg.find((o) => o.field === 'name')).toBeUndefined();
     expect(rg.find((o) => o.field === 'kind')).toBeUndefined();
@@ -352,7 +343,7 @@ describe('FederalAwardScraper.run', () => {
     const fetchAgencyPage = vi.fn().mockResolvedValueOnce({ awards: [DOE_AWARD], hasNext: false });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      resolveResearcherId: fakeUserFinder([HARRIS]) as any,
+      resolveResearcherId: fakeUserFinder([PLACEHOLDER_PI]) as any,
       researchHomeResolver: vi.fn().mockResolvedValue({ status: 'ambiguous' }),
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,
@@ -370,8 +361,10 @@ describe('FederalAwardScraper.run', () => {
     });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      resolveResearcherId: fakeUserFinder([HARRIS]) as any,
-      researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
+      resolveResearcherId: fakeUserFinder([PLACEHOLDER_PI]) as any,
+      researchHomeResolver: vi
+        .fn()
+        .mockResolvedValue({ status: 'canonical', slug: 'dept-physics-row' }),
       agencies: [
         { toptierName: 'Department of Energy', abbreviation: 'DOE' },
         { toptierName: 'National Aeronautics and Space Administration', abbreviation: 'NASA' },
@@ -395,7 +388,7 @@ describe('FederalAwardScraper.run', () => {
     const fetchAgencyPage = vi.fn().mockResolvedValue({ awards: page, hasNext: true });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      resolveResearcherId: fakeUserFinder([HARRIS]) as any,
+      resolveResearcherId: fakeUserFinder([PLACEHOLDER_PI]) as any,
       researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,
@@ -409,7 +402,7 @@ describe('FederalAwardScraper.run', () => {
     const fetchAgencyPage = vi.fn().mockResolvedValue({ awards: [DOE_AWARD], hasNext: false });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      resolveResearcherId: fakeUserFinder([HARRIS]) as any,
+      resolveResearcherId: fakeUserFinder([PLACEHOLDER_PI]) as any,
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,
     });
@@ -422,7 +415,7 @@ describe('FederalAwardScraper.run', () => {
     const fetchAgencyPage = vi.fn().mockRejectedValueOnce(new Error('ECONNRESET'));
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      resolveResearcherId: fakeUserFinder([HARRIS]) as any,
+      resolveResearcherId: fakeUserFinder([PLACEHOLDER_PI]) as any,
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,
     });
@@ -431,5 +424,127 @@ describe('FederalAwardScraper.run', () => {
     expect(result.entitiesObserved).toBe(0);
     expect(emitted).toHaveLength(0);
     expect(logs.some((l) => /ECONNRESET|aborting/i.test(l))).toBe(true);
+  });
+
+  it('says why a run with no inline PI acquired nothing', async () => {
+    const fetchAgencyPage = vi.fn(async (agency: { abbreviation: string }) =>
+      agency.abbreviation === 'DOE'
+        ? { awards: [NO_PI_AWARD, { ...NO_PI_AWARD, 'Award ID': 'DESC0017661' }], hasNext: false }
+        : { awards: [], hasNext: false },
+    );
+    const scraper = new FederalAwardScraper({
+      fetchAgencyPage: fetchAgencyPage as any,
+      resolveResearcherId: fakeUserFinder([]) as any,
+      agencies: [
+        { toptierName: 'Department of Energy', abbreviation: 'DOE' },
+        { toptierName: 'Department of Defense', abbreviation: 'DOD' },
+      ],
+      timePeriod: TIME_PERIOD,
+    });
+    const { ctx } = buildContext();
+    const result = await scraper.run(ctx);
+    expect(result.observationCount).toBe(0);
+    expect(result.notes).toContain('USAspending awards fetched (2020-01-01 to 2026-01-01): 2');
+    expect(result.notes).toContain('[DOE 2, DOD 0]');
+    expect(result.notes).toContain('awards with an inline PI: 0');
+    expect(result.notes).toContain(NO_PI_FIELD_NOTE);
+  });
+
+  it('separates an ambiguous PI from an unresolved one in the notes', async () => {
+    const OTHER_AWARD = {
+      ...NASA_AWARD,
+      Description: 'EXOPLANET SURVEY; PI - JORDAN EXAMPLE',
+      generated_internal_id: 'ASST_NON_OTHER_080',
+    };
+    const fetchAgencyPage = vi
+      .fn()
+      .mockResolvedValueOnce({ awards: [DOE_AWARD, OTHER_AWARD], hasNext: false });
+    const scraper = new FederalAwardScraper({
+      fetchAgencyPage: fetchAgencyPage as any,
+      resolveResearcherId: fakeUserFinder([
+        { _id: 'a', fname: 'Avery', lname: 'Placeholder' },
+        { _id: 'b', fname: 'Avery', lname: 'Placeholder' },
+      ]) as any,
+      researchHomeResolver: vi.fn(),
+      agencies: ONE_AGENCY,
+      timePeriod: TIME_PERIOD,
+    });
+    const { ctx } = buildContext();
+    const result = await scraper.run(ctx);
+    expect(result.notes).toMatch(/1 resolved to no researcher, 1 resolved to several researchers/);
+  });
+
+  it('fails closed and says so when every agency fetch failed', async () => {
+    const fetchAgencyPage = vi.fn().mockRejectedValue(new Error('ECONNRESET'));
+    const scraper = new FederalAwardScraper({
+      fetchAgencyPage: fetchAgencyPage as any,
+      resolveResearcherId: fakeUserFinder([]) as any,
+      agencies: [
+        { toptierName: 'Department of Energy', abbreviation: 'DOE' },
+        { toptierName: 'Department of Defense', abbreviation: 'DOD' },
+      ],
+      timePeriod: TIME_PERIOD,
+    });
+    const { ctx, emitted } = buildContext();
+    const result = await scraper.run(ctx);
+    expect(emitted).toHaveLength(0);
+    expect(result.notes).toMatch(/^USAspending unreachable; failed closed/);
+    expect(result.notes).toContain('DOE 0 (fetch failed), DOD 0 (fetch failed)');
+  });
+
+  it('fails closed and says so when the response envelope drops its results array', async () => {
+    vi.mocked(axios.post).mockResolvedValue({ data: { detail: 'unexpected error' } });
+    const scraper = new FederalAwardScraper({
+      resolveResearcherId: fakeUserFinder([]) as any,
+      agencies: ONE_AGENCY,
+      timePeriod: TIME_PERIOD,
+    });
+    const { ctx, emitted } = buildContext({ useCache: true });
+    const result = await scraper.run(ctx);
+    expect(emitted).toHaveLength(0);
+    expect(setCached).not.toHaveBeenCalled();
+    expect(result.notes).toMatch(/^USAspending unreachable; failed closed/);
+    expect(result.notes).toContain('DOE 0 (fetch failed)');
+    expect(result.notes).not.toContain(NO_PI_FIELD_NOTE);
+  });
+
+  it('fails closed and says so when the response no longer carries Description', async () => {
+    const { Description: _dropped, ...withoutDescription } = DOE_AWARD;
+    const fetchAgencyPage = vi
+      .fn()
+      .mockResolvedValueOnce({ awards: [withoutDescription], hasNext: false });
+    const resolveResearcherId = vi.fn();
+    const scraper = new FederalAwardScraper({
+      fetchAgencyPage: fetchAgencyPage as any,
+      resolveResearcherId: resolveResearcherId as any,
+      agencies: ONE_AGENCY,
+      timePeriod: TIME_PERIOD,
+    });
+    const { ctx, emitted } = buildContext();
+    const result = await scraper.run(ctx);
+    expect(emitted).toHaveLength(0);
+    expect(resolveResearcherId).not.toHaveBeenCalled();
+    expect(result.notes).toMatch(
+      /response shape drifted: none of 1 awards carried the "Description" field/,
+    );
+  });
+
+  it('omits the ceiling note once a home is enriched', async () => {
+    const fetchAgencyPage = vi.fn().mockResolvedValueOnce({ awards: [DOE_AWARD], hasNext: false });
+    const scraper = new FederalAwardScraper({
+      fetchAgencyPage: fetchAgencyPage as any,
+      resolveResearcherId: fakeUserFinder([PLACEHOLDER_PI]) as any,
+      researchHomeResolver: vi
+        .fn()
+        .mockResolvedValue({ status: 'canonical', slug: 'dept-physics-row' }),
+      agencies: ONE_AGENCY,
+      timePeriod: TIME_PERIOD,
+    });
+    const { ctx, emitted } = buildContext();
+    const result = await scraper.run(ctx);
+    expect(emitted.every((o) => o.entityKey === 'dept-physics-row')).toBe(true);
+    expect(emitted.map((o) => o.field)).not.toContain('slug');
+    expect(result.notes).toMatch(/homes enriched: 1/);
+    expect(result.notes).not.toContain(NO_PI_FIELD_NOTE);
   });
 });

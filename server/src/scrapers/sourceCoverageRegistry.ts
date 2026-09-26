@@ -438,7 +438,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['FUNDING_ACTIVITY'],
     defaultConfidence: 'MEDIUM',
     notes:
-      'DOE/NASA/DoD Yale awards from USAspending.gov, covering physical-science and mission-agency PIs the NSF/NIH fallbacks miss. USAspending exposes no structured PI field, so a PI is only harvested when the award description embeds one inline and resolves to a single existing Yale User; awards with no extractable/resolvable PI are skipped (fail-closed, never minting a person or lab from a free-text name). Emits additive grant activity (recentGrants, recentGrantCount, fundingAgencies, lastObservedAt) only; not undergraduate-access evidence alone.',
+      'DOE/NASA/DoD Yale awards from USAspending.gov, covering physical-science and mission-agency PIs the NSF/NIH fallbacks miss. USAspending exposes no structured PI field, so a PI is only harvested when the award description embeds one inline and resolves to a single existing Yale User; awards with no extractable/resolvable PI, or whose PI has no existing research row, are skipped (fail-closed, never minting a row, #3145), and the run notes count each reason. Emits additive grant activity (recentGrants, recentGrantCount, fundingAgencies, lastObservedAt) only; not undergraduate-access evidence alone.',
   },
   'doe-osti': {
     priority: 6,

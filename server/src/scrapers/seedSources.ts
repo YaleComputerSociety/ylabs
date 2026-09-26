@@ -414,7 +414,7 @@ const SOURCES: SourceSeed[] = [
     name: 'federal-award-usaspending',
     displayName: 'USAspending federal awards (DOE/NASA/DoD)',
     description:
-      'Pulls DOE, NASA, and DoD Yale awards from USAspending.gov to enrich physical-science and mission-agency research homes the NSF/NIH fallbacks miss. USAspending carries no structured PI field, so a PI is harvested only when the award description embeds one inline and resolves to a single existing Yale User; otherwise the award is skipped (fail-closed). Emits additive grant activity only.',
+      'Pulls DOE, NASA, and DoD Yale awards from USAspending.gov to enrich physical-science and mission-agency research homes the NSF/NIH fallbacks miss. USAspending carries no structured PI field, so a PI is harvested only when the award description embeds one inline and resolves to a single existing Yale User with an existing research row; otherwise the award is skipped (fail-closed) and the run notes say why. Emits additive grant activity only and never mints a row.',
     baseUrl: 'https://api.usaspending.gov/api/v2/search/spending_by_award/',
     defaultWeight: 0.9,
     cadence: 'weekly',

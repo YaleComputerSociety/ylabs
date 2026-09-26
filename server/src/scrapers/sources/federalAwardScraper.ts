@@ -20,11 +20,12 @@
  *   small minority of records. We therefore FAIL CLOSED:
  *     - Awards with no extractable inline PI are skipped (never attributed).
  *     - An extracted PI is emitted only when it resolves to a single existing
- *       canonical Researcher via the same conservative matcher NSF uses; ambiguous or
- *       absent identities are skipped. We never mint a person/lab shell from a
- *       free-text name alone.
- *   This keeps net-new coverage evidence-first and avoids fabricating research
- *   homes from mission-agency spending descriptions.
+ *       canonical Researcher via the same conservative matcher NSF uses, and only
+ *       onto the existing research row the canonical resolver names; a grant never
+ *       mints a row (#3145).
+ *   Measured on 2026-09-26, 1 of 293 Yale awards embeds a PI, so the yield is near
+ *   zero by construction. The run notes state every count and that ceiling, so an
+ *   empty run is never silent (#3542).
  */
 import axios from 'axios';
 import { canonicalPersonName } from '../utils/personNameCasing';
@@ -37,11 +38,6 @@ import {
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { resolveUserForPi, piGroupKey, type FederalPiResolverDeps } from './nsfAwardScraper';
-import {
-  GRANT_SHELL_ENTITY_TYPE,
-  GRANT_SHELL_KIND,
-  grantShellResearchRecordName,
-} from '../utils/grantShellIdentity';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const USASPENDING_SEARCH_URL = 'https://api.usaspending.gov/api/v2/search/spending_by_award/';
@@ -52,7 +48,6 @@ const PAGE_SIZE = 100;
 const MAX_PAGES = 100;
 const DEFAULT_LOOKBACK_YEARS = 5;
 const MAX_GRANTS_PER_PI = 10;
-const PI_DERIVED_LAB_NAME_CONFIDENCE = 0.3;
 const RECIPIENT_SEARCH_TEXT = ['YALE UNIVERSITY'];
 const GRANT_AWARD_TYPE_CODES = ['02', '03', '04', '05'];
 const AWARD_SEARCH_FIELDS = [
@@ -223,43 +218,23 @@ export function groupAwardsByPi(awards: FederalAward[]): PiAwardsGroup[] {
   return Array.from(map.values());
 }
 
-export function federalPiSlug(piUserId: string): string {
-  return `federal-pi-${piUserId}`.slice(0, 100);
-}
-
 export function buildResearchHomeObservations(
   group: PiAwardsGroup,
   piUserId: string,
   sourceUrl: string,
-  canonicalResearchHomeSlug: string | null,
+  canonicalResearchHomeSlug: string,
 ): ObservationInput[] {
-  const slug = canonicalResearchHomeSlug || federalPiSlug(piUserId);
-  const piName = canonicalPersonName(
-    normalizeName([group.piFirstName, group.piLastName].filter(Boolean).join(' ')),
-  );
-  const recordName = grantShellResearchRecordName(piName, `Federal award PI ${slug}`);
-
   const records = group.awards
     .map((a) => awardToRecord(a, 'pi'))
     .filter((r): r is RecentGrantRecord => r !== null);
-  const sorted = sortGrantsByRecency(records);
-  const top = sorted.slice(0, MAX_GRANTS_PER_PI);
+  const top = sortGrantsByRecency(records).slice(0, MAX_GRANTS_PER_PI);
 
-  const base = { entityType: 'researchEntity' as const, entityKey: slug, sourceUrl };
+  const base = {
+    entityType: 'researchEntity' as const,
+    entityKey: canonicalResearchHomeSlug,
+    sourceUrl,
+  };
   const out: ObservationInput[] = [
-    ...(!canonicalResearchHomeSlug
-      ? [
-          { ...base, field: 'slug', value: slug },
-          {
-            ...base,
-            field: 'name',
-            value: recordName,
-            confidenceOverride: PI_DERIVED_LAB_NAME_CONFIDENCE,
-          },
-          { ...base, field: 'kind', value: GRANT_SHELL_KIND },
-          { ...base, field: 'entityType', value: GRANT_SHELL_ENTITY_TYPE },
-        ]
-      : []),
     { ...base, field: 'recentGrants', value: top },
     { ...base, field: 'recentGrantCount', value: records.length },
     { ...base, field: 'fundingAgencies', value: fundingAgenciesForGroup(group) },
@@ -310,8 +285,11 @@ async function fetchAgencyPage(
     results?: UsaspendingAward[];
     page_metadata?: { hasNext?: boolean };
   };
+  if (!Array.isArray(data.results)) {
+    throw new Error('USAspending response carried no "results" array');
+  }
   const payload: FetchAgencyPageResult = {
-    awards: Array.isArray(data.results) ? data.results : [],
+    awards: data.results,
     hasNext: Boolean(data.page_metadata?.hasNext),
   };
   if (useCache) await setCached(sourceName, cacheKey, payload);
@@ -336,6 +314,39 @@ function defaultTimePeriod(): { start_date: string; end_date: string } {
       '0',
     )}`;
   return { start_date: iso(start), end_date: iso(end) };
+}
+
+interface AgencyTally {
+  abbreviation: string;
+  fetched: number;
+  failed: boolean;
+}
+
+interface AttachTally {
+  enriched: number;
+  unresolved: number;
+  ambiguousPerson: number;
+  noExistingRow: number;
+  ineligibleRow: number;
+  ambiguousRow: number;
+}
+
+export const NO_PI_FIELD_NOTE =
+  'USAspending publishes no principal-investigator field, so an award is attributable only when its description embeds "PI - <name>"';
+
+function agencySummary(agencies: AgencyTally[]): string {
+  return agencies
+    .map((a) => `${a.abbreviation} ${a.fetched}${a.failed ? ' (fetch failed)' : ''}`)
+    .join(', ');
+}
+
+function attachSummary(attach: AttachTally): string {
+  return (
+    `homes enriched: ${attach.enriched}; not attached: ${attach.unresolved} resolved to no researcher, ` +
+    `${attach.ambiguousPerson} resolved to several researchers, ` +
+    `${attach.noExistingRow} have no existing research row (grants never mint one, #3145), ` +
+    `${attach.ineligibleRow} ineligible row, ${attach.ambiguousRow} ambiguous row`
+  );
 }
 
 export class FederalAwardScraper implements IScraper {
@@ -367,16 +378,21 @@ export class FederalAwardScraper implements IScraper {
     );
 
     const federalAwards: FederalAward[] = [];
+    const agencyTallies: AgencyTally[] = [];
     let totalFetched = 0;
     let withInlinePi = 0;
+    let missingDescription = 0;
 
     for (const agency of agencies) {
       if (totalFetched >= limit) break;
+      const tally: AgencyTally = { abbreviation: agency.abbreviation, fetched: 0, failed: false };
+      agencyTallies.push(tally);
       for (let page = 1; page <= MAX_PAGES; page++) {
         let payload: FetchAgencyPageResult;
         try {
           payload = await fetcher(agency, page, timePeriod, ctx.options.useCache, this.name);
         } catch (err: unknown) {
+          tally.failed = true;
           ctx.log(
             `fetch failed for ${agency.abbreviation} page ${page}: ${sanitizeLogValue(
               err,
@@ -388,6 +404,8 @@ export class FederalAwardScraper implements IScraper {
         for (const award of payload.awards) {
           if (totalFetched >= limit) break;
           totalFetched++;
+          tally.fetched++;
+          if (!Object.prototype.hasOwnProperty.call(award, 'Description')) missingDescription++;
           const pi = extractPiName(award.Description);
           if (!pi) continue;
           withInlinePi++;
@@ -403,6 +421,22 @@ export class FederalAwardScraper implements IScraper {
       }
     }
 
+    const window = `${timePeriod.start_date} to ${timePeriod.end_date}`;
+    const fetchedLine = `USAspending awards fetched (${window}): ${totalFetched} [${agencySummary(agencyTallies)}]`;
+
+    if (agencyTallies.length > 0 && agencyTallies.every((a) => a.failed && a.fetched === 0)) {
+      const notes = `USAspending unreachable; failed closed with no writes. ${fetchedLine}`;
+      ctx.log(notes);
+      return { observationCount: 0, entitiesObserved: 0, notes };
+    }
+    if (totalFetched > 0 && missingDescription === totalFetched) {
+      const notes =
+        `USAspending response shape drifted: none of ${totalFetched} awards carried the "Description" field, ` +
+        `so no PI could be read; failed closed with no writes. ${fetchedLine}`;
+      ctx.log(notes);
+      return { observationCount: 0, entitiesObserved: 0, notes };
+    }
+
     ctx.log(
       `Fetched ${totalFetched} awards; ${withInlinePi} carried an inline PI in the description`,
     );
@@ -410,47 +444,71 @@ export class FederalAwardScraper implements IScraper {
     const groups = groupAwardsByPi(federalAwards);
     ctx.log(`Grouped into ${groups.length} distinct inline-PI names`);
 
+    const attach: AttachTally = {
+      enriched: 0,
+      unresolved: 0,
+      ambiguousPerson: 0,
+      noExistingRow: 0,
+      ineligibleRow: 0,
+      ambiguousRow: 0,
+    };
     let totalObs = 0;
-    let piMatched = 0;
-    let homesEnriched = 0;
 
     for (const group of groups) {
       const resolution = await resolveUserForPi(
         { firstName: group.piFirstName, lastName: group.piLastName },
         resolverDeps,
       );
-      if (resolution.status !== 'matched') continue;
-      piMatched++;
-      const piUserId = resolution.userId;
-
-      const homeResolution = await researchHomeResolver(piUserId);
-      if (homeResolution.status === 'ambiguous' || homeResolution.status === 'ineligible') {
+      if (resolution.status === 'ambiguous') {
+        attach.ambiguousPerson++;
         continue;
       }
-      const canonicalResearchHomeSlug =
-        homeResolution.status === 'canonical' ? homeResolution.slug : null;
+      if (resolution.status !== 'matched') {
+        attach.unresolved++;
+        continue;
+      }
+
+      const home = await researchHomeResolver(resolution.userId);
+      if (home.status === 'safe-shell') {
+        attach.noExistingRow++;
+        continue;
+      }
+      if (home.status === 'ineligible') {
+        attach.ineligibleRow++;
+        continue;
+      }
+      if (home.status === 'ambiguous') {
+        attach.ambiguousRow++;
+        continue;
+      }
 
       const obs = buildResearchHomeObservations(
         group,
-        piUserId,
+        resolution.userId,
         USASPENDING_SEARCH_URL,
-        canonicalResearchHomeSlug,
+        home.slug,
       );
       await ctx.emit(obs);
       totalObs += obs.length;
-      homesEnriched++;
+      attach.enriched++;
     }
 
-    ctx.log(
-      `Emitted ${totalObs} observations for ${homesEnriched} research homes (${piMatched} inline PIs matched to Yale Users)`,
-    );
+    const notes = [
+      fetchedLine,
+      missingDescription > 0 ? `awards missing the "Description" field: ${missingDescription}` : '',
+      `awards with an inline PI: ${withInlinePi}`,
+      `distinct inline PIs: ${groups.length}`,
+      attachSummary(attach),
+      attach.enriched === 0 ? NO_PI_FIELD_NOTE : '',
+    ]
+      .filter(Boolean)
+      .join('; ');
+    ctx.log(`Emitted ${totalObs} observations. ${notes}`);
 
     return {
       observationCount: totalObs,
-      entitiesObserved: homesEnriched,
-      notes:
-        `USAspending awards fetched: ${totalFetched}, inline-PI awards: ${withInlinePi}, ` +
-        `distinct PIs: ${groups.length}, matched to Users: ${piMatched}, homes enriched: ${homesEnriched}`,
+      entitiesObserved: attach.enriched,
+      notes,
     };
   }
 }
