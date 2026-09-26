@@ -51,6 +51,22 @@ describe('canonicalResearchHomeResolver', () => {
     ).toBe(false);
   });
 
+  it('treats NEH award hosts and neh-pi slugs as grant evidence, not an official home', () => {
+    for (const url of [
+      'https://awardsearch.neh.gov/AwardDetail.aspx?gn=FEL-000001-24',
+      'https://apps.neh.gov/open/data',
+      'https://securegrants.neh.gov/publicquery/main.aspx?gn=FEL-000001-24',
+    ]) {
+      expect(isOfficialResearchHomeCandidate({ slug: 'ada-lab', sourceUrls: [url] })).toBe(false);
+    }
+    expect(
+      isOfficialResearchHomeCandidate({ slug: 'neh-pi-ada', websiteUrl: 'https://ada.yale.edu/' }),
+    ).toBe(false);
+    expect(
+      isGraduatedGrantShellCandidate({ slug: 'neh-pi-ada', websiteUrl: 'https://ada.yale.edu/' }),
+    ).toBe(true);
+  });
+
   it('distinguishes safe shell creation from ineligible and ambiguous homes', () => {
     expect(resolveCanonicalResearchHome([])).toEqual({ status: 'safe-shell' });
     expect(resolveCanonicalResearchHome([{ slug: 'nih-pi-ada' }])).toEqual({

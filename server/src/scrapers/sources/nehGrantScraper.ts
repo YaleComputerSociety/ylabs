@@ -2,25 +2,26 @@
  * NehGrantScraper
  *
  * Pulls Yale-awardee National Endowment for the Humanities (NEH) funded
- * projects from NEH's public open-data bulk files
- * (https://apps.neh.gov/open/data/, per-decade `NEH_Grants<decade>s.csv`).
- * The files are free, unauthenticated, and published in a stable CSV schema.
+ * projects from NEH Award Search (https://awardsearch.neh.gov/, query-string
+ * API documented in https://awardsearch.neh.gov/api.pdf). The per-decade
+ * open-data CSVs this lane used to read were retired with the apps.neh.gov
+ * file host, which now redirects every path to the NEH application-status
+ * tool (#3541).
  *
  * This is the humanities/social-science analogue of the STEM-only NIH RePORTER
- * and NSF Award Search grant lanes (#1529): a Yale historian, classicist, or
- * area-studies scholar is more likely to lack a scrapable lab microsite, so a
- * funding-side lane matters more there, not less. It mirrors the NSF/NIH
- * producers: group awards by PI, self-attach a resolved PI to an existing
- * research home, or mint a conservative synthetic shell only when no membership
- * exists. Funding is FUNDING_ACTIVITY enrichment only and is never
- * undergraduate-access evidence on its own; the run creates no access/route/
- * opportunity evidence.
+ * and NSF Award Search grant lanes (#1529). A grant proves that a person is
+ * funded, never that a research row should exist, so this lane only enriches
+ * an existing research row the canonical resolver names for a Project Director
+ * who resolves to exactly one researcher, and never mints one (#3145). Funding
+ * is FUNDING_ACTIVITY enrichment only and is never undergraduate-access
+ * evidence on its own.
  *
- * Fail-closed: if no decade file is reachable, or a fetched file's schema has
- * drifted (required columns absent), the run emits no observations and logs a
- * coverage note, exactly as the NIH/NSF scrapers do on API errors.
+ * Fail-closed: an unreachable year shard, an unrecognised page, or a results
+ * grid missing a required column contributes nothing, and the run notes say
+ * which of those happened on every run.
  */
 import axios from 'axios';
+import * as cheerio from 'cheerio';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
 import {
@@ -28,39 +29,33 @@ import {
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
-import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
+import { normalizeName, slugify } from '../utils/scraperHelpers';
 import { resolveUserForPi, type FederalPiResolverDeps } from './nsfAwardScraper';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
-const NEH_OPEN_DATA_BASE = 'https://apps.neh.gov/open/data';
+export const NEH_AWARD_SEARCH_BASE = 'https://awardsearch.neh.gov';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 60_000;
 const DEFAULT_LOOKBACK_YEARS = 6;
 const MAX_GRANTS_PER_PI = 10;
-// "<PI> Research" is a placeholder minted only when no real name is known; keep
-// it well below any real-name source (microsite, official profile) so those win.
-const PI_DERIVED_HOME_NAME_CONFIDENCE = 0.3;
-// A funded humanities scholar's project, deliberately not a STEM `LAB` shape.
-const HUMANITIES_SHELL_ENTITY_TYPE = 'FACULTY_PROJECT';
-const HUMANITIES_SHELL_KIND = 'individual';
-const LEAD_ROLE = 'project director';
-const CO_LEAD_ROLE = 'co project director';
+const ORGANIZATION_QUERY = 'Yale';
+const STATE_QUERY = 'CT';
 
-// Any missing column fails the schema check closed rather than writing garbage.
-const REQUIRED_CSV_HEADERS = [
-  'appnumber',
-  'institution',
-  'inststate',
+const REQUIRED_GRID_HEADERS = [
+  'awardnumber',
   'projecttitle',
-  'participants',
+  'projectdirectorfirstname',
+  'projectdirectorlastname',
+  'organization',
+  'organizationstate',
   'yearawarded',
 ] as const;
 
 export interface NehParticipant {
   fullName: string;
-  role: string;
+  firstName: string;
+  lastName: string;
   isLead: boolean;
-  isCoLead: boolean;
 }
 
 export interface NehGrant {
@@ -74,9 +69,7 @@ export interface NehGrant {
   beginGrant?: Date;
   endGrant?: Date;
   projectDesc: string;
-  toSupport: string;
   primaryDiscipline: string;
-  disciplines: string[];
   awardOutright?: number;
   originalAmount?: number;
   participants: NehParticipant[];
@@ -101,63 +94,64 @@ export interface RecentGrantRecord {
   role: 'pi' | 'copi';
 }
 
-export function parseCsvRows(input: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = '';
-  let inQuotes = false;
-  for (let i = 0; i < input.length; i++) {
-    const char = input[i];
-    const next = input[i + 1];
-    if (char === '"') {
-      if (inQuotes && next === '"') {
-        cell += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (char === ',' && !inQuotes) {
-      row.push(cell);
-      cell = '';
-    } else if ((char === '\n' || char === '\r') && !inQuotes) {
-      if (char === '\r' && next === '\n') i++;
-      row.push(cell);
-      if (row.some((value) => value.length > 0)) rows.push(row);
-      row = [];
-      cell = '';
-    } else {
-      cell += char;
-    }
-  }
-  row.push(cell);
-  if (row.some((value) => value.length > 0)) rows.push(row);
-  return rows;
-}
+export type NehGridRecord = Record<string, string>;
+
+export type NehAwardSearchPage =
+  | { kind: 'grid'; headers: string[]; records: NehGridRecord[]; reportedCount?: number }
+  | { kind: 'empty' }
+  | { kind: 'unrecognised' };
 
 export function normalizedHeader(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-export type NehCsvRecord = Record<string, string>;
+function collapseWhitespace(text: string): string {
+  return text
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
-export function parseNehCsv(input: string): { records: NehCsvRecord[]; headers: string[] } {
-  const rows = parseCsvRows(input);
-  if (rows.length < 1) return { records: [], headers: [] };
-  const headers = rows[0].map((cell) => normalizedHeader(cell.trim()));
-  const records = rows.slice(1).flatMap((cells) => {
-    if (!cells.some((cell) => cell.trim().length > 0)) return [];
-    const record: NehCsvRecord = {};
-    headers.forEach((header, index) => {
-      record[header] = (cells[index] ?? '').trim();
+export function parseNehAwardSearchPage(html: string): NehAwardSearchPage {
+  const $ = cheerio.load(html);
+  const grid = $('table.rgMasterTable').first();
+  if (grid.length === 0) {
+    const resultsPanel = $('#cphMainContent_pnlResults').length > 0;
+    const queryError = collapseWhitespace($('#cphMainContent_lblQueryError').text());
+    return resultsPanel && !queryError ? { kind: 'empty' } : { kind: 'unrecognised' };
+  }
+  const headers = grid
+    .find('thead th')
+    .toArray()
+    .map((th) => {
+      const clone = $(th).clone();
+      clone.find('button, input').remove();
+      return normalizedHeader(collapseWhitespace(clone.text()));
     });
-    return [record];
-  });
-  return { records, headers };
+  const records = grid
+    .find('tbody tr')
+    .toArray()
+    .filter((tr) => /\brg(?:Alt)?Row\b/.test($(tr).attr('class') || ''))
+    .map((tr) => {
+      const cells = $(tr).children('td').toArray();
+      const record: NehGridRecord = {};
+      headers.forEach((header, index) => {
+        record[header] = cells[index] ? collapseWhitespace($(cells[index]).text()) : '';
+      });
+      return record;
+    });
+  const countMatch = grid
+    .find('.rgInfoPart')
+    .first()
+    .text()
+    .match(/(\d[\d,]*)\s+items?\b/i);
+  const reportedCount = countMatch ? Number(countMatch[1].replace(/,/g, '')) : undefined;
+  return { kind: 'grid', headers, records, reportedCount };
 }
 
 export function hasRequiredNehHeaders(headers: string[]): boolean {
   const set = new Set(headers);
-  return REQUIRED_CSV_HEADERS.every((header) => set.has(header));
+  return REQUIRED_GRID_HEADERS.every((header) => set.has(header));
 }
 
 export function parseNehDate(s: string | undefined | null): Date | undefined {
@@ -169,6 +163,13 @@ export function parseNehDate(s: string | undefined | null): Date | undefined {
   const [, mm, dd, yyyy] = m;
   const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
   return Number.isFinite(d.getTime()) ? d : undefined;
+}
+
+export function parseAwardPeriod(s: string | undefined | null): { begin?: Date; end?: Date } {
+  const [begin, end] = String(s || '')
+    .split(/\s+-\s+/)
+    .map((part) => parseNehDate(part));
+  return { begin, end };
 }
 
 export function parseNehAmount(s: string | undefined | null): number | undefined {
@@ -189,63 +190,63 @@ export function parseYear(s: string | undefined | null): number | undefined {
   return Number.isFinite(year) ? year : undefined;
 }
 
-export function parseParticipants(raw: string | undefined | null): NehParticipant[] {
-  if (!raw) return [];
-  return String(raw)
-    .split(';')
-    .map((chunk) => chunk.trim())
-    .filter(Boolean)
-    .map((chunk) => {
-      const m = chunk.match(/^(.*?)\s*\[([^\]]*)\]\s*$/);
-      const fullName = normalizeName((m ? m[1] : chunk).trim());
-      const role = (m ? m[2] : '').trim();
-      const roleKey = role.toLowerCase();
-      return {
-        fullName,
-        role,
-        isLead: roleKey === LEAD_ROLE,
-        isCoLead: roleKey === CO_LEAD_ROLE,
-      };
-    })
-    .filter((p) => p.fullName.length > 0);
+function participantFrom(first: string, last: string, isLead: boolean): NehParticipant | null {
+  const firstName = normalizeName(first);
+  const lastName = normalizeName(last);
+  if (!lastName) return null;
+  const fullName = [firstName, lastName].filter(Boolean).join(' ');
+  return { fullName, firstName, lastName, isLead };
+}
+
+export function participantsFromRecord(record: NehGridRecord): NehParticipant[] {
+  return [
+    participantFrom(record.projectdirectorfirstname, record.projectdirectorlastname, true),
+    participantFrom(record.coprojectdirectorfirstname, record.coprojectdirectorlastname, false),
+  ].filter((p): p is NehParticipant => p !== null);
 }
 
 export function leadParticipant(participants: NehParticipant[]): NehParticipant | null {
-  return participants.find((p) => p.isLead) || participants[0] || null;
+  return participants.find((p) => p.isLead) || null;
 }
 
-export function isYaleAwardee(record: NehCsvRecord): boolean {
-  const institution = (record.institution || '').toLowerCase();
-  const state = (record.inststate || '').trim().toUpperCase();
+export function isYaleAwardee(record: NehGridRecord): boolean {
+  const institution = (record.organization || '').toLowerCase();
+  const state = (record.organizationstate || '').trim().toUpperCase();
   return /\byale\b/.test(institution) && state === 'CT';
 }
 
-export function recordToNehGrant(record: NehCsvRecord): NehGrant | null {
-  const appNumber = (record.appnumber || '').trim();
+function awardedTotal(record: NehGridRecord): number | undefined {
+  const outright = parseNehAmount(record.awardedoutrightfunds) ?? 0;
+  const matching = parseNehAmount(record.awardedmatchingfunds) ?? 0;
+  const total = outright + matching;
+  return total > 0 ? total : undefined;
+}
+
+function approvedTotal(record: NehGridRecord): number | undefined {
+  return parseNehAmount(record.approvedawardtotal) ?? parseNehAmount(record.approvedoutrightfunds);
+}
+
+export function recordToNehGrant(record: NehGridRecord): NehGrant | null {
+  const appNumber = (record.awardnumber || '').trim();
   const projectTitle = (record.projecttitle || '').trim();
   if (!appNumber || !projectTitle) return null;
-  const participants = parseParticipants(record.participants);
+  const participants = participantsFromRecord(record);
   if (participants.length === 0) return null;
-  const disciplines = (record.disciplines || '')
-    .split(';')
-    .map((d) => d.trim())
-    .filter(Boolean);
+  const { begin, end } = parseAwardPeriod(record.awardperiod);
   return {
     appNumber,
-    institution: (record.institution || '').trim(),
-    instState: (record.inststate || '').trim(),
+    institution: (record.organization || '').trim(),
+    instState: (record.organizationstate || '').trim(),
     projectTitle,
-    program: (record.program || '').trim(),
-    division: (record.division || '').trim(),
+    program: (record.grantprogramname || record.grantprogram || '').trim(),
+    division: (record.divisionoroffice || '').trim(),
     yearAwarded: parseYear(record.yearawarded),
-    beginGrant: parseNehDate(record.begingrant),
-    endGrant: parseNehDate(record.endgrant),
-    projectDesc: (record.projectdesc || '').trim(),
-    toSupport: (record.tosupport || '').trim(),
-    primaryDiscipline: (record.primarydiscipline || '').trim(),
-    disciplines,
-    awardOutright: parseNehAmount(record.awardoutright),
-    originalAmount: parseNehAmount(record.originalamount),
+    beginGrant: begin,
+    endGrant: end,
+    projectDesc: (record.description || '').trim(),
+    primaryDiscipline: (record.primaryhumanitiesdiscipline || '').trim(),
+    awardOutright: awardedTotal(record),
+    originalAmount: approvedTotal(record),
     participants,
   };
 }
@@ -262,12 +263,15 @@ export function groupGrantsByLeadPi(grants: NehGrant[]): PiGrantsGroup[] {
   for (const grant of grants) {
     const lead = leadParticipant(grant.participants);
     if (!lead) continue;
-    const { first, last } = splitName(lead.fullName);
-    if (!first && !last) continue;
-    const key = piGroupKey(first, last);
+    const key = piGroupKey(lead.firstName, lead.lastName);
     let group = map.get(key);
     if (!group) {
-      group = { piFirstName: first, piLastName: last, fullName: lead.fullName, awards: [] };
+      group = {
+        piFirstName: lead.firstName,
+        piLastName: lead.lastName,
+        fullName: lead.fullName,
+        awards: [],
+      };
       map.set(key, group);
     }
     group.awards.push(grant);
@@ -276,9 +280,7 @@ export function groupGrantsByLeadPi(grants: NehGrant[]): PiGrantsGroup[] {
 }
 
 export function nehGrantUrl(appNumber: string): string {
-  return `https://securegrants.neh.gov/publicquery/main.aspx?f=1&gn=${encodeURIComponent(
-    appNumber,
-  )}`;
+  return `${NEH_AWARD_SEARCH_BASE}/AwardDetail.aspx?gn=${encodeURIComponent(appNumber)}`;
 }
 
 export function grantToRecord(grant: NehGrant, role: 'pi' | 'copi' = 'pi'): RecentGrantRecord {
@@ -286,7 +288,7 @@ export function grantToRecord(grant: NehGrant, role: 'pi' | 'copi' = 'pi'): Rece
     id: grant.appNumber,
     agency: 'NEH',
     title: grant.projectTitle,
-    abstract: grant.projectDesc || grant.toSupport || '',
+    abstract: grant.projectDesc,
     startDate: grant.beginGrant,
     endDate: grant.endGrant,
     dollarAmount: grant.awardOutright ?? grant.originalAmount,
@@ -312,71 +314,81 @@ export function maxStartDate(grants: NehGrant[]): Date | undefined {
   return max;
 }
 
-export function piSlug(piUserId: string | null, firstName: string, lastName: string): string {
-  if (piUserId) return `neh-pi-${piUserId}`;
-  const key = piGroupKey(firstName, lastName);
-  return `neh-pi-${key.replace(/\s+/g, '-')}`.slice(0, 100);
+export function yearShardsForLookback(currentYear: number, lookbackYears: number): number[] {
+  const years: number[] = [];
+  for (let year = currentYear - lookbackYears; year <= currentYear; year++) years.push(year);
+  return years;
 }
 
-// A window that straddles a decade boundary needs both decade files, since each
-// NEH file spans exactly one decade (NEH_Grants2020s.csv covers 2020-2029).
-export function decadeFilesForLookback(currentYear: number, lookbackYears: number): string[] {
-  const startYear = currentYear - lookbackYears;
-  const files = new Set<string>();
-  for (let decade = Math.floor(startYear / 10) * 10; decade <= currentYear; decade += 10) {
-    files.add(`NEH_Grants${decade}s.csv`);
-  }
-  return Array.from(files);
+export function awardSearchQueryUrl(year: number): string {
+  const params = new URLSearchParams({
+    q: '1',
+    a: '0',
+    n: '0',
+    o: '1',
+    ov: ORGANIZATION_QUERY,
+    ot: '0',
+    k: '0',
+    f: '0',
+    s: '1',
+    sv: STATE_QUERY,
+    cd: '0',
+    p: '0',
+    d: '0',
+    at: '0',
+    y: '1',
+    yf: String(year),
+    yt: String(year),
+    prd: '0',
+    cov: '0',
+    prz: '0',
+    wp: '0',
+    sp: '0',
+    ca: '0',
+    arp: '0',
+    ob: 'year',
+    or: 'DESC',
+  });
+  return `${NEH_AWARD_SEARCH_BASE}/Default.aspx?${params.toString()}`;
 }
 
-async function fetchDecadeCsv(
-  fileName: string,
+async function fetchAwardSearchYear(
+  year: number,
   useCache: boolean,
   sourceName: string,
 ): Promise<string> {
-  const cacheKey = `file:${fileName}`;
+  const url = awardSearchQueryUrl(year);
+  const cacheKey = `award-search:org=${ORGANIZATION_QUERY}:state=${STATE_QUERY}:year=${year}`;
   if (useCache) {
-    const cached = await getCached<{ csv: string }>(sourceName, cacheKey);
-    if (cached) return cached.csv;
+    const cached = await getCached<{ html: string }>(sourceName, cacheKey);
+    if (cached) return cached.html;
   }
-  const res = await axios.get(`${NEH_OPEN_DATA_BASE}/${fileName}`, {
+  const res = await axios.get(url, {
     timeout: FETCH_TIMEOUT_MS,
     responseType: 'text',
     transformResponse: [(data) => data],
-    headers: { 'User-Agent': USER_AGENT, Accept: 'text/csv,*/*' },
+    maxRedirects: 0,
+    headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,*/*' },
   });
-  const csv = typeof res.data === 'string' ? res.data : String(res.data ?? '');
-  if (useCache) await setCached(sourceName, cacheKey, { csv });
-  return csv;
+  const html = typeof res.data === 'string' ? res.data : String(res.data ?? '');
+  if (useCache) await setCached(sourceName, cacheKey, { html });
+  return html;
 }
 
 export function buildResearchEntityObservations(
   group: PiGrantsGroup,
-  piUserId: string | null,
-  sourceUrl: string,
-  canonicalResearchHomeSlug?: string | null,
+  piUserId: string,
+  canonicalResearchHomeSlug: string,
 ): ObservationInput[] {
-  const slug = canonicalResearchHomeSlug || piSlug(piUserId, group.piFirstName, group.piLastName);
-  const homeName = group.fullName ? `${group.fullName} Research` : `NEH PI ${slug}`;
-
   const records = group.awards.map((a) => grantToRecord(a, 'pi'));
   const top = sortGrantsByRecency(records).slice(0, MAX_GRANTS_PER_PI);
 
-  const base = { entityType: 'researchEntity' as const, entityKey: slug, sourceUrl };
+  const base = {
+    entityType: 'researchEntity' as const,
+    entityKey: canonicalResearchHomeSlug,
+    sourceUrl: `${NEH_AWARD_SEARCH_BASE}/`,
+  };
   const out: ObservationInput[] = [
-    ...(!canonicalResearchHomeSlug
-      ? [
-          { ...base, field: 'slug', value: slug },
-          {
-            ...base,
-            field: 'name',
-            value: homeName,
-            confidenceOverride: PI_DERIVED_HOME_NAME_CONFIDENCE,
-          },
-          { ...base, field: 'kind', value: HUMANITIES_SHELL_KIND },
-          { ...base, field: 'entityType', value: HUMANITIES_SHELL_ENTITY_TYPE },
-        ]
-      : []),
     { ...base, field: 'recentGrants', value: top },
     { ...base, field: 'recentGrantCount', value: records.length },
     { ...base, field: 'fundingAgencies', value: ['NEH'] },
@@ -385,9 +397,7 @@ export function buildResearchEntityObservations(
   const lastObserved = maxStartDate(group.awards);
   if (lastObserved) out.push({ ...base, field: 'lastObservedAt', value: lastObserved });
 
-  if (piUserId) {
-    out.push({ ...base, field: 'inferredPiUserId', value: piUserId, confidenceOverride: 0.7 });
-  }
+  out.push({ ...base, field: 'inferredPiUserId', value: piUserId, confidenceOverride: 0.7 });
   return out;
 }
 
@@ -400,10 +410,46 @@ export function buildResearchEntityObservations(
 
 export interface NehGrantScraperDeps {
   resolveResearcherId?: typeof resolveResearcherIdForPersonName;
-  fetchDecadeCsv?: typeof fetchDecadeCsv;
+  fetchAwardSearchYear?: typeof fetchAwardSearchYear;
   lookbackYears?: number;
   currentYear?: number;
   researchHomeResolver?: (researcherId: string) => Promise<CanonicalResearchHomeResolution>;
+}
+
+interface ShardTally {
+  fetched: number;
+  failed: number;
+  empty: number;
+  unrecognised: number;
+  schemaDrift: number;
+  truncated: number;
+}
+
+interface AttachTally {
+  enriched: number;
+  unresolved: number;
+  ambiguousPerson: number;
+  noExistingRow: number;
+  ineligibleRow: number;
+  ambiguousRow: number;
+}
+
+function shardSummary(years: number[], shards: ShardTally): string {
+  return (
+    `year shards ${years[0]}-${years[years.length - 1]}: ${years.length} queried, ` +
+    `${shards.fetched} fetched, ${shards.failed} failed, ${shards.empty} empty, ` +
+    `${shards.unrecognised} unrecognised page, ${shards.schemaDrift} schema drift, ` +
+    `${shards.truncated} truncated`
+  );
+}
+
+function attachSummary(attach: AttachTally): string {
+  return (
+    `rows enriched: ${attach.enriched}; not attached: ${attach.unresolved} resolved to no researcher, ` +
+    `${attach.ambiguousPerson} resolved to several researchers, ` +
+    `${attach.noExistingRow} have no existing research row (grants never mint one, #3145), ` +
+    `${attach.ineligibleRow} ineligible row, ${attach.ambiguousRow} ambiguous row`
+  );
 }
 
 export class NehGrantScraper implements IScraper {
@@ -416,7 +462,7 @@ export class NehGrantScraper implements IScraper {
     const resolverDeps: FederalPiResolverDeps = {
       resolveResearcherId: this.deps.resolveResearcherId,
     };
-    const fetcher = this.deps.fetchDecadeCsv ?? fetchDecadeCsv;
+    const fetcher = this.deps.fetchAwardSearchYear ?? fetchAwardSearchYear;
     const researchHomeResolver =
       this.deps.researchHomeResolver ?? resolveCanonicalResearchHomeForResearcher;
     const lookbackYears = this.deps.lookbackYears ?? DEFAULT_LOOKBACK_YEARS;
@@ -429,61 +475,89 @@ export class NehGrantScraper implements IScraper {
     }
     const piLimit = limitOption ?? Infinity;
 
-    const files = decadeFilesForLookback(currentYear, lookbackYears);
-    ctx.log(`Fetching NEH open-data files ${files.join(', ')} (awards since ${cutoffYear})`);
+    const years = yearShardsForLookback(currentYear, lookbackYears);
+    ctx.log(
+      `Querying NEH Award Search for ${ORGANIZATION_QUERY} (${STATE_QUERY}) awards, one request per year ${years[0]}-${years[years.length - 1]}`,
+    );
 
-    const yaleGrants: NehGrant[] = [];
-    let anyFileFetched = false;
-    let anySchemaIntact = false;
-    for (const fileName of files) {
-      let csv: string;
+    const shards: ShardTally = {
+      fetched: 0,
+      failed: 0,
+      empty: 0,
+      unrecognised: 0,
+      schemaDrift: 0,
+      truncated: 0,
+    };
+    const grantsByNumber = new Map<string, NehGrant>();
+    for (const year of years) {
+      let html: string;
       try {
-        csv = await fetcher(fileName, ctx.options.useCache, this.name);
+        html = await fetcher(year, ctx.options.useCache, this.name);
       } catch (err: unknown) {
-        ctx.log(`fetch failed for ${fileName}: ${sanitizeLogValue(err)}`);
+        shards.failed++;
+        ctx.log(`fetch failed for NEH Award Search year ${year}: ${sanitizeLogValue(err)}`);
         continue;
       }
-      anyFileFetched = true;
-      const { records, headers } = parseNehCsv(csv);
-      if (!hasRequiredNehHeaders(headers)) {
-        ctx.log(`schema drift in ${fileName}: required column(s) absent; skipping (fail closed)`);
+      shards.fetched++;
+      const page = parseNehAwardSearchPage(html);
+      if (page.kind === 'empty') {
+        shards.empty++;
         continue;
       }
-      anySchemaIntact = true;
-      for (const record of records) {
+      if (page.kind === 'unrecognised') {
+        shards.unrecognised++;
+        ctx.log(`NEH Award Search year ${year} returned no results grid; skipping (fail closed)`);
+        continue;
+      }
+      if (!hasRequiredNehHeaders(page.headers)) {
+        shards.schemaDrift++;
+        ctx.log(
+          `schema drift in NEH Award Search year ${year}: required column(s) absent; skipping (fail closed)`,
+        );
+        continue;
+      }
+      if (page.reportedCount !== undefined && page.reportedCount > page.records.length) {
+        shards.truncated++;
+        ctx.log(
+          `NEH Award Search year ${year} reported ${page.reportedCount} awards but served ${page.records.length} on one page`,
+        );
+      }
+      for (const record of page.records) {
         if (!isYaleAwardee(record)) continue;
         const grant = recordToNehGrant(record);
         if (!grant) continue;
         if (grant.yearAwarded !== undefined && grant.yearAwarded < cutoffYear) continue;
-        yaleGrants.push(grant);
+        grantsByNumber.set(grant.appNumber, grant);
       }
     }
 
-    if (!anyFileFetched) {
-      ctx.log('no NEH open-data file was reachable; emitting nothing (fail closed)');
-      return {
-        observationCount: 0,
-        entitiesObserved: 0,
-        notes: 'NEH open data unreachable; failed closed with no writes',
-      };
+    if (shards.fetched === 0) {
+      const notes = `NEH Award Search unreachable; failed closed with no writes (${shardSummary(years, shards)})`;
+      ctx.log(notes);
+      return { observationCount: 0, entitiesObserved: 0, notes };
     }
-    if (!anySchemaIntact) {
-      ctx.log('every reachable NEH file failed the schema check; emitting nothing (fail closed)');
-      return {
-        observationCount: 0,
-        entitiesObserved: 0,
-        notes: 'NEH open-data schema drift; failed closed with no writes',
-      };
+    const shardsWithUsableGrid = shards.fetched - shards.unrecognised - shards.schemaDrift;
+    if (shardsWithUsableGrid === 0) {
+      const notes = `NEH Award Search page shape drifted; failed closed with no writes (${shardSummary(years, shards)})`;
+      ctx.log(notes);
+      return { observationCount: 0, entitiesObserved: 0, notes };
     }
 
-    ctx.log(`Retained ${yaleGrants.length} Yale NEH award(s) within the lookback window`);
+    const yaleGrants = Array.from(grantsByNumber.values());
+    ctx.log(`Retained ${yaleGrants.length} Yale NEH award(s) awarded since ${cutoffYear}`);
 
     const groups = groupGrantsByLeadPi(yaleGrants);
-    ctx.log(`Grouped into ${groups.length} distinct PIs`);
+    ctx.log(`Grouped into ${groups.length} distinct Project Directors`);
 
-    const sourceUrl = NEH_OPEN_DATA_BASE;
+    const attach: AttachTally = {
+      enriched: 0,
+      unresolved: 0,
+      ambiguousPerson: 0,
+      noExistingRow: 0,
+      ineligibleRow: 0,
+      ambiguousRow: 0,
+    };
     let totalObs = 0;
-    let piMatched = 0;
     let processed = 0;
     for (const group of groups) {
       if (processed >= piLimit) break;
@@ -493,40 +567,44 @@ export class NehGrantScraper implements IScraper {
         { firstName: group.piFirstName, lastName: group.piLastName },
         resolverDeps,
       );
-      if (userResolution.status === 'ambiguous') continue;
-      const piUserId = userResolution.status === 'matched' ? userResolution.userId : null;
-      if (piUserId) piMatched++;
-
-      const researchHomeResolution = piUserId
-        ? await researchHomeResolver(piUserId)
-        : { status: 'safe-shell' as const };
-      if (
-        researchHomeResolution.status === 'ambiguous' ||
-        researchHomeResolution.status === 'ineligible'
-      ) {
+      if (userResolution.status === 'ambiguous') {
+        attach.ambiguousPerson++;
         continue;
       }
-      const canonicalResearchHomeSlug =
-        researchHomeResolution.status === 'canonical' ? researchHomeResolution.slug : null;
+      if (userResolution.status !== 'matched') {
+        attach.unresolved++;
+        continue;
+      }
 
-      const entityObs = buildResearchEntityObservations(
-        group,
-        piUserId,
-        sourceUrl,
-        canonicalResearchHomeSlug,
-      );
+      const home = await researchHomeResolver(userResolution.userId);
+      if (home.status === 'safe-shell') {
+        attach.noExistingRow++;
+        continue;
+      }
+      if (home.status === 'ineligible') {
+        attach.ineligibleRow++;
+        continue;
+      }
+      if (home.status === 'ambiguous') {
+        attach.ambiguousRow++;
+        continue;
+      }
+
+      const entityObs = buildResearchEntityObservations(group, userResolution.userId, home.slug);
       await ctx.emit(entityObs);
       totalObs += entityObs.length;
+      attach.enriched++;
     }
 
-    ctx.log(
-      `Emitted ${totalObs} observations across ${processed} PIs (${piMatched} matched to Yale Users)`,
-    );
+    const notes =
+      `${shardSummary(years, shards)}; Yale NEH awards since ${cutoffYear}: ${yaleGrants.length}; ` +
+      `Project Directors: ${groups.length} (${processed} processed); ${attachSummary(attach)}`;
+    ctx.log(`Emitted ${totalObs} observations. ${notes}`);
 
     return {
       observationCount: totalObs,
-      entitiesObserved: processed,
-      notes: `Yale NEH awards: ${yaleGrants.length}, PIs: ${groups.length}, matched to Users: ${piMatched}`,
+      entitiesObserved: attach.enriched,
+      notes,
     };
   }
 }

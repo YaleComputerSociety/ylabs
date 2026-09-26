@@ -1,319 +1,278 @@
 /**
  * Unit tests for NehGrantScraper.
  *
- * No network, no Mongo - the NEH open-data fetch and the User finder are both
- * injected via the scraper constructor, so the tests exercise the full run()
- * path (fetch, schema check, Yale filtering, PI grouping, matching, observation
- * emission, fail-closed behavior) deterministically against canned fixtures.
+ * No network, no Mongo - the NEH Award Search fetch, the researcher resolver and
+ * the research-row resolver are injected, so the tests exercise the full run()
+ * path against synthetic Award Search pages.
  */
 import { describe, it, expect, vi } from 'vitest';
 import mongoose from 'mongoose';
 import {
   NehGrantScraper,
-  decadeFilesForLookback,
+  awardSearchQueryUrl,
   grantToRecord,
   groupGrantsByLeadPi,
   hasRequiredNehHeaders,
   isYaleAwardee,
-  leadParticipant,
   maxStartDate,
   nehGrantUrl,
-  parseCsvRows,
+  parseAwardPeriod,
   parseNehAmount,
-  parseNehCsv,
+  parseNehAwardSearchPage,
   parseNehDate,
-  parseParticipants,
   parseYear,
   piGroupKey,
-  piSlug,
   recordToNehGrant,
   sortGrantsByRecency,
+  yearShardsForLookback,
 } from '../sources/nehGrantScraper';
 import type { ObservationInput, ScraperContext } from '../types';
 
-const HEADER =
-  'AppNumber,Institution,InstState,YearAwarded,ProjectTitle,Program,Division,AwardOutright,OriginalAmount,BeginGrant,EndGrant,ProjectDesc,ToSupport,PrimaryDiscipline,Disciplines,Participants';
+const GRID_HEADERS = [
+  'Award Number',
+  'Grant Program',
+  'Award Recipient',
+  'Project Title',
+  'Award Period',
+  'Approved Award Total',
+  'Project Director First Name',
+  'Project Director Middle Name',
+  'Project Director Last Name',
+  'Co-Project Director First Name',
+  'Co-Project Director Middle Name',
+  'Co-Project Director Last Name',
+  'Organization',
+  'Organization City',
+  'Organization State',
+  'Organization Postal Code',
+  'Organization Country',
+  'Year Awarded',
+  'Primary Humanities Discipline',
+  'Grant Program Name',
+  'Division or Office',
+  'Approved Outright Funds',
+  'Approved Matching Funds',
+  'Awarded Outright Funds',
+  'Awarded Matching Funds',
+  'Description',
+];
 
-function csvRow(fields: Record<string, string>): string {
-  const order = [
-    'AppNumber',
-    'Institution',
-    'InstState',
-    'YearAwarded',
-    'ProjectTitle',
-    'Program',
-    'Division',
-    'AwardOutright',
-    'OriginalAmount',
-    'BeginGrant',
-    'EndGrant',
-    'ProjectDesc',
-    'ToSupport',
-    'PrimaryDiscipline',
-    'Disciplines',
-    'Participants',
-  ];
-  return order
-    .map((key) => {
-      const value = fields[key] ?? '';
-      return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+type GridRow = Partial<Record<(typeof GRID_HEADERS)[number], string>>;
+
+const escapeHtml = (value: string) =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function awardSearchPage(
+  rows: GridRow[],
+  options: { headers?: string[]; reportedCount?: number } = {},
+): string {
+  const headers = options.headers ?? GRID_HEADERS;
+  const count = options.reportedCount ?? rows.length;
+  const th = headers
+    .map(
+      (h) =>
+        `<th scope="col" class="rgHeader"><a href="javascript:void(0)">${escapeHtml(h)}</a>&nbsp;<button type="button" value="Sorted asc">sort</button></th>`,
+    )
+    .join('');
+  const body = rows
+    .map((row, index) => {
+      const cells = headers
+        .map((h, i) => {
+          const value = row[h as keyof GridRow] ?? '';
+          const hidden = i >= 6 ? ' style="display:none;"' : '';
+          const content =
+            h === 'Award Number' && value
+              ? `<a href="AwardDetail.aspx?gn=${value}">${value}</a>`
+              : h === 'Description'
+                ? `<p>${escapeHtml(value)}</p>\n<p>Second paragraph.</p>`
+                : value
+                  ? escapeHtml(value)
+                  : '&nbsp;';
+          return `<td${hidden}>${content}</td>`;
+        })
+        .join('');
+      return `<tr class="${index % 2 ? 'rgAltRow' : 'rgRow'}">${cells}</tr>`;
     })
-    .join(',');
+    .join('');
+  return `<html><body><div id="cphMainContent_pnlResults"><span id="cphMainContent_lblQueryError"></span>
+<table class="rgMasterTable"><thead>
+<tr class="rgCommandRow"><td class="rgCommandCell"><button>Download to CSV</button></td></tr>
+<tr class="rgPager"><td class="rgPagerCell"><div class="rgWrap rgInfoPart">&nbsp;<strong>${count}</strong> items in <strong>1</strong> pages</div></td></tr>
+<tr>${th}</tr></thead><tbody>${body}</tbody></table></div></body></html>`;
 }
 
-const YALE_FELLOWSHIP = {
-  AppNumber: 'FEL-268066-20',
-  Institution: 'Yale University',
-  InstState: 'CT',
-  YearAwarded: '2022',
-  ProjectTitle: 'Russian Filmmaker Evgenii Bauer: Cinema and Genealogies',
-  Program: 'Fellowships',
-  Division: 'Research Programs',
-  AwardOutright: '60000.0000',
-  OriginalAmount: '60000.0000',
-  BeginGrant: '7/1/2022 12:00:00 AM',
-  EndGrant: '6/30/2023 12:00:00 AM',
-  ProjectDesc: 'Research and writing, leading to a book\nabout early Russian cinema.',
-  ToSupport: 'Research and writing leading to a book.',
-  PrimaryDiscipline: 'Film History and Criticism',
-  Disciplines: 'Arts, General; Film History and Criticism',
-  Participants: 'Oksana Director [Project Director]',
+const EMPTY_RESULTS_PAGE =
+  '<html><body><div id="cphMainContent_pnlResults"><span id="cphMainContent_lblResultsSummary"></span><span id="cphMainContent_lblQueryError"></span></div></body></html>';
+
+const ERROR_PAGE =
+  '<html><body><h1>NEH Award Search: Error</h1><p>An error has occurred in the Award Search tool.</p></body></html>';
+
+const FELLOWSHIP: GridRow = {
+  'Award Number': 'FEL-000001-24',
+  'Grant Program': 'Research: Fellowships',
+  'Award Recipient': 'Avery Placeholder',
+  'Project Title': 'Synthetic Study of Placeholder Manuscripts',
+  'Award Period': '7/1/2024 - 6/30/2025',
+  'Approved Award Total': '$60,000.00',
+  'Project Director First Name': 'Avery',
+  'Project Director Last Name': 'Placeholder',
+  Organization: 'Yale University',
+  'Organization City': 'New Haven',
+  'Organization State': 'CT',
+  'Year Awarded': '2024',
+  'Primary Humanities Discipline': 'Film History and Criticism',
+  'Grant Program Name': 'Fellowships',
+  'Division or Office': 'Research',
+  'Approved Outright Funds': '60000',
+  'Approved Matching Funds': '0',
+  'Awarded Outright Funds': '60000',
+  'Awarded Matching Funds': '0',
+  Description: 'Research and writing leading to a book.',
 };
 
-const YALE_COLLAB = {
-  AppNumber: 'RZ-279836-22',
-  Institution: 'Yale University',
-  InstState: 'CT',
-  YearAwarded: '2021',
-  ProjectTitle: 'Recovering Black Performance in Early Modern Iberia',
-  Program: 'Collaborative Research',
-  Division: 'Research Programs',
-  AwardOutright: '46817.3500',
-  OriginalAmount: '46817.3500',
-  BeginGrant: '10/1/2021 12:00:00 AM',
-  EndGrant: '6/30/2024 12:00:00 AM',
-  ProjectDesc: 'Planning and holding a conference on Black performance.',
-  ToSupport: 'A conference and edited volume.',
-  PrimaryDiscipline: 'Theater History and Criticism',
-  Disciplines: 'Renaissance Studies; Theater History and Criticism',
-  Participants: 'Nicholas Lead [Project Director]; Elizabeth Second [Co Project Director]',
+const COLLABORATIVE: GridRow = {
+  ...FELLOWSHIP,
+  'Award Number': 'RZ-000002-25',
+  'Grant Program': 'Research: Collaborative Research',
+  'Project Title': 'Synthetic Collaborative Edition',
+  'Award Period': '9/1/2025 - 8/31/2027',
+  'Co-Project Director First Name': 'Jordan',
+  'Co-Project Director Last Name': 'Example',
+  'Year Awarded': '2025',
+  'Awarded Outright Funds': '150000',
+  'Awarded Matching Funds': '25000',
 };
 
-const NON_YALE = {
-  ...YALE_FELLOWSHIP,
-  AppNumber: 'FEL-999999-20',
-  Institution: 'Harvard University',
-  InstState: 'MA',
-  Participants: 'Someone Else [Project Director]',
+const NON_YALE: GridRow = {
+  ...FELLOWSHIP,
+  'Award Number': 'FEL-000003-24',
+  Organization: 'Placeholder State University',
+  'Project Director First Name': 'Riley',
+  'Project Director Last Name': 'Sample',
 };
 
-const YALE_OUT_OF_STATE = {
-  ...YALE_FELLOWSHIP,
-  AppNumber: 'FEL-888888-20',
-  Institution: 'Yale-NUS College',
-  InstState: 'SG',
-  Participants: 'Overseas Person [Project Director]',
+const YALE_OUT_OF_STATE: GridRow = {
+  ...FELLOWSHIP,
+  'Award Number': 'FEL-000004-24',
+  'Organization State': 'NY',
+  'Project Director First Name': 'Casey',
+  'Project Director Last Name': 'Stand-In',
 };
 
-function buildCsv(rows: Array<Record<string, string>>): string {
-  return [HEADER, ...rows.map(csvRow)].join('\n') + '\n';
+const PI_ID = '507f1f77bcf86cd799439011';
+
+function gridRecord(row: GridRow) {
+  const page = parseNehAwardSearchPage(awardSearchPage([row]));
+  if (page.kind !== 'grid') throw new Error('expected a grid');
+  return page.records[0];
 }
 
-describe('parseCsvRows', () => {
-  it('handles quoted fields with embedded commas and newlines', () => {
-    const rows = parseCsvRows('a,b\n"x,y","line1\nline2"\n');
-    expect(rows).toHaveLength(2);
-    expect(rows[1]).toEqual(['x,y', 'line1\nline2']);
-  });
-  it('unescapes doubled quotes', () => {
-    const rows = parseCsvRows('h\n"say ""hi"""\n');
-    expect(rows[1]).toEqual(['say "hi"']);
-  });
-});
-
-describe('parseNehCsv + hasRequiredNehHeaders', () => {
-  it('parses a Yale row into a normalized record', () => {
-    const { records, headers } = parseNehCsv(buildCsv([YALE_FELLOWSHIP]));
-    expect(hasRequiredNehHeaders(headers)).toBe(true);
-    expect(records).toHaveLength(1);
-    expect(records[0].appnumber).toBe('FEL-268066-20');
-    expect(records[0].projectdesc).toContain('early Russian cinema');
-  });
-  it('flags schema drift when a required column is absent', () => {
-    const drifted = buildCsv([YALE_FELLOWSHIP]).replace('Participants', 'Contributors');
-    const { headers } = parseNehCsv(drifted);
-    expect(hasRequiredNehHeaders(headers)).toBe(false);
-  });
-});
-
-describe('parseNehDate', () => {
-  it('parses NEH datetime and plain m/d/yyyy', () => {
-    expect(parseNehDate('7/1/2022 12:00:00 AM')?.toISOString().slice(0, 10)).toBe('2022-07-01');
-    expect(parseNehDate('10/1/2021')?.toISOString().slice(0, 10)).toBe('2021-10-01');
-  });
-  it('returns undefined for blank or malformed', () => {
-    expect(parseNehDate('')).toBeUndefined();
-    expect(parseNehDate(null)).toBeUndefined();
-    expect(parseNehDate('2021-10-01')).toBeUndefined();
-  });
-});
-
-describe('parseNehAmount', () => {
-  it('parses fixed-point dollar strings', () => {
-    expect(parseNehAmount('60000.0000')).toBe(60000);
-    expect(parseNehAmount('46817.3500')).toBeCloseTo(46817.35);
-  });
-  it('returns undefined for blank or zero', () => {
-    expect(parseNehAmount('')).toBeUndefined();
-    expect(parseNehAmount('0.0000')).toBeUndefined();
-    expect(parseNehAmount(null)).toBeUndefined();
-  });
-});
-
-describe('parseYear', () => {
-  it('extracts a 4-digit year', () => {
-    expect(parseYear('2022')).toBe(2022);
-  });
-  it('returns undefined when no year present', () => {
-    expect(parseYear('n/a')).toBeUndefined();
-    expect(parseYear(undefined)).toBeUndefined();
-  });
-});
-
-describe('parseParticipants', () => {
-  it('parses a single Project Director', () => {
-    expect(parseParticipants('Oksana Director [Project Director]')).toEqual([
-      { fullName: 'Oksana Director', role: 'Project Director', isLead: true, isCoLead: false },
-    ]);
-  });
-  it('parses lead + co-lead', () => {
-    const parsed = parseParticipants(
-      'Nicholas Lead [Project Director]; Elizabeth Second [Co Project Director]',
+describe('parseNehAwardSearchPage', () => {
+  it('reads the grid by header name, including the hidden columns', () => {
+    const page = parseNehAwardSearchPage(awardSearchPage([FELLOWSHIP, COLLABORATIVE]));
+    expect(page.kind).toBe('grid');
+    if (page.kind !== 'grid') return;
+    expect(page.reportedCount).toBe(2);
+    expect(page.records).toHaveLength(2);
+    expect(page.headers).toContain('projectdirectorlastname');
+    expect(page.headers[0]).toBe('awardnumber');
+    expect(page.records[0].awardnumber).toBe('FEL-000001-24');
+    expect(page.records[0].organizationstate).toBe('CT');
+    expect(page.records[0].projectdirectormiddlename).toBe('');
+    expect(page.records[1].coprojectdirectorlastname).toBe('Example');
+    expect(page.records[0].description).toBe(
+      'Research and writing leading to a book. Second paragraph.',
     );
-    expect(parsed).toHaveLength(2);
-    expect(parsed[0].isLead).toBe(true);
-    expect(parsed[1].isCoLead).toBe(true);
+    expect(hasRequiredNehHeaders(page.headers)).toBe(true);
   });
-  it('treats an unlabeled participant as a non-lead name', () => {
-    const parsed = parseParticipants('Just Name');
-    expect(parsed[0]).toEqual({ fullName: 'Just Name', role: '', isLead: false, isCoLead: false });
+
+  it('recognises an empty result set as empty rather than drift', () => {
+    expect(parseNehAwardSearchPage(EMPTY_RESULTS_PAGE)).toEqual({ kind: 'empty' });
   });
-  it('returns [] for blank', () => {
-    expect(parseParticipants('')).toEqual([]);
-    expect(parseParticipants(null)).toEqual([]);
+
+  it('refuses an error page or a query error as unrecognised', () => {
+    expect(parseNehAwardSearchPage(ERROR_PAGE)).toEqual({ kind: 'unrecognised' });
+    const queryError = EMPTY_RESULTS_PAGE.replace(
+      '<span id="cphMainContent_lblQueryError"></span>',
+      '<span id="cphMainContent_lblQueryError">The query could not be parsed.</span>',
+    );
+    expect(parseNehAwardSearchPage(queryError)).toEqual({ kind: 'unrecognised' });
+  });
+
+  it('flags a renamed required column as missing', () => {
+    const headers = GRID_HEADERS.map((h) =>
+      h === 'Project Director Last Name' ? 'Director Surname' : h,
+    );
+    const page = parseNehAwardSearchPage(awardSearchPage([FELLOWSHIP], { headers }));
+    expect(page.kind).toBe('grid');
+    if (page.kind !== 'grid') return;
+    expect(hasRequiredNehHeaders(page.headers)).toBe(false);
   });
 });
 
-describe('leadParticipant', () => {
-  it('prefers the labeled Project Director', () => {
-    const parts = parseParticipants('A Co [Co Project Director]; B Lead [Project Director]');
-    expect(leadParticipant(parts)?.fullName).toBe('B Lead');
+describe('record helpers', () => {
+  it('parses dates, periods, amounts and years', () => {
+    expect(parseNehDate('7/1/2024')?.getFullYear()).toBe(2024);
+    expect(parseNehDate('garbage')).toBeUndefined();
+    const period = parseAwardPeriod('9/1/2025 - 8/31/2027');
+    expect(period.begin?.getMonth()).toBe(8);
+    expect(period.end?.getFullYear()).toBe(2027);
+    expect(parseAwardPeriod('')).toEqual({ begin: undefined, end: undefined });
+    expect(parseNehAmount('$60,000.00')).toBe(60000);
+    expect(parseNehAmount('0')).toBeUndefined();
+    expect(parseYear('2024')).toBe(2024);
+    expect(parseYear('')).toBeUndefined();
   });
-  it('falls back to the first participant when none is labeled lead', () => {
-    const parts = parseParticipants('A First [Consultant]; B Second [Consultant]');
-    expect(leadParticipant(parts)?.fullName).toBe('A First');
-  });
-});
 
-describe('isYaleAwardee', () => {
-  it('accepts Yale University in CT', () => {
-    expect(isYaleAwardee({ institution: 'Yale University', inststate: 'CT' })).toBe(true);
+  it('identifies Yale awardees in Connecticut only', () => {
+    expect(isYaleAwardee(gridRecord(FELLOWSHIP))).toBe(true);
+    expect(isYaleAwardee(gridRecord(NON_YALE))).toBe(false);
+    expect(isYaleAwardee(gridRecord(YALE_OUT_OF_STATE))).toBe(false);
   });
-  it('rejects a non-Yale institution', () => {
-    expect(isYaleAwardee({ institution: 'Harvard University', inststate: 'MA' })).toBe(false);
-  });
-  it('rejects a Yale-named org outside CT', () => {
-    expect(isYaleAwardee({ institution: 'Yale-NUS College', inststate: 'SG' })).toBe(false);
-  });
-});
 
-describe('recordToNehGrant', () => {
-  it('maps a record into a typed grant', () => {
-    const { records } = parseNehCsv(buildCsv([YALE_COLLAB]));
-    const grant = recordToNehGrant(records[0])!;
-    expect(grant.appNumber).toBe('RZ-279836-22');
-    expect(grant.yearAwarded).toBe(2021);
-    expect(grant.awardOutright).toBeCloseTo(46817.35);
-    expect(grant.disciplines).toEqual(['Renaissance Studies', 'Theater History and Criticism']);
-    expect(grant.participants).toHaveLength(2);
+  it('maps a grid row to a grant with the director as lead and awarded totals', () => {
+    const grant = recordToNehGrant(gridRecord(COLLABORATIVE));
+    expect(grant?.appNumber).toBe('RZ-000002-25');
+    expect(grant?.participants.map((p) => [p.fullName, p.isLead])).toEqual([
+      ['Avery Placeholder', true],
+      ['Jordan Example', false],
+    ]);
+    expect(grant?.awardOutright).toBe(175000);
+    expect(grant?.yearAwarded).toBe(2025);
+    expect(grant?.program).toBe('Fellowships');
   });
-  it('returns null with no app number, title, or participants', () => {
+
+  it('drops a row with no award number, title or director surname', () => {
+    expect(recordToNehGrant(gridRecord({ ...FELLOWSHIP, 'Award Number': '' }))).toBeNull();
+    expect(recordToNehGrant(gridRecord({ ...FELLOWSHIP, 'Project Title': '' }))).toBeNull();
     expect(
-      recordToNehGrant({ appnumber: '', projecttitle: 'x', participants: 'A [Project Director]' }),
+      recordToNehGrant(gridRecord({ ...FELLOWSHIP, 'Project Director Last Name': '' })),
     ).toBeNull();
-    expect(
-      recordToNehGrant({ appnumber: 'x', projecttitle: '', participants: 'A [Project Director]' }),
-    ).toBeNull();
-    expect(recordToNehGrant({ appnumber: 'x', projecttitle: 'y', participants: '' })).toBeNull();
   });
-});
 
-describe('groupGrantsByLeadPi', () => {
-  it('groups awards by their lead Project Director', () => {
-    const g1 = recordToNehGrant(parseNehCsv(buildCsv([YALE_FELLOWSHIP])).records[0])!;
-    const g2 = recordToNehGrant(
-      parseNehCsv(buildCsv([{ ...YALE_FELLOWSHIP, AppNumber: 'FEL-2' }])).records[0],
-    )!;
-    const g3 = recordToNehGrant(parseNehCsv(buildCsv([YALE_COLLAB])).records[0])!;
-    const groups = groupGrantsByLeadPi([g1, g2, g3]);
-    expect(groups).toHaveLength(2);
-    const oksana = groups.find((g) => g.piLastName === 'Director');
-    expect(oksana!.awards).toHaveLength(2);
+  it('groups grants by lead director and cites the current award detail page', () => {
+    const grants = [FELLOWSHIP, COLLABORATIVE].map((r) => recordToNehGrant(gridRecord(r))!);
+    const groups = groupGrantsByLeadPi(grants);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].awards).toHaveLength(2);
+    expect(piGroupKey('AVERY', 'Placeholder')).toBe('avery placeholder');
+    const records = sortGrantsByRecency(grants.map((g) => grantToRecord(g)));
+    expect(records[0].id).toBe('RZ-000002-25');
+    expect(records[0].url).toBe(nehGrantUrl('RZ-000002-25'));
+    expect(nehGrantUrl('RZ-000002-25')).toBe(
+      'https://awardsearch.neh.gov/AwardDetail.aspx?gn=RZ-000002-25',
+    );
+    expect(maxStartDate(grants)?.getFullYear()).toBe(2025);
   });
-});
 
-describe('grantToRecord', () => {
-  it('normalizes a grant into a recentGrants subdocument', () => {
-    const grant = recordToNehGrant(parseNehCsv(buildCsv([YALE_FELLOWSHIP])).records[0])!;
-    const rec = grantToRecord(grant);
-    expect(rec.agency).toBe('NEH');
-    expect(rec.id).toBe('FEL-268066-20');
-    expect(rec.dollarAmount).toBe(60000);
-    expect(rec.url).toBe(nehGrantUrl('FEL-268066-20'));
-    expect(rec.startDate?.toISOString().slice(0, 10)).toBe('2022-07-01');
-  });
-  it('falls back to ToSupport when ProjectDesc is empty', () => {
-    const grant = recordToNehGrant(
-      parseNehCsv(buildCsv([{ ...YALE_FELLOWSHIP, ProjectDesc: '' }])).records[0],
-    )!;
-    expect(grantToRecord(grant).abstract).toBe('Research and writing leading to a book.');
-  });
-});
-
-describe('sortGrantsByRecency / maxStartDate', () => {
-  it('sorts most-recent-first and finds the latest start', () => {
-    const early = recordToNehGrant(
-      parseNehCsv(buildCsv([{ ...YALE_FELLOWSHIP, AppNumber: 'E', BeginGrant: '1/1/2020' }]))
-        .records[0],
-    )!;
-    const late = recordToNehGrant(
-      parseNehCsv(buildCsv([{ ...YALE_FELLOWSHIP, AppNumber: 'L', BeginGrant: '1/1/2024' }]))
-        .records[0],
-    )!;
-    const sorted = sortGrantsByRecency([early, late].map((g) => grantToRecord(g)));
-    expect(sorted.map((r) => r.id)).toEqual(['L', 'E']);
-    expect(maxStartDate([early, late])?.getFullYear()).toBe(2024);
-  });
-});
-
-describe('decadeFilesForLookback', () => {
-  it('returns the single current-decade file for an in-decade window', () => {
-    expect(decadeFilesForLookback(2026, 6)).toEqual(['NEH_Grants2020s.csv']);
-  });
-  it('includes the prior decade when the window straddles a boundary', () => {
-    expect(decadeFilesForLookback(2023, 6)).toEqual(['NEH_Grants2010s.csv', 'NEH_Grants2020s.csv']);
-  });
-});
-
-describe('piSlug / piGroupKey', () => {
-  it('uses the user id when matched', () => {
-    expect(piSlug('507f1f77bcf86cd799439011', 'A', 'B')).toBe('neh-pi-507f1f77bcf86cd799439011');
-  });
-  it('falls back to a name-based slug when unmatched', () => {
-    expect(piSlug(null, 'Oksana', 'Director')).toBe('neh-pi-oksana-director');
-  });
-  it('normalizes the group key', () => {
-    expect(piGroupKey('OKSANA', 'Director')).toBe('oksana director');
+  it('queries one year per shard across the lookback window', () => {
+    expect(yearShardsForLookback(2026, 3)).toEqual([2023, 2024, 2025, 2026]);
+    const url = new URL(awardSearchQueryUrl(2024));
+    expect(url.origin).toBe('https://awardsearch.neh.gov');
+    expect(url.searchParams.get('ov')).toBe('Yale');
+    expect(url.searchParams.get('sv')).toBe('CT');
+    expect(url.searchParams.get('yf')).toBe('2024');
+    expect(url.searchParams.get('yt')).toBe('2024');
   });
 });
 
@@ -337,176 +296,211 @@ function buildContext(overrides: Partial<ScraperContext['options']> = {}) {
   return { ctx, emitted, logs };
 }
 
+const matched = async () => ({
+  status: 'matched' as const,
+  researcherId: new mongoose.Types.ObjectId(PI_ID),
+});
+
+function scraperFor(
+  pagesByYear: Record<number, string>,
+  deps: Partial<ConstructorParameters<typeof NehGrantScraper>[0]> = {},
+) {
+  const fetchAwardSearchYear = vi.fn(async (year: number) => {
+    const page = pagesByYear[year];
+    if (page === undefined) return EMPTY_RESULTS_PAGE;
+    return page;
+  });
+  const scraper = new NehGrantScraper({
+    fetchAwardSearchYear: fetchAwardSearchYear as any,
+    resolveResearcherId: matched,
+    researchHomeResolver: vi.fn().mockResolvedValue({ status: 'canonical', slug: 'dept-row' }),
+    currentYear: 2026,
+    lookbackYears: 6,
+    ...deps,
+  });
+  return { scraper, fetchAwardSearchYear };
+}
+
 describe('NehGrantScraper.run', () => {
-  it('filters non-Yale and out-of-state rows before grouping', async () => {
-    const fetchDecadeCsv = vi.fn(async () =>
-      buildCsv([YALE_FELLOWSHIP, NON_YALE, YALE_OUT_OF_STATE]),
+  it('enriches the existing research row and never emits identity fields', async () => {
+    const researchHomeResolver = vi
+      .fn()
+      .mockResolvedValue({ status: 'canonical', slug: 'dept-film-row' });
+    const { scraper, fetchAwardSearchYear } = scraperFor(
+      { 2024: awardSearchPage([FELLOWSHIP]), 2025: awardSearchPage([COLLABORATIVE]) },
+      { researchHomeResolver },
     );
-    const resolveResearcherId = async () => ({ status: 'absent' as const });
-    const scraper = new NehGrantScraper({
-      fetchDecadeCsv: fetchDecadeCsv as any,
-      resolveResearcherId,
-      currentYear: 2026,
-    });
     const { ctx, emitted } = buildContext();
     const result = await scraper.run(ctx);
+
+    expect(fetchAwardSearchYear).toHaveBeenCalledTimes(7);
+    expect(researchHomeResolver).toHaveBeenCalledWith(PI_ID);
     expect(result.entitiesObserved).toBe(1);
-    const names = emitted.filter((o) => o.field === 'name').map((o) => o.value);
-    expect(names).toEqual(['Oksana Director Research']);
+    expect(result.observationCount).toBe(emitted.length);
+    expect(emitted.every((o) => o.entityType === 'researchEntity')).toBe(true);
+    expect(emitted.every((o) => o.entityKey === 'dept-film-row')).toBe(true);
+    expect(emitted.every((o) => o.sourceUrl === 'https://awardsearch.neh.gov/')).toBe(true);
+    const fields = emitted.map((o) => o.field);
+    for (const identity of ['slug', 'name', 'kind', 'entityType']) {
+      expect(fields).not.toContain(identity);
+    }
+    expect(emitted.find((o) => o.field === 'recentGrantCount')?.value).toBe(2);
+    expect(emitted.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NEH']);
+    expect(emitted.find((o) => o.field === 'inferredPiUserId')?.value).toBe(PI_ID);
+    const grants = emitted.find((o) => o.field === 'recentGrants')?.value as Array<{
+      url: string;
+    }>;
+    expect(
+      grants.every((g) => g.url.startsWith('https://awardsearch.neh.gov/AwardDetail.aspx')),
+    ).toBe(true);
+    for (const forbidden of ['signal', 'pathway', 'opportunity', 'contactroute']) {
+      expect(fields.some((f) => f.toLowerCase().includes(forbidden))).toBe(false);
+    }
+    expect(result.notes).toMatch(/rows enriched: 1/);
   });
 
-  it('mints a humanities FACULTY_PROJECT shell for an unmatched PI (never a STEM LAB)', async () => {
-    const fetchDecadeCsv = vi.fn(async () => buildCsv([YALE_FELLOWSHIP]));
-    const resolveResearcherId = async () => ({ status: 'absent' as const });
-    const scraper = new NehGrantScraper({
-      fetchDecadeCsv: fetchDecadeCsv as any,
-      resolveResearcherId,
-      currentYear: 2026,
-    });
+  it('mints nothing for a director with no existing research row, and says so', async () => {
+    const { scraper } = scraperFor(
+      { 2024: awardSearchPage([FELLOWSHIP]) },
+      { researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }) },
+    );
     const { ctx, emitted } = buildContext();
-    await scraper.run(ctx);
+    const result = await scraper.run(ctx);
+    expect(emitted).toHaveLength(0);
+    expect(result.notes).toMatch(/1 have no existing research row/);
+  });
 
-    const rg = emitted.filter((o) => o.entityType === 'researchEntity');
-    expect(rg.find((o) => o.field === 'entityType')?.value).toBe('FACULTY_PROJECT');
-    expect(rg.find((o) => o.field === 'kind')?.value).toBe('individual');
-    const nameObs = rg.find((o) => o.field === 'name');
-    expect(String(nameObs?.value)).toMatch(/ Research$/);
-    expect(nameObs?.confidenceOverride).toBe(0.3);
-    expect(rg.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NEH']);
-    expect(rg.find((o) => o.field === 'recentGrantCount')?.value).toBe(1);
-    const emittedFields = new Set(emitted.map((o) => o.field.toLowerCase()));
-    for (const forbidden of ['signal', 'pathway', 'opportunity', 'accesssignal', 'contactroute']) {
-      expect([...emittedFields].some((f) => f.includes(forbidden))).toBe(false);
+  it('mints nothing for a director who resolves to nobody or to several people', async () => {
+    const unresolved = scraperFor(
+      { 2024: awardSearchPage([FELLOWSHIP]) },
+      { resolveResearcherId: async () => ({ status: 'absent' as const }) },
+    );
+    const run1 = buildContext();
+    const r1 = await unresolved.scraper.run(run1.ctx);
+    expect(run1.emitted).toHaveLength(0);
+    expect(r1.notes).toMatch(/1 resolved to no researcher/);
+
+    const ambiguous = scraperFor(
+      { 2024: awardSearchPage([FELLOWSHIP]) },
+      { resolveResearcherId: async () => ({ status: 'ambiguous' as const }) },
+    );
+    const run2 = buildContext();
+    const r2 = await ambiguous.scraper.run(run2.ctx);
+    expect(run2.emitted).toHaveLength(0);
+    expect(r2.notes).toMatch(/1 resolved to several researchers/);
+  });
+
+  it('skips an ineligible or ambiguous research row', async () => {
+    for (const status of ['ineligible', 'ambiguous'] as const) {
+      const { scraper } = scraperFor(
+        { 2024: awardSearchPage([FELLOWSHIP]) },
+        { researchHomeResolver: vi.fn().mockResolvedValue({ status }) },
+      );
+      const { ctx, emitted } = buildContext();
+      const result = await scraper.run(ctx);
+      expect(emitted).toHaveLength(0);
+      expect(result.notes).toMatch(new RegExp(`1 ${status} row`));
     }
   });
 
-  it('self-attaches a matched PI to a canonical home without minting identity fields', async () => {
-    const fetchDecadeCsv = vi.fn(async () => buildCsv([YALE_FELLOWSHIP]));
-    const researchHomeResolver = vi
-      .fn()
-      .mockResolvedValue({ status: 'canonical', slug: 'dept-film-oksana-director' });
-    const scraper = new NehGrantScraper({
-      fetchDecadeCsv: fetchDecadeCsv as any,
-      resolveResearcherId: async () => ({
-        status: 'matched' as const,
-        researcherId: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
-      }),
-      researchHomeResolver,
-      currentYear: 2026,
+  it('filters non-Yale and out-of-state rows and dedupes an award seen in two shards', async () => {
+    const { scraper } = scraperFor({
+      2024: awardSearchPage([FELLOWSHIP, NON_YALE, YALE_OUT_OF_STATE]),
+      2025: awardSearchPage([FELLOWSHIP]),
     });
     const { ctx, emitted } = buildContext();
-    await scraper.run(ctx);
-
-    const rg = emitted.filter((o) => o.entityType === 'researchEntity');
-    expect(researchHomeResolver).toHaveBeenCalledWith('507f1f77bcf86cd799439011');
-    expect(rg.every((o) => o.entityKey === 'dept-film-oksana-director')).toBe(true);
-    expect(rg.find((o) => o.field === 'slug')).toBeUndefined();
-    expect(rg.find((o) => o.field === 'name')).toBeUndefined();
-    expect(rg.find((o) => o.field === 'kind')).toBeUndefined();
-    expect(rg.find((o) => o.field === 'entityType')).toBeUndefined();
-    expect(rg.find((o) => o.field === 'recentGrants')).toBeDefined();
-    expect(rg.find((o) => o.field === 'inferredPiUserId')?.value).toBe('507f1f77bcf86cd799439011');
-  });
-
-  // See the NSF twin: #3274 removed roster-member emission from both grant lanes, so the
-  // assertion moved from which members it emits to it emitting none.
-  it('emits no roster membership for a Yale-resolvable Co Project Director', async () => {
-    const fetchDecadeCsv = vi.fn(async () => buildCsv([YALE_COLLAB]));
-    const eliz = new mongoose.Types.ObjectId();
-    const resolveResearcherId = async (name: string) =>
-      /second/i.test(name)
-        ? { status: 'matched' as const, researcherId: eliz }
-        : { status: 'absent' as const };
-    const scraper = new NehGrantScraper({
-      fetchDecadeCsv: fetchDecadeCsv as any,
-      resolveResearcherId,
-      currentYear: 2026,
-    });
-    const { ctx, emitted } = buildContext();
-    await scraper.run(ctx);
-
-    expect(emitted.filter((o) => o.entityType === 'researchGroupMember')).toEqual([]);
-    expect(
-      emitted.filter((o) => o.field === 'researchGroupSlug' || o.field === 'researchGroupKey'),
-    ).toEqual([]);
-    expect(
-      emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'recentGrants'),
-    ).toBeDefined();
-    expect(Boolean(eliz)).toBe(true);
+    const result = await scraper.run(ctx);
+    expect(emitted.find((o) => o.field === 'recentGrantCount')?.value).toBe(1);
+    expect(result.notes).toMatch(/Yale NEH awards since 2020: 1;/);
   });
 
   it('drops awards older than the lookback cutoff', async () => {
-    const stale = { ...YALE_FELLOWSHIP, AppNumber: 'OLD', YearAwarded: '2005' };
-    const fetchDecadeCsv = vi.fn(async () => buildCsv([stale]));
-    const resolveResearcherId = async () => ({ status: 'absent' as const });
-    const scraper = new NehGrantScraper({
-      fetchDecadeCsv: fetchDecadeCsv as any,
-      resolveResearcherId,
-      currentYear: 2026,
-      lookbackYears: 6,
-    });
+    const stale = { ...FELLOWSHIP, 'Award Number': 'FEL-000009-05', 'Year Awarded': '2005' };
+    const { scraper } = scraperFor({ 2024: awardSearchPage([stale]) });
     const { ctx, emitted } = buildContext();
     const result = await scraper.run(ctx);
     expect(result.entitiesObserved).toBe(0);
     expect(emitted).toHaveLength(0);
   });
 
-  it('fails closed with no writes when no file is reachable', async () => {
-    const fetchDecadeCsv = vi.fn(async () => {
-      throw new Error('ETIMEDOUT');
-    });
-    const resolveResearcherId = async () => ({ status: 'absent' as const });
-    const scraper = new NehGrantScraper({
-      fetchDecadeCsv: fetchDecadeCsv as any,
-      resolveResearcherId,
-      currentYear: 2026,
-    });
-    const { ctx, emitted, logs } = buildContext();
+  it('fails closed with no writes and says so when every shard is unreachable', async () => {
+    const { scraper } = scraperFor(
+      {},
+      {
+        fetchAwardSearchYear: vi.fn(async () => {
+          throw new Error('Request failed with status code 301');
+        }) as any,
+      },
+    );
+    const { ctx, emitted } = buildContext();
     const result = await scraper.run(ctx);
     expect(result.observationCount).toBe(0);
     expect(emitted).toHaveLength(0);
-    expect(logs.some((l) => /unreachable|fail closed/i.test(l))).toBe(true);
+    expect(result.notes).toMatch(/unreachable; failed closed/);
+    expect(result.notes).toMatch(/7 failed/);
   });
 
-  it('fails closed with no writes on schema drift', async () => {
-    const drifted = buildCsv([YALE_FELLOWSHIP]).replace('Participants', 'Contributors');
-    const fetchDecadeCsv = vi.fn(async () => drifted);
-    const resolveResearcherId = async () => ({ status: 'absent' as const });
-    const scraper = new NehGrantScraper({
-      fetchDecadeCsv: fetchDecadeCsv as any,
-      resolveResearcherId,
-      currentYear: 2026,
-    });
-    const { ctx, emitted, logs } = buildContext();
+  it('fails closed with no writes when every page drifted', async () => {
+    const headers = GRID_HEADERS.map((h) =>
+      h === 'Project Director Last Name' ? 'Director Surname' : h,
+    );
+    const drifted = awardSearchPage([FELLOWSHIP], { headers });
+    const pages = Object.fromEntries(
+      [2020, 2021, 2022, 2023, 2024, 2025, 2026].map((y) => [y, y % 2 ? ERROR_PAGE : drifted]),
+    );
+    const { scraper } = scraperFor(pages);
+    const { ctx, emitted } = buildContext();
     const result = await scraper.run(ctx);
-    expect(result.observationCount).toBe(0);
     expect(emitted).toHaveLength(0);
-    expect(logs.some((l) => /schema drift|fail closed/i.test(l))).toBe(true);
+    expect(result.notes).toMatch(/page shape drifted; failed closed/);
+    expect(result.notes).toMatch(/3 unrecognised page, 4 schema drift/);
+  });
+
+  it('reports an empty window as empty rather than as a failure', async () => {
+    const { scraper } = scraperFor({});
+    const { ctx, emitted } = buildContext();
+    const result = await scraper.run(ctx);
+    expect(emitted).toHaveLength(0);
+    expect(result.notes).toMatch(/7 fetched, 0 failed, 7 empty/);
+    expect(result.notes).toMatch(/Yale NEH awards since 2020: 0;/);
+  });
+
+  it('counts a shard that reports more awards than it served as truncated', async () => {
+    const { scraper } = scraperFor({ 2024: awardSearchPage([FELLOWSHIP], { reportedCount: 60 }) });
+    const { ctx, logs } = buildContext();
+    const result = await scraper.run(ctx);
+    expect(result.notes).toMatch(/1 truncated/);
+    expect(logs.some((l) => /reported 60 awards but served 1/.test(l))).toBe(true);
+  });
+
+  it('emits no roster membership for a co-director', async () => {
+    const { scraper } = scraperFor({ 2025: awardSearchPage([COLLABORATIVE]) });
+    const { ctx, emitted } = buildContext();
+    await scraper.run(ctx);
+    expect(emitted.filter((o) => o.entityType === 'researchGroupMember')).toEqual([]);
+    expect(
+      emitted.filter((o) => o.field === 'researchGroupSlug' || o.field === 'researchGroupKey'),
+    ).toEqual([]);
   });
 
   it('rejects unsafe runtime limits before fetching', async () => {
-    const fetchDecadeCsv = vi.fn(async () => buildCsv([YALE_FELLOWSHIP]));
-    const scraper = new NehGrantScraper({ fetchDecadeCsv: fetchDecadeCsv as any });
+    const { scraper, fetchAwardSearchYear } = scraperFor({});
     const { ctx } = buildContext({ limit: 9007199254740992 } as any);
     await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);
-    expect(fetchDecadeCsv).not.toHaveBeenCalled();
+    expect(fetchAwardSearchYear).not.toHaveBeenCalled();
   });
 
-  it('honors --limit by capping PIs processed', async () => {
+  it('honors --limit by capping directors processed', async () => {
     const rows = Array.from({ length: 5 }, (_v, i) => ({
-      ...YALE_FELLOWSHIP,
-      AppNumber: `A-${i}`,
-      Participants: `First${i} Last${i} [Project Director]`,
+      ...FELLOWSHIP,
+      'Award Number': `FEL-00010${i}-24`,
+      'Project Director First Name': `Synthetic${String.fromCharCode(65 + i)}`,
+      'Project Director Last Name': `Placeholder${String.fromCharCode(65 + i)}`,
     }));
-    const fetchDecadeCsv = vi.fn(async () => buildCsv(rows));
-    const resolveResearcherId = async () => ({ status: 'absent' as const });
-    const scraper = new NehGrantScraper({
-      fetchDecadeCsv: fetchDecadeCsv as any,
-      resolveResearcherId,
-      currentYear: 2026,
-    });
+    const { scraper } = scraperFor({ 2024: awardSearchPage(rows) });
     const { ctx } = buildContext({ limit: 2 });
     const result = await scraper.run(ctx);
     expect(result.entitiesObserved).toBe(2);
+    expect(result.notes).toMatch(/Project Directors: 5 \(2 processed\)/);
   });
 });
