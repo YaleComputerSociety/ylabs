@@ -1,3 +1,10 @@
+import { createHash } from 'crypto';
+import {
+  UNDERGRAD_EVIDENCE_VERDICTS,
+  type UndergradEvidenceJudgement,
+  type UndergradEvidenceVerdict,
+} from './journeyEvalJudgements';
+
 export type InvariantStatus = 'pass' | 'fail' | 'inconclusive';
 
 export interface InvariantResult {
@@ -307,4 +314,193 @@ export function checkExpectedNoResults(query: string, servedTotal: number): Inva
     servedTotal === 0,
     { query, served: servedTotal },
   );
+}
+
+export interface ProportionInterval {
+  low: number;
+  high: number;
+  z: number;
+}
+
+const Z_95 = 1.959964;
+
+const roundTo4 = (value: number): number => Number(value.toFixed(4));
+
+export function wilsonInterval(
+  successes: number,
+  trials: number,
+  z: number = Z_95,
+): ProportionInterval | null {
+  if (trials <= 0) return null;
+  const proportion = successes / trials;
+  const zSquared = z * z;
+  const denominator = 1 + zSquared / trials;
+  const centre = proportion + zSquared / (2 * trials);
+  const margin =
+    z * Math.sqrt((proportion * (1 - proportion)) / trials + zSquared / (4 * trials * trials));
+  return {
+    low: roundTo4(Math.max(0, (centre - margin) / denominator)),
+    high: roundTo4(Math.min(1, (centre + margin) / denominator)),
+    z,
+  };
+}
+
+export const fingerprintQuote = (quote: string): string =>
+  createHash('sha256').update(quote.replace(/\s+/g, ' ').trim()).digest('hex').slice(0, 16);
+
+const seededDrawRank = (seed: string, rowKey: string): string =>
+  createHash('sha256').update(`${seed}:${rowKey}`).digest('hex');
+
+export function drawSeededSample(
+  rowKeys: readonly string[],
+  seed: string,
+  sampleSize: number,
+): string[] {
+  return [...new Set(rowKeys)]
+    .map((rowKey) => ({ rowKey, rank: seededDrawRank(seed, rowKey) }))
+    .sort((left, right) => (left.rank < right.rank ? -1 : left.rank > right.rank ? 1 : 0))
+    .slice(0, Math.max(0, sampleSize))
+    .map((entry) => entry.rowKey);
+}
+
+export const fingerprintPopulation = (rowKeys: readonly string[]): string =>
+  createHash('sha256')
+    .update([...new Set(rowKeys)].sort().join('\n'))
+    .digest('hex')
+    .slice(0, 16);
+
+export interface UndergradEvidenceServedRow {
+  rowKey: string;
+  quoteFingerprint: string;
+}
+
+export interface UndergradEvidenceJudgementScore {
+  population: number;
+  drawn: number;
+  judged: number;
+  unjudged: number;
+  judgementForAChangedQuote: number;
+  judgementsOutsideTheDraw: number;
+  verdicts: Record<UndergradEvidenceVerdict, number>;
+  verifiable: number;
+  correct: number;
+  precision: number;
+  precisionInterval: ProportionInterval | null;
+  precisionCountingUnverifiableAsWrong: number;
+  precisionCountingUnverifiableAsWrongInterval: ProportionInterval | null;
+  badgeWordingJudged: number;
+  badgeWordingBacked: number;
+  badgeWordingPrecision: number;
+  badgeWordingInterval: ProportionInterval | null;
+}
+
+const emptyVerdictTally = (): Record<UndergradEvidenceVerdict, number> =>
+  Object.fromEntries(UNDERGRAD_EVIDENCE_VERDICTS.map((verdict) => [verdict, 0])) as Record<
+    UndergradEvidenceVerdict,
+    number
+  >;
+
+export function scoreUndergradEvidenceJudgements(
+  population: readonly UndergradEvidenceServedRow[],
+  judgements: readonly UndergradEvidenceJudgement[],
+  seed: string,
+  sampleSize: number,
+): UndergradEvidenceJudgementScore {
+  const fingerprintByRow = new Map(population.map((row) => [row.rowKey, row.quoteFingerprint]));
+  const judgementByRow = new Map(judgements.map((judgement) => [judgement.rowKey, judgement]));
+  const drawn = drawSeededSample([...fingerprintByRow.keys()], seed, sampleSize);
+  const drawnSet = new Set(drawn);
+
+  const verdicts = emptyVerdictTally();
+  let unjudged = 0;
+  let judgementForAChangedQuote = 0;
+  let badgeWordingJudged = 0;
+  let badgeWordingBacked = 0;
+
+  for (const rowKey of drawn) {
+    const judgement = judgementByRow.get(rowKey);
+    if (!judgement?.verdict) {
+      unjudged += 1;
+      continue;
+    }
+    if (judgement.quoteFingerprint !== fingerprintByRow.get(rowKey)) {
+      judgementForAChangedQuote += 1;
+      continue;
+    }
+    verdicts[judgement.verdict] += 1;
+    if (
+      judgement.verdict !== 'stale_or_unreachable' &&
+      judgement.backsHostedBadgeWording !== undefined
+    ) {
+      badgeWordingJudged += 1;
+      if (judgement.backsHostedBadgeWording) badgeWordingBacked += 1;
+    }
+  }
+
+  const judged = Object.values(verdicts).reduce((total, count) => total + count, 0);
+  const verifiable = judged - verdicts.stale_or_unreachable;
+  const correct = verdicts.correct;
+
+  return {
+    population: fingerprintByRow.size,
+    drawn: drawn.length,
+    judged,
+    unjudged,
+    judgementForAChangedQuote,
+    judgementsOutsideTheDraw: judgements.filter((judgement) => !drawnSet.has(judgement.rowKey))
+      .length,
+    verdicts,
+    verifiable,
+    correct,
+    precision: asRate(correct, verifiable),
+    precisionInterval: wilsonInterval(correct, verifiable),
+    precisionCountingUnverifiableAsWrong: asRate(correct, judged),
+    precisionCountingUnverifiableAsWrongInterval: wilsonInterval(correct, judged),
+    badgeWordingJudged,
+    badgeWordingBacked,
+    badgeWordingPrecision: asRate(badgeWordingBacked, badgeWordingJudged),
+    badgeWordingInterval: wilsonInterval(badgeWordingBacked, badgeWordingJudged),
+  };
+}
+
+export interface QuoteAttributionObservation {
+  servedVersionMatchesStored: boolean;
+  storedSourceName: string;
+}
+
+export function checkUndergradEvidenceQuoteAttribution(
+  observations: readonly QuoteAttributionObservation[],
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'undergrad-evidence-quote-names-its-source';
+  const title = 'Every served undergraduate evidence quote is attributable to a named source';
+  const comparable = observations.filter((observation) => observation.servedVersionMatchesStored);
+  const unattributed = comparable.filter(
+    (observation) => observation.storedSourceName.trim().length === 0,
+  ).length;
+  const detail = {
+    served: observations.length,
+    comparable: comparable.length,
+    skippedStaleIndex: observations.length - comparable.length,
+    unattributed,
+  };
+
+  if (comparable.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No served quote could be compared with its stored row, so a zero unattributed count would be a green signal over an empty population',
+      detail,
+    );
+  }
+  if (unattributed > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the quotes were compared, so a quote may look unattributed only because the served and stored rows describe different versions',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, unattributed === 0, detail);
 }

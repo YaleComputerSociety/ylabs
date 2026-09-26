@@ -7,7 +7,12 @@ import { initializeConnections } from '../../db/connections';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from '../scriptWriteGuards';
 import { journeyCases, type BrowseRequest, type JourneyEvalContext } from './journeyEvalCases';
-import { parseTopicQueryJudgements, type TopicQueryJudgement } from './journeyEvalJudgements';
+import {
+  parseTopicQueryJudgements,
+  parseUndergradEvidenceJudgements,
+  type TopicQueryJudgement,
+  type UndergradEvidenceJudgementSet,
+} from './journeyEvalJudgements';
 import { summarizeInvariants, type InvariantResult, type RateResult } from './journeyEvalMetrics';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,17 +31,41 @@ function loadTopicQueryJudgements(explicitPath?: string): TopicQueryJudgement[] 
   return parseTopicQueryJudgements(JSON.parse(fs.readFileSync(judgementsPath, 'utf8'))).queries;
 }
 
+function loadUndergradEvidenceJudgements(
+  explicitPath?: string,
+): UndergradEvidenceJudgementSet | null {
+  if (!explicitPath) return null;
+  if (!fs.existsSync(explicitPath)) {
+    console.error(`No judgements file at ${explicitPath}, so the precision case is inconclusive`);
+    return null;
+  }
+  return parseUndergradEvidenceJudgements(JSON.parse(fs.readFileSync(explicitPath, 'utf8')));
+}
+
+const DEFAULT_UNDERGRAD_SAMPLE_SEED = '3569';
+const DEFAULT_UNDERGRAD_SAMPLE_SIZE = 50;
+
 interface JourneyEvalArgs {
   window: number;
   facetValues: number;
   pages: number;
   cases?: string[];
   judgements?: string;
+  undergradJudgements?: string;
+  undergradSampleOut?: string;
+  undergradSampleSeed: string;
+  undergradSampleSize: number;
   output?: string;
 }
 
 function parseArgs(argv: string[]): JourneyEvalArgs {
-  const args: JourneyEvalArgs = { window: 100, facetValues: 3, pages: 3 };
+  const args: JourneyEvalArgs = {
+    window: 100,
+    facetValues: 3,
+    pages: 3,
+    undergradSampleSeed: DEFAULT_UNDERGRAD_SAMPLE_SEED,
+    undergradSampleSize: DEFAULT_UNDERGRAD_SAMPLE_SIZE,
+  };
   for (const token of argv) {
     if (token.startsWith('--window=')) args.window = Number(token.slice('--window='.length));
     else if (token.startsWith('--facet-values='))
@@ -51,6 +80,14 @@ function parseArgs(argv: string[]): JourneyEvalArgs {
     else if (token.startsWith('--judgements='))
       args.judgements = token.slice('--judgements='.length);
     else if (token.startsWith('--judgments=')) args.judgements = token.slice('--judgments='.length);
+    else if (token.startsWith('--undergrad-judgements='))
+      args.undergradJudgements = token.slice('--undergrad-judgements='.length);
+    else if (token.startsWith('--undergrad-sample-out='))
+      args.undergradSampleOut = token.slice('--undergrad-sample-out='.length);
+    else if (token.startsWith('--undergrad-sample-seed='))
+      args.undergradSampleSeed = token.slice('--undergrad-sample-seed='.length);
+    else if (token.startsWith('--undergrad-sample-size='))
+      args.undergradSampleSize = Number(token.slice('--undergrad-sample-size='.length));
     else if (token.startsWith('--output=')) args.output = token.slice('--output='.length);
   }
   return args;
@@ -62,8 +99,32 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
   if (!database) throw new Error('MongoDB connection is not initialized');
   const collection = database.collection(RESEARCH_ENTITY_COLLECTION);
 
+  const undergradSampleOut = args.undergradSampleOut;
+  if (undergradSampleOut !== undefined) {
+    resolveSafeJsonReportOutputPath(undergradSampleOut, '--undergrad-sample-out');
+    if (!Number.isInteger(args.undergradSampleSize) || args.undergradSampleSize <= 0)
+      throw new Error('--undergrad-sample-size must be a positive integer');
+  }
+
   return {
     topicQueryJudgements: loadTopicQueryJudgements(args.judgements),
+    undergradEvidenceJudgements: loadUndergradEvidenceJudgements(args.undergradJudgements),
+    ...(undergradSampleOut !== undefined
+      ? {
+          undergradEvidenceSampleRequest: {
+            seed: args.undergradSampleSeed,
+            sampleSize: args.undergradSampleSize,
+            write: async (sample: UndergradEvidenceJudgementSet) => {
+              const samplePath = resolveSafeJsonReportOutputPath(
+                undergradSampleOut,
+                '--undergrad-sample-out',
+              );
+              fs.writeFileSync(samplePath, JSON.stringify(sample, null, 2));
+              return samplePath;
+            },
+          },
+        }
+      : {}),
     window: args.window,
     facetValuesChecked: args.facetValues,
     pagesChecked: args.pages,

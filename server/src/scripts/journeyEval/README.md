@@ -111,6 +111,48 @@ Keep a private or experimental set outside the repository and point at it with `
 Write the matchers as tightly as the judgement really is.
 Permissive substring lists inflate `precisionAtK`, so a high score against a loose judgement measures the judgement rather than the retrieval.
 
+## Measuring undergraduate evidence quote precision
+
+The browse card's undergraduate access badge derives almost entirely from `undergradEvidenceQuote`, and whether a quote is right can only be judged by reading the page it cites.
+The `undergrad-evidence-quote-precision` case turns that reading into a repeatable measurement without putting any judged row in the repository.
+
+It walks the whole reachable browse, keeps the served rows carrying a non-empty quote, and reads each row's stored `fieldProvenance.undergradEvidenceQuote` to find the rows whose quote came from the judged lane, `lab-microsite-undergrad-llm` by default.
+That set is the population, and a sample is drawn from it by ranking each row key on a SHA-256 of `seed:rowKey`, so the same seed over the same population draws the same rows and a row joining the population displaces at most one drawn row.
+
+Drawing and judging are two runs:
+
+```bash
+yarn journey:eval --case=undergrad-evidence-quote-precision \
+  --undergrad-sample-out="$TMPDIR/undergrad-judgements.json" \
+  --undergrad-sample-seed=3569 --undergrad-sample-size=50
+yarn journey:eval --case=undergrad-evidence-quote-precision \
+  --undergrad-judgements="$TMPDIR/undergrad-judgements.json" --output="$TMPDIR/journey.json"
+```
+
+The first writes a template, which is itself a valid judgements file: one entry per drawn row carrying `rowKey`, `quoteFingerprint`, the served `quote`, and the cited `sourceUrl`, with no verdict.
+Fill in `verdict`, and optionally `backsHostedBadgeWording` and `note`, then pass the file back.
+The template names rows and carries their quotes, so it is person-bearing and must stay outside the repository; `--undergrad-sample-out` accepts only a path under `$TMPDIR` or `./tmp`.
+
+The flag is separate from `--judgements`, which feeds the topic relevance case a differently shaped file.
+
+A verdict is exactly one of the following, applied in this order so that each row gets one answer:
+
+1. `not_an_undergrad_access_claim` when the quote on its face states no fact about undergraduates: generic "students" or "trainees", medical or graduate students only, a job title, a course taught, or a degree program name.
+2. `stale_or_unreachable` when the cited page cannot be read, so grounding cannot be checked.
+3. `not_grounded` when the quote is neither verbatim nor near-verbatim on the cited page or a same-site page it links to. Model commentary such as "no explicit mention of undergraduates on the provided pages" is the common case.
+4. `about_another_entity` when the quote is on the page but describes a different program, center, or department than the row.
+5. `correct` otherwise: grounded, about this row, and stating an undergraduate access fact such as undergraduate members, mentoring, openings, or how to ask.
+
+`backsHostedBadgeWording` answers the narrower question of whether the quote shows the row has hosted undergraduates, which is what the badge text asserts, as opposed to only saying it is open to them.
+
+The case reports three rates, none of which gates: `undergrad-evidence-quote-precision` over rows whose page could be read, the same precision counting an unreadable page as wrong, and `undergrad-evidence-backs-hosted-badge-wording`.
+The report's `notes.score` carries the verdict counts and a 95% Wilson interval for each, because a precision over 50 rows is a range rather than a point.
+A judgement records the fingerprint of the quote it judged, and a drawn row whose served quote has since changed is counted as `judgementForAChangedQuote` rather than scored, so a verdict never silently transfers to a different quote.
+
+Its invariant is attribution, not equality: every served quote whose stored row describes the same version names a source in its provenance.
+It reports inconclusive when nothing could be compared or when the corpus moved during the walk, on the same one-directional reasoning as the topic case.
+A missing judgements file, or a draw in which no row carries a verdict on its current quote, is inconclusive rather than passing.
+
 ## Adding a case
 
 Add one object to `journeyCases` in `journeyEvalCases.ts`.
