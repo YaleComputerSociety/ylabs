@@ -1717,3 +1717,118 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(result.entitiesObserved).toBe(2);
   });
 });
+
+describe('LabMicrositeUndergradLLMExtractor one-lab failure isolation (#3558)', () => {
+  const depth = 20_000;
+  const deeplyNestedHomeHtml =
+    '<html><body>' +
+    '<div>'.repeat(depth) +
+    '<p>We welcome undergraduate researchers each semester in our laboratory group.</p>' +
+    '<p>' +
+    'Our research program studies synthetic example systems. '.repeat(6) +
+    '</p>' +
+    '<a href="/people">Lab Members</a>' +
+    '</div>'.repeat(depth) +
+    '</body></html>';
+
+  const extraction: LLMExtraction = {
+    openToUndergrads: 'yes',
+    currentUndergradCount: 3,
+    evidenceQuote: 'We welcome undergraduate researchers each semester.',
+    evidenceSource: 'members_section',
+    joinPageUrl: null,
+  };
+
+  const twoLabs = async (): Promise<CandidateLab[]> => [
+    { _id: '1', slug: 'failing-lab', name: 'Failing Lab', websiteUrl: 'https://fail.example.com/' },
+    {
+      _id: '2',
+      slug: 'smith-lab',
+      name: 'The Smith Lab',
+      websiteUrl: 'https://smith.example.com/',
+    },
+  ];
+
+  it('flattens a 20,000-level nested page to prompt text instead of overflowing', () => {
+    const text = htmlToPromptText(deeplyNestedHomeHtml);
+    expect(text).toContain('We welcome undergraduate researchers each semester');
+    expect(discoverSubPageUrls(deeplyNestedHomeHtml, 'https://deep.example.com/')).toEqual([
+      'https://deep.example.com/people',
+    ]);
+  });
+
+  it('extracts from a deeply nested lab page end to end', async () => {
+    const callLLM = vi.fn(async (): Promise<LLMExtraction> => extraction);
+    const scraper = newTestScraper({
+      fetchPage: makeFetchPage({ 'https://deep.example.com/': deeplyNestedHomeHtml }),
+      callLLM,
+      labFinder: async () => [
+        { _id: '1', slug: 'deep-lab', name: 'Deep Lab', websiteUrl: 'https://deep.example.com/' },
+      ],
+      apiKey: 'sk-test',
+    });
+    const { ctx } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(callLLM).toHaveBeenCalledTimes(1);
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.notes).toContain('0 processing-failed');
+  });
+
+  it('counts an exception on one lab as processing-failed and continues with the rest', async () => {
+    const workPlanLoader: WorkPlanLoaderFn = async (lab, policy, ctx) => {
+      if (lab.slug === 'failing-lab') throw new RangeError('Maximum call stack size exceeded');
+      return alwaysFetchWorkPlan(lab, policy, ctx);
+    };
+    const callLLM = vi.fn(async (): Promise<LLMExtraction> => extraction);
+    const scraper = newTestScraper({
+      fetchPage: makeFetchPage({
+        'https://smith.example.com/': HOME_HTML,
+        'https://smith.example.com/people': PEOPLE_HTML,
+      }),
+      callLLM,
+      workPlanLoader,
+      labFinder: twoLabs,
+      apiKey: 'sk-test',
+    });
+    const { ctx, logs } = makeContext({ sourceConcurrency: 1 });
+    const result = await scraper.run(ctx);
+
+    expect(callLLM).toHaveBeenCalledTimes(1);
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.notes).toContain('1/2 labs');
+    expect(result.notes).toContain('1 processing-failed');
+    expect(
+      logs.some(
+        (log) =>
+          log.includes('[failing-lab] processing failed') &&
+          log.includes('Maximum call stack size exceeded'),
+      ),
+    ).toBe(true);
+  });
+
+  it('still fails the lane when writing observations fails', async () => {
+    const scraper = newTestScraper({
+      fetchPage: makeFetchPage({
+        'https://smith.example.com/': HOME_HTML,
+        'https://smith.example.com/people': PEOPLE_HTML,
+      }),
+      callLLM: async () => extraction,
+      labFinder: async () => [
+        {
+          _id: '2',
+          slug: 'smith-lab',
+          name: 'The Smith Lab',
+          websiteUrl: 'https://smith.example.com/',
+        },
+      ],
+      apiKey: 'sk-test',
+    });
+    const { ctx } = makeContext();
+    ctx.emit = async () => {
+      throw new Error('observation store unavailable');
+    };
+
+    await expect(scraper.run(ctx)).rejects.toThrow('observation store unavailable');
+  });
+});

@@ -5,6 +5,7 @@ import {
   candidateDescriptionLabsFromDocs,
   descriptionExtractionToObservations,
   groundDescriptionExtraction,
+  htmlToText,
   discoverOrganizationAboutSubPageUrls,
   discoverResearchSubPageUrls,
   normalizeDescriptionLlmObjectId,
@@ -1623,5 +1624,28 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     const full = emitted.find((obs) => obs.field === 'fullDescription');
     expect(full?.value).toBe(CRAWLED);
     expect(full?.sourceUrl).toBe('https://examplelab.org/research');
+  });
+});
+
+describe('deeply nested microsite pages (#3558)', () => {
+  const depth = 20_000;
+  const deeplyNestedHtml =
+    '<html><body>' +
+    '<div>'.repeat(depth) +
+    '<p>The lab studies synthetic example systems.</p>' +
+    '<a href="/research">Research</a>' +
+    '</div>'.repeat(depth) +
+    '</body></html>';
+
+  it('flattens page text without overflowing the stack', () => {
+    expect(htmlToText(deeplyNestedHtml)).toBe(
+      'The lab studies synthetic example systems. Research',
+    );
+  });
+
+  it('reads anchor text without overflowing the stack', () => {
+    expect(discoverResearchSubPageUrls(deeplyNestedHtml, 'https://deep.example.com/')).toEqual([
+      'https://deep.example.com/research',
+    ]);
   });
 });

@@ -32,6 +32,7 @@ import type { FilterQuery } from 'mongoose';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
+import { plainTextContent } from '../utils/htmlText';
 import { ResearchEntity } from '../../models/researchEntity';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
@@ -213,7 +214,7 @@ export function htmlToPromptText(html: string): string {
     return String(html).slice(0, MAX_PROMPT_CHARS);
   }
   $('script, style, noscript, svg, iframe').remove();
-  const text = $('body').text() || $.root().text() || '';
+  const text = plainTextContent($('body').toArray()) || plainTextContent($.root().toArray());
   const collapsed = text.replace(/\s+/g, ' ').trim();
   return collapsed.length > MAX_PROMPT_CHARS ? collapsed.slice(0, MAX_PROMPT_CHARS) : collapsed;
 }
@@ -239,7 +240,7 @@ export function discoverSubPageUrls(
   const seen = new Set<string>();
   $('a').each((_i, el) => {
     if (found.length >= maxUrls) return;
-    const text = ($(el).text() || '').trim();
+    const text = plainTextContent(el).trim();
     const href = $(el).attr('href') || '';
     if (!text || !href) return;
     if (!SUBPAGE_ANCHOR_RE.test(text)) return;
@@ -979,6 +980,23 @@ async function defaultLabFinder(): Promise<CandidateLab[]> {
   return (docs as any[]).map(candidateLabFromResearchEntityDoc);
 }
 
+class ObservationWriteFailure extends Error {
+  constructor(readonly writeError: unknown) {
+    super('observation write failed');
+  }
+}
+
+async function emitOrAbortLane(
+  ctx: ScraperContext,
+  observations: Parameters<ScraperContext['emit']>[0],
+): Promise<void> {
+  try {
+    await ctx.emit(observations);
+  } catch (error) {
+    throw new ObservationWriteFailure(error);
+  }
+}
+
 export class LabMicrositeUndergradLLMExtractor implements IScraper {
   readonly name = 'lab-microsite-undergrad-llm';
   readonly displayName = 'Lab microsite LLM (undergrad signals)';
@@ -1035,6 +1053,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     let succeeded = 0;
     let fetchFailed = 0;
     let llmFailed = 0;
+    let processingFailed = 0;
     let contentUnchangedSkipped = 0;
     const fetchAttempts: ScraperFetchMetric[] = [];
     const workPlannerPolicy = ctx.options.ignoreWorkPlanner
@@ -1048,176 +1067,184 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
 
     await mapWithConcurrency(labs, concurrency, async (lab) => {
       processed++;
-      if (workPlannerPolicy) {
-        if (!lab.slug) {
-          recordWorkPlannerNoIdentifier(workPlannerMetrics);
-          ctx.log('[candidate] skipped by WorkPlanner — missing slug/entity key.');
-          return;
+      try {
+        if (workPlannerPolicy) {
+          if (!lab.slug) {
+            recordWorkPlannerNoIdentifier(workPlannerMetrics);
+            ctx.log('[candidate] skipped by WorkPlanner — missing slug/entity key.');
+            return;
+          }
+          const plan = await this.workPlanLoader(lab, workPlannerPolicy, ctx);
+          recordWorkPlannerDecision(workPlannerMetrics, plan);
+          if (!plan.shouldFetch) {
+            const reasons = Array.from(new Set(plan.fields.map((field) => field.reason))).join(',');
+            ctx.log(`[${lab.slug}] skipped by WorkPlanner — ${reasons || 'fresh'}.`);
+            return;
+          }
         }
-        const plan = await this.workPlanLoader(lab, workPlannerPolicy, ctx);
-        recordWorkPlannerDecision(workPlannerMetrics, plan);
-        if (!plan.shouldFetch) {
-          const reasons = Array.from(new Set(plan.fields.map((field) => field.reason))).join(',');
-          ctx.log(`[${lab.slug}] skipped by WorkPlanner — ${reasons || 'fresh'}.`);
-          return;
-        }
-      }
 
-      const measuredHomePage = await measureRenderedFetch(lab.websiteUrl, 'http', () =>
-        this.fetchPage(lab.websiteUrl),
-      );
-      fetchAttempts.push(measuredHomePage.metric);
-      let homePage: FetchedPage | null = measuredHomePage.result;
-      if (!homePage || htmlToPromptText(homePage.html).length < 200) {
-        const rendered = await measureRenderedFetch(
-          lab.websiteUrl,
-          'scrapling',
-          () =>
-            fetchRenderedLabPage(
-              SOURCE_KEY,
-              ctx.options.useCache,
-              lab.websiteUrl,
-              this.renderedFetcher,
-            ),
-          { selectorName: 'body' },
+        const measuredHomePage = await measureRenderedFetch(lab.websiteUrl, 'http', () =>
+          this.fetchPage(lab.websiteUrl),
         );
-        fetchAttempts.push(rendered.metric);
-        if (rendered.result?.html) {
-          homePage = {
-            url: rendered.result.url || lab.websiteUrl,
-            html: rendered.result.html,
-          };
+        fetchAttempts.push(measuredHomePage.metric);
+        let homePage: FetchedPage | null = measuredHomePage.result;
+        if (!homePage || htmlToPromptText(homePage.html).length < 200) {
+          const rendered = await measureRenderedFetch(
+            lab.websiteUrl,
+            'scrapling',
+            () =>
+              fetchRenderedLabPage(
+                SOURCE_KEY,
+                ctx.options.useCache,
+                lab.websiteUrl,
+                this.renderedFetcher,
+              ),
+            { selectorName: 'body' },
+          );
+          fetchAttempts.push(rendered.metric);
+          if (rendered.result?.html) {
+            homePage = {
+              url: rendered.result.url || lab.websiteUrl,
+              html: rendered.result.html,
+            };
+          }
         }
-      }
-      if (!homePage) {
-        fetchFailed++;
-        return;
-      }
-      const homeText = htmlToPromptText(homePage.html);
-
-      const subPages: PromptSourcePage[] = [];
-      for (const candidate of candidateCrawlUrls(homePage.html, homePage.url)) {
-        if (subPages.length >= MAX_SUBPAGES_FETCHED) break;
-        const measuredSubPage = await measureRenderedFetch(candidate, 'http', () =>
-          this.fetchPage(candidate),
-        );
-        fetchAttempts.push(measuredSubPage.metric);
-        const fetched = measuredSubPage.result;
-        if (!fetched) continue;
-        const text = htmlToPromptText(fetched.html);
-        if (!text) continue;
-        subPages.push({ url: fetched.url, text });
-      }
-      const [primarySubPage, ...additionalSubPages] = subPages;
-
-      const entityRef = { entityType: 'researchEntity' as const, entityKey: lab.slug };
-      const contentHash = computeVersionedContentHash(
-        [homeText, ...subPages.map((page) => page.text)].join('\n'),
-        UNDERGRAD_EXTRACTION_PROMPT_HASH,
-        this.model,
-      );
-      const storedContentHash = ctx.options.forceLlm
-        ? undefined
-        : await loadStoredContentHash(this.name, entityRef);
-      if (contentUnchanged(storedContentHash, contentHash, ctx.options.forceLlm)) {
-        contentUnchangedSkipped += 1;
-        ctx.log(`[${lab.slug}] skipped — content unchanged.`);
-        return;
-      }
-
-      const userPrompt = buildLLMPrompt(
-        lab.name,
-        homePage.url,
-        homeText,
-        primarySubPage?.url ?? null,
-        primarySubPage?.text ?? null,
-        additionalSubPages,
-      );
-
-      // Per-(websiteUrl, model) cache so reruns don't re-charge OpenAI. The namespace
-      // must be bumped whenever the response format changes, because the cache is read
-      // before the prompt-hash re-extraction gate and would otherwise hand back a
-      // response shaped for the previous schema.
-      const sourceUrls = [homePage.url, ...subPages.map((page) => page.url)];
-      const cacheKey = `llm:undergrad-v3:${this.model}:${sourceUrls.join('+')}`;
-
-      let extraction: LLMExtraction | null = null;
-      if (ctx.options.useCache) {
-        try {
-          const cached = await getCached<LLMExtraction>(SOURCE_KEY, cacheKey);
-          if (cached) extraction = cached;
-        } catch {
-          /* ignore cache errors */
-        }
-      }
-
-      if (!extraction) {
-        try {
-          extraction = await this.callLLM({
-            model: this.model,
-            systemPrompt: LAB_UNDERGRAD_SYSTEM_PROMPT,
-            userPrompt,
-            apiKey: this.apiKey as string,
-            responseFormat: LAB_UNDERGRAD_RESPONSE_FORMAT,
-          });
-        } catch (err: any) {
-          ctx.log(`[${lab.slug}] LLM call failed: ${sanitizeLogValue(err)}; skipping.`);
-          llmFailed++;
+        if (!homePage) {
+          fetchFailed++;
           return;
         }
-        if (ctx.options.useCache && extraction) {
+        const homeText = htmlToPromptText(homePage.html);
+
+        const subPages: PromptSourcePage[] = [];
+        for (const candidate of candidateCrawlUrls(homePage.html, homePage.url)) {
+          if (subPages.length >= MAX_SUBPAGES_FETCHED) break;
+          const measuredSubPage = await measureRenderedFetch(candidate, 'http', () =>
+            this.fetchPage(candidate),
+          );
+          fetchAttempts.push(measuredSubPage.metric);
+          const fetched = measuredSubPage.result;
+          if (!fetched) continue;
+          const text = htmlToPromptText(fetched.html);
+          if (!text) continue;
+          subPages.push({ url: fetched.url, text });
+        }
+        const [primarySubPage, ...additionalSubPages] = subPages;
+
+        const entityRef = { entityType: 'researchEntity' as const, entityKey: lab.slug };
+        const contentHash = computeVersionedContentHash(
+          [homeText, ...subPages.map((page) => page.text)].join('\n'),
+          UNDERGRAD_EXTRACTION_PROMPT_HASH,
+          this.model,
+        );
+        const storedContentHash = ctx.options.forceLlm
+          ? undefined
+          : await loadStoredContentHash(this.name, entityRef);
+        if (contentUnchanged(storedContentHash, contentHash, ctx.options.forceLlm)) {
+          contentUnchangedSkipped += 1;
+          ctx.log(`[${lab.slug}] skipped — content unchanged.`);
+          return;
+        }
+
+        const userPrompt = buildLLMPrompt(
+          lab.name,
+          homePage.url,
+          homeText,
+          primarySubPage?.url ?? null,
+          primarySubPage?.text ?? null,
+          additionalSubPages,
+        );
+
+        // Per-(websiteUrl, model) cache so reruns don't re-charge OpenAI. The namespace
+        // must be bumped whenever the response format changes, because the cache is read
+        // before the prompt-hash re-extraction gate and would otherwise hand back a
+        // response shaped for the previous schema.
+        const sourceUrls = [homePage.url, ...subPages.map((page) => page.url)];
+        const cacheKey = `llm:undergrad-v3:${this.model}:${sourceUrls.join('+')}`;
+
+        let extraction: LLMExtraction | null = null;
+        if (ctx.options.useCache) {
           try {
-            await setCached(SOURCE_KEY, cacheKey, extraction);
+            const cached = await getCached<LLMExtraction>(SOURCE_KEY, cacheKey);
+            if (cached) extraction = cached;
           } catch {
             /* ignore cache errors */
           }
         }
-      }
 
-      let observations = extractionToObservations(
-        lab.slug,
-        sourceUrlForExtraction({ url: homePage.url, text: homeText }, subPages, extraction),
-        extraction,
-        new Date(),
-        {
-          sourceUrls,
-          quoteSourceUrl: sourceUrlForExtraction(
-            { url: homePage.url, text: homeText },
-            subPages,
-            extraction,
-          ),
-          sourceTexts: [homeText, ...subPages.map((page) => page.text)],
-          sourcePages: [{ url: homePage.url, text: homeText }, ...subPages],
-          entityIdentity: lab,
-        },
-      );
-      if ((lab.manuallyLockedFields || []).includes(UNDERGRAD_ACCESS_EVIDENCE_FIELD)) {
-        observations = observations.filter(
-          (observation) => observation.field !== UNDERGRAD_ACCESS_EVIDENCE_FIELD,
+        if (!extraction) {
+          try {
+            extraction = await this.callLLM({
+              model: this.model,
+              systemPrompt: LAB_UNDERGRAD_SYSTEM_PROMPT,
+              userPrompt,
+              apiKey: this.apiKey as string,
+              responseFormat: LAB_UNDERGRAD_RESPONSE_FORMAT,
+            });
+          } catch (err: any) {
+            ctx.log(`[${lab.slug}] LLM call failed: ${sanitizeLogValue(err)}; skipping.`);
+            llmFailed++;
+            return;
+          }
+          if (ctx.options.useCache && extraction) {
+            try {
+              await setCached(SOURCE_KEY, cacheKey, extraction);
+            } catch {
+              /* ignore cache errors */
+            }
+          }
+        }
+
+        let observations = extractionToObservations(
+          lab.slug,
+          sourceUrlForExtraction({ url: homePage.url, text: homeText }, subPages, extraction),
+          extraction,
+          new Date(),
+          {
+            sourceUrls,
+            quoteSourceUrl: sourceUrlForExtraction(
+              { url: homePage.url, text: homeText },
+              subPages,
+              extraction,
+            ),
+            sourceTexts: [homeText, ...subPages.map((page) => page.text)],
+            sourcePages: [{ url: homePage.url, text: homeText }, ...subPages],
+            entityIdentity: lab,
+          },
         );
-      }
-      if (observations.length > 0) {
-        await ctx.emit(observations);
-        totalObs += observations.length;
-      }
-      await ctx.emit([contentHashObservation(entityRef, homePage.url, contentHash)]);
-      succeeded++;
+        if ((lab.manuallyLockedFields || []).includes(UNDERGRAD_ACCESS_EVIDENCE_FIELD)) {
+          observations = observations.filter(
+            (observation) => observation.field !== UNDERGRAD_ACCESS_EVIDENCE_FIELD,
+          );
+        }
+        if (observations.length > 0) {
+          await emitOrAbortLane(ctx, observations);
+          totalObs += observations.length;
+        }
+        await emitOrAbortLane(ctx, [contentHashObservation(entityRef, homePage.url, contentHash)]);
+        succeeded++;
 
-      if (processed % 25 === 0 || processed === labs.length) {
+        if (processed % 25 === 0 || processed === labs.length) {
+          ctx.log(
+            `progress: ${processed}/${labs.length} labs | ${succeeded} ok | ${fetchFailed} fetch-failed | ${llmFailed} llm-failed | ${processingFailed} processing-failed | ${totalObs} obs`,
+          );
+        }
+      } catch (error) {
+        if (error instanceof ObservationWriteFailure) throw error.writeError;
+        processingFailed++;
         ctx.log(
-          `progress: ${processed}/${labs.length} labs | ${succeeded} ok | ${fetchFailed} fetch-failed | ${llmFailed} llm-failed | ${totalObs} obs`,
+          `[${lab.slug || 'candidate'}] processing failed: ${sanitizeLogValue(error)}; skipping.`,
         );
       }
     });
 
     ctx.log(
-      `Done. processed=${processed}, succeeded=${succeeded}, fetchFailed=${fetchFailed}, llmFailed=${llmFailed}, observations=${totalObs}`,
+      `Done. processed=${processed}, succeeded=${succeeded}, fetchFailed=${fetchFailed}, llmFailed=${llmFailed}, processingFailed=${processingFailed}, observations=${totalObs}`,
     );
 
     return {
       observationCount: totalObs,
       entitiesObserved: succeeded,
-      notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed, ${contentUnchangedSkipped} content-unchanged skipped, ${workPlannerMetrics.skippedFresh + workPlannerMetrics.skippedManualLock} workplanner-skipped)`,
+      notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed, ${processingFailed} processing-failed, ${contentUnchangedSkipped} content-unchanged skipped, ${workPlannerMetrics.skippedFresh + workPlannerMetrics.skippedManualLock} workplanner-skipped)`,
       metrics: {
         workPlanner: workPlannerMetrics,
       },
