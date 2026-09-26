@@ -42,14 +42,16 @@ Iterate on canonical product surfaces instead of creating student-facing version
 
 ## Adding a script that writes
 
-A new entry script under `server/src/scripts` that calls `assertScriptApplyAllowed` must be one of three things, or CI fails (`server/src/scripts/__tests__/humanRunWriteScriptGuard.test.ts`, #3524).
+A new entry script anywhere under `server/src/scripts` that calls `assertScriptApplyAllowed` or parses an `--apply` flag must be one of three things, or CI fails (`server/src/scripts/__tests__/humanRunWriteScriptGuard.test.ts`, #3524).
 
 1. A sweep stage: register its npm command in `DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `runScraperSweep.ts`, so it runs every sweep rather than when someone remembers.
 2. A lane or projection change instead of a script, when the correction has a shape a predicate can express.
 3. A standing operator tool, added to `OPERATOR_TOOLS` with its reason, only when it records a judgement about one row or operates infrastructure.
 
+A read-only instrument that names `--apply` only to refuse it goes in `INSTRUMENTS_THAT_REFUSE_APPLY` instead.
+
 `humanRunWriteScripts.pending.json` lists the legacy one-offs awaiting conversion.
-Converting or deleting one means removing it from that list and lowering `PENDING_CONVERSION_CEILING`, which is what keeps the count moving in one direction.
+Converting or deleting one means removing it from that list and lowering `PENDING_CONVERSION_CEILING` to match, because the test requires the two to be equal, which is what keeps the count moving in one direction.
 
 ## General implementation rules
 

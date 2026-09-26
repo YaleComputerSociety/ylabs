@@ -1,4 +1,5 @@
 [
+  "access-signals:reconcile-not-currently-available",
   "access-signals:repair-duplicates",
   "analytics:collapse-search-episodes",
   "data:drop-dead-citations",
@@ -89,6 +90,7 @@
   "research-homes:backfill-browse-rank",
   "research-homes:backfill-center-directors",
   "research-homes:backfill-descriptions",
+  "research-homes:backfill-non-lab-browse-rank-debias",
   "research-homes:backfill-org-units",
   "research-homes:backfill-research-areas",
   "research-homes:backfill-school-from-profile-host",
@@ -104,6 +106,8 @@
   "retire:bibliographic-mirror",
   "retire:documented-way-in-field",
   "retire:identified-lead-ways-in",
+  "retire:stale-access-signal-fields",
+  "retire:stale-saved-plan-fields",
   "retire:undergraduate-logistics-fields",
   "role-assignments:backfill-lead-edge-source-name",
   "role-assignments:retire-non-owner-pi-edges",

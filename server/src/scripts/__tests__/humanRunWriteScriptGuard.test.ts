@@ -9,8 +9,9 @@ import pendingConversion from './humanRunWriteScripts.pending.json';
 
 const SCRIPTS_DIR = path.join(__dirname, '..');
 const PACKAGE_JSON = path.join(__dirname, '..', '..', '..', 'package.json');
-const WRITE_GUARD_CALL = 'assertScriptApplyAllowed(';
+const WRITE_SIGNALS = ['assertScriptApplyAllowed(', "'--apply'"];
 const WRITE_GUARD_MODULE = 'scriptWriteGuards.ts';
+const SWEEP_RUNNER = 'runScraperSweep.ts';
 
 /**
  * Write scripts that are meant to be run by a person, and why. Each one records a judgement
@@ -35,6 +36,19 @@ const OPERATOR_TOOLS: Record<string, string> = {
   'beta:readiness': 'promotion tooling, run as part of the release process',
   'beta:repair-queue': 'promotion tooling, run as part of the release process',
   'beta:clear-student-analytics': 'promotion tooling, run as part of the release process',
+  'beta:seed-environment': 'promotion tooling, run as part of the release process',
+  'beta:refresh-from-development': 'promotion tooling, run as part of the release process',
+  'development:refresh-from-beta': 'promotion tooling, run as part of the release process',
+  'production:promote-beta-copy': 'promotion tooling, run as part of the release process',
+  'model-refactor:validators':
+    'applies declared collection validators, a reviewed schema operation',
+};
+
+const INSTRUMENTS_THAT_REFUSE_APPLY: Record<string, string> = {
+  'research-entity:audit-departure-lane': 'throws on --apply and points at the materialize lane',
+  'scripts:audit-plans-the-projection-declines': 'throws on --apply, it has no apply path',
+  'role-assignments:lead-edge-retirement-review-queue':
+    'throws on --apply, read-only by construction',
 };
 
 /**
@@ -42,7 +56,7 @@ const OPERATOR_TOOLS: Record<string, string> = {
  * stages. Lower it when one is converted or deleted. Raising it is the thing this guard exists
  * to make a visible, reviewed decision.
  */
-const PENDING_CONVERSION_CEILING = 122;
+const PENDING_CONVERSION_CEILING = 126;
 
 function commandsByScriptFile(): Map<string, string[]> {
   const scripts =
@@ -65,13 +79,20 @@ function humanRunWriteScripts(): string[] {
   );
   const byFile = commandsByScriptFile();
   return fs
-    .readdirSync(SCRIPTS_DIR)
+    .readdirSync(SCRIPTS_DIR, { recursive: true, encoding: 'utf8' })
+    .map((file) => file.split(path.sep).join('/'))
     .filter(
-      (file) => file.endsWith('.ts') && !file.endsWith('Core.ts') && file !== WRITE_GUARD_MODULE,
+      (file) =>
+        file.endsWith('.ts') &&
+        !file.endsWith('Core.ts') &&
+        !file.includes('__tests__/') &&
+        file !== WRITE_GUARD_MODULE &&
+        file !== SWEEP_RUNNER,
     )
-    .filter((file) =>
-      fs.readFileSync(path.join(SCRIPTS_DIR, file), 'utf8').includes(WRITE_GUARD_CALL),
-    )
+    .filter((file) => {
+      const source = fs.readFileSync(path.join(SCRIPTS_DIR, file), 'utf8');
+      return WRITE_SIGNALS.some((signal) => source.includes(signal));
+    })
     .flatMap((file) => {
       const commands = byFile.get(file) ?? [];
       if (commands.some((command) => sweptCommands.has(command))) return [];
@@ -83,6 +104,7 @@ function humanRunWriteScripts(): string[] {
 describe('a write script is born as engine behaviour, not a one-off', () => {
   const found = humanRunWriteScripts();
   const operatorTools = new Set(Object.keys(OPERATOR_TOOLS));
+  const refusingInstruments = new Set(Object.keys(INSTRUMENTS_THAT_REFUSE_APPLY));
   const pending = new Set(pendingConversion);
 
   it('finds the write scripts it is guarding', () => {
@@ -90,7 +112,10 @@ describe('a write script is born as engine behaviour, not a one-off', () => {
   });
 
   it('has no new write script that only a person can run', () => {
-    const undeclared = found.filter((entry) => !operatorTools.has(entry) && !pending.has(entry));
+    const undeclared = found.filter(
+      (entry) =>
+        !operatorTools.has(entry) && !pending.has(entry) && !refusingInstruments.has(entry),
+    );
     expect(
       undeclared,
       'Register it as a sweep stage in runScraperSweep.ts, fold its correction into a lane, or, if it records a per-row judgement, add it to OPERATOR_TOOLS with the reason.',
@@ -106,12 +131,19 @@ describe('a write script is born as engine behaviour, not a one-off', () => {
     expect([...operatorTools].filter((entry) => !found.includes(entry))).toEqual([]);
   });
 
-  it('never lets the pending list grow past its ceiling', () => {
-    expect(pending.size).toBeLessThanOrEqual(PENDING_CONVERSION_CEILING);
+  it('keeps every instrument that refuses --apply a script that still names the flag', () => {
+    expect([...refusingInstruments].filter((entry) => !found.includes(entry))).toEqual([]);
+  });
+
+  it('holds the pending list at exactly its ceiling, so it only moves by a reviewed edit', () => {
+    expect(pending.size).toBe(PENDING_CONVERSION_CEILING);
     expect(pendingConversion).toHaveLength(pending.size);
   });
 
   it('never classifies one script both ways', () => {
     expect([...operatorTools].filter((entry) => pending.has(entry))).toEqual([]);
+    expect(
+      [...refusingInstruments].filter((entry) => pending.has(entry) || operatorTools.has(entry)),
+    ).toEqual([]);
   });
 });
