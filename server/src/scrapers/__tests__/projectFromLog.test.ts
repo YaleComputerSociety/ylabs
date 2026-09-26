@@ -5,6 +5,7 @@ import {
   type ProjectFromLogInput,
 } from '../entityMaterializer';
 import type { ResolvedField } from '../confidenceResolver';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 
 const FIXED_NOW = new Date('2020-01-01T00:00:00.000Z');
 
@@ -375,6 +376,101 @@ describe('projectFromLog', () => {
       }),
     );
     expect(result.set.websiteUrl === undefined || result.set.websiteUrl === admissible).toBe(true);
+  });
+
+  it('clears a stored fullDescription the row refuses, which the resolver screen cannot reach', async () => {
+    const refusedBody =
+      'The Synthetic Example Lab studies how metabolic pathways are regulated in disease.';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Synthetic Example Lab') },
+        entityDoc: {
+          _id: 'f'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          fullDescription: refusedBody,
+          sourceUrls: [],
+          confidenceByField: {},
+          fieldValueRefusals: {
+            fullDescription: [
+              {
+                valueKey: fieldValueRefusalKey('fullDescription', refusedBody),
+                rule: 'superseded_by_better_source',
+                refusedBy: 'test',
+                refusedAt: new Date(),
+                note: '',
+              },
+            ],
+          },
+        },
+      }),
+    );
+    expect(result.set.fullDescription).toBe('');
+  });
+
+  it('leaves a stored fullDescription the row does not refuse standing', async () => {
+    const body = 'The Synthetic Example Lab studies how metabolic pathways drive disease.';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Synthetic Example Lab') },
+        entityDoc: {
+          _id: '0'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          fullDescription: body,
+          sourceUrls: [],
+          confidenceByField: {},
+          fieldValueRefusals: {
+            fullDescription: [
+              {
+                valueKey: fieldValueRefusalKey('fullDescription', 'a different body entirely'),
+                rule: 'superseded_by_better_source',
+                refusedBy: 'test',
+                refusedAt: new Date(),
+                note: '',
+              },
+            ],
+          },
+        },
+      }),
+    );
+    expect(result.set.fullDescription === undefined || result.set.fullDescription === body).toBe(
+      true,
+    );
+  });
+
+  it('does not clear a refused fullDescription the operator has locked', async () => {
+    const refusedBody =
+      'The Synthetic Example Lab studies how metabolic pathways are regulated in disease.';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        manuallyLockedFields: ['fullDescription'],
+        resolved: { name: resolvedField('Synthetic Example Lab') },
+        entityDoc: {
+          _id: '1'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          fullDescription: refusedBody,
+          sourceUrls: [],
+          confidenceByField: {},
+          fieldValueRefusals: {
+            fullDescription: [
+              {
+                valueKey: fieldValueRefusalKey('fullDescription', refusedBody),
+                rule: 'superseded_by_better_source',
+                refusedBy: 'test',
+                refusedAt: new Date(),
+                note: '',
+              },
+            ],
+          },
+        },
+      }),
+    );
+    expect(result.set.fullDescription).toBeUndefined();
   });
 
   it('does not clear a refused websiteUrl the operator has locked', async () => {

@@ -110,6 +110,7 @@ import {
 } from './storedTextNormalization';
 import { planDirectoryGraftCitationRetraction } from './directoryGraftCitations';
 import { planRefusedStoredWebsiteUrlClear } from './refusedStoredWebsiteUrl';
+import { planRefusedStoredDescriptionClears } from './refusedStoredDescription';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -5125,6 +5126,25 @@ export async function projectFromLog(
         set.websiteUrl = '';
         fieldsWritten++;
       }
+    }
+    // Ordered after every description arm deliberately, because this reads the value the
+    // pass will LEAVE standing rather than the value it started with: an arm that stages
+    // the stored prose back would otherwise overwrite a `''` written earlier and the clear
+    // would silently not hold. The resolver screen already dropped the refused
+    // observation, so in the ordinary case nothing is staged here and this is the only
+    // stage that can reach the stored value (#3438).
+    for (const clear of planRefusedStoredDescriptionClears({
+      stored: entityDoc,
+      staged: set,
+      lockedFields: manuallyLockedFields,
+    })) {
+      if (clear.skipped) {
+        console.log(`[refused-stored-description] kept a refused ${clear.field}: ${clear.skipped}`);
+        continue;
+      }
+      console.log(`[refused-stored-description] cleared a refused ${clear.field}`);
+      set[clear.field] = '';
+      fieldsWritten++;
     }
     if (yaleStatusCacheIsWritable({ manuallyLockedFields })) {
       const populatedYaleStatusField = (setValue: unknown, docValue: unknown): unknown => {
