@@ -360,8 +360,7 @@ describe('computeResearchEntityStudentVisibility', () => {
         websiteUrl: 'https://medicine.yale.edu/lab/quimby/',
         sourceUrls: ['https://medicine.yale.edu/lab/quimby/'],
       },
-      leadMembers: [{ userId: 'yz53', role: 'pi' }],
-      leadPersonName: 'Avery Sloan',
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
       knownPersonSurnames: new Set(['quimby', 'sloan']),
       accessSignalCount: 1,
       actionablePathwayCount: 1,
@@ -385,8 +384,7 @@ describe('computeResearchEntityStudentVisibility', () => {
         websiteUrl: 'https://medicine.yale.edu/lab/sloan/',
         sourceUrls: ['https://medicine.yale.edu/lab/sloan/'],
       },
-      leadMembers: [{ userId: 'yz53', role: 'pi' }],
-      leadPersonName: 'Avery Sloan',
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
       knownPersonSurnames: new Set(['quimby', 'sloan']),
       accessSignalCount: 1,
       actionablePathwayCount: 1,
@@ -408,8 +406,7 @@ describe('computeResearchEntityStudentVisibility', () => {
           'Source-backed research profile with enough detail for student display, covering mineral carbonation pathways.',
         sourceUrls: ['https://medicine.yale.edu/profile/fixture-sloan/'],
       },
-      leadMembers: [{ userId: 'yz53', role: 'pi' }],
-      leadPersonName: 'Avery Sloan',
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
       accessSignalCount: 1,
       actionablePathwayCount: 1,
     });
@@ -439,8 +436,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     };
     const withoutRoster = computeResearchEntityStudentVisibility({
       entity: base,
-      leadMembers: [{ userId: 'yz53', role: 'pi' }],
-      leadPersonName: 'Avery Sloan',
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
       accessSignalCount: 1,
       actionablePathwayCount: 1,
     });
@@ -448,8 +444,7 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     const withRoster = computeResearchEntityStudentVisibility({
       entity: base,
-      leadMembers: [{ userId: 'yz53', role: 'pi' }],
-      leadPersonName: 'Avery Sloan',
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
       knownPersonSurnames: new Set(['quimby', 'sloan']),
       accessSignalCount: 1,
       actionablePathwayCount: 1,
@@ -473,13 +468,41 @@ describe('computeResearchEntityStudentVisibility', () => {
         websiteUrl: 'https://medicine.yale.edu/lab/quimby/',
         sourceUrls: ['https://medicine.yale.edu/lab/quimby/'],
       },
-      leadMembers: [{ userId: 'yz53', role: 'pi' }],
-      leadPersonName: 'Avery Sloan',
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
       accessSignalCount: 1,
       actionablePathwayCount: 1,
     });
 
     expect(result.reasons).toContain('unusable_name');
+  });
+
+  // The row the eponym arm must not touch: no lead resolves, so there is no person for
+  // "another person's lab" to be measured against, and the slug carries research words
+  // rather than the surname. Judging it anyway condemns a lab for its OWN eponym and
+  // shuts the lead-attachment lanes over exactly the population they recover, because
+  // they refuse a row a second hard blocker also holds (#1930/#3499).
+  it('leaves a leadless eponymous lab held by missing_lead alone', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'leadless-eponym-named',
+        name: 'Quimby Lab',
+        slug: 'synthetic-eponymous-neonatal-lab',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: 'Studies neonatal care quality improvement across community nurseries.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement across community hospital nurseries.',
+        websiteUrl: 'https://medicine.yale.edu/lab/quimby/',
+        sourceUrls: ['https://medicine.yale.edu/lab/quimby/'],
+      },
+      leadMembers: [],
+      knownPersonSurnames: new Set(['quimby']),
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('missing_lead');
+    expect(result.reasons).not.toContain('unusable_name');
   });
 
   // A third furniture class, on the axis the placeholder and platform arms do not

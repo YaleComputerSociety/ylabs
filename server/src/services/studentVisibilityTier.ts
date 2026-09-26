@@ -23,6 +23,9 @@ import {
   isUnrecoverablePersonScopedEntityName,
   isExternalScholarlyPlatformLinkLabelName,
   personScopedResearchEntityNameNamesSomethingElse,
+  entityKeyPersonTokens,
+  nameNamesACitedSharedAcademicHost,
+  researchHomeIdentitySource,
   NO_SURNAME_ROSTER,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -55,24 +58,25 @@ export interface ResearchEntityStudentVisibilityInput {
   citationsSharedAcrossPersonRows?: boolean;
   relatedEntityAccessPathCount?: number;
   /**
-   * The two corpus facts the name-identity authority cannot derive from one record,
+   * The one corpus fact the name-identity authority cannot derive from one record,
    * supplied here for the same reason `ResearchEntityNameIdentityAuthority` supplies
-   * them to the materializer: whether an eponym is anybody's surname, and whether
-   * that somebody is this record's own lead.
+   * it to the materializer: whether an eponym is anybody's surname at all. The other
+   * half of that judgement - whether the somebody is this record's own person - is
+   * read off `leadMembers`, so no caller can select a weaker verdict by omitting it.
    *
-   * Optional with an explicitly weaker default rather than required, because a caller
-   * that judges one record (a dedupe simulation) cannot pay a corpus load.
+   * Optional only because a corpus roster is a corpus load: both production callers
+   * supply a real one, and a single-record caller that cannot reach the corpus gets
+   * the explicitly weaker `NO_SURNAME_ROSTER`.
    *
-   * What omitting them costs is narrower than it sounds, and it was measured rather
-   * than reasoned about: the umbrella and shared-host arms need neither, and the
-   * foreign-lab arm still refuses an eponym the row's own cited URL corroborates,
+   * What omitting it costs is narrower than it sounds, and it was measured rather
+   * than reasoned about: the umbrella and shared-host arms need it not at all, and
+   * the foreign-lab arm still refuses an eponym the row's own cited URL corroborates,
    * because the page itself says whose lab it is. The roster is what decides an eponym
    * no cited URL corroborates, which corpus-wide is the difference between the arm
    * reaching 11 of the 90 condemned rows and 87 of them. Either way the gate gets
-   * weaker, never wider, when they are absent (#3499).
+   * weaker, never wider, when it is absent (#3499).
    */
   knownPersonSurnames?: ReadonlySet<string>;
-  leadPersonName?: string;
 }
 
 export function hasProfileAreaShellDuplicateRisk({
@@ -751,7 +755,6 @@ export function computeResearchEntityStudentVisibility({
   citationsSharedAcrossPersonRows = false,
   relatedEntityAccessPathCount = 0,
   knownPersonSurnames = NO_SURNAME_ROSTER,
-  leadPersonName = '',
 }: ResearchEntityStudentVisibilityInput): StudentVisibilityResult {
   const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
     entity,
@@ -845,29 +848,54 @@ export function computeResearchEntityStudentVisibility({
   // withhold only the alias (#2360, #2351). Held rather than blanked, because nothing on
   // the row derives a research-record name from somebody else's.
   //
-  // This is the whole name-identity authority rather than its shared-host arm alone,
-  // which is what it replaced. The shared-host arm was the only one wired here, so the
-  // eponymous-foreign-lab case - 81 of the 90 rows whose stored `name` the authority
-  // condemns - had no gate blocker at all and published another person's lab name
-  // (#3499). The authority unions the resolved lead's tokens with the entity key's, so
-  // passing `leadPersonName` makes this the `resolved_lead` judgement rather than the
-  // strictly weaker `entity_key_tokens` one the shared-host arm used.
-  const nameNamesSomethingElse = personScopedResearchEntityNameNamesSomethingElse({
-    entityType: entity.entityType,
-    kind: entity.kind,
-    slug: entity.slug,
-    personName: leadPersonName,
-    candidateName: entity.name,
-    // The provenance URL first, because an eponym is corroborated by the page the name
-    // was harvested from; the row's own site is the fallback a manual value leaves.
-    websiteUrl: entity.fieldProvenance?.name?.sourceUrl || entity.websiteUrl || entity.website,
-    knownPersonSurnames,
-    recordCitedUrls: [entity.websiteUrl, entity.website, entity.sourceUrls],
-  });
+  // The whole name-identity authority rather than its shared-host arm alone, which is
+  // what was wired here: the eponymous-foreign-lab case - 81 of the 90 rows whose
+  // stored `name` the authority condemns - had no gate blocker at all and published
+  // another person's lab name (#3499).
+  //
+  // "Another person's" is a comparison, so it needs the person this record belongs to,
+  // and only a lead resolves that. The authority also accepts the entity key's tokens,
+  // which it documents as strictly weaker because a key spells the research rather
+  // than the person, and on a leadless row that weaker reading condemns a lab for its
+  // OWN eponym: `synthetic-eponymous-neonatal-lab` named "Quimby Lab" on
+  // `/lab/quimby/` matches no key token. Those rows are already held by `missing_lead`,
+  // so the stamp adds nothing a student sees and costs the lead-attachment lanes the
+  // rows they exist for: `leadWouldUnblock` refuses a row a second hard blocker also
+  // holds, so `unusable_name` would shut the #1930 recovery lane over exactly its own
+  // population and nothing could ever clear either reason.
+  const recordCitedUrls = [entity.websiteUrl, entity.website, entity.sourceUrls];
+  const leadPersonName =
+    leadMembers.map((lead) => textValue(lead?.name || lead?.user?.displayName)).find(Boolean) || '';
+  // The shared-host arm stays unconditional, because it asks whether the name belongs
+  // to an organization at all rather than to which person, and answers that from the
+  // URLs the row cites (#2360).
+  const namesASharedHostOrganization =
+    isPersonScopedResearchEntity(entity) &&
+    nameNamesACitedSharedAcademicHost({
+      harvestedName: entity.name,
+      recordCitedUrls,
+      identityTokens: entityKeyPersonTokens(entity.slug),
+    });
+  const namesAnotherPersonsResearch =
+    researchHomeIdentitySource({ personName: leadPersonName, slug: entity.slug }) ===
+      'resolved_lead' &&
+    personScopedResearchEntityNameNamesSomethingElse({
+      entityType: entity.entityType,
+      kind: entity.kind,
+      slug: entity.slug,
+      personName: leadPersonName,
+      candidateName: entity.name,
+      // The provenance URL first, because an eponym is corroborated by the page the name
+      // was harvested from; the row's own site is the fallback a manual value leaves.
+      websiteUrl: entity.fieldProvenance?.name?.sourceUrl || entity.websiteUrl || entity.website,
+      knownPersonSurnames,
+      recordCitedUrls,
+    });
   const hasUsableName =
     !isPlaceholderEntityName(entity.name) &&
     !isExternalScholarlyPlatformLinkLabelName(entity.name) &&
-    !nameNamesSomethingElse &&
+    !namesASharedHostOrganization &&
+    !namesAnotherPersonsResearch &&
     !(isPersonScopedResearchEntity(entity) && isUnrecoverablePersonScopedEntityName(entity.name));
 
   if (entity.activeAtYaleCache === false) reasons.push('inactive_at_yale');

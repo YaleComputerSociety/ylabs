@@ -56,6 +56,7 @@ import {
   type ResearchEntityRosterEntry,
 } from '../services/researchEntityMembershipAccessor';
 import { buildGateLeadRow } from './retireForeignLeadGraftsCore';
+import { loadKnownPersonSurnameRoster } from '../utils/researchHomeNameIdentityRoster';
 import {
   fullDescriptionQuality,
   shortDescriptionQuality,
@@ -2214,6 +2215,12 @@ export async function resolveNonDemotingMerge(
   const allLeads = allIds.flatMap((id) =>
     renderLeadMembersFromRoster(rosterMap.get(String(id)) || [], id),
   );
+  // The same surname roster the gate judges names against. Simulating without it read
+  // an uncorroborated foreign eponym as usable while the stored tier - computed WITH
+  // the roster - already held the row, so the non-demoting guard compared an
+  // optimistic hypothetical against a real verdict and could archive a student_ready
+  // twin for a survivor the next gate pass demotes (#2060).
+  const knownPersonSurnames = await loadKnownPersonSurnameRoster();
 
   const candidateOrder = [
     preferredCanonicalId,
@@ -2243,6 +2250,7 @@ export async function resolveNonDemotingMerge(
       leadMembers,
       duplicateRisk: false,
       exactUrlDuplicateRisk: false,
+      knownPersonSurnames,
     });
     if (mergeTierRank(simulated.tier) >= bestInputRank) {
       return {
