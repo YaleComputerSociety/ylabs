@@ -346,7 +346,7 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
  * only cited source is the
  * profile page (the profile page is not a research-home websiteUrl). Returns [] for
  * a profile with no lab site, no research areas, and no research description so
- * nothing empty is minted.
+ * nothing empty is minted, unless its linked lab site is dead.
  *
  * The lead PI is keyed on the person-specific email when present: YSE profile
  * emails are firstname.lastname aliases, not netids, and the materializer
@@ -379,7 +379,12 @@ export function facultyToResearchEntityObservations(
   // a judgement about a link that may still answer, which #2647 keeps out of
   // retraction, and field retraction re-probes a sole-holder value before retiring it.
   const labLinkIsDead = linkedLabVerdict === 'dead';
-  if (!hasLab && profile.researchAreas.length === 0 && !profile.description) return [];
+  // A dead withdrawal still mints, even for a profile with no areas and no
+  // description: this lane may already have asserted the LAB identity, and only a
+  // fresh read from it demotes that identity and carries the websiteUrl retraction.
+  if (!hasLab && !labLinkIsDead && profile.researchAreas.length === 0 && !profile.description) {
+    return [];
+  }
   // The same three title screens the YSM and department-roster mints ask, because
   // this lane cites the person's profile as the row's identity and so mints the same
   // class of row: somebody who works in another person's group, carrying that

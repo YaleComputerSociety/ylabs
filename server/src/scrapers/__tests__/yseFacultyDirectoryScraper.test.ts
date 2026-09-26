@@ -484,15 +484,28 @@ describe('a linked lab site the corpus knows is dead (#3452)', () => {
     expect(Object.fromEntries(obs.map((o) => [o.field, o.value])).entityType).toBe('LAB');
   });
 
-  it('mints nothing when a dead lab link was the only reason to mint', () => {
-    // Withdrawing the lab drops the row to the areas/description arm, and a
-    // profile with neither must still mint nothing rather than an empty home.
+  it('still demotes and retracts when a dead lab link was the only reason to mint', () => {
     const bare = {
       ...extractProfile(PROFILE_WITH_LAB, RIVERS),
       researchAreas: [],
       description: '',
     };
-    expect(facultyToResearchEntityObservations(bare, 'yse:jordan-rivers', () => 'dead')).toEqual(
+    const obs = facultyToResearchEntityObservations(bare, 'yse:jordan-rivers', () => 'dead');
+    const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(byField.kind).toBe('individual');
+    expect(byField.name).toBe('Jordan Rivers Faculty Research');
+    expect(obs.some((o) => o.field === 'websiteUrl')).toBe(false);
+    expect(obs.find((o) => o.field === 'slug')?.assertsNoValueFor).toEqual(['websiteUrl']);
+  });
+
+  it('mints nothing when a refused lab link was the only reason to mint', () => {
+    const bare = {
+      ...extractProfile(PROFILE_WITH_LAB, RIVERS),
+      researchAreas: [],
+      description: '',
+    };
+    expect(facultyToResearchEntityObservations(bare, 'yse:jordan-rivers', () => 'refused')).toEqual(
       [],
     );
   });
