@@ -741,6 +741,40 @@ describe('studentVisibilityGateService', () => {
       }
     });
 
+    it('serves the owner of a shared address when both rows are index-published', () => {
+      const ownerOfSecondHome = (studentVisibilityTier: string) => ({
+        ...directoryTwin(studentVisibilityTier),
+        websiteUrl: 'https://medicine.yale.edu/lab/shared-lead-second/',
+        sourceUrls: [sharedProfileUrl],
+        fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+      });
+      const citerOfSecondHome = (studentVisibilityTier: string) => ({
+        ...indexPublishedLab(studentVisibilityTier),
+        sourceUrls: [
+          'https://medicine.yale.edu/lab/shared-lead/',
+          sharedProfileUrl,
+          'https://medicine.yale.edu/lab/shared-lead-second/',
+        ],
+      });
+      for (const [citerTier, ownerTier] of [
+        ['student_ready', 'suppressed'],
+        ['suppressed', 'student_ready'],
+        ['suppressed', 'suppressed'],
+      ]) {
+        const entities = [citerOfSecondHome(citerTier), ownerOfSecondHome(ownerTier)];
+        const duplicateRiskEntityIds = selectExactUrlDuplicateRiskEntityIds(entities, leadRows);
+        const survivorIds = selectDuplicateGroupSurvivorEntityIds({
+          entities,
+          leadRows,
+          duplicateRiskEntityIds,
+        });
+        const servedIds = ['atoz-shared-lead', 'directory-shared-lead'].filter(
+          (id) => !duplicateRiskEntityIds.has(id) || survivorIds.has(id),
+        );
+        expect(servedIds).toEqual(['directory-shared-lead']);
+      }
+    });
+
     it('releases the index-published row when the same-lead relation names the twin canonical', () => {
       for (const [indexTier, twinTier] of [
         ['student_ready', 'suppressed'],
