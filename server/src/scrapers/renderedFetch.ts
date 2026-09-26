@@ -5,8 +5,8 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from './../utils/ssrfGuard';
-import { defaultHostConcurrencyLimiter } from './utils/hostConcurrencyLimiter';
 import { isBenchmarkReplayActive, refuseBenchmarkReplayNetwork } from './snapshotBenchmarkMode';
+import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import type {
   ScraperFetchAttemptMetrics,
@@ -309,7 +309,7 @@ export function createScraplingRenderedFetcher(
     const seedUrl = await assertPublicHttpUrl(request.url);
     const safeRequestUrl = seedUrl.toString();
     const timeoutMs = boundedRenderedFetchTimeout(request.timeoutMs, defaultTimeoutMs);
-    const releaseHostSlot = await defaultHostConcurrencyLimiter.acquire(seedUrl.hostname);
+    const releaseHostSlot = await scraperHostSlotLimiter().acquire(seedUrl.hostname);
     try {
       try {
         if (await seedRedirectCheck(seedUrl, timeoutMs)) {

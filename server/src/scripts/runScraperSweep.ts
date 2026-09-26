@@ -13,7 +13,11 @@ import {
 } from '../scrapers/scraperEnvironment';
 import { c4LosslessIngestEnabled } from '../scrapers/observationStore';
 import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency';
-import { DEFAULT_PER_HOST_CONCURRENCY } from '../scrapers/utils/hostConcurrencyLimiter';
+import {
+  DEFAULT_PER_HOST_CONCURRENCY,
+  HostConcurrencyLimiter,
+} from '../scrapers/utils/hostConcurrencyLimiter';
+import { HostSlotBroker, SCRAPER_HOST_SLOT_BROKER_ENV } from '../scrapers/utils/hostSlotBroker';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { SOURCE_LINK_HEALTH_FRESHNESS_DAYS } from '../services/sourceLinkHealth';
 import {
@@ -520,6 +524,28 @@ export function resolveSweepChildPerHostConcurrency(
   const shared = Math.max(1, Math.floor(budget / Math.max(1, phaseConcurrency)));
   const override = Number(env.SCRAPER_PER_HOST_CONCURRENCY);
   return Number.isInteger(override) && override >= 1 ? Math.min(override, shared) : shared;
+}
+
+export function resolveSweepHostSlotBudget(
+  env: NodeJS.ProcessEnv = process.env,
+  budget: number = DEFAULT_PER_HOST_CONCURRENCY,
+): number {
+  const override = Number(env.SCRAPER_PER_HOST_CONCURRENCY);
+  return Number.isInteger(override) && override >= 1 ? Math.min(override, budget) : budget;
+}
+
+export function sweepHostSlotBrokerPath(tmpdir: string = os.tmpdir(), pid = process.pid): string {
+  return path.join(tmpdir, `ylabs-host-slots-${pid}.sock`);
+}
+
+export async function startSweepHostSlotBroker(
+  env: NodeJS.ProcessEnv = process.env,
+  socketPath: string = sweepHostSlotBrokerPath(),
+): Promise<HostSlotBroker> {
+  return HostSlotBroker.listen(
+    socketPath,
+    new HostConcurrencyLimiter(resolveSweepHostSlotBudget(env)),
+  );
 }
 
 export { runWithBoundedConcurrency };
@@ -1794,6 +1820,8 @@ export async function runScraperSweep(
     }
   }
 
+  const hostSlotBroker = await startSweepHostSlotBroker();
+
   const artifactPathFor = (source: ScraperSweepSource, index: number): string =>
     path.join(outputDirectory, `${String(index + 1).padStart(2, '0')}-${source.name}.json`);
 
@@ -1870,6 +1898,7 @@ export async function runScraperSweep(
           SCRAPER_PER_HOST_CONCURRENCY: String(
             resolveSweepChildPerHostConcurrency(phaseConcurrency),
           ),
+          [SCRAPER_HOST_SLOT_BROKER_ENV]: hostSlotBroker.socketPath,
         },
         logPath,
       },
@@ -1951,19 +1980,23 @@ export async function runScraperSweep(
   };
 
   const globalEntries = sweepSources.map((source, index) => ({ source, index }));
-  for (const phase of orderedScraperSweepPhases(sweepSources)) {
-    const phaseEntries = globalEntries.filter((entry) => entry.source.phase === phase);
-    if (stopped) {
-      for (const { source, index } of phaseEntries) {
-        if (!rows[index]) rows[index] = notRunRow(source, index);
+  try {
+    for (const phase of orderedScraperSweepPhases(sweepSources)) {
+      const phaseEntries = globalEntries.filter((entry) => entry.source.phase === phase);
+      if (stopped) {
+        for (const { source, index } of phaseEntries) {
+          if (!rows[index]) rows[index] = notRunRow(source, index);
+        }
+        continue;
       }
-      continue;
+      const phaseConcurrency = resolvePhaseConcurrency(options.mode, phase, options.concurrency);
+      await runWithBoundedConcurrency(phaseEntries, phaseConcurrency, ({ source, index }) =>
+        runSource(source, index, phaseConcurrency),
+      );
+      await runBetweenPhasesPrune(phase);
     }
-    const phaseConcurrency = resolvePhaseConcurrency(options.mode, phase, options.concurrency);
-    await runWithBoundedConcurrency(phaseEntries, phaseConcurrency, ({ source, index }) =>
-      runSource(source, index, phaseConcurrency),
-    );
-    await runBetweenPhasesPrune(phase);
+  } finally {
+    await hostSlotBroker.close();
   }
 
   for (const [index, source] of sweepSources.entries()) {

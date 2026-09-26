@@ -33,6 +33,10 @@ export function resolveHostThrottle(
 
 export type HostSlotRelease = () => void;
 
+export interface HostSlotLimiter {
+  acquire(host: string): Promise<HostSlotRelease>;
+}
+
 const realSleep = (ms: number): Promise<void> =>
   ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
@@ -48,7 +52,7 @@ export interface HostConcurrencyLimiterOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
-export class HostConcurrencyLimiter {
+export class HostConcurrencyLimiter implements HostSlotLimiter {
   private readonly baseThrottle: HostThrottle;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -129,7 +133,7 @@ export function hostnameForLimiter(url: unknown, baseURL?: string): string | und
 export async function withHostSlot<T>(
   url: string,
   run: () => Promise<T>,
-  limiter: HostConcurrencyLimiter = defaultHostConcurrencyLimiter,
+  limiter: HostSlotLimiter = defaultHostConcurrencyLimiter,
 ): Promise<T> {
   const host = hostnameForLimiter(url);
   if (!host) return run();
@@ -145,7 +149,7 @@ const RELEASE_KEY = '__scraperHostRelease';
 let installed = false;
 
 export function installScraperHostConcurrencyInterceptor(
-  limiter: HostConcurrencyLimiter = defaultHostConcurrencyLimiter,
+  limiter: HostSlotLimiter = defaultHostConcurrencyLimiter,
 ): void {
   if (installed) return;
   installed = true;

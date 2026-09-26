@@ -33,6 +33,7 @@ import {
   resolveFellowshipPostRunOptions,
   resolvePhaseConcurrency,
   resolveSweepChildPerHostConcurrency,
+  resolveSweepHostSlotBudget,
   runWithBoundedConcurrency,
   scraperSweepArtifactError,
   scraperSweepModes,
@@ -44,6 +45,13 @@ import {
 } from '../runScraperSweep';
 
 describe('runScraperSweep', () => {
+  it('gives the sweep one per-host budget that an operator override can only tighten', () => {
+    expect(resolveSweepHostSlotBudget({})).toBe(4);
+    expect(resolveSweepHostSlotBudget({ SCRAPER_PER_HOST_CONCURRENCY: '2' })).toBe(2);
+    expect(resolveSweepHostSlotBudget({ SCRAPER_PER_HOST_CONCURRENCY: '16' })).toBe(4);
+    expect(resolveSweepHostSlotBudget({ SCRAPER_PER_HOST_CONCURRENCY: 'zero' })).toBe(4);
+  });
+
   it('partitions every registered scraper across the two engines minus the manual-only source', () => {
     const registeredNames = buildOrchestrator()
       .list()
