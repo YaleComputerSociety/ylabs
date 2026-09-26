@@ -220,7 +220,8 @@ Evidence is not re-keyed, so a materialize entered through the survivor's key an
 Three filters apply to a loser's observations only.
 A loser only fills a gap: its observation of a field is dropped when the survivor has its own observation of that field or already stores a value for it, and a loser's `description`, `shortDescription` or `fullDescription` is dropped when the survivor holds any of the three (#3581).
 Without that rule a loser out-voted the survivor, either because a newer same-source loser row collapsed the survivor's statement away in `collapseLatestWins` or because a higher-confidence loser source won the field outright; a Development dry run showed 211 survivors losing every stored department that way.
-A stored value counts as the survivor's only when no loser observation backs it, so a value a loser filled stays open to that loser lane's later observations rather than freezing.
+A stored value counts as the survivor's only when no loser observation backs it, so a value a loser filled stays open to later observations from that same loser rather than freezing.
+Another loser cannot displace it: a survivor merged from several same-source rosters otherwise swapped a primary department for a secondary program whenever a different roster was read last, measured at 58 Development survivors.
 A field cleared when no evidence reaches it, such as `methods`, is gated on observations only, so a loser fill does not flip between cleared and refilled on alternate resolves.
 The grant family (`recentGrants`, `recentGrantCount` and `fundingAgencies`) still aggregates across survivor and losers together.
 Identity, lead and visibility fields (`SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS` in `entityMaterializer.ts`, for example `name`, `slug`, `entityType`, `school`, `lead`, the `inferredPi*` and `inferredDirector*` fields, and `studentVisibility*`) stay the survivor's own, so a loser cannot re-open the merge decision on every resolve.

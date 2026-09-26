@@ -423,6 +423,30 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     );
   });
 
+  it('does not let a second loser displace the value another loser filled', async () => {
+    const survivor = await seedMerge('ysm-faculty-example-lead');
+    await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+    expect((await projectSurvivor(survivor._id)).websiteUrl).toBe('https://examplelead.yale.edu/');
+
+    await ResearchEntity.create({
+      slug: 'dept-example-second-roster',
+      name: 'Example Lead Second Roster',
+      kind: 'individual',
+      archived: true,
+      canonicalGroupId: survivor._id,
+    });
+    await seedObservation(
+      'dept-example-second-roster',
+      'websiteUrl',
+      'https://example-program.yale.edu/',
+      'dept-faculty-roster',
+      { observedAt: new Date('2026-06-01T00:00:00Z') },
+    );
+    await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+
+    expect((await projectSurvivor(survivor._id)).websiteUrl).toBe('https://examplelead.yale.edu/');
+  });
+
   it('aggregates grant counts and agencies together with the unioned grants', async () => {
     const survivor = await seedMerge('ysm-faculty-example-lead');
     await seedObservation(
