@@ -75,7 +75,7 @@ const Dashboard = () => {
     `inline-flex min-h-[44px] items-center px-4 py-2 text-sm font-medium transition-colors yr-focus-ring ${
       active
         ? 'bg-[var(--yr-blue)] text-white'
-        : 'bg-[var(--yr-panel)] text-slate-600 hover:bg-[var(--yr-panel-muted)]'
+        : 'bg-[var(--yr-panel)] text-muted hover:bg-[var(--yr-panel-muted)]'
     }`;
 
   return (

@@ -56,7 +56,7 @@ const EntitySampleLabel = ({
   collection: EntityCollection;
 }) => {
   const target = entitySampleLinkTarget(sample, collection);
-  if (!target) return <span className="font-medium text-gray-900">{sample.label}</span>;
+  if (!target) return <span className="font-medium text-ink">{sample.label}</span>;
 
   return (
     <a
@@ -465,7 +465,7 @@ const ArtifactFreshnessStrip = ({ items }: { items: GateArtifactFreshness[] }) =
       }`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted">
           Gate data freshness
         </span>
         {anyStale && (
@@ -815,7 +815,7 @@ const total = (rows: TierCount[]) => rows.reduce((sum, row) => sum + row.count, 
 const queueKindStyles: Record<QueueKind, string> = {
   blocking: 'border-red-200 bg-red-50 text-red-700',
   evidence: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  review: 'border-[var(--yr-line)] bg-[var(--yr-panel-muted)] text-gray-700',
+  review: 'border-[var(--yr-line)] bg-[var(--yr-panel-muted)] text-ink-soft',
 };
 
 const queueKindRank: Record<QueueKind, number> = {
@@ -881,7 +881,7 @@ const repairStageLabel: Record<RepairStage, string> = {
 };
 
 const GateStatus = ({ label, status }: { label: string; status: string }) => (
-  <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+  <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-muted">
     {label} status: {status}
   </div>
 );
@@ -1126,7 +1126,7 @@ const ReasonList = ({
 
   return (
     <div className="mt-2">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{label}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">{label}</div>
       <div className="mt-1 flex flex-wrap gap-1">
         {reasons.map((reason) => (
           <span key={reason} className={`rounded-md border px-2 py-0.5 text-xs ${toneClass}`}>
@@ -1204,13 +1204,15 @@ const AdminOperatorBoard = () => {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-xl font-semibold text-gray-900">Data Quality Operator Board</h3>
-          <p className="mt-1 text-sm text-gray-600">Updated {formatDate(board.generatedAt)}</p>
+          <h3 className="yr-display text-2xl font-semibold text-ink">
+            Data Quality Operator Board
+          </h3>
+          <p className="mt-1 text-sm text-muted">Updated {formatDate(board.generatedAt)}</p>
         </div>
         <button
           type="button"
           onClick={() => void fetchBoard()}
-          className="min-h-10 rounded-card border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+          className="min-h-10 rounded-card border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-ink-soft hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
         >
           Refresh
         </button>
@@ -1220,11 +1222,11 @@ const AdminOperatorBoard = () => {
 
       {Boolean(board.recommendedNextActions?.length) && (
         <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
-          <h4 className="font-semibold text-gray-900">Recommended Next Actions</h4>
-          <ol className="mt-3 space-y-2 text-sm text-gray-700">
+          <h4 className="text-sm font-semibold text-ink">Recommended Next Actions</h4>
+          <ol className="mt-3 space-y-2 text-sm text-ink-soft">
             {board.recommendedNextActions?.map((action, index) => (
               <li key={`${index}-${action}`} className="flex gap-2">
-                <span className="min-w-5 font-semibold text-gray-900">{index + 1}.</span>
+                <span className="min-w-5 font-semibold text-ink">{index + 1}.</span>
                 <span>{action}</span>
               </li>
             ))}
@@ -1242,18 +1244,16 @@ const AdminOperatorBoard = () => {
             className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4"
           >
             <div className="mb-3 flex items-center justify-between">
-              <h4 className="font-semibold text-gray-900">{label as string}</h4>
-              <span className="text-sm text-gray-500">{total(rows as TierCount[])} records</span>
+              <h4 className="text-sm font-semibold text-ink">{label as string}</h4>
+              <span className="text-sm text-muted">{total(rows as TierCount[])} records</span>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {(rows as TierCount[]).map((row) => (
                 <div key={row.tier} className="rounded-md border border-[var(--yr-line)] p-3">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted">
                     {tierLabel[row.tier]}
                   </div>
-                  <div className="yr-num mt-1 text-2xl font-semibold text-gray-900">
-                    {row.count}
-                  </div>
+                  <div className="yr-num mt-1 text-2xl font-semibold text-ink">{row.count}</div>
                 </div>
               ))}
             </div>
@@ -1262,23 +1262,23 @@ const AdminOperatorBoard = () => {
       </div>
 
       <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
-        <h4 className="mb-3 font-semibold text-gray-900">Gate Status</h4>
+        <h4 className="mb-3 text-sm font-semibold text-ink">Gate Status</h4>
         <div className="grid gap-3 lg:grid-cols-4">
           {board.gates.repairQueue && (
             <div className="rounded-md border border-[var(--yr-line)] p-3">
-              <div className="text-sm font-semibold text-gray-900">Automatic repair</div>
+              <div className="text-sm font-semibold text-ink">Automatic repair</div>
               <GateStatus label="Automatic repair" status={board.gates.repairQueue.status} />
-              <code className="mt-2 block whitespace-pre-wrap text-xs text-gray-600">
+              <code className="mt-2 block whitespace-pre-wrap text-xs text-muted">
                 {board.gates.repairQueue.command}
               </code>
-              <p className="mt-2 text-sm text-gray-600">{board.gates.repairQueue.note}</p>
+              <p className="mt-2 text-sm text-muted">{board.gates.repairQueue.note}</p>
               {typeof board.gates.repairQueue.openCount === 'number' && (
-                <p className="mt-1 text-xs text-gray-600">
+                <p className="mt-1 text-xs text-muted">
                   Open queue items: {board.gates.repairQueue.openCount}
                 </p>
               )}
               {typeof board.gates.repairQueue.scanned === 'number' && (
-                <p className="mt-1 text-xs text-gray-600">
+                <p className="mt-1 text-xs text-muted">
                   Scanned: {board.gates.repairQueue.scanned}
                 </p>
               )}
@@ -1311,7 +1311,7 @@ const AdminOperatorBoard = () => {
                 </p>
               ) : null}
               {board.gates.repairQueue.options && (
-                <p className="mt-1 text-xs text-gray-600">
+                <p className="mt-1 text-xs text-muted">
                   Artifact options:{' '}
                   {[
                     board.gates.repairQueue.options.collection,
@@ -1331,7 +1331,7 @@ const AdminOperatorBoard = () => {
                 </p>
               ) : null}
               {board.gates.repairQueue.repairSourceHosts?.length ? (
-                <p className="mt-1 text-xs text-gray-600">
+                <p className="mt-1 text-xs text-muted">
                   Source hosts: {formatCountList(board.gates.repairQueue.repairSourceHosts, 'host')}
                 </p>
               ) : null}
@@ -1343,12 +1343,12 @@ const AdminOperatorBoard = () => {
             </div>
           )}
           <div className="rounded-md border border-[var(--yr-line)] p-3">
-            <div className="text-sm font-semibold text-gray-900">Data quality</div>
+            <div className="text-sm font-semibold text-ink">Data quality</div>
             <GateStatus label="Data quality" status={board.gates.dataQuality.status} />
-            <code className="mt-2 block whitespace-pre-wrap text-xs text-gray-600">
+            <code className="mt-2 block whitespace-pre-wrap text-xs text-muted">
               {board.gates.dataQuality.command}
             </code>
-            <p className="mt-2 text-sm text-gray-600">{board.gates.dataQuality.note}</p>
+            <p className="mt-2 text-sm text-muted">{board.gates.dataQuality.note}</p>
             {typeof board.gates.dataQuality.artifactAgeHours === 'number' && (
               <p className="mt-1 text-xs text-amber-700">
                 Artifact age: {board.gates.dataQuality.artifactAgeHours} hours
@@ -1377,12 +1377,12 @@ const AdminOperatorBoard = () => {
             />
           </div>
           <div className="rounded-md border border-[var(--yr-line)] p-3">
-            <div className="text-sm font-semibold text-gray-900">Scraper integrity</div>
+            <div className="text-sm font-semibold text-ink">Scraper integrity</div>
             <GateStatus label="Scraper integrity" status={board.gates.scraperIntegrity.status} />
-            <code className="mt-2 block whitespace-pre-wrap text-xs text-gray-600">
+            <code className="mt-2 block whitespace-pre-wrap text-xs text-muted">
               {board.gates.scraperIntegrity.command}
             </code>
-            <p className="mt-2 text-sm text-gray-600">
+            <p className="mt-2 text-sm text-muted">
               {board.gates.scraperIntegrity.note ||
                 `Latest persisted integrity status: ${board.gates.scraperIntegrity.status}`}
             </p>
@@ -1414,12 +1414,12 @@ const AdminOperatorBoard = () => {
           </div>
           {board.gates.launchTrust && (
             <div className="rounded-md border border-[var(--yr-line)] p-3">
-              <div className="text-sm font-semibold text-gray-900">Launch trust</div>
+              <div className="text-sm font-semibold text-ink">Launch trust</div>
               <GateStatus label="Launch trust" status={board.gates.launchTrust.status} />
-              <code className="mt-2 block whitespace-pre-wrap text-xs text-gray-600">
+              <code className="mt-2 block whitespace-pre-wrap text-xs text-muted">
                 {board.gates.launchTrust.command}
               </code>
-              <p className="mt-2 text-sm text-gray-600">{board.gates.launchTrust.note}</p>
+              <p className="mt-2 text-sm text-muted">{board.gates.launchTrust.note}</p>
               {typeof board.gates.launchTrust.heldCount === 'number' && (
                 <p className="mt-1 text-xs text-amber-700">
                   Held rows: {board.gates.launchTrust.heldCount}
@@ -1431,7 +1431,7 @@ const AdminOperatorBoard = () => {
                 </p>
               )}
               {typeof board.gates.launchTrust.repairLaneCount === 'number' && (
-                <p className="mt-1 text-xs text-gray-600">
+                <p className="mt-1 text-xs text-muted">
                   Repair lanes: {board.gates.launchTrust.repairLaneCount}
                 </p>
               )}
@@ -1503,27 +1503,27 @@ const AdminOperatorBoard = () => {
           )}
           {board.gates.launchAcquisition && (
             <div className="rounded-md border border-[var(--yr-line)] p-3">
-              <div className="text-sm font-semibold text-gray-900">Launch acquisition</div>
+              <div className="text-sm font-semibold text-ink">Launch acquisition</div>
               <GateStatus
                 label="Launch acquisition"
                 status={board.gates.launchAcquisition.status}
               />
-              <code className="mt-2 block whitespace-pre-wrap text-xs text-gray-600">
+              <code className="mt-2 block whitespace-pre-wrap text-xs text-muted">
                 {board.gates.launchAcquisition.command}
               </code>
-              <p className="mt-2 text-sm text-gray-600">{board.gates.launchAcquisition.note}</p>
+              <p className="mt-2 text-sm text-muted">{board.gates.launchAcquisition.note}</p>
               {typeof board.gates.launchAcquisition.scanned === 'number' && (
-                <p className="mt-1 text-xs text-gray-600">
+                <p className="mt-1 text-xs text-muted">
                   Scanned blockers: {board.gates.launchAcquisition.scanned}
                 </p>
               )}
               {typeof board.gates.launchAcquisition.piBlockers === 'number' && (
-                <p className="mt-1 text-xs text-gray-600">
+                <p className="mt-1 text-xs text-muted">
                   PI blockers: {board.gates.launchAcquisition.piBlockers}
                 </p>
               )}
               {typeof board.gates.launchAcquisition.actionBlockers === 'number' && (
-                <p className="mt-1 text-xs text-gray-600">
+                <p className="mt-1 text-xs text-muted">
                   Action blockers: {board.gates.launchAcquisition.actionBlockers}
                 </p>
               )}
@@ -1558,24 +1558,24 @@ const AdminOperatorBoard = () => {
           )}
           {board.gates.productionCopy && (
             <div className="rounded-md border border-[var(--yr-line)] p-3">
-              <div className="text-sm font-semibold text-gray-900">Production copy</div>
+              <div className="text-sm font-semibold text-ink">Production copy</div>
               <GateStatus label="Production copy" status={board.gates.productionCopy.status} />
-              <code className="mt-2 block whitespace-pre-wrap text-xs text-gray-600">
+              <code className="mt-2 block whitespace-pre-wrap text-xs text-muted">
                 {board.gates.productionCopy.command}
               </code>
-              <p className="mt-2 text-sm text-gray-600">{board.gates.productionCopy.note}</p>
+              <p className="mt-2 text-sm text-muted">{board.gates.productionCopy.note}</p>
               {typeof board.gates.productionCopy.applyBlockerCount === 'number' && (
                 <p className="mt-1 text-xs text-amber-700">
                   Apply blockers: {board.gates.productionCopy.applyBlockerCount}
                 </p>
               )}
               {typeof board.gates.productionCopy.excludedSyntheticUsers === 'number' && (
-                <p className="mt-1 text-xs text-gray-600">
+                <p className="mt-1 text-xs text-muted">
                   Excluded synthetic users: {board.gates.productionCopy.excludedSyntheticUsers}
                 </p>
               )}
               {typeof board.gates.productionCopy.collectionCategoryCount === 'number' && (
-                <p className="mt-1 text-xs text-gray-600">
+                <p className="mt-1 text-xs text-muted">
                   Collection categories: {board.gates.productionCopy.collectionCategoryCount}
                 </p>
               )}
@@ -1592,9 +1592,9 @@ const AdminOperatorBoard = () => {
       {board.repairQueue && (
         <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h4 className="font-semibold text-gray-900">Automatic Repair Queue</h4>
+            <h4 className="text-sm font-semibold text-ink">Automatic Repair Queue</h4>
             <span
-              className="text-sm text-gray-500"
+              className="text-sm text-muted"
               title="Patched counts open queue items a repair has already written to. They are still open because the visibility gate held them, so this is not a promotion count."
             >
               {board.repairQueue.openCount} open · {board.repairQueue.statusCounts.repaired || 0}{' '}
@@ -1603,7 +1603,7 @@ const AdminOperatorBoard = () => {
           </div>
           <div className="grid gap-3 lg:grid-cols-2">
             <div className="rounded-md border border-[var(--yr-line)] p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted">
                 Repair lanes
               </div>
               <div className="mt-2 space-y-2">
@@ -1613,41 +1613,41 @@ const AdminOperatorBoard = () => {
                     className="flex items-center justify-between gap-2 text-sm"
                   >
                     <div>
-                      <div className="font-medium text-gray-800">
+                      <div className="font-medium text-ink">
                         {repairStageLabel[row.stage] || row.stage}
                       </div>
-                      <div className="text-xs text-gray-500">{row.status}</div>
+                      <div className="text-xs text-muted">{row.status}</div>
                     </div>
-                    <span className="font-semibold text-gray-900">{row.count}</span>
+                    <span className="font-semibold text-ink">{row.count}</span>
                   </div>
                 ))}
                 {board.repairQueue.byStage.length === 0 && (
-                  <div className="text-sm text-gray-500">No queued repairs</div>
+                  <div className="text-sm text-muted">No queued repairs</div>
                 )}
               </div>
             </div>
             <div className="rounded-md border border-[var(--yr-line)] p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted">
                 Recent automatic work
               </div>
               <div className="mt-2 space-y-3">
                 {board.repairQueue.samples.slice(0, 4).map((sample) => (
                   <div key={sample.id}>
                     <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-sm font-semibold text-gray-900">{sample.label}</div>
-                      <span className="rounded-md border border-[var(--yr-line)] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                      <div className="text-sm font-semibold text-ink">{sample.label}</div>
+                      <span className="rounded-md border border-[var(--yr-line)] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
                         {repairStageLabel[sample.repairStage] || sample.repairStage}
                       </span>
                     </div>
-                    <div className="mt-1 text-xs text-gray-500">
+                    <div className="mt-1 text-xs text-muted">
                       {sample.safeToAttempt ? 'Safe auto-repair' : 'Needs more evidence'} ·{' '}
                       {sample.repairStatus} · {sample.attemptCount} attempts
                     </div>
-                    <div className="mt-1 text-sm text-gray-600">{sample.nextRepairAction}</div>
+                    <div className="mt-1 text-sm text-muted">{sample.nextRepairAction}</div>
                   </div>
                 ))}
                 {board.repairQueue.samples.length === 0 && (
-                  <div className="text-sm text-gray-500">No repair samples</div>
+                  <div className="text-sm text-muted">No repair samples</div>
                 )}
               </div>
             </div>
@@ -1658,31 +1658,31 @@ const AdminOperatorBoard = () => {
       {board.releaseQueue && (
         <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h4 className="font-semibold text-gray-900">Release Queue</h4>
-            <span className="text-sm text-gray-500">
+            <h4 className="text-sm font-semibold text-ink">Release Queue</h4>
+            <span className="text-sm text-muted">
               {board.releaseQueue.openCount} open · {board.releaseQueue.statusCounts.resolved || 0}{' '}
               resolved
             </span>
           </div>
           <div className="grid gap-3 lg:grid-cols-3">
             <div className="rounded-md border border-[var(--yr-line)] p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted">
                 Top blockers
               </div>
               <div className="mt-2 space-y-2">
                 {board.releaseQueue.topBlockers.slice(0, 5).map((row) => (
                   <div key={row.reason} className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-gray-700">{row.reason}</span>
-                    <span className="font-semibold text-gray-900">{row.count}</span>
+                    <span className="text-ink-soft">{row.reason}</span>
+                    <span className="font-semibold text-ink">{row.count}</span>
                   </div>
                 ))}
                 {board.releaseQueue.topBlockers.length === 0 && (
-                  <div className="text-sm text-gray-500">No open blockers</div>
+                  <div className="text-sm text-muted">No open blockers</div>
                 )}
               </div>
             </div>
             <div className="rounded-md border border-[var(--yr-line)] p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted">
                 Source pressure
               </div>
               <div className="mt-2 space-y-2">
@@ -1691,29 +1691,29 @@ const AdminOperatorBoard = () => {
                     key={row.sourceName}
                     className="flex items-center justify-between gap-2 text-sm"
                   >
-                    <span className="text-gray-700">{row.sourceName}</span>
-                    <span className="font-semibold text-gray-900">{row.count}</span>
+                    <span className="text-ink-soft">{row.sourceName}</span>
+                    <span className="font-semibold text-ink">{row.count}</span>
                   </div>
                 ))}
                 {board.releaseQueue.sourcePressure.length === 0 && (
-                  <div className="text-sm text-gray-500">No source pressure</div>
+                  <div className="text-sm text-muted">No source pressure</div>
                 )}
               </div>
             </div>
             <div className="rounded-md border border-[var(--yr-line)] p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted">
                 Recent holds
               </div>
               <div className="mt-2 space-y-3">
                 {board.releaseQueue.samples.slice(0, 3).map((sample) => (
                   <div key={sample.id}>
-                    <div className="text-sm font-semibold text-gray-900">{sample.label}</div>
-                    <div className="mt-1 text-xs text-gray-500">{sample.collection}</div>
-                    <div className="mt-1 text-sm text-gray-600">{sample.nextRepairAction}</div>
+                    <div className="text-sm font-semibold text-ink">{sample.label}</div>
+                    <div className="mt-1 text-xs text-muted">{sample.collection}</div>
+                    <div className="mt-1 text-sm text-muted">{sample.nextRepairAction}</div>
                   </div>
                 ))}
                 {board.releaseQueue.samples.length === 0 && (
-                  <div className="text-sm text-gray-500">No held samples</div>
+                  <div className="text-sm text-muted">No held samples</div>
                 )}
               </div>
             </div>
@@ -1722,8 +1722,8 @@ const AdminOperatorBoard = () => {
       )}
 
       <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
-        <h4 className="mb-1 font-semibold text-gray-900">Decision Lanes</h4>
-        <p className="mb-3 text-sm text-gray-600">
+        <h4 className="text-sm mb-1 font-semibold text-ink">Decision Lanes</h4>
+        <p className="mb-3 text-sm text-muted">
           Visibility queues grouped by the decision an operator needs to make.
         </p>
         <div className="grid gap-3 lg:grid-cols-3">
@@ -1733,11 +1733,11 @@ const AdminOperatorBoard = () => {
               <div key={lane.kind} className="rounded-md border border-[var(--yr-line)] p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted">
                       {copy.eyebrow}
                     </div>
-                    <h5 className="mt-1 font-semibold text-gray-900">{copy.title}</h5>
-                    <p className="mt-1 text-xs text-gray-600">{copy.description}</p>
+                    <h5 className="mt-1 font-semibold text-ink">{copy.title}</h5>
+                    <p className="mt-1 text-xs text-muted">{copy.description}</p>
                   </div>
                   <span
                     className={`shrink-0 rounded-md border px-2 py-0.5 text-xs font-semibold ${queueKindStyles[lane.kind]}`}
@@ -1748,7 +1748,7 @@ const AdminOperatorBoard = () => {
 
                 <div className="mt-3 space-y-3">
                   {lane.queues.length === 0 && (
-                    <div className="rounded-card bg-[var(--yr-panel-muted)] p-3 text-sm text-gray-500">
+                    <div className="rounded-card bg-[var(--yr-panel-muted)] p-3 text-sm text-muted">
                       No current rows
                     </div>
                   )}
@@ -1759,22 +1759,22 @@ const AdminOperatorBoard = () => {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <div className="font-medium text-gray-900">
+                          <div className="font-medium text-ink">
                             {queueDecisionPrompt(queue.reason)}
                           </div>
-                          <div className="mt-1 text-xs text-gray-500">
+                          <div className="mt-1 text-xs text-muted">
                             <span>{queue.reason}</span>
                             <span className="mx-1">·</span>
                             <span className="capitalize">{queue.collection}</span>
                           </div>
                         </div>
-                        <span className="shrink-0 text-sm font-semibold text-gray-900">
+                        <span className="shrink-0 text-sm font-semibold text-ink">
                           {queue.count}
                         </span>
                       </div>
-                      <div className="mt-2 text-sm text-gray-700">{queue.nextAction}</div>
+                      <div className="mt-2 text-sm text-ink-soft">{queue.nextAction}</div>
 
-                      <div className="mt-3 text-sm text-gray-600">
+                      <div className="mt-3 text-sm text-muted">
                         {queue.samples.length === 0
                           ? 'No samples'
                           : queue.samples.slice(0, 3).map((sample) => {
@@ -1803,7 +1803,7 @@ const AdminOperatorBoard = () => {
                               );
                             })}
                         {queue.samples.length > 3 && (
-                          <div className="mt-2 text-xs text-gray-500">
+                          <div className="mt-2 text-xs text-muted">
                             +{queue.samples.length - 3} more samples
                           </div>
                         )}
@@ -1819,8 +1819,8 @@ const AdminOperatorBoard = () => {
 
       <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h4 className="font-semibold text-gray-900">Source Freshness</h4>
-          <span className="text-sm text-gray-500">
+          <h4 className="text-sm font-semibold text-ink">Source Freshness</h4>
+          <span className="text-sm text-muted">
             {board.sourceFreshness.windowDays} days · {board.sourceFreshness.riskCounts.ok} ok ·{' '}
             {board.sourceFreshness.riskCounts.warn} warn · {board.sourceFreshness.riskCounts.error}{' '}
             error
@@ -1930,8 +1930,8 @@ const AdminOperatorBoard = () => {
             <div key={row.sourceName} className="rounded-md border border-[var(--yr-line)] p-3">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <div className="font-semibold text-gray-900">{row.displayName}</div>
-                  <div className="text-xs text-gray-500">{row.sourceName}</div>
+                  <div className="font-semibold text-ink">{row.displayName}</div>
+                  <div className="text-xs text-muted">{row.sourceName}</div>
                 </div>
                 <span
                   className={`rounded-md border px-2 py-1 text-xs font-semibold ${riskStyles[row.risk]}`}
@@ -1939,8 +1939,8 @@ const AdminOperatorBoard = () => {
                   {row.risk}
                 </span>
               </div>
-              <p className="mt-2 text-sm text-gray-600">{row.action}</p>
-              <p className="mt-2 text-xs text-gray-500">
+              <p className="mt-2 text-sm text-muted">{row.action}</p>
+              <p className="mt-2 text-xs text-muted">
                 Latest run: {formatDate(row.latestRun?.startedAt)}
               </p>
             </div>

@@ -236,7 +236,7 @@ const AdminFellowshipsTable = () => {
           ))}
         </select>
 
-        <span className="text-sm text-gray-500">
+        <span className="text-sm text-muted">
           {total} fellowship{total !== 1 ? 's' : ''} total
         </span>
       </div>
@@ -249,7 +249,7 @@ const AdminFellowshipsTable = () => {
                 <th
                   key={col.value}
                   onClick={() => handleSort(col.value)}
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-[var(--yr-panel-muted)]"
+                  className="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider cursor-pointer hover:bg-[var(--yr-panel-muted)]"
                 >
                   <div className="flex items-center gap-1">
                     {col.label}
@@ -257,10 +257,10 @@ const AdminFellowshipsTable = () => {
                   </div>
                 </th>
               ))}
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-center text-xs font-medium text-muted uppercase tracking-wider">
                 Audit
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                 Actions
               </th>
             </tr>
@@ -268,19 +268,13 @@ const AdminFellowshipsTable = () => {
           <tbody className="bg-[var(--yr-panel)] divide-y divide-[var(--yr-line)]">
             {isLoading ? (
               <tr>
-                <td
-                  colSpan={TABLE_COLUMNS.length + 2}
-                  className="px-4 py-8 text-center text-gray-500"
-                >
+                <td colSpan={TABLE_COLUMNS.length + 2} className="px-4 py-8 text-center text-muted">
                   Loading...
                 </td>
               </tr>
             ) : fellowships.length === 0 ? (
               <tr>
-                <td
-                  colSpan={TABLE_COLUMNS.length + 2}
-                  className="px-4 py-8 text-center text-gray-500"
-                >
+                <td colSpan={TABLE_COLUMNS.length + 2} className="px-4 py-8 text-center text-muted">
                   No fellowships found
                 </td>
               </tr>
@@ -292,26 +286,21 @@ const AdminFellowshipsTable = () => {
                 >
                   <td className="px-4 py-3">
                     <div className="max-w-xs">
-                      <p
-                        className="text-sm font-medium text-gray-900 truncate"
-                        title={fellowship.title}
-                      >
+                      <p className="text-sm font-medium text-ink truncate" title={fellowship.title}>
                         {fellowship.title}
                       </p>
                       {fellowship.archived && (
                         <span className="text-xs text-red-600">(Archived)</span>
                       )}
-                      <span className="block text-xs text-gray-500">
-                        {formatStatus(fellowship)}
-                      </span>
+                      <span className="block text-xs text-muted">{formatStatus(fellowship)}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
+                  <td className="px-4 py-3 text-sm text-muted">
                     {formatDate(fellowship.deadline)}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{fellowship.views}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{fellowship.favorites}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
+                  <td className="px-4 py-3 text-sm text-muted">{fellowship.views}</td>
+                  <td className="px-4 py-3 text-sm text-muted">{fellowship.favorites}</td>
+                  <td className="px-4 py-3 text-sm text-muted">
                     {formatDate(fellowship.createdAt)}
                   </td>
                   <td className="px-4 py-3 text-center">
@@ -354,7 +343,7 @@ const AdminFellowshipsTable = () => {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <div className="text-sm text-gray-500">
+          <div className="text-sm text-muted">
             Page {page} of {totalPages}
           </div>
           <div className="flex gap-2">
@@ -416,7 +405,7 @@ const ArrayFieldEditor = ({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <label className="block text-sm font-medium text-ink-soft mb-1">{label}</label>
       <div className="flex flex-wrap gap-1.5 mb-2">
         {values.map((value) => (
           <span
@@ -484,7 +473,7 @@ const LinksEditor = ({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
+      <label className="block text-sm font-medium text-ink-soft mb-1">
         Links to Additional Information
       </label>
       {links.length > 0 && (
@@ -630,7 +619,7 @@ const FellowshipEditModal = ({
         <h3 className="text-lg font-semibold mb-4">Edit Fellowship</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+            <label className="block text-sm font-medium text-ink-soft mb-1">Title</label>
             <input
               value={title}
               onChange={(e) => formDispatch({ type: 'SET_TITLE', payload: e.target.value })}
@@ -638,7 +627,7 @@ const FellowshipEditModal = ({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Competition Type</label>
+            <label className="block text-sm font-medium text-ink-soft mb-1">Competition Type</label>
             <input
               value={competitionType}
               onChange={(e) =>
@@ -650,7 +639,7 @@ const FellowshipEditModal = ({
           </div>
 
           <div className="bg-[var(--yr-panel-muted)] border border-[var(--yr-line)] rounded-card p-3">
-            <p className="text-xs text-gray-500 mb-1">
+            <p className="text-xs text-muted mb-1">
               <strong>Tip:</strong> To add a clickable link inside any text field, use the format:{' '}
               <code className="bg-[var(--yr-panel-muted)] px-1 rounded-card">
                 [link text](https://url)
@@ -659,7 +648,7 @@ const FellowshipEditModal = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-ink-soft mb-1">
               Brief Description
             </label>
             <textarea
@@ -670,7 +659,7 @@ const FellowshipEditModal = ({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Full Description</label>
+            <label className="block text-sm font-medium text-ink-soft mb-1">Full Description</label>
             <textarea
               value={description}
               onChange={(e) => formDispatch({ type: 'SET_DESCRIPTION', payload: e.target.value })}
@@ -679,7 +668,7 @@ const FellowshipEditModal = ({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-ink-soft mb-1">
               Application Information
             </label>
             <textarea
@@ -693,7 +682,7 @@ const FellowshipEditModal = ({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-ink-soft mb-1">
               Special Eligibility Requirements
             </label>
             <textarea
@@ -709,7 +698,7 @@ const FellowshipEditModal = ({
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-ink-soft mb-1">
               Restrictions to Use of Award
             </label>
             <textarea
@@ -721,7 +710,7 @@ const FellowshipEditModal = ({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-ink-soft mb-1">
               Additional Information
             </label>
             <textarea
@@ -735,7 +724,7 @@ const FellowshipEditModal = ({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Application Link</label>
+            <label className="block text-sm font-medium text-ink-soft mb-1">Application Link</label>
             <input
               value={applicationLink}
               onChange={(e) =>
@@ -745,7 +734,7 @@ const FellowshipEditModal = ({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Award Amount</label>
+            <label className="block text-sm font-medium text-ink-soft mb-1">Award Amount</label>
             <input
               value={awardAmount}
               onChange={(e) => formDispatch({ type: 'SET_AWARD_AMOUNT', payload: e.target.value })}
@@ -762,10 +751,10 @@ const FellowshipEditModal = ({
           </div>
 
           <div className="border-t pt-4 mt-4">
-            <h4 className="text-sm font-semibold text-gray-800 mb-3">Contact Information</h4>
+            <h4 className="text-sm font-semibold text-ink mb-3">Contact Information</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Name</label>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Contact Name</label>
                 <input
                   value={contactName}
                   onChange={(e) =>
@@ -776,7 +765,7 @@ const FellowshipEditModal = ({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-ink-soft mb-1">
                   Contact Email
                 </label>
                 <input
@@ -788,7 +777,7 @@ const FellowshipEditModal = ({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-ink-soft mb-1">
                   Contact Phone
                 </label>
                 <input
@@ -801,7 +790,7 @@ const FellowshipEditModal = ({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-ink-soft mb-1">
                   Contact Office
                 </label>
                 <input
@@ -817,10 +806,10 @@ const FellowshipEditModal = ({
           </div>
 
           <div className="border-t pt-4 mt-4">
-            <h4 className="text-sm font-semibold text-gray-800 mb-3">Status & Dates</h4>
+            <h4 className="text-sm font-semibold text-ink mb-3">Status & Dates</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-ink-soft mb-1">
                   Accepting Applications
                 </label>
                 <select
@@ -838,7 +827,7 @@ const FellowshipEditModal = ({
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-ink-soft mb-1">
                   Application Open Date & Time
                 </label>
                 <input
@@ -851,7 +840,7 @@ const FellowshipEditModal = ({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-ink-soft mb-1">
                   Deadline Date & Time
                 </label>
                 <input
@@ -880,7 +869,7 @@ const FellowshipEditModal = ({
           </div>
 
           <div className="border-t pt-4 mt-4">
-            <h4 className="text-sm font-semibold text-gray-800 mb-3">Admin Flags</h4>
+            <h4 className="text-sm font-semibold text-ink mb-3">Admin Flags</h4>
             <div className="flex gap-6">
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -906,7 +895,7 @@ const FellowshipEditModal = ({
           </div>
 
           <div className="border-t pt-4 mt-4">
-            <h4 className="text-sm font-semibold text-gray-800 mb-3">Categories & Filters</h4>
+            <h4 className="text-sm font-semibold text-ink mb-3">Categories & Filters</h4>
             <div className="space-y-4">
               <ArrayFieldEditor
                 label="Year of Study"

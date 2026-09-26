@@ -76,17 +76,17 @@ export default function AdminCorrectionReports() {
     <div>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h3 className="text-xl font-semibold text-gray-900">Page correction reports</h3>
-          <p className="text-sm text-gray-600">
+          <h3 className="text-xl font-semibold text-ink">Page correction reports</h3>
+          <p className="text-sm text-muted">
             {total} {status} reports
           </p>
         </div>
-        <label className="text-sm font-medium text-gray-800">
+        <label className="text-sm font-medium text-ink">
           Status
           <select
             value={status}
             onChange={(event) => setStatus(event.target.value as ReportStatus)}
-            className="ml-2 min-h-11 rounded-md border border-gray-400 px-3"
+            className="ml-2 min-h-11 rounded-md border border-line-strong px-3"
           >
             <option value="unreviewed">Unreviewed</option>
             <option value="accepted">Accepted</option>
@@ -99,7 +99,7 @@ export default function AdminCorrectionReports() {
           {error}
         </p>
       )}
-      <ul className="mt-4 divide-y divide-gray-200 border-y border-gray-200">
+      <ul className="mt-4 divide-y divide-line border-y border-line">
         {reports.map((report) => (
           <li key={report._id}>
             <button
@@ -110,13 +110,13 @@ export default function AdminCorrectionReports() {
               }}
               className="min-h-14 w-full px-2 py-3 text-left yr-focus-ring"
             >
-              <span className="font-semibold text-gray-900">
+              <span className="font-semibold text-ink">
                 {report.entitySnapshot.name || report.entitySlug}
               </span>
-              <span className="ml-2 text-sm text-gray-600">{CATEGORY_LABELS[report.category]}</span>
-              <span className="ml-2 text-xs text-gray-500">({report.reporter.role})</span>
+              <span className="ml-2 text-sm text-muted">{CATEGORY_LABELS[report.category]}</span>
+              <span className="ml-2 text-xs text-muted">({report.reporter.role})</span>
               {report.note && (
-                <p className="mt-1 line-clamp-2 text-sm text-gray-700">{report.note}</p>
+                <p className="mt-1 line-clamp-2 text-sm text-ink-soft">{report.note}</p>
               )}
             </button>
           </li>
@@ -136,7 +136,7 @@ export default function AdminCorrectionReports() {
             <h2 id="report-review-title" className="text-lg font-semibold">
               {selected.entitySnapshot.name || selected.entitySlug}
             </h2>
-            <p className="mt-2 text-sm text-gray-700">
+            <p className="mt-2 text-sm text-ink-soft">
               {CATEGORY_LABELS[selected.category]} reported by{' '}
               {selected.reporter.name || selected.reporter.netId} ({selected.reporter.role})
             </p>
@@ -149,7 +149,7 @@ export default function AdminCorrectionReports() {
               Open page
             </a>
             {selected.note && (
-              <p className="mt-4 whitespace-pre-wrap text-sm text-gray-800">{selected.note}</p>
+              <p className="mt-4 whitespace-pre-wrap text-sm text-ink">{selected.note}</p>
             )}
             <p className="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
               Recording a decision does not change any page content or visibility. It only logs the
@@ -164,7 +164,7 @@ export default function AdminCorrectionReports() {
               maxLength={2000}
               value={reviewerNote}
               onChange={(event) => setReviewerNote(event.target.value)}
-              className="mt-1 w-full rounded-md border border-gray-400 p-3"
+              className="mt-1 w-full rounded-md border border-line-strong p-3"
             />
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button
@@ -177,7 +177,7 @@ export default function AdminCorrectionReports() {
               <button
                 type="button"
                 onClick={() => void review('dismissed')}
-                className="min-h-11 rounded-md border border-gray-600 px-4 font-semibold text-gray-700 yr-focus-ring"
+                className="min-h-11 rounded-md border border-muted px-4 font-semibold text-ink-soft yr-focus-ring"
               >
                 Dismiss
               </button>

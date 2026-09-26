@@ -189,9 +189,15 @@ A selected filter chip was `bg-slate-900`, a near-black that is not in this pale
 And the identical 1px divider inside two sibling sort dropdowns was `bg-gray-300` in one and `bg-slate-300` in the other, which no amount of care at a call site prevents and only a token does.
 - A scrim is tinted with the page's own dark, `var(--yr-navy)`, not with `slate-950`.
 - `src/__tests__/neutralTextScaleGuard.test.ts` enforces all of this in CI: three distinct declared values, no generic neutral text class in a swept path, and no element carrying the same step at rest and on a state.
-- The sweep so far covers the student-facing surfaces.
-`components/admin`, `components/analytics`, and `pages/analytics.tsx` still hold about 396 generic neutral text classes and are listed in the guard as pending rather than exempt, so widening `SWEPT_PATHS` is how the rest lands.
-Generic neutral *background* and *border* classes are likewise still present and are not yet in scope.
+- The sweep covers the whole tree, so the guard has no path list.
+A path list is honest only while a sweep is in progress; kept afterwards it means the next new file sits quietly outside the rule.
+- Six lines keep a generic neutral, and they are the complete set of grey members of a declared multi-hue or state scale: the `gray` entry in `colorKeyToTailwind`, the fellowship cycle badge, `researchPlanStageMeta` `SAVED` and `CLOSED`, `ROLE_PILL_CLASSES` `staff`, and the grey sibling of an emerald `active` pair in the admin grants table.
+A seventh entry needs a matching row in the scale table above.
+- Do not widen that exemption by predicate.
+A grey background beside grey text also describes an ordinary secondary button, and treating those as scale members is how two `Cancel` buttons kept an untokened hover.
+Those two are now `.yr-secondary-action`, which is the house primitive for a cancel beside a save.
+- A strong button outline uses `muted`, not `line-strong`.
+`line-strong` is a hairline token and disappears when asked to carry a button's edge.
 - Keep line length comfortable for reading; prefer measured column widths over full-bleed paragraphs.
 - Display headings carry `.yr-display`, which tightens tracking to `-0.02em`.
 Type set at a display size with default tracking reads as browser default rather than as set type, and it is the highest-signal way a page looks unconsidered.

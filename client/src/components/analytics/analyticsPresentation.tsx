@@ -181,7 +181,7 @@ export const actionPriorityClass = (priority?: string): string => {
     return 'border-amber-200 bg-amber-50 text-amber-700';
   }
 
-  return 'border-[var(--yr-line)] bg-[var(--yr-panel-muted)] text-gray-700';
+  return 'border-[var(--yr-line)] bg-[var(--yr-panel-muted)] text-ink-soft';
 };
 
 export const StatCard = ({
@@ -195,9 +195,9 @@ export const StatCard = ({
 }) => (
   <div className="overflow-hidden rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-raised">
     <div className="p-6">
-      <h3 className="text-sm font-medium text-gray-600 mb-2">{title}</h3>
-      <p className="yr-num text-3xl font-bold text-gray-900">{value}</p>
-      {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
+      <h3 className="text-sm font-medium text-muted mb-2">{title}</h3>
+      <p className="yr-num text-3xl font-bold text-ink">{value}</p>
+      {subtitle && <p className="text-sm text-muted mt-1">{subtitle}</p>}
     </div>
   </div>
 );
@@ -236,7 +236,7 @@ export const DashboardMetric = ({
           </span>
         )}
       </h3>
-      <p className="yr-num mt-2 text-3xl font-bold text-gray-950">{value}</p>
+      <p className="yr-num mt-2 text-3xl font-bold text-ink">{value}</p>
       <p className="mt-2 text-sm leading-5 opacity-85">{context}</p>
     </div>
   );
@@ -250,13 +250,13 @@ export const DetailSectionHeader = ({
   description?: string;
 }) => (
   <div className="mb-4 flex flex-col gap-1 border-b border-[var(--yr-line)] pb-3">
-    <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
-    {description && <p className="text-sm text-gray-500">{description}</p>}
+    <h2 className="yr-display text-2xl font-semibold text-ink">{title}</h2>
+    {description && <p className="text-sm text-muted">{description}</p>}
   </div>
 );
 
 export const ScopeBadge = ({ label }: { label: string }): ReactNode => (
-  <span className="ml-3 inline-flex items-center rounded-full border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-2.5 py-0.5 align-middle text-xs font-medium text-gray-500">
+  <span className="ml-3 inline-flex items-center rounded-full border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-2.5 py-0.5 align-middle text-xs font-medium text-muted">
     {label}
   </span>
 );

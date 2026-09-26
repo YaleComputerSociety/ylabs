@@ -162,10 +162,10 @@ const AdminResearchAreas = () => {
   return (
     <div>
       <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised p-4 border border-[var(--yr-line)] mb-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Add New Topic</h3>
+        <h3 className="text-sm font-semibold text-ink-soft mb-3">Add New Topic</h3>
         <div className="flex flex-wrap gap-2 items-end">
           <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs text-gray-500 mb-1">Name</label>
+            <label className="block text-xs text-muted mb-1">Name</label>
             <input
               value={newDraft.name}
               onChange={(e) =>
@@ -179,7 +179,7 @@ const AdminResearchAreas = () => {
             />
           </div>
           <div className="min-w-[200px]">
-            <label className="block text-xs text-gray-500 mb-1">Field</label>
+            <label className="block text-xs text-muted mb-1">Field</label>
             <select
               value={newDraft.field}
               onChange={(e) =>
@@ -218,22 +218,22 @@ const AdminResearchAreas = () => {
           <table className="min-w-full text-sm">
             <thead>
               <tr className="bg-[var(--yr-panel-muted)] border-b">
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Field</th>
-                <th className="text-center py-3 px-4 font-semibold text-gray-700">Default</th>
-                <th className="text-center py-3 px-4 font-semibold text-gray-700">Actions</th>
+                <th className="text-left py-3 px-4 font-semibold text-ink-soft">Name</th>
+                <th className="text-left py-3 px-4 font-semibold text-ink-soft">Field</th>
+                <th className="text-center py-3 px-4 font-semibold text-ink-soft">Default</th>
+                <th className="text-center py-3 px-4 font-semibold text-ink-soft">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={4} className="text-center py-8 text-gray-500">
+                  <td colSpan={4} className="text-center py-8 text-muted">
                     Loading...
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="text-center py-8 text-gray-500">
+                  <td colSpan={4} className="text-center py-8 text-muted">
                     No topics found
                   </td>
                 </tr>
@@ -282,7 +282,7 @@ const AdminResearchAreas = () => {
                       ) : (
                         <span
                           className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            FIELD_COLORS[area.field] || 'bg-[var(--yr-panel-muted)] text-gray-700'
+                            FIELD_COLORS[area.field] || 'bg-[var(--yr-panel-muted)] text-ink-soft'
                           }`}
                         >
                           {area.field}
@@ -308,7 +308,7 @@ const AdminResearchAreas = () => {
                             </button>
                             <button
                               onClick={() => dispatch({ type: 'CANCEL_EDIT' })}
-                              className="min-h-[44px] text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400 yr-focus-ring"
+                              className="yr-secondary-action min-h-[44px] rounded px-2 py-1 text-xs yr-focus-ring"
                             >
                               Cancel
                             </button>

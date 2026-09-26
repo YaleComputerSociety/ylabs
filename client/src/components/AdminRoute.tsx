@@ -61,7 +61,7 @@ const AdminRoute = ({ Component }: AdminRouteProps) => {
   if (!isAuthenticated) {
     if (localAdminDevLoginUrl) {
       return (
-        <div className="flex min-h-[50vh] items-center justify-center px-4 text-center text-gray-600">
+        <div className="flex min-h-[50vh] items-center justify-center px-4 text-center text-muted">
           Opening local admin session...
         </div>
       );
@@ -73,7 +73,7 @@ const AdminRoute = ({ Component }: AdminRouteProps) => {
   if (user && !user.isAdmin) {
     if (localAdminDevLoginUrl) {
       return (
-        <div className="flex min-h-[50vh] items-center justify-center px-4 text-center text-gray-600">
+        <div className="flex min-h-[50vh] items-center justify-center px-4 text-center text-muted">
           Opening local admin session...
         </div>
       );

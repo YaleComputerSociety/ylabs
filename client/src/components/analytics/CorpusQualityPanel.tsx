@@ -27,8 +27,8 @@ const TREND_MARK: Record<CorpusQualityTrend, string> = {
 const TREND_CLASS: Record<CorpusQualityTrend, string> = {
   better: 'text-emerald-700',
   worse: 'text-rose-700',
-  flat: 'text-gray-500',
-  unknown: 'text-gray-400',
+  flat: 'text-muted',
+  unknown: 'text-muted',
 };
 
 const MetricRow = ({ row }: { row: CorpusQualityMetricRow }) => {
@@ -38,13 +38,11 @@ const MetricRow = ({ row }: { row: CorpusQualityMetricRow }) => {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-[var(--yr-line)] py-3 last:border-b-0">
       <div className="min-w-0">
-        <p className="text-sm font-medium text-gray-900">{row.label}</p>
-        <p className="text-xs text-gray-500">{row.hint}</p>
+        <p className="text-sm font-medium text-ink">{row.label}</p>
+        <p className="text-xs text-muted">{row.hint}</p>
       </div>
       <div className="shrink-0 text-right">
-        <p className="text-sm font-semibold tabular-nums text-gray-900">
-          {formatRatio(row.current)}
-        </p>
+        <p className="text-sm font-semibold tabular-nums text-ink">{formatRatio(row.current)}</p>
         {trend !== 'unknown' && (
           <p className={`text-xs ${TREND_CLASS[trend]}`}>
             <span aria-hidden="true">{TREND_MARK[trend]} </span>
@@ -52,7 +50,7 @@ const MetricRow = ({ row }: { row: CorpusQualityMetricRow }) => {
             {points}
           </p>
         )}
-        {!row.live && <p className="text-[11px] uppercase tracking-wide text-gray-400">measured</p>}
+        {!row.live && <p className="text-[11px] uppercase tracking-wide text-muted">measured</p>}
       </div>
     </div>
   );
@@ -67,7 +65,7 @@ export interface CorpusQualityPanelProps {
 const CorpusQualityPanel = ({ corpusQuality, isLoading, error }: CorpusQualityPanelProps) => {
   if (isLoading) {
     return (
-      <p className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 text-sm text-gray-500">
+      <p className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 text-sm text-muted">
         Loading corpus quality.
       </p>
     );
@@ -90,19 +88,19 @@ const CorpusQualityPanel = ({ corpusQuality, isLoading, error }: CorpusQualityPa
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <div className="overflow-hidden rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-raised">
         <div className="border-b border-[var(--yr-line)] p-4">
-          <h3 className="text-lg font-semibold text-gray-800">
+          <h3 className="text-lg font-semibold text-ink">
             What the student-ready corpus actually serves
           </h3>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted">
             Counted over the {formatNumber(live.coverage.studentReady)} rows served right now, every
             metric keeping its denominator so a growing corpus cannot read as improving quality.
             Topics average {formatMean(live.richness.topicTotal)}.
           </p>
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-muted">
             {snapshotRowCount === 0 ? (
               <>
                 Rows needing the roster resolved per entity are not shown yet. Run{' '}
-                <code className="rounded bg-gray-100 px-1 py-0.5">{refreshCommand}</code> or wait
+                <code className="rounded bg-panel-muted px-1 py-0.5">{refreshCommand}</code> or wait
                 for the scheduled measurement.
               </>
             ) : (
@@ -128,8 +126,8 @@ const CorpusQualityPanel = ({ corpusQuality, isLoading, error }: CorpusQualityPa
 
       <div className="overflow-hidden rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-raised">
         <div className="border-b border-[var(--yr-line)] p-4">
-          <h3 className="text-lg font-semibold text-gray-800">Student-Ready by School</h3>
-          <p className="text-sm text-gray-500">Where the served corpus reaches, counted now</p>
+          <h3 className="text-lg font-semibold text-ink">Student-Ready by School</h3>
+          <p className="text-sm text-muted">Where the served corpus reaches, counted now</p>
         </div>
         <div className="p-4">
           <BarChart

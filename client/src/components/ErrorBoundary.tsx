@@ -33,19 +33,16 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   render() {
     if (this.state.hasError) {
       return (
-        <main className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
+        <main className="min-h-screen bg-panel-muted flex items-center justify-center px-4">
           <section
-            className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 text-center shadow-yr-raised"
+            className="w-full max-w-md rounded-lg border border-line bg-white p-8 text-center shadow-yr-raised"
             role="alert"
             aria-labelledby="error-boundary-title"
           >
-            <h1
-              id="error-boundary-title"
-              className="yr-display text-2xl font-semibold text-slate-900"
-            >
+            <h1 id="error-boundary-title" className="yr-display text-2xl font-semibold text-ink">
               Something went wrong
             </h1>
-            <p className="mt-4 text-slate-600">
+            <p className="mt-4 text-muted">
               The page hit an unexpected error. Refresh to try again, or return home.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
@@ -58,7 +55,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
               </button>
               <button
                 type="button"
-                className="rounded-md border border-slate-300 px-5 py-3 font-semibold text-slate-700 transition-colors hover:bg-slate-50 yr-focus-ring"
+                className="rounded-md border border-line-strong px-5 py-3 font-semibold text-ink-soft transition-colors hover:bg-panel-muted yr-focus-ring"
                 onClick={this.handleHome}
               >
                 Go home
