@@ -88,7 +88,7 @@ const UserButton = () => {
           height: '44px',
           borderRadius: '50%',
           backgroundColor: 'var(--yr-blue)',
-          color: '#FFFFFF',
+          color: 'var(--yr-panel)',
           fontFamily: 'Inter',
           fontWeight: 600,
           fontSize: '14px',
