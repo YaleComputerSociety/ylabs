@@ -27,6 +27,7 @@ import {
 } from '../../utils/descriptionHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { fetchFailureMessage, fetchFailureStatusCode } from '../utils/fetchFailure';
 import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
 import { classifyProgram } from '../../services/programClassifier';
 import { readCourseCreditRouteFromHtml } from '../utils/courseCreditRouteEvidence';
@@ -841,15 +842,6 @@ async function defaultFetchHtml(url: string, useCache: boolean): Promise<string>
   return html;
 }
 
-function fetchFailureStatusCode(err: unknown): number | undefined {
-  const status = (err as { response?: { status?: unknown } } | null)?.response?.status;
-  return typeof status === 'number' ? status : undefined;
-}
-
-function failureMessage(err: unknown): string {
-  return sanitizeLogValue(err instanceof Error ? err.message : err);
-}
-
 function parseRuntimeIntegerOption(
   value: number | undefined,
   flag: string,
@@ -952,7 +944,7 @@ export class DepartmentUndergradResearchScraper implements IScraper {
           ...buildFetchAttemptMetrics({ fetchMode: 'http', success: false, startedAt }),
           target: page.url,
           statusCode: fetchFailureStatusCode(err),
-          errorMessage: failureMessage(err),
+          errorMessage: fetchFailureMessage(err),
         });
         ctx.log(`[${page.key}] fetch failed, skipping page: ${sanitizeLogValue(err)}`);
         summaries.push(`${page.key}=fetch-failed`);
@@ -973,7 +965,7 @@ export class DepartmentUndergradResearchScraper implements IScraper {
           success: false,
           selectorBreakage: true,
           target: page.url,
-          errorMessage: failureMessage(err),
+          errorMessage: fetchFailureMessage(err),
         });
         ctx.log(`[${page.key}] parse failed, skipping page: ${sanitizeLogValue(err)}`);
         summaries.push(`${page.key}=parse-failed`);
