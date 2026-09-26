@@ -105,7 +105,7 @@ async function main() {
     },
   })
     .select(
-      'slug sourceUrls websiteUrl website manuallyLockedFields sourceLinkHealth archived studentVisibilityTier',
+      'slug sourceUrls websiteUrl website manuallyLockedFields fieldValueRefusals sourceLinkHealth archived studentVisibilityTier',
     )
     .lean()) as unknown as Array<Record<string, any>>;
 
@@ -178,10 +178,10 @@ async function main() {
         });
 
         if (options.apply) {
-          const { changedFields: _changedFields, fieldLockUpdate, ...fields } = change;
+          const { changedFields: _changedFields, fieldValueRefusalUpdate, ...fields } = change;
           await ResearchEntity.updateOne(
             { _id: row._id },
-            { $set: { ...fields, ...(fieldLockUpdate ?? {}) } },
+            { $set: { ...fields, ...(fieldValueRefusalUpdate ?? {}) } },
           );
         }
       } catch (error) {

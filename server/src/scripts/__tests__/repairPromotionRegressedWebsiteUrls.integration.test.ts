@@ -26,8 +26,8 @@ vi.mock('../../services/studentVisibilityGateService', () => ({
 
 import { getResearchGroupDetail } from '../../services/researchGroupService';
 import type { SourceLinkProbeResult } from '../../services/sourceLinkHealth';
-import { isRevisitableFieldLock } from '../../utils/researchEntityFieldLocks';
-import { WEBSITE_URL_REPAIR_LOCKED_BY } from '../repairPromotionRegressedWebsiteUrlsCore';
+import { liveFieldValueRefusals } from '../../utils/researchEntityFieldValueRefusals';
+import { WEBSITE_URL_REPAIR_REFUSED_BY } from '../repairPromotionRegressedWebsiteUrlsCore';
 import { runRepairPromotionRegressedWebsiteUrls } from '../repairPromotionRegressedWebsiteUrls';
 
 const WATTS_DEAD = 'http://www.ngogochimp.commons.yale.edu/';
@@ -142,7 +142,7 @@ describe('repair-promotion-regressed-website-urls against a real collection (#25
     expect(gateMocks.planStudentVisibilityGate).not.toHaveBeenCalled();
   });
 
-  it('serves the restored url, drops its stale provenance, and locks the field', async () => {
+  it('serves the restored url and drops its stale provenance, without locking the field', async () => {
     await runRepairPromotionRegressedWebsiteUrls({
       apply: true,
       confirm: true,
@@ -151,13 +151,13 @@ describe('repair-promotion-regressed-website-urls against a real collection (#25
 
     const watts = await stored('watts-dwatts');
     expect(watts?.websiteUrl).toBe(WATTS_LIVE);
-    expect(watts?.manuallyLockedFields).toEqual(['websiteUrl']);
+    expect(watts?.manuallyLockedFields ?? []).not.toContain('websiteUrl');
     expect(watts?.fieldProvenance).not.toHaveProperty('websiteUrl');
     expect(watts?.fieldProvenance).toHaveProperty('name');
     expect((await stored('dept-physics-john-sous'))?.websiteUrl).toBe(SOUS_LIVE);
   });
 
-  it('stores why it locked the field, so a later engine improvement can tell this from an operator decision', async () => {
+  it('refuses the regressed value and leaves the field unlocked, so the row can still improve', async () => {
     await runRepairPromotionRegressedWebsiteUrls({
       apply: true,
       confirm: true,
@@ -165,12 +165,14 @@ describe('repair-promotion-regressed-website-urls against a real collection (#25
     });
 
     const watts = await stored('watts-dwatts');
-    expect(watts?.fieldLockProvenance?.websiteUrl).toMatchObject({
-      reason: 'engine_gap_workaround',
-      lockedBy: WEBSITE_URL_REPAIR_LOCKED_BY,
+    const refusals = liveFieldValueRefusals(watts?.fieldValueRefusals, 'websiteUrl');
+    expect(refusals).toHaveLength(1);
+    expect(refusals[0]).toMatchObject({
+      rule: 'superseded_by_better_source',
+      refusedBy: WEBSITE_URL_REPAIR_REFUSED_BY,
     });
-    expect(watts?.fieldLockProvenance?.websiteUrl?.lockedAt).toBeInstanceOf(Date);
-    expect(isRevisitableFieldLock(watts?.fieldLockProvenance, 'websiteUrl')).toBe(true);
+    expect(refusals[0].refusedAt).toBeInstanceOf(Date);
+    expect(watts?.manuallyLockedFields ?? []).not.toContain('websiteUrl');
   });
 
   it('unsets the dead url with its provenance and re-gates that row', async () => {
@@ -183,14 +185,13 @@ describe('repair-promotion-regressed-website-urls against a real collection (#25
     const mane = await stored('ysm-faculty-shrikant-mane');
     expect(mane).not.toHaveProperty('websiteUrl');
     expect(mane?.fieldProvenance).not.toHaveProperty('websiteUrl');
-    expect(mane?.manuallyLockedFields).toEqual(['websiteUrl']);
-    // This row is the lock-asserts-absence case: with nothing stored for the field,
-    // the resolver returns `value: undefined` at confidence 1.0, which is #2542 done
-    // by hand. It is recorded on the same axis as any other engine-gap workaround.
-    expect(mane?.fieldLockProvenance?.websiteUrl).toMatchObject({
-      reason: 'engine_gap_workaround',
-      lockedBy: WEBSITE_URL_REPAIR_LOCKED_BY,
-    });
+    expect(mane?.manuallyLockedFields ?? []).not.toContain('websiteUrl');
+    // This row is the absence case: nothing is stored for the field afterwards, and what
+    // keeps it empty is the refusal of the dead value rather than a frozen field, so the
+    // row still takes a real research home if one is ever asserted.
+    expect(liveFieldValueRefusals(mane?.fieldValueRefusals, 'websiteUrl')).toMatchObject([
+      { rule: 'operator_judgement', refusedBy: WEBSITE_URL_REPAIR_REFUSED_BY },
+    ]);
     expect(gateMocks.planStudentVisibilityGate).toHaveBeenCalledWith({
       collection: 'research',
       mode: 'apply',
@@ -300,7 +301,12 @@ describe('repair-promotion-regressed-website-urls against a real collection (#25
     expect(await servedWebsiteUrl('ysm-faculty-shrikant-mane')).toBeUndefined();
   });
 
-  it('is re-runnable: a second apply finds the rows already locked and writes nothing new', async () => {
+  // The skip reason moved with the mechanism and the new one is the more honest of the
+  // two. Locking made every re-run report `website_url_manually_locked`, which said only
+  // that the lane had frozen the field. Now the row no longer holds the regressed value
+  // the decision names, so `current_value_unexpected` is what actually stops the second
+  // pass, and it would stop it even if this lane had never run.
+  it('is re-runnable: a second apply finds the rows no longer holding the regressed value', async () => {
     await runRepairPromotionRegressedWebsiteUrls({
       apply: true,
       confirm: true,
@@ -315,9 +321,9 @@ describe('repair-promotion-regressed-website-urls against a real collection (#25
     });
 
     expect(plans.map((plan) => plan.skipped)).toEqual([
-      'website_url_manually_locked',
-      'website_url_manually_locked',
-      'website_url_manually_locked',
+      'current_value_unexpected',
+      'current_value_unexpected',
+      'current_value_unexpected',
     ]);
     expect((await stored('watts-dwatts'))?.websiteUrl).toBe(WATTS_LIVE);
     expect(meiliMocks.syncEntities).not.toHaveBeenCalled();
