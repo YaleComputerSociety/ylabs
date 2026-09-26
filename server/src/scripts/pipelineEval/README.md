@@ -32,7 +32,7 @@ It never writes to live collections.
 yarn fuzzy:labeled-set
 ```
 
-The CLI builds the ground-truth clusters from the durable merge records (the `canonicalGroupId` transitive closure, with researcher-dedupe records kept in a separate namespace) and prints a JSON report of cluster counts, positive within-cluster pairs, and a cluster-size histogram.
+The CLI builds the ground-truth clusters from the durable merge records (the `canonicalGroupId` transitive closure, with researcher-dedupe records kept in a separate namespace) and prints a JSON report of cluster counts, positive within-cluster pairs, those pairs split by label provenance (`labelsByProvenance`), and a cluster-size histogram.
 
 `fuzzyMatchMetrics.ts` holds the pure, dependency-free primitives the report and the matcher share: `buildGroundTruthClusters` and `clusterPairs` for labeled positives, `buildLabeledNegatives` for same-name-different-person hard negatives drawn from the quarantines, and `pairwiseMetrics` (precision, recall, F1), `pairCompleteness`, and `clusterBcubed` for scoring predictions.
 
