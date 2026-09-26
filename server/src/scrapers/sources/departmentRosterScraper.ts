@@ -35,6 +35,12 @@ import {
   type RenderedFetchResult,
 } from '../renderedFetch';
 import { getCached, setCached } from '../snapshotCache';
+import {
+  labUrlUnusabilityFor,
+  loadLabUrlEvidenceBySlug,
+  type LabUrlEvidenceLoader,
+  type LabUrlIsUnusable,
+} from '../utils/labUrlEvidence';
 import { normalizeOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
@@ -3798,13 +3804,35 @@ export function rosterResearchHomeEvidence(entry: FacultyEntry): RosterResearchH
  * lab-less FACULTY_RESEARCH_AREA needs positive research evidence on the
  * person's own official profile, never a bare roster row.
  */
+/**
+ * The research-entity slug this lane mints for a roster row, exported so the run
+ * loop can read the corpus's verdicts for the same keys before the loop starts.
+ * Sharing the formula is the point: a second copy would drift and the lookup would
+ * silently miss.
+ */
+export function rosterResearchEntitySlug(entry: FacultyEntry, dept: DeptConfig): string {
+  const cleanedName = normalizeName(entry.name);
+  const nameSlug = slugify(cleanedName) || (entry.labUrl ? slugify(entry.labUrl) : '');
+  if (!nameSlug) return '';
+  return `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
+}
+
 export function entryToResearchEntityObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
   sourceUrl: string,
   ownerEntityKey: string,
+  labUrlIsUnusable: LabUrlIsUnusable = () => false,
 ): ObservationInput[] {
-  const isExplicitLab = Boolean(entry.labUrl) && isLikelyExplicitLabWebsite(entry);
+  // `isLikelyExplicitLabWebsite` reads the roster row. It cannot see what the
+  // corpus has since decided about that URL, and a refusal is exactly the verdict
+  // it misses - most often `wrong_owner`, where the row links a lab this person
+  // works in rather than runs. Without this the refusal withheld only the
+  // `websiteUrl` while the name, kind, and `entityType` kept asserting the lab
+  // (#3452). Withdrawal needs a positive verdict, never silence - see
+  // `labUrlIsUnusableForResearchHome`.
+  const isExplicitLab =
+    Boolean(entry.labUrl) && isLikelyExplicitLabWebsite(entry) && !labUrlIsUnusable(entry.labUrl!);
   if (!isExplicitLab && dept.emitPersonalResearchEntities === false) return [];
 
   const evidence = rosterResearchHomeEvidence(entry);
@@ -3816,9 +3844,8 @@ export function entryToResearchEntityObservations(
   if (!entry.labUrl && !hasLabLessResearchEvidence) return [];
 
   const cleanedName = normalizeName(entry.name);
-  const nameSlug = slugify(cleanedName) || (entry.labUrl ? slugify(entry.labUrl) : '');
-  if (!nameSlug) return [];
-  const slug = `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
+  const slug = rosterResearchEntitySlug(entry, dept);
+  if (!slug) return [];
   const entityName = cleanedName
     ? isExplicitLab
       ? `${cleanedName} Lab`
@@ -3912,6 +3939,7 @@ export class DepartmentRosterScraper implements IScraper {
     private readonly configs: DeptConfig[] = DEFAULT_DEPT_CONFIGS,
     private readonly renderedFetcher: RenderedFetcher | null = createScraplingRenderedFetcher(),
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
+    private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
   ) {}
 
   /**
@@ -3988,6 +4016,11 @@ export class DepartmentRosterScraper implements IScraper {
       let faculty = 0;
       let labs = 0;
       let observations = 0;
+      // One read per batch rather than one per row, and keyed by the slug this lane
+      // itself mints so the lookup cannot miss.
+      const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
+        entries.map((entry) => rosterResearchEntitySlug(entry, dept)).filter(Boolean),
+      );
 
       for (const rawEntry of entries) {
         if (totalFaculty >= limit) break;
@@ -4017,7 +4050,13 @@ export class DepartmentRosterScraper implements IScraper {
 
         const labObs = dept.officialProfileOnly
           ? []
-          : entryToResearchEntityObservations(entry, dept, sourceUrl, entityKey);
+          : entryToResearchEntityObservations(
+              entry,
+              dept,
+              sourceUrl,
+              entityKey,
+              labUrlUnusabilityFor(labUrlEvidenceBySlug, rosterResearchEntitySlug(entry, dept)),
+            );
         const labKey = labObs[0]?.entityKey;
         if (labObs.length > 0 && labKey && !seenLabKeys.has(labKey)) {
           seenLabKeys.add(labKey);

@@ -58,6 +58,12 @@ import {
 } from './yaleDirectoryScraper';
 import { normalizeYsmProfileUrl } from './ysmMeshKeywordScraper';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
+import {
+  labUrlUnusabilityFor,
+  loadLabUrlEvidenceBySlug,
+  type LabUrlEvidenceLoader,
+  type LabUrlIsUnusable,
+} from '../utils/labUrlEvidence';
 
 const DIRECTORY_URL = 'https://medicine.yale.edu/faculty/faculty-directory/facultylist/';
 const SOURCE_KEY = 'ysm-faculty-directory';
@@ -414,10 +420,20 @@ export function facultyToResearchEntityObservations(
   profile: YsmFacultyProfile,
   fallbackUserKey: string,
   knownPersonSurnames: ReadonlySet<string>,
+  labUrlIsUnusable: LabUrlIsUnusable = () => false,
 ): ObservationInput[] {
   const linkedSite = classifyProfileLabWebsite(profile, knownPersonSurnames);
   if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) return [];
-  const hasLab = linkedSite.isOwnResearchHome;
+  // `classifyProfileLabWebsite` answers whose lab the link names from the page
+  // alone. It cannot see what the corpus has since decided about that URL, and
+  // `wrong_owner` is exactly the verdict it misses: the slot names a lab this
+  // person works in rather than runs, which reads as an own research home on the
+  // page and is refused at write time. Without this the refusal withheld only the
+  // `websiteUrl`, and the name, kind, and `entityType` kept asserting the lab
+  // (#3452). Withdrawal needs a positive verdict, never silence - see
+  // `labUrlIsUnusableForResearchHome`.
+  const hasLab =
+    linkedSite.isOwnResearchHome && !(profile.labUrl && labUrlIsUnusable(profile.labUrl));
 
   const slug = `ysm-faculty-${profile.slug}`.slice(0, 100);
   const entityName = hasLab
@@ -510,7 +526,10 @@ export class YsmFacultyDirectoryScraper implements IScraper {
   readonly name = SOURCE_KEY;
   readonly displayName = 'YSM faculty directory and individual profiles';
 
-  constructor(private readonly htmlFetcher: HtmlFetcher = fetchHtml) {}
+  constructor(
+    private readonly htmlFetcher: HtmlFetcher = fetchHtml,
+    private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
+  ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const limitOption = ctx.options.limit;
@@ -546,6 +565,9 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     // cannot be narrowed to research roles here - a role needs the person's own
     // profile, and this run only fetches the limited slice (#2368/#2369).
     const directorySurnames = personSurnamesFromDisplayNames(roster.map((entry) => entry.name));
+    const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
+      limited.map((faculty) => `ysm-faculty-${faculty.slug}`),
+    );
 
     let totalObs = 0;
     let profilesScanned = 0;
@@ -553,6 +575,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     let entityCount = 0;
     let subordinateRankSkipped = 0;
     let labCount = 0;
+    let withdrawnLabCount = 0;
     let areaCount = 0;
 
     for (const faculty of limited) {
@@ -582,19 +605,26 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       await ctx.emit(userObs);
       totalObs += userObs.length;
 
-      const entityObs = facultyToResearchEntityObservations(profile, entityKey, directorySurnames);
+      const entityObs = facultyToResearchEntityObservations(
+        profile,
+        entityKey,
+        directorySurnames,
+        labUrlUnusabilityFor(labUrlEvidenceBySlug, `ysm-faculty-${profile.slug}`),
+      );
       if (entityObs.length > 0) {
         await ctx.emit(entityObs);
         totalObs += entityObs.length;
         entityCount += 1;
-        if (profile.labUrl) labCount += 1;
+        if (entityObs.some((obs) => obs.field === 'websiteUrl')) labCount += 1;
+        else if (profile.labUrl) withdrawnLabCount += 1;
         if (profile.researchAreas.length > 0) areaCount += 1;
       }
     }
 
     ctx.log(
       `Emitted ${totalObs} observations across ${researchersEnriched} researchers / ${entityCount} entities ` +
-        `(${labCount} with lab sites, ${areaCount} with research areas) of ${profilesScanned} profiles scanned; ` +
+        `(${labCount} with lab sites, ${withdrawnLabCount} whose linked lab site the corpus refuses, ` +
+        `${areaCount} with research areas) of ${profilesScanned} profiles scanned; ` +
         `${subordinateRankSkipped} skipped as subordinate research ranks`,
     );
 
