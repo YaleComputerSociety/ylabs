@@ -94,9 +94,7 @@ export default function EntityCorrectionReportPanel({
 
   return (
     <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-        See something wrong?
-      </h2>
+      <h2 className="yr-kicker">See something wrong?</h2>
       <p className="mt-2 text-sm text-ink-soft">
         This page is assembled from public sources and may be inaccurate. Signed-in members can flag
         an issue for our team to review.

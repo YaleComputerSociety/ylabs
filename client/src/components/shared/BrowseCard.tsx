@@ -127,7 +127,7 @@ const BrowseCard = React.memo(
               )}
             </div>
 
-            <h3 className="mb-2 text-base font-bold leading-tight text-ink">
+            <h3 className="mb-2 text-base font-semibold leading-tight text-ink">
               <button
                 type="button"
                 onClick={handleClick}

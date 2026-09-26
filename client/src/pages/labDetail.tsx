@@ -88,7 +88,7 @@ const buildYaleDirectorySearchUrl = (name?: string): string => {
 const RESEARCH_PROFILE_NOT_FOUND_ERROR = 'Research profile not found.';
 
 const SectionHeading = ({ children }: { children: React.ReactNode }) => (
-  <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">{children}</h2>
+  <h2 className="yr-kicker mb-3">{children}</h2>
 );
 
 const RelatedResearchEntitiesSection = ({
