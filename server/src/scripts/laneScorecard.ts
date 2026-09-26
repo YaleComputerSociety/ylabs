@@ -138,13 +138,17 @@ async function main(): Promise<void> {
     if (options.liveModelRuns) {
       if (!pages.some((page) => page.sourceName === MODEL_RESPONSE_NAMESPACE)) continue;
       const scores = [];
+      const replays = [];
       for (let runIndex = 0; runIndex < options.liveModelRuns; runIndex += 1) {
-        scores.push((await replayBenchmark(benchmark, pages, { liveModel: true })).score);
+        const run = await replayBenchmark(benchmark, pages, { liveModel: true });
+        scores.push(run.score);
+        replays.push(run.replay);
       }
       results.push({
         benchmarkId: benchmark.benchmarkId,
         sourceName: benchmark.sourceName,
         codeSha,
+        replays,
         liveModel: summarizeLiveModelRuns(scores),
       });
       continue;

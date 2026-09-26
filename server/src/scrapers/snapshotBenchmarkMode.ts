@@ -132,6 +132,11 @@ export const isBenchmarkModeActive = (): boolean => mode !== null;
 
 export const isLiveModelReplayActive = (): boolean => mode?.kind === 'replay' && mode.liveModel;
 
+export function refuseBenchmarkReplayNetwork(): never {
+  if (mode?.kind === 'replay') mode.networkBlocks += 1;
+  throw new BenchmarkReplayNetworkError();
+}
+
 function serveFrozenModelResponse(
   config: InternalAxiosRequestConfig,
   payload: unknown,
@@ -175,8 +180,7 @@ export function beginBenchmarkReplay(
       }
       replay.missed.add(key);
     }
-    replay.networkBlocks += 1;
-    throw new BenchmarkReplayNetworkError();
+    return refuseBenchmarkReplayNetwork();
   });
   mode = replay;
 }

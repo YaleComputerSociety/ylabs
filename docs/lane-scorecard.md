@@ -37,6 +37,7 @@ yarn --cwd server lane:scorecard --apply --confirm-lane-scorecard
 ```
 
 Replay serves only benchmark pages and blocks the default axios instance, so a page the capture never saw is a counted miss and never a fetch.
+The Scrapling renderer refuses every call during replay too, so a lane's rendered fallback serves only a rendered page the capture froze and never renders one live.
 The SSRF guard skips its DNS lookup during replay, because nothing can connect, and a live lookup would let the resolver rather than lane code decide which targets reach the cache.
 The work planner is ignored during both capture and replay, because it skips targets by when they were last scraped, which is a property of the clock and not of the code.
 A lane that also reads the live corpus to choose its targets is only as frozen as that read, and `pagesMissed` is where that drift shows.
@@ -51,6 +52,7 @@ yarn --cwd server lane:scorecard --benchmark=<benchmark-id> --live-model --runs=
 ```
 
 It reports, per field, the minimum, maximum, and mean emitted count across runs and the number of distinct fingerprints, and it never stores a row.
+It also reports each run's `pagesServed`, `pagesMissed`, and `networkBlocks`, because a band measured over missed pages mixes lane drift into the model's spread, so read the band only when every run missed nothing.
 Read a change to an LLM lane's prompt or model against this band: on the first undergrad benchmark, 3 runs over 8 labs emitted between 33 and 36 values with 3 distinct fingerprints.
 It calls the paid model once per target per run, so it is an operator command and not a sweep stage.
 

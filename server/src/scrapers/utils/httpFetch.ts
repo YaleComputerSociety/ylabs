@@ -12,10 +12,10 @@ import axios from 'axios';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { HostConcurrencyLimiter, hostnameForLimiter } from './hostConcurrencyLimiter';
 import {
-  BenchmarkReplayNetworkError,
   benchmarkCacheRead,
   benchmarkCacheWrite,
   isBenchmarkReplayActive,
+  refuseBenchmarkReplayNetwork,
 } from '../snapshotBenchmarkMode';
 
 export interface FetchedHttpPage {
@@ -132,7 +132,7 @@ export async function fetchPageWithPolicy(
   const benchmarkKey = `page:v1:${url}`;
   const frozen = benchmarkCacheRead(POLICY_FETCH_BENCHMARK_NAMESPACE, benchmarkKey);
   if (frozen.handled && frozen.payload) return frozen.payload as FetchedHttpPage;
-  if (isBenchmarkReplayActive()) throw new BenchmarkReplayNetworkError();
+  if (isBenchmarkReplayActive()) refuseBenchmarkReplayNetwork();
   const page = await fetchPageLive(url, options);
   benchmarkCacheWrite(POLICY_FETCH_BENCHMARK_NAMESPACE, benchmarkKey, page);
   return page;

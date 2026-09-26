@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from './../utils/ssrfGuard';
 import { defaultHostConcurrencyLimiter } from './utils/hostConcurrencyLimiter';
+import { isBenchmarkReplayActive, refuseBenchmarkReplayNetwork } from './snapshotBenchmarkMode';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import type {
   ScraperFetchAttemptMetrics,
@@ -299,6 +300,7 @@ export function createScraplingRenderedFetcher(
   const seedRedirectCheck = options.seedRedirectCheck || defaultRenderedSeedRedirectCheck;
 
   return async (request) => {
+    if (isBenchmarkReplayActive()) refuseBenchmarkReplayNetwork();
     // SSRF guard: request.url originates from DB-stored / scraped values. Block private/metadata
     // hosts before handing the URL to the headless Python fetcher. Also fail closed if the seed
     // URL immediately redirects, because the Python renderer cannot use Node's connect-time
