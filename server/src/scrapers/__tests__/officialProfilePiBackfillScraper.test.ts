@@ -4400,6 +4400,74 @@ describe('officialProfilePiBackfillScraper', () => {
         ),
       ).toBe(false);
     });
+
+    // The `LAB` early return was an assumption rather than a test: a profile links a
+    // colleague's lab as readily as its own, and this lane asserts `name` at 0.96, above
+    // every roster lane, so the adopted value wins the resolve outright (#3529).
+    const anotherPersonsLab = {
+      ...centre,
+      name: 'Quimby Lab',
+      rawName: 'The Quimby Lab',
+      url: 'https://medicine.yale.edu/lab/quimby/',
+      entityType: 'LAB' as const,
+      kind: 'lab' as const,
+    };
+
+    it('refuses a lab home whose eponym its own url says is another person', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          anotherPersonsLab,
+          'David Fiellin',
+        ),
+      ).toBe(true);
+    });
+
+    it('still adopts the profile person own eponymous lab', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          {
+            ...anotherPersonsLab,
+            name: 'Fiellin Lab',
+            url: 'https://medicine.yale.edu/lab/fiellin/',
+          },
+          'David Fiellin',
+        ),
+      ).toBe(false);
+    });
+
+    it('adopts a lab home when the entity key names the person and the profile name is absent', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          {
+            ...anotherPersonsLab,
+            name: 'Fiellin Lab',
+            url: 'https://medicine.yale.edu/lab/fiellin/',
+          },
+          undefined,
+        ),
+      ).toBe(false);
+    });
+
+    // A topical lab name carries no eponym for a url path to corroborate, so there is
+    // nothing to refuse and the home is adopted. Stated as a test because the opposite
+    // reading - refusing whatever the identity tokens do not match - would condemn every
+    // lab that is not named after its own PI.
+    it('adopts a topical lab home no url path contradicts', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          {
+            ...anotherPersonsLab,
+            name: 'Vascular Biology and Therapeutics Lab',
+            url: 'https://medicine.yale.edu/lab/vascular-biology/',
+          },
+          'David Fiellin',
+        ),
+      ).toBe(false);
+    });
   });
 
   it('emits direct lead website observations without inventing a research-home name', () => {
