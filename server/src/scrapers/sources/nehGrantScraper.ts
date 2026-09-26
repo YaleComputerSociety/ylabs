@@ -32,6 +32,12 @@ import {
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { normalizeName, slugify } from '../utils/scraperHelpers';
 import { resolveUserForPi, type FederalPiResolverDeps } from './nsfAwardScraper';
+import {
+  countGrantAttach,
+  emptyGrantAttachTally,
+  grantAttachSummary,
+  resolveGrantEnrichmentTarget,
+} from '../utils/grantEnrichmentTarget';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 export const NEH_AWARD_SEARCH_BASE = 'https://awardsearch.neh.gov';
@@ -427,30 +433,12 @@ interface ShardTally {
   truncated: number;
 }
 
-interface AttachTally {
-  enriched: number;
-  unresolved: number;
-  ambiguousPerson: number;
-  noExistingRow: number;
-  ineligibleRow: number;
-  ambiguousRow: number;
-}
-
 function shardSummary(years: number[], shards: ShardTally): string {
   return (
     `year shards ${years[0]}-${years[years.length - 1]}: ${years.length} queried, ` +
     `${shards.fetched} fetched, ${shards.failed} failed, ${shards.empty} empty, ` +
     `${shards.unrecognised} unrecognised page, ${shards.schemaDrift} schema drift, ` +
     `${shards.truncated} truncated`
-  );
-}
-
-function attachSummary(attach: AttachTally): string {
-  return (
-    `rows enriched: ${attach.enriched}; not attached: ${attach.unresolved} resolved to no researcher, ` +
-    `${attach.ambiguousPerson} resolved to several researchers, ` +
-    `${attach.noExistingRow} have no existing research row (grants never mint one, #3145), ` +
-    `${attach.ineligibleRow} ineligible row, ${attach.ambiguousRow} ambiguous row`
   );
 }
 
@@ -559,56 +547,29 @@ export class NehGrantScraper implements IScraper {
     const groups = groupGrantsByLeadPi(yaleGrants);
     ctx.log(`Grouped into ${groups.length} distinct Project Directors`);
 
-    const attach: AttachTally = {
-      enriched: 0,
-      unresolved: 0,
-      ambiguousPerson: 0,
-      noExistingRow: 0,
-      ineligibleRow: 0,
-      ambiguousRow: 0,
-    };
+    const attach = emptyGrantAttachTally();
     let totalObs = 0;
     let processed = 0;
     for (const group of groups) {
       if (processed >= piLimit) break;
       processed++;
 
-      const userResolution = await resolveUserForPi(
+      const person = await resolveUserForPi(
         { firstName: group.piFirstName, lastName: group.piLastName },
         resolverDeps,
       );
-      if (userResolution.status === 'ambiguous') {
-        attach.ambiguousPerson++;
-        continue;
-      }
-      if (userResolution.status !== 'matched') {
-        attach.unresolved++;
-        continue;
-      }
+      const target = await resolveGrantEnrichmentTarget(person, researchHomeResolver);
+      countGrantAttach(attach, target);
+      if (target.status !== 'enrich') continue;
 
-      const home = await researchHomeResolver(userResolution.userId);
-      if (home.status === 'safe-shell') {
-        attach.noExistingRow++;
-        continue;
-      }
-      if (home.status === 'ineligible') {
-        attach.ineligibleRow++;
-        continue;
-      }
-      if (home.status === 'ambiguous') {
-        attach.ambiguousRow++;
-        continue;
-      }
-
-      const entityObs = buildResearchEntityObservations(group, userResolution.userId, home.slug);
+      const entityObs = buildResearchEntityObservations(group, target.researcherId, target.slug);
       await ctx.emit(entityObs);
       totalObs += entityObs.length;
-      attach.enriched++;
     }
 
     const notes =
       `${shardSummary(years, shards)}; Yale NEH awards since ${cutoffYear}: ${yaleGrants.length}; ` +
-      `Project Directors: ${groups.length} (${processed} processed); ${attachSummary(attach)}`;
+      `Project Directors: ${groups.length} (${processed} processed); ${grantAttachSummary(attach)}`;
     ctx.log(`Emitted ${totalObs} observations. ${notes}`);
 
     return {

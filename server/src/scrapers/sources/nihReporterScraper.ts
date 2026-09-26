@@ -16,10 +16,10 @@
  *   - Group grants by contact PI name.
  *   - For each PI:
  *       - Resolve an unambiguous canonical Researcher by exact or conservative prefix name matching.
- *       - Enrich the PI's one eligible official research home when present, fail closed
- *         on ambiguous or ineligible identity/home evidence, or use a synthetic shell
- *         only when no research-home membership exists.
- *       - Emit grant evidence without replacing identity fields on an official home.
+ *       - Resolve the one existing research row the canonical resolver names for them.
+ *         A grant proves that a person is funded, never that a row should exist, so
+ *         every other outcome is counted by reason and mints nothing (#3145, #3561).
+ *       - Emit grant evidence without replacing identity fields on the existing row.
  *
  * Honors:
  *   - ctx.options.useCache — caches each (offset/limit/fiscal_year) page payload.
@@ -32,25 +32,18 @@ import {
   resolveCanonicalResearchHomeForResearcher,
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
-import { slugify, splitName } from '../utils/scraperHelpers';
 import { Researcher } from '../../models/researcher';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import {
-  GRANT_SHELL_ENTITY_TYPE,
-  GRANT_SHELL_KIND,
-  grantShellResearchRecordName,
-} from '../utils/grantShellIdentity';
+  countGrantAttach,
+  emptyGrantAttachTally,
+  grantAttachSummary,
+  resolveGrantEnrichmentTarget,
+} from '../utils/grantEnrichmentTarget';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
 const REPORTER_ENDPOINT = 'https://api.reporter.nih.gov/v2/projects/search';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
-// "<PI> Lab" is only a placeholder when no real name is known; keep it well below
-// any real-name source (microsite, official profile) so those always win (issue #456).
-const PI_DERIVED_LAB_NAME_CONFIDENCE = 0.3;
-// A funded-project abstract describes the lead's actual research, but it is grant
-// prose, not an authored lab page. Keep it below the 0.5 default so any real
-// lab-page/microsite description wins on confidence resolution (issue #1418).
-const GRANT_ABSTRACT_DESCRIPTION_CONFIDENCE = 0.35;
 const GRANT_DESCRIPTION_MAX_CHARS = 420;
 const PAGE_SIZE = 500;
 const FETCH_TIMEOUT_MS = 60_000;
@@ -67,8 +60,8 @@ const MAX_PAGES = 30;
 
 // NIH individual trainee-fellowship activity codes (F30/F31/F32/F33): the
 // contact PI on these awards is the trainee (grad student / postdoc), not a
-// faculty lab lead, so they must not mint a standalone research-home entity
-// (#739).
+// faculty lab lead, so their awards are never attributed to a row as its
+// lead's funding (#739).
 const TRAINEE_FELLOWSHIP_ACTIVITY_CODES = new Set(['F30', 'F31', 'F32', 'F33']);
 
 // ---------------------------------------------------------------------------
@@ -176,26 +169,11 @@ function titleCaseToken(token: string): string {
 }
 
 /**
- * Stable, deterministic key for a PI when we can't (yet) match them to a User.
- * Used as both the emitted ResearchGroup slug seed and the User observation
- * entityKey. Idempotent across runs.
- */
-export function piEntityKey(canonicalName: string): string {
-  const slug = slugify(canonicalName);
-  return slug ? `nih-pi:${slug}` : '';
-}
-
-export function piSlugForResearchGroup(canonicalName: string): string {
-  const slug = slugify(canonicalName);
-  return slug ? `nih-pi-${slug}` : '';
-}
-
-/**
  * True when a grant is an NIH individual trainee-fellowship award (F30/F31/F32/
  * F33), whose contact PI is the trainee rather than a faculty lab lead. These
- * awards fail closed at ingestion: dropping them before grouping means no
- * "<Fellow> Lab" entity is ever minted, while a faculty PI's normal awards
- * (R01, R35, ...) still group and mint unaffected (#739).
+ * awards fail closed at ingestion: dropping them before grouping means a
+ * trainee's award never reaches a row, while a faculty PI's normal awards
+ * (R01, R35, ...) still group unaffected (#739).
  */
 export function isTraineeFellowshipGrant(grant: NihGrant): boolean {
   const code = (grant.activity_code || '').trim().toUpperCase();
@@ -484,32 +462,13 @@ function researchHomeEligibleUserTitle(title: unknown): boolean {
   return true;
 }
 
-/**
- * Build the observation list for one PI's grants.
- *
- * Emits:
- *   - `user` observation keyed by `nih-pi:<slug>` when no researcher matched, so
- *     downstream materialization can create a stub.
- *   - ResearchGroup observations keyed by either the matched researcher's PI slug
- *     (legible `nih-pi-<slug>`) or the same slug used by the researcher stub.
- *   - All recentGrants observations are emitted as a single full array — the
- *     resolver picks the highest-confidence value per field rather than trying
- *     to merge multiple partial arrays.
- */
 export function piGrantsToObservations(
-  canonicalName: string,
   grants: NihGrant[],
-  matchedUser: { _id: string; netid?: string; researchHomeEligible?: boolean } | null,
-  canonicalResearchHomeSlug?: string | null,
+  researcherId: string,
+  existingRowSlug: string,
 ): ObservationInput[] {
-  const out: ObservationInput[] = [];
-  if (!canonicalName || grants.length === 0) return out;
-  if (matchedUser?.researchHomeEligible === false) return out;
+  if (grants.length === 0 || !existingRowSlug) return [];
 
-  const slug = canonicalResearchHomeSlug || piSlugForResearchGroup(canonicalName);
-  if (!slug) return out;
-
-  // Sort grants by start date (desc), keep top N for the recentGrants array.
   const sorted = [...grants].sort((a, b) => {
     const ad = parseDate(a.project_start_date)?.getTime() ?? 0;
     const bd = parseDate(b.project_start_date)?.getTime() ?? 0;
@@ -521,97 +480,20 @@ export function piGrantsToObservations(
     .filter((t): t is number => typeof t === 'number')
     .reduce((max, t) => (t > max ? t : max), 0);
 
-  const sourceUrls = sorted.map((g) => g.project_detail_url).filter((u): u is string => !!u);
-
-  // Determine school/department hint from organization.dept_type when present.
-  // We only use it as a soft signal; the resolver will dedupe against other sources.
-  const deptTypes = new Set<string>();
-  for (const g of sorted) {
-    const dt = g.organization?.dept_type;
-    if (dt) deptTypes.add(dt);
-  }
-
-  // 1. `user` observation — only emit when no existing researcher was matched.
-  //    The materializer treats `nih-pi:<slug>` as a synthetic key and creates a
-  //    stub Researcher from the surname and first name.
-  const piEntityKeyValue = piEntityKey(canonicalName);
-  if (!matchedUser && piEntityKeyValue) {
-    const { first, last } = splitName(canonicalName);
-    const userBase = {
-      entityType: 'user' as const,
-      entityKey: piEntityKeyValue,
-      sourceUrl: sorted[0]?.project_detail_url || REPORTER_ENDPOINT,
-    };
-    if (first) out.push({ ...userBase, field: 'fname', value: first });
-    if (last) out.push({ ...userBase, field: 'lname', value: last });
-    out.push({ ...userBase, field: 'dataSources', value: ['nih-reporter'] });
-  }
-
-  // 2. ResearchGroup observations.
-  const groupBase = {
+  const base = {
     entityType: 'researchEntity' as const,
-    entityKey: slug,
+    entityKey: existingRowSlug,
     sourceUrl: sorted[0]?.project_detail_url || REPORTER_ENDPOINT,
   };
-  const piDisplayName = canonicalName;
-  if (!canonicalResearchHomeSlug) {
-    out.push({ ...groupBase, field: 'slug', value: slug });
-    out.push({
-      ...groupBase,
-      field: 'name',
-      value: grantShellResearchRecordName(piDisplayName, `NIH PI ${slug}`),
-      confidenceOverride: PI_DERIVED_LAB_NAME_CONFIDENCE,
-    });
-    out.push({ ...groupBase, field: 'kind', value: GRANT_SHELL_KIND });
-    out.push({ ...groupBase, field: 'entityType', value: GRANT_SHELL_ENTITY_TYPE });
-    const grantDescription = labDescriptionFromRecentGrants(recentRecords);
-    if (grantDescription) {
-      out.push({
-        ...groupBase,
-        field: 'fullDescription',
-        value: grantDescription,
-        confidenceOverride: GRANT_ABSTRACT_DESCRIPTION_CONFIDENCE,
-      });
-    }
-  }
-  out.push({ ...groupBase, field: 'recentGrants', value: recentRecords });
-  out.push({ ...groupBase, field: 'recentGrantCount', value: sorted.length });
-  out.push({ ...groupBase, field: 'fundingAgencies', value: ['NIH'] });
+  const out: ObservationInput[] = [
+    { ...base, field: 'recentGrants', value: recentRecords },
+    { ...base, field: 'recentGrantCount', value: sorted.length },
+    { ...base, field: 'fundingAgencies', value: ['NIH'] },
+  ];
   if (lastObservedAt > 0) {
-    out.push({ ...groupBase, field: 'lastObservedAt', value: new Date(lastObservedAt) });
+    out.push({ ...base, field: 'lastObservedAt', value: new Date(lastObservedAt) });
   }
-  if (sourceUrls.length > 0 && !canonicalResearchHomeSlug) {
-    out.push({
-      ...groupBase,
-      field: 'sourceUrls',
-      value: sourceUrls.slice(0, RECENT_GRANTS_PER_PI),
-    });
-  }
-  if (matchedUser) {
-    out.push({
-      ...groupBase,
-      field: 'inferredPiUserId',
-      value: matchedUser._id,
-      confidenceOverride: 0.9, // RePORTER + name match is high-confidence
-    });
-  } else {
-    // Soft link via the synthetic User key the materializer will resolve.
-    out.push({
-      ...groupBase,
-      field: 'inferredPiUserKey',
-      value: piEntityKeyValue,
-      confidenceOverride: 0.6,
-    });
-  }
-  if (deptTypes.size > 0 && !canonicalResearchHomeSlug) {
-    out.push({
-      ...groupBase,
-      field: 'departments',
-      value: Array.from(deptTypes),
-      confidenceOverride: 0.4, // dept_type is RePORTER's free-text, not authoritative
-    });
-  }
-
+  out.push({ ...base, field: 'inferredPiUserId', value: researcherId, confidenceOverride: 0.9 });
   return out;
 }
 
@@ -723,7 +605,7 @@ export class NihReporterScraper implements IScraper {
     ctx.log(`fetched ${allGrants.length}/${total} grants across ${pages} page(s)`);
 
     // 2. Drop individual trainee-fellowship awards (F30/F31/F32/F33) so a
-    //    trainee is never minted as a "<Fellow> Lab" research home (#739).
+    //    trainee's award is never attributed to a row (#739).
     const fundableGrants = allGrants.filter((grant) => !isTraineeFellowshipGrant(grant));
     const excludedTraineeFellowships = allGrants.length - fundableGrants.length;
     if (excludedTraineeFellowships > 0) {
@@ -740,59 +622,52 @@ export class NihReporterScraper implements IScraper {
     const piLimit = limitOption ?? Infinity;
     const piEntries = Array.from(groups.entries()).slice(0, piLimit);
 
-    // 5. Resolve each PI to a User (or stub) and emit observations.
+    const attach = emptyGrantAttachTally();
+    let ineligibleLeadTitle = 0;
     let totalObs = 0;
-    let matched = 0;
-    let unmatched = 0;
     let processed = 0;
     for (const [piName, grants] of piEntries) {
-      let userResolution: NihPiUserResolution = { status: 'ambiguous' };
+      processed++;
+      let person: NihPiUserResolution = { status: 'ambiguous' };
       try {
-        userResolution = await resolveUserForPi(piName, {
+        person = await resolveUserForPi(piName, {
           resolveResearcherId: this.opts.resolveResearcherId,
           loadResearcherProfileTitle: this.opts.loadResearcherProfileTitle,
         });
       } catch (err: any) {
         ctx.log(`user-lookup error for PI candidate: ${sanitizeLogValue(err)}`);
       }
-      const matchedUser = userResolution.status === 'matched' ? userResolution.user : null;
-      if (userResolution.status === 'matched') matched++;
-      else if (userResolution.status === 'absent') unmatched++;
-      else continue;
-
-      const researchHomeResolution = matchedUser
-        ? await researchHomeResolver(matchedUser._id)
-        : { status: 'safe-shell' as const };
-      if (
-        researchHomeResolution.status === 'ambiguous' ||
-        researchHomeResolution.status === 'ineligible'
-      ) {
+      if (person.status === 'matched' && person.user.researchHomeEligible === false) {
+        ineligibleLeadTitle++;
         continue;
       }
-      const canonicalResearchHomeSlug =
-        researchHomeResolution.status === 'canonical' ? researchHomeResolution.slug : null;
-      const observations = piGrantsToObservations(
-        piName,
-        grants,
-        matchedUser,
-        canonicalResearchHomeSlug,
+      const target = await resolveGrantEnrichmentTarget(
+        person.status === 'matched' ? { status: 'matched', userId: person.user._id } : person,
+        researchHomeResolver,
       );
-      if (observations.length > 0) {
+      countGrantAttach(attach, target);
+      if (target.status === 'enrich') {
+        const observations = piGrantsToObservations(grants, target.researcherId, target.slug);
         await ctx.emit(observations);
         totalObs += observations.length;
       }
-      processed++;
       if (processed % 100 === 0 || processed === piEntries.length) {
         ctx.log(
-          `progress: ${processed}/${piEntries.length} PIs (${matched} matched, ${unmatched} unmatched), ${totalObs} obs`,
+          `progress: ${processed}/${piEntries.length} PIs (${attach.enriched} rows enriched), ${totalObs} obs`,
         );
       }
     }
 
+    const notes =
+      `Yale NIH grants FY ${fiscalYears.join('-')}: ${allGrants.length} grants; ` +
+      `contact PIs: ${groups.size} (${piEntries.length} processed); ${grantAttachSummary(attach)}; ` +
+      `${ineligibleLeadTitle} held for a non-lead title`;
+    ctx.log(`Emitted ${totalObs} observations. ${notes}`);
+
     return {
       observationCount: totalObs,
-      entitiesObserved: piEntries.length,
-      notes: `Yale NIH grants FY ${fiscalYears.join('-')}: ${allGrants.length} grants → ${groups.size} PIs (matched ${matched}, stubbed ${unmatched})`,
+      entitiesObserved: attach.enriched,
+      notes,
     };
   }
 }

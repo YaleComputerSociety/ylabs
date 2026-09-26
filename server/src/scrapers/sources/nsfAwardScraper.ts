@@ -18,18 +18,16 @@
  *      offset/rpp pagination. Stop on an empty page.
  *   2. Group awards by PI (`piFirstName` + `piLastName`).
  *   3. For each PI, resolve an unambiguous canonical Researcher by exact or conservative
- *      prefix matching. Enrich one eligible official research home when present,
- *      fail closed on ambiguous or ineligible identity/home evidence, or use a
- *      synthetic shell only when no research-home membership exists.
- *   4. Emit grant evidence without replacing identity fields on an official home:
+ *      prefix matching, then the one existing research row the canonical resolver
+ *      names for them. A grant proves that a person is funded, never that a row
+ *      should exist, so every other outcome is counted by reason and mints nothing
+ *      (#3145, #3561).
+ *   4. Emit grant evidence without replacing identity fields on the existing row:
  *        - `recentGrants`: full embedded array of up to MAX_GRANTS_PER_PI
  *          (latest by start date).
  *        - `recentGrantCount`: count of active awards for this PI.
  *        - `fundingAgencies`: ['NSF'] (materialization unions latest source snapshots).
  *        - `lastObservedAt`: max(startDate) across this PI's awards.
- *   5. Co-PIs (`coPDPI`) → emit ResearchGroupMember observations with role
- *      'co-pi' but ONLY when we can resolve the co-PI to an existing canonical Researcher
- *      (avoids creating noise from non-Yale collaborators).
  *
  * Honors `--use-cache` (page responses cached via snapshotCache) and `--limit`
  * (caps total awards processed across all pages).
@@ -42,12 +40,13 @@ import {
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
-import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
+import { slugify } from '../utils/scraperHelpers';
 import {
-  GRANT_SHELL_ENTITY_TYPE,
-  GRANT_SHELL_KIND,
-  grantShellResearchRecordName,
-} from '../utils/grantShellIdentity';
+  countGrantAttach,
+  emptyGrantAttachTally,
+  grantAttachSummary,
+  resolveGrantEnrichmentTarget,
+} from '../utils/grantEnrichmentTarget';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -61,9 +60,6 @@ const PAGE_SIZE = 25; // NSF API max
 const MAX_PAGES = 200; // safety cap (5000 awards) — well above current ~400
 const DEFAULT_LOOKBACK_YEARS = 5;
 const MAX_GRANTS_PER_PI = 10;
-// "<PI> Lab" is only a placeholder when no real name is known; keep it well below
-// any real-name source (microsite, official profile) so those always win (issue #456).
-const PI_DERIVED_LAB_NAME_CONFIDENCE = 0.3;
 
 // Quote-wrapped exact-phrase match. Without quotes the API does a fuzzy
 // keyword search across all awardees and returns ~every university.
@@ -171,20 +167,9 @@ export function parseDollarAmount(s: string | undefined | null): number | undefi
   return Number.isFinite(n) ? n : undefined;
 }
 
-/** Compose a full PI display name from the awarded `piFirstName` + `piLastName`. */
-export function piDisplayName(award: NsfAward): string {
-  const first = (award.piFirstName || '').trim();
-  const last = (award.piLastName || '').trim();
-  const composed = [first, last].filter(Boolean).join(' ').trim();
-  if (composed) return composed;
-  // fallback to pdPIName if PI name fields are missing
-  return normalizeName(award.pdPIName || '');
-}
-
 /**
  * Stable, lowercase, dash-joined key for a (firstName, lastName) pair. Used as
- * the deduplication key when grouping awards by PI and as the entityKey suffix
- * for unmatched-PI User observations.
+ * the deduplication key when grouping awards by PI.
  */
 export function piGroupKey(firstName: string, lastName: string): string {
   const f = slugify(firstName || '');
@@ -265,42 +250,6 @@ export function maxStartDate(awards: NsfAward[]): Date | undefined {
     if (d && (!max || d.getTime() > max.getTime())) max = d;
   }
   return max;
-}
-
-/**
- * Parse a co-PI line of the form "FullName email@host" into its parts.
- * NSF's API returns coPDPI as an array of these joined strings. Returns null
- * if we can't extract at least a name.
- */
-export function parseCoPdpiLine(line: string): {
-  fullName: string;
-  email?: string;
-} | null {
-  if (!line) return null;
-  const trimmed = String(line).trim();
-  if (!trimmed) return null;
-  // Email tends to be the last whitespace-separated token containing '@'.
-  const tokens = trimmed.split(/\s+/);
-  let email: string | undefined;
-  let nameTokens = tokens;
-  if (tokens.length > 1 && tokens[tokens.length - 1].includes('@')) {
-    email = tokens[tokens.length - 1];
-    nameTokens = tokens.slice(0, -1);
-  }
-  const fullName = nameTokens.join(' ').trim();
-  if (!fullName) return null;
-  return { fullName, email };
-}
-
-/**
- * Slug to use when emitting ResearchGroup observations for a matched-Yale-PI.
- * Mirrors the dept-faculty-roster scraper's slug shape so multiple sources
- * landing on the same Yale faculty PI converge on one ResearchGroup row.
- */
-export function piSlug(piUserId: string | null, firstName: string, lastName: string): string {
-  if (piUserId) return `nsf-pi-${piUserId}`;
-  const key = piGroupKey(firstName, lastName);
-  return `nsf-pi-${key.replace(/\s+/g, '-')}`.slice(0, 100);
 }
 
 /**
@@ -389,65 +338,22 @@ async function fetchPage(
 // Observation builders
 // ---------------------------------------------------------------------------
 
-function buildPiUserObservations(
+export function buildResearchEntityObservations(
   group: PiAwardsGroup,
-  sourceUrl: string,
-): { observations: ObservationInput[]; entityKey: string } {
-  const fullName = piDisplayName(group.awards[0] || ({} as NsfAward));
-  const cleaned = normalizeName(fullName);
-  const { first, last } = splitName(cleaned);
-  const entityKey = `nsf-pi:${piGroupKey(group.piFirstName, group.piLastName)}`;
-  const base = { entityType: 'user' as const, entityKey, sourceUrl };
-  const obs: ObservationInput[] = [];
-  if (first || group.piFirstName) {
-    obs.push({ ...base, field: 'fname', value: first || group.piFirstName });
-  }
-  if (last || group.piLastName) {
-    obs.push({ ...base, field: 'lname', value: last || group.piLastName });
-  }
-  // capture an email if one came back on a PI line
-  const piLine = (group.awards[0]?.pi || [])[0];
-  if (piLine) {
-    const parts = parseCoPdpiLine(piLine);
-    if (parts?.email && /@yale\.edu$/i.test(parts.email)) {
-      obs.push({ ...base, field: 'email', value: parts.email });
-    }
-  }
-  obs.push({ ...base, field: 'dataSources', value: ['nsf-award-search'] });
-  return { observations: obs, entityKey };
-}
-
-export function buildResearchGroupObservations(
-  group: PiAwardsGroup,
-  piUserId: string | null,
-  sourceUrl: string,
-  canonicalResearchHomeSlug?: string | null,
+  piUserId: string,
+  existingRowSlug: string,
 ): ObservationInput[] {
-  const slug = canonicalResearchHomeSlug || piSlug(piUserId, group.piFirstName, group.piLastName);
-  const piName = piDisplayName(group.awards[0] || ({} as NsfAward));
-  const recordName = grantShellResearchRecordName(piName, `NSF PI ${slug}`);
-
   const records = group.awards
     .map((a) => awardToRecord(a, 'pi'))
     .filter((r): r is RecentGrantRecord => r !== null);
-  const sorted = sortGrantsByRecency(records);
-  const top = sorted.slice(0, MAX_GRANTS_PER_PI);
+  const top = sortGrantsByRecency(records).slice(0, MAX_GRANTS_PER_PI);
 
-  const base = { entityType: 'researchEntity' as const, entityKey: slug, sourceUrl };
+  const base = {
+    entityType: 'researchEntity' as const,
+    entityKey: existingRowSlug,
+    sourceUrl: NSF_API_URL,
+  };
   const out: ObservationInput[] = [
-    ...(!canonicalResearchHomeSlug
-      ? [
-          { ...base, field: 'slug', value: slug },
-          {
-            ...base,
-            field: 'name',
-            value: recordName,
-            confidenceOverride: PI_DERIVED_LAB_NAME_CONFIDENCE,
-          },
-          { ...base, field: 'kind', value: GRANT_SHELL_KIND },
-          { ...base, field: 'entityType', value: GRANT_SHELL_ENTITY_TYPE },
-        ]
-      : []),
     { ...base, field: 'recentGrants', value: top },
     { ...base, field: 'recentGrantCount', value: records.length },
     { ...base, field: 'fundingAgencies', value: ['NSF'] },
@@ -456,14 +362,7 @@ export function buildResearchGroupObservations(
   const lastObserved = maxStartDate(group.awards);
   if (lastObserved) out.push({ ...base, field: 'lastObservedAt', value: lastObserved });
 
-  if (piUserId) {
-    out.push({
-      ...base,
-      field: 'inferredPiUserId',
-      value: piUserId,
-      confidenceOverride: 0.7,
-    });
-  }
+  out.push({ ...base, field: 'inferredPiUserId', value: piUserId, confidenceOverride: 0.7 });
   return out;
 }
 
@@ -560,64 +459,31 @@ export class NsfAwardScraper implements IScraper {
     const groups = groupAwardsByPi(awards);
     ctx.log(`Grouped into ${groups.length} distinct PIs`);
 
-    // 3. For each PI: emit User + ResearchGroup + co-PI member observations.
-    const sourceUrl = NSF_API_URL;
+    const attach = emptyGrantAttachTally();
     let totalObs = 0;
-    let piMatched = 0;
-
     for (const group of groups) {
-      // 3a. Match PI to existing User (best-effort).
-      const userResolution = await resolveUserForPi(
+      const person = await resolveUserForPi(
         { firstName: group.piFirstName, lastName: group.piLastName },
         resolverDeps,
       );
-      if (userResolution.status === 'ambiguous') continue;
-      const piUserId = userResolution.status === 'matched' ? userResolution.userId : null;
-      if (piUserId) piMatched++;
-      const researchHomeResolution = piUserId
-        ? await researchHomeResolver(piUserId)
-        : { status: 'safe-shell' as const };
-      if (
-        researchHomeResolution.status === 'ambiguous' ||
-        researchHomeResolution.status === 'ineligible'
-      ) {
-        continue;
-      }
-      const canonicalResearchHomeSlug =
-        researchHomeResolution.status === 'canonical' ? researchHomeResolution.slug : null;
-
-      // 3b. User observations — under nsf-pi:<key> entityKey if no match.
-      // (Matched PIs already have a real Researcher; we don't re-emit user obs
-      // for them, since we don't want to overwrite authoritative directory data
-      // with weak NSF-name signals.)
-      if (!piUserId) {
-        const { observations: userObs } = buildPiUserObservations(group, sourceUrl);
-        await ctx.emit(userObs);
-        totalObs += userObs.length;
-      }
-
-      // 3c. ResearchGroup observations — always emitted.
-      const rgObs = buildResearchGroupObservations(
-        group,
-        piUserId,
-        sourceUrl,
-        canonicalResearchHomeSlug,
-      );
-      await ctx.emit(rgObs);
-      totalObs += rgObs.length;
+      const target = await resolveGrantEnrichmentTarget(person, researchHomeResolver);
+      countGrantAttach(attach, target);
+      if (target.status !== 'enrich') continue;
+      const observations = buildResearchEntityObservations(group, target.researcherId, target.slug);
+      await ctx.emit(observations);
+      totalObs += observations.length;
     }
 
-    ctx.log(
-      `Emitted ${totalObs} observations across ${groups.length} PIs (${piMatched} matched to Yale Users)`,
-    );
+    const notes =
+      `Yale NSF awards: ${awards.length}` +
+      (totalCount !== undefined ? ` (NSF totalCount=${totalCount})` : '') +
+      `; PIs: ${groups.length}; ${grantAttachSummary(attach)}`;
+    ctx.log(`Emitted ${totalObs} observations. ${notes}`);
 
     return {
       observationCount: totalObs,
-      entitiesObserved: groups.length,
-      notes:
-        `Yale NSF awards: ${awards.length}` +
-        (totalCount !== undefined ? ` (NSF totalCount=${totalCount})` : '') +
-        `, PIs: ${groups.length}, matched to Users: ${piMatched}`,
+      entitiesObserved: attach.enriched,
+      notes,
     };
   }
 }

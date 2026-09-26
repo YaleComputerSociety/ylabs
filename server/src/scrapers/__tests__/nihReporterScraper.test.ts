@@ -14,8 +14,6 @@ import {
   NihReporterScraper,
   canonicalPiName,
   pickContactPiName,
-  piEntityKey,
-  piSlugForResearchGroup,
   groupGrantsByPi,
   isTraineeFellowshipGrant,
   grantToRecord,
@@ -165,17 +163,6 @@ describe('canonicalPiName', () => {
     expect(canonicalPiName('')).toBe('');
     expect(canonicalPiName(null)).toBe('');
     expect(canonicalPiName(undefined)).toBe('');
-  });
-});
-
-describe('piEntityKey / piSlugForResearchGroup', () => {
-  it('produces a deterministic, slug-friendly key per PI', () => {
-    expect(piEntityKey('Amy Arnsten')).toBe('nih-pi:amy-arnsten');
-    expect(piSlugForResearchGroup('Amy Arnsten')).toBe('nih-pi-amy-arnsten');
-  });
-  it('returns empty string for empty input', () => {
-    expect(piEntityKey('')).toBe('');
-    expect(piSlugForResearchGroup('')).toBe('');
   });
 });
 
@@ -552,81 +539,40 @@ describe('labDescriptionFromRecentGrants (non-research grant guard)', () => {
 });
 
 describe('piGrantsToObservations', () => {
-  it('emits user + research-group observations when no Yale user is matched', () => {
-    const obs = piGrantsToObservations('Amy Arnsten', [grantArnsten, grantArnsten2], null);
+  it('enriches the existing row with grant fields and no identity field', () => {
+    const obs = piGrantsToObservations(
+      [grantArnsten, grantArnsten2],
+      'researcher-abc',
+      'dept-existing-row',
+    );
 
-    const userObs = obs.filter((o) => o.entityType === 'user');
-    expect(userObs.length).toBeGreaterThan(0);
-    expect(userObs.every((o) => o.entityKey === 'nih-pi:amy-arnsten')).toBe(true);
-    expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Amy');
-    expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Arnsten');
+    expect(obs.every((o) => o.entityType === 'researchEntity')).toBe(true);
+    expect(obs.every((o) => o.entityKey === 'dept-existing-row')).toBe(true);
+    for (const identityField of [
+      'slug',
+      'name',
+      'kind',
+      'entityType',
+      'departments',
+      'sourceUrls',
+      'fullDescription',
+    ]) {
+      expect(obs.find((o) => o.field === identityField)).toBeUndefined();
+    }
+    expect(obs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NIH']);
 
-    const groupObs = obs.filter((o) => o.entityType === 'researchEntity');
-    expect(groupObs.every((o) => o.entityKey === 'nih-pi-amy-arnsten')).toBe(true);
-    expect(groupObs.find((o) => o.field === 'slug')?.value).toBe('nih-pi-amy-arnsten');
-    expect(groupObs.find((o) => o.field === 'name')?.value).toBe('Amy Arnsten Faculty Research');
-    expect(groupObs.find((o) => o.field === 'name')?.confidenceOverride).toBe(0.3);
-    expect(groupObs.find((o) => o.field === 'kind')?.value).toBe('individual');
-    const fullDescription = groupObs.find((o) => o.field === 'fullDescription');
-    expect(fullDescription?.value).toBe('We will study PFC circuit dynamics in aging primates.');
-    expect(fullDescription?.confidenceOverride).toBe(0.35);
-    expect(groupObs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NIH']);
-
-    const recentGrants = groupObs.find((o) => o.field === 'recentGrants')?.value as any[];
+    const recentGrants = obs.find((o) => o.field === 'recentGrants')?.value as any[];
     expect(recentGrants).toHaveLength(2);
-    // Sorted descending by start_date — Arnsten1 (2025-04-01) before Arnsten2 (2024-08-15).
     expect(recentGrants[0].id).toBe('5R01MH123456-03');
     expect(recentGrants[1].id).toBe('5R21AG999999-01');
 
-    expect(groupObs.find((o) => o.field === 'recentGrantCount')?.value).toBe(2);
-    const lastObserved = groupObs.find((o) => o.field === 'lastObservedAt')?.value as Date;
-    expect(lastObserved).toBeInstanceOf(Date);
+    expect(obs.find((o) => o.field === 'recentGrantCount')?.value).toBe(2);
+    const lastObserved = obs.find((o) => o.field === 'lastObservedAt')?.value as Date;
     expect(lastObserved.toISOString().slice(0, 10)).toBe('2025-04-01');
 
-    expect(groupObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe('nih-pi:amy-arnsten');
-    expect(groupObs.find((o) => o.field === 'inferredPiUserId')).toBeUndefined();
-  });
-
-  it('skips the user observation block and emits inferredPiUserId when matched', () => {
-    const obs = piGrantsToObservations('Riley Roster', [grantRoster], {
-      _id: 'user-abc',
-      netid: 'rrb1',
-    });
-    expect(obs.filter((o) => o.entityType === 'user')).toHaveLength(0);
-    const groupObs = obs.filter((o) => o.entityType === 'researchEntity');
-    const piId = groupObs.find((o) => o.field === 'inferredPiUserId');
-    expect(piId?.value).toBe('user-abc');
+    const piId = obs.find((o) => o.field === 'inferredPiUserId');
+    expect(piId?.value).toBe('researcher-abc');
     expect(piId?.confidenceOverride).toBeGreaterThanOrEqual(0.8);
-    expect(groupObs.find((o) => o.field === 'inferredPiUserKey')).toBeUndefined();
-  });
-
-  it('enriches one canonical research home without overwriting its identity fields', () => {
-    const obs = piGrantsToObservations(
-      'Riley Roster',
-      [grantRoster],
-      { _id: 'user-abc', netid: 'rrb1' },
-      'dept-mcdb-riley-roster',
-    );
-    const groupObs = obs.filter((o) => o.entityType === 'researchEntity');
-    expect(groupObs.every((o) => o.entityKey === 'dept-mcdb-riley-roster')).toBe(true);
-    expect(groupObs.find((o) => o.field === 'slug')).toBeUndefined();
-    expect(groupObs.find((o) => o.field === 'name')).toBeUndefined();
-    expect(groupObs.find((o) => o.field === 'kind')).toBeUndefined();
-    expect(groupObs.find((o) => o.field === 'departments')).toBeUndefined();
-    expect(groupObs.find((o) => o.field === 'sourceUrls')).toBeUndefined();
-    expect(groupObs.find((o) => o.field === 'fullDescription')).toBeUndefined();
-    expect(groupObs.find((o) => o.field === 'recentGrants')).toBeDefined();
-    expect(groupObs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NIH']);
-  });
-
-  it('emits no research-home observations for known non-owner grant PIs', () => {
-    expect(
-      piGrantsToObservations('Robin Hutchison', [grantArnsten], {
-        _id: 'user-postdoc',
-        netid: 'jh1',
-        researchHomeEligible: false,
-      }),
-    ).toEqual([]);
   });
 
   it('truncates recentGrants to the configured cap', () => {
@@ -636,20 +582,15 @@ describe('piGrantsToObservations', () => {
       appl_id: 20000000 + i,
       project_start_date: `2024-${String((i % 12) + 1).padStart(2, '0')}-01T00:00:00`,
     }));
-    const obs = piGrantsToObservations('Amy Arnsten', many, null);
-    const recentGrants = obs.find(
-      (o) => o.entityType === 'researchEntity' && o.field === 'recentGrants',
-    )?.value as any[];
+    const obs = piGrantsToObservations(many, 'researcher-abc', 'dept-existing-row');
+    const recentGrants = obs.find((o) => o.field === 'recentGrants')?.value as any[];
     expect(recentGrants).toHaveLength(10);
     expect(obs.find((o) => o.field === 'recentGrantCount')?.value).toBe(20);
-    expect(
-      obs.find((o) => o.entityType === 'researchEntity' && o.field === 'recentGrantCount')?.value,
-    ).toBe(20);
   });
 
   it('returns no observations on empty inputs', () => {
-    expect(piGrantsToObservations('', [grantArnsten], null)).toEqual([]);
-    expect(piGrantsToObservations('Amy Arnsten', [], null)).toEqual([]);
+    expect(piGrantsToObservations([grantArnsten], 'researcher-abc', '')).toEqual([]);
+    expect(piGrantsToObservations([], 'researcher-abc', 'dept-existing-row')).toEqual([]);
   });
 });
 
@@ -679,135 +620,128 @@ function makeContext(overrides: Partial<ScraperContext['options']> = {}) {
   return { ctx, emitted };
 }
 
+function stubReporter(results: NihGrant[]) {
+  return vi.spyOn(axios, 'post').mockImplementation(async (_url, body) => {
+    const offset = (body as any).offset || 0;
+    const page = offset === 0 ? results : [];
+    return { data: { meta: { total: results.length, offset, limit: 500 }, results: page } } as any;
+  });
+}
+
+const existingRowPerResearcher = vi.fn(async (researcherId: string) => ({
+  status: 'canonical' as const,
+  slug: `existing-row-${researcherId}`,
+}));
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
 describe('NihReporterScraper.run', () => {
-  it('paginates the API, groups by PI, resolves users, and emits observations', async () => {
-    const postSpy = vi.spyOn(axios, 'post').mockImplementation(async (_url, body) => {
-      const offset = (body as any).offset || 0;
-      // Page 1 returns 2 grants for Arnsten + 1 for Roster; page 2 returns empty.
-      if (offset === 0) {
-        return {
-          data: {
-            meta: { total: 3, offset: 0, limit: 500 },
-            results: [grantArnsten, grantArnsten2, grantRoster],
-          },
-        } as any;
-      }
-      return { data: { meta: { total: 3, offset, limit: 500 }, results: [] } } as any;
-    });
-
-    // Match Roster but not Arnsten.
-    const breakerId = new mongoose.Types.ObjectId();
+  it('enriches the row the canonical resolver names and mints nothing for an unresolved PI', async () => {
+    const postSpy = stubReporter([grantArnsten, grantArnsten2, grantRoster]);
+    const rosterId = new mongoose.Types.ObjectId();
     const resolveResearcherId = async (name: string) =>
       /roster/i.test(name)
-        ? { status: 'matched' as const, researcherId: breakerId }
+        ? { status: 'matched' as const, researcherId: rosterId }
         : { status: 'absent' as const };
 
-    const researchHomeResolver = vi.fn().mockResolvedValue({ status: 'safe-shell' });
     const scraper = new NihReporterScraper({
       resolveResearcherId,
       loadResearcherProfileTitle: async () => undefined,
-      researchHomeResolver,
+      researchHomeResolver: existingRowPerResearcher,
     });
     const { ctx, emitted } = makeContext();
     const result = await scraper.run(ctx);
 
     expect(postSpy).toHaveBeenCalled();
-    expect(result.entitiesObserved).toBe(2); // 2 unique PIs
-    expect(result.notes).toContain('matched 1');
-    expect(result.notes).toContain('stubbed 1');
-    expect(researchHomeResolver).toHaveBeenCalledWith(breakerId.toString());
-
-    // Arnsten unmatched → user obs present
-    const arnstenUserObs = emitted.filter(
-      (o) => o.entityType === 'user' && o.entityKey === 'nih-pi:amy-arnsten',
-    );
-    expect(arnstenUserObs.length).toBeGreaterThan(0);
-
-    // Roster matched → no user obs
-    const breakerUserObs = emitted.filter(
-      (o) => o.entityType === 'user' && o.entityKey === 'nih-pi:riley-roster',
-    );
-    expect(breakerUserObs).toHaveLength(0);
-
-    // Both should have ResearchGroup observations
-    const arnstenGroup = emitted.filter(
-      (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-amy-arnsten',
-    );
-    expect(arnstenGroup.length).toBeGreaterThan(0);
-    expect(arnstenGroup.find((o) => o.field === 'recentGrantCount')?.value).toBe(2);
-
-    const breakerGroup = emitted.filter(
-      (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-riley-roster',
-    );
-    expect(breakerGroup.find((o) => o.field === 'inferredPiUserId')?.value).toBe(
-      breakerId.toString(),
-    );
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.notes).toMatch(/rows enriched: 1/);
+    expect(result.notes).toMatch(/1 resolved to no researcher/);
+    expect(emitted.filter((o) => o.entityType === 'user')).toEqual([]);
+    expect(emitted.every((o) => o.entityKey === `existing-row-${rosterId}`)).toBe(true);
+    expect(emitted.find((o) => o.field === 'inferredPiUserId')?.value).toBe(rosterId.toString());
   });
 
-  it('never mints an entity for an individual trainee-fellowship award (#739)', async () => {
-    vi.spyOn(axios, 'post').mockImplementation(async (_url, body) => {
-      const offset = (body as any).offset || 0;
-      if (offset === 0) {
-        return {
-          data: {
-            meta: { total: 2, offset: 0, limit: 500 },
-            results: [grantArnsten, grantTrainee],
-          },
-        } as any;
-      }
-      return { data: { meta: { total: 2, offset, limit: 500 }, results: [] } } as any;
-    });
+  it.each([
+    ['several researchers', 'ambiguous', undefined, /1 resolved to several researchers/],
+    ['no existing row', 'matched', 'safe-shell', /1 have no existing research row/],
+    ['an ineligible row', 'matched', 'ineligible', /1 ineligible row/],
+    ['an ambiguous row', 'matched', 'ambiguous', /1 ambiguous row/],
+  ] as const)(
+    'mints nothing and counts a PI that resolves to %s',
+    async (_l, person, row, note) => {
+      stubReporter([grantRoster]);
+      const scraper = new NihReporterScraper({
+        resolveResearcherId: async () =>
+          person === 'matched'
+            ? { status: 'matched' as const, researcherId: new mongoose.Types.ObjectId() }
+            : { status: 'ambiguous' as const },
+        loadResearcherProfileTitle: async () => undefined,
+        researchHomeResolver: vi.fn().mockResolvedValue({ status: row }),
+      });
+      const { ctx, emitted } = makeContext();
+      const result = await scraper.run(ctx);
 
+      expect(emitted).toEqual([]);
+      expect(result.entitiesObserved).toBe(0);
+      expect(result.notes).toMatch(note);
+    },
+  );
+
+  it('holds a PI whose title marks them a non-lead, before resolving a row', async () => {
+    stubReporter([grantRoster]);
+    const researchHomeResolver = vi.fn();
     const scraper = new NihReporterScraper({
-      resolveResearcherId: async () => ({ status: 'absent' as const }),
-      researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
+      resolveResearcherId: async () => ({
+        status: 'matched' as const,
+        researcherId: new mongoose.Types.ObjectId(),
+      }),
+      loadResearcherProfileTitle: async () => 'Postdoctoral Associate',
+      researchHomeResolver,
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(emitted).toEqual([]);
+    expect(researchHomeResolver).not.toHaveBeenCalled();
+    expect(result.notes).toMatch(/1 held for a non-lead title/);
+  });
+
+  it('never attributes an individual trainee-fellowship award (#739)', async () => {
+    stubReporter([grantArnsten, grantTrainee]);
+    const scraper = new NihReporterScraper({
+      resolveResearcherId: async () => ({
+        status: 'matched' as const,
+        researcherId: new mongoose.Types.ObjectId(),
+      }),
+      loadResearcherProfileTitle: async () => undefined,
+      researchHomeResolver: existingRowPerResearcher,
     });
     const { ctx, emitted } = makeContext();
     const result = await scraper.run(ctx);
 
     expect(result.entitiesObserved).toBe(1);
-
-    const traineeGroup = emitted.filter(
-      (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-taylor-trainee',
-    );
-    expect(traineeGroup).toHaveLength(0);
-    const traineeUserObs = emitted.filter(
-      (o) => o.entityType === 'user' && o.entityKey === 'nih-pi:taylor-trainee',
-    );
-    expect(traineeUserObs).toHaveLength(0);
-
-    const arnstenGroup = emitted.filter(
-      (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-amy-arnsten',
-    );
-    expect(arnstenGroup.length).toBeGreaterThan(0);
+    const grantIds = emitted
+      .filter((o) => o.field === 'recentGrants')
+      .flatMap((o) => (o.value as any[]).map((g) => g.id));
+    expect(grantIds).not.toContain(grantTrainee.project_num);
   });
 
   it('honors the limit option (caps PIs processed, not raw grants)', async () => {
-    vi.spyOn(axios, 'post').mockResolvedValueOnce({
-      data: {
-        meta: { total: 3, offset: 0, limit: 500 },
-        results: [grantArnsten, grantArnsten2, grantRoster],
-      },
-    } as any);
-    vi.spyOn(axios, 'post').mockResolvedValueOnce({
-      data: { meta: { total: 3, offset: 3, limit: 500 }, results: [] },
-    } as any);
-
+    stubReporter([grantArnsten, grantArnsten2, grantRoster]);
     const scraper = new NihReporterScraper({
-      resolveResearcherId: async () => ({ status: 'absent' as const }),
+      resolveResearcherId: async () => ({
+        status: 'matched' as const,
+        researcherId: new mongoose.Types.ObjectId(),
+      }),
+      loadResearcherProfileTitle: async () => undefined,
+      researchHomeResolver: existingRowPerResearcher,
     });
     const { ctx, emitted } = makeContext({ limit: 1 });
     const result = await scraper.run(ctx);
 
-    // Only one PI should have been emitted observations for.
-    const groupKeys = new Set(
-      emitted.filter((o) => o.entityType === 'researchEntity').map((o) => o.entityKey),
-    );
-    expect(groupKeys.size).toBe(1);
+    expect(new Set(emitted.map((o) => o.entityKey)).size).toBe(1);
     expect(result.entitiesObserved).toBe(1);
   });
 

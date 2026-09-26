@@ -3,7 +3,6 @@ import {
   BBS_TRACKS,
   BbsResearchTrackScraper,
   bbsGraftObservations,
-  bbsMintObservations,
   bbsProfileSlugFromUrl,
   bbsTrackResearchAreaLabel,
   buildBbsMatchIndex,
@@ -232,48 +231,10 @@ describe('observation shaping', () => {
       },
     ]);
   });
-
-  it('mints a FACULTY_RESEARCH_AREA home on the ysm-faculty namespace with track areas', () => {
-    const obs = bbsMintObservations(
-      {
-        name: 'Alex B. Rivera',
-        profileSlug: 'alex-rivera-bbs',
-        profileUrl: 'https://medicine.yale.edu/bbs/profile/alex-rivera-bbs/',
-        researchAreas: ['Immunology'],
-      },
-      {
-        canonicalProfileUrl: 'https://medicine.yale.edu/profile/alex-rivera/',
-        labUrls: [],
-      },
-    );
-    const entityObs = obs.filter((o) => o.entityType === 'researchEntity');
-    const bySlug = entityObs.find((o) => o.field === 'slug');
-    expect(bySlug?.entityKey).toBe('ysm-faculty-alex-rivera');
-    expect(bySlug?.value).toBe('ysm-faculty-alex-rivera');
-    expect(entityObs.find((o) => o.field === 'entityType')?.value).toBe('FACULTY_RESEARCH_AREA');
-    expect(entityObs.find((o) => o.field === 'school')?.value).toBe('Yale School of Medicine');
-    expect(entityObs.find((o) => o.field === 'researchAreas')?.value).toEqual(['Immunology']);
-    const userObs = obs.filter((o) => o.entityType === 'user');
-    expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Rivera');
-    expect(userObs.every((o) => o.entityKey === 'bbs:alex-rivera')).toBe(true);
-  });
-
-  it('keys a mint by the BBS slug when the profile exposes no canonical YSM URL', () => {
-    const obs = bbsMintObservations(
-      {
-        name: 'Morgan Lee',
-        profileSlug: 'morgan-lee',
-        profileUrl: 'https://medicine.yale.edu/bbs/profile/morgan-lee/',
-        researchAreas: ['Neuroscience'],
-      },
-      NO_LINKS,
-    );
-    expect(obs.find((o) => o.field === 'slug')?.value).toBe('bbs-morgan-lee');
-  });
 });
 
 describe('BbsResearchTrackScraper.run', () => {
-  it('grafts onto an existing home, mints a net-new one, and holds an ambiguous PI', async () => {
+  it('grafts onto an existing row and mints nothing for an absent or ambiguous one', async () => {
     const pages: Record<string, string> = {
       'https://medicine.yale.edu/bbs/people/immunology/': trackListingHtml([
         { slug: 'alex-rivera', label: 'Rivera, Alex' },
@@ -307,18 +268,52 @@ describe('BbsResearchTrackScraper.run', () => {
     const { ctx, emitted } = makeContext({ only: ['immunology'] });
     const result = await scraper.run(ctx);
 
-    expect(result.entitiesObserved).toBe(2);
+    expect(result.entitiesObserved).toBe(1);
 
     const graft = emitted.find(
       (o) => o.entityId === '111111111111111111111111' && o.field === 'researchAreas',
     );
     expect(graft?.value).toEqual(['Immunology']);
 
-    const mintedSlug = emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'slug');
-    expect(mintedSlug?.value).toBe('ysm-faculty-morgan-lee');
-
+    expect(emitted).toHaveLength(1);
+    expect(emitted.some((o) => o.entityType === 'user')).toBe(false);
+    expect(emitted.some((o) => o.field === 'slug')).toBe(false);
     expect(emitted.some((o) => o.entityId?.startsWith('aaaaaaaaaaaaaaaaaaaaaaa'))).toBe(false);
-    expect(result.notes).toMatch(/1 PIs held/);
+    expect(result.notes).toMatch(/rows enriched: 1 of 3 track PIs/);
+    expect(result.notes).toMatch(/1 have no existing research row/);
+    expect(result.notes).toMatch(/1 ambiguous row/);
+  });
+
+  it('counts a row reached only through a lab URL naming someone else apart from an absent row', async () => {
+    const labUrl = 'https://medicine.yale.edu/lab/quokka/';
+    const pages: Record<string, string> = {
+      'https://medicine.yale.edu/bbs/people/immunology/': trackListingHtml([
+        { slug: 'alex-rivera', label: 'Rivera, Alex' },
+      ]),
+      'https://medicine.yale.edu/bbs/profile/alex-rivera/': bbsProfileHtml({
+        canonicalSlug: 'alex-rivera',
+        labUrls: [labUrl],
+      }),
+    };
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => pages[url] ?? '',
+      entityFinder: async () => [
+        candidate({
+          _id: '222222222222222222222222',
+          slug: 'ysm-faculty-kaya-lindgren',
+          name: 'Kaya Lindgren Faculty Research',
+          matchUrls: [labUrl],
+          nameKey: 'kaya-lindgren',
+        }),
+      ],
+    });
+
+    const { ctx, emitted } = makeContext({ only: ['immunology'] });
+    const result = await scraper.run(ctx);
+
+    expect(emitted).toHaveLength(0);
+    expect(result.notes).toMatch(/0 have no existing research row/);
+    expect(result.notes).toMatch(/1 cite a lab URL only on a row naming someone else/);
   });
 
   it('unions track areas for a PI listed under more than one track', async () => {
@@ -376,7 +371,7 @@ describe('resolveBbsResearchHome on a borrowed URL (#3342)', () => {
       }),
     ]);
 
-    expect(resolveBbsResearchHome(linksWithLab('alex-rivera'), '', index).status).toBe('unmatched');
+    expect(resolveBbsResearchHome(linksWithLab('alex-rivera'), '', index).status).toBe('refused');
   });
 
   it('keeps a lab URL match when the row names the same person', () => {
@@ -445,7 +440,7 @@ describe('resolveBbsResearchHome on a borrowed URL (#3342)', () => {
     ]);
 
     expect(resolveBbsResearchHome(linksWithLab('alex-rivera'), 'alex-rivera', index).status).toBe(
-      'unmatched',
+      'refused',
     );
   });
 

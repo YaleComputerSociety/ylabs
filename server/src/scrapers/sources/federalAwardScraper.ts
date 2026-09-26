@@ -38,6 +38,12 @@ import {
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { resolveUserForPi, piGroupKey, type FederalPiResolverDeps } from './nsfAwardScraper';
+import {
+  countGrantAttach,
+  emptyGrantAttachTally,
+  grantAttachSummary,
+  resolveGrantEnrichmentTarget,
+} from '../utils/grantEnrichmentTarget';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const USASPENDING_SEARCH_URL = 'https://api.usaspending.gov/api/v2/search/spending_by_award/';
@@ -322,15 +328,6 @@ interface AgencyTally {
   failed: boolean;
 }
 
-interface AttachTally {
-  enriched: number;
-  unresolved: number;
-  ambiguousPerson: number;
-  noExistingRow: number;
-  ineligibleRow: number;
-  ambiguousRow: number;
-}
-
 export const NO_PI_FIELD_NOTE =
   'USAspending publishes no principal-investigator field, so an award is attributable only when its description embeds "PI - <name>"';
 
@@ -338,15 +335,6 @@ function agencySummary(agencies: AgencyTally[]): string {
   return agencies
     .map((a) => `${a.abbreviation} ${a.fetched}${a.failed ? ' (fetch failed)' : ''}`)
     .join(', ');
-}
-
-function attachSummary(attach: AttachTally): string {
-  return (
-    `homes enriched: ${attach.enriched}; not attached: ${attach.unresolved} resolved to no researcher, ` +
-    `${attach.ambiguousPerson} resolved to several researchers, ` +
-    `${attach.noExistingRow} have no existing research row (grants never mint one, #3145), ` +
-    `${attach.ineligibleRow} ineligible row, ${attach.ambiguousRow} ambiguous row`
-  );
 }
 
 export class FederalAwardScraper implements IScraper {
@@ -444,53 +432,26 @@ export class FederalAwardScraper implements IScraper {
     const groups = groupAwardsByPi(federalAwards);
     ctx.log(`Grouped into ${groups.length} distinct inline-PI names`);
 
-    const attach: AttachTally = {
-      enriched: 0,
-      unresolved: 0,
-      ambiguousPerson: 0,
-      noExistingRow: 0,
-      ineligibleRow: 0,
-      ambiguousRow: 0,
-    };
+    const attach = emptyGrantAttachTally();
     let totalObs = 0;
 
     for (const group of groups) {
-      const resolution = await resolveUserForPi(
+      const person = await resolveUserForPi(
         { firstName: group.piFirstName, lastName: group.piLastName },
         resolverDeps,
       );
-      if (resolution.status === 'ambiguous') {
-        attach.ambiguousPerson++;
-        continue;
-      }
-      if (resolution.status !== 'matched') {
-        attach.unresolved++;
-        continue;
-      }
-
-      const home = await researchHomeResolver(resolution.userId);
-      if (home.status === 'safe-shell') {
-        attach.noExistingRow++;
-        continue;
-      }
-      if (home.status === 'ineligible') {
-        attach.ineligibleRow++;
-        continue;
-      }
-      if (home.status === 'ambiguous') {
-        attach.ambiguousRow++;
-        continue;
-      }
+      const target = await resolveGrantEnrichmentTarget(person, researchHomeResolver);
+      countGrantAttach(attach, target);
+      if (target.status !== 'enrich') continue;
 
       const obs = buildResearchHomeObservations(
         group,
-        resolution.userId,
+        target.researcherId,
         USASPENDING_SEARCH_URL,
-        home.slug,
+        target.slug,
       );
       await ctx.emit(obs);
       totalObs += obs.length;
-      attach.enriched++;
     }
 
     const notes = [
@@ -498,7 +459,7 @@ export class FederalAwardScraper implements IScraper {
       missingDescription > 0 ? `awards missing the "Description" field: ${missingDescription}` : '',
       `awards with an inline PI: ${withInlinePi}`,
       `distinct inline PIs: ${groups.length}`,
-      attachSummary(attach),
+      grantAttachSummary(attach),
       attach.enriched === 0 ? NO_PI_FIELD_NOTE : '',
     ]
       .filter(Boolean)
