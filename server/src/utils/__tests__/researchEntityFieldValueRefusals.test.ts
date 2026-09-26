@@ -52,6 +52,29 @@ describe('a refusal keeps the refused value out', () => {
     ).toBe(true);
   });
 
+  it('matches one prose value wrapped differently, so a newline cannot evade a refusal', () => {
+    const body = 'The Fixture Lab studies how metabolic pathways are regulated in disease.';
+    const refusals = {
+      fullDescription: [
+        {
+          valueKey: fieldValueRefusalKey('fullDescription', body),
+          rule: 'not_this_rows_research' as const,
+          refusedBy: 'test',
+          refusedAt: new Date(),
+          note: '',
+        },
+      ],
+    };
+
+    expect(
+      valueIsRefused(
+        refusals,
+        'fullDescription',
+        '  The Fixture Lab studies how metabolic\n   pathways are regulated in disease.  ',
+      ),
+    ).toBe(true);
+  });
+
   it('drops only the refused observation, leaving the rest to resolve', () => {
     const screened = refusedResolverObservations(
       [

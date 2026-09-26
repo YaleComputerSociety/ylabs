@@ -92,11 +92,26 @@ export function foldDefaultDocumentLeaf(key: string): string {
   return key.replace(DEFAULT_DOCUMENT_LEAF, '');
 }
 
+/**
+ * Internal whitespace is collapsed for the same reason a trailing space is trimmed: one
+ * prose value wrapped differently is one value, and a refusal that missed on a newline
+ * would read as a clean row.
+ *
+ * It is load bearing rather than tidy. A recorder that builds the key from a row's stored
+ * text has already been through a collapsing normalizer, while the resolver screen and the
+ * projection stage compare the raw observation and the raw stored value, so without this
+ * the two sides of the same refusal can disagree on a line break and a refused description
+ * survives its own refusal (#3438).
+ */
+const collapseRefusalWhitespace = (value: string): string => value.replace(/\s+/g, ' ').trim();
+
 export function fieldValueRefusalKey(field: string, value: unknown): string {
-  if (Array.isArray(value)) return JSON.stringify(value.map((entry) => String(entry).trim()));
+  if (Array.isArray(value)) {
+    return JSON.stringify(value.map((entry) => collapseRefusalWhitespace(String(entry))));
+  }
   if (value === null || value === undefined) return '';
   if (typeof value !== 'string') return JSON.stringify(value);
-  const text = value.trim();
+  const text = collapseRefusalWhitespace(value);
   if (!text) return '';
   if (!URL_VALUED_FIELDS.has(field)) return text.toLowerCase();
   return foldDefaultDocumentLeaf(normalizeWebsiteUrlIdentityKey(text) || text.toLowerCase());
