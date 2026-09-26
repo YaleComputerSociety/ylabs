@@ -375,7 +375,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                       }}
                       onBlur={() => flushNoteSave(program.id)}
                       maxLength={MAX_PROGRAM_NOTE_LENGTH}
-                      placeholder="Add a private note about this program..."
+                      placeholder="Add a private note about this program…"
                       rows={2}
                       className="w-full rounded-control border border-[var(--yr-line)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                     />
@@ -385,7 +385,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                       aria-live="polite"
                     >
                       {status === 'saving'
-                        ? 'Saving...'
+                        ? 'Saving…'
                         : status === 'saved'
                           ? 'Saved'
                           : status === 'error'

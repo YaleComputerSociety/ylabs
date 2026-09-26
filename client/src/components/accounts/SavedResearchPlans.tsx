@@ -505,7 +505,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         }}
                         onBlur={() => flushNoteSave(entity._id)}
                         maxLength={MAX_PLAN_NOTES_LENGTH}
-                        placeholder="Add a private note about this research..."
+                        placeholder="Add a private note about this research…"
                         rows={2}
                         className="w-full rounded-control border border-[var(--yr-line)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                       />
@@ -517,7 +517,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         aria-live="polite"
                       >
                         {status === 'saving'
-                          ? 'Saving...'
+                          ? 'Saving…'
                           : status === 'saved'
                             ? 'Saved'
                             : status === 'error'

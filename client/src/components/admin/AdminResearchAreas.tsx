@@ -207,7 +207,7 @@ const AdminResearchAreas = () => {
         <input
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
-          placeholder="Filter topics..."
+          placeholder="Filter topics…"
           className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
         />
         <div className="text-xs text-muted mt-1">{filtered.length} topics</div>
@@ -228,7 +228,7 @@ const AdminResearchAreas = () => {
               {isLoading ? (
                 <tr>
                   <td colSpan={4} className="text-center py-8 text-muted">
-                    Loading...
+                    Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (

@@ -1187,7 +1187,7 @@ const AdminOperatorBoard = () => {
   if (loading) {
     return (
       <div className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-6">
-        Loading board...
+        Loading board…
       </div>
     );
   }

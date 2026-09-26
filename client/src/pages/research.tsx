@@ -1627,7 +1627,7 @@ const Research = () => {
                   className="yr-focus-ring min-h-12 rounded-control bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-line disabled:text-ink-soft sm:min-h-14"
                   disabled={searchDisabled}
                 >
-                  {searchLoading ? 'Searching...' : 'Search'}
+                  {searchLoading ? 'Searching…' : 'Search'}
                 </button>
               </div>
               <p id="research-search-help" className="mt-2 text-sm text-muted">
