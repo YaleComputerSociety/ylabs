@@ -13,10 +13,9 @@
  * label onto each PI's existing canonical research home rather than minting a
  * duplicate identity shell: BBS PIs are YSM/basic-science faculty already
  * covered by `ysm-faculty-directory` / `ysm-atoz-index` / department rosters.
- * A conservative FACULTY_RESEARCH_AREA home is minted only when no existing
- * entity resolves for the PI, keyed on the same `ysm-faculty-<slug>` namespace
- * `ysm-faculty-directory` uses so the two sources converge on one entity
- * instead of forking a shell (#1390).
+ * A track listing proves a person's research area, never that a row should
+ * exist, so a PI with no existing row, or with several, mints nothing and is
+ * counted by reason (#3561).
  *
  * Crawl shape (mirrors `ysm-mesh-keyword` / `ysm-faculty-directory`):
  *   - Each `/bbs/people/<track>` page is a SEED listing, never cited as a source.
@@ -33,7 +32,6 @@ import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
-import { splitName } from '../utils/scraperHelpers';
 import { facultyNameMatchKey, normalizeYsmProfileUrl } from './ysmMeshKeywordScraper';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
@@ -43,7 +41,6 @@ const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const SCHOOL_NAME = 'Yale School of Medicine';
 const RESEARCH_AREA_CONFIDENCE = 0.7;
-const INFERRED_PI_CONFIDENCE = 0.7;
 const MAX_CANDIDATE_SCAN = 4000;
 
 export interface BbsTrack {
@@ -475,63 +472,6 @@ export function bbsGraftObservations(
   ];
 }
 
-/**
- * Conservative FACULTY_RESEARCH_AREA home minted only when no existing home
- * resolves. Keyed on the `ysm-faculty-<slug>` namespace so it converges with
- * `ysm-faculty-directory` rather than forking a duplicate shell (#1390). The
- * lead is keyed to a synthetic BBS user observation; the materializer resolves
- * the actual canonical Researcher from the name under the existing person-match guards.
- */
-export function bbsMintObservations(pi: BbsTrackPi, links: BbsProfileLinks): ObservationInput[] {
-  const ysmProfileUrl = links.canonicalProfileUrl;
-  const identitySourceUrl = ysmProfileUrl || pi.profileUrl;
-  const profileSlug = ysmProfileUrl
-    ? ysmProfileUrl.replace(/\/+$/, '').split('/').pop() || pi.profileSlug
-    : pi.profileSlug;
-  const entityKey = ysmProfileUrl
-    ? `ysm-faculty-${profileSlug}`.slice(0, 100)
-    : `bbs-${pi.profileSlug}`.slice(0, 100);
-  const areas = uniqueStrings(pi.researchAreas);
-  if (areas.length === 0) return [];
-
-  const userKey = `bbs:${profileSlug}`;
-  const { first, last } = splitName(pi.name);
-  const userBase = {
-    entityType: 'user' as const,
-    entityKey: userKey,
-    sourceUrl: identitySourceUrl,
-  };
-  const userObs: ObservationInput[] = [{ ...userBase, field: 'userType', value: 'faculty' }];
-  if (first) userObs.push({ ...userBase, field: 'fname', value: first });
-  if (last) userObs.push({ ...userBase, field: 'lname', value: last });
-  if (ysmProfileUrl) {
-    userObs.push({ ...userBase, field: 'profileUrls', value: { departmental: ysmProfileUrl } });
-  }
-
-  const entityBase = {
-    entityType: 'researchEntity' as const,
-    entityKey,
-    sourceUrl: identitySourceUrl,
-  };
-  const entityObs: ObservationInput[] = [
-    { ...entityBase, field: 'slug', value: entityKey },
-    { ...entityBase, field: 'name', value: `${pi.name} Faculty Research` },
-    { ...entityBase, field: 'kind', value: 'individual' },
-    { ...entityBase, field: 'entityType', value: 'FACULTY_RESEARCH_AREA' },
-    { ...entityBase, field: 'school', value: SCHOOL_NAME },
-    { ...entityBase, field: 'sourceUrls', value: [identitySourceUrl] },
-    { ...entityBase, field: 'researchAreas', value: areas },
-    {
-      ...entityBase,
-      field: 'inferredPiUserKey',
-      value: userKey,
-      confidenceOverride: INFERRED_PI_CONFIDENCE,
-    },
-  ];
-
-  return [...userObs, ...entityObs];
-}
-
 export type FetchBbsPageFn = (url: string, useCache: boolean) => Promise<string | null>;
 
 export type BbsEntityFinderFn = () => Promise<BbsCandidateEntity[]>;
@@ -677,7 +617,7 @@ export class BbsResearchTrackScraper implements IScraper {
 
     let observationCount = 0;
     let grafted = 0;
-    let minted = 0;
+    let noExistingRow = 0;
     let ambiguous = 0;
     let processed = 0;
 
@@ -700,33 +640,29 @@ export class BbsResearchTrackScraper implements IScraper {
         continue;
       }
 
-      if (resolution.status === 'matched') {
-        const observations = bbsGraftObservations(
-          resolution.entityId,
-          pi.researchAreas,
-          links.canonicalProfileUrl || pi.profileUrl,
-        );
-        if (observations.length === 0) continue;
-        await ctx.emit(observations);
-        observationCount += observations.length;
-        grafted += 1;
+      if (resolution.status === 'unmatched') {
+        noExistingRow += 1;
         continue;
       }
 
-      const observations = bbsMintObservations(pi, links);
+      const observations = bbsGraftObservations(
+        resolution.entityId,
+        pi.researchAreas,
+        links.canonicalProfileUrl || pi.profileUrl,
+      );
       if (observations.length === 0) continue;
       await ctx.emit(observations);
       observationCount += observations.length;
-      minted += 1;
+      grafted += 1;
     }
 
     return {
       observationCount,
-      entitiesObserved: grafted + minted,
+      entitiesObserved: grafted,
       notes:
-        `Grafted BBS track research areas onto ${grafted} existing homes; ` +
-        `minted ${minted} net-new FACULTY_RESEARCH_AREA homes; ` +
-        `${ambiguous} PIs held (ambiguous home) of ${pis.size} track PIs.`,
+        `rows enriched: ${grafted} of ${pis.size} track PIs; not attached: ` +
+        `${noExistingRow} have no existing research row (a track listing never mints one, #3561), ` +
+        `${ambiguous} ambiguous row.`,
     };
   }
 }

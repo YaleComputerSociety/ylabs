@@ -544,7 +544,7 @@ describe('FederalAwardScraper.run', () => {
     const result = await scraper.run(ctx);
     expect(emitted.every((o) => o.entityKey === 'dept-physics-row')).toBe(true);
     expect(emitted.map((o) => o.field)).not.toContain('slug');
-    expect(result.notes).toMatch(/homes enriched: 1/);
+    expect(result.notes).toMatch(/rows enriched: 1/);
     expect(result.notes).not.toContain(NO_PI_FIELD_NOTE);
   });
 });

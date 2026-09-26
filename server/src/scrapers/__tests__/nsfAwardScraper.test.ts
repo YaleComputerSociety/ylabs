@@ -13,12 +13,9 @@ import {
   awardToRecord,
   groupAwardsByPi,
   maxStartDate,
-  parseCoPdpiLine,
   parseDollarAmount,
   parseNsfDate,
-  piDisplayName,
   piGroupKey,
-  piSlug,
   sortGrantsByRecency,
   type NsfAward,
 } from '../sources/nsfAwardScraper';
@@ -122,18 +119,6 @@ describe('parseDollarAmount', () => {
   });
 });
 
-describe('piDisplayName', () => {
-  it('joins first + last', () => {
-    expect(piDisplayName(GRANT_AWARD)).toBe('Parker Grant');
-  });
-  it('falls back to pdPIName if first/last are missing', () => {
-    expect(piDisplayName({ pdPIName: 'Just Pdpi' })).toBe('Just Pdpi');
-  });
-  it('returns empty string when nothing usable', () => {
-    expect(piDisplayName({})).toBe('');
-  });
-});
-
 describe('piGroupKey', () => {
   it('produces a stable lowercase key', () => {
     expect(piGroupKey('Parker', 'Grant')).toBe('parker grant');
@@ -233,47 +218,6 @@ describe('maxStartDate', () => {
   });
 });
 
-describe('parseCoPdpiLine', () => {
-  it('extracts name + email when both are present', () => {
-    expect(parseCoPdpiLine('Rowan Circuit rowan.circuit@yale.edu')).toEqual({
-      fullName: 'Rowan Circuit',
-      email: 'rowan.circuit@yale.edu',
-    });
-  });
-  it('handles middle initials in name', () => {
-    expect(parseCoPdpiLine('Harper Signal harper.signal@yale.edu')).toEqual({
-      fullName: 'Harper Signal',
-      email: 'harper.signal@yale.edu',
-    });
-  });
-  it('handles a name-only line (no email)', () => {
-    expect(parseCoPdpiLine('Just Name')).toEqual({ fullName: 'Just Name' });
-  });
-  it('returns null for blanks', () => {
-    expect(parseCoPdpiLine('')).toBeNull();
-    expect(parseCoPdpiLine('   ')).toBeNull();
-  });
-});
-
-describe('piSlug', () => {
-  it('uses user id when matched', () => {
-    expect(piSlug('507f1f77bcf86cd799439011', 'Parker', 'Grant')).toBe(
-      'nsf-pi-507f1f77bcf86cd799439011',
-    );
-  });
-  it('falls back to a name-based slug when unmatched', () => {
-    expect(piSlug(null, 'Parker', 'Grant')).toBe('nsf-pi-parker-grant');
-  });
-  it('caps slug length at 100 chars', () => {
-    const slug = piSlug(null, 'A'.repeat(80), 'B'.repeat(80));
-    expect(slug.length).toBeLessThanOrEqual(100);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// findUserForPi (with injected finder; no Mongo)
-// ---------------------------------------------------------------------------
-
 // ---------------------------------------------------------------------------
 // Full run() — paginated, with mocked NSF API + User finder
 // ---------------------------------------------------------------------------
@@ -303,124 +247,78 @@ function buildContext(overrides: Partial<ScraperContext['options']> = {}) {
   return { ctx, emitted, logs };
 }
 
+const matchedEveryone = async (_name: string) => ({
+  status: 'matched' as const,
+  researcherId: new mongoose.Types.ObjectId(),
+});
+
+const existingRowPerResearcher = vi.fn(async (researcherId: string) => ({
+  status: 'canonical' as const,
+  slug: `existing-row-${researcherId}`,
+}));
+
 describe('NsfAwardScraper.run', () => {
   it('paginates until an empty page is returned', async () => {
-    // Build a single full page (PAGE_SIZE=25 in source), then a short page,
-    // then would be empty. Two pages worth of distinct PIs.
     const page1 = Array.from({ length: 25 }, (_v, i) => ({
       ...YAN_AWARD,
       id: `p1-${i}`,
       piFirstName: 'PiFirst' + i,
       piLastName: 'PiLast' + i,
     }));
-    const page2 = [GRANT_AWARD]; // short page → stop after this
+    const page2 = [GRANT_AWARD];
     const fetchPage = vi
       .fn()
       .mockResolvedValueOnce({ awards: page1, totalCount: 26 })
       .mockResolvedValueOnce({ awards: page2, totalCount: 26 });
 
-    const resolveResearcherId = async () => ({ status: 'absent' as const });
-
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
-      resolveResearcherId,
+      resolveResearcherId: matchedEveryone,
+      researchHomeResolver: existingRowPerResearcher,
       dateStart: '01/01/2020',
     });
     const { ctx, emitted, logs } = buildContext();
     const result = await scraper.run(ctx);
 
     expect(fetchPage).toHaveBeenCalledTimes(2);
-    expect(result.entitiesObserved).toBe(26); // 26 distinct PIs
+    expect(result.entitiesObserved).toBe(26);
     expect(emitted.length).toBeGreaterThan(0);
     expect(logs.some((l) => /totalCount=26/.test(l))).toBe(true);
   });
 
-  it('groups multiple awards by the same PI into one ResearchGroup observation set', async () => {
+  it('groups multiple awards by the same PI into one observation set on the existing row', async () => {
     const fetchPage = vi.fn().mockResolvedValueOnce({
       awards: [GRANT_AWARD, GRANT_AWARD_2, YAN_AWARD],
     });
-    const resolveResearcherId = async () => ({ status: 'absent' as const });
-
+    const grantPi = new mongoose.Types.ObjectId();
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
-      resolveResearcherId,
+      resolveResearcherId: async (name: string) =>
+        /grant/i.test(name)
+          ? { status: 'matched' as const, researcherId: grantPi }
+          : matchedEveryone(name),
+      researchHomeResolver: existingRowPerResearcher,
       dateStart: '01/01/2020',
     });
     const { ctx, emitted } = buildContext();
     const result = await scraper.run(ctx);
 
-    expect(result.entitiesObserved).toBe(2); // Grant + Yan
+    expect(result.entitiesObserved).toBe(2);
 
-    // Grant's ResearchGroup observations
-    const hollandRg = emitted.filter(
-      (o) => o.entityType === 'researchEntity' && o.entityKey?.includes('grant'),
-    );
-    const grants = hollandRg.find((o) => o.field === 'recentGrants')?.value as Array<{
+    const grantRow = emitted.filter((o) => o.entityKey === `existing-row-${grantPi}`);
+    const grants = grantRow.find((o) => o.field === 'recentGrants')?.value as Array<{
       id: string;
     }>;
-    expect(Array.isArray(grants)).toBe(true);
     expect(grants).toHaveLength(2);
-    // Sorted recency — newer (2026 start) first
     expect(grants[0].id).toBe('2535171');
     expect(grants[1].id).toBe('2200001');
-
-    const grantCount = hollandRg.find((o) => o.field === 'recentGrantCount')?.value;
-    expect(grantCount).toBe(2);
-
-    const fundingAgencies = hollandRg.find((o) => o.field === 'fundingAgencies')?.value;
-    expect(fundingAgencies).toEqual(['NSF']);
-
-    const lastObserved = hollandRg.find((o) => o.field === 'lastObservedAt')?.value as Date;
+    expect(grantRow.find((o) => o.field === 'recentGrantCount')?.value).toBe(2);
+    expect(grantRow.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NSF']);
+    const lastObserved = grantRow.find((o) => o.field === 'lastObservedAt')?.value as Date;
     expect(lastObserved.toISOString().slice(0, 10)).toBe('2026-01-01');
   });
 
-  it('emits a User observation under nsf-pi: key when PI is unmatched', async () => {
-    const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD] });
-    const resolveResearcherId = async () => ({ status: 'absent' as const });
-    const scraper = new NsfAwardScraper({
-      fetchPage: fetchPage as any,
-      resolveResearcherId,
-      dateStart: '01/01/2020',
-    });
-    const { ctx, emitted } = buildContext();
-    await scraper.run(ctx);
-
-    const userObs = emitted.filter((o) => o.entityType === 'user');
-    expect(userObs.length).toBeGreaterThan(0);
-    expect(userObs[0].entityKey).toBe('nsf-pi:parker grant');
-    expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Parker');
-    expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Grant');
-    expect(userObs.find((o) => o.field === 'email')?.value).toBe('parker.grant@yale.edu');
-    expect(userObs.find((o) => o.field === 'dataSources')?.value).toEqual(['nsf-award-search']);
-  });
-
-  it('skips emitting User observations and uses user-id slug when PI matches a Yale User', async () => {
-    const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD] });
-    const holland = new mongoose.Types.ObjectId();
-
-    const scraper = new NsfAwardScraper({
-      fetchPage: fetchPage as any,
-      resolveResearcherId: async () => ({ status: 'matched' as const, researcherId: holland }),
-      dateStart: '01/01/2020',
-      researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
-    });
-    const { ctx, emitted } = buildContext();
-    await scraper.run(ctx);
-
-    // No user observations for matched PI
-    expect(emitted.filter((o) => o.entityType === 'user')).toHaveLength(0);
-
-    const rgObs = emitted.filter((o) => o.entityType === 'researchEntity');
-    expect(rgObs.find((o) => o.field === 'slug')?.value).toBe(`nsf-pi-${holland.toString()}`);
-    expect(rgObs.find((o) => o.field === 'inferredPiUserId')?.value).toBe(holland.toString());
-    const inferredObs = rgObs.find((o) => o.field === 'inferredPiUserId');
-    expect(inferredObs?.confidenceOverride).toBe(0.7);
-    const nameObs = rgObs.find((o) => o.field === 'name');
-    expect(String(nameObs?.value)).toMatch(/ Faculty Research$/);
-    expect(nameObs?.confidenceOverride).toBe(0.3);
-  });
-
-  it('targets one resolved canonical home and preserves its identity fields', async () => {
+  it('enriches the row the canonical resolver names and asserts no identity field', async () => {
     const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD] });
     const researchHomeResolver = vi.fn().mockResolvedValue({
       status: 'canonical',
@@ -436,56 +334,85 @@ describe('NsfAwardScraper.run', () => {
       dateStart: '01/01/2020',
     });
     const { ctx, emitted } = buildContext();
-    await scraper.run(ctx);
+    const result = await scraper.run(ctx);
 
-    const rgObs = emitted.filter((o) => o.entityType === 'researchEntity');
     expect(researchHomeResolver).toHaveBeenCalledWith('507f1f77bcf86cd799439011');
-    expect(rgObs.every((o) => o.entityKey === 'dept-chem-parker-grant')).toBe(true);
-    expect(rgObs.find((o) => o.field === 'slug')).toBeUndefined();
-    expect(rgObs.find((o) => o.field === 'name')).toBeUndefined();
-    expect(rgObs.find((o) => o.field === 'kind')).toBeUndefined();
-    expect(rgObs.find((o) => o.field === 'recentGrants')).toBeDefined();
-    expect(rgObs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NSF']);
+    expect(emitted.every((o) => o.entityType === 'researchEntity')).toBe(true);
+    expect(emitted.every((o) => o.entityKey === 'dept-chem-parker-grant')).toBe(true);
+    for (const identityField of ['slug', 'name', 'kind', 'entityType']) {
+      expect(emitted.find((o) => o.field === identityField)).toBeUndefined();
+    }
+    const inferred = emitted.find((o) => o.field === 'inferredPiUserId');
+    expect(inferred?.value).toBe('507f1f77bcf86cd799439011');
+    expect(inferred?.confidenceOverride).toBe(0.7);
+    expect(result.notes).toMatch(/rows enriched: 1/);
   });
 
-  // Replaced rather than loosened. This lane used to emit a roster-member observation per
-  // Yale-resolvable co-PI, and #3274 removed that: a grant establishes that someone
-  // received funding, never that they are on a lab's roster, which is #3145's rule one
-  // step further. The co-PI resolution path is still exercised, so the assertion moved
-  // from which members it emits to it emitting none.
+  it.each([
+    ['no researcher', { status: 'absent' as const }, undefined, /1 resolved to no researcher/],
+    [
+      'several researchers',
+      { status: 'ambiguous' as const },
+      undefined,
+      /1 resolved to several researchers/,
+    ],
+    [
+      'no existing row',
+      { status: 'matched' as const },
+      { status: 'safe-shell' as const },
+      /1 have no existing research row/,
+    ],
+    [
+      'an ineligible row',
+      { status: 'matched' as const },
+      { status: 'ineligible' as const },
+      /1 ineligible row/,
+    ],
+    [
+      'an ambiguous row',
+      { status: 'matched' as const },
+      { status: 'ambiguous' as const },
+      /1 ambiguous row/,
+    ],
+  ])('mints nothing and counts a PI that resolves to %s', async (_label, person, row, note) => {
+    const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD] });
+    const scraper = new NsfAwardScraper({
+      fetchPage: fetchPage as any,
+      resolveResearcherId: async () =>
+        person.status === 'matched'
+          ? { status: 'matched' as const, researcherId: new mongoose.Types.ObjectId() }
+          : person,
+      researchHomeResolver: vi.fn().mockResolvedValue(row),
+      dateStart: '01/01/2020',
+    });
+    const { ctx, emitted } = buildContext();
+    const result = await scraper.run(ctx);
+
+    expect(emitted).toEqual([]);
+    expect(result.entitiesObserved).toBe(0);
+    expect(result.notes).toMatch(/rows enriched: 0/);
+    expect(result.notes).toMatch(note);
+  });
+
   it('emits no roster membership even when co-PIs resolve to Yale researchers', async () => {
     const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [BHATTACHARJEE_AWARD] });
 
-    // PI Bhattacharjee is absent; co-PIs Rowan Circuit and Harper Signal match,
-    // Raghavendra Pothukuchi does not.
-    const rajit = new mongoose.Types.ObjectId();
-    const hitten = new mongoose.Types.ObjectId();
-    const resolveResearcherId = async (name: string) => {
-      if (/circuit/i.test(name)) return { status: 'matched' as const, researcherId: rajit };
-      if (/signal/i.test(name)) return { status: 'matched' as const, researcherId: hitten };
-      return { status: 'absent' as const };
-    };
-
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
-      resolveResearcherId,
+      resolveResearcherId: matchedEveryone,
+      researchHomeResolver: existingRowPerResearcher,
       dateStart: '01/01/2020',
     });
     const { ctx, emitted } = buildContext();
     await scraper.run(ctx);
 
     expect(emitted.filter((o) => o.entityType === 'researchGroupMember')).toEqual([]);
-    // Neither spelling of the addressing field, because renaming it was the activation
-    // this change declined rather than a tidy.
     expect(
       emitted.filter((o) => o.field === 'researchGroupSlug' || o.field === 'researchGroupKey'),
     ).toEqual([]);
-    // The award's own funding evidence is untouched: it reaches the row through the
-    // grant fields, never through a roster edge.
     expect(
       emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'recentGrants'),
     ).toBeDefined();
-    expect([rajit, hitten].every(Boolean)).toBe(true);
   });
 
   it('respects ctx.options.limit by capping awards mid-page', async () => {
@@ -496,26 +423,25 @@ describe('NsfAwardScraper.run', () => {
       piLastName: 'Last' + i,
     }));
     const fetchPage = vi.fn().mockResolvedValueOnce({ awards: page, totalCount: 25 });
-    const resolveResearcherId = async () => ({ status: 'absent' as const });
 
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
-      resolveResearcherId,
+      resolveResearcherId: matchedEveryone,
+      researchHomeResolver: existingRowPerResearcher,
       dateStart: '01/01/2020',
     });
     const { ctx } = buildContext({ limit: 3 });
     const result = await scraper.run(ctx);
 
-    expect(result.entitiesObserved).toBe(3); // 3 PIs because each award is a distinct PI
+    expect(result.entitiesObserved).toBe(3);
     expect(fetchPage).toHaveBeenCalledTimes(1);
   });
 
   it('rejects unsafe runtime limits before fetching NSF pages', async () => {
     const fetchPage = vi.fn().mockResolvedValue({ awards: [YAN_AWARD], totalCount: 1 });
-    const resolveResearcherId = async () => ({ status: 'absent' as const });
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
-      resolveResearcherId,
+      resolveResearcherId: matchedEveryone,
       dateStart: '01/01/2020',
     });
     const { ctx } = buildContext({ limit: 9007199254740992 } as any);
@@ -535,17 +461,17 @@ describe('NsfAwardScraper.run', () => {
       .fn()
       .mockResolvedValueOnce({ awards: page1, totalCount: 100 })
       .mockRejectedValueOnce(new Error('ECONNRESET'));
-    const resolveResearcherId = async () => ({ status: 'absent' as const });
 
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
-      resolveResearcherId,
+      resolveResearcherId: matchedEveryone,
+      researchHomeResolver: existingRowPerResearcher,
       dateStart: '01/01/2020',
     });
     const { ctx, emitted, logs } = buildContext();
     const result = await scraper.run(ctx);
 
-    expect(result.entitiesObserved).toBe(25); // first page processed
+    expect(result.entitiesObserved).toBe(25);
     expect(emitted.length).toBeGreaterThan(0);
     expect(logs.some((l) => /ECONNRESET|aborting/i.test(l))).toBe(true);
   });
