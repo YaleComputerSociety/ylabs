@@ -18,6 +18,7 @@ Flags:
 
 Strategies scored: C0 (status-quo baseline over the stored collection), C1 (prevention-first identity clustering, basic vs rich keys), C2 (decide-late quality-preferring resolution over the full retained log), and C3 (hybrid of C1 and C2).
 Dedup accuracy is scored against the durable merge records (an archived row's `canonicalGroupId` tombstone) as labeled positives. The separate `research_entity_redirects` ledger was retired in #3027.
+`scoreDedupe` keys a merge as an unordered pair, so a correct merge is credited whichever member the prediction chose as canonical.
 
 ## Fuzzy-match labeled set
 
