@@ -93,6 +93,7 @@
     "meili:seed": "yarn meili:rebuild-research-entities --clear --confirm-meili-rebuild",
     "research-entity:coverage-audit": "tsx src/scripts/researchEntityCoverageAudit.ts",
     "research-entity:audit-departure-lane": "tsx src/scripts/auditFacultyDepartureLane.ts",
+    "research-entity:audit-description-source-ownership": "tsx src/scripts/auditDescriptionSourceOwnership.ts",
     "research-entity:audit-public-descriptions": "tsx src/scripts/publicResearchEntityDescriptionAudit.ts",
     "research-entity:audit-website-url-refusals": "tsx src/scripts/researchHomeWebsiteUrlRefusalAudit.ts",
     "research-entity:audit-off-entity-graft": "tsx src/scripts/offEntityGraftAudit.ts",
