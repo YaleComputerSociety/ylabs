@@ -10,6 +10,7 @@ import {
   type RawYseFaculty,
 } from '../sources/yseFacultyDirectoryScraper';
 import type { ObservationInput, ScraperContext } from '../types';
+import type { LabUrlEvidence } from '../utils/labUrlEvidence';
 import * as cheerio from 'cheerio';
 
 const DIRECTORY_URL = 'https://environment.yale.edu/directory/faculty';
@@ -350,10 +351,13 @@ describe('facultyToResearchEntityObservations', () => {
   });
 });
 
+const noStoredEvidence = async () => new Map<string, LabUrlEvidence>();
+const liveLabLinks = async () => false;
+
 describe('YseFacultyDirectoryScraper.run', () => {
   it('rejects unsafe runtime limits before fetching', async () => {
     const fetcher = vi.fn(async () => DIRECTORY_HTML);
-    const scraper = new YseFacultyDirectoryScraper(fetcher);
+    const scraper = new YseFacultyDirectoryScraper(fetcher, noStoredEvidence, liveLabLinks);
     const { ctx } = makeContext({ limit: 9007199254740992 });
     await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);
     expect(fetcher).not.toHaveBeenCalled();
@@ -366,7 +370,7 @@ describe('YseFacultyDirectoryScraper.run', () => {
       if (url === MEADOW.profileUrl) return PROFILE_NO_LAB;
       throw new Error(`unexpected url ${url}`);
     });
-    const scraper = new YseFacultyDirectoryScraper(fetcher);
+    const scraper = new YseFacultyDirectoryScraper(fetcher, noStoredEvidence, liveLabLinks);
     const { ctx, emitted } = makeContext();
     const result = await scraper.run(ctx);
 
@@ -422,7 +426,7 @@ describe('YseFacultyDirectoryScraper.run', () => {
       if (url === staffUrl) return staffProfile;
       throw new Error(`unexpected url ${url}`);
     });
-    const scraper = new YseFacultyDirectoryScraper(fetcher);
+    const scraper = new YseFacultyDirectoryScraper(fetcher, noStoredEvidence, liveLabLinks);
     const { ctx, emitted } = makeContext();
     await scraper.run(ctx);
 
@@ -477,5 +481,62 @@ describe('a linked lab site the corpus knows is dead (#3452)', () => {
       description: '',
     };
     expect(facultyToResearchEntityObservations(bare, 'yse:jordan-rivers', () => true)).toEqual([]);
+  });
+});
+
+describe('a lab link whose verdict the link-health lane has since dropped (#3452)', () => {
+  const RIVERS_SLUG = 'yse-faculty-jordan-rivers';
+  const LAB_URL = 'https://riverslab.example.org/';
+  const fetcher = async (url: string) => {
+    if (url === DIRECTORY_URL) return DIRECTORY_HTML;
+    if (url === RIVERS.profileUrl) return PROFILE_WITH_LAB;
+    if (url === MEADOW.profileUrl) return PROFILE_NO_LAB;
+    throw new Error(`unexpected url ${url}`);
+  };
+  const riversFields = (emitted: ObservationInput[]) =>
+    Object.fromEntries(
+      emitted
+        .filter((o) => o.entityType === 'researchEntity' && o.entityKey === RIVERS_SLUG)
+        .map((o) => [o.field, o.value]),
+    );
+
+  it('probes the link itself and stays withdrawn instead of re-minting the lab', async () => {
+    const prober = vi.fn(async (url: string) => url === LAB_URL);
+    const scraper = new YseFacultyDirectoryScraper(fetcher, noStoredEvidence, prober);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(prober).toHaveBeenCalledWith(LAB_URL);
+    const fields = riversFields(emitted);
+    expect(fields.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(fields.kind).toBe('individual');
+    expect(fields.name).toBe('Jordan Rivers Faculty Research');
+    expect(fields.sourceUrls).toEqual([RIVERS.profileUrl]);
+    expect(fields.websiteUrl).toBeUndefined();
+  });
+
+  it('keeps the lab when the probe does not positively show the link is gone', async () => {
+    const scraper = new YseFacultyDirectoryScraper(fetcher, noStoredEvidence, liveLabLinks);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const fields = riversFields(emitted);
+    expect(fields.entityType).toBe('LAB');
+    expect(fields.kind).toBe('lab');
+    expect(fields.websiteUrl).toBe(LAB_URL);
+  });
+
+  it('never probes when a stored verdict already answers, so it cannot overrule the link-health lane', async () => {
+    const prober = vi.fn(async () => true);
+    const healthy = async () =>
+      new Map<string, LabUrlEvidence>([
+        [RIVERS_SLUG, { sourceLinkHealth: [{ url: LAB_URL, healthStatus: 'HEALTHY' }] }],
+      ]);
+    const scraper = new YseFacultyDirectoryScraper(fetcher, healthy, prober);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(prober).not.toHaveBeenCalled();
+    expect(riversFields(emitted).entityType).toBe('LAB');
   });
 });

@@ -31,10 +31,12 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import {
-  labUrlUnusabilityFor,
+  labUrlUnusabilityWithProbeFor,
   loadLabUrlEvidenceBySlug,
+  probeLabUrlIsPositivelyDead,
   type LabUrlEvidenceLoader,
   type LabUrlIsUnusable,
+  type LabUrlProber,
 } from '../utils/labUrlEvidence';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -450,6 +452,7 @@ export class YseFacultyDirectoryScraper implements IScraper {
   constructor(
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
     private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
+    private readonly labUrlProber: LabUrlProber = probeLabUrlIsPositivelyDead,
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -473,8 +476,8 @@ export class YseFacultyDirectoryScraper implements IScraper {
     let areaCount = 0;
 
     // One read for the whole run rather than one per profile: the verdicts this
-    // consults are written by the link-health lane, so they are already stored and
-    // this lane must not re-probe.
+    // consults are written by the link-health lane, so a lab link is probed here
+    // only when no stored verdict or refusal covers it.
     const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
       limited.map((faculty) => `yse-faculty-${faculty.slug}`),
     );
@@ -497,7 +500,12 @@ export class YseFacultyDirectoryScraper implements IScraper {
       const entityObs = facultyToResearchEntityObservations(
         profile,
         entityKey,
-        labUrlUnusabilityFor(labUrlEvidenceBySlug, `yse-faculty-${profile.slug}`),
+        await labUrlUnusabilityWithProbeFor(
+          labUrlEvidenceBySlug,
+          `yse-faculty-${profile.slug}`,
+          ownsNoResearchEntityByTitle(profile.title) ? undefined : profile.labUrl,
+          this.labUrlProber,
+        ),
       );
       if (entityObs.length > 0) {
         await ctx.emit(entityObs);
