@@ -381,6 +381,82 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     ]);
   });
 
+  it('keeps a loser-only clearable field stable across repeated resolves', async () => {
+    const survivor = await seedMerge('ysm-faculty-example-lead');
+    await seedObservation('ysm-faculty-example-lead', 'methods', ['Calcium imaging']);
+
+    const methodsAfterEachRun: string[][] = [];
+    for (let run = 0; run < 3; run++) {
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+      const stored = await ResearchEntity.findById(survivor._id).lean<{ methods?: string[] }>();
+      methodsAfterEachRun.push([...(stored?.methods ?? [])]);
+    }
+
+    expect(methodsAfterEachRun).toEqual([
+      ['Calcium imaging'],
+      ['Calcium imaging'],
+      ['Calcium imaging'],
+    ]);
+  });
+
+  it('lets a loser lane update the value it filled on the survivor', async () => {
+    const survivor = await seedMerge('ysm-faculty-example-lead');
+
+    await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+    expect((await projectSurvivor(survivor._id)).websiteUrl).toBe('https://examplelead.yale.edu/');
+
+    await Observation.updateMany(
+      { entityKey: 'ysm-faculty-example-lead', field: 'websiteUrl' },
+      { $set: { superseded: true } },
+    );
+    await seedObservation(
+      'ysm-faculty-example-lead',
+      'websiteUrl',
+      'https://examplelead-moved.yale.edu/',
+      'dept-faculty-roster',
+      { observedAt: new Date('2026-06-01T00:00:00Z') },
+    );
+    await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+
+    expect((await projectSurvivor(survivor._id)).websiteUrl).toBe(
+      'https://examplelead-moved.yale.edu/',
+    );
+  });
+
+  it('aggregates grant counts and agencies together with the unioned grants', async () => {
+    const survivor = await seedMerge('ysm-faculty-example-lead');
+    await seedObservation(
+      'example-lead-lab',
+      'recentGrants',
+      [{ id: 'R01-SURVIVOR', title: 'Synthetic award', agency: 'NIH' }],
+      'nih-reporter',
+    );
+    await seedObservation('example-lead-lab', 'recentGrantCount', 1, 'nih-reporter');
+    await seedObservation('example-lead-lab', 'fundingAgencies', ['NIH'], 'nih-reporter');
+    await seedObservation(
+      'ysm-faculty-example-lead',
+      'recentGrants',
+      [{ id: 'NSF-LOSER', title: 'Synthetic award', agency: 'NSF' }],
+      'nsf-award-search',
+    );
+    await seedObservation('ysm-faculty-example-lead', 'recentGrantCount', 1, 'nsf-award-search');
+    await seedObservation('ysm-faculty-example-lead', 'fundingAgencies', ['NSF'], 'nsf-award-search');
+
+    await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+    const stored = await ResearchEntity.findById(survivor._id).lean<{
+      recentGrants?: Array<{ id?: string }>;
+      recentGrantCount?: number;
+      fundingAgencies?: string[];
+    }>();
+
+    expect((stored?.recentGrants ?? []).map((award) => award.id).sort()).toEqual([
+      'NSF-LOSER',
+      'R01-SURVIVOR',
+    ]);
+    expect(stored?.recentGrantCount).toBe(2);
+    expect([...(stored?.fundingAgencies ?? [])].sort()).toEqual(['NIH', 'NSF']);
+  });
+
   it('leaves the shell archived and unwritten', async () => {
     await seedMerge('ysm-faculty-example-lead');
 

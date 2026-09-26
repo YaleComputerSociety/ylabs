@@ -779,10 +779,6 @@ function latestWinsObservedTime(value: unknown): number {
  */
 const ADDITIVE_LATEST_WINS_LIST_FIELDS = new Set(['recentGrants']);
 
-export function isAdditiveLatestWinsListField(field: string): boolean {
-  return ADDITIVE_LATEST_WINS_LIST_FIELDS.has(field);
-}
-
 /**
  * Identity for unioning an accumulating list. A grant carries its own award id, which
  * is the only stable handle: the same award arrives with a different dollar amount or
