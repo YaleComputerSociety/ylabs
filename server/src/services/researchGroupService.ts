@@ -1863,6 +1863,21 @@ const addPublicMemberField = (target: Record<string, any>, key: string, value: a
  * raw value, and refuses anything outside ORCID's issued range even when the check digit
  * computes, because the corpus holds constructed iDs in the never-issued 0000-0000 block.
  */
+/**
+ * A lead's Yale address, served the way the ORCID line is: an additional way to reach the person,
+ * never a replacement for the official-profile action. Lead roles only, because a roster's
+ * graduate students and staff are not the person a student writes to, and a Yale-domain address
+ * only, so a scraped third-party address cannot reach the page.
+ */
+const addPublicMemberLeadEmail = (target: Record<string, any>, role: string, value: unknown) => {
+  if (!PUBLIC_LEAD_ROLES.has(role)) return;
+  const email = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  if (!email || !/^[^@\s]+@([a-z0-9-]+\.)*yale\.edu$/.test(email)) return;
+  target.email = email;
+};
+
 const addPublicMemberOrcid = (target: Record<string, any>, value: unknown) => {
   const orcid = servableOrcid(value);
   if (!orcid) return;
@@ -1895,7 +1910,7 @@ function publicMemberKeyForResearchDetail(
     .slice(0, 160);
 }
 
-function publicMemberUserForResearchDetail(user: any): any {
+function publicMemberUserForResearchDetail(user: any, role = ''): any {
   const publicUser: Record<string, any> = {};
   const imageUrl = user?.imageUrl || user?.image_url || '';
   const primaryDepartment = user?.primaryDepartment || user?.primary_department || '';
@@ -1917,6 +1932,7 @@ function publicMemberUserForResearchDetail(user: any): any {
     }
   }
   addPublicMemberOrcid(publicUser, user?.orcid ?? user?.identifiers?.orcid);
+  addPublicMemberLeadEmail(publicUser, role, user?.email);
 
   return publicUser;
 }
@@ -1982,6 +1998,7 @@ function canonicalMemberUserForResearchDetail(entry: ResearchEntityRosterEntry):
     }
   }
   addPublicMemberOrcid(publicUser, entry.orcid);
+  addPublicMemberLeadEmail(publicUser, entry.role, entry.email);
 
   return publicUser;
 }
@@ -3023,7 +3040,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     return {
       ...member,
       user: {
-        ...publicMemberUserForResearchDetail(member.user),
+        ...publicMemberUserForResearchDetail(member.user, member.role),
         publicKey: publicMemberKeyForResearchDetail(member.user, member.role, row?.identityKey),
       },
       ...(rosterEvidence ? { rosterEvidence } : {}),

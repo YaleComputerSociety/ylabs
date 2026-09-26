@@ -591,6 +591,7 @@ const DecisionSummary = ({
                   singleColumn
                   entityDepartments={group.departments}
                   resolveMemberProfileUrl={() => leadCardProfileUrl}
+                  resolveMemberEmailHref={() => piMailtoHref || undefined}
                 />
               </div>
             </div>
@@ -615,14 +616,7 @@ const DecisionSummary = ({
                     >
                       See how to get involved
                     </a>
-                    {piMailtoHref ? (
-                      <a
-                        href={piMailtoHref}
-                        className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
-                      >
-                        {piName ? `Email ${piName}` : 'Email the director'}
-                      </a>
-                    ) : profileUrl && principalInvestigator ? (
+                    {profileUrl && principalInvestigator ? (
                       <a
                         href={profileUrl}
                         target="_blank"
@@ -634,15 +628,6 @@ const DecisionSummary = ({
                     ) : null}
                   </div>
                 </>
-              ) : piMailtoHref ? (
-                <div className="mt-3 flex flex-col gap-2">
-                  <a
-                    href={piMailtoHref}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
-                  >
-                    {piName ? `Email ${piName}` : 'Email the PI'}
-                  </a>
-                </div>
               ) : profileNeedsOwnButton ? (
                 <div className="mt-3 flex flex-col gap-2">
                   <a
@@ -1020,6 +1005,21 @@ const LabDetail = () => {
     leadIdentityUnderReview || principalInvestigators.length !== 1;
   const resolveLeadOfficialProfileUrl = (member: LabMember): string | undefined =>
     officialProfileUrlFromMemberUser(member.user as unknown as Record<string, unknown>);
+  /**
+   * Carries a composed intro draft onto the lead card's email line, so the subject and body
+   * scaffolded in #1431 survive now that the email is a side link rather than the primary CTA.
+   * Composed per member rather than once per page, so a multi-lead card greets its own lead.
+   */
+  const resolveLeadIntroEmailHref = (member: LabMember): string | undefined => {
+    const email = member.user?.email;
+    if (!email) return undefined;
+    const draft = composeStudentIntroEmailDraft({
+      entityName: researchEntityTitle(group),
+      leadName: memberPersonName(member),
+      researchAreas: detailTopics(group, 5),
+    });
+    return safeMailtoHref(email, { subject: draft.subject, body: draft.body }) || undefined;
+  };
   const leadProfilesLinkedInline =
     showDedicatedPrincipalInvestigatorSection &&
     !leadIdentityUnderReview &&
@@ -1177,6 +1177,7 @@ const LabDetail = () => {
                   members={principalInvestigators}
                   entityDepartments={group.departments}
                   resolveMemberProfileUrl={resolveLeadOfficialProfileUrl}
+                  resolveMemberEmailHref={resolveLeadIntroEmailHref}
                 />
               )}
             </section>

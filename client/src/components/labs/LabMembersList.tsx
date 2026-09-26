@@ -6,7 +6,12 @@
  */
 import { useState } from 'react';
 import { LabMember, LabMemberRole } from '../../types/labDetail';
-import { EXTERNAL_IMAGE_REFERRER_POLICY, EXTERNAL_LINK_REL, safeHttpUrl } from '../../utils/url';
+import {
+  EXTERNAL_IMAGE_REFERRER_POLICY,
+  EXTERNAL_LINK_REL,
+  safeHttpUrl,
+  safeMailtoHref,
+} from '../../utils/url';
 import { useConfig } from '../../hooks/useConfig';
 import { canonicalizeResearcherDepartmentLabel } from '../../utils/researcherDepartmentLabel';
 import { DepartmentNameRecord } from '../../utils/departmentNames';
@@ -19,6 +24,7 @@ interface LabMembersListProps {
   singleColumn?: boolean;
   entityDepartments?: Array<string | undefined | null>;
   resolveMemberProfileUrl?: (member: LabMember) => string | undefined;
+  resolveMemberEmailHref?: (member: LabMember) => string | undefined;
 }
 
 const ROLE_LABELS: Record<LabMemberRole, string> = {
@@ -74,6 +80,7 @@ const LabMemberCard = ({
   pillEligibleLabels,
   entityDepartments,
   profileUrl,
+  emailHref,
 }: {
   user: LabMember['user'];
   role: LabMemberRole;
@@ -82,6 +89,7 @@ const LabMemberCard = ({
   pillEligibleLabels: readonly string[];
   entityDepartments: Array<string | undefined | null>;
   profileUrl?: string;
+  emailHref?: string;
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const fullName = user.displayName || `${user.fname} ${user.lname}`.trim();
@@ -98,6 +106,9 @@ const LabMemberCard = ({
     ? NEUTRAL_NON_OWNER_ROLE_PILL
     : ROLE_PILL_CLASSES[role];
   const orcidUrl = orcidRecordUrlFromMemberUser(user);
+  // Prefers the caller's href so the intro-email draft composed for this page survives (#1431).
+  const resolvedEmailHref = emailHref || safeMailtoHref(user.email);
+
   const isExternalLink = Boolean(profileUrl);
   const isInteractive = isExternalLink;
   const baseClassName = `group flex items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
@@ -178,19 +189,27 @@ const LabMemberCard = ({
     ) : (
       <div className={baseClassName}>{identityBody}</div>
     );
-  if (!orcidUrl) return identityCard;
+  const sideLinkClassName = `${singleColumn ? 'text-[10px]' : 'text-xs'} yr-focus-ring self-start rounded-control px-1 font-medium text-muted hover:text-brand hover:underline`;
+  if (!orcidUrl && !resolvedEmailHref) return identityCard;
   return (
     <div className="flex flex-col gap-1">
       {identityCard}
-      <a
-        href={orcidUrl}
-        target="_blank"
-        rel={EXTERNAL_LINK_REL}
-        aria-label={`Open ${fullName}'s ORCID record`}
-        className={`${singleColumn ? 'text-[10px]' : 'text-xs'} yr-focus-ring self-start rounded-control px-1 font-medium text-muted hover:text-brand hover:underline`}
-      >
-        ORCID {user.orcid}
-      </a>
+      {orcidUrl && (
+        <a
+          href={orcidUrl}
+          target="_blank"
+          rel={EXTERNAL_LINK_REL}
+          aria-label={`Open ${fullName}'s ORCID record`}
+          className={sideLinkClassName}
+        >
+          ORCID {user.orcid}
+        </a>
+      )}
+      {resolvedEmailHref && (
+        <a href={resolvedEmailHref} aria-label={`Email ${fullName}`} className={sideLinkClassName}>
+          {user.email}
+        </a>
+      )}
     </div>
   );
 };
@@ -200,6 +219,7 @@ const LabMembersList = ({
   singleColumn = false,
   entityDepartments = [],
   resolveMemberProfileUrl,
+  resolveMemberEmailHref,
 }: LabMembersListProps) => {
   const { departments, departmentPillEligibleLabels } = useConfig();
   if (!members || members.length === 0) {
@@ -248,6 +268,7 @@ const LabMembersList = ({
             pillEligibleLabels={departmentPillEligibleLabels}
             entityDepartments={entityDepartments}
             profileUrl={safeHttpUrl(resolveMemberProfileUrl?.(member))}
+            emailHref={resolveMemberEmailHref?.(member)}
           />
         );
       })}

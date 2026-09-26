@@ -1023,7 +1023,7 @@ describe('LabDetail page', () => {
     expect(screen.getByText('How to get involved')).toBeTruthy();
   });
 
-  it('always offers an email-the-PI action when the PI has an email, regardless of signals', async () => {
+  it('offers the lead email as a card side link carrying the intro draft, not as the primary CTA', async () => {
     renderLabDetail({
       ...basePayload,
       members: [
@@ -1042,7 +1042,10 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
+    // The primary action stays the official profile; the email rides alongside like the ORCID line.
+    expect(screen.queryByRole('link', { name: 'Email the PI' })).toBeNull();
     const emailLink = screen.getByRole('link', { name: 'Email Jordan Researcher' });
+    expect(emailLink.textContent).toBe('jordan.researcher@example.test');
     const href = emailLink.getAttribute('href') || '';
     expect(href.startsWith('mailto:jordan.researcher@example.test?')).toBe(true);
     const mailto = new URL(href);
