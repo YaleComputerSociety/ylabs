@@ -112,6 +112,21 @@ describe('ScraperOrchestrator', () => {
     );
   });
 
+  it('creates a benchmark run already invalidated and a live run valid', async () => {
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register({
+      name: 'fixture-source',
+      displayName: 'Fixture source',
+      run: async () => ({ observationCount: 0, entitiesObserved: 0 }),
+    });
+    const options = { dryRun: true, useCache: true, release: false };
+
+    await orchestrator.run('fixture-source', { ...options, benchmarkRun: true });
+    await orchestrator.run('fixture-source', options);
+
+    expect(mocks.scrapeRunCreate.mock.calls.map(([row]) => row.invalidated)).toEqual([true, false]);
+  });
+
   it('fails a run whose source has now emitted nothing on three consecutive runs', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.scrapeRunFind.mockReturnValue(

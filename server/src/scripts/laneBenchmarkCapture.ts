@@ -142,23 +142,28 @@ async function main(): Promise<void> {
   if (!args.dryRun) {
     if (pages.length === 0)
       throw new Error('The capture fetched no pages; refusing to store an empty benchmark');
-    await LaneBenchmarkPage.insertMany(
-      pages.map((page) => ({ ...page, benchmarkId: args.benchmarkId })),
-      { ordered: true },
-    );
-    await LaneBenchmark.create({
-      benchmarkId: args.benchmarkId,
-      sourceName: args.sourceName,
-      only: args.only,
-      limit: args.limit,
-      capturedAt: new Date(),
-      environment: guard.environment,
-      databaseName: mongoose.connection.db?.databaseName ?? 'unknown',
-      codeSha: currentCodeSha(),
-      pageCount: pages.length,
-      plannedObservationCount: run.observations.length,
-      labels,
-    });
+    try {
+      await LaneBenchmarkPage.insertMany(
+        pages.map((page) => ({ ...page, benchmarkId: args.benchmarkId })),
+        { ordered: true },
+      );
+      await LaneBenchmark.create({
+        benchmarkId: args.benchmarkId,
+        sourceName: args.sourceName,
+        only: args.only,
+        limit: args.limit,
+        capturedAt: new Date(),
+        environment: guard.environment,
+        databaseName: mongoose.connection.db?.databaseName ?? 'unknown',
+        codeSha: currentCodeSha(),
+        pageCount: pages.length,
+        plannedObservationCount: run.observations.length,
+        labels,
+      });
+    } catch (error) {
+      await LaneBenchmarkPage.deleteMany({ benchmarkId: args.benchmarkId });
+      throw error;
+    }
   }
   console.log(JSON.stringify(report, null, 2));
   await mongoose.disconnect();

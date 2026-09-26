@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { afterEach, describe, expect, it } from 'vitest';
+import { assertPublicHttpUrl, SsrfBlockedError } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
 import {
   BenchmarkReplayMissError,
@@ -60,7 +61,27 @@ describe('snapshot benchmark mode', () => {
       BenchmarkReplayNetworkError,
     );
     expect(finishBenchmarkReplay().networkBlocks).toBe(1);
-    expect(axios.interceptors.request).toBeDefined();
+    const response = await axios.get('https://example.invalid/', {
+      adapter: async (config) => ({
+        data: 'live',
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      }),
+    });
+    expect(response.data).toBe('live');
+  });
+
+  it('answers the SSRF guard without a DNS lookup during replay but keeps literal checks', async () => {
+    beginBenchmarkReplay([]);
+    await expect(assertPublicHttpUrl('https://captured-host.invalid/page')).resolves.toBeInstanceOf(
+      URL,
+    );
+    await expect(assertPublicHttpUrl('http://127.0.0.1/')).rejects.toBeInstanceOf(SsrfBlockedError);
+    await expect(assertPublicHttpUrl('ftp://captured-host.invalid/')).rejects.toBeInstanceOf(
+      SsrfBlockedError,
+    );
   });
 
   it('refuses to nest a replay inside a capture', () => {

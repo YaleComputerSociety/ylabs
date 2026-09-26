@@ -1123,8 +1123,9 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
   },
   {
     // Replays each lane against its frozen benchmark, so the stored trend moves only when
-    // lane code does. It reads benchmark pages and never the network, and writes only a
-    // `lane_scorecard_snapshots` row (#3526).
+    // lane code does. It reads benchmark pages and never the network, and writes a
+    // `lane_scorecard_snapshots` row plus one `invalidated` scrape run per replay, so no
+    // health, freshness, or barren-streak reader mistakes a replay for a live run (#3526).
     name: 'lane-scorecard',
     command: 'lane:scorecard',
     artifactName: 'development-lane-scorecard.json',

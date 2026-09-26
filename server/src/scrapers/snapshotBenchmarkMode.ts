@@ -5,7 +5,9 @@
  * Capture forces every `getCached` read to miss, so the lane fetches live, and records
  * every `setCached` payload instead of writing the TTL cache. Replay serves only the
  * captured pages and blocks the default axios instance, the only HTTP client the lanes
- * use, so a page the capture never saw is counted as a miss rather than fetched.
+ * use, so a page the capture never saw is counted as a miss rather than fetched. The SSRF
+ * guard skips its DNS lookup during replay, because nothing can connect and a live lookup
+ * would let the resolver, rather than lane code, decide which targets reach the cache.
  */
 import axios from 'axios';
 
@@ -64,6 +66,8 @@ export function finishBenchmarkCapture(): CapturedPage[] {
   mode = null;
   return pages;
 }
+
+export const isBenchmarkReplayActive = (): boolean => mode?.kind === 'replay';
 
 export function beginBenchmarkReplay(pages: readonly CapturedPage[]): void {
   assertNoActiveMode();

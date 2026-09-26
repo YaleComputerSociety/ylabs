@@ -10,6 +10,7 @@ import dns from 'dns/promises';
 import http from 'http';
 import https from 'https';
 import type { LookupFunction } from 'net';
+import { isBenchmarkReplayActive } from '../scrapers/snapshotBenchmarkMode';
 import { containsAsciiControl } from './asciiControl';
 
 const MAX_SSRF_PUBLIC_HTTP_URL_LENGTH = 2048;
@@ -282,6 +283,7 @@ export const assertPublicHttpUrl = async (rawUrl: string): Promise<URL> => {
   if (!isAllowedPublicHttpPort(parsed)) {
     throw new SsrfBlockedError('URL port is not allowed', 'port');
   }
+  if (isBenchmarkReplayActive() && !net.isIP(stripIpv6Brackets(parsed.hostname))) return parsed;
   const resolution = await classifyHostnameResolution(parsed.hostname);
   if (resolution.kind !== 'public') {
     throw new SsrfBlockedError('URL resolves to a private or non-public address', resolution.kind);

@@ -72,6 +72,7 @@ export class ScraperOrchestrator {
       startedAt: new Date(),
       status: 'running',
       options: options as any,
+      invalidated: options.benchmarkRun === true,
     });
 
     let observationCount = 0;

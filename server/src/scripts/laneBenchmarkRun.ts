@@ -55,6 +55,7 @@ export async function runLaneDry(spec: LaneBenchmarkSpec): Promise<{
     only: spec.only.length > 0 ? spec.only : undefined,
     limit: spec.limit,
     triggeredBy: 'cli',
+    benchmarkRun: true,
   };
   const { explainedObservations, explainTruncated } = await buildOrchestrator().run(
     spec.sourceName,
