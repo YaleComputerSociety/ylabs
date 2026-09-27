@@ -378,6 +378,57 @@ describe('YsmFacultyDirectoryScraper.run', () => {
   });
 });
 
+describe('YsmFacultyDirectoryScraper.run profile prefetch (#3568)', () => {
+  it('fetches profiles concurrently but emits them in roster order, and still skips a failed fetch', async () => {
+    const html = directoryHtml([
+      {
+        id: 'A',
+        items: [
+          { url: '/profile/jordan-rivers/', text: 'Rivers, Jordan' },
+          { url: '/profile/cole-nobody/', text: 'Nobody, Cole' },
+          { url: '/profile/avery-sloan/', text: 'Sloan, Avery' },
+        ],
+      },
+    ]);
+    const pages: Record<string, string> = {
+      [RIVERS.profileUrl]: profileHtml({
+        fullName: 'Jordan Rivers',
+        email: 'jordan.rivers@yale.edu',
+        meshKeywords: ['Heart Failure'],
+      }),
+      [SLOAN.profileUrl]: profileHtml({
+        fullName: 'Avery Sloan',
+        email: 'avery.sloan@yale.edu',
+        meshKeywords: ['Climate Policy'],
+      }),
+    };
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return html;
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, url === RIVERS.profileUrl ? 40 : 5));
+      inFlight -= 1;
+      if (!pages[url]) throw new Error('Request failed with status code 403');
+      return pages[url];
+    });
+    const logs: string[] = [];
+    const { ctx, emitted } = makeContext();
+    ctx.log = (message) => logs.push(message);
+
+    await new YsmFacultyDirectoryScraper(fetcher).run(ctx);
+
+    expect(maxInFlight).toBe(3);
+    const slugs = emitted
+      .filter((o) => o.entityType === 'researchEntity' && o.field === 'slug')
+      .map((o) => o.value);
+    expect(slugs).toEqual(['ysm-faculty-jordan-rivers', 'ysm-faculty-avery-sloan']);
+    expect(logs.some((line) => line.includes('[cole-nobody] profile fetch failed'))).toBe(true);
+    expect(logs.at(-1)).toContain('of 3 profiles scanned');
+  });
+});
+
 describe('YsmFacultyDirectoryScraper.run support-staff mint gate (#3410)', () => {
   // The damaging path, not the predicate: a lab assistant's profile carries the PI's
   // lab link and the PI's MeSH keywords, so every positive mint condition is met and

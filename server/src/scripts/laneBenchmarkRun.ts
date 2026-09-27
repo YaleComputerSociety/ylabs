@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { ResearchEntity } from '../models/researchEntity';
 import { buildOrchestrator } from '../scrapers/registry';
 import type { ScraperOptions } from '../scrapers/types';
+import { installScraperHostConcurrencyInterceptor } from '../scrapers/utils/hostConcurrencyLimiter';
 import type { PlannedObservation } from './laneScorecardCore';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -55,6 +56,7 @@ export async function runLaneDry(spec: LaneBenchmarkSpec): Promise<{
   observations: PlannedObservation[];
   truncated: boolean;
 }> {
+  installScraperHostConcurrencyInterceptor();
   const options: ScraperOptions = {
     dryRun: true,
     useCache: true,

@@ -37,6 +37,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { clampDescriptionLength } from '../../utils/descriptionHygiene';
+import { forEachInOrderWithPrefetch } from '../utils/boundedConcurrency';
 import { flattenHtmlToText } from '../utils/htmlText';
 import { normalizeOrcid } from '../../utils/orcid';
 import {
@@ -71,6 +72,7 @@ const SOURCE_KEY = 'ysm-faculty-directory';
 const SCHOOL_NAME = 'Yale School of Medicine';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
+const PROFILE_FETCH_LOOKAHEAD = 4;
 // The profile-page research prose is the faculty's own official description but
 // lives on a profile page, so it must rank at the profile-page description tier:
 // above the synthesized roster one-liner and below a lab-microsite full page.
@@ -580,60 +582,65 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     let withdrawnLabCount = 0;
     let areaCount = 0;
 
-    for (const faculty of limited) {
-      profilesScanned += 1;
-      let profileHtml: string;
-      try {
-        profileHtml = await this.htmlFetcher(faculty.profileUrl, ctx.options.useCache);
-      } catch (err) {
-        ctx.log(`[${faculty.slug}] profile fetch failed: ${sanitizeLogValue(err)}`);
-        continue;
-      }
+    const fetchProfile = (faculty: RawYsmFaculty) =>
+      this.htmlFetcher(faculty.profileUrl, ctx.options.useCache);
+    await forEachInOrderWithPrefetch(
+      limited,
+      PROFILE_FETCH_LOOKAHEAD,
+      fetchProfile,
+      async (faculty, fetched) => {
+        profilesScanned += 1;
+        if (fetched.status === 'rejected') {
+          ctx.log(`[${faculty.slug}] profile fetch failed: ${sanitizeLogValue(fetched.reason)}`);
+          return;
+        }
+        const profileHtml = fetched.value;
 
-      const profile = extractProfile(profileHtml, faculty);
-      if (!profile) continue;
-      if (looksLikeNonResearchTitle(profile.title)) continue;
-      // A trainee works in somebody else's lab, so their profile mints no
-      // research home of their own and cannot inherit their PI's lab name
-      // (#2304, the mint-side cause of the #2285 grafts). A lab technician,
-      // instrument technologist or research librarian works in somebody else's
-      // lab for the same reason, and matched neither screen before #3410.
-      if (isSubordinateResearchRank(profile.title)) {
-        subordinateRankSkipped += 1;
-        continue;
-      }
-      if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) continue;
+        const profile = extractProfile(profileHtml, faculty);
+        if (!profile) return;
+        if (looksLikeNonResearchTitle(profile.title)) return;
+        // A trainee works in somebody else's lab, so their profile mints no
+        // research home of their own and cannot inherit their PI's lab name
+        // (#2304, the mint-side cause of the #2285 grafts). A lab technician,
+        // instrument technologist or research librarian works in somebody else's
+        // lab for the same reason, and matched neither screen before #3410.
+        if (isSubordinateResearchRank(profile.title)) {
+          subordinateRankSkipped += 1;
+          return;
+        }
+        if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) return;
 
-      researchersEnriched += 1;
-      const { observations: userObs, entityKey } = facultyToUserObservations(profile);
-      await ctx.emit(userObs);
-      totalObs += userObs.length;
+        researchersEnriched += 1;
+        const { observations: userObs, entityKey } = facultyToUserObservations(profile);
+        await ctx.emit(userObs);
+        totalObs += userObs.length;
 
-      // After the person observations, not before them, because a support-staff
-      // profile still describes a real person: their title is the evidence the
-      // retirement pass keys on, so screening ahead of the emit would stop
-      // refreshing the very claim that judges the row (#3410). The two screens above
-      // still skip person enrichment, which predates this change.
-      if (isResearchSupportStaffTitle(profile.title)) {
-        supportStaffSkipped += 1;
-        continue;
-      }
+        // After the person observations, not before them, because a support-staff
+        // profile still describes a real person: their title is the evidence the
+        // retirement pass keys on, so screening ahead of the emit would stop
+        // refreshing the very claim that judges the row (#3410). The two screens above
+        // still skip person enrichment, which predates this change.
+        if (isResearchSupportStaffTitle(profile.title)) {
+          supportStaffSkipped += 1;
+          return;
+        }
 
-      const entityObs = facultyToResearchEntityObservations(
-        profile,
-        entityKey,
-        directorySurnames,
-        labUrlUnusabilityFor(labUrlEvidenceBySlug, `ysm-faculty-${profile.slug}`),
-      );
-      if (entityObs.length > 0) {
-        await ctx.emit(entityObs);
-        totalObs += entityObs.length;
-        entityCount += 1;
-        if (entityObs.some((obs) => obs.field === 'websiteUrl')) labCount += 1;
-        else if (profile.labUrl) withdrawnLabCount += 1;
-        if (profile.researchAreas.length > 0) areaCount += 1;
-      }
-    }
+        const entityObs = facultyToResearchEntityObservations(
+          profile,
+          entityKey,
+          directorySurnames,
+          labUrlUnusabilityFor(labUrlEvidenceBySlug, `ysm-faculty-${profile.slug}`),
+        );
+        if (entityObs.length > 0) {
+          await ctx.emit(entityObs);
+          totalObs += entityObs.length;
+          entityCount += 1;
+          if (entityObs.some((obs) => obs.field === 'websiteUrl')) labCount += 1;
+          else if (profile.labUrl) withdrawnLabCount += 1;
+          if (profile.researchAreas.length > 0) areaCount += 1;
+        }
+      },
+    );
 
     ctx.log(
       `Emitted ${totalObs} observations across ${researchersEnriched} researchers / ${entityCount} entities ` +
