@@ -89,14 +89,21 @@ import {
 } from '../../utils/researchEntityDescriptionQuality';
 import { unwrapMicrosoftSafeLinksUrl } from '../../utils/safeLinksUrl';
 import { orgUnitMatchKey } from '../orgUnitCanonicalization';
-import { DEPARTMENT_ROSTER_HEALTH_FIELD } from '../facultyRosterDepartureReconciler';
+import {
+  DEPARTMENT_ROSTER_HEALTH_FIELD,
+  ROSTER_LANE_FAILED_READ_STATUSES,
+} from '../facultyRosterDepartureReconciler';
 import {
   isFacultyTitle,
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
   ownsNoResearchEntityByTitle,
 } from './yaleDirectoryScraper';
-import { rosterEntryIdentityKey, walkRosterLanePages } from '../utils/rosterLanePaging';
+import {
+  rosterEntryIdentityKey,
+  walkRosterLanePages,
+  type RosterLaneWalk,
+} from '../utils/rosterLanePaging';
 import { runWithBoundedConcurrency } from '../utils/boundedConcurrency';
 import { evidenceAssertsALab } from '../utils/labClaimEvidence';
 import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
@@ -161,6 +168,32 @@ export function collapseLaneOutcomesByDepartment(outcomes: LaneOutcome[]): LaneO
     }
   }
   return Array.from(byDeptKey.values());
+}
+
+/** A lane that never tried to read: no renderer was available, or `--limit` ran out first. */
+const ROSTER_LANES_NEVER_ATTEMPTED_STATUSES: ReadonlySet<string> = new Set([
+  'js-rendered-skip',
+  'skipped-by-limit',
+]);
+
+/**
+ * The status an HTML lane reports for its walk.
+ *
+ * Only a walk that reached the roster's own end and was not cut by `--limit` may be
+ * `ok`, because `ok` is what makes the department's snapshot `complete`, and a
+ * complete snapshot tells the departure lane that everybody it did not list is gone
+ * (#3647). A page that was never fetched is `fetch-failed` rather than `empty`: an
+ * empty roster is a read that listed nobody, which a failed fetch is not.
+ */
+export function htmlLaneStatus(
+  walk: Pick<RosterLaneWalk, 'pages' | 'pagesFetched' | 'stopReason' | 'readWholeRoster'>,
+  facultyRead: number,
+  truncatedByLimit: boolean,
+): string {
+  if (walk.pagesFetched === 0) return 'fetch-failed';
+  if (walk.pages.length === 0 && walk.stopReason === 'extractor-error') return 'extractor-error';
+  if (!walk.readWholeRoster || truncatedByLimit) return 'partial-read';
+  return facultyRead === 0 ? 'empty' : 'ok';
 }
 
 /**
@@ -4100,10 +4133,12 @@ export class DepartmentRosterScraper implements IScraper {
       faculty: number;
       labs: number;
       observations: number;
+      truncatedByLimit: boolean;
     }> => {
       let faculty = 0;
       let labs = 0;
       let observations = 0;
+      let truncatedByLimit = false;
       // One read per batch rather than one per row, and keyed by the slug this lane
       // itself mints so the lookup cannot miss.
       const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
@@ -4114,7 +4149,10 @@ export class DepartmentRosterScraper implements IScraper {
       // or a group's is a fact about the whole roster, not about one row.
       const enriched: Array<{ entry: FacultyEntry; personKey: string }> = [];
       for (const rawEntry of entries) {
-        if (totalFaculty + enriched.length >= limit) break;
+        if (totalFaculty + enriched.length >= limit) {
+          truncatedByLimit = true;
+          break;
+        }
         if (dept.crossListedProgramme && programmeRosterRowIsRejectableFromRosterAlone(rawEntry)) {
           continue;
         }
@@ -4193,11 +4231,19 @@ export class DepartmentRosterScraper implements IScraper {
         totalFaculty++;
       }
 
-      return { faculty, labs, observations };
+      return { faculty, labs, observations, truncatedByLimit };
     };
 
-    const runLane = async (dept: DeptConfig): Promise<LaneRead | null> => {
-      if (totalFaculty >= limit) return null;
+    const runLane = async (dept: DeptConfig): Promise<LaneRead> => {
+      if (totalFaculty >= limit) {
+        return {
+          deptKey: dept.deptKey,
+          count: 0,
+          status: 'skipped-by-limit',
+          pagesRead: 0,
+          readMode: 'none',
+        };
+      }
 
       if (dept.jsRenderedSkip && dept.dataUrl && dept.dataExtractor) {
         try {
@@ -4211,7 +4257,7 @@ export class DepartmentRosterScraper implements IScraper {
             return {
               deptKey: dept.deptKey,
               count: processed.faculty,
-              status: 'ok',
+              status: processed.truncatedByLimit ? 'partial-read' : 'ok',
               pagesRead: 1,
               readMode: 'data-endpoint',
             };
@@ -4286,7 +4332,11 @@ export class DepartmentRosterScraper implements IScraper {
         return {
           deptKey: dept.deptKey,
           count: processed.faculty,
-          status: processed.faculty === 0 ? 'empty' : 'ok',
+          status: processed.truncatedByLimit
+            ? 'partial-read'
+            : processed.faculty === 0
+              ? 'empty'
+              : 'ok',
           pagesRead: 1,
           readMode: 'rendered',
         };
@@ -4310,6 +4360,7 @@ export class DepartmentRosterScraper implements IScraper {
       // one keys on the ENRICHED identity, which a profile page can change.
       const seenRawKeys = new Set<string>();
       let deptCount = 0;
+      let truncatedByLimit = false;
       for (const page of walk.pages) {
         const unread = page.entries.filter((entry) => {
           const key = rosterEntryIdentityKey(entry);
@@ -4323,6 +4374,10 @@ export class DepartmentRosterScraper implements IScraper {
         totalObs += processed.observations;
         totalLabs += processed.labs;
         deptCount += processed.faculty;
+        if (processed.truncatedByLimit) {
+          truncatedByLimit = true;
+          break;
+        }
       }
 
       ctx.log(
@@ -4331,7 +4386,7 @@ export class DepartmentRosterScraper implements IScraper {
       return {
         deptKey: dept.deptKey,
         count: deptCount,
-        status: deptCount === 0 ? 'empty' : 'ok',
+        status: htmlLaneStatus(walk, deptCount, truncatedByLimit),
         pagesRead: walk.pagesFetched,
         readMode: walk.pagesFetched > 0 ? 'html' : 'none',
         pagesReusedWithinSweep: laneReuse.pagesReused,
@@ -4348,9 +4403,7 @@ export class DepartmentRosterScraper implements IScraper {
     const outcomeByIndex = new Array<LaneOutcome | null>(this.configs.length).fill(null);
     const runSelectedLane = async ({ dept, index }: { dept: DeptConfig; index: number }) => {
       const read = await runLane(dept);
-      outcomeByIndex[index] = read
-        ? { ...read, crossListedProgramme: Boolean(dept.crossListedProgramme) }
-        : null;
+      outcomeByIndex[index] = { ...read, crossListedProgramme: Boolean(dept.crossListedProgramme) };
     };
 
     // A rendered lane drives a headless browser, so those six run one at a time
@@ -4366,6 +4419,19 @@ export class DepartmentRosterScraper implements IScraper {
     const laneOutcomes = outcomeByIndex.filter(
       (outcome): outcome is LaneOutcome => outcome !== null,
     );
+    const attemptedLanes = laneOutcomes.filter(
+      (outcome) => !ROSTER_LANES_NEVER_ATTEMPTED_STATUSES.has(outcome.status),
+    );
+    const failedLanes = attemptedLanes.filter((outcome) =>
+      ROSTER_LANE_FAILED_READ_STATUSES.has(outcome.status),
+    );
+    if (attemptedLanes.length > 0 && failedLanes.length === attemptedLanes.length) {
+      throw new Error(
+        `Every attempted roster lane failed to read its page (${failedLanes
+          .map((outcome) => `${outcome.deptKey}(${outcome.status})`)
+          .join(', ')}); the run read no roster and is a failure, not a success`,
+      );
+    }
     // One department is one roster-health snapshot, even when several configs
     // share its `deptKey` (economics has four person-type pages, and 13 of the 125
     // non-programme lanes collapse this way). A per-config snapshot published two
@@ -4459,12 +4525,30 @@ export class DepartmentRosterScraper implements IScraper {
       `Emitted ${totalObs} observations across ${totalFaculty} faculty / ${totalLabs} labs (${summary})`,
     );
 
-    const breakageStatuses = new Set(['empty', 'rendered-extractor-error']);
+    const breakageStatuses = new Set(['empty', 'extractor-error', 'rendered-extractor-error']);
     const brokenSources = perDept.filter((d) => breakageStatuses.has(d.status));
     if (brokenSources.length > 0) {
       ctx.log(
         `WARNING: ${brokenSources.length} configured roster source(s) fetched but yielded no faculty - likely a site migration or renamed layout; re-verify the URL and extractor: ${brokenSources
           .map((d) => `${d.deptKey}(${d.status})`)
+          .join(', ')}`,
+      );
+    }
+    const unreadSources = perDept.filter((d) =>
+      ['fetch-failed', 'rendered-unavailable'].includes(d.status),
+    );
+    if (unreadSources.length > 0) {
+      ctx.log(
+        `WARNING: ${unreadSources.length} configured roster source(s) could not be read in this run, so they assert nothing about who is listed: ${unreadSources
+          .map((d) => `${d.deptKey}(${d.status})`)
+          .join(', ')}`,
+      );
+    }
+    const partialSources = perDept.filter((d) => d.status === 'partial-read');
+    if (partialSources.length > 0) {
+      ctx.log(
+        `WARNING: ${partialSources.length} configured roster source(s) read only part of their roster, so they are not authoritative about who is absent: ${partialSources
+          .map((d) => d.deptKey)
           .join(', ')}`,
       );
     }

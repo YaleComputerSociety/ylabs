@@ -116,6 +116,40 @@ export function rosterHealthReadProvenance(
   return reused > 0 ? 'reused-within-sweep' : 'fetched';
 }
 
+/**
+ * Lane statuses `dept-faculty-roster` records when a lane did not read its whole
+ * roster in the run: the page could not be fetched or parsed, the pager stopped
+ * before the roster's end, or `--limit` cut the lane short or never reached it.
+ */
+export const ROSTER_LANE_FAILED_READ_STATUSES: ReadonlySet<string> = new Set([
+  'fetch-failed',
+  'extractor-error',
+  'rendered-unavailable',
+  'rendered-extractor-error',
+]);
+export const ROSTER_LANE_PARTIAL_READ_STATUSES: ReadonlySet<string> = new Set([
+  'partial-read',
+  'skipped-by-limit',
+]);
+
+/**
+ * Whether this snapshot's lane left part of its roster unread in this run.
+ *
+ * Such a lane withholds its whole canonical department, not just itself. Several
+ * configs can resolve to one department, and absence is concluded from every lane
+ * failing to find somebody; a lane that did not read its pages has not failed to find
+ * anybody on them, so the other lanes' discovery cannot stand in for it (#3647).
+ */
+export function rosterHealthRecordsAnIncompleteRead(
+  snapshot: DepartmentRosterHealthSnapshot,
+): boolean {
+  if (rosterHealthReadProvenance(snapshot) === 'not-read') return true;
+  const status = typeof snapshot.status === 'string' ? snapshot.status : '';
+  return (
+    ROSTER_LANE_FAILED_READ_STATUSES.has(status) || ROSTER_LANE_PARTIAL_READ_STATUSES.has(status)
+  );
+}
+
 /** When the snapshot's own run says it read the page, if it recorded that at all. */
 export function rosterHealthReadAt(snapshot: DepartmentRosterHealthSnapshot): Date | null {
   const raw = snapshot.read?.readAt;
@@ -455,6 +489,8 @@ export interface FacultyRosterDepartureResult {
   departmentsGoverningNothing: number;
   /** Departments whose read lost too much of their own previous discovery to be believed. */
   regressedDepartments: number;
+  /** Departments withheld because one of their lanes left its roster partly unread. */
+  incompleteReadDepartments: number;
   /**
    * How many snapshots landed in each admissibility state, so a department refused for
    * discovering nobody is legible rather than silently skipped (#3302).
@@ -718,6 +754,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     frozenDepartments: 0,
     departmentsGoverningNothing: 0,
     regressedDepartments: 0,
+    incompleteReadDepartments: 0,
     planned: { ...EMPTY_DEPARTURE_PLAN },
     regatedEntities: 0,
     governedDepartments: [] as string[],
@@ -751,6 +788,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
 
   const scrapedDeptNames = new Set<string>();
   const healthyDiscoveredByDept = new Map<string, Set<string>>();
+  const incompletelyReadDeptNames = new Set<string>();
   // A run covers many departments read at different moments, so one scalar cannot
   // date them. It used to be overwritten by each snapshot in turn, so every entity
   // was stamped with whichever department happened to be last in the cursor (#3251).
@@ -796,6 +834,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
         snapshotObservedAtByDept.set(deptName, snapshotObservedAt);
       }
     }
+    if (rosterHealthRecordsAnIncompleteRead(snapshot)) incompletelyReadDeptNames.add(deptName);
     const admissibility = rosterHealthAdmissibility(snapshot);
     admissibilityCounts[admissibility] = (admissibilityCounts[admissibility] || 0) + 1;
     if (admissibility === 'read-discovered-nobody') {
@@ -847,6 +886,13 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     }
   }
 
+  for (const deptName of incompletelyReadDeptNames) {
+    if (!healthyDiscoveredByDept.delete(deptName)) continue;
+    console.warn(
+      `[faculty-departure] withheld department ${sanitizeLogValue(deptName)}: one of its roster lanes left part of the roster unread in this run`,
+    );
+  }
+
   const evidenceFreshness: FacultyRosterDepartureEvidenceFreshness = {
     snapshotsRead: snapshots.length,
     distinctSnapshotObservedAt: new Set(
@@ -864,6 +910,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     admissibilityCounts,
     departmentsGoverningNothing,
     regressedDepartments,
+    incompleteReadDepartments: incompletelyReadDeptNames.size,
     unresolvedDepartments,
     governedDepartments: Array.from(healthyDiscoveredByDept.keys()),
   };

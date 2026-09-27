@@ -922,6 +922,33 @@ A segment after the marker is required, which is a tightening the widening had t
 The rest of the served rows with no probeable page are not defects.
 69 are organisational rows with no lead role edge at all (`CORE_FACILITY`, `INITIATIVE`, `CENTER`, `INSTITUTE`), and an institute has no person profile to read; 15 have a lead whose `Researcher` carries no `profileLinks` of any kind, which is an identity-coverage gap rather than a matcher one.
 One `person_present` vetoes the verdict even when another page asserts absence, since somebody cross-listed who leaves one departmental roster has not left Yale, and no Yale page to read means hold rather than suppress.
+One `indeterminate` page vetoes it too (#3647): a profile that failed to fetch, answered non-2xx, or could not be classified is a page nobody read, and it may be the current profile that still names the person, so a stale person-less page beside it is not evidence that they left.
+The probe reports those pages as `indeterminateUrls`.
+
+#### A roster read that did not see the whole roster is not complete
+
+Absence from a snapshot is only evidence when the snapshot's lane read the whole roster, so `dept-faculty-roster` marks every other read with a non-`ok` status, and a non-`ok` status is `complete: false` (#3647).
+
+| Lane status | What happened |
+| --- | --- |
+| `ok` | The pager reached the roster's own end (`not-paginated`, `empty-page`, `repeated-page`) and `--limit` did not cut the lane. |
+| `empty` | A page was read and listed nobody. Warned as a likely site migration. |
+| `partial-read` | The walk stopped before the end (`fetch-failed`, `extractor-error` or `no-identifiable-rows` on a later page of a paginated lane, or `page-cap`), or `--limit` cut the lane mid-roster. |
+| `skipped-by-limit` | `--limit` ran out before the lane started. |
+| `fetch-failed`, `rendered-unavailable` | No page was obtained, so the lane asserts nothing about who is listed. Warned as unreadable, never as a migration. |
+| `extractor-error`, `rendered-extractor-error` | The first page was fetched but could not be parsed. |
+| `js-rendered-skip` | No renderer was available for a JS-rendered lane. |
+
+Before this a walk that stopped on a later page's fetch failure or at the 20-page cap reported `ok` whenever it had read anybody, so the people on its unread pages were recorded absent and became suppression candidates on the next run, and the truncated discovery also became the next read's retention baseline.
+`--limit` did the same to the development-sample sweep, and a department whose sibling config the limit never reached published the first config's people as the whole department.
+`loadPreviousDiscoveryCounts` reads only `complete: true` snapshots, so a partial read no longer lowers the baseline either.
+
+A lane's incomplete read withholds its whole canonical department in that run, not just its own snapshot (`rosterHealthRecordsAnIncompleteRead`).
+Several configs resolve to one department (Economics and School of Management, Physics and Wright Laboratory), and absence is concluded from every lane failing to find somebody; a lane that did not read its pages has not failed to find anybody on them, so the union of the other lanes cannot stand in for it.
+The pass reports the count as `incompleteReadDepartments`.
+
+A run in which every attempted lane failed to read throws, so it is stored as a `failure` rather than a `success`, and so does an `official-research-home-rosters` run in which every roster fetch failed.
+Without that, a lane whose every page was unreachable still emitted its honest not-read snapshot, which counted as an observation, so the barren-streak guard could never fire and the run read healthy.
 
 Writing the Yale-status fields is not the same as removing the row from the directory, so every suppressed or cleared row is re-gated through `planStudentVisibilityGate`/`applyStudentVisibilityGatePlans` and the count is reported as `regatedEntities`.
 `studentVisibilityTier` is a stored field and `activeAtYaleCache === false` only decides the tier the next gate pass computes.

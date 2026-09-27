@@ -169,6 +169,7 @@ export interface YaleProfileDepartureEvidence {
   assertsAbsence: boolean;
   absentUrls: string[];
   presentUrls: string[];
+  indeterminateUrls: string[];
 }
 
 /**
@@ -176,6 +177,11 @@ export interface YaleProfileDepartureEvidence {
  * absence: a professor listed on two departmental rosters who leaves one of them
  * has not left Yale, and the cross-listed case is common enough that reading any
  * single absence as departure would suppress people who are here.
+ *
+ * One `indeterminate` vetoes it for the same reason. A page that failed to fetch,
+ * answered non-2xx, or could not be classified is a profile nobody read, and the
+ * unread one may be the current profile that still names the person; only a verdict
+ * over every profile the row cites may assert that they left (#3647).
  */
 export async function probeYaleProfileDepartureEvidence(
   profileUrls: readonly string[],
@@ -184,6 +190,7 @@ export async function probeYaleProfileDepartureEvidence(
   const urls = Array.from(new Set(profileUrls.filter(isYaleProfileUrl).map((url) => url.trim())));
   const absentUrls: string[] = [];
   const presentUrls: string[] = [];
+  const indeterminateUrls: string[] = [];
   for (const url of urls) {
     let verdict: YaleProfilePersonPresence = 'indeterminate';
     try {
@@ -193,11 +200,14 @@ export async function probeYaleProfileDepartureEvidence(
     }
     if (verdict === 'person_absent') absentUrls.push(url);
     if (verdict === 'person_present') presentUrls.push(url);
+    if (verdict === 'indeterminate') indeterminateUrls.push(url);
   }
   return {
     probed: urls.length,
-    assertsAbsence: absentUrls.length > 0 && presentUrls.length === 0,
+    assertsAbsence:
+      absentUrls.length > 0 && presentUrls.length === 0 && indeterminateUrls.length === 0,
     absentUrls,
     presentUrls,
+    indeterminateUrls,
   };
 }

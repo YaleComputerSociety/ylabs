@@ -67,6 +67,12 @@ export interface RosterLaneWalk {
   pagesFetched: number;
   /** Distinct people across every page, by `rosterEntryIdentityKey`. */
   distinctEntries: FacultyEntry[];
+  /**
+   * The pager reached the roster's own end. A walk that stopped for any other
+   * reason left pages unread, so its people are a subset of the roster and it
+   * must never be published as the complete list of who the roster names.
+   */
+  readWholeRoster: boolean;
   error?: string;
 }
 
@@ -88,6 +94,17 @@ export interface RosterLaneWalkRequest {
  * still costs an out-of-range pager only 2 wasted fetches instead of 19.
  */
 const CONSECUTIVE_REPEATED_PAGES_TO_STOP = 2;
+
+const STOP_REASONS_AT_THE_ROSTER_END: ReadonlySet<RosterPagerStopReason> = new Set([
+  'not-paginated',
+  'empty-page',
+  'repeated-page',
+]);
+
+function stopReasonReadWholeRoster(stopReason: RosterPagerStopReason, paginated: boolean): boolean {
+  if (stopReason === 'no-identifiable-rows') return !paginated;
+  return STOP_REASONS_AT_THE_ROSTER_END.has(stopReason);
+}
 
 /**
  * Walks a lane's pager, skipping pages it has already seen and stopping once two
@@ -111,6 +128,7 @@ export async function walkRosterLanePages(request: RosterLaneWalkRequest): Promi
     stopReason,
     pagesFetched,
     distinctEntries: Array.from(distinctByKey.values()),
+    readWholeRoster: stopReasonReadWholeRoster(stopReason, Boolean(request.paginated)),
     ...(error ? { error } : {}),
   });
 

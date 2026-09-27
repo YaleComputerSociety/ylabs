@@ -201,6 +201,39 @@ describe('probeYaleProfileDepartureEvidence', () => {
     expect(evidence).toMatchObject({ probed: 0, assertsAbsence: false });
   });
 
+  it('withholds the verdict when a second Yale profile could not be read', async () => {
+    const fetchPage = vi
+      .fn()
+      .mockResolvedValueOnce(page(TOMBSTONE))
+      .mockRejectedValueOnce(new Error('ETIMEDOUT'));
+    const evidence = await probeYaleProfileDepartureEvidence(
+      [
+        'https://politicalscience.yale.edu/people/somebody',
+        'https://economics.yale.edu/people/somebody',
+      ],
+      fetchPage,
+    );
+    expect(evidence.assertsAbsence).toBe(false);
+    expect(evidence.absentUrls).toHaveLength(1);
+    expect(evidence.indeterminateUrls).toEqual(['https://economics.yale.edu/people/somebody']);
+  });
+
+  it('withholds the verdict when a second Yale profile answers a non-2xx status', async () => {
+    const fetchPage = vi
+      .fn()
+      .mockResolvedValueOnce(page(TOMBSTONE))
+      .mockResolvedValueOnce({ status: 503, html: '' });
+    const evidence = await probeYaleProfileDepartureEvidence(
+      [
+        'https://politicalscience.yale.edu/people/somebody',
+        'https://economics.yale.edu/people/somebody',
+      ],
+      fetchPage,
+    );
+    expect(evidence.assertsAbsence).toBe(false);
+    expect(evidence.indeterminateUrls).toHaveLength(1);
+  });
+
   it('fails closed when the fetch throws', async () => {
     const fetchPage = vi.fn().mockRejectedValue(new Error('ETIMEDOUT'));
     const evidence = await probeYaleProfileDepartureEvidence(
