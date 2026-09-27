@@ -58,7 +58,7 @@ const INSTRUMENTS_THAT_REFUSE_APPLY: Record<string, string> = {
  * stages. Lower it when one is converted or deleted. Raising it is the thing this guard exists
  * to make a visible, reviewed decision.
  */
-const PENDING_CONVERSION_CEILING = 126;
+const PENDING_CONVERSION_CEILING = 123;
 
 function commandsByScriptFile(): Map<string, string[]> {
   const scripts =
