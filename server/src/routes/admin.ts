@@ -1,10 +1,17 @@
 /**
  * Admin-only routes for managing fellowships, users, and profiles.
  */
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { replaceAsciiControls } from '../utils/asciiControl';
-import { isAuthenticated, isAdmin, validateObjectId, validateNetid } from '../middleware/index';
+import {
+  asyncHandler,
+  isAuthenticated,
+  isAdmin,
+  validateObjectId,
+  validateNetid,
+} from '../middleware/index';
+import { BadRequestError } from '../utils/errors';
 import { writeLimit } from '../middleware/rateLimiters';
 import { ResearchArea, ResearchField, fieldColorKeys } from '../models/researchArea';
 import { Department, DepartmentCategory, categoryColorKeys } from '../models/department';
@@ -31,7 +38,6 @@ import {
 import { buildAdminOperatorBoard } from '../services/adminOperatorBoardService';
 import { listAdminAuditEvents } from '../services/adminAuditService';
 import { adminAuditMutationLogger } from '../middleware/adminAuditLogger';
-import { sanitizeLogValue } from '../utils/logSanitizer';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { publicHttpUrl } from '../utils/urlSafety';
 
@@ -255,7 +261,7 @@ export const normalizeAdminTaxonomyLabel = (
   maxLength = MAX_ADMIN_TAXONOMY_LABEL_LENGTH,
 ): string => {
   if (typeof value !== 'string') {
-    throw new Error(`Invalid ${fieldName}`);
+    throw new BadRequestError(`Invalid ${fieldName}`);
   }
 
   const normalized = replaceAsciiControls(value, ' ').replace(/\s+/g, ' ').trim();
@@ -264,7 +270,7 @@ export const normalizeAdminTaxonomyLabel = (
     normalized.length > maxLength ||
     redactDirectContactInfo(normalized) !== normalized
   ) {
-    throw new Error(`Invalid ${fieldName}`);
+    throw new BadRequestError(`Invalid ${fieldName}`);
   }
 
   return normalized;
@@ -272,7 +278,7 @@ export const normalizeAdminTaxonomyLabel = (
 
 export const normalizeAdminDepartmentCategory = (value: unknown): DepartmentCategory => {
   if (!Object.values(DepartmentCategory).includes(value as DepartmentCategory)) {
-    throw new Error('Invalid department category');
+    throw new BadRequestError('Invalid department category');
   }
   return value as DepartmentCategory;
 };
@@ -284,57 +290,57 @@ export const normalizeAdminDepartmentCategories = (
   const rawValues =
     value === undefined ? [fallbackPrimaryCategory] : Array.isArray(value) ? value : [value];
   if (rawValues.length === 0 || rawValues.length > MAX_ADMIN_DEPARTMENT_CATEGORIES) {
-    throw new Error('Invalid department categories');
+    throw new BadRequestError('Invalid department categories');
   }
 
   const categories = Array.from(
     new Set(rawValues.map((category) => normalizeAdminDepartmentCategory(category))),
   );
   if (categories.length === 0) {
-    throw new Error('Invalid department categories');
+    throw new BadRequestError('Invalid department categories');
   }
   return categories;
 };
 
-const sendAdminGrantError = (res: Response, error: unknown, fallbackMessage: string) => {
-  const isValidationFailure = error instanceof AdminGrantValidationError;
-  const isConflict = error instanceof AdminGrantConflictError;
-  res.status(isValidationFailure ? 400 : isConflict ? 409 : 500).json({
-    error: isValidationFailure
-      ? 'Invalid admin grant request'
-      : isConflict
-        ? 'Admin access is already active'
-        : fallbackMessage,
-  });
+const answerAdminGrantError = (error: unknown, res: Response, next: NextFunction) => {
+  if (error instanceof AdminGrantValidationError) {
+    return res.status(400).json({ error: 'Invalid admin grant request' });
+  }
+  if (error instanceof AdminGrantConflictError) {
+    return res.status(409).json({ error: 'Admin access is already active' });
+  }
+  return next(error);
 };
 
-router.get('/admin-grants', async (_req: Request, res: Response) => {
-  try {
+router.get(
+  '/admin-grants',
+  asyncHandler(async (_req: Request, res: Response) => {
     res.json(await listAdminGrants());
-  } catch (error) {
-    console.error('Admin: Error fetching admin grants:', sanitizeLogValue(error));
-    res.status(500).json({ error: 'Failed to fetch admin grants' });
-  }
-});
+  }),
+);
 
-router.post('/admin-grants', writeLimit, async (req: Request, res: Response) => {
-  try {
-    const grant = await grantAdminAccess({
-      netid: req.body?.netid,
-      actorNetid: currentActorNetid(req),
-      note: req.body?.note,
-    });
-    res.status(201).json({ grant });
-  } catch (error) {
-    sendAdminGrantError(res, error, 'Failed to grant admin access');
-  }
-});
+router.post(
+  '/admin-grants',
+  writeLimit,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const grant = await grantAdminAccess({
+        netid: req.body?.netid,
+        actorNetid: currentActorNetid(req),
+        note: req.body?.note,
+      });
+      res.status(201).json({ grant });
+    } catch (error) {
+      answerAdminGrantError(error, res, next);
+    }
+  },
+);
 
 router.post(
   '/admin-grants/:netid/revoke',
   writeLimit,
   validateNetid('netid'),
-  async (req: Request, res: Response) => {
+  async (req: Request, res: Response, next: NextFunction) => {
     try {
       const grant = await revokeAdminAccess({
         netid: req.params.netid,
@@ -344,7 +350,7 @@ router.post(
       if (!grant) return res.status(404).json({ error: 'Active admin grant not found' });
       res.json({ grant });
     } catch (error) {
-      sendAdminGrantError(res, error, 'Failed to revoke admin access');
+      answerAdminGrantError(error, res, next);
     }
   },
 );
@@ -357,8 +363,9 @@ const adminAuditFilter = (value: unknown): string | undefined => {
   return trimmed || undefined;
 };
 
-router.get('/audit-events', async (req: Request, res: Response) => {
-  try {
+router.get(
+  '/audit-events',
+  asyncHandler(async (req: Request, res: Response) => {
     res.json(
       await listAdminAuditEvents({
         actor: adminAuditFilter(req.query.actor),
@@ -369,20 +376,15 @@ router.get('/audit-events', async (req: Request, res: Response) => {
         pageSize: req.query.pageSize,
       }),
     );
-  } catch (error) {
-    console.error('Admin: Error fetching audit events:', sanitizeLogValue(error));
-    res.status(500).json({ error: 'Failed to fetch admin audit events' });
-  }
-});
+  }),
+);
 
-router.get('/operator-board', async (_req: Request, res: Response) => {
-  try {
+router.get(
+  '/operator-board',
+  asyncHandler(async (_req: Request, res: Response) => {
     res.json(await buildAdminOperatorBoard());
-  } catch (error) {
-    console.error('Admin: Error fetching operator board:', sanitizeLogValue(error));
-    res.status(500).json({ error: 'Failed to fetch operator board' });
-  }
-});
+  }),
+);
 
 router.get('/correction-reports', listAdminEntityCorrectionReports);
 router.put(
@@ -392,15 +394,13 @@ router.put(
   reviewAdminEntityCorrectionReport,
 );
 
-router.get('/research-areas', async (_req: Request, res: Response) => {
-  try {
+router.get(
+  '/research-areas',
+  asyncHandler(async (_req: Request, res: Response) => {
     const areas = await ResearchArea.find().sort({ name: 1 }).lean();
     res.json({ researchAreas: areas.map(adminResearchAreaDto) });
-  } catch (error) {
-    console.error('Admin: Error fetching research areas:', sanitizeLogValue(error));
-    res.status(500).json({ error: 'Failed to fetch research areas' });
-  }
-});
+  }),
+);
 
 const parseResearchAreaName = (value: unknown): string | undefined => {
   try {
@@ -413,14 +413,16 @@ const parseResearchAreaName = (value: unknown): string | undefined => {
 const isResearchField = (value: unknown): value is ResearchField =>
   Object.values(ResearchField).includes(value as ResearchField);
 
-router.post('/research-areas', writeLimit, async (req: Request, res: Response) => {
-  const name = parseResearchAreaName(req.body?.name);
-  if (!name) return res.status(400).json({ error: 'Invalid research area name' });
+router.post(
+  '/research-areas',
+  writeLimit,
+  asyncHandler(async (req: Request, res: Response) => {
+    const name = parseResearchAreaName(req.body?.name);
+    if (!name) return res.status(400).json({ error: 'Invalid research area name' });
 
-  const field = req.body?.field;
-  if (!isResearchField(field)) return res.status(400).json({ error: 'Invalid field value' });
+    const field = req.body?.field;
+    if (!isResearchField(field)) return res.status(400).json({ error: 'Invalid field value' });
 
-  try {
     const existing = await ResearchArea.findOne({
       name: { $regex: new RegExp(`^${escapeRegex(name)}$`, 'i') },
     });
@@ -437,90 +439,77 @@ router.post('/research-areas', writeLimit, async (req: Request, res: Response) =
 
     invalidateConfigCache();
     res.status(201).json({ researchArea: adminResearchAreaDto(area) });
-  } catch (error) {
-    console.error('Admin: Error creating research area:', sanitizeLogValue(error));
-    res.status(500).json({ error: 'Failed to create research area' });
-  }
-});
+  }),
+);
 
 router.put(
   '/research-areas/:id',
   writeLimit,
   validateObjectId('id'),
-  async (req: Request, res: Response) => {
-    try {
-      const safeId = normalizeAdminObjectId(req.params.id);
-      if (!safeId) return res.status(400).json({ error: 'Invalid id' });
-      const { name, field } = req.body;
-      const update: any = {};
+  asyncHandler(async (req: Request, res: Response) => {
+    const safeId = normalizeAdminObjectId(req.params.id);
+    if (!safeId) return res.status(400).json({ error: 'Invalid id' });
+    const { name, field } = req.body;
+    const update: any = {};
 
-      if (name !== undefined) {
-        update.name = normalizeAdminTaxonomyLabel(
-          name,
-          'research area name',
-          MAX_RESEARCH_AREA_NAME_LENGTH,
-        );
-      }
-      if (field !== undefined) {
-        if (!Object.values(ResearchField).includes(field)) {
-          return res.status(400).json({ error: 'Invalid field value' });
-        }
-        update.field = field;
-        update.colorKey = fieldColorKeys[field as ResearchField] || 'gray';
-      }
-
-      const area = await ResearchArea.findByIdAndUpdate(safeId, update, {
-        new: true,
-        runValidators: true,
-      });
-
-      if (!area) {
-        return res.status(404).json({ error: 'Research area not found' });
-      }
-
-      invalidateConfigCache();
-      res.json({ researchArea: adminResearchAreaDto(area) });
-    } catch (error) {
-      console.error('Admin: Error updating research area:', sanitizeLogValue(error));
-      res.status(400).json({ error: 'Request failed' });
+    if (name !== undefined) {
+      update.name = normalizeAdminTaxonomyLabel(
+        name,
+        'research area name',
+        MAX_RESEARCH_AREA_NAME_LENGTH,
+      );
     }
-  },
+    if (field !== undefined) {
+      if (!Object.values(ResearchField).includes(field)) {
+        return res.status(400).json({ error: 'Invalid field value' });
+      }
+      update.field = field;
+      update.colorKey = fieldColorKeys[field as ResearchField] || 'gray';
+    }
+
+    const area = await ResearchArea.findByIdAndUpdate(safeId, update, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!area) {
+      return res.status(404).json({ error: 'Research area not found' });
+    }
+
+    invalidateConfigCache();
+    res.json({ researchArea: adminResearchAreaDto(area) });
+  }),
 );
 
 router.delete(
   '/research-areas/:id',
   writeLimit,
   validateObjectId('id'),
-  async (req: Request, res: Response) => {
-    try {
-      const safeId = normalizeAdminObjectId(req.params.id);
-      if (!safeId) return res.status(400).json({ error: 'Invalid id' });
-      const area = await ResearchArea.findByIdAndDelete(safeId);
-      if (!area) {
-        return res.status(404).json({ error: 'Research area not found' });
-      }
-
-      invalidateConfigCache();
-      res.json({ message: 'Research area deleted' });
-    } catch (error) {
-      console.error('Admin: Error deleting research area:', sanitizeLogValue(error));
-      res.status(400).json({ error: 'Request failed' });
+  asyncHandler(async (req: Request, res: Response) => {
+    const safeId = normalizeAdminObjectId(req.params.id);
+    if (!safeId) return res.status(400).json({ error: 'Invalid id' });
+    const area = await ResearchArea.findByIdAndDelete(safeId);
+    if (!area) {
+      return res.status(404).json({ error: 'Research area not found' });
     }
-  },
+
+    invalidateConfigCache();
+    res.json({ message: 'Research area deleted' });
+  }),
 );
 
-router.get('/departments', async (_req: Request, res: Response) => {
-  try {
+router.get(
+  '/departments',
+  asyncHandler(async (_req: Request, res: Response) => {
     const departments = await Department.find().sort({ abbreviation: 1 }).lean();
     res.json({ departments: departments.map(adminDepartmentDto) });
-  } catch (error) {
-    console.error('Admin: Error fetching departments:', sanitizeLogValue(error));
-    res.status(500).json({ error: 'Failed to fetch departments' });
-  }
-});
+  }),
+);
 
-router.post('/departments', writeLimit, async (req: Request, res: Response) => {
-  try {
+router.post(
+  '/departments',
+  writeLimit,
+  asyncHandler(async (req: Request, res: Response) => {
     const { abbreviation, name, displayName, categories, primaryCategory } = req.body;
 
     if (!abbreviation || !name || !primaryCategory) {
@@ -558,85 +547,73 @@ router.post('/departments', writeLimit, async (req: Request, res: Response) => {
     await dept.save();
     invalidateConfigCache();
     res.status(201).json({ department: adminDepartmentDto(dept) });
-  } catch (error) {
-    console.error('Admin: Error creating department:', sanitizeLogValue(error));
-    res.status(400).json({ error: 'Request failed' });
-  }
-});
+  }),
+);
 
 router.put(
   '/departments/:id',
   writeLimit,
   validateObjectId('id'),
-  async (req: Request, res: Response) => {
-    try {
-      const safeId = normalizeAdminObjectId(req.params.id);
-      if (!safeId) return res.status(400).json({ error: 'Invalid id' });
-      const { abbreviation, name, displayName, categories, primaryCategory, isActive } = req.body;
-      const update: any = {};
+  asyncHandler(async (req: Request, res: Response) => {
+    const safeId = normalizeAdminObjectId(req.params.id);
+    if (!safeId) return res.status(400).json({ error: 'Invalid id' });
+    const { abbreviation, name, displayName, categories, primaryCategory, isActive } = req.body;
+    const update: any = {};
 
-      if (abbreviation !== undefined) {
-        update.abbreviation = normalizeAdminTaxonomyLabel(
-          abbreviation,
-          'department abbreviation',
-          MAX_ADMIN_DEPARTMENT_ABBREVIATION_LENGTH,
-        );
-      }
-      if (name !== undefined) update.name = normalizeAdminTaxonomyLabel(name, 'department name');
-      if (displayName !== undefined) {
-        update.displayName = normalizeAdminTaxonomyLabel(displayName, 'department display name');
-      }
-      if (categories !== undefined)
-        update.categories = normalizeAdminDepartmentCategories(categories);
-      if (primaryCategory !== undefined) {
-        const normalizedPrimaryCategory = normalizeAdminDepartmentCategory(primaryCategory);
-        update.primaryCategory = normalizedPrimaryCategory;
-        update.colorKey = categoryColorKeys[normalizedPrimaryCategory] ?? 0;
-      }
-      if (isActive !== undefined) update.isActive = isActive === true;
-
-      const dept = await Department.findByIdAndUpdate(safeId, update, {
-        new: true,
-        runValidators: true,
-      });
-
-      if (!dept) {
-        return res.status(404).json({ error: 'Department not found' });
-      }
-
-      invalidateConfigCache();
-      res.json({ department: adminDepartmentDto(dept) });
-    } catch (error) {
-      console.error('Admin: Error updating department:', sanitizeLogValue(error));
-      res.status(400).json({ error: 'Request failed' });
+    if (abbreviation !== undefined) {
+      update.abbreviation = normalizeAdminTaxonomyLabel(
+        abbreviation,
+        'department abbreviation',
+        MAX_ADMIN_DEPARTMENT_ABBREVIATION_LENGTH,
+      );
     }
-  },
+    if (name !== undefined) update.name = normalizeAdminTaxonomyLabel(name, 'department name');
+    if (displayName !== undefined) {
+      update.displayName = normalizeAdminTaxonomyLabel(displayName, 'department display name');
+    }
+    if (categories !== undefined)
+      update.categories = normalizeAdminDepartmentCategories(categories);
+    if (primaryCategory !== undefined) {
+      const normalizedPrimaryCategory = normalizeAdminDepartmentCategory(primaryCategory);
+      update.primaryCategory = normalizedPrimaryCategory;
+      update.colorKey = categoryColorKeys[normalizedPrimaryCategory] ?? 0;
+    }
+    if (isActive !== undefined) update.isActive = isActive === true;
+
+    const dept = await Department.findByIdAndUpdate(safeId, update, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!dept) {
+      return res.status(404).json({ error: 'Department not found' });
+    }
+
+    invalidateConfigCache();
+    res.json({ department: adminDepartmentDto(dept) });
+  }),
 );
 
 router.delete(
   '/departments/:id',
   writeLimit,
   validateObjectId('id'),
-  async (req: Request, res: Response) => {
-    try {
-      const safeId = normalizeAdminObjectId(req.params.id);
-      if (!safeId) return res.status(400).json({ error: 'Invalid id' });
-      const dept = await Department.findByIdAndDelete(safeId);
-      if (!dept) {
-        return res.status(404).json({ error: 'Department not found' });
-      }
-
-      invalidateConfigCache();
-      res.json({ message: 'Department deleted' });
-    } catch (error) {
-      console.error('Admin: Error deleting department:', sanitizeLogValue(error));
-      res.status(400).json({ error: 'Request failed' });
+  asyncHandler(async (req: Request, res: Response) => {
+    const safeId = normalizeAdminObjectId(req.params.id);
+    if (!safeId) return res.status(400).json({ error: 'Invalid id' });
+    const dept = await Department.findByIdAndDelete(safeId);
+    if (!dept) {
+      return res.status(404).json({ error: 'Department not found' });
     }
-  },
+
+    invalidateConfigCache();
+    res.json({ message: 'Department deleted' });
+  }),
 );
 
-router.get('/fellowships', async (req: Request, res: Response) => {
-  try {
+router.get(
+  '/fellowships',
+  asyncHandler(async (req: Request, res: Response) => {
     const {
       search,
       sortBy: rawSortBy = 'createdAt',
@@ -694,70 +671,47 @@ router.get('/fellowships', async (req: Request, res: Response) => {
       pageSize: pageSizeNum,
       totalPages: Math.ceil(total / pageSizeNum),
     });
-  } catch (error) {
-    console.error('Admin: Error fetching fellowships:', sanitizeLogValue(error));
-    res.status(500).json({ error: 'Failed to fetch fellowships' });
-  }
-});
+  }),
+);
 
 router.put(
   '/fellowships/:id',
   writeLimit,
   validateObjectId('id'),
-  async (req: Request, res: Response) => {
-    try {
-      const fellowship = await updateFellowship(req.params.id, req.body.data);
-      res.json({ fellowship: adminFellowshipDto(fellowship) });
-    } catch (error) {
-      console.error('Admin: Error updating fellowship:', sanitizeLogValue(error));
-      res.status(400).json({ error: 'Request failed' });
-    }
-  },
+  asyncHandler(async (req: Request, res: Response) => {
+    const fellowship = await updateFellowship(req.params.id, req.body.data);
+    res.json({ fellowship: adminFellowshipDto(fellowship) });
+  }),
 );
 
 router.put(
   '/fellowships/:id/archive',
   writeLimit,
   validateObjectId('id'),
-  async (req: Request, res: Response) => {
-    try {
-      const fellowship = await archiveFellowship(req.params.id);
-      res.json({ fellowship: adminFellowshipDto(fellowship) });
-    } catch (error) {
-      console.error('Admin: Error archiving fellowship:', sanitizeLogValue(error));
-      res.status(400).json({ error: 'Request failed' });
-    }
-  },
+  asyncHandler(async (req: Request, res: Response) => {
+    const fellowship = await archiveFellowship(req.params.id);
+    res.json({ fellowship: adminFellowshipDto(fellowship) });
+  }),
 );
 
 router.put(
   '/fellowships/:id/unarchive',
   writeLimit,
   validateObjectId('id'),
-  async (req: Request, res: Response) => {
-    try {
-      const fellowship = await unarchiveFellowship(req.params.id);
-      res.json({ fellowship: adminFellowshipDto(fellowship) });
-    } catch (error) {
-      console.error('Admin: Error unarchiving fellowship:', sanitizeLogValue(error));
-      res.status(400).json({ error: 'Request failed' });
-    }
-  },
+  asyncHandler(async (req: Request, res: Response) => {
+    const fellowship = await unarchiveFellowship(req.params.id);
+    res.json({ fellowship: adminFellowshipDto(fellowship) });
+  }),
 );
 
 router.delete(
   '/fellowships/:id',
   writeLimit,
   validateObjectId('id'),
-  async (req: Request, res: Response) => {
-    try {
-      await deleteFellowship(req.params.id);
-      res.json({ message: 'Fellowship deleted' });
-    } catch (error) {
-      console.error('Admin: Error deleting fellowship:', sanitizeLogValue(error));
-      res.status(400).json({ error: 'Request failed' });
-    }
-  },
+  asyncHandler(async (req: Request, res: Response) => {
+    await deleteFellowship(req.params.id);
+    res.json({ message: 'Fellowship deleted' });
+  }),
 );
 
 export default router;

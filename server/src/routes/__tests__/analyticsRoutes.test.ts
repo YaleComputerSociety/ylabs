@@ -40,6 +40,7 @@ vi.mock('../../services/researchAnalytics', async (importOriginal) => ({
 }));
 
 import router from '../analytics';
+import { errorHandler } from '../../middleware/errorHandler';
 
 const routeByPath = (path: string) =>
   (router as any).stack.map((layer: any) => layer.route).find((route: any) => route?.path === path);
@@ -48,6 +49,11 @@ const invokeRouteHandler = async (path: string, request: any = {}) => {
   const route = routeByPath(path);
   expect(route).toBeTruthy();
   const handler = route.stack[route.stack.length - 1].handle;
+  const requestWithDefaults = { query: {}, params: {}, ...request };
+  let settle: (forwarded: unknown) => void = () => undefined;
+  const settled = new Promise<unknown>((resolve) => {
+    settle = resolve;
+  });
   const response = {
     statusCode: 200,
     body: undefined as unknown,
@@ -57,18 +63,16 @@ const invokeRouteHandler = async (path: string, request: any = {}) => {
     }),
     json: vi.fn(function (this: any, body: unknown) {
       this.body = body;
+      settle(undefined);
       return this;
     }),
   } as any;
 
-  await handler(
-    {
-      query: {},
-      params: {},
-      ...request,
-    },
-    response,
-  );
+  void handler(requestWithDefaults, response, settle);
+  const forwarded = await settled;
+  if (forwarded !== undefined) {
+    errorHandler(forwarded as Error, requestWithDefaults, response, vi.fn());
+  }
   return response;
 };
 
@@ -327,7 +331,7 @@ describe('analytics routes', () => {
     const res = await invokeRouteHandler('/search-quality');
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to fetch search quality analytics' });
+    expect(res.body).toEqual({ error: 'Internal server error' });
   });
 
   it('does not count a degraded search as a search with results', async () => {
@@ -359,7 +363,7 @@ describe('analytics routes', () => {
     const res = await invokeRouteHandler('/users');
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to fetch user analytics' });
+    expect(res.body).toEqual({ error: 'Internal server error' });
   });
 
   it('rejects oversized user analytics search before dispatching aggregation', async () => {
@@ -463,6 +467,6 @@ describe('analytics routes', () => {
     });
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to fetch user analytics' });
+    expect(res.body).toEqual({ error: 'Internal server error' });
   });
 });

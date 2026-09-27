@@ -115,7 +115,8 @@ export const notFoundHandler = (req: Request, res: Response, _next: NextFunction
 type AsyncRequestHandler = (req: Request, res: Response, next: NextFunction) => Promise<unknown>;
 
 export const asyncHandler = (fn: AsyncRequestHandler) => {
-  return (req: Request, res: Response, next: NextFunction) => {
+  const forwardRejection = (req: Request, res: Response, next: NextFunction) => {
     void Promise.resolve(fn(req, res, next)).catch(next);
   };
+  return Object.defineProperty(forwardRejection, 'name', { value: fn.name });
 };

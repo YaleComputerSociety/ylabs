@@ -12,8 +12,15 @@ const safeClientErrorText = (value: unknown): string => {
   return trimmed;
 };
 
+type ErrorResponse = { status?: unknown; data?: Record<string, unknown> };
+
+const isServerErrorStatus = (status: unknown): boolean =>
+  typeof status === 'number' && status >= 500;
+
 export const clientErrorMessage = (error: unknown, fallback: string): string => {
-  const responseData = (error as { response?: { data?: Record<string, unknown> } })?.response?.data;
+  const errorResponse = (error as { response?: ErrorResponse })?.response;
+  if (isServerErrorStatus(errorResponse?.status)) return fallback;
+  const responseData = errorResponse?.data;
   return (
     safeClientErrorText(responseData?.error) ||
     safeClientErrorText(responseData?.message) ||

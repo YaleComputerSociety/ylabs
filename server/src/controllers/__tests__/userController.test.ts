@@ -188,6 +188,8 @@ const expectPublicProgram = (payload: any) => {
   expect(payload).not.toHaveProperty('updatedAt');
 };
 
+const next = vi.fn();
+
 const privateResponseDouble = () =>
   ({
     statusCode: 200,
@@ -224,7 +226,7 @@ describe('userController', () => {
       json: vi.fn(),
     } as any;
 
-    await getWatchedPrograms(req, res);
+    await getWatchedPrograms(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(200);
     const body = res.json.mock.calls[0][0];
@@ -243,7 +245,7 @@ describe('userController', () => {
       json: vi.fn(),
     } as any;
 
-    await addWatchedPrograms(req, res);
+    await addWatchedPrograms(req, res, next);
 
     expect(mocks.addWatchedPrograms).toHaveBeenCalledWith('student123', [
       '64a000000000000000000010',
@@ -266,7 +268,7 @@ describe('userController', () => {
       json: vi.fn(),
     } as any;
 
-    await removeWatchedPrograms(req, res);
+    await removeWatchedPrograms(req, res, next);
 
     expect(mocks.removeWatchedPrograms).toHaveBeenCalledWith('student123', [
       '64a000000000000000000010',
@@ -275,20 +277,19 @@ describe('userController', () => {
     expect(res.json.mock.calls[0][0]).toEqual({ watchedProgramIds: [] });
   });
 
-  it('does not leak internal service errors when fetching watched programs fails', async () => {
-    mocks.getWatchedPrograms.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-
+  it('forwards watched program fetch failures to the global error handler', async () => {
     const req = {
       user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
     } as any;
     const res = privateResponseDouble();
 
-    await getWatchedPrograms(req, res);
+    const outage = new Error('mongodb://user:pass@example.invalid leaked');
+    mocks.getWatchedPrograms.mockRejectedValue(outage);
 
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to fetch watched programs' });
+    await getWatchedPrograms(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(outage);
+    expect(res.json).not.toHaveBeenCalled();
   });
 
   it('scopes saved-entity reads to the authenticated owner', async () => {
@@ -303,9 +304,9 @@ describe('userController', () => {
     mocks.getSavedResearchEntityPlans.mockResolvedValue({});
 
     const savedResponse = privateResponseDouble();
-    await getSavedResearchEntities(req, savedResponse);
+    await getSavedResearchEntities(req, savedResponse, next);
     const plansResponse = privateResponseDouble();
-    await getSavedResearchEntityPlans(req, plansResponse);
+    await getSavedResearchEntityPlans(req, plansResponse, next);
 
     expect(mocks.getSavedResearchEntityList).toHaveBeenCalledWith('student123');
     expect(mocks.getSavedResearchEntityPlans).toHaveBeenCalledWith('student123');
@@ -329,6 +330,7 @@ describe('userController', () => {
         },
       } as any,
       privateResponseDouble(),
+      next,
     );
     await removeSavedResearchEntities(
       {
@@ -336,6 +338,7 @@ describe('userController', () => {
         body: { accountOwner: 'other-student', savedResearchEntities: [entityId] },
       } as any,
       privateResponseDouble(),
+      next,
     );
     await updateSavedResearchEntityPlan(
       {
@@ -344,6 +347,7 @@ describe('userController', () => {
         body: { accountOwner: 'other-student', data: { plan: { note: 'Private note' } } },
       } as any,
       privateResponseDouble(),
+      next,
     );
 
     expect(mocks.addSavedResearchEntities).toHaveBeenCalledWith('student123', [entityId]);

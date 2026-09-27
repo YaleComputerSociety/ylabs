@@ -2,7 +2,12 @@
  * Canonical routes for structured research programs and fellowships.
  */
 import { Router, Request, Response, NextFunction } from 'express';
-import { isAuthenticated, validateObjectId, validatePagination } from '../middleware/index';
+import {
+  asyncHandler,
+  isAuthenticated,
+  validateObjectId,
+  validatePagination,
+} from '../middleware/index';
 import * as programController from '../controllers/programController';
 import { recordSiteSearch, resolveSiteSearchPage } from '../services/siteSearchAnalytics';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -93,10 +98,10 @@ router.get(
   isAuthenticated,
   validatePagination,
   logProgramSearchEvent,
-  programController.searchProgramsController,
+  asyncHandler(programController.searchProgramsController),
 );
 
-router.get('/filters', isAuthenticated, programController.getProgramFilterOptions);
+router.get('/filters', isAuthenticated, asyncHandler(programController.getProgramFilterOptions));
 
 router.get('/:id', isAuthenticated, validateObjectId('id'), programController.getProgramById);
 

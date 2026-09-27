@@ -49,6 +49,7 @@ import router, {
   normalizeAdminPagination,
   resolveAdminSortField,
 } from '../admin';
+import { errorHandler } from '../../middleware/errorHandler';
 
 const routeByPath = (path: string) =>
   (router as any).stack.map((layer: any) => layer.route).find((route: any) => route?.path === path);
@@ -83,6 +84,10 @@ const invokeRouteHandler = async (path: string, req: Record<string, any>, method
   const route = routeByPathAndMethod(path, method) || routeByPath(path);
   const stack = route?.stack || [];
   const handler = stack[stack.length - 1]?.handle;
+  let settle: (forwarded: unknown) => void = () => undefined;
+  const settled = new Promise<unknown>((resolve) => {
+    settle = resolve;
+  });
   const res = {
     statusCode: 200,
     body: undefined as unknown,
@@ -92,11 +97,16 @@ const invokeRouteHandler = async (path: string, req: Record<string, any>, method
     },
     json(body: unknown) {
       this.body = body;
+      settle(undefined);
       return this;
     },
   };
 
-  await handler(req, res);
+  void handler(req, res, settle);
+  const forwarded = await settled;
+  if (forwarded !== undefined) {
+    errorHandler(forwarded as Error, req as any, res as any, vi.fn());
+  }
   return res;
 };
 
@@ -170,7 +180,7 @@ describe('admin routes', () => {
     const res = await invokeRouteHandler('/audit-events', { query: {}, params: {} }, 'get');
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to fetch admin audit events' });
+    expect(res.body).toEqual({ error: 'Internal server error' });
   });
 
   it('does not leak internal messages from admin grant failures', async () => {
@@ -184,7 +194,7 @@ describe('admin routes', () => {
     });
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to grant admin access' });
+    expect(res.body).toEqual({ error: 'Internal server error' });
   });
 
   it('does not leak raw validation text from admin grant failures', async () => {
@@ -234,7 +244,7 @@ describe('admin routes', () => {
     });
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to revoke admin access' });
+    expect(res.body).toEqual({ error: 'Internal server error' });
   });
 
   it('allowlists admin sort fields before building Mongo sort objects', () => {

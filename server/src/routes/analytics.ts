@@ -21,6 +21,7 @@ import {
 import { getCorpusQualityDashboard } from '../services/corpusQualityDashboardService';
 import { validateNetid } from '../middleware/validation';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { BadRequestError } from '../utils/errors';
 import {
   emitResearchEvent,
   existingResearchEntityIds,
@@ -53,7 +54,7 @@ function setPrivateAnalyticsCacheHeaders(_request: Request, response: Response, 
 
 router.use(setPrivateAnalyticsCacheHeaders);
 
-class AnalyticsRequestError extends Error {}
+const invalidAnalyticsRequest = () => new BadRequestError('Invalid analytics request');
 
 const MAX_RESEARCH_EVENT_BATCH = 50;
 
@@ -176,20 +177,13 @@ const parseAnalyticsRange = (range: unknown): AnalyticsDateRange => {
   return { start: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), end: now };
 };
 
-const handleAnalyticsError = (response: Response, error: unknown, fallbackMessage: string) => {
-  const isValidationFailure = error instanceof AnalyticsRequestError;
-  response.status(isValidationFailure ? 400 : 500).json({
-    error: isValidationFailure ? 'Invalid analytics request' : fallbackMessage,
-  });
-};
-
 const parseUserAnalyticsSearch = (search: unknown): string | undefined => {
   if (typeof search !== 'string') {
     return undefined;
   }
 
   if (search.length > MAX_USER_ANALYTICS_SEARCH_LENGTH) {
-    throw new AnalyticsRequestError('Invalid analytics request');
+    throw invalidAnalyticsRequest();
   }
 
   return search;
@@ -201,12 +195,12 @@ const parseAnalyticsLimit = (limit: unknown, max: number): number | undefined =>
   }
 
   if (typeof limit !== 'string' || limit.length > 16) {
-    throw new AnalyticsRequestError('Invalid analytics request');
+    throw invalidAnalyticsRequest();
   }
 
   const numericLimit = Number(limit);
   if (!Number.isInteger(numericLimit) || numericLimit < 1 || numericLimit > max) {
-    throw new AnalyticsRequestError('Invalid analytics request');
+    throw invalidAnalyticsRequest();
   }
 
   return numericLimit;
@@ -220,7 +214,7 @@ const parseAnalyticsOffset = (offset: unknown): number | undefined => {
   }
 
   if (typeof offset !== 'string' || offset.length > 16) {
-    throw new AnalyticsRequestError('Invalid analytics request');
+    throw invalidAnalyticsRequest();
   }
 
   const numericOffset = Number(offset);
@@ -229,7 +223,7 @@ const parseAnalyticsOffset = (offset: unknown): number | undefined => {
     numericOffset < 0 ||
     numericOffset > MAX_USER_ANALYTICS_OFFSET
   ) {
-    throw new AnalyticsRequestError('Invalid analytics request');
+    throw invalidAnalyticsRequest();
   }
 
   return numericOffset;
@@ -241,7 +235,7 @@ const parseAnalyticsUserSort = (sort: unknown): AnalyticsUserSort | undefined =>
   }
 
   if (typeof sort !== 'string' || !ANALYTICS_USER_SORTS.includes(sort as AnalyticsUserSort)) {
-    throw new AnalyticsRequestError('Invalid analytics request');
+    throw invalidAnalyticsRequest();
   }
 
   return sort as AnalyticsUserSort;
@@ -256,7 +250,7 @@ const parseAnalyticsSortDirection = (direction: unknown): AnalyticsSortDirection
     typeof direction !== 'string' ||
     !ANALYTICS_SORT_DIRECTIONS.includes(direction as AnalyticsSortDirection)
   ) {
-    throw new AnalyticsRequestError('Invalid analytics request');
+    throw invalidAnalyticsRequest();
   }
 
   return direction as AnalyticsSortDirection;
@@ -272,7 +266,7 @@ const parseAnalyticsUserType = (userType: unknown): string | undefined => {
     userType.length > MAX_ANALYTICS_USER_TYPE_LENGTH ||
     !ANALYTICS_USER_TYPE_RE.test(userType)
   ) {
-    throw new AnalyticsRequestError('Invalid analytics request');
+    throw invalidAnalyticsRequest();
   }
 
   return userType;
@@ -284,43 +278,41 @@ const parseAnalyticsActiveSince = (activeSince: unknown): string | undefined => 
   }
 
   if (typeof activeSince !== 'string' || activeSince.length > MAX_ANALYTICS_ACTIVE_SINCE_LENGTH) {
-    throw new AnalyticsRequestError('Invalid analytics request');
+    throw invalidAnalyticsRequest();
   }
 
   const trimmed = activeSince.trim();
   if (!trimmed || Number.isNaN(new Date(trimmed).getTime())) {
-    throw new AnalyticsRequestError('Invalid analytics request');
+    throw invalidAnalyticsRequest();
   }
 
   return trimmed;
 };
 
-router.get('/', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
-  try {
+router.get(
+  '/',
+  isAuthenticated,
+  isAdmin,
+  asyncHandler(async (request: Request, response: Response) => {
     const analytics = await getAnalytics(parseAnalyticsRange(request.query.range));
     response.status(200).json(analytics);
-  } catch (error) {
-    console.error('Error fetching analytics:', sanitizeLogValue(error));
-    handleAnalyticsError(response, error, 'Failed to fetch analytics');
-  }
-});
+  }),
+);
 
 router.get(
   '/corpus-quality',
   isAuthenticated,
   isAdmin,
-  async (_request: Request, response: Response) => {
-    try {
-      response.status(200).json(await getCorpusQualityDashboard());
-    } catch (error) {
-      console.error('Error fetching corpus quality:', sanitizeLogValue(error));
-      handleAnalyticsError(response, error, 'Failed to fetch corpus quality');
-    }
-  },
+  asyncHandler(async (_request: Request, response: Response) => {
+    response.status(200).json(await getCorpusQualityDashboard());
+  }),
 );
 
-router.get('/users', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
-  try {
+router.get(
+  '/users',
+  isAuthenticated,
+  isAdmin,
+  asyncHandler(async (request: Request, response: Response) => {
     const { userType, activeSince, search, sort, direction, limit, offset } = request.query;
     const analytics = await getUserAnalytics({
       userType: parseAnalyticsUserType(userType),
@@ -333,81 +325,70 @@ router.get('/users', isAuthenticated, isAdmin, async (request: Request, response
     });
 
     response.status(200).json(analytics);
-  } catch (error) {
-    console.error('Error fetching user analytics:', sanitizeLogValue(error));
-    handleAnalyticsError(response, error, 'Failed to fetch user analytics');
-  }
-});
+  }),
+);
 
 router.get(
   '/search-quality',
   isAuthenticated,
   isAdmin,
-  async (request: Request, response: Response) => {
-    try {
-      const analytics = await getSearchQualityAnalytics(parseAnalyticsRange(request.query.range));
-      response.status(200).json({
-        ...analytics,
-        searchesWithResults: Math.max(
-          analytics.totalSearches - analytics.degradedSearches - analytics.zeroResultSearches,
-          0,
-        ),
-        avgResultsPerSearch:
-          analytics.byQueryAndEntityType.length > 0
-            ? analytics.byQueryAndEntityType.reduce(
-                (sum, query) => sum + query.avgResultCount * query.totalSearches,
-                0,
-              ) /
-              analytics.byQueryAndEntityType.reduce((sum, query) => sum + query.totalSearches, 0)
-            : 0,
-        topQueries: analytics.topQueries.map((query) => ({
+  asyncHandler(async (request: Request, response: Response) => {
+    const analytics = await getSearchQualityAnalytics(parseAnalyticsRange(request.query.range));
+    response.status(200).json({
+      ...analytics,
+      searchesWithResults: Math.max(
+        analytics.totalSearches - analytics.degradedSearches - analytics.zeroResultSearches,
+        0,
+      ),
+      avgResultsPerSearch:
+        analytics.byQueryAndEntityType.length > 0
+          ? analytics.byQueryAndEntityType.reduce(
+              (sum, query) => sum + query.avgResultCount * query.totalSearches,
+              0,
+            ) / analytics.byQueryAndEntityType.reduce((sum, query) => sum + query.totalSearches, 0)
+          : 0,
+      topQueries: analytics.topQueries.map((query) => ({
+        ...query,
+        count: query.totalSearches,
+        zeroResults: query.zeroResultSearches,
+        avgResults: query.avgResultCount,
+      })),
+      zeroResultQueries: analytics.topZeroResultQueries.map((query) => ({
+        ...query,
+        count: query.totalSearches,
+        zeroResults: query.zeroResultSearches,
+        avgResults: query.avgResultCount,
+      })),
+      lowResultQueries: analytics.byQueryAndEntityType
+        .filter((query) => query.avgResultCount > 0 && query.avgResultCount <= 3)
+        .slice(0, 10)
+        .map((query) => ({
           ...query,
           count: query.totalSearches,
           zeroResults: query.zeroResultSearches,
           avgResults: query.avgResultCount,
         })),
-        zeroResultQueries: analytics.topZeroResultQueries.map((query) => ({
-          ...query,
-          count: query.totalSearches,
-          zeroResults: query.zeroResultSearches,
-          avgResults: query.avgResultCount,
-        })),
-        lowResultQueries: analytics.byQueryAndEntityType
-          .filter((query) => query.avgResultCount > 0 && query.avgResultCount <= 3)
-          .slice(0, 10)
-          .map((query) => ({
-            ...query,
-            count: query.totalSearches,
-            zeroResults: query.zeroResultSearches,
-            avgResults: query.avgResultCount,
-          })),
-      });
-    } catch (error) {
-      console.error('Error fetching search quality analytics:', sanitizeLogValue(error));
-      handleAnalyticsError(response, error, 'Failed to fetch search quality analytics');
-    }
-  },
+    });
+  }),
 );
 
 router.get(
   '/search-queries',
   isAuthenticated,
   isAdmin,
-  async (request: Request, response: Response) => {
-    try {
-      const analytics = await getSearchQueryAnalytics(parseAnalyticsRange(request.query.range), {
-        limit: parseAnalyticsLimit(request.query.limit, 100),
-      });
-      response.status(200).json(analytics);
-    } catch (error) {
-      console.error('Error fetching search query analytics:', sanitizeLogValue(error));
-      handleAnalyticsError(response, error, 'Failed to fetch search query analytics');
-    }
-  },
+  asyncHandler(async (request: Request, response: Response) => {
+    const analytics = await getSearchQueryAnalytics(parseAnalyticsRange(request.query.range), {
+      limit: parseAnalyticsLimit(request.query.limit, 100),
+    });
+    response.status(200).json(analytics);
+  }),
 );
 
-router.get('/funnel', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
-  try {
+router.get(
+  '/funnel',
+  isAuthenticated,
+  isAdmin,
+  asyncHandler(async (request: Request, response: Response) => {
     const analytics = await getFunnelAnalytics(parseAnalyticsRange(request.query.range));
     const stages = [
       { key: 'research_searches', label: 'Searched research', count: analytics.researchSearches },
@@ -447,14 +428,14 @@ router.get('/funnel', isAuthenticated, isAdmin, async (request: Request, respons
             ? analytics.qualifiedActions / analytics.logins
             : 0,
     });
-  } catch (error) {
-    console.error('Error fetching funnel analytics:', sanitizeLogValue(error));
-    handleAnalyticsError(response, error, 'Failed to fetch funnel analytics');
-  }
-});
+  }),
+);
 
-router.get('/actions', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
-  try {
+router.get(
+  '/actions',
+  isAuthenticated,
+  isAdmin,
+  asyncHandler(async (request: Request, response: Response) => {
     const analytics = await getActionNeededAnalytics(parseAnalyticsRange(request.query.range));
     const searchCards = analytics.highSearchLowResults.slice(0, 4).map((query) => ({
       id: `search-${query.entityType}-${query.query}`,
@@ -470,32 +451,24 @@ router.get('/actions', isAuthenticated, isAdmin, async (request: Request, respon
       ...analytics,
       cards: searchCards.slice(0, 6),
     });
-  } catch (error) {
-    console.error('Error fetching action-needed analytics:', sanitizeLogValue(error));
-    handleAnalyticsError(response, error, 'Failed to fetch action-needed analytics');
-  }
-});
+  }),
+);
 
 router.get(
   '/users/:netid',
   isAuthenticated,
   isAdmin,
   validateNetid('netid'),
-  async (request: Request, response: Response) => {
-    try {
-      const limit = parseAnalyticsLimit(request.query.limit, 300);
-      const analytics = await getUserAnalyticsDrilldown(request.params.netid, { limit });
+  asyncHandler(async (request: Request, response: Response) => {
+    const limit = parseAnalyticsLimit(request.query.limit, 300);
+    const analytics = await getUserAnalyticsDrilldown(request.params.netid, { limit });
 
-      if (!analytics) {
-        return response.status(404).json({ error: 'User analytics not found' });
-      }
-
-      response.status(200).json(analytics);
-    } catch (error) {
-      console.error('Error fetching user analytics drilldown:', sanitizeLogValue(error));
-      handleAnalyticsError(response, error, 'Failed to fetch user analytics');
+    if (!analytics) {
+      return response.status(404).json({ error: 'User analytics not found' });
     }
-  },
+
+    response.status(200).json(analytics);
+  }),
 );
 
 export default router;
