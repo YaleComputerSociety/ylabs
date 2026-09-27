@@ -2475,35 +2475,37 @@ describe('Research page', () => {
     expect(JSON.stringify(searchJourneyEvents[0])).not.toContain('machine learning');
   });
 
-  it('dedupes browse impressions per StrictMode load but records a later visit', async () => {
+  it('records one results view per StrictMode browse load and none for a restored grid', async () => {
     mockSearchResponses((url) =>
       url === '/research/search'
         ? researchSearchResponse([researchEntity])
         : unexpectedSearchEndpoint(url),
     );
 
-    const collectImpressionEvents = () =>
+    const collectResultsViewEvents = () =>
       mockedAxios.post.mock.calls
         .filter(([url]) => url === '/analytics/research/batch')
         .flatMap(([, body]) => body.events)
-        .filter((event) => event.eventType === 'research_entity_impression');
+        .filter((event) => event.eventType === 'research_results_view');
 
     const firstVisit = renderResearchStrict();
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
     await waitFor(async () => {
       await flushResearchAnalytics();
-      expect(collectImpressionEvents()).toHaveLength(1);
+      expect(collectResultsViewEvents()).toHaveLength(1);
     });
     firstVisit.unmount();
 
     renderResearchStrict();
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
-    await waitFor(async () => {
-      await flushResearchAnalytics();
-      const impressionEvents = collectImpressionEvents();
-      expect(impressionEvents).toHaveLength(2);
-      expect(impressionEvents[0].dedupeKey).not.toBe(impressionEvents[1].dedupeKey);
-    });
+    await flushResearchAnalytics();
+    expect(collectResultsViewEvents()).toEqual([
+      expect.objectContaining({
+        entityType: 'research_entity',
+        entityIds: ['entity-1'],
+        payload: { surface: 'browse', pageBucket: '1' },
+      }),
+    ]);
   });
 
   it('records exactly one terminal error outcome without the raw query', async () => {

@@ -24,6 +24,7 @@ export interface LogEventParams {
   fellowshipId?: string;
   entityType?: string;
   entityId?: string;
+  entityIds?: string[];
   searchQuery?: string;
   searchDepartments?: string[];
   metadata?: any;
@@ -420,6 +421,15 @@ const sanitizeResearchEntityType = (value: unknown): string | undefined =>
 const sanitizeResearchEntityId = (value: unknown): string | undefined => {
   const sanitized = sanitizeAnalyticsText(value);
   return sanitized && sanitized.trim() !== '' ? sanitized.slice(0, 128) : undefined;
+};
+
+const sanitizeResearchEntityIds = (value: unknown): string[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const ids = value
+    .slice(0, MAX_ANALYTICS_ARRAY_ITEMS)
+    .map(sanitizeResearchEntityId)
+    .filter((id): id is string => Boolean(id));
+  return ids.length > 0 ? ids : undefined;
 };
 
 const sanitizeAnalyticsDedupeKey = (value: unknown): string | undefined =>
@@ -866,6 +876,7 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
     const fellowshipId = sanitizeAnalyticsObjectId(params.fellowshipId);
     const entityType = sanitizeResearchEntityType(params.entityType);
     const entityId = sanitizeResearchEntityId(params.entityId);
+    const entityIds = sanitizeResearchEntityIds(params.entityIds);
     const dedupeKey = sanitizeAnalyticsDedupeKey(params.dedupeKey);
     const eventPayload: Record<string, unknown> = {
       eventType,
@@ -879,6 +890,7 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
     if (fellowshipId) eventPayload.fellowshipId = fellowshipId;
     if (entityType) eventPayload.entityType = entityType;
     if (entityId) eventPayload.entityId = entityId;
+    if (entityIds) eventPayload.entityIds = entityIds;
     if (dedupeKey) eventPayload.dedupeKey = dedupeKey;
 
     if (dedupeKey) {
@@ -1771,6 +1783,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
     AnalyticsEventType.SOURCE_LINK_CLICK,
     AnalyticsEventType.RESEARCH_SEARCH,
     AnalyticsEventType.RESEARCH_ENTITY_IMPRESSION,
+    AnalyticsEventType.RESEARCH_RESULTS_VIEW,
     AnalyticsEventType.RESEARCH_PROFILE_OPEN,
     AnalyticsEventType.RESEARCH_SOURCE_REVIEW,
     AnalyticsEventType.RESEARCH_FILTER_CHANGE,

@@ -35,7 +35,7 @@ export const RESEARCH_EVENT_TYPES: readonly AnalyticsEventType[] = [
   AnalyticsEventType.CONTACT_ROUTE_CLICK,
   AnalyticsEventType.SOURCE_LINK_CLICK,
   AnalyticsEventType.RESEARCH_SEARCH,
-  AnalyticsEventType.RESEARCH_ENTITY_IMPRESSION,
+  AnalyticsEventType.RESEARCH_RESULTS_VIEW,
   AnalyticsEventType.RESEARCH_PROFILE_OPEN,
   AnalyticsEventType.RESEARCH_SOURCE_REVIEW,
   AnalyticsEventType.RESEARCH_FILTER_CHANGE,
@@ -47,7 +47,7 @@ export const RESEARCH_EVENT_TYPES: readonly AnalyticsEventType[] = [
 
 export const RESEARCH_JOURNEY_EVENT_TYPES: readonly AnalyticsEventType[] = [
   AnalyticsEventType.RESEARCH_SEARCH,
-  AnalyticsEventType.RESEARCH_ENTITY_IMPRESSION,
+  AnalyticsEventType.RESEARCH_RESULTS_VIEW,
   AnalyticsEventType.RESEARCH_PROFILE_OPEN,
   AnalyticsEventType.RESEARCH_SOURCE_REVIEW,
   AnalyticsEventType.RESEARCH_FILTER_CHANGE,
@@ -61,13 +61,14 @@ export const RESEARCH_SEARCH_OUTCOMES = ['results', 'zero_results', 'error'] as 
 export const RESEARCH_RESULT_COUNT_BUCKETS = ['0', '1-5', '6-20', '21-50', '51+'] as const;
 export const RESEARCH_SEARCH_KINDS = ['query', 'filtered', 'department'] as const;
 export const RESEARCH_FILTER_COUNT_BUCKETS = ['0', '1', '2', '3+'] as const;
-export const RESEARCH_IMPRESSION_SURFACES = [
+export const RESEARCH_RESULTS_SURFACES = [
   'browse',
   'search',
   'saved_plans',
   'related_programs',
 ] as const;
-export const RESEARCH_POSITION_BUCKETS = ['1-3', '4-10', '11-24', '25+'] as const;
+export const RESEARCH_RESULTS_PAGE_BUCKETS = ['1', '2', '3-4', '5+'] as const;
+export const MAX_RESEARCH_RESULTS_VIEW_ENTITIES = 50;
 export const RESEARCH_PROFILE_OPEN_SOURCES = [
   'browse',
   'search',
@@ -121,6 +122,9 @@ const JOURNEY_EVENTS_WITHOUT_ENTITY = new Set<AnalyticsEventType>([
   // A compare describes a set of 2-4 entities, so it carries an entityCountBucket
   // instead of a single entityId.
   AnalyticsEventType.RESEARCH_COMPARE,
+  // A results view describes the ordered page of entities it showed, so it
+  // carries entityIds instead of a single entityId.
+  AnalyticsEventType.RESEARCH_RESULTS_VIEW,
 ]);
 const ANALYTICS_DEDUPE_KEY_RE = /^[A-Za-z0-9:_-]{1,160}$/;
 
@@ -210,9 +214,9 @@ export const sanitizeResearchPayload = (
       out.filterCountBucket = oneOf(input.filterCountBucket, RESEARCH_FILTER_COUNT_BUCKETS) ?? '0';
       break;
     }
-    case AnalyticsEventType.RESEARCH_ENTITY_IMPRESSION: {
-      out.surface = oneOf(input.surface, RESEARCH_IMPRESSION_SURFACES) ?? 'search';
-      out.positionBucket = oneOf(input.positionBucket, RESEARCH_POSITION_BUCKETS) ?? '25+';
+    case AnalyticsEventType.RESEARCH_RESULTS_VIEW: {
+      out.surface = oneOf(input.surface, RESEARCH_RESULTS_SURFACES) ?? 'search';
+      out.pageBucket = oneOf(input.pageBucket, RESEARCH_RESULTS_PAGE_BUCKETS) ?? '1';
       break;
     }
     case AnalyticsEventType.RESEARCH_PROFILE_OPEN: {
@@ -336,12 +340,38 @@ export const researchEntityExists = async (
   return Boolean(await Fellowship.exists({ _id: id }));
 };
 
+/**
+ * The subset of `entityIds` that name a research entity, in the order given.
+ * One query for the whole page, where a per-entity row used to cost one lookup
+ * each.
+ */
+export const existingResearchEntityIds = async (entityIds: unknown): Promise<string[]> => {
+  if (!Array.isArray(entityIds)) return [];
+  const ids = [
+    ...new Set(
+      entityIds
+        .slice(0, MAX_RESEARCH_RESULTS_VIEW_ENTITIES)
+        .filter(isNonEmptyString)
+        .map((id) => id.trim().slice(0, 128)),
+    ),
+  ];
+  if (ids.length === 0) return [];
+  const objectIds = ids.filter((id) => mongoose.isValidObjectId(id));
+  const found = await ResearchEntity.find(
+    { $or: [{ slug: { $in: ids } }, ...(objectIds.length ? [{ _id: { $in: objectIds } }] : [])] },
+    { slug: 1 },
+  ).lean<Array<{ _id: mongoose.Types.ObjectId; slug?: string }>>();
+  const known = new Set(found.flatMap((entity) => [String(entity._id), entity.slug ?? '']));
+  return ids.filter((id) => known.has(id));
+};
+
 export interface BuildResearchEventInput {
   eventType: AnalyticsEventType;
   netid: string;
   userType: string;
   entityType?: ResearchEntityType;
   entityId?: string;
+  entityIds?: string[];
   payload?: unknown;
   dedupeKey?: string;
 }
@@ -364,6 +394,7 @@ export const buildResearchEvent = (input: BuildResearchEventInput): LogEventPara
     userType: input.userType,
     ...(input.entityType ? { entityType: input.entityType } : {}),
     ...(input.entityId ? { entityId: String(input.entityId).slice(0, 128) } : {}),
+    ...(input.entityIds?.length ? { entityIds: input.entityIds } : {}),
     ...(metadata ? { metadata } : {}),
     ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
   };
@@ -373,6 +404,7 @@ export interface EmitResearchEventInput {
   eventType: unknown;
   entityType: unknown;
   entityId: unknown;
+  entityIds?: string[];
   user?: AnalyticsUser;
   payload?: unknown;
   dedupeKey?: unknown;
@@ -394,6 +426,9 @@ export const emitResearchEvent = async (
   const entityOptional = JOURNEY_EVENTS_WITHOUT_ENTITY.has(input.eventType);
   const hasEntity = isResearchEntityType(input.entityType) && isNonEmptyString(input.entityId);
   if (!entityOptional && !hasEntity) return false;
+  if (input.eventType === AnalyticsEventType.RESEARCH_RESULTS_VIEW) {
+    if (input.entityType !== 'research_entity' || !input.entityIds?.length) return false;
+  }
   if (
     input.dedupeKey !== undefined &&
     !(typeof input.dedupeKey === 'string' && ANALYTICS_DEDUPE_KEY_RE.test(input.dedupeKey))
@@ -426,6 +461,9 @@ export const emitResearchEvent = async (
             entityType: input.entityType as ResearchEntityType,
             entityId: (input.entityId as string).trim(),
           }
+        : {}),
+      ...(input.eventType === AnalyticsEventType.RESEARCH_RESULTS_VIEW
+        ? { entityType: 'research_entity' as const, entityIds: input.entityIds }
         : {}),
       payload,
       ...(typeof input.dedupeKey === 'string' ? { dedupeKey: input.dedupeKey } : {}),

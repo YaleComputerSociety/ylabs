@@ -560,9 +560,9 @@ describe('app security runtime classification', () => {
             body: JSON.stringify({
               events: [
                 {
-                  eventType: 'research_entity_impression',
+                  eventType: 'research_results_view',
                   entityType: 'research_entity',
-                  entityId: '64a000000000000000000030',
+                  entityIds: ['64a000000000000000000030'],
                 },
               ],
             }),

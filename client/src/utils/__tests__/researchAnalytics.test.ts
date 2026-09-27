@@ -4,12 +4,12 @@ import axios from '../axios';
 import {
   flushResearchAnalytics,
   researchCountBucket,
-  researchPositionBucket,
   researchResultCountBucket,
   resetResearchAnalyticsDedupeForTests,
   setResearchAnalyticsEnabled,
   trackResearchEvent,
   trackResearchEventOnce,
+  trackResearchResultsView,
 } from '../researchAnalytics';
 
 vi.mock('../axios', () => ({
@@ -155,7 +155,33 @@ describe('research journey analytics client', () => {
     await expect(flushResearchAnalytics()).resolves.toBeUndefined();
   });
 
-  it('uses bounded result, position, and comparison buckets', () => {
+  it('records a result page as one event with its entities in display order', async () => {
+    vi.mocked(axios.post).mockResolvedValue({ status: 202 });
+
+    await trackResearchResultsView(
+      'browse:abc:1:3',
+      [{ _id: 'lab-a' }, {}, { _id: 'lab-b' }],
+      'browse',
+      3,
+    );
+    await trackResearchResultsView('browse:abc:1:3', [{ _id: 'lab-a' }], 'browse', 3);
+    await flushResearchAnalytics();
+
+    expect(axios.post).toHaveBeenCalledOnce();
+    expect(vi.mocked(axios.post).mock.calls[0][1]).toEqual({
+      events: [
+        {
+          eventType: 'research_results_view',
+          entityType: 'research_entity',
+          entityIds: ['lab-a', 'lab-b'],
+          payload: { surface: 'browse', pageBucket: '3-4' },
+          dedupeKey: 'browse:abc:1:3',
+        },
+      ],
+    });
+  });
+
+  it('uses bounded result and comparison buckets', () => {
     expect([0, 1, 6, 21, 51].map(researchResultCountBucket)).toEqual([
       '0',
       '1-5',
@@ -163,7 +189,6 @@ describe('research journey analytics client', () => {
       '21-50',
       '51+',
     ]);
-    expect([1, 4, 11, 25].map(researchPositionBucket)).toEqual(['1-3', '4-10', '11-24', '25+']);
     expect([1, 2, 4, 5].map(researchCountBucket)).toEqual(['1', '2', '3-4', '5+']);
   });
 });

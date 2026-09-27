@@ -38,10 +38,9 @@ import useDocumentTitle from '../hooks/useDocumentTitle';
 import type { PathwaySearchFilters } from '../types/pathway';
 import {
   createResearchAnalyticsInteractionId,
-  researchPositionBucket,
   researchResultCountBucket,
   trackResearchEvent,
-  trackResearchEventOnce,
+  trackResearchResultsView,
 } from '../utils/researchAnalytics';
 
 interface DepartmentResearchHomeConfig {
@@ -553,21 +552,6 @@ const Research = () => {
   }, []);
 
   useEffect(() => {
-    restoredSnapshotRef.current?.defaultResearchEntities.forEach((entity, index) => {
-      if (!entity._id) return;
-      void trackResearchEventOnce(`${browseAnalyticsSessionRef.current}:restored:${entity._id}`, {
-        eventType: 'research_entity_impression',
-        entityType: 'research_entity',
-        entityId: entity._id,
-        payload: {
-          surface: 'browse',
-          positionBucket: researchPositionBucket(index + 1),
-        },
-      });
-    });
-  }, []);
-
-  useEffect(() => {
     if (isAdmin) return;
     if (showWeakestProfilesFirst) setShowWeakestProfilesFirst(false);
     if (qualityFilters.length > 0) setQualityFilters([]);
@@ -621,20 +605,7 @@ const Research = () => {
       }
       setDefaultSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
       setDefaultSearchError('');
-      researchEntities.forEach((entity, index) => {
-        if (!entity._id) return;
-        void trackResearchEventOnce(`${browseLoadAnalyticsKey}:${entity._id}`, {
-          eventType: 'research_entity_impression',
-          entityType: 'research_entity',
-          entityId: entity._id,
-          payload: {
-            surface: 'browse',
-            positionBucket: researchPositionBucket(
-              (page - 1) * DEFAULT_RESEARCH_HOME_LIMIT + index + 1,
-            ),
-          },
-        });
-      });
+      void trackResearchResultsView(browseLoadAnalyticsKey, researchEntities, 'browse', page);
     } catch (error) {
       if (
         requestId === defaultSearchRequestIdRef.current &&
@@ -785,15 +756,7 @@ const Research = () => {
         },
         dedupeKey: analyticsKey,
       });
-      researchEntities.forEach((entity, index) => {
-        if (!entity._id) return;
-        void trackResearchEventOnce(`${analyticsKey}:i:${entity._id}`, {
-          eventType: 'research_entity_impression',
-          entityType: 'research_entity',
-          entityId: entity._id,
-          payload: { surface: 'search', positionBucket: researchPositionBucket(index + 1) },
-        });
-      });
+      void trackResearchResultsView(`${analyticsKey}:results:1`, researchEntities, 'search', 1);
       options.filterChanges?.forEach((change) => {
         void trackResearchEvent({
           eventType: 'research_filter_change',
@@ -868,18 +831,12 @@ const Research = () => {
       });
       const analyticsKey = activeSearchAnalyticsKeyRef.current;
       if (analyticsKey) {
-        visibleResearchEntities.forEach((entity, index) => {
-          if (!entity._id) return;
-          void trackResearchEventOnce(`${analyticsKey}:i:${entity._id}`, {
-            eventType: 'research_entity_impression',
-            entityType: 'research_entity',
-            entityId: entity._id,
-            payload: {
-              surface: 'search',
-              positionBucket: researchPositionBucket((page - 1) * 24 + index + 1),
-            },
-          });
-        });
+        void trackResearchResultsView(
+          `${analyticsKey}:results:${page}`,
+          visibleResearchEntities,
+          'search',
+          page,
+        );
       }
       if (!researchEntitiesPage.depthLimited) {
         setSearchTotal(researchEntitiesPage.estimatedTotalHits);

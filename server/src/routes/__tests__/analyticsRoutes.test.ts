@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getUserAnalytics: vi.fn(),
   getUserAnalyticsDrilldown: vi.fn(),
   emitResearchEvent: vi.fn(),
+  existingResearchEntityIds: vi.fn(),
   researchEntityExists: vi.fn(),
 }));
 
@@ -34,6 +35,7 @@ vi.mock('../../services/analyticsService', async (importOriginal) => ({
 vi.mock('../../services/researchAnalytics', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/researchAnalytics')>()),
   emitResearchEvent: mocks.emitResearchEvent,
+  existingResearchEntityIds: mocks.existingResearchEntityIds,
   researchEntityExists: mocks.researchEntityExists,
 }));
 
@@ -112,7 +114,7 @@ describe('analytics routes', () => {
 
   it('accepts a batch of research events and reports the accepted count', async () => {
     mocks.emitResearchEvent.mockResolvedValue(true);
-    mocks.researchEntityExists.mockResolvedValue(true);
+    mocks.existingResearchEntityIds.mockResolvedValue(['lab-a', 'lab-b']);
 
     const res = await invokeRouteHandler('/research/batch', {
       body: {
@@ -127,10 +129,10 @@ describe('analytics routes', () => {
             },
           },
           {
-            eventType: 'research_entity_impression',
+            eventType: 'research_results_view',
             entityType: 'research_entity',
-            entityId: '507f1f77bcf86cd799439011',
-            payload: { surface: 'browse', positionBucket: '1-3' },
+            entityIds: ['lab-a', 'lab-b'],
+            payload: { surface: 'browse', pageBucket: '1' },
           },
         ],
       },
@@ -144,15 +146,80 @@ describe('analytics routes', () => {
     expect(mocks.emitResearchEvent).toHaveBeenCalledTimes(2);
   });
 
-  it('reports sent alongside accepted so a caller can tell delivery from acceptance', async () => {
+  it('stores a result page as one event carrying only the entities that exist', async () => {
+    mocks.emitResearchEvent.mockResolvedValue(true);
+    mocks.existingResearchEntityIds.mockResolvedValue(['lab-a', 'lab-c']);
+
     const res = await invokeRouteHandler('/research/batch', {
       body: {
         events: [
+          {
+            eventType: 'research_results_view',
+            entityType: 'research_entity',
+            entityIds: ['lab-a', 'lab-gone', 'lab-c'],
+            payload: { surface: 'search', pageBucket: '2' },
+            dedupeKey: 'search:abc:results:2',
+          },
+        ],
+      },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(res.body).toEqual({ accepted: 1, sent: 1 });
+    expect(mocks.existingResearchEntityIds).toHaveBeenCalledOnce();
+    expect(mocks.researchEntityExists).not.toHaveBeenCalled();
+    expect(mocks.emitResearchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'research_results_view',
+        entityIds: ['lab-a', 'lab-c'],
+        dedupeKey: 'search:abc:results:2',
+      }),
+    );
+  });
+
+  it('rejects a result page with no known entity and the retired per-entity impression', async () => {
+    mocks.existingResearchEntityIds.mockResolvedValue([]);
+
+    const res = await invokeRouteHandler('/research/batch', {
+      body: {
+        events: [
+          {
+            eventType: 'research_results_view',
+            entityType: 'research_entity',
+            entityIds: ['lab-gone'],
+            payload: { surface: 'browse', pageBucket: '1' },
+          },
           {
             eventType: 'research_entity_impression',
             entityType: 'research_entity',
             entityId: '507f1f77bcf86cd799439011',
             payload: { surface: 'browse', positionBucket: '1-3' },
+          },
+        ],
+      },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(res.body).toEqual({ accepted: 0, sent: 2 });
+    expect(mocks.emitResearchEvent).not.toHaveBeenCalled();
+  });
+
+  it('reports sent alongside accepted so a caller can tell delivery from acceptance', async () => {
+    mocks.emitResearchEvent.mockResolvedValue(true);
+    mocks.existingResearchEntityIds.mockResolvedValue(['lab-a']);
+
+    const res = await invokeRouteHandler('/research/batch', {
+      body: {
+        events: [
+          {
+            eventType: 'research_results_view',
+            entityType: 'research_entity',
+            entityIds: ['lab-a'],
+            payload: { surface: 'browse', pageBucket: '1' },
           },
           { eventType: 'not_a_research_event' },
         ],

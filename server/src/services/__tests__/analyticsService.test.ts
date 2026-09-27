@@ -38,6 +38,7 @@ vi.mock('../../models/analytics', () => ({
     SOURCE_LINK_CLICK: 'source_link_click',
     RESEARCH_SEARCH: 'research_search',
     RESEARCH_ENTITY_IMPRESSION: 'research_entity_impression',
+    RESEARCH_RESULTS_VIEW: 'research_results_view',
     RESEARCH_PROFILE_OPEN: 'research_profile_open',
     RESEARCH_SOURCE_REVIEW: 'research_source_review',
     RESEARCH_FILTER_CHANGE: 'research_filter_change',
