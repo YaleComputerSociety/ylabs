@@ -324,6 +324,7 @@ async function applyRepair(
   emptySlotRefusalsRecorded: number;
   observationsSuperseded: number;
   regatedEntities: number;
+  indexSyncFailures: number;
 }> {
   let rowsRepaired = 0;
   let servedSlotsCleared = 0;
@@ -365,6 +366,7 @@ async function applyRepair(
   }
 
   let regatedEntities = 0;
+  let indexSyncFailures = 0;
   if (regateEntityIds.length > 0) {
     const gatePlans = await planStudentVisibilityGate({
       collection: 'research',
@@ -376,13 +378,7 @@ async function applyRepair(
     for (const entityId of regateEntityIds) {
       const fresh = await ResearchEntity.findById(entityId).lean();
       if (!fresh) continue;
-      await syncEntity('researchEntity', fresh).catch((error) =>
-        console.warn(
-          `[${SCRIPT_NAME}] meili sync failed for ${sanitizeLogValue(entityId)}: ${sanitizeLogValue(
-            error instanceof Error ? error.message : String(error),
-          )}`,
-        ),
-      );
+      if (!(await syncEntity('researchEntity', fresh))) indexSyncFailures += 1;
     }
   }
 
@@ -392,6 +388,7 @@ async function applyRepair(
     emptySlotRefusalsRecorded,
     observationsSuperseded,
     regatedEntities,
+    indexSyncFailures,
   };
 }
 
@@ -438,6 +435,7 @@ async function main() {
         emptySlotRefusalsRecorded: 0,
         observationsSuperseded: 0,
         regatedEntities: 0,
+        indexSyncFailures: 0,
       };
 
   const report = {
@@ -463,6 +461,7 @@ async function main() {
     emptySlotRefusalsRecorded: applied.emptySlotRefusalsRecorded,
     observationsSuperseded: applied.observationsSuperseded,
     regatedEntities: applied.regatedEntities,
+    indexSyncFailures: applied.indexSyncFailures,
     byOwnerEntityType: planned.reduce<Record<string, number>>((acc, row) => {
       const key = row.plan.ownerEntityType || 'UNKNOWN';
       acc[key] = (acc[key] || 0) + 1;

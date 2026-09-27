@@ -33,17 +33,19 @@ export const isSyncableEntityType = (entityType: string): entityType is Syncable
   return getConfig(entityType) !== null;
 };
 
-export const syncEntity = async (entityType: string, doc: any): Promise<void> => {
+export const syncEntity = async (entityType: string, doc: any): Promise<boolean> => {
   const config = getConfig(entityType);
-  if (!config || !doc) return;
+  if (!config || !doc) return false;
 
   try {
     const meiliDoc = await config.transform(doc);
-    if (!meiliDoc) return;
+    if (!meiliDoc) return false;
     const index = await getMeiliIndex(config.indexName);
     await index.addDocuments([meiliDoc], { primaryKey: config.primaryKey });
+    return true;
   } catch (error) {
     console.error(`Failed to sync ${entityType} to Meilisearch:`, sanitizeLogValue(error));
+    return false;
   }
 };
 

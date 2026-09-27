@@ -113,7 +113,7 @@ describe('analytics routes', () => {
   });
 
   it('accepts a batch of research events and reports the accepted count', async () => {
-    mocks.emitResearchEvent.mockResolvedValue(true);
+    mocks.emitResearchEvent.mockResolvedValue('recorded');
     mocks.existingResearchEntityIds.mockResolvedValue(['lab-a', 'lab-b']);
 
     const res = await invokeRouteHandler('/research/batch', {
@@ -147,7 +147,7 @@ describe('analytics routes', () => {
   });
 
   it('stores a result page as one event carrying only the entities that exist', async () => {
-    mocks.emitResearchEvent.mockResolvedValue(true);
+    mocks.emitResearchEvent.mockResolvedValue('recorded');
     mocks.existingResearchEntityIds.mockResolvedValue(['lab-a', 'lab-c']);
 
     const res = await invokeRouteHandler('/research/batch', {
@@ -209,7 +209,7 @@ describe('analytics routes', () => {
   });
 
   it('reports sent alongside accepted so a caller can tell delivery from acceptance', async () => {
-    mocks.emitResearchEvent.mockResolvedValue(true);
+    mocks.emitResearchEvent.mockResolvedValue('recorded');
     mocks.existingResearchEntityIds.mockResolvedValue(['lab-a']);
 
     const res = await invokeRouteHandler('/research/batch', {
@@ -231,6 +231,61 @@ describe('analytics routes', () => {
 
     expect(res.statusCode).toBe(202);
     expect(res.body).toEqual({ accepted: 1, sent: 2 });
+  });
+
+  it('does not count an event the store failed to write as accepted, and warns about it', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mocks.emitResearchEvent.mockResolvedValueOnce('recorded').mockResolvedValueOnce('failed');
+
+    const searchEvent = {
+      eventType: 'research_search',
+      payload: {
+        outcome: 'results',
+        resultCountBucket: '6-20',
+        searchKind: 'query',
+        filterCountBucket: '0',
+      },
+    };
+    const res = await invokeRouteHandler('/research/batch', {
+      body: { events: [searchEvent, searchEvent] },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(res.statusCode).toBe(202);
+    expect(res.body).toEqual({ accepted: 1, sent: 2 });
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(JSON.stringify(warnSpy.mock.calls[0])).toContain('unstored');
+    warnSpy.mockRestore();
+  });
+
+  it('does not count a Beta-suppressed event as accepted and does not warn about it', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mocks.emitResearchEvent.mockResolvedValue('suppressed');
+
+    const res = await invokeRouteHandler('/research/batch', {
+      body: {
+        events: [
+          {
+            eventType: 'research_search',
+            payload: {
+              outcome: 'results',
+              resultCountBucket: '6-20',
+              searchKind: 'query',
+              filterCountBucket: '0',
+            },
+          },
+        ],
+      },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(res.body).toEqual({ accepted: 0, sent: 1 });
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 
   it('rejects a batch that is not a non-empty array', async () => {

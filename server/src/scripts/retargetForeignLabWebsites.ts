@@ -612,6 +612,7 @@ export async function applyRetargetRows(rows: RetargetRow[]): Promise<{
   holderFieldsCleared: number;
   observationsRetired: number;
   visibilityTierChanges: number;
+  indexSyncFailures: number;
   touchedSlugs: string[];
 }> {
   const retargets = rows.filter((row) => row.decision === 'RETARGET' && row.targetSlug);
@@ -621,6 +622,7 @@ export async function applyRetargetRows(rows: RetargetRow[]): Promise<{
     holderFieldsCleared: 0,
     observationsRetired: 0,
     visibilityTierChanges: 0,
+    indexSyncFailures: 0,
     touchedSlugs: [] as string[],
   };
   if (retargets.length === 0) return summary;
@@ -727,12 +729,13 @@ export async function applyRetargetRows(rows: RetargetRow[]): Promise<{
 
   const touched = Array.from(new Set(summary.touchedSlugs));
   const touchedIds: string[] = [];
+  const unsyncedSlugs = new Set<string>();
   for (const slug of touched) {
     const doc = await ResearchEntity.findOne({ slug }).lean();
     if (!doc) continue;
     const id = serializedDocumentId((doc as { _id: unknown })._id);
     if (id) touchedIds.push(id);
-    await syncEntity('researchEntity', doc);
+    if (!(await syncEntity('researchEntity', doc))) unsyncedSlugs.add(slug);
   }
   // Re-gated because a repair can change what the record is able to serve: a record
   // that loses the only description it had must stop claiming `student_ready` rather
@@ -744,11 +747,13 @@ export async function applyRetargetRows(rows: RetargetRow[]): Promise<{
       recordIds: touchedIds,
     });
     summary.visibilityTierChanges = gate.counts.changed;
+    unsyncedSlugs.clear();
     for (const slug of touched) {
       const doc = await ResearchEntity.findOne({ slug }).lean();
-      if (doc) await syncEntity('researchEntity', doc);
+      if (doc && !(await syncEntity('researchEntity', doc))) unsyncedSlugs.add(slug);
     }
   }
+  summary.indexSyncFailures = unsyncedSlugs.size;
   return summary;
 }
 

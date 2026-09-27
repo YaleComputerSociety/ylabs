@@ -19,10 +19,11 @@ describe('research analytics event emission', () => {
       },
       async (event) => {
         events.push(event);
+        return 'recorded' as const;
       },
     );
 
-    expect(emitted).toBe(true);
+    expect(emitted).toBe('recorded');
     expect(events[0]).toEqual({
       eventType: AnalyticsEventType.RESEARCH_VIEW,
       netid: 'abc123',
@@ -52,10 +53,11 @@ describe('research analytics event emission', () => {
       },
       async (event) => {
         events.push(event);
+        return 'recorded' as const;
       },
     );
 
-    expect(emitted).toBe(true);
+    expect(emitted).toBe('recorded');
     expect(events).toHaveLength(1);
     expect(events[0]).toEqual({
       eventType: AnalyticsEventType.WAYS_IN_CLICK,
@@ -87,6 +89,7 @@ describe('research analytics event emission', () => {
       },
       async (event) => {
         events.push(event);
+        return 'recorded' as const;
       },
     );
 
@@ -110,6 +113,7 @@ describe('research analytics event emission', () => {
       },
       async (event) => {
         events.push(event);
+        return 'recorded' as const;
       },
     );
 
@@ -137,6 +141,7 @@ describe('research analytics event emission', () => {
       },
       async (event) => {
         events.push(event);
+        return 'recorded' as const;
       },
     );
 
@@ -149,11 +154,12 @@ describe('research analytics event emission', () => {
       },
       async (event) => {
         events.push(event);
+        return 'recorded' as const;
       },
     );
 
-    expect(emitted).toBe(true);
-    expect(invalidEmitted).toBe(false);
+    expect(emitted).toBe('recorded');
+    expect(invalidEmitted).toBe('rejected');
     expect(events).toHaveLength(1);
     expect(events[0].metadata).toEqual({
       action: 'stage_change',
@@ -182,6 +188,7 @@ describe('research analytics event emission', () => {
       },
       async (event) => {
         events.push(event);
+        return 'recorded' as const;
       },
     );
 
@@ -218,10 +225,11 @@ describe('research analytics event emission', () => {
       },
       async (event) => {
         events.push(event);
+        return 'recorded' as const;
       },
     );
 
-    expect(emitted).toBe(true);
+    expect(emitted).toBe('recorded');
     expect(events).toEqual([
       {
         eventType: AnalyticsEventType.RESEARCH_RESULTS_VIEW,
@@ -233,6 +241,21 @@ describe('research analytics event emission', () => {
         dedupeKey: 'browse:fixture-1:1:1',
       },
     ]);
+  });
+
+  it('reports a storage failure from the log instead of claiming the event was emitted', async () => {
+    const emitted = await emitResearchEvent(
+      {
+        eventType: AnalyticsEventType.RESEARCH_VIEW,
+        entityType: 'fellowship',
+        entityId: '507f1f77bcf86cd799439010',
+        user,
+        payload: { surface: 'detail' },
+      },
+      async () => 'failed' as const,
+    );
+
+    expect(emitted).toBe('failed');
   });
 
   it('refuses a result page with no entities', async () => {
@@ -249,7 +272,7 @@ describe('research analytics event emission', () => {
         },
         log,
       ),
-    ).resolves.toBe(false);
+    ).resolves.toBe('rejected');
     expect(log).not.toHaveBeenCalled();
   });
 
@@ -267,10 +290,11 @@ describe('research analytics event emission', () => {
       },
       async (event) => {
         events.push(event);
+        return 'recorded' as const;
       },
     );
 
-    expect(emitted).toBe(true);
+    expect(emitted).toBe('recorded');
     expect(events).toEqual([
       {
         eventType: AnalyticsEventType.RESEARCH_COMPARE,
@@ -342,11 +366,12 @@ describe('research analytics event emission', () => {
       },
       async (event) => {
         events.push(event);
+        return 'recorded' as const;
       },
       resolve,
     );
 
-    expect(emitted).toBe(true);
+    expect(emitted).toBe('recorded');
     expect(events[0]).toMatchObject({
       eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
       entityType: 'research_entity',
@@ -384,10 +409,11 @@ describe('research analytics event emission', () => {
         },
         async (event) => {
           events.push(event);
+          return 'recorded' as const;
         },
         qualified,
       ),
-    ).resolves.toBe(false);
+    ).resolves.toBe('rejected');
     await expect(
       emitResearchEvent(
         {
@@ -398,10 +424,11 @@ describe('research analytics event emission', () => {
         },
         async (event) => {
           events.push(event);
+          return 'recorded' as const;
         },
         missing,
       ),
-    ).resolves.toBe(false);
+    ).resolves.toBe('rejected');
     expect(events).toHaveLength(0);
   });
 });

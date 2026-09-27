@@ -19,7 +19,7 @@ import { AnalyticsEventType, RESEARCH_ENTITY_TYPES, ResearchEntityType } from '.
 import { Fellowship, ResearchEntity } from '../models/index';
 import { Account } from '../models/account';
 import { logEvent } from './analyticsService';
-import type { LogEventParams } from './analyticsService';
+import type { AnalyticsWriteOutcome, LogEventParams } from './analyticsService';
 import {
   listPlanningContextsForResearchEntities,
   PLANNING_CONTEXT_CATEGORIES,
@@ -378,7 +378,9 @@ export interface BuildResearchEventInput {
 }
 
 type AnalyticsUser = { netId?: string; userType?: string };
-type ResearchLogFn = (params: LogEventParams) => Promise<void> | void;
+type ResearchLogFn = (params: LogEventParams) => Promise<AnalyticsWriteOutcome>;
+
+export type ResearchEventOutcome = AnalyticsWriteOutcome | 'rejected';
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.trim() !== '';
@@ -419,40 +421,41 @@ export const emitResearchEvent = async (
   input: EmitResearchEventInput,
   log: ResearchLogFn = logEvent,
   resolvePlanningContexts: PlanningContextResolver = listPlanningContextsForResearchEntities,
-): Promise<boolean> => {
+): Promise<ResearchEventOutcome> => {
   if (!isResearchEventType(input.eventType) || !isNonEmptyString(input.user?.netId)) {
-    return false;
+    return 'rejected';
   }
 
   const entityOptional = JOURNEY_EVENTS_WITHOUT_ENTITY.has(input.eventType);
   const hasEntity = isResearchEntityType(input.entityType) && isNonEmptyString(input.entityId);
-  if (!entityOptional && !hasEntity) return false;
+  if (!entityOptional && !hasEntity) return 'rejected';
   if (input.eventType === AnalyticsEventType.RESEARCH_RESULTS_VIEW) {
-    if (input.entityType !== 'research_entity' || !input.entityIds?.length) return false;
+    if (input.entityType !== 'research_entity' || !input.entityIds?.length) return 'rejected';
   }
   if (
     input.dedupeKey !== undefined &&
     !(typeof input.dedupeKey === 'string' && ANALYTICS_DEDUPE_KEY_RE.test(input.dedupeKey))
   )
-    return false;
+    return 'rejected';
 
   let payload = input.payload;
   if (input.eventType === AnalyticsEventType.RESEARCH_QUALIFIED_ACTION) {
-    if (input.entityType !== 'research_entity' || !isNonEmptyString(input.entityId)) return false;
+    if (input.entityType !== 'research_entity' || !isNonEmptyString(input.entityId))
+      return 'rejected';
     const contexts = await resolvePlanningContexts([input.entityId.trim()]);
     const context = contexts.get(input.entityId.trim());
-    if (!context) return false;
+    if (!context) return 'rejected';
     const requestedCategory = (input.payload as { actionCategory?: unknown } | undefined)
       ?.actionCategory;
     if (
       requestedCategory !== undefined &&
       requestedCategory !== (context.category as PlanningContextCategory)
     )
-      return false;
+      return 'rejected';
     payload = { actionCategory: context.category };
   }
 
-  await log(
+  return log(
     buildResearchEvent({
       eventType: input.eventType,
       netid: input.user.netId,
@@ -470,8 +473,6 @@ export const emitResearchEvent = async (
       ...(typeof input.dedupeKey === 'string' ? { dedupeKey: input.dedupeKey } : {}),
     }),
   );
-
-  return true;
 };
 
 export const logResearchEventOnSuccess = (

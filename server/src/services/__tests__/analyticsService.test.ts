@@ -1170,6 +1170,111 @@ describe('logEvent', () => {
   });
 });
 
+describe('logEvent outcome', () => {
+  beforeEach(() => {
+    stubPreviousSearchEvent(null);
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+  });
+
+  it('reports a created event as recorded', async () => {
+    mocks.analyticsCreate.mockResolvedValueOnce({});
+
+    await expect(
+      logEvent({
+        eventType: AnalyticsEventType.LOGIN,
+        netid: 'student123',
+        userType: 'undergraduate',
+      }),
+    ).resolves.toBe('recorded');
+  });
+
+  it('reports a storage error as failed without throwing', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.analyticsCreate.mockRejectedValueOnce(new Error('mongo down'));
+
+    await expect(
+      logEvent({
+        eventType: AnalyticsEventType.LOGIN,
+        netid: 'student123',
+        userType: 'undergraduate',
+      }),
+    ).resolves.toBe('failed');
+  });
+
+  it('reports a failed dedupe upsert as failed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.analyticsUpdateOne.mockRejectedValueOnce(new Error('mongo down'));
+
+    await expect(
+      logEvent({
+        eventType: AnalyticsEventType.RESEARCH_SAVE,
+        netid: 'student123',
+        userType: 'undergraduate',
+        entityType: 'research_entity',
+        entityId: '507f1f77bcf86cd799439011',
+        dedupeKey: 'save:fixture-2',
+      }),
+    ).resolves.toBe('failed');
+  });
+
+  it('reports an already-stored dedupe key as recorded', async () => {
+    mocks.analyticsUpdateOne.mockResolvedValueOnce({ upsertedCount: 0, matchedCount: 1 });
+
+    await expect(
+      logEvent({
+        eventType: AnalyticsEventType.RESEARCH_SAVE,
+        netid: 'student123',
+        userType: 'undergraduate',
+        entityType: 'research_entity',
+        entityId: '507f1f77bcf86cd799439011',
+        dedupeKey: 'save:fixture-3',
+      }),
+    ).resolves.toBe('recorded');
+  });
+
+  it('reports a Beta student event as suppressed, not stored', async () => {
+    vi.stubEnv('SCRAPER_ENV', 'beta');
+    try {
+      await expect(
+        logEvent({
+          eventType: AnalyticsEventType.LOGIN,
+          netid: 'zz9999',
+          userType: 'undergraduate',
+        }),
+      ).resolves.toBe('suppressed');
+      expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('reports a malformed event type or actor as invalid rather than failed', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect(
+      logEvent({
+        eventType: 'search.$where' as AnalyticsEventType,
+        netid: 'student123',
+        userType: 'undergraduate',
+      }),
+    ).resolves.toBe('invalid');
+    await expect(
+      logEvent({
+        eventType: AnalyticsEventType.SEARCH,
+        netid: '../not-a-netid',
+        userType: 'undergraduate',
+      }),
+    ).resolves.toBe('invalid');
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe('search typing episodes', () => {
   beforeEach(() => {
     stubPreviousSearchEvent(null);

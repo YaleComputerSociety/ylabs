@@ -152,6 +152,7 @@ async function main(): Promise<void> {
   let storedCleared = 0;
   let regatedEntities = 0;
   let demotedFromStudentReady = 0;
+  let indexSyncFailures = 0;
   if (!options.dryRun && plans.length > 0) {
     const ids = plans.flatMap((plan) => plan.supersedeObservationIds);
     const superseded = await Observation.updateMany(
@@ -211,13 +212,7 @@ async function main(): Promise<void> {
         demotedFromStudentReady += 1;
       }
       const full = await ResearchEntity.findById(entityId).lean();
-      if (full) {
-        await syncEntity('researchEntity', full).catch((error) =>
-          console.warn(
-            `[${SCRIPT_NAME}] meili sync failed: ${sanitizeLogValue(error instanceof Error ? error.message : String(error))}`,
-          ),
-        );
-      }
+      if (full && !(await syncEntity('researchEntity', full))) indexSyncFailures += 1;
     }
   }
 
@@ -238,6 +233,7 @@ async function main(): Promise<void> {
     storedCleared: options.dryRun ? null : storedCleared,
     regatedEntities: options.dryRun ? null : regatedEntities,
     demotedFromStudentReady: options.dryRun ? null : demotedFromStudentReady,
+    indexSyncFailures: options.dryRun ? null : indexSyncFailures,
   };
   console.log(JSON.stringify(report, null, 2));
   if (options.output) {

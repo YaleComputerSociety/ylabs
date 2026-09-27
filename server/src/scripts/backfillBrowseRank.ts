@@ -84,6 +84,7 @@ export interface BrowseRankBackfillResult {
   mode: 'dry-run' | 'apply';
   considered: number;
   updated: number;
+  indexSyncFailures: number;
   sampleScores: Array<{ id: string; name?: string; score: number }>;
 }
 
@@ -103,6 +104,7 @@ export async function runBrowseRankBackfill(options: {
     mode: options.dryRun ? 'dry-run' : 'apply',
     considered: 0,
     updated: 0,
+    indexSyncFailures: 0,
     sampleScores: [],
   };
 
@@ -111,6 +113,7 @@ export async function runBrowseRankBackfill(options: {
     const batchResult = await recomputeBrowseRankForEntities(batch, { dryRun: options.dryRun });
     result.considered += batchResult.considered;
     result.updated += batchResult.updated;
+    result.indexSyncFailures += batchResult.indexSyncFailures;
     for (const [id, score] of batchResult.scoresByEntityId) {
       if (result.sampleScores.length >= 25) break;
       result.sampleScores.push({ id, name: nameById.get(id), score });
@@ -159,6 +162,12 @@ async function main(): Promise<void> {
       console.log(`Saved browse-rank backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
+    if (result.indexSyncFailures > 0) {
+      console.error(
+        `${result.indexSyncFailures} updated row(s) were not resynced to Meilisearch, so browse still serves their old order; rebuild the index or rerun.`,
+      );
+      process.exitCode = 1;
+    }
   } finally {
     await mongoose.disconnect();
   }

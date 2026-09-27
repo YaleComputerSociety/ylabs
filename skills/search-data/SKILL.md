@@ -100,6 +100,8 @@ Strong `CURRENT_UNDERGRADS` and `PAST_UNDERGRADS` signals outweigh the `REACH_OU
 `NOT_CURRENTLY_AVAILABLE` is negative.
 
 `entityMaterializer` recomputes ranking live after access signals are derived.
+Browse sorts on the indexed score, not the stored one, so a Mongo write whose resync failed still serves the old order.
+`syncEntity` therefore returns whether it submitted the document, and `recomputeBrowseRankForEntities`, the browse-rank backfills, and `materializeFromRun` (`indexSyncFailures`, persisted as `ScrapeRun.materializationIndexSyncFailures`) report those rows apart from `updated` (#3638).
 Admin "weakest profiles first" with `browseQuality: 'low-first'` is a separate Mongo-side path.
 
 ## Measuring search quality

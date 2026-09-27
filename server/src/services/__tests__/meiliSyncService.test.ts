@@ -162,9 +162,18 @@ describe('syncEntity transform', () => {
     expect(mocks.addDocuments).not.toHaveBeenCalled();
   });
 
-  it('swallows Meilisearch errors so callers do not break', async () => {
+  it('reports a submitted document as synced', async () => {
+    await expect(syncEntity('researchEntity', { _id: 'a', name: 't' })).resolves.toBe(true);
+  });
+
+  it('reports a Meilisearch error as not synced instead of throwing', async () => {
     mocks.addDocuments.mockRejectedValueOnce(new Error('meili down'));
-    await expect(syncEntity('researchEntity', { _id: 'a', name: 't' })).resolves.toBeUndefined();
+    await expect(syncEntity('researchEntity', { _id: 'a', name: 't' })).resolves.toBe(false);
+  });
+
+  it('reports nothing synced for a null doc or an unregistered type', async () => {
+    await expect(syncEntity('researchEntity', null)).resolves.toBe(false);
+    await expect(syncEntity('user', { _id: 'x' })).resolves.toBe(false);
   });
 });
 

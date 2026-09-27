@@ -90,6 +90,7 @@ export interface RecomputeBrowseRankOptions {
 export interface RecomputeBrowseRankResult {
   considered: number;
   updated: number;
+  indexSyncFailures: number;
   scoresByEntityId: Map<string, number>;
 }
 
@@ -104,7 +105,7 @@ export async function recomputeBrowseRankForEntities(
   const sync = options.sync ?? true;
   const scoresByEntityId = new Map<string, number>();
   if (entityIds.length === 0) {
-    return { considered: 0, updated: 0, scoresByEntityId };
+    return { considered: 0, updated: 0, indexSyncFailures: 0, scoresByEntityId };
   }
 
   const entities = (await ResearchEntity.find({ _id: { $in: entityIds } }).lean()) as any[];
@@ -116,6 +117,7 @@ export async function recomputeBrowseRankForEntities(
   ]);
 
   let updated = 0;
+  let indexSyncFailures = 0;
   for (const entity of entities) {
     const id = browseRankDocumentId(entity._id);
     if (!id) continue;
@@ -147,13 +149,14 @@ export async function recomputeBrowseRankForEntities(
     );
     if (sync) {
       const fresh = await ResearchEntity.findById(entity._id).lean();
-      if (fresh) await syncEntity('researchEntity', fresh);
+      if (!fresh || !(await syncEntity('researchEntity', fresh))) indexSyncFailures += 1;
     }
   }
 
   return {
     considered: entities.length,
     updated,
+    indexSyncFailures,
     scoresByEntityId,
   };
 }

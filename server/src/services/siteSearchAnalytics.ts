@@ -9,7 +9,6 @@
  */
 import { logEvent } from './analyticsService';
 import { AnalyticsEventType } from '../models/index';
-import { sanitizeLogValue } from '../utils/logSanitizer';
 
 export type SiteSearchSurface = 'program' | 'research_entity';
 
@@ -103,26 +102,20 @@ export const recordSiteSearch = async (record: SiteSearchRecord): Promise<boolea
     ),
   );
 
-  try {
-    await logEvent({
-      eventType: AnalyticsEventType.SEARCH,
-      netid: record.netid as string,
-      userType: record.userType ?? 'unknown',
-      searchQuery: record.searchQuery,
-      occurredAt: record.requestArrivedAt,
-      foldQueryEdits: foldsQueryEdits(record.surface),
-      metadata: {
-        ...record.metadata,
-        entityType: record.surface,
-        resultCount: record.resultCount,
-        filters: activeFilters,
-        page: record.page,
-      },
-    });
-  } catch (error) {
-    console.error('Error logging site search event:', sanitizeLogValue(error));
-    return false;
-  }
-
-  return true;
+  const outcome = await logEvent({
+    eventType: AnalyticsEventType.SEARCH,
+    netid: record.netid as string,
+    userType: record.userType ?? 'unknown',
+    searchQuery: record.searchQuery,
+    occurredAt: record.requestArrivedAt,
+    foldQueryEdits: foldsQueryEdits(record.surface),
+    metadata: {
+      ...record.metadata,
+      entityType: record.surface,
+      resultCount: record.resultCount,
+      filters: activeFilters,
+      page: record.page,
+    },
+  });
+  return outcome === 'recorded';
 };
