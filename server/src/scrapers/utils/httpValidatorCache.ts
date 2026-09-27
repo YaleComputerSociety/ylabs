@@ -17,6 +17,7 @@ import axios, {
 } from 'axios';
 import CachePolicy from 'http-cache-semantics';
 import type { ScraperFetchMetrics, ScraperResult } from '../types';
+import { isSweepPageReuseHit } from './sweepPageReuseHit';
 
 export const DEFAULT_HTTP_CACHE_MAX_BYTES = 512 * 1024 * 1024;
 export const DEFAULT_HTTP_CACHE_MAX_ENTRY_BYTES = 8 * 1024 * 1024;
@@ -269,8 +270,8 @@ type ConfigWithCacheState = InternalAxiosRequestConfig & {
   [SKIP_KEY]?: boolean;
 };
 
-const TEXTUAL_RESPONSE_TYPES = new Set([undefined, '', 'json', 'text', 'document']);
-const CALLER_OWNED_REQUEST_HEADERS = [
+export const TEXTUAL_RESPONSE_TYPES = new Set([undefined, '', 'json', 'text', 'document']);
+export const CALLER_OWNED_REQUEST_HEADERS = [
   'if-none-match',
   'if-modified-since',
   'if-match',
@@ -281,7 +282,7 @@ const CALLER_OWNED_REQUEST_HEADERS = [
   'cookie',
 ];
 
-function plainHeaders(headers: unknown): CachePolicy.Headers {
+export function plainHeaders(headers: unknown): CachePolicy.Headers {
   const source =
     headers instanceof AxiosHeaders
       ? (headers.toJSON() as Record<string, unknown>)
@@ -294,7 +295,7 @@ function plainHeaders(headers: unknown): CachePolicy.Headers {
   return plain;
 }
 
-function isTextualContentType(contentType: unknown): boolean {
+export function isTextualContentType(contentType: unknown): boolean {
   if (typeof contentType !== 'string') return false;
   const mime = contentType.split(';')[0].trim().toLowerCase();
   return (
@@ -306,7 +307,7 @@ function isTextualContentType(contentType: unknown): boolean {
   );
 }
 
-function responseFinalUrl(response: AxiosResponse, fallback: string): string {
+export function responseFinalUrl(response: AxiosResponse, fallback: string): string {
   const candidate = (response.request as { res?: { responseUrl?: unknown } } | undefined)?.res
     ?.responseUrl;
   if (typeof candidate !== 'string' || !candidate) return fallback;
@@ -357,7 +358,7 @@ export function attachHttpValidatorCache(
 
   const requestId = instance.interceptors.request.use(async (config) => {
     const cacheConfig = config as ConfigWithCacheState;
-    if (cacheConfig[SKIP_KEY]) return config;
+    if (cacheConfig[SKIP_KEY] || isSweepPageReuseHit(config)) return config;
     if ((config.method ?? 'get').toLowerCase() !== 'get') return config;
     if (!TEXTUAL_RESPONSE_TYPES.has(config.responseType)) return config;
     const requestHeaders = plainHeaders(config.headers);

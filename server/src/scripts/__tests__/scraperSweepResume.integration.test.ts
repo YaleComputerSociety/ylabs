@@ -17,6 +17,7 @@ interface RecordedChild {
   args: string[];
   logPath?: string;
   hostSlotBroker?: string;
+  pageReuse?: string;
 }
 
 function outputPathFromArgs(args: string[]): string | undefined {
@@ -104,10 +105,12 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
       options: { logPath?: string; env?: NodeJS.ProcessEnv },
     ): Promise<{ status: number | null }> => {
       const hostSlotBroker = options.env?.SCRAPER_HOST_SLOT_BROKER;
+      const pageReuse = options.env?.SCRAPER_SWEEP_PAGE_REUSE;
       calls.push({
         args,
         ...(options.logPath ? { logPath: options.logPath } : {}),
         ...(hostSlotBroker ? { hostSlotBroker } : {}),
+        ...(pageReuse ? { pageReuse } : {}),
       });
       const sourceName = sourceNameFromArgs(args);
       const failing = Boolean(sourceName && failingSources.has(sourceName));
@@ -210,6 +213,12 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     const sourceCalls = failed.calls.filter((call) => sourceNameFromArgs(call.args));
     expect(sourceCalls.length).toBe(firstSummary.sourceCount);
     for (const call of sourceCalls) expect(call.args).toContain('--force-llm');
+    for (const call of sourceCalls) expect(call.pageReuse).toBe('1');
+    expect(firstSummary.pageReuse).toMatchObject({
+      hosts: ['medicine.yale.edu', 'ysph.yale.edu'],
+      lookups: 0,
+      maxBytes: 1024 * 1024 * 1024,
+    });
 
     const pruneCalls = failed.calls.filter(
       (call) => commandFromArgs(call.args) === 'observations:prune-dead',
@@ -348,8 +357,14 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     };
 
     const failed = makeChildRunner(new Set(['yale-reu-programs']));
-    const firstSummary = await runScraperSweep(options, { childRunner: failed.runner });
+    const firstSummary = await runScraperSweep(
+      { ...options, noPageReuse: true },
+      { childRunner: failed.runner },
+    );
     trackRun(mode, firstSummary.outputDirectory);
+    const fellowshipSourceCalls = failed.calls.filter((call) => sourceNameFromArgs(call.args));
+    for (const call of fellowshipSourceCalls) expect(call.pageReuse).toBe('0');
+    expect(firstSummary.pageReuse).toBeUndefined();
 
     expect(firstSummary.failed).toBe(1);
     expect((firstSummary.postRun?.stages || []).map((stage) => stage.name)).toContain(

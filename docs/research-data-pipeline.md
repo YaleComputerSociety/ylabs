@@ -82,6 +82,29 @@ An exhaustive mode always fetches live and writes no `scrape_snapshots` rows, be
 A live read is also what an exhaustive refresh is for: with the cache on, a run within a day of the last one re-read the previous day's pages, and department roster snapshots recorded `cacheAllowed: true`.
 To re-run one failed source cheaply, run it by hand and pass `--use-cache` yourself; that bounds the cache to one source.
 
+#### Page reuse within one sweep
+
+The three exhaustive Development modes reuse a page one source child fetched earlier in the same sweep instead of asking the site again (#3568), and `--no-page-reuse` turns it off.
+It is scoped to an explicit list, `SWEEP_PAGE_REUSE_HOSTS` (`medicine.yale.edu` and `ysph.yale.edu`), the two hosts in `HOST_THROTTLE_OVERRIDES`: each caps the sweep at 2 requests in flight and sends no `ETag` or `Last-Modified`, so the #3557 validator cache (`utils/httpValidatorCache.ts`) can never store their pages.
+The list is deliberately not derived from `HOST_THROTTLE_OVERRIDES`, so throttling another host does not turn reuse on for it.
+On 2026-09-26 `medicine.yale.edu` carried about 18,600 discovery requests shared by `ysm-faculty-directory` and the roster's `ysm-*` profile enrichment, and later `official-profile-pi-backfill` and `ysm-mesh-keyword` re-read the same school-wide `/profile/` pages.
+
+- The store lives in memory in the sweep parent's host slot broker process, the same process and socket that hands out host slots, and it is discarded when the source phases end, so it is never a cache across sweeps and never touches Mongo.
+  A resumed sweep starts with an empty store.
+- It is bounded by `SCRAPER_SWEEP_PAGE_REUSE_MAX_MB` (default 1024 MiB of gzip-compressed pages, least recently used evicted first), which holds every reused-host page of a full sweep with room to spare: a school-wide profile page is about 330 KB and 35 KB compressed.
+- A page is reused only for a later `GET` of the same URL, compared without its fragment.
+  Only a `200` with a textual body is stored; a `403`, a `429`, any other error, a `Cache-Control: no-store` body, and any request carrying `Authorization`, `Cookie`, `Range` or a conditional header are never stored or served.
+  A redirected page is stored under its final URL, and under the requested URL only when every hop was a permanent `301` or `308`, so a reused redirect answers with the final URL the first fetch actually landed on.
+  `medicine.yale.edu` answers a school-wide `/profile/<slug>/` with two `301` hops, and a department-scoped `/<department>/profile/<slug>/` lands on a different page, so the two are never reused for each other.
+- A reused response carries `x-ylabs-sweep-reused-fetched-at` with the time the page was fetched, and takes no host slot, so it costs the throttled host nothing.
+- A run records `fetchMetrics.sweepPageReuse` (`lookups`, `reused`, `bytesReused`, `offered`), and the sweep's `summary.json` records `pageReuse` with the store's `hits`, `stored`, `evicted` and `peakHeldBytes`.
+- A department roster snapshot's `read` block records `pagesReusedWithinSweep`, and the roster's fetch attempt reads `http-sweep-reused` instead of `http`.
+  The departure lane classifies such a snapshot as `reused-within-sweep` and admits it exactly like `fetched` and `cache-permitted`, because the page came off the wire during this sweep; the provenance says what happened without weighting it.
+  The departure lane's own Yale-profile probe never reuses a page: a suppression asserts that a person left, so it reads the profile live at decision time.
+- Outside a sweep nothing changes: a hand-run `scrape run`, a cron and the preflight canaries never install reuse, and a child without both `SCRAPER_HOST_SLOT_BROKER` and `SCRAPER_SWEEP_PAGE_REUSE=1` fetches every page as before.
+  If the broker cannot be reached, the child logs one warning and fetches every page from the site.
+- Post-run stages run after the broker closes, so `source-link-health` still probes each URL live.
+
 Development modes require a local Meilisearch host and an empty `MEILISEARCH_INDEX_PREFIX`; the sweep refuses a non-local Development Meili target.
 Beta modes fetch observations into the `Beta` database and emit per-source `betaRenderCommands` (dry-run materialize plan plus apply) so the Beta Render service materializes the recorded run ID; local Beta runs never materialize.
 
@@ -832,7 +855,7 @@ The `disabled` outcome is also stated in the materialize log rather than passed 
 2. `departmentRosterHealth` observations are the reconciler's only input, and there were **0** in Beta and Production and **1** in Development when this was measured on 2026-09-05.
 `departmentRosterScraper` emits one per configured department per run, so the input appears only after a roster sweep.
 **That gate has since opened on Development**: on 2026-09-22 it holds 125 live roster-health observations across 12 runs, so enabling the lane now reaches live rows where it provably could not before.
-Since #3251 a snapshot also records what its lane read, in `read: { pagesRead, readMode, cacheAllowed, readAt }`, and a snapshot whose run recorded no read is not authoritative.
+Since #3251 a snapshot also records what its lane read, in `read: { pagesRead, readMode, cacheAllowed, pagesReusedWithinSweep, readAt }` (the last since #3568), and a snapshot whose run recorded no read is not authoritative.
 Read that before believing a plan.
 The run-level `fetchMetrics` is not a substitute and was not one before either: only the rendered-browser branch pushed an attempt, so a run whose 112 HTML lanes each fetched reported `summary.total: 0`, and that zero was read once as "the fetch layer was never entered".
 Every snapshot written before #3251 classifies as `unrecorded` and governs nothing until a roster run supersedes it.

@@ -35,6 +35,7 @@ import {
   type RenderedFetchResult,
 } from '../renderedFetch';
 import { getCached, setCached } from '../snapshotCache';
+import { observeSweepPageReuse } from '../utils/sweepPageReuse';
 import {
   labUrlUnusabilityFor,
   loadLabUrlEvidenceBySlug,
@@ -121,6 +122,7 @@ interface LaneRead {
   status: string;
   pagesRead: number;
   readMode: LaneReadMode;
+  pagesReusedWithinSweep?: number;
 }
 
 interface LaneOutcome extends LaneRead {
@@ -151,6 +153,8 @@ export function collapseLaneOutcomesByDepartment(outcomes: LaneOutcome[]): LaneO
     }
     existing.count += outcome.count;
     existing.pagesRead += outcome.pagesRead;
+    existing.pagesReusedWithinSweep =
+      (existing.pagesReusedWithinSweep ?? 0) + (outcome.pagesReusedWithinSweep ?? 0);
     if (existing.status === 'ok' && outcome.status !== 'ok') existing.status = outcome.status;
     if (existing.readMode === 'none' && outcome.readMode !== 'none') {
       existing.readMode = outcome.readMode;
@@ -4021,7 +4025,8 @@ export class DepartmentRosterScraper implements IScraper {
    * zero was then read as "the fetch layer was never entered". The mode carries
    * whether a cache hit was permitted, because `fetchHtml` serves a 24-hour
    * snapshot cache when `--use-cache` is set and cannot say afterwards which it
-   * did: `http` is a read that could only have come off the wire.
+   * did: `http` is a read that could only have come off the wire, and
+   * `http-sweep-reused` is a page another lane fetched earlier in the same sweep (#3568).
    *
    * Per-row profile enrichment is deliberately still uncounted. It costs one
    * request per faculty row, so counting it would store tens of thousands of
@@ -4032,11 +4037,19 @@ export class DepartmentRosterScraper implements IScraper {
     pageUrl: string,
     ctx: ScraperContext,
     fetchAttempts: ScraperFetchMetric[],
+    laneReuse: { pagesReused: number },
   ): Promise<string> {
-    const fetchMode = ctx.options.useCache ? 'http-cache-allowed' : 'http';
     const startedAt = Date.now();
     try {
-      const html = await this.htmlFetcher(pageUrl, ctx.options.useCache, this.name);
+      const { value: html, pagesReused } = await observeSweepPageReuse(() =>
+        this.htmlFetcher(pageUrl, ctx.options.useCache, this.name),
+      );
+      laneReuse.pagesReused += pagesReused;
+      const fetchMode = ctx.options.useCache
+        ? 'http-cache-allowed'
+        : pagesReused > 0
+          ? 'http-sweep-reused'
+          : 'http';
       fetchAttempts.push(
         buildFetchAttemptMetrics({
           fetchMode,
@@ -4050,7 +4063,7 @@ export class DepartmentRosterScraper implements IScraper {
     } catch (error) {
       fetchAttempts.push(
         buildFetchAttemptMetrics({
-          fetchMode,
+          fetchMode: ctx.options.useCache ? 'http-cache-allowed' : 'http',
           success: false,
           startedAt,
           blocked: false,
@@ -4269,11 +4282,12 @@ export class DepartmentRosterScraper implements IScraper {
         };
       }
 
+      const laneReuse = { pagesReused: 0 };
       const walk = await walkRosterLanePages({
         url: dept.url,
         paginated: dept.paginated,
         extractor: dept.extractor,
-        fetchHtml: (pageUrl) => this.measuredHtmlFetch(pageUrl, ctx, fetchAttempts),
+        fetchHtml: (pageUrl) => this.measuredHtmlFetch(pageUrl, ctx, fetchAttempts, laneReuse),
       });
       if (walk.error) {
         ctx.log(`[${dept.deptKey}] ${walk.stopReason}: ${sanitizeLogValue(walk.error)}`);
@@ -4310,6 +4324,7 @@ export class DepartmentRosterScraper implements IScraper {
         status: deptCount === 0 ? 'empty' : 'ok',
         pagesRead: walk.pagesFetched,
         readMode: walk.pagesFetched > 0 ? 'html' : 'none',
+        pagesReusedWithinSweep: laneReuse.pagesReused,
       };
     };
 
@@ -4414,6 +4429,7 @@ export class DepartmentRosterScraper implements IScraper {
             pagesRead: deptResult.pagesRead,
             readMode: deptResult.readMode,
             cacheAllowed: Boolean(ctx.options.useCache),
+            pagesReusedWithinSweep: deptResult.pagesReusedWithinSweep ?? 0,
             readAt: snapshotObservedAt.toISOString(),
           },
         },

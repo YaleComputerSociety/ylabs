@@ -30,6 +30,7 @@ import { buildOrchestrator } from './registry';
 import { installScraperHostConcurrencyInterceptor } from './utils/hostConcurrencyLimiter';
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
 import { installScraperHttpValidatorCache } from './utils/httpValidatorCache';
+import { installSweepPageReuse } from './utils/sweepPageReuse';
 import { materializeFromRun } from './entityMaterializer';
 import { ScrapeRun } from '../models/scrapeRun';
 import { getScrapeRunReport } from './runReport';
@@ -171,7 +172,12 @@ async function warnWhenSourceIsBeingWritten(
 export async function main(): Promise<void> {
   installScraperHostConcurrencyInterceptor(scraperHostSlotLimiter());
   const { command, flags } = parseArgs(process.argv);
-  if (!flags.release) installScraperHttpValidatorCache();
+  if (!flags.release) {
+    installScraperHttpValidatorCache();
+    // Must stay last: axios runs request interceptors in reverse, so a reused page is answered
+    // before the host slot and validator interceptors run.
+    installSweepPageReuse();
+  }
 
   if (command === 'help' || command === '--help' || command === '-h') {
     console.log(`

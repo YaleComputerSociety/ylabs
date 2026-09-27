@@ -1,3 +1,5 @@
+import { gzipSync } from 'zlib';
+import axios, { type AxiosAdapter } from 'axios';
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,6 +16,8 @@ import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { resetOrgUnitCanonicalizerCache } from '../orgUnitCanonicalization';
+import { attachSweepPageReuse } from '../utils/sweepPageReuse';
+import { SweepPageStore } from '../utils/sweepPageStore';
 import {
   DEPARTMENT_ROSTER_HEALTH_FIELD,
   reconcileFacultyRosterDeparturesFromRun,
@@ -154,6 +158,64 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     expect(gone?.yaleStatusReasonCache).toBe('departed');
     const present = await readEntity('lab-present');
     expect(present?.activeAtYaleCache).not.toBe(false);
+  });
+
+  it('suppresses on a roster read reused within the sweep, and reads the profile live', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
+    await seedDeptHealth(run, {
+      discoveredEntityKeys: ['lab-present'],
+      discoveredCount: 1,
+      read: { ...FETCHED_READ, pagesReusedWithinSweep: 1 },
+    });
+    const profileUrl = TOMBSTONE.url;
+    const store = new SweepPageStore(1024 * 1024, ['physics.yale.edu']);
+    store.put(profileUrl, false, {
+      finalUrl: profileUrl,
+      contentType: 'text/html',
+      fetchedAt: '2026-08-26T00:00:00.000Z',
+      gzipBase64: gzipSync(LIVE_PROFILE.html).toString('base64'),
+    });
+    const instance = axios.create();
+    const reuse = attachSweepPageReuse(instance, {
+      source: {
+        lookup: async (key) => (key ? store.get(key) : null),
+        offer: () => {},
+      },
+      hosts: ['physics.yale.edu'],
+    });
+    let liveReads = 0;
+    const liveTombstone: AxiosAdapter = async (config) => {
+      liveReads += 1;
+      return {
+        data: TOMBSTONE.html,
+        status: 200,
+        statusText: 'OK',
+        headers: { 'content-type': 'text/html' },
+        config,
+        request: { res: { responseUrl: profileUrl } },
+      };
+    };
+    const readProfile = async (url: string) => {
+      const response = await instance.get(url, { adapter: liveTombstone });
+      return { status: response.status, url, html: String(response.data) };
+    };
+    fetchPage.mockImplementation(readProfile);
+
+    try {
+      expect((await readProfile(profileUrl)).html).toBe(LIVE_PROFILE.html);
+      expect(liveReads).toBe(0);
+
+      const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+      expect(result.evidenceFreshness.readProvenance['reused-within-sweep']).toBe(1);
+      expect(result.suppressed).toBe(1);
+      expect(liveReads).toBeGreaterThan(0);
+      expect((await readEntity('lab-gone'))?.activeAtYaleCache).toBe(false);
+    } finally {
+      reuse.detach();
+    }
   });
 
   // Writing the Yale-status fields is not the same as removing the row from the
@@ -350,6 +412,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     expect(result.suppressed).toBe(0);
     expect(result.evidenceFreshness.readProvenance).toEqual({
       fetched: 0,
+      'reused-within-sweep': 0,
       'cache-permitted': 0,
       'not-read': 0,
       unrecorded: 1,
@@ -456,7 +519,13 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
         snapshotsRead: 0,
         distinctSnapshotObservedAt: 0,
         planningRunFetchesSucceeded: 0,
-        readProvenance: { fetched: 0, 'cache-permitted': 0, 'not-read': 0, unrecorded: 0 },
+        readProvenance: {
+          fetched: 0,
+          'reused-within-sweep': 0,
+          'cache-permitted': 0,
+          'not-read': 0,
+          unrecorded: 0,
+        },
       },
       governedDepartments: [],
       unresolvedDepartments: [],

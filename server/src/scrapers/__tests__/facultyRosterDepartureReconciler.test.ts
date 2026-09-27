@@ -126,6 +126,33 @@ describe('isEntityAuthoritativeSnapshot / snapshotDiscoveredEntityKeys', () => {
         read: { pagesRead: 2, readMode: 'html', cacheAllowed: true },
       }),
     ).toBe('cache-permitted');
+    expect(
+      rosterHealthReadProvenance({
+        read: { pagesRead: 2, readMode: 'html', cacheAllowed: false, pagesReusedWithinSweep: 1 },
+      }),
+    ).toBe('reused-within-sweep');
+    expect(
+      rosterHealthReadProvenance({
+        read: { pagesRead: 2, readMode: 'html', cacheAllowed: true, pagesReusedWithinSweep: 1 },
+      }),
+    ).toBe('cache-permitted');
+    expect(
+      rosterHealthReadProvenance({
+        read: { pagesRead: 0, readMode: 'none', pagesReusedWithinSweep: 1 },
+      }),
+    ).toBe('not-read');
+  });
+
+  it('admits a read reused within the sweep exactly as it admits a fetched one', () => {
+    const snapshot = (read: Record<string, unknown>) => ({
+      complete: true,
+      discoveredEntityKeys: ['a'],
+      read: { pagesRead: 1, readMode: 'html', cacheAllowed: false, readAt: NOW_ISO, ...read },
+    });
+    expect(rosterHealthAdmissibility(snapshot({ pagesReusedWithinSweep: 1 }))).toBe(
+      rosterHealthAdmissibility(snapshot({ pagesReusedWithinSweep: 0 })),
+    );
+    expect(isEntityAuthoritativeSnapshot(snapshot({ pagesReusedWithinSweep: 1 }))).toBe(true);
   });
 
   it('dates a row from the newest read among its own departments', () => {

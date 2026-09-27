@@ -6,6 +6,8 @@
  * emit. We deliberately do NOT touch the network: the scraper class itself is
  * exercised with an in-memory config whose extractor returns canned rows.
  */
+import { gzipSync } from 'zlib';
+import axios from 'axios';
 import { describe, it, expect, vi } from 'vitest';
 
 // The scraper SSRF-guards every dept URL with a real DNS resolution; tests use
@@ -16,6 +18,8 @@ vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
   assertPublicHttpUrl: vi.fn(async (rawUrl: string) => new URL(rawUrl)),
 }));
 
+import { attachSweepPageReuse } from '../utils/sweepPageReuse';
+import { SweepPageStore } from '../utils/sweepPageStore';
 import {
   artPeopleListExtractor,
   DepartmentRosterScraper,
@@ -2681,6 +2685,7 @@ describe('DepartmentRosterScraper.run', () => {
       pagesRead: 1,
       readMode: 'html',
       cacheAllowed: false,
+      pagesReusedWithinSweep: 0,
       readAt: expect.any(String),
     });
     // A lane that needs a browser it does not have read nothing, and says so, so
@@ -2689,12 +2694,60 @@ describe('DepartmentRosterScraper.run', () => {
       pagesRead: 0,
       readMode: 'none',
       cacheAllowed: false,
+      pagesReusedWithinSweep: 0,
       readAt: expect.any(String),
     });
     const cs = emitted.find(
       (o) => o.entityType === 'departmentRosterHealth' && o.entityKey === 'cs',
     );
     expect((cs?.value as any).complete).toBe(false);
+  });
+
+  it('records a roster page served from within-sweep reuse on the snapshot and the attempt', async () => {
+    const url = 'https://italian.yale.edu/people/faculty';
+    const store = new SweepPageStore(1024 * 1024, ['italian.yale.edu']);
+    store.put(url, false, {
+      finalUrl: url,
+      contentType: 'text/html',
+      fetchedAt: '2026-09-26T08:30:00.000Z',
+      gzipBase64: gzipSync('<html><body></body></html>').toString('base64'),
+    });
+    const instance = axios.create();
+    const reuse = attachSweepPageReuse(instance, {
+      source: { lookup: async (key) => (key ? store.get(key) : null), offer: () => {} },
+      hosts: ['italian.yale.edu'],
+    });
+    const htmlFetcher = vi.fn(async (pageUrl: string) =>
+      String((await instance.get(pageUrl)).data),
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'italian',
+        deptName: 'Italian Language and Literature',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url,
+        paginated: false,
+        extractor: vi.fn((): FacultyEntry[] => [{ name: 'Test Faculty', email: 'tf@example.edu' }]),
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    try {
+      const result = await scraper.run(ctx);
+      const snapshot = emitted.find((o) => o.entityType === 'departmentRosterHealth');
+      expect((snapshot?.value as any).read).toMatchObject({
+        pagesRead: 1,
+        readMode: 'html',
+        cacheAllowed: false,
+        pagesReusedWithinSweep: 1,
+      });
+      expect((snapshot?.value as any).complete).toBe(true);
+      expect(result.fetchMetrics?.attempts.map((attempt) => attempt.fetchMode)).toEqual([
+        'http-sweep-reused',
+      ]);
+    } finally {
+      reuse.detach();
+    }
   });
 
   it('lists discovered entity keys in a stable sorted order', async () => {
