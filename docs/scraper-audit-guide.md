@@ -83,14 +83,8 @@ SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
   npx -y corepack@0.34.7 yarn --cwd server scrape run --source <source-name> --limit 100 --use-cache --auto-materialize
 ```
 
-Production writes require both `--release` and `CONFIRM_PROD_SCRAPE=true`:
-
-```bash
-SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source <source-name> --release --auto-materialize
-```
-
-This command is blocked until the production promotion operator packet in [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md) is filled and accepted. Do not use the command to make the lane decision.
+There is no Beta or Production write command.
+The CLI refuses a `run`, `cron`, or `materialize` write against either, because both receive data only through promotion; [`docs/data-refresh-runbook.md`](./data-refresh-runbook.md) owns that sequence.
 
 ## Audit Checklist
 
@@ -255,10 +249,10 @@ Project impact:
 Commands:
 
 ```bash
-SCRAPER_ENV=beta \
+SCRAPER_ENV=development \
   npx -y corepack@0.34.7 yarn --cwd server scrape run --source lab-microsite-description-llm --dry-run --only <entity-id-or-slug> --limit 1 --output /tmp/ylabs-description-llm-dry-run.json
 
-SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true \
+SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
   npx -y corepack@0.34.7 yarn --cwd server scrape run --source lab-microsite-description-llm --only <entity-id-or-slug> --limit 1 --auto-materialize --output /tmp/ylabs-description-llm-apply.json
 ```
 
@@ -453,10 +447,10 @@ Project impact:
 
 ## Production Readiness Checklist
 
-Before switching a source to production:
+Before a source's output is promoted to production:
 
 - The operator has read the production gate in [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md).
-- The promotion lane is explicit: accepted Beta copy or guarded production delta.
+- The promotion lane is the accepted Beta copy, which is the only lane.
 - A Production Atlas backup or restore point exists and rollback ownership is clear.
 - Small dev write passes.
 - Larger dev write passes.
@@ -464,7 +458,5 @@ Before switching a source to production:
 - Conflicts are understood.
 - Source coverage warnings are expected or fixed.
 - Meilisearch backfill/reindex plan is ready.
-- Production command includes `SCRAPER_ENV=production`, `CONFIRM_PROD_SCRAPE=true`, and `--release`.
-- Render cron is source-specific and staggered rather than one giant all-scraper job.
-- Render cron does not assume local accepted-input files, local Meili, interactive browser dependencies, or a MongoDB Atlas access-list entry for its egress addresses. It does not need Yale VPN, because no source requires it.
+- The source runs in the Development sweep manifest rather than in any job scheduled against Production.
 - Post-write smoke checks cover Research, Programs/Fellowships visibility, admin auth, removed legacy routes, source health, and Meili counts.

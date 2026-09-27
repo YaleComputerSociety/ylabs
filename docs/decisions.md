@@ -5,6 +5,27 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-27: Scraper Sweeps Run Only Against Development (#3670)
+
+Scrapers write only to Development.
+Beta receives the accepted Development dataset through `beta:refresh-from-development`, Production receives accepted Beta through `production:promote-beta-copy`, and each target then re-gates and reindexes from its Render shell.
+No sweep, scrape, or standalone materialize writes to Beta or Production, and the scrape CLI refuses one with a message naming the promotion commands.
+
+Until this decision the repository documented two models for one job.
+The primary one fetched the release candidate from the local machine straight into Atlas Beta (`scrape:beta:all:fetch`, the `beta-fetch` sweep mode) and materialized each recorded run from the Beta Render shell; the alternative swept Development and mirrored the result.
+The two overwrite each other, because the mirror replaces the same whole collections a Beta fetch writes, so an operator had to choose correctly every time and the runbook had to keep both paths true.
+
+Three facts made the Development model the only sensible one.
+Development is where every instrument points: the served scoreboard, the corpus snapshot, the lane scorecard, and `journey:eval` all measure Development, so evidence written straight into Beta was evidence nothing had measured.
+The definition of done in `AGENTS.md` already said a stored-data fix is done when Development is fixed and verified, which only holds if Beta can never diverge by being scraped on its own.
+And the mirror no longer costs a second copy of the evidence log: it leaves `observations` behind, so it moves about 23,000 documents rather than 436,026, which removed the storage argument the Beta-fetch model was built on.
+
+What was removed: the `beta-plan` and `beta-fetch` sweep modes with their stop-on-first-failure and per-run Render-command branches, the `scrape:beta*` and `profile:beta:write` scripts, the fellowship `catalog-refresh` sweep stage and the `fellowships:refresh` command it called, which wrote the catalog straight into Beta or Production, and the `--source` option of `beta:seed-environment`, which ran scrapers against Beta.
+The former guarded production delta lane goes with them, and `scrape cron`, which only ever targeted Production, now refuses to write.
+What was kept: the mirror, the promotion, the Beta and Production reindex, `release-hold`, every read-only audit that can target Beta or Production, and dry runs against either, which write no observations.
+
+A future need to refresh Beta or Production without a full sweep is answered by a bounded Development run and the same promotion, never by a second write path.
+
 ## 2026-09-25: `beta` Requires Its Smoke Test Too, And Protection Here Is Rulesets (#3425)
 
 `beta` already required `test-and-build` and one approving review, through the `require CI on beta` ruleset created 2026-08-22.
@@ -1121,6 +1142,7 @@ Producers and consumers are retired as a hard cutover with no rollback opt-in: t
 ## 2026-07-25: Development Uses Atlas MongoDB And Local Meilisearch
 
 Its Yale VPN requirement is superseded by the 2026-09-18 entry "Scraper Fetches Do Not Require Yale VPN" above, and the paragraph below is kept only as the record of what was believed at the time.
+Its local Beta operator fetch and Beta Render materialization are superseded by the 2026-09-27 entry "Scraper Sweeps Run Only Against Development" above.
 
 Development uses the Atlas `Development` database and local Docker Meilisearch so operators share a disposable integration dataset while keeping search iteration local.
 Development can be refreshed one way from accepted Beta through an allowlist-only, Atlas-Beta-to-Atlas-Development copy.

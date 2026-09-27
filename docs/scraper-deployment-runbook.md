@@ -2,14 +2,15 @@
 
 Status: active runbook
 
-Last updated: 2026-07-24
+Last updated: 2026-09-27
 
-For the concise Development -> local Beta fetch -> Beta Render materialization -> Production operator sequence, use [`docs/data-refresh-runbook.md`](./data-refresh-runbook.md).
+For the concise Development sweep -> Development-to-Beta mirror -> Beta re-gate and reindex -> Production promotion sequence, use [`docs/data-refresh-runbook.md`](./data-refresh-runbook.md).
+Scrapers write only to Development; Beta and Production receive data only through promotion, and the scrape CLI refuses a `run`, `cron`, or `materialize` write against either (decision 2026-09-27 in `docs/decisions.md`).
 This longer document remains the source-specific deployment and recovery reference.
 
 ## Goal
 
-Move scraper data safely from development testing to Beta seeding and then production refresh jobs without overpaying for compute or creating unsupported student-facing access claims.
+Move scraper data safely from Development sweeps to a mirrored Beta candidate and then a promoted Production dataset without overpaying for compute or creating unsupported student-facing access claims.
 
 Web service security is part of the production gate. The currently deployed
 site must pass the production security smoke before any Beta launch or
@@ -39,10 +40,10 @@ Run scrapers as short-lived CLI jobs, not inside the web service process.
 
 The web app can stay on Render while scraper execution remains separate:
 
-- Development testing can run from a local machine against a development database.
-- Beta seeding can run from a local machine or one-off job against the Beta MongoDB database.
-- Production seeding should run source by source after Beta output is accepted and production backups exist.
-- Recurring refresh should use source-specific staggered jobs, not one giant all-scraper cron.
+- Every scraper run and sweep writes to the Development database, from a local machine.
+- Beta receives the accepted Development dataset through `beta:refresh-from-development`, never through a scraper run.
+- Production receives the accepted Beta dataset through `production:promote-beta-copy`, never through a scraper run.
+- Recurring refresh is a Development incremental sweep followed by the same promotion, not a scheduled scraper against Beta or Production.
 
 `MONGODBURL` decides the target database. Always read the CLI's printed Mongo target before accepting a run.
 
@@ -94,11 +95,12 @@ Rules:
 - Use `yarn --cwd server scrape materialize --run <scrapeRunId> --dry-run --output <path>` for a saved materialization review artifact before any standalone materialization write. Standalone write materialization requires `--confirm-materialize` in addition to the existing environment write guards. The materialize artifact includes the materialization result, optional visibility-gate result, ScrapeRun report, command, target `environment`, `db`, and parsed `options`.
 - Do not promote a source while materialization errors are nonzero or conflicts are unexplained.
 
-### 2. Beta Seeding
+### 2. Beta Staging
 
-Purpose: seed a realistic staging dataset and validate UI/search behavior before touching production.
+Purpose: stage the accepted Development dataset on Beta and validate UI/search behavior before touching production.
+Beta is filled by the Development-to-Beta mirror in [`data-refresh-runbook.md`](./data-refresh-runbook.md), which copies `taxonomy_terms` along with the corpus; no scraper runs against Beta.
 
-Precondition: confirm `taxonomy_terms` is seeded in the target database before running any scraper against Beta or a fresh environment.
+Precondition: confirm `taxonomy_terms` is seeded in Development before running a sweep there against a freshly reset database.
 The only writer for that collection (`data-migration/seedTaxonomyTerms.ts`) was deleted in #2186, so an empty environment stays empty and nothing in the repository will fill it.
 `research-area-source-extractor` is fail-closed against the approved registry and emits nothing when it is empty, and every other source's `researchAreas[]` then passes through raw and un-canonicalized.
 Both failures are silent: the run reports success with degraded research-area data.
@@ -124,48 +126,33 @@ SCRAPER_ENV=beta yarn --cwd server beta:seed --output /tmp/ylabs-beta-seed-plan.
 SCRAPER_ENV=beta yarn --cwd server beta:seed --apply --confirm-beta-seed --output /tmp/ylabs-beta-seed-result.json
 ```
 
-Use `beta:seed-meili` on the Beta server when Mongo is already populated and the launch task is to rebuild Meilisearch plus run the related checks. The broader `beta:seed` wrapper plans or runs Beta readiness, Source registry seeding, the ResearchEntity Meilisearch rebuild, and final Meili readiness acceptance. It does not run broad scrapers unless the operator explicitly names sources:
-
-```bash
-SCRAPER_ENV=beta yarn --cwd server beta:seed --apply --confirm-beta-seed \
-  --sources=ysm-atoz-index,yse-centers-index,centers-institutes-index \
-  --output /tmp/ylabs-beta-seed-result.json
-```
+Use `beta:seed-meili` on the Beta server when Mongo is already populated and the launch task is to rebuild Meilisearch plus run the related checks. The broader `beta:seed` wrapper plans or runs Beta readiness, Source registry seeding, the ResearchEntity Meilisearch rebuild, and final Meili readiness acceptance.
+It never runs a scraper: `--source` and `--sources` are refused with a pointer to the promotion path.
 
 Use `--skip-meili`, `--skip-source-metadata`, or `--skip-readiness` only for a targeted recovery run after the omitted phase already has a fresh accepted artifact.
 
-Then run accepted sources in rollout order:
-
-1. Entity discovery: `ysm-atoz-index`, `yse-centers-index`, `yse-faculty-directory`, `centers-institutes-index`, selected `dept-faculty-roster` departments.
-2. Profile metadata: `yale-directory`.
-3. Enrichment: `nih-reporter` and `nsf-award-search`.
-4. Access evidence: bounded `lab-microsite-undergrad-llm` source lists.
-5. Gated sources only after blockers clear: `undergrad-fellowships-recipients` and bounded `official-research-home-roster` allowlist entries.
-
-OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref ingestion are retired and are not valid Beta or Render schedule targets.
+OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref ingestion are retired and are not valid sweep sources.
 Researcher profiles may expose reviewed Google Scholar and ORCID links for outbound navigation, but those links do not rebuild a local publication corpus.
 Ordinary scraper runs, cron runs, and standalone materialization never read or write paper data; paper materialization and the `Paper` and `PaperAuthor` models and their readers are retired with no rollback opt-in.
 Historical `paper` observations are retained as read-only archived evidence and are never materialized.
 Retain historical source rows and observations and the stored scholarly collections until the human-gated `papers`/`paper_authors` collection drop in issue #207.
 
-For each Beta source:
+For the mirrored Beta candidate:
 
-- Save the run ID.
-- Inspect the report.
+- Record the mirror plan and result artifacts.
 - Spot-check materialized records in MongoDB and the app.
 - Confirm public surfaces do not expose non-public scraped contact data.
 - Confirm expected access artifacts match the source's coverage metadata.
 
 The undergraduate-logistics release audit is retired with the vertical (#3088); there is no logistics acquisition left to gate.
 
-Beta can be seeded from a local machine pointed at the Beta database. This is usually cheaper than paying for long-lived cloud compute during initial backfill.
-
 ### 3. Production Seeding
 
 Purpose: populate production only after Beta output is accepted.
 
 This is a manual promotion gate. Do not run it from the Render web service process, do not mix copy and delta strategies in the same promotion, and do not enable recurring cron until the smoke checklist passes.
-Production writes are off by default: no operator should run a production copy, scraper write, retention apply, or recurring job unless this gate is explicitly recorded and the command includes the required production confirmations.
+Production writes are off by default: no operator should run a production copy or retention apply unless this gate is explicitly recorded and the command includes the required production confirmations.
+A Production scraper write is not an option at all: the CLI refuses it.
 
 ### Production Promotion Gate Checklist
 
@@ -173,11 +160,11 @@ Record each item in the promotion's GitHub issue before changing production data
 
 - [ ] **Backup and restore drill:** Create the fresh Atlas backup or restore point, name its identifier and rollback owner, and confirm the restore drill or exact restore procedure has been exercised for the target cluster.
 - [ ] **Dataset versioning:** Assign a promotion dataset version such as `prod-promote-YYYY-MM-DD-<lane>` and attach it to the accepted Beta snapshot or per-source production run IDs, saved reports, and Meili rebuild outputs.
-- [ ] **Copy-vs-delta decision:** Choose exactly one lane: accepted Beta copy or guarded production delta. Do not mix the lanes in one promotion window.
+- [ ] **Promotion lane:** The accepted Beta copy is the only lane; the guarded production delta is retired.
 - [ ] **Privacy payload gate:** Sample public API payloads before promotion and confirm they exclude non-public scraped contact data, suppressed/operator-review programs, raw observations, internal review notes, and production-only usage/session data.
 - [ ] **Meili sync and rollback:** Rebuild the `researchentities` index after the Mongo copy and confirm the rebuilt document counts against the accepted Beta counts before opening production traffic.
 - [ ] **Smoke routes:** Assign an owner for `/api/config`, `/api/research/search`, `/research/:slug`, `/programs` or `/fellowships`, unauthenticated admin `401`, and removed legacy route checks.
-- [ ] **No recurring writes by default:** Keep production cron, compact-retention apply mode, and broad/paid source reruns disabled until the manual promotion smoke checklist passes.
+- [ ] **No recurring writes by default:** Keep compact-retention apply mode disabled until the manual promotion smoke checklist passes.
 
 Required before any production copy or write:
 
@@ -185,7 +172,7 @@ Required before any production copy or write:
 - The operator can name the exact restore point and the person who can restore it.
 - Source readiness is recorded in the promotion's GitHub issue.
 - The open Beta trust-audit caveats are either fixed or explicitly accepted for this release.
-- Promotion lane is chosen and recorded: accepted Beta copy or guarded production delta.
+- Promotion lane is recorded: accepted Beta copy.
 - Promotion dataset version is recorded and tied to accepted reports or source run IDs.
 - Privacy payload gate is accepted for public student routes.
 - Meilisearch sync or reindex plan is ready.
@@ -230,7 +217,7 @@ SMOKE_COOKIE='<operator-session-cookie>' yarn --cwd client smoke:production-prom
 
 When `beta:data-quality --include-samples` reports `sourceHealthWarnings`, use each queue item's `nextCommand` to write the latest scraper report for that source. Those commands are read-only and point at `/tmp/ylabs-scraper-reports/<source>-<runId>.json`.
 
-Do not run production copy commands, `SCRAPER_ENV=production` scraper writes, retention `--apply`, or production cron until the packet is complete.
+Do not run production copy commands or retention `--apply` until the packet is complete.
 
 The guarded Lane A copy command is dry-run-first and allowlist-only. It requires separate Beta and Production Mongo URLs, excludes synthetic `devadmin`/`test123`/`@example.invalid` users, and does not copy sessions, analytics, usage logs, or other collections outside the runbook allowlist:
 
@@ -267,7 +254,7 @@ The full guarded dry-run, reviewer-decision, and apply workflow for same-PI enti
 
 ### Production Promotion Lanes
 
-Choose one lane before touching production.
+The accepted Beta copy is the only lane.
 
 #### Lane A: Accepted Beta Copy
 
@@ -276,9 +263,9 @@ Use this when Beta is the accepted production candidate and a fresh parity check
 Gate:
 
 1. Create a fresh Atlas backup or restore point for Production.
-2. Confirm no new production-only base data appeared after the last Beta parity audit. If it did, copy the missing base data into Beta and rerun parity, or use Lane B.
+2. Confirm no new production-only base data appeared after the last Beta parity audit. If it did, bring the missing base data into Development, mirror to Beta again, and rerun parity.
 3. Copy only the accepted research-discovery dataset and required base collections. Do not copy production usage logs, sessions, analytics events, or other live operational collections unless a separate decision says to.
-4. Keep recurring scraper jobs disabled during the copy.
+4. Pause the Development sweep during the copy, so the mirrored candidate does not move under the review.
 5. Rebuild or sync Meilisearch after Mongo copy completes.
 6. Run the smoke checklist before declaring the gate complete.
 
@@ -298,52 +285,15 @@ Dry-run rollback drill before using Lane A:
 4. Record the Meilisearch recovery command: `yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild`.
 5. Confirm the rebuilt `researchentities` index document count matches the restored dataset before opening traffic.
 
-#### Lane B: Guarded Production Delta
+#### Retired: Guarded Production Delta
 
-Use this when live Production data must remain in place or Beta parity cannot be re-established safely.
-
-Gate:
-
-1. Create a fresh Atlas backup or restore point for Production.
-2. Run one source at a time with production guardrails.
-3. Save the run ID and report before moving to the next source.
-4. Stop on materialization errors, unexpected access artifacts, unexplained conflicts, or source-health errors.
-5. Rebuild or sync Meilisearch after accepted writes.
-6. Run the smoke checklist before enabling any recurrence.
-
-Production command shape:
-
-```bash
-SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
-  yarn --cwd server scrape run --source <source-name> --release --auto-materialize --output /tmp/ylabs-<source-name>-production-report.json
-```
-
-Cron command shape after manual acceptance:
-
-```bash
-SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
-  yarn --cwd server scrape cron --source <source-name> --release
-```
-
-Rules:
-
-- Do not use `--use-cache` with `--release`; production guardrails disable it.
-- Run one source at a time.
-- Prefer a bounded first production pass for expensive or broad sources.
-- Run `report` immediately and inspect warnings before moving to the next source.
-- Treat Meilisearch failures as non-blocking for Mongo correctness, then reindex or batch-sync after accepted writes.
-
-Dry-run rollback drill before using Lane B:
-
-1. For each source in the delta, record the source name, planned command, expected materialized collections, and source-health warning posture before the run.
-2. Confirm the source can be stopped by disabling `Source.enabled` for cron or by stopping the manual rollout; do not start additional source runs until the incident is classified.
-3. Record the pre-run Atlas backup or restore point for broad bad materialization.
-4. Confirm minor field-quality issues will use manual locks or a fixed rerun only after inspection, while broad materialization problems restore from the pre-run backup.
-5. Record the Meilisearch recovery command sequence after any accepted restore or fixed rerun.
+The former Lane B ran scrapers directly against Production, one source at a time, and scheduled `scrape cron` against it.
+It was retired on 2026-09-27 together with the Beta sweep modes, because a second write path into Production produces evidence that Development, the only environment anyone measures, has never seen.
+The scrape CLI now refuses any Production `run`, `cron`, or `materialize` write, so a delta is a Development sweep followed by a promotion.
 
 ### Meilisearch Gate
 
-After accepted production copy or writes, run with production Mongo and Meili environment variables:
+After an accepted production copy, run with production Mongo and Meili environment variables:
 
 ```bash
 SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
@@ -360,7 +310,7 @@ If the Meili rebuild fails after Mongo writes succeeded, complete the Mongo smok
 
 ### Smoke Checklist
 
-Run these checks against the production app and production API after copy/delta plus Meili sync:
+Run these checks against the production app and production API after the copy plus Meili sync:
 
 - `/api/config` returns `200` and points at the expected environment.
 - Research search returns real `research_entities` results for broad terms such as `machine learning`, `biology`, and `history`.
@@ -372,7 +322,7 @@ Run these checks against the production app and production API after copy/delta 
 - Legacy `/api/research-groups/search`, `/labs`, and `/labs/:slug` remain unavailable.
 - Source health is `0 error`; any warnings match the accepted warnings in the roadmap.
 - Source-health warning reports have been generated from the `nextCommand` values in `beta:data-quality --include-samples` and reviewed or explicitly accepted.
-- Meili document counts are plausible against the accepted Beta counts in the roadmap or the chosen delta scope.
+- Meili document counts are plausible against the accepted Beta counts in the roadmap.
 
 Reusable read-only helper:
 
@@ -398,9 +348,8 @@ These are not automatic blockers if still accurate and accepted in the roadmap, 
 ### Local And Render Constraints
 
 - Local operator runs can use local accepted-input files, local Meili, and browser tooling. Confirm `MONGODBURL`, Meili host, and `SCRAPER_ENV` before every run.
-- Render web service should not run scraper backfills. Keep scraper execution in local CLI, one-off jobs, or source-specific cron.
-- Render cron should run only sources whose dependencies exist in the container, with all required environment variables configured. Network reachability is not the constraint: no scraper source requires Yale VPN or campus wifi, and `docs/data-refresh-runbook.md` records the paired measurement. What Render cron cannot assume is local files under `/tmp/ylabs-accepted-inputs`, local Meili, interactive browser dependencies, or a MongoDB Atlas access-list entry for its egress addresses.
-- For sources that need private credentials, manual accepted-input files, or the `renderedFetch` python and browser toolchain, run a guarded local or one-off job instead of Render cron. The single exception on network grounds is any host on a private address, currently only `ensemble.yale.edu`, which no off-campus runner can reach.
+- Render web service should not run scraper backfills. Keep scraper execution in the local CLI against Development.
+- Render shells re-gate and reindex Beta and Production after a copy, because their private Meilisearch services are reachable only inside Render. They never run a scraper.
 
 ### Post-Gate Documentation
 
@@ -409,104 +358,24 @@ After a successful gate, update the promotion's GitHub issue with:
 - Promotion lane used.
 - Backup or restore-point identifier, without secrets.
 - Collections or sources promoted.
-- Production run IDs and saved report locations.
+- Development sweep output directory and saved report locations.
 - Meili rebuild/sync outcome and `researchentities` document count.
 - Smoke checklist outcome.
 - Rollback posture and any accepted warnings.
 
 ## Recurring Refresh
 
-Recurring jobs should be source-specific and staggered. Do not schedule a single all-source weekly job.
+A recurring refresh is a Development incremental sweep, `yarn scrape:development:all:incremental`, followed by the mirror to Beta and the promotion to Production in [`data-refresh-runbook.md`](./data-refresh-runbook.md).
+No scheduled job scrapes Beta or Production.
+`scrape cron` remains in the CLI but refuses to write, because it only ever targeted Production.
 
-Render Cron Jobs should use the cron-safe entrypoint:
-
-```bash
-SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
-  yarn --cwd server scrape cron --source <source-name> --release
-```
-
-The cron command:
-
-- Acquires a source-level `ScrapeJobLock` keyed by `production + sourceName`.
-- Skips cleanly with exit code `0` if another cron already owns that source lock.
-- Refuses disabled `Source` rows unless `--force-disabled` is passed for manual recovery.
-- Runs the scraper with `triggeredBy=cron`, materializes immediately, prints a cron summary plus run report when no output file is requested, and exits nonzero if materialization errors are reported.
-- When the run's materialization reports no errors, runs a corpus-wide inferred-PI lead reclaim before the visibility gate so entities whose PI evidence a prior or partial run recorded but never materialized get a lead attached in the same locked cycle.
-  The reclaim is idempotent and best-effort: it skips already-linked and unresolvable entities, and a reclaim failure is logged without failing the primary scrape (it retries next cycle).
-  This makes the standalone `data:materialize-inferred-pi-leads --all` backfill a manual recovery tool rather than a recurring necessity.
-- When the run's materialization reports no errors, runs a single unconditional corpus-wide visibility gate (`{ collection: 'all', mode: 'apply' }`).
-  The gate is a handful of batched Mongo reads with no LLM calls, writes only records whose computed tier or reasons actually changed, and syncs only those to Meilisearch, so it converges to a near no-op once the corpus is current.
-  Because the re-gate is corpus-wide and unconditional, a gate-logic change self-applies on the next scheduled per-source run with no version bump and no manual `student-visibility:gate` op.
-- Heartbeats the lock during long runs and releases it with the last `ScrapeRun` id on success or failure.
-
-The `run` and `materialize` commands take the same per-source lock when they write (#2498), so a second writer on one source is refused rather than interleaved.
-They differ from `cron` in how they report it: `cron` skips with exit `0` because a missed cron tick is routine, while `run` and `materialize` exit nonzero because an operator asked for work that did not happen.
+The `run` and `materialize` commands take a per-source `ScrapeJobLock` when they write (#2498), so a second writer on one source is refused rather than interleaved, and they exit nonzero because an operator asked for work that did not happen.
 A `--dry-run` does not contend for the lock and instead warns when a live holder exists.
 Interrupting a writing command releases its lock before the process dies, so a Ctrl-C does not block the retry that usually follows it.
 A refusal names the current holder and when its lease expires, so the choice between waiting and investigating does not need a database query.
 `skills/scrapers/SKILL.md` owns the concurrency contract, including why `scrape_runs.status` cannot be used as a liveness signal.
 
-Use `--output <path>` to save the full cron result JSON from a cron run. The artifact includes lock-skip outcomes when a source lock is held, and completed runs include the scrape result, materialization result, optional inferred-PI lead reclaim result, optional visibility-gate result, and ScrapeRun report.
-
-Suggested starting cadence:
-
-| Source                             | Cadence                              | Notes                                                                                                |
-| ---------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `ysm-atoz-index`                   | weekly                               | Entity discovery only.                                                                               |
-| `yse-centers-index`                | weekly                               | Entity discovery only.                                                                               |
-| `yse-faculty-directory`            | weekly                               | Faculty directory seed plus individual profile pages; profile pages are the cited source.            |
-| `centers-institutes-index`         | weekly or biweekly                   | Broad member extraction; stagger separately.                                                         |
-| `official-research-home-roster`    | weekly after audit                   | Disabled by default; data operations owns refresh and sampled precision review.                      |
-| `dept-faculty-roster`              | weekly by department group           | Use source-specific `--only`/config where available.                                                 |
-| `yale-directory`                   | weekly                               | Broad directory paging; watch runtime.                                                               |
-| `nih-reporter`                     | weekly or monthly                    | Enrichment only; conflicts should remain understood aggregate churn.                                 |
-| `nsf-award-search`                 | weekly or monthly                    | Enrichment only.                                                                                     |
-| `lab-microsite-undergrad-llm`      | weekly legacy-only after WorkPlanner | Paid/LLM source; emits undergraduate-access evidence, description text and quote fields only, since logistics is retired (#3088). |
-| `undergrad-fellowships-recipients` | monthly/manual                       | Requires accepted real CSV/manual data.                                                              |
-
-Use separate Render Cron jobs per source or per source group and stagger start times. If a job needs more than the platform's cron runtime limits, split it into batches or use a background worker temporarily for that backfill only.
-
-### Source-Specific Cron Acceptance Matrix
-
-Do not enable recurring cron for a source until its row is accepted. A source may be accepted for manual guarded runs while remaining unaccepted for unattended cron.
-
-| Source                            | Cron acceptance prerequisites                                                                                                                                                                                                                                                                  | First cron posture                                                                                                                                                                      | Hold if                                                                                                                                                                                |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ysm-atoz-index`                  | Manual production or accepted Beta evidence shows entity discovery is stable, `materialization.errors = 0`, and source health has no unexplained errors.                                                                                                                                       | Weekly, one source-specific cron, report saved with run ID.                                                                                                                             | Selector/fetch failures, duplicate entity churn, or unexpected access artifacts.                                                                                                       |
-| `department-undergrad-research`   | Source metadata exists, output is verified as undergraduate-access evidence rather than generic department discovery, and public contact policy is reviewed.                                                                                                                                   | Manual or low-frequency cron after one accepted guarded run.                                                                                                                            | It emits unsupported access claims, non-public contact data, or department pages resolve to a private address.                                                                         |
-| `yale-college-fellowships-office` | Fellowship program mapping and public application/contact routes are reviewed; no private recipient or applicant data is required.                                                                                                                                                             | Monthly or term-bound cron, aligned to public deadline cycles.                                                                                                                          | The run depends on manual/private files, creates person-level scraped data, or deadline state cannot be verified.                                                                      |
-| `lab-microsite-undergrad-llm`     | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested. | Weekly legacy-only after WorkPlanner, with saved report and sampled public UI smoke. | Cost cap is missing, source emits raw non-public emails, or materialization conflicts are unexplained. |
-
-### Recurring fellowship refresh
-
-`yarn --cwd server fellowships:refresh` is the deployable scheduler entrypoint for the official Yale fellowship catalog.
-No recurring job is configured in the repository, so it is disabled by default.
-Configure it as a separate monthly scheduled job, with additional runs six weeks before the usual fall and spring application cycles, only after the target-specific database name and restore workflow have been verified.
-
-The command is dry-run by default and prints only aggregate, redacted counts.
-It requires an explicit `--target=beta|prod`, a matching `SCRAPER_ENV`, and a connected database whose name exactly matches `FELLOWSHIP_REFRESH_BETA_DB` or `FELLOWSHIP_REFRESH_PROD_DB`.
-Use an uncached bounded Beta dry-run first:
-
-```bash
-SCRAPER_ENV=beta \
-FELLOWSHIP_REFRESH_BETA_DB=<beta-db-name> \
-MONGODBURL=<beta-url> \
-yarn --cwd server fellowships:refresh --target=beta --limit=50
-```
-
-Review the aggregate created, updated, unchanged, review-required, and reopened counts plus the private review queue before execute mode.
-Execute mode additionally requires `--execute --confirm=execute-fellowship-refresh-beta` and a restore token, supplied either as `--restore-token=<restore-id>` or in the `FELLOWSHIP_REFRESH_RESTORE_TOKEN` environment variable.
-Prefer the environment variable so the token never appears in the host process table; the sweep's `catalog-refresh` stage passes it that way.
-Because the environment value satisfies the same per-run backup attestation as the flag, keep it out of any persisted `.env` or shell profile and set it only for the run you have just taken a backup for.
-Production requires the corresponding `prod` target and confirmation, plus `--confirm-prod=confirm-production-fellowship-refresh`.
-Never put a restore token in scheduler configuration committed to this repository.
-Use the secret manager provided by the deployment platform and rotate the token after the verified rollback window closes.
-
-Each run is bounded to at most 100 records, uses the existing distributed scraper lease, retries official page fetches with exponential backoff, and upserts by the authoritative source key.
-Missing or invalid deadlines, duplicate source identities, junk titles, and non-authoritative URLs go to `fellowship_refresh_review_queue` instead of changing a fellowship.
-Validated past-to-future transitions emit one idempotent `program_reopened` row in `program_watch_events` for downstream watchlist delivery.
-No future deadline is synthesized.
-Successful execute runs write aggregate freshness state to `fellowship_refresh_runs`; alert when no successful run exists within 45 days or when every discovered row requires review.
+The former `fellowships:refresh` command wrote the fellowship catalog straight into Beta or Production and was removed on 2026-09-27; the `fellowship-development-full` sweep refreshes the catalog in Development and promotion carries it.
 
 ### Compact Observation Retention
 
@@ -616,7 +485,7 @@ Production writes remain out of scope.
 
 Use these controls before spending cloud or API money:
 
-- Run the initial backfill locally against Beta when practical.
+- Run the initial backfill locally against Development; promotion carries it to Beta and Production at no fetch cost.
 - Use `--limit`, `--only`, `--since`, and source-specific caps during the first pass.
 - Keep LLM sources gated until the exact target list is accepted.
 - Use `--use-cache` for development reruns only.
@@ -643,20 +512,18 @@ After every non-dry run:
 
 ## Rollback
 
-Before production seeding, prefer an Atlas backup over clever cleanup. The rollback owner must know whether the gate used Lane A or Lane B.
+Before production seeding, prefer an Atlas backup over clever cleanup.
 
-If a production run is bad:
+If a promoted dataset is bad:
 
-1. Disable the scheduled job or stop the manual rollout.
-2. Do not run more sources on top of questionable materialized data.
-3. For minor field-quality issues, use manual locks or a fixed rerun after inspection.
+1. Stop the rollout and do not promote again until the cause is classified.
+2. Do not run more sources on top of questionable materialized data in Development.
+3. For minor field-quality issues, fix the lane in Development, verify there, and promote again.
 4. For a bad Beta copy or broad bad materialization, restore from the pre-run Atlas backup.
 5. Rebuild or resync Meilisearch after restoring MongoDB.
 6. Record the rollback and follow-up decision in the promotion's GitHub issue.
 
 Claim-local rollback of a single run was only ever implemented for undergraduate logistics, which is retired (#3088), so there is no per-claim rollback path today: a bad run is handled by the steps above.
-
-`Source.enabled=false` blocks cron execution by default. Use `--force-disabled` only for an explicit manual recovery run after checking the source-health report.
 
 ### Rolling back a written description
 
