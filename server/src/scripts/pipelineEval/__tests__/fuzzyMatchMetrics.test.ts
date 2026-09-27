@@ -4,6 +4,8 @@ import {
   buildLabeledNegatives,
   clusterBcubed,
   clusterPairs,
+  groundTruthPairsByProvenance,
+  labelProvenance,
   pairCompleteness,
   pairKey,
   pairwiseMetrics,
@@ -172,5 +174,30 @@ describe('clusterBcubed', () => {
     expect(m.precision).toBeNull();
     expect(m.recall).toBeNull();
     expect(m.truthCoverage).toBeNull();
+  });
+});
+
+describe('label provenance', () => {
+  const automated = ['script:dedupe'];
+
+  it('classifies a merge by who decided it', () => {
+    expect(labelProvenance('script:dedupe', automated)).toBe('automated');
+    expect(labelProvenance('reviewed-merge', automated)).toBe('other_attributed');
+    expect(labelProvenance('', automated)).toBe('unattributed');
+    expect(labelProvenance(undefined, automated)).toBe('unattributed');
+  });
+
+  it('builds each provenance only from its own merge edges', () => {
+    const pairs = groundTruthPairsByProvenance(
+      [
+        { entityId: 'a', canonicalGroupId: 'c', archivedReason: 'script:dedupe' },
+        { entityId: 'b', canonicalGroupId: 'c', archivedReason: 'reviewed-merge' },
+        { entityId: 'd', canonicalGroupId: 'e' },
+      ],
+      automated,
+    );
+    expect([...pairs.automated]).toEqual([pairKey('a', 'c')]);
+    expect([...pairs.other_attributed]).toEqual([pairKey('b', 'c')]);
+    expect([...pairs.unattributed]).toEqual([pairKey('d', 'e')]);
   });
 });

@@ -16,6 +16,8 @@ import {
   specificProfileLabUrlIdentityKey,
   normalizeOrgDedupeName,
 } from '../researchEntityPiDedupeCore';
+import { AUTOMATED_MERGE_ARCHIVE_REASONS } from '../../models/entityArchival';
+import { labelProvenance, labelProvenances, type LabelProvenance } from './fuzzyMatchMetrics';
 import { ratioOrNull, type MetricRatio } from './metricRatio';
 import { scoreAccuracy, type AccuracyMetrics, type ScorableEntity } from './pipelineEvalMetrics';
 
@@ -32,6 +34,7 @@ export interface EvalEntity {
   websiteUrl?: unknown;
   studentVisibilityTier?: string;
   canonicalGroupId?: string | null;
+  archivedReason?: string;
   archived?: boolean;
   inferredPiUserId?: string | null;
   departments?: unknown;
@@ -372,6 +375,10 @@ export interface DedupeStrategyResult {
   groundTruthMergedPairs: number;
   groundTruthCaught: number;
   recall: MetricRatio;
+  groundTruthByProvenance: Record<
+    LabelProvenance,
+    { mergedPairs: number; caught: number; recall: MetricRatio }
+  >;
   droppedGenericKeys: number;
   predictedClusters: number;
   predictedNewMergePairs: number;
@@ -415,8 +422,18 @@ export function scoreDedupeStrategy(
     }
   }
   let groundTruthCaught = 0;
+  const byProvenance = Object.fromEntries(
+    labelProvenances.map((provenance) => [provenance, { mergedPairs: 0, caught: 0 }]),
+  ) as Record<LabelProvenance, { mergedPairs: number; caught: number }>;
   for (const [shell, canonical] of groundTruthPairs) {
-    if (uf.find(shell) === uf.find(canonical)) groundTruthCaught += 1;
+    const caught = uf.find(shell) === uf.find(canonical);
+    if (caught) groundTruthCaught += 1;
+    const bucket =
+      byProvenance[
+        labelProvenance(byId.get(shell)?.archivedReason, AUTOMATED_MERGE_ARCHIVE_REASONS)
+      ];
+    bucket.mergedPairs += 1;
+    if (caught) bucket.caught += 1;
   }
   const knownMergedKeys = new Set(
     groundTruthPairs.flatMap(([shell, canonical]) => [
@@ -467,6 +484,18 @@ export function scoreDedupeStrategy(
     groundTruthMergedPairs: groundTruthPairs.length,
     groundTruthCaught,
     recall: ratioOrNull(groundTruthCaught, groundTruthPairs.length),
+    groundTruthByProvenance: Object.fromEntries(
+      labelProvenances.map((provenance) => [
+        provenance,
+        {
+          ...byProvenance[provenance],
+          recall: ratioOrNull(
+            byProvenance[provenance].caught,
+            byProvenance[provenance].mergedPairs,
+          ),
+        },
+      ]),
+    ) as DedupeStrategyResult['groundTruthByProvenance'],
     droppedGenericKeys,
     predictedClusters: multiClusterCount,
     predictedNewMergePairs,

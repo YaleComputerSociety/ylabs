@@ -15,7 +15,10 @@ import {
   getResearchGroupDetail,
   resolveArchivedResearchEntityCanonicalSlug,
 } from '../services/researchGroupService';
-import { archivedEntityUpdate } from '../models/entityArchival';
+import {
+  SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
+  archivedEntityUpdate,
+} from '../models/entityArchival';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import { SAME_LEAD_MERGE_CARRIED_FIELDS } from './mergeSameLeadDuplicateGroupsCore';
@@ -33,8 +36,6 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SCRIPT_NAME = 'research-entity:merge-same-lead-duplicate-groups';
 export const CONFIRM_FLAG = '--confirm-merge-same-lead-duplicate-groups';
-const ARCHIVE_REASON =
-  'Merged into the corroborated survivor of its duplicate-url group: same lead person plus a corroborating name or shell asymmetry (#3326).';
 
 /** The distinct funding evidence a row carries, as comparable keys. */
 const fundingEvidenceKeys = (row: Record<string, any>): Set<string> => {
@@ -250,7 +251,7 @@ async function main(): Promise<void> {
       for (const loser of losers) {
         await ResearchEntity.updateOne(
           { _id: loser._id },
-          archivedEntityUpdate(ARCHIVE_REASON, {
+          archivedEntityUpdate(SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON, {
             canonicalGroupId: survivor._id,
             lastObservedAt: now,
           }),

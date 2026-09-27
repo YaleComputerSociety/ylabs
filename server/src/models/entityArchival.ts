@@ -77,6 +77,19 @@ export const archiveAttributionFields = {
  */
 export const DEPT_ROSTER_SHELL_FOLD_ARCHIVE_REASON = 'materialize:fold-dept-roster-shell';
 export const PI_DEDUPE_ARCHIVE_REASON = 'research-entity:dedupe-by-pi';
+export const SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON =
+  'Merged into the corroborated survivor of its duplicate-url group: same lead person plus a corroborating name or shell asymmetry (#3326).';
+
+/**
+ * The archivers that fold a row into a canonical one automatically. The eval harness reads
+ * this to tell a merge a script decided from one an operator did, because a label produced
+ * by the system under measurement caps its recall at what that system already found (#3514).
+ */
+export const AUTOMATED_MERGE_ARCHIVE_REASONS: readonly string[] = [
+  PI_DEDUPE_ARCHIVE_REASON,
+  DEPT_ROSTER_SHELL_FOLD_ARCHIVE_REASON,
+  SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
+];
 
 /**
  * The one update document that archives a row. Callers pass the lane or rule that
