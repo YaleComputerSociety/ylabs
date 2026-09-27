@@ -41,6 +41,7 @@ import {
   buildArchivedEntityArtifactRepairPlan,
   type ArchivedEntityArtifact,
   type ArchivedEntityArtifactType,
+  type ArchivedEntityDisposition,
 } from './repairArchivedEntityArtifactsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { isSweepStageEnabledByDefault } from './sweepStageFlags';
@@ -1619,6 +1620,23 @@ function stringId(value: unknown): string {
   return value === undefined || value === null ? '' : String(value);
 }
 
+function mergeDispositionsForDuplicates(
+  duplicateIds: mongoose.Types.ObjectId[],
+  canonicalId: mongoose.Types.ObjectId,
+): Map<string, ArchivedEntityDisposition> {
+  return new Map(
+    duplicateIds.map((duplicateId) => [
+      stringId(duplicateId),
+      {
+        archivedEntityId: stringId(duplicateId),
+        repairClass: 'merge-survivor',
+        survivorId: stringId(canonicalId),
+        archivedReason: PI_DEDUPE_ARCHIVE_REASON,
+      },
+    ]),
+  );
+}
+
 async function loadArtifactsForDeleteMode(args: {
   canonicalId: mongoose.Types.ObjectId;
   duplicateIds: mongoose.Types.ObjectId[];
@@ -1668,10 +1686,8 @@ async function loadArtifactsForDeleteMode(args: {
         artifactType: spec.artifactType,
         id: stringId(row._id),
         researchEntityId: stringId(row.researchEntityId),
-        canonicalResearchEntityId: stringId(args.canonicalId),
         derivationKey: stringId(row.derivationKey),
         signalType: stringId(row.type),
-        entryPathwayId: stringId(row.entryPathwayId),
       });
     }
     for (const row of canonicalRows) {
@@ -1679,10 +1695,8 @@ async function loadArtifactsForDeleteMode(args: {
         artifactType: spec.artifactType,
         id: stringId(row._id),
         researchEntityId: stringId(row.researchEntityId),
-        canonicalResearchEntityId: stringId(row.researchEntityId),
         derivationKey: stringId(row.derivationKey),
         signalType: stringId(row.type),
-        entryPathwayId: stringId(row.entryPathwayId),
       });
     }
   }
@@ -1767,7 +1781,11 @@ async function applyDeleteModeArtifactPlan(args: {
   if (!db) return counts;
 
   const { artifacts, canonicalArtifacts } = await loadArtifactsForDeleteMode(args);
-  const plan = buildArchivedEntityArtifactRepairPlan({ artifacts, canonicalArtifacts });
+  const plan = buildArchivedEntityArtifactRepairPlan({
+    artifacts,
+    canonicalArtifacts,
+    dispositions: mergeDispositionsForDuplicates(args.duplicateIds, args.canonicalId),
+  });
 
   for (const item of plan.relink) {
     const spec = ARTIFACT_SPECS.find((candidate) => candidate.artifactType === item.artifactType);

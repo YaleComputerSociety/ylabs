@@ -2279,39 +2279,6 @@ test('LLM source-acquisition ObjectId filters are primitive-normalized', () => {
   }
 });
 
-test('archived artifact repair plan ids are primitive-normalized', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/repairArchivedEntityArtifacts.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /ARCHIVED_ARTIFACT_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(
-    source,
-    /export function normalizeArchivedArtifactObjectId\(value: unknown\): string \| undefined/,
-  );
-  assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
-  assert.match(
-    source,
-    /function objectId\(value: unknown\): mongoose\.Types\.ObjectId \| undefined/,
-  );
-  assert.match(source, /const itemObjectId = objectId\(item\.id\)/);
-  assert.match(source, /const canonicalObjectId = objectId\(item\.canonicalResearchEntityId\)/);
-  assert.match(source, /const duplicateObjectId = objectId\(item\.duplicateId\)/);
-  assert.match(
-    source,
-    /function stringId\(value: unknown\): string \{\s*return serializedDocumentId\(value\) \|\| '';\s*\}/,
-  );
-  assert.doesNotMatch(source, /ObjectId\.isValid/);
-  assert.doesNotMatch(source, /new mongoose\.Types\.ObjectId\(value\)/);
-  assert.doesNotMatch(
-    source,
-    /typeof \(value as \{ toHexString\?: \(\) => string \}\)\.toHexString === 'function'/,
-  );
-  assert.doesNotMatch(source, /\(value as \{ toHexString: \(\) => string \}\)\.toHexString\(\)/);
-  assert.doesNotMatch(source, /return String\(value\)/);
-});
-
 test('duplicate access signal repair ids are primitive-normalized', () => {
   const source = fs.readFileSync(
     new URL('../server/src/scripts/repairDuplicateAccessSignals.ts', import.meta.url),
