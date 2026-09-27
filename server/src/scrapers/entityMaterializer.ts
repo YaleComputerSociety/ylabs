@@ -155,12 +155,13 @@ import {
   isLikelyOfficialPersonProfileUrl,
   normalizeOfficialProfileDestination,
 } from '../services/leadProfileIdentity';
-import { isPlausibleUndergradEvidenceQuote } from './undergradEvidenceQuoteValidation';
 import { materializeOrgUnitSignalsForObservations } from './orgUnitSignalMaterializer';
 import {
-  isHistoricalUndergradEvidence,
-  namesNonYaleInstitution,
-} from './sources/labMicrositeUndergradLLMExtractor';
+  planStoredUndergradEvidenceQuoteClear,
+  sourcesWithdrawingUndergradEvidenceQuote,
+  undergradEvidenceQuoteIsInadmissible,
+  withoutWithdrawnUndergradEvidenceQuotes,
+} from './storedUndergradEvidenceQuote';
 import { withResearchEntityWriteTransaction } from '../services/researchEntityWriteTransaction';
 import {
   applyResearchEntityOrgUnitCanonicalization,
@@ -918,9 +919,7 @@ export function shouldIgnoreObservationForEntityMaterialization(
     isResearchEntityObservationType(entityType) &&
     observation.field === 'undergradEvidenceQuote' &&
     typeof observation.value === 'string' &&
-    (!isPlausibleUndergradEvidenceQuote(observation.value) ||
-      isHistoricalUndergradEvidence(observation.value) ||
-      namesNonYaleInstitution(observation.value))
+    undergradEvidenceQuoteIsInadmissible(observation.value)
   ) {
     return true;
   }
@@ -4572,6 +4571,7 @@ export interface ProjectFromLogInput {
   materializationObs: any[];
   resolverObs: ResolverObservation[];
   fullDescriptionShellGated: boolean;
+  undergradEvidenceQuoteWithdrawnBy?: ReadonlySet<string>;
   droppedLoserWebsiteValues?: readonly unknown[];
   loserRosterReads?: readonly ResolverObservation[];
   now: Date;
@@ -5095,6 +5095,7 @@ export async function projectFromLog(
     materializationObs,
     resolverObs,
     fullDescriptionShellGated,
+    undergradEvidenceQuoteWithdrawnBy = new Set<string>(),
     droppedLoserWebsiteValues = [],
     loserRosterReads = [],
   } = input;
@@ -5689,6 +5690,23 @@ export async function projectFromLog(
       set[clear.field] = '';
       fieldsWritten++;
     }
+    const storedQuoteClear = planStoredUndergradEvidenceQuoteClear({
+      stored: entityDoc,
+      staged: set,
+      withdrawingSources: undergradEvidenceQuoteWithdrawnBy,
+      lockedFields: manuallyLockedFields,
+    });
+    if (storedQuoteClear?.skipped) {
+      console.log(
+        `[stored-undergrad-evidence-quote] kept a ${storedQuoteClear.reason} undergradEvidenceQuote: ${storedQuoteClear.skipped}`,
+      );
+    } else if (storedQuoteClear) {
+      console.log(
+        `[stored-undergrad-evidence-quote] cleared a ${storedQuoteClear.reason} undergradEvidenceQuote`,
+      );
+      set.undergradEvidenceQuote = '';
+      fieldsWritten++;
+    }
     if (yaleStatusCacheIsWritable({ manuallyLockedFields })) {
       const populatedYaleStatusField = (setValue: unknown, docValue: unknown): unknown => {
         if (typeof setValue === 'string') return setValue.trim().length > 0 ? setValue : docValue;
@@ -6251,8 +6269,14 @@ export async function materializeEntity(
     if (entityDoc && entityDoc[f] !== undefined) manualValues[f] = entityDoc[f];
   }
 
+  const undergradEvidenceQuoteWithdrawnBy = isResearchEntityObservationType(entityType)
+    ? sourcesWithdrawingUndergradEvidenceQuote(obs)
+    : new Set<string>();
   const materializationObs = collapseLatestWins(
-    obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o)),
+    withoutWithdrawnUndergradEvidenceQuotes(
+      obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o)),
+      undergradEvidenceQuoteWithdrawnBy,
+    ),
     entityType,
   );
 
@@ -6409,6 +6433,7 @@ export async function materializeEntity(
     materializationObs,
     resolverObs,
     fullDescriptionShellGated,
+    undergradEvidenceQuoteWithdrawnBy,
     droppedLoserWebsiteValues,
     loserRosterReads,
     now: new Date(),

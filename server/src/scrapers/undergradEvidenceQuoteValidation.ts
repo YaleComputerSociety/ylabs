@@ -93,6 +93,15 @@ const MODEL_SEARCH_NOTE_PATTERNS: RegExp[] = [
   /\b(?:the|these|this|those)\s+(?:provided|profiled|supplied|given|available)\s+(?:pages?|profiles?|profile\s+pages?|sub-?pages?|text|sites?|content)\b/i,
   /\b(?:pages?|profiles?|text|content)\s+(?:provided|supplied|given)\b/i,
   /^\W*(?:no|there\s+(?:is|are)\s+no)\s+(?:(?:explicit|clear|direct|specific)\s+)?(?:mentions?|evidence|text|language|statements?|references?|indications?|information|invitations?)\b/i,
+  /\bno\s+(?:(?:explicit|clear|direct|specific)\s+)?mentions?\s+of\b/i,
+  /\bno\s+(?:(?:explicit|clear|direct|specific)\s+)?(?:text|language|statements?)\s+on\s+(?:the|these|this)\s+(?:pages?|sites?|profiles?)\b/i,
+  /\b(?:does|do)\s+not\s+(?:explicitly\s+)?mention\s+(?:any\s+)?(?:accepting\s+)?undergrad/i,
+  /\b(?:members?|people|team|staff)\s*\(?pages?\)?\s+(?:lists|shows|contains|includes)\b/i,
+  /^\W*the\s+page\s+(?:lists|shows|contains|includes)\b[^.]*\b(?:no|not)\b/i,
+  /\((?:lists|shows|includes)\b/i,
+  /\bno\s+(?:one|(?:current\s+)?(?:yale\s+)?(?:students\s+or\s+)?undergrad(?:uate)?s?)\b[^.;)]{0,40}?\b(?:(?:explicitly\s+)?(?:listed|mentioned)|labell?ed)\b/i,
+  /\bbut\s+no\s+(?:current\s+)?(?:yale\s+)?undergrad(?:uate)?s?\b/i,
+  /\bnav(?:igation)?\s+item\b/i,
 ];
 
 /**

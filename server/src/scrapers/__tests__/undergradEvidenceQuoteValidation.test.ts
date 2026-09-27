@@ -112,6 +112,26 @@ describe('isModelSearchNote (#3683)', () => {
     '(no language on page about undergraduate recruitment or student opportunities)',
     'No explicit invitation or statement about undergraduates appears on the faculty page.',
   ];
+  const pageDescriptions = [
+    'Lab Members (people page) lists faculty and research scientists; no explicit mention of undergraduates.',
+    'People (page) lists lab members with titles but does not mention undergraduates.',
+    'Program Members (members page lists faculty and staff; no students or undergraduates explicitly listed)',
+    'Lab Members page lists faculty, researchers, postdocs, staff (no undergraduates mentioned)',
+    'Members (page) lists faculty and associates; no one is labeled as a current Yale undergraduate.',
+    'The page lists Publications and Contact but contains no explicit invitation for undergraduate researchers.',
+    'Lab members include only graduate students and postdocs, with no mention of undergraduates.',
+    'Students is a top-level nav item, but no explicit text on these pages states the lab welcomes undergraduates.',
+    'Directory > All People (lists categories including Undergraduate Students)',
+    'Past mentees are listed with degree years, but no current undergraduates are listed.',
+    'The lab does not mention accepting undergraduate researchers.',
+  ];
+
+  it('recognizes the model describing the page it read (#3592)', () => {
+    for (const note of pageDescriptions) {
+      expect(isModelSearchNote(note), note).toBe(true);
+      expect(isPlausibleUndergradEvidenceQuote(note), note).toBe(false);
+    }
+  });
 
   it('recognizes the model describing its own search', () => {
     for (const note of notes) {
@@ -128,6 +148,9 @@ describe('isModelSearchNote (#3683)', () => {
       'The lab has provided research positions to undergraduates every summer since 2015.',
       'No prior experience is necessary; undergraduates interested should send information about their background to the PI.',
       'Not only do undergraduates co-author papers, they also receive letters of reference.',
+      'This page lists external opportunities for current MFA and undergraduate students.',
+      'Current undergraduates are listed on our members page.',
+      'Undergraduates who join the lab present at the spring symposium.',
     ];
     for (const quote of quotes) {
       expect(isModelSearchNote(quote), quote).toBe(false);

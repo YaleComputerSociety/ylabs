@@ -28,13 +28,16 @@
  * runtime can be exercised in tests without ever touching the network.
  */
 import axios from 'axios';
-import type { FilterQuery } from 'mongoose';
+import mongoose, { type FilterQuery } from 'mongoose';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import { plainTextContent } from '../utils/htmlText';
 import { ResearchEntity } from '../../models/researchEntity';
+import { Observation } from '../../models/observation';
+import { isBenchmarkModeActive } from '../snapshotBenchmarkMode';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
 import {
@@ -102,6 +105,8 @@ const MAX_SUBPAGES_FETCHED = 3;
 // A manual lock on this field suppresses this lane's access observation outright,
 // so `releaseRevisitableFieldLocksCore` lists it as lock-suppressed too.
 const UNDERGRAD_ACCESS_EVIDENCE_FIELD = 'undergradAccessEvidence';
+const UNDERGRAD_EVIDENCE_QUOTE_FIELD = 'undergradEvidenceQuote';
+const MIN_READABLE_PAGE_TEXT_CHARS = 200;
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -399,7 +404,7 @@ export function buildLLMPrompt(
 }
 
 const normalizeQuoteText = (text: string): string =>
-  text
+  stripInvisibleFormatCharacters(text)
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201C\u201D]/g, '"')
     .replace(/[\u2013\u2014]/g, '-')
@@ -424,6 +429,67 @@ export function pageContainingQuote(
         normalizeQuoteText(redactDirectContactInfo(page.text)).includes(needle),
     ) ?? null
   );
+}
+
+export interface LiveEvidenceQuote {
+  value: string;
+  sourceUrl: string;
+}
+
+export type LiveEvidenceQuoteLoaderFn = (entityKey: string) => Promise<LiveEvidenceQuote | null>;
+
+export const defaultLiveEvidenceQuoteLoader: LiveEvidenceQuoteLoaderFn = async (entityKey) => {
+  if (isBenchmarkModeActive() || mongoose.connection.readyState !== 1) return null;
+  const row = await Observation.findOne({
+    entityType: 'researchEntity',
+    entityKey,
+    sourceName: SOURCE_KEY,
+    field: UNDERGRAD_EVIDENCE_QUOTE_FIELD,
+    superseded: false,
+  })
+    .sort({ observedAt: -1 })
+    .select('value sourceUrl')
+    .lean<{ value?: unknown; sourceUrl?: unknown }>();
+  const value = typeof row?.value === 'string' ? row.value.trim() : '';
+  const sourceUrl = typeof row?.sourceUrl === 'string' ? row.sourceUrl.trim() : '';
+  return value && sourceUrl ? { value, sourceUrl } : null;
+};
+
+export function pageUrlIdentity(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    return `${host}${parsed.pathname.replace(/\/+$/, '')}${parsed.search}`;
+  } catch {
+    return url.trim();
+  }
+}
+
+export function evidenceQuoteIsWithdrawnByRead(
+  live: LiveEvidenceQuote,
+  readPages: readonly PromptSourcePage[],
+): boolean {
+  const citedIdentity = pageUrlIdentity(live.sourceUrl);
+  const citedPage = readPages.find((page) => pageUrlIdentity(page.url) === citedIdentity);
+  if (!citedPage || normalizeQuoteText(citedPage.text).length < MIN_READABLE_PAGE_TEXT_CHARS) {
+    return false;
+  }
+  return pageContainingQuote(live.value, readPages) === null;
+}
+
+export function evidenceQuoteWithdrawalObservation(
+  entityKey: string,
+  live: LiveEvidenceQuote,
+): ObservationInput {
+  return {
+    entityType: 'researchEntity',
+    entityKey,
+    sourceUrl: live.sourceUrl,
+    field: UNDERGRAD_EVIDENCE_QUOTE_FIELD,
+    value: '',
+    assertsNoValueFor: [UNDERGRAD_EVIDENCE_QUOTE_FIELD],
+    confidenceOverride: 0.5,
+  };
 }
 
 const PAGE_QUOTE_FIELDS = [
@@ -991,6 +1057,7 @@ export interface LabMicrositeUndergradLLMExtractorDeps {
   renderedFetcher?: RenderedFetcher | null;
   callLLM?: CallLLMFn;
   workPlanLoader?: WorkPlanLoaderFn;
+  liveEvidenceQuoteLoader?: LiveEvidenceQuoteLoaderFn;
   /** Resolves the candidate-lab list. Default queries Mongo. */
   labFinder?: () => Promise<CandidateLab[]>;
   model?: string;
@@ -1073,6 +1140,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
   private readonly renderedFetcher: RenderedFetcher | null;
   private readonly callLLM: CallLLMFn;
   private readonly workPlanLoader: WorkPlanLoaderFn;
+  private readonly liveEvidenceQuoteLoader: LiveEvidenceQuoteLoaderFn;
   private readonly labFinder: () => Promise<CandidateLab[]>;
   private readonly model: string;
   private readonly apiKey: string | undefined;
@@ -1083,6 +1151,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     this.renderedFetcher = deps.renderedFetcher ?? createScraplingRenderedFetcher();
     this.callLLM = deps.callLLM ?? defaultCallLLM;
     this.workPlanLoader = deps.workPlanLoader ?? defaultWorkPlanLoader;
+    this.liveEvidenceQuoteLoader = deps.liveEvidenceQuoteLoader ?? defaultLiveEvidenceQuoteLoader;
     this.labFinder = deps.labFinder ?? defaultLabFinder;
     this.model = deps.model ?? DEFAULT_MODEL;
     this.apiKey = deps.apiKey ?? process.env.OPENAI_API_KEY;
@@ -1124,6 +1193,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     let processingFailed = 0;
     let contentUnchangedSkipped = 0;
     let quotesNotOnPage = 0;
+    let evidenceQuotesWithdrawn = 0;
     const fetchAttempts: ScraperFetchMetric[] = [];
     const workPlannerPolicy = ctx.options.ignoreWorkPlanner
       ? undefined
@@ -1200,6 +1270,38 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           subPages.push({ url: fetched.url, text });
         }
         const [primarySubPage, ...additionalSubPages] = subPages;
+
+        const liveEvidenceQuote = await abortLaneOnFailure(() =>
+          this.liveEvidenceQuoteLoader(lab.slug),
+        );
+        if (liveEvidenceQuote) {
+          const readPages: PromptSourcePage[] = [
+            { url: homePage.url, text: homeText },
+            ...subPages,
+          ];
+          const citedIdentity = pageUrlIdentity(liveEvidenceQuote.sourceUrl);
+          if (!readPages.some((page) => pageUrlIdentity(page.url) === citedIdentity)) {
+            const measuredCitedPage = await measureRenderedFetch(
+              liveEvidenceQuote.sourceUrl,
+              'http',
+              () => this.fetchPage(liveEvidenceQuote.sourceUrl),
+            );
+            fetchAttempts.push(measuredCitedPage.metric);
+            if (measuredCitedPage.result) {
+              readPages.push({
+                url: liveEvidenceQuote.sourceUrl,
+                text: htmlToPromptText(measuredCitedPage.result.html),
+              });
+            }
+          }
+          if (evidenceQuoteIsWithdrawnByRead(liveEvidenceQuote, readPages)) {
+            await abortLaneOnFailure(() =>
+              ctx.emit([evidenceQuoteWithdrawalObservation(lab.slug, liveEvidenceQuote)]),
+            );
+            evidenceQuotesWithdrawn += 1;
+            totalObs += 1;
+          }
+        }
 
         const entityRef = { entityType: 'researchEntity' as const, entityKey: lab.slug };
         const contentHash = computeVersionedContentHash(
@@ -1319,10 +1421,11 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: succeeded,
-      notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed, ${processingFailed} processing-failed, ${contentUnchangedSkipped} content-unchanged skipped, ${quotesNotOnPage} quotes not on page, ${workPlannerMetrics.skippedFresh + workPlannerMetrics.skippedManualLock} workplanner-skipped)`,
+      notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed, ${processingFailed} processing-failed, ${contentUnchangedSkipped} content-unchanged skipped, ${quotesNotOnPage} quotes not on page, ${evidenceQuotesWithdrawn} stored evidence quotes withdrawn, ${workPlannerMetrics.skippedFresh + workPlannerMetrics.skippedManualLock} workplanner-skipped)`,
       metrics: {
         workPlanner: workPlannerMetrics,
         quotesNotOnPage,
+        evidenceQuotesWithdrawn,
       },
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };

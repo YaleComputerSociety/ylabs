@@ -235,6 +235,9 @@ Audit focus:
 
 - Quotes are real and traceable to `sourceUrl`/`quoteSourceUrl`.
 The lane now enforces this for its own quote fields, so a nonzero `quotesNotOnPage` in the run report is the model paraphrasing, and each one was dropped rather than stored.
+- A stored `undergradEvidenceQuote` from an earlier run is re-checked on every read, including a content-unchanged skip: when the page it cites was read and neither it nor any other fetched page carries the quote, the lane emits an empty `undergradEvidenceQuote` with `assertsNoValueFor`, counted as `evidenceQuotesWithdrawn`.
+An unread or too-short cited page states nothing, so a fetch failure never withdraws a quote.
+The next materialize clears the stored value, and it also clears a stored quote that fails the admission check, such as the model's own search note (#3592).
 - LLM evidence remains low-trust and conservative.
 - No access signal overstates availability from a generic join page.
 - Direct emails and phone numbers are redacted from public quote/excerpt fields unless a guarded contact policy explicitly allows display.
