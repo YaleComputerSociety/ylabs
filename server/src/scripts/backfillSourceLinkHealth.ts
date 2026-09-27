@@ -15,6 +15,10 @@ import {
   ResolverUnhealthyError,
 } from '../scrapers/utils/resolverCircuitBreaker';
 import {
+  HOST_THROTTLE_OVERRIDES,
+  type HostThrottle,
+} from '../scrapers/utils/hostConcurrencyLimiter';
+import {
   collectSourceLinkHealthCandidates,
   resolveSourceLinkHealthEntry,
   storedSourceLinkHealthByUrl,
@@ -156,6 +160,10 @@ export interface SourceLinkHealthBackfillResult {
 export const DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY = 4;
 export const DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS = 250;
 
+export function measuredHostBudget(host: string): HostThrottle | undefined {
+  return Object.hasOwn(HOST_THROTTLE_OVERRIDES, host) ? HOST_THROTTLE_OVERRIDES[host] : undefined;
+}
+
 const hostOf = (url: string): string => {
   try {
     return new URL(url).hostname.toLowerCase();
@@ -179,6 +187,12 @@ const hostOf = (url: string): string => {
  *
  * Pacing counts REQUESTS, not candidates: an already-cached URL costs nothing and
  * must not consume a host's delay.
+ *
+ * A host with a measured budget (`hostThrottleFor`) is the one exception to serial:
+ * it gets that budget's requests in flight, with starts spaced by the larger of the
+ * pace and the budget's interval. `medicine.yale.edu` holds 3,529 of the 9,052 URLs a
+ * Development pass probes, at about 2 s a probe, so one-at-a-time on that host alone
+ * was most of the 110-minute stage (#3568).
  */
 export async function probeUncachedUrlsByHost(
   urls: readonly string[],
@@ -194,6 +208,7 @@ export async function probeUncachedUrlsByHost(
      * failing. Omit only in tests that are not exercising that path (#2782).
      */
     resolverBreaker?: ResolverCircuitBreaker;
+    hostThrottleFor?: (host: string) => HostThrottle | undefined;
   },
 ): Promise<void> {
   const byHost = new Map<string, string[]>();
@@ -208,34 +223,68 @@ export async function probeUncachedUrlsByHost(
   }
   if (byHost.size === 0) return;
 
-  const buckets = [...byHost.values()];
+  const probe = async (url: string): Promise<void> => {
+    try {
+      const health = await deps.checkLink(url);
+      healthCache.set(url, health);
+      deps.result.checked += 1;
+      // A verdict of UNAVAILABLE carrying no HTTP status is the shape a
+      // resolution failure takes, and it is the only shape #2775 mis-recorded.
+      if (health.healthStatus === 'UNAVAILABLE' && health.httpStatusCode === undefined) {
+        deps.resolverBreaker?.recordFailure(hostOf(url));
+      } else {
+        deps.resolverBreaker?.recordSuccess(hostOf(url));
+      }
+    } catch (error) {
+      if (error instanceof ResolverUnhealthyError) throw error;
+      deps.result.errors += 1;
+      console.error('source-link-health probe failed:', sanitizeLogValue(error));
+    }
+  };
+
+  const probeSerially = async (bucket: string[]): Promise<void> => {
+    for (const [index, url] of bucket.entries()) {
+      // Stop before the next probe rather than after it, so a tripped breaker
+      // cannot record one more death on its way out.
+      deps.resolverBreaker?.assertHealthy();
+      if (index > 0 && deps.paceDelayMs > 0) await deps.sleep(deps.paceDelayMs);
+      await probe(url);
+    }
+  };
+
+  const probeWithinBudget = async (bucket: string[], budget: HostThrottle): Promise<void> => {
+    const spacingMs = Math.max(deps.paceDelayMs, budget.minIntervalMs);
+    let next = 0;
+    let startTurn: Promise<void> = Promise.resolve();
+    const awaitStartTurn = (index: number): Promise<void> => {
+      startTurn = startTurn.then(() =>
+        index > 0 && spacingMs > 0 ? deps.sleep(spacingMs) : undefined,
+      );
+      return startTurn;
+    };
+    const lane = async (): Promise<void> => {
+      while (next < bucket.length) {
+        const index = next;
+        next += 1;
+        await awaitStartTurn(index);
+        deps.resolverBreaker?.assertHealthy();
+        await probe(bucket[index]);
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(Math.floor(budget.concurrency), bucket.length) }, lane),
+    );
+  };
+
+  const buckets = [...byHost.entries()];
   let cursor = 0;
   const worker = async (): Promise<void> => {
     while (cursor < buckets.length) {
-      const bucket = buckets[cursor];
+      const [host, bucket] = buckets[cursor];
       cursor += 1;
-      for (const [index, url] of bucket.entries()) {
-        // Stop before the next probe rather than after it, so a tripped breaker
-        // cannot record one more death on its way out.
-        deps.resolverBreaker?.assertHealthy();
-        if (index > 0 && deps.paceDelayMs > 0) await deps.sleep(deps.paceDelayMs);
-        try {
-          const health = await deps.checkLink(url);
-          healthCache.set(url, health);
-          deps.result.checked += 1;
-          // A verdict of UNAVAILABLE carrying no HTTP status is the shape a
-          // resolution failure takes, and it is the only shape #2775 mis-recorded.
-          if (health.healthStatus === 'UNAVAILABLE' && health.httpStatusCode === undefined) {
-            deps.resolverBreaker?.recordFailure(hostOf(url));
-          } else {
-            deps.resolverBreaker?.recordSuccess(hostOf(url));
-          }
-        } catch (error) {
-          if (error instanceof ResolverUnhealthyError) throw error;
-          deps.result.errors += 1;
-          console.error('source-link-health probe failed:', sanitizeLogValue(error));
-        }
-      }
+      const budget = deps.hostThrottleFor?.(host);
+      if (budget && budget.concurrency > 1) await probeWithinBudget(bucket, budget);
+      else await probeSerially(bucket);
     }
   };
   await Promise.all(
@@ -258,6 +307,7 @@ export async function runSourceLinkHealthBackfill(options: {
   paceDelayMs?: number;
   sleep?: (ms: number) => Promise<void>;
   resolverBreaker?: ResolverCircuitBreaker;
+  hostThrottleFor?: (host: string) => HostThrottle | undefined;
 }): Promise<SourceLinkHealthBackfillResult> {
   const checkLink = options.checkLink ?? checkSourceLinkHealth;
   const resolverBreaker = options.resolverBreaker ?? new ResolverCircuitBreaker();
@@ -380,7 +430,15 @@ export async function runSourceLinkHealthBackfill(options: {
     await probeUncachedUrlsByHost(
       plans.flatMap((plan) => plan.candidates),
       healthCache,
-      { checkLink, hostConcurrency, paceDelayMs, sleep, result, resolverBreaker },
+      {
+        checkLink,
+        hostConcurrency,
+        paceDelayMs,
+        sleep,
+        result,
+        resolverBreaker,
+        hostThrottleFor: options.hostThrottleFor ?? measuredHostBudget,
+      },
     );
 
     // Phase 3, no network: every verdict is cached, so assembling and writing a

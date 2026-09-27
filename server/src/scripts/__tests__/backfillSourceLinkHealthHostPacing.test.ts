@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY,
   DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS,
+  measuredHostBudget,
   probeUncachedUrlsByHost,
 } from '../backfillSourceLinkHealth';
 import type { SourceLinkHealth } from '../../services/sourceLinkHealth';
@@ -177,5 +178,94 @@ describe('probeUncachedUrlsByHost', () => {
   it('defaults are polite rather than aggressive', () => {
     expect(DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY).toBe(4);
     expect(DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS).toBeGreaterThanOrEqual(250);
+  });
+
+  describe('a host with a measured budget (#3568)', () => {
+    const slowHarness = () => {
+      const h = harness();
+      const inFlightByHost = new Map<string, number>();
+      return {
+        ...h,
+        checkLink: async (url: string) => {
+          const host = new URL(url).hostname;
+          const next = (inFlightByHost.get(host) ?? 0) + 1;
+          inFlightByHost.set(host, next);
+          h.maxInFlightByHost.set(host, Math.max(h.maxInFlightByHost.get(host) ?? 0, next));
+          h.order.push(url);
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          inFlightByHost.set(host, (inFlightByHost.get(host) ?? 1) - 1);
+          return healthy();
+        },
+      };
+    };
+
+    it('probes the budgeted host at its concurrency and every other host one at a time', async () => {
+      const h = slowHarness();
+      const urls = [
+        ...Array.from({ length: 6 }, (_, i) => `https://medicine.yale.edu/profile/${i}/`),
+        ...Array.from({ length: 6 }, (_, i) => `https://one.yale.edu/${i}`),
+      ];
+
+      await probeUncachedUrlsByHost(urls, new Map(), {
+        checkLink: h.checkLink,
+        hostConcurrency: 4,
+        paceDelayMs: 250,
+        sleep: h.sleep,
+        result: h.result,
+        hostThrottleFor: measuredHostBudget,
+      });
+
+      expect(h.maxInFlightByHost.get('medicine.yale.edu')).toBe(2);
+      expect(h.maxInFlightByHost.get('one.yale.edu')).toBe(1);
+      expect(h.result.checked).toBe(12);
+      expect(h.sleeps.filter((ms) => ms === 400)).toHaveLength(5);
+      expect(h.sleeps.filter((ms) => ms === 250)).toHaveLength(5);
+    });
+
+    it('never spaces a budgeted host tighter than the pace', async () => {
+      const h = slowHarness();
+
+      await probeUncachedUrlsByHost(
+        Array.from({ length: 3 }, (_, i) => `https://medicine.yale.edu/lab/${i}/`),
+        new Map(),
+        {
+          checkLink: h.checkLink,
+          hostConcurrency: 4,
+          paceDelayMs: 900,
+          sleep: h.sleep,
+          result: h.result,
+          hostThrottleFor: measuredHostBudget,
+        },
+      );
+
+      expect(h.sleeps).toEqual([900, 900]);
+    });
+
+    it('stays serial on every host when no budget is supplied', async () => {
+      const h = slowHarness();
+
+      await probeUncachedUrlsByHost(
+        Array.from({ length: 4 }, (_, i) => `https://medicine.yale.edu/lab/${i}/`),
+        new Map(),
+        {
+          checkLink: h.checkLink,
+          hostConcurrency: 4,
+          paceDelayMs: 0,
+          sleep: h.sleep,
+          result: h.result,
+        },
+      );
+
+      expect(h.maxInFlightByHost.get('medicine.yale.edu')).toBe(1);
+    });
+
+    it('reads the budget from the host throttle overrides only', () => {
+      expect(measuredHostBudget('medicine.yale.edu')).toEqual({
+        concurrency: 2,
+        minIntervalMs: 400,
+      });
+      expect(measuredHostBudget('economics.yale.edu')).toBeUndefined();
+      expect(measuredHostBudget('constructor')).toBeUndefined();
+    });
   });
 });
