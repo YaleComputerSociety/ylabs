@@ -9,6 +9,10 @@ import { isTraineeLevelTitle as clientIsTraineeLevelTitle } from '../../../../cl
 const PARITY_CASES = [
   'Postdoctoral Associate',
   'Postdoctoral Fellow',
+  'Postgraduate Associate',
+  'Postgraduate Fellow',
+  'Postgraduate Associate in Pediatrics',
+  'Postgraduate Associate in the Child Study Center',
   'Postdoctoral Scholar',
   'Post-doctoral Associate',
   'Postdoc',
@@ -50,6 +54,19 @@ describe('isTraineeLevelTitle', () => {
     expect(isTraineeLevelTitle('Postdoctoral Fellow')).toBe(true);
     expect(isTraineeLevelTitle('Post-doc')).toBe(true);
     expect(isTraineeLevelTitle('Research Assistant, YSPH')).toBe(true);
+  });
+
+  // Yale's post-bachelor's, pre-doctoral research appointments. Missing until #3576,
+  // where one served row reached students on a `Postgraduate Associate` lead.
+  it('treats a postgraduate associate or fellow as unable to host', () => {
+    expect(isTraineeLevelTitle('Postgraduate Associate')).toBe(true);
+    expect(isTraineeLevelTitle('Postgraduate Fellow')).toBe(true);
+    expect(isTraineeLevelTitle('Postgraduate Associate in Pediatrics')).toBe(true);
+    expect(isTraineeLevelTitle('Postgraduate Associate in the Child Study Center')).toBe(true);
+  });
+
+  it('still exempts a postgraduate appointment held alongside a supervisory one', () => {
+    expect(isTraineeLevelTitle('Postgraduate Associate and Lecturer in Pediatrics')).toBe(false);
   });
 
   it('exempts a supervisory title alongside the trainee one', () => {
