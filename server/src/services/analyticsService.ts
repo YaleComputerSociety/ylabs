@@ -2127,7 +2127,10 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
   const [topResearchEntityDocs, topFellowshipDocs, topProfileDocs] = await Promise.all([
     topEntityIdsFor('research_entity').length
       ? ResearchEntity.find({
-          _id: { $in: toAnalyticsObjectIds(topEntityIdsFor('research_entity')) },
+          $or: [
+            { slug: { $in: topEntityIdsFor('research_entity') } },
+            { _id: { $in: toAnalyticsObjectIds(topEntityIdsFor('research_entity')) } },
+          ],
         })
           .select('name displayName slug')
           .lean()
@@ -2168,7 +2171,10 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
         displayName?: string;
         slug?: string;
       }>
-    ).map((doc) => [String(doc._id), doc] as const),
+    ).flatMap((doc) => [
+      [String(doc._id), doc] as const,
+      ...(doc.slug ? [[doc.slug, doc] as const] : []),
+    ]),
   );
   const fellowshipTitleById = new Map(
     (topFellowshipDocs as Array<{ _id: unknown; title?: string }>).map(

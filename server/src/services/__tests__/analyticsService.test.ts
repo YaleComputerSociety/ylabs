@@ -846,6 +846,46 @@ describe('getAnalytics research coverage and range scoping', () => {
       },
     ]);
   });
+  it('resolves research profile opens recorded by slug to a name and href', async () => {
+    const slug = 'synthetic-quokka-lab';
+    primeAnalyticsMocks();
+    mocks.analyticsAggregate.mockResolvedValue([
+      {
+        ...eventFacetStub,
+        topEntities: [{ entityType: 'research_entity', entityId: slug, views: 2, uniqueViewers: 1 }],
+      },
+    ]);
+    mocks.researchEntityAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 0, active: 0 }],
+        byType: [],
+        byVisibilityTier: [],
+        freshness: [],
+        scholarly: [],
+      },
+    ]);
+    mocks.researchEntityFind.mockImplementation((query: any) => ({
+      select: () => ({
+        lean: async () =>
+          query.$or?.some((clause: any) => clause.slug?.$in?.includes(slug))
+            ? [{ _id: '507f1f77bcf86cd799439013', name: 'Quokka Lab', slug }]
+            : [],
+      }),
+    }));
+
+    const analytics = await getAnalytics();
+
+    expect(analytics.research.topEntities).toEqual([
+      {
+        entityType: 'research_entity',
+        entityId: slug,
+        views: 2,
+        uniqueViewers: 1,
+        name: 'Quokka Lab',
+        href: `/research/${slug}`,
+      },
+    ]);
+  });
 });
 
 describe('shouldSuppressBetaAnalyticsEvent', () => {
