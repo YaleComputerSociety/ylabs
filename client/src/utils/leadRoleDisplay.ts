@@ -1,7 +1,7 @@
 import { LabMember, LabMemberRole } from '../types/labDetail';
 
 const TRAINEE_TITLE_PATTERN =
-  /\b(post-?doctoral|post-?doc|postgraduate (?:associate|fellow|researcher)|research assistant|(?:ph\.?\s?d|doctoral|graduate|undergraduate|masters?|m\.?s)\.?\s+(?:student|candidate)|intern|pre-?doctoral|trainee)\b/i;
+  /\b(post-?doctoral|post-?doc|postgraduate (?:associate|fellow)|research assistant|(?:ph\.?\s?d|doctoral|graduate|undergraduate|masters?|m\.?s)\.?\s+(?:student|candidate)|intern|pre-?doctoral|trainee)\b/i;
 // A bare "Student", "MA Student" or "IDE Alumni" carries no degree qualifier, so the
 // alternatives above never reach it. Two anchors keep the widening safe: the noun must
 // end its clause, separating a rank ("IDE Student") from a modifier ("International

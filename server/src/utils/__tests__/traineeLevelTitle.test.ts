@@ -63,7 +63,6 @@ describe('isTraineeLevelTitle', () => {
     expect(isTraineeLevelTitle('Postgraduate Fellow')).toBe(true);
     expect(isTraineeLevelTitle('Postgraduate Associate in Pediatrics')).toBe(true);
     expect(isTraineeLevelTitle('Postgraduate Associate in the Child Study Center')).toBe(true);
-    expect(isTraineeLevelTitle('Postgraduate Researcher')).toBe(true);
   });
 
   it('still exempts a postgraduate appointment held alongside a supervisory one', () => {

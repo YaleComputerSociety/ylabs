@@ -22,7 +22,7 @@
  * are separate packages; parity is pinned by behaviour in a test, per #2433.
  */
 const TRAINEE_TITLE_PATTERN =
-  /\b(post-?doctoral|post-?doc|postgraduate (?:associate|fellow|researcher)|research assistant|(?:ph\.?\s?d|doctoral|graduate|undergraduate|masters?|m\.?s)\.?\s+(?:student|candidate)|intern|pre-?doctoral|trainee)\b/i;
+  /\b(post-?doctoral|post-?doc|postgraduate (?:associate|fellow)|research assistant|(?:ph\.?\s?d|doctoral|graduate|undergraduate|masters?|m\.?s)\.?\s+(?:student|candidate)|intern|pre-?doctoral|trainee)\b/i;
 /**
  * A degree qualifier is not always present: the corpus stores bare "Student",
  * "MA Student", "IDE Student" and "Graduate School Student", none of which the

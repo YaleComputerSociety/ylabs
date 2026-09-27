@@ -34,17 +34,6 @@
  * lead, so they describe a real access route and are not defects. Never archive on this
  * verdict alone (#3576).
  *
- * NOT THE HOSTABILITY QUESTION, and this is the more important caveat. Whether a row
- * describes a way in for a student is owned by `utils/traineeLevelTitle.ts` and
- * `hasStrongLead`: a postdoc cannot admit an undergraduate, so a row led only by one is
- * demoted to `missing_lead` (#2876/#2877). This module answers the narrower question of
- * what a title claims about its own rank, and it is deliberately WIDER: it reads an
- * associate research scientist, a clinical fellow and a postgraduate associate as working
- * in another group, and it disagrees with `isTraineeLevelTitle` on 59 of 103 rows.
- * Measured on Development, 38 of the 39 served rows in that population carry a non-trainee
- * lead, so they describe a real access route and are not defects. Never archive on this
- * verdict alone (#3576).
- *
  * KNOWN LIMIT, measured rather than assumed. A title names ranks; it does not say whose
  * rank each one is. Of the 325 distinct stored titles this module reads as owning nothing,
  * five name a rank as the population somebody SERVES - "Senior Associate Director, Graduate
