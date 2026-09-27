@@ -177,7 +177,6 @@
     "research-entity:repair-unbacked-lab-names": "tsx src/scripts/repairUnbackedLabNames.ts",
     "data:repair-invisible-format-characters": "tsx src/scripts/repairInvisibleFormatCharacters.ts",
     "data:repair-glued-sentence-boundaries": "tsx src/scripts/repairGluedSentenceBoundaries.ts",
-    "research-entity:repair-sentence-shaped-chips": "tsx src/scripts/repairSentenceShapedChips.ts",
     "research-entity:backfill-lab-branded-name-type": "tsx src/scripts/labBrandedNameTypeBackfill.ts",
     "research-entity:audit-lab-name-in-source-prose": "tsx src/scripts/labNameInSourceProseAudit.ts",
     "research-homes:repair-nih-nsf-pi-center-lab-conflation": "tsx src/scripts/repairNihNsfPiCenterLabConflation.ts",

@@ -21,7 +21,7 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { appendObservations } from '../observationStore';
 import { materializeEntity } from '../entityMaterializer';
-import { planChipList } from '../../scripts/repairSentenceShapedChipsCore';
+import { sanitizeObservationField } from '../observationFieldSanitizer';
 
 beforeEach(clearC4Flags);
 
@@ -103,8 +103,14 @@ describe('a sentence-shaped method chip is cleaned at ingest, not only at serve 
     const expected = ['Cryo-electron microscopy', 'Patch-clamp electrophysiology'];
     expect(await activeMethodObservations()).toEqual([expected]);
     expect(await storedMethods()).toEqual(expected);
-    expect(planChipList('methods', expected).changed).toBe(false);
-    expect(planChipList('methods', raw).repaired).toEqual(expected);
+    // Asserted against the ingest sanitizer rather than against a repair script's planner,
+    // which is where this cross-check used to point: the engine owns the rule, so cleaning an
+    // already-clean list is a no-op and cleaning the raw read reaches the same list.
+    expect(sanitizeObservationField('researchEntity', 'methods', expected)).toEqual({
+      value: expected,
+      rejected: false,
+    });
+    expect(sanitizeObservationField('researchEntity', 'methods', raw).value).toEqual(expected);
   });
 
   it('refuses an all-sentence read so it cannot displace a clean stored method list', async () => {
