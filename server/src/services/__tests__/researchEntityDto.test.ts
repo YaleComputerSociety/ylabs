@@ -642,6 +642,27 @@ describe('researchEntityDto', () => {
     );
   });
 
+  it("withholds the model's search note so it cannot back the undergraduate badge (#3683)", () => {
+    const note = toPublicResearchEntityDto({
+      id: 'entity-search-note',
+      slug: 'search-note-lab',
+      name: 'Search Note Lab',
+      undergradEvidenceQuote:
+        'No explicit mention of undergraduate students was found on the provided pages.',
+    });
+    expect(note.undergradEvidenceQuote).toBeUndefined();
+
+    const alumni = toPublicResearchEntityDto({
+      id: 'entity-alumni-quote',
+      slug: 'alumni-quote-lab',
+      name: 'Alumni Quote Lab',
+      undergradEvidenceQuote: 'Former undergraduate researchers include three Yale College alumni.',
+    });
+    expect(alumni.undergradEvidenceQuote).toBe(
+      'Former undergraduate researchers include three Yale College alumni.',
+    );
+  });
+
   it('splits bare comma-delimited research-area blobs while preserving enumeration titles', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-area-split',

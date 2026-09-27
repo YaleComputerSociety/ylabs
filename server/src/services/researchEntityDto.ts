@@ -31,6 +31,7 @@ import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityName
 import { personScopedResearchEntityNameNamesSomethingElseByUrlPath } from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import { isModelSearchNote } from '../scrapers/undergradEvidenceQuoteValidation';
 import {
   MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS,
   SERVED_FIELD_CONTRIBUTION_LABEL_SET,
@@ -498,6 +499,10 @@ export function toPublicResearchEntityDto(
         // when the two echo each other the body is the half to keep, consistent
         // with the sibling guard in `observationStore`.
         dto[field] = String(served[field] || '');
+        continue;
+      }
+      if (field === 'undergradEvidenceQuote') {
+        if (!isModelSearchNote(group[field])) dto[field] = publicTextValue(group[field]);
         continue;
       }
       if (field === 'profileResearchAreas') {
