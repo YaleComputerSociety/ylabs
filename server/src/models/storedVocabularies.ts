@@ -66,8 +66,7 @@ export const LEGACY_FACULTY_RESEARCH_ENTITY_TYPES = [
   'INDIVIDUAL_RESEARCH',
   'FACULTY_RESEARCH',
 ] as const;
-export type LegacyFacultyResearchEntityType =
-  (typeof LEGACY_FACULTY_RESEARCH_ENTITY_TYPES)[number];
+export type LegacyFacultyResearchEntityType = (typeof LEGACY_FACULTY_RESEARCH_ENTITY_TYPES)[number];
 
 const LEGACY_FACULTY_RESEARCH_ENTITY_TYPE_SET: ReadonlySet<string> = new Set(
   LEGACY_FACULTY_RESEARCH_ENTITY_TYPES,
