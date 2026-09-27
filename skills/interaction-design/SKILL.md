@@ -128,7 +128,23 @@ The current order is an assumption, not a finding.
 It appeared on 0 of 24 browse cards, and the cause was neither coverage nor layout.
 `ResearchHomeCard` derived its badges only from `pathways`, and the browse response from `/api/research/search` carries no `pathways` and no `wayInBadges` field, so the signals were always empty and the block that renders them was never entered.
 The same response does carry the evidence, in the entity shape, so the card could not see data that had already reached it.
-Fixed in #3555 by deriving from the entity fields as a fallback: 13 of 24 cards now show it, matching the payload exactly.
+Fixed in #3555 by deriving from the entity fields as a fallback, and then **withdrawn** in #3569's wake.
+The corpus-wide figure was 270 of 800 sampled rows, 33.8%, and every one of those came from `undergradEvidenceQuote` alone, because the other four fields are empty on ~100% of rows and two of them have no writing lane at all (#3579).
+#3569 then measured that field's dominant source, `lab-microsite-undergrad-llm`, at a badge precision of 0.36 with a Wilson 95% upper bound of 0.50, and found that 19 of 50 sampled quotes were the model's own absence commentary, "No explicit mention of undergraduates on the provided pages", which passed the plausibility regex and switched the badge **on** exactly where the lane had found nothing.
+So the badge is off the browse card again, and it is off for the right reason this time.
+
+Three lessons for this file, which is why this entry is long.
+
+A served field is not an evidenced field.
+`undergradEvidenceQuote` arrives on the row, is non-empty, and reads plausibly, and none of that makes the claim true.
+Ask which lane writes a field and what its precision is before putting it in front of a student, because the DTO cannot tell you.
+
+"Show the evidence instead of asserting" is not a universal escape hatch.
+It was the obvious middle option, and it fails here: 20 of the 50 quotes are not on the page they cite, so showing the quote would have published a fabrication with a citation attached.
+
+Write down the threshold before you see the number.
+Three cut-points were committed to in advance, so when 0.36 arrived there was nothing to negotiate.
+Deciding afterwards what counts as good enough is how a claim like this survives.
 The lesson for this file is that "the design exists and nothing renders" has a third explanation besides coverage and layout, which is a shape mismatch between the DTO and the component, and it is invisible to every test because the component is correct for its inputs and the inputs never arrive.
 - **Is admitting coverage gaps a trust gain or a trust cost?**
 See §5.

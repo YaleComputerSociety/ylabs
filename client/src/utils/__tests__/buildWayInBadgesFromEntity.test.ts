@@ -16,11 +16,33 @@ describe('buildWayInBadgesFromEntity', () => {
   });
 
   it.each([
-    ['a quote', { undergradEvidenceQuote: 'Two undergraduates joined in 2025.' }],
     ['past advisees', { pastUndergradAdvisees: [{}] as ResearchEntity['pastUndergradAdvisees'] }],
     ['typical roles', { typicalUndergradRoles: ['Data analysis'] }],
   ])('reads undergraduate evidence from %s', (_label, fields) => {
     expect(buildWayInBadgesFromEntity(entity(fields))).toEqual(['Undergrad evidence']);
+  });
+
+  /**
+   * The load-bearing assertion of this file. #3569 measured badge precision for
+   * the dominant source of `undergradEvidenceQuote` at 0.36, Wilson 95% upper
+   * bound 0.50, and found that 19 of 50 sampled quotes were the model's own
+   * absence commentary, which switched the badge on where the lane had found
+   * nothing. A quote alone must never assert undergraduate access.
+   */
+  it('never claims undergraduate access from a quote alone', () => {
+    const quoteOnly = entity({
+      undergradEvidenceQuote: 'No explicit mention of undergraduates on the provided pages.',
+    });
+
+    expect(buildWayInBadgesFromEntity(quoteOnly)).toEqual([]);
+  });
+
+  it('never claims undergraduate access from a plausible-looking quote either', () => {
+    const plausible = entity({
+      undergradEvidenceQuote: 'Undergraduates have contributed to this work every term.',
+    });
+
+    expect(buildWayInBadgesFromEntity(plausible)).toEqual([]);
   });
 
   it.each([
@@ -31,11 +53,6 @@ describe('buildWayInBadgesFromEntity', () => {
     ],
   ])('reads student-project evidence from %s', (_label, fields) => {
     expect(buildWayInBadgesFromEntity(entity(fields))).toEqual(['Student project evidence']);
-  });
-
-  /** A whitespace-only quote is absence of evidence, not evidence. */
-  it('treats a blank quote as no evidence', () => {
-    expect(buildWayInBadgesFromEntity(entity({ undergradEvidenceQuote: '   ' }))).toEqual([]);
   });
 
   it('treats a false independent-study flag as no evidence', () => {
@@ -50,7 +67,6 @@ describe('buildWayInBadgesFromEntity', () => {
    */
   it('never claims a contact route', () => {
     const everything = entity({
-      undergradEvidenceQuote: 'Undergraduates contribute each term.',
       offersIndependentStudy: true,
       typicalUndergradRoles: ['Field work'],
     });

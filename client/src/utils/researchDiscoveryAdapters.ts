@@ -428,8 +428,23 @@ export const buildWayInBadgesFromEntity = (entity: ResearchEntity | undefined): 
   if (!entity) return [];
 
   const badges: string[] = [];
+  // `undergradEvidenceQuote` is deliberately NOT read here. #3569 measured the
+  // badge precision of its dominant source, `lab-microsite-undergrad-llm`, at
+  // 0.36 with a Wilson 95% upper bound of 0.50, over a seeded sample of 50 of
+  // the 925 rows that lane supplies. 19 of those 50 quotes were the model's own
+  // absence commentary, "No explicit mention of undergraduates on the provided
+  // pages", which passed the plausibility regex and switched this badge ON
+  // precisely where the lane had found no evidence.
+  //
+  // Showing the quote instead of asserting does not rescue it either: 20 of the
+  // 50 quotes are not on the page they cite. So the field cannot back a
+  // student-facing claim at all until that lane improves, tracked on #3592.
+  //
+  // The remaining fields stay. They come from roster and manual lanes and are
+  // trustworthy when populated; they are simply empty corpus-wide right now
+  // (#3579), so this derivation will light up again when a lane fills them
+  // rather than needing to be rebuilt.
   const hasUndergradEvidence =
-    Boolean(entity.undergradEvidenceQuote?.trim()) ||
     (entity.pastUndergradAdvisees?.length ?? 0) > 0 ||
     (entity.typicalUndergradRoles?.length ?? 0) > 0;
   const hasStudentProjectEvidence =
