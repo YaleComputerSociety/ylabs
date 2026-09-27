@@ -31,7 +31,11 @@ import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityName
 import { personScopedResearchEntityNameNamesSomethingElseByUrlPath } from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
-import { isModelSearchNote } from '../scrapers/undergradEvidenceQuoteValidation';
+import {
+  isModelSearchNote,
+  laneQuoteStatesUndergraduates,
+  UNDERGRAD_MICROSITE_LANE,
+} from '../scrapers/undergradEvidenceQuoteValidation';
 import {
   MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS,
   SERVED_FIELD_CONTRIBUTION_LABEL_SET,
@@ -502,7 +506,12 @@ export function toPublicResearchEntityDto(
         continue;
       }
       if (field === 'undergradEvidenceQuote') {
-        if (!isModelSearchNote(group[field])) dto[field] = publicTextValue(group[field]);
+        const fromMicrositeLane =
+          group.fieldProvenance?.undergradEvidenceQuote?.sourceName === UNDERGRAD_MICROSITE_LANE;
+        const withheld =
+          isModelSearchNote(group[field]) ||
+          (fromMicrositeLane && !laneQuoteStatesUndergraduates(group[field]));
+        if (!withheld) dto[field] = publicTextValue(group[field]);
         continue;
       }
       if (field === 'profileResearchAreas') {

@@ -1,4 +1,8 @@
-import { isPlausibleUndergradEvidenceQuote } from './undergradEvidenceQuoteValidation';
+import {
+  isPlausibleUndergradEvidenceQuote,
+  laneQuoteStatesUndergraduates,
+  UNDERGRAD_MICROSITE_LANE,
+} from './undergradEvidenceQuoteValidation';
 import {
   isHistoricalUndergradEvidence,
   namesNonYaleInstitution,
@@ -6,11 +10,12 @@ import {
 
 export const UNDERGRAD_EVIDENCE_QUOTE_FIELD = 'undergradEvidenceQuote';
 
-export function undergradEvidenceQuoteIsInadmissible(value: string): boolean {
+export function undergradEvidenceQuoteIsInadmissible(value: string, sourceName?: unknown): boolean {
   return (
     !isPlausibleUndergradEvidenceQuote(value) ||
     isHistoricalUndergradEvidence(value) ||
-    namesNonYaleInstitution(value)
+    namesNonYaleInstitution(value) ||
+    (sourceName === UNDERGRAD_MICROSITE_LANE && !laneQuoteStatesUndergraduates(value))
   );
 }
 
@@ -43,7 +48,8 @@ export function sourcesWithdrawingUndergradEvidenceQuote(
   for (const [sourceName, latest] of latestBySource) {
     if (typeof latest.value !== 'string') continue;
     const text = latest.value.trim();
-    if (!text || undergradEvidenceQuoteIsInadmissible(text)) withdrawing.add(sourceName);
+    if (!text || undergradEvidenceQuoteIsInadmissible(text, sourceName))
+      withdrawing.add(sourceName);
   }
   return withdrawing;
 }
@@ -90,7 +96,8 @@ export function planStoredUndergradEvidenceQuoteClear(input: {
     : input.stored?.[UNDERGRAD_EVIDENCE_QUOTE_FIELD];
   if (typeof current !== 'string' || current.trim().length === 0) return null;
   let reason: StoredUndergradEvidenceQuoteClearReason | null = null;
-  if (undergradEvidenceQuoteIsInadmissible(current.trim())) reason = 'inadmissible';
+  const currentSource = staged ? undefined : provenanceSourceName(input.stored);
+  if (undergradEvidenceQuoteIsInadmissible(current.trim(), currentSource)) reason = 'inadmissible';
   else if (!staged && input.withdrawingSources.has(provenanceSourceName(input.stored))) {
     reason = 'withdrawn-by-its-source';
   }

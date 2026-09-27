@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isModelSearchNote,
+  laneQuoteStatesUndergraduates,
   isPlausibleUndergradEvidenceQuote,
   quoteExplicitlyDeclinesUndergraduates,
 } from '../undergradEvidenceQuoteValidation';
@@ -157,5 +158,50 @@ describe('isModelSearchNote (#3683)', () => {
       expect(isModelSearchNote(quote), quote).toBe(false);
       expect(isPlausibleUndergradEvidenceQuote(quote), quote).toBe(true);
     }
+  });
+});
+
+describe('laneQuoteStatesUndergraduates (#3764)', () => {
+  it('refuses the four false-badge shapes the gold benchmark found', () => {
+    for (const quote of [
+      'The lab welcomes prospective postdoctoral scientists, postgraduate researchers, and rotation students in population genetics.',
+      'I am always happy to hear from prospective students, postdocs, and collaborators - please reach out by email.',
+      'Undergraduate Students',
+      'Our Undergraduate Researchers',
+      'Undergraduate Research Assistants',
+      'Current Undergraduate Lab Members',
+      'We welcome first-year graduate students for rotations.',
+      'We welcome postdocs and junior researchers.',
+      'Students interested in stars and galaxies are welcome.',
+    ]) {
+      expect(laneQuoteStatesUndergraduates(quote), quote).toBe(false);
+    }
+  });
+
+  it('keeps quotes that name undergraduates, including roster text glued to a name', () => {
+    for (const quote of [
+      'Undergraduate research positions are also available.',
+      'Jordan ExampleUndergraduate Student Researcher, Example Lab',
+      'Taylor Example, Yale College junior in the lab',
+      'Sam Example SURF student',
+      'A Harvard College Student Intern',
+      'We welcome first-year students and juniors to join the lab.',
+    ]) {
+      expect(laneQuoteStatesUndergraduates(quote), quote).toBe(true);
+    }
+  });
+
+  it('keeps a generic "students" only when an undergraduate cue backs it', () => {
+    expect(
+      laneQuoteStatesUndergraduates(
+        'We have projects suitable for research placements, course credit, or research theses for Yale students.',
+      ),
+    ).toBe(true);
+    expect(
+      laneQuoteStatesUndergraduates(
+        'The laboratory invites Yale University students for research during the academic year and in the summer months.',
+      ),
+    ).toBe(true);
+    expect(laneQuoteStatesUndergraduates('Internships for Yale students')).toBe(false);
   });
 });

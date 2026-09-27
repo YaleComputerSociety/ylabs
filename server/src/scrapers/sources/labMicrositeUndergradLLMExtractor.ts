@@ -39,7 +39,7 @@ import { isBenchmarkModeActive } from '../snapshotBenchmarkMode';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
-import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
+import { laneQuoteStatesUndergraduates } from '../undergradEvidenceQuoteValidation';
 import {
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
@@ -474,7 +474,7 @@ export function evidenceQuoteIsWithdrawnByRead(
   if (!citedPage || normalizeQuoteText(citedPage.text).length < MIN_READABLE_PAGE_TEXT_CHARS) {
     return false;
   }
-  return pageContainingQuote(live.value, readPages) === null;
+  return pageContainingQuote(live.value, pagesWithinEntityScope(readPages)) === null;
 }
 
 export function evidenceQuoteWithdrawalObservation(
@@ -490,6 +490,39 @@ export function evidenceQuoteWithdrawalObservation(
     assertsNoValueFor: [UNDERGRAD_EVIDENCE_QUOTE_FIELD],
     confidenceOverride: 0.5,
   };
+}
+
+const LANDING_PAGE_SEGMENT = /^(?:home|index(?:\.\w+)?|welcome|main|default(?:\.\w+)?)$/i;
+
+function sectionPrefix(url: string): { host: string; prefix: string } | null {
+  try {
+    const parsed = new URL(url);
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    const last = segments[segments.length - 1];
+    if (last && (LANDING_PAGE_SEGMENT.test(last) || last.includes('.'))) segments.pop();
+    return {
+      host: parsed.host.toLowerCase(),
+      prefix: segments.length ? `/${segments.join('/')}` : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The fetched pages that belong to this entity. A home page with its own path, such as a center
+ * that lives at `/southasia` on a shared host, can link into a sibling program's section of the
+ * same host, and a quote from there describes that program rather than this one (#3764).
+ */
+export function pagesWithinEntityScope(pages: readonly PromptSourcePage[]): PromptSourcePage[] {
+  const home = pages[0] ? sectionPrefix(pages[0].url) : null;
+  if (!home || !home.prefix) return [...pages];
+  return pages.filter((page, index) => {
+    if (index === 0) return true;
+    const candidate = sectionPrefix(page.url);
+    if (!candidate || candidate.host !== home.host) return false;
+    return candidate.prefix === home.prefix || candidate.prefix.startsWith(`${home.prefix}/`);
+  });
 }
 
 const PAGE_QUOTE_FIELDS = [
@@ -648,7 +681,7 @@ export function extractionToObservations(
 ): ObservationInput[] {
   const sourceUrls = sourceContext.sourceUrls?.filter(Boolean) ?? [sourceUrl];
   const quoteSourceUrl = sourceContext.quoteSourceUrl || sourceUrl;
-  const pages = sourceContext.sourcePages ?? [];
+  const pages = pagesWithinEntityScope(sourceContext.sourcePages ?? []);
   const quoteOnPage = (quote: string | undefined) => {
     const text = (quote || '').trim();
     const page = pageContainingQuote(text, pages);
@@ -708,7 +741,7 @@ export function extractionToObservations(
 
   if (
     evidenceQuote &&
-    isPlausibleUndergradEvidenceQuote(evidenceQuote.text) &&
+    laneQuoteStatesUndergraduates(evidenceQuote.text) &&
     isCurrentYaleUndergradEvidence(evidenceQuote.text)
   ) {
     out.push({
