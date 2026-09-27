@@ -10,7 +10,7 @@ export type LegacyResearchEventType =
 
 export const RESEARCH_JOURNEY_EVENT_TYPES = [
   'research_search',
-  'research_entity_impression',
+  'research_results_view',
   'research_profile_open',
   'research_source_review',
   'research_filter_change',
@@ -38,7 +38,7 @@ export type ResearchJourneyPayload =
     }
   | {
       surface: 'browse' | 'search' | 'saved_plans' | 'related_programs';
-      positionBucket: '1-3' | '4-10' | '11-24' | '25+';
+      pageBucket: '1' | '2' | '3-4' | '5+';
     }
   | { source: 'browse' | 'search' | 'direct' | 'saved_plans' | 'related_programs' }
   | {
@@ -79,6 +79,7 @@ interface TrackResearchEventParams {
   eventType: ResearchEventType;
   entityType?: ResearchEntityType;
   entityId?: string;
+  entityIds?: string[];
   payload?: Record<string, string> | ResearchJourneyPayload;
   dedupeKey?: string;
 }
@@ -113,13 +114,6 @@ export const researchResultCountBucket = (
   return '51+';
 };
 
-export const researchPositionBucket = (position: number): '1-3' | '4-10' | '11-24' | '25+' => {
-  if (position <= 3) return '1-3';
-  if (position <= 10) return '4-10';
-  if (position <= 24) return '11-24';
-  return '25+';
-};
-
 export const researchCountBucket = (count: number): '1' | '2' | '3-4' | '5+' => {
   if (count <= 1) return '1';
   if (count === 2) return '2';
@@ -131,6 +125,7 @@ type OutgoingResearchEvent = {
   eventType: ResearchEventType;
   entityType?: ResearchEntityType;
   entityId?: string;
+  entityIds?: string[];
   payload?: Record<string, string> | ResearchJourneyPayload;
   dedupeKey?: string;
 };
@@ -146,12 +141,14 @@ const buildOutgoingEvent = ({
   eventType,
   entityType,
   entityId,
+  entityIds,
   payload,
   dedupeKey,
 }: TrackResearchEventParams): OutgoingResearchEvent => ({
   eventType,
   ...(entityType ? { entityType } : {}),
   ...(entityId ? { entityId } : {}),
+  ...(entityIds?.length ? { entityIds } : {}),
   ...(payload ? { payload } : {}),
   ...(dedupeKey ? { dedupeKey } : {}),
 });
@@ -238,6 +235,22 @@ export const trackResearchEventOnce = (
   if (sentOnceKeys.has(onceKey)) return Promise.resolve();
   sentOnceKeys.add(onceKey);
   return trackResearchEvent({ ...event, dedupeKey: event.dedupeKey || onceKey });
+};
+
+export const trackResearchResultsView = (
+  onceKey: string,
+  entities: ReadonlyArray<{ _id?: string }>,
+  surface: 'browse' | 'search',
+  page: number,
+): Promise<void> => {
+  const entityIds = entities.map((entity) => entity._id).filter((id): id is string => Boolean(id));
+  if (entityIds.length === 0) return Promise.resolve();
+  return trackResearchEventOnce(onceKey, {
+    eventType: 'research_results_view',
+    entityType: 'research_entity',
+    entityIds,
+    payload: { surface, pageBucket: researchCountBucket(page) },
+  });
 };
 
 export const resetResearchAnalyticsDedupeForTests = (): void => {

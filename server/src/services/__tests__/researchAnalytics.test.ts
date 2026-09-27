@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AnalyticsEventType } from '../../models/analytics';
 import { emitResearchEvent, sanitizeResearchPayload } from '../researchAnalytics';
 import type { LogEventParams } from '../analyticsService';
@@ -203,6 +203,56 @@ describe('research analytics event emission', () => {
     expect(JSON.stringify(events)).not.toContain('searchId');
   });
 
+  it('records a result page as one event carrying its ordered entity ids', async () => {
+    const events: LogEventParams[] = [];
+
+    const emitted = await emitResearchEvent(
+      {
+        eventType: AnalyticsEventType.RESEARCH_RESULTS_VIEW,
+        user,
+        entityType: 'research_entity',
+        entityId: undefined,
+        entityIds: ['lab-b', 'lab-a'],
+        dedupeKey: 'browse:fixture-1:1:1',
+        payload: { surface: 'browse', pageBucket: '1', positionBucket: '1-3' },
+      },
+      async (event) => {
+        events.push(event);
+      },
+    );
+
+    expect(emitted).toBe(true);
+    expect(events).toEqual([
+      {
+        eventType: AnalyticsEventType.RESEARCH_RESULTS_VIEW,
+        netid: 'abc123',
+        userType: 'undergraduate',
+        entityType: 'research_entity',
+        entityIds: ['lab-b', 'lab-a'],
+        metadata: { surface: 'browse', pageBucket: '1' },
+        dedupeKey: 'browse:fixture-1:1:1',
+      },
+    ]);
+  });
+
+  it('refuses a result page with no entities', async () => {
+    const log = vi.fn();
+    await expect(
+      emitResearchEvent(
+        {
+          eventType: AnalyticsEventType.RESEARCH_RESULTS_VIEW,
+          user,
+          entityType: 'research_entity',
+          entityId: undefined,
+          entityIds: [],
+          payload: { surface: 'browse', pageBucket: '1' },
+        },
+        log,
+      ),
+    ).resolves.toBe(false);
+    expect(log).not.toHaveBeenCalled();
+  });
+
   it('records a compare as one set-level event with a count bucket and no entity', async () => {
     const events: LogEventParams[] = [];
 
@@ -233,7 +283,7 @@ describe('research analytics event emission', () => {
   });
 
   it.each([
-    [AnalyticsEventType.RESEARCH_ENTITY_IMPRESSION, { surface: 'search', positionBucket: '4-10' }],
+    [AnalyticsEventType.RESEARCH_RESULTS_VIEW, { surface: 'search', pageBucket: '3-4' }],
     [AnalyticsEventType.RESEARCH_PROFILE_OPEN, { source: 'direct' }],
     [AnalyticsEventType.RESEARCH_SOURCE_REVIEW, { sourceCategory: 'publication' }],
     [AnalyticsEventType.RESEARCH_SAVE, { operation: 'remove', surface: 'saved_plans' }],

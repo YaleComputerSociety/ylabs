@@ -12,7 +12,7 @@ Any enum or payload change must update both files and their focused contract tes
 | Event                        | Required entity   | Allowlisted payload                                               | Meaning                                                                                         |
 | ---------------------------- | ----------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `research_search`            | none              | `outcome`, `resultCountBucket`, `searchKind`, `filterCountBucket` | One terminal result, zero-result, or error outcome for one submitted canonical research search. |
-| `research_entity_impression` | `research_entity` | `surface`, `positionBucket`                                       | A canonical entity was returned in a visible result page.                                       |
+| `research_results_view`      | `research_entity` | `surface`, `pageBucket`, plus `entityIds`                         | One visible result page, carrying the canonical entities it showed in display order.            |
 | `research_profile_open`      | `research_entity` | `source`                                                          | A canonical research profile loaded successfully.                                               |
 | `research_source_review`     | `research_entity` | `sourceCategory`                                                  | A student opened a profile, website, ORCID, publication, or evidence source.                    |
 | `research_filter_change`     | none              | `operation`, `filter`                                             | A bounded research filter was applied, removed, cleared, opened, or closed.                     |
@@ -20,6 +20,12 @@ Any enum or payload change must update both files and their focused contract tes
 | `research_compare`           | `research_entity` | `entityCountBucket`                                               | One entity participated in an explicit saved-home comparison or advising preview.               |
 | `research_plan_update`       | `research_entity` | `field`                                                           | A saved plan field group persisted successfully.                                                |
 | `research_qualified_action`  | `research_entity` | `actionCategory`                                                  | The student opened a route that the server re-qualified against the current QA-01 projection.   |
+
+A result page is one row, never one row per entity.
+`entityIds` holds the page's canonical entity identifiers in display order, so a position is the array index, and the server keeps only the identifiers that name a current `ResearchEntity`, validated in one query for the whole page.
+A grid restored from the tab's snapshot on a return visit is a page already recorded, so it records nothing.
+The retired `research_entity_impression` wrote one row per card, which put 56% of Production's rows into impressions, and a single query with one result could sit beside hundreds of rows from browse scrolling (#3628).
+The enum value stays so stored rows remain valid until the TTL expires them, but the batch route no longer accepts it.
 
 The only access-conversion event is `research_qualified_action`.
 Its `actionCategory` is the `PlanningContextCategory` enum from `server/src/services/planningContextService.ts`: `open_position`, `official_application`, `reviewed_route`, or `qualified_participation`.

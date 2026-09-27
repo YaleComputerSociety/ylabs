@@ -3,6 +3,7 @@
  */
 import { Request, Response, Router } from 'express';
 import { isAuthenticated, isAdmin } from '../middleware/auth';
+import { AnalyticsEventType } from '../models/analytics';
 import { asyncHandler } from '../middleware/errorHandler';
 import {
   AnalyticsSortDirection,
@@ -22,6 +23,7 @@ import { validateNetid } from '../middleware/validation';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   emitResearchEvent,
+  existingResearchEntityIds,
   isResearchEntityType,
   isResearchEventType,
   isResearchJourneyEventType,
@@ -58,10 +60,25 @@ const acceptResearchEvent = async (
   event: unknown,
   user: { netId?: string; userType?: string },
 ): Promise<boolean> => {
-  const { eventType, entityType, entityId, payload, dedupeKey } =
+  const { eventType, entityType, entityId, entityIds, payload, dedupeKey } =
     (event as Record<string, unknown>) || {};
 
   if (!isResearchEventType(eventType)) return false;
+
+  if (eventType === AnalyticsEventType.RESEARCH_RESULTS_VIEW) {
+    if (entityType !== 'research_entity') return false;
+    const shownEntityIds = await existingResearchEntityIds(entityIds);
+    if (shownEntityIds.length === 0) return false;
+    return emitResearchEvent({
+      eventType,
+      entityType,
+      entityId: undefined,
+      entityIds: shownEntityIds,
+      payload,
+      dedupeKey,
+      user,
+    });
+  }
 
   const requiresEntity =
     !isResearchJourneyEventType(eventType) || researchJourneyEventRequiresEntity(eventType);
