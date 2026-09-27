@@ -34,6 +34,7 @@ import {
   ownershipGuardedCitedUrls,
   refusesDescriptionOnSharedPage,
 } from './descriptionSourceOwnership';
+import { resetDescriptionOwnershipCitersCache } from './descriptionOwnershipResolverScreen';
 import { normalizeEvidenceUrl } from './utils/sharedEvidenceUrls';
 
 export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
@@ -414,6 +415,10 @@ async function loadForeignDescriptionCiters(
   return byUrl;
 }
 
+const writesOwnershipGuardedDescriptionField = (doc: { entityType: string; field: string }) =>
+  doc.entityType === OWNERSHIP_GUARDED_ENTITY_TYPE &&
+  OWNERSHIP_GUARDED_DESCRIPTION_FIELDS.has(doc.field);
+
 export async function appendObservations(
   inputs: ObservationInput[],
   ctx: AppendContext,
@@ -639,6 +644,7 @@ export async function appendObservations(
     return { inserted: 0, skipped: docs.length + skippedCount, superseded: 0 };
   }
 
+  if (docs.some(writesOwnershipGuardedDescriptionField)) resetDescriptionOwnershipCitersCache();
   const result = await Observation.insertMany(docs, { ordered: false });
   const latestByFingerprint = new Map<string, { id: any; input: (typeof docs)[number] }>();
   for (const [index, doc] of (result as any[]).entries()) {
@@ -692,7 +698,9 @@ export async function retireObservations(
     { $set: { superseded: true, rollback: { rolledBackAt: new Date(), reason } } },
   );
   const modifiedCount = (result as { modifiedCount?: number }).modifiedCount;
-  return { retired: typeof modifiedCount === 'number' ? modifiedCount : 0 };
+  const retired = typeof modifiedCount === 'number' ? modifiedCount : 0;
+  if (retired > 0) resetDescriptionOwnershipCitersCache();
+  return { retired };
 }
 
 /**
