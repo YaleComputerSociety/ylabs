@@ -160,6 +160,14 @@ describe('extractProfile', () => {
     expect(profile?.orcid).toBe('9999-9000-9999-9005');
   });
 
+  it('drops MeSH geographic descriptors, which tag a study site rather than a topic', () => {
+    const html = profileHtml({
+      fullName: 'Jordan Rivers',
+      meshKeywords: ['Heart Failure', 'Uganda', 'Global Health', 'Africa, Eastern'],
+    });
+    expect(extractProfile(html, RIVERS)?.researchAreas).toEqual(['Heart Failure', 'Global Health']);
+  });
+
   it('inserts a block-boundary separator between glued bio/research HTML blocks (#1481)', () => {
     const html = profileHtml({
       fullName: 'Jordan Rivers',

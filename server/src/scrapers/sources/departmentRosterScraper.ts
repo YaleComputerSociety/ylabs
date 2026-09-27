@@ -63,6 +63,10 @@ import {
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
 import {
+  isMeshIndexedProfileUrl,
+  withoutMeshGeographicDescriptors,
+} from '../utils/meshGeographicDescriptors';
+import {
   isInstitutionalAdvancementUrl,
   isInstitutionalPublicityPageUrl,
   isMapOrDirectionsUrl,
@@ -3359,7 +3363,10 @@ export function profileEnrichmentFromHtml(
     labUrl = absolute;
   });
 
-  const researchInterests = extractResearchInterestsFromHtml($);
+  const extractedInterests = extractResearchInterestsFromHtml($);
+  const researchInterests = isMeshIndexedProfileUrl(canonicalUrl)
+    ? withoutMeshGeographicDescriptors(extractedInterests)
+    : extractedInterests;
   const bio = extractBioFromHtml($);
   const officialProse = extractGroundedProfileDescription(html);
 
