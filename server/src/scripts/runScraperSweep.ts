@@ -186,6 +186,7 @@ export interface DevelopmentPostRunStage {
     | 'profile-link-health'
     | 'dead-research-website-clear'
     | 'organization-identity-website-retire'
+    | 'shared-roster-website-retire'
     | 'refusal-lane-attribution'
     | 'visibility-gate'
     | 'search-rebuild'
@@ -1175,6 +1176,17 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     command: 'observations:retire-organization-identity-websites',
     artifactName: 'development-organization-identity-website-retire.json',
     buildArgs: () => ['--apply', '--confirm-retire-organization-identity-websites'],
+    isEnabled: () => true,
+  },
+  {
+    // Relational like the stage above: whether a roster website is a group site depends on
+    // which other people the lane gave it to. Ordered before `refusal-lane-attribution` so
+    // the refusals it records are attributed the same sweep, and it plans nothing once the
+    // lane's shared claims are retired (#3615).
+    name: 'shared-roster-website-retire',
+    command: 'observations:retire-shared-roster-websites',
+    artifactName: 'development-shared-roster-website-retire.json',
+    buildArgs: () => ['--apply', '--confirm-retire-shared-roster-websites'],
     isEnabled: () => true,
   },
   {
