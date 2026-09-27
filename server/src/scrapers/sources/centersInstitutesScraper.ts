@@ -46,6 +46,10 @@ import type {
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import { mapResearchGroupKindToEntityType } from '../../models/researchAccessTypes';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import {
+  researchHomeWebsiteUrlWriteRefusal,
+  type ResearchHomeWebsiteUrlRefusal,
+} from '../../utils/researchHomeWebsiteUrl';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -156,6 +160,16 @@ export interface CenterConfig {
 
 export function centerEntityKey(config: CenterConfig): string {
   return config.entityKey || `center-${config.centerKey}`;
+}
+
+export function centerHomeUrlWriteRefusal(
+  config: CenterConfig,
+): ResearchHomeWebsiteUrlRefusal | null {
+  return researchHomeWebsiteUrlWriteRefusal(config.homeUrl ?? config.url, {
+    name: config.centerName,
+    entityType: mapResearchGroupKindToEntityType(config.kind),
+    kind: config.kind,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -912,6 +926,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     kind: 'institute',
     departments: ['Neuroscience', 'Psychology', 'Molecular, Cellular and Developmental Biology'],
     url: 'https://wti.yale.edu/humans/faculty',
+    homeUrl: 'https://wti.yale.edu/',
     paginated: true,
     extractor: wuTsaiExtractor,
   },
@@ -921,6 +936,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: 'Yale School of Medicine',
     kind: 'center',
     url: 'https://medicine.yale.edu/cancer/research/membership/directory',
+    homeUrl: 'https://medicine.yale.edu/cancer/',
     paginated: false,
     extractor: yaleCancerCenterExtractor,
   },
@@ -931,6 +947,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     kind: 'institute',
     departments: ['Physics', 'Applied Physics', 'Computer Science', 'Electrical Engineering'],
     url: 'https://quantuminstitute.yale.edu/people/members',
+    homeUrl: 'https://quantuminstitute.yale.edu/',
     paginated: false,
     extractor: viewsFieldNameExtractor,
   },
@@ -951,6 +968,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     kind: 'center',
     departments: ['Economics'],
     url: 'https://tobin.yale.edu/people',
+    homeUrl: 'https://tobin.yale.edu/',
     paginated: true,
     extractor: nodeTeaserPersonExtractor,
   },
@@ -961,6 +979,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     kind: 'institute',
     departments: ['Political Science', 'Economics', 'Sociology'],
     url: 'https://isps.yale.edu/team/directory/faculty-fellows',
+    homeUrl: 'https://isps.yale.edu/',
     paginated: true,
     extractor: ispsExtractor,
   },
@@ -970,6 +989,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'center',
     url: 'https://macmillan.yale.edu/people',
+    homeUrl: 'https://macmillan.yale.edu/',
     paginated: true,
     extractor: nodeTeaserPersonExtractor,
   },
@@ -1139,6 +1159,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: 'Yale Faculty of Arts and Sciences',
     kind: 'center',
     url: 'https://whc.yale.edu/people/our-people',
+    homeUrl: 'https://whc.yale.edu/',
     paginated: false,
     extractor: viewsFieldNameExtractor,
   },
@@ -1158,6 +1179,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'institute',
     url: 'https://qbio.yale.edu/members',
+    homeUrl: 'https://qbio.yale.edu/',
     paginated: false,
     extractor: directoryListingCardExtractor,
   },
@@ -1378,7 +1400,7 @@ export function centerToGroupObservations(
   // research home. Emitting it as `websiteUrl` would compete with and clear the
   // target's canonical website, so the roster only adds members and provenance
   // and leaves the identity website to the owning source.
-  if (!config.entityKey) {
+  if (!config.entityKey && !centerHomeUrlWriteRefusal(config)) {
     obs.push({ ...base, field: 'websiteUrl', value: homeUrl });
   }
   if (config.schoolName) {

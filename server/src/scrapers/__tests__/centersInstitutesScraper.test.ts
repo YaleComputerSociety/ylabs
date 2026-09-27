@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import {
   CentersInstitutesScraper,
   DEFAULT_CENTER_CONFIGS,
+  centerHomeUrlWriteRefusal,
   nodeTeaserPersonExtractor,
   wuTsaiExtractor,
   yaleCancerCenterExtractor,
@@ -761,6 +762,7 @@ describe('centerToGroupObservations', () => {
       kind: 'institute',
       departments: ['Neuroscience', 'Psychology'],
       url: 'https://wti.yale.edu/humans/faculty',
+      homeUrl: 'https://wti.yale.edu/',
       extractor: wuTsaiExtractor,
     };
     const members: CenterMember[] = [{ name: 'Ian Abraham' }, { name: 'Amy Arnsten' }];
@@ -912,7 +914,7 @@ describe('entityKey override', () => {
     );
   });
 
-  it('emits the config url as websiteUrl only when no override is set', () => {
+  it('never emits a roster crawl url as websiteUrl, even with no override set', () => {
     const plain: CenterConfig = { ...config, entityKey: undefined };
     const { entityKey, observations } = centerToGroupObservations(
       plain,
@@ -920,8 +922,23 @@ describe('entityKey override', () => {
       'https://naturalcarboncapture.yale.edu/people',
     );
     expect(entityKey).toBe('center-natural-carbon-capture');
-    expect(observations.find((o) => o.field === 'websiteUrl')!.value).toBe(
+    expect(centerHomeUrlWriteRefusal(plain)).not.toBeNull();
+    expect(observations.find((o) => o.field === 'websiteUrl')).toBeUndefined();
+  });
+
+  it('emits a declared landing page as websiteUrl when no override is set', () => {
+    const plain: CenterConfig = {
+      ...config,
+      entityKey: undefined,
+      homeUrl: 'https://naturalcarboncapture.yale.edu/',
+    };
+    const { observations } = centerToGroupObservations(
+      plain,
+      [],
       'https://naturalcarboncapture.yale.edu/people',
+    );
+    expect(observations.find((o) => o.field === 'websiteUrl')!.value).toBe(
+      'https://naturalcarboncapture.yale.edu/',
     );
   });
 });
@@ -1845,5 +1862,29 @@ describe('profileGridLeadershipExtractor', () => {
       'https://medicine.yale.edu/internal-medicine/genmed/eric/',
       'https://medicine.yale.edu/internal-medicine/genmed/eric/about/',
     ]);
+  });
+});
+
+describe('DEFAULT_CENTER_CONFIGS websiteUrl', () => {
+  it('emits every declared landing page, so none is silently dropped by the write gate', () => {
+    const dropped = DEFAULT_CENTER_CONFIGS.filter(
+      (config) => config.homeUrl && !config.entityKey,
+    ).flatMap((config) => {
+      const { observations } = centerToGroupObservations(config, [], config.url);
+      const emitted = observations.find((o) => o.field === 'websiteUrl')?.value;
+      return emitted === config.homeUrl
+        ? []
+        : [`${config.centerKey}: ${centerHomeUrlWriteRefusal(config)}`];
+    });
+    expect(dropped).toEqual([]);
+  });
+
+  it('keeps emitting a website for most configs, so the guard is not vacuous', () => {
+    const emitting = DEFAULT_CENTER_CONFIGS.filter((config) =>
+      centerToGroupObservations(config, [], config.url).observations.some(
+        (o) => o.field === 'websiteUrl',
+      ),
+    );
+    expect(emitting.length).toBeGreaterThanOrEqual(30);
   });
 });

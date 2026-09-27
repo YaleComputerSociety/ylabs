@@ -730,6 +730,12 @@ Retraction is keyed on one `entityKey`, so it cannot reach a tombstoned loser's 
 For `websiteUrl` and `website` on a survivor its own lab-identity lane typed, the survivor-ownership rule in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md) keeps that evidence out of the slot at resolve time (#3585).
 That is an ownership decision rather than a retirement, so every other field, and a survivor with no lab-identity typing of its own, still resolves over frozen loser evidence until #3609 lets a survivor's complete reads retire it.
 
+A stored `websiteUrl` that no observation states is left alone by default, because retention can prune the evidence behind a real value and an absence is not a claim (#3586).
+The one exception is a value whose `fieldProvenance.websiteUrl` names a lane but carries neither a `sourceId` nor an `observationId`: that record is the shape a direct write leaves (#3363), so `planUnsourcedProvenanceWebsiteUrlClear` (`scrapers/unsourcedProvenanceWebsiteClear.ts`) clears it on materialize when no observation the pass reads states it, and a cited `sourceUrls` entry may still refill the slot on the same pass.
+Before that clear runs against stored rows, `data:find-lab-websites --reverify-stored` re-reads exactly that population with the lane's own `judgePage` test and appends a `lab-site-search-discovery` observation for every page it adopts, so a real website becomes evidence and only a refused one clears.
+Measured on Development on 2026-09-27: 18 live rows stored a `websiteUrl` no active observation, loser observation or citation backs; 9 carried the unsourced-provenance shape, the lane's judge adopted 8 of them, and a whole-corpus dry-run projection changed exactly those 9 served values and no other.
+Five more were a `centers-institutes-index` roster page asserted as `websiteUrl` and refused by the write gate, which left an earlier landing page standing with nothing behind it; that lane now emits a declared `homeUrl` and never a refused crawl URL.
+
 Measured on Development on 2026-09-23, and it corrects a root cause recorded elsewhere as "merged but inert, because no source asserts absence" (#3135).
 Absence is asserted: 90 live observations carry a non-empty `assertsNoValueFor`.
 What has never happened is a retraction, of which there have been zero.
