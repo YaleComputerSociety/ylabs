@@ -3595,6 +3595,70 @@ describe('buildSharedPersonIdResearchEntityDedupePlan', () => {
     expect(buildSharedPersonIdResearchEntityDedupePlan(rows)).toEqual([]);
   });
 
+  it.each(['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'])(
+    'never folds a person row into a %s the person holds a PI edge to',
+    (entityType) => {
+      const rows = [
+        {
+          userId: 'person-org',
+          normalizedName: 'same-pi:person-org',
+          entities: [
+            {
+              id: 'org',
+              slug: 'center-fixture-energy-institute',
+              name: 'Fixture Energy Institute',
+              entityType,
+              fullDescription: 'A'.repeat(900),
+            },
+            {
+              id: 'lab',
+              slug: 'dept-chem-fixture-person',
+              name: 'Fixture Person Lab',
+              entityType: 'LAB',
+              fullDescription: 'B'.repeat(200),
+            },
+          ],
+        },
+      ];
+      expect(buildSharedPersonIdResearchEntityDedupePlan(rows)).toEqual([]);
+    },
+  );
+
+  it('still merges the person rows that sit beside an organization edge', () => {
+    const rows = [
+      {
+        userId: 'person-org-and-shell',
+        normalizedName: 'same-pi:person-org-and-shell',
+        entities: [
+          {
+            id: 'org',
+            slug: 'center-fixture-energy-institute',
+            name: 'Fixture Energy Institute',
+            entityType: 'INSTITUTE',
+            fullDescription: 'A'.repeat(900),
+          },
+          {
+            id: 'lab',
+            slug: 'dept-chem-fixture-person',
+            name: 'Fixture Person Lab',
+            entityType: 'LAB',
+            fullDescription: 'B'.repeat(200),
+          },
+          {
+            id: 'shell',
+            slug: 'nih-pi-fixture-person',
+            name: 'Fixture Person',
+            entityType: 'FACULTY_RESEARCH_AREA',
+          },
+        ],
+      },
+    ];
+    const plan = buildSharedPersonIdResearchEntityDedupePlan(rows);
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('lab');
+    expect(plan[0].duplicateEntityIds).toEqual(['shell']);
+  });
+
   it('excludes a co-PI entity claimed by two persons from every merge group', () => {
     const rows = [
       {

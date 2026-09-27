@@ -898,7 +898,12 @@ export function buildSharedPersonIdResearchEntityDedupePlan(
 ): ResearchEntityPiDedupeGroup[] {
   const sharedEntityIds = multiPersonEntityIds(rows);
   return rows.flatMap((row) => {
-    const entities = row.entities.filter((entity) => entity.id && !sharedEntityIds.has(entity.id));
+    const entities = row.entities.filter(
+      (entity) =>
+        entity.id &&
+        !sharedEntityIds.has(entity.id) &&
+        !isSharedOrganizationEntityType(entity.entityType),
+    );
     if (entities.length <= 1) return [];
     const group = buildGroupFromCluster(row, entities);
     if (!group) return [];
