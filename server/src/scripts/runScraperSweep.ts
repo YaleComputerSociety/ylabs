@@ -1796,6 +1796,8 @@ export async function runScraperSweep(
     }
   }
 
+  const hostSlotBroker = await startSweepHostSlotBroker();
+
   if (isSweepPreflightEnabled(options)) {
     const pendingSources = sweepSources
       .map((source) => source.name)
@@ -1810,17 +1812,20 @@ export async function runScraperSweep(
       repoRoot,
       childRunner,
       forceLlm: options.forceLlm,
+      env: { ...process.env, [SCRAPER_HOST_SLOT_BROKER_ENV]: hostSlotBroker.socketPath },
       now,
+    }).catch(async (error: unknown) => {
+      await hostSlotBroker.close();
+      throw error;
     });
     console.log(formatSweepPreflightReport(preflight));
     if (preflight.status === 'failed') {
+      await hostSlotBroker.close();
       throw new Error(
         `sweep preflight failed before any source ran (${preflight.failures.length} failure(s)); report at ${path.join(outputDirectory, 'preflight.json')}`,
       );
     }
   }
-
-  const hostSlotBroker = await startSweepHostSlotBroker();
 
   const artifactPathFor = (source: ScraperSweepSource, index: number): string =>
     path.join(outputDirectory, `${String(index + 1).padStart(2, '0')}-${source.name}.json`);

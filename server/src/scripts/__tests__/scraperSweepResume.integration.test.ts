@@ -285,10 +285,16 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     fs.rmSync(checkpointFor(mode), { force: true });
     const canaried: string[] = [];
     const scraped: string[] = [];
-    const runner = async (_command: string, args: string[]): Promise<{ status: number | null }> => {
+    const canaryBrokers = new Set<string | undefined>();
+    const runner = async (
+      _command: string,
+      args: string[],
+      options: { env?: NodeJS.ProcessEnv },
+    ): Promise<{ status: number | null }> => {
       const sourceName = sourceNameFromArgs(args) ?? '';
       if (commandFromArgs(args) === 'scrape:canary') {
         canaried.push(sourceName);
+        canaryBrokers.add(options.env?.SCRAPER_HOST_SLOT_BROKER);
         const verdict = sourceName === 'nih-reporter' ? 'failed' : 'passed';
         fs.writeFileSync(
           outputPathFromArgs(args)!,
@@ -316,6 +322,10 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     expect(canaried.length).toBeGreaterThan(10);
     expect(canaried).toContain('nih-reporter');
     expect(scraped).toEqual([]);
+    const [canaryBroker] = [...canaryBrokers];
+    expect(canaryBrokers.size).toBe(1);
+    expect(canaryBroker).toMatch(/ylabs-host-slots-\d+\.sock$/);
+    expect(fs.existsSync(canaryBroker!)).toBe(false);
     const checkpoint = readSweepCheckpoint(checkpointFor(mode));
     expect(checkpoint).toBeDefined();
     const outputDirectory = checkpoint!.outputDirectory;
