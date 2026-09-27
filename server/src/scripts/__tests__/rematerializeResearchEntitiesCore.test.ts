@@ -404,6 +404,14 @@ describe('REMATERIALIZE_TRACKED_FIELDS', () => {
     }
   });
 
+  it('can scope a pass to the undergraduate evidence quote alone (#3592)', () => {
+    const args = parseRematerializeResearchEntitiesArgs([
+      '--slugs=a',
+      '--only-fields=undergradEvidenceQuote',
+    ]);
+    expect(args.onlyFields).toEqual(['undergradEvidenceQuote']);
+  });
+
   it('has no duplicate entries', () => {
     expect(new Set(REMATERIALIZE_TRACKED_FIELDS).size).toBe(REMATERIALIZE_TRACKED_FIELDS.length);
   });
