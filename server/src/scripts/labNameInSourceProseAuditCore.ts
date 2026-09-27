@@ -12,8 +12,7 @@
  * Read-only by design. Half the raw signal is the model coining "The <Full Name>
  * Lab" while paraphrasing a person's site, which is not evidence that a lab
  * exists, so a candidate is only ever a review entry. Acceptance is a human
- * judgement recorded as a checked-in list, the same shape as
- * `repairLabNamedFacultyResearchTypesCore`.
+ * judgement, never a write from this audit.
  */
 import {
   namesASelfDeclaredLaboratory,

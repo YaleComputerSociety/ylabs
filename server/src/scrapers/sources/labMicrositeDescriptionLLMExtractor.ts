@@ -1108,9 +1108,8 @@ export function descriptionExtractionToObservations(
     observations.push({ ...nameBase, field: 'name', value: labName });
     observations.push({ ...nameBase, field: 'displayName', value: labName });
     // A brand adopted without its type leaves the row labelled "Faculty Research"
-    // while carrying a laboratory's name, which is the divergence the hand-judged
-    // list in repairLabNamedFacultyResearchTypes was patching one row at a time
-    // (#2685). Only a person-scoped row is re-typed: an organization name is the
+    // while carrying a laboratory's name, which is the divergence a since-deleted
+    // hand-judged list was patching one row at a time (#2685, #3675). Only a person-scoped row is re-typed: an organization name is the
     // right name for an organization-shaped row, so there is nothing to correct.
     if (namesASelfDeclaredLaboratory(labName) && isPersonScopedResearchEntity(context)) {
       observations.push({ ...nameBase, field: 'entityType', value: 'LAB' });

@@ -80,7 +80,7 @@ This is a fourth category beside evidence-shaped, operator-shaped and derived-bo
 **A normalizer that runs at ingest and again in the projection is hygiene, not evidence.**
 `materializedFieldValue` composes the five name normalizers, and `observationFieldSanitizer` composes them again at ingest, so a name is cleaned on the way in and on every projection.
 The corollary settles a whole class: mapping a retired vocabulary spelling onto the canonical one is derived-bookkeeping, because no source can assert "this spelling is the current vocabulary".
-`consolidateFacultyResearchEntityType` is that shape, and so is `orgAffiliationLabels`, which `canonicalizeDepartments` computes from `departments` - which is why 1,135 of 1,135 served rows carrying it with no observation is correct behaviour rather than a defect.
+`consolidateFacultyResearchEntityType` was that shape before #3675 deleted it, and so is `orgAffiliationLabels`, which `canonicalizeDepartments` computes from `departments` - which is why 1,135 of 1,135 served rows carrying it with no observation is correct behaviour rather than a defect.
 
 One note on how the census read, because it is the same lesson as the rest of it: the name cohort looked outstanding because what had been recorded was a reading of the scripts rather than of the materializer.
 The hygiene was already in both places before the census started.

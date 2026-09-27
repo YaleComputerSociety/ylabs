@@ -504,9 +504,8 @@ export const isOrgEngagementSourceUrl = (url?: string | null): boolean => {
 };
 
 // Mirrors `PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES` in
-// server/src/utils/researchHomeWebsiteUrl.ts, including the two retired types that
-// persist on rows `research-entity:consolidate-faculty-type` has not reached;
-// changing the arms there requires updating this copy.
+// server/src/utils/researchHomeWebsiteUrl.ts, including the two retired types a
+// stored row may still carry; changing the arms there requires updating this copy.
 const PERSON_SCOPED_CITING_ENTITY_TYPES = new Set([
   'LAB',
   'FACULTY_RESEARCH_AREA',

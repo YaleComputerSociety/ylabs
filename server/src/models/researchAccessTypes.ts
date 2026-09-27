@@ -9,8 +9,8 @@
  * `INDIVIDUAL_RESEARCH` and `FACULTY_RESEARCH` were retired (#2219): they are
  * duplicates of `FACULTY_RESEARCH_AREA`, nothing mints them, and every consumer
  * already treats the set as one thing. Read paths stay tolerant of the stored
- * values because environments not yet migrated by
- * `research-entity:consolidate-faculty-type` still hold rows, and
+ * values because nothing rewrites them any more (the one-off consolidation was
+ * deleted in #3675), so a stored row may still carry one, and
  * `derivedResearchGroupKind` returns undefined for an unrecognized type, so such
  * a row keeps its stored `kind: 'individual'` rather than being reclassified.
  */

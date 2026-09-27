@@ -92,7 +92,7 @@ The legacy `kind` field (migration residue from the retired `ResearchGroup` mode
 `derivedResearchGroupKind` runs on every research-entity projection, so a drifted row is re-derived on its next materialize and the one-off backfill that used to do it was deleted (#3675).
 The derivation is lossy wherever two legacy kinds shared one entity type: a stored `program`, `group`, or `solo` row resolves to `initiative`, `initiative`, or `individual` respectively, and no surviving `entityType` derives `program` or `group`, so those two kinds are reachable only as stored legacy values.
 The collapse is pinned in [`researchAccessModels.test.ts`](../server/src/models/__tests__/researchAccessModels.test.ts).
-The derivation is enforced in the scraper projection rather than in the schema, so every other writer must set the pair together (`researchGroupService` and the entity-type consolidation script already do); a direct `$set: { entityType }` elsewhere would reintroduce drift.
+The derivation is enforced in the scraper projection rather than in the schema, so every other writer must set the pair together (`researchGroupService` already does); a direct `$set: { entityType }` elsewhere would reintroduce drift.
 Two escapes are deliberate: an operator lock on `kind` still wins over the derivation, and an entity with no recognizable `entityType` has no derivable kind, so `kind` observations still classify it at mint time.
 Classify a research home by observing `entityType`: a source that observes only `kind` cannot correct an entity another source already minted under a different `entityType`.
 
@@ -299,7 +299,7 @@ The current model expresses the entity as `ResearchEntity`, the access evidence 
 They are gone from `researchEntityTypes` and from `EntityTypeToResearchGroupKind`.
 No lane emits either spelling and Development holds 0 rows carrying one, so the one-off consolidation was deleted; the vocabulary that names them lives in `models/storedVocabularies.ts` for the readers that still tolerate them (#3675).
 
-Read paths stay deliberately tolerant of the stored values, because an environment that has not run the consolidation still holds rows.
+Read paths stay deliberately tolerant of the stored values, because nothing rewrites them any more and a copied or restored environment may still hold rows.
 This is safe rather than merely lenient: `derivedResearchGroupKind` returns `undefined` for an entity type it does not recognize, so such a row keeps its stored `kind: 'individual'` instead of being reclassified as a lab, and `isFacultyResearchEntity` matches on that kind.
 Retiring the type therefore stops new writes without changing how an unmigrated row renders.
 
