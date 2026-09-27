@@ -12,6 +12,7 @@ import {
   checkNotDegraded,
   checkQueryRelevance,
   checkSortOrdering,
+  checkSurvivorWebsiteAttribution,
   checkTopicDropAttribution,
   checkUndergradEvidenceQuoteAttribution,
   corpusFingerprintMoved,
@@ -21,11 +22,13 @@ import {
   resolvePagesToWalk,
   scoreQueryRelevance,
   scoreUndergradEvidenceJudgements,
+  tallySurvivorWebsites,
   type CorpusFingerprint,
   type FacetAgreementObservation,
   type InvariantResult,
   type RateResult,
   type QuoteAttributionObservation,
+  type SurvivorWebsiteObservation,
   type TopicDropObservation,
   type UndergradEvidenceServedRow,
 } from './journeyEvalMetrics';
@@ -69,6 +72,10 @@ export interface JourneyEvalContext {
   undergradEvidenceSampleRequest?: UndergradEvidenceSampleRequest;
   readStoredRows: ReadStoredRowsFn;
   readCorpusFingerprint: () => Promise<CorpusFingerprint>;
+  readOwnedSlotSurvivorWebsites: () => Promise<{
+    survivorsScanned: number;
+    observations: SurvivorWebsiteObservation[];
+  }>;
   window: number;
   facetValuesChecked: number;
   pagesChecked: number;
@@ -589,6 +596,36 @@ const undergradEvidenceQuotePrecision: JourneyCase = {
   },
 };
 
+const survivorWebsiteAttribution: JourneyCase = {
+  id: 'survivor-website-attribution',
+  title:
+    "A served merged survivor whose own lab-identity lane owns its website does not serve a loser's",
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const { survivorsScanned, observations } = await context.readOwnedSlotSurvivorWebsites();
+    const tally = tallySurvivorWebsites(observations);
+    const corpusAfter = await context.readCorpusFingerprint();
+    const traced = tally.byAttribution['survivor-evidence'] + tally.byAttribution.locked;
+
+    return {
+      invariants: [checkSurvivorWebsiteAttribution(tally, corpusBefore, corpusAfter)],
+      rates: [
+        buildRate(
+          'survivor-websites-traced-to-evidence',
+          'Owned-slot survivor websites traced to survivor evidence or a lock',
+          traced,
+          tally.comparable,
+        ),
+      ],
+      notes: {
+        servedSurvivorsWithAWebsite: survivorsScanned,
+        survivorsWhoseOwnLaneOwnsTheWebsite: observations.length,
+        ...tally.byAttribution,
+      },
+    };
+  },
+};
+
 export const journeyCases: readonly JourneyCase[] = [
   coldBrowseCardContract,
   topicDropAttribution,
@@ -597,4 +634,5 @@ export const journeyCases: readonly JourneyCase[] = [
   sortedBrowseKeepsOrder,
   topicQueryRelevance,
   undergradEvidenceQuotePrecision,
+  survivorWebsiteAttribution,
 ];

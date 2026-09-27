@@ -13,13 +13,28 @@ import {
   type TopicQueryJudgement,
   type UndergradEvidenceJudgementSet,
 } from './journeyEvalJudgements';
-import { summarizeInvariants, type InvariantResult, type RateResult } from './journeyEvalMetrics';
+import {
+  summarizeInvariants,
+  type InvariantResult,
+  type RateResult,
+  type SurvivorWebsiteObservation,
+} from './journeyEvalMetrics';
+import { Observation } from '../../models/observation';
+import {
+  materializationReadScopeFilter,
+  mergedSurvivorEvidence,
+} from '../../scrapers/entityMaterializer';
+import {
+  websiteIdentitiesStatedBy,
+  websiteIdentity,
+} from '../../scrapers/survivorOwnedWebsiteClear';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 const RESEARCH_ENTITY_COLLECTION = 'research_entities';
+const SERVED_TIER = 'student_ready';
 const DEFAULT_JUDGEMENTS_PATH = path.resolve(__dirname, 'topicQueryJudgements.json');
 
 function loadTopicQueryJudgements(explicitPath?: string): TopicQueryJudgement[] | null {
@@ -110,8 +125,33 @@ function parseArgs(argv: string[]): JourneyEvalArgs {
   return args;
 }
 
+async function readOwnedSlotSurvivorWebsite(
+  survivor: Record<string, unknown>,
+  readServedWebsiteUrl: (slug: string) => Promise<unknown>,
+): Promise<SurvivorWebsiteObservation | null> {
+  const slug = String(survivor.slug);
+  const own = await Observation.find({
+    entityType: 'researchEntity',
+    ...materializationReadScopeFilter(),
+    $or: [{ entityKey: slug }, { entityId: survivor._id }],
+  }).lean();
+  const merged = await mergedSurvivorEvidence('researchEntity', survivor, own);
+  if (!merged.survivorLaneOwnsWebsite) return null;
+  const lockedFields = Array.isArray(survivor.manuallyLockedFields)
+    ? (survivor.manuallyLockedFields as string[])
+    : [];
+  return {
+    servedWebsiteIdentity: websiteIdentity(await readServedWebsiteUrl(slug)),
+    websiteLocked: lockedFields.includes('websiteUrl'),
+    survivorStated: websiteIdentitiesStatedBy(own),
+    admittedStated: websiteIdentitiesStatedBy(merged.observations),
+    droppedLoser: new Set(merged.droppedLoserWebsiteValues.map(websiteIdentity).filter(Boolean)),
+  };
+}
+
 async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> {
-  const { searchResearchGroupsViaMeili } = await import('../../services/researchGroupService');
+  const { getResearchGroupDetail, searchResearchGroupsViaMeili } =
+    await import('../../services/researchGroupService');
   const database = mongoose.connection.db;
   if (!database) throw new Error('MongoDB connection is not initialized');
   const collection = database.collection(RESEARCH_ENTITY_COLLECTION);
@@ -153,6 +193,32 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
     readStoredRows: async (rowKeys: string[]) => {
       const rows = await collection.find({ slug: { $in: rowKeys } }).toArray();
       return new Map(rows.map((row) => [String(row.slug), row as Record<string, unknown>]));
+    },
+    readOwnedSlotSurvivorWebsites: async () => {
+      const survivorIds = await collection.distinct('canonicalGroupId', {
+        archived: true,
+        canonicalGroupId: { $ne: null },
+      });
+      const survivors = await collection
+        .find({
+          _id: { $in: survivorIds },
+          archived: { $ne: true },
+          studentVisibilityTier: SERVED_TIER,
+          websiteUrl: { $nin: ['', null] },
+        })
+        .sort({ _id: 1 })
+        .toArray();
+      const readServedWebsiteUrl = async (slug: string) =>
+        (await getResearchGroupDetail(slug))?.researchEntity?.websiteUrl;
+      const observations: SurvivorWebsiteObservation[] = [];
+      for (const survivor of survivors) {
+        const observation = await readOwnedSlotSurvivorWebsite(
+          survivor as Record<string, unknown>,
+          readServedWebsiteUrl,
+        );
+        if (observation) observations.push(observation);
+      }
+      return { survivorsScanned: survivors.length, observations };
     },
     readCorpusFingerprint: async () => {
       const [rowCount, latest] = await Promise.all([
