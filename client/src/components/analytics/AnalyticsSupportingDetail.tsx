@@ -307,20 +307,20 @@ const AnalyticsSupportingDetail = ({
           <StatCard
             title={`Signed-in visitors (${selectedRangeLabel})`}
             value={data.visitors.lifetime.total}
-            subtitle="Unique users who logged in"
+            subtitle="Unique students with any activity"
           />
           {showSevenDayBreakdown && (
             <StatCard
               title="Signed-in visitors (Last 7 Days)"
               value={data.visitors.last7Days.total}
-              subtitle="Signed in during the past week"
+              subtitle="Active during the past week"
             />
           )}
           {showTodayBreakdown && (
             <StatCard
               title="Signed-in visitors today"
               value={data.visitors.today.total}
-              subtitle="Logged in today"
+              subtitle="Active today"
             />
           )}
         </div>
