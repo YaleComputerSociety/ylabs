@@ -22,6 +22,7 @@ export const RESEARCH_JOURNEY_EVENT_TYPES = [
 
 export type ResearchJourneyEventType = (typeof RESEARCH_JOURNEY_EVENT_TYPES)[number];
 export type ResearchEventType = LegacyResearchEventType | ResearchJourneyEventType;
+export type ResearchSaveSurface = 'profile' | 'search' | 'saved_plans';
 export type ResearchEntityType = 'profile' | 'listing' | 'fellowship' | 'research_entity';
 export type PlanningContextCategory =
   | 'open_position'
@@ -61,7 +62,7 @@ export type ResearchJourneyPayload =
         | 'research_type'
         | 'hosts_undergrads';
     }
-  | { operation: 'save' | 'remove'; surface: 'profile' | 'search' | 'saved_plans' }
+  | { operation: 'save' | 'remove'; surface: ResearchSaveSurface }
   | { entityCountBucket: '1' | '2' | '3-4' | '5+' }
   | {
       field:

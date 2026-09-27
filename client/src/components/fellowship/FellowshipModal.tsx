@@ -87,13 +87,7 @@ const RichTextBlock = ({ text, className }: { text: string; className?: string }
   );
 };
 
-const trackFellowshipApplyClick = (fellowshipId: string, href: string) => {
-  void trackResearchEvent({
-    eventType: 'source_link_click',
-    entityType: 'fellowship',
-    entityId: fellowshipId,
-    payload: { sourceCategory: 'external', url: href },
-  });
+const trackFellowshipApplyClick = (fellowshipId: string) => {
   void trackResearchEvent({
     eventType: 'ways_in_click',
     entityType: 'fellowship',
@@ -354,7 +348,7 @@ const FellowshipModal = ({
                     rel="noopener noreferrer"
                     onClick={(e) => {
                       e.stopPropagation();
-                      trackFellowshipApplyClick(fellowship.id, applicationHref);
+                      trackFellowshipApplyClick(fellowship.id);
                     }}
                     className={iconActionClass}
                     aria-label={applicationActionLabel}
@@ -718,7 +712,7 @@ const FellowshipModal = ({
                           href={applicationHref}
                           target="_blank"
                           rel="noopener noreferrer"
-                          onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
+                          onClick={() => trackFellowshipApplyClick(fellowship.id)}
                           className="yr-pressable inline-flex min-h-[44px] items-center rounded-control bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
                         >
                           Open official application
@@ -821,7 +815,7 @@ const FellowshipModal = ({
                       href={applicationHref}
                       target="_blank"
                       rel="noopener noreferrer"
-                      onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
+                      onClick={() => trackFellowshipApplyClick(fellowship.id)}
                       className={`inline-flex min-h-[44px] items-center rounded-control px-6 py-2.5 text-sm font-medium text-white transition-colors yr-focus-ring ${
                         applicationStatus.isApplicationWindowOpen
                           ? 'bg-brand hover:bg-brand-navy'

@@ -69,6 +69,9 @@ A signed-in visitor is a distinct netid with any recorded event in the window, t
 A `visitor` row carries a `visitor:<UTC date>` dedupe key, so it is written at most once per student per UTC day, and counting only `login` and `visitor` rows missed a returning student whose first visit that day fell before the window.
 Before #3692 the first burst of parallel requests in a session each wrote one, and a local auth-bypass session wrote one per request: 31 of 475 Production and 27,085 of 30,416 Development visitor rows followed the same student's previous row within 10 seconds.
 Logins count `login` rows only.
+Opening a program records one `fellowship_view`, and a click on its application link records one `ways_in_click` with kind `apply`; before #3766 each wrote a second row (`research_view` and `source_link_click`).
+A research save or removal records the surface it came from, so a removal on the Dashboard reads `saved_plans`.
+No `research_qualified_action` can be recorded while planning contexts have no source (#377), so when none was recorded in the range the funnel omits the qualified-route stage and the route tiles read as not recorded, the same treatment as the overall next-step rate.
 The per-user Profile Opens column (the `researchViews` field) counts `research_profile_open`, because `research_view` is emitted only by the fellowship detail route.
 Action needed and the top zero-result queries rank every query group with a zero-result search, not only the 100 most searched; action needed also requires at least 2 searches.
 

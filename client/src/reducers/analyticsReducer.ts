@@ -274,8 +274,8 @@ export interface AnalyticsFunnelResponse {
   qualifiedActionEventsRecorded?: number;
   journeyMetrics?: {
     sourceInspections: number;
-    officialRouteAttempts: number;
-    applicationOpens: number;
+    officialRouteAttempts: number | null;
+    applicationOpens: number | null;
   };
 }
 

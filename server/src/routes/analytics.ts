@@ -390,6 +390,7 @@ router.get(
   isAdmin,
   asyncHandler(async (request: Request, response: Response) => {
     const analytics = await getFunnelAnalytics(parseAnalyticsRange(request.query.range));
+    const qualifiedActionsMeasured = analytics.qualifiedActionEvents > 0;
     const stages = [
       { key: 'research_searches', label: 'Searched research', count: analytics.researchSearches },
       { key: 'profile_opens', label: 'Opened a profile', count: analytics.researchProfileOpens },
@@ -401,7 +402,7 @@ router.get(
         label: 'Used a qualified route',
         count: analytics.qualifiedActions,
       },
-    ];
+    ].filter((stage) => stage.key !== 'qualified_actions' || qualifiedActionsMeasured);
 
     response.status(200).json({
       ...analytics,
@@ -414,8 +415,8 @@ router.get(
       }),
       journeyMetrics: {
         sourceInspections: analytics.sourceInspections,
-        officialRouteAttempts: analytics.officialRouteAttempts,
-        applicationOpens: analytics.applicationOpens,
+        officialRouteAttempts: qualifiedActionsMeasured ? analytics.officialRouteAttempts : null,
+        applicationOpens: qualifiedActionsMeasured ? analytics.applicationOpens : null,
       },
       qualifiedActionEventsRecorded: analytics.qualifiedActionEvents,
       // A rate of 0 and a lane that recorded nothing are different facts, and a
