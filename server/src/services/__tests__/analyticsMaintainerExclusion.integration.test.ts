@@ -55,15 +55,9 @@ describe('usage analytics over a real store', () => {
       row('legacy01', AnalyticsEventType.LOGIN, daysAgo(1), { userType: 'admin' }),
       zeroResultSearch('maint01', 'maintainer probe', daysAgo(1)),
       zeroResultSearch('maint01', 'maintainer probe', daysAgo(1)),
-      ...Array.from({ length: 101 }, (_, index) =>
+      ...Array.from({ length: 101 * 3 }, (_, index) =>
         row('stud02', AnalyticsEventType.SEARCH, daysAgo(3), {
-          searchQuery: `popular topic ${index}`,
-          metadata: { entityType: 'research_entity', resultCount: 5 },
-        }),
-      ),
-      ...Array.from({ length: 101 }, (_, index) =>
-        row('stud02', AnalyticsEventType.SEARCH, daysAgo(3), {
-          searchQuery: `popular topic ${index}`,
+          searchQuery: `popular topic ${index % 101}`,
           metadata: { entityType: 'research_entity', resultCount: 5 },
         }),
       ),
@@ -75,6 +69,14 @@ describe('usage analytics over a real store', () => {
   afterAll(async () => {
     await mongoose.disconnect();
     await memoryServer?.stop();
+  });
+
+  it('matches grant holders whatever the case of the netid on their rows', async () => {
+    await AnalyticsEvent.collection.insertOne(row('MAINT01', AnalyticsEventType.LOGIN, daysAgo(1)));
+
+    const { visitors } = await getAnalytics();
+
+    expect(visitors.loginFrequency.totalLogins).toBe(2);
   });
 
   it('counts logins from login rows only, leaving out maintainers', async () => {

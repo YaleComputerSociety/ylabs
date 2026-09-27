@@ -228,8 +228,8 @@ export interface SearchQualityAnalytics {
   zeroResultRate: number;
   uniqueSearchers: number;
   byQueryAndEntityType: SearchQualityQueryAnalytics[];
-  zeroResultQueryGroups: SearchQualityQueryAnalytics[];
   topZeroResultQueries: SearchQualityQueryAnalytics[];
+  highSearchLowResults: HighSearchLowResultsAction[];
   topQueries: SearchQualityQueryAnalytics[];
   engagedSearches: number;
   returnedButIgnoredSearches: number;
@@ -543,7 +543,9 @@ const maintainerExclusionMatch = async (): Promise<Record<string, unknown>> => {
   const maintainerNetids = (await AdminGrant.distinct('netid')) as string[];
   return {
     userType: { $ne: 'admin' },
-    ...(maintainerNetids.length > 0 ? { netid: { $nin: maintainerNetids } } : {}),
+    ...(maintainerNetids.length > 0
+      ? { $expr: { $not: { $in: [{ $toLower: { $ifNull: ['$netid', ''] } }, maintainerNetids] } } }
+      : {}),
   };
 };
 
@@ -1012,6 +1014,35 @@ const zeroResultAfterProjection = {
   $and: [{ $lte: ['$resultCount', 0] }, { $ne: ['$degraded', true] }],
 };
 
+const zeroResultQueryGroupStages = [
+  {
+    $group: {
+      _id: {
+        query: '$normalizedQuery',
+        entityType: '$searchEntityType',
+      },
+      totalSearches: { $sum: 1 },
+      zeroResultSearches: {
+        $sum: { $cond: [zeroResultAfterProjection, 1, 0] },
+      },
+      uniqueSearchers: { $addToSet: '$netid' },
+      avgResultCount: { $avg: '$resultCount' },
+    },
+  },
+  {
+    $project: {
+      _id: 0,
+      query: '$_id.query',
+      entityType: '$_id.entityType',
+      totalSearches: 1,
+      zeroResultSearches: 1,
+      uniqueSearchers: { $size: '$uniqueSearchers' },
+      avgResultCount: { $round: ['$avgResultCount', 2] },
+    },
+  },
+  { $match: { zeroResultSearches: { $gt: 0 } } },
+];
+
 const computeSearchQualityAnalytics = async (
   range: AnalyticsDateRange = {},
 ): Promise<SearchQualityAnalytics> => {
@@ -1194,33 +1225,23 @@ const computeSearchQualityAnalytics = async (
           { $sort: { totalSearches: -1, zeroResultSearches: -1, query: 1 } },
           { $limit: 100 },
         ],
-        zeroResultQueryGroups: [
+        topZeroResultQueries: [
+          ...zeroResultQueryGroupStages,
+          { $sort: { zeroResultSearches: -1, totalSearches: -1, query: 1 } },
+          { $limit: 10 },
+        ],
+        highSearchLowResults: [
+          ...zeroResultQueryGroupStages,
+          { $match: { totalSearches: { $gte: 2 } } },
           {
-            $group: {
-              _id: {
-                query: '$normalizedQuery',
-                entityType: '$searchEntityType',
+            $addFields: {
+              zeroResultRate: {
+                $round: [{ $divide: ['$zeroResultSearches', '$totalSearches'] }, 4],
               },
-              totalSearches: { $sum: 1 },
-              zeroResultSearches: {
-                $sum: { $cond: [zeroResultAfterProjection, 1, 0] },
-              },
-              uniqueSearchers: { $addToSet: '$netid' },
-              avgResultCount: { $avg: '$resultCount' },
             },
           },
-          {
-            $project: {
-              _id: 0,
-              query: '$_id.query',
-              entityType: '$_id.entityType',
-              totalSearches: 1,
-              zeroResultSearches: 1,
-              uniqueSearchers: { $size: '$uniqueSearchers' },
-              avgResultCount: { $round: ['$avgResultCount', 2] },
-            },
-          },
-          { $match: { zeroResultSearches: { $gt: 0 } } },
+          { $sort: { zeroResultRate: -1, zeroResultSearches: -1, totalSearches: -1, query: 1 } },
+          { $limit: 10 },
         ],
       },
     },
@@ -1237,16 +1258,10 @@ const computeSearchQualityAnalytics = async (
   const byQueryAndEntityType = (result?.byQueryAndEntityType ??
     []) as SearchQualityQueryAnalytics[];
   const topQueries = byQueryAndEntityType.slice(0, 10);
-  const zeroResultQueryGroups = (result?.zeroResultQueryGroups ??
+  const topZeroResultQueries = (result?.topZeroResultQueries ??
     []) as SearchQualityQueryAnalytics[];
-  const topZeroResultQueries = [...zeroResultQueryGroups]
-    .sort(
-      (a, b) =>
-        b.zeroResultSearches - a.zeroResultSearches ||
-        b.totalSearches - a.totalSearches ||
-        a.query.localeCompare(b.query),
-    )
-    .slice(0, 10);
+  const highSearchLowResults = (result?.highSearchLowResults ??
+    []) as HighSearchLowResultsAction[];
 
   const searchesThatReachedTheCorpus = overall.totalSearches - overall.degradedSearches;
   return {
@@ -1259,8 +1274,8 @@ const computeSearchQualityAnalytics = async (
         : 0,
     uniqueSearchers: overall.uniqueSearchers,
     byQueryAndEntityType,
-    zeroResultQueryGroups,
     topZeroResultQueries,
+    highSearchLowResults,
     topQueries,
     engagedSearches: overall.engagedSearches,
     returnedButIgnoredSearches: overall.returnedButIgnoredSearches,
@@ -1571,20 +1586,7 @@ export const getFunnelAnalytics = async (
 export const getActionNeededAnalytics = async (
   range: AnalyticsDateRange = {},
 ): Promise<ActionNeededAnalytics> => {
-  const searchQuality = await getSearchQualityAnalytics(range);
-  const highSearchLowResults = searchQuality.zeroResultQueryGroups
-    .filter((query) => query.totalSearches >= 2)
-    .map((query) => ({
-      ...query,
-      zeroResultRate: Number((query.zeroResultSearches / query.totalSearches).toFixed(4)),
-    }))
-    .sort(
-      (a, b) =>
-        b.zeroResultRate - a.zeroResultRate ||
-        b.zeroResultSearches - a.zeroResultSearches ||
-        b.totalSearches - a.totalSearches,
-    )
-    .slice(0, 10);
+  const { highSearchLowResults } = await getSearchQualityAnalytics(range);
 
   return {
     highSearchLowResults,
