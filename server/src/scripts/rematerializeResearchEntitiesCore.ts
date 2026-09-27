@@ -70,6 +70,7 @@ export const REMATERIALIZE_TRACKED_FIELDS = [
   'schools',
   'departments',
   'orgAffiliationLabels',
+  'undergradEvidenceQuote',
   'studentVisibilityTier',
 ] as const;
 
