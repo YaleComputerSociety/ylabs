@@ -12,7 +12,7 @@
  * Flags for `run`:
  *   --dry-run       Don't write Observations (just log what would be inserted)
  *   --use-cache     Memoize external fetches in ScrapeSnapshot collection (dev only)
- *   --release       Production mode (caches off, errors surface)
+ *   --release       Release mode (caches off, errors surface)
  *   --limit <n>     Cap the number of entities the scraper processes
  *   --offset <n>    Skip the first n entities after source-specific ordering
  *   --only <keys>   Comma-separated source-specific keys/netids to process
@@ -194,7 +194,7 @@ ylabs scraper CLI
 
   list                                       List registered scrapers
   run --source <name> [flags]                Run a scraper
-  cron --source <name> --release             Run a production cron-safe scraper job
+  cron --source <name> --release             Run a cron-safe scraper job against Development
   materialize --run <runId> [--output <path>]
                                              Materialize observations from a previous run
   report --run <runId> [--output <path>]     Print or save a QA report for a ScrapeRun
@@ -203,7 +203,7 @@ ylabs scraper CLI
 Run flags:
   --dry-run            Skip Observation writes (preview only)
   --use-cache          Cache external fetches in ScrapeSnapshot (dev)
-  --release            Production mode
+  --release            Release mode (caches off, errors surface)
   --limit <n>          Cap entities processed
   --offset <n>         Skip first n ordered entities
   --only <keys>        Comma-separated source-specific keys/netids
@@ -247,8 +247,10 @@ Prune flags:
 
 Environment guardrails:
   SCRAPER_ENV=development|beta|production
-  Non-production runs default to --dry-run and disable --auto-materialize.
-  Production writes require --release and CONFIRM_PROD_SCRAPE=true.
+  Development runs default to --dry-run and disable --auto-materialize;
+  set ALLOW_NON_PROD_SCRAPER_WRITES=true to write.
+  Beta and Production refuse run, cron, and materialize writes: they receive
+  data only through promotion (docs/data-refresh-runbook.md).
 
 Concurrency:
   A writing "run" or "materialize" takes that source's ScrapeJobLock and is
