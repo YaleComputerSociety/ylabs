@@ -2052,3 +2052,116 @@ describe('LabMicrositeUndergradLLMExtractor one-lab failure isolation (#3558)', 
     await expect(scraper.run(ctx)).rejects.toThrow('observation store unavailable');
   });
 });
+
+describe('LabMicrositeUndergradLLMExtractor.run withdrawing a stored evidence quote (#3592)', () => {
+  const FILLER =
+    'The group studies synthetic membranes, protein folding kinetics and the design of new imaging methods for living tissue across many scales of time, from single molecules to whole organs, with collaborators in chemistry and physics.';
+  const HOME = `<html><body><h1>Example Lab</h1><p>${FILLER}</p><p>Undergraduates join us every fall.</p></body></html>`;
+  const JOIN = `<html><body><h2>Join</h2><p>${FILLER}</p><p>Email the lab manager to ask about openings.</p></body></html>`;
+  const lab: CandidateLab = {
+    _id: '1',
+    slug: 'example-lab',
+    name: 'Example Lab',
+    websiteUrl: 'https://example-lab.example.edu/',
+  };
+  const noQuoteAnswer: LLMExtraction = {
+    openToUndergrads: 'unclear',
+    currentUndergradCount: 0,
+    evidenceQuote: '',
+    evidenceSource: 'none',
+    joinPageUrl: null,
+  };
+
+  async function runWith(
+    live: { value: string; sourceUrl: string } | null,
+    pages: Record<string, string>,
+    answer: LLMExtraction = noQuoteAnswer,
+  ) {
+    const fetchPage = makeFetchPage(pages);
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM: vi.fn(async () => answer),
+      labFinder: async () => [lab],
+      liveEvidenceQuoteLoader: async () => live,
+      renderedFetcher: null,
+      apiKey: 'sk-test',
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+    const quoteRows = emitted.filter((obs) => obs.field === 'undergradEvidenceQuote');
+    return { result, quoteRows, fetchPage };
+  }
+
+  it('states the stored quote has no value when the page it cites no longer carries it', async () => {
+    const { result, quoteRows } = await runWith(
+      {
+        value: 'No explicit mention of undergraduates was found on the provided pages.',
+        sourceUrl: 'https://example-lab.example.edu/',
+      },
+      { 'https://example-lab.example.edu/': HOME },
+    );
+    expect(quoteRows).toEqual([
+      expect.objectContaining({
+        value: '',
+        sourceUrl: 'https://example-lab.example.edu/',
+        assertsNoValueFor: ['undergradEvidenceQuote'],
+      }),
+    ]);
+    expect(result.metrics?.evidenceQuotesWithdrawn).toBe(1);
+  });
+
+  it('keeps a stored quote that is still on a page the lane read, whatever the model says now', async () => {
+    const { quoteRows, result } = await runWith(
+      {
+        value: 'Undergraduates   join us every fall.',
+        sourceUrl: 'https://example-lab.example.edu/',
+      },
+      { 'https://example-lab.example.edu/': HOME },
+    );
+    expect(quoteRows).toEqual([]);
+    expect(result.metrics?.evidenceQuotesWithdrawn).toBe(0);
+  });
+
+  it('reads the cited page itself when the crawl did not reach it', async () => {
+    const { quoteRows, fetchPage } = await runWith(
+      {
+        value: 'Email the lab manager to ask about openings.',
+        sourceUrl: 'https://example-lab.example.edu/about/join/',
+      },
+      {
+        'https://example-lab.example.edu/': HOME,
+        'https://example-lab.example.edu/about/join/': JOIN,
+      },
+    );
+    expect(fetchPage).toHaveBeenCalledWith('https://example-lab.example.edu/about/join/');
+    expect(quoteRows).toEqual([]);
+  });
+
+  it('states nothing when the cited page could not be read', async () => {
+    const { quoteRows } = await runWith(
+      {
+        value: 'A sentence only an unreachable page could confirm, about undergraduates.',
+        sourceUrl: 'https://example-lab.example.edu/gone/',
+      },
+      { 'https://example-lab.example.edu/': HOME },
+    );
+    expect(quoteRows).toEqual([]);
+  });
+
+  it('lets a quote the model finds on the page in the same run replace the withdrawal', async () => {
+    const { quoteRows } = await runWith(
+      {
+        value: 'A paraphrase the page never said about undergraduates.',
+        sourceUrl: 'https://example-lab.example.edu/',
+      },
+      { 'https://example-lab.example.edu/': HOME },
+      {
+        ...noQuoteAnswer,
+        openToUndergrads: 'yes',
+        evidenceQuote: 'Undergraduates join us every fall.',
+        evidenceSource: 'explicit_text',
+      },
+    );
+    expect(quoteRows.map((obs) => obs.value)).toEqual(['', 'Undergraduates join us every fall.']);
+  });
+});
