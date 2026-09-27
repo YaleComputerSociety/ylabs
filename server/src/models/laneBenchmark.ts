@@ -24,6 +24,18 @@ const benchmarkLabelSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const goldLabelSchema = new mongoose.Schema(
+  {
+    entityKey: { type: String, required: true },
+    field: { type: String, required: true },
+    expected: { type: String, enum: ['present', 'absent'], required: true },
+    acceptable: { type: [String], default: [] },
+    judgedPageUrl: { type: String, required: false },
+    note: { type: String, required: false },
+  },
+  { _id: false },
+);
+
 const laneBenchmarkSchema = new mongoose.Schema(
   {
     benchmarkId: { type: String, required: true, unique: true },
@@ -37,6 +49,8 @@ const laneBenchmarkSchema = new mongoose.Schema(
     pageCount: { type: Number, required: true },
     plannedObservationCount: { type: Number, required: true },
     labels: { type: [benchmarkLabelSchema], default: [] },
+    goldLabels: { type: [goldLabelSchema], default: [] },
+    goldLabeledAt: { type: Date, required: false },
   },
   { timestamps: true },
 );

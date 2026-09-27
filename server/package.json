@@ -114,6 +114,7 @@
     "taxonomy:review-queue": "tsx src/scripts/taxonomyReviewQueue.ts",
     "corpus:snapshot": "tsx src/scripts/corpusQualitySnapshot.ts",
     "lane:benchmark-capture": "tsx src/scripts/laneBenchmarkCapture.ts",
+    "lane:benchmark-label": "tsx src/scripts/laneBenchmarkLabel.ts",
     "lane:scorecard": "tsx src/scripts/laneScorecard.ts",
     "model-refactor:inventory": "tsx src/scripts/researchModelInventory.ts",
     "model-refactor:identity-collisions": "tsx src/scripts/phase0IdentityCollisionAudit.ts",

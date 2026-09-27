@@ -22,6 +22,20 @@ const fieldScoreSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const goldFieldScoreSchema = new mongoose.Schema(
+  {
+    field: { type: String, required: true },
+    labeled: { type: Number, required: true },
+    truePositive: { type: Number, required: true },
+    falsePositive: { type: Number, required: true },
+    falseNegative: { type: Number, required: true },
+    trueNegative: { type: Number, required: true },
+    precision: { type: Number, required: false },
+    recall: { type: Number, required: false },
+  },
+  { _id: false },
+);
+
 const laneScorecardSnapshotSchema = new mongoose.Schema(
   {
     measuredAt: { type: Date, required: true, default: () => new Date() },
@@ -39,6 +53,7 @@ const laneScorecardSnapshotSchema = new mongoose.Schema(
     labelCount: { type: Number, required: true },
     outputFingerprint: { type: String, required: true },
     byField: { type: [fieldScoreSchema], default: [] },
+    gold: { type: [goldFieldScoreSchema], default: [] },
   },
   { timestamps: false },
 );
