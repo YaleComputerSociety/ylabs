@@ -54,7 +54,14 @@ The registered sources in each engine are grouped into ordered phases that run i
 The fellowship engine currently only spans the `discovery` phase.
 The `scholarly` phase is declared in the source-phase contract but currently carries no registered sources, so it does not run.
 Sources inside a phase run with bounded concurrency, and the two LLM-heavy phases (`relationships`, `content-access`) are capped at concurrency 2 by `PHASE_CONCURRENCY_CAPS` regardless of the requested `--concurrency`.
-The three exhaustive Development modes (`development-full`, `development-incremental`, and `fellowship-development-full`) default the network-bound discovery phase to cross-source concurrency 8; to stay polite to any single host, the sweep sets each source child process a `SCRAPER_PER_HOST_CONCURRENCY` cap that shrinks as cross-source concurrency rises, so the combined per-host request budget across concurrent children stays bounded, and an operator `SCRAPER_PER_HOST_CONCURRENCY` override can only tighten that per-child cap, never loosen it.
+The three exhaustive Development modes (`development-full`, `development-incremental`, and `fellowship-development-full`) default the network-bound discovery phase to cross-source concurrency 8.
+The per-host request budget is one budget for the whole sweep, not one per child (#3568).
+The sweep parent runs a host slot broker (`scrapers/utils/hostSlotBroker.ts`) on a private Unix socket for the preflight canaries and the source phases, and names it to every canary and source child in `SCRAPER_HOST_SLOT_BROKER`; each child's axios interceptor and rendered fetch ask the broker for a slot on the request's host, and the broker grants from one `HostConcurrencyLimiter` holding `DEFAULT_PER_HOST_CONCURRENCY` (4) per host, with the `HOST_THROTTLE_OVERRIDES` concurrency and spacing applied across all children together.
+So a child alone on its host gets the whole budget, children that share a host divide it between them, and no host ever sees more than its budget or its override in flight, whatever the phase concurrency.
+The previous rule gave every child `floor(4 / phase concurrency)`, which at concurrency 8 was 1 slot per child on every host: a lane alone on its host ran one request at a time, while eight children on one host could hold 8 between them.
+An operator `SCRAPER_PER_HOST_CONCURRENCY` can only tighten the broker's budget, never loosen it.
+A child keeps that old per-child cap (`resolveSweepChildPerHostConcurrency`) only as its fallback: when the broker cannot be reached it logs the reason and gates each host on its own, which is no looser than before.
+The broker gates request slots, not lane loops: a lane that fetches one page at a time still runs at one request in flight however large its host budget is.
 Individually rate-limited hosts are pinned tighter still by a per-host override map that no `SCRAPER_PER_HOST_CONCURRENCY` value can lift; see `utils/hostConcurrencyLimiter.ts` in `skills/scrapers/SKILL.md` for the current entries and the rationale.
 The dept-roster and dept-undergrad sources stay effectively serial because they page through their own in-loop `--limit`.
 

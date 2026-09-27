@@ -28,6 +28,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { buildOrchestrator } from './registry';
 import { installScraperHostConcurrencyInterceptor } from './utils/hostConcurrencyLimiter';
+import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
 import { installScraperHttpValidatorCache } from './utils/httpValidatorCache';
 import { materializeFromRun } from './entityMaterializer';
 import { ScrapeRun } from '../models/scrapeRun';
@@ -168,7 +169,7 @@ async function warnWhenSourceIsBeingWritten(
 }
 
 export async function main(): Promise<void> {
-  installScraperHostConcurrencyInterceptor();
+  installScraperHostConcurrencyInterceptor(scraperHostSlotLimiter());
   const { command, flags } = parseArgs(process.argv);
   if (!flags.release) installScraperHttpValidatorCache();
 

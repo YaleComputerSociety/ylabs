@@ -16,6 +16,7 @@ const SWEEP_ENV_KEYS = [
 interface RecordedChild {
   args: string[];
   logPath?: string;
+  hostSlotBroker?: string;
 }
 
 function outputPathFromArgs(args: string[]): string | undefined {
@@ -100,9 +101,14 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     const runner = async (
       _command: string,
       args: string[],
-      options: { logPath?: string },
+      options: { logPath?: string; env?: NodeJS.ProcessEnv },
     ): Promise<{ status: number | null }> => {
-      calls.push({ args, ...(options.logPath ? { logPath: options.logPath } : {}) });
+      const hostSlotBroker = options.env?.SCRAPER_HOST_SLOT_BROKER;
+      calls.push({
+        args,
+        ...(options.logPath ? { logPath: options.logPath } : {}),
+        ...(hostSlotBroker ? { hostSlotBroker } : {}),
+      });
       const sourceName = sourceNameFromArgs(args);
       const failing = Boolean(sourceName && failingSources.has(sourceName));
       if (options.logPath) {
@@ -184,6 +190,17 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     const failed = makeChildRunner(new Set(['nih-reporter']));
     const firstSummary = await runScraperSweep(options, { childRunner: failed.runner });
     trackRun(mode, firstSummary.outputDirectory);
+
+    const brokerPaths = [
+      ...new Set(
+        failed.calls
+          .filter((call) => sourceNameFromArgs(call.args))
+          .map((call) => call.hostSlotBroker),
+      ),
+    ];
+    expect(brokerPaths).toHaveLength(1);
+    expect(brokerPaths[0]).toMatch(/ylabs-host-slots-\d+\.sock$/);
+    expect(fs.existsSync(brokerPaths[0]!)).toBe(false);
 
     expect(firstSummary.failed).toBe(1);
     expect(firstSummary.rows.find((row) => row.sourceName === 'nih-reporter')?.status).toBe(
@@ -268,10 +285,16 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     fs.rmSync(checkpointFor(mode), { force: true });
     const canaried: string[] = [];
     const scraped: string[] = [];
-    const runner = async (_command: string, args: string[]): Promise<{ status: number | null }> => {
+    const canaryBrokers = new Set<string | undefined>();
+    const runner = async (
+      _command: string,
+      args: string[],
+      options: { env?: NodeJS.ProcessEnv },
+    ): Promise<{ status: number | null }> => {
       const sourceName = sourceNameFromArgs(args) ?? '';
       if (commandFromArgs(args) === 'scrape:canary') {
         canaried.push(sourceName);
+        canaryBrokers.add(options.env?.SCRAPER_HOST_SLOT_BROKER);
         const verdict = sourceName === 'nih-reporter' ? 'failed' : 'passed';
         fs.writeFileSync(
           outputPathFromArgs(args)!,
@@ -299,6 +322,10 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     expect(canaried.length).toBeGreaterThan(10);
     expect(canaried).toContain('nih-reporter');
     expect(scraped).toEqual([]);
+    const [canaryBroker] = [...canaryBrokers];
+    expect(canaryBrokers.size).toBe(1);
+    expect(canaryBroker).toMatch(/ylabs-host-slots-\d+\.sock$/);
+    expect(fs.existsSync(canaryBroker!)).toBe(false);
     const checkpoint = readSweepCheckpoint(checkpointFor(mode));
     expect(checkpoint).toBeDefined();
     const outputDirectory = checkpoint!.outputDirectory;

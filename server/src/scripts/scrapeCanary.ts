@@ -55,6 +55,7 @@ async function main(): Promise<number> {
     { readPriorRunYieldFacts },
     output,
     hosts,
+    { scraperHostSlotLimiter },
   ] = await Promise.all([
     import('../scrapers/registry'),
     import('../scrapers/scraperCanary'),
@@ -62,8 +63,9 @@ async function main(): Promise<number> {
     import('../scrapers/sourceYieldGuard'),
     import('../scrapers/scraperCliOutput'),
     import('../scrapers/utils/hostConcurrencyLimiter'),
+    import('../scrapers/utils/scraperHostSlotLimiter'),
   ]);
-  hosts.installScraperHostConcurrencyInterceptor();
+  hosts.installScraperHostConcurrencyInterceptor(scraperHostSlotLimiter());
 
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL is required for a scrape canary');

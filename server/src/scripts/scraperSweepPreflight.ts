@@ -318,6 +318,7 @@ export async function runSweepPreflight(input: {
   repoRoot: string;
   childRunner: CanaryChildRunner;
   forceLlm?: boolean;
+  env?: NodeJS.ProcessEnv;
   config?: SweepPreflightConfig;
   now?: () => Date;
   connect?: (mongoUrl: string) => Promise<Connection>;
@@ -354,6 +355,7 @@ export async function runSweepPreflight(input: {
     config,
     childRunner: input.childRunner,
     forceLlm: input.forceLlm,
+    env: input.env,
   });
 
   const report = summarizeSweepPreflight({
