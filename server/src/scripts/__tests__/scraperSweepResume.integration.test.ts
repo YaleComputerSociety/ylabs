@@ -336,6 +336,68 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     );
   }, 180_000);
 
+  const runSweepFailingLastSource = async () => {
+    const mode = 'development-full' as const;
+    fs.rmSync(checkpointFor(mode), { force: true });
+    const options = {
+      mode,
+      confirmations: new Set(['--confirm-development-full-sweep']),
+      skipPreflight: true,
+    };
+    const lastSource = researchSweepSources[researchSweepSources.length - 1].name;
+    const failed = makeChildRunner(new Set([lastSource]));
+    const summary = await runScraperSweep(options, {
+      childRunner: failed.runner,
+      sweepSources: researchSweepSources,
+    });
+    trackRun(mode, summary.outputDirectory);
+    expect(summary.failed).toBe(1);
+    return { mode, options, lastSource };
+  };
+
+  const resumedSourceNames = (calls: RecordedChild[]): string[] =>
+    calls.map((call) => sourceNameFromArgs(call.args)).filter((name): name is string => !!name);
+
+  it('resumes a checkpoint that recorded no artifact paths by the derived artifact name (#3570)', async () => {
+    const { mode, options, lastSource } = await runSweepFailingLastSource();
+    const raw = JSON.parse(fs.readFileSync(checkpointFor(mode), 'utf8'));
+    for (const step of Object.values(raw.steps) as Array<Record<string, unknown>>) {
+      delete step.artifactPath;
+    }
+    fs.writeFileSync(checkpointFor(mode), JSON.stringify(raw));
+
+    const resumed = makeChildRunner(new Set());
+    const summary = await runScraperSweep(options, {
+      childRunner: resumed.runner,
+      sweepSources: researchSweepSources,
+    });
+    trackRun(mode, summary.outputDirectory);
+
+    expect(resumedSourceNames(resumed.calls)).toEqual([lastSource]);
+    expect(summary.failed).toBe(0);
+  }, 180_000);
+
+  it('re-runs a done source whose recorded artifact is missing instead of trusting it (#3570)', async () => {
+    const { mode, options, lastSource } = await runSweepFailingLastSource();
+    const missingSource = researchSweepSources[1].name;
+    const checkpoint = readSweepCheckpoint(checkpointFor(mode));
+    fs.rmSync(checkpoint!.steps[`source:${missingSource}`].artifactPath!, { force: true });
+
+    const resumed = makeChildRunner(new Set());
+    const summary = await runScraperSweep(options, {
+      childRunner: resumed.runner,
+      sweepSources: researchSweepSources.filter(
+        (source) => source.name !== researchSweepSources[0].name,
+      ),
+    });
+    trackRun(mode, summary.outputDirectory);
+
+    expect(new Set(resumedSourceNames(resumed.calls))).toEqual(
+      new Set([missingSource, lastSource]),
+    );
+    expect(summary.failed).toBe(0);
+  }, 180_000);
+
   it('stops a development-full sweep before any source runs when its preflight canary fails', async () => {
     const mode = 'development-full' as const;
     fs.rmSync(checkpointFor(mode), { force: true });
