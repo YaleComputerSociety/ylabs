@@ -78,6 +78,26 @@ To re-run one failed source cheaply, run it by hand and pass `--use-cache` yours
 Development modes require a local Meilisearch host and an empty `MEILISEARCH_INDEX_PREFIX`; the sweep refuses a non-local Development Meili target.
 Beta modes fetch observations into the `Beta` database and emit per-source `betaRenderCommands` (dry-run materialize plan plus apply) so the Beta Render service materializes the recorded run ID; local Beta runs never materialize.
 
+#### Preflight: fail a broken sweep in minutes, not hours
+
+A `development-full` sweep runs a preflight before its first phase, and `--skip-preflight` turns it off (#3568).
+It exists because failures used to surface hours in: on the 2026-09-26 sweeps a full cluster failed 19 sources about 100 minutes in (#3536), and three lanes that could never acquire failed on the barren-streak guard only after the discovery phase had spent 3.6 hours.
+The preflight has two checks, and either failing stops the sweep before any source runs, with the report printed and written to `preflight.json` in the sweep's output directory.
+
+- **Storage headroom.** It sums `dataSize` plus `indexSize` from `dbStats` over every non-system database on the cluster, because Development, Beta and Production share one Atlas quota (see `data-refresh-runbook.md`), and fails when the quota minus that sum is under the required headroom.
+  The quota defaults to 5120 MB (`SCRAPER_SWEEP_CLUSTER_QUOTA_MB`) and the headroom to 1024 MB (`SCRAPER_SWEEP_MIN_HEADROOM_MB`); the headroom is a starting figure, not a measured per-sweep growth.
+  A measurement that cannot be taken, for example a credential without `listDatabases`, fails closed.
+- **A write-free canary per source.** Each source still to run gets a `scrape:canary --source <name> --limit 5` child (`SCRAPER_SWEEP_CANARY_LIMIT`), eight at a time (`SCRAPER_SWEEP_CANARY_CONCURRENCY`), each killed after 150 s (`SCRAPER_SWEEP_CANARY_TIMEOUT_MS`).
+  The canary runs the lane in process with a dry-run, uncached context whose `emit` only counts, so it opens no `ScrapeRun` and writes no observation, unlike `scrape run --dry-run`, which records a run row.
+  A `--force-llm` sweep passes `--force-llm` to each canary too, so content-hash gated LLM lanes re-extract exactly as their real run will.
+  It is write-free by construction rather than by convention: before anything connects, `installMongoWriteRefusal` (`scrapers/utils/mongoWriteRefusal.ts`) replaces every driver write path (collection and database write methods, write commands, `$out` and `$merge` pipelines, client bulk writes, index and collection creation) with a refusal, so a lane that writes outside `emit` is refused rather than trusted.
+  A lane that throws fails the preflight, and so does a lane that emits nothing when its prior runs were already barren, because the real run would then fail the barren-streak guard below.
+  The canary classifies its own zero-yield run with the lane's returned metrics and options, the same facts the orchestrator uses, so a bounded run whose work planner skipped every target stays `inconclusive` rather than predicting a barren failure.
+  A lane that emits nothing with a productive history, times out, or is refused a write is reported `inconclusive` and does not stop the sweep, because a bounded run cannot tell those apart from a healthy lane.
+
+A canary cannot catch a failure that only appears at full scale, such as the `official-profile-pi-backfill` observation sort that overflowed memory on the whole corpus (#3543).
+On a resume the canary covers only the sources the checkpoint does not already record as `done`.
+
 #### Checkpoint, resume, and structured logging
 
 The sweep is resumable and observable so a long run that dies mid-way does not restart from scratch (issue #2182).

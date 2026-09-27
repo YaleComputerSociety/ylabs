@@ -178,6 +178,7 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
       confirmations: new Set(['--confirm-development-full-sweep']),
       forceLlm: true,
       pruneBetweenPhases: true,
+      skipPreflight: true,
     };
 
     const failed = makeChildRunner(new Set(['nih-reporter']));
@@ -260,6 +261,54 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     expect(restarted.calls.filter((call) => sourceNameFromArgs(call.args)).length).toBe(
       thirdSummary.sourceCount,
     );
+  }, 180_000);
+
+  it('stops a development-full sweep before any source runs when its preflight canary fails', async () => {
+    const mode = 'development-full' as const;
+    fs.rmSync(checkpointFor(mode), { force: true });
+    const canaried: string[] = [];
+    const scraped: string[] = [];
+    const runner = async (_command: string, args: string[]): Promise<{ status: number | null }> => {
+      const sourceName = sourceNameFromArgs(args) ?? '';
+      if (commandFromArgs(args) === 'scrape:canary') {
+        canaried.push(sourceName);
+        const verdict = sourceName === 'nih-reporter' ? 'failed' : 'passed';
+        fs.writeFileSync(
+          outputPathFromArgs(args)!,
+          JSON.stringify({
+            sourceName,
+            verdict,
+            reason: verdict === 'failed' ? 'the lane threw: fixture outage' : 'emitted 3',
+            observationCount: verdict === 'failed' ? 0 : 3,
+          }),
+        );
+        return { status: verdict === 'failed' ? 1 : 0 };
+      }
+      scraped.push(sourceName);
+      return { status: 0 };
+    };
+    const options = {
+      mode,
+      confirmations: new Set(['--confirm-development-full-sweep']),
+    };
+
+    await expect(runScraperSweep(options, { childRunner: runner })).rejects.toThrow(
+      /sweep preflight failed before any source ran/,
+    );
+
+    expect(canaried.length).toBeGreaterThan(10);
+    expect(canaried).toContain('nih-reporter');
+    expect(scraped).toEqual([]);
+    const checkpoint = readSweepCheckpoint(checkpointFor(mode));
+    expect(checkpoint).toBeDefined();
+    const outputDirectory = checkpoint!.outputDirectory;
+    trackRun(mode, outputDirectory);
+    const preflight = JSON.parse(
+      fs.readFileSync(path.join(outputDirectory, 'preflight.json'), 'utf8'),
+    );
+    expect(preflight.status).toBe('failed');
+    expect(preflight.storage.ok).toBe(true);
+    expect(preflight.failures).toEqual(['canary nih-reporter: the lane threw: fixture outage']);
   }, 180_000);
 
   it('resumes the fellowship sweep from its own checkpoint and runs the gated fellowship prune stage', async () => {

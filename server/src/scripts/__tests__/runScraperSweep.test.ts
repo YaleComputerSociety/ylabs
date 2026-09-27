@@ -20,6 +20,7 @@ import {
   fellowshipCatalogRefreshBlocker,
   fellowshipPostRunArtifactError,
   isDeadObservationPruneSweepMode,
+  isSweepPreflightEnabled,
   orderedScraperSweepPhases,
   parseDevelopmentPostRunStageResult,
   parseEponymousFraMergeResult,
@@ -159,6 +160,30 @@ describe('runScraperSweep', () => {
     expect(() =>
       validateScraperSweepSourceRows(['yale-directory', 'center-director-llm'], ['yale-directory']),
     ).toThrow(/center-director-llm.*source metadata seed/i);
+  });
+
+  it('runs the preflight by default only on development-full, with an opt-out flag', () => {
+    const full = parseScraperSweepArgs([
+      '--mode=development-full',
+      '--confirm-development-full-sweep',
+    ]);
+    expect(isSweepPreflightEnabled(full)).toBe(true);
+    const skipped = parseScraperSweepArgs([
+      '--mode=development-full',
+      '--confirm-development-full-sweep',
+      '--skip-preflight',
+    ]);
+    expect(skipped.skipPreflight).toBe(true);
+    expect(isSweepPreflightEnabled(skipped)).toBe(false);
+    expect(
+      isSweepPreflightEnabled(
+        parseScraperSweepArgs([
+          '--mode=development-incremental',
+          '--confirm-development-incremental-sweep',
+        ]),
+      ),
+    ).toBe(false);
+    expect(isSweepPreflightEnabled(parseScraperSweepArgs(['--mode=development-plan']))).toBe(false);
   });
 
   it('requires explicit confirmation for full Development and Beta fetch sweeps', () => {
