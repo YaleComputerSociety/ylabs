@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { OrgUnit } from '../../models/orgUnit';
 import {
   applyResearchEntityOrgUnitCanonicalization,
   buildDepartmentAncestorMap,
@@ -311,6 +312,22 @@ describe('isDroppedAdministrativeOrgUnit', () => {
 });
 
 describe('applyResearchEntityOrgUnitCanonicalization', () => {
+  it('fails loud when the org-unit registry cannot be loaded, instead of passing raw values through', async () => {
+    resetOrgUnitCanonicalizerCache();
+    const findSpy = vi.spyOn(OrgUnit, 'find').mockImplementation(() => {
+      throw new Error('MongoServerSelectionError: connection refused');
+    });
+    const set: Record<string, unknown> = {
+      school: 'YSM',
+      departments: ['Dept. of Neuroscience', 'Office of the Dean'],
+    };
+
+    await expect(applyResearchEntityOrgUnitCanonicalization(set)).rejects.toThrow(
+      /connection refused/,
+    );
+    findSpy.mockRestore();
+  });
+
   it('rewrites school and departments in the set and reports unmatched values', async () => {
     setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(index));
     const set: Record<string, unknown> = {

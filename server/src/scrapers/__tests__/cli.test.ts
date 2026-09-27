@@ -533,3 +533,54 @@ describe('a write run that materializes nothing', () => {
     expect(cli.unmaterializedWriteRunWarning({ ...base, observationCount: 0 })).toBeUndefined();
   });
 });
+
+describe('a scrape command whose run or materialization did not complete cleanly', () => {
+  it('fails on materialization errors and says the visibility gate was skipped', async () => {
+    const cli = await import('../cliHelpers');
+    const outcome = cli.scrapeCliCompletionOutcome({
+      runId: 'run-1',
+      runStatus: 'success',
+      materializationErrors: 3,
+      visibilityGateSkipped: true,
+    });
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.errors.join(' ')).toContain('3 row error(s)');
+    expect(outcome.errors.join(' ')).toContain('student visibility gate was skipped');
+    expect(outcome.errors.join(' ')).toContain(
+      'scrape materialize --run run-1 --confirm-materialize',
+    );
+  });
+
+  it('fails a dry-run materialize with errors without claiming a gate was skipped', async () => {
+    const cli = await import('../cliHelpers');
+    const outcome = cli.scrapeCliCompletionOutcome({
+      runId: 'run-1',
+      materializationErrors: 1,
+      visibilityGateSkipped: false,
+    });
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.errors.join(' ')).not.toContain('visibility gate');
+  });
+
+  it('fails a run whose stored status is failure, and warns on a partial one', async () => {
+    const cli = await import('../cliHelpers');
+    expect(cli.scrapeCliCompletionOutcome({ runId: 'run-1', runStatus: 'failure' })).toMatchObject({
+      exitCode: 1,
+    });
+    const partial = cli.scrapeCliCompletionOutcome({ runId: 'run-1', runStatus: 'partial' });
+    expect(partial.exitCode).toBe(0);
+    expect(partial.warnings.join(' ')).toContain('partial');
+  });
+
+  it('stays quiet for a clean run', async () => {
+    const cli = await import('../cliHelpers');
+    expect(
+      cli.scrapeCliCompletionOutcome({
+        runId: 'run-1',
+        runStatus: 'success',
+        materializationErrors: 0,
+        visibilityGateSkipped: false,
+      }),
+    ).toEqual({ exitCode: 0, errors: [], warnings: [] });
+  });
+});

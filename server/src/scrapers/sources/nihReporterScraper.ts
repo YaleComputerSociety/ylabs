@@ -582,6 +582,7 @@ export class NihReporterScraper implements IScraper {
     let offset = 0;
     let total = Infinity;
     let pages = 0;
+    const partialFailures: string[] = [];
     while (offset < total && pages < MAX_PAGES) {
       let page: NihPage;
       try {
@@ -593,7 +594,12 @@ export class NihReporterScraper implements IScraper {
           ctx,
         });
       } catch (err: any) {
-        ctx.log(`fetch error at offset=${offset}: ${sanitizeLogValue(err)}`);
+        const failure = `NIH RePORTER fetch failed at offset=${offset}: ${sanitizeLogValue(
+          err instanceof Error ? err.message : err,
+        )}; pagination aborted`;
+        if (pages === 0) throw new Error(failure);
+        ctx.log(`${failure}; the grant window is incomplete.`);
+        partialFailures.push(failure);
         break;
       }
       pages++;
@@ -628,15 +634,10 @@ export class NihReporterScraper implements IScraper {
     let processed = 0;
     for (const [piName, grants] of piEntries) {
       processed++;
-      let person: NihPiUserResolution = { status: 'ambiguous' };
-      try {
-        person = await resolveUserForPi(piName, {
-          resolveResearcherId: this.opts.resolveResearcherId,
-          loadResearcherProfileTitle: this.opts.loadResearcherProfileTitle,
-        });
-      } catch (err: any) {
-        ctx.log(`user-lookup error for PI candidate: ${sanitizeLogValue(err)}`);
-      }
+      const person = await resolveUserForPi(piName, {
+        resolveResearcherId: this.opts.resolveResearcherId,
+        loadResearcherProfileTitle: this.opts.loadResearcherProfileTitle,
+      });
       if (person.status === 'matched' && person.user.researchHomeEligible === false) {
         ineligibleLeadTitle++;
         continue;
@@ -668,6 +669,7 @@ export class NihReporterScraper implements IScraper {
       observationCount: totalObs,
       entitiesObserved: attach.enriched,
       notes,
+      ...(partialFailures.length > 0 ? { partialFailures } : {}),
     };
   }
 }

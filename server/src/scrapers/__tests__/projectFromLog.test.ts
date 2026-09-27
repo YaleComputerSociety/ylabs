@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY,
   projectFromLog,
@@ -6,6 +6,12 @@ import {
 } from '../entityMaterializer';
 import type { ResolvedField } from '../confidenceResolver';
 import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
+import {
+  buildOrgUnitResolverIndex,
+  createOrgUnitCanonicalizer,
+  resetOrgUnitCanonicalizerCache,
+  setOrgUnitCanonicalizerForTesting,
+} from '../orgUnitCanonicalization';
 
 const FIXED_NOW = new Date('2020-01-01T00:00:00.000Z');
 
@@ -51,6 +57,11 @@ const researchEntityInput = (overrides: Partial<ProjectFromLogInput> = {}): Proj
   });
 
 describe('projectFromLog', () => {
+  afterEach(() => {
+    setOrgUnitCanonicalizerForTesting(null);
+    resetOrgUnitCanonicalizerCache();
+  });
+
   it('is byte-identical across runs with a fixed clock (idempotency contract)', async () => {
     const input = baseInput({
       resolved: {
@@ -152,6 +163,14 @@ describe('projectFromLog', () => {
   });
 
   it('keeps the co-derived org-unit fields when a field-scoped pass writes only departments', async () => {
+    setOrgUnitCanonicalizerForTesting(
+      createOrgUnitCanonicalizer(
+        buildOrgUnitResolverIndex([
+          { slug: 'school-of-medicine', name: 'School of Medicine', kind: 'SCHOOL' },
+          { slug: 'genetics', name: 'Genetics', kind: 'DEPARTMENT' },
+        ]),
+      ),
+    );
     const result = await projectFromLog(
       'researchEntity',
       researchEntityInput({

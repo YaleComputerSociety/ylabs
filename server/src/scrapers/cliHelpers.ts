@@ -225,6 +225,44 @@ export function unmaterializedWriteRunWarning(input: {
   ].join(' ');
 }
 
+export interface ScrapeCliCompletionOutcome {
+  exitCode: 0 | 1;
+  errors: string[];
+  warnings: string[];
+}
+
+export function scrapeCliCompletionOutcome(input: {
+  runId: string;
+  runStatus?: string;
+  materializationErrors?: number;
+  visibilityGateSkipped?: boolean;
+}): ScrapeCliCompletionOutcome {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (input.runStatus === 'failure') {
+    errors.push(
+      `ScrapeRun ${input.runId} finished with status failure; read its errors with "yarn --cwd server scrape report --run ${input.runId}".`,
+    );
+  } else if (input.runStatus === 'partial') {
+    warnings.push(
+      `ScrapeRun ${input.runId} finished with status partial, so its coverage is incomplete; read its errors with "yarn --cwd server scrape report --run ${input.runId}".`,
+    );
+  }
+  const materializationErrors = input.materializationErrors ?? 0;
+  if (materializationErrors > 0) {
+    errors.push(
+      [
+        `Materialization of run ${input.runId} reported ${materializationErrors} row error(s).`,
+        ...(input.visibilityGateSkipped
+          ? ['The student visibility gate was skipped, so no row this run touched was re-gated.']
+          : []),
+        `Fix the cause and re-run "yarn --cwd server scrape materialize --run ${input.runId} --confirm-materialize".`,
+      ].join(' '),
+    );
+  }
+  return { exitCode: errors.length > 0 ? 1 : 0, errors, warnings };
+}
+
 export function buildMaterializeOutputPayload({
   runId,
   materialization,

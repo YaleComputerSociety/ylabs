@@ -689,6 +689,66 @@ describe('NihReporterScraper.run', () => {
     },
   );
 
+  it('fails the run when the researcher lookup itself fails, instead of counting every PI ambiguous', async () => {
+    stubReporter([grantArnsten, grantRoster]);
+    const scraper = new NihReporterScraper({
+      resolveResearcherId: async () => {
+        throw new Error('MongoServerSelectionError: connection refused');
+      },
+      loadResearcherProfileTitle: async () => undefined,
+      researchHomeResolver: existingRowPerResearcher,
+    });
+    const { ctx, emitted } = makeContext();
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/connection refused/);
+    expect(emitted).toEqual([]);
+  });
+
+  it('fails the run when the profile-title lookup fails', async () => {
+    stubReporter([grantRoster]);
+    const scraper = new NihReporterScraper({
+      resolveResearcherId: async () => ({
+        status: 'matched' as const,
+        researcherId: new mongoose.Types.ObjectId(),
+      }),
+      loadResearcherProfileTitle: async () => {
+        throw new Error('MongoNetworkError: socket closed');
+      },
+      researchHomeResolver: existingRowPerResearcher,
+    });
+    const { ctx } = makeContext();
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/socket closed/);
+  });
+
+  it('fails the run when the first RePORTER page cannot be read', async () => {
+    vi.spyOn(axios, 'post').mockRejectedValue(new Error('ETIMEDOUT'));
+    const scraper = new NihReporterScraper({
+      resolveResearcherId: async () => ({ status: 'absent' as const }),
+      researchHomeResolver: existingRowPerResearcher,
+    });
+    const { ctx } = makeContext();
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/offset=0.*ETIMEDOUT/);
+  });
+
+  it('reports a later RePORTER page failure as incomplete coverage', async () => {
+    vi.spyOn(axios, 'post').mockImplementation(async (_url, body) => {
+      if ((body as any).offset > 0) throw new Error('ETIMEDOUT');
+      return {
+        data: { meta: { total: 900, offset: 0, limit: 500 }, results: [grantRoster] },
+      } as any;
+    });
+    const scraper = new NihReporterScraper({
+      resolveResearcherId: async () => ({ status: 'absent' as const }),
+      researchHomeResolver: existingRowPerResearcher,
+    });
+    const { ctx } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(result.partialFailures).toEqual([expect.stringMatching(/offset=1.*ETIMEDOUT/)]);
+  });
+
   it('holds a PI whose title marks them a non-lead, before resolving a row', async () => {
     stubReporter([grantRoster]);
     const researchHomeResolver = vi.fn();

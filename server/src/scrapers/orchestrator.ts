@@ -143,6 +143,9 @@ export class ScraperOrchestrator {
         options.dryRun && options.dbReview
           ? await buildEvidenceCoverageImpactReportForObservations(previewObservations)
           : undefined;
+      for (const failure of result.partialFailures ?? []) {
+        errors.push({ message: sanitizeLogValue(failure), at: new Date() });
+      }
       const barrenStreakFailure = resolveBarrenStreakFailure({
         sourceName: source.name,
         source,

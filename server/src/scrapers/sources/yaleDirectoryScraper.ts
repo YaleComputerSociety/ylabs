@@ -434,6 +434,7 @@ export class YaleDirectoryScraper implements IScraper {
     let skippedNonFaculty = 0;
     let pageNum = 1;
     let stop = false;
+    const partialFailures: string[] = [];
 
     // Yalies's filter DSL takes arrays like { school_code: ['MD','EN',...] }. We
     // pass no filter and discriminate faculty vs students client-side via
@@ -445,15 +446,14 @@ export class YaleDirectoryScraper implements IScraper {
       try {
         records = await fetchYaliesPage(pageNum, undefined, ctx.options.useCache);
       } catch (err: unknown) {
-        if (axios.isAxiosError(err) && err.response?.status === 401) {
-          ctx.log(`Yalies API returned 401 (auth failed); aborting after page ${pageNum}.`);
-          break;
-        }
-        ctx.log(
-          `error fetching Yalies page ${pageNum}: ${sanitizeLogValue(
-            err instanceof Error ? err.message : String(err),
-          )} — aborting.`,
-        );
+        const reason =
+          axios.isAxiosError(err) && err.response?.status === 401
+            ? 'Yalies API returned 401 (auth failed)'
+            : sanitizeLogValue(err instanceof Error ? err.message : String(err));
+        const failure = `Yalies page ${pageNum} could not be read (${reason}); pagination aborted`;
+        if (pageNum === 1) throw new Error(failure);
+        ctx.log(`${failure}; the faculty roster is incomplete.`);
+        partialFailures.push(failure);
         break;
       }
 
@@ -492,10 +492,13 @@ export class YaleDirectoryScraper implements IScraper {
         `non-faculty skipped: ${skippedNonFaculty}, pages fetched: ${pageNum}.`,
     );
 
+    const incomplete =
+      partialFailures.length > 0 ? `; incomplete: ${partialFailures.join('; ')}` : '';
     return {
       observationCount: totalObs,
       entitiesObserved: processed,
-      notes: `Yalies faculty sync: ${processed} faculty, ${totalObs} observations across ${pageNum} pages`,
+      notes: `Yalies faculty sync: ${processed} faculty, ${totalObs} observations across ${pageNum} pages${incomplete}`,
+      ...(partialFailures.length > 0 ? { partialFailures } : {}),
     };
   }
 }
