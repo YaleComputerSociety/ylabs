@@ -3895,7 +3895,11 @@ test('analytics search-query report uses the validated date-range helper', () =>
 
   assert.match(
     source,
-    /export const getSearchQueryAnalytics[\s\S]*eventType: AnalyticsEventType\.SEARCH,[\s\S]*\.\.\.buildRangeTimestampMatch\(range\)/,
+    /export const getSearchQueryAnalytics[\s\S]*eventType: AnalyticsEventType\.SEARCH,[\s\S]*\.\.\.\(await buildUsageMatch\(range\)\)/,
+  );
+  assert.match(
+    source,
+    /const buildUsageMatch = async \(range[^)]*\)[^=]*=> \(\{\s*\.\.\.buildRangeTimestampMatch\(range\),/,
   );
   assert.doesNotMatch(
     source,
