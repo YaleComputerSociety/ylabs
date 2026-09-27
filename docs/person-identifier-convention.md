@@ -85,10 +85,12 @@ Two arms, with different strengths, because a single mechanism cannot cover both
 It fails on a committed data file that holds many distinct personal addresses or profile URLs, which is the shape of a scraped directory dump.
 It deliberately ignores anything under a test or fixture path, because synthetic identifiers there are intentional, and it ignores source files.
 
-**Loud, and not required.** `.github/workflows/person-identifier-scan.yml`, on issue and pull request bodies.
-When a body trips a rule the workflow comments with the rule names and counts, never the matched text, and then fails its own check run so a green check cannot read as a clean body.
-Because the check is not required, that failure informs a merge path rather than stopping one.
-`scripts/person-identifier-scan-workflow.test.mjs` pins both halves: a flagged body turns the run red and still posts a report that never echoes the match, and a body written by predicate leaves the run green and posts nothing.
+**Blocking before posting.** `scripts/gh-identifier-guard.mjs`, installed as a `gh` shim ahead of the real binary on PATH, on issue, pull request, comment, review, merge, close and reopen comment, and API bodies, GraphQL mutations included.
+For a call that targets a `YaleComputerSociety` repository, whether through `-R`, `GH_REPO`, the checkout remote, an API endpoint, or a URL argument, it scans the title and body before `gh` runs, and when a rule fires it prints the rule names and counts, never the matched text, and exits without calling GitHub.
+It also refuses when the scanner itself is missing, so a broken install fails closed rather than posting unchecked.
+A refused draft is kept at `$TMPDIR/gh-guard-<random>/body.md`, readable only by its owner, and the refusal prints that path, so the author can read exactly what to rewrite.
+`scripts/new-agent-worktree.sh` installs it through `scripts/install-gh-identifier-guard.sh`, which refuses to overwrite a `gh` there that is not a guard shim, and `scripts/gh-identifier-guard.test.mjs` pins that a flagged body never reaches the real `gh` and a clean one reaches it unchanged.
+There is no after-the-fact bot: a comment on text GitHub already serves cannot unpublish it, so the workflow that posted one was removed (#3682).
 
 The body arm separates a finding from a note.
 
@@ -120,20 +122,17 @@ yarn security:identifiers:body /tmp/pr-body.md
 The prose-name rule is fuzzy on purpose and lives only on the body arm.
 Measured against the repository's own documentation, roughly nine in ten of its early matches were Title Case technical phrases rather than people; excluding headings, table rows, code fences, indented blocks, acronyms (including plural ones such as `IDs` and `POSTs`, meaning any token that opens with two capitals), quoted titles, and segments that do not read as prose cut that to eleven matches across all of `docs/` and `skills/`, two of which are real names.
 A pull request body is shorter and far less dense in Title Case than those files, so treat that as an upper bound.
-The blocking arm never calls this rule, so a false positive cannot fail a required check.
-It can fail the body arm's own run, which is why `AGENTS.md` excepts `Person identifier scan` from "merge only when checks are green": the remedy for a Title Case product phrase matched as a name is a comment saying so, then a merge on the red.
+The blocking file arm never calls this rule, so a false positive cannot fail a required check.
+It does stop the guard from posting, so a Title Case product phrase matched as a name is fixed in the detector, with a regression test, rather than worked around.
 It is never an `identifier-exempt:` line, which suppresses the whole body including a real name elsewhere in it, and a detector switched off to discuss ordinary work stays off.
+Never call the real `gh` directly to get past a refusal either.
 
-The body arm cannot prevent the text from being published, and this is a real limit rather than an oversight.
-A workflow cannot prevent an issue from being created, and adding `edited` to the `ci.yml` trigger would rerun the entire test-and-build job on every body tweak.
-The comment tells the author while the context is fresh, which is the moment the fix is still free.
+The gate writes its pull request body from the diff, so it quotes test fixtures, and the guard cannot tell a synthetic fixture from a real person.
+When the gate's `pr` step fails on a guard refusal, run `no-mistakes sync --yes` to take the gate's pushed head, then re-run `no-mistakes axi run` with an `--intent` that carries this rule: describe the regression tests by behaviour only and never quote a test fixture string, slug, or name from the diff.
+The rule lowers the odds rather than guaranteeing a clean body, so read the kept draft before re-running.
 
-The body arm does, however, fail its own check run on a finding, and that is not a contradiction.
-It succeeded either way until #2953, which made a green `gh pr checks` read as "the body is clean" to every automated merge path: two pull request bodies naming a person reached `beta` that way, each with the scan check green beside the comment that flagged it.
-The failure cannot unpublish anything.
-It exists so that a merge path reading `gh pr checks` sees the finding rather than a green row, and it is safe to make loud precisely because the check is not required, so a false positive delays nobody.
-It is not a guarantee that the finding is seen: the run is queued by the `opened` event after `gh pr create` returns, so a path that polls and merges promptly can finish before the check exists.
-Closing that would mean requiring the check, which the paragraph above rules out.
+The guard protects only a host it is installed on.
+A body posted from anywhere else is not scanned at all, and commit messages are not guarded anywhere, because another tool owns `core.hooksPath` on the maintainer machine, so scan them by hand before a push.
 
 ## Escape hatch
 

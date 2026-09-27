@@ -163,9 +163,8 @@ That is not sloppiness: a sole maintainer cannot approve their own pull request,
 It also keeps the release watchdog's bot flow working.
 If you have admin, the restraint is yours to supply: the flag really will override a failing `test-and-build`, so use it for the review requirement and not to get past a red check.
 
-Two checks are deliberately **not** required on `beta`.
-`Person identifier scan` is advisory because its prose rule is fuzzy on purpose, so a red run means read the finding rather than wait for green.
-`release-hold` is the promotion hold and only runs on pull requests into `main`.
+`release-hold` is deliberately **not** required on `beta`: it is the promotion hold and only runs on pull requests into `main`.
+Person identifiers in issue and pull request bodies are refused before posting by the `gh` identifier guard that `scripts/new-agent-worktree.sh` installs, not by a check.
 
 **A local test failure is usually your laptop.**
 The suites are large and on a loaded machine they produce timeouts that are not real: in-memory MongoDB failing to start, or vitest workers timing out.

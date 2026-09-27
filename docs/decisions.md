@@ -5,6 +5,24 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-27: Person Identifiers Are Refused Before Posting, Not Reported After (#3682)
+
+The `Person identifier scan` workflow commented on an issue or pull request body after GitHub had already stored it.
+GitHub serves every prior revision of a body to anyone without an account, so a comment after publication could only report the exposure, never undo it.
+It was removed together with its workflow test.
+
+Enforcement now sits in front of publication instead.
+`scripts/gh-identifier-guard.mjs` is installed as a `gh` shim ahead of the real binary on PATH by `scripts/install-gh-identifier-guard.sh`, which `scripts/new-agent-worktree.sh` runs.
+For a `YaleComputerSociety` repository it runs `check-no-person-identifiers.mjs` on the title and body of every `gh` issue, pull request, comment, review, merge, and API text field, and refuses to call GitHub when the scan flags it or the scanner is missing.
+That covers text an agent writes and the pull request body the gate writes, because the gate publishes through the same `gh`.
+
+The guard makes the scanner's false positives blocking rather than advisory, so a false positive is fixed in the detector (#3681), never by calling the real `gh` directly or adding an `identifier-exempt:` line.
+
+Two gaps remain and are accepted rather than hidden.
+A host where the guard is not installed has no protection at all, since there is no longer a bot to report after the fact.
+Commit messages are not guarded, because another tool owns `core.hooksPath` on the maintainer machine, so they are scanned by hand before a push.
+The blocking file arm, `yarn security:identifiers` inside `security:preflight`, is unchanged.
+
 ## 2026-09-27: Scraper Sweeps Run Only Against Development (#3670)
 
 Scrapers write only to Development.
@@ -46,10 +64,10 @@ Two properties of the real configuration are worth stating because they read as 
 This is also why every pull request merged to date shows no approving review, and why that fact is not evidence of review being skipped in a team that had one.
 
 The bypass is unconditional, so it overrides a failing suite as readily as the review rule.
-That makes restraint the contract rather than the configuration: the flag is for the review requirement, the watchdog's bot flow, and a read-and-answered `Person identifier scan`, and never for a red `test-and-build`.
+That makes restraint the contract rather than the configuration: the flag is for the review requirement and the watchdog's bot flow, and never for a red `test-and-build`.
 `AGENTS.md` owns that rule.
 
-`Person identifier scan` stays advisory deliberately, because its prose-name rule is fuzzy by design and it cannot unpublish text GitHub already serves, so gating on it would buy nothing.
+`Person identifier scan` was never required, because it could not unpublish text GitHub already serves; it was removed on 2026-09-27 in favour of a guard that refuses the text before posting (#3682).
 
 ## 2026-09-24: Evidence Sets A Field, A Lane Owns A Class Of Wrongness, An Operator Decides One Row (#3359)
 
