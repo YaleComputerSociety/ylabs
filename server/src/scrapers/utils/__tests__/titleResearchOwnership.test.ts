@@ -67,9 +67,7 @@ describe('titleResearchOwnership', () => {
   });
 
   it('reads a rank through the invisible format characters a CMS emits', () => {
-    expect(titleResearchOwnership('Assis­tant Pro­fes­sor of Economics')).toBe(
-      'owns_research',
-    );
+    expect(titleResearchOwnership('Assis­tant Pro­fes­sor of Economics')).toBe('owns_research');
     expect(titleResearchOwnership('Post​doctoral Associate')).toBe('works_in_another_group');
   });
 

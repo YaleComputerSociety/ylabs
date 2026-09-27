@@ -19,7 +19,11 @@ describe('auditTitleResearchOwnership', () => {
     const audit = auditTitleResearchOwnership([
       row(),
       row({ id: 'b'.repeat(24), storedTitles: ['Professor of Neurology'] }),
-      row({ id: 'c'.repeat(24), storedTitles: ['Laboratory Assistant 3'], tier: 'operator_review' }),
+      row({
+        id: 'c'.repeat(24),
+        storedTitles: ['Laboratory Assistant 3'],
+        tier: 'operator_review',
+      }),
       row({ id: 'd'.repeat(24), identityProfileUrl: null }),
       row({ id: 'e'.repeat(24), storedTitles: [] }),
     ]);
@@ -44,7 +48,7 @@ describe('auditTitleResearchOwnership', () => {
     expect(audit.findings).toEqual([]);
   });
 
-  it('reports the predicate\'s known limit alongside the population it sizes', () => {
+  it("reports the predicate's known limit alongside the population it sizes", () => {
     const audit = auditTitleResearchOwnership([
       row(),
       row({
@@ -57,7 +61,10 @@ describe('auditTitleResearchOwnership', () => {
   });
 
   it('counts the second witness without acting on it', () => {
-    const audit = auditTitleResearchOwnership([row({ leadEdgesElsewhere: 2 }), row({ id: 'g'.repeat(24) })]);
+    const audit = auditTitleResearchOwnership([
+      row({ leadEdgesElsewhere: 2 }),
+      row({ id: 'g'.repeat(24) }),
+    ]);
     expect(audit.worksInAnotherGroup.corroboratedByALeadEdgeElsewhere).toBe(1);
     expect(audit.findings.map((f) => f.corroboratedByALeadEdgeElsewhere)).toEqual([true, false]);
   });

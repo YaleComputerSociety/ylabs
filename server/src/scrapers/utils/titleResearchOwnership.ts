@@ -26,7 +26,7 @@
  * KNOWN LIMIT, measured rather than assumed. A title names ranks; it does not say whose
  * rank each one is. Of the 325 distinct stored titles this module reads as owning nothing,
  * five name a rank as the population somebody SERVES - "Senior Associate Director, Graduate
- * Student and Postdoctoral Career Services" is not a postdoc. `administrativeRankObjects`
+ * Student and Postdoctoral Career Services" is not a postdoc. `namesARankItServesRatherThanHolds`
  * reports those rather than silently reclassifying them, because a rule for them would be
  * the sixth string heuristic in this family and the first five each broke on first contact
  * with the corpus. So: this module is sound as an audit and as one of two witnesses, and it
@@ -36,10 +36,7 @@ import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatChara
 
 export type TitleRankVerdict = 'owns_research' | 'works_in_another_group';
 
-export type TitleResearchOwnership =
-  | 'owns_research'
-  | 'works_in_another_group'
-  | 'states_no_rank';
+export type TitleResearchOwnership = 'owns_research' | 'works_in_another_group' | 'states_no_rank';
 
 interface RankPattern {
   readonly pattern: RegExp;
@@ -61,7 +58,10 @@ const RANK_PATTERNS: readonly RankPattern[] = [
   { pattern: /\bchair\b/i, verdict: 'owns_research' },
   { pattern: /\bemerit(?:us|a|i)\b/i, verdict: 'owns_research' },
   { pattern: /\bpost-?doc(?:toral)?\b/i, verdict: 'works_in_another_group' },
-  { pattern: /\bpostgraduate (?:associate|fellow|researcher)\b/i, verdict: 'works_in_another_group' },
+  {
+    pattern: /\bpostgraduate (?:associate|fellow|researcher)\b/i,
+    verdict: 'works_in_another_group',
+  },
   {
     pattern: /\bresearch (?:associate|fellow|assistant|affiliate|aide)\b/i,
     verdict: 'works_in_another_group',
@@ -116,7 +116,9 @@ export function titleRankSpans(title: string | undefined | null): TitleRankSpan[
   return found
     .filter(
       (span) =>
-        !found.some((other) => other !== span && encloses(other, span) && other.length > span.length),
+        !found.some(
+          (other) => other !== span && encloses(other, span) && other.length > span.length,
+        ),
     )
     .sort((a, b) => a.start - b.start);
 }
