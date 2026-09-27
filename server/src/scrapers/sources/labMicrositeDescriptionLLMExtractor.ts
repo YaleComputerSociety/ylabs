@@ -166,6 +166,7 @@ export interface DescriptionExtraction {
   topics: string[];
   methods: string[];
   name?: string;
+  subject?: string;
 }
 
 export type FetchDescriptionPageFn = (url: string) => Promise<FetchedDescriptionPage | null>;
@@ -1022,6 +1023,13 @@ export function groundDescriptionExtraction(
   const groundedShort = isDescriptionGroundedInSource(extraction.shortDescription, pageText)
     ? extraction.shortDescription
     : '';
+  // The model names whose prose it copied. An organization's mission or a department's
+  // overview on a person's row is not that row's research however verbatim it is, and a
+  // classification field is followed where an instruction to return nothing was not
+  // (the refused-row benchmark kept 9 of 9 known-wrong under the instruction alone).
+  if (typeof extraction.subject === 'string' && extraction.subject !== 'named_entity') {
+    return { ...extraction, fullDescription: '', shortDescription: '' };
+  }
   return { ...extraction, fullDescription: groundedFull, shortDescription: groundedShort };
 }
 
@@ -1300,7 +1308,7 @@ async function defaultCallLLM(input: {
           content: [
             `Lab: ${safeLabName}`,
             `Source URL: ${safeSourceUrl}`,
-            'Return JSON with fullDescription, shortDescription, topics, methods, name.',
+            'Return JSON with fullDescription, shortDescription, topics, methods, name, subject.',
             "fullDescription: copy the page's own overview/about/mission prose describing what this research entity studies, verbatim (one or more consecutive sentences, exactly as written). shortDescription: copy a single verbatim sentence that best summarizes the work, or an empty string.",
             'topics and methods: only terms that appear verbatim on the page.',
             'For name, return the research entity\'s own proper or branded name exactly as it appears prominently on the page (for example "The Efficient Computing Lab (ECL)"). If the page only identifies it by the principal investigator\'s personal name, or no clear proper name is stated, return an empty string.',
