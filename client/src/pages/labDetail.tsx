@@ -793,6 +793,10 @@ const LabDetail = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const locationStateRef = useRef<unknown>(location.state);
+  useEffect(() => {
+    locationStateRef.current = location.state;
+  }, [location.state]);
   const [state, dispatch] = useReducer(labDetailReducer, undefined, () =>
     createInitialLabDetailState(),
   );
@@ -828,7 +832,7 @@ const LabDetail = () => {
         if (canonicalSlug && canonicalSlug.toLowerCase() !== slug.toLowerCase()) {
           void navigate(`/research/${safeRouteSegment(canonicalSlug)}`, {
             replace: true,
-            state: location.state,
+            state: locationStateRef.current,
           });
           return;
         }
