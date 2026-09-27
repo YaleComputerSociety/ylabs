@@ -32,6 +32,84 @@ describe('resolveField', () => {
     expect(r?.hasConflict).toBe(false);
   });
 
+  it('resolves a website observed over http and https to its https form (#3577)', () => {
+    const r = resolveField(
+      'websiteUrl',
+      [
+        {
+          field: 'websiteUrl',
+          value: 'http://example-lab.yale.edu/research',
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.6,
+          observedAt: D('2026-09-26'),
+        },
+        {
+          field: 'websiteUrl',
+          value: 'https://example-lab.yale.edu/research',
+          sourceName: 'department-undergrad-research',
+          confidence: 0.3,
+          observedAt: D('2026-06-01'),
+        },
+        {
+          field: 'websiteUrl',
+          value: 'https://other-lab.yale.edu/',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.5,
+          observedAt: D('2026-09-26'),
+        },
+      ],
+      { now: D('2026-09-27') },
+    );
+    expect(r?.value).toBe('https://example-lab.yale.edu/research');
+    expect(r?.contributingSources.sort()).toEqual([
+      'department-undergrad-research',
+      'dept-faculty-roster',
+    ]);
+  });
+
+  it('keeps an http-only website as observed and leaves other fields scheme-sensitive', () => {
+    const now = { now: D('2026-09-27') };
+    const httpOnly = resolveField(
+      'websiteUrl',
+      [
+        {
+          field: 'websiteUrl',
+          value: 'http://example-lab.yale.edu/',
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.6,
+          observedAt: D('2026-09-26'),
+        },
+      ],
+      now,
+    );
+    expect(httpOnly?.value).toBe('http://example-lab.yale.edu/');
+
+    const ranked = resolveFieldRanked(
+      'joinUrl',
+      [
+        {
+          field: 'joinUrl',
+          value: 'http://example-lab.yale.edu/join',
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.6,
+          observedAt: D('2026-09-26'),
+        },
+        {
+          field: 'joinUrl',
+          value: 'https://example-lab.yale.edu/join',
+          sourceName: 'department-undergrad-research',
+          confidence: 0.3,
+          observedAt: D('2026-09-26'),
+        },
+      ],
+      now,
+    );
+    expect(ranked.map((candidate) => candidate.value)).toEqual([
+      'http://example-lab.yale.edu/join',
+      'https://example-lab.yale.edu/join',
+    ]);
+  });
+
   it('picks the higher-weight value when sources disagree', () => {
     const r = resolveField(
       'title',

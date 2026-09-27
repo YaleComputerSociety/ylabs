@@ -4,7 +4,8 @@
  *
  * Algorithm:
  *   1. If the field is in manuallyLockedFields on the entity, return the locked value.
- *   2. Group observations by serialized value.
+ *   2. Group observations by serialized value. A website URL observed over both http and
+ *      https for the same host and path is one group that resolves to its https form.
  *   3. For each group: weight = sum(source.weight × recencyDecay(observedAt)).
  *   4. Apply an agreement bonus when more than one source contributes to a group.
  *   5. Return the highest-weighted group's value; flag conflict if runner-up is close.
@@ -179,6 +180,21 @@ function serializeValue(value: unknown): string {
     return `o:${JSON.stringify(value, Object.keys(value as object).sort())}`;
   }
   return `x:${String(value)}`;
+}
+
+const SCHEME_EQUIVALENT_URL_FIELDS = new Set(['websiteUrl', 'website']);
+const HTTP_SCHEME_PREFIX = /^https?:\/\//i;
+const HTTPS_SCHEME_PREFIX = /^https:\/\//i;
+
+function groupKeyForFieldValue(field: string, value: unknown): string {
+  if (SCHEME_EQUIVALENT_URL_FIELDS.has(field) && typeof value === 'string') {
+    return serializeValue(value.trim().replace(HTTP_SCHEME_PREFIX, 'https://'));
+  }
+  return serializeValue(value);
+}
+
+function isHttpsUrlValue(value: unknown): boolean {
+  return typeof value === 'string' && HTTPS_SCHEME_PREFIX.test(value.trim());
 }
 
 function recencyDecay(observedAt: Date, now: Date, halfLifeDays: number): number {
@@ -596,7 +612,7 @@ function rankFieldGroups(
 
   const groups = new Map<string, RankedGroup>();
   for (const obs of fieldObs) {
-    const key = serializeValue(obs.value);
+    const key = groupKeyForFieldValue(field, obs.value);
     const decay = recencyDecay(
       obs.observedAt,
       now,
@@ -607,6 +623,12 @@ function rankFieldGroups(
     if (!g) {
       g = { value: obs.value, weight: 0, sources: new Set() };
       groups.set(key, g);
+    } else if (
+      SCHEME_EQUIVALENT_URL_FIELDS.has(field) &&
+      isHttpsUrlValue(obs.value) &&
+      !isHttpsUrlValue(g.value)
+    ) {
+      g.value = obs.value;
     }
     g.weight += contribution;
     g.sources.add(obs.sourceName);
