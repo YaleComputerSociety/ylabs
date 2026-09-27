@@ -2224,46 +2224,34 @@ type DepartmentValueTest = (value: unknown) => boolean;
 
 async function departmentValueNamesADepartment(
   effectiveSchool: unknown,
-): Promise<DepartmentValueTest | null> {
-  try {
-    const canonicalizer = await getOrgUnitCanonicalizer();
-    const schoolKey =
-      typeof effectiveSchool === 'string' && effectiveSchool.trim()
-        ? canonicalizer.canonicalizeSchool(effectiveSchool).value.trim().toLocaleLowerCase()
-        : '';
-    return (value) =>
-      canonicalizer
-        .canonicalizeDepartments(value)
-        .values.some((department) => department.toLocaleLowerCase() !== schoolKey);
-  } catch {
-    return null;
-  }
+): Promise<DepartmentValueTest> {
+  const canonicalizer = await getOrgUnitCanonicalizer();
+  const schoolKey =
+    typeof effectiveSchool === 'string' && effectiveSchool.trim()
+      ? canonicalizer.canonicalizeSchool(effectiveSchool).value.trim().toLocaleLowerCase()
+      : '';
+  return (value) =>
+    canonicalizer
+      .canonicalizeDepartments(value)
+      .values.some((department) => department.toLocaleLowerCase() !== schoolKey);
 }
 
 async function canonicalLeadDepartment(rawDepartment: string): Promise<string | undefined> {
-  try {
-    const canonicalizer = await getOrgUnitCanonicalizer();
-    const canonical = canonicalizer.canonicalizeDepartments([rawDepartment]);
-    if (canonical.values.length !== 1 || canonical.unmatched.length > 0) return undefined;
-    return canonical.values[0];
-  } catch {
-    return undefined;
-  }
+  const canonicalizer = await getOrgUnitCanonicalizer();
+  const canonical = canonicalizer.canonicalizeDepartments([rawDepartment]);
+  if (canonical.values.length !== 1 || canonical.unmatched.length > 0) return undefined;
+  return canonical.values[0];
 }
 
 async function leadDepartmentWithParentSchool(
   rawDepartment: string,
 ): Promise<{ department: string; school: string } | undefined> {
-  try {
-    const canonicalizer = await getOrgUnitCanonicalizer();
-    const canonical = canonicalizer.canonicalizeDepartments([rawDepartment]);
-    if (canonical.values.length !== 1 || canonical.unmatched.length > 0) return undefined;
-    const department = canonical.values[0];
-    const school = canonicalizer.schoolForDepartment(department);
-    return school ? { department, school } : undefined;
-  } catch {
-    return undefined;
-  }
+  const canonicalizer = await getOrgUnitCanonicalizer();
+  const canonical = canonicalizer.canonicalizeDepartments([rawDepartment]);
+  if (canonical.values.length !== 1 || canonical.unmatched.length > 0) return undefined;
+  const department = canonical.values[0];
+  const school = canonicalizer.schoolForDepartment(department);
+  return school ? { department, school } : undefined;
 }
 
 export async function inheritSchoolFromLeadPi(
@@ -3819,9 +3807,7 @@ export async function mergedSurvivorEvidence(
   // cannot hold the field against a loser's real one (#3610).
   const namesADepartment = await departmentValueNamesADepartment(survivor.school);
   const holdsNoDepartment = (observation: any): boolean =>
-    observation.field === 'departments' &&
-    namesADepartment !== null &&
-    !namesADepartment(observation.value);
+    observation.field === 'departments' && !namesADepartment(observation.value);
   const survivorHeldFields = new Set(
     entryPointIndependentOrder
       .filter((observation: any) => !loserOrigin(observation) && !holdsNoDepartment(observation))
@@ -4710,7 +4696,7 @@ async function adoptDepartmentNamingCandidate(input: {
   const namesADepartment = await departmentValueNamesADepartment(
     'school' in set ? set.school : entityDoc?.school,
   );
-  if (!namesADepartment || namesADepartment(set[field])) return 0;
+  if (namesADepartment(set[field])) return 0;
 
   const replacement = resolveFieldRanked(field, input.resolverObs, {
     manuallyLockedFields: input.manuallyLockedFields,

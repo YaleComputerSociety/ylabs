@@ -253,13 +253,9 @@ export function rosterDiscoveryRegressed(
  */
 export async function resolveGovernedDepartmentName(deptName: string): Promise<string | null> {
   if (!deptName.trim()) return null;
-  try {
-    const canonicalizer = await getOrgUnitCanonicalizer();
-    const resolved = canonicalizer.canonicalizeDepartments([deptName]).values[0];
-    return resolved || null;
-  } catch {
-    return null;
-  }
+  const canonicalizer = await getOrgUnitCanonicalizer();
+  const resolved = canonicalizer.canonicalizeDepartments([deptName]).values[0];
+  return resolved || null;
 }
 
 export function classifyEntityRunSignal(params: {
