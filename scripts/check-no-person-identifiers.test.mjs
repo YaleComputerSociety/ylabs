@@ -9,7 +9,7 @@ import {
   formatFindings,
   hasBlockingFindings,
   isDirectoryDumpCandidate,
-  isRegisteredSourceName,
+  isRegisteredName,
 } from './check-no-person-identifiers-core.mjs';
 
 const body = (content) => [{ label: 'issue body', content }];
@@ -195,22 +195,26 @@ test('still flags a longer slug that merely starts like a registered source name
   assert.equal(findings[0].rule, 'person-bearing-entity-slug');
 });
 
-test('does not flag a slug prefix partway through a longer hyphenated script name', () => {
+test('does not flag a registered script or source name that embeds a slug prefix', () => {
   for (const clean of [
     'The `research-homes:repair-nih-nsf-pi-center-lab-conflation` entry stays and is not wrong.',
     '`yarn run | grep -c repair-nih-nsf-pi-center-lab-conflation` returned 1, so nothing is stale.',
-    'The legacy-ysm-faculty-roster-sync job is dead.',
+    'The nih-nsf-pi-center-lab-conflation-repair source is not wrong.',
   ]) {
     assert.deepEqual(rulesOf(findPersonIdentifierFindings(body(clean))), [], clean);
   }
 });
 
-test('still flags a person slug wherever it opens a token', () => {
+test('still flags a person slug at the start of or inside a hyphenated token', () => {
   for (const flagged of [
     'The row `nih-pi-quilla-marrowbane` is wrong.',
     'See https://ylabs.example/research/nsf-pi-quilla-marrowbane which is stale.',
     'The row (ysm-faculty-quilla-marrowbane) departed.',
     'slug=faculty-research-area-quilla-marrowbane is suppressed',
+    'See /tmp/screenshot-nih-pi-quilla-marrowbane.png, the row is wrong.',
+    'fixture-ysm-faculty-quilla-marrowbane.json shows it departed.',
+    'The legacy-ysm-faculty-directory row is stale.',
+    'The repair-nih-nsf-pi-center-lab-conflation-quilla row is stale.',
   ]) {
     assert.deepEqual(
       rulesOf(findPersonIdentifierFindings(body(flagged))),
@@ -245,7 +249,7 @@ test('an internally capitalised surname is still a name', () => {
 // Pins the allowance to the real registry: a source name added later that collides
 // with a person-slug prefix has to be recorded deliberately, and one removed has to
 // stop being ignored. Without this the set silently drifts into a stoplist.
-test('the source-name allowance matches the colliding names in seedSources', async () => {
+test('the registered-name allowance matches the colliding source and script names', async () => {
   const seedSources = await readFile(
     new URL('../server/src/scrapers/seedSources.ts', import.meta.url),
     'utf8',
@@ -255,17 +259,24 @@ test('the source-name allowance matches the colliding names in seedSources', asy
   );
   assert.ok(declared.length > 20, 'expected to parse the seedSources name list');
 
-  const colliding = declared.filter((name) =>
-    ['nih-pi-', 'nsf-pi-', 'ysm-faculty-', 'faculty-research-area-'].some((prefix) =>
-      name.startsWith(prefix),
-    ),
-  );
+  const serverScripts = JSON.parse(
+    await readFile(new URL('../server/package.json', import.meta.url), 'utf8'),
+  ).scripts;
+  const scriptNames = Object.keys(serverScripts).flatMap((script) => script.split(':'));
+
+  const containsSlugPrefix = (name) =>
+    /(?:^|-)(?:nih-pi-|nsf-pi-|ysm-faculty-|faculty-research-area-)/.test(name);
+  const colliding = [...declared, ...scriptNames].filter(containsSlugPrefix);
 
   for (const name of colliding) {
-    assert.ok(isRegisteredSourceName(name), `${name} collides with a person-slug prefix`);
+    assert.ok(isRegisteredName(name), `${name} collides with a person-slug prefix`);
   }
-  for (const name of ['ysm-faculty-directory']) {
-    assert.ok(colliding.includes(name), `${name} is no longer a registered source`);
+  for (const name of [
+    'ysm-faculty-directory',
+    'nih-nsf-pi-center-lab-conflation-repair',
+    'repair-nih-nsf-pi-center-lab-conflation',
+  ]) {
+    assert.ok(colliding.includes(name), `${name} is no longer a registered name`);
   }
 });
 

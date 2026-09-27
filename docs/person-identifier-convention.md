@@ -29,7 +29,8 @@ A body may name a person with no identifier in it at all, in ordinary prose, and
 ## What counts as a person-bearing identifier
 
 - An entity slug carrying a person-bearing prefix: `nih-pi-`, `nsf-pi-`, `ysm-faculty-`, `faculty-research-area-`.
-  The prefix has to open the token, so a longer hyphenated name that contains one partway through, such as a repair script joining two grant prefixes, is not a slug.
+  A prefix partway through a hyphenated token counts too, so `screenshot-nih-pi-<name>.png` is still a slug.
+  The exception is a registered source or server script name that contains a prefix, such as `repair-nih-nsf-pi-center-lab-conflation`, which the scan allows by exact match on the whole token.
 - A directory profile path: `<host>.yale.edu/profile/<name>`, and the `people` and `faculty` variants.
 - A personal `@yale.edu` address.
   A role address such as `physics@yale.edu` is not person-bearing.
