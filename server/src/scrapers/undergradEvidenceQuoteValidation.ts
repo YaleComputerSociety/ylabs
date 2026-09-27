@@ -92,7 +92,7 @@ export function isExplicitUndergradUnavailabilityPhrase(quote?: string): boolean
 const MODEL_SEARCH_NOTE_PATTERNS: RegExp[] = [
   /\b(?:the|these|this|those)\s+(?:provided|profiled|supplied|given|available)\s+(?:pages?|profiles?|profile\s+pages?|sub-?pages?|text|sites?|content)\b/i,
   /\b(?:pages?|profiles?|text|content)\s+(?:provided|supplied|given)\b/i,
-  /^\W*(?:no|none|not|there\s+(?:is|are)\s+no)\b[^.]{0,120}\b(?:mention|mentions|mentioned|statements?|text|language|references?|indications?|information|evidence)\b/i,
+  /^\W*(?:no|there\s+(?:is|are)\s+no)\s+(?:(?:explicit|clear|direct|specific)\s+)?(?:mentions?|evidence|text|language|statements?|references?|indications?|information)\b/i,
 ];
 
 /**

@@ -125,6 +125,8 @@ describe('isModelSearchNote (#3683)', () => {
       'No prior research experience is required; undergraduates learn on the job.',
       'Not sure where to start? Undergraduate students should email the lab manager.',
       'The lab has provided research positions to undergraduates every summer since 2015.',
+      'No prior experience is necessary; undergraduates interested should send information about their background to the PI.',
+      'Not only do undergraduates co-author papers, they also receive letters of reference.',
     ];
     for (const quote of quotes) {
       expect(isModelSearchNote(quote), quote).toBe(false);
