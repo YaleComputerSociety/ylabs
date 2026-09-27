@@ -1,6 +1,6 @@
 import os from 'os';
 import path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HostConcurrencyLimiter, type HostSlotRelease } from '../hostConcurrencyLimiter';
 import { BrokeredHostSlotLimiter, HostSlotBroker } from '../hostSlotBroker';
 import { resolveScraperHostSlotLimiter } from '../scraperHostSlotLimiter';
@@ -8,12 +8,14 @@ import { resolveScraperHostSlotLimiter } from '../scraperHostSlotLimiter';
 const openBrokers: HostSlotBroker[] = [];
 const openClients: BrokeredHostSlotLimiter[] = [];
 
-async function startBroker(budget = 4): Promise<HostSlotBroker> {
+async function startBroker(
+  limiter: HostConcurrencyLimiter = new HostConcurrencyLimiter(4),
+): Promise<HostSlotBroker> {
   const socketPath = path.join(
     os.tmpdir(),
     `ylabs-host-slots-test-${process.pid}-${Math.random().toString(36).slice(2, 8)}.sock`,
   );
-  const broker = await HostSlotBroker.listen(socketPath, new HostConcurrencyLimiter(budget));
+  const broker = await HostSlotBroker.listen(socketPath, limiter);
   openBrokers.push(broker);
   return broker;
 }
@@ -25,6 +27,23 @@ function client(broker: HostSlotBroker, fallback = new HostConcurrencyLimiter(1)
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
+
+async function waitForLength(items: unknown[], length: number): Promise<void> {
+  await vi.waitFor(() => expect(items).toHaveLength(length));
+}
+
+function virtualClockLimiter(budget: number) {
+  let clock = 0;
+  const sleeps: number[] = [];
+  const limiter = new HostConcurrencyLimiter(budget, {
+    now: () => clock,
+    sleep: async (ms) => {
+      sleeps.push(ms);
+      clock += ms;
+    },
+  });
+  return { limiter, sleeps };
+}
 
 function track(acquisitions: Promise<HostSlotRelease>[]) {
   const granted: HostSlotRelease[] = [];
@@ -39,55 +58,56 @@ afterEach(async () => {
 
 describe('HostSlotBroker', () => {
   it('gives a child alone on a host the whole host budget, not budget divided by phase size', async () => {
-    const broker = await startBroker(4);
+    const brokerLimiter = new HostConcurrencyLimiter(4);
+    const broker = await startBroker(brokerLimiter);
     const lone = client(broker);
     const granted = track(Array.from({ length: 6 }, () => lone.acquire('example.yale.edu')));
-    await settle();
-    expect(granted).toHaveLength(4);
+    await waitForLength(granted, 4);
+    expect(brokerLimiter.activeCount('example.yale.edu')).toBe(4);
     granted[0]();
-    await settle();
-    expect(granted).toHaveLength(5);
+    await waitForLength(granted, 5);
+    expect(brokerLimiter.activeCount('example.yale.edu')).toBe(4);
   });
 
   it('holds children that share a host to one budget between them', async () => {
-    const broker = await startBroker(4);
+    const brokerLimiter = new HostConcurrencyLimiter(4);
+    const broker = await startBroker(brokerLimiter);
     const first = track(Array.from({ length: 3 }, () => client(broker).acquire('shared.yale.edu')));
     const second = track(
       Array.from({ length: 3 }, () => client(broker).acquire('shared.yale.edu')),
     );
-    await settle();
-    expect(first.length + second.length).toBe(4);
+    await vi.waitFor(() => expect(first.length + second.length).toBe(4));
+    expect(brokerLimiter.activeCount('shared.yale.edu')).toBe(4);
   });
 
   it('never lifts an overridden host past its override, across processes', async () => {
-    const broker = await startBroker(4);
-    const grantedAt: number[] = [];
-    const acquisitions = [client(broker), client(broker), client(broker)].map((limiter) =>
-      limiter.acquire('medicine.yale.edu').then((release) => {
-        grantedAt.push(Date.now());
-        return release;
-      }),
+    const { limiter: brokerLimiter, sleeps } = virtualClockLimiter(4);
+    const broker = await startBroker(brokerLimiter);
+    const granted = track(
+      [client(broker), client(broker), client(broker)].map((limiter) =>
+        limiter.acquire('medicine.yale.edu'),
+      ),
     );
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    expect(grantedAt).toHaveLength(2);
-    expect(grantedAt[1] - grantedAt[0]).toBeGreaterThanOrEqual(380);
-    (await acquisitions[0])();
-    await Promise.all(acquisitions.slice(1));
-    expect(grantedAt).toHaveLength(3);
+    await waitForLength(granted, 2);
+    expect(brokerLimiter.activeCount('medicine.yale.edu')).toBe(2);
+    expect(sleeps).toEqual([400]);
+    granted[0]();
+    await waitForLength(granted, 3);
+    expect(sleeps).toEqual([400, 400]);
   });
 
   it('returns every slot a child held when its connection closes', async () => {
-    const broker = await startBroker(2);
+    const brokerLimiter = new HostConcurrencyLimiter(2);
+    const broker = await startBroker(brokerLimiter);
     const crashing = client(broker);
     const held = track([crashing.acquire('a.yale.edu'), crashing.acquire('a.yale.edu')]);
-    await settle();
-    expect(held).toHaveLength(2);
+    await waitForLength(held, 2);
     const waiting = track([client(broker).acquire('a.yale.edu')]);
     await settle();
     expect(waiting).toHaveLength(0);
     crashing.close();
-    await settle();
-    expect(waiting).toHaveLength(1);
+    await waitForLength(waiting, 1);
+    expect(brokerLimiter.activeCount('a.yale.edu')).toBe(1);
   });
 
   it('falls back to the local cap when the broker is unreachable', async () => {
