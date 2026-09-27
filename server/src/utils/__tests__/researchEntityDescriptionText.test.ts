@@ -1807,6 +1807,76 @@ describe('revoiceFirstPersonResearchLead', () => {
     }
   });
 
+  it('converts a regular past-tense verb the closed table never listed (#3481)', () => {
+    const lab = { name: 'Arnal Lab', entityType: 'LAB', kind: 'lab' };
+    // A hand read of 45 rows carrying unconverted first person found these nine verbs in
+    // 29 of them, and the 88-entry closed table listed none.
+    const pairs: Array<[string, string]> = [
+      ['We identified the molecular link.', 'The Arnal Lab identified the molecular link.'],
+      ['We performed an in vivo screen.', 'The Arnal Lab performed an in vivo screen.'],
+      [
+        'We validated Noggin as a key effector.',
+        'The Arnal Lab validated Noggin as a key effector.',
+      ],
+      [
+        'We assessed changes in serum biomarkers.',
+        'The Arnal Lab assessed changes in serum biomarkers.',
+      ],
+      [
+        'We characterized the protein products.',
+        'The Arnal Lab characterized the protein products.',
+      ],
+      [
+        'We hypothesized that the fusion promotes it.',
+        'The Arnal Lab hypothesized that the fusion promotes it.',
+      ],
+    ];
+    for (const [input, expected] of pairs) {
+      expect(revoiceFirstPersonResearchLead(input, lab)).toBe(expected);
+    }
+  });
+
+  it('converts a singular past subject and one with an adverb between (#3481)', () => {
+    const faculty = {
+      name: 'Ada Lovelace Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+    };
+    expect(revoiceFirstPersonResearchLead('I obtained extramural funding.', faculty)).toBe(
+      'Ada Lovelace obtained extramural funding.',
+    );
+    expect(revoiceFirstPersonResearchLead('We recently continued that research.', faculty)).toBe(
+      'Ada Lovelace recently continued that research.',
+    );
+  });
+
+  it('refuses a word that ends in ed without being past tense (#3481)', () => {
+    const faculty = {
+      name: 'Ada Lovelace Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+    };
+    // Matching `[a-z]+ed` as morphology is only safe because these are refused. Without
+    // the denylist "We need to" would be read as a past form and left mangled.
+    for (const body of [
+      'We need to understand the fundamental biology.',
+      'We proceed with the second phase next year.',
+      'We succeed by combining methods.',
+      'We exceed the required sensitivity.',
+    ]) {
+      expect(revoiceFirstPersonResearchLead(body, faculty)).toBe(body);
+    }
+  });
+
+  it('leaves the closed present-tense table conjugating, not the morphology rule (#3481)', () => {
+    const lab = { name: 'Arnal Lab', entityType: 'LAB', kind: 'lab' };
+    // `study` is in the table, so it must still be inflected to `studies` rather than
+    // falling through to a rule that copies the token unchanged.
+    expect(revoiceFirstPersonResearchLead('We study lncRNA contribution.', lab)).toBe(
+      'The Arnal Lab studies lncRNA contribution.',
+    );
+  });
+
   it('names the lead in full on first mention and by surname after it (#3368)', () => {
     const faculty = {
       name: 'David Mulligan Faculty Research',
