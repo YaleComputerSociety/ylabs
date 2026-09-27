@@ -120,6 +120,7 @@ interface ResearchEntitySearchPage {
 }
 
 interface ActiveResearchSearchRequest {
+  submittedText: string;
   searchQuery: string;
   filters: ResearchSearchFilters;
   options?: ResearchEntitySearchOptions;
@@ -133,6 +134,7 @@ interface ResearchFilterAnalyticsChange {
 interface ResearchPageSnapshot {
   key: string;
   isAdmin: boolean;
+  resultsSettled: boolean;
   query: string;
   submittedQuery: string;
   departmentSearch: DepartmentSearchTarget | null;
@@ -177,6 +179,9 @@ const defaultResearchSortOrder = (field: ResearchSortField): 'asc' | 'desc' =>
   field === 'name' ? 'asc' : 'desc';
 
 let researchPageSnapshot: ResearchPageSnapshot | null = null;
+
+const lastLoadedPage = (page: number, isLoadingPage: boolean): number =>
+  isLoadingPage && page > 1 ? page - 1 : page;
 
 const searchResearchEntities = async (
   q: string,
@@ -332,6 +337,11 @@ const buildDepartmentSearchTargets = (
     .filter((target) => target.filters.departments.length > 0)
     .sort((a, b) => a.label.localeCompare(b.label));
 
+const withDepartmentSearchTarget = (
+  filters: ResearchSearchFilters,
+  target: DepartmentSearchTarget,
+): ResearchSearchFilters => ({ ...filters, departments: target.filters.departments });
+
 const scrollResearchViewportToTop = () => {
   const scrollContainer = document.querySelector<HTMLElement>('[data-scroll-container]');
   if (scrollContainer) {
@@ -353,11 +363,13 @@ const Research = () => {
   const { departments } = useConfig();
   const isAdmin = user?.isAdmin ?? false;
   const pageSnapshotKey = searchParams.toString();
-  const restorableSnapshot =
+  const snapshotForThisPage =
     researchPageSnapshot?.key === pageSnapshotKey && researchPageSnapshot.isAdmin === isAdmin
       ? researchPageSnapshot
       : null;
-  const restoredSnapshotRef = useRef<ResearchPageSnapshot | null>(restorableSnapshot);
+  const restoredSnapshotRef = useRef<ResearchPageSnapshot | null>(
+    snapshotForThisPage?.resultsSettled ? snapshotForThisPage : null,
+  );
   const [query, setQuery] = useState(
     () => restoredSnapshotRef.current?.query ?? searchParams.get('q') ?? '',
   );
@@ -404,10 +416,10 @@ const Research = () => {
     () => restoredSnapshotRef.current?.selectedDepartment ?? searchParams.get('department') ?? '',
   );
   const [sortBy, setSortBy] = useState<ResearchSortField>(
-    () => restoredSnapshotRef.current?.sortBy ?? 'relevance',
+    () => snapshotForThisPage?.sortBy ?? 'relevance',
   );
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(
-    () => restoredSnapshotRef.current?.sortOrder ?? 'asc',
+    () => snapshotForThisPage?.sortOrder ?? 'asc',
   );
   const sortByRef = useRef(sortBy);
   const sortOrderRef = useRef(sortOrder);
@@ -631,9 +643,11 @@ const Research = () => {
       syncUrl?: boolean;
       filterChanges?: ResearchFilterAnalyticsChange[];
       preserveResults?: boolean;
+      preserveDraftQuery?: boolean;
     } = {},
   ) => {
     defaultSearchAbortRef.current?.abort();
+    setDefaultSearchLoading(false);
     const trimmed = nextQuery.trim();
     const searchQuery = options.searchQuery ?? trimmed;
     const filters = options.filters ?? {};
@@ -674,6 +688,7 @@ const Research = () => {
       setSearchResultResearchEntities([]);
     }
     setActiveSearchRequest({
+      submittedText: trimmed,
       searchQuery: searchQuery.trim(),
       filters,
       options: {
@@ -682,7 +697,7 @@ const Research = () => {
         ...currentSortRequestOptions(),
       },
     });
-    setQuery(trimmed);
+    if (!options.preserveDraftQuery) setQuery(trimmed);
     setSubmittedQuery(resultQueryLabel);
     setDepartmentSearch(options.departmentSearch ?? null);
     if (!options.preserveResults) {
@@ -703,7 +718,7 @@ const Research = () => {
           departmentLabel: options.departmentSearch?.label,
           entityType: filters.entityType?.[0],
           school: filters.school?.[0],
-          department: filters.departments?.[0],
+          department: options.departmentSearch ? undefined : filters.departments?.[0],
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
           trustTiers: trustTierFilters,
@@ -889,6 +904,7 @@ const Research = () => {
   const resetSearch = () => {
     searchAbortRef.current?.abort();
     searchRequestIdRef.current += 1;
+    activeSearchKeyRef.current = null;
     setQuery('');
     setSubmittedQuery('');
     setDepartmentSearch(null);
@@ -907,20 +923,14 @@ const Research = () => {
     setHasFacetError(false);
     setSearchLoading(false);
     setIsLoadingMore(false);
-    setDefaultSearchExhausted(false);
-    setDefaultSearchPage(1);
     writeResearchSearchParams(
       {
         showWeakest: showWeakestProfilesFirst,
         quality: qualityFilters,
         trustTiers: trustTierFilters,
       },
-      { replace: true },
+      { replace: true, markPending: true },
     );
-    if (defaultResearchEntities.length === 0) {
-      setDefaultSearchTotal(0);
-      void runDefaultResearchHomeSearch(1);
-    }
   };
 
   const hasSubmittedSearch = submittedQuery.trim().length > 0;
@@ -979,6 +989,7 @@ const Research = () => {
       restoredSnapshotRef.current = null;
       return;
     }
+    restoredSnapshotSyncKeyRef.current = null;
 
     if (showWeakestProfilesFirst !== urlWeakestFirst) {
       setShowWeakestProfilesFirst(urlWeakestFirst);
@@ -1017,15 +1028,26 @@ const Research = () => {
       : null;
 
     if (urlDepartmentSearch) {
-      if (departmentSearch?.label === urlDepartmentSearch.label && hasSubmittedSearch) {
+      const departmentSearchFilters = withDepartmentSearchTarget(
+        studentFilters,
+        urlDepartmentSearch,
+      );
+      const isSameDepartmentSearch =
+        departmentSearch?.label === urlDepartmentSearch.label && hasSubmittedSearch;
+      if (
+        isSameDepartmentSearch &&
+        JSON.stringify(activeSearchRequest?.filters || {}) ===
+          JSON.stringify(departmentSearchFilters)
+      ) {
         return;
       }
       void runSearchRef.current(urlDepartmentSearch.label, {
         searchQuery: '',
-        filters: { departments: urlDepartmentSearch.filters.departments },
+        filters: departmentSearchFilters,
         hasFilterSelections: true,
         departmentSearch: urlDepartmentSearch,
         syncUrl: false,
+        preserveResults: isSameDepartmentSearch,
       });
       return;
     }
@@ -1115,6 +1137,9 @@ const Research = () => {
     researchPageSnapshot = {
       key: pageSnapshotKey,
       isAdmin,
+      resultsSettled: hasSubmittedSearch
+        ? !searchLoading
+        : !(defaultSearchLoading && defaultSearchPage <= 1),
       query,
       submittedQuery,
       departmentSearch,
@@ -1130,12 +1155,12 @@ const Research = () => {
       browseFacetDistribution,
       groupedResults,
       searchResultResearchEntities,
-      searchPage,
+      searchPage: lastLoadedPage(searchPage, isLoadingMore),
       searchTotal,
       searchExhausted,
       activeSearchRequest,
       defaultResearchEntities,
-      defaultSearchPage,
+      defaultSearchPage: lastLoadedPage(defaultSearchPage, defaultSearchLoading),
       defaultSearchTotal,
       defaultSearchExhausted,
       searchError,
@@ -1143,6 +1168,10 @@ const Research = () => {
       defaultSearchError,
     };
   }, [
+    hasSubmittedSearch,
+    searchLoading,
+    isLoadingMore,
+    defaultSearchLoading,
     pageSnapshotKey,
     isAdmin,
     query,
@@ -1311,7 +1340,19 @@ const Research = () => {
     setSelectedSchool(school);
     setSelectedDepartment(department);
     const filters = studentSearchFilters(school, department, entityType);
-    if (!query.trim() && !hasStructuredFilters(filters)) {
+    if (departmentSearch && !department) {
+      void runSearch(departmentSearch.label, {
+        searchQuery: '',
+        filters: withDepartmentSearchTarget(filters, departmentSearch),
+        hasFilterSelections: true,
+        departmentSearch,
+        filterChanges,
+        preserveResults: true,
+      });
+      return;
+    }
+    const textQuery = departmentSearch ? '' : query.trim();
+    if (!textQuery && !hasStructuredFilters(filters)) {
       filterChanges.forEach((change) => {
         void trackResearchEvent({
           eventType: 'research_filter_change',
@@ -1322,10 +1363,24 @@ const Research = () => {
       resetSearch();
       return;
     }
-    void runSearch(query.trim(), {
+    void runSearch(textQuery, {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
       filterChanges,
+      preserveResults: true,
+    });
+  };
+  const clearSearchText = () => {
+    const filters = studentSearchFilters();
+    if (!hasStructuredFilters(filters)) {
+      resetSearch();
+      return;
+    }
+    const isAlreadyFiltersOnly = !departmentSearch && activeSearchRequest?.submittedText === '';
+    if (isAlreadyFiltersOnly) return;
+    void runSearch('', {
+      filters,
+      hasFilterSelections: true,
       preserveResults: true,
     });
   };
@@ -1337,12 +1392,13 @@ const Research = () => {
     setSortBy(nextSortBy);
     setSortOrder(order);
     if (hasSubmittedSearch && activeSearchRequest) {
-      void runSearchRef.current(query.trim(), {
+      void runSearchRef.current(activeSearchRequest.submittedText, {
         searchQuery: activeSearchRequest.searchQuery,
         filters: activeSearchRequest.filters,
         hasFilterSelections: hasStructuredFilters(activeSearchRequest.filters),
         departmentSearch,
         preserveResults: true,
+        preserveDraftQuery: true,
         syncUrl: false,
       });
       return;
@@ -1572,7 +1628,7 @@ const Research = () => {
                     const nextQuery = event.target.value;
                     setQuery(nextQuery);
                     if (!nextQuery.trim() && hasSubmittedSearch) {
-                      resetSearch();
+                      clearSearchText();
                     }
                   }}
                   aria-describedby="research-search-context research-search-help"

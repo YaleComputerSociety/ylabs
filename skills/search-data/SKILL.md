@@ -102,6 +102,14 @@ Strong `CURRENT_UNDERGRADS` and `PAST_UNDERGRADS` signals outweigh the `REACH_OU
 `entityMaterializer` recomputes ranking live after access signals are derived.
 Admin "weakest profiles first" with `browseQuality: 'low-first'` is a separate Mongo-side path.
 
+## `/research` client search state
+
+`client/src/pages/research.tsx` keeps three kinds of search: a text query, a filters-only search, and a department search (`dept` in the URL), which owns the department filter and composes with the school and type facets rather than turning into a free-text search of the department label.
+A sort change re-runs the submitted search, never the unsubmitted draft in the box, and emptying the box falls back to the filters-only search when facets are active.
+The in-memory page snapshot restores results on Back only when they had settled: a search still in flight when the student left is re-run from the URL with the chosen sort, and a page still loading more is fetched again.
+Leaving a search returns to browse through the URL-sync effect, which reloads browse under the current sort and admin filters.
+`client/src/pages/__tests__/research.searchState.test.tsx` pins each of these (#3653).
+
 ## Measuring search quality
 
 `yarn --cwd server research-search:relevance` is the instrument for "is search any good", and it is read-only.
