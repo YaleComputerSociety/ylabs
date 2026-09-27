@@ -64,6 +64,7 @@ export interface ScraperResult {
   observationCount: number;
   entitiesObserved: number;
   notes?: string;
+  partialFailures?: string[];
   metrics?: ScraperMetrics;
   fetchMetrics?: ScraperFetchMetrics;
 }

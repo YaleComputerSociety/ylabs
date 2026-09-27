@@ -161,6 +161,43 @@ describe('ScraperOrchestrator', () => {
     consoleError.mockRestore();
   });
 
+  it('marks a run partial and records why when the scraper reports incomplete coverage', async () => {
+    mocks.appendObservations.mockResolvedValue({ inserted: 1, skipped: 0, superseded: 0 });
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register({
+      name: 'fixture-source',
+      displayName: 'Fixture source',
+      async run(ctx) {
+        await ctx.emit({
+          entityType: 'researchEntity',
+          entityKey: 'fixture-lab',
+          field: 'name',
+          value: 'Fixture Lab',
+        });
+        return {
+          observationCount: 1,
+          entitiesObserved: 1,
+          partialFailures: ['listing page 2 failed: HTTP 401'],
+        };
+      },
+    });
+
+    await orchestrator.run('fixture-source', {
+      dryRun: false,
+      dbReview: false,
+      useCache: false,
+      release: true,
+    });
+
+    const persisted = mocks.scrapeRunUpdateOne.mock.calls.at(-1)?.[1] as {
+      $set?: { status?: string; errors?: Array<{ message?: string }> };
+    };
+    expect(persisted.$set?.status).toBe('partial');
+    expect(persisted.$set?.errors?.map((error) => error.message)).toEqual([
+      'listing page 2 failed: HTTP 401',
+    ]);
+  });
+
   it('keeps a run successful while the barren streak is still short', async () => {
     mocks.scrapeRunFind.mockReturnValue(priorRuns([{ status: 'success', observationCount: 0 }]));
     const orchestrator = new ScraperOrchestrator();

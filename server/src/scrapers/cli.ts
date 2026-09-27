@@ -59,7 +59,9 @@ import {
   buildScraperCliOutputPayload,
   buildScraperCliPreflight,
   parseArgs,
+  scrapeCliCompletionOutcome,
   unmaterializedWriteRunWarning,
+  type ScrapeCliCompletionOutcome,
   type ScraperCliPreflight,
 } from './cliHelpers';
 
@@ -71,6 +73,7 @@ export {
   parseArgs,
   parseIntegerFlag,
   parseScraperOptions,
+  scrapeCliCompletionOutcome,
   unmaterializedWriteRunWarning,
 } from './cliHelpers';
 
@@ -84,6 +87,12 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 interface ScrapeCliLockedOutcome {
   runId?: string;
   failed?: boolean;
+}
+
+function reportScrapeCliCompletion(outcome: ScrapeCliCompletionOutcome): void {
+  for (const warning of outcome.warnings) console.warn(`\nWARNING: ${warning}`);
+  for (const error of outcome.errors) console.error(`\nERROR: ${error}`);
+  if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode;
 }
 
 // Every CLI write to a source runs inside that source's job lock, which is what
@@ -296,10 +305,12 @@ Concurrency:
           await markSourceCrawled(sourceName, new Date());
         }
 
+        let materializationErrors: number | undefined;
         if (guard.autoMaterialize && !guard.options.dryRun) {
           console.log(`\nMaterializing observations from run ${runId}...`);
           const matResult = await materializeFromRun(runId, { dryRun: false });
           console.log(JSON.stringify(matResult, null, 2));
+          materializationErrors = matResult.errors;
           if (matResult.errors === 0) {
             console.log(`\nRunning student visibility gate for source ${sourceName}...`);
             console.log(
@@ -354,7 +365,14 @@ Concurrency:
           console.log(JSON.stringify(report, null, 2));
         }
         const runStatus = (report as { run?: { status?: string } }).run?.status;
-        return { runId, failed: runStatus === 'failure' };
+        const completion = scrapeCliCompletionOutcome({
+          runId,
+          runStatus,
+          materializationErrors,
+          visibilityGateSkipped: (materializationErrors ?? 0) > 0,
+        });
+        reportScrapeCliCompletion(completion);
+        return { runId, failed: completion.exitCode !== 0 };
       };
 
       // A dry run writes no Observations, so it does not contend for the lock.
@@ -481,7 +499,13 @@ Concurrency:
           console.log(`\nRun report for ${runId}:`);
           console.log(JSON.stringify(report, null, 2));
         }
-        return { runId, failed: result.errors > 0 };
+        const completion = scrapeCliCompletionOutcome({
+          runId,
+          materializationErrors: result.errors,
+          visibilityGateSkipped: !guard.options.dryRun && result.errors > 0,
+        });
+        reportScrapeCliCompletion(completion);
+        return { runId, failed: completion.exitCode !== 0 };
       };
 
       // Guarding `run` alone would leave a hole: a standalone materialize writes

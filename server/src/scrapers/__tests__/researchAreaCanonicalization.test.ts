@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { TaxonomyTerm } from '../../models/taxonomyTerm';
 import {
   applyResearchEntityResearchAreaCanonicalization,
   buildResearchAreaResolverIndex,
@@ -564,6 +565,21 @@ describe('generic seeded single-word derivation precision', () => {
 });
 
 describe('applyResearchEntityResearchAreaCanonicalization', () => {
+  it('fails loud when the vocabulary cannot be loaded, instead of passing raw areas through', async () => {
+    resetResearchAreaCanonicalizerCache();
+    const findSpy = vi.spyOn(TaxonomyTerm, 'find').mockImplementation(() => {
+      throw new Error('MongoServerSelectionError: connection refused');
+    });
+    const set: Record<string, unknown> = {
+      researchAreas: ['Internal Medicine', 'Fields of Interest', 'Neuroscience'],
+    };
+
+    await expect(
+      applyResearchEntityResearchAreaCanonicalization(set, ['Internal Medicine']),
+    ).rejects.toThrow(/connection refused/);
+    findSpy.mockRestore();
+  });
+
   it('rewrites the set researchAreas in place and reports unmatched', async () => {
     setResearchAreaCanonicalizerForTesting(canonicalizer);
     const set: Record<string, unknown> = { researchAreas: ['AI', 'Quilting'] };

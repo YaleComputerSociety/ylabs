@@ -401,6 +401,39 @@ describe('YaleDirectoryScraper.run', () => {
     expect(result.entitiesObserved).toBe(200);
     expect(emitted.length).toBeGreaterThan(0);
     expect(logs.some((l) => /ECONNRESET|aborting/i.test(l))).toBe(true);
+    expect(result.partialFailures).toEqual([expect.stringMatching(/page 2.*ECONNRESET/)]);
+    expect(result.notes).toMatch(/incomplete/);
+  });
+
+  it('reports a 401 mid-pagination as a partial run rather than a complete roster', async () => {
+    process.env.YALIES_API_KEY = 'test-key';
+    const fillerPage = Array.from({ length: 200 }, (_, i) => ({
+      netid: `dd${String(i).padStart(3, '0')}`,
+      first_name: 'Auth',
+      last_name: 'Expired',
+      title: 'Professor of Access',
+    }));
+    const unauthorized = Object.assign(new Error('Request failed with status code 401'), {
+      isAxiosError: true,
+      response: { status: 401 },
+    });
+    mockedListYalies.mockResolvedValueOnce(fillerPage).mockRejectedValueOnce(unauthorized);
+
+    const { ctx } = buildContext();
+    const result = await new YaleDirectoryScraper().run(ctx);
+
+    expect(result.entitiesObserved).toBe(200);
+    expect(result.partialFailures).toEqual([expect.stringMatching(/page 2.*401/)]);
+  });
+
+  it('fails the run when the first page cannot be read, since nothing was synced', async () => {
+    process.env.YALIES_API_KEY = 'test-key';
+    mockedListYalies.mockRejectedValueOnce(new Error('ECONNRESET'));
+
+    const { ctx, emitted } = buildContext();
+
+    await expect(new YaleDirectoryScraper().run(ctx)).rejects.toThrow(/page 1.*ECONNRESET/);
+    expect(emitted).toEqual([]);
   });
 });
 

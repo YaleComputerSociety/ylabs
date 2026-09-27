@@ -542,10 +542,11 @@ export function departmentMatchKeys(departments: unknown): Set<string> {
  * Canonicalizes a research-entity materialization `$set` in place: scraper-label
  * leakage is dropped, the surviving `researchAreas[]` strings are rewritten to
  * their canonical `TaxonomyTerm` names when they resolve against an approved term
- * and left as their raw trimmed values otherwise, deduped. Never throws - a
- * canonicalization failure or an unseeded/empty approved `taxonomy_terms`
- * registry leaves the raw scraped values untouched so materialization keeps
- * working (fail closed to raw, never guess-collapse distinct topics).
+ * and left as their raw trimmed values otherwise, deduped. An unseeded or empty
+ * approved `taxonomy_terms` registry leaves unmatched values raw (never
+ * guess-collapse distinct topics), but a registry that cannot be read throws, so
+ * the row fails materialization rather than skipping the leakage, #1451 and #1544
+ * filters and writing raw scraped values.
  *
  * `departments` (the entity's own resolved `departments[]`, if known) is kept
  * disjoint from `researchAreas[]`: an area entry that case/punctuation-normalizes
@@ -571,20 +572,15 @@ export async function applyResearchEntityResearchAreaCanonicalization(
   if (!Object.prototype.hasOwnProperty.call(set, 'researchAreas')) return result;
   if (!Array.isArray(set.researchAreas)) return result;
 
-  try {
-    const canonicalizer = await getResearchAreaCanonicalizer();
-    const canonical = canonicalizer.canonicalizeResearchAreas(set.researchAreas);
-    const departmentKeys = departmentMatchKeys(departments);
-    const isDepartmentDuplicate = (value: string) =>
-      departmentKeys.has(researchAreaMatchKey(value));
-    const isRejected = (value: string) =>
-      isDepartmentDuplicate(value) || isDivisionLevelResearchAreaLabel(value);
-    set.researchAreas = canonical.values.filter((value) => !isRejected(value));
-    result.unmatchedResearchAreas = canonical.unmatched.filter((value) => !isRejected(value));
-    result.droppedResearchAreas = [...canonical.dropped, ...canonical.values.filter(isRejected)];
-  } catch {
-    return result;
-  }
+  const canonicalizer = await getResearchAreaCanonicalizer();
+  const canonical = canonicalizer.canonicalizeResearchAreas(set.researchAreas);
+  const departmentKeys = departmentMatchKeys(departments);
+  const isDepartmentDuplicate = (value: string) => departmentKeys.has(researchAreaMatchKey(value));
+  const isRejected = (value: string) =>
+    isDepartmentDuplicate(value) || isDivisionLevelResearchAreaLabel(value);
+  set.researchAreas = canonical.values.filter((value) => !isRejected(value));
+  result.unmatchedResearchAreas = canonical.unmatched.filter((value) => !isRejected(value));
+  result.droppedResearchAreas = [...canonical.dropped, ...canonical.values.filter(isRejected)];
 
   return result;
 }

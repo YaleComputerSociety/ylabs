@@ -607,9 +607,9 @@ export function researchEntityHasSchoolButNoRealDepartment(entity: {
  * `backfillResearchEntityOrgUnitsCore` is built on.
  * `existing` supplies the entity's current school and departments so
  * `schools[]` reflects the merged record when a scrape updates only one of
- * them. Never throws - a canonicalization failure or an unseeded `org_units`
- * collection leaves the raw scraped values untouched so materialization keeps
- * working.
+ * them. An unseeded `org_units` collection leaves unmatched values raw, but a
+ * registry that cannot be read throws, so the row fails materialization rather
+ * than writing a half-canonicalized or raw school and departments.
  */
 export async function applyResearchEntityOrgUnitCanonicalization(
   set: Record<string, unknown>,
@@ -642,109 +642,101 @@ export async function applyResearchEntityOrgUnitCanonicalization(
   const hasDepartments = Object.prototype.hasOwnProperty.call(set, 'departments');
   if (!hasSchool && !hasDepartments) return result;
 
-  try {
-    const canonicalizer = await getOrgUnitCanonicalizer();
-    let clearedSchoolLabel = '';
-    if (hasSchool && typeof set.school === 'string' && set.school.trim()) {
-      const rawSchool = set.school.trim();
-      const canonical = canonicalizer.canonicalizeSchool(rawSchool);
-      set.school = canonical.value;
-      if (!canonical.matched) {
-        result.unmatchedSchool = rawSchool;
-        if (!canonical.value) {
-          clearedSchoolLabel = rawSchool;
-          result.clearedSchoolLabel = rawSchool;
-        }
+  const canonicalizer = await getOrgUnitCanonicalizer();
+  let clearedSchoolLabel = '';
+  if (hasSchool && typeof set.school === 'string' && set.school.trim()) {
+    const rawSchool = set.school.trim();
+    const canonical = canonicalizer.canonicalizeSchool(rawSchool);
+    set.school = canonical.value;
+    if (!canonical.matched) {
+      result.unmatchedSchool = rawSchool;
+      if (!canonical.value) {
+        clearedSchoolLabel = rawSchool;
+        result.clearedSchoolLabel = rawSchool;
       }
     }
-    if (hasDepartments && Array.isArray(set.departments)) {
-      const canonical = canonicalizer.canonicalizeDepartments(set.departments);
-      set.departments = canonical.values;
-      set.orgAffiliationLabels = canonical.affiliationLabels;
-      result.unmatchedDepartments = canonical.unmatched;
-      result.droppedDepartments = canonical.dropped;
-      result.orgAffiliationLabels = canonical.affiliationLabels;
-      result.departmentAffiliationLabels = canonical.affiliationLabels;
-    }
-    if (clearedSchoolLabel && Array.isArray(set.orgAffiliationLabels)) {
-      const merged = withAffiliationLabel(
-        asStringList(set.orgAffiliationLabels),
-        clearedSchoolLabel,
+  }
+  if (hasDepartments && Array.isArray(set.departments)) {
+    const canonical = canonicalizer.canonicalizeDepartments(set.departments);
+    set.departments = canonical.values;
+    set.orgAffiliationLabels = canonical.affiliationLabels;
+    result.unmatchedDepartments = canonical.unmatched;
+    result.droppedDepartments = canonical.dropped;
+    result.orgAffiliationLabels = canonical.affiliationLabels;
+    result.departmentAffiliationLabels = canonical.affiliationLabels;
+  }
+  if (clearedSchoolLabel && Array.isArray(set.orgAffiliationLabels)) {
+    const merged = withAffiliationLabel(asStringList(set.orgAffiliationLabels), clearedSchoolLabel);
+    set.orgAffiliationLabels = merged;
+    result.orgAffiliationLabels = merged;
+  }
+
+  const effectiveSchool = hasSchool ? set.school : existing?.school;
+  // A department value that is itself the entity's own school (e.g. a
+  // DIVISION-kind org unit such as "Faculty of Arts and Sciences" that
+  // resolves under both SCHOOL_KINDS and DEPARTMENT_KINDS) is the same
+  // category error as the retired fallback and is dropped here even though
+  // canonicalizeDepartments has no entity context to catch it itself (#1384).
+  if (hasDepartments && Array.isArray(set.departments) && typeof effectiveSchool === 'string') {
+    const schoolKey = effectiveSchool.trim().toLocaleLowerCase();
+    if (schoolKey) {
+      const departments = set.departments as string[];
+      const selfReferential = departments.filter(
+        (department) => department.toLocaleLowerCase() === schoolKey,
       );
-      set.orgAffiliationLabels = merged;
-      result.orgAffiliationLabels = merged;
-    }
-
-    const effectiveSchool = hasSchool ? set.school : existing?.school;
-    // A department value that is itself the entity's own school (e.g. a
-    // DIVISION-kind org unit such as "Faculty of Arts and Sciences" that
-    // resolves under both SCHOOL_KINDS and DEPARTMENT_KINDS) is the same
-    // category error as the retired fallback and is dropped here even though
-    // canonicalizeDepartments has no entity context to catch it itself (#1384).
-    if (hasDepartments && Array.isArray(set.departments) && typeof effectiveSchool === 'string') {
-      const schoolKey = effectiveSchool.trim().toLocaleLowerCase();
-      if (schoolKey) {
-        const departments = set.departments as string[];
-        const selfReferential = departments.filter(
-          (department) => department.toLocaleLowerCase() === schoolKey,
+      if (selfReferential.length > 0) {
+        set.departments = departments.filter(
+          (department) => department.toLocaleLowerCase() !== schoolKey,
         );
-        if (selfReferential.length > 0) {
-          set.departments = departments.filter(
-            (department) => department.toLocaleLowerCase() !== schoolKey,
-          );
-          result.droppedDepartments = [...result.droppedDepartments, ...selfReferential];
-        }
+        result.droppedDepartments = [...result.droppedDepartments, ...selfReferential];
       }
     }
-    const statedDepartments = hasDepartments
-      ? asStringList(set.departments)
-      : asStringList(existing?.departments);
-    const effectiveDepartments = withAncestorDepartments(canonicalizer, statedDepartments);
-    // Only ever appends, so a length change is exactly "an ancestor department was
-    // missing", and writing it back heals a stored row on the next materialize even
-    // when this pass only touched `school`.
-    if (effectiveDepartments.length !== statedDepartments.length) {
-      set.departments = effectiveDepartments;
-    }
-    const schools: string[] = [];
-    const addSchool = (value: unknown): void => {
-      if (typeof value === 'string' && value.trim() && !schools.includes(value))
-        schools.push(value);
-    };
-    const canonicalEffectiveSchool =
-      typeof effectiveSchool === 'string' && effectiveSchool.trim()
-        ? canonicalizer.canonicalizeSchool(effectiveSchool).value
-        : '';
-    addSchool(canonicalEffectiveSchool);
-    for (const department of effectiveDepartments) {
-      addSchool(canonicalizer.schoolForDepartment(department));
-    }
+  }
+  const statedDepartments = hasDepartments
+    ? asStringList(set.departments)
+    : asStringList(existing?.departments);
+  const effectiveDepartments = withAncestorDepartments(canonicalizer, statedDepartments);
+  // Only ever appends, so a length change is exactly "an ancestor department was
+  // missing", and writing it back heals a stored row on the next materialize even
+  // when this pass only touched `school`.
+  if (effectiveDepartments.length !== statedDepartments.length) {
+    set.departments = effectiveDepartments;
+  }
+  const schools: string[] = [];
+  const addSchool = (value: unknown): void => {
+    if (typeof value === 'string' && value.trim() && !schools.includes(value)) schools.push(value);
+  };
+  const canonicalEffectiveSchool =
+    typeof effectiveSchool === 'string' && effectiveSchool.trim()
+      ? canonicalizer.canonicalizeSchool(effectiveSchool).value
+      : '';
+  addSchool(canonicalEffectiveSchool);
+  for (const department of effectiveDepartments) {
+    addSchool(canonicalizer.schoolForDepartment(department));
+  }
 
-    if (schools.length === 0 && profileUrls.length > 0) {
-      const hostSchool = schoolNameFromProfileHosts(profileUrls);
-      if (hostSchool) {
-        const canonical = canonicalizer.canonicalizeSchool(hostSchool);
-        if (canonical.matched) addSchool(canonical.value);
-      }
+  if (schools.length === 0 && profileUrls.length > 0) {
+    const hostSchool = schoolNameFromProfileHosts(profileUrls);
+    if (hostSchool) {
+      const canonical = canonicalizer.canonicalizeSchool(hostSchool);
+      if (canonical.matched) addSchool(canonical.value);
     }
+  }
 
-    if (schools.length > 0) set.schools = schools;
-    else if (asStringList(existing?.schools).length > 0) set.schools = [];
+  if (schools.length > 0) set.schools = schools;
+  else if (asStringList(existing?.schools).length > 0) set.schools = [];
 
-    const assertedSchool = hasSchool ? stringValue(set.school) : '';
-    if (
-      !assertedSchool &&
-      schools.length > 1 &&
-      isCrossSchoolOrganizationEntity(set.entityType ?? existing?.entityType) &&
-      (!canonicalEffectiveSchool || canonicalEffectiveSchool === schools[0])
-    ) {
-      set.school = '';
-      result.unresolvablePrimarySchool = true;
-    } else if (!canonicalEffectiveSchool && schools.length > 0) {
-      set.school = schools[0];
-    }
-  } catch {
-    return result;
+  const assertedSchool = hasSchool ? stringValue(set.school) : '';
+  if (
+    !assertedSchool &&
+    schools.length > 1 &&
+    isCrossSchoolOrganizationEntity(set.entityType ?? existing?.entityType) &&
+    (!canonicalEffectiveSchool || canonicalEffectiveSchool === schools[0])
+  ) {
+    set.school = '';
+    result.unresolvablePrimarySchool = true;
+  } else if (!canonicalEffectiveSchool && schools.length > 0) {
+    set.school = schools[0];
   }
 
   return result;

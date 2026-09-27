@@ -17,6 +17,7 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 });
 
 import { Observation } from '../../models/observation';
+import { TaxonomyTerm } from '../../models/taxonomyTerm';
 import { ResearchEntity } from '../../models/researchEntity';
 import { DERIVED_RESEARCH_AREA_SOURCE_NAME, materializeEntity } from '../entityMaterializer';
 import { dropDomainIncoherentUnsourcedResearchAreas } from '../../utils/researchAreaDomainCoherence';
@@ -85,6 +86,26 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
       superseded: false,
     });
   };
+
+  it('fails the row instead of writing no chips when the vocabulary cannot be loaded', async () => {
+    await seedEntity();
+    await seedField(
+      'fullDescription',
+      'The lab focuses on the intersection of neuroscience and immunology.',
+    );
+    resetResearchAreaCanonicalizerCache();
+    const findSpy = vi.spyOn(TaxonomyTerm, 'find').mockImplementation(() => {
+      throw new Error('MongoServerSelectionError: connection refused');
+    });
+
+    try {
+      await expect(
+        materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' }),
+      ).rejects.toThrow(/connection refused/);
+    } finally {
+      findSpy.mockRestore();
+    }
+  });
 
   it('derives areas from an empty-area LAB whose description names canonical topics', async () => {
     await seedEntity();

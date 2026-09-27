@@ -128,6 +128,25 @@ Any status check must treat the stored set as open, not as the enum.
 `scrape_job_locks` is the live-writer signal, read through `findHeldScrapeJobLock`.
 It was empty before this change for the same reason `running` is unreliable: the only path that wrote it never ran.
 
+### A failure must reach the run status and the exit code
+
+A failure that reads as success or as a legitimate verdict is worse than a crash, because nothing downstream escalates it.
+
+- A scraper that knows its coverage is incomplete returns `partialFailures` on its `ScraperResult`.
+  The orchestrator records each one in `run.errors` and marks the run `partial`, which `runReport` warns on, `sourceHealthService` rates `warn`, and `scraperSweepArtifactError` fails as a non-`success` status.
+  Before this, only the barren-streak guard wrote `run.errors`, so `partial` was unreachable.
+- A pager that fails before its first page has read nothing and throws, so the run is `failure`; one that fails later reports `partialFailures`.
+  `yale-directory` (a Yalies 401 or network error) and `nih-reporter` (a RePORTER fetch error) follow this rule.
+- A lookup failure in a lane-shared dependency propagates rather than degrading to a verdict.
+  `nih-reporter` once caught a failed researcher lookup and counted the PI `ambiguous`, so a database outage read as "every PI is ambiguous" on a `success` run.
+- The canonicalizers throw when their registry cannot be read (`getResearchAreaCanonicalizer`, `getOrgUnitCanonicalizer`, and the description-derived area fallback), so the row counts as a materialization error.
+  Passing raw values through skipped the leakage, #1451 and #1544 filters and wrote raw topics and departments.
+  An empty or unseeded registry still leaves unmatched values raw, because that is not a failure.
+- `scrape run` exits nonzero when the run status is `failure` or when `--auto-materialize` reports row errors, and `scrape materialize` exits nonzero on row errors, dry run included (`scrapeCliCompletionOutcome` in `cliHelpers.ts`).
+  A `partial` run prints a warning and exits zero.
+  When row errors skip the student visibility gate, the command says so, because a silently skipped gate leaves every row the run touched un-regated.
+  `cronRunner` already exited nonzero on either condition, and the sweep fails the step on a nonzero exit, a non-`success` status, or materialization errors, so neither changes.
+
 ### Killing a scraper process
 
 Match on PID, never on a command-string pattern.

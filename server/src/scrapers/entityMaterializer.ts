@@ -759,15 +759,11 @@ async function applyDescriptionResearchAreaDerivation(
     .join('\n');
   if (!textBlob) return;
 
-  try {
-    const canonicalizer = await getResearchAreaCanonicalizer();
-    const derived = canonicalizer.deriveResearchAreasFromText(textBlob);
-    if (derived.length > 0) {
-      set.researchAreas = derived;
-      recordDerivedResearchAreaProvenance(set);
-    }
-  } catch {
-    // Canonicalizer load failure is non-fatal: leave researchAreas untouched.
+  const canonicalizer = await getResearchAreaCanonicalizer();
+  const derived = canonicalizer.deriveResearchAreasFromText(textBlob);
+  if (derived.length > 0) {
+    set.researchAreas = derived;
+    recordDerivedResearchAreaProvenance(set);
   }
 }
 
