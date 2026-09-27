@@ -147,9 +147,9 @@ export interface SourceFieldRetractionContract {
  * `dept-faculty-roster` qualifies through `FacultyEntry.labSlotAttestation` (#3135).
  * On a `profileBelongsToRosterPerson` mismatch it keeps the citation and drops only
  * the enrichment, `labUrl` included, so that outcome is recorded as `refused`, and a
- * profile fetch failure withdraws the roster card's `empty`: the profile is where the
- * lab link usually lives, so an unread one states nothing. #2385 records that
- * dropping that edge strands the real lab, which
+ * profile left unread (a fetch failure or an off-Yale link) withdraws the roster card's
+ * `empty`: the profile is where the lab link usually lives, so an unread one states
+ * nothing. #2385 records that dropping that edge strands the real lab, which
  * `observations:retarget-foreign-lab-websites` exists to repair rather than retract.
  *
  * `yse-faculty-directory` qualifies for one case only. It emits `slug` and
