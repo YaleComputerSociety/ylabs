@@ -1450,6 +1450,32 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.degraded).toBe(false);
   });
 
+  it('marks a text search degraded when the embedder check itself fails', async () => {
+    mocks.getEmbedders.mockRejectedValue(new Error('meili embedders endpoint timed out'));
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      const result = await searchResearchGroupsViaMeili('zzzxxxqqq123nonsense', {}, 1, 24);
+
+      expect(mocks.search).toHaveBeenCalledTimes(1);
+      expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
+      expect(result.degraded).toBe(true);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('keeps a keyword-only text search undegraded when no embedder is configured', async () => {
+    mocks.getEmbedders.mockResolvedValue({});
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('zzzxxxqqq123nonsense', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
+    expect(result.degraded).toBe(false);
+  });
+
   it('drops a lone coincidental single-typo keyword hit for a real zero-coverage query (#1015)', async () => {
     const historianId = '67d8928150621bcef434a1f7';
     mocks.search.mockResolvedValueOnce({

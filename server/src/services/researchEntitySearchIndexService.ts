@@ -13,6 +13,7 @@ import {
   servedResearchEntityTitle,
 } from '../utils/servedResearchEntityTitle';
 import { getMeiliIndex } from '../utils/meiliClient';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { dropDomainIncoherentUnsourcedResearchAreas } from '../utils/researchAreaDomainCoherence';
 import {
@@ -632,44 +633,55 @@ export const buildResearchEntitySearchEmbedderConfig = (apiKey: string) => ({
 
 const RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS = 5 * 60 * 1000;
 
-let embedderConfiguredCache: boolean | null = null;
-let embedderConfiguredCacheAt = 0;
+export type ResearchEntitySearchEmbedderState = 'configured' | 'absent' | 'unknown';
+
+let embedderStateCache: Exclude<ResearchEntitySearchEmbedderState, 'unknown'> | null = null;
+let embedderStateCacheAt = 0;
 
 export const invalidateResearchEntitySearchEmbedderCache = (): void => {
-  embedderConfiguredCache = null;
-  embedderConfiguredCacheAt = 0;
+  embedderStateCache = null;
+  embedderStateCacheAt = 0;
 };
 
 interface ResearchEntitySearchIndexLike {
   getEmbedders?: () => Promise<Record<string, unknown> | null | undefined>;
 }
 
+export async function readResearchEntitySearchEmbedderState(
+  index: ResearchEntitySearchIndexLike,
+): Promise<ResearchEntitySearchEmbedderState> {
+  const now = Date.now();
+  if (
+    embedderStateCache !== null &&
+    now - embedderStateCacheAt < RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS
+  ) {
+    return embedderStateCache;
+  }
+
+  let embedders: Record<string, unknown> | null | undefined;
+  try {
+    embedders = typeof index.getEmbedders === 'function' ? await index.getEmbedders() : null;
+  } catch (error) {
+    console.error(
+      'ResearchEntity Meilisearch embedder check failed; searching keyword-only:',
+      sanitizeLogValue(error),
+    );
+    return 'unknown';
+  }
+
+  const state =
+    embedders && typeof embedders === 'object' && RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME in embedders
+      ? 'configured'
+      : 'absent';
+  embedderStateCache = state;
+  embedderStateCacheAt = now;
+  return state;
+}
+
 export async function isResearchEntitySearchEmbedderConfigured(
   index: ResearchEntitySearchIndexLike,
 ): Promise<boolean> {
-  const now = Date.now();
-  if (
-    embedderConfiguredCache !== null &&
-    now - embedderConfiguredCacheAt < RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS
-  ) {
-    return embedderConfiguredCache;
-  }
-
-  let configured = false;
-  try {
-    const embedders = typeof index.getEmbedders === 'function' ? await index.getEmbedders() : null;
-    configured = Boolean(
-      embedders &&
-      typeof embedders === 'object' &&
-      RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME in embedders,
-    );
-  } catch {
-    configured = false;
-  }
-
-  embedderConfiguredCache = configured;
-  embedderConfiguredCacheAt = now;
-  return configured;
+  return (await readResearchEntitySearchEmbedderState(index)) === 'configured';
 }
 
 const MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS = 180_000;
