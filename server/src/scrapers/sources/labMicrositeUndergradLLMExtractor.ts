@@ -39,7 +39,7 @@ import { isBenchmarkModeActive } from '../snapshotBenchmarkMode';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
-import { laneQuoteStatesUndergraduates } from '../undergradEvidenceQuoteValidation';
+import { quoteStatesAnUndergraduateAccessFact } from '../undergradQuoteRelevance';
 import {
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
@@ -741,7 +741,7 @@ export function extractionToObservations(
 
   if (
     evidenceQuote &&
-    laneQuoteStatesUndergraduates(evidenceQuote.text) &&
+    quoteStatesAnUndergraduateAccessFact(evidenceQuote.text) &&
     isCurrentYaleUndergradEvidence(evidenceQuote.text)
   ) {
     out.push({

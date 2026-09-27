@@ -129,3 +129,50 @@ describe('the microsite lane admission rule (#3764)', () => {
     ).toBeNull();
   });
 });
+
+describe('planStoredUndergradEvidenceQuoteClear with the row as citation context (#3592)', () => {
+  const plan = (row: Record<string, unknown>) =>
+    planStoredUndergradEvidenceQuoteClear({
+      stored: row,
+      staged: {},
+      withdrawingSources: new Set(),
+      lockedFields: [],
+    });
+
+  it('clears a quote held only by the retired cache backfill', () => {
+    expect(plan(stored(GROUNDED, 'research-entity-cache-backfill'))).toEqual({
+      reason: 'inadmissible',
+      skipped: null,
+    });
+  });
+
+  it('clears a lane quote cited to a department program page the row does not own', () => {
+    const row = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      websiteUrl: '',
+      undergradEvidenceQuote: GROUNDED,
+      fieldProvenance: {
+        undergradEvidenceQuote: {
+          sourceName: LANE,
+          sourceUrl: 'https://economics.yale.edu/undergraduate/employment-opportunities',
+        },
+      },
+    };
+    expect(plan(row)).toEqual({ reason: 'inadmissible', skipped: null });
+  });
+
+  it('keeps a lane quote cited to the row own lab page', () => {
+    const row = {
+      entityType: 'LAB',
+      websiteUrl: 'https://medicine.yale.edu/lab/example/',
+      undergradEvidenceQuote: GROUNDED,
+      fieldProvenance: {
+        undergradEvidenceQuote: {
+          sourceName: LANE,
+          sourceUrl: 'https://medicine.yale.edu/lab/example/people/',
+        },
+      },
+    };
+    expect(plan(row)).toBeNull();
+  });
+});

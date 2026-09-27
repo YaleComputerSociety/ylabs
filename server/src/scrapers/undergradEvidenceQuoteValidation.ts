@@ -130,6 +130,8 @@ export function isPlausibleUndergradEvidenceQuote(quote: string | undefined | nu
 
 export const UNDERGRAD_MICROSITE_LANE = 'lab-microsite-undergrad-llm';
 
+export const RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE = 'research-entity-cache-backfill';
+
 const EXPLICIT_UNDERGRADUATE_POPULATION =
   /(?:\b|(?<=[a-z]))(?:undergrads?|undergraduates?)\b|\b(?:college\s+students?|yale\s+college|freshm(?:an|en)|sophomores?)\b|\b(?:first[- ]years?|juniors?)\b(?![\s-]+(?:graduate|grad|ph\.?\s?d|doctoral|postdoc|post-doc|medical|faculty|investigators?|researchers?|scientists?|fellows?|staff))/i;
 

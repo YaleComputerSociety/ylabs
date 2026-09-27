@@ -33,9 +33,13 @@ import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntit
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import {
   isModelSearchNote,
-  laneQuoteStatesUndergraduates,
+  RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
   UNDERGRAD_MICROSITE_LANE,
 } from '../scrapers/undergradEvidenceQuoteValidation';
+import {
+  quotePageIsAboutAnotherEntity,
+  quoteStatesAnUndergraduateAccessFact,
+} from '../scrapers/undergradQuoteRelevance';
 import {
   MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS,
   SERVED_FIELD_CONTRIBUTION_LABEL_SET,
@@ -506,11 +510,14 @@ export function toPublicResearchEntityDto(
         continue;
       }
       if (field === 'undergradEvidenceQuote') {
-        const fromMicrositeLane =
-          group.fieldProvenance?.undergradEvidenceQuote?.sourceName === UNDERGRAD_MICROSITE_LANE;
+        const provenance = group.fieldProvenance?.undergradEvidenceQuote;
+        const fromMicrositeLane = provenance?.sourceName === UNDERGRAD_MICROSITE_LANE;
         const withheld =
           isModelSearchNote(group[field]) ||
-          (fromMicrositeLane && !laneQuoteStatesUndergraduates(group[field]));
+          provenance?.sourceName === RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE ||
+          (fromMicrositeLane &&
+            (!quoteStatesAnUndergraduateAccessFact(group[field]) ||
+              quotePageIsAboutAnotherEntity(provenance?.sourceUrl, group)));
         if (!withheld) dto[field] = publicTextValue(group[field]);
         continue;
       }
