@@ -64,7 +64,7 @@ Splitting by surface keeps one corpus per row: the same word searched on both su
 ## Search engagement
 
 The admin search-success metric is action-aware.
-A search is engaged when the same signed-in user views a research home, listing, or program, or saves a pathway, listing, or program, within 30 minutes and before that user's next search.
+A search is engaged when the same signed-in user records a `fellowship_view`, `research_view`, `pathway_save`, `research_profile_open`, or `research_save` within 30 minutes and before that user's next search.
 The next-search boundary avoids attributing an action to multiple earlier queries in the same browsing session.
 
 The dashboard reports engaged searches separately from searches that returned results but received no attributed view or save.
