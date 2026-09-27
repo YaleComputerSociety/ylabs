@@ -478,7 +478,7 @@ async function loadArchivedEntityArtifactPlan(
         .toArray(),
       survivorIds.length > 0
         ? collection
-            .find({ ...spec.activeMatch, [spec.entityIdPath]: { $in: survivorIds } })
+            .find({ [spec.entityIdPath]: { $in: survivorIds } })
             .project(spec.projection)
             .toArray()
         : Promise.resolve([]),
@@ -559,7 +559,7 @@ async function mergeSignalEvidenceIntoSurvivor(
   const evidenceIds = duplicate?.source?.evidenceIds;
   if (!Array.isArray(evidenceIds) || evidenceIds.length === 0) return 0;
   const result = await collection.updateOne(
-    { _id: canonicalObjectId },
+    { _id: canonicalObjectId, archived: { $ne: true } },
     {
       $addToSet: { 'source.evidenceIds': { $each: evidenceIds } },
       $set: { lastMaterializedAt: now },
