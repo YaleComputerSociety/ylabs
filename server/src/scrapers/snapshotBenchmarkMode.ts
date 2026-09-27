@@ -9,8 +9,15 @@
  * fails through the lane's normal error path rather than reaching the network. The SSRF
  * guard skips its DNS lookup during replay, because nothing can connect and a live lookup
  * would let the resolver, rather than lane code, decide which targets reach the cache.
+ *
+ * A model call is frozen the same way (#3587). Capture records each chat-completion response
+ * keyed by a hash of the exact request body, and replay serves it, so a changed prompt or a
+ * changed page-to-prompt step is a counted miss rather than a stale answer. A live-model
+ * replay serves the frozen pages but lets model calls through, which measures the model's
+ * own run-to-run spread instead of the lane code.
  */
-import axios from 'axios';
+import axios, { type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
+import crypto from 'crypto';
 
 export interface CapturedPage {
   sourceName: string;
@@ -26,9 +33,15 @@ export class BenchmarkReplayNetworkError extends Error {
   }
 }
 
+export const MODEL_RESPONSE_NAMESPACE = 'model-chat-completion';
+
+const MODEL_ENDPOINT_PREFIX = 'https://api.openai.com/';
+
 interface CaptureMode {
   kind: 'capture';
   pages: Map<string, CapturedPage>;
+  requestInterceptorId: number;
+  responseInterceptorId: number;
 }
 
 interface ReplayMode {
@@ -38,6 +51,7 @@ interface ReplayMode {
   missed: Set<string>;
   networkBlocks: number;
   interceptorId: number;
+  liveModel: boolean;
 }
 
 let mode: CaptureMode | ReplayMode | null = null;
@@ -49,13 +63,64 @@ function assertNoActiveMode(): void {
   if (mode) throw new Error(`a benchmark ${mode.kind} is already active`);
 }
 
+const canonicalJson = (value: unknown): string =>
+  JSON.stringify(value, (_key, entry: unknown) =>
+    entry && typeof entry === 'object' && !Array.isArray(entry)
+      ? Object.fromEntries(
+          Object.entries(entry as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)),
+        )
+      : entry,
+  );
+
+const isModelRequest = (config: InternalAxiosRequestConfig): boolean =>
+  (config.method ?? 'get').toLowerCase() === 'post' &&
+  typeof config.url === 'string' &&
+  config.url.startsWith(MODEL_ENDPOINT_PREFIX);
+
+export function modelRequestKey(url: string, body: unknown): string {
+  const parsed = typeof body === 'string' ? JSON.parse(body) : body;
+  const digest = crypto
+    .createHash('sha256')
+    .update(`${url}\n${canonicalJson(parsed ?? null)}`)
+    .digest('hex');
+  return `model-request:v1:${digest}`;
+}
+
+const modelRequestKeyByConfig = new WeakMap<object, string>();
+
 export function beginBenchmarkCapture(): void {
   assertNoActiveMode();
-  mode = { kind: 'capture', pages: new Map() };
+  const capture: CaptureMode = {
+    kind: 'capture',
+    pages: new Map(),
+    requestInterceptorId: -1,
+    responseInterceptorId: -1,
+  };
+  capture.requestInterceptorId = axios.interceptors.request.use((config) => {
+    if (isModelRequest(config)) {
+      modelRequestKeyByConfig.set(config, modelRequestKey(config.url as string, config.data));
+    }
+    return config;
+  });
+  capture.responseInterceptorId = axios.interceptors.response.use((response: AxiosResponse) => {
+    const requestKey = modelRequestKeyByConfig.get(response.config);
+    if (requestKey) {
+      capture.pages.set(benchmarkPageKey(MODEL_RESPONSE_NAMESPACE, requestKey), {
+        sourceName: MODEL_RESPONSE_NAMESPACE,
+        requestKey,
+        payload: response.data,
+        fetchedAt: new Date(),
+      });
+    }
+    return response;
+  });
+  mode = capture;
 }
 
 export function finishBenchmarkCapture(): CapturedPage[] {
   if (mode?.kind !== 'capture') throw new Error('no benchmark capture is active');
+  axios.interceptors.request.eject(mode.requestInterceptorId);
+  axios.interceptors.response.eject(mode.responseInterceptorId);
   const pages = [...mode.pages.values()];
   mode = null;
   return pages;
@@ -63,7 +128,33 @@ export function finishBenchmarkCapture(): CapturedPage[] {
 
 export const isBenchmarkReplayActive = (): boolean => mode?.kind === 'replay';
 
-export function beginBenchmarkReplay(pages: readonly CapturedPage[]): void {
+export const isBenchmarkModeActive = (): boolean => mode !== null;
+
+export const isLiveModelReplayActive = (): boolean => mode?.kind === 'replay' && mode.liveModel;
+
+export function refuseBenchmarkReplayNetwork(): never {
+  if (mode?.kind === 'replay') mode.networkBlocks += 1;
+  throw new BenchmarkReplayNetworkError();
+}
+
+function serveFrozenModelResponse(
+  config: InternalAxiosRequestConfig,
+  payload: unknown,
+): InternalAxiosRequestConfig {
+  config.adapter = async () => ({
+    data: payload,
+    status: 200,
+    statusText: 'OK',
+    headers: {},
+    config,
+  });
+  return config;
+}
+
+export function beginBenchmarkReplay(
+  pages: readonly CapturedPage[],
+  options: { liveModel?: boolean } = {},
+): void {
   assertNoActiveMode();
   const replay: ReplayMode = {
     kind: 'replay',
@@ -74,10 +165,22 @@ export function beginBenchmarkReplay(pages: readonly CapturedPage[]): void {
     missed: new Set(),
     networkBlocks: 0,
     interceptorId: -1,
+    liveModel: options.liveModel === true,
   };
-  replay.interceptorId = axios.interceptors.request.use(() => {
-    replay.networkBlocks += 1;
-    throw new BenchmarkReplayNetworkError();
+  replay.interceptorId = axios.interceptors.request.use((config) => {
+    if (isModelRequest(config)) {
+      if (replay.liveModel) return config;
+      const key = benchmarkPageKey(
+        MODEL_RESPONSE_NAMESPACE,
+        modelRequestKey(config.url as string, config.data),
+      );
+      if (replay.pages.has(key)) {
+        replay.served.add(key);
+        return serveFrozenModelResponse(config, replay.pages.get(key));
+      }
+      replay.missed.add(key);
+    }
+    return refuseBenchmarkReplayNetwork();
   });
   mode = replay;
 }

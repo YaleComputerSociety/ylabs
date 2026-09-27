@@ -57,8 +57,9 @@ import {
   type RenderedFetcher,
   type RenderedFetchResult,
 } from '../renderedFetch';
-import { getCached, setCached } from '../snapshotCache';
+import { getCached, getCachedModelAnswer, setCached } from '../snapshotCache';
 import {
+  computeContentHash,
   computeVersionedContentHash,
   contentHashObservation,
   contentUnchanged,
@@ -1153,17 +1154,17 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           additionalSubPages,
         );
 
-        // Per-(websiteUrl, model) cache so reruns don't re-charge OpenAI. The namespace
-        // must be bumped whenever the response format changes, because the cache is read
-        // before the prompt-hash re-extraction gate and would otherwise hand back a
-        // response shaped for the previous schema.
+        // Keyed by the exact request, so a changed prompt, response format, or page text is
+        // a cache miss, and a benchmark replay never serves an answer to a different question.
         const sourceUrls = [homePage.url, ...subPages.map((page) => page.url)];
-        const cacheKey = `llm:undergrad-v3:${this.model}:${sourceUrls.join('+')}`;
+        const cacheKey = `llm:undergrad-v4:${this.model}:${computeContentHash(
+          JSON.stringify([LAB_UNDERGRAD_SYSTEM_PROMPT, LAB_UNDERGRAD_RESPONSE_FORMAT, userPrompt]),
+        )}`;
 
         let extraction: LLMExtraction | null = null;
         if (ctx.options.useCache) {
           try {
-            const cached = await getCached<LLMExtraction>(SOURCE_KEY, cacheKey);
+            const cached = await getCachedModelAnswer<LLMExtraction>(SOURCE_KEY, cacheKey);
             if (cached) extraction = cached;
           } catch {
             /* ignore cache errors */

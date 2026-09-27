@@ -59,7 +59,10 @@ const withoutWallClock = (key: string, value: unknown): unknown =>
  * `read.readAt`, and that clock would make every replay differ. Any other date, including a
  * page-stated one serialized as a full instant, still counts.
  */
-export function plannedOutputFingerprint(observations: readonly PlannedObservation[]): string {
+export function plannedOutputFingerprint(
+  observations: readonly PlannedObservation[],
+  runClockFields: ReadonlySet<string> = new Set(),
+): string {
   const lines = observations
     .map((observation) =>
       JSON.stringify(
@@ -67,7 +70,7 @@ export function plannedOutputFingerprint(observations: readonly PlannedObservati
           text(observation.entityType),
           text(observation.entityKey) || idText(observation.entityId),
           text(observation.field),
-          observation.value ?? null,
+          runClockFields.has(text(observation.field)) ? 'instant' : (observation.value ?? null),
         ],
         withoutWallClock,
       ),
@@ -85,6 +88,7 @@ export function scoreLaneReplay(
   observations: readonly PlannedObservation[],
   labels: readonly BenchmarkLabel[],
   slugByEntityId: ReadonlyMap<string, string> = new Map(),
+  runClockFields: ReadonlySet<string> = new Set(),
 ): LaneReplayScore {
   const bySlug = labelsBySlug(labels);
   const byField = new Map<string, FieldScore>();
@@ -125,7 +129,50 @@ export function scoreLaneReplay(
     knownWrong,
     labelsMatched: matchedLabels.size,
     labelCount: labels.length,
-    outputFingerprint: plannedOutputFingerprint(observations),
+    outputFingerprint: plannedOutputFingerprint(observations, runClockFields),
     byField: [...byField.values()].sort((a, b) => a.field.localeCompare(b.field)),
+  };
+}
+
+export interface CountSpread {
+  min: number;
+  max: number;
+  mean: number;
+}
+
+export interface LiveModelSpread {
+  runs: number;
+  distinctFingerprints: number;
+  emitted: CountSpread;
+  knownWrong: CountSpread;
+  byField: Array<{ field: string; emitted: CountSpread; knownWrong: CountSpread }>;
+}
+
+const spreadOf = (counts: readonly number[]): CountSpread => ({
+  min: Math.min(...counts),
+  max: Math.max(...counts),
+  mean: counts.reduce((sum, count) => sum + count, 0) / counts.length,
+});
+
+/**
+ * The noise band of a lane whose model is called live, over repeated replays of the same
+ * frozen pages. A field absent from a run counts as zero there, so a field one run emits and
+ * another does not widens the band instead of vanishing from it.
+ */
+export function summarizeLiveModelRuns(scores: readonly LaneReplayScore[]): LiveModelSpread {
+  if (scores.length === 0) throw new Error('a live-model spread needs at least one run');
+  const fields = [...new Set(scores.flatMap((score) => score.byField.map((f) => f.field)))].sort();
+  const fieldCount = (score: LaneReplayScore, field: string, key: 'emitted' | 'knownWrong') =>
+    score.byField.find((entry) => entry.field === field)?.[key] ?? 0;
+  return {
+    runs: scores.length,
+    distinctFingerprints: new Set(scores.map((score) => score.outputFingerprint)).size,
+    emitted: spreadOf(scores.map((score) => score.emitted)),
+    knownWrong: spreadOf(scores.map((score) => score.knownWrong)),
+    byField: fields.map((field) => ({
+      field,
+      emitted: spreadOf(scores.map((score) => fieldCount(score, field, 'emitted'))),
+      knownWrong: spreadOf(scores.map((score) => fieldCount(score, field, 'knownWrong'))),
+    })),
   };
 }

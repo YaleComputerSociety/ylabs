@@ -3,7 +3,9 @@ import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusa
 import {
   plannedOutputFingerprint,
   scoreLaneReplay,
+  summarizeLiveModelRuns,
   type BenchmarkLabel,
+  type LaneReplayScore,
 } from '../laneScorecardCore';
 
 const wrongSite = 'https://example.org/someone-elses-lab';
@@ -119,5 +121,70 @@ describe('plannedOutputFingerprint', () => {
     expect(plannedOutputFingerprint([a, b])).not.toBe(
       plannedOutputFingerprint([a, { ...b, value: 'B2' }]),
     );
+  });
+});
+
+describe('run-clock fields', () => {
+  const observed = (at: Date) => ({
+    entityType: 'researchEntity',
+    entityKey: 'lab',
+    field: 'lastObservedAt',
+    value: at,
+  });
+
+  it('masks a field the lane stamps with the run clock', () => {
+    const clock = new Set(['lastObservedAt']);
+    expect(plannedOutputFingerprint([observed(new Date(1))], clock)).toBe(
+      plannedOutputFingerprint([observed(new Date(2))], clock),
+    );
+  });
+
+  it('keeps the same field when the lane does not declare it a run clock', () => {
+    expect(plannedOutputFingerprint([observed(new Date(1))])).not.toBe(
+      plannedOutputFingerprint([observed(new Date(2))]),
+    );
+  });
+});
+
+describe('summarizeLiveModelRuns', () => {
+  const score = (fingerprint: string, fields: Record<string, number>): LaneReplayScore => ({
+    emitted: Object.values(fields).reduce((sum, count) => sum + count, 0),
+    knownWrong: 0,
+    labelsMatched: 0,
+    labelCount: 0,
+    outputFingerprint: fingerprint,
+    byField: Object.entries(fields).map(([field, emitted]) => ({
+      field,
+      emitted,
+      labeledEntityEmitted: 0,
+      knownWrong: 0,
+    })),
+  });
+
+  it('reports the band of each field across runs, counting an absent field as zero', () => {
+    const spread = summarizeLiveModelRuns([
+      score('x', { undergradEvidenceQuote: 4, joinPageUrl: 1 }),
+      score('y', { undergradEvidenceQuote: 6 }),
+      score('x', { undergradEvidenceQuote: 5, joinPageUrl: 2 }),
+    ]);
+    expect(spread.runs).toBe(3);
+    expect(spread.distinctFingerprints).toBe(2);
+    expect(spread.emitted).toEqual({ min: 5, max: 7, mean: 6 });
+    expect(spread.byField).toEqual([
+      {
+        field: 'joinPageUrl',
+        emitted: { min: 0, max: 2, mean: 1 },
+        knownWrong: { min: 0, max: 0, mean: 0 },
+      },
+      {
+        field: 'undergradEvidenceQuote',
+        emitted: { min: 4, max: 6, mean: 5 },
+        knownWrong: { min: 0, max: 0, mean: 0 },
+      },
+    ]);
+  });
+
+  it('refuses an empty set of runs', () => {
+    expect(() => summarizeLiveModelRuns([])).toThrow(/at least one run/);
   });
 });

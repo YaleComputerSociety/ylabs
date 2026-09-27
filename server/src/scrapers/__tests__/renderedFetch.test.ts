@@ -9,6 +9,11 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { createScraplingRenderedFetcher } from '../renderedFetch';
+import {
+  BenchmarkReplayNetworkError,
+  beginBenchmarkReplay,
+  finishBenchmarkReplay,
+} from '../snapshotBenchmarkMode';
 
 const execFileSuccess = (payload: unknown) => {
   mocks.execFile.mockImplementationOnce((_command, _args, _options, callback) => {
@@ -19,6 +24,31 @@ const execFileSuccess = (payload: unknown) => {
 const noSeedRedirect = async () => false;
 
 describe('createScraplingRenderedFetcher', () => {
+  it('refuses to render during a benchmark replay and counts the block', async () => {
+    const seedRedirectCheck = vi.fn(async () => false);
+    const fetcher = createScraplingRenderedFetcher({
+      enabled: true,
+      pythonCommand: 'python3',
+      bridgePath: 'scraplingBridge.py',
+      seedRedirectCheck,
+    });
+
+    beginBenchmarkReplay([]);
+    try {
+      await expect(fetcher?.({ url: 'https://8.8.8.8/source' })).rejects.toBeInstanceOf(
+        BenchmarkReplayNetworkError,
+      );
+      expect(seedRedirectCheck).not.toHaveBeenCalled();
+      expect(mocks.execFile).not.toHaveBeenCalled();
+    } finally {
+      expect(finishBenchmarkReplay()).toEqual({
+        pagesServed: 0,
+        pagesMissed: 0,
+        networkBlocks: 1,
+      });
+    }
+  });
+
   it('blocks before invoking the Python renderer when the seed URL redirects', async () => {
     const fetcher = createScraplingRenderedFetcher({
       enabled: true,

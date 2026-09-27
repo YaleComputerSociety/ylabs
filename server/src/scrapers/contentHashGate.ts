@@ -12,6 +12,7 @@ import { createHash } from 'crypto';
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import type { ObservedEntityType } from '../models/observation';
+import { isBenchmarkModeActive } from './snapshotBenchmarkMode';
 import type { ObservationInput } from './types';
 
 export const SOURCE_CONTENT_HASH_FIELD = 'sourceContentHash';
@@ -49,6 +50,8 @@ export async function loadStoredContentHash(
   entity: ContentHashEntityRef,
 ): Promise<string | undefined> {
   if (!entity.entityId && !entity.entityKey) return undefined;
+  // A benchmark must not skip a target because of what the live corpus stored last week.
+  if (isBenchmarkModeActive()) return undefined;
   // Fail open when no DB connection is available (e.g. pure unit tests): a gate
   // lookup must never block or hang extraction, only skip re-work when it can
   // prove the content is unchanged.
