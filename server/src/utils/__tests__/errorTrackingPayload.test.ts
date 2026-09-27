@@ -79,13 +79,13 @@ describe('server error report payload', () => {
       type: undefined,
       exception: {
         values: [
-          { type: 'Error', value: 'failed to reach mongodb+srv://synthuser:synthpass@host/db' },
+          { type: 'Error', value: 'failed to reach mongodb+srv://user:pass@example.invalid/db' },
         ],
       },
     });
 
     expect(scrubbed.exception?.values?.[0]?.value).toBe(
-      'failed to reach mongodb+srv://[Filtered]@host/db',
+      'failed to reach mongodb+srv://[Filtered]@example.invalid/db',
     );
   });
 });
