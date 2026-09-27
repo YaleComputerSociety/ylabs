@@ -490,6 +490,11 @@ Read the served output afterwards with `yarn --cwd server research-entity:served
   One asymmetry is deliberate and stays: `isMateriallyThinnerProseRefresh` runs only in the collapse, because the richer-value preference (#2423) compares against the whole retained log rather than against a single active incumbent.
   The collapse also judges quality without the batch's `researchAreas` or `fullContext`, which the write path supplies, so the two can reach different verdicts on the same pair; that is a known gap rather than a settled decision.
   `appendObservations` resolves every incumbent prose lookup the batch can need once, up front and concurrently, and judges the incumbent with the same `entityType` and `researchAreas` as the incoming value, so an incumbent the quality bar rejects cannot block a refresh.
+- The card-loss guard `isCardLosingDescriptionRefresh` (`server/src/scrapers/descriptionCardRefreshGuard.ts`, #3767) judges a research row's `fullDescription` and `shortDescription` as one pair, because the card is built from both.
+  It drops the whole incoming pair when the source's current pair builds a complete card and the incoming one does not, filling a field the batch does not refresh from the current value.
+  The verdict comes from the gate's own `buildResearchEntityPublicDescriptionRepresentation` with the row's stored fields and its gate lead members, not from the raw prose checks, because a keyword list, a citation or a recruiting line can pass those and still build no card.
+  An equal or better pair still replaces the current one, and a row the judge cannot load raises no objection.
+  It runs only on the write path and is skipped under `C4_LOSSLESS_INGEST`.
 - `retireObservations` (#1966) is a primitive that bulk-supersedes the observations matching a filter (for example an entity's active rows) and stamps a `rollback` marker with an audit reason, without deleting evidence.
 
 Microsite LLM extractors are gated on a versioned content hash (#2025).
