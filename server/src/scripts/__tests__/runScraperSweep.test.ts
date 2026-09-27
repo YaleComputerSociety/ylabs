@@ -112,6 +112,41 @@ describe('runScraperSweep', () => {
     }
   });
 
+  it('keeps the undergrad microsite LLM lane registered and seeded but out of the sweep', () => {
+    const registeredNames = buildOrchestrator()
+      .list()
+      .map((source) => source.name);
+    expect(MANUAL_ONLY_SWEEP_SOURCES).toContain('lab-microsite-undergrad-llm');
+    expect(RESEARCH_SWEEP_SOURCES.map((source) => source.name)).not.toContain(
+      'lab-microsite-undergrad-llm',
+    );
+    expect(registeredNames).toContain('lab-microsite-undergrad-llm');
+    expect(ACTIVE_SOURCE_NAMES).toContain('lab-microsite-undergrad-llm');
+  });
+
+  it('refuses the undergrad microsite LLM lane put back into the sweep manifest', () => {
+    const registeredNames = buildOrchestrator()
+      .list()
+      .map((source) => source.name);
+    RESEARCH_SWEEP_SOURCES.push({ name: 'lab-microsite-undergrad-llm', phase: 'content-access' });
+    try {
+      expect(() => validateScraperSweepManifest(registeredNames)).toThrow(
+        /manual-only sources must stay out of the sweep manifest: lab-microsite-undergrad-llm/,
+      );
+    } finally {
+      RESEARCH_SWEEP_SOURCES.pop();
+    }
+  });
+
+  it('never hands a manual-only source to the development-full preflight canary', () => {
+    const preflightCandidates = sweepSourcesForMode('development-full').map(
+      (source) => source.name,
+    );
+    for (const name of MANUAL_ONLY_SWEEP_SOURCES) {
+      expect(preflightCandidates).not.toContain(name);
+    }
+  });
+
   it('refuses a manual-only source that is no longer registered', () => {
     const registeredNames = buildOrchestrator()
       .list()
