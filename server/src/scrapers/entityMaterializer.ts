@@ -3713,6 +3713,7 @@ export interface MergedSurvivorEvidence {
   mergedInKeys: string[];
   survivorLaneOwnsWebsite: boolean;
   droppedLoserWebsiteValues: unknown[];
+  loserRosterAppointments: any[];
 }
 
 /**
@@ -3733,6 +3734,7 @@ export async function mergedSurvivorEvidence(
     mergedInKeys: [],
     survivorLaneOwnsWebsite: false,
     droppedLoserWebsiteValues: [],
+    loserRosterAppointments: [],
   };
   if (!survivorId) return unmerged;
   if (prefetch?.hasNoMergedInRows(survivorId)) return unmerged;
@@ -3862,11 +3864,15 @@ export async function mergedSurvivorEvidence(
     (observation: any) => !loserOrigin(observation) && isRosterAppointment(observation),
   );
   const droppedLoserWebsiteValues: unknown[] = [];
+  const loserRosterAppointments: any[] = [];
   const observations = entryPointIndependentOrder.filter((observation: any) => {
     const loser = loserOrigin(observation);
     if (!loser) return true;
     const field = String(observation.field || '');
-    if (survivorReadOnARoster && isRosterAppointment(observation)) return true;
+    if (survivorReadOnARoster && isRosterAppointment(observation)) {
+      loserRosterAppointments.push(observation);
+      return false;
+    }
     if (SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS.has(field)) return false;
     if (survivorOwnsItsWebsite && LAB_IDENTITY_WEBSITE_FIELDS.has(field)) {
       droppedLoserWebsiteValues.push(observation.value);
@@ -3908,6 +3914,7 @@ export async function mergedSurvivorEvidence(
     droppedLoserWebsiteValues: droppedLoserWebsiteValues.filter(
       (value) => !survivorStatedWebsites.has(websiteIdentity(value)),
     ),
+    loserRosterAppointments,
   };
 }
 
@@ -4565,6 +4572,7 @@ export interface ProjectFromLogInput {
   resolverObs: ResolverObservation[];
   fullDescriptionShellGated: boolean;
   droppedLoserWebsiteValues?: readonly unknown[];
+  loserRosterReads?: readonly ResolverObservation[];
   now: Date;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
   writeOnlyFields?: string[];
@@ -4758,7 +4766,7 @@ export const DEPARTMENT_ROSTER_APPOINTMENT_CURRENCY_DAYS = 14;
 async function combineDepartmentRosterAppointments(input: {
   set: Record<string, unknown>;
   entityDoc: any;
-  resolverObs: ResolverObservation[];
+  rosterReads: readonly ResolverObservation[];
   manuallyLockedFields: string[];
 }): Promise<void> {
   const field = 'departments';
@@ -4770,12 +4778,15 @@ async function combineDepartmentRosterAppointments(input: {
   ) {
     return;
   }
-  const rosterReads = input.resolverObs.filter(
-    (observation) =>
-      observation.field === field &&
-      observation.sourceName === DEPARTMENT_ROSTER_APPOINTMENT_SOURCE &&
-      Array.isArray(observation.value),
-  );
+  const rosterReads = refusedResolverObservations(
+    input.rosterReads.filter(
+      (observation) =>
+        observation.field === field &&
+        observation.sourceName === DEPARTMENT_ROSTER_APPOINTMENT_SOURCE &&
+        Array.isArray(observation.value),
+    ),
+    entityDoc?.fieldValueRefusals,
+  ).kept;
   const readTime = (observation: ResolverObservation) =>
     new Date(observation.observedAt as any).getTime() || 0;
   const newestRead = Math.max(0, ...rosterReads.map(readTime));
@@ -5084,6 +5095,7 @@ export async function projectFromLog(
     resolverObs,
     fullDescriptionShellGated,
     droppedLoserWebsiteValues = [],
+    loserRosterReads = [],
   } = input;
   const set: Record<string, unknown> = {};
   const unset: Record<string, ''> = {};
@@ -5219,7 +5231,7 @@ export async function projectFromLog(
     await combineDepartmentRosterAppointments({
       set,
       entityDoc,
-      resolverObs,
+      rosterReads: [...resolverObs, ...loserRosterReads],
       manuallyLockedFields,
     });
   }
@@ -6176,11 +6188,19 @@ export async function materializeEntity(
 
   let mergedInKeys: string[] = [];
   let droppedLoserWebsiteValues: unknown[] = [];
+  let loserRosterReads: ResolverObservation[] = [];
   if (isResearchEntityObservationType(entityType) && entityDoc && entityDoc.archived !== true) {
     const merged = await mergedSurvivorEvidence(entityType, entityDoc, obs, options.chunkPrefetch);
     obs = merged.observations;
     mergedInKeys = merged.mergedInKeys;
     droppedLoserWebsiteValues = merged.droppedLoserWebsiteValues;
+    loserRosterReads = merged.loserRosterAppointments.map((o: any) => ({
+      field: o.field,
+      value: o.value,
+      sourceName: o.sourceName,
+      confidence: o.confidence,
+      observedAt: o.observedAt,
+    }));
     if (obs.length === 0) {
       return {
         entityType,
@@ -6375,6 +6395,7 @@ export async function materializeEntity(
     resolverObs,
     fullDescriptionShellGated,
     droppedLoserWebsiteValues,
+    loserRosterReads,
     now: new Date(),
     synthesizeCardDescription: options.synthesizeCardDescription,
     writeOnlyFields: options.writeOnlyFields,

@@ -179,6 +179,35 @@ describe('department roster appointments combine (#3621)', () => {
     ).toBe(true);
   });
 
+  it('never lets a merged-in roster read outrank a department the survivor holds', async () => {
+    const survivor = await seedRow('example-lead', ['Early Modern Studies']);
+    await ResearchEntity.create({
+      slug: 'example-lead-roster-shell',
+      name: 'Example Lead Faculty Research',
+      archived: true,
+      canonicalGroupId: survivor._id,
+    });
+    await seedName('example-lead');
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: 'example-lead',
+      field: 'departments',
+      value: ['Early Modern Studies'],
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'lab-microsite',
+      sourceUrl: 'https://example.yale.edu/example-lead/',
+      confidence: 0.9,
+      observedAt: RECENT,
+      superseded: false,
+    });
+    await seedRosterRead('example-lead', ['History']);
+    await seedRosterRead('example-lead-roster-shell', ['History']);
+
+    await materializeEntity('researchEntity', { entityKey: 'example-lead' });
+
+    expect(await departmentsOf('example-lead')).toEqual(['Early Modern Studies']);
+  });
+
   it('never combines a school label from a roster page', async () => {
     await seedRow('example-lead', ['History'], { school: 'Faculty of Arts and Sciences' });
     await seedName('example-lead');
