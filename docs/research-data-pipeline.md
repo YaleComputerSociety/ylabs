@@ -687,6 +687,10 @@ The operator lane, `yarn --cwd server observations:reconcile-field-retractions`,
 It is dry-run by default, and apply requires `--confirm-field-retraction` plus a planned count within `--max-apply` (default 200).
 Retention bounds how far back witnesses reach - `observations:prune-dead` keeps the last 3 runs per source - and losing older witnesses only ever makes the lane more conservative.
 
+Retraction is keyed on one `entityKey`, so it cannot reach a tombstoned loser's evidence: once a source stops emitting the loser's slug nothing reads that key again, and the loser's whole observation bundle stays active while `mergedSurvivorEvidence` resolves the survivor over it (#3560).
+For `websiteUrl` and `website` on a survivor its own lab-identity lane typed, the survivor-ownership rule in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md) keeps that evidence out of the slot at resolve time (#3585).
+That is an ownership decision rather than a retirement, so every other field, and a survivor with no lab-identity typing of its own, still resolves over frozen loser evidence until #3609 lets a survivor's complete reads retire it.
+
 Measured on Development on 2026-09-23, and it corrects a root cause recorded elsewhere as "merged but inert, because no source asserts absence" (#3135).
 Absence is asserted: 90 live observations carry a non-empty `assertsNoValueFor`.
 What has never happened is a retraction, of which there have been zero.

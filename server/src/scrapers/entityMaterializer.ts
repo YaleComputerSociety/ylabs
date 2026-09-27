@@ -114,6 +114,13 @@ import {
 } from './storedTextNormalization';
 import { planDirectoryGraftCitationRetraction } from './directoryGraftCitations';
 import { planRefusedStoredWebsiteUrlClear } from './refusedStoredWebsiteUrl';
+import {
+  isDroppedLoserWebsite,
+  planSurvivorOwnedWebsiteClear,
+  websiteIdentitiesStatedBy,
+  websiteIdentity,
+  type SurvivorOwnedWebsiteField,
+} from './survivorOwnedWebsiteClear';
 import { planRefusedStoredDescriptionClears } from './refusedStoredDescription';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import type { ReportPostMaterializationMetrics } from './runReport';
@@ -3659,6 +3666,20 @@ const SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS = new Set([
   'studentVisibilityReviewNote',
 ]);
 
+// These lanes fork a lab identity (`name`, `kind`, `entityType`, `websiteUrl`) on
+// one profile link, so once one of them has typed the survivor from the survivor's
+// own key its website is part of that decision. A loser's website would otherwise
+// serve a lab address under a type the survivor's own lane chose because it found
+// no lab (#3585). Adding a lane here also requires it to emit `entityType` and
+// `websiteUrl` from the same link, which `skills/scrapers/SKILL.md` records.
+export const LAB_IDENTITY_DECIDING_SOURCES: ReadonlySet<string> = new Set([
+  'yse-faculty-directory',
+  'ysm-faculty-directory',
+  'dept-faculty-roster',
+]);
+
+const LAB_IDENTITY_WEBSITE_FIELDS: ReadonlySet<string> = new Set(['websiteUrl', 'website']);
+
 // Mirrors the merge plan's `trustedAreaShellEntities` guard (#604, #3330): an area
 // or funding shell's topics and prose must not graft onto a real research row.
 const LOW_TRUST_SHELL_GUARDED_RESEARCH_ENTITY_FIELDS = new Set([
@@ -3688,6 +3709,8 @@ function storedFieldHasValue(value: unknown, hasProvenance: boolean): boolean {
 export interface MergedSurvivorEvidence {
   observations: any[];
   mergedInKeys: string[];
+  survivorLaneOwnsWebsite: boolean;
+  droppedLoserWebsiteValues: unknown[];
 }
 
 /**
@@ -3702,9 +3725,15 @@ export async function mergedSurvivorEvidence(
   loadedObservations: any[],
 ): Promise<MergedSurvivorEvidence> {
   const survivorId = toMaterializerObjectId(survivor._id);
-  if (!survivorId) return { observations: loadedObservations, mergedInKeys: [] };
+  const unmerged = {
+    observations: loadedObservations,
+    mergedInKeys: [],
+    survivorLaneOwnsWebsite: false,
+    droppedLoserWebsiteValues: [],
+  };
+  if (!survivorId) return unmerged;
   const mergedInRows = await listResearchEntityMergedInRows(survivorId);
-  if (mergedInRows.length === 0) return { observations: loadedObservations, mergedInKeys: [] };
+  if (mergedInRows.length === 0) return unmerged;
 
   const survivorSlug = textValue(survivor.slug);
   const loserSlugById = new Map(mergedInRows.map((row) => [String(row._id), textValue(row.slug)]));
@@ -3738,6 +3767,21 @@ export async function mergedSurvivorEvidence(
     return undefined;
   };
   const survivorIsLowTrustShell = isLowTrustAreaShellSlug(survivorSlug);
+  // A locked type or a refused value means an operator, not the lane, decided who
+  // this row is, so the lane has no claim on the website either.
+  const survivorTypeIsLocked =
+    Array.isArray(survivor.manuallyLockedFields) &&
+    survivor.manuallyLockedFields.includes('entityType');
+  const survivorOwnsItsWebsite =
+    !survivorTypeIsLocked &&
+    [...loadedObservations, ...kept].some(
+      (observation: any) =>
+        !loserOrigin(observation) &&
+        observation.field === 'entityType' &&
+        LAB_IDENTITY_DECIDING_SOURCES.has(String(observation.sourceName || '')) &&
+        Boolean(textValue(observation.value)) &&
+        !valueIsRefused(survivor.fieldValueRefusals, 'entityType', observation.value),
+    );
   // The resolver breaks an exact weight tie by array order, so the union is put in
   // one fixed order rather than the entry key's own observations first.
   const entryPointIndependentOrder = [...loadedObservations, ...kept].sort((a: any, b: any) =>
@@ -3808,11 +3852,16 @@ export async function mergedSurvivorEvidence(
   const proseBackingLoserSlug = [...MERGED_SURVIVOR_PROSE_FIELDS]
     .map((proseField) => backingLoserSlugByField.get(proseField))
     .find((slug) => slug !== undefined);
+  const droppedLoserWebsiteValues: unknown[] = [];
   const observations = entryPointIndependentOrder.filter((observation: any) => {
     const loser = loserOrigin(observation);
     if (!loser) return true;
     const field = String(observation.field || '');
     if (SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS.has(field)) return false;
+    if (survivorOwnsItsWebsite && LAB_IDENTITY_WEBSITE_FIELDS.has(field)) {
+      droppedLoserWebsiteValues.push(observation.value);
+      return false;
+    }
     if (survivorHeldFields.has(field) && !RESEARCH_ENTITY_GRANT_EVIDENCE_FIELDS.has(field)) {
       return false;
     }
@@ -3839,9 +3888,16 @@ export async function mergedSurvivorEvidence(
     );
   });
 
+  const survivorStatedWebsites = websiteIdentitiesStatedBy(
+    observations.filter((observation: any) => !loserOrigin(observation)),
+  );
   return {
     observations,
     mergedInKeys: [...loserSlugById.keys(), ...loserSlugs],
+    survivorLaneOwnsWebsite: survivorOwnsItsWebsite,
+    droppedLoserWebsiteValues: droppedLoserWebsiteValues.filter(
+      (value) => !survivorStatedWebsites.has(websiteIdentity(value)),
+    ),
   };
 }
 
@@ -3857,8 +3913,8 @@ async function observationsMergedIntoLiveSurvivor(
       : null;
   if (!lookup) return [];
   const survivor = (await ResearchEntity.findOne({ ...lookup, archived: { $ne: true } })
-    .select('_id slug')
-    .lean()) as { _id?: unknown; slug?: unknown } | null;
+    .select('_id slug fieldValueRefusals manuallyLockedFields')
+    .lean()) as Parameters<typeof mergedSurvivorEvidence>[1] | null;
   if (!survivor) return [];
   return (await mergedSurvivorEvidence(entityType, survivor, [])).observations;
 }
@@ -4493,6 +4549,7 @@ export interface ProjectFromLogInput {
   materializationObs: any[];
   resolverObs: ResolverObservation[];
   fullDescriptionShellGated: boolean;
+  droppedLoserWebsiteValues?: readonly unknown[];
   now: Date;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
   writeOnlyFields?: string[];
@@ -4937,6 +4994,7 @@ export async function projectFromLog(
     materializationObs,
     resolverObs,
     fullDescriptionShellGated,
+    droppedLoserWebsiteValues = [],
   } = input;
   const set: Record<string, unknown> = {};
   const unset: Record<string, ''> = {};
@@ -5369,6 +5427,22 @@ export async function projectFromLog(
     // websiteUrl resolves after the #613 sourceUrls projection: it clears a profile-page
     // websiteUrl the entity already cites, so it has to see the projection this same pass
     // or the duplicate way-in stays live until the next materialization (issue #2352).
+    const clearLoserOnlySurvivorWebsite = (field: SurvivorOwnedWebsiteField) => {
+      const clearsLoserOnlyWebsite = planSurvivorOwnedWebsiteClear({
+        field,
+        stored: entityDoc,
+        staged: set,
+        droppedLoserValues: droppedLoserWebsiteValues,
+        lockedFields: manuallyLockedFields,
+      });
+      if (!clearsLoserOnlyWebsite) return;
+      console.log(
+        `[survivor-owned-website] cleared a ${field} only a merged-in loser's evidence backed`,
+      );
+      set[field] = '';
+      fieldsWritten++;
+    };
+    clearLoserOnlySurvivorWebsite('website');
     if (!manuallyLockedFields.includes('websiteUrl')) {
       // The vocabulary that already knows this URL is not a research home now stops
       // the write instead of only annotating an audit (#3167). It screens the
@@ -5405,6 +5479,7 @@ export async function projectFromLog(
         );
         delete set.websiteUrl;
       }
+      clearLoserOnlySurvivorWebsite('websiteUrl');
       // Ordered ahead of the promotion deliberately: emptying the slot here lets the
       // promotion below refill it from an admissible citation on this same pass, so a
       // row trades a refused research home for its best evidenced one rather than for
@@ -5442,7 +5517,16 @@ export async function projectFromLog(
         websiteResolution.action === 'set'
           ? researchHomeWebsiteUrlWriteRefusal(websiteResolution.websiteUrl, websiteUrlHostOwner)
           : null;
-      const promotedValueIsRefused = promotedRowRefusal || Boolean(promotedRuleRefusal);
+      const promotedLoserOwnedWebsite =
+        websiteResolution.action === 'set' &&
+        isDroppedLoserWebsite(websiteResolution.websiteUrl, droppedLoserWebsiteValues);
+      if (promotedLoserOwnedWebsite) {
+        console.log(
+          "[survivor-owned-website] declined to promote a merged-in loser's lab website from a citation",
+        );
+      }
+      const promotedValueIsRefused =
+        promotedRowRefusal || Boolean(promotedRuleRefusal) || promotedLoserOwnedWebsite;
       if (promotedRowRefusal) {
         console.log(
           '[field-value-refusal] declined to promote a refused websiteUrl from a citation',
@@ -5983,10 +6067,12 @@ export async function materializeEntity(
   }
 
   let mergedInKeys: string[] = [];
+  let droppedLoserWebsiteValues: unknown[] = [];
   if (isResearchEntityObservationType(entityType) && entityDoc && entityDoc.archived !== true) {
     const merged = await mergedSurvivorEvidence(entityType, entityDoc, obs);
     obs = merged.observations;
     mergedInKeys = merged.mergedInKeys;
+    droppedLoserWebsiteValues = merged.droppedLoserWebsiteValues;
     if (obs.length === 0) {
       return {
         entityType,
@@ -6177,6 +6263,7 @@ export async function materializeEntity(
     materializationObs,
     resolverObs,
     fullDescriptionShellGated,
+    droppedLoserWebsiteValues,
     now: new Date(),
     synthesizeCardDescription: options.synthesizeCardDescription,
     writeOnlyFields: options.writeOnlyFields,

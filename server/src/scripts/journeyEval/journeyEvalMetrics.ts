@@ -215,6 +215,91 @@ export function checkTopicDropAttribution(
   return buildInvariant(id, title, tally.unexplained === 0, { ...tally });
 }
 
+export type SurvivorWebsiteAttribution =
+  | 'locked'
+  | 'survivor-evidence'
+  | 'loser-only-under-owned-slot'
+  | 'merged-loser-evidence'
+  | 'unbacked';
+
+export interface SurvivorWebsiteObservation {
+  servedWebsiteIdentity: string;
+  websiteLocked: boolean;
+  survivorStated: ReadonlySet<string>;
+  admittedStated: ReadonlySet<string>;
+  droppedLoser: ReadonlySet<string>;
+}
+
+export function classifySurvivorWebsite(
+  observation: SurvivorWebsiteObservation,
+): SurvivorWebsiteAttribution {
+  const served = observation.servedWebsiteIdentity;
+  if (observation.websiteLocked) return 'locked';
+  if (observation.survivorStated.has(served)) return 'survivor-evidence';
+  if (observation.droppedLoser.has(served)) return 'loser-only-under-owned-slot';
+  if (observation.admittedStated.has(served)) return 'merged-loser-evidence';
+  return 'unbacked';
+}
+
+export interface SurvivorWebsiteTally {
+  comparable: number;
+  byAttribution: Record<SurvivorWebsiteAttribution, number>;
+}
+
+export function tallySurvivorWebsites(
+  observations: readonly SurvivorWebsiteObservation[],
+): SurvivorWebsiteTally {
+  const byAttribution: Record<SurvivorWebsiteAttribution, number> = {
+    locked: 0,
+    'survivor-evidence': 0,
+    'loser-only-under-owned-slot': 0,
+    'merged-loser-evidence': 0,
+    unbacked: 0,
+  };
+  let comparable = 0;
+  for (const observation of observations) {
+    if (!observation.servedWebsiteIdentity) continue;
+    comparable += 1;
+    byAttribution[classifySurvivorWebsite(observation)] += 1;
+  }
+  return { comparable, byAttribution };
+}
+
+/**
+ * The defect class of #3585 is a served survivor website that only a merged-in
+ * loser states while the survivor's own lab-identity lane owns the slot. `unbacked`
+ * is reported but never asserted here, because a value no evidence states is its
+ * own defect class (#3586) with its own causes.
+ */
+export function checkSurvivorWebsiteAttribution(
+  tally: SurvivorWebsiteTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'survivor-website-is-not-a-loser-lab-identity';
+  const title =
+    'No served merged survivor serves a website only a loser states while its own lab-identity lane owns the slot';
+  const violations = tally.byAttribution['loser-only-under-owned-slot'];
+
+  if (tally.comparable === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No served merged survivor serves a website, so a zero count would be a green signal over an empty population',
+      { ...tally },
+    );
+  }
+  if (violations > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the survivors were read, so a served value and its evidence may describe different versions',
+      { ...tally, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, violations === 0, { ...tally });
+}
+
 export function checkSortOrdering(
   values: readonly (number | null)[],
   order: 'asc' | 'desc',

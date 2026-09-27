@@ -228,6 +228,14 @@ Identity, lead and visibility fields (`SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS` in
 A low-trust shell loser (`isLowTrustAreaShellSlug`: `faculty-research-area-`, `nih-pi-`, `nsf-pi-`, `federal-pi-`, `doe-pi-`) contributes no `researchAreas` or description prose unless the survivor is itself such a shell, which mirrors the merge plan's `trustedAreaShellEntities` guard (#604, #3330).
 Merge-time unions onto the survivor are therefore durable only where the loser's evidence backs them through these filters; a carried topic from a low-trust shell is refused again on the next resolve by design.
 Access signals for a survivor with merged-in rows derive from the same filtered union, so a loser's access evidence reaches the survivor from either entry point.
+A third filter keeps lab identity one unit (#3585).
+`yse-faculty-directory`, `ysm-faculty-directory` and `dept-faculty-roster` (`LAB_IDENTITY_DECIDING_SOURCES`) decide `name`, `kind`, `entityType` and `websiteUrl` on one profile link, so once one of them has typed the survivor under the survivor's own key, a loser's `websiteUrl` and `website` observations are dropped too.
+Without it a row typed `FACULTY_RESEARCH_AREA` by its own lane, which found no lab, served a lab address a loser's lane stated alongside a `LAB` type the survivor never takes.
+The rule stands down when an operator decided the type instead of the lane: an `entityType` lock, or a `fieldValueRefusals` entry refusing the lane's type value.
+Dropping the evidence cannot reach a stored value, so `planSurvivorOwnedWebsiteClear` (`scrapers/survivorOwnedWebsiteClear.ts`) clears a stored `websiteUrl` or `website` that is exactly a dropped loser value no survivor-own observation states, and the citation-promotion path refuses to re-promote that same value from a loser's `sourceUrls` citation, since a refusal that reaches one write path and not the other is undone on the same pass.
+A survivor with no lab-identity typing of its own still absorbs a loser's website, which is the #3560 behaviour.
+A dry-run projection on Development on 2026-09-26 across all 1,665 live survivors, compared with the same projection without the rule, changes 13 served websites, all on `FACULTY_RESEARCH_AREA` rows and all to empty, and no other website; the two served `LAB` survivors whose lane type is refused keep theirs.
+`yarn --cwd server journey:eval --case=survivor-website-attribution` asserts the class on the served route.
 
 The redirect is written from the shared merge primitive (`applyResearchEntityDedupeMergeGroup`), so both the pipeline stage and the manual `research-entity:dedupe-by-pi` CLI produce it, and re-recording the same merge upserts the same row (keyed on the globally unique `mergedSlug`), so it stays idempotent.
 

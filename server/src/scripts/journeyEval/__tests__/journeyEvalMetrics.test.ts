@@ -6,12 +6,16 @@ import {
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
   checkSortOrdering,
+  checkSurvivorWebsiteAttribution,
+  classifySurvivorWebsite,
   resolvePagesToWalk,
+  tallySurvivorWebsites,
   checkTopicDropAttribution,
   corpusFingerprintMoved,
   summarizeInvariants,
   type CorpusFingerprint,
   type TopicAttributionTally,
+  type SurvivorWebsiteObservation,
   type TopicDropObservation,
 } from '../journeyEvalMetrics';
 
@@ -287,5 +291,66 @@ describe('checkTopicDropAttribution', () => {
     );
 
     expect(result.status).toBe('inconclusive');
+  });
+});
+
+describe('survivor website attribution (#3585)', () => {
+  const LAB = 'examplelab.example.org';
+  const survivor = (
+    overrides: Partial<SurvivorWebsiteObservation> = {},
+  ): SurvivorWebsiteObservation => ({
+    servedWebsiteIdentity: LAB,
+    websiteLocked: false,
+    survivorStated: new Set(),
+    admittedStated: new Set(),
+    droppedLoser: new Set(),
+    ...overrides,
+  });
+  const movedCorpus: CorpusFingerprint = {
+    ...steadyCorpus,
+    latestUpdatedAt: '2026-09-25T18:05:00.000Z',
+  };
+
+  it('names the evidence a served website traces to, survivor evidence first', () => {
+    expect(
+      classifySurvivorWebsite(
+        survivor({ survivorStated: new Set([LAB]), droppedLoser: new Set([LAB]) }),
+      ),
+    ).toBe('survivor-evidence');
+    expect(classifySurvivorWebsite(survivor({ droppedLoser: new Set([LAB]) }))).toBe(
+      'loser-only-under-owned-slot',
+    );
+    expect(classifySurvivorWebsite(survivor({ admittedStated: new Set([LAB]) }))).toBe(
+      'merged-loser-evidence',
+    );
+    expect(
+      classifySurvivorWebsite(survivor({ websiteLocked: true, droppedLoser: new Set([LAB]) })),
+    ).toBe('locked');
+    expect(classifySurvivorWebsite(survivor())).toBe('unbacked');
+  });
+
+  it('fails only on a loser-only website, and reports an unbacked one without failing', () => {
+    const clean = tallySurvivorWebsites([
+      survivor({ survivorStated: new Set([LAB]) }),
+      survivor(),
+      survivor({ servedWebsiteIdentity: '' }),
+    ]);
+    expect(clean.comparable).toBe(2);
+    expect(checkSurvivorWebsiteAttribution(clean, steadyCorpus, steadyCorpus).status).toBe('pass');
+
+    const defect = tallySurvivorWebsites([survivor({ droppedLoser: new Set([LAB]) })]);
+    expect(checkSurvivorWebsiteAttribution(defect, steadyCorpus, steadyCorpus).status).toBe('fail');
+  });
+
+  it('is inconclusive over an empty population, or when the corpus moved under a failure', () => {
+    expect(
+      checkSurvivorWebsiteAttribution(tallySurvivorWebsites([]), steadyCorpus, steadyCorpus).status,
+    ).toBe('inconclusive');
+    const defect = tallySurvivorWebsites([survivor({ droppedLoser: new Set([LAB]) })]);
+    expect(checkSurvivorWebsiteAttribution(defect, steadyCorpus, movedCorpus).status).toBe(
+      'inconclusive',
+    );
+    const clean = tallySurvivorWebsites([survivor({ survivorStated: new Set([LAB]) })]);
+    expect(checkSurvivorWebsiteAttribution(clean, steadyCorpus, movedCorpus).status).toBe('pass');
   });
 });

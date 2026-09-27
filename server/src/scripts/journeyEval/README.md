@@ -163,6 +163,12 @@ Its invariant is attribution, not equality: every served quote whose stored row 
 It reports inconclusive when nothing could be compared or when the corpus moved during the walk, on the same one-directional reasoning as the topic case.
 A missing judgements file, or a draw in which no row carries a verdict on its current quote, is inconclusive rather than passing.
 
+## Why the survivor website case reads the route for one population only
+
+`survivor-website-attribution` (#3585) reads every served merged survivor's evidence, but asks the detail route only for the survivors whose own lab-identity lane owns the website slot, because only those can exhibit the defect and a route read for all 854 served survivors did not finish within ten minutes.
+It asserts attribution rather than absence: the served website must not be a value only a loser states under an owned slot.
+A served website no evidence states at all is counted as `unbacked` and never asserted, because that is its own defect class (#3586) with its own causes, and folding it in would fail the case for a reason this fix does not own.
+
 ## Adding a case
 
 Add one object to `journeyCases` in `journeyEvalCases.ts`.

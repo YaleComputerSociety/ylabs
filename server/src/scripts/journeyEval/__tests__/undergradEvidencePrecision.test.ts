@@ -262,6 +262,7 @@ describe('undergrad-evidence-quote-precision case', () => {
     readStoredRows: async (keys) =>
       new Map(keys.map((key) => [key, storedRows.get(key) as Record<string, unknown>])),
     readCorpusFingerprint: async () => still,
+    readOwnedSlotSurvivorWebsites: async () => ({ survivorsScanned: 0, observations: [] }),
     window: 100,
     facetValuesChecked: 0,
     pagesChecked: 1,
