@@ -1378,7 +1378,7 @@ The surviving organizational types (`CENTER`, `INSTITUTE`, `INITIATIVE`, `CORE_F
 See [research-model.md](research-model.md) for the retirement rationale and the course-credit signal direction that replaces `COURSE_SEQUENCE`.
 
 Their `Source` rows outlived the decision, still carrying `enabled: true` and a `lastCrawledAt`, so the freshness worklist counted them as re-crawl work that nothing could perform (#2619).
-All eight now sit in `RETIRED_SOURCE_NAMES` and carry the retirement marker, alongside `lab-microsite-llm` and `ylabs-listing`, the three one-time `root-yale-*-json` imports, and the `holdfix-second-opinion*`, `official-profile-enrichment`, `research-entity-cache-backfill`, and `yale-directory-csv` lanes whose writing code is no longer in the tree.
+All eight now sit in `RETIRED_SOURCE_NAMES` and carry the retirement marker; that list in `server/src/scrapers/sourceDispatch.ts` owns the full set of retired sources.
 Retirement changes the row only; their stored observations and scrape runs stay as evidence of what they once asserted.
 
 ### Research entities minted from a support-staff profile (#3410)

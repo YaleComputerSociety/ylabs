@@ -12,7 +12,7 @@ const PERSON_SLUG_RE = new RegExp(
  * person-slug prefix. A source or script name identifies code, so pairing it with a
  * claim names no person, but the prefixes cannot see the difference:
  * `ysm-faculty-directory` reads as `ysm-faculty-<surname>`, and
- * `repair-nih-nsf-pi-center-lab-conflation` contains `nsf-pi-center-...`.
+ * `nih-nsf-pi-center-lab-conflation-repair` contains `nsf-pi-center-...`.
  *
  * This is an exact-match allowance on the whole hyphenated token, not a token
  * stoplist, so `ysm-faculty-directors`, `legacy-ysm-faculty-directory`, or any other
