@@ -245,7 +245,9 @@ describe('Analytics admin fetches ignore superseded responses', () => {
       expect(scope.getByText('Query: alpha query')).toBeTruthy();
     });
 
-    fireEvent.click(within(userSection().querySelector('table') as HTMLElement).getByText('fixa001'));
+    fireEvent.click(
+      within(userSection().querySelector('table') as HTMLElement).getByText('fixa001'),
+    );
 
     const aside = within(userSection().querySelector('aside') as HTMLElement);
     expect(aside.getByRole('heading', { name: 'Sample Alpha' })).toBeTruthy();
