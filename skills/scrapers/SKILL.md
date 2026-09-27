@@ -80,7 +80,7 @@ The three screens above decide whether a profile may MINT. They are the wrong in
 
 For the retirement-side question use `utils/titleResearchOwnership.ts`, a rank lattice: phrases with explicit verdicts, matched as spans anywhere in the title, longest span winning an overlap. `yarn --cwd server research-entity:audit-title-research-ownership` is its read-only instrument and has no `--apply`.
 
-Four earlier mechanisms each broke on a stored title, and the module's test file pins one case per failure. Before proposing a fifth string rule, read that list: the recurring lesson is that a title names ranks without saying whose rank each one is. `docs/research-data-pipeline.md` owns the reasoning, the measured buckets, and why the lead-edge second witness reaches only 2 of 103 rows.
+Four earlier mechanisms each broke on a stored title, and the module's test file pins one case per failure. Before proposing a fifth string rule, read that list: the recurring lesson is that a title names ranks without saying whose rank each one is. `docs/research-data-pipeline.md` owns the reasoning, the measured buckets, and why the lead-edge second witness is retired and reported for sizing only.
 
 ## Safety rules (write guards)
 

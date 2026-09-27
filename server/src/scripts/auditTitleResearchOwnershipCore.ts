@@ -5,7 +5,7 @@
  * Read-only by construction: this module plans nothing and the script around it takes no
  * `--apply`. #3576 exists because a title string alone is not a safe basis for an
  * irreversible archive, so the audit's job is to size the population and to surface the
- * rows where a second witness is needed, not to queue writes.
+ * rows a future second witness would have to decide, not to queue writes.
  */
 import {
   namesARankItServesRatherThanHolds,
@@ -21,7 +21,7 @@ export interface TitleOwnershipRow {
   tier?: string;
   identityProfileUrl?: string | null;
   storedTitles?: readonly string[];
-  /** Live lead-shaped role edges this row's identity person holds on OTHER entities. */
+  /** Current PI, CO_PI, DIRECTOR or CO_DIRECTOR edges this row's identity person holds on OTHER entities. */
   leadEdgesElsewhere?: number;
 }
 
@@ -53,7 +53,7 @@ export interface TitleOwnershipAudit {
     served: number;
     /** The known limit of the predicate, reported so a reader can subtract it. */
     namingARankTheyServe: number;
-    /** The rows a second, non-string witness already corroborates. */
+    /** Rows carrying the retired second-witness candidate, reported for sizing only. */
     corroboratedByALeadEdgeElsewhere: number;
     byEntityType: Record<string, number>;
   };

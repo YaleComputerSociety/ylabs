@@ -1475,6 +1475,8 @@ On Development, over 4,687 live rows: `owns_research` 1,755, `works_in_another_g
 Two of those numbers are the point.
 `namingARankTheyServe` was **0** among the 103, so the predicate's known limit does not reach this population even though it is real in the vocabulary.
 And `corroboratedByALeadEdgeElsewhere` was **2** of 103, which retires the second-witness design #3576 first proposed: a trainee is a member rather than a lead, so a lead edge on another entity is evidence almost none of them carries.
+That 2 was read under an earlier edge query that matched `PI`, `DIRECTOR` and `CO_DIRECTOR` in any `state`; the audit now counts `CURRENT` `PI`, `CO_PI`, `DIRECTOR` and `CO_DIRECTOR` edges, and the number needs a fresh Development read before it is quoted again.
+The retirement does not rest on the count alone: a lead edge elsewhere shows that a person leads research somewhere, which is not evidence that this row belongs to somebody else's group, so the report carries the count for sizing only and never as archive evidence.
 A workable second witness has to be something a person in somebody else's group actually holds, and finding one is open work.
 
 ### Source dispatch and the freshness worklist (#2619)

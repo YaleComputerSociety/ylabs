@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
@@ -92,9 +93,9 @@ async function main(): Promise<void> {
     titlesByUrl.set(url, held);
   }
 
-  // The second witness #3576 asks for, gathered but not acted on: a person holding a
-  // lead-shaped edge on an entity OTHER than this row is, by the corpus's own record,
-  // working somewhere they do not own. It is a fact rather than a reading of prose.
+  // The retired #3576 second-witness candidate, gathered for sizing only: a current
+  // lead edge elsewhere shows the person leads research somewhere, which is not evidence
+  // that this row belongs to somebody else's group, so it must never justify an archive.
   const personIdsByUrl = new Map<string, string[]>();
   for (const person of await Researcher.find({
     archived: { $ne: true },
@@ -115,15 +116,15 @@ async function main(): Promise<void> {
     }
   }
 
-  const LEAD_ROLES = new Set(['PI', 'DIRECTOR', 'LEAD', 'CO_DIRECTOR']);
   const leadTargetsByPerson = new Map<string, Set<string>>();
   for (const edge of await RoleAssignment.find({
     'target.kind': 'RESEARCH_ENTITY',
+    role: { $in: ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'] },
+    state: 'CURRENT',
     archived: { $ne: true },
   })
-    .select('target personId role')
+    .select('target personId')
     .lean()) {
-    if (!LEAD_ROLES.has(String(edge.role || ''))) continue;
     const personId = serializedDocumentId(edge.personId);
     const entityId = serializedDocumentId(edge.target?.id);
     if (!personId || !entityId) continue;
@@ -172,7 +173,7 @@ async function main(): Promise<void> {
     interpretation: [
       'works_in_another_group sizes the #3576 population; it is NOT an archive list.',
       'Subtract namingARankTheyServe: those titles name a rank as the population somebody serves.',
-      'corroboratedByALeadEdgeElsewhere is the second, non-string witness an archive should require.',
+      'corroboratedByALeadEdgeElsewhere counts a retired second-witness candidate for sizing only; it is not archive evidence.',
     ],
     findings: audit.findings.slice(0, args.findingsLimit),
     findingsShown: Math.min(args.findingsLimit, audit.findings.length),
@@ -190,7 +191,7 @@ async function main(): Promise<void> {
 }
 
 const invokedDirectly =
-  process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname);
+  process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 if (invokedDirectly) {
   main().catch((error) => {
     console.error(error instanceof Error ? error.message : error);
