@@ -16,7 +16,6 @@ const fieldScoreSchema = new mongoose.Schema(
   {
     field: { type: String, required: true },
     emitted: { type: Number, required: true },
-    refusedAtIngest: { type: Number, required: false },
     labeledEntityEmitted: { type: Number, required: true },
     knownWrong: { type: Number, required: true },
   },
@@ -34,6 +33,7 @@ const laneScorecardSnapshotSchema = new mongoose.Schema(
     pagesServed: { type: Number, required: true },
     pagesMissed: { type: Number, required: true },
     emitted: { type: Number, required: true },
+    refusedAtIngest: { type: Number, required: false },
     knownWrong: { type: Number, required: true },
     labelsMatched: { type: Number, required: true },
     labelCount: { type: Number, required: true },
