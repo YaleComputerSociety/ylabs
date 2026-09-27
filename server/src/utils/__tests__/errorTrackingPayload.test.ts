@@ -78,7 +78,9 @@ describe('server error report payload', () => {
     const scrubbed = scrubServerEvent({
       type: undefined,
       exception: {
-        values: [{ type: 'Error', value: 'failed to reach mongodb+srv://synthuser:synthpass@host/db' }],
+        values: [
+          { type: 'Error', value: 'failed to reach mongodb+srv://synthuser:synthpass@host/db' },
+        ],
       },
     });
 
