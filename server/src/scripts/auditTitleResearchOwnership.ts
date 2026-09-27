@@ -171,7 +171,8 @@ async function main(): Promise<void> {
     servedByBucket: audit.servedByBucket,
     worksInAnotherGroup: audit.worksInAnotherGroup,
     interpretation: [
-      'works_in_another_group sizes the #3576 population; it is NOT an archive list.',
+      'works_in_another_group is NOT a defect list. Measured on Development, 38 of its 39 served rows carry a non-trainee lead, so a student reaches the faculty lead and the row describes a real access route.',
+      'Hostability is owned by isTraineeLevelTitle plus hasStrongLead (#2876/#2877), not by this bucket. This predicate is deliberately wider and disagrees with isTraineeLevelTitle on 59 of 103 rows, reading research staff such as an associate research scientist as working in another group when they are reachable through their PI.',
       'Subtract namingARankTheyServe: those titles name a rank as the population somebody serves.',
       'corroboratedByALeadEdgeElsewhere counts a retired second-witness candidate for sizing only; it is not archive evidence.',
     ],

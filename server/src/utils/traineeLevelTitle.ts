@@ -9,11 +9,20 @@
  * A supervisory title alongside the trainee one exempts the person, because a
  * professor or lecturer can supervise whatever else their title says.
  *
+ * `postgraduate associate` and `postgraduate fellow` are Yale's post-bachelor's,
+ * pre-doctoral research appointments, so they belong here for the same reason a
+ * postdoc does: the person does real research and has no standing to admit anybody.
+ * They were missing, and one served row reached students on a `Postgraduate
+ * Associate` lead whose own stored title the gate therefore read as hostable (#3576).
+ * Seven distinct stored titles match the addition and four served rows lose their
+ * strong lead to it, each routing to `missing_lead` and the PI-attachment lane rather
+ * than being removed.
+ *
  * Duplicated from `client/src/utils/leadRoleDisplay.ts` because client and server
  * are separate packages; parity is pinned by behaviour in a test, per #2433.
  */
 const TRAINEE_TITLE_PATTERN =
-  /\b(post-?doctoral|post-?doc|research assistant|(?:ph\.?\s?d|doctoral|graduate|undergraduate|masters?|m\.?s)\.?\s+(?:student|candidate)|intern|pre-?doctoral|trainee)\b/i;
+  /\b(post-?doctoral|post-?doc|postgraduate (?:associate|fellow|researcher)|research assistant|(?:ph\.?\s?d|doctoral|graduate|undergraduate|masters?|m\.?s)\.?\s+(?:student|candidate)|intern|pre-?doctoral|trainee)\b/i;
 /**
  * A degree qualifier is not always present: the corpus stores bare "Student",
  * "MA Student", "IDE Student" and "Graduate School Student", none of which the

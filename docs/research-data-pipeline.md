@@ -1475,11 +1475,20 @@ It buckets every live row by what its identity page's live titles claim, keeps a
 
 On Development, over 4,687 live rows: `owns_research` 1,755, `works_in_another_group` 103 (39 served), `states_no_rank` 85, `titles_disagree` 29, `no_identity_profile` 2,422, `no_stored_title` 293.
 
-Two of those numbers are the point.
+Three of those numbers are the point, and the first corrects how this audit was first read.
+
+**`works_in_another_group` is not a defect count.** Of its 39 served rows, **38 carry a non-trainee lead**, so a student who lands there reaches the faculty lead and the row describes a real access route.
+Whether a row is a way in is owned by `isTraineeLevelTitle` and `hasStrongLead` (#2876/#2877) rather than by what a title says about its own rank, and this predicate is deliberately wider than that pair: it disagrees with `isTraineeLevelTitle` on 59 of the 103, because it reads an associate research scientist or a clinical fellow as working in another group when those people are reachable through their PI.
+Archiving on this bucket would have removed 19 legitimately-led pages, which is why the command has no `--apply`.
+
 `namingARankTheyServe` was **0** among the 103, so the predicate's known limit does not reach this population even though it is real in the vocabulary.
 And `corroboratedByALeadEdgeElsewhere` was **2** of 103, which retires the second-witness design #3576 first proposed: a trainee is a member rather than a lead, so a lead edge on another entity is evidence almost none of them carries.
 That 2 was read under an earlier edge query that matched `PI`, `DIRECTOR` and `CO_DIRECTOR` in any `state`; the audit now counts `CURRENT` `PI`, `CO_PI`, `DIRECTOR` and `CO_DIRECTOR` edges, and the number needs a fresh Development read before it is quoted again.
 The retirement does not rest on the count alone: a lead edge elsewhere shows that a person leads research somewhere, which is not evidence that this row belongs to somebody else's group, so the report carries the count for sizing only and never as archive evidence.
+
+What the audit did find, once read against the hostability rule rather than as a defect list, was **one** served row: a `Postgraduate Associate` whose only lead's stored title the gate read as hostable, because `postgraduate associate` and `postgraduate fellow` were missing from `TRAINEE_TITLE_PATTERN` in `utils/traineeLevelTitle.ts`.
+Those are Yale's post-bachelor's, pre-doctoral research appointments, so they belong there for the same reason a postdoc does.
+Adding them matches seven distinct stored titles and removes the strong lead from four served rows, each routing to `missing_lead` and the PI-attachment lane rather than being removed, which is the remedy #2877 established.
 A workable second witness has to be something a person in somebody else's group actually holds, and finding one is open work.
 
 ### Source dispatch and the freshness worklist (#2619)

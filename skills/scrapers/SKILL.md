@@ -80,7 +80,9 @@ The three screens above decide whether a profile may MINT. They are the wrong in
 
 For the retirement-side question use `utils/titleResearchOwnership.ts`, a rank lattice: phrases with explicit verdicts, matched as spans anywhere in the title, longest span winning an overlap. `yarn --cwd server research-entity:audit-title-research-ownership` is its read-only instrument and has no `--apply`.
 
-Four earlier mechanisms each broke on a stored title, and the module's test file pins one case per failure. Before proposing a fifth string rule, read that list: the recurring lesson is that a title names ranks without saying whose rank each one is. `docs/research-data-pipeline.md` owns the reasoning, the measured buckets, and why the lead-edge second witness is retired and reported for sizing only.
+Four earlier mechanisms each broke on a stored title, and the module's test file pins one case per failure. Before proposing a fifth string rule, read that list: the recurring lesson is that a title names ranks without saying whose rank each one is.
+
+**Do not read that audit as a defect list.** Whether a row is a way in for a student is a different question, owned by `utils/traineeLevelTitle.ts` and `hasStrongLead`: a postdoc cannot admit an undergraduate, so a row led only by one is demoted to `missing_lead`. Measured on Development, 38 of the 39 served rows the audit buckets as working in another group carry a non-trainee lead and are therefore fine, and archiving on that bucket would have removed 19 legitimately-led pages. `docs/research-data-pipeline.md` owns the reasoning, the measured buckets, and why the lead-edge second witness is retired and reported for sizing only.
 
 ## Safety rules (write guards)
 
