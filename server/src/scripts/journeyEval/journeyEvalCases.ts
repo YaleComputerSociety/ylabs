@@ -13,18 +13,28 @@ import {
   checkQueryRelevance,
   checkSortOrdering,
   checkTopicDropAttribution,
+  checkUndergradEvidenceQuoteAttribution,
+  corpusFingerprintMoved,
+  drawSeededSample,
+  fingerprintPopulation,
+  fingerprintQuote,
   resolvePagesToWalk,
   scoreQueryRelevance,
+  scoreUndergradEvidenceJudgements,
   type CorpusFingerprint,
   type FacetAgreementObservation,
   type InvariantResult,
   type RateResult,
+  type QuoteAttributionObservation,
   type TopicDropObservation,
+  type UndergradEvidenceServedRow,
 } from './journeyEvalMetrics';
 import {
   DEFAULT_TOP_K,
+  DEFAULT_UNDERGRAD_EVIDENCE_LANE,
   type RelevanceMatchers,
   type TopicQueryJudgement,
+  type UndergradEvidenceJudgementSet,
 } from './journeyEvalJudgements';
 
 export interface ServedBrowseResult {
@@ -46,9 +56,17 @@ export type BrowseFn = (request: BrowseRequest) => Promise<ServedBrowseResult>;
 
 export type ReadStoredRowsFn = (rowKeys: string[]) => Promise<Map<string, Record<string, unknown>>>;
 
+export interface UndergradEvidenceSampleRequest {
+  seed: string;
+  sampleSize: number;
+  write: (sample: UndergradEvidenceJudgementSet) => Promise<string>;
+}
+
 export interface JourneyEvalContext {
   browse: BrowseFn;
   topicQueryJudgements: TopicQueryJudgement[] | null;
+  undergradEvidenceJudgements?: UndergradEvidenceJudgementSet | null;
+  undergradEvidenceSampleRequest?: UndergradEvidenceSampleRequest;
   readStoredRows: ReadStoredRowsFn;
   readCorpusFingerprint: () => Promise<CorpusFingerprint>;
   window: number;
@@ -380,6 +398,197 @@ const topicQueryRelevance: JourneyCase = {
   },
 };
 
+const WALK_PAGE_SIZE = 100;
+
+const walkServedCorpus = async (context: JourneyEvalContext) => {
+  const reachablePages = maxReachableResearchSearchPage(WALK_PAGE_SIZE);
+  const rows: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
+  let estimatedTotalHits = 0;
+  let degradedPages = 0;
+  for (let page = 1; page <= reachablePages; page += 1) {
+    const result = await context.browse({ page, pageSize: WALK_PAGE_SIZE });
+    estimatedTotalHits = result.estimatedTotalHits ?? estimatedTotalHits;
+    if (result.degraded !== false) degradedPages += 1;
+    const pageRows = servedRows(result);
+    for (const row of pageRows) {
+      const key = rowKey(row);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      rows.push(row);
+    }
+    if (pageRows.length < WALK_PAGE_SIZE) break;
+  }
+  return { rows, estimatedTotalHits, degradedPages };
+};
+
+const storedQuoteProvenance = (
+  storedRow: Record<string, unknown> | undefined,
+): { sourceName: string; sourceUrl: string } => {
+  const provenance = (storedRow?.fieldProvenance as Record<string, unknown> | undefined)
+    ?.undergradEvidenceQuote as Record<string, unknown> | undefined;
+  return {
+    sourceName: typeof provenance?.sourceName === 'string' ? provenance.sourceName : '',
+    sourceUrl: typeof provenance?.sourceUrl === 'string' ? provenance.sourceUrl : '',
+  };
+};
+
+const undergradEvidenceQuotePrecision: JourneyCase = {
+  id: 'undergrad-evidence-quote-precision',
+  title:
+    'A served undergraduate evidence quote is grounded on its cited page and states an access fact',
+  run: async (context) => {
+    const judgementSet = context.undergradEvidenceJudgements ?? null;
+    const lane = judgementSet?.lane ?? DEFAULT_UNDERGRAD_EVIDENCE_LANE;
+    const corpusBefore = await context.readCorpusFingerprint();
+    const walk = await walkServedCorpus(context);
+    const quoted = walk.rows.filter((row) => hasText(row.undergradEvidenceQuote));
+    const stored = await context.readStoredRows(quoted.map(rowKey));
+    const corpusAfter = await context.readCorpusFingerprint();
+
+    const attribution: QuoteAttributionObservation[] = [];
+    const laneRows: Array<{ row: Record<string, unknown>; sourceUrl: string }> = [];
+    let citingAPage = 0;
+    let skippedStaleIndex = 0;
+    for (const row of quoted) {
+      const storedRow = stored.get(rowKey(row));
+      const provenance = storedQuoteProvenance(storedRow);
+      const servedVersionMatchesStored =
+        Boolean(storedRow) && storedRow?.undergradEvidenceQuote === row.undergradEvidenceQuote;
+      attribution.push({ servedVersionMatchesStored, storedSourceName: provenance.sourceName });
+      if (!servedVersionMatchesStored) {
+        skippedStaleIndex += 1;
+        continue;
+      }
+      if (provenance.sourceUrl) citingAPage += 1;
+      if (provenance.sourceName === lane) laneRows.push({ row, sourceUrl: provenance.sourceUrl });
+    }
+
+    const population: UndergradEvidenceServedRow[] = laneRows.map(({ row }) => ({
+      rowKey: rowKey(row),
+      quoteFingerprint: fingerprintQuote(row.undergradEvidenceQuote as string),
+    }));
+    const populationFingerprint = fingerprintPopulation(population.map((row) => row.rowKey));
+
+    const invariants: InvariantResult[] = [
+      checkUndergradEvidenceQuoteAttribution(attribution, corpusBefore, corpusAfter),
+      buildInvariant(
+        'undergrad-evidence-walk-is-not-degraded',
+        'The corpus walk behind the precision sample never falls back to a degraded search path',
+        walk.degradedPages === 0,
+        { degradedPages: walk.degradedPages },
+      ),
+    ];
+    const rates: RateResult[] = [
+      buildRate(
+        'served-cards-with-an-undergrad-evidence-quote',
+        'Served rows carrying a non-empty undergraduate evidence quote',
+        quoted.length,
+        walk.rows.length,
+      ),
+      buildRate(
+        'undergrad-evidence-quotes-from-the-judged-lane',
+        `Served undergraduate evidence quotes matching their stored row whose provenance is ${lane}`,
+        laneRows.length,
+        quoted.length - skippedStaleIndex,
+      ),
+      buildRate(
+        'undergrad-evidence-quotes-citing-a-page',
+        'Served undergraduate evidence quotes matching their stored row whose provenance cites a source page',
+        citingAPage,
+        quoted.length - skippedStaleIndex,
+      ),
+    ];
+    const notes: Record<string, unknown> = {
+      lane,
+      servedRowsWalked: walk.rows.length,
+      estimatedTotalHits: walk.estimatedTotalHits,
+      population: population.length,
+      skippedStaleIndex,
+      populationFingerprint,
+      corpusMovedDuringWalk: corpusFingerprintMoved(corpusBefore, corpusAfter),
+    };
+
+    const sampleRequest = context.undergradEvidenceSampleRequest;
+    if (sampleRequest) {
+      const drawn = new Set(
+        drawSeededSample(
+          population.map((row) => row.rowKey),
+          sampleRequest.seed,
+          sampleRequest.sampleSize,
+        ),
+      );
+      const sampleRows = laneRows.filter(({ row }) => drawn.has(rowKey(row)));
+      notes.sampleWrittenTo = await sampleRequest.write({
+        lane,
+        seed: sampleRequest.seed,
+        sampleSize: sampleRequest.sampleSize,
+        judgements: sampleRows.map(({ row, sourceUrl }) => ({
+          rowKey: rowKey(row),
+          quoteFingerprint: fingerprintQuote(row.undergradEvidenceQuote as string),
+          quote: row.undergradEvidenceQuote as string,
+          sourceUrl,
+        })),
+      });
+    }
+
+    if (!judgementSet) {
+      invariants.push(
+        buildInconclusiveInvariant(
+          'undergrad-evidence-precision-has-judgements',
+          'The precision case has a judgement set to score against',
+          'No judgement file was supplied, so a precision over it would be a green signal over an empty sample',
+          { judgements: 0 },
+        ),
+      );
+      return { invariants, rates, notes };
+    }
+
+    const score = scoreUndergradEvidenceJudgements(
+      population,
+      judgementSet.judgements,
+      judgementSet.seed,
+      judgementSet.sampleSize,
+    );
+    if (score.verifiable === 0) {
+      invariants.push(
+        buildInconclusiveInvariant(
+          'undergrad-evidence-precision-has-judgements',
+          'The precision case has a judgement set to score against',
+          'No drawn row carries a verdict on its current quote, so a precision over it would be a green signal over an empty sample',
+          {
+            drawn: score.drawn,
+            unjudged: score.unjudged,
+            changed: score.judgementForAChangedQuote,
+          },
+        ),
+      );
+    }
+    rates.push(
+      buildRate(
+        'undergrad-evidence-badge-precision',
+        'Readable judged quotes that are grounded, about the row, and state an undergraduate access fact',
+        score.correct,
+        score.verifiable,
+      ),
+      buildRate(
+        'undergrad-evidence-lane-grounding-precision',
+        'Readable judged quotes found verbatim or near-verbatim on their cited page',
+        score.grounded,
+        score.verifiable,
+      ),
+      buildRate(
+        'undergrad-evidence-backs-hosted-badge-wording',
+        'Judged quotes that back the browse badge wording that the row has hosted undergraduate researchers',
+        score.badgeWordingBacked,
+        score.badgeWordingJudged,
+      ),
+    );
+    notes.score = { seed: judgementSet.seed, sampleSize: judgementSet.sampleSize, ...score };
+    return { invariants, rates, notes };
+  },
+};
+
 export const journeyCases: readonly JourneyCase[] = [
   coldBrowseCardContract,
   topicDropAttribution,
@@ -387,4 +596,5 @@ export const journeyCases: readonly JourneyCase[] = [
   paginationServesDistinctRows,
   sortedBrowseKeepsOrder,
   topicQueryRelevance,
+  undergradEvidenceQuotePrecision,
 ];

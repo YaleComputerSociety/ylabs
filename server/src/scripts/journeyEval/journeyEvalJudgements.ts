@@ -84,3 +84,104 @@ export function parseTopicQueryJudgements(value: unknown): TopicQueryJudgementSe
     }),
   };
 }
+
+export const UNDERGRAD_EVIDENCE_VERDICTS = [
+  'correct',
+  'not_grounded',
+  'not_an_undergrad_access_claim',
+  'about_another_entity',
+  'stale_or_unreachable',
+] as const;
+
+export type UndergradEvidenceVerdict = (typeof UNDERGRAD_EVIDENCE_VERDICTS)[number];
+
+export const DEFAULT_UNDERGRAD_EVIDENCE_LANE = 'lab-microsite-undergrad-llm';
+
+export interface UndergradEvidenceJudgement {
+  rowKey: string;
+  quoteFingerprint: string;
+  verdict?: UndergradEvidenceVerdict;
+  backsHostedBadgeWording?: boolean;
+  note?: string;
+  quote?: string;
+  sourceUrl?: string;
+}
+
+export interface UndergradEvidenceJudgementSet {
+  lane: string;
+  seed: string;
+  sampleSize: number;
+  judgements: UndergradEvidenceJudgement[];
+}
+
+const isUndergradEvidenceVerdict = (value: unknown): value is UndergradEvidenceVerdict =>
+  typeof value === 'string' && (UNDERGRAD_EVIDENCE_VERDICTS as readonly string[]).includes(value);
+
+const optionalString = (raw: Record<string, unknown>, key: string): Record<string, string> =>
+  typeof raw[key] === 'string' ? { [key]: raw[key] as string } : {};
+
+export function parseUndergradEvidenceJudgements(value: unknown): UndergradEvidenceJudgementSet {
+  if (typeof value !== 'object' || value === null)
+    throw new Error('An undergraduate evidence judgements file must be a JSON object');
+  const raw = value as Record<string, unknown>;
+
+  if (typeof raw.seed !== 'string' || raw.seed.trim().length === 0)
+    throw new Error(
+      'An undergraduate evidence judgements file must record the seed it was drawn with',
+    );
+  const sampleSize = Number(raw.sampleSize);
+  if (!Number.isInteger(sampleSize) || sampleSize <= 0)
+    throw new Error('An undergraduate evidence judgements file must record a positive sampleSize');
+  if (!Array.isArray(raw.judgements))
+    throw new Error('An undergraduate evidence judgements file must carry a judgements array');
+  const lane =
+    typeof raw.lane === 'string' && raw.lane.trim().length > 0
+      ? raw.lane
+      : DEFAULT_UNDERGRAD_EVIDENCE_LANE;
+
+  const seenRowKeys = new Set<string>();
+  const judgements = raw.judgements.map((entry, index): UndergradEvidenceJudgement => {
+    if (typeof entry !== 'object' || entry === null)
+      throw new Error(`Undergraduate evidence judgement at index ${index} is not an object`);
+    const judgement = entry as Record<string, unknown>;
+    if (typeof judgement.rowKey !== 'string' || judgement.rowKey.length === 0)
+      throw new Error(`Undergraduate evidence judgement at index ${index} has no rowKey`);
+    if (seenRowKeys.has(judgement.rowKey))
+      throw new Error(`Undergraduate evidence judgement at index ${index} repeats a rowKey`);
+    seenRowKeys.add(judgement.rowKey);
+    if (typeof judgement.quoteFingerprint !== 'string' || judgement.quoteFingerprint.length === 0)
+      throw new Error(
+        `Undergraduate evidence judgement at index ${index} has no quoteFingerprint, so a changed quote would inherit a verdict about a different one`,
+      );
+    if (
+      judgement.verdict !== undefined &&
+      judgement.verdict !== null &&
+      !isUndergradEvidenceVerdict(judgement.verdict)
+    )
+      throw new Error(
+        `Undergraduate evidence judgement at index ${index} has a verdict outside ${UNDERGRAD_EVIDENCE_VERDICTS.join(', ')}`,
+      );
+    if (
+      judgement.backsHostedBadgeWording !== undefined &&
+      judgement.backsHostedBadgeWording !== null &&
+      typeof judgement.backsHostedBadgeWording !== 'boolean'
+    )
+      throw new Error(
+        `Undergraduate evidence judgement at index ${index} has a backsHostedBadgeWording that is not a boolean`,
+      );
+
+    return {
+      rowKey: judgement.rowKey,
+      quoteFingerprint: judgement.quoteFingerprint,
+      ...(isUndergradEvidenceVerdict(judgement.verdict) ? { verdict: judgement.verdict } : {}),
+      ...(typeof judgement.backsHostedBadgeWording === 'boolean'
+        ? { backsHostedBadgeWording: judgement.backsHostedBadgeWording }
+        : {}),
+      ...optionalString(judgement, 'note'),
+      ...optionalString(judgement, 'quote'),
+      ...optionalString(judgement, 'sourceUrl'),
+    };
+  });
+
+  return { lane, seed: raw.seed, sampleSize, judgements };
+}
