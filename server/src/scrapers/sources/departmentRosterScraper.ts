@@ -3579,7 +3579,8 @@ export async function enrichEntryFromOfficialProfile(
   htmlFetcher: HtmlFetcher,
   log: ScraperContext['log'],
 ): Promise<FacultyEntry> {
-  if (!entry.profileUrl || !isOfficialYaleUrl(entry.profileUrl)) return entry;
+  if (!entry.profileUrl) return entry;
+  if (!isOfficialYaleUrl(entry.profileUrl)) return withUnreadProfileSlot(entry, 'unread');
   // A shared roster page is never one person's profile, so reading one back
   // would attribute the whole department's prose to whichever row linked it.
   if (isSharedPeopleRosterUrl(entry.profileUrl)) return entry;

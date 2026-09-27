@@ -209,6 +209,23 @@ describe('a roster card attested empty whose profile page was never read', () =>
     expect(entry.labSlotAttestation).toBeUndefined();
   });
 
+  it('drops the empty claim when the profile is off Yale and so is never fetched', async () => {
+    let fetched = false;
+    const entry = await enrichEntryFromOfficialProfile(
+      { ...rosterEntry, profileUrl: 'https://adafixture.example.org/about' },
+      'dept-faculty-roster',
+      false,
+      () => {
+        fetched = true;
+        return Promise.resolve(profilePage('<p>No links here.</p>'));
+      },
+      () => {},
+    );
+
+    expect(fetched).toBe(false);
+    expect(entry.labSlotAttestation).toBeUndefined();
+  });
+
   it('records a refusal when the profile is refused as another person&apos;s page', async () => {
     const entry = await enrichWith(() =>
       Promise.resolve(
