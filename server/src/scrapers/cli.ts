@@ -4,7 +4,7 @@
  * Usage:
  *   npx tsx server/src/scrapers/cli.ts list
  *   npx tsx server/src/scrapers/cli.ts run --source nih-reporter [flags] [--output <path>]
- *   npx tsx server/src/scrapers/cli.ts cron --source nih-reporter --release
+ *   npx tsx server/src/scrapers/cli.ts cron --source nih-reporter --release   (retired; refuses to write)
  *   npx tsx server/src/scrapers/cli.ts materialize --run <runId> [--dry-run|--confirm-materialize] [--output <path>]
  *   npx tsx server/src/scrapers/cli.ts report --run <runId> [--output <path>]
  *   npx tsx server/src/scrapers/cli.ts prune-observations [--apply --confirm-observation-prune] [--output <path>]
@@ -194,7 +194,8 @@ ylabs scraper CLI
 
   list                                       List registered scrapers
   run --source <name> [flags]                Run a scraper
-  cron --source <name> --release             Run a cron-safe scraper job against Development
+  cron --source <name> --release             Retired: refuses to write in every environment;
+                                             use the Development sweep plus promotion
   materialize --run <runId> [--output <path>]
                                              Materialize observations from a previous run
   report --run <runId> [--output <path>]     Print or save a QA report for a ScrapeRun
