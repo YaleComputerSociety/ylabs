@@ -2297,7 +2297,7 @@ test('archived artifact repair plan ids are primitive-normalized', () => {
   );
   assert.match(source, /const itemObjectId = objectId\(item\.id\)/);
   assert.match(source, /const canonicalObjectId = objectId\(item\.canonicalResearchEntityId\)/);
-  assert.match(source, /const duplicateObjectId = objectId\(item\.duplicateId\)/);
+  assert.match(source, /const duplicateObjectId = objectId\(duplicateId\)/);
   assert.match(
     source,
     /function stringId\(value: unknown\): string \{\s*return serializedDocumentId\(value\) \|\| '';\s*\}/,
