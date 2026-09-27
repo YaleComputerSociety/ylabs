@@ -1177,6 +1177,29 @@ const FIRST_PERSON_SUBJECT_ADVERB_ALTERNATION = [
   'now',
 ].join('|');
 
+/**
+ * A regular past-tense verb, matched by its own morphology rather than enumerated.
+ *
+ * The closed list reached 88 verbs and still missed the ones the corpus actually uses:
+ * a hand read of 45 served rows carrying unconverted first person found `identified`,
+ * `performed`, `validated`, `assessed`, `characterized`, `hypothesized`,
+ * `recapitulated`, `continued` and `obtained` in 29 of them, and none was listed
+ * (#3481). Enumerating research verbs is the losing side of that: the corpus can reach
+ * any verb in the language, which is the same reason
+ * `conjugateCoordinatedVerbToThirdPersonSingular` exists.
+ *
+ * Safe as morphology because a past form needs NO conjugation: "We performed" becomes
+ * "<Name> performed", the same token. That is the property the closed present-tense
+ * table exists to supply and a past form does not need.
+ *
+ * The denylist is the words that end in `ed` without being past tense. Without it
+ * "we need to" and "we proceed with" would be read as past and left mangled mid-sentence.
+ */
+const NOT_A_PAST_TENSE_ED_WORD =
+  /^(?:need|proceed|exceed|succeed|speed|feed|breed|heed|bleed|indeed|embed|seed|deed|creed|freed|agreed|decreed|guaranteed)$/i;
+
+const REGULAR_PAST_TENSE_VERB = '[a-z]{3,}ed';
+
 const FIRST_PERSON_VERB_ALTERNATION = [
   ...Object.keys(THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS),
   ...FIRST_PERSON_PAST_OR_MODAL_VERBS,
@@ -1365,6 +1388,32 @@ const firstPersonLeadRevoiceRules = (
         ? ` and ${conjugatedCoordinatedVerb}`
         : coordination || '';
       return `${subjectPhrase} ${adverbPhrase}${conjugatedVerb}${coordinatedPhrase}`;
+    },
+  ],
+  /**
+   * The same subject conversion for a regular past-tense verb the closed table does not
+   * list. Runs after it, so a verb the table knows is still conjugated by the table and
+   * this rule only sees what was left over.
+   */
+  [
+    new RegExp(
+      `\\b(I|We)\\s+(?:(${FIRST_PERSON_SUBJECT_ADVERB_ALTERNATION})\\s+)?(${REGULAR_PAST_TENSE_VERB})\\b`,
+      'g',
+    ),
+    (
+      _match: string,
+      subject: string,
+      adverb: string | undefined,
+      verb: string,
+      offset: number,
+      full: string,
+    ) => {
+      if (NOT_A_PAST_TENSE_ED_WORD.test(verb)) return _match;
+      const atSentenceStart = isAtSentenceStart(offset, full);
+      const demonstrative = atSentenceStart ? 'This' : 'this';
+      const noun = subject === 'We' ? 'group' : 'researcher';
+      const subjectPhrase = nominativeLead(forms, atSentenceStart, `${demonstrative} ${noun}`);
+      return `${subjectPhrase} ${adverb ? `${adverb} ` : ''}${verb}`;
     },
   ],
   /**
