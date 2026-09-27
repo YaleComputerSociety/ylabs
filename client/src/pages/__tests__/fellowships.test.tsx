@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useState, type MouseEvent } from 'react';
 
@@ -27,17 +27,28 @@ vi.mock('../../components/shared/BrowseGrid', () => ({
     items,
     favIds = [],
     onToggleFavorite,
+    onOpenModal,
     emptyMessage,
   }: {
-    items: Array<{ data: Fellowship }>;
+    items: Array<{ type: 'fellowship'; data: Fellowship }>;
     favIds?: string[];
     onToggleFavorite?: (id: string, event: MouseEvent) => void;
+    onOpenModal?: (item: { type: 'fellowship'; data: Fellowship }) => void;
     emptyMessage: string;
   }) => (
     <section aria-label={emptyMessage}>
       {items.map((item) => (
         <article key={item.data.id}>
           <span>{item.data.title}</span>
+          {onOpenModal && (
+            <button
+              type="button"
+              aria-label={`Open program ${item.data.id}`}
+              onClick={() => onOpenModal(item)}
+            >
+              Open
+            </button>
+          )}
           {onToggleFavorite && (
             <button
               type="button"
@@ -151,10 +162,27 @@ const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   ...overrides,
 });
 
+const HistoryControls = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  return (
+    <>
+      <button type="button" onClick={() => void navigate(-1)}>
+        Browser back
+      </button>
+      <button type="button" onClick={() => void navigate(1)}>
+        Browser forward
+      </button>
+      <span data-testid="current-location">{`${location.pathname}${location.search}`}</span>
+    </>
+  );
+};
+
 const renderPage = (
   fellowships: Fellowship[],
   overrides: Partial<FellowshipSearchContextType> = {},
   initialEntries: string[] = ['/programs'],
+  initialIndex: number = initialEntries.length - 1,
 ) => {
   if (!mockedAxios.get.getMockImplementation()) {
     mockedAxios.get.mockResolvedValue({ data: { watchedProgramIds: [] } });
@@ -220,7 +248,8 @@ const renderPage = (
   };
 
   return render(
-    <MemoryRouter initialEntries={initialEntries}>
+    <MemoryRouter initialEntries={initialEntries} initialIndex={initialIndex}>
+      <HistoryControls />
       <UserContext.Provider
         value={{
           isLoading: false,
@@ -231,7 +260,10 @@ const renderPage = (
       >
         <UIContext.Provider value={defaultUIContext}>
           <FellowshipSearchContext.Provider value={value}>
-            <Fellowships />
+            <Routes>
+              <Route path="/programs" element={<Fellowships />} />
+              <Route path="/previous" element={<p>Previous page</p>} />
+            </Routes>
           </FellowshipSearchContext.Provider>
         </UIContext.Provider>
       </UserContext.Provider>
@@ -785,5 +817,94 @@ describe('Programs page', () => {
 
     const detailFetches = mockedAxios.get.mock.calls.filter((call) => call[0] === '/programs/f1');
     expect(detailFetches).toHaveLength(1);
+  });
+
+  describe('program modal history', () => {
+    const openProgram = () =>
+      baseFellowship({
+        id: 'open-1',
+        title: 'Browse Opened Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(30),
+      });
+
+    const mockProgramDetail = (program: Fellowship) =>
+      mockedAxios.get.mockImplementation((url: string) => {
+        if (url === `/programs/${program.id}`) {
+          return Promise.resolve({ data: { program } });
+        }
+        return Promise.resolve({ data: { watchedProgramIds: [] } });
+      });
+
+    const currentLocation = () => screen.getByTestId('current-location');
+
+    it('closes a program opened from browse when the student presses Back', async () => {
+      const program = openProgram();
+      mockProgramDetail(program);
+      renderPage([program]);
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Open program open-1' }));
+      expect(await screen.findByRole('dialog', { name: 'Browse Opened Program' })).toBeTruthy();
+      expect(currentLocation().textContent).toBe('/programs?program=open-1');
+
+      await userEvent.click(screen.getByRole('button', { name: 'Browser back' }));
+
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Browse Opened Program' })).toBeNull(),
+      );
+      expect(currentLocation().textContent).toBe('/programs');
+    });
+
+    it('reopens the program when the student presses Forward after Back', async () => {
+      const program = openProgram();
+      mockProgramDetail(program);
+      renderPage([program]);
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Open program open-1' }));
+      await screen.findByRole('dialog', { name: 'Browse Opened Program' });
+      await userEvent.click(screen.getByRole('button', { name: 'Browser back' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Browse Opened Program' })).toBeNull(),
+      );
+
+      await userEvent.click(screen.getByRole('button', { name: 'Browser forward' }));
+
+      expect(await screen.findByRole('dialog', { name: 'Browse Opened Program' })).toBeTruthy();
+    });
+
+    it('leaves no extra history entry after opening and closing a program', async () => {
+      const program = openProgram();
+      mockProgramDetail(program);
+      renderPage([program], {}, ['/previous', '/programs']);
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Open program open-1' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Browse Opened Program' });
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Browse Opened Program' })).toBeNull(),
+      );
+      expect(currentLocation().textContent).toBe('/programs');
+
+      await userEvent.click(screen.getByRole('button', { name: 'Browser back' }));
+
+      expect(await screen.findByText('Previous page')).toBeTruthy();
+    });
+
+    it('closes a deep-linked program without adding a history entry', async () => {
+      const program = baseFellowship({ id: 'f1', title: 'Deep Linked Program' });
+      mockProgramDetail(program);
+      renderPage([], {}, ['/previous', '/programs?program=f1']);
+
+      const dialog = await screen.findByRole('dialog', { name: 'Deep Linked Program' });
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Deep Linked Program' })).toBeNull(),
+      );
+      expect(currentLocation().textContent).toBe('/programs');
+
+      await userEvent.click(screen.getByRole('button', { name: 'Browser back' }));
+
+      expect(await screen.findByText('Previous page')).toBeTruthy();
+    });
   });
 });

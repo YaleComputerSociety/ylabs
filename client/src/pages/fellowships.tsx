@@ -2,8 +2,8 @@
  * Programs & Fellowships browse page with search, local quick filters,
  * application-cycle empty states, and grid/list view.
  */
-import { useReducer, useEffect, useContext, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useReducer, useEffect, useContext, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import FellowshipModal from '../components/fellowship/FellowshipModal';
 import AdminFellowshipEditModal from '../components/admin/AdminFellowshipEditModal';
 import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
@@ -230,10 +230,31 @@ const sortFellowshipsForDisplay = (
   return sorted;
 };
 
+const PROGRAM_PARAM = 'program';
+const LEGACY_PROGRAM_PARAM = 'fellowship';
+
+interface ProgramModalHistoryState {
+  programModalOpenedInPage: true;
+}
+
+const OPENED_IN_PAGE_HISTORY_STATE: ProgramModalHistoryState = { programModalOpenedInPage: true };
+
+const wasProgramModalOpenedInPage = (historyState: unknown) =>
+  (historyState as Partial<ProgramModalHistoryState> | null)?.programModalOpenedInPage === true;
+
+const withoutProgramParams = (params: URLSearchParams) => {
+  params.delete(PROGRAM_PARAM);
+  params.delete(LEGACY_PROGRAM_PARAM);
+  return params;
+};
+
 const Fellowships = () => {
   useDocumentTitle('Programs & Fellowships');
   const [searchParams, setSearchParams] = useSearchParams();
-  const deepLinkHandledRef = useRef(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const requestedProgramId =
+    searchParams.get(PROGRAM_PARAM) || searchParams.get(LEGACY_PROGRAM_PARAM);
   const {
     queryString,
     fellowships,
@@ -310,28 +331,44 @@ const Fellowships = () => {
     void reloadFavorites();
   }, []);
 
+  const selectedProgramId = selectedFellowship?.id ?? null;
+
   useEffect(() => {
-    if (deepLinkHandledRef.current) return;
-    deepLinkHandledRef.current = true;
-    const fellowshipId = searchParams.get('program') || searchParams.get('fellowship');
-    if (!fellowshipId) return;
+    if (!requestedProgramId) {
+      if (isModalOpen) {
+        dispatch({ type: 'CLOSE_DETAIL_MODAL' });
+      }
+      return;
+    }
+    if (isModalOpen && requestedProgramId === selectedProgramId) return;
+
+    let isLatestRequest = true;
     axios
-      .get(`/programs/${fellowshipId}`)
+      .get(`/programs/${encodeURIComponent(requestedProgramId)}`)
       .then((response) => {
+        if (!isLatestRequest) return;
         const program = response.data?.program || response.data?.fellowship;
         if (program) {
           dispatch({ type: 'OPEN_DETAIL_MODAL', item: program });
         }
       })
       .catch(() => {
+        if (!isLatestRequest) return;
         console.error('Error fetching direct fellowship link.');
-        setSearchParams((params) => {
-          params.delete('program');
-          params.delete('fellowship');
-          return params;
-        });
+        setSearchParams(withoutProgramParams, { replace: true });
       });
-  }, [searchParams, setSearchParams]);
+    return () => {
+      isLatestRequest = false;
+    };
+  }, [requestedProgramId, selectedProgramId, isModalOpen, setSearchParams]);
+
+  const closeProgramModal = () => {
+    if (wasProgramModalOpenedInPage(location.state)) {
+      void navigate(-1);
+      return;
+    }
+    setSearchParams(withoutProgramParams, { replace: true });
+  };
 
   const fellowshipFilterTabs: FilterTabConfig[] = [
     {
@@ -601,11 +638,14 @@ const Fellowships = () => {
   const handleOpenModal = (item: BrowsableItem) => {
     if (item.type === 'fellowship') {
       dispatch({ type: 'OPEN_DETAIL_MODAL', item: item.data });
-      setSearchParams((params) => {
-        params.delete('fellowship');
-        params.set('program', item.data.id);
-        return params;
-      });
+      setSearchParams(
+        (params) => {
+          params.delete(LEGACY_PROGRAM_PARAM);
+          params.set(PROGRAM_PARAM, item.data.id);
+          return params;
+        },
+        { state: OPENED_IN_PAGE_HISTORY_STATE },
+      );
     }
   };
 
@@ -868,14 +908,7 @@ const Fellowships = () => {
           <FellowshipModal
             fellowship={selectedFellowship}
             isOpen={isModalOpen}
-            onClose={() => {
-              dispatch({ type: 'CLOSE_DETAIL_MODAL' });
-              setSearchParams((params) => {
-                params.delete('program');
-                params.delete('fellowship');
-                return params;
-              });
-            }}
+            onClose={closeProgramModal}
             isFavorite={favFellowshipIds.includes(selectedFellowship.id)}
             toggleFavorite={() => {
               updateFavorite(
