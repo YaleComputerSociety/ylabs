@@ -21,7 +21,10 @@ vi.mock('../../models/postedOpportunity', () => ({
 }));
 
 vi.mock('../../models/researchEntity', () => ({
-  ResearchEntity: { aggregate: modelMocks.aggregate },
+  ResearchEntity: {
+    aggregate: modelMocks.aggregate,
+    find: () => ({ select: () => ({ lean: async () => [] }) }),
+  },
 }));
 
 vi.mock('../../models/roleAssignment', () => ({
