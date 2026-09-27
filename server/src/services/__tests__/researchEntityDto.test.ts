@@ -1208,6 +1208,26 @@ describe('researchEntityDto', () => {
     expect(JSON.stringify(card)).not.toContain('thermal stress');
   });
 
+  it('withholds the displayName alias when the page lead names could not be read', () => {
+    const entity = {
+      _id: '6a05677c7c6d4fba869fbb84',
+      slug: 'dept-econ-hollis-quintrell-four',
+      name: 'Hollis Quintrell Faculty Research',
+      displayName: 'Tidewater Marine Institute',
+      kind: 'center',
+      entityType: 'CENTER',
+      researchAreas: ['Coral Reef Ecology'],
+    };
+
+    const [card] = addResearchEntitySearchAliases(
+      { hits: [entity] },
+      { leadMemberNamesByEntityId: new Map(), leadMemberNamesUnavailable: true },
+    ).researchEntities;
+
+    expect(card.name).toBe('Hollis Quintrell Faculty Research');
+    expect(JSON.stringify(card)).not.toContain('Tidewater Marine Institute');
+  });
+
   it('disambiguates two student-visible entities sharing an identical name (#1211)', () => {
     const result = addResearchEntitySearchAliases({
       hits: [
