@@ -30,7 +30,7 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { materializeEntity } from '../entityMaterializer';
 
-describe('materializeEntity reports index resyncs that did not land', () => {
+describe('materializeEntity reports rows whose last index resync did not land', () => {
   let replSet: MongoMemoryReplSet;
 
   beforeAll(async () => {
@@ -75,7 +75,7 @@ describe('materializeEntity reports index resyncs that did not land', () => {
     });
   });
 
-  it('counts a failed entity resync and a failed browse-rank resync without hiding the write', async () => {
+  it('flags the row once when every resync of it fails, without hiding the write', async () => {
     mocks.syncEntity.mockResolvedValue(false);
     mocks.recomputeBrowseRankForEntities.mockResolvedValueOnce({
       considered: 1,
@@ -87,13 +87,36 @@ describe('materializeEntity reports index resyncs that did not land', () => {
     const result = await materializeEntity('researchEntity', { entityKey: 'index-sync-fixture' });
 
     expect(result.fieldsWritten).toBeGreaterThan(0);
-    expect(result.indexSyncFailures).toBe(2);
+    expect(result.indexSyncFailed).toBe(true);
   });
 
-  it('omits the count when every resync lands', async () => {
+  it('clears the flag when a later browse-rank resync lands the fresh document', async () => {
+    mocks.syncEntity.mockResolvedValueOnce(false);
+
     const result = await materializeEntity('researchEntity', { entityKey: 'index-sync-fixture' });
 
     expect(result.fieldsWritten).toBeGreaterThan(0);
-    expect(result.indexSyncFailures).toBeUndefined();
+    expect(result.indexSyncFailed).toBeUndefined();
+  });
+
+  it('keeps the flag when the browse rank is unchanged and so never resyncs', async () => {
+    mocks.syncEntity.mockResolvedValueOnce(false);
+    mocks.recomputeBrowseRankForEntities.mockResolvedValueOnce({
+      considered: 1,
+      updated: 0,
+      indexSyncFailures: 0,
+      scoresByEntityId: new Map<string, number>(),
+    });
+
+    const result = await materializeEntity('researchEntity', { entityKey: 'index-sync-fixture' });
+
+    expect(result.indexSyncFailed).toBe(true);
+  });
+
+  it('omits the flag when every resync lands', async () => {
+    const result = await materializeEntity('researchEntity', { entityKey: 'index-sync-fixture' });
+
+    expect(result.fieldsWritten).toBeGreaterThan(0);
+    expect(result.indexSyncFailed).toBeUndefined();
   });
 });

@@ -452,7 +452,7 @@ interface MaterializeResult {
   created: boolean;
   resolved: Record<string, ResolvedField>;
   postMaterializationMetrics?: ReportPostMaterializationMetrics;
-  indexSyncFailures?: number;
+  indexSyncFailed?: true;
   skipped?: string;
   plannedSet?: Record<string, unknown>;
   plannedUnset?: Record<string, ''>;
@@ -6441,10 +6441,10 @@ export async function materializeEntity(
     created = didCreate;
   }
 
-  let indexSyncFailures = 0;
+  let indexStale = false;
   if (isSyncableEntityType(entityType) && entityIdString && !entityScalarUnchanged) {
     const fresh = await Model.findById(entityIdString).lean();
-    if (!fresh || !(await syncEntity(entityType, fresh))) indexSyncFailures += 1;
+    indexStale = !fresh || !(await syncEntity(entityType, fresh));
   }
 
   let postMaterializationMetrics: ReportPostMaterializationMetrics | undefined;
@@ -6453,7 +6453,7 @@ export async function materializeEntity(
       await materializeInferredPiMembership(entityIdString, materializationObs);
       await materializeInferredDirectorMembership(entityIdString, materializationObs);
       const inheritance = await inheritSchoolFromLeadPi(entityIdString, { manuallyLockedFields });
-      if (inheritance.indexSyncFailed) indexSyncFailures += 1;
+      if (inheritance.inherited) indexStale = !!inheritance.indexSyncFailed;
     }
     const accessResult = await materializeAccessForResearchGroup(
       {
@@ -6478,7 +6478,7 @@ export async function materializeEntity(
     if (!options.dryRun) {
       try {
         const browseRank = await recomputeBrowseRankForEntities([entityIdString]);
-        indexSyncFailures += browseRank.indexSyncFailures;
+        if (browseRank.updated > 0) indexStale = browseRank.indexSyncFailures > 0;
       } catch (error) {
         console.error(
           'Failed to recompute browseRankScore:',
@@ -6507,7 +6507,7 @@ export async function materializeEntity(
     created,
     resolved,
     postMaterializationMetrics,
-    ...(indexSyncFailures > 0 ? { indexSyncFailures } : {}),
+    ...(indexStale ? { indexSyncFailed: true as const } : {}),
     ...(entityScalarUnchanged ? { skipped: 'unchanged' as const } : {}),
   };
 }
@@ -6769,13 +6769,13 @@ export async function materializeFromRun(
       else if (!res.skipped) updated++;
       if (res.skipped) skipped++;
       conflicts += res.conflicts;
-      indexSyncFailures += res.indexSyncFailures ?? 0;
+      if (res.indexSyncFailed) indexSyncFailures++;
       addPostMaterializationMetrics(postMaterializationMetrics, res.postMaterializationMetrics);
     },
   );
   if (indexSyncFailures > 0) {
     console.warn(
-      `materializeFromRun: ${indexSyncFailures} index resync(s) failed, so search and browse order still serve the previous documents for those rows until a reindex`,
+      `materializeFromRun: ${indexSyncFailures} row(s) failed their last index resync, so search and browse order still serve the previous documents for those rows until a reindex`,
     );
   }
   const rosterMembersArchived = await reconcileOfficialRosterSnapshotsFromRun(scrapeRunId, options);

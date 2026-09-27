@@ -633,7 +633,7 @@ router.use(async (req, res, next) => {
       },
     });
     authDebug(`Visitor analytics event ${visitorOutcome} (cookie login)`);
-    if (visitorOutcome !== 'failed') req.session!.visitorLogged = true;
+    req.session!.visitorLogged = true;
   }
   next();
 });
