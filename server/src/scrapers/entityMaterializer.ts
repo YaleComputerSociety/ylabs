@@ -919,7 +919,7 @@ export function shouldIgnoreObservationForEntityMaterialization(
     isResearchEntityObservationType(entityType) &&
     observation.field === 'undergradEvidenceQuote' &&
     typeof observation.value === 'string' &&
-    undergradEvidenceQuoteIsInadmissible(observation.value)
+    undergradEvidenceQuoteIsInadmissible(observation.value, observation.sourceName)
   ) {
     return true;
   }

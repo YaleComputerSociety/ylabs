@@ -105,6 +105,8 @@ The first gold benchmark is `undergrad-llm-gold-v1` on Development: 42 labs draw
 Its first replay read precision 8 of 12 and recall 8 of 11.
 Three live-model runs over the same frozen pages read precision 0.57 to 0.58 and recall 0.64 to 0.73, so the captured answers were a favourable draw and the lane's own band sits below the frozen number.
 Quote the band, not the frozen replay, when judging the lane rather than its code.
+After #3764 fixed the four false-badge shapes the labels found, the frozen replay read precision 7 of 7 and recall 7 of 11, and three live-model runs read precision 0.88 to 1.00 and recall 0.55 to 0.64.
+The recall given up is a bare "Undergraduate Students" heading on a page that does list an undergraduate below it: the heading alone names no one, so the lane now needs the roster line itself.
 The sample over-represents rows that already carry a quote, so the rate describes the lane on these strata rather than the corpus, and at this size one row moves precision by about 8 points.
 
 Two replays of unchanged code must give the same fingerprint.

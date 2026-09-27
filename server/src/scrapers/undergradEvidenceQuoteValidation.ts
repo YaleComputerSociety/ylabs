@@ -127,3 +127,28 @@ export function isPlausibleUndergradEvidenceQuote(quote: string | undefined | nu
   if (isExplicitUndergradUnavailabilityPhrase(text)) return false;
   return quoteHasUndergraduatePopulation(text);
 }
+
+export const UNDERGRAD_MICROSITE_LANE = 'lab-microsite-undergrad-llm';
+
+const EXPLICIT_UNDERGRADUATE_POPULATION =
+  /(?:\b|(?<=[a-z]))(?:undergrads?|undergraduates?)\b|\b(?:college\s+students?|yale\s+college|first[- ]years?|freshm(?:an|en)|sophomores?|juniors?|SURF|STARS)\b/i;
+
+const UNDERGRADUATE_CONTEXT_CUE =
+  /\b(?:summer\s+(?:months|research|interns?|internships?|students?|program)|in\s+the\s+summer|course\s+credit|for\s+credit|senior[\s-]+(?:thesis|essay|project)|research\s+theses|independent\s+study|class\s+of\s+20\d{2}|b\.?[as]\.?\s+candidates?)\b/i;
+
+const BARE_POPULATION_HEADING =
+  /^\W*(?:(?:current|former|our)\s+)?(?:undergrad(?:uate)?s?|college\s+students?)(?:\s+(?:students?|researchers?|members?|interns?|assistants?))?\W*$/i;
+
+/**
+ * The microsite lane's own admission rule for a quote that backs "Has hosted undergraduate
+ * researchers" (#3764). The shared plausibility check accepts a bare "students", which on a lab
+ * site is usually a postdoc, rotation, or PhD invitation, and a bare "Undergraduate Students"
+ * navigation heading, which names no one. The department undergraduate-research lane keeps
+ * the looser rule because its pages are about undergraduates by construction.
+ */
+export function laneQuoteStatesUndergraduates(quote: string | undefined | null): boolean {
+  const text = (quote || '').trim();
+  if (!isPlausibleUndergradEvidenceQuote(text)) return false;
+  if (BARE_POPULATION_HEADING.test(text)) return false;
+  return EXPLICIT_UNDERGRADUATE_POPULATION.test(text) || UNDERGRADUATE_CONTEXT_CUE.test(text);
+}

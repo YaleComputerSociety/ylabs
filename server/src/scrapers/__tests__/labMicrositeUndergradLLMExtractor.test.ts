@@ -22,6 +22,7 @@ import {
   LAB_UNDERGRAD_SYSTEM_PROMPT,
   extractionToObservations,
   pageContainingQuote,
+  pagesWithinEntityScope,
   quoteFieldsNotOnPage,
   deriveCurrentUndergradCount,
   isHistoricalUndergradEvidence,
@@ -427,6 +428,38 @@ describe('extractionToObservations quote grounding', () => {
     expect(
       (obs.find((o) => o.field === 'undergradAccessEvidence')?.value as any).quoteSourceUrl,
     ).toBe('https://x.example/join');
+  });
+});
+
+describe('pagesWithinEntityScope (#3764)', () => {
+  const page = (url: string) => ({ url, text: 'text' });
+
+  it('drops a crawled page from a sibling section of a shared host', () => {
+    const scoped = pagesWithinEntityScope([
+      page('https://shared.example.edu/center-a'),
+      page('https://shared.example.edu/center-a/people'),
+      page('https://shared.example.edu/network-b/members'),
+      page('https://elsewhere.example.org/center-a/people'),
+    ]);
+    expect(scoped.map((entry) => entry.url)).toEqual([
+      'https://shared.example.edu/center-a',
+      'https://shared.example.edu/center-a/people',
+    ]);
+  });
+
+  it('keeps every page when the home page is the site root or a landing file', () => {
+    expect(
+      pagesWithinEntityScope([
+        page('https://lab.example.edu/'),
+        page('https://lab.example.edu/join'),
+      ]),
+    ).toHaveLength(2);
+    expect(
+      pagesWithinEntityScope([
+        page('https://lab.example.edu/home'),
+        page('https://lab.example.edu/people'),
+      ]),
+    ).toHaveLength(2);
   });
 });
 

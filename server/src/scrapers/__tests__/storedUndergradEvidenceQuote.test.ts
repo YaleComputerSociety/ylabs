@@ -103,3 +103,29 @@ describe('planStoredUndergradEvidenceQuoteClear', () => {
     expect(plan(stored(''), { withdrawing: [LANE] })).toBeNull();
   });
 });
+
+describe('the microsite lane admission rule (#3764)', () => {
+  const ROTATION = 'The lab welcomes postdoctoral scientists and rotation students.';
+
+  it('clears a stored lane quote that names no undergraduate', () => {
+    expect(
+      planStoredUndergradEvidenceQuoteClear({
+        stored: stored(ROTATION),
+        staged: {},
+        withdrawingSources: new Set(),
+        lockedFields: [],
+      }),
+    ).toEqual({ reason: 'inadmissible', skipped: null });
+  });
+
+  it('leaves the same text alone when another source stored it', () => {
+    expect(
+      planStoredUndergradEvidenceQuoteClear({
+        stored: stored(ROTATION, 'department-undergrad-research'),
+        staged: {},
+        withdrawingSources: new Set(),
+        lockedFields: [],
+      }),
+    ).toBeNull();
+  });
+});
