@@ -160,7 +160,7 @@ The two exhaustive Development modes (`development-full`, `development-increment
 2. `eponymous-fra-merge` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_AUTO_MERGE_FRA=0`)
 3. `url-identity-dedupe` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES=0`)
 4. `website-url-identity-dedupe` (the same lane family keyed on the whole normalized `websiteUrl` rather than a Yale `/lab/` or `/profile/` path; gated by the same flag)
-5. `source-link-health` (`research-homes:backfill-source-link-health --apply`; ordered before the gate because the gate reads `sourceLinkHealth`)
+5. `source-link-health` (`research-homes:backfill-source-link-health --apply --reprobe-healthy-after-days=7`; ordered before the gate because the gate reads `sourceLinkHealth`; `--full-link-health-reprobe` on the sweep drops the window and probes every URL)
 6. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
 7. `search-rebuild` (`meili:rebuild-research-entities --clear`)
 8. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
@@ -958,6 +958,17 @@ A verdict expires.
 `SOURCE_LINK_HEALTH_FRESHNESS_DAYS` (30) is the horizon past which a verdict stops counting as verification, because a stale `HEALTHY` is worse than a missing one: serve-time suppression keys off `UNAVAILABLE`, so an absent record fails open while a stale `HEALTHY` positively asserts that a now-`404` page is fine.
 Staleness means unknown, not gone, so it never suppresses on its own - it makes the row eligible for a re-probe (`--stale-only`, which skips rows whose every verdict is still fresh) and it withholds the row from anything that requires proof, which is what `isVerifiedReachableSourceLink` answers.
 That predicate is deliberately not the negation of `isLikelyUnavailableSourceLink`: an inconclusive or stale verdict is neither verified-reachable nor dead, and the two questions are "hide a known-dead CTA" and "count a proven route".
+
+The sweep re-probes by URL rather than by row, with `--reprobe-healthy-after-days=7` (`SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS`, #3568).
+A URL is probed when it has no stored verdict, including a URL new to the row since its last probe, and whenever its verdict is anything but `HEALTHY`, so `UNAVAILABLE`, `UNKNOWN` and `REDIRECTED` are re-probed on every sweep.
+A `HEALTHY` verdict is carried forward unprobed, with its original `checkedAt`, until it is more than 7 days old.
+The stored verdict is found by `sourceLinkCandidateKey`, the same normalization `findSourceLinkHealth` uses, so the sweep and the readers agree on which verdict belongs to which citation.
+The window is 7 days rather than the 30-day horizon because the gate and `dead-research-website-clear` act on these verdicts, and a site can die within a month: a dead site is noticed at most 7 days late.
+Keeping it well inside the 30-day horizon also means a regularly swept `HEALTHY` verdict never lapses into unverified.
+No reader of a dead verdict loses anything, because a dead verdict is never carried and so is at most one sweep old; `retireDeadCitationResearchEntities`, the only reader that ages a dead verdict, still applies the 30-day horizon.
+The gate itself reads no verdict age.
+`--full-link-health-reprobe` on the sweep, or running the backfill without the flag, probes every URL, which is the recovery path after a probe-rule change alongside `--checked-before`.
+The saving depends on sweep cadence: a sweep run more than 7 days after the last one re-probes almost everything.
 
 `client/src/utils/researchDetailSources.ts` mirrors the retiring-status set; changing the arms on either side requires updating the other copy.
 

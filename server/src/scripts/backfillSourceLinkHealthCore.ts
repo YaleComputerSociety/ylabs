@@ -1,5 +1,6 @@
 import {
   isStaleSourceLinkHealth,
+  sourceLinkHealthAgeDays,
   type DatedSourceLinkHealth,
   type SourceLinkHealthStatus,
 } from '../services/sourceLinkHealth';
@@ -247,5 +248,80 @@ export function resolveSourceLinkHealthEntry(
       lastAttemptedAt: now,
     },
     preservedDecisiveVerdict: true,
+  };
+}
+
+/**
+ * How old a `HEALTHY` verdict may be before an unattended sweep probes the URL again.
+ *
+ * It must stay well inside `SOURCE_LINK_HEALTH_FRESHNESS_DAYS`, so a regularly swept
+ * verdict never lapses into "unverified", and it is short because the gate and
+ * `dead-research-website-clear` act on these verdicts: a site that dies is noticed
+ * at most this many days late. Only `HEALTHY` earns the skip; every other verdict,
+ * and every URL without one, is probed on every sweep (#3568).
+ */
+export const SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS = 7;
+
+export function storedSourceLinkHealthByCandidateKey(
+  storedHealth: unknown,
+): Map<string, StoredSourceLinkHealthEntry> {
+  const index = new Map<string, StoredSourceLinkHealthEntry>();
+  if (!Array.isArray(storedHealth)) return index;
+  for (const entry of storedHealth) {
+    const url = (entry as { url?: unknown })?.url;
+    if (typeof url !== 'string' || !url) continue;
+    const key = sourceLinkCandidateKey(url);
+    if (key && !index.has(key)) index.set(key, entry as StoredSourceLinkHealthEntry);
+  }
+  return index;
+}
+
+export function isFreshHealthySourceLinkVerdict(
+  stored: StoredSourceLinkHealthEntry | undefined,
+  reprobeHealthyAfterDays: number,
+  now: Date,
+): boolean {
+  if (stored?.healthStatus !== 'HEALTHY') return false;
+  const ageDays = sourceLinkHealthAgeDays(stored, now);
+  return ageDays !== undefined && ageDays >= 0 && ageDays <= reprobeHealthyAfterDays;
+}
+
+export interface SourceLinkReprobePlan {
+  toProbe: string[];
+  carried: Map<string, StoredSourceLinkHealthEntry>;
+}
+
+export function planSourceLinkReprobe(
+  candidates: readonly string[],
+  storedHealth: unknown,
+  reprobeHealthyAfterDays: number,
+  now: Date,
+): SourceLinkReprobePlan {
+  const storedByKey = storedSourceLinkHealthByCandidateKey(storedHealth);
+  const toProbe: string[] = [];
+  const carried = new Map<string, StoredSourceLinkHealthEntry>();
+  for (const url of candidates) {
+    const key = sourceLinkCandidateKey(url);
+    const stored = key ? storedByKey.get(key) : undefined;
+    if (isFreshHealthySourceLinkVerdict(stored, reprobeHealthyAfterDays, now)) {
+      carried.set(url, stored as StoredSourceLinkHealthEntry);
+    } else {
+      toProbe.push(url);
+    }
+  }
+  return { toProbe, carried };
+}
+
+export function carryForwardSourceLinkHealthEntry(
+  url: string,
+  stored: StoredSourceLinkHealthEntry,
+): StoredSourceLinkHealthEntry {
+  return {
+    url,
+    healthStatus: stored.healthStatus,
+    ...(typeof stored.httpStatusCode === 'number' ? { httpStatusCode: stored.httpStatusCode } : {}),
+    ...(stored.privateAddressHost === true ? { privateAddressHost: true } : {}),
+    ...(stored.checkedAt ? { checkedAt: stored.checkedAt } : {}),
+    ...(stored.lastAttemptedAt ? { lastAttemptedAt: stored.lastAttemptedAt } : {}),
   };
 }

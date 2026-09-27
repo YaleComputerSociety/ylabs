@@ -47,6 +47,7 @@ import {
   validateScraperSweepManifest,
   validateScraperSweepSourceRows,
 } from '../runScraperSweep';
+import { SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS } from '../backfillSourceLinkHealthCore';
 
 describe('runScraperSweep', () => {
   it('gives the sweep one per-host budget that an operator override can only tighten', () => {
@@ -581,6 +582,31 @@ describe('runScraperSweep', () => {
     expect(stages.find((stage) => stage.name === 'trust-contract')?.args).toEqual(
       expect.arrayContaining(['--collection=all', '--mode=student-ready-only', '--strict']),
     );
+  });
+
+  it('re-probes only due link-health verdicts unless a full re-probe is asked for', () => {
+    const argsOf = (stages: ReturnType<typeof buildDevelopmentPostRunStages>) =>
+      stages.find((stage) => stage.name === 'source-link-health')?.args ?? [];
+
+    expect(argsOf(buildDevelopmentPostRunStages('/tmp/development-sweep'))).toContain(
+      `--reprobe-healthy-after-days=${SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS}`,
+    );
+    const full = argsOf(
+      buildDevelopmentPostRunStages('/tmp/development-sweep', { fullLinkHealthReprobe: true }),
+    );
+    expect(full.some((arg) => arg.startsWith('--reprobe-healthy-after-days'))).toBe(false);
+    expect(full).toEqual(expect.arrayContaining(['--apply', '--limit=10000']));
+
+    const parsed = parseScraperSweepArgs([
+      '--mode=development-full',
+      '--confirm-development-full-sweep',
+      '--full-link-health-reprobe',
+    ]);
+    expect(parsed.fullLinkHealthReprobe).toBe(true);
+    expect(
+      parseScraperSweepArgs(['--mode=development-full', '--confirm-development-full-sweep'])
+        .fullLinkHealthReprobe,
+    ).toBeUndefined();
   });
 
   it('keeps the archived-cleanup stage report-only unless merge-residue deletion is enabled', () => {

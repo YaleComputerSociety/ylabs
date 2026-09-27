@@ -26,6 +26,7 @@ import {
 import { SweepPageStore, type SweepPageStoreStats } from '../scrapers/utils/sweepPageStore';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { SOURCE_LINK_HEALTH_FRESHNESS_DAYS } from '../services/sourceLinkHealth';
+import { SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS } from './backfillSourceLinkHealthCore';
 import {
   DEFAULT_EPONYMOUS_FRA_MERGE_MAX,
   SCRAPER_SWEEP_AUTO_MERGE_FRA_ENV,
@@ -143,6 +144,7 @@ export interface ScraperSweepCliOptions {
   pruneBetweenPhases?: boolean;
   skipPreflight?: boolean;
   noPageReuse?: boolean;
+  fullLinkHealthReprobe?: boolean;
 }
 
 export type ScraperSweepPhase = ScraperSweepSource['phase'];
@@ -220,6 +222,7 @@ export interface DevelopmentPostRunStageOptions {
   mergeUrlIdentityDuplicates?: boolean;
   deleteMergeResidue?: boolean;
   pruneDeadObservations?: boolean;
+  fullLinkHealthReprobe?: boolean;
   sinceIso?: string;
   maxMerges?: number;
   maxUrlIdentityMerges?: number;
@@ -426,6 +429,7 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
   let pruneBetweenPhases = false;
   let skipPreflight = false;
   let noPageReuse = false;
+  let fullLinkHealthReprobe = false;
   const confirmations = new Set<string>();
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -448,6 +452,10 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
     }
     if (arg === '--no-page-reuse') {
       noPageReuse = true;
+      continue;
+    }
+    if (arg === '--full-link-health-reprobe') {
+      fullLinkHealthReprobe = true;
       continue;
     }
     if (arg.startsWith('--concurrency=')) {
@@ -504,6 +512,7 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
     ...(pruneBetweenPhases ? { pruneBetweenPhases } : {}),
     ...(skipPreflight ? { skipPreflight } : {}),
     ...(noPageReuse ? { noPageReuse } : {}),
+    ...(fullLinkHealthReprobe ? { fullLinkHealthReprobe } : {}),
   };
 }
 
@@ -1147,14 +1156,21 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
   // only scheduled re-probe of research-entity links - without it a link
   // harvested alive rots indefinitely, which is how 41 served rows came to cite a
   // dead website while every scraper reported success (#2539).
+  //
+  // A `HEALTHY` verdict younger than the re-probe window is carried forward rather
+  // than probed again; every other verdict, and every URL without one, is probed on
+  // every sweep. `--full-link-health-reprobe` probes everything (#3568).
   {
     name: 'source-link-health',
     command: 'research-homes:backfill-source-link-health',
     artifactName: 'development-source-link-health.json',
-    buildArgs: () => [
+    buildArgs: (options) => [
       '--apply',
       '--confirm-source-link-health',
       `--limit=${SOURCE_LINK_HEALTH_STAGE_LIMIT}`,
+      ...(options.fullLinkHealthReprobe
+        ? []
+        : [`--reprobe-healthy-after-days=${SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS}`]),
     ],
     isEnabled: () => true,
   },
@@ -2083,6 +2099,9 @@ export async function runScraperSweep(
     Boolean(options.pruneBetweenPhases) && isDeadObservationPruneSweepMode(options.mode);
   if (developmentPostRunOptions && pruneDeadObservations) {
     developmentPostRunOptions.pruneDeadObservations = true;
+  }
+  if (developmentPostRunOptions && options.fullLinkHealthReprobe) {
+    developmentPostRunOptions.fullLinkHealthReprobe = true;
   }
   const fellowshipPostRunOptions = resolveFellowshipPostRunOptions(options.mode, process.env);
   if (fellowshipPostRunOptions && pruneDeadObservations) {
