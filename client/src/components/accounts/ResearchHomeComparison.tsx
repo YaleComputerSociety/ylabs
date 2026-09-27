@@ -28,6 +28,7 @@ import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/ur
 import {
   createResearchAnalyticsInteractionId,
   researchCountBucket,
+  researchProfileOpenState,
   trackResearchEvent,
 } from '../../utils/researchAnalytics';
 import { CloseIcon } from '../shared/icons';
@@ -392,6 +393,7 @@ const ResearchHomeComparison = ({
                   >
                     <Link
                       to={`/research/${safeRouteSegment(column.base.slug)}`}
+                      state={researchProfileOpenState('saved_plans')}
                       className="yr-link yr-focus-ring rounded-control text-sm font-semibold"
                     >
                       {columnHeaderTitle(column)}

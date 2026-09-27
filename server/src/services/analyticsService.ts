@@ -920,6 +920,8 @@ const SEARCH_ATTRIBUTION_EVENT_TYPES = [
   AnalyticsEventType.FELLOWSHIP_VIEW,
   AnalyticsEventType.RESEARCH_VIEW,
   AnalyticsEventType.PATHWAY_SAVE,
+  AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+  AnalyticsEventType.RESEARCH_SAVE,
 ];
 
 const ANALYTICS_CACHE_TTL_MS = 30 * 1000;

@@ -1717,6 +1717,7 @@ const Research = () => {
                             home={cluster}
                             onSelect={exploreHome}
                             variant="compact"
+                            openSource="browse"
                             showAdminQuality={isAdmin && showWeakestProfilesFirst}
                           />
                         ))}
@@ -1807,6 +1808,7 @@ const Research = () => {
                               home={cluster}
                               onSelect={exploreHome}
                               variant="compact"
+                              openSource="search"
                             />
                           ))}
                         </div>

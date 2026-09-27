@@ -82,7 +82,10 @@ const basePayload: LabDetailPayload = {
 
 function renderLabDetail(
   payload: LabDetailPayload = basePayload,
-  { isAuthenticated = true }: { isAuthenticated?: boolean } = {},
+  {
+    isAuthenticated = true,
+    routerState,
+  }: { isAuthenticated?: boolean; routerState?: unknown } = {},
 ) {
   mockedAxios.get.mockImplementation((url: string) => {
     if (url === '/users/savedResearchEntityIds') {
@@ -99,7 +102,9 @@ function renderLabDetail(
       <ConfigContext.Provider
         value={{ ...defaultConfigContext, departmentPillEligibleLabels: PILL_ELIGIBLE_LABELS }}
       >
-        <MemoryRouter initialEntries={[`/research/${DEFAULT_SLUG}`]}>
+        <MemoryRouter
+          initialEntries={[{ pathname: `/research/${DEFAULT_SLUG}`, state: routerState }]}
+        >
           <Routes>
             <Route path="/research/:slug" element={<LabDetail />} />
             <Route path="/login" element={<div>Yale sign in</div>} />
@@ -145,6 +150,25 @@ describe('LabDetail page', () => {
       .flatMap((call) => call[1]?.events ?? [])
       .filter((event: { eventType?: string }) => event?.eventType === 'research_profile_open');
     expect(profileOpenEvents).toHaveLength(1);
+  });
+
+  it.each([
+    [{ researchProfileOpenSource: 'search' }, 'search'],
+    [{ researchProfileOpenSource: 'saved_plans' }, 'saved_plans'],
+    [{ researchProfileOpenSource: 'not-a-surface' }, 'direct'],
+  ])('records the surface a profile was opened from (%o)', async (routerState, source) => {
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    renderLabDetail(basePayload, { routerState });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+    await waitFor(async () => {
+      await flushResearchAnalytics();
+      const profileOpens = mockedAxios.post.mock.calls
+        .filter((call) => call[0] === '/analytics/research/batch')
+        .flatMap((call) => call[1]?.events ?? [])
+        .filter((event: { eventType?: string }) => event?.eventType === 'research_profile_open');
+      expect(profileOpens).toEqual([expect.objectContaining({ payload: { source } })]);
+    });
   });
 
   it('shows a Yale CAS login CTA instead of the save button for logged-out visitors', async () => {

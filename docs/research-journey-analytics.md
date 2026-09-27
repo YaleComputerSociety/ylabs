@@ -63,6 +63,12 @@ Application opens include only `open_position` and `official_application` qualif
 Official-route attempts include only the `open_position`, `official_application`, and `reviewed_route` categories, and exclude `qualified_participation`.
 Confirmed outcomes remain `outreach_outcome` records and are never inferred from route attempts.
 
+Search engagement credits a recorded `search` with a later `fellowship_view`, `research_view`, `pathway_save`, `research_profile_open` or `research_save` by the same student, inside 30 minutes and before their next search.
+`research_view` is emitted only by the fellowship detail route, so before #3632 a research-surface search could never read as engaged: on Production, 0 of 39 research searches with results counted, against 25 that were followed by a profile open.
+`research_profile_open.source` is the surface the student came from, carried in router state by the card or saved-plan link they followed, and `direct` only when no such link was followed.
+Opens recorded before #3632 all read `direct` and cannot be recovered.
+Server-side research `search` rows exist in Production only from 2026-09-26, so the search-query and zero-result tables hold no research-surface query text before that date.
+
 ## Third-Party Measurement
 
 A Google Analytics 4 tag is live on every page load, with measurement id `G-3SQLGT56ZM`.

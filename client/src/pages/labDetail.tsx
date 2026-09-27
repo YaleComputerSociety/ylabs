@@ -72,6 +72,7 @@ import UserContext from '../contexts/UserContext';
 import EntityCorrectionReportPanel from '../components/research/EntityCorrectionReportPanel';
 import {
   createResearchAnalyticsInteractionId,
+  readResearchProfileOpenSource,
   trackResearchEvent,
   trackResearchEventOnce,
 } from '../utils/researchAnalytics';
@@ -825,7 +826,10 @@ const LabDetail = () => {
         const canonicalMatch = finalUrl.match(/\/research\/([^/?#]+)(?:[/?#]|$)/i);
         const canonicalSlug = canonicalMatch ? decodeURIComponent(canonicalMatch[1]) : '';
         if (canonicalSlug && canonicalSlug.toLowerCase() !== slug.toLowerCase()) {
-          void navigate(`/research/${safeRouteSegment(canonicalSlug)}`, { replace: true });
+          void navigate(`/research/${safeRouteSegment(canonicalSlug)}`, {
+            replace: true,
+            state: location.state,
+          });
           return;
         }
         dispatch({
@@ -853,9 +857,9 @@ const LabDetail = () => {
       eventType: 'research_profile_open',
       entityType: 'research_entity',
       entityId: entity._id,
-      payload: { source: 'direct' },
+      payload: { source: readResearchProfileOpenSource(location.state) },
     });
-  }, [location.key, payload]);
+  }, [location.key, location.state, payload]);
 
   if (loading && !payload) {
     return (
