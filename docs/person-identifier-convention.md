@@ -88,6 +88,7 @@ It deliberately ignores anything under a test or fixture path, because synthetic
 **Blocking before posting.** `scripts/gh-identifier-guard.mjs`, installed as a `gh` shim ahead of the real binary on PATH, on issue, pull request, comment, review, merge, close and reopen comment, and API bodies, GraphQL mutations included.
 For a call that targets a `YaleComputerSociety` repository, whether through `-R`, `GH_REPO`, the checkout remote, an API endpoint, or a URL argument, it scans the title and body before `gh` runs, and when a rule fires it prints the rule names and counts, never the matched text, and exits without calling GitHub.
 It also refuses when the scanner itself is missing, so a broken install fails closed rather than posting unchecked.
+A refused draft is kept at `$TMPDIR/gh-guard-rejected-<ms>.md`, and the refusal prints that path, so the author can read exactly what to rewrite.
 `scripts/new-agent-worktree.sh` installs it through `scripts/install-gh-identifier-guard.sh`, which refuses to overwrite a `gh` there that is not a guard shim, and `scripts/gh-identifier-guard.test.mjs` pins that a flagged body never reaches the real `gh` and a clean one reaches it unchanged.
 There is no after-the-fact bot: a comment on text GitHub already serves cannot unpublish it, so the workflow that posted one was removed (#3682).
 
@@ -125,6 +126,10 @@ The blocking file arm never calls this rule, so a false positive cannot fail a r
 It does stop the guard from posting, so a Title Case product phrase matched as a name is fixed in the detector, with a regression test, rather than worked around.
 It is never an `identifier-exempt:` line, which suppresses the whole body including a real name elsewhere in it, and a detector switched off to discuss ordinary work stays off.
 Never call the real `gh` directly to get past a refusal either.
+
+The gate writes its pull request body from the diff, so it quotes test fixtures, and the guard cannot tell a synthetic fixture from a real person.
+When the gate's `pr` step fails on a guard refusal, run `no-mistakes sync --yes` to take the gate's pushed head, then re-run `no-mistakes axi run` with an `--intent` that carries this rule: describe the regression tests by behaviour only and never quote a test fixture string, slug, or name from the diff.
+The rule lowers the odds rather than guaranteeing a clean body, so read the kept draft before re-running.
 
 The guard protects only a host it is installed on.
 A body posted from anywhere else is not scanned at all, and commit messages are not guarded anywhere, because another tool owns `core.hooksPath` on the maintainer machine, so scan them by hand before a push.

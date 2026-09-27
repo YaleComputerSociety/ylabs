@@ -10,8 +10,9 @@ import { classifyCommand, isGuardedRepo, planGuard } from './gh-identifier-guard
 
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 const GUARDED = 'YaleComputerSociety/does-not-exist-guard-test';
-const FLAGGED_SLUG = 'The entity nih-pi-quilla-marrowbane serves a stale description.';
-const FLAGGED_PROSE = 'Quilla Marrowbane has departed and the row is wrong.';
+const FLAGGED_NETID = 'zzq9999';
+const FLAGGED = `The row keyed netid: ${FLAGGED_NETID} is stale.`;
+const FLAGGED_COMMENT = `Closing because netid ${FLAGGED_NETID} departed.`;
 const CLEAN = 'The 12 rows where manuallyLockedFields contains activeAtYaleCache are stale.';
 
 const context = (overrides = {}) => ({
@@ -25,19 +26,19 @@ const context = (overrides = {}) => ({
 });
 
 test('scans the title and inline body of a publishing command', () => {
-  const plan = planGuard(['issue', 'create', '-t', 'fix: x', '--body', FLAGGED_SLUG], context());
+  const plan = planGuard(['issue', 'create', '-t', 'fix: x', '--body', FLAGGED], context());
 
   assert.equal(plan.action, 'scan');
   assert.equal(plan.label, 'issue create body');
   assert.match(plan.text, /fix: x/);
-  assert.match(plan.text, /nih-pi-quilla-marrowbane/);
+  assert.match(plan.text, new RegExp(FLAGGED_NETID));
 });
 
 test('reads --body-file and a stdin body through the injected reader', () => {
   const reads = [];
   const readBodyFile = (file) => {
     reads.push(file);
-    return FLAGGED_PROSE;
+    return FLAGGED_COMMENT;
   };
 
   assert.equal(
@@ -53,13 +54,13 @@ test('reads --body-file and a stdin body through the injected reader', () => {
 
 test('scans the text fields of a gh api call and ignores the rest', () => {
   const plan = planGuard(
-    ['api', 'repos/x/y/issues/1/comments', '-f', `body=${FLAGGED_SLUG}`, '-f', 'state=open'],
+    ['api', 'repos/x/y/issues/1/comments', '-f', `body=${FLAGGED}`, '-f', 'state=open'],
     context(),
   );
 
   assert.equal(plan.action, 'scan');
   assert.equal(plan.label, 'API body');
-  assert.equal(plan.text, FLAGGED_SLUG);
+  assert.equal(plan.text, FLAGGED);
   assert.deepEqual(planGuard(['api', 'repos/x/y/pulls', '-f', 'state=open'], context()), {
     action: 'passthrough',
   });
@@ -68,21 +69,21 @@ test('scans the text fields of a gh api call and ignores the rest', () => {
 test('scans the branch commit messages that pr create --fill would publish', () => {
   const plan = planGuard(
     ['pr', 'create', '--fill', '--base', 'beta'],
-    context({ branchCommitMessages: (base) => `${base}: ${FLAGGED_PROSE}` }),
+    context({ branchCommitMessages: (base) => `${base}: ${FLAGGED_COMMENT}` }),
   );
 
   assert.equal(plan.action, 'scan');
-  assert.equal(plan.text, `beta: ${FLAGGED_PROSE}`);
+  assert.equal(plan.text, `beta: ${FLAGGED_COMMENT}`);
 });
 
 test('passes through a repository outside the guarded organisation', () => {
-  const args = ['issue', 'create', '-R', 'cli/cli', '-b', FLAGGED_SLUG];
+  const args = ['issue', 'create', '-R', 'cli/cli', '-b', FLAGGED];
 
   assert.equal(isGuardedRepo('cli/cli'), false);
   assert.deepEqual(planGuard(args, context()), { action: 'passthrough' });
   assert.deepEqual(
     planGuard(
-      ['issue', 'create', '-b', FLAGGED_SLUG],
+      ['issue', 'create', '-b', FLAGGED],
       context({ originUrl: 'git@github.com:cli/cli.git' }),
     ),
     { action: 'passthrough' },
@@ -93,45 +94,45 @@ test('an explicit -R or GH_REPO outranks the checkout remote', () => {
   const outside = context({ originUrl: 'git@github.com:cli/cli.git' });
 
   assert.equal(
-    planGuard(['issue', 'create', '-R', GUARDED, '-b', FLAGGED_SLUG], outside).action,
+    planGuard(['issue', 'create', '-R', GUARDED, '-b', FLAGGED], outside).action,
     'scan',
   );
   assert.equal(
-    planGuard(['issue', 'create', '-b', FLAGGED_SLUG], { ...outside, envRepo: GUARDED }).action,
+    planGuard(['issue', 'create', '-b', FLAGGED], { ...outside, envRepo: GUARDED }).action,
     'scan',
   );
 });
 
 test('scans the comment that close and reopen post', () => {
   for (const args of [
-    ['pr', 'close', '12', '-c', FLAGGED_PROSE],
-    ['issue', 'reopen', '3', `--comment=${FLAGGED_PROSE}`],
+    ['pr', 'close', '12', '-c', FLAGGED_COMMENT],
+    ['issue', 'reopen', '3', `--comment=${FLAGGED_COMMENT}`],
   ]) {
     const plan = planGuard(args, context());
     assert.equal(plan.action, 'scan', args.join(' '));
-    assert.equal(plan.text, FLAGGED_PROSE);
+    assert.equal(plan.text, FLAGGED_COMMENT);
   }
 });
 
 test('treats pr create -f as --fill and scans the commit messages', () => {
   const plan = planGuard(
     ['pr', 'create', '-f'],
-    context({ branchCommitMessages: () => FLAGGED_PROSE }),
+    context({ branchCommitMessages: () => FLAGGED_COMMENT }),
   );
 
   assert.equal(plan.action, 'scan');
-  assert.equal(plan.text, FLAGGED_PROSE);
+  assert.equal(plan.text, FLAGGED_COMMENT);
 });
 
 test('reads attached short-flag values', () => {
   assert.equal(
-    planGuard(['issue', 'create', '-t', 'x', `-b${FLAGGED_SLUG}`], context()).text,
-    `x\n\n${FLAGGED_SLUG}`,
+    planGuard(['issue', 'create', '-t', 'x', `-b${FLAGGED}`], context()).text,
+    `x\n\n${FLAGGED}`,
   );
-  assert.equal(planGuard(['issue', 'create', `-b=${FLAGGED_SLUG}`], context()).text, FLAGGED_SLUG);
+  assert.equal(planGuard(['issue', 'create', `-b=${FLAGGED}`], context()).text, FLAGGED);
   assert.equal(
-    planGuard(['api', 'repos/x/y/issues', `-fbody=${FLAGGED_SLUG}`], context()).text,
-    FLAGGED_SLUG,
+    planGuard(['api', 'repos/x/y/issues', `-fbody=${FLAGGED}`], context()).text,
+    FLAGGED,
   );
 });
 
@@ -139,22 +140,20 @@ test('guards a repository named by an API endpoint or URL outside the checkout',
   const outside = context({ originUrl: '' });
 
   assert.equal(
-    planGuard(['api', `repos/${GUARDED}/issues/1/comments`, '-f', `body=${FLAGGED_SLUG}`], outside)
+    planGuard(['api', `repos/${GUARDED}/issues/1/comments`, '-f', `body=${FLAGGED}`], outside)
       .action,
     'scan',
   );
   assert.equal(
-    planGuard(
-      ['pr', 'comment', `https://github.com/${GUARDED}/pull/12`, '-b', FLAGGED_SLUG],
-      outside,
-    ).action,
+    planGuard(['pr', 'comment', `https://github.com/${GUARDED}/pull/12`, '-b', FLAGGED], outside)
+      .action,
     'scan',
   );
 });
 
 test('scans a GraphQL mutation wherever it runs, and passes a read query through', () => {
   const outside = context({ originUrl: 'git@github.com:cli/cli.git' });
-  const mutation = `mutation{addComment(input:{subjectId:"x",body:"${FLAGGED_PROSE}"}){clientMutationId}}`;
+  const mutation = `mutation{addComment(input:{subjectId:"x",body:"${FLAGGED_COMMENT}"}){clientMutationId}}`;
 
   const plan = planGuard(['api', 'graphql', '-f', `query=${mutation}`], outside);
   assert.equal(plan.action, 'scan');
@@ -196,22 +195,40 @@ test('refuses a flagged body end to end, so the real gh never runs', () => {
   const { dir, log } = makeFakeGh();
   const guard = path.join(scriptsDir, 'gh-identifier-guard.mjs');
 
-  const inline = runGuard(
-    guard,
-    ['issue', 'create', '-R', GUARDED, '-t', 't', '-b', FLAGGED_SLUG],
-    { binDir: dir },
-  );
+  const inline = runGuard(guard, ['issue', 'create', '-R', GUARDED, '-t', 't', '-b', FLAGGED], {
+    binDir: dir,
+  });
   const stdin = runGuard(guard, ['issue', 'comment', '1', '-R', GUARDED, '-F', '-'], {
     binDir: dir,
-    input: FLAGGED_PROSE,
+    input: FLAGGED_COMMENT,
   });
 
   for (const result of [inline, stdin]) {
     assert.equal(result.status, 1);
     assert.match(result.stderr, /gh guard: NOT posted/);
-    assert.doesNotMatch(result.stderr, /quilla/i);
+    assert.doesNotMatch(result.stderr, new RegExp(FLAGGED_NETID));
   }
   assert.equal(fs.existsSync(log), false);
+});
+
+test('keeps a refused draft locally so the author can see what to rewrite', () => {
+  const { dir } = makeFakeGh();
+  const guard = path.join(scriptsDir, 'gh-identifier-guard.mjs');
+
+  const result = runGuard(
+    guard,
+    ['issue', 'create', '-R', GUARDED, '-t', 'fix: x', '-b', FLAGGED],
+    {
+      binDir: dir,
+    },
+  );
+  const kept = result.stderr.match(/Rejected draft kept locally at (\S+)/)?.[1];
+
+  assert.equal(result.status, 1);
+  assert.ok(kept, result.stderr);
+  assert.equal(path.dirname(kept), os.tmpdir());
+  assert.equal(fs.readFileSync(kept, 'utf8'), `fix: x\n\n${FLAGGED}`);
+  fs.rmSync(kept);
 });
 
 test('forwards a clean body and its stdin to the real gh unchanged', () => {
