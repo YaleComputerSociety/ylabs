@@ -82,61 +82,74 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
  * Cached for the life of the process because a materialize sweep walks thousands of
  * rows whose candidate URLs repeat heavily - the repetition is the defect being
  * screened - so the uncached cost would be one query per row.
+ *
+ * The cache is filled once, from every live description citation, and each row is
+ * admitted under the same host pattern the per-host query used, so a lookup answers
+ * exactly what that query answered. Keyed by URL, the cache re-read a whole host for
+ * each new page: on Development that was 201 host reads, each 0.25 s to 0.5 s over up
+ * to 9,288 rows, for 400 roster rows, 40% of their materialization, while one read of
+ * all 19,679 live citations takes about 0.7 s (#3568).
  */
-const citersCache = new Map<string, Set<string>>();
+let citersByUrl: Map<string, Set<string>> | undefined;
 
 export function resetDescriptionOwnershipCitersCache(): void {
-  citersCache.clear();
+  citersByUrl = undefined;
 }
 
-export async function loadDescriptionSourceCiters(
-  urls: readonly string[],
-): Promise<Map<string, Set<string>>> {
-  const wanted = new Set(urls.map((url) => normalizeEvidenceUrl(url)).filter(Boolean));
-  const result = new Map<string, Set<string>>();
-  const missing: string[] = [];
-  for (const url of wanted) {
-    const cached = citersCache.get(url);
-    if (cached) result.set(url, cached);
-    else missing.push(url);
+const hostOfUrl = (url: string): string | undefined => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return undefined;
   }
-  if (missing.length === 0) return result;
+};
 
-  const hosts = new Set<string>();
-  for (const url of missing) {
-    try {
-      hosts.add(new URL(url).hostname);
-    } catch {
-      continue;
-    }
-  }
-  if (hosts.size === 0) return result;
+const citationHostPattern = (host: string): RegExp =>
+  new RegExp(`^https?://(www\\.)?${escapeRegExp(host)}(/|$|\\?)`, 'i');
+
+async function loadAllDescriptionSourceCiters(): Promise<Map<string, Set<string>>> {
   const rows = (await Observation.find(
     {
       entityType: OWNERSHIP_GUARDED_ENTITY_TYPE,
       field: { $in: [...OWNERSHIP_GUARDED_DESCRIPTION_FIELDS] },
       superseded: { $ne: true },
-      $or: [...hosts].map((host) => ({
-        sourceUrl: { $regex: `^https?://(www\\.)?${escapeRegExp(host)}(/|$|\\?)`, $options: 'i' },
-      })),
     },
     { sourceUrl: 1, entityKey: 1, entityId: 1 },
   ).lean()) as any[];
-
-  const missingSet = new Set(missing);
-  for (const url of missing) citersCache.set(url, citersCache.get(url) ?? new Set<string>());
+  const byUrl = new Map<string, Set<string>>();
+  const patternByHost = new Map<string, RegExp>();
   for (const row of rows) {
-    const url = normalizeEvidenceUrl(row.sourceUrl);
-    if (!missingSet.has(url)) continue;
     const key = String(row.entityKey || row.entityId || '');
-    if (!key) continue;
-    const existing = citersCache.get(url) ?? new Set<string>();
+    if (!key || typeof row.sourceUrl !== 'string') continue;
+    const url = normalizeEvidenceUrl(row.sourceUrl);
+    const host = url ? hostOfUrl(url) : undefined;
+    if (!host) continue;
+    let pattern = patternByHost.get(host);
+    if (!pattern) {
+      pattern = citationHostPattern(host);
+      patternByHost.set(host, pattern);
+    }
+    if (!pattern.test(row.sourceUrl)) continue;
+    const existing = byUrl.get(url) ?? new Set<string>();
     existing.add(key);
-    citersCache.set(url, existing);
+    byUrl.set(url, existing);
   }
-  for (const url of missing) {
-    const entry = citersCache.get(url);
-    if (entry) result.set(url, entry);
+  return byUrl;
+}
+
+export async function loadDescriptionSourceCiters(
+  urls: readonly string[],
+): Promise<Map<string, Set<string>>> {
+  const wanted = [...new Set(urls.map((url) => normalizeEvidenceUrl(url)).filter(Boolean))].filter(
+    (url) => hostOfUrl(url),
+  );
+  const result = new Map<string, Set<string>>();
+  if (wanted.length === 0) return result;
+  citersByUrl ??= await loadAllDescriptionSourceCiters();
+  for (const url of wanted) {
+    const entry = citersByUrl.get(url) ?? new Set<string>();
+    citersByUrl.set(url, entry);
+    result.set(url, entry);
   }
   return result;
 }
