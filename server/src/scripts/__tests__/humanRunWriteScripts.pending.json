@@ -25,7 +25,6 @@
   "observations:repair-orphaned-references",
   "observations:repartition-fingerprint-index",
   "observations:retarget-foreign-lab-websites",
-  "observations:retire-accepting-undergrads",
   "observations:retire-affiliated-org-name-grafts",
   "observations:retire-dead-program-lanes",
   "observations:retire-deploy-host-citations",
@@ -75,7 +74,6 @@
   "research-entity:repair-lab-named-faculty-research-types",
   "research-entity:repair-link-chrome-names",
   "research-entity:repair-sentence-shaped-chips",
-  "research-entity:repair-studies-template-glue-shorts",
   "research-entity:repair-unbacked-lab-names",
   "research-entity:resolve-lead-netids",
   "research-entity:resync-kind",
@@ -121,7 +119,6 @@
   "sources:repair-promotion-regressed-website-urls",
   "sources:repair-superseded-entity-source-urls",
   "sources:repair-vanity-host-citations",
-  "sources:repair-ysm-atoz-index-url",
   "sources:strip-directory-loaders",
   "unregistered:collapsePersonPageCitationMirrors.ts",
   "visibility:retire-stale-launch-overrides"

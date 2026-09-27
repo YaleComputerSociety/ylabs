@@ -499,7 +499,9 @@ Examples:
 Following the Simple Directory First slice (see the direction note above), the read-time `accessSummary` payload, the graded "Evidence" chips, and the computed "Best Next Step" label are no longer produced or shown.
 Reaching out by opening the official profile is the constant contact action, and the remaining factual `Signal` rows render as plain badges without confidence stamps or a plausibility verdict.
 The legacy stored access fields (`acceptingUndergrads`, `openness`, `acceptanceConfidence`, and the openness caches) were retired in #420/#463 and no longer exist on `ResearchEntity`.
-#2055 finished the job for `acceptingUndergrads`: no scraper emits it, no materializer reads it, it carries no served source-contribution label, and `yarn --cwd server observations:retire-accepting-undergrads` supersedes the stored observations and clears the `fieldProvenance` entries that credited a source for it.
+#2055 finished the job for `acceptingUndergrads`: no scraper emits it, no materializer reads it, and it carries no served source-contribution label.
+The retirement is engine behaviour rather than a script: `acceptingUndergrads` is in `RETIRED_ACCESS_OBSERVATION_FIELDS`, which `shouldIgnoreObservationForEntityMaterialization` consults, so the projection ignores such an observation whether or not one exists.
+The one-off `observations:retire-accepting-undergrads` was deleted once that made it unable to act (#3633).
 
 The `accessAcceptanceLevel` grade was retired by the 2026-08-25 "Simple Directory First" pivot: access plausibility no longer feeds ranking, filtering, or a trust tier, and the read-time `accessSummary` payload is no longer produced.
 
