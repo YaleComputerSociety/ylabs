@@ -41,6 +41,7 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
   let mongod: MongoMemoryServer;
   let mongoUrl: string;
   let runScraperSweep: typeof import('../runScraperSweep').runScraperSweep;
+  let researchSweepSources: typeof import('../runScraperSweep').RESEARCH_SWEEP_SOURCES;
   let checkpointPathForMode: typeof import('../scraperSweepCheckpoint').checkpointPathForMode;
   let readSweepCheckpoint: typeof import('../scraperSweepCheckpoint').readSweepCheckpoint;
   const previousEnv = new Map<string, string | undefined>();
@@ -60,6 +61,7 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     const sweep = await import('../runScraperSweep');
     const checkpointModule = await import('../scraperSweepCheckpoint');
     runScraperSweep = sweep.runScraperSweep;
+    researchSweepSources = sweep.RESEARCH_SWEEP_SOURCES;
     checkpointPathForMode = checkpointModule.checkpointPathForMode;
     readSweepCheckpoint = checkpointModule.readSweepCheckpoint;
 
@@ -286,6 +288,51 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     expect(thirdSummary.outputDirectory).not.toBe(firstSummary.outputDirectory);
     expect(restarted.calls.filter((call) => sourceNameFromArgs(call.args)).length).toBe(
       thirdSummary.sourceCount,
+    );
+  }, 180_000);
+
+  it('resumes after a source is removed from the list without re-running any done source (#3570)', async () => {
+    const mode = 'development-full' as const;
+    fs.rmSync(checkpointFor(mode), { force: true });
+    const options = {
+      mode,
+      confirmations: new Set(['--confirm-development-full-sweep']),
+      skipPreflight: true,
+    };
+    const lastSource = researchSweepSources[researchSweepSources.length - 1].name;
+    const removedSource = researchSweepSources[0].name;
+
+    const failed = makeChildRunner(new Set([lastSource]));
+    const firstSummary = await runScraperSweep(options, {
+      childRunner: failed.runner,
+      sweepSources: researchSweepSources,
+    });
+    trackRun(mode, firstSummary.outputDirectory);
+    expect(firstSummary.failed).toBe(1);
+
+    const checkpoint = readSweepCheckpoint(checkpointFor(mode));
+    const secondSource = researchSweepSources[1].name;
+    const recordedPath = checkpoint?.steps[`source:${secondSource}`]?.artifactPath;
+    expect(recordedPath).toBe(path.join(firstSummary.outputDirectory, `02-${secondSource}.json`));
+
+    const resumed = makeChildRunner(new Set());
+    const secondSummary = await runScraperSweep(options, {
+      childRunner: resumed.runner,
+      sweepSources: researchSweepSources.filter((source) => source.name !== removedSource),
+    });
+    trackRun(mode, secondSummary.outputDirectory);
+
+    expect(
+      resumed.calls
+        .filter((call) => sourceNameFromArgs(call.args))
+        .map((call) => sourceNameFromArgs(call.args)),
+    ).toEqual([lastSource]);
+    expect(secondSummary.failed).toBe(0);
+    expect(secondSummary.rows.find((row) => row.sourceName === secondSource)?.artifactPath).toBe(
+      recordedPath,
+    );
+    expect(fs.existsSync(path.join(firstSummary.outputDirectory, `01-${secondSource}.json`))).toBe(
+      false,
     );
   }, 180_000);
 

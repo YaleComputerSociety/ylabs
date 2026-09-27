@@ -11,6 +11,7 @@ export interface SweepCheckpointStep {
   kind: SweepStepKind;
   status: SweepStepStatus;
   exitCode?: number;
+  artifactPath?: string;
   startedAt?: string;
   finishedAt?: string;
 }
@@ -205,8 +206,19 @@ export class SweepCheckpointStore {
     this.persist(now);
   }
 
-  markDone(stepId: string, kind: SweepStepKind, exitCode: number, now: Date): void {
-    this.upsert(stepId, kind, 'done', exitCode, now);
+  markDone(
+    stepId: string,
+    kind: SweepStepKind,
+    exitCode: number,
+    now: Date,
+    artifactPath?: string,
+  ): void {
+    this.upsert(stepId, kind, 'done', exitCode, now, artifactPath);
+  }
+
+  recordedArtifactPath(stepId: string): string | undefined {
+    const artifactPath = this.checkpoint.steps[stepId]?.artifactPath;
+    return typeof artifactPath === 'string' && artifactPath ? artifactPath : undefined;
   }
 
   markFailed(stepId: string, kind: SweepStepKind, exitCode: number, now: Date): void {
@@ -219,6 +231,7 @@ export class SweepCheckpointStore {
     status: SweepStepStatus,
     exitCode: number,
     now: Date,
+    artifactPath?: string,
   ): void {
     const existing = this.checkpoint.steps[stepId];
     this.checkpoint.steps[stepId] = {
@@ -226,6 +239,7 @@ export class SweepCheckpointStore {
       kind,
       status,
       exitCode,
+      ...(artifactPath ? { artifactPath } : {}),
       ...(existing?.startedAt ? { startedAt: existing.startedAt } : {}),
       finishedAt: now.toISOString(),
     };

@@ -1696,6 +1696,7 @@ export async function runScraperSweep(
   dependencies: {
     childRunner?: ChildRunner;
     now?: () => Date;
+    sweepSources?: ScraperSweepSource[];
   } = {},
 ): Promise<ScraperSweepSummary> {
   const config = MODE_CONFIG[options.mode];
@@ -1729,7 +1730,7 @@ export async function runScraperSweep(
   const logger = new SweepRunLogger(outputDirectory, now);
   const ctx: SweepRuntimeContext = { store, logger, now };
   const childRunner = dependencies.childRunner || spawnChild;
-  const sweepSources = sweepSourcesForMode(options.mode);
+  const sweepSources = dependencies.sweepSources || sweepSourcesForMode(options.mode);
   const rows = new Array<ScraperSweepRunRow>(sweepSources.length);
 
   if (resumed && sweepSources.some((source) => !store.isDone(sourceStepId(source.name)))) {
@@ -1818,7 +1819,10 @@ export async function runScraperSweep(
     const artifactPath = artifactPathFor(source, index);
     const stepId = sourceStepId(source.name);
     if (store.isDone(stepId)) {
-      const resumedRow = succeededRowFromArtifact(source, artifactPath);
+      const resumedRow = succeededRowFromArtifact(
+        source,
+        store.recordedArtifactPath(stepId) || artifactPath,
+      );
       if (resumedRow) {
         console.log(
           `\n[${index + 1}/${sweepSources.length}] ${source.phase}: ${source.name} (resume: already done)`,
@@ -1886,7 +1890,7 @@ export async function runScraperSweep(
         artifactPath,
         ...artifact,
       };
-      store.markDone(stepId, 'source', exitCode, now());
+      store.markDone(stepId, 'source', exitCode, now(), artifactPath);
       logger.logDone(stepId, exitCode);
     } catch (error) {
       failStep(sanitizeLogValue(error));
