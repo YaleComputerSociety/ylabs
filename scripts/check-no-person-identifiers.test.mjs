@@ -11,6 +11,7 @@ import {
   isDirectoryDumpCandidate,
   isRegisteredName,
   SYNTHETIC_FIXTURE_SURNAMES,
+  SYNTHETIC_NETID_RE,
 } from './check-no-person-identifiers-core.mjs';
 
 const scanStrict = (documents) => findPersonIdentifierFindings(documents, { strict: true });
@@ -437,4 +438,21 @@ test('a finding never carries the text it matched', () => {
   const findings = scanStrict(body('Quilla Marrowbane has departed and the row is wrong.'));
   assert.ok(findings.length > 0);
   for (const finding of findings) assert.equal('matched' in finding, false);
+});
+
+test('pins the synthetic netid shape, so widening it is a deliberate change', () => {
+  assert.equal(SYNTHETIC_NETID_RE.source, '^zz[a-z]?99\\d*$');
+});
+
+test('the body scan lets a synthetic netid through while strict mode still flags it', () => {
+  for (const fixture of ['netid: zz9993', "const NETID = 'zzq9999';", 'netid=zz99']) {
+    assert.deepEqual(rulesOf(findPersonIdentifierFindings(body(fixture))), [], fixture);
+    assert.deepEqual(rulesOf(scanStrict(body(fixture))), ['yale-netid'], fixture);
+  }
+});
+
+test('a netid outside the synthetic shape is flagged by the body scan', () => {
+  for (const flagged of ['netid: qmb4821', 'netid: zz1234', 'netid: ab9912', 'netid: zzab99']) {
+    assert.deepEqual(rulesOf(findPersonIdentifierFindings(body(flagged))), ['yale-netid'], flagged);
+  }
 });
