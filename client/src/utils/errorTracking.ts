@@ -1,5 +1,7 @@
 import * as Sentry from '@sentry/react';
 
+import { scrubBreadcrumb, scrubErrorEvent } from './errorReportScrubbing';
+
 type ErrorTrackingConfig = {
   dsn?: string;
   environment: string;
@@ -12,16 +14,23 @@ const getErrorTrackingConfig = (): ErrorTrackingConfig => ({
   release: import.meta.env.VITE_SENTRY_RELEASE,
 });
 
+export const buildErrorTrackingOptions = (
+  config: ErrorTrackingConfig & { dsn: string },
+): Sentry.BrowserOptions => ({
+  dsn: config.dsn,
+  environment: config.environment,
+  release: config.release,
+  sendDefaultPii: false,
+  beforeSend: scrubErrorEvent,
+  beforeBreadcrumb: scrubBreadcrumb,
+});
+
 export const initializeErrorTracking = (config = getErrorTrackingConfig()) => {
   if (!config.dsn) {
     return false;
   }
 
-  Sentry.init({
-    dsn: config.dsn,
-    environment: config.environment,
-    release: config.release,
-  });
+  Sentry.init(buildErrorTrackingOptions({ ...config, dsn: config.dsn }));
 
   return true;
 };
