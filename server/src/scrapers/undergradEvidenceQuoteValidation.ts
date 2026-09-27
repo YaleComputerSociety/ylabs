@@ -98,7 +98,7 @@ const MODEL_SEARCH_NOTE_PATTERNS: RegExp[] = [
   /\b(?:does|do)\s+not\s+(?:explicitly\s+)?mention\s+(?:any\s+)?(?:accepting\s+)?undergrad/i,
   /\b(?:members?|people|team|staff)\s*\(?pages?\)?\s+(?:lists|shows|contains|includes)\b/i,
   /^\W*the\s+page\s+(?:lists|shows|contains|includes)\b[^.]*\b(?:no|not)\b/i,
-  /\((?:lists|shows|includes)\b/i,
+  /\b(?:people|members?|directory)\b[^()]*\((?:lists|shows|includes)\b/i,
   /\bno\s+(?:one|(?:current\s+)?(?:yale\s+)?(?:students\s+or\s+)?undergrad(?:uate)?s?)\b[^.;)]{0,40}?\b(?:(?:explicitly\s+)?(?:listed|mentioned)|labell?ed)\b/i,
   /\bbut\s+no\s+(?:current\s+)?(?:yale\s+)?undergrad(?:uate)?s?\b/i,
   /\bnav(?:igation)?\s+item\b/i,

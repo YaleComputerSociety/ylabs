@@ -151,6 +151,7 @@ describe('isModelSearchNote (#3683)', () => {
       'This page lists external opportunities for current MFA and undergraduate students.',
       'Current undergraduates are listed on our members page.',
       'Undergraduates who join the lab present at the spring symposium.',
+      'Undergraduates are welcome to join the lab (includes paid summer positions).',
     ];
     for (const quote of quotes) {
       expect(isModelSearchNote(quote), quote).toBe(false);
