@@ -268,7 +268,7 @@ const runScanBodyJob = async ({ body, existingComments = [], number = 4242 }) =>
   return { conclusion, created, updated, failures, skipped, logs, outputs };
 };
 
-const flaggedBody = ['## Summary', '', 'The served row for netid: zzq9999 is wrong.'].join('\n');
+const flaggedBody = ['## Summary', '', 'The served row for netid: qmb4821 is wrong.'].join('\n');
 
 const predicateBody = [
   '## Summary',
@@ -291,8 +291,8 @@ test('the failing run still posts the finding, and never echoes the matched name
   const comment = run.created[0].body;
   assert.match(comment, /<!-- person-identifier-scan -->/);
   assert.match(comment, /yale-netid/);
-  assert.ok(!comment.includes('zzq9999'));
-  assert.ok(!run.failures.join('\n').includes('zzq9999'));
+  assert.ok(!comment.includes('qmb4821'));
+  assert.ok(!run.failures.join('\n').includes('qmb4821'));
 });
 
 test('an edited body that is still flagged updates the comment and stays red', async () => {
