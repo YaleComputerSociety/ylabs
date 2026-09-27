@@ -249,8 +249,9 @@ export function goldValueMatches(emitted: string, acceptable: readonly string[])
 /**
  * Precision and recall against hand-judged labels, per field (#3588). Each label is one
  * `(entityKey, field)` judged against the frozen benchmark page: `absent` means the lane
- * should emit nothing, `present` lists the values a reader accepted. An emission on an
- * unlabeled pair is unjudged and counted nowhere, per #3514.
+ * should emit nothing, `present` lists the values a reader accepted. A wrong value on a
+ * `present` pair is both a false positive and a false negative, so recall is over every
+ * `present` label. An emission on an unlabeled pair is unjudged and counted nowhere, per #3514.
  */
 export function scoreGoldLabels(
   observations: readonly PlannedObservation[],
@@ -293,10 +294,12 @@ export function scoreGoldLabels(
       else score.trueNegative += 1;
       continue;
     }
-    if (emitted.length === 0) score.falseNegative += 1;
-    else if (emitted.some((value) => goldValueMatches(value, label.acceptable ?? [])))
+    if (emitted.some((value) => goldValueMatches(value, label.acceptable ?? []))) {
       score.truePositive += 1;
-    else score.falsePositive += 1;
+      continue;
+    }
+    score.falseNegative += 1;
+    if (emitted.length > 0) score.falsePositive += 1;
   }
 
   for (const score of byField.values()) {

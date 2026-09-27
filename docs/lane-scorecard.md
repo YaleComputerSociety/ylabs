@@ -93,10 +93,11 @@ yarn --cwd server lane:benchmark-label --id=<benchmark-id> --file=<labels.json> 
 ```
 
 The file is a JSON array of `{ entityKey, field, expected, acceptable, judgedPageUrl, note }`, and it lives under `/tmp`, never in the repository, because a label quotes a page that can name a person.
-The command refuses a label outside the benchmark's scope, a `present` label with nothing acceptable, and a repeated pair, and it refuses to overwrite existing labels without `--replace`.
+The command refuses a label outside the benchmark's `--only` scope, any label on a benchmark captured without `--only`, a `present` label with nothing acceptable, and a repeated pair, and it refuses to overwrite existing labels without `--replace`.
 Leave a pair unlabeled when the frozen page cannot settle it, such as a page that captured only site chrome: an unlabeled pair is counted nowhere, which is honest, while a guessed label is a wrong instrument.
 
 Each scorecard row then carries `gold`, one entry per labeled field with true and false positives, false negatives, true negatives, precision, and recall.
+A wrong value on a `present` pair is both a false positive and a false negative, so recall is over every `present` label.
 A rate is `null` when its denominator is zero, never `0` or `1`.
 A live-model run reports the band of each rate as `liveModelGold`.
 

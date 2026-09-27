@@ -56,10 +56,10 @@ describe('scoreGoldLabels', () => {
       labeled: 5,
       truePositive: 1,
       falsePositive: 2,
-      falseNegative: 1,
+      falseNegative: 2,
       trueNegative: 1,
       precision: 1 / 3,
-      recall: 1 / 2,
+      recall: 1 / 3,
     });
   });
 
@@ -197,5 +197,11 @@ describe('parseGoldLabelFile', () => {
     [{ not: 'an array' }, /JSON array/],
   ])('refuses %j', (raw, message) => {
     expect(() => parseGoldLabelFile(raw, scope)).toThrow(message);
+  });
+
+  it('refuses every label when the benchmark has no captured scope', () => {
+    expect(() =>
+      parseGoldLabelFile([{ entityKey: 'lab-a', field: 'f', expected: 'absent' }], { only: [] }),
+    ).toThrow(/not captured with --only/);
   });
 });

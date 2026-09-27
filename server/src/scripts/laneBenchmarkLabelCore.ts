@@ -6,12 +6,16 @@ export interface GoldLabelValidationScope {
 
 /**
  * Checks a hand-judged label file before it is attached to a benchmark (#3588). A label
- * outside the benchmark's scope could never be scored, and a `present` label with nothing
- * acceptable would count every emission wrong, so both are refused rather than stored.
+ * outside the benchmark's scope could never be scored, a benchmark with no `only` list has no
+ * checkable scope, and a `present` label with nothing acceptable would count every emission
+ * wrong, so all three are refused rather than stored.
  */
 export function parseGoldLabelFile(raw: unknown, scope: GoldLabelValidationScope): GoldLabel[] {
   if (!Array.isArray(raw)) throw new Error('a gold label file is a JSON array of labels');
   const inScope = new Set(scope.only);
+  if (inScope.size === 0) {
+    throw new Error('the benchmark was not captured with --only, so a label cannot be scoped');
+  }
   const seen = new Set<string>();
   return raw.map((entry, index) => {
     const at = `label ${index}`;
@@ -20,7 +24,7 @@ export function parseGoldLabelFile(raw: unknown, scope: GoldLabelValidationScope
     const entityKey = typeof label.entityKey === 'string' ? label.entityKey.trim() : '';
     const field = typeof label.field === 'string' ? label.field.trim() : '';
     if (!entityKey || !field) throw new Error(`${at} needs an entityKey and a field`);
-    if (inScope.size > 0 && !inScope.has(entityKey)) {
+    if (!inScope.has(entityKey)) {
       throw new Error(`${at} names an entity outside the benchmark's scope`);
     }
     if (label.expected !== 'present' && label.expected !== 'absent') {
