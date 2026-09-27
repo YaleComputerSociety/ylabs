@@ -107,6 +107,9 @@ The body scan lets an identifier or prose name built from one of them through, b
 The allowance tests only the identifier itself, meaning the slug from its prefix onward or a two-word prose name ending in a roster surname, so a fixture surname sitting next to another name does not let that other name through.
 The tests scan in strict mode, which ignores the roster, so they still prove every shape is flagged.
 Write a new test fixture from the roster rather than inventing another name, and widening the roster is a reviewed change that its pin test makes deliberate.
+The same allowance covers one netid shape, `SYNTHETIC_NETID_RE`: `zz`, an optional third letter, then digits beginning with `99`, such as `zz9993` or `zzq9999`.
+It is the only netid form a fixture may use.
+A real netid would need both `zz` initials and a `99` digit prefix to pass the body scan, and that is the accepted limit of the allowance.
 
 Check a draft before posting it, which is the only moment the fix is free:
 

@@ -276,6 +276,12 @@ const mentionsSyntheticFixture = (text) => {
   return SYNTHETIC_FIXTURE_SURNAMES.some((surname) => lowered.includes(surname));
 };
 
+// The fake netid shape the repository's fixtures already use. A real netid would
+// need both `zz` initials and a `99` digit prefix to pass, which the convention
+// doc records as the accepted limit.
+// Changing this shape also requires updating docs/person-identifier-convention.md.
+export const SYNTHETIC_NETID_RE = /^zz[a-z]?99\d*$/i;
+
 const isSyntheticFixtureName = (name) => {
   const tokens = String(name || '').split(/\s+/);
   return tokens.length === 2 && SYNTHETIC_FIXTURE_SURNAMES.includes(tokens[1].toLowerCase());
@@ -404,7 +410,9 @@ export function findPersonIdentifierFindings(documents, { strict = false } = {})
         if (isSynthetic(localPart)) return null;
         return 'a personal yale.edu address';
       }),
-      ...collect(document, NETID_LABELLED_RE, 'yale-netid', () => 'a Yale netid'),
+      ...collect(document, NETID_LABELLED_RE, 'yale-netid', (match) =>
+        !strict && SYNTHETIC_NETID_RE.test(match[1]) ? null : 'a Yale netid',
+      ),
       ...personClaimFindings(document).filter((finding) => !isSyntheticName(finding.matched)),
     );
   }
