@@ -511,6 +511,11 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
 - `confidenceResolver.ts` - pure-function aggregator that picks a winning observation value and computes a confidence score (no DB calls, fully testable)
 - `observationRetention.ts` - TTL/cleanup for old observation rows
 - `renderedFetch.ts` - headless-browser fetch helper for JS-rendered pages
+  Every rendered-fetch consumer reads a page through `fetchUsableRenderedPage`, never by adopting `result.html` from the fetcher directly (#3644).
+  `scraplingBridge.py` returns the body of an error or challenge page alongside `statusCode` and `blocked`, and it flags only 401, 403, 429 and 503 plus challenge markers, so a 404 or 5xx body arrives unflagged.
+  `renderedPageFailureReason` refuses a blocked, non-2xx or empty result; the helper then returns it with an empty `html`, so each lane's existing empty-page branch reports a fetch failure, and `measureRenderedFetch` counts the attempt as failed.
+  An unusable page is never written to the `--use-cache` snapshot, and an unusable page already cached is ignored and re-rendered, so a dead site cannot be served back as content on a later run.
+  Before this, the undergrad LLM lane read 404 pages as lab text, stored a content hash of the error page, and skipped the row as unchanged on every later run, so a dead site never appeared as `fetch-failed`.
 - `utils/httpFetch.ts` - shared SSRF-guarded page fetch (`fetchPageWithPolicy`, wrapping `ssrfGuard`) with a per-host rate limiter and exponential backoff that retries 403/429/5xx and honors `Retry-After`; microsite LLM extractors fetch through it so exhaustive per-entity scrapes stop tripping host WAF 403s
 - `utils/hostConcurrencyLimiter.ts` - the single per-host slot-and-spacing core (`HostConcurrencyLimiter`) plus the `HOST_THROTTLE_OVERRIDES` map.
   Both fetch paths share this one core: the axios request interceptor that gates the `renderedFetch`/sweep path, and `httpFetch`'s `HostRateLimiter`, which delegates its per-host slot and spacing here rather than reimplementing them.

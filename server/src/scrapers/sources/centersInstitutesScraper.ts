@@ -31,10 +31,10 @@ import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
 import {
   createScraplingRenderedFetcher,
+  fetchUsableRenderedPage,
   measureRenderedFetch,
   summarizeFetchMetrics,
   type RenderedFetcher,
-  type RenderedFetchResult,
 } from '../renderedFetch';
 import type {
   IScraper,
@@ -1684,7 +1684,16 @@ export class CentersInstitutesScraper implements IScraper {
           config.url,
           'scrapling',
           () =>
-            fetchRenderedCenterPage(this.name, ctx.options.useCache, config, this.renderedFetcher),
+            fetchUsableRenderedPage({
+              sourceName: this.name,
+              useCache: ctx.options.useCache,
+              request: {
+                url: config.url,
+                waitSelector: config.renderWaitSelector,
+                timeoutMs: FETCH_TIMEOUT_MS,
+              },
+              renderedFetcher: this.renderedFetcher,
+            }),
           { selectorName: config.renderWaitSelector },
         );
         fetchAttempts.push(rendered.metric);
@@ -1839,25 +1848,4 @@ export class CentersInstitutesScraper implements IScraper {
 
     return { engagementUrl, members };
   }
-}
-
-async function fetchRenderedCenterPage(
-  sourceName: string,
-  useCache: boolean,
-  config: CenterConfig,
-  renderedFetcher: RenderedFetcher | null,
-): Promise<RenderedFetchResult | null> {
-  if (!renderedFetcher) return null;
-  const cacheKey = `rendered-page:v1:${config.url}`;
-  if (useCache) {
-    const cached = await getCached<RenderedFetchResult>(sourceName, cacheKey);
-    if (cached) return cached;
-  }
-  const result = await renderedFetcher({
-    url: config.url,
-    waitSelector: config.renderWaitSelector,
-    timeoutMs: FETCH_TIMEOUT_MS,
-  });
-  if (useCache && result?.html) await setCached(sourceName, cacheKey, result);
-  return result;
 }

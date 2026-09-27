@@ -2,13 +2,25 @@ import { describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   execFile: vi.fn(),
+  getCached: vi.fn(),
+  setCached: vi.fn(),
 }));
 
 vi.mock('node:child_process', () => ({
   execFile: mocks.execFile,
 }));
 
-import { createScraplingRenderedFetcher } from '../renderedFetch';
+vi.mock('../snapshotCache', () => ({
+  getCached: mocks.getCached,
+  setCached: mocks.setCached,
+}));
+
+import {
+  createScraplingRenderedFetcher,
+  fetchUsableRenderedPage,
+  measureRenderedFetch,
+  renderedPageFailureReason,
+} from '../renderedFetch';
 import {
   BenchmarkReplayNetworkError,
   beginBenchmarkReplay,
@@ -188,5 +200,110 @@ describe('createScraplingRenderedFetcher', () => {
       expect.objectContaining({ timeout: 6_000 }),
       expect.any(Function),
     );
+  });
+});
+
+describe('renderedPageFailureReason', () => {
+  const page = { url: 'https://lab.example.edu/', html: '<html><body>ok</body></html>' };
+
+  it.each([
+    [{ ...page, statusCode: 200 }, null],
+    [page, null],
+    [{ ...page, statusCode: 404 }, 'http-404'],
+    [{ ...page, statusCode: 500 }, 'http-500'],
+    [{ ...page, statusCode: 403, blocked: true, blockedReason: 'http-403' }, 'http-403'],
+    [
+      { ...page, statusCode: 200, blocked: true, blockedReason: 'captcha-or-turnstile' },
+      'captcha-or-turnstile',
+    ],
+    [{ ...page, blocked: true }, 'blocked'],
+    [{ ...page, html: '   ' }, 'empty-body'],
+    [
+      { ...page, html: '', blockedReason: 'scrapling-fetch-failed: boom' },
+      'scrapling-fetch-failed: boom',
+    ],
+    [null, 'no-result'],
+  ])('classifies %j as %s', (result, reason) => {
+    expect(renderedPageFailureReason(result)).toBe(reason);
+  });
+});
+
+describe('fetchUsableRenderedPage', () => {
+  const request = { url: 'https://lab.example.edu/', waitSelector: 'body', timeoutMs: 10_000 };
+  const notFound = {
+    url: 'https://lab.example.edu/',
+    html: '<html><body>Page not found</body></html>',
+    statusCode: 404,
+    blocked: false,
+    fetchMode: 'scrapling' as const,
+  };
+  const good = { ...notFound, html: '<html><body>Lab research</body></html>', statusCode: 200 };
+
+  it('strips the body of an unusable page and refuses to cache it', async () => {
+    mocks.getCached.mockReset().mockResolvedValue(null);
+    mocks.setCached.mockReset();
+    const renderedFetcher = vi.fn().mockResolvedValue(notFound);
+
+    const result = await fetchUsableRenderedPage({
+      sourceName: 'lane',
+      useCache: true,
+      request,
+      renderedFetcher,
+    });
+
+    expect(result).toMatchObject({ html: '', statusCode: 404, blockedReason: 'http-404' });
+    expect(mocks.setCached).not.toHaveBeenCalled();
+  });
+
+  it('ignores a cached unusable page and re-renders instead of serving it', async () => {
+    mocks.getCached.mockReset().mockResolvedValue(notFound);
+    mocks.setCached.mockReset();
+    const renderedFetcher = vi.fn().mockResolvedValue(good);
+
+    const result = await fetchUsableRenderedPage({
+      sourceName: 'lane',
+      useCache: true,
+      request,
+      renderedFetcher,
+    });
+
+    expect(renderedFetcher).toHaveBeenCalledWith(request);
+    expect(result?.html).toBe(good.html);
+    expect(mocks.setCached).toHaveBeenCalledWith(
+      'lane',
+      'rendered-page:v1:https://lab.example.edu/',
+      good,
+    );
+  });
+
+  it('serves a cached usable page without rendering', async () => {
+    mocks.getCached.mockReset().mockResolvedValue(good);
+    mocks.setCached.mockReset();
+    const renderedFetcher = vi.fn();
+
+    const result = await fetchUsableRenderedPage({
+      sourceName: 'lane',
+      useCache: true,
+      request,
+      renderedFetcher,
+    });
+
+    expect(renderedFetcher).not.toHaveBeenCalled();
+    expect(result).toEqual(good);
+  });
+
+  it('counts a non-2xx page as a failed attempt that is neither blocked nor a selector breakage', async () => {
+    const renderedFetcher = vi.fn().mockResolvedValue(notFound);
+
+    const measured = await measureRenderedFetch(request.url, 'scrapling', () =>
+      fetchUsableRenderedPage({ sourceName: 'lane', useCache: false, request, renderedFetcher }),
+    );
+
+    expect(measured.metric).toMatchObject({
+      success: false,
+      blocked: false,
+      blockedReason: 'http-404',
+      selectorBreakage: false,
+    });
   });
 });

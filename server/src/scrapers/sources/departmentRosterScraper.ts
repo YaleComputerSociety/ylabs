@@ -29,10 +29,10 @@ import type { AnyNode } from 'domhandler';
 import {
   buildFetchAttemptMetrics,
   createScraplingRenderedFetcher,
+  fetchUsableRenderedPage,
   measureRenderedFetch,
   summarizeFetchMetrics,
   type RenderedFetcher,
-  type RenderedFetchResult,
 } from '../renderedFetch';
 import { getCached, setCached } from '../snapshotCache';
 import { observeSweepPageReuse } from '../utils/sweepPageReuse';
@@ -4237,7 +4237,17 @@ export class DepartmentRosterScraper implements IScraper {
         const rendered = await measureRenderedFetch(
           dept.url,
           'scrapling',
-          () => fetchRenderedDeptPage(this.name, ctx.options.useCache, dept, this.renderedFetcher),
+          () =>
+            fetchUsableRenderedPage({
+              sourceName: this.name,
+              useCache: ctx.options.useCache,
+              request: {
+                url: dept.url,
+                waitSelector: dept.renderWaitSelector,
+                timeoutMs: FETCH_TIMEOUT_MS,
+              },
+              renderedFetcher: this.renderedFetcher,
+            }),
           { selectorName: dept.renderWaitSelector },
         );
         fetchAttempts.push(rendered.metric);
@@ -4466,25 +4476,4 @@ export class DepartmentRosterScraper implements IScraper {
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }
-}
-
-async function fetchRenderedDeptPage(
-  sourceName: string,
-  useCache: boolean,
-  dept: DeptConfig,
-  renderedFetcher: RenderedFetcher | null,
-): Promise<RenderedFetchResult | null> {
-  if (!renderedFetcher) return null;
-  const cacheKey = `rendered-page:v1:${dept.url}`;
-  if (useCache) {
-    const cached = await getCached<RenderedFetchResult>(sourceName, cacheKey);
-    if (cached) return cached;
-  }
-  const result = await renderedFetcher({
-    url: dept.url,
-    waitSelector: dept.renderWaitSelector,
-    timeoutMs: FETCH_TIMEOUT_MS,
-  });
-  if (useCache && result?.html) await setCached(sourceName, cacheKey, result);
-  return result;
 }

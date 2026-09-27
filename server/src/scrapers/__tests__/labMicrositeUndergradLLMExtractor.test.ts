@@ -1496,6 +1496,45 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(result.fetchMetrics?.summary.byMode.http?.succeeded).toBe(1);
   });
 
+  it.each([
+    {
+      label: 'a 404 page the bridge does not flag',
+      page: { statusCode: 404, blocked: false },
+    },
+    {
+      label: 'a challenge page the bridge flags as blocked',
+      page: { statusCode: 403, blocked: true, blockedReason: 'http-403' },
+    },
+  ])('counts $label from the rendered fallback as a fetch failure', async ({ page }) => {
+    const fetchPage = makeFetchPage({});
+    const renderedFetcher = vi.fn().mockResolvedValue({
+      url: 'https://gone.example.com/',
+      html: `<html><body><h1>Page not found</h1><p>${'The page you requested could not be found on this server. '.repeat(8)}</p></body></html>`,
+      fetchMode: 'scrapling',
+      ...page,
+    });
+    const callLLM = vi.fn();
+    const labFinder = async (): Promise<CandidateLab[]> => [
+      { _id: '1', slug: 'gone-lab', name: 'Gone Lab', websiteUrl: 'https://gone.example.com/' },
+    ];
+
+    const scraper = newTestScraper({
+      fetchPage,
+      renderedFetcher,
+      callLLM,
+      labFinder,
+      apiKey: 'sk-test',
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(renderedFetcher).toHaveBeenCalledTimes(1);
+    expect(callLLM).not.toHaveBeenCalled();
+    expect(emitted).toEqual([]);
+    expect(result.notes).toContain('LLM-extracted undergrad signals for 0/1 labs (1 fetch-failed');
+    expect(result.fetchMetrics?.summary.byMode.scrapling?.succeeded).toBe(0);
+  });
+
   it('keeps emitting other observations while preserving a legacy acceptance lock', async () => {
     const fetchPage = makeFetchPage({
       'https://locked.yale.edu/': HOME_HTML.replace(

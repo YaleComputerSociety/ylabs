@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from './../utils/ssrfGuard';
 import { isBenchmarkReplayActive, refuseBenchmarkReplayNetwork } from './snapshotBenchmarkMode';
+import { getCached, setCached } from './snapshotCache';
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import type {
@@ -26,6 +27,7 @@ const PYTHON_COMMAND_RE = /^python(?:3(?:\.\d{1,2})?)?$/;
 const RENDERED_FETCH_MODES = new Set(['dynamic', 'stealthy']);
 const MAX_RENDERED_FETCH_SELECTOR_LENGTH = 256;
 const MAX_RENDERED_SEED_REDIRECT_CHECK_MS = 5_000;
+const RENDERED_PAGE_CACHE_KEY_PREFIX = 'rendered-page:v1:';
 
 const normalizeRenderedPythonCommand = (value: string): string => {
   const command = value.trim();
@@ -68,6 +70,7 @@ const normalizeRenderedFetchSelector = (value: unknown): string | undefined => {
 };
 
 export interface RenderedFetchMetricOverrides {
+  failed?: boolean;
   blocked?: boolean;
   blockedReason?: string;
   selectorBreakage?: boolean;
@@ -92,6 +95,48 @@ export interface RenderedFetchResult {
 export type RenderedFetcher = (
   request: RenderedFetchRequest,
 ) => Promise<RenderedFetchResult | null>;
+
+const isSuccessfulHttpStatus = (statusCode: number | undefined): boolean =>
+  typeof statusCode !== 'number' || (statusCode >= 200 && statusCode < 300);
+
+export function renderedPageFailureReason(
+  result: RenderedFetchResult | null | undefined,
+): string | null {
+  if (!result || typeof result !== 'object') return 'no-result';
+  if (result.blocked) return result.blockedReason || 'blocked';
+  if (!isSuccessfulHttpStatus(result.statusCode)) return `http-${result.statusCode}`;
+  if (typeof result.html !== 'string' || result.html.trim() === '') {
+    return result.blockedReason || 'empty-body';
+  }
+  return null;
+}
+
+export interface UsableRenderedPageRequest {
+  sourceName: string;
+  useCache: boolean;
+  request: RenderedFetchRequest;
+  renderedFetcher: RenderedFetcher | null;
+}
+
+export async function fetchUsableRenderedPage({
+  sourceName,
+  useCache,
+  request,
+  renderedFetcher,
+}: UsableRenderedPageRequest): Promise<RenderedFetchResult | null> {
+  if (!renderedFetcher) return null;
+  const cacheKey = `${RENDERED_PAGE_CACHE_KEY_PREFIX}${request.url}`;
+  if (useCache) {
+    const cached = await getCached<RenderedFetchResult>(sourceName, cacheKey);
+    if (cached && renderedPageFailureReason(cached) === null) return cached;
+  }
+  const result = await renderedFetcher(request);
+  if (!result) return null;
+  const failureReason = renderedPageFailureReason(result);
+  if (failureReason !== null) return { ...result, html: '', blockedReason: failureReason };
+  if (useCache) await setCached(sourceName, cacheKey, result);
+  return result;
+}
 
 export interface ScraplingRenderedFetcherOptions {
   enabled?: boolean;
@@ -168,10 +213,12 @@ export async function measureRenderedFetch<T, TFetchMode extends string = Scrape
 
   try {
     const result = await fetcher();
-    const overrides = classify ? classify(result) : inferRenderedFetchOverrides(result);
+    const { failed, ...overrides } = classify
+      ? classify(result)
+      : inferRenderedFetchOverrides(result);
     const metrics = buildFetchAttemptMetrics({
       fetchMode,
-      success: !overrides.blocked && !overrides.selectorBreakage,
+      success: !failed && !overrides.blocked && !overrides.selectorBreakage,
       startedAt,
       memoryStartBytes,
       ...overrides,
@@ -409,6 +456,14 @@ export function createScraplingRenderedFetcher(
 function inferRenderedFetchOverrides(result: unknown): RenderedFetchMetricOverrides {
   if (!result || typeof result !== 'object') return { selectorBreakage: true };
   const page = result as Partial<RenderedFetchResult>;
+  if (!page.blocked && !isSuccessfulHttpStatus(page.statusCode)) {
+    return {
+      failed: true,
+      blocked: false,
+      blockedReason: page.blockedReason || `http-${page.statusCode}`,
+      selectorBreakage: false,
+    };
+  }
   return {
     blocked: page.blocked ?? false,
     blockedReason: page.blockedReason,

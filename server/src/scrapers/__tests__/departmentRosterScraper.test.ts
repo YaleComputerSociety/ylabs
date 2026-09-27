@@ -4646,6 +4646,37 @@ describe('DepartmentRosterScraper.run', () => {
     postSpy.mockRestore();
   });
 
+  it('reports a rendered 404 page as unavailable instead of parsing it as an empty roster', async () => {
+    const renderedExtractor = vi.fn((): FacultyEntry[] => []);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'cs',
+        deptName: 'Computer Science',
+        schoolName: 'SEAS',
+        url: 'https://example.invalid/cs',
+        paginated: false,
+        extractor: vi.fn((): FacultyEntry[] => []),
+        renderedExtractor,
+        jsRenderedSkip: true,
+      },
+    ];
+    const renderedFetcher = vi.fn().mockResolvedValue({
+      url: 'https://example.invalid/cs',
+      html: '<html><body><h1>Page not found</h1></body></html>',
+      statusCode: 404,
+      blocked: false,
+      fetchMode: 'scrapling',
+    });
+
+    const scraper = new DepartmentRosterScraper(configs, renderedFetcher);
+    const { ctx } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(renderedExtractor).not.toHaveBeenCalled();
+    expect(result.notes).toContain('cs=rendered-unavailable');
+    expect(result.fetchMetrics?.summary.byMode.scrapling?.succeeded).toBe(0);
+  });
+
   it('skips JS-rendered depts when the injected rendered page fetcher returns null', async () => {
     const renderedExtractor = vi.fn((): FacultyEntry[] => [{ name: 'Unexpected Faculty' }]);
     const configs: DeptConfig[] = [

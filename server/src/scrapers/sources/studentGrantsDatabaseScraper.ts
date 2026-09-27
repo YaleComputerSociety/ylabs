@@ -33,8 +33,11 @@
  */
 import crypto from 'crypto';
 import * as cheerio from 'cheerio';
-import { getCached, setCached } from '../snapshotCache';
-import { createScraplingRenderedFetcher, type RenderedFetcher } from '../renderedFetch';
+import {
+  createScraplingRenderedFetcher,
+  fetchUsableRenderedPage,
+  type RenderedFetcher,
+} from '../renderedFetch';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { classifyProgram } from '../../services/programClassifier';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
@@ -418,16 +421,13 @@ export function createRenderedStudentGrantsHtmlFetcher(
   renderedFetcher: RenderedFetcher | null = createScraplingRenderedFetcher(),
 ): StudentGrantsHtmlFetcher {
   return async (url, useCache, sourceName) => {
-    if (!renderedFetcher) return '';
-    const cacheKey = `rendered-page:v1:${url}`;
-    if (useCache) {
-      const cached = await getCached<string>(sourceName, cacheKey);
-      if (cached) return cached;
-    }
-    const result = await renderedFetcher({ url, mode: 'stealthy', timeoutMs: FETCH_TIMEOUT_MS });
-    const html = result && !result.blocked ? result.html || '' : '';
-    if (useCache && html) await setCached(sourceName, cacheKey, html);
-    return html;
+    const page = await fetchUsableRenderedPage({
+      sourceName,
+      useCache,
+      request: { url, mode: 'stealthy', timeoutMs: FETCH_TIMEOUT_MS },
+      renderedFetcher,
+    });
+    return page?.html || '';
   };
 }
 
