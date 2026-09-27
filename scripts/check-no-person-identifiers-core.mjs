@@ -1,7 +1,9 @@
 const PERSON_SLUG_PREFIXES = ['nih-pi-', 'nsf-pi-', 'ysm-faculty-', 'faculty-research-area-'];
 
+// A prefix inside a longer hyphenated token (a script name that joins two grant
+// prefixes) is not the start of a slug, so the prefix must open the token.
 const PERSON_SLUG_RE = new RegExp(
-  `\\b(?:${PERSON_SLUG_PREFIXES.join('|')})[a-z0-9][a-z0-9+-]*`,
+  `(?<![A-Za-z0-9-])(?:${PERSON_SLUG_PREFIXES.join('|')})[a-z0-9][a-z0-9+-]*`,
   'gi',
 );
 
@@ -167,8 +169,12 @@ const NON_PERSON_TOKENS = new Set(
   ].map((token) => token.toLowerCase()),
 );
 
+// A leading capital pair covers plural acronyms (POSTs, IDs, URLs), which a
+// surname never opens with.
 const isAcronymOrCode = (token) =>
-  /\d/.test(token) || (token.length >= 2 && token === token.toUpperCase());
+  /\d/.test(token) ||
+  (token.length >= 2 && token === token.toUpperCase()) ||
+  /^[A-Z]{2}/.test(token);
 
 const isPersonShapedName = (candidate) =>
   candidate.split(/\s+/).every((token) => {

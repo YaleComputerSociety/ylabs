@@ -195,6 +195,53 @@ test('still flags a longer slug that merely starts like a registered source name
   assert.equal(findings[0].rule, 'person-bearing-entity-slug');
 });
 
+test('does not flag a slug prefix partway through a longer hyphenated script name', () => {
+  for (const clean of [
+    'The `research-homes:repair-nih-nsf-pi-center-lab-conflation` entry stays and is not wrong.',
+    '`yarn run | grep -c repair-nih-nsf-pi-center-lab-conflation` returned 1, so nothing is stale.',
+    'The legacy-ysm-faculty-roster-sync job is dead.',
+  ]) {
+    assert.deepEqual(rulesOf(findPersonIdentifierFindings(body(clean))), [], clean);
+  }
+});
+
+test('still flags a person slug wherever it opens a token', () => {
+  for (const flagged of [
+    'The row `nih-pi-quilla-marrowbane` is wrong.',
+    'See https://ylabs.example/research/nsf-pi-quilla-marrowbane which is stale.',
+    'The row (ysm-faculty-quilla-marrowbane) departed.',
+    'slug=faculty-research-area-quilla-marrowbane is suppressed',
+  ]) {
+    assert.deepEqual(
+      rulesOf(findPersonIdentifierFindings(body(flagged))),
+      ['person-bearing-entity-slug'],
+      flagged,
+    );
+  }
+});
+
+test('a capitalised word before a plural acronym is not a name', () => {
+  for (const clean of [
+    'Adversarial POSTs were handled: the wrong entityType stored nothing.',
+    'Duplicate IDs were dropped, so the stale list is gone.',
+    'Broken URLs are the defect this fixes.',
+  ]) {
+    assert.deepEqual(rulesOf(findPersonIdentifierFindings(body(clean))), [], clean);
+  }
+});
+
+test('an internally capitalised surname is still a name', () => {
+  for (const flagged of [
+    'Quilla McMarrowbane has departed and the row is wrong.',
+    'Tobias DeFenwright has departed from the lab.',
+  ]) {
+    assert.ok(
+      rulesOf(findPersonIdentifierFindings(body(flagged))).includes('person-claim-pairing'),
+      flagged,
+    );
+  }
+});
+
 // Pins the allowance to the real registry: a source name added later that collides
 // with a person-slug prefix has to be recorded deliberately, and one removed has to
 // stop being ignored. Without this the set silently drifts into a stoplist.

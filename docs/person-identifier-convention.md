@@ -29,6 +29,7 @@ A body may name a person with no identifier in it at all, in ordinary prose, and
 ## What counts as a person-bearing identifier
 
 - An entity slug carrying a person-bearing prefix: `nih-pi-`, `nsf-pi-`, `ysm-faculty-`, `faculty-research-area-`.
+  The prefix has to open the token, so a longer hyphenated name that contains one partway through, such as a repair script joining two grant prefixes, is not a slug.
 - A directory profile path: `<host>.yale.edu/profile/<name>`, and the `people` and `faculty` variants.
 - A personal `@yale.edu` address.
   A role address such as `physics@yale.edu` is not person-bearing.
@@ -107,7 +108,7 @@ yarn security:identifiers:body /tmp/pr-body.md
 ```
 
 The prose-name rule is fuzzy on purpose and lives only on the body arm.
-Measured against the repository's own documentation, roughly nine in ten of its early matches were Title Case technical phrases rather than people; excluding headings, table rows, code fences, indented blocks, acronyms, quoted titles, and segments that do not read as prose cut that to eleven matches across all of `docs/` and `skills/`, two of which are real names.
+Measured against the repository's own documentation, roughly nine in ten of its early matches were Title Case technical phrases rather than people; excluding headings, table rows, code fences, indented blocks, acronyms (including plural ones such as `IDs` and `POSTs`, meaning any token that opens with two capitals), quoted titles, and segments that do not read as prose cut that to eleven matches across all of `docs/` and `skills/`, two of which are real names.
 A pull request body is shorter and far less dense in Title Case than those files, so treat that as an upper bound.
 The blocking arm never calls this rule, so a false positive cannot fail a required check.
 It can fail the body arm's own run, which is why `AGENTS.md` excepts `Person identifier scan` from "merge only when checks are green": the remedy for a Title Case product phrase matched as a name is a comment saying so, then a merge on the red.
