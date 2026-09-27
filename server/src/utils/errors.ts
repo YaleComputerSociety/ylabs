@@ -40,3 +40,6 @@ export class IncorrectPermissionsError extends Error {
     Object.setPrototypeOf(this, IncorrectPermissionsError.prototype);
   }
 }
+
+export const isNotFoundError = (error: unknown): boolean =>
+  error instanceof NotFoundError || (error as { name?: unknown } | null)?.name === 'NotFoundError';

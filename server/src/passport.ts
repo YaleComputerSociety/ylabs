@@ -710,7 +710,7 @@ router.get('/logout', (req, res, next) => {
 });
 
 if (isDevLoginAllowed()) {
-  router.get('/dev-login', async (req, res) => {
+  router.get('/dev-login', async (req, res, next) => {
     setPrivateAuthResponseHeaders(res);
     if (!isDevLoginAllowed()) {
       return res.status(403).json({ error: 'Dev login is disabled for this environment' });
@@ -722,8 +722,7 @@ if (isDevLoginAllowed()) {
 
       req.logIn(testUser, async (err) => {
         if (err) {
-          console.error('Dev login error:', sanitizeLogValue(err));
-          return res.status(500).json({ error: 'Dev login failed' });
+          return next(err);
         }
 
         const devLoginOutcome = await logEvent({
@@ -742,8 +741,7 @@ if (isDevLoginAllowed()) {
         res.redirect(redirectUrl);
       });
     } catch (error) {
-      console.error('Dev login error:', sanitizeLogValue(error));
-      res.status(500).json({ error: 'Dev login failed' });
+      next(error);
     }
   });
 }

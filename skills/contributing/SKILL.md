@@ -23,6 +23,12 @@ Validation middleware: `validateObjectId(paramName?)`, `validateNetid(paramName?
 
 The `asyncHandler` wrapper catches promise rejections in route handlers.
 
+Never answer a 500 from a controller or route `catch`.
+The global `errorHandler` is the only place that sanitizes a server error body and reports it to error tracking, so a handler that writes its own 500 hides the failure.
+Answer only the domain-specific 4xx cases the handler owns, then forward everything else with `next(error)`, or let `asyncHandler` forward the rejection.
+Throw `BadRequestError` for invalid input so it answers 400 with its bounded message; the global handler already maps mongoose validation errors to 400, a duplicate key to 409, and `NotFoundError` to 404.
+`server/src/__tests__/handledServerErrorsReachErrorTracking.test.ts` pins this for every route family.
+
 ## Adding a new page
 
 1. **Page component** in `client/src/pages/<page>.tsx`.

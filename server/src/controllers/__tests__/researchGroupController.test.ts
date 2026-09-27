@@ -32,10 +32,9 @@ describe('researchGroupController', () => {
     mocks.resolveArchivedResearchEntityCanonicalSlug.mockResolvedValue(null);
   });
 
-  it('does not leak internal service errors from public research detail failures', async () => {
-    mocks.getResearchGroupDetail.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid research detail failed'),
-    );
+  it('rethrows public research detail failures for the global error handler', async () => {
+    const outage = new Error('mongodb://user:pass@example.invalid research detail failed');
+    mocks.getResearchGroupDetail.mockRejectedValue(outage);
 
     const req = { params: { slug: 'example-lab' } } as any;
     const res = {
@@ -43,11 +42,8 @@ describe('researchGroupController', () => {
       status: vi.fn().mockReturnThis(),
     } as any;
 
-    await getResearchGroupBySlug(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Failed to fetch research entity' });
-    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
+    await expect(getResearchGroupBySlug(req, res)).rejects.toBe(outage);
+    expect(res.json).not.toHaveBeenCalled();
   });
 
   it('does not echo slugs or internal text from missing public research details', async () => {
