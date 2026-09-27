@@ -190,16 +190,22 @@ const ROSTER_LANES_NEVER_ATTEMPTED_STATUSES: ReadonlySet<string> = new Set([
  * complete snapshot tells the departure lane that everybody it did not list is gone
  * (#3647). A page that was never fetched is `fetch-failed` rather than `empty`: an
  * empty roster is a read that listed nobody, which a failed fetch is not.
+ *
+ * `empty` is decided on the rows the page listed, not on the people this lane emitted,
+ * because a tab sharing its `deptKey` with an earlier tab emits nobody new when it
+ * re-lists the same people, and an `empty` status withholds the whole department.
  */
 export function htmlLaneStatus(
-  walk: Pick<RosterLaneWalk, 'pages' | 'pagesFetched' | 'stopReason' | 'readWholeRoster'>,
-  facultyRead: number,
+  walk: Pick<
+    RosterLaneWalk,
+    'pages' | 'pagesFetched' | 'stopReason' | 'readWholeRoster' | 'distinctEntries'
+  >,
   truncatedByLimit: boolean,
 ): string {
   if (walk.pagesFetched === 0) return 'fetch-failed';
   if (walk.pages.length === 0 && walk.stopReason === 'extractor-error') return 'extractor-error';
   if (!walk.readWholeRoster || truncatedByLimit) return 'partial-read';
-  return facultyRead === 0 ? 'empty' : 'ok';
+  return walk.distinctEntries.length === 0 ? 'empty' : 'ok';
 }
 
 /**
@@ -4340,7 +4346,7 @@ export class DepartmentRosterScraper implements IScraper {
           count: processed.faculty,
           status: processed.truncatedByLimit
             ? 'partial-read'
-            : processed.faculty === 0
+            : entries.length === 0
               ? 'empty'
               : 'ok',
           pagesRead: 1,
@@ -4392,7 +4398,7 @@ export class DepartmentRosterScraper implements IScraper {
       return {
         deptKey: dept.deptKey,
         count: deptCount,
-        status: htmlLaneStatus(walk, deptCount, truncatedByLimit),
+        status: htmlLaneStatus(walk, truncatedByLimit),
         pagesRead: walk.pagesFetched,
         readMode: walk.pagesFetched > 0 ? 'html' : 'none',
         pagesReusedWithinSweep: laneReuse.pagesReused,

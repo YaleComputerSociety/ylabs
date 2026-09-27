@@ -5503,6 +5503,22 @@ describe('DepartmentRosterScraper.run read completeness (#3647)', () => {
     expect(emitted.filter((o) => o.entityType === 'departmentRosterHealth')).toEqual([]);
   });
 
+  it('does not report a tab that re-lists people an earlier same-key tab listed as empty', async () => {
+    const scraper = new DepartmentRosterScraper(
+      [
+        physicsLane({ url: 'https://physics.yale.edu/people?type=1' }),
+        physicsLane({ url: 'https://physics.yale.edu/people?type=2' }),
+      ],
+      null,
+      vi.fn(async () => '<html></html>'),
+    );
+    const { ctx, emitted } = makeContext();
+
+    await scraper.run(ctx);
+
+    expect(rosterHealthOf(emitted, 'physics')).toMatchObject({ status: 'ok', complete: true });
+  });
+
   it('does not fail the run when a lane read a page that listed nobody', async () => {
     const scraper = new DepartmentRosterScraper(
       [physicsLane({ extractor: () => [] })],

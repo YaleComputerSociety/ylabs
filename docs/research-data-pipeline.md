@@ -946,10 +946,11 @@ Before this a walk that stopped on a later page's fetch failure or at the 20-pag
 A lane's incomplete read withholds its whole canonical department in that run, not just its own snapshot (`rosterHealthRecordsAnIncompleteRead`).
 Several configs resolve to one department (Economics and School of Management, Physics and Wright Laboratory), and absence is concluded from every lane failing to find somebody; a lane that did not read its pages has not failed to find anybody on them, so the union of the other lanes cannot stand in for it.
 Every status in the table except `ok` withholds, `empty` and `js-rendered-skip` included: a fetched page that listed nobody is warned as a likely site migration, so its people cannot be concluded absent from a sibling lane's read.
+`empty` means the page listed no rows at all, not that the lane emitted nobody new, so a tab sharing its `deptKey` with an earlier tab that re-lists the same people stays `ok` rather than withholding its department on every run.
 When several configs share one `deptKey`, the collapsed status is the first incomplete-read status among them, so an `empty` config cannot mask a sibling's `partial-read` or `fetch-failed`.
 The pass reports the count as `incompleteReadDepartments`.
 
-A run in which every attempted lane failed to read throws, so it is stored as a `failure` rather than a `success`.
+A run in which every attempted lane failed to read throws, so it is stored as a `failure` rather than a `success`, and so does an `official-research-home-rosters` run in which every roster fetch failed.
 Without that, a lane whose every page was unreachable still emitted its honest not-read snapshot, which counted as an observation, so the barren-streak guard could never fire and the run read healthy.
 
 Writing the Yale-status fields is not the same as removing the row from the directory, so every suppressed or cleared row is re-gated through `planStudentVisibilityGate`/`applyStudentVisibilityGatePlans` and the count is reported as `regatedEntities`.
