@@ -18,6 +18,12 @@ import {
   HostConcurrencyLimiter,
 } from '../scrapers/utils/hostConcurrencyLimiter';
 import { HostSlotBroker, SCRAPER_HOST_SLOT_BROKER_ENV } from '../scrapers/utils/hostSlotBroker';
+import {
+  SCRAPER_SWEEP_PAGE_REUSE_ENV,
+  SWEEP_PAGE_REUSE_HOSTS,
+  resolveSweepPageReuseMaxBytes,
+} from '../scrapers/utils/sweepPageReuse';
+import { SweepPageStore, type SweepPageStoreStats } from '../scrapers/utils/sweepPageStore';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { SOURCE_LINK_HEALTH_FRESHNESS_DAYS } from '../services/sourceLinkHealth';
 import {
@@ -136,6 +142,7 @@ export interface ScraperSweepCliOptions {
   forceLlm?: boolean;
   pruneBetweenPhases?: boolean;
   skipPreflight?: boolean;
+  noPageReuse?: boolean;
 }
 
 export type ScraperSweepPhase = ScraperSweepSource['phase'];
@@ -269,6 +276,10 @@ export function sourcesThatProducedNothing(rows: ScraperSweepRunRow[]): string[]
     .map((row) => row.sourceName);
 }
 
+export interface SweepPageReuseSummary extends SweepPageStoreStats {
+  hosts: string[];
+}
+
 export interface ScraperSweepSummary {
   mode: ScraperSweepMode;
   environment: ScraperSweepModeConfig['environment'];
@@ -283,6 +294,7 @@ export interface ScraperSweepSummary {
   producedNothing: number;
   producedNothingSources: string[];
   rows: ScraperSweepRunRow[];
+  pageReuse?: SweepPageReuseSummary;
   postRun?: {
     status: 'succeeded' | 'failed';
     stages: Array<DevelopmentPostRunStage | FellowshipPostRunStage>;
@@ -413,6 +425,7 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
   let forceLlm = false;
   let pruneBetweenPhases = false;
   let skipPreflight = false;
+  let noPageReuse = false;
   const confirmations = new Set<string>();
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -431,6 +444,10 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
     }
     if (arg === '--skip-preflight') {
       skipPreflight = true;
+      continue;
+    }
+    if (arg === '--no-page-reuse') {
+      noPageReuse = true;
       continue;
     }
     if (arg.startsWith('--concurrency=')) {
@@ -486,7 +503,12 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
     ...(forceLlm ? { forceLlm } : {}),
     ...(pruneBetweenPhases ? { pruneBetweenPhases } : {}),
     ...(skipPreflight ? { skipPreflight } : {}),
+    ...(noPageReuse ? { noPageReuse } : {}),
   };
+}
+
+export function isSweepPageReuseEnabled(options: ScraperSweepCliOptions): boolean {
+  return isDeadObservationPruneSweepMode(options.mode) && !options.noPageReuse;
 }
 
 export function isSweepPreflightEnabled(options: ScraperSweepCliOptions): boolean {
@@ -542,11 +564,31 @@ export function sweepHostSlotBrokerPath(tmpdir: string = os.tmpdir(), pid = proc
 export async function startSweepHostSlotBroker(
   env: NodeJS.ProcessEnv = process.env,
   socketPath: string = sweepHostSlotBrokerPath(),
+  options: { pageReuse?: boolean } = {},
 ): Promise<HostSlotBroker> {
   return HostSlotBroker.listen(
     socketPath,
     new HostConcurrencyLimiter(resolveSweepHostSlotBudget(env)),
+    options.pageReuse
+      ? {
+          pageStore: new SweepPageStore(resolveSweepPageReuseMaxBytes(env), SWEEP_PAGE_REUSE_HOSTS),
+        }
+      : {},
   );
+}
+
+export function sweepPageReuseSummary(broker: HostSlotBroker): SweepPageReuseSummary | undefined {
+  const stats = broker.pageStore?.stats();
+  return stats ? { hosts: [...SWEEP_PAGE_REUSE_HOSTS], ...stats } : undefined;
+}
+
+function formatMebibytes(bytes: number): string {
+  return `${Math.round(bytes / (1024 * 1024))} MiB`;
+}
+
+export function formatSweepPageReuseSummary(summary: SweepPageReuseSummary | undefined): string {
+  if (!summary) return 'Page reuse within this sweep: off';
+  return `Page reuse within this sweep: ${summary.hits} of ${summary.lookups} lookups served from a page fetched earlier in the sweep; ${summary.stored} stored, ${summary.evicted} evicted, peak ${formatMebibytes(summary.peakHeldBytes)} of ${formatMebibytes(summary.maxBytes)}`;
 }
 
 export { runWithBoundedConcurrency };
@@ -1808,7 +1850,15 @@ export async function runScraperSweep(
     }
   }
 
-  const hostSlotBroker = await startSweepHostSlotBroker();
+  const pageReuse = isSweepPageReuseEnabled(options);
+  const hostSlotBroker = await startSweepHostSlotBroker(process.env, sweepHostSlotBrokerPath(), {
+    pageReuse,
+  });
+  console.log(
+    pageReuse
+      ? `Page reuse within this sweep: on for ${SWEEP_PAGE_REUSE_HOSTS.join(', ')}, held in memory up to ${formatMebibytes(resolveSweepPageReuseMaxBytes())} and discarded when the sweep ends (disable with --no-page-reuse)`
+      : 'Page reuse within this sweep: off',
+  );
 
   if (isSweepPreflightEnabled(options)) {
     const pendingSources = sweepSources
@@ -1916,6 +1966,7 @@ export async function runScraperSweep(
             resolveSweepChildPerHostConcurrency(phaseConcurrency),
           ),
           [SCRAPER_HOST_SLOT_BROKER_ENV]: hostSlotBroker.socketPath,
+          [SCRAPER_SWEEP_PAGE_REUSE_ENV]: pageReuse ? '1' : '0',
         },
         logPath,
       },
@@ -1997,6 +2048,7 @@ export async function runScraperSweep(
   };
 
   const globalEntries = sweepSources.map((source, index) => ({ source, index }));
+  let pageReuseSummary: SweepPageReuseSummary | undefined;
   try {
     for (const phase of orderedScraperSweepPhases(sweepSources)) {
       const phaseEntries = globalEntries.filter((entry) => entry.source.phase === phase);
@@ -2013,8 +2065,10 @@ export async function runScraperSweep(
       await runBetweenPhasesPrune(phase);
     }
   } finally {
+    pageReuseSummary = sweepPageReuseSummary(hostSlotBroker);
     await hostSlotBroker.close();
   }
+  console.log(formatSweepPageReuseSummary(pageReuseSummary));
 
   for (const [index, source] of sweepSources.entries()) {
     if (!rows[index]) rows[index] = notRunRow(source, index);
@@ -2067,6 +2121,7 @@ export async function runScraperSweep(
     producedNothing: producedNothingSources.length,
     producedNothingSources,
     rows,
+    ...(pageReuseSummary ? { pageReuse: pageReuseSummary } : {}),
     ...(postRun ? { postRun } : {}),
   };
   const summaryPath = path.join(outputDirectory, 'summary.json');

@@ -14,6 +14,7 @@ import {
 } from '../services/studentVisibilityGateService';
 import { getOrgUnitCanonicalizer } from './orgUnitCanonicalization';
 import { fetchPageWithPolicy } from './utils/httpFetch';
+import { withoutSweepPageReuse } from './utils/sweepPageReuse';
 import {
   isYaleProfileUrl,
   probeYaleProfileDepartureEvidence,
@@ -29,6 +30,7 @@ export interface DepartmentRosterHealthSnapshotRead {
   pagesRead?: unknown;
   readMode?: unknown;
   cacheAllowed?: unknown;
+  pagesReusedWithinSweep?: unknown;
   readAt?: unknown;
 }
 
@@ -41,7 +43,12 @@ export interface DepartmentRosterHealthSnapshot {
   read?: DepartmentRosterHealthSnapshotRead;
 }
 
-export type RosterHealthReadProvenance = 'fetched' | 'cache-permitted' | 'not-read' | 'unrecorded';
+export type RosterHealthReadProvenance =
+  | 'fetched'
+  | 'reused-within-sweep'
+  | 'cache-permitted'
+  | 'not-read'
+  | 'unrecorded';
 
 /**
  * Why a roster-health snapshot may or may not govern departures, as one named verdict.
@@ -91,6 +98,11 @@ export function rosterHealthAdmissibility(
  * of what a department listed at that moment and deleting them would erase the
  * lane's entire history; they are simply not authoritative, and the next roster run
  * supersedes each one with a snapshot that does record its read.
+ *
+ * `reused-within-sweep` is a read served from a page another lane fetched earlier in
+ * the same sweep (#3568). It is admitted exactly like `fetched` and `cache-permitted`:
+ * the page came off the wire during this sweep, which is at least as fresh as a
+ * permitted snapshot-cache hit, so it is recorded honestly without being weighted.
  */
 export function rosterHealthReadProvenance(
   snapshot: DepartmentRosterHealthSnapshot,
@@ -99,7 +111,9 @@ export function rosterHealthReadProvenance(
   if (!read || typeof read !== 'object') return 'unrecorded';
   const pagesRead = typeof read.pagesRead === 'number' ? read.pagesRead : 0;
   if (pagesRead <= 0 || read.readMode === 'none') return 'not-read';
-  return read.cacheAllowed === true ? 'cache-permitted' : 'fetched';
+  if (read.cacheAllowed === true) return 'cache-permitted';
+  const reused = typeof read.pagesReusedWithinSweep === 'number' ? read.pagesReusedWithinSweep : 0;
+  return reused > 0 ? 'reused-within-sweep' : 'fetched';
 }
 
 /** When the snapshot's own run says it read the page, if it recorded that at all. */
@@ -403,10 +417,10 @@ export async function probeEntityDepartureEvidence(
   entity: Record<string, unknown>,
   fetchPage: (url: string) => Promise<YaleProfilePage | null> = fetchYaleProfilePage,
 ): Promise<YaleProfileDepartureEvidence> {
-  return probeYaleProfileDepartureEvidence(
-    await yaleProfileUrlsForDepartureEvidence(entity),
-    fetchPage,
-  );
+  const profileUrls = await yaleProfileUrlsForDepartureEvidence(entity);
+  // A departure suppression asserts that a person left, so its profile evidence is read live
+  // at decision time rather than from a page another lane fetched earlier in the sweep.
+  return withoutSweepPageReuse(() => probeYaleProfileDepartureEvidence(profileUrls, fetchPage));
 }
 
 /**
@@ -536,6 +550,7 @@ export interface FacultyRosterDepartureEvidenceFreshness {
 
 const EMPTY_READ_PROVENANCE: Record<RosterHealthReadProvenance, number> = {
   fetched: 0,
+  'reused-within-sweep': 0,
   'cache-permitted': 0,
   'not-read': 0,
   unrecorded: 0,
@@ -743,6 +758,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
   const unresolvedDepartments: string[] = [];
   const readProvenanceCounts: Record<RosterHealthReadProvenance, number> = {
     fetched: 0,
+    'reused-within-sweep': 0,
     'cache-permitted': 0,
     'not-read': 0,
     unrecorded: 0,

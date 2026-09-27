@@ -12,6 +12,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { appendObservations, getSourceByName } from './observationStore';
 import { readPriorRunYieldFacts, resolveBarrenStreakFailure } from './sourceYieldGuard';
 import { withHttpCacheFetchMetrics, withHttpValidatorCacheScope } from './utils/httpValidatorCache';
+import { withSweepPageReuseFetchMetrics, withSweepPageReuseScope } from './utils/sweepPageReuse';
 import type {
   IScraper,
   ScraperContext,
@@ -131,8 +132,13 @@ export class ScraperOrchestrator {
     };
 
     try {
-      const cached = await withHttpValidatorCacheScope(() => scraper.run(ctx));
-      const result = withHttpCacheFetchMetrics(cached.value as ScraperResult, cached.stats);
+      const reused = await withSweepPageReuseScope(() =>
+        withHttpValidatorCacheScope(() => scraper.run(ctx)),
+      );
+      const result = withSweepPageReuseFetchMetrics(
+        withHttpCacheFetchMetrics(reused.value.value as ScraperResult, reused.value.stats),
+        reused.stats,
+      );
       const evidenceCoverageImpact =
         options.dryRun && options.dbReview
           ? await buildEvidenceCoverageImpactReportForObservations(previewObservations)

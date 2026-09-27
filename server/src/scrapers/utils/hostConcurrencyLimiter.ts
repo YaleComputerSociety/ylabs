@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { isSweepPageReuseHit } from './sweepPageReuseHit';
 
 export const DEFAULT_PER_HOST_CONCURRENCY = 4;
 
@@ -155,7 +156,7 @@ export function installScraperHostConcurrencyInterceptor(
   installed = true;
   axios.interceptors.request.use(async (config) => {
     const host = hostnameForLimiter(config.url, config.baseURL);
-    if (host) {
+    if (host && !isSweepPageReuseHit(config)) {
       (config as unknown as Record<string, unknown>)[RELEASE_KEY] = await limiter.acquire(host);
     }
     return config;

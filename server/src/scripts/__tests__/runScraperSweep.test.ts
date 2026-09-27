@@ -21,6 +21,10 @@ import {
   fellowshipPostRunArtifactError,
   isDeadObservationPruneSweepMode,
   isSweepPreflightEnabled,
+  isSweepPageReuseEnabled,
+  formatSweepPageReuseSummary,
+  startSweepHostSlotBroker,
+  sweepPageReuseSummary,
   orderedScraperSweepPhases,
   parseDevelopmentPostRunStageResult,
   parseEponymousFraMergeResult,
@@ -192,6 +196,55 @@ describe('runScraperSweep', () => {
       ),
     ).toBe(false);
     expect(isSweepPreflightEnabled(parseScraperSweepArgs(['--mode=development-plan']))).toBe(false);
+  });
+
+  it('reuses pages within a sweep by default only in the exhaustive Development write modes', () => {
+    const enabled = (argv: string[]) => isSweepPageReuseEnabled(parseScraperSweepArgs(argv));
+    expect(enabled(['--mode=development-full', '--confirm-development-full-sweep'])).toBe(true);
+    expect(
+      enabled(['--mode=development-incremental', '--confirm-development-incremental-sweep']),
+    ).toBe(true);
+    expect(enabled(['--mode=fellowship-development-full', '--confirm-fellowship-sweep'])).toBe(
+      true,
+    );
+    expect(enabled(['--mode=development-plan'])).toBe(false);
+    expect(enabled(['--mode=development-sample'])).toBe(false);
+    expect(enabled(['--mode=beta-plan'])).toBe(false);
+    expect(enabled(['--mode=beta-fetch', '--confirm-beta-release-candidate'])).toBe(false);
+    const disabled = parseScraperSweepArgs([
+      '--mode=development-full',
+      '--confirm-development-full-sweep',
+      '--no-page-reuse',
+    ]);
+    expect(disabled.noPageReuse).toBe(true);
+    expect(isSweepPageReuseEnabled(disabled)).toBe(false);
+  });
+
+  it('holds the page store in the broker only when the sweep enables reuse', async () => {
+    const socketPath = (label: string) =>
+      path.join(os.tmpdir(), `ylabs-sweep-reuse-${label}-${process.pid}.sock`);
+    const withPages = await startSweepHostSlotBroker(
+      { SCRAPER_SWEEP_PAGE_REUSE_MAX_MB: '16' },
+      socketPath('on'),
+      { pageReuse: true },
+    );
+    const withoutPages = await startSweepHostSlotBroker({}, socketPath('off'));
+    try {
+      const summary = sweepPageReuseSummary(withPages);
+      expect(summary).toMatchObject({
+        hosts: ['medicine.yale.edu', 'ysph.yale.edu'],
+        maxBytes: 16 * 1024 * 1024,
+        heldBytes: 0,
+      });
+      expect(formatSweepPageReuseSummary(summary)).toBe(
+        'Page reuse within this sweep: 0 of 0 lookups served from a page fetched earlier in the sweep; 0 stored, 0 evicted, peak 0 MiB of 16 MiB',
+      );
+      expect(sweepPageReuseSummary(withoutPages)).toBeUndefined();
+      expect(formatSweepPageReuseSummary(undefined)).toBe('Page reuse within this sweep: off');
+    } finally {
+      await withPages.close();
+      await withoutPages.close();
+    }
   });
 
   it('requires explicit confirmation for full Development and Beta fetch sweeps', () => {

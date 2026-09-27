@@ -46,8 +46,8 @@ export interface FacultyDepartureLaneFacts {
   /**
    * How many of the planning run's snapshots recorded reading their department's
    * page. Read this before believing the plan: a snapshot counted `unrecorded` or
-   * `not-read` governs nothing, so the plan rests on the `fetched` and
-   * `cache-permitted` ones alone (#3251).
+   * `not-read` governs nothing, so the plan rests on the `fetched`,
+   * `reused-within-sweep` and `cache-permitted` ones alone (#3251, #3568).
    */
   readProvenance?: Record<RosterHealthReadProvenance, number>;
   /** Age in whole hours of the newest read the planning run recorded. */
@@ -105,7 +105,11 @@ export function blockingDepartureLaneGate(
 export function snapshotsRecordingARead(facts: FacultyDepartureLaneFacts): number {
   const provenance = facts.readProvenance;
   if (!provenance) return 0;
-  return (provenance.fetched ?? 0) + (provenance['cache-permitted'] ?? 0);
+  return (
+    (provenance.fetched ?? 0) +
+    (provenance['reused-within-sweep'] ?? 0) +
+    (provenance['cache-permitted'] ?? 0)
+  );
 }
 
 export function summarizeFacultyDepartureLaneAudit(

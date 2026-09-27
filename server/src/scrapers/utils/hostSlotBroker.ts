@@ -5,35 +5,13 @@ import {
   type HostSlotLimiter,
   type HostSlotRelease,
 } from './hostConcurrencyLimiter';
+import { lineReader, writeLine as send } from './brokerWire';
+import { handleSweepPageMessage, type SweepPageStore } from './sweepPageStore';
 
 export const SCRAPER_HOST_SLOT_BROKER_ENV = 'SCRAPER_HOST_SLOT_BROKER';
 
 type ClientMessage = { t: 'acquire'; id: number; host: string } | { t: 'release'; id: number };
 type BrokerMessage = { t: 'grant'; id: number };
-
-function lineReader(onMessage: (message: unknown) => void): (chunk: Buffer) => void {
-  let buffered = '';
-  return (chunk) => {
-    buffered += chunk.toString('utf8');
-    let newline = buffered.indexOf('\n');
-    while (newline >= 0) {
-      const line = buffered.slice(0, newline);
-      buffered = buffered.slice(newline + 1);
-      if (line.trim()) {
-        try {
-          onMessage(JSON.parse(line));
-        } catch {
-          return;
-        }
-      }
-      newline = buffered.indexOf('\n');
-    }
-  };
-}
-
-function send(socket: net.Socket, message: ClientMessage | BrokerMessage): void {
-  if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
-}
 
 export class HostSlotBroker {
   private readonly connections = new Set<net.Socket>();
@@ -41,15 +19,17 @@ export class HostSlotBroker {
   private constructor(
     private readonly server: net.Server,
     readonly socketPath: string,
+    readonly pageStore?: SweepPageStore,
   ) {}
 
   static async listen(
     socketPath: string,
     limiter: HostConcurrencyLimiter,
+    options: { pageStore?: SweepPageStore } = {},
   ): Promise<HostSlotBroker> {
     fs.rmSync(socketPath, { force: true });
     const server = net.createServer((socket) => broker.serve(socket, limiter));
-    const broker = new HostSlotBroker(server, socketPath);
+    const broker = new HostSlotBroker(server, socketPath, options.pageStore);
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
       server.listen(socketPath, () => {
@@ -76,6 +56,7 @@ export class HostSlotBroker {
     socket.on(
       'data',
       lineReader((raw) => {
+        if (handleSweepPageMessage(this.pageStore, socket, raw)) return;
         const message = raw as ClientMessage;
         if (message?.t === 'acquire' && Number.isInteger(message.id)) {
           void limiter.acquire(String(message.host ?? '')).then((release) => {
