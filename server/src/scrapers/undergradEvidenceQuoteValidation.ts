@@ -89,9 +89,26 @@ export function isExplicitUndergradUnavailabilityPhrase(quote?: string): boolean
   return EXPLICIT_UNDERGRAD_UNAVAILABILITY_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+const MODEL_SEARCH_NOTE_PATTERNS: RegExp[] = [
+  /\b(?:the|these|this|those)\s+(?:provided|profiled|supplied|given|available)\s+(?:pages?|profiles?|profile\s+pages?|sub-?pages?|text|sites?|content)\b/i,
+  /\b(?:pages?|profiles?|text|content)\s+(?:provided|supplied|given)\b/i,
+  /^\W*(?:no|there\s+(?:is|are)\s+no)\s+(?:(?:explicit|clear|direct|specific)\s+)?(?:mentions?|evidence|text|language|statements?|references?|indications?|information|invitations?)\b/i,
+];
+
+/**
+ * The model describing its own search ("No explicit mention of undergraduates was found on
+ * the provided pages") rather than quoting the lab. It names an undergraduate population, so
+ * without this it reads as evidence that the lab hosts them (#3683).
+ */
+export function isModelSearchNote(quote: string | undefined | null): boolean {
+  const text = (quote || '').trim();
+  return Boolean(text) && MODEL_SEARCH_NOTE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 export function isPlausibleUndergradEvidenceQuote(quote: string | undefined | null): boolean {
   const text = (quote || '').trim();
   if (!text) return false;
+  if (isModelSearchNote(text)) return false;
   if (HIGH_SCHOOL_POPULATION_PATTERN.test(text)) return false;
   if (RESUME_EDUCATION_LINE_PATTERN.test(text)) return false;
   if (SELF_REFERENTIAL_DEGREE_HISTORY_PATTERN.test(text)) return false;

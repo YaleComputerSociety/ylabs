@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isModelSearchNote,
   isPlausibleUndergradEvidenceQuote,
   quoteExplicitlyDeclinesUndergraduates,
 } from '../undergradEvidenceQuoteValidation';
@@ -97,5 +98,40 @@ describe('quoteExplicitlyDeclinesUndergraduates', () => {
         'The lab is not currently accepting Lab Assistant applications.',
       ),
     ).toBe(true);
+  });
+});
+
+describe('isModelSearchNote (#3683)', () => {
+  const notes = [
+    'No explicit mention of undergraduate students or undergraduate opportunities was found on the provided pages.',
+    '(no explicit invitation or members roster of undergraduates found on the provided pages)',
+    'View Lab Website; no explicit mention of undergraduates or joining the lab on the pages provided.',
+    'no mention of undergraduate researchers on the team page.',
+    'no evidence of accepting undergraduates found.',
+    'There is no text on these pages that explicitly states the lab welcomes or hires undergraduates.',
+    '(no language on page about undergraduate recruitment or student opportunities)',
+    'No explicit invitation or statement about undergraduates appears on the faculty page.',
+  ];
+
+  it('recognizes the model describing its own search', () => {
+    for (const note of notes) {
+      expect(isModelSearchNote(note), note).toBe(true);
+      expect(isPlausibleUndergradEvidenceQuote(note), note).toBe(false);
+    }
+  });
+
+  it('leaves real lab quotes alone, including ones that open with a negation', () => {
+    const quotes = [
+      'Undergraduates are welcome to join the lab.',
+      'No prior research experience is required; undergraduates learn on the job.',
+      'Not sure where to start? Undergraduate students should email the lab manager.',
+      'The lab has provided research positions to undergraduates every summer since 2015.',
+      'No prior experience is necessary; undergraduates interested should send information about their background to the PI.',
+      'Not only do undergraduates co-author papers, they also receive letters of reference.',
+    ];
+    for (const quote of quotes) {
+      expect(isModelSearchNote(quote), quote).toBe(false);
+      expect(isPlausibleUndergradEvidenceQuote(quote), quote).toBe(true);
+    }
   });
 });
