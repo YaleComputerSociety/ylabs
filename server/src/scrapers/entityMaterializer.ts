@@ -2213,6 +2213,17 @@ export function leadPiSchoolInheritanceGate(input: {
   return 'school-and-department';
 }
 
+type DepartmentValueTest = (value: unknown) => boolean;
+
+async function departmentValueNamesADepartment(): Promise<DepartmentValueTest | null> {
+  try {
+    const canonicalizer = await getOrgUnitCanonicalizer();
+    return (value) => canonicalizer.canonicalizeDepartments(value).values.length > 0;
+  } catch {
+    return null;
+  }
+}
+
 async function canonicalLeadDepartment(rawDepartment: string): Promise<string | undefined> {
   try {
     const canonicalizer = await getOrgUnitCanonicalizer();
@@ -3735,9 +3746,16 @@ export async function mergedSurvivorEvidence(
   // A field cleared when no evidence reaches it is gated on observations only, since
   // gating it on its own stored fill would clear it on one resolve and refill it on
   // the next.
+  // A school or campus label in the departments slot names no department, so it
+  // cannot hold the field against a loser's real one (#3610).
+  const namesADepartment = await departmentValueNamesADepartment();
+  const holdsNoDepartment = (observation: any): boolean =>
+    observation.field === 'departments' &&
+    namesADepartment !== null &&
+    !namesADepartment(observation.value);
   const survivorHeldFields = new Set(
     entryPointIndependentOrder
-      .filter((observation: any) => !loserOrigin(observation))
+      .filter((observation: any) => !loserOrigin(observation) && !holdsNoDepartment(observation))
       .map((observation: any) => String(observation.field || '')),
   );
   const storedSurvivor =
@@ -4577,6 +4595,67 @@ function adoptServableFullDescription(input: {
 }
 
 /**
+ * A department winner that names no department (a school, a campus, a funder's
+ * administrative unit) is dropped by org-unit canonicalization, so the row ends with
+ * `departments: []` even when a lower-weight observation names a real department.
+ * Roster sources carry more confidence than lead-PI inheritance, so a school-level
+ * roster label ("Yale School of Public Health") out-voted the inherited department on
+ * every resolve (#3610). The resolver has no org-unit catalog, so the winner is
+ * judged here and the next ranked candidate that names a department is adopted.
+ * When none does, the stored departments are left alone: a label that names no
+ * department is not evidence that the row has none.
+ * Returns the change to the written-field count.
+ */
+async function adoptDepartmentNamingCandidate(input: {
+  entityType: ObservedEntityType;
+  set: Record<string, unknown>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  resolverObs: ResolverObservation[];
+  manuallyLockedFields: string[];
+  manualValues: Record<string, unknown>;
+  materializationObs: MaterializerObservationLike[];
+  sourceEntityIdentity: ResearchEntityIdentity | undefined;
+}): Promise<number> {
+  const field = 'departments';
+  const { set, entityDoc, confidenceByField } = input;
+  if (input.manuallyLockedFields.includes(field) || !(field in set)) return 0;
+  const namesADepartment = await departmentValueNamesADepartment();
+  if (!namesADepartment || namesADepartment(set[field])) return 0;
+
+  const replacement = resolveFieldRanked(field, input.resolverObs, {
+    manuallyLockedFields: input.manuallyLockedFields,
+    manualValues: input.manualValues,
+  }).find((candidate) => namesADepartment(candidate.value));
+  if (replacement) {
+    set[field] = sanitizeProjectedField(
+      input.entityType,
+      field,
+      replacement.value,
+      entityDoc?.[field],
+      input.sourceEntityIdentity,
+    );
+    confidenceByField[field] = replacement.confidence;
+    const provenance = fieldProvenanceForResolvedObservation(
+      field,
+      replacement,
+      input.materializationObs,
+    );
+    if (provenance) set[`fieldProvenance.${field}`] = provenance;
+    else delete set[`fieldProvenance.${field}`];
+    return 0;
+  }
+
+  if (!namesADepartment(entityDoc?.[field])) return 0;
+  delete set[field];
+  delete set[`fieldProvenance.${field}`];
+  const storedConfidence = entityDoc?.confidenceByField?.[field];
+  if (typeof storedConfidence === 'number') confidenceByField[field] = storedConfidence;
+  else delete confidenceByField[field];
+  return -1;
+}
+
+/**
  * Refuses a name that identifies nothing (placeholder filler like "n/a"), or that
  * names something other than this person-scoped record: an umbrella organization
  * it merely belongs to, or a different person's lab.
@@ -4967,6 +5046,17 @@ export async function projectFromLog(
       manuallyLockedFields,
       manualValues,
       materializationObs,
+    });
+    fieldsWritten += await adoptDepartmentNamingCandidate({
+      entityType,
+      set,
+      confidenceByField,
+      entityDoc,
+      resolverObs,
+      manuallyLockedFields,
+      manualValues,
+      materializationObs,
+      sourceEntityIdentity,
     });
   }
   let fullRestatesCurrentCard = false;
