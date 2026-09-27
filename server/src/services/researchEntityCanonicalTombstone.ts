@@ -14,31 +14,88 @@ export type ResearchEntityCanonicalAcceptance = (candidate: ResearchEntityTombst
 const acceptAnyLiveCanonical: ResearchEntityCanonicalAcceptance = (candidate) =>
   candidate.archived !== true;
 
+/**
+ * Why a chain ended without reaching a live canonical, because the three answers are not
+ * one defect.
+ *
+ * A `cycle` and an `absent_target` are malformed pointers: the chain cannot name a
+ * destination by construction, so the row's slug redirects to nothing and no evidence says
+ * where it should go. An `archived_terminal` is well-formed data whose answer is that the
+ * subject has no live home, which a not-found states truthfully.
+ *
+ * The distinction used to exist only in a repair script's own sync copy of this walk, so
+ * the production walker returned a bare `null` for all three and nothing in the engine
+ * could tell a defect from a correct dead end (#3704).
+ */
+export const RESEARCH_ENTITY_TOMBSTONE_TERMINAL_CAUSES = [
+  'cycle',
+  'absent_target',
+  'archived_terminal',
+] as const;
+export type ResearchEntityTombstoneTerminalCause =
+  (typeof RESEARCH_ENTITY_TOMBSTONE_TERMINAL_CAUSES)[number];
+
+export interface ResearchEntityTombstoneChainResult {
+  canonical: ResearchEntityTombstoneNode | null;
+  hops: number;
+  terminalCause?: ResearchEntityTombstoneTerminalCause;
+}
+
 export interface ResearchEntityTombstoneChainDeps {
   findById: (id: string) => Promise<ResearchEntityTombstoneNode | null>;
   isAcceptableCanonical?: ResearchEntityCanonicalAcceptance;
   maxHops?: number;
 }
 
-export async function walkResearchEntityTombstoneChain(
+/**
+ * The one walk, reporting why it stopped.
+ *
+ * `walkResearchEntityTombstoneChain` below keeps the node-or-null shape its existing
+ * callers expect, so this is additive rather than a signature change: there is still a
+ * single traversal, and the cause is available to a caller that needs to judge the failure
+ * rather than merely handle it.
+ */
+export async function walkResearchEntityTombstoneChainWithCause(
   start: ResearchEntityTombstoneNode,
   deps: ResearchEntityTombstoneChainDeps,
-): Promise<ResearchEntityTombstoneNode | null> {
+): Promise<ResearchEntityTombstoneChainResult> {
   const maxHops = deps.maxHops ?? MAX_RESEARCH_ENTITY_TOMBSTONE_HOPS;
   const isAcceptableCanonical = deps.isAcceptableCanonical ?? acceptAnyLiveCanonical;
   const visited = new Set<string>([String(start._id)]);
   let nextId = start.canonicalGroupId ? String(start.canonicalGroupId) : null;
+  let hops = 0;
 
-  for (let hop = 0; hop < maxHops && nextId; hop += 1) {
-    if (visited.has(nextId)) return null;
+  while (nextId && hops < maxHops) {
+    if (visited.has(nextId)) return { canonical: null, hops, terminalCause: 'cycle' };
     visited.add(nextId);
     const candidate = await deps.findById(nextId);
-    if (!candidate) return null;
-    if (isAcceptableCanonical(candidate)) return candidate;
+    hops += 1;
+    if (!candidate) return { canonical: null, hops, terminalCause: 'absent_target' };
+    if (isAcceptableCanonical(candidate)) return { canonical: candidate, hops };
     nextId = candidate.canonicalGroupId ? String(candidate.canonicalGroupId) : null;
   }
 
-  return null;
+  // A pointer still outstanding at the hop ceiling is a cycle this walk declined to keep
+  // following, not a chain that ended: reporting it as a terminal would call a malformed
+  // pointer well-formed.
+  if (nextId) return { canonical: null, hops, terminalCause: 'cycle' };
+  return { canonical: null, hops, terminalCause: 'archived_terminal' };
+}
+
+export async function walkResearchEntityTombstoneChain(
+  start: ResearchEntityTombstoneNode,
+  deps: ResearchEntityTombstoneChainDeps,
+): Promise<ResearchEntityTombstoneNode | null> {
+  return (await walkResearchEntityTombstoneChainWithCause(start, deps)).canonical;
+}
+
+/**
+ * Whether the chain's failure is a defect rather than a truthful "no live home".
+ */
+export function tombstoneTerminalCauseIsMalformed(
+  cause: ResearchEntityTombstoneTerminalCause | undefined,
+): boolean {
+  return cause === 'cycle' || cause === 'absent_target';
 }
 
 // findOne rather than findById so the chain hop and the entry lookup share one
