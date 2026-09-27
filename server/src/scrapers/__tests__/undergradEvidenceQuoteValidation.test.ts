@@ -168,6 +168,11 @@ describe('laneQuoteStatesUndergraduates (#3764)', () => {
       'I am always happy to hear from prospective students, postdocs, and collaborators - please reach out by email.',
       'Undergraduate Students',
       'Our Undergraduate Researchers',
+      'Undergraduate Research Assistants',
+      'Current Undergraduate Lab Members',
+      'We welcome first-year graduate students for rotations.',
+      'We welcome postdocs and junior researchers.',
+      'Students interested in stars and galaxies are welcome.',
     ]) {
       expect(laneQuoteStatesUndergraduates(quote), quote).toBe(false);
     }
@@ -180,6 +185,7 @@ describe('laneQuoteStatesUndergraduates (#3764)', () => {
       'Taylor Example, Yale College junior in the lab',
       'Sam Example SURF student',
       'A Harvard College Student Intern',
+      'We welcome first-year students and juniors to join the lab.',
     ]) {
       expect(laneQuoteStatesUndergraduates(quote), quote).toBe(true);
     }

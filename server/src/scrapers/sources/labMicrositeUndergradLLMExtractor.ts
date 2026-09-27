@@ -477,7 +477,7 @@ export function evidenceQuoteIsWithdrawnByRead(
   if (!citedPage || normalizeQuoteText(citedPage.text).length < MIN_READABLE_PAGE_TEXT_CHARS) {
     return false;
   }
-  return pageContainingQuote(live.value, readPages) === null;
+  return pageContainingQuote(live.value, pagesWithinEntityScope(readPages)) === null;
 }
 
 export function evidenceQuoteWithdrawalObservation(

@@ -131,13 +131,15 @@ export function isPlausibleUndergradEvidenceQuote(quote: string | undefined | nu
 export const UNDERGRAD_MICROSITE_LANE = 'lab-microsite-undergrad-llm';
 
 const EXPLICIT_UNDERGRADUATE_POPULATION =
-  /(?:\b|(?<=[a-z]))(?:undergrads?|undergraduates?)\b|\b(?:college\s+students?|yale\s+college|first[- ]years?|freshm(?:an|en)|sophomores?|juniors?|SURF|STARS)\b/i;
+  /(?:\b|(?<=[a-z]))(?:undergrads?|undergraduates?)\b|\b(?:college\s+students?|yale\s+college|freshm(?:an|en)|sophomores?)\b|\b(?:first[- ]years?|juniors?)\b(?![\s-]+(?:graduate|grad|ph\.?\s?d|doctoral|postdoc|post-doc|medical|faculty|investigators?|researchers?|scientists?|fellows?|staff))/i;
+
+const UNDERGRADUATE_PROGRAM_ACRONYM = /\b(?:SURF|STARS)\b/;
 
 const UNDERGRADUATE_CONTEXT_CUE =
   /\b(?:summer\s+(?:months|research|interns?|internships?|students?|program)|in\s+the\s+summer|course\s+credit|for\s+credit|senior[\s-]+(?:thesis|essay|project)|research\s+theses|independent\s+study|class\s+of\s+20\d{2}|b\.?[as]\.?\s+candidates?)\b/i;
 
 const BARE_POPULATION_HEADING =
-  /^\W*(?:(?:current|former|our)\s+)?(?:undergrad(?:uate)?s?|college\s+students?)(?:\s+(?:students?|researchers?|members?|interns?|assistants?))?\W*$/i;
+  /^\W*(?:(?:current|former|our)\s+)?(?:undergrad(?:uate)?s?|college\s+students?)(?:\s+(?:research|lab|laboratory|students?|researchers?|members?|interns?|assistants?)){0,3}\W*$/i;
 
 /**
  * The microsite lane's own admission rule for a quote that backs "Has hosted undergraduate
@@ -150,5 +152,9 @@ export function laneQuoteStatesUndergraduates(quote: string | undefined | null):
   const text = (quote || '').trim();
   if (!isPlausibleUndergradEvidenceQuote(text)) return false;
   if (BARE_POPULATION_HEADING.test(text)) return false;
-  return EXPLICIT_UNDERGRADUATE_POPULATION.test(text) || UNDERGRADUATE_CONTEXT_CUE.test(text);
+  return (
+    EXPLICIT_UNDERGRADUATE_POPULATION.test(text) ||
+    UNDERGRADUATE_PROGRAM_ACRONYM.test(text) ||
+    UNDERGRADUATE_CONTEXT_CUE.test(text)
+  );
 }

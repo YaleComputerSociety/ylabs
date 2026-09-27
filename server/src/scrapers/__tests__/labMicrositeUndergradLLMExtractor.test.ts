@@ -23,6 +23,7 @@ import {
   extractionToObservations,
   pageContainingQuote,
   pagesWithinEntityScope,
+  evidenceQuoteIsWithdrawnByRead,
   quoteFieldsNotOnPage,
   deriveCurrentUndergradCount,
   isHistoricalUndergradEvidence,
@@ -460,6 +461,32 @@ describe('pagesWithinEntityScope (#3764)', () => {
         page('https://lab.example.edu/people'),
       ]),
     ).toHaveLength(2);
+  });
+});
+
+describe('evidenceQuoteIsWithdrawnByRead scope (#3764)', () => {
+  const QUOTE = 'Undergraduate researchers join the network every summer.';
+  const filler = 'The program studies regional history and culture. '.repeat(6);
+  const home = { url: 'https://shared.example.edu/center-a', text: filler };
+
+  it('withdraws a stored quote cited to a sibling section of a shared host', () => {
+    const siblingUrl = 'https://shared.example.edu/network-b/members';
+    expect(
+      evidenceQuoteIsWithdrawnByRead({ value: QUOTE, sourceUrl: siblingUrl }, [
+        home,
+        { url: siblingUrl, text: `${filler} ${QUOTE}` },
+      ]),
+    ).toBe(true);
+  });
+
+  it('keeps a stored quote that still reads on a page within the entity', () => {
+    const peopleUrl = 'https://shared.example.edu/center-a/people';
+    expect(
+      evidenceQuoteIsWithdrawnByRead({ value: QUOTE, sourceUrl: peopleUrl }, [
+        home,
+        { url: peopleUrl, text: `${filler} ${QUOTE}` },
+      ]),
+    ).toBe(false);
   });
 });
 
