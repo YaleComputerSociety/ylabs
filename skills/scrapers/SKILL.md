@@ -596,6 +596,9 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
   A row that is neither registered, nor declared script-driven, nor retired is `unowned`, and `scrapers:audit-freshness` fails on it rather than listing it as pending work.
   Retiring a lane means adding its name here and applying `scrape:seed-sources`, which stamps `enabled: false`, `cadence: 'retired'`, and a retirement note while leaving stored observations and scrape runs intact as evidence.
 - `integrityGate.ts` - post-materialization integrity gate (duplicate entities/people, current members on archived entities, duplicate access signals, active artifacts on archived entities, and a `deadEndTombstoneChains` warning for malformed tombstone pointers), with recommended CLI repair commands
+  Most checks collect at most `--limit` rows (1 without `--include-samples`), and duplicate people and same-PI duplicates also stop at an internal scan cap, so a count that reaches its cap is a lower bound and `countLabels` renders it as "at least N".
+  Never size a repair from a capped count (#3578).
+  The two archived-entity checks also run a `$count` over the same pipeline, so their `counts` are the measured population and their samples stay capped.
 - `cliHelpers.ts` / `scraperCliOutput.ts` / `types.ts` - CLI parsing, output formatting, shared types
 - `scraplingBridge.py` - Python bridge for utilities requiring Python tooling
 

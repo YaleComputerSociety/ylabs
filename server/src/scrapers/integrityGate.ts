@@ -98,6 +98,8 @@ export interface BuildPostMaterializationIntegrityInput {
   activeArtifactsOnArchivedEntities?: ActiveArtifactOnArchivedEntity[];
   warnings?: PostMaterializationIntegrityWarning[];
   limit?: number;
+  truncatedChecks?: PostMaterializationIntegrityFailureName[];
+  populationCounts?: Partial<Record<PostMaterializationIntegrityFailureName, number>>;
   sourceRunId?: string;
 }
 
@@ -105,6 +107,7 @@ export interface PostMaterializationIntegritySummary {
   status: PostMaterializationIntegrityStatus;
   sourceRunId?: string;
   counts: Record<PostMaterializationIntegrityFailureName, number>;
+  countLabels: Record<PostMaterializationIntegrityFailureName, string>;
   failureNames: PostMaterializationIntegrityFailureName[];
   samples: {
     samePiSameNameResearchEntities: SamePiNameDuplicateGroup[];
@@ -208,7 +211,7 @@ export function buildPostMaterializationIntegritySummary(
   input: BuildPostMaterializationIntegrityInput,
 ): PostMaterializationIntegritySummary {
   const limit = input.limit ?? DEFAULT_SAMPLE_LIMIT;
-  const counts: Record<PostMaterializationIntegrityFailureName, number> = {
+  const sampledCounts: Record<PostMaterializationIntegrityFailureName, number> = {
     samePiSameNameResearchEntities: input.samePiNameDuplicateGroups?.length || 0,
     officialLabUrlResearchEntities: input.officialLabUrlDuplicateGroups?.length || 0,
     duplicatePeople: input.duplicatePersonGroups?.length || 0,
@@ -217,6 +220,11 @@ export function buildPostMaterializationIntegritySummary(
     duplicateAccessSignals: input.duplicateAccessSignalGroups?.length || 0,
     activeArtifactsOnArchivedEntities: input.activeArtifactsOnArchivedEntities?.length || 0,
   };
+  const { counts, countLabels } = resolveIntegrityCounts(
+    sampledCounts,
+    input.populationCounts || {},
+    new Set(input.truncatedChecks),
+  );
   const failureNames = FAILURE_ORDER.filter((name) => counts[name] > 0);
   const warnings = enrichIntegrityWarnings(input.warnings || []);
   const warningCommands = warnings
@@ -227,6 +235,7 @@ export function buildPostMaterializationIntegritySummary(
     status: failureNames.length > 0 ? 'failure' : 'pass',
     sourceRunId: input.sourceRunId,
     counts,
+    countLabels,
     failureNames,
     samples: {
       samePiSameNameResearchEntities: sample(input.samePiNameDuplicateGroups, limit),
@@ -240,6 +249,23 @@ export function buildPostMaterializationIntegritySummary(
     warnings,
     recommendedCommands: [...recommendedCommandsForFailures(failureNames), ...warningCommands],
   };
+}
+
+function resolveIntegrityCounts(
+  sampledCounts: Record<PostMaterializationIntegrityFailureName, number>,
+  populationCounts: Partial<Record<PostMaterializationIntegrityFailureName, number>>,
+  truncatedChecks: ReadonlySet<PostMaterializationIntegrityFailureName>,
+): Pick<PostMaterializationIntegritySummary, 'counts' | 'countLabels'> {
+  const counts = {} as Record<PostMaterializationIntegrityFailureName, number>;
+  const countLabels = {} as Record<PostMaterializationIntegrityFailureName, string>;
+  for (const name of FAILURE_ORDER) {
+    const population = populationCounts[name];
+    const count = population ?? sampledCounts[name];
+    const lowerBound = population === undefined && truncatedChecks.has(name);
+    counts[name] = count;
+    countLabels[name] = lowerBound ? `at least ${count}` : String(count);
+  }
+  return { counts, countLabels };
 }
 
 function recommendedCommandsForFailures(
@@ -330,17 +356,26 @@ async function loadResearcherNetidCollisionGroups(): Promise<DuplicatePersonGrou
 
 async function loadDuplicatePeopleIntegrity(): Promise<{
   groups: DuplicatePersonGroup[];
+  truncated: boolean;
   warnings: PostMaterializationIntegrityWarning[];
 }> {
-  const [emailGroups, orcidGroups, netidGroups] = await Promise.all([
+  const groupsByField = await Promise.all([
     loadIdentityCollisionGroups(Account, 'email', 'email'),
     loadIdentityCollisionGroups(Researcher, 'orcid', 'identifiers.orcid'),
     loadResearcherNetidCollisionGroups(),
   ]);
-  return { groups: [...emailGroups, ...orcidGroups, ...netidGroups], warnings: [] };
+  return {
+    groups: groupsByField.flat(),
+    truncated: groupsByField.some(
+      (groups) => groups.length >= DUPLICATE_PEOPLE_SCAN_LIMIT_PER_FIELD,
+    ),
+    warnings: [],
+  };
 }
 
-async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameDuplicateGroup[]> {
+async function loadSamePiNameDuplicateGroups(
+  limit: number,
+): Promise<{ groups: SamePiNameDuplicateGroup[]; truncated: boolean }> {
   const rows = await RoleAssignment.aggregate([
     {
       $match: {
@@ -399,7 +434,7 @@ async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameD
     { $limit: SAME_PI_ENTITY_SCAN_LIMIT },
   ]);
 
-  return buildSamePiNameDuplicateGroupsFromDedupeRows(
+  const groups = buildSamePiNameDuplicateGroupsFromDedupeRows(
     rows.map((row: any) => {
       const personId = stringId(row._id?.personId);
       const { first, last } = splitName(stringId(row.personDisplayName));
@@ -411,7 +446,11 @@ async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameD
         entities: row.entities || [],
       };
     }),
-  ).slice(0, limit);
+  );
+  return {
+    groups: groups.slice(0, limit),
+    truncated: rows.length >= SAME_PI_ENTITY_SCAN_LIMIT || groups.length >= limit,
+  };
 }
 
 export function buildSamePiNameDuplicateGroupsFromDedupeRows(
@@ -515,28 +554,40 @@ async function loadDuplicateCurrentMemberGroups(
   }));
 }
 
+const currentMembersOnArchivedEntitiesPipeline = (): mongoose.PipelineStage[] => [
+  {
+    $match: {
+      archived: { $ne: true },
+      state: { $ne: 'HISTORICAL' },
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': { $exists: true, $ne: null },
+    },
+  },
+  {
+    $lookup: {
+      from: 'research_entities',
+      localField: 'target.id',
+      foreignField: '_id',
+      as: 'entity',
+    },
+  },
+  { $unwind: '$entity' },
+  { $match: { 'entity.archived': true } },
+];
+
+async function countPipeline(
+  model: mongoose.Model<any>,
+  pipeline: mongoose.PipelineStage[],
+): Promise<number> {
+  const [row] = await model.aggregate([...pipeline, { $count: 'total' }]);
+  return Number(row?.total) || 0;
+}
+
 async function loadCurrentMembersOnArchivedEntities(
   limit: number,
 ): Promise<CurrentMemberOnArchivedEntity[]> {
   const rows = await RoleAssignment.aggregate([
-    {
-      $match: {
-        archived: { $ne: true },
-        state: { $ne: 'HISTORICAL' },
-        'target.kind': 'RESEARCH_ENTITY',
-        'target.id': { $exists: true, $ne: null },
-      },
-    },
-    {
-      $lookup: {
-        from: 'research_entities',
-        localField: 'target.id',
-        foreignField: '_id',
-        as: 'entity',
-      },
-    },
-    { $unwind: '$entity' },
-    { $match: { 'entity.archived': true } },
+    ...currentMembersOnArchivedEntitiesPipeline(),
     {
       $project: {
         memberId: { $toString: '$_id' },
@@ -657,59 +708,57 @@ export function buildDuplicateAccessSignalGroupsFromRows(
   });
 }
 
+const activeAccessSignalsOnArchivedEntitiesPipeline = (): mongoose.PipelineStage[] => [
+  {
+    $match: {
+      archived: { $ne: true },
+      researchEntityId: { $exists: true, $ne: null },
+      type: { $in: [...accessSignalTypes] },
+    },
+  },
+  {
+    $lookup: {
+      from: 'research_entities',
+      localField: 'researchEntityId',
+      foreignField: '_id',
+      as: 'entity',
+    },
+  },
+  { $unwind: '$entity' },
+  { $match: { 'entity.archived': true } },
+];
+
 async function loadActiveArtifactsOnArchivedEntities(
   limit: number,
 ): Promise<ActiveArtifactOnArchivedEntity[]> {
-  const artifactSpecs = [
+  const rows = await Signal.aggregate([
+    ...activeAccessSignalsOnArchivedEntitiesPipeline(),
     {
-      artifactType: 'AccessSignal' as const,
-      model: Signal,
-      match: { type: { $in: [...accessSignalTypes] } } as Record<string, unknown>,
+      $project: {
+        artifactId: { $toString: '$_id' },
+        researchEntityId: { $toString: '$researchEntityId' },
+        canonicalGroupId: { $toString: '$entity.canonicalGroupId' },
+      },
     },
-  ];
-  const results: ActiveArtifactOnArchivedEntity[] = [];
+    { $limit: limit },
+  ]);
 
-  for (const spec of artifactSpecs) {
-    const rows = await spec.model.aggregate([
-      {
-        $match: {
-          archived: { $ne: true },
-          researchEntityId: { $exists: true, $ne: null },
-          ...spec.match,
-        },
-      },
-      {
-        $lookup: {
-          from: 'research_entities',
-          localField: 'researchEntityId',
-          foreignField: '_id',
-          as: 'entity',
-        },
-      },
-      { $unwind: '$entity' },
-      { $match: { 'entity.archived': true } },
-      {
-        $project: {
-          artifactId: { $toString: '$_id' },
-          researchEntityId: { $toString: '$researchEntityId' },
-          canonicalGroupId: { $toString: '$entity.canonicalGroupId' },
-        },
-      },
-      { $limit: Math.max(1, limit - results.length) },
-    ]);
+  return rows.map((row: any) => ({
+    artifactType: 'AccessSignal' as const,
+    artifactId: stringId(row.artifactId),
+    researchEntityId: stringId(row.researchEntityId),
+    canonicalGroupId: stringId(row.canonicalGroupId) || null,
+  }));
+}
 
-    for (const row of rows) {
-      results.push({
-        artifactType: spec.artifactType,
-        artifactId: stringId(row.artifactId),
-        researchEntityId: stringId(row.researchEntityId),
-        canonicalGroupId: stringId(row.canonicalGroupId) || null,
-      });
-      if (results.length >= limit) return results;
-    }
-  }
-
-  return results;
+async function loadArchivedEntityPopulationCounts(): Promise<
+  Partial<Record<PostMaterializationIntegrityFailureName, number>>
+> {
+  const [currentMembersOnArchivedEntities, activeArtifactsOnArchivedEntities] = await Promise.all([
+    countPipeline(RoleAssignment, currentMembersOnArchivedEntitiesPipeline()),
+    countPipeline(Signal, activeAccessSignalsOnArchivedEntitiesPipeline()),
+  ]);
+  return { currentMembersOnArchivedEntities, activeArtifactsOnArchivedEntities };
 }
 
 async function loadAmbiguousSameNameWarning(): Promise<PostMaterializationIntegrityWarning[]> {
@@ -820,7 +869,7 @@ export async function runPostMaterializationIntegrityGate(
   const limit = normalizePostMaterializationIntegrityLimit(options.limit);
   const queryLimit = options.includeSamples ? limit : 1;
   const [
-    samePiNameDuplicateGroups,
+    samePiNameDuplicates,
     officialLabUrlDuplicateGroups,
     duplicatePersonIntegrity,
     duplicateCurrentMemberGroups,
@@ -829,6 +878,7 @@ export async function runPostMaterializationIntegrityGate(
     activeArtifactsOnArchivedEntities,
     warnings,
     deadEndTombstoneChainWarnings,
+    populationCounts,
   ] = await Promise.all([
     loadSamePiNameDuplicateGroups(queryLimit),
     loadOfficialLabUrlDuplicateGroups(queryLimit),
@@ -839,10 +889,24 @@ export async function runPostMaterializationIntegrityGate(
     loadActiveArtifactsOnArchivedEntities(queryLimit),
     loadAmbiguousSameNameWarning(),
     loadDeadEndTombstoneChains(queryLimit),
+    loadArchivedEntityPopulationCounts(),
   ]);
 
+  const reachesQueryLimit = (rows: unknown[]) => rows.length >= queryLimit;
+  const truncatedChecks = (
+    [
+      ['samePiSameNameResearchEntities', samePiNameDuplicates.truncated],
+      ['officialLabUrlResearchEntities', reachesQueryLimit(officialLabUrlDuplicateGroups)],
+      ['duplicatePeople', duplicatePersonIntegrity.truncated],
+      ['duplicateCurrentMembers', reachesQueryLimit(duplicateCurrentMemberGroups)],
+      ['duplicateAccessSignals', reachesQueryLimit(duplicateAccessSignalGroups)],
+    ] as const
+  )
+    .filter(([, truncated]) => truncated)
+    .map(([name]) => name);
+
   return buildPostMaterializationIntegritySummary({
-    samePiNameDuplicateGroups,
+    samePiNameDuplicateGroups: samePiNameDuplicates.groups,
     officialLabUrlDuplicateGroups,
     duplicatePersonGroups: duplicatePersonIntegrity.groups,
     duplicateCurrentMemberGroups,
@@ -851,6 +915,8 @@ export async function runPostMaterializationIntegrityGate(
     activeArtifactsOnArchivedEntities,
     warnings: [...warnings, ...duplicatePersonIntegrity.warnings, ...deadEndTombstoneChainWarnings],
     limit: options.includeSamples ? limit : 0,
+    truncatedChecks,
+    populationCounts,
     sourceRunId: options.sourceRunId,
   });
 }

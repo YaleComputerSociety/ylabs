@@ -92,9 +92,17 @@ describe('scraperIntegrityGate CLI helpers', () => {
             duplicatePeople: 0,
             duplicateCurrentMembers: 0,
             currentMembersOnArchivedEntities: 0,
-            duplicateExploratoryContactPathways: 0,
             duplicateAccessSignals: 0,
             activeArtifactsOnArchivedEntities: 0,
+          },
+          countLabels: {
+            samePiSameNameResearchEntities: '1',
+            officialLabUrlResearchEntities: '0',
+            duplicatePeople: '0',
+            duplicateCurrentMembers: '0',
+            currentMembersOnArchivedEntities: '0',
+            duplicateAccessSignals: '0',
+            activeArtifactsOnArchivedEntities: '0',
           },
           failureNames: ['samePiSameNameResearchEntities'],
           samples: {
@@ -103,7 +111,6 @@ describe('scraperIntegrityGate CLI helpers', () => {
             duplicatePeople: [],
             duplicateCurrentMembers: [],
             currentMembersOnArchivedEntities: [],
-            duplicateExploratoryContactPathways: [],
             duplicateAccessSignals: [],
             activeArtifactsOnArchivedEntities: [],
           },
@@ -197,6 +204,50 @@ describe('scraperIntegrityGate CLI helpers', () => {
     expect(summary.recommendedCommands).toContain(
       'SCRAPER_ENV=beta yarn --cwd server users:repair-mismatched-emails --limit=10000 --output /tmp/ylabs-mismatched-person-email-repair.json',
     );
+  });
+
+  it('labels a count as a lower bound only when its check reports truncation', () => {
+    const cappedRows = Array.from({ length: 25 }, (_, index) => ({
+      officialLabUrl: `https://medicine.yale.edu/lab/synthetic-${index}/`,
+      entityIds: [`entity-${index}-a`, `entity-${index}-b`],
+    }));
+    const summary = buildPostMaterializationIntegritySummary({
+      officialLabUrlDuplicateGroups: cappedRows,
+      duplicateAccessSignalGroups: [
+        {
+          researchEntityId: 'entity-1',
+          signalType: 'UNDERGRAD_RESEARCH',
+          identityField: 'derivationKey',
+          identityValue: 'entity-1:undergrad',
+          signalIds: ['signal-a', 'signal-b'],
+        },
+      ],
+      truncatedChecks: ['officialLabUrlResearchEntities'],
+    });
+
+    expect(summary.counts.officialLabUrlResearchEntities).toBe(25);
+    expect(summary.countLabels.officialLabUrlResearchEntities).toBe('at least 25');
+    expect(summary.countLabels.duplicateAccessSignals).toBe('1');
+  });
+
+  it('reports a measured population instead of the capped sample length', () => {
+    const summary = buildPostMaterializationIntegritySummary({
+      currentMembersOnArchivedEntities: Array.from({ length: 25 }, (_, index) => ({
+        researchEntityId: `archived-${index}`,
+        memberId: `member-${index}`,
+      })),
+      populationCounts: {
+        currentMembersOnArchivedEntities: 1391,
+        activeArtifactsOnArchivedEntities: 0,
+      },
+      truncatedChecks: ['currentMembersOnArchivedEntities'],
+    });
+
+    expect(summary.counts.currentMembersOnArchivedEntities).toBe(1391);
+    expect(summary.countLabels.currentMembersOnArchivedEntities).toBe('1391');
+    expect(summary.samples.currentMembersOnArchivedEntities).toHaveLength(25);
+    expect(summary.counts.activeArtifactsOnArchivedEntities).toBe(0);
+    expect(summary.failureNames).toEqual(['currentMembersOnArchivedEntities']);
   });
 
   it('builds duplicate access-signal groups from repeated signal identities', () => {
