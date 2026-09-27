@@ -60,6 +60,10 @@ Take the tells, not the taste.
 
 - Every async surface has an explicit loading state and an explicit error state, not a blank frame.
 - Use skeletons or spinners consistently; do not let layout jump when data arrives.
+- A fetch keyed on a selection, filter, or search must never let an older response overwrite a newer one.
+Take a ticket from `client/src/hooks/useLatestRequest.ts`, pass its `signal`, and gate every state write, including the one in `finally`, on `isCurrent()`.
+Clear state that belongs to the previous selection in the same handler that changes it, and reset the page or offset in the same state update as the filter change, never in a later effect.
+Debounce free-text search inputs with `client/src/hooks/useDebouncedCallback.ts`.
 - Empty states say what the surface is for and offer the next action.
 - Every route sets a meaningful page title.
 - Never render placeholder or half-finished content to real users.
