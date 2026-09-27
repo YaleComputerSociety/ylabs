@@ -171,6 +171,59 @@ describe('LabDetail page', () => {
     });
   });
 
+  it('records a profile opened from another profile as related_programs', async () => {
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    const similarSlug = 'lab-similar-topics';
+    renderLabDetail({
+      ...basePayload,
+      similarResearchEntities: [
+        {
+          id: 'entity-similar',
+          slug: similarSlug,
+          name: 'Similar Topics Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          departments: ['Physics'],
+        },
+      ],
+    });
+    const baseGet = mockedAxios.get.getMockImplementation() as (url: string) => Promise<unknown>;
+    mockedAxios.get.mockImplementation((url: string) =>
+      url === `/research/${similarSlug}`
+        ? Promise.resolve({
+            data: {
+              ...basePayload,
+              group: {
+                ...basePayload.group,
+                _id: 'entity-similar',
+                slug: similarSlug,
+                name: 'Similar Topics Lab',
+              },
+            },
+          })
+        : baseGet(url),
+    );
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+    fireEvent.click(screen.getByRole('link', { name: /Similar Topics Lab/ }));
+    await screen.findByRole('heading', { name: 'Similar Topics Lab', level: 1 });
+
+    await waitFor(async () => {
+      await flushResearchAnalytics();
+      const profileOpens = mockedAxios.post.mock.calls
+        .filter((call) => call[0] === '/analytics/research/batch')
+        .flatMap((call) => call[1]?.events ?? [])
+        .filter((event: { eventType?: string }) => event?.eventType === 'research_profile_open');
+      expect(profileOpens).toEqual([
+        expect.objectContaining({ entityId: 'entity-1', payload: { source: 'direct' } }),
+        expect.objectContaining({
+          entityId: 'entity-similar',
+          payload: { source: 'related_programs' },
+        }),
+      ]);
+    });
+  });
+
   it('shows a Yale CAS login CTA instead of the save button for logged-out visitors', async () => {
     mockedAxios.post.mockResolvedValue({ status: 202 });
     renderLabDetail(basePayload, { isAuthenticated: false });
