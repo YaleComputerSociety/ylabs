@@ -23,6 +23,11 @@ describe('redactDirectContactInfo phone arm', () => {
     ['Phone5550100016 for details', `Phone${PHONE} for details`],
     ['Tel5550100017', `Tel${PHONE}`],
     ['office x5550100018', `office x${PHONE}`],
+    ['Ph5550100022', `Ph${PHONE}`],
+    ['Office5550100023 for details', `Office${PHONE} for details`],
+    ['Main5550100024', `Main${PHONE}`],
+    ['Voice5550100025', `Voice${PHONE}`],
+    ['phone number5550100026', `phone number${PHONE}`],
   ])('redacts a phone number glued to the letters before it: %s', (input, expected) => {
     expect(redactDirectContactInfo(input)).toBe(expected);
   });
