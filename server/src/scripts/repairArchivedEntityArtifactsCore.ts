@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 import {
-  walkResearchEntityTombstoneChain,
+  tombstoneTerminalCauseIsMalformed,
+  walkResearchEntityTombstoneChainWithCause,
   type ResearchEntityTombstoneNode,
+  type ResearchEntityTombstoneTerminalCause,
 } from '../services/researchEntityCanonicalTombstone';
 
 export const archivedEntityArtifactTypes = ['RoleAssignment', 'AccessSignal'] as const;
@@ -9,6 +11,7 @@ export type ArchivedEntityArtifactType = (typeof archivedEntityArtifactTypes)[nu
 
 export const archivedEntityRepairClasses = [
   'merge-survivor',
+  'merge-no-live-home',
   'merge-dead-end',
   'no-canonical',
 ] as const;
@@ -28,6 +31,7 @@ export interface ArchivedEntityDisposition {
   archivedEntityId: string;
   repairClass: ArchivedEntityRepairClass;
   survivorId?: string;
+  terminalCause?: ResearchEntityTombstoneTerminalCause;
   archivedReason: string;
   archivedAt?: Date;
 }
@@ -111,13 +115,24 @@ export async function resolveArchivedEntityDispositions(
       continue;
     }
     const start = tombstoneNode(entity);
-    const survivor = start ? await walkResearchEntityTombstoneChain(start, { findById }) : null;
-    dispositions.set(
-      entity.id,
-      survivor
-        ? { ...base, repairClass: 'merge-survivor', survivorId: String(survivor._id) }
-        : { ...base, repairClass: 'merge-dead-end' },
-    );
+    const chain = start
+      ? await walkResearchEntityTombstoneChainWithCause(start, { findById })
+      : { canonical: null, terminalCause: 'absent_target' as const };
+    if (chain.canonical) {
+      dispositions.set(entity.id, {
+        ...base,
+        repairClass: 'merge-survivor',
+        survivorId: String(chain.canonical._id),
+      });
+      continue;
+    }
+    dispositions.set(entity.id, {
+      ...base,
+      repairClass: tombstoneTerminalCauseIsMalformed(chain.terminalCause)
+        ? 'merge-dead-end'
+        : 'merge-no-live-home',
+      terminalCause: chain.terminalCause,
+    });
   }
   return dispositions;
 }
@@ -195,7 +210,10 @@ export function buildArchivedEntityArtifactRepairPlan({
       archivedReason: disposition.archivedReason,
     };
 
-    if (disposition.repairClass === 'no-canonical') {
+    if (
+      disposition.repairClass === 'no-canonical' ||
+      disposition.repairClass === 'merge-no-live-home'
+    ) {
       plan.archiveWithoutCanonical.push({ ...base, id: artifact.id });
       continue;
     }

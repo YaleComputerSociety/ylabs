@@ -16,6 +16,8 @@ const SURVIVOR = 'bbbbbbbbbbbbbbbbbbbbbbb1';
 const ORPHAN = 'aaaaaaaaaaaaaaaaaaaaaaa3';
 const DEAD_END = 'aaaaaaaaaaaaaaaaaaaaaaa4';
 const MISSING = 'ccccccccccccccccccccccc1';
+const NO_HOME = 'aaaaaaaaaaaaaaaaaaaaaaa5';
+const TERMINAL = 'aaaaaaaaaaaaaaaaaaaaaaa6';
 
 function nodes(list: ArchivedEntityNode[]): Map<string, ArchivedEntityNode> {
   return new Map(list.map((node) => [node.id, node]));
@@ -37,6 +39,8 @@ describe('resolveArchivedEntityDispositions', () => {
       { id: MIDDLE, archived: true, canonicalGroupId: SURVIVOR },
       { id: ORPHAN, archived: true, archivedReason: '  ' },
       { id: DEAD_END, archived: true, canonicalGroupId: MISSING },
+      { id: NO_HOME, archived: true, canonicalGroupId: TERMINAL },
+      { id: TERMINAL, archived: true },
     ];
     const dispositions = await resolveArchivedEntityDispositions(
       archived,
@@ -57,8 +61,15 @@ describe('resolveArchivedEntityDispositions', () => {
       repairClass: 'no-canonical',
       archivedReason: ARCHIVED_REASON_ABSENT,
     });
-    expect(dispositions.get(DEAD_END)?.repairClass).toBe('merge-dead-end');
+    expect(dispositions.get(DEAD_END)).toMatchObject({
+      repairClass: 'merge-dead-end',
+      terminalCause: 'absent_target',
+    });
     expect(dispositions.get(DEAD_END)?.survivorId).toBeUndefined();
+    expect(dispositions.get(NO_HOME)).toMatchObject({
+      repairClass: 'merge-no-live-home',
+      terminalCause: 'archived_terminal',
+    });
   });
 
   it('treats a tombstone cycle as a dead end rather than a survivor', async () => {
@@ -272,6 +283,30 @@ describe('buildArchivedEntityArtifactRepairPlan', () => {
       expect.objectContaining({ id: 'edge-dead-end', reason: 'merge-chain-dead-end' }),
     ]);
     expect(plan.relink).toEqual([]);
+  });
+
+  it('retires artifacts on a merged row whose chain ends on an archived row with no live home', () => {
+    const plan = buildArchivedEntityArtifactRepairPlan({
+      artifacts: [
+        { artifactType: 'RoleAssignment', id: 'edge-no-home', researchEntityId: NO_HOME },
+      ],
+      dispositions: new Map<string, ArchivedEntityDisposition>([
+        [
+          NO_HOME,
+          {
+            archivedEntityId: NO_HOME,
+            repairClass: 'merge-no-live-home',
+            terminalCause: 'archived_terminal',
+            archivedReason: ARCHIVED_REASON_ABSENT,
+          },
+        ],
+      ]),
+    });
+
+    expect(plan.archiveWithoutCanonical).toEqual([
+      expect.objectContaining({ id: 'edge-no-home', repairClass: 'merge-no-live-home' }),
+    ]);
+    expect(plan.skipped).toEqual([]);
   });
 
   it('summarizes the plan per class with archive reasons and artifact types', () => {
