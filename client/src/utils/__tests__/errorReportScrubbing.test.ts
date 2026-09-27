@@ -29,9 +29,9 @@ describe('scrubPath', () => {
 
 describe('scrubUrl', () => {
   it('keeps the origin and replaces the query and fragment', () => {
-    expect(scrubUrl(`https://yalelabs.io/research/${SYNTHETIC_SLUG}?q=${SYNTHETIC_QUERY}#top`)).toBe(
-      'https://yalelabs.io/research/:param?[Filtered]',
-    );
+    expect(
+      scrubUrl(`https://yalelabs.io/research/${SYNTHETIC_SLUG}?q=${SYNTHETIC_QUERY}#top`),
+    ).toBe('https://yalelabs.io/research/:param?[Filtered]');
   });
 
   it('keeps a relative path relative', () => {

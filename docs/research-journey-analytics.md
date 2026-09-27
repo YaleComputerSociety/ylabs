@@ -129,6 +129,7 @@ Adding a client route or an API path with new static words means adding them to 
 A query string reports as `?[Filtered]`, a fragment is dropped, and request headers other than `User-Agent` are dropped.
 Only navigation, fetch, and XHR breadcrumbs survive, reduced to their method, status, and scrubbed URLs.
 Absolute URLs inside an exception message are scrubbed the same way, and a message the client writes itself must not interpolate a slug or key.
+A stack frame's `filename` and `abs_path` are scrubbed too, because the SDK falls back to the full page URL for a window error with no usable stack; only a same-origin bundled asset under `/assets/` with no query or fragment is kept verbatim, so source maps still resolve.
 `client/src/utils/__tests__/errorTrackingPayload.test.ts` runs the real SDK with its default integrations against a capturing transport and fails if a synthetic key or query value reaches the sent envelope.
 
 ## Identity Joins Must Fail Closed
