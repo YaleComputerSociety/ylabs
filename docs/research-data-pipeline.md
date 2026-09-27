@@ -694,7 +694,10 @@ That comparison is of run identity, never of a missing row, which is what keeps 
 
 Retraction is opt-in per source (`fieldRetractionContracts`), because a run's field set is a fact about the run rather than about the page.
 `ysm-faculty-directory` qualifies: `facultyToResearchEntityObservations` emits `slug`, `name`, `kind`, `entityType`, `school`, `sourceUrls`, and `inferredPiUserKey` for every profile it accepts, and emits `websiteUrl` only when the profile links a research home the person owns, which is exactly the pair of cases #2542 asks to retract - a lab slot emptied, and a lab slot now holding an affiliated organization.
-`dept-faculty-roster` deliberately does not qualify despite the identical emit shape: on a `profileBelongsToRosterPerson` mismatch it keeps the citation and drops only the enrichment, `labUrl` included, so a wrong-person refusal is indistinguishable from a delisting, and #2385 records that dropping that edge strands the real lab, which `observations:retarget-foreign-lab-websites` repairs rather than retracts.
+It states the absence only when the profile's lab slot carries no link at all (`labSlotAttestation === 'empty'`): a slot holding a value it cannot adopt, such as a scheme-less URL, is `refused` and states nothing.
+`dept-faculty-roster` qualifies through `FacultyEntry.labSlotAttestation` (#3135), which every parse that reads `labUrl` sets and which a refusal path always leaves `refused`.
+Two outcomes of the profile read decide the attestation too: a profile refused by `profileBelongsToRosterPerson` records `refused`, and a profile that was never read, because its fetch failed or it links off Yale, withdraws the roster card's `empty`, because the profile is where the lab link usually lives and an unread page states nothing.
+#2385 records that dropping a wrong-person edge strands the real lab, which `observations:retarget-foreign-lab-websites` repairs rather than retracts.
 `yse-faculty-directory` qualifies for one case: it states `assertsNoValueFor: ['websiteUrl']` only when it withdrew a lab because the linked site is dead on a stored or probed verdict (#3452), so the `websiteUrl` it asserted before it knew stops being live; a refused link and an empty lab slot state nothing, because `extractLabUrl` can decline a link the page still carries.
 `ysm-atoz-index` does not qualify for the opposite reason: a delisted lab vanishes from the index entirely, so it emits no witness and no partial read ever occurs, which is `ysmLabDelistingReconciler`'s cohort.
 
@@ -736,7 +739,7 @@ Whether those pages dropped their links is not measurable until those sources de
 
 Widening coverage is not a configuration change.
 `dept-faculty-roster` holds 15 of the 26 and emits `websiteUrl` only when `entry.labUrl` is set, which looks like the contracted source's shape but is not: `labUrl` is left unset by several refusal paths, a website the same roster lists for two or more people among them, as well as by a genuinely empty entry, so testing `!entry.labUrl` would reintroduce exactly what #2647 measured, where 2 of 4 planned retractions were refusals of links the page still carried.
-An honest contract for a source needs a parse-time "no candidate was present at all" signal kept distinct from every refusal path, which is what `labSlotIsEmpty` is on the contracted source.
+An honest contract for a source needs a parse-time "no candidate was present at all" signal kept distinct from every refusal path and from every unread page, which is what `labSlotAttestation` is on the YSM and department-roster sources.
 
 ### Value refusal: how a repair persists without freezing a field
 

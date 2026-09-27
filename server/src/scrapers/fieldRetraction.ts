@@ -144,12 +144,13 @@ export interface SourceFieldRetractionContract {
  * carries carries nothing. This comment previously claimed both refusals were
  * retractable, which is the #2647 defect.
  *
- * `dept-faculty-roster` deliberately does NOT qualify even though its emit has
- * the same shape. On a `profileBelongsToRosterPerson` mismatch it keeps the
- * citation and drops only the enrichment, `labUrl` included, so a wrong-person
- * refusal is indistinguishable from a delisting; and #2385 records that dropping
- * that edge strands the real lab, which `observations:retarget-foreign-lab-websites`
- * exists to repair rather than retract.
+ * `dept-faculty-roster` qualifies through `FacultyEntry.labSlotAttestation` (#3135).
+ * On a `profileBelongsToRosterPerson` mismatch it keeps the citation and drops only
+ * the enrichment, `labUrl` included, so that outcome is recorded as `refused`, and a
+ * profile left unread (a fetch failure or an off-Yale link) withdraws the roster card's
+ * `empty`: the profile is where the lab link usually lives, so an unread one states
+ * nothing. #2385 records that dropping that edge strands the real lab, which
+ * `observations:retarget-foreign-lab-websites` exists to repair rather than retract.
  *
  * `yse-faculty-directory` qualifies for one case only. It emits `slug` and
  * `sourceUrls` for every entity it mints, and states `assertsNoValueFor:
@@ -178,7 +179,7 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
     witnessFields: ['slug', 'sourceUrls'],
     retractableFields: ['websiteUrl'],
     notes:
-      'Emits slug and sourceUrls on every entity it mints. It states assertsNoValueFor: [websiteUrl] only on a positively attested empty lab-website slot (FacultyEntry.labSlotAttestation === "empty"), which every parse that reads labUrl must set and which is never set when a candidate link was seen and not adopted. A parse that routes a single destination link, or that never looked, leaves the claim unmade (#3135).',
+      'Emits slug and sourceUrls on every entity it mints. It states assertsNoValueFor: [websiteUrl] only on a positively attested empty lab-website slot (FacultyEntry.labSlotAttestation === "empty"), which every parse that reads labUrl must set and which is never set when a candidate link was seen and not adopted. A parse that routes a single destination link, or that never looked, leaves the claim unmade (#3135). An unread profile withdraws the empty a roster card attested, and a profile refused as naming someone else records refused.',
   },
 };
 

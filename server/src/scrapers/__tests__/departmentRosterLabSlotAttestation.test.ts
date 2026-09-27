@@ -14,6 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  enrichEntryFromOfficialProfile,
   rosterResearchEntityMint,
   mcdbExtractor,
   profileEnrichmentFromHtml,
@@ -183,6 +184,64 @@ describe('the observation the lane emits', () => {
     expect(
       absenceAssertions({ labUrl: 'https://fixturelab.org/', labSlotAttestation: 'empty' }),
     ).toEqual([]);
+  });
+});
+
+describe('a roster card attested empty whose profile page was never read', () => {
+  const rosterEntry = {
+    name: 'Ada Fixture',
+    profileUrl: PROFILE_URL,
+    labSlotAttestation: 'empty' as const,
+  };
+
+  const enrichWith = (htmlFetcher: () => Promise<string>) =>
+    enrichEntryFromOfficialProfile(
+      rosterEntry,
+      'dept-faculty-roster',
+      false,
+      htmlFetcher,
+      () => {},
+    );
+
+  it('drops the empty claim when the profile fetch fails', async () => {
+    const entry = await enrichWith(() => Promise.reject(new Error('socket hang up')));
+
+    expect(entry.labSlotAttestation).toBeUndefined();
+  });
+
+  it('drops the empty claim when the profile is off Yale and so is never fetched', async () => {
+    let fetched = false;
+    const entry = await enrichEntryFromOfficialProfile(
+      { ...rosterEntry, profileUrl: 'https://adafixture.example.org/about' },
+      'dept-faculty-roster',
+      false,
+      () => {
+        fetched = true;
+        return Promise.resolve(profilePage('<p>No links here.</p>'));
+      },
+      () => {},
+    );
+
+    expect(fetched).toBe(false);
+    expect(entry.labSlotAttestation).toBeUndefined();
+  });
+
+  it('records a refusal when the profile is refused as another person&apos;s page', async () => {
+    const entry = await enrichWith(() =>
+      Promise.resolve(
+        `<html><head><title>Bea Otherperson | MCDB</title>
+           <link rel="canonical" href="https://mcdb.yale.edu/people/bea-otherperson"></head>
+         <body><main><p><a href="https://otherpersonlab.org/">Lab website</a></p></main></body></html>`,
+      ),
+    );
+
+    expect(entry.labSlotAttestation).toBe('refused');
+  });
+
+  it('keeps the empty claim when the profile was read and offers no candidate', async () => {
+    const entry = await enrichWith(() => Promise.resolve(profilePage('<p>No links here.</p>')));
+
+    expect(entry.labSlotAttestation).toBe('empty');
   });
 });
 
