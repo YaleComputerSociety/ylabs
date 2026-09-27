@@ -103,6 +103,30 @@ describe('adminAuditMutationLogger', () => {
     expect(mocks.recordAdminAuditEvent).not.toHaveBeenCalled();
   });
 
+  it('warns when a successful admin mutation has no audit entry', () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const req = buildReq('POST /unmapped-mutation');
+    const { res, flushFinish } = buildRes(200);
+    adminAuditMutationLogger(req, res, vi.fn());
+    flushFinish();
+
+    expect(mocks.recordAdminAuditEvent).not.toHaveBeenCalled();
+    expect(consoleWarn).toHaveBeenCalledOnce();
+    expect(String(consoleWarn.mock.calls[0].join(' '))).toContain('POST /unmapped-mutation');
+    consoleWarn.mockRestore();
+  });
+
+  it('does not warn about an unmapped mutation that did not succeed', () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const req = buildReq('POST /unmapped-mutation');
+    const { res, flushFinish } = buildRes(403);
+    adminAuditMutationLogger(req, res, vi.fn());
+    flushFinish();
+
+    expect(consoleWarn).not.toHaveBeenCalled();
+    consoleWarn.mockRestore();
+  });
+
   it('does not attach auditing to read requests', () => {
     const req = buildReq('GET /audit-events');
     const { res } = buildRes(200);

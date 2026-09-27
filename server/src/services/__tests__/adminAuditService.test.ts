@@ -67,6 +67,36 @@ describe('recordAdminAuditEvent', () => {
 
     expect(consoleError).toHaveBeenCalled();
   });
+
+  it('names the unrecorded action when the audit insert rejects', async () => {
+    vi.spyOn(AdminAuditEvent, 'create').mockRejectedValue(new Error('mongo down'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await recordAdminAuditEvent({
+      actorNetid: 'admin1',
+      action: 'department.delete',
+      targetType: 'department',
+      targetId: '507f1f77bcf86cd799439011',
+    });
+
+    const logged = consoleError.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(logged).toContain('department.delete');
+    expect(logged).toContain('department');
+    expect(logged).not.toContain('admin1');
+    expect(logged).not.toContain('507f1f77bcf86cd799439011');
+  });
+
+  it('warns instead of silently dropping an event it refuses to write', async () => {
+    const create = vi.spyOn(AdminAuditEvent, 'create').mockResolvedValue({} as any);
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await recordAdminAuditEvent({ actorNetid: 'not a netid', action: 'department.update' });
+
+    expect(create).not.toHaveBeenCalled();
+    expect(consoleWarn).toHaveBeenCalledOnce();
+    expect(consoleWarn.mock.calls[0].join(' ')).toContain('department.update');
+    expect(consoleWarn.mock.calls[0].join(' ')).not.toContain('not a netid');
+  });
 });
 
 describe('listAdminAuditEvents', () => {

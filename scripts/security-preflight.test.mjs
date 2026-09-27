@@ -799,10 +799,7 @@ test('CI gates on ESLint errors, leaves warnings advisory, and lints before the 
   const lintAt = ciWorkflow.search(lintRun);
   const firstSuiteAt = ciWorkflow.search(/^\s*run:\s*yarn --cwd server test\s*$/m);
   assert.ok(firstSuiteAt > 0, 'ci.yml must still run the server suite');
-  assert.ok(
-    lintAt > 0 && lintAt < firstSuiteAt,
-    'the lint step must run before the server suite',
-  );
+  assert.ok(lintAt > 0 && lintAt < firstSuiteAt, 'the lint step must run before the server suite');
 
   // verify:fast is the documented pre-push predictor of CI's cheap gates, so a
   // gate CI enforces and verify:fast omits would surprise every author.
@@ -1375,7 +1372,6 @@ test('mounted API routes sanitize caught errors before logging', () => {
     '../server/src/routes/config.ts',
     '../server/src/routes/fellowships.ts',
     '../server/src/routes/programs.ts',
-    '../server/src/routes/researchAreas.ts',
     '../server/src/routes/users.ts',
   ];
 
@@ -3590,7 +3586,7 @@ test('no state-changing route is reachable without authentication', () => {
     'utf8',
   );
 
-  assert.ok(routeFiles.length >= 8, `expected the routes directory, found ${routeFiles.length}`);
+  assert.ok(routeFiles.length >= 7, `expected the routes directory, found ${routeFiles.length}`);
 
   // Balanced-paren extraction, not a regex over the whole call. A lazy
   // `[\s\S]*?` up to `\n);` runs past the end of a one-line route into the next
@@ -3718,20 +3714,17 @@ test('unified research search audit constrains env-driven URLs and output paths'
 });
 
 test('shared research-area creation normalizes labels and rejects direct contact info', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/routes/researchAreas.ts', import.meta.url),
-    'utf8',
-  );
+  const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
 
   assert.match(source, /import \{ redactDirectContactInfo \} from '\.\.\/utils\/contactRedaction'/);
-  assert.match(source, /const normalizeResearchAreaLabel = \(value: string\): string =>/);
   assert.match(source, /replaceAsciiControls\(value, ' '\)/);
+  assert.match(source, /redactDirectContactInfo\(normalized\) !== normalized/);
   assert.match(
     source,
-    /const hasDirectContactInfo = \(value: string\): boolean => redactDirectContactInfo\(value\) !== value/,
+    /normalizeAdminTaxonomyLabel\(value, 'research area name', MAX_RESEARCH_AREA_NAME_LENGTH\)/,
   );
-  assert.match(source, /const trimmedName = normalizeResearchAreaLabel\(name\)/);
-  assert.match(source, /Research area name cannot include contact information/);
+  assert.match(source, /const name = parseResearchAreaName\(req\.body\?\.name\)/);
+  assert.match(source, /router\.post\('\/research-areas', writeLimit,/);
 });
 
 test('public pathway search omits persistence timestamp metadata', () => {
@@ -5147,7 +5140,7 @@ test('user account routes set full private no-store response headers', () => {
 });
 
 test('authenticated research-area routes set full private no-store response headers', () => {
-  const routeFiles = ['../server/src/routes/researchAreas.ts'];
+  const routeFiles = ['../server/src/routes/admin.ts'];
 
   for (const file of routeFiles) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
