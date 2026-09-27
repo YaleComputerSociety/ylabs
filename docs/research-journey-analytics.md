@@ -51,6 +51,8 @@ Every client interaction carries a bounded idempotency key.
 The server enforces uniqueness per authenticated analytics actor, so Strict Mode replay and transport retries do not create duplicate events.
 Analytics requests are fire-and-forget and swallow tracker, offline, navigation, and server failures.
 They do not alter focus, copy, navigation, optimistic state, or completion feedback.
+On the server, `logEvent` never throws either, so an analytics outage cannot block a login, logout, or search, but it reports what happened: `recorded`, `suppressed` (Beta), `invalid`, or `failed`.
+`POST /analytics/research/batch` counts only `recorded` events in its `accepted` total, and logs event types and counts for rejected and `unstored` events, so a storage failure reads as a gap rather than as a delivered batch (#3638).
 
 The analytics collection uses the existing 1,095-day TTL index in `server/src/models/analytics.ts`.
 Beta continues to suppress real student analytics through `shouldSuppressBetaAnalyticsEvent`, while allowing fixture and admin validation.

@@ -68,6 +68,10 @@ const scrapeRunSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    materializationIndexSyncFailures: {
+      type: Number,
+      default: 0,
+    },
     postMaterializationMetrics: {
       type: mongoose.Schema.Types.Mixed,
       default: undefined,

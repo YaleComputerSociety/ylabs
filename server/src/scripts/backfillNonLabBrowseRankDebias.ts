@@ -207,7 +207,12 @@ async function main(): Promise<void> {
 
   const applied = options.apply
     ? await recomputeBrowseRankForEntities(ids, { dryRun: false })
-    : { considered: 0, updated: 0, scoresByEntityId: new Map<string, number>() };
+    : {
+        considered: 0,
+        updated: 0,
+        indexSyncFailures: 0,
+        scoresByEntityId: new Map<string, number>(),
+      };
 
   const afterScores = options.apply ? [...applied.scoresByEntityId.values()] : projectedAfterScores;
 
@@ -229,12 +234,19 @@ async function main(): Promise<void> {
     applied: {
       considered: applied.considered,
       updated: applied.updated,
+      indexSyncFailures: applied.indexSyncFailures,
       afterTierDistribution: options.apply ? tallyTiers(afterScores) : undefined,
     },
   };
 
   console.log(JSON.stringify(report, null, 2));
   writeOutput(report, options.output);
+  if (applied.indexSyncFailures > 0) {
+    console.error(
+      `${applied.indexSyncFailures} updated row(s) were not resynced to Meilisearch, so browse still serves their old order; rebuild the index or rerun.`,
+    );
+    process.exitCode = 1;
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {

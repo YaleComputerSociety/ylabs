@@ -29,6 +29,7 @@ import {
   isResearchJourneyEventType,
   researchEntityExists,
   researchJourneyEventRequiresEntity,
+  type ResearchEventOutcome,
 } from '../services/researchAnalytics';
 
 const router = Router();
@@ -59,16 +60,16 @@ const MAX_RESEARCH_EVENT_BATCH = 50;
 const acceptResearchEvent = async (
   event: unknown,
   user: { netId?: string; userType?: string },
-): Promise<boolean> => {
+): Promise<ResearchEventOutcome> => {
   const { eventType, entityType, entityId, entityIds, payload, dedupeKey } =
     (event as Record<string, unknown>) || {};
 
-  if (!isResearchEventType(eventType)) return false;
+  if (!isResearchEventType(eventType)) return 'rejected';
 
   if (eventType === AnalyticsEventType.RESEARCH_RESULTS_VIEW) {
-    if (entityType !== 'research_entity') return false;
+    if (entityType !== 'research_entity') return 'rejected';
     const shownEntityIds = await existingResearchEntityIds(entityIds);
-    if (shownEntityIds.length === 0) return false;
+    if (shownEntityIds.length === 0) return 'rejected';
     return emitResearchEvent({
       eventType,
       entityType,
@@ -83,8 +84,8 @@ const acceptResearchEvent = async (
   const requiresEntity =
     !isResearchJourneyEventType(eventType) || researchJourneyEventRequiresEntity(eventType);
 
-  if (requiresEntity && !isResearchEntityType(entityType)) return false;
-  if (requiresEntity && (typeof entityId !== 'string' || entityId.trim() === '')) return false;
+  if (requiresEntity && !isResearchEntityType(entityType)) return 'rejected';
+  if (requiresEntity && (typeof entityId !== 'string' || entityId.trim() === '')) return 'rejected';
   if (
     requiresEntity &&
     !(await researchEntityExists(
@@ -92,7 +93,7 @@ const acceptResearchEvent = async (
       entityId as Parameters<typeof researchEntityExists>[1],
     ))
   ) {
-    return false;
+    return 'rejected';
   }
 
   return emitResearchEvent({ eventType, entityType, entityId, payload, dedupeKey, user });
@@ -114,28 +115,34 @@ router.post(
 
     const user = request.user as { netId?: string; userType?: string };
     let accepted = 0;
+    let suppressed = 0;
     const rejectedEventTypes = new Map<string, number>();
-    for (const event of events) {
-      if (await acceptResearchEvent(event, user)) {
-        accepted += 1;
-        continue;
-      }
+    const unstoredEventTypes = new Map<string, number>();
+    const tally = (counts: Map<string, number>, event: unknown) => {
       const eventType = (event as { eventType?: unknown })?.eventType;
       const key = isResearchEventType(eventType) ? eventType : 'unrecognized';
-      rejectedEventTypes.set(key, (rejectedEventTypes.get(key) || 0) + 1);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    };
+    for (const event of events) {
+      const outcome = await acceptResearchEvent(event, user);
+      if (outcome === 'recorded') accepted += 1;
+      else if (outcome === 'suppressed') suppressed += 1;
+      else if (outcome === 'failed') tally(unstoredEventTypes, event);
+      else tally(rejectedEventTypes, event);
     }
 
     // A batch answers 202 whatever it stored, and the browser swallows the body,
     // so validation that rejects everything is otherwise invisible. It stayed
     // invisible long enough for every research-entity journey event ever emitted
     // to be dropped (#2677). Event types and counts only, never an identifier.
-    if (accepted < events.length) {
+    if (accepted + suppressed < events.length) {
       console.warn(
         '[analytics] research batch partially rejected:',
         sanitizeLogValue({
           sent: events.length,
           accepted,
           rejected: Object.fromEntries(rejectedEventTypes),
+          unstored: Object.fromEntries(unstoredEventTypes),
         }),
       );
     }

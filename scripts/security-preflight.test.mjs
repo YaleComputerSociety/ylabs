@@ -3970,7 +3970,7 @@ test('analytics event storage redacts user-entered contact details', () => {
     /const sanitizeAnalyticsEventType = \(value: unknown\): AnalyticsEventType \| undefined =>/,
   );
   assert.match(source, /const eventType = sanitizeAnalyticsEventType\(params\.eventType\)/);
-  assert.match(source, /if \(!eventType\) \{\s*return;\s*\}/);
+  assert.match(source, /if \(!eventType\) \{\s*return 'invalid';\s*\}/);
   assert.match(source, /ANALYTICS_NETID_RE = \/\^\[A-Za-z0-9\]\{2,12\}\$\//);
   assert.match(source, /ANALYTICS_NON_USER_NETIDS = new Set\(\['anonymous', 'unknown'\]\)/);
   assert.match(source, /const netid = normalizeAnalyticsEventNetid\(params\.netid\)/);

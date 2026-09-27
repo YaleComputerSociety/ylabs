@@ -586,20 +586,16 @@ const casLogin = function (
           return next(err);
         }
 
-        try {
-          await logEvent({
-            eventType: AnalyticsEventType.LOGIN,
-            netid: user.netId,
-            userType: user.userType || 'unknown',
-            metadata: {
-              timestamp: new Date(),
-              loginMethod: 'CAS',
-            },
-          });
-          authDebug('Login event logged to analytics');
-        } catch (analyticsError) {
-          console.error('Error logging analytics event:', sanitizeLogValue(analyticsError));
-        }
+        const loginOutcome = await logEvent({
+          eventType: AnalyticsEventType.LOGIN,
+          netid: user.netId,
+          userType: user.userType || 'unknown',
+          metadata: {
+            timestamp: new Date(),
+            loginMethod: 'CAS',
+          },
+        });
+        authDebug(`Login analytics event ${loginOutcome}`);
 
         const safeTarget = safeRedirectTarget(req.query?.redirect);
         if (safeTarget) {
@@ -627,21 +623,17 @@ router.use(async (req, res, next) => {
 
   if (req.isAuthenticated() && !req.session!.visitorLogged) {
     const user = req.user as any;
-    try {
-      await logEvent({
-        eventType: AnalyticsEventType.VISITOR,
-        netid: user.netId,
-        userType: user.userType || 'unknown',
-        metadata: {
-          timestamp: new Date(),
-          loginMethod: 'cookie',
-        },
-      });
-      authDebug('🍪 Visitor event logged to analytics (cookie login)');
-      req.session!.visitorLogged = true;
-    } catch (analyticsError) {
-      console.error('Error logging visitor analytics event:', sanitizeLogValue(analyticsError));
-    }
+    const visitorOutcome = await logEvent({
+      eventType: AnalyticsEventType.VISITOR,
+      netid: user.netId,
+      userType: user.userType || 'unknown',
+      metadata: {
+        timestamp: new Date(),
+        loginMethod: 'cookie',
+      },
+    });
+    authDebug(`Visitor analytics event ${visitorOutcome} (cookie login)`);
+    req.session!.visitorLogged = true;
   }
   next();
 });
@@ -681,19 +673,15 @@ const logoutRouteHandler = async (
 
   if (req.user) {
     const user = req.user as any;
-    try {
-      await logEvent({
-        eventType: AnalyticsEventType.LOGOUT,
-        netid: user.netId,
-        userType: user.userType || 'unknown',
-        metadata: {
-          timestamp: new Date(),
-        },
-      });
-      authDebug('Logout event logged to analytics');
-    } catch (analyticsError) {
-      console.error('Error logging analytics event:', sanitizeLogValue(analyticsError));
-    }
+    const logoutOutcome = await logEvent({
+      eventType: AnalyticsEventType.LOGOUT,
+      netid: user.netId,
+      userType: user.userType || 'unknown',
+      metadata: {
+        timestamp: new Date(),
+      },
+    });
+    authDebug(`Logout analytics event ${logoutOutcome}`);
   }
 
   const casLogoutUrl = `${authConfig.ssoBaseURL}/logout`;
@@ -738,23 +726,16 @@ if (isDevLoginAllowed()) {
           return res.status(500).json({ error: 'Dev login failed' });
         }
 
-        try {
-          await logEvent({
-            eventType: AnalyticsEventType.LOGIN,
-            netid: testUser.netId,
-            userType: testUser.userType || 'unknown',
-            metadata: {
-              timestamp: new Date(),
-              loginMethod: 'dev-login',
-            },
-          });
-          authDebug('Dev login event logged to analytics');
-        } catch (analyticsError) {
-          console.error(
-            'Error logging dev login analytics event:',
-            sanitizeLogValue(analyticsError),
-          );
-        }
+        const devLoginOutcome = await logEvent({
+          eventType: AnalyticsEventType.LOGIN,
+          netid: testUser.netId,
+          userType: testUser.userType || 'unknown',
+          metadata: {
+            timestamp: new Date(),
+            loginMethod: 'dev-login',
+          },
+        });
+        authDebug(`Dev login analytics event ${devLoginOutcome}`);
 
         const redirectUrl =
           safeRedirectTarget(req.query?.redirect) ?? localDevOriginFromRequest(req);

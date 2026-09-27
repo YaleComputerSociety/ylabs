@@ -452,6 +452,7 @@ interface MaterializeResult {
   created: boolean;
   resolved: Record<string, ResolvedField>;
   postMaterializationMetrics?: ReportPostMaterializationMetrics;
+  indexSyncFailed?: true;
   skipped?: string;
   plannedSet?: Record<string, unknown>;
   plannedUnset?: Record<string, ''>;
@@ -2184,6 +2185,7 @@ export interface LeadPiSchoolInheritanceResult {
   /** Fields this pass asserted as observations, so the value survives a re-projection. */
   observed?: string[];
   observationSkipped?: 'source-not-registered' | 'observation-refused';
+  indexSyncFailed?: true;
 }
 
 /**
@@ -2360,12 +2362,13 @@ export async function inheritSchoolFromLeadPi(
     ResearchEntity.updateOne({ _id: researchEntityId }, { $set: set }, { session }),
   );
   const fresh = await ResearchEntity.findById(researchEntityId).lean();
-  if (fresh) await syncEntity('researchEntity', fresh);
+  const indexSynced = !!fresh && (await syncEntity('researchEntity', fresh));
   return {
     inherited: true,
     ...(derivedSchool ? { school: derivedSchool } : {}),
     departments,
     ...assertion,
+    ...(indexSynced ? {} : { indexSyncFailed: true as const }),
   };
 }
 
@@ -6438,9 +6441,10 @@ export async function materializeEntity(
     created = didCreate;
   }
 
+  let indexStale = false;
   if (isSyncableEntityType(entityType) && entityIdString && !entityScalarUnchanged) {
     const fresh = await Model.findById(entityIdString).lean();
-    if (fresh) await syncEntity(entityType, fresh);
+    indexStale = !fresh || !(await syncEntity(entityType, fresh));
   }
 
   let postMaterializationMetrics: ReportPostMaterializationMetrics | undefined;
@@ -6448,7 +6452,8 @@ export async function materializeEntity(
     if (!options.dryRun) {
       await materializeInferredPiMembership(entityIdString, materializationObs);
       await materializeInferredDirectorMembership(entityIdString, materializationObs);
-      await inheritSchoolFromLeadPi(entityIdString, { manuallyLockedFields });
+      const inheritance = await inheritSchoolFromLeadPi(entityIdString, { manuallyLockedFields });
+      if (inheritance.inherited) indexStale = !!inheritance.indexSyncFailed;
     }
     const accessResult = await materializeAccessForResearchGroup(
       {
@@ -6472,7 +6477,8 @@ export async function materializeEntity(
     // re-sync the entity so the default /research ordering stays fresh.
     if (!options.dryRun) {
       try {
-        await recomputeBrowseRankForEntities([entityIdString]);
+        const browseRank = await recomputeBrowseRankForEntities([entityIdString]);
+        if (browseRank.updated > 0) indexStale = browseRank.indexSyncFailures > 0;
       } catch (error) {
         console.error(
           'Failed to recompute browseRankScore:',
@@ -6501,6 +6507,7 @@ export async function materializeEntity(
     created,
     resolved,
     postMaterializationMetrics,
+    ...(indexStale ? { indexSyncFailed: true as const } : {}),
     ...(entityScalarUnchanged ? { skipped: 'unchanged' as const } : {}),
   };
 }
@@ -6670,6 +6677,7 @@ export async function materializeFromRun(
   conflicts: number;
   skipped: number;
   errors: number;
+  indexSyncFailures: number;
   postMaterializationMetrics: Required<ReportPostMaterializationMetrics>;
 }> {
   const runObjectId = toMaterializerObjectId(scrapeRunId);
@@ -6681,6 +6689,7 @@ export async function materializeFromRun(
       conflicts: 0,
       skipped: 0,
       errors: 0,
+      indexSyncFailures: 0,
       postMaterializationMetrics: emptyPostMaterializationMetrics(),
     };
   }
@@ -6699,6 +6708,7 @@ export async function materializeFromRun(
       conflicts: 0,
       skipped: 0,
       errors: 0,
+      indexSyncFailures: 0,
       postMaterializationMetrics: emptyPostMaterializationMetrics(),
     };
   }
@@ -6735,6 +6745,7 @@ export async function materializeFromRun(
   let conflicts = 0;
   let skipped = 0;
   let errors = 0;
+  let indexSyncFailures = 0;
   const postMaterializationMetrics = emptyPostMaterializationMetrics();
   await materializeObservedEntitiesInChunks(
     distinct.map((row) => ({
@@ -6758,9 +6769,15 @@ export async function materializeFromRun(
       else if (!res.skipped) updated++;
       if (res.skipped) skipped++;
       conflicts += res.conflicts;
+      if (res.indexSyncFailed) indexSyncFailures++;
       addPostMaterializationMetrics(postMaterializationMetrics, res.postMaterializationMetrics);
     },
   );
+  if (indexSyncFailures > 0) {
+    console.warn(
+      `materializeFromRun: ${indexSyncFailures} row(s) failed their last index resync, so search and browse order still serve the previous documents for those rows until a reindex`,
+    );
+  }
   const rosterMembersArchived = await reconcileOfficialRosterSnapshotsFromRun(scrapeRunId, options);
   const departureResult = await reconcileFacultyRosterDeparturesFromRun(scrapeRunId, options);
   // An operator who switched the lane on needs to see why it did nothing;
@@ -6837,6 +6854,7 @@ export async function materializeFromRun(
           materializationSkipped: skipped,
           materializationConflicts: conflicts,
           materializationErrors: errors,
+          materializationIndexSyncFailures: indexSyncFailures,
           entitiesArchived: rosterMembersArchived,
           postMaterializationMetrics,
         },
@@ -6850,6 +6868,7 @@ export async function materializeFromRun(
     conflicts,
     skipped,
     errors,
+    indexSyncFailures,
     postMaterializationMetrics,
   };
 }

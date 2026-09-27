@@ -391,13 +391,14 @@ const normalizeAnalyticsNetid = (value: string): string => {
   return trimmed;
 };
 
-const normalizeAnalyticsEventNetid = (value: string): string => {
+const normalizeAnalyticsEventNetid = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   const lower = trimmed.toLowerCase();
   if (ANALYTICS_NON_USER_NETIDS.has(lower)) {
     return lower;
   }
-  return normalizeAnalyticsNetid(trimmed);
+  return ANALYTICS_NETID_RE.test(trimmed) ? trimmed : undefined;
 };
 
 const sanitizeAnalyticsUserType = (value: unknown): string => {
@@ -859,18 +860,23 @@ const supersedeSearchEpisode = async (
   return result.matchedCount > 0 ? 'folded' : 'separate';
 };
 
-export const logEvent = async (params: LogEventParams): Promise<void> => {
+export type AnalyticsWriteOutcome = 'recorded' | 'suppressed' | 'invalid' | 'failed';
+
+export const logEvent = async (params: LogEventParams): Promise<AnalyticsWriteOutcome> => {
   try {
     const eventType = sanitizeAnalyticsEventType(params.eventType);
     if (!eventType) {
-      return;
+      return 'invalid';
     }
     const netid = normalizeAnalyticsEventNetid(params.netid);
+    if (!netid) {
+      return 'invalid';
+    }
     const userType = sanitizeAnalyticsUserType(params.userType);
     const normalizedParams = { ...params, eventType, netid, userType };
 
     if (shouldSuppressBetaAnalyticsEvent(normalizedParams)) {
-      return;
+      return 'suppressed';
     }
 
     const fellowshipId = sanitizeAnalyticsObjectId(params.fellowshipId);
@@ -894,22 +900,23 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
     if (dedupeKey) eventPayload.dedupeKey = dedupeKey;
 
     if (dedupeKey) {
-      const result = await AnalyticsEvent.updateOne(
+      await AnalyticsEvent.updateOne(
         { netid, dedupeKey },
         { $setOnInsert: eventPayload },
         { upsert: true },
       );
-      if (result.upsertedCount === 0) return;
-    } else if (eventType === AnalyticsEventType.SEARCH) {
+      return 'recorded';
+    }
+    if (eventType === AnalyticsEventType.SEARCH) {
       eventPayload.searchEpisodeUpdatedAt = eventPayload.timestamp;
       const outcome = await supersedeSearchEpisode(eventPayload, params.foldQueryEdits === true);
-      if (outcome !== 'separate') return;
-      await AnalyticsEvent.create(eventPayload);
-    } else {
-      await AnalyticsEvent.create(eventPayload);
+      if (outcome !== 'separate') return 'recorded';
     }
+    await AnalyticsEvent.create(eventPayload);
+    return 'recorded';
   } catch (error) {
     console.error('Error logging analytics event:', sanitizeLogValue(error));
+    return 'failed';
   }
 };
 
