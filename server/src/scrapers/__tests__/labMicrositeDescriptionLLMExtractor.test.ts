@@ -540,6 +540,41 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(grounded.shortDescription).toBe('');
   });
 
+  it('blanks a grounded description the model classified as another subject', () => {
+    const pageText =
+      'The Department of Examples prepares students for careers across the discipline.';
+    const extraction = {
+      fullDescription:
+        'The Department of Examples prepares students for careers across the discipline.',
+      shortDescription:
+        'The Department of Examples prepares students for careers across the discipline.',
+      topics: [],
+      methods: [],
+    };
+    for (const subject of ['organization', 'other']) {
+      const grounded = groundDescriptionExtraction({ ...extraction, subject }, pageText);
+      expect(grounded.fullDescription).toBe('');
+      expect(grounded.shortDescription).toBe('');
+    }
+  });
+
+  it('keeps a grounded description about the named entity, or with no classification at all', () => {
+    const pageText = 'The Ground Lab studies neural circuits underlying decision making.';
+    const extraction = {
+      fullDescription: 'The Ground Lab studies neural circuits underlying decision making.',
+      shortDescription: '',
+      topics: [],
+      methods: [],
+    };
+    expect(
+      groundDescriptionExtraction({ ...extraction, subject: 'named_entity' }, pageText)
+        .fullDescription,
+    ).toContain('neural circuits');
+    expect(groundDescriptionExtraction(extraction, pageText).fullDescription).toContain(
+      'neural circuits',
+    );
+  });
+
   it('emits nothing when deterministic extraction fails and the LLM output is ungrounded', async () => {
     const { ctx, emitted } = makeContext();
     const callLLM = vi.fn().mockResolvedValue({
