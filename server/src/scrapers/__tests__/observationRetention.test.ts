@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { Observation } from '../../models/observation';
 import { ScrapeRun } from '../../models/scrapeRun';
 import {
+  OBSERVATION_PRUNE_DELETE_BATCH_SIZE,
   OBSERVATION_REFERENCE_SPECS,
   buildObservationReferencePipeline,
   buildSupersededObservationPruneFilter,
@@ -39,6 +40,20 @@ function mockReferencedObservationRows(
   );
 }
 
+function mockEligibleObservationIds(ids: unknown[]) {
+  const cursor = () => ({
+    async *[Symbol.asyncIterator]() {
+      for (const _id of ids) yield { _id };
+    },
+  });
+  return vi
+    .spyOn(Observation, 'find')
+    .mockImplementation((() => ({ select: () => ({ lean: () => ({ cursor }) }) })) as any);
+}
+
+const observationIds = (count: number, prefix = 'observation'): string[] =>
+  Array.from({ length: count }, (_, index) => `${prefix}-${index}`);
+
 const ALL_REFERENCE_SPEC_COVERAGE = (referencedObservations: number) =>
   OBSERVATION_REFERENCE_SPECS.map((spec) => ({
     collection: spec.collection,
@@ -63,14 +78,12 @@ describe('observation retention', () => {
         cutoff: CUTOFF,
         sourceName: 'openalex',
         keepRunIds: ['recent-run-1', 'recent-run-2'],
-        protectedObservationIds: ['referenced-observation'],
       }),
     ).toEqual({
       superseded: true,
       observedAt: { $lt: CUTOFF },
       sourceName: 'openalex',
       scrapeRunId: { $nin: ['recent-run-1', 'recent-run-2'] },
-      _id: { $nin: ['referenced-observation'] },
     });
   });
 
@@ -127,7 +140,7 @@ describe('observation retention', () => {
       { _id: 'openalex', runIds: ['recent-run-1', 'recent-run-2', 'recent-run-3'] },
     ] as any);
     mockReferencedObservationRows();
-    const countDocuments = vi.spyOn(Observation, 'countDocuments').mockResolvedValue(42 as any);
+    const find = mockEligibleObservationIds(observationIds(42));
     const deleteMany = vi.spyOn(Observation, 'deleteMany');
 
     const result = await pruneSupersededObservations({
@@ -137,12 +150,11 @@ describe('observation retention', () => {
       apply: false,
     });
 
-    expect(countDocuments).toHaveBeenCalledWith({
+    expect(find).toHaveBeenCalledWith({
       superseded: true,
       observedAt: { $lt: CUTOFF },
       scrapeRunId: { $nin: ['recent-run-1', 'recent-run-2', 'recent-run-3'] },
     });
-    expect(countDocuments).toHaveBeenCalledTimes(2);
     expect(deleteMany).not.toHaveBeenCalled();
     expect(result).toEqual({
       apply: false,
@@ -165,7 +177,7 @@ describe('observation retention', () => {
       { _id: 'openalex', runIds: ['recent-run-1'] },
     ] as any);
     mockReferencedObservationRows();
-    vi.spyOn(Observation, 'countDocuments').mockResolvedValue(5 as any);
+    mockEligibleObservationIds(observationIds(5));
     const deleteMany = vi
       .spyOn(Observation, 'deleteMany')
       .mockResolvedValue({ deletedCount: 5 } as any);
@@ -183,6 +195,7 @@ describe('observation retention', () => {
       observedAt: { $lt: CUTOFF },
       sourceName: 'openalex',
       scrapeRunId: { $nin: ['recent-run-1'] },
+      _id: { $in: observationIds(5) },
     });
     expect(result.deleted).toBe(5);
   });
@@ -192,9 +205,7 @@ describe('observation retention', () => {
       { _id: 'openalex', runIds: ['recent-run-1'] },
     ] as any);
     mockReferencedObservationRows([{ _id: 'referenced-observation' }]);
-    vi.spyOn(Observation, 'countDocuments')
-      .mockResolvedValueOnce(5 as any)
-      .mockResolvedValueOnce(4 as any);
+    mockEligibleObservationIds(['referenced-observation', ...observationIds(4)]);
     const deleteMany = vi
       .spyOn(Observation, 'deleteMany')
       .mockResolvedValue({ deletedCount: 4 } as any);
@@ -210,7 +221,7 @@ describe('observation retention', () => {
       superseded: true,
       observedAt: { $lt: CUTOFF },
       scrapeRunId: { $nin: ['recent-run-1'] },
-      _id: { $nin: ['referenced-observation'] },
+      _id: { $in: observationIds(4) },
     });
     expect(result).toMatchObject({
       eligibleCandidates: 5,
@@ -249,7 +260,7 @@ describe('observation retention', () => {
       process.env.C4_LOSSLESS_INGEST = 'true';
       vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([] as any);
       mockReferencedObservationRows();
-      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(7 as any);
+      mockEligibleObservationIds(observationIds(7));
       const deleteMany = vi.spyOn(Observation, 'deleteMany');
 
       const compact = await pruneSupersededObservations({ now: NOW, apply: false });
@@ -277,9 +288,7 @@ describe('observation retention', () => {
         { _id: 'openalex', runIds: ['run-c', 'run-b', 'run-a'] },
       ] as any);
       mockReferencedObservationRows([{ _id: 'referenced-observation' }]);
-      vi.spyOn(Observation, 'countDocuments')
-        .mockResolvedValueOnce(10 as any)
-        .mockResolvedValueOnce(9 as any);
+      mockEligibleObservationIds(['referenced-observation', ...observationIds(9)]);
       const deleteMany = vi
         .spyOn(Observation, 'deleteMany')
         .mockResolvedValue({ deletedCount: 9 } as any);
@@ -290,7 +299,7 @@ describe('observation retention', () => {
         superseded: true,
         observedAt: { $lt: NOW },
         scrapeRunId: { $nin: ['run-c', 'run-b', 'run-a'] },
-        _id: { $nin: ['referenced-observation'] },
+        _id: { $in: observationIds(9) },
       });
       expect(result).toEqual({
         apply: true,
@@ -315,7 +324,7 @@ describe('observation retention', () => {
           { _id: 'openalex', runIds: ['newest-run', 'previous-run', 'older-run'] },
         ] as any);
       mockReferencedObservationRows();
-      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(4 as any);
+      mockEligibleObservationIds(observationIds(4));
       const deleteMany = vi
         .spyOn(Observation, 'deleteMany')
         .mockResolvedValue({ deletedCount: 4 } as any);
@@ -332,7 +341,7 @@ describe('observation retention', () => {
     it('forfeits run retention only when the caller explicitly asks for keepRuns=0', async () => {
       const aggregate = vi.spyOn(ScrapeRun, 'aggregate');
       mockReferencedObservationRows();
-      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(4 as any);
+      mockEligibleObservationIds(observationIds(4));
       const deleteMany = vi
         .spyOn(Observation, 'deleteMany')
         .mockResolvedValue({ deletedCount: 4 } as any);
@@ -343,6 +352,7 @@ describe('observation retention', () => {
       expect(deleteMany).toHaveBeenCalledWith({
         superseded: true,
         observedAt: { $lt: NOW },
+        _id: { $in: observationIds(4) },
       });
       expect(result).toMatchObject({ keepRuns: 0, retainedRuns: 0 });
     });
@@ -350,7 +360,7 @@ describe('observation retention', () => {
     it('records that the read scope was undeclared so a refused apply cannot read as a clean corpus', async () => {
       vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([] as any);
       mockReferencedObservationRows();
-      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(3 as any);
+      mockEligibleObservationIds(observationIds(3));
 
       const undeclared = await pruneDeadObservations({ now: NOW, apply: false });
       expect(undeclared).toMatchObject({ projectionNeutral: true, readScopeDeclared: false });
@@ -363,13 +373,46 @@ describe('observation retention', () => {
     it('never deletes in dry-run mode', async () => {
       vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([] as any);
       mockReferencedObservationRows();
-      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(3 as any);
+      mockEligibleObservationIds(observationIds(3));
       const deleteMany = vi.spyOn(Observation, 'deleteMany');
 
       const result = await pruneDeadObservations({ now: NOW, apply: false });
 
       expect(deleteMany).not.toHaveBeenCalled();
       expect(result).toMatchObject({ apply: false, candidates: 3, deleted: 0 });
+    });
+  });
+
+  describe('a referenced set larger than one BSON command (#3733)', () => {
+    it('never sends the referenced ids to the server and deletes in bounded batches', async () => {
+      vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([] as any);
+      const referenced = observationIds(1_100_000, 'referenced');
+      mockReferencedObservationRows(
+        referenced.map((_id) => ({ _id })),
+        ['observations'],
+      );
+      const unreferenced = observationIds(OBSERVATION_PRUNE_DELETE_BATCH_SIZE + 1, 'dead');
+      const find = mockEligibleObservationIds([...referenced.slice(0, 3), ...unreferenced]);
+      const deleteMany = vi.spyOn(Observation, 'deleteMany').mockImplementation((async (
+        filter: any,
+      ) => ({
+        deletedCount: filter._id.$in.length,
+      })) as any);
+
+      const result = await pruneDeadObservations({ now: NOW, apply: true });
+
+      expect(JSON.stringify((find.mock.calls as unknown[][])[0]?.[0])).not.toContain('referenced-');
+      expect(deleteMany).toHaveBeenCalledTimes(2);
+      for (const [filter] of deleteMany.mock.calls as any[]) {
+        expect(filter._id.$in.length).toBeLessThanOrEqual(OBSERVATION_PRUNE_DELETE_BATCH_SIZE);
+        expect(JSON.stringify(filter)).not.toContain('referenced-');
+      }
+      expect(result).toMatchObject({
+        eligibleCandidates: unreferenced.length + 3,
+        protectedCandidates: 3,
+        candidates: unreferenced.length,
+        deleted: unreferenced.length,
+      });
     });
   });
 
@@ -380,7 +423,7 @@ describe('observation retention', () => {
         [{ _id: 'referenced-observation' }],
         ['observations', 'signals', 'research_entities'],
       );
-      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(3 as any);
+      mockEligibleObservationIds(observationIds(3));
 
       const scan = await scanReferencedObservations();
 
@@ -396,7 +439,7 @@ describe('observation retention', () => {
     it('carries the same coverage onto both prune reports', async () => {
       vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([] as any);
       mockReferencedObservationRows([{ _id: 'referenced-observation' }], ['observations']);
-      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(3 as any);
+      mockEligibleObservationIds(observationIds(3));
 
       const superseded = await pruneSupersededObservations({ now: NOW, apply: false });
       const dead = await pruneDeadObservations({ now: NOW, apply: false });

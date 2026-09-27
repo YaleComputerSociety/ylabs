@@ -87,7 +87,6 @@ export function buildSupersededObservationPruneFilter(input: {
   cutoff: Date;
   sourceName?: string;
   keepRunIds?: unknown[];
-  protectedObservationIds?: unknown[];
 }): Record<string, unknown> {
   const filter: Record<string, unknown> = {
     superseded: true,
@@ -96,9 +95,6 @@ export function buildSupersededObservationPruneFilter(input: {
   if (input.sourceName) filter.sourceName = input.sourceName;
   if (input.keepRunIds && input.keepRunIds.length > 0) {
     filter.scrapeRunId = { $nin: input.keepRunIds };
-  }
-  if (input.protectedObservationIds && input.protectedObservationIds.length > 0) {
-    filter._id = { $nin: input.protectedObservationIds };
   }
   return filter;
 }
@@ -151,17 +147,12 @@ export async function pruneSupersededObservations(
     sourceName: options.sourceName,
     keepRunIds: keptRunIds,
   });
-  const eligibleCandidates = await Observation.countDocuments(eligibleFilter);
   const referenceScan = await scanReferencedObservations();
-  const protectedObservationIds = referenceScan.ids;
-  const filter = buildSupersededObservationPruneFilter({
-    cutoff,
-    sourceName: options.sourceName,
-    keepRunIds: keptRunIds,
-    protectedObservationIds,
+  const { eligibleCandidates, candidates, deleted } = await pruneUnreferencedEligibleObservations({
+    eligibleFilter,
+    referencedObservationIds: referenceScan.ids,
+    apply: Boolean(options.apply),
   });
-  const candidates = await Observation.countDocuments(filter);
-  const deleted = options.apply ? (await Observation.deleteMany(filter)).deletedCount || 0 : 0;
 
   return {
     apply: Boolean(options.apply),
@@ -218,17 +209,12 @@ export async function pruneDeadObservations(
     sourceName: options.sourceName,
     keepRunIds: keptRunIds,
   });
-  const eligibleCandidates = await Observation.countDocuments(eligibleFilter);
   const referenceScan = await scanReferencedObservations();
-  const protectedObservationIds = referenceScan.ids;
-  const filter = buildSupersededObservationPruneFilter({
-    cutoff: now,
-    sourceName: options.sourceName,
-    keepRunIds: keptRunIds,
-    protectedObservationIds,
+  const { eligibleCandidates, candidates, deleted } = await pruneUnreferencedEligibleObservations({
+    eligibleFilter,
+    referencedObservationIds: referenceScan.ids,
+    apply: Boolean(options.apply),
   });
-  const candidates = await Observation.countDocuments(filter);
-  const deleted = options.apply ? (await Observation.deleteMany(filter)).deletedCount || 0 : 0;
 
   return {
     apply: Boolean(options.apply),
@@ -244,6 +230,41 @@ export async function pruneDeadObservations(
     sourceName: options.sourceName,
     referenceSpecs: referenceScan.specs,
   };
+}
+
+export const OBSERVATION_PRUNE_DELETE_BATCH_SIZE = 5000;
+
+/**
+ * Referenced ids are excluded in memory rather than sent as an `_id: { $nin }` filter,
+ * because the referenced set grows with the corpus and passed the 16 MB BSON command
+ * limit on Development at about one million ids (#3733).
+ */
+async function pruneUnreferencedEligibleObservations(input: {
+  eligibleFilter: Record<string, unknown>;
+  referencedObservationIds: unknown[];
+  apply: boolean;
+}): Promise<{ eligibleCandidates: number; candidates: number; deleted: number }> {
+  const referencedKeys = new Set(input.referencedObservationIds.map((id) => String(id)));
+  let eligibleCandidates = 0;
+  const unreferencedIds: unknown[] = [];
+  const cursor = Observation.find(input.eligibleFilter).select('_id').lean().cursor();
+  for await (const row of cursor) {
+    eligibleCandidates += 1;
+    if (!referencedKeys.has(String(row._id))) unreferencedIds.push(row._id);
+  }
+  let deleted = 0;
+  if (input.apply) {
+    for (
+      let start = 0;
+      start < unreferencedIds.length;
+      start += OBSERVATION_PRUNE_DELETE_BATCH_SIZE
+    ) {
+      const batch = unreferencedIds.slice(start, start + OBSERVATION_PRUNE_DELETE_BATCH_SIZE);
+      const result = await Observation.deleteMany({ ...input.eligibleFilter, _id: { $in: batch } });
+      deleted += result.deletedCount || 0;
+    }
+  }
+  return { eligibleCandidates, candidates: unreferencedIds.length, deleted };
 }
 
 export interface ReferencedObservationScan {
