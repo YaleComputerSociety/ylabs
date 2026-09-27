@@ -6,6 +6,7 @@ import {
   MAX_SERVED_RESEARCH_ENTITY_TEXT_LENGTH,
   servedResearchEntityCardDescription,
   servedResearchEntityCopy,
+  withoutLeadGuardedCopy,
 } from './servedResearchEntityCard';
 import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
@@ -564,6 +565,7 @@ export function toPublicResearchEntityDto(
  */
 export interface ResearchEntitySearchAliasOptions extends PublicResearchEntityDtoOptions {
   leadMemberNamesByEntityId?: ReadonlyMap<string, readonly string[]>;
+  leadMemberNamesUnavailable?: boolean;
 }
 
 export function addResearchEntitySearchAliases<T extends { hits: Record<string, any>[] }>(
@@ -572,11 +574,11 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
 ): Omit<T, 'hits'> & {
   researchEntities: PublicResearchEntityDto[];
 } {
-  const { leadMemberNamesByEntityId, ...entityOptions } = options;
+  const { leadMemberNamesByEntityId, leadMemberNamesUnavailable, ...entityOptions } = options;
   const listOptions: PublicResearchEntityDtoOptions = { ...entityOptions, forList: true };
   const researchEntities = disambiguateCollidingResearchEntityNames(
     (result.hits || []).map((hit) =>
-      toPublicResearchEntityDto(hit, {
+      toPublicResearchEntityDto(leadMemberNamesUnavailable ? withoutLeadGuardedCopy(hit) : hit, {
         ...listOptions,
         leadMemberNames: leadMemberNamesByEntityId?.get(String(hit?._id || hit?.id || '')),
       }),

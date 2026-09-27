@@ -69,4 +69,7 @@ The next-search boundary avoids attributing an action to multiple earlier querie
 
 The dashboard reports engaged searches separately from searches that returned results but received no attributed view or save.
 Zero-result rate remains available as a coverage diagnostic.
+A research search answered by a fallback path records `metadata.degraded: true`, and the zero-result counts, the zero-result rate, and the zero-result query lists exclude those rows, because an outage is not a coverage gap.
+The dashboard reports them separately as degraded searches, and the rate's denominator is the searches that reached the full search (#3641).
+The client `research_search` event reports the same case as the `degraded` outcome rather than `zero_results`, and the research page replaces its coverage-gap recovery with a limited-search notice.
 Attribution is computed from existing bounded analytics events and does not copy query text or direct contact information onto action events.

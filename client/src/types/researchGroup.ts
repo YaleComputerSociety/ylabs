@@ -183,4 +183,7 @@ export interface ResearchGroupSearchResponse {
   // Set when the requested page sits past the server's reachable pagination
   // depth. The search never ran, so the response carries no result-set size.
   depthLimited?: boolean;
+  // The server answered from a fallback path, so the result set may be incomplete
+  // and an empty one is not evidence that nothing matches.
+  degraded?: boolean;
 }

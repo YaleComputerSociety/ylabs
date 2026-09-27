@@ -2,7 +2,12 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AnalyticsEvent, AnalyticsEventType } from '../../models/analytics';
-import { getSearchQualityAnalytics, invalidateAnalyticsCaches } from '../analyticsService';
+import {
+  getActionNeededAnalytics,
+  getSearchQualityAnalytics,
+  getSearchQueryAnalytics,
+  invalidateAnalyticsCaches,
+} from '../analyticsService';
 
 // Seeding and aggregating over a real replica set outruns the default per-test
 // timeout when several suites start their own server at once.
@@ -339,5 +344,43 @@ describe('search-quality attribution single-pass equivalence', () => {
     expect(result.totalSearches).toBeGreaterThan(0);
     expect(result.engagedSearches).toBeGreaterThan(0);
     expect(result.returnedButIgnoredSearches).toBeGreaterThan(0);
+  });
+  it('never counts a degraded search as a zero-result search, and reports it on its own', async () => {
+    const timestamp = new Date('2026-02-01T12:00:00.000Z');
+    const search = (netid: string, searchQuery: string, metadata: Record<string, unknown>) => ({
+      netid,
+      userType: 'undergraduate',
+      eventType: AnalyticsEventType.SEARCH,
+      timestamp,
+      searchQuery,
+      metadata: { entityType: 'research_entity', filters: {}, page: 1, ...metadata },
+    });
+    await AnalyticsEvent.insertMany([
+      search('stud01', 'outage topic', { resultCount: 0, degraded: true }),
+      search('stud02', 'outage topic', { resultCount: 0, degraded: true }),
+      search('stud01', 'coverage gap', { resultCount: 0, degraded: false }),
+      search('stud02', 'coverage gap', { resultCount: 0 }),
+      search('stud03', 'neuroscience', { resultCount: 4, degraded: false }),
+    ]);
+
+    const quality = await getSearchQualityAnalytics();
+    expect(quality.totalSearches).toBe(5);
+    expect(quality.degradedSearches).toBe(2);
+    expect(quality.zeroResultSearches).toBe(2);
+    expect(quality.zeroResultRate).toBe(Number((2 / 3).toFixed(4)));
+    expect(quality.topZeroResultQueries.map((query) => query.query)).toEqual(['coverage gap']);
+
+    const actionNeeded = await getActionNeededAnalytics();
+    expect(actionNeeded.highSearchLowResults.map((query) => query.query)).toEqual(['coverage gap']);
+
+    const { queries } = await getSearchQueryAnalytics();
+    const zeroResultsByQuery = Object.fromEntries(
+      queries.map((row) => [row.query, row.zeroResultSearches]),
+    );
+    expect(zeroResultsByQuery).toMatchObject({
+      'outage topic': 0,
+      'coverage gap': 2,
+      neuroscience: 0,
+    });
   });
 });

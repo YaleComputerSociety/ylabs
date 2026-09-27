@@ -57,7 +57,7 @@ export const RESEARCH_JOURNEY_EVENT_TYPES: readonly AnalyticsEventType[] = [
   AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
 ];
 
-export const RESEARCH_SEARCH_OUTCOMES = ['results', 'zero_results', 'error'] as const;
+export const RESEARCH_SEARCH_OUTCOMES = ['results', 'zero_results', 'degraded', 'error'] as const;
 export const RESEARCH_RESULT_COUNT_BUCKETS = ['0', '1-5', '6-20', '21-50', '51+'] as const;
 export const RESEARCH_SEARCH_KINDS = ['query', 'filtered', 'department'] as const;
 export const RESEARCH_FILTER_COUNT_BUCKETS = ['0', '1', '2', '3+'] as const;

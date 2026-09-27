@@ -124,6 +124,7 @@ const AnalyticsSupportingDetail = ({
   const searchTotal = searchQuality?.totalSearches || 0;
   const engagedSearches = searchQuality?.engagedSearches || 0;
   const returnedButIgnoredSearches = searchQuality?.returnedButIgnoredSearches || 0;
+  const degradedSearches = searchQuality?.degradedSearches || 0;
   const avgResults = searchQuality?.avgResults ?? searchQuality?.avgResultsPerSearch;
   const zeroResultQueries = searchQuality?.zeroResultQueries || [];
   const lowResultQueries = searchQuality?.lowResultQueries || [];
@@ -505,11 +506,15 @@ const AnalyticsSupportingDetail = ({
                     : '-'}
                 </span>
               </div>
-              <div className="mb-3 flex justify-between text-muted">
+              <div className="mb-2 flex justify-between text-muted">
                 <span>Returned but ignored</span>
                 <span className="font-medium text-ink">
                   {formatNumber(returnedButIgnoredSearches)}
                 </span>
+              </div>
+              <div className="mb-3 flex justify-between text-muted">
+                <span>Degraded, not counted as zero-result</span>
+                <span className="font-medium text-ink">{formatNumber(degradedSearches)}</span>
               </div>
               <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
                 Zero or Low Result Queries

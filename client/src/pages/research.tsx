@@ -5,6 +5,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { isResearchHomeResetState } from '../components/researchHomeNavigation';
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
+import ResearchSearchDegradedNotice from '../components/research/ResearchSearchDegradedNotice';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
 import ResearchSortDropdown, {
   ResearchSortField,
@@ -117,6 +118,7 @@ interface ResearchEntitySearchPage {
   // search ran and `estimatedTotalHits` carries no information about the result
   // set. Ends the walk without overwriting the total already on screen.
   depthLimited?: boolean;
+  degraded?: boolean;
 }
 
 interface ActiveResearchSearchRequest {
@@ -161,6 +163,8 @@ interface ResearchPageSnapshot {
   searchError: string;
   hasFacetError: boolean;
   defaultSearchError: string;
+  searchDegraded: boolean;
+  defaultSearchDegraded: boolean;
 }
 
 interface ResearchEntitySearchOptions {
@@ -219,6 +223,7 @@ const searchResearchEntities = async (
     pageSize: normalized.pageSize || pageSize,
     facetDistribution: normalized.facetDistribution,
     depthLimited: normalized.depthLimited === true,
+    degraded: normalized.degraded === true,
   };
 };
 
@@ -259,10 +264,14 @@ const resultSummary = (
   loading: boolean,
   departmentGapLabel?: string,
   totalMatchingHomeCount?: number,
+  degraded = false,
 ): string => {
   if (loading) return `Searching y/labs for ${query}.`;
   const loadedHomeCount = results.clusters.length;
   const matchingHomeCount = Math.max(totalMatchingHomeCount ?? loadedHomeCount, loadedHomeCount);
+  if (degraded && matchingHomeCount === 0 && results.people.length === 0) {
+    return `No results could be confirmed for '${query}'.`;
+  }
   if (departmentGapLabel && matchingHomeCount === 0 && results.people.length === 0) {
     return `No indexed research yet for ${departmentGapLabel}.`;
   }
@@ -279,6 +288,14 @@ const resultSummary = (
     parts.push(pluralize(results.pathways.length, 'verified way in', 'verified ways in'));
   }
   return parts.join(', ');
+};
+
+const researchSearchOutcome = (
+  resultCount: number,
+  degraded: boolean,
+): 'results' | 'zero_results' | 'degraded' => {
+  if (degraded) return 'degraded';
+  return resultCount > 0 ? 'results' : 'zero_results';
 };
 
 const EmptyGroup = ({ children }: { children: string }) => (
@@ -482,6 +499,12 @@ const Research = () => {
   const [defaultSearchError, setDefaultSearchError] = useState(
     () => restoredSnapshotRef.current?.defaultSearchError ?? '',
   );
+  const [searchDegraded, setSearchDegraded] = useState(
+    () => restoredSnapshotRef.current?.searchDegraded ?? false,
+  );
+  const [defaultSearchDegraded, setDefaultSearchDegraded] = useState(
+    () => restoredSnapshotRef.current?.defaultSearchDegraded ?? false,
+  );
   const [relaxedQuerySuggestion, setRelaxedQuerySuggestion] = useState<string | null>(null);
   const relaxProbeRequestIdRef = useRef(0);
   const relaxProbeAbortRef = useRef<AbortController | null>(null);
@@ -607,6 +630,11 @@ const Research = () => {
       setDefaultResearchEntities((current) =>
         page === 1 ? researchEntities : [...current, ...researchEntities],
       );
+      setDefaultSearchDegraded((current) =>
+        page === 1
+          ? researchEntitiesPage.degraded === true
+          : current || researchEntitiesPage.degraded === true,
+      );
       // Page 1 is where the server sends facets, but guard anyway: overwriting a
       // populated panel with undefined would clear the browse filters.
       if (page === 1 && researchEntitiesPage.facetDistribution) {
@@ -708,6 +736,7 @@ const Research = () => {
     setIsApplyingFilters(Boolean(options.preserveResults));
     setSearchError('');
     setHasFacetError(false);
+    setSearchDegraded(false);
     if (!options.preserveResults) {
       setGroupedResults(emptyGroupedResults(resultQueryLabel));
     }
@@ -746,6 +775,7 @@ const Research = () => {
       const researchEntities = researchEntitiesPage.researchEntities;
       setSearchError('');
       setHasFacetError(false);
+      setSearchDegraded(researchEntitiesPage.degraded === true);
       setSearchResultResearchEntities(researchEntities);
       setSearchTotal(researchEntitiesPage.estimatedTotalHits);
       if (researchEntitiesPage.facetDistribution) {
@@ -764,7 +794,7 @@ const Research = () => {
       void trackResearchEvent({
         eventType: 'research_search',
         payload: {
-          outcome: resultCount > 0 ? 'results' : 'zero_results',
+          outcome: researchSearchOutcome(resultCount, researchEntitiesPage.degraded === true),
           resultCountBucket: researchResultCountBucket(resultCount),
           searchKind,
           filterCountBucket,
@@ -832,6 +862,7 @@ const Research = () => {
       if (requestId !== searchRequestIdRef.current || controller.signal.aborted) return;
 
       const visibleResearchEntities = researchEntitiesPage.researchEntities;
+      if (researchEntitiesPage.degraded) setSearchDegraded(true);
 
       setSearchResultResearchEntities((current) => {
         const nextResearchEntities = [...current, ...visibleResearchEntities];
@@ -921,6 +952,7 @@ const Research = () => {
     activeSearchAnalyticsKeyRef.current = null;
     setSearchError('');
     setHasFacetError(false);
+    setSearchDegraded(false);
     setSearchLoading(false);
     setIsLoadingMore(false);
     writeResearchSearchParams(
@@ -1107,6 +1139,7 @@ const Research = () => {
     setActiveSearchRequest(null);
     setSearchError('');
     setHasFacetError(false);
+    setSearchDegraded(false);
     setSearchLoading(false);
     setIsLoadingMore(false);
     setDefaultResearchEntities([]);
@@ -1166,6 +1199,8 @@ const Research = () => {
       searchError,
       hasFacetError,
       defaultSearchError,
+      searchDegraded,
+      defaultSearchDegraded,
     };
   }, [
     hasSubmittedSearch,
@@ -1200,6 +1235,8 @@ const Research = () => {
     searchError,
     hasFacetError,
     defaultSearchError,
+    searchDegraded,
+    defaultSearchDegraded,
   ]);
 
   useEffect(() => {
@@ -1220,6 +1257,7 @@ const Research = () => {
     hasSubmittedSearch &&
     !searchLoading &&
     !searchError &&
+    !searchDegraded &&
     activeSearchRequest !== null &&
     searchResultResearchEntities.length === 0;
 
@@ -1392,17 +1430,24 @@ const Research = () => {
     setSortBy(nextSortBy);
     setSortOrder(order);
     if (hasSubmittedSearch && activeSearchRequest) {
-      void runSearchRef.current(activeSearchRequest.submittedText, {
-        searchQuery: activeSearchRequest.searchQuery,
-        filters: activeSearchRequest.filters,
-        hasFilterSelections: hasStructuredFilters(activeSearchRequest.filters),
-        departmentSearch,
-        preserveResults: true,
-        preserveDraftQuery: true,
-        syncUrl: false,
-      });
+      rerunActiveSearch();
       return;
     }
+    reloadDefaultResearchHomes();
+  };
+  const rerunActiveSearch = () => {
+    if (!activeSearchRequest) return;
+    void runSearchRef.current(activeSearchRequest.submittedText, {
+      searchQuery: activeSearchRequest.searchQuery,
+      filters: activeSearchRequest.filters,
+      hasFilterSelections: hasStructuredFilters(activeSearchRequest.filters),
+      departmentSearch,
+      preserveResults: true,
+      preserveDraftQuery: true,
+      syncUrl: false,
+    });
+  };
+  const reloadDefaultResearchHomes = () => {
     setDefaultResearchEntities([]);
     setDefaultSearchPage(1);
     setDefaultSearchTotal(0);
@@ -1707,6 +1752,14 @@ const Research = () => {
                     {defaultSearchError}
                   </div>
                 )}
+                {defaultSearchDegraded && !defaultSearchError && !defaultSearchLoading && (
+                  <div className="mb-4">
+                    <ResearchSearchDegradedNotice
+                      hasResults={defaultClusters.length > 0}
+                      onRetry={reloadDefaultResearchHomes}
+                    />
+                  </div>
+                )}
                 {isAdmin && showWeakestProfilesFirst && (
                   <div
                     className="yr-muted-surface mb-4 flex flex-wrap gap-2 rounded-card p-2"
@@ -1786,7 +1839,7 @@ const Research = () => {
                       )}
                     </div>
                   </div>
-                ) : (
+                ) : defaultSearchDegraded ? null : (
                   <EmptyGroup>
                     No research matches these filters. Try a broader topic, professor name, lab,
                     method, or research question.
@@ -1810,6 +1863,7 @@ const Research = () => {
                       searchLoading,
                       departmentSearch?.label,
                       searchTotal,
+                      searchDegraded,
                     )}
                   </p>
                   <div className="flex shrink-0 items-center gap-2">
@@ -1838,6 +1892,12 @@ const Research = () => {
                     className="mt-4 rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
                   >
                     {searchError}
+                  </div>
+                )}
+
+                {searchDegraded && !searchError && !searchLoading && activeClusters.length > 0 && (
+                  <div className="mt-4">
+                    <ResearchSearchDegradedNotice hasResults onRetry={rerunActiveSearch} />
                   </div>
                 )}
 
@@ -1874,6 +1934,12 @@ const Research = () => {
                       )}
                       {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
                     </>
+                  ) : searchDegraded ? (
+                    <ResearchSearchDegradedNotice
+                      hasResults={false}
+                      onRetry={rerunActiveSearch}
+                      onBrowseAll={browseAllResearchHomes}
+                    />
                   ) : (
                     <ResearchZeroResultRecovery
                       isDepartmentSearch={Boolean(departmentSearch)}

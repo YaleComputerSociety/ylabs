@@ -222,6 +222,7 @@ export interface SearchQualityQueryAnalytics {
 
 export interface SearchQualityAnalytics {
   totalSearches: number;
+  degradedSearches: number;
   zeroResultSearches: number;
   zeroResultRate: number;
   uniqueSearchers: number;
@@ -976,6 +977,15 @@ const createRangeTtlCache = <T>() => {
   return { load, clear };
 };
 
+const isDegradedSearchExpression = { $eq: ['$metadata.degraded', true] };
+
+// A degraded search fell back to a weaker path, so its count describes the outage
+// rather than the corpus, and counting it as a zero-result search reports an outage
+// as a coverage gap. Reads the projected `degraded` and `resultCount` fields.
+const zeroResultAfterProjection = {
+  $and: [{ $lte: ['$resultCount', 0] }, { $ne: ['$degraded', true] }],
+};
+
 const computeSearchQualityAnalytics = async (
   range: AnalyticsDateRange = {},
 ): Promise<SearchQualityAnalytics> => {
@@ -1007,6 +1017,7 @@ const computeSearchQualityAnalytics = async (
       $addFields: {
         normalizedQuery: { $trim: { input: { $ifNull: ['$searchQuery', ''] } } },
         searchEntityType: { $ifNull: ['$metadata.entityType', 'unknown'] },
+        degraded: isDegradedSearchExpression,
         resultCount: {
           $convert: {
             input: '$metadata.resultCount',
@@ -1095,8 +1106,9 @@ const computeSearchQualityAnalytics = async (
             $group: {
               _id: null,
               totalSearches: { $sum: 1 },
+              degradedSearches: { $sum: { $cond: ['$degraded', 1, 0] } },
               zeroResultSearches: {
-                $sum: { $cond: [{ $lte: ['$resultCount', 0] }, 1, 0] },
+                $sum: { $cond: [zeroResultAfterProjection, 1, 0] },
               },
               uniqueSearchers: { $addToSet: '$netid' },
               engagedSearches: {
@@ -1119,6 +1131,7 @@ const computeSearchQualityAnalytics = async (
             $project: {
               _id: 0,
               totalSearches: 1,
+              degradedSearches: 1,
               zeroResultSearches: 1,
               uniqueSearchers: { $size: '$uniqueSearchers' },
               engagedSearches: 1,
@@ -1135,7 +1148,7 @@ const computeSearchQualityAnalytics = async (
               },
               totalSearches: { $sum: 1 },
               zeroResultSearches: {
-                $sum: { $cond: [{ $lte: ['$resultCount', 0] }, 1, 0] },
+                $sum: { $cond: [zeroResultAfterProjection, 1, 0] },
               },
               uniqueSearchers: { $addToSet: '$netid' },
               avgResultCount: { $avg: '$resultCount' },
@@ -1161,6 +1174,7 @@ const computeSearchQualityAnalytics = async (
 
   const overall = result?.overall?.[0] ?? {
     totalSearches: 0,
+    degradedSearches: 0,
     zeroResultSearches: 0,
     uniqueSearchers: 0,
     engagedSearches: 0,
@@ -1179,12 +1193,14 @@ const computeSearchQualityAnalytics = async (
     )
     .slice(0, 10);
 
+  const searchesThatReachedTheCorpus = overall.totalSearches - overall.degradedSearches;
   return {
     totalSearches: overall.totalSearches,
+    degradedSearches: overall.degradedSearches,
     zeroResultSearches: overall.zeroResultSearches,
     zeroResultRate:
-      overall.totalSearches > 0
-        ? Number((overall.zeroResultSearches / overall.totalSearches).toFixed(4))
+      searchesThatReachedTheCorpus > 0
+        ? Number((overall.zeroResultSearches / searchesThatReachedTheCorpus).toFixed(4))
         : 0,
     uniqueSearchers: overall.uniqueSearchers,
     byQueryAndEntityType,
@@ -1274,6 +1290,7 @@ export const getSearchQueryAnalytics = async (
         normalizedQuery: { $trim: { input: { $ifNull: ['$searchQuery', ''] } } },
         filterSummary: searchFilterSummaryExpression,
         surface: { $ifNull: ['$metadata.entityType', 'unknown'] },
+        degraded: isDegradedSearchExpression,
         resultCount: {
           $convert: {
             input: '$metadata.resultCount',
@@ -1302,7 +1319,7 @@ export const getSearchQueryAnalytics = async (
         userType: { $last: '$userType' },
         searchCount: { $sum: 1 },
         zeroResultSearches: {
-          $sum: { $cond: [{ $lte: ['$resultCount', 0] }, 1, 0] },
+          $sum: { $cond: [zeroResultAfterProjection, 1, 0] },
         },
         resultCountTotal: { $sum: '$resultCount' },
         lastSearchedAt: { $max: '$timestamp' },

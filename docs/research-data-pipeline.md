@@ -1055,6 +1055,8 @@ The public research-entity DTO (`toPublicResearchEntityDto`, `toPublicResearchEn
 One guard in that union needs an input the sanitizer cannot derive: the mismatched-person-name strip is a structural no-op unless the caller supplies the record's lead display names, so a serve path that omits them is running a smaller guard set than the detail page, not a cheaper version of the same one.
 Browse and search therefore batch one roster read per result page (`optionalPublicLeadMemberNames` in `researchGroupService.ts`) and pass the names to `addResearchEntitySearchAliases`, which keys them onto each hit by `_id` (#2240).
 The detail page's related and similar rails and the saved-plan list in `researchPlanService.ts` batch the same read through the same function.
+A failed read is reported as `unavailable` rather than as an empty map, because no names is exactly the no-op above: every caller then serves its rows through `withoutLeadGuardedCopy` in `servedResearchEntityCard.ts`, which withholds the copy fields those guards protect, and a list response carries `degraded: true`.
+A row whose read succeeded but found no leads is a different case and keeps its copy (#3641).
 `publicProfileResearchEntity` in `profileService.ts` also calls the sanitizer with no names, but it is reached only through `normalizePublicProfile`, which no route calls: the person page is retired, and `cleanPublicProfileBio` is the one export any production caller still imports from that module.
 It is left nameless deliberately rather than plumbed, because wiring a batched roster read into a path nothing serves would add a reader for `rosterEnrichment` that no request exercises.
 Any future route that revives that surface has to supply lead names, or it revives the divergence with it.

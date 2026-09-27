@@ -84,6 +84,25 @@ export function servedResearchEntityCopy(
   return sanitizeServedResearchEntityCopyFields(bounded, leadMemberNames);
 }
 
+/**
+ * The entity with every copy field that `leadMemberNames` guards withheld, for a serve
+ * path whose roster read failed.
+ *
+ * An empty lead list is a structural no-op for the mismatched-person-name strip and
+ * weakens the organization and other-person biography checks, so serving a stored
+ * card after a failed read serves it with those guards off. The row stays findable by
+ * its name, topics, and departments, and the card falls back to a topic summary, which
+ * names no person. A row whose read succeeded with no leads is not this case and keeps
+ * its copy.
+ */
+export function withoutLeadGuardedCopy<T extends Record<string, any>>(entity: T): T {
+  const withheld: Record<string, any> = { ...entity };
+  for (const field of SERVED_COPY_TEXT_FIELDS) {
+    if (typeof withheld[field] === 'string') withheld[field] = '';
+  }
+  return withheld as T;
+}
+
 export function servedShortDescriptionString(value: unknown): string {
   const text = String(value || '').slice(0, MAX_SERVED_RESEARCH_ENTITY_TEXT_LENGTH);
   return sanitizeResearchEntityShortDescription(text);

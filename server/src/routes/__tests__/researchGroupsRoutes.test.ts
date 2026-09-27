@@ -138,6 +138,23 @@ describe('research search telemetry', () => {
     expect(recorded.requestArrivedAt!.getTime()).toBeLessThanOrEqual(Date.now());
   });
 
+  it('records whether the result set came from a degraded search path', async () => {
+    await invokeSearchLogging(
+      { user: { netId: 'teststud1', userType: 'undergraduate' }, body: { q: 'econ', page: 1 } },
+      { researchEntities: [], estimatedTotalHits: 0, page: 1, pageSize: 24, degraded: true },
+    );
+    await invokeSearchLogging(
+      { user: { netId: 'teststud1', userType: 'undergraduate' }, body: { q: 'econ', page: 1 } },
+      { researchEntities: [], estimatedTotalHits: 0, page: 1, pageSize: 24 },
+    );
+
+    const [[degraded], [healthy]] = mocks.recordSiteSearch.mock.calls as unknown as Array<
+      [{ metadata?: Record<string, unknown> }]
+    >;
+    expect(degraded.metadata).toMatchObject({ degraded: true });
+    expect(healthy.metadata).toMatchObject({ degraded: false });
+  });
+
   it('reports nothing for a depth-limited page that ran no search', async () => {
     await invokeSearchLogging(
       { user: { netId: 'teststud1', userType: 'undergraduate' }, body: { q: 'econ', page: 200 } },
