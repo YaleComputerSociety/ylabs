@@ -75,6 +75,7 @@ export const RESEARCH_PROFILE_OPEN_SOURCES = [
   'direct',
   'saved_plans',
   'related_programs',
+  'related_research',
 ] as const;
 export const RESEARCH_SOURCE_CATEGORIES = [
   'entity_website',

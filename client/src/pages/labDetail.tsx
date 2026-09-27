@@ -72,6 +72,8 @@ import UserContext from '../contexts/UserContext';
 import EntityCorrectionReportPanel from '../components/research/EntityCorrectionReportPanel';
 import {
   createResearchAnalyticsInteractionId,
+  readResearchProfileOpenSource,
+  researchProfileOpenState,
   trackResearchEvent,
   trackResearchEventOnce,
 } from '../utils/researchAnalytics';
@@ -124,6 +126,7 @@ const RelatedResearchEntitiesSection = ({
             <Link
               key={entity.slug || entity.id}
               to={`/research/${safeRouteSegment(entity.slug)}`}
+              state={researchProfileOpenState('related_research')}
               className="block rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 [transition-property:color,background-color,border-color,box-shadow] hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
             >
               <div className="flex flex-wrap gap-2">
@@ -184,6 +187,7 @@ const AffiliatedResearchEntitiesSection = ({
           <Link
             key={entity.slug || entity.id}
             to={`/research/${safeRouteSegment(entity.slug)}`}
+            state={researchProfileOpenState('related_research')}
             className={`${className} hover:border-line-strong hover:shadow-yr-raised`}
           >
             {content}
@@ -211,6 +215,7 @@ const SimilarResearchEntitiesSection = ({
         <Link
           key={entity.slug || entity.id}
           to={`/research/${safeRouteSegment(entity.slug)}`}
+          state={researchProfileOpenState('related_research')}
           className="block rounded-card border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 [transition-property:color,background-color,border-color,box-shadow] hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
         >
           <div className="flex flex-wrap gap-2">
@@ -792,11 +797,16 @@ const LabDetail = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const locationStateRef = useRef<unknown>(location.state);
+  useEffect(() => {
+    locationStateRef.current = location.state;
+  }, [location.state]);
   const [state, dispatch] = useReducer(labDetailReducer, undefined, () =>
     createInitialLabDetailState(),
   );
   const { payload, loading, error } = state;
   const requestIdRef = useRef(0);
+  const payloadSlugRef = useRef<string | undefined>(undefined);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const [showResearchPlanSavedCallout, setShowResearchPlanSavedCallout] = useState(false);
   const { favIds: savedResearchPlanIds, setFavorite: setSavedResearchPlanFavorite } = useFavorites(
@@ -825,9 +835,13 @@ const LabDetail = () => {
         const canonicalMatch = finalUrl.match(/\/research\/([^/?#]+)(?:[/?#]|$)/i);
         const canonicalSlug = canonicalMatch ? decodeURIComponent(canonicalMatch[1]) : '';
         if (canonicalSlug && canonicalSlug.toLowerCase() !== slug.toLowerCase()) {
-          void navigate(`/research/${safeRouteSegment(canonicalSlug)}`, { replace: true });
+          void navigate(`/research/${safeRouteSegment(canonicalSlug)}`, {
+            replace: true,
+            state: locationStateRef.current,
+          });
           return;
         }
+        payloadSlugRef.current = slug;
         dispatch({
           type: 'FETCH_SUCCESS',
           payload: normalizeResearchEntityDetailPayload(res.data),
@@ -848,14 +862,14 @@ const LabDetail = () => {
 
   useEffect(() => {
     const entity = payload?.researchEntity || payload?.group;
-    if (!entity?._id) return;
+    if (!entity?._id || payloadSlugRef.current !== slug) return;
     void trackResearchEventOnce(`profile:${location.key}:${entity._id}`, {
       eventType: 'research_profile_open',
       entityType: 'research_entity',
       entityId: entity._id,
-      payload: { source: 'direct' },
+      payload: { source: readResearchProfileOpenSource(location.state) },
     });
-  }, [location.key, payload]);
+  }, [location.key, location.state, payload, slug]);
 
   if (loading && !payload) {
     return (

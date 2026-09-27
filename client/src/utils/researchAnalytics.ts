@@ -40,7 +40,7 @@ export type ResearchJourneyPayload =
       surface: 'browse' | 'search' | 'saved_plans' | 'related_programs';
       pageBucket: '1' | '2' | '3-4' | '5+';
     }
-  | { source: 'browse' | 'search' | 'direct' | 'saved_plans' | 'related_programs' }
+  | { source: ResearchProfileOpenSource }
   | {
       sourceCategory:
         | 'entity_website'
@@ -95,6 +95,28 @@ let analyticsEnabled = true;
  */
 export const setResearchAnalyticsEnabled = (enabled: boolean): void => {
   analyticsEnabled = enabled;
+};
+
+const RESEARCH_PROFILE_OPEN_SOURCES = [
+  'browse',
+  'search',
+  'direct',
+  'saved_plans',
+  'related_programs',
+  'related_research',
+] as const;
+export type ResearchProfileOpenSource = (typeof RESEARCH_PROFILE_OPEN_SOURCES)[number];
+
+export const researchProfileOpenState = (source: ResearchProfileOpenSource) => ({
+  researchProfileOpenSource: source,
+});
+
+export const readResearchProfileOpenSource = (state: unknown): ResearchProfileOpenSource => {
+  const source = (state as { researchProfileOpenSource?: unknown } | null)
+    ?.researchProfileOpenSource;
+  return (RESEARCH_PROFILE_OPEN_SOURCES as readonly unknown[]).includes(source)
+    ? (source as ResearchProfileOpenSource)
+    : 'direct';
 };
 
 export const createResearchAnalyticsInteractionId = (prefix = 'journey'): string => {

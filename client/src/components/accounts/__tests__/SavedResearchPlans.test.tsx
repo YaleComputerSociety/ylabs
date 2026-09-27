@@ -11,7 +11,10 @@ vi.mock('../../../utils/axios', () => ({
 
 vi.mock('sweetalert', () => ({ default: vi.fn() }));
 
-vi.mock('../../../utils/researchAnalytics', () => ({
+vi.mock('../../../utils/researchAnalytics', async () => ({
+  ...(await vi.importActual<typeof import('../../../utils/researchAnalytics')>(
+    '../../../utils/researchAnalytics',
+  )),
   trackResearchEvent: vi.fn(),
   createResearchAnalyticsInteractionId: () => 'test-interaction',
 }));

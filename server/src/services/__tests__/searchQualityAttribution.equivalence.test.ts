@@ -57,6 +57,8 @@ const legacySelfJoinPipeline = (): mongoose.PipelineStage[] => [
                       AnalyticsEventType.FELLOWSHIP_VIEW,
                       AnalyticsEventType.RESEARCH_VIEW,
                       AnalyticsEventType.PATHWAY_SAVE,
+                      AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+                      AnalyticsEventType.RESEARCH_SAVE,
                     ],
                   ],
                 },
@@ -265,6 +267,17 @@ describe('search-quality attribution single-pass equivalence', () => {
         metadata: { entityType: 'research_entity', resultCount: 6 },
       }),
       event('stud04', AnalyticsEventType.FELLOWSHIP_VIEW, 5),
+
+      event('stud05', AnalyticsEventType.SEARCH, 0, {
+        searchQuery: 'ecology',
+        metadata: { entityType: 'research_entity', resultCount: 7 },
+      }),
+      event('stud05', AnalyticsEventType.RESEARCH_PROFILE_OPEN, 1),
+      event('stud05', AnalyticsEventType.SEARCH, 60, {
+        searchQuery: 'geology',
+        metadata: { entityType: 'research_entity', resultCount: 3 },
+      }),
+      event('stud05', AnalyticsEventType.RESEARCH_SAVE, 62),
     ]);
   };
 
@@ -281,6 +294,35 @@ describe('search-quality attribution single-pass equivalence', () => {
     expect(current.engagedSearches).toBe(legacyOverall.engagedSearches);
     expect(current.returnedButIgnoredSearches).toBe(legacyOverall.returnedButIgnoredSearches);
     expect(current.byQueryAndEntityType).toEqual(legacy.byQueryAndEntityType);
+  });
+
+  it('credits a research search with the profile open that followed it inside the window', async () => {
+    const base = new Date('2026-02-01T12:00:00.000Z');
+    const researchSearch = (netid: string) => ({
+      netid,
+      userType: 'undergraduate',
+      eventType: AnalyticsEventType.SEARCH,
+      timestamp: base,
+      searchQuery: 'ecology',
+      metadata: { entityType: 'research_entity', resultCount: 7 },
+    });
+    const profileOpen = (netid: string, offset: number) => ({
+      netid,
+      userType: 'undergraduate',
+      eventType: AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+      timestamp: minutes(base, offset),
+    });
+    await AnalyticsEvent.insertMany([
+      researchSearch('stud06'),
+      profileOpen('stud06', 1),
+      researchSearch('stud07'),
+      profileOpen('stud07', WINDOW_MINUTES + 1),
+    ]);
+
+    const result = await getSearchQualityAnalytics();
+
+    expect(result.engagedSearches).toBe(1);
+    expect(result.returnedButIgnoredSearches).toBe(1);
   });
 
   it('runs attribution without any self-join stage', async () => {

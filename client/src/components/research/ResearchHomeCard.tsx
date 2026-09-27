@@ -13,6 +13,10 @@ import { formatTitleCaseLabel } from '../../utils/displayText';
 import { sanitizeResearchEntityCopy } from '../../utils/researchEntityCopy';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/url';
 import { principalInvestigatorLinkFromResearchEntity } from '../../utils/principalInvestigatorLinks';
+import {
+  researchProfileOpenState,
+  type ResearchProfileOpenSource,
+} from '../../utils/researchAnalytics';
 
 interface ResearchHomeCardProps {
   home: ResearchCluster;
@@ -21,6 +25,7 @@ interface ResearchHomeCardProps {
   onOpen?: (home: ResearchCluster) => void;
   variant?: 'default' | 'compact';
   showAdminQuality?: boolean;
+  openSource?: ResearchProfileOpenSource;
 }
 
 const countLabel = (count: number, singular: string, plural: string): string =>
@@ -79,8 +84,10 @@ const ResearchHomeCard = ({
   onOpen,
   variant = 'default',
   showAdminQuality = false,
+  openSource,
 }: ResearchHomeCardProps) => {
   const navigate = useNavigate();
+  const profileOpenState = openSource ? researchProfileOpenState(openSource) : undefined;
   const isCompact = variant === 'compact';
   const homeEntities = home.entities.slice(0, 3).map((entity) => ({
     id: entity._id || entity.slug,
@@ -150,7 +157,7 @@ const ResearchHomeCard = ({
   const activateCard = () => {
     if (primaryProfileUrl) {
       onOpen?.(home);
-      void navigate(primaryProfileUrl);
+      void navigate(primaryProfileUrl, { state: profileOpenState });
       return;
     }
 
@@ -178,6 +185,7 @@ const ResearchHomeCard = ({
             {singleLinkedEntity ? (
               <Link
                 to={`/research/${safeRouteSegment(singleLinkedEntity.slug)}`}
+                state={profileOpenState}
                 className="yr-link yr-focus-ring rounded-control"
                 onClick={(event) => {
                   event.stopPropagation();
@@ -337,6 +345,7 @@ const ResearchHomeCard = ({
                 <Link
                   key={entity.slug}
                   to={`/research/${safeRouteSegment(entity.slug)}`}
+                  state={profileOpenState}
                   className="yr-focus-ring yr-link inline-flex min-h-[44px] items-center text-sm font-medium"
                   onClick={(event) => event.stopPropagation()}
                 >
@@ -371,6 +380,7 @@ const ResearchHomeCard = ({
         <div className="mt-auto flex flex-wrap gap-2 border-t border-line pt-3">
           <Link
             to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
+            state={profileOpenState}
             className="yr-focus-ring yr-pressable inline-flex min-h-[44px] flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
             onClick={(event) => event.stopPropagation()}
           >
