@@ -2757,6 +2757,16 @@ function withoutAnotherOrganizationsBody<T extends Record<string, any>>(
   };
 }
 
+// Symbol-keyed so it survives the spreads a serve path copies the entity through but never
+// serializes into a response: `withoutLeadGuardedCopy` blanks the prose a failed roster read
+// cannot guard, and the chip-coherence guard below still needs that prose as evidence.
+export const LEAD_GUARD_WITHHELD_PROSE = Symbol('leadGuardWithheldProse');
+
+export interface LeadGuardWithheldProse {
+  shortDescription: string;
+  fullDescription: string;
+}
+
 /**
  * Withholds a `profileSynthesisDescription` whose biographical subject is a
  * different person who shares a name with the record's own (#1922).
@@ -3025,6 +3035,9 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
   }
 
   if (Array.isArray(next.researchAreas)) {
+    const leadGuardWithheld = (entity as Record<symbol, LeadGuardWithheldProse | undefined>)[
+      LEAD_GUARD_WITHHELD_PROSE
+    ];
     const coherent = dropDomainIncoherentUnsourcedResearchAreas(
       next.researchAreas as string[],
       next.fieldProvenance,
@@ -3038,8 +3051,10 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
         // text: reading the blanked field instead cost 5 of the 32 withheld rows
         // every chip they had, and with the chips went the chips-derived card on 2
         // of them, so a student lost the topics as collateral on a body fix.
-        shortDescription: next.shortDescription || ownSubject.withheldCard,
-        fullDescription: next.fullDescription || ownSubject.withheldBody,
+        shortDescription:
+          next.shortDescription || ownSubject.withheldCard || leadGuardWithheld?.shortDescription,
+        fullDescription:
+          next.fullDescription || ownSubject.withheldBody || leadGuardWithheld?.fullDescription,
       },
     );
     if (coherent !== next.researchAreas) {

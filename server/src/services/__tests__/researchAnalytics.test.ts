@@ -229,6 +229,7 @@ describe('research analytics event emission', () => {
       },
       async (event) => {
         events.push(event);
+        return 'recorded' as const;
       },
     );
 

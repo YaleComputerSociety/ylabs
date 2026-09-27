@@ -1208,6 +1208,34 @@ describe('researchEntityDto', () => {
     expect(JSON.stringify(card)).not.toContain('thermal stress');
   });
 
+  it('keeps unsourced topic chips the withheld copy supports when the page lead names could not be read', () => {
+    const entity = {
+      _id: '6a05677c7c6d4fba869fbb85',
+      slug: 'dept-psych-quokka-cognition',
+      name: 'Quokka Cognition Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      departments: ['Psychology'],
+      researchAreas: ['animal cognition', 'spatial memory', 'behavioral ecology'],
+      shortDescription:
+        'Studies animal cognition, spatial memory, and behavioral ecology in marsupials.',
+      fullDescription:
+        'The lab studies animal cognition, spatial memory, and behavioral ecology in wild marsupials.',
+    };
+
+    const [card] = addResearchEntitySearchAliases(
+      { hits: [entity] },
+      { leadMemberNamesByEntityId: new Map(), leadMemberNamesUnavailable: true },
+    ).researchEntities;
+
+    expect(card.researchAreas).toEqual([
+      'animal cognition',
+      'spatial memory',
+      'behavioral ecology',
+    ]);
+    expect(JSON.stringify(card)).not.toContain('wild marsupials');
+  });
+
   it('withholds the displayName alias when the page lead names could not be read', () => {
     const entity = {
       _id: '6a05677c7c6d4fba869fbb84',
