@@ -1342,6 +1342,39 @@ describe('CentersInstitutesScraper.run', () => {
     getSpy.mockRestore();
   });
 
+  it('reports a blocked rendered page as unavailable instead of extracting from it', async () => {
+    const staticExt = vi.fn();
+    const renderedExt = vi.fn((): ExtractorResult => ({ members: [] }));
+    const configs: CenterConfig[] = [
+      {
+        centerKey: 'gated',
+        centerName: 'Gated Institute',
+        schoolName: '',
+        kind: 'institute',
+        url: 'https://gated.invalid/people',
+        extractor: staticExt,
+        renderedExtractor: renderedExt,
+        jsRenderedSkip: true,
+      },
+    ];
+    const renderedFetcher = vi.fn().mockResolvedValue({
+      url: 'https://gated.invalid/people',
+      html: '<html><body>Access denied</body></html>',
+      statusCode: 403,
+      blocked: true,
+      blockedReason: 'http-403',
+      fetchMode: 'scrapling',
+    });
+
+    const scraper = new CentersInstitutesScraper(configs, renderedFetcher);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(renderedExt).not.toHaveBeenCalled();
+    expect(result.notes).toContain('gated=rendered-unavailable');
+    expect(emitted).toHaveLength(0);
+  });
+
   it('skips JS-rendered configs when no rendered fetcher is available', async () => {
     const staticExt = vi.fn();
     const renderedExt = vi.fn();

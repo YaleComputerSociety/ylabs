@@ -52,12 +52,12 @@ import {
 import { UNDERGRAD_EXTRACTION_PROMPT, UNDERGRAD_EXTRACTION_PROMPT_HASH } from '../prompts';
 import {
   createScraplingRenderedFetcher,
+  fetchUsableRenderedPage,
   measureRenderedFetch,
   summarizeFetchMetrics,
   type RenderedFetcher,
-  type RenderedFetchResult,
 } from '../renderedFetch';
-import { getCached, getCachedModelAnswer, setCached } from '../snapshotCache';
+import { getCachedModelAnswer, setCached } from '../snapshotCache';
 import {
   computeContentHash,
   computeVersionedContentHash,
@@ -1093,12 +1093,12 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
             lab.websiteUrl,
             'scrapling',
             () =>
-              fetchRenderedLabPage(
-                SOURCE_KEY,
-                ctx.options.useCache,
-                lab.websiteUrl,
-                this.renderedFetcher,
-              ),
+              fetchUsableRenderedPage({
+                sourceName: SOURCE_KEY,
+                useCache: ctx.options.useCache,
+                request: { url: lab.websiteUrl, waitSelector: 'body', timeoutMs: FETCH_TIMEOUT_MS },
+                renderedFetcher: this.renderedFetcher,
+              }),
             { selectorName: 'body' },
           );
           fetchAttempts.push(rendered.metric);
@@ -1253,25 +1253,4 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }
-}
-
-async function fetchRenderedLabPage(
-  sourceName: string,
-  useCache: boolean,
-  url: string,
-  renderedFetcher: RenderedFetcher | null,
-): Promise<RenderedFetchResult | null> {
-  if (!renderedFetcher) return null;
-  const cacheKey = `rendered-page:v1:${url}`;
-  if (useCache) {
-    const cached = await getCached<RenderedFetchResult>(sourceName, cacheKey);
-    if (cached) return cached;
-  }
-  const result = await renderedFetcher({
-    url,
-    waitSelector: 'body',
-    timeoutMs: FETCH_TIMEOUT_MS,
-  });
-  if (useCache && result?.html) await setCached(sourceName, cacheKey, result);
-  return result;
 }

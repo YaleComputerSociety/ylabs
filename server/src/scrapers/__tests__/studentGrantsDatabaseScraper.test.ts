@@ -3,6 +3,7 @@ import {
   DEFAULT_STUDENT_GRANTS_SEARCH_URL,
   STUDENT_GRANTS_DATABASE_SOURCE,
   StudentGrantsDatabaseScraper,
+  createRenderedStudentGrantsHtmlFetcher,
   fundToObservations,
   isRecordSpecificFundDetailUrl,
   parseFundDetailPage,
@@ -175,6 +176,22 @@ describe('fundToObservations', () => {
     expect(byField.get('awardAmount')).toContain('$4,000');
     expect(byField.get('eligibility')).toContain('Yale College undergraduates');
     expect(byField.get('archived')).toBe(false);
+  });
+});
+
+describe('createRenderedStudentGrantsHtmlFetcher', () => {
+  it('returns no HTML for a rendered 404 page the bridge does not flag as blocked', async () => {
+    const renderedFetcher = vi.fn().mockResolvedValue({
+      url: FUND_B_URL,
+      html: '<html><body><h1>Page not found</h1></body></html>',
+      statusCode: 404,
+      blocked: false,
+      fetchMode: 'scrapling',
+    });
+    const fetchHtml = createRenderedStudentGrantsHtmlFetcher(renderedFetcher);
+
+    await expect(fetchHtml(FUND_B_URL, false, STUDENT_GRANTS_DATABASE_SOURCE)).resolves.toBe('');
+    expect(renderedFetcher).toHaveBeenCalledWith(expect.objectContaining({ mode: 'stealthy' }));
   });
 });
 
