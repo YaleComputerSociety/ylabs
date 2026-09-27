@@ -56,9 +56,7 @@ describe('runPostMaterializationIntegrityGate', () => {
     modelMocks.aggregate.mockReset();
     modelMocks.aggregate.mockImplementation(async (pipeline: any[] = []) => {
       const last = pipeline[pipeline.length - 1] || {};
-      const archivedLookup = pipeline.some(
-        (stage) => stage?.$match?.['entity.archived'] === true,
-      );
+      const archivedLookup = pipeline.some((stage) => stage?.$match?.['entity.archived'] === true);
       if (!archivedLookup) return [];
       if (last.$count) {
         const roleEdgePipeline = pipeline.some((stage) => stage?.$match?.['target.kind']);
