@@ -38,6 +38,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { clampDescriptionLength } from '../../utils/descriptionHygiene';
 import { forEachInOrderWithPrefetch } from '../utils/boundedConcurrency';
+import { fetchFailureStatusCode } from '../utils/fetchFailure';
 import { flattenHtmlToText } from '../utils/htmlText';
 import { normalizeOrcid } from '../../utils/orcid';
 import {
@@ -73,6 +74,8 @@ const SCHOOL_NAME = 'Yale School of Medicine';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const PROFILE_FETCH_LOOKAHEAD = 4;
+export const REFUSED_PROFILE_RETRY_PAUSE_MS = 60_000;
+const REFUSAL_STATUS_CODES: ReadonlySet<number> = new Set([403, 429]);
 // The profile-page research prose is the faculty's own official description but
 // lives on a profile page, so it must rank at the profile-page description tier:
 // above the synthesized roster one-liner and below a lab-microsite full page.
@@ -532,6 +535,8 @@ export class YsmFacultyDirectoryScraper implements IScraper {
   constructor(
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
     private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
+    private readonly pause: (ms: number) => Promise<void> = (ms) =>
+      new Promise((resolve) => setTimeout(resolve, ms)),
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -582,18 +587,24 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     let withdrawnLabCount = 0;
     let areaCount = 0;
 
+    const refusedProfiles: RawYsmFaculty[] = [];
+    let refusedProfilesRecovered = 0;
     const fetchProfile = (faculty: RawYsmFaculty) =>
       this.htmlFetcher(faculty.profileUrl, ctx.options.useCache);
-    await forEachInOrderWithPrefetch(
-      limited,
-      PROFILE_FETCH_LOOKAHEAD,
-      fetchProfile,
-      async (faculty, fetched) => {
-        profilesScanned += 1;
+    const consumeProfile =
+      (pass: 'first' | 'retry') =>
+      async (faculty: RawYsmFaculty, fetched: PromiseSettledResult<string>): Promise<void> => {
+        if (pass === 'first') profilesScanned += 1;
         if (fetched.status === 'rejected') {
+          const status = fetchFailureStatusCode(fetched.reason);
+          if (pass === 'first' && status !== undefined && REFUSAL_STATUS_CODES.has(status)) {
+            refusedProfiles.push(faculty);
+            return;
+          }
           ctx.log(`[${faculty.slug}] profile fetch failed: ${sanitizeLogValue(fetched.reason)}`);
           return;
         }
+        if (pass === 'retry') refusedProfilesRecovered += 1;
         const profileHtml = fetched.value;
 
         const profile = extractProfile(profileHtml, faculty);
@@ -639,15 +650,35 @@ export class YsmFacultyDirectoryScraper implements IScraper {
           else if (profile.labUrl) withdrawnLabCount += 1;
           if (profile.researchAreas.length > 0) areaCount += 1;
         }
-      },
+      };
+    await forEachInOrderWithPrefetch(
+      limited,
+      PROFILE_FETCH_LOOKAHEAD,
+      fetchProfile,
+      consumeProfile('first'),
     );
+
+    if (refusedProfiles.length > 0) {
+      ctx.log(
+        `Retrying ${refusedProfiles.length} refused profile(s) once after a ${REFUSED_PROFILE_RETRY_PAUSE_MS} ms pause`,
+      );
+      await this.pause(REFUSED_PROFILE_RETRY_PAUSE_MS);
+      await forEachInOrderWithPrefetch(
+        refusedProfiles,
+        PROFILE_FETCH_LOOKAHEAD,
+        fetchProfile,
+        consumeProfile('retry'),
+      );
+    }
+    const refusedProfilesLost = refusedProfiles.length - refusedProfilesRecovered;
 
     ctx.log(
       `Emitted ${totalObs} observations across ${researchersEnriched} researchers / ${entityCount} entities ` +
         `(${labCount} with lab sites, ${withdrawnLabCount} whose linked lab site the corpus refuses, ` +
         `${areaCount} with research areas) of ${profilesScanned} profiles scanned; ` +
         `${subordinateRankSkipped} skipped as subordinate research ranks, ` +
-        `${supportStaffSkipped} skipped as research-support staff`,
+        `${supportStaffSkipped} skipped as research-support staff; ` +
+        `${refusedProfiles.length} refused on the first pass, ${refusedProfilesRecovered} recovered on the retry, ${refusedProfilesLost} lost`,
     );
 
     return {
@@ -657,7 +688,8 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         `YSM faculty directory: ${researchersEnriched} researchers with research content, ` +
         `${entityCount} research homes (${labCount} labs, ${areaCount} with areas) of ${profilesScanned} profiles scanned, ` +
         `${subordinateRankSkipped} subordinate ranks skipped, ` +
-        `${supportStaffSkipped} research-support staff skipped`,
+        `${supportStaffSkipped} research-support staff skipped, ` +
+        `${refusedProfiles.length} profiles refused then ${refusedProfilesRecovered} recovered on one retry`,
     };
   }
 }

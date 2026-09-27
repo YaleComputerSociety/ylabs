@@ -5,6 +5,7 @@ import {
   extractProfile,
   facultyToUserObservations,
   facultyToResearchEntityObservations,
+  REFUSED_PROFILE_RETRY_PAUSE_MS,
   type RawYsmFaculty,
 } from '../sources/ysmFacultyDirectoryScraper';
 import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
@@ -735,5 +736,136 @@ describe('a lab URL the corpus has already refused (#3452)', () => {
       NO_SURNAME_ROSTER,
     );
     expect(Object.fromEntries(obs.map((o) => [o.field, o.value])).entityType).toBe('LAB');
+  });
+});
+
+describe('YsmFacultyDirectoryScraper.run refused-profile retry (#3599)', () => {
+  const refusal = (status: number) =>
+    Object.assign(new Error(`Request failed with status code ${status}`), {
+      response: { status },
+    });
+  const roster = directoryHtml([
+    {
+      id: 'A',
+      items: [
+        { url: '/profile/jordan-rivers/', text: 'Rivers, Jordan' },
+        { url: '/profile/cole-nobody/', text: 'Nobody, Cole' },
+        { url: '/profile/avery-sloan/', text: 'Sloan, Avery' },
+      ],
+    },
+  ]);
+  const NOBODY_URL = 'https://medicine.yale.edu/profile/cole-nobody/';
+  const pages: Record<string, string> = {
+    [RIVERS.profileUrl]: profileHtml({
+      fullName: 'Jordan Rivers',
+      email: 'jordan.rivers@yale.edu',
+      meshKeywords: ['Heart Failure'],
+    }),
+    [SLOAN.profileUrl]: profileHtml({
+      fullName: 'Avery Sloan',
+      email: 'avery.sloan@yale.edu',
+      meshKeywords: ['Climate Policy'],
+    }),
+  };
+  const noLabEvidence = async () => new Map();
+  const slugsOf = (emitted: ObservationInput[]) =>
+    emitted
+      .filter((o) => o.entityType === 'researchEntity' && o.field === 'slug')
+      .map((o) => o.value);
+
+  it('retries a 403 once after the pause and emits the recovered profile after the walk', async () => {
+    const refusedOnce = new Set<string>();
+    const events: string[] = [];
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return roster;
+      if (url === RIVERS.profileUrl && !refusedOnce.has(url)) {
+        refusedOnce.add(url);
+        throw refusal(403);
+      }
+      if (!pages[url]) throw refusal(404);
+      events.push(`fetch ${url}`);
+      return pages[url];
+    });
+    const pause = vi.fn(async (ms: number) => {
+      events.push(`pause ${ms}`);
+    });
+    const logs: string[] = [];
+    const { ctx, emitted } = makeContext();
+    ctx.log = (message) => logs.push(message);
+
+    const result = await new YsmFacultyDirectoryScraper(fetcher, noLabEvidence, pause).run(ctx);
+
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(events).toEqual([
+      `fetch ${SLOAN.profileUrl}`,
+      `pause ${REFUSED_PROFILE_RETRY_PAUSE_MS}`,
+      `fetch ${RIVERS.profileUrl}`,
+    ]);
+    expect(slugsOf(emitted)).toEqual(['ysm-faculty-avery-sloan', 'ysm-faculty-jordan-rivers']);
+    expect(fetcher.mock.calls.filter(([url]) => url === NOBODY_URL)).toHaveLength(1);
+    expect(logs.some((line) => line.includes('[cole-nobody] profile fetch failed'))).toBe(true);
+    expect(logs.at(-1)).toContain('of 3 profiles scanned');
+    expect(logs.at(-1)).toContain('1 refused on the first pass, 1 recovered on the retry, 0 lost');
+    expect(result.notes).toContain('1 profiles refused then 1 recovered on one retry');
+  });
+
+  it('emits what a clean walk emits once the refused profile recovers', async () => {
+    const clean = makeContext();
+    await new YsmFacultyDirectoryScraper(
+      async (url) => {
+        if (url === DIRECTORY_URL) return roster;
+        if (!pages[url]) throw refusal(404);
+        return pages[url];
+      },
+      noLabEvidence,
+      async () => undefined,
+    ).run(clean.ctx);
+
+    const refusedOnce = new Set<string>();
+    const retried = makeContext();
+    await new YsmFacultyDirectoryScraper(
+      async (url) => {
+        if (url === DIRECTORY_URL) return roster;
+        if (url === RIVERS.profileUrl && !refusedOnce.has(url)) {
+          refusedOnce.add(url);
+          throw refusal(429);
+        }
+        if (!pages[url]) throw refusal(404);
+        return pages[url];
+      },
+      noLabEvidence,
+      async () => undefined,
+    ).run(retried.ctx);
+
+    const key = (o: ObservationInput) => JSON.stringify(o);
+    expect(retried.emitted.map(key).sort()).toEqual(clean.emitted.map(key).sort());
+  });
+
+  it('retries only once, and never pauses when nothing was refused', async () => {
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return roster;
+      if (url === RIVERS.profileUrl) throw refusal(403);
+      if (!pages[url]) throw refusal(404);
+      return pages[url];
+    });
+    const pause = vi.fn(async () => undefined);
+    const logs: string[] = [];
+    const { ctx, emitted } = makeContext();
+    ctx.log = (message) => logs.push(message);
+
+    await new YsmFacultyDirectoryScraper(fetcher, noLabEvidence, pause).run(ctx);
+
+    expect(fetcher.mock.calls.filter(([url]) => url === RIVERS.profileUrl)).toHaveLength(2);
+    expect(slugsOf(emitted)).toEqual(['ysm-faculty-avery-sloan']);
+    expect(logs.some((line) => line.includes('[jordan-rivers] profile fetch failed'))).toBe(true);
+    expect(logs.at(-1)).toContain('1 refused on the first pass, 0 recovered on the retry, 1 lost');
+
+    const quiet = vi.fn(async () => undefined);
+    await new YsmFacultyDirectoryScraper(
+      async (url) => (url === DIRECTORY_URL ? directoryHtml([]) : ''),
+      noLabEvidence,
+      quiet,
+    ).run(makeContext().ctx);
+    expect(quiet).not.toHaveBeenCalled();
   });
 });
