@@ -12,7 +12,8 @@ export const PHONE_SHAPED_DIGITS_PATTERN =
 
 const BARE_DIGIT_RUN = /^\d+$/;
 const ENDS_WITH_LETTER = /[A-Za-z]$/;
-const ENDS_WITH_PHONE_LABEL = /(?:^|[^A-Za-z])(?:phone|ph|tel|telephone|fax|cell|mobile|call|ext|x|office|main|voice|number)$/i;
+const ENDS_WITH_PHONE_LABEL =
+  /(?:^|[^A-Za-z])(?:phone|ph|tel|telephone|fax|cell|mobile|call|ext|x|office|main|voice|number)$/i;
 const LABEL_LOOKBACK_CHARS = 16;
 
 // Measured on Development (#3738): every glued phone carried separators, while every
