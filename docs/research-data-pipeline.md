@@ -85,13 +85,13 @@ To re-run one failed source cheaply, run it by hand and pass `--use-cache` yours
 #### Page reuse within one sweep
 
 The three exhaustive Development modes reuse a page one source child fetched earlier in the same sweep instead of asking the site again (#3568), and `--no-page-reuse` turns it off.
-It is scoped to `medicine.yale.edu` (`SWEEP_PAGE_REUSE_HOSTS`), because that host caps the sweep at 2 requests in flight and sends no `ETag` or `Last-Modified`, so the #3557 validator cache (`utils/httpValidatorCache.ts`) can never store its pages.
-The list is deliberately not derived from `HOST_THROTTLE_OVERRIDES`: `ysph.yale.edu` is throttled too but is not reused, and throttling another host does not turn reuse on for it.
+It is scoped to an explicit list, `SWEEP_PAGE_REUSE_HOSTS` (`medicine.yale.edu` and `ysph.yale.edu`), the two hosts in `HOST_THROTTLE_OVERRIDES`: each caps the sweep at 2 requests in flight and sends no `ETag` or `Last-Modified`, so the #3557 validator cache (`utils/httpValidatorCache.ts`) can never store their pages.
+The list is deliberately not derived from `HOST_THROTTLE_OVERRIDES`, so throttling another host does not turn reuse on for it.
 On 2026-09-26 `medicine.yale.edu` carried about 18,600 discovery requests shared by `ysm-faculty-directory` and the roster's `ysm-*` profile enrichment, and later `official-profile-pi-backfill` and `ysm-mesh-keyword` re-read the same school-wide `/profile/` pages.
 
 - The store lives in memory in the sweep parent's host slot broker process, the same process and socket that hands out host slots, and it is discarded when the source phases end, so it is never a cache across sweeps and never touches Mongo.
   A resumed sweep starts with an empty store.
-- It is bounded by `SCRAPER_SWEEP_PAGE_REUSE_MAX_MB` (default 1024 MiB of gzip-compressed pages, least recently used evicted first), which holds every `medicine.yale.edu` page of a full sweep with room to spare: a school-wide profile page is about 330 KB and 35 KB compressed.
+- It is bounded by `SCRAPER_SWEEP_PAGE_REUSE_MAX_MB` (default 1024 MiB of gzip-compressed pages, least recently used evicted first), which holds every reused-host page of a full sweep with room to spare: a school-wide profile page is about 330 KB and 35 KB compressed.
 - A page is reused only for a later `GET` of the same URL, compared without its fragment.
   Only a `200` with a textual body is stored; a `403`, a `429`, any other error, a `Cache-Control: no-store` body, and any request carrying `Authorization`, `Cookie`, `Range` or a conditional header are never stored or served.
   A redirected page is stored under its final URL, and under the requested URL only when every hop was a permanent `301` or `308`, so a reused redirect answers with the final URL the first fetch actually landed on.

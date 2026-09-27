@@ -213,14 +213,16 @@ describe('attachSweepPageReuse', () => {
   it('only reuses pages on the listed hosts', async () => {
     routes['/page'] = html('<p>page</p>');
     const source = storeSource(store);
-    handles.push(attachSweepPageReuse(instance, { source, hosts: ['medicine.yale.edu'] }));
+    handles.push(
+      attachSweepPageReuse(instance, { source, hosts: ['medicine.yale.edu', 'ysph.yale.edu'] }),
+    );
 
     await instance.get(`${baseUrl}/page`);
     await instance.get(`${baseUrl}/page`);
 
     expect(hits['/page']).toBe(2);
     expect(store.stats().lookups).toBe(0);
-    expect(SWEEP_PAGE_REUSE_HOSTS).toEqual(['medicine.yale.edu']);
+    expect(SWEEP_PAGE_REUSE_HOSTS).toEqual(['medicine.yale.edu', 'ysph.yale.edu']);
   });
 
   it('reads live inside withoutSweepPageReuse, and neither looks up nor stores there', async () => {

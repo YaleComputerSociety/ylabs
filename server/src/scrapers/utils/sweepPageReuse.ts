@@ -35,7 +35,7 @@ export const DEFAULT_SWEEP_PAGE_REUSE_MAX_BYTES = 1024 * MEBIBYTE;
 export const SWEEP_PAGE_REUSE_MAX_PAGE_BYTES = 8 * MEBIBYTE;
 export const SWEEP_PAGE_REUSE_LOOKUP_TIMEOUT_MS = 5_000;
 
-export const SWEEP_PAGE_REUSE_HOSTS: readonly string[] = ['medicine.yale.edu'];
+export const SWEEP_PAGE_REUSE_HOSTS: readonly string[] = ['medicine.yale.edu', 'ysph.yale.edu'];
 
 const PERMANENT_REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 308]);
 
