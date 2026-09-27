@@ -110,6 +110,7 @@ describe('isModelSearchNote (#3683)', () => {
     'no evidence of accepting undergraduates found.',
     'There is no text on these pages that explicitly states the lab welcomes or hires undergraduates.',
     '(no language on page about undergraduate recruitment or student opportunities)',
+    'No explicit invitation or statement about undergraduates appears on the faculty page.',
   ];
 
   it('recognizes the model describing its own search', () => {
