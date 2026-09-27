@@ -66,7 +66,7 @@ Confirmed outcomes remain `outreach_outcome` records and are never inferred from
 Search engagement is defined in [Topic matching and search engagement](topic-matching-and-search-engagement.md#search-engagement), and counts a `research_profile_open` or `research_save` as engagement.
 `research_view` is emitted only by the fellowship detail route, so before #3632 a research-surface search could never read as engaged: on Production, 0 of 39 research searches with results counted, against 25 that were followed by a profile open.
 `research_profile_open.source` is the surface the student came from, carried in router state by the card, saved-plan, or related-profile link they followed, and `direct` only when no such link was followed.
-Links between profiles (related, affiliated, and similar research) record `related_programs`.
+Links between profiles (related, affiliated, and similar research) record `related_research`.
 Opens recorded before #3632 all read `direct` and cannot be recovered.
 Server-side research `search` rows exist in Production only from 2026-09-26, so the search-query and zero-result tables hold no research-surface query text before that date.
 

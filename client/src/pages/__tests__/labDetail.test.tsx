@@ -171,7 +171,7 @@ describe('LabDetail page', () => {
     });
   });
 
-  it('records a profile opened from another profile as related_programs', async () => {
+  it('records a profile opened from another profile as related_research', async () => {
     mockedAxios.post.mockResolvedValue({ status: 202 });
     const similarSlug = 'lab-similar-topics';
     renderLabDetail({
@@ -218,7 +218,7 @@ describe('LabDetail page', () => {
         expect.objectContaining({ entityId: 'entity-1', payload: { source: 'direct' } }),
         expect.objectContaining({
           entityId: 'entity-similar',
-          payload: { source: 'related_programs' },
+          payload: { source: 'related_research' },
         }),
       ]);
     });

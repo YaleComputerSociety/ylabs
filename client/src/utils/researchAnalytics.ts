@@ -103,6 +103,7 @@ const RESEARCH_PROFILE_OPEN_SOURCES = [
   'direct',
   'saved_plans',
   'related_programs',
+  'related_research',
 ] as const;
 export type ResearchProfileOpenSource = (typeof RESEARCH_PROFILE_OPEN_SOURCES)[number];
 

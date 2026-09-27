@@ -126,7 +126,7 @@ const RelatedResearchEntitiesSection = ({
             <Link
               key={entity.slug || entity.id}
               to={`/research/${safeRouteSegment(entity.slug)}`}
-              state={researchProfileOpenState('related_programs')}
+              state={researchProfileOpenState('related_research')}
               className="block rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 [transition-property:color,background-color,border-color,box-shadow] hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
             >
               <div className="flex flex-wrap gap-2">
@@ -187,7 +187,7 @@ const AffiliatedResearchEntitiesSection = ({
           <Link
             key={entity.slug || entity.id}
             to={`/research/${safeRouteSegment(entity.slug)}`}
-            state={researchProfileOpenState('related_programs')}
+            state={researchProfileOpenState('related_research')}
             className={`${className} hover:border-line-strong hover:shadow-yr-raised`}
           >
             {content}
@@ -215,7 +215,7 @@ const SimilarResearchEntitiesSection = ({
         <Link
           key={entity.slug || entity.id}
           to={`/research/${safeRouteSegment(entity.slug)}`}
-          state={researchProfileOpenState('related_programs')}
+          state={researchProfileOpenState('related_research')}
           className="block rounded-card border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 [transition-property:color,background-color,border-color,box-shadow] hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
         >
           <div className="flex flex-wrap gap-2">
