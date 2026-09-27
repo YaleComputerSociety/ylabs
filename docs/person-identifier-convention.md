@@ -104,6 +104,7 @@ Unlike a URL, none of them has a legitimate evidentiary use in a body.
 
 The one allowance is the synthetic fixture roster, `SYNTHETIC_FIXTURE_SURNAMES` in `scripts/check-no-person-identifiers-core.mjs`, which holds the invented surnames the detector's own tests use.
 The body scan lets an identifier or prose name built from one of them through, because a pull request about the detector has to quote its fixtures and the no-mistakes gate pastes its adversarial inputs into the body.
+The allowance tests only the identifier itself, meaning the slug from its prefix onward or a two-word prose name ending in a roster surname, so a fixture surname sitting next to another name does not let that other name through.
 The tests scan in strict mode, which ignores the roster, so they still prove every shape is flagged.
 Write a new test fixture from the roster rather than inventing another name, and widening the roster is a reviewed change that its pin test makes deliberate.
 

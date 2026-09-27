@@ -276,6 +276,11 @@ const mentionsSyntheticFixture = (text) => {
   return SYNTHETIC_FIXTURE_SURNAMES.some((surname) => lowered.includes(surname));
 };
 
+const isSyntheticFixtureName = (name) => {
+  const tokens = String(name || '').split(/\s+/);
+  return tokens.length === 2 && SYNTHETIC_FIXTURE_SURNAMES.includes(tokens[1].toLowerCase());
+};
+
 const isPlaceholderSlug = (slug) => {
   const segment = slugSegment(slug);
   if (!segment) return true;
@@ -380,13 +385,14 @@ export function isExempt(content) {
 export function findPersonIdentifierFindings(documents, { strict = false } = {}) {
   const findings = [];
   const isSynthetic = (text) => !strict && mentionsSyntheticFixture(text);
+  const isSyntheticName = (name) => !strict && isSyntheticFixtureName(name);
 
   for (const document of documents) {
     if (isExempt(document.content)) continue;
 
     findings.push(
       ...collect(document, PERSON_SLUG_RE, 'person-bearing-entity-slug', (match) =>
-        isPlaceholderSlug(match[1]) || isRegisteredName(match[0]) || isSynthetic(match[0])
+        isPlaceholderSlug(match[1]) || isRegisteredName(match[0]) || isSynthetic(match[1])
           ? null
           : 'a person-bearing slug prefix',
       ),
@@ -399,7 +405,7 @@ export function findPersonIdentifierFindings(documents, { strict = false } = {})
         return 'a personal yale.edu address';
       }),
       ...collect(document, NETID_LABELLED_RE, 'yale-netid', () => 'a Yale netid'),
-      ...personClaimFindings(document).filter((finding) => !isSynthetic(finding.matched)),
+      ...personClaimFindings(document).filter((finding) => !isSyntheticName(finding.matched)),
     );
   }
 
