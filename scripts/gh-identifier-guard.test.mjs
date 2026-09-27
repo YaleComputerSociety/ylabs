@@ -226,9 +226,10 @@ test('keeps a refused draft locally so the author can see what to rewrite', () =
 
   assert.equal(result.status, 1);
   assert.ok(kept, result.stderr);
-  assert.equal(path.dirname(kept), os.tmpdir());
+  assert.equal(fs.statSync(kept).mode & 0o077, 0);
+  assert.equal(fs.statSync(path.dirname(kept)).mode & 0o077, 0);
   assert.equal(fs.readFileSync(kept, 'utf8'), `fix: x\n\n${FLAGGED}`);
-  fs.rmSync(kept);
+  fs.rmSync(path.dirname(kept), { recursive: true });
 });
 
 test('forwards a clean body and its stdin to the real gh unchanged', () => {

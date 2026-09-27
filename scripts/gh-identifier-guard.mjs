@@ -87,7 +87,7 @@ if (!fs.existsSync(scannerPath)) {
 
 const draftDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-guard-'));
 const draftFile = path.join(draftDir, 'body.md');
-fs.writeFileSync(draftFile, plan.text);
+fs.writeFileSync(draftFile, plan.text, { mode: 0o600 });
 const scan = spawnSync(
   process.execPath,
   [scannerPath, '--body-file', draftFile, '--label', plan.label],
@@ -95,14 +95,11 @@ const scan = spawnSync(
 );
 
 if (scan.status !== 0) {
-  const rejectedDraft = path.join(os.tmpdir(), `gh-guard-rejected-${Date.now()}.md`);
-  fs.renameSync(draftFile, rejectedDraft);
-  fs.rmSync(draftDir, { recursive: true, force: true });
   process.stderr.write(scan.stdout ?? '');
   process.stderr.write(scan.stderr ?? '');
   console.error(
     '\ngh guard: NOT posted. Nothing reached GitHub. Rewrite the text by predicate and re-run.' +
-      `\nRejected draft kept locally at ${rejectedDraft}` +
+      `\nRejected draft kept locally at ${draftFile}` +
       '\nCheck a draft with: yarn security:identifiers:body <file>',
   );
   process.exit(1);
