@@ -456,6 +456,23 @@ describe('researchEntitySearchIndexService', () => {
     expect(JSON.stringify(doc)).not.toContain('203-555-1212');
   });
 
+  it('redacts direct contact text from biography description fields stored in the index', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-biography-contact',
+      name: 'Biography Contact Lab',
+      profileSynthesisDescription:
+        'Studies synaptic plasticity. Email: someone@example.edu Phone555-010-0040Fields of interest: memory.',
+      description: 'Reach the office by calling 555-010-0041.',
+      archived: false,
+    });
+
+    const serialized = JSON.stringify(doc);
+    expect(serialized).not.toContain('someone@example.edu');
+    expect(serialized).not.toContain('555-010-0040');
+    expect(serialized).not.toContain('555-010-0041');
+    expect(doc?.profileSynthesisDescription).toContain('Studies synaptic plasticity.');
+  });
+
   it('strips endowed-chair honorific titles from searchable description text so a chair-name term does not surface unrelated faculty (#1286)', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-townsend-chair',

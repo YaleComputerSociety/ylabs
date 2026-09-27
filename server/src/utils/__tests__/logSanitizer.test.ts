@@ -53,4 +53,10 @@ describe('sanitizeLogValue', () => {
     expect(logged).not.toContain('raw-access-token');
     expect(logged).not.toContain('raw-api-key');
   });
+
+  it('redacts a phone number glued to the label text around it', () => {
+    const logged = sanitizeLogValue('scraped Phone555.010.0030Fax555.010.0031Office');
+
+    expect(logged).toBe('scraped Phone[phone redacted]Fax[phone redacted]Office');
+  });
 });
