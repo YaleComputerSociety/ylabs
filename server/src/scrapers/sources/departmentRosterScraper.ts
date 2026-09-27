@@ -98,6 +98,7 @@ import {
 import { rosterEntryIdentityKey, walkRosterLanePages } from '../utils/rosterLanePaging';
 import { runWithBoundedConcurrency } from '../utils/boundedConcurrency';
 import { evidenceAssertsALab } from '../utils/labClaimEvidence';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -3615,6 +3616,36 @@ function withoutOffsiteInstitutionWebsite(entry: FacultyEntry): FacultyEntry {
   return { ...entry, labUrl: undefined, labSlotAttestation: 'refused' };
 }
 
+const labUrlIdentity = (url: string): string => fieldValueRefusalKey('websiteUrl', url);
+
+/**
+ * A website one roster lists for two or more different people is a group site, not any
+ * one of them's own research home, so it is refused for all of them rather than handed to
+ * whichever row materializes first. Measured on Development before this landed: 20 URLs
+ * this lane assigned to 2 to 5 different people, 20 of those rows already refused
+ * `wrong_owner` by an operator and 37 still served as the row's own website.
+ *
+ * The same person listed twice is not a sharer, because their rows are one research home
+ * however many departments print them, which is duplicate-row work rather than a wrong URL.
+ * Stripping marks the slot `refused`, never empty, because the page still carries the link
+ * (#3135).
+ */
+export function withoutSharedGroupWebsites<T extends { entry: FacultyEntry; personKey: string }>(
+  items: readonly T[],
+): T[] {
+  const peopleByUrl = new Map<string, Set<string>>();
+  for (const { entry, personKey } of items) {
+    if (!entry.labUrl) continue;
+    const key = labUrlIdentity(entry.labUrl);
+    peopleByUrl.set(key, (peopleByUrl.get(key) ?? new Set()).add(personKey));
+  }
+  return items.map((item) => {
+    const url = item.entry.labUrl;
+    if (!url || (peopleByUrl.get(labUrlIdentity(url))?.size ?? 0) < 2) return item;
+    return { ...item, entry: { ...item.entry, labUrl: undefined, labSlotAttestation: 'refused' } };
+  });
+}
+
 const SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE: Record<string, string> = {
   'mechanical-engineering': 'meng-matsci',
   'materials-science': 'meng-matsci',
@@ -4066,8 +4097,11 @@ export class DepartmentRosterScraper implements IScraper {
         entries.map((entry) => rosterResearchEntitySlug(entry, dept)).filter(Boolean),
       );
 
+      // Enriched before anything is emitted, because whether a website is one person's
+      // or a group's is a fact about the whole roster, not about one row.
+      const enriched: Array<{ entry: FacultyEntry; personKey: string }> = [];
       for (const rawEntry of entries) {
-        if (totalFaculty >= limit) break;
+        if (totalFaculty + enriched.length >= limit) break;
         if (dept.crossListedProgramme && programmeRosterRowIsRejectableFromRosterAlone(rawEntry)) {
           continue;
         }
@@ -4080,6 +4114,14 @@ export class DepartmentRosterScraper implements IScraper {
             ctx.log,
           ),
         );
+        enriched.push({
+          entry,
+          personKey: entryToUserObservations(entry, dept, sourceUrl).entityKey,
+        });
+      }
+
+      for (const { entry } of withoutSharedGroupWebsites(enriched)) {
+        if (totalFaculty >= limit) break;
         if (dept.crossListedProgramme && !programmeRosterRowStatesFacultyRank(entry)) continue;
         const { observations: userObs, entityKey } = entryToUserObservations(
           entry,

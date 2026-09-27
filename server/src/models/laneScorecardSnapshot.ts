@@ -16,6 +16,7 @@ const fieldScoreSchema = new mongoose.Schema(
   {
     field: { type: String, required: true },
     emitted: { type: Number, required: true },
+    refusedAtIngest: { type: Number, required: false },
     labeledEntityEmitted: { type: Number, required: true },
     knownWrong: { type: Number, required: true },
   },

@@ -47,6 +47,7 @@ import {
   type DeptConfig,
   type FacultyEntry,
   type FacultyExtractor,
+  withoutSharedGroupWebsites,
 } from '../sources/departmentRosterScraper';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -5093,5 +5094,42 @@ describe('DepartmentRosterScraper lane execution', () => {
 
     expect(result.notes).toBe('Departments: wanted=1');
     expect(htmlFetcher.mock.calls.some((call) => String(call[0]).includes('skipped.'))).toBe(false);
+  });
+});
+
+describe('withoutSharedGroupWebsites', () => {
+  const item = (personKey: string, labUrl?: string) => ({
+    personKey,
+    entry: { name: `Person ${personKey}`, labUrl } as Parameters<
+      typeof withoutSharedGroupWebsites
+    >[0][number]['entry'],
+  });
+
+  it('refuses a website the roster lists for two different people, for both', () => {
+    const out = withoutSharedGroupWebsites([
+      item('a', 'https://group.example.org/'),
+      item('b', 'http://www.group.example.org'),
+      item('c', 'https://own.example.org/'),
+    ]);
+    expect(out[0].entry.labUrl).toBeUndefined();
+    expect(out[0].entry.labSlotAttestation).toBe('refused');
+    expect(out[1].entry.labUrl).toBeUndefined();
+    expect(out[2].entry.labUrl).toBe('https://own.example.org/');
+  });
+
+  it('keeps a website one person is listed with twice', () => {
+    const out = withoutSharedGroupWebsites([
+      item('a', 'https://own.example.org/'),
+      item('a', 'https://own.example.org/'),
+    ]);
+    expect(out.map((entry) => entry.entry.labUrl)).toEqual([
+      'https://own.example.org/',
+      'https://own.example.org/',
+    ]);
+  });
+
+  it('never marks a row with no website', () => {
+    const [out] = withoutSharedGroupWebsites([item('a')]);
+    expect(out.entry.labSlotAttestation).toBeUndefined();
   });
 });
