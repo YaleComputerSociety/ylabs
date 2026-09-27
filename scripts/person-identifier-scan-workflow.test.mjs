@@ -268,11 +268,7 @@ const runScanBodyJob = async ({ body, existingComments = [], number = 4242 }) =>
   return { conclusion, created, updated, failures, skipped, logs, outputs };
 };
 
-const flaggedBody = [
-  '## Summary',
-  '',
-  'The served row for netid: zzq9999 is wrong.',
-].join('\n');
+const flaggedBody = ['## Summary', '', 'The served row for netid: zzq9999 is wrong.'].join('\n');
 
 const predicateBody = [
   '## Summary',

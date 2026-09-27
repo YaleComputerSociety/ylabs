@@ -420,7 +420,10 @@ test('the body scan lets the synthetic fixtures through, so a detector pull requ
 
 test('a fixture surname beside another name does not let that other name through', () => {
   const cases = [
-    ['See /tmp/compare-marrowbane-nih-pi-tobias-quilla.png, the row is wrong.', 'person-bearing-entity-slug'],
+    [
+      'See /tmp/compare-marrowbane-nih-pi-tobias-quilla.png, the row is wrong.',
+      'person-bearing-entity-slug',
+    ],
     ['Marrowbane Quilla Tobias has departed and the row is wrong.', 'person-claim-pairing'],
     ['Quilla Tobias Fenwright has departed and the row is wrong.', 'person-claim-pairing'],
   ];
