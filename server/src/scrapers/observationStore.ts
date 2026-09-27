@@ -28,6 +28,11 @@ import { isCareerBiographyDescription } from '../utils/careerBiographyDescriptio
 import { containsHtmlTagMarkup } from '../utils/descriptionHygiene';
 import type { ObservationInput } from './types';
 import {
+  createDescriptionCardJudge,
+  isCardLosingDescriptionRefresh,
+  type DescriptionCardJudge,
+} from './descriptionCardRefreshGuard';
+import {
   DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS,
   OWNERSHIP_GUARDED_DESCRIPTION_FIELDS,
   OWNERSHIP_GUARDED_ENTITY_TYPE,
@@ -338,6 +343,7 @@ async function loadProseIncumbents(
     if (!QUALITY_GUARDED_PROSE_FIELDS.has(obs.field)) continue;
     requireIncumbent(obs, obs.field);
     if (obs.field === 'shortDescription') requireIncumbent(obs, 'fullDescription');
+    if (obs.field === 'fullDescription') requireIncumbent(obs, 'shortDescription');
   }
   const loaded = new Map<string, string | undefined>();
   await Promise.all(
@@ -465,10 +471,61 @@ const writesOwnershipGuardedDescriptionField = (doc: { entityType: string; field
   doc.entityType === OWNERSHIP_GUARDED_ENTITY_TYPE &&
   OWNERSHIP_GUARDED_DESCRIPTION_FIELDS.has(doc.field);
 
+const CARD_PAIR_FIELDS: ReadonlySet<string> = new Set(['fullDescription', 'shortDescription']);
+
+/**
+ * Removes, in place, a research row's incoming description pair when it would take away the
+ * card the source's current pair gives, and returns how many rows were held. Judged per row
+ * as a pair because the card is built from both fields together.
+ */
+async function dropCardLosingDescriptionRefreshes(
+  kept: ObservationInput[],
+  incumbents: ReadonlyMap<string, string | undefined>,
+  researchAreasByEntity: ReadonlyMap<string, unknown>,
+  judge: DescriptionCardJudge,
+): Promise<{ rows: number; observations: number }> {
+  const byEntity = new Map<string, ObservationInput[]>();
+  for (const obs of kept) {
+    if (obs.entityType !== 'researchEntity' || !CARD_PAIR_FIELDS.has(obs.field)) continue;
+    const key = entityKeyForProse(obs);
+    byEntity.set(key, [...(byEntity.get(key) ?? []), obs]);
+  }
+  const held = new Set<ObservationInput>();
+  for (const [entityKey, pairObs] of byEntity) {
+    const subject = pairObs[0];
+    const existing = {
+      fullDescription: incumbents.get(proseIncumbentKey(subject, 'fullDescription')),
+      shortDescription: incumbents.get(proseIncumbentKey(subject, 'shortDescription')),
+    };
+    const incomingFull = pairObs.find((obs) => obs.field === 'fullDescription');
+    const incomingShort = pairObs.find((obs) => obs.field === 'shortDescription');
+    const incoming = {
+      fullDescription: incomingFull ? incomingFull.value : existing.fullDescription,
+      shortDescription: incomingShort ? incomingShort.value : existing.shortDescription,
+    };
+    if (
+      await isCardLosingDescriptionRefresh({
+        subject,
+        existing,
+        incoming,
+        researchAreas: researchAreasByEntity.get(entityKey),
+        judge,
+      })
+    ) {
+      for (const obs of pairObs) held.add(obs);
+    }
+  }
+  if (held.size === 0) return { rows: 0, observations: 0 };
+  const rows = new Set([...held].map((obs) => entityKeyForProse(obs))).size;
+  const remaining = kept.filter((obs) => !held.has(obs));
+  kept.splice(0, kept.length, ...remaining);
+  return { rows, observations: held.size };
+}
+
 export async function appendObservations(
   inputs: ObservationInput[],
   ctx: AppendContext,
-  opts: { loadActiveProse?: ActiveProseLoader } = {},
+  opts: { loadActiveProse?: ActiveProseLoader; judgeDescriptionCard?: DescriptionCardJudge } = {},
 ): Promise<{ inserted: number; skipped: number; superseded: number }> {
   if (inputs.length === 0) return { inserted: 0, skipped: 0, superseded: 0 };
   const loadActiveProse = opts.loadActiveProse ?? loadActiveProseValue;
@@ -637,6 +694,20 @@ export async function appendObservations(
     keptInputs.push(obs);
   }
 
+  const cardRegressionGuarded = losslessIngest
+    ? { rows: 0, observations: 0 }
+    : await dropCardLosingDescriptionRefreshes(
+        keptInputs,
+        proseIncumbents,
+        incomingResearchAreasByEntity,
+        opts.judgeDescriptionCard ?? createDescriptionCardJudge(),
+      );
+  if (cardRegressionGuarded.rows > 0) {
+    console.warn(
+      `[observation-store] ${ctx.sourceName} kept the current description for ${cardRegressionGuarded.rows} row(s) whose refresh would lose the card the current one gives.`,
+    );
+  }
+
   // Reported, never subtracted from the batch: a `kind` assertion is not invalid, it is
   // unread, so the lane that wrote it needs to know rather than the batch being shrunk.
   const kindOnlyKeys = kindOnlyTypeAssertionKeys(candidateInputs);
@@ -653,7 +724,8 @@ export async function appendObservations(
     rejectedInvalidEnum.length +
     regressiveProseGuarded +
     weakerProseGuarded +
-    selfDefeatingCardGuarded;
+    selfDefeatingCardGuarded +
+    cardRegressionGuarded.observations;
   if (keptInputs.length === 0) {
     return { inserted: 0, skipped: skippedCount, superseded: 0 };
   }
