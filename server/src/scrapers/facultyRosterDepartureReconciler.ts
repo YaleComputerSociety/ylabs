@@ -679,8 +679,11 @@ export async function loadRosterObservedEntityKeys(): Promise<ReadonlySet<string
 }
 
 /**
- * The discovery count of each department's newest prior snapshot that found anybody,
- * keyed by canonical department name.
+ * The discovery count of each lane's newest prior snapshot that found anybody, keyed by
+ * the snapshot `entityKey` (its `deptKey`) rather than by canonical department. Two
+ * lanes can resolve to one department and list different people, so a department-keyed
+ * baseline compared one lane's full read against its sibling's count, judged it
+ * regressed, and let the sibling govern the department alone.
  *
  * Reads superseded observations on purpose. Each roster run supersedes the last, so a
  * department's previous reading exists only there, and a comparison against history is
@@ -704,25 +707,18 @@ export async function loadPreviousDiscoveryCounts(
     scrapeRunId: { $ne: currentRunObjectId },
   })
     .sort({ observedAt: 1 })
-    .select('value observedAt')
-    .lean()) as Array<{ value?: unknown }>;
+    .select('entityKey value observedAt')
+    .lean()) as Array<{ entityKey?: unknown; value?: unknown }>;
 
-  const byDept = new Map<string, number>();
-  const canonicalByRaw = new Map<string, string | null>();
+  const byLane = new Map<string, number>();
   for (const row of snapshots) {
     const snapshot = (row.value ?? {}) as DepartmentRosterHealthSnapshot;
     if (snapshot.complete !== true) continue;
     if (snapshotDiscoveredEntityKeys(snapshot).length === 0) continue;
-    const raw = typeof snapshot.deptName === 'string' ? snapshot.deptName : '';
-    if (!raw) continue;
-    if (!canonicalByRaw.has(raw)) {
-      canonicalByRaw.set(raw, await resolveGovernedDepartmentName(raw));
-    }
-    const deptName = canonicalByRaw.get(raw);
-    if (!deptName) continue;
-    byDept.set(deptName, snapshotDiscoveredEntityKeys(snapshot).length);
+    if (typeof row.entityKey !== 'string' || !row.entityKey) continue;
+    byLane.set(row.entityKey, snapshotDiscoveredEntityKeys(snapshot).length);
   }
-  return byDept;
+  return byLane;
 }
 
 async function countRosterGovernedEntities(
@@ -790,7 +786,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     entityType: 'departmentRosterHealth',
     field: DEPARTMENT_ROSTER_HEALTH_FIELD,
   })
-    .select('value observedAt')
+    .select('entityKey value observedAt')
     .lean()) as any[];
   if (snapshots.length === 0) return { ...base, outcome: 'no-roster-health-observations' };
 
@@ -813,7 +809,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
   const admissibilityCounts: Record<string, number> = {};
   let departmentsGoverningNothing = 0;
   const rosterObservedEntityKeys = await loadRosterObservedEntityKeys();
-  const previousDiscoveryByDept = await loadPreviousDiscoveryCounts(runObjectId);
+  const previousDiscoveryByLane = await loadPreviousDiscoveryCounts(runObjectId);
   let regressedDepartments = 0;
   let latestObservedAt = new Date();
 
@@ -859,7 +855,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     // department read 86 of 200 and froze at 0.43, while over the 124 rows the lane has
     // actually observed the same read scores 0.69 and passes (#3302).
     const governedCount = await countRosterGovernedEntities(deptName, rosterObservedEntityKeys);
-    const previousDiscovered = previousDiscoveryByDept.get(deptName) ?? null;
+    const previousDiscovered = previousDiscoveryByLane.get(snapshotObservation.entityKey) ?? null;
     if (rosterDiscoveryRegressed(previousDiscovered, discovered.length)) {
       regressedDepartments += 1;
       console.warn(
