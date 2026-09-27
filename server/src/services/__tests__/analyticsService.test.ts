@@ -852,7 +852,9 @@ describe('getAnalytics research coverage and range scoping', () => {
     mocks.analyticsAggregate.mockResolvedValue([
       {
         ...eventFacetStub,
-        topEntities: [{ entityType: 'research_entity', entityId: slug, views: 2, uniqueViewers: 1 }],
+        topEntities: [
+          { entityType: 'research_entity', entityId: slug, views: 2, uniqueViewers: 1 },
+        ],
       },
     ]);
     mocks.researchEntityAggregate.mockResolvedValue([
