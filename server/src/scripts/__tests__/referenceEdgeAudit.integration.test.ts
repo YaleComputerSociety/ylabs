@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { SIGNAL_TARGET_REFERENCE_EDGES } from '../betaDataQualityCore';
 import { auditReferenceEdge, type ReferenceEdge } from '../referenceEdgeAudit';
 
 const evidenceEdge: ReferenceEdge = {
@@ -44,7 +45,14 @@ describe('auditReferenceEdge (integration)', () => {
   afterEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['signals', 'observations', 'research_entity_members', 'users']) {
+    for (const name of [
+      'signals',
+      'observations',
+      'research_entity_members',
+      'users',
+      'research_entities',
+      'org_units',
+    ]) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -126,5 +134,32 @@ describe('auditReferenceEdge (integration)', () => {
     const audit = await auditReferenceEdge(db(), memberEdge);
 
     expect(audit.orphanedPresentRefs).toBe(1);
+  });
+
+  it('reads a signal targeting an org unit as a resolved reference, not a missing entity (#3582)', async () => {
+    const liveEntity = new mongoose.Types.ObjectId();
+    const liveOrgUnit = new mongoose.Types.ObjectId();
+    const missingOrgUnit = new mongoose.Types.ObjectId();
+    await db().collection('research_entities').insertOne({ _id: liveEntity });
+    await db().collection('org_units').insertOne({ _id: liveOrgUnit });
+    await db()
+      .collection('signals')
+      .insertMany([
+        { researchEntityId: liveEntity },
+        { orgUnitId: liveOrgUnit },
+        { orgUnitId: missingOrgUnit },
+        {},
+      ]);
+
+    const edgeNamed = (name: string): ReferenceEdge => {
+      const edge = SIGNAL_TARGET_REFERENCE_EDGES.find((candidate) => candidate.name === name);
+      if (!edge) throw new Error(`no scorecard edge named ${name}`);
+      return edge;
+    };
+    const entityAudit = await auditReferenceEdge(db(), edgeNamed('signals.researchEntityId'));
+    const orgUnitAudit = await auditReferenceEdge(db(), edgeNamed('signals.orgUnitId'));
+
+    expect(entityAudit).toMatchObject({ missingRequired: 1, orphanedPresentRefs: 0 });
+    expect(orgUnitAudit).toMatchObject({ missingRequired: 0, orphanedPresentRefs: 1 });
   });
 });

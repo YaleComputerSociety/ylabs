@@ -33,6 +33,7 @@ import {
   parseBetaDataQualityArgs,
   selectLiveLinkCandidates,
   shouldStrictModeFail,
+  SIGNAL_TARGET_REFERENCE_EDGES,
   writeScorecardOutput,
   type BetaDataQualityOptions,
   type BetaDataQualityScorecard,
@@ -91,13 +92,7 @@ const BETA_SCORECARD_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze([
     targetCollectionName: 'accounts',
     required: false,
   },
-  {
-    name: 'signals.researchEntityId',
-    collectionName: 'signals',
-    localField: 'researchEntityId',
-    targetCollectionName: 'research_entities',
-    required: true,
-  },
+  ...SIGNAL_TARGET_REFERENCE_EDGES,
   {
     name: 'signals.source.evidenceIds',
     collectionName: 'signals',

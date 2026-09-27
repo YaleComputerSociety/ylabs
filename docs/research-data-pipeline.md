@@ -40,7 +40,7 @@ The research engine writes `ResearchEntity` records for `/research` and runs the
 The fellowship engine writes `Fellowship` records for `/programs` and runs the catalog sources in `FELLOWSHIP_SWEEP_SOURCES`: `yale-college-fellowships-office`, `yale-reu-programs`, `yale-health-sciences-summer-programs`, and `student-grants-database`.
 `validateScraperSweepManifest` asserts every registered orchestrator source is in exactly one engine, with the exception of the sources in `MANUAL_ONLY_SWEEP_SOURCES`, which stay registered, seeded and runnable by hand (`scrape run --source <name>`) but out of both automated manifests.
 The validator also refuses a manual-only name that is no longer registered, so the list cannot go stale.
-Each manual-only source records its reason next to its name in `runScraperSweep.ts`:
+Each manual-only source records its reason next to its name in `scrapers/manualOnlySweepSources.ts`, which `runScraperSweep.ts` re-exports:
 
 - `undergrad-fellowships-recipients` is a backward-looking recipients source with no clean public feed.
 - `federal-award-usaspending` can never acquire, because USAspending publishes no principal-investigator field: across the 293 Yale DOE, NASA and DoD awards its request returns, 1 description embeds a PI name and that name resolves ambiguously, so every sweep failed it on the barren-streak guard below (#3542, #3547).
@@ -1488,6 +1488,8 @@ A workable second witness has to be something a person in somebody else's group 
 `buildOrchestrator()` is the authority for the first: the CLI, the cron, and the sweep all resolve a name through it, so a row it does not name fails with "No scraper registered with name" no matter what the row says.
 `scrapers:audit-freshness` therefore computes overdue and never-crawled over sweep-registered rows only, reports script-driven lanes next to the command that runs each one, lists retired rows separately, and fails rather than reporting phantom work when a registered scraper has no row, a row is `unowned`, or a retired lane's row is still enabled.
 Admin source health reads the same classification, so a retired row is `ok` with its retirement stated rather than a warning asking an operator to confirm a decision the repo already made, and a script-driven lane with no scrape run names its command instead of suggesting a crawl that would fail.
+Source health and the freshness worklist also share one recurrence rule, `sourceIsExpectedToRecur` in `scrapers/sourceYieldGuard.ts`: a source that is disabled, `MANUAL_OVERRIDE`, or in the sweep's manual-only set (`scrapers/manualOnlySweepSources.ts`) has no recurring run expectation, so it never reads as stale and its latest failed run is `ok` with the report command rather than `error` risk (#3582).
+Only the recurrence rule reads the manual-only set: the barren-streak guard still uses `sourceIsExpectedToYield`, so a deliberate manual run of a manual-only lane that acquires nothing is still a failed run the operator sees.
 Every scraper in `registry.ts` must also have a `seedSources.ts` entry, because applying the seed is the only remediation the audit's missing-row block accepts.
 
 ## Canonical Collections
