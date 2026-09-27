@@ -438,3 +438,26 @@ export function isMeshIndexedProfileUrl(url: string): boolean {
     return false;
   }
 }
+
+function researchAreaProvenanceSourceUrl(fieldProvenance: unknown): string {
+  if (!fieldProvenance || typeof fieldProvenance !== 'object') return '';
+  const entry = (fieldProvenance as Record<string, unknown>).researchAreas;
+  if (!entry || typeof entry !== 'object') return '';
+  const sourceUrl = (entry as Record<string, unknown>).sourceUrl;
+  return typeof sourceUrl === 'string' ? sourceUrl : '';
+}
+
+// Serve-time as well as ingest-time, because a stored list whose every entry is a place
+// has no successor observation to supersede it once the lanes stop emitting one.
+export function withoutMeshSourcedGeographicResearchAreas(
+  areas: readonly string[],
+  fieldProvenance: unknown,
+): string[] {
+  if (!isMeshIndexedProfileUrl(researchAreaProvenanceSourceUrl(fieldProvenance))) {
+    return areas as string[];
+  }
+  const kept = areas.filter(
+    (area) => typeof area !== 'string' || !isMeshGeographicDescriptor(area),
+  );
+  return kept.length === areas.length ? (areas as string[]) : kept;
+}

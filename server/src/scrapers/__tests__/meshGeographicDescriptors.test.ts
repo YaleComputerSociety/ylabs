@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { profileEnrichmentFromHtml } from '../sources/departmentRosterScraper';
 import { parseYsmProfileResearch } from '../sources/ysmMeshKeywordScraper';
+import { buildResearchEntitySearchIndexDocument } from '../../services/researchEntitySearchIndexService';
+import { sanitizeServedResearchEntityCopyFields } from '../../utils/researchEntityDescriptionText';
 import {
   isMeshGeographicDescriptor,
   isMeshIndexedProfileUrl,
@@ -97,5 +99,45 @@ describe('lanes that read a MeSH keyword list', () => {
       HUMANITIES_PROFILE_URL,
     );
     expect(result.researchInterests).toEqual(['Latin America', 'Brazil']);
+  });
+
+  const storedEntity = (researchAreas: string[], provenanceSourceUrl: string) => ({
+    _id: 'entity-mesh-fixture',
+    slug: 'ysm-faculty-fixture-ada',
+    name: 'Ada Fixture Lab',
+    kind: 'individual',
+    entityType: 'FACULTY_RESEARCH_AREA',
+    archived: false,
+    researchAreas,
+    fieldProvenance: {
+      researchAreas: { sourceName: 'ysm-mesh-keyword', sourceUrl: provenanceSourceUrl },
+    },
+  });
+
+  it('withholds a stored all-place MeSH list that no re-run can supersede', () => {
+    const stored = storedEntity(
+      ['China', 'Taiwan'],
+      'https://medicine.yale.edu/profile/ada-fixture/',
+    );
+    expect(buildResearchEntitySearchIndexDocument(stored)).not.toHaveProperty('researchAreas');
+    expect(sanitizeServedResearchEntityCopyFields(stored).researchAreas).toEqual([]);
+  });
+
+  it('withholds only the places from a stored MeSH list at serve time', () => {
+    const stored = storedEntity(['Genetics', 'China'], MESH_PROFILE_URL);
+    expect(buildResearchEntitySearchIndexDocument(stored)?.researchAreas).toEqual(['Genetics']);
+    expect(sanitizeServedResearchEntityCopyFields(stored).researchAreas).toEqual(['Genetics']);
+  });
+
+  it('serves a place a non-MeSH source recorded as the topic', () => {
+    const stored = storedEntity(['Latin America', 'Brazil'], HUMANITIES_PROFILE_URL);
+    expect(buildResearchEntitySearchIndexDocument(stored)?.researchAreas).toEqual([
+      'Latin America',
+      'Brazil',
+    ]);
+    expect(sanitizeServedResearchEntityCopyFields(stored).researchAreas).toEqual([
+      'Latin America',
+      'Brazil',
+    ]);
   });
 });
