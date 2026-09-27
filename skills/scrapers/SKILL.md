@@ -578,7 +578,7 @@ That file records the deliberate skips (Haskins, John B. Pierce, YCCI, IPCH, Poo
 | `yseFacultyDirectoryScraper.ts` | Yale School of the Environment faculty: crawls the directory as a seed roster, then cites each individual profile for identity, research home (FACULTY_RESEARCH_AREA, or LAB when the profile links its own site), areas, and official prose. |
 | `yaleDirectoryScraper.ts` | Faculty roster via the Yalies API. |
 | `officialResearchHomeRosterScraper.ts` | Disabled-by-default, allowlisted current non-lead research-home rosters with stable official-profile identities and bounded freshness. |
-| `officialProfilePiBackfillScraper.ts` | Backfill scraper for PI official-profile data. |
+| `officialProfilePiBackfillScraper.ts` | Backfill scraper for PI official-profile data. Profile pages are fetched four ahead through `forEachInOrderWithPrefetch` and consumed in selection order, so the per-entity user lookups and emits run exactly as a serial walk would; the lane's 150 ms throttle spaces fetch starts, and the host limiter bounds each host. Its step time was fetch latency rather than Mongo, although the run records no `fetchMetrics` because the lane fetches with plain `axios` (#3568). |
 | `labSiteLeadVerificationScraper.ts` | Checks every attached `PI`/`CO_PI`/`DIRECTOR`/`CO_DIRECTOR` against the research home's own website and records a per-lead verdict in `leadVerification`. Writes that field only: no lead is attached, detached, or suppressed, because acting on a contradiction needs its own visibility re-gate (#2714). See the verdict rules below. |
 
 #### Choosing the department-claim flag for a roster lane
