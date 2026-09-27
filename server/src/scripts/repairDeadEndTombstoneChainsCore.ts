@@ -1,9 +1,10 @@
-export const DEAD_END_TOMBSTONE_TERMINAL_CAUSES = [
-  'cycle',
-  'absent_target',
-  'archived_terminal',
-] as const;
-export type DeadEndTombstoneTerminalCause = (typeof DEAD_END_TOMBSTONE_TERMINAL_CAUSES)[number];
+import {
+  RESEARCH_ENTITY_TOMBSTONE_TERMINAL_CAUSES,
+  tombstoneTerminalCauseIsMalformed,
+  walkResearchEntityTombstoneChainWithCause,
+  type ResearchEntityTombstoneNode,
+  type ResearchEntityTombstoneTerminalCause,
+} from '../services/researchEntityCanonicalTombstone';
 
 export const DEAD_END_TOMBSTONE_VERDICTS = [
   'clear_malformed_pointer',
@@ -12,61 +13,18 @@ export const DEAD_END_TOMBSTONE_VERDICTS = [
 ] as const;
 export type DeadEndTombstoneVerdict = (typeof DEAD_END_TOMBSTONE_VERDICTS)[number];
 
-export interface TombstoneChainNode {
-  id: string;
-  archived: boolean;
-  canonicalGroupId?: string;
-}
-
-export interface TombstoneChainResult {
-  resolvedCanonicalId?: string;
-  hops: number;
-  terminalCause?: DeadEndTombstoneTerminalCause;
-}
-
-export const MAX_TOMBSTONE_CHAIN_HOPS = 10;
-
-/**
- * Walks a tombstone's `canonicalGroupId` chain and names why it failed when it did,
- * because the three failures are not one defect: a cycle and an absent target are
- * malformed pointers, while a chain that simply ends on an archived row is
- * well-formed data saying the subject has no live home.
- */
-export function walkTombstoneChain(
-  start: TombstoneChainNode,
-  nodeById: (id: string) => TombstoneChainNode | undefined,
-  maxHops: number = MAX_TOMBSTONE_CHAIN_HOPS,
-): TombstoneChainResult {
-  const visited = new Set<string>([start.id]);
-  let nextId = start.canonicalGroupId;
-  let hops = 0;
-
-  while (nextId && hops < maxHops) {
-    if (visited.has(nextId)) return { hops, terminalCause: 'cycle' };
-    visited.add(nextId);
-    const node = nodeById(nextId);
-    hops += 1;
-    if (!node) return { hops, terminalCause: 'absent_target' };
-    if (!node.archived) return { resolvedCanonicalId: node.id, hops };
-    nextId = node.canonicalGroupId;
-  }
-
-  if (nextId) return { hops, terminalCause: 'cycle' };
-  return { hops, terminalCause: 'archived_terminal' };
-}
-
 export interface DeadEndTombstonePlan {
   slug: string;
   entityId: string;
   verdict: DeadEndTombstoneVerdict;
-  terminalCause?: DeadEndTombstoneTerminalCause;
+  terminalCause?: ResearchEntityTombstoneTerminalCause;
 }
 
 export interface DeadEndTombstoneSummary {
   scanned: number;
   plans: DeadEndTombstonePlan[];
   byVerdict: Record<DeadEndTombstoneVerdict, number>;
-  byTerminalCause: Record<DeadEndTombstoneTerminalCause, number>;
+  byTerminalCause: Record<ResearchEntityTombstoneTerminalCause, number>;
 }
 
 function emptyVerdicts(): Record<DeadEndTombstoneVerdict, number> {
@@ -76,10 +34,10 @@ function emptyVerdicts(): Record<DeadEndTombstoneVerdict, number> {
   );
 }
 
-function emptyCauses(): Record<DeadEndTombstoneTerminalCause, number> {
-  return DEAD_END_TOMBSTONE_TERMINAL_CAUSES.reduce(
+function emptyCauses(): Record<ResearchEntityTombstoneTerminalCause, number> {
+  return RESEARCH_ENTITY_TOMBSTONE_TERMINAL_CAUSES.reduce(
     (counts, cause) => ({ ...counts, [cause]: 0 }),
-    {} as Record<DeadEndTombstoneTerminalCause, number>,
+    {} as Record<ResearchEntityTombstoneTerminalCause, number>,
   );
 }
 
@@ -95,21 +53,19 @@ function emptyCauses(): Record<DeadEndTombstoneTerminalCause, number> {
  * `archived_terminal` is left alone. The chain is well-formed and its answer is that
  * the subject has no live home, which a not-found states truthfully.
  */
-export function buildDeadEndTombstoneRepairPlan(input: {
-  tombstones: Array<{ id: string; slug: string; canonicalGroupId?: string }>;
-  nodeById: (id: string) => TombstoneChainNode | undefined;
-}): DeadEndTombstoneSummary {
+export async function buildDeadEndTombstoneRepairPlan(input: {
+  tombstones: Array<ResearchEntityTombstoneNode & { slug?: string }>;
+  nodeById: (id: string) => ResearchEntityTombstoneNode | undefined;
+}): Promise<DeadEndTombstoneSummary> {
   const plans: DeadEndTombstonePlan[] = [];
   const byVerdict = emptyVerdicts();
   const byTerminalCause = emptyCauses();
+  const findById = async (id: string) => input.nodeById(id) ?? null;
 
   for (const tombstone of input.tombstones) {
-    const chain = walkTombstoneChain(
-      { id: tombstone.id, archived: true, canonicalGroupId: tombstone.canonicalGroupId },
-      input.nodeById,
-    );
+    const chain = await walkResearchEntityTombstoneChainWithCause(tombstone, { findById });
 
-    if (chain.resolvedCanonicalId) {
+    if (chain.canonical) {
       byVerdict.keep_resolves += 1;
       continue;
     }
@@ -117,13 +73,17 @@ export function buildDeadEndTombstoneRepairPlan(input: {
     const terminalCause = chain.terminalCause ?? 'archived_terminal';
     byTerminalCause[terminalCause] += 1;
 
-    const verdict: DeadEndTombstoneVerdict =
-      terminalCause === 'archived_terminal'
-        ? 'keep_subject_has_no_live_home'
-        : 'clear_malformed_pointer';
+    const verdict: DeadEndTombstoneVerdict = tombstoneTerminalCauseIsMalformed(terminalCause)
+      ? 'clear_malformed_pointer'
+      : 'keep_subject_has_no_live_home';
     byVerdict[verdict] += 1;
 
-    plans.push({ slug: tombstone.slug, entityId: tombstone.id, verdict, terminalCause });
+    plans.push({
+      slug: tombstone.slug ?? '',
+      entityId: String(tombstone._id),
+      verdict,
+      terminalCause,
+    });
   }
 
   return { scanned: input.tombstones.length, plans, byVerdict, byTerminalCause };

@@ -1,6 +1,11 @@
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ResearchEntity } from '../models/researchEntity';
+import {
+  tombstoneTerminalCauseIsMalformed,
+  walkResearchEntityTombstoneChainWithCause,
+  type ResearchEntityTombstoneNode,
+} from '../services/researchEntityCanonicalTombstone';
 import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
 import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
@@ -177,6 +182,11 @@ const INTEGRITY_WARNING_OPERATOR_METADATA: Record<
   string,
   Pick<PostMaterializationIntegrityWarning, 'classification' | 'owner' | 'nextCommand'>
 > = {
+  deadEndTombstoneChains: {
+    classification: 'post_promotion_backlog',
+    owner: 'research-entity operator',
+    nextCommand: 'yarn --cwd server research-entity:repair-dead-end-tombstones',
+  },
   duplicatePersonIdentityConflicts: {
     classification: 'must_fix_before_promotion',
     owner: 'identity/account operator',
@@ -706,6 +716,96 @@ async function loadAmbiguousSameNameWarning(): Promise<PostMaterializationIntegr
   return [];
 }
 
+/**
+ * A tombstone whose `canonicalGroupId` chain is malformed: it cycles, or it points at a row
+ * that is not there. Either way the row's slug redirects to nothing and no evidence names
+ * where it should go.
+ *
+ * A warning rather than a failure, because clearing the pointer is an operator act: the
+ * repair is to CLEAR it rather than to pick a destination, since guessing one from a name is
+ * the graft channel #2378 recorded. Clearing keeps the row, so it keeps its slug and its own
+ * description, citations and website, which is the material anyone needs to decide later
+ * where the slug should point.
+ *
+ * A chain that simply ends on an archived row is deliberately NOT counted. That is
+ * well-formed data whose answer is that the subject has no live home, and a not-found states
+ * it truthfully. Counting it would put 40 correct rows in a warning that fires forever, which
+ * is noise rather than a signal.
+ *
+ * This detection used to live only in `research-entity:repair-dead-end-tombstones`, on that
+ * script's own sync copy of the production walk, so nothing in the engine could see a
+ * malformed pointer and the state was visible only when somebody remembered to run the
+ * script (#3704).
+ */
+export async function loadDeadEndTombstoneChains(
+  limit: number,
+): Promise<PostMaterializationIntegrityWarning[]> {
+  const tombstones = (await ResearchEntity.find({
+    archived: true,
+    canonicalGroupId: { $ne: null },
+  })
+    .select('_id archived canonicalGroupId')
+    .lean()) as unknown as ResearchEntityTombstoneNode[];
+  if (tombstones.length === 0) return [];
+
+  const byId = new Map(tombstones.map((row) => [String(row._id), row]));
+  // Every archived row with a pointer is loaded above, so a chain can only leave that set on
+  // its final hop. One read of those final targets makes every hop a map lookup, and a target
+  // missing from the map is genuinely absent.
+  const finalTargetIds = [
+    ...new Set(
+      tombstones
+        .map((row) => String(row.canonicalGroupId))
+        .filter((id) => !byId.has(id) && mongoose.Types.ObjectId.isValid(id)),
+    ),
+  ];
+  if (finalTargetIds.length > 0) {
+    const targets = (await ResearchEntity.find({
+      _id: { $in: finalTargetIds.map((id) => new mongoose.Types.ObjectId(id)) },
+    })
+      .select('_id archived canonicalGroupId')
+      .lean()) as unknown as ResearchEntityTombstoneNode[];
+    for (const target of targets) byId.set(String(target._id), target);
+  }
+  const findById = async (id: string) => byId.get(id) ?? null;
+
+  const malformed: Array<{ entityId: string; terminalCause: string }> = [];
+  for (const tombstone of tombstones) {
+    const chain = await walkResearchEntityTombstoneChainWithCause(tombstone, { findById });
+    if (chain.canonical) continue;
+    if (!tombstoneTerminalCauseIsMalformed(chain.terminalCause)) continue;
+    malformed.push({
+      entityId: String(tombstone._id),
+      terminalCause: String(chain.terminalCause),
+    });
+  }
+  if (malformed.length === 0) return [];
+
+  const byCause = malformed.reduce<Record<string, number>>((counts, row) => {
+    counts[row.terminalCause] = (counts[row.terminalCause] ?? 0) + 1;
+    return counts;
+  }, {});
+  const causeSummary = Object.entries(byCause)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([cause, count]) => `${cause}=${count}`)
+    .join(', ');
+
+  return [
+    {
+      name: 'deadEndTombstoneChains',
+      count: malformed.length,
+      message:
+        `${malformed.length} archived row(s) of ${tombstones.length} scanned point at a canonical ` +
+        `that cannot be reached (${causeSummary}), so the slug redirects to nothing. Clearing the ` +
+        `pointer is an operator act: it keeps the row and its evidence rather than guessing a ` +
+        `destination. Sample: ${malformed
+          .slice(0, limit)
+          .map((row) => row.entityId)
+          .join(', ')}`,
+    },
+  ];
+}
+
 function normalizePostMaterializationIntegrityLimit(limit: number | undefined): number {
   if (limit === undefined) return DEFAULT_SAMPLE_LIMIT;
   if (!Number.isSafeInteger(limit) || limit < 1) {
@@ -728,6 +828,7 @@ export async function runPostMaterializationIntegrityGate(
     duplicateAccessSignalGroups,
     activeArtifactsOnArchivedEntities,
     warnings,
+    deadEndTombstoneChainWarnings,
   ] = await Promise.all([
     loadSamePiNameDuplicateGroups(queryLimit),
     loadOfficialLabUrlDuplicateGroups(queryLimit),
@@ -737,6 +838,7 @@ export async function runPostMaterializationIntegrityGate(
     loadDuplicateAccessSignalGroups(queryLimit),
     loadActiveArtifactsOnArchivedEntities(queryLimit),
     loadAmbiguousSameNameWarning(),
+    loadDeadEndTombstoneChains(queryLimit),
   ]);
 
   return buildPostMaterializationIntegritySummary({
@@ -747,7 +849,7 @@ export async function runPostMaterializationIntegrityGate(
     currentMembersOnArchivedEntities,
     duplicateAccessSignalGroups,
     activeArtifactsOnArchivedEntities,
-    warnings: [...warnings, ...duplicatePersonIntegrity.warnings],
+    warnings: [...warnings, ...duplicatePersonIntegrity.warnings, ...deadEndTombstoneChainWarnings],
     limit: options.includeSamples ? limit : 0,
     sourceRunId: options.sourceRunId,
   });

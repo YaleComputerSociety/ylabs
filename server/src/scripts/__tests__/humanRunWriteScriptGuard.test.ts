@@ -27,6 +27,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'withdraws one row an operator judged not research',
   'research-entity:release-field-locks': 'releases locks one reviewed row at a time',
   'research-entity:restore-merge-tombstones': 'reverses a merge an operator judged wrong',
+  'research-entity:repair-dead-end-tombstones':
+    'clears one malformed canonical pointer at a time, refusing to guess a destination; the integrity gate now does the detection',
   'taxonomy:review-term': 'records a curated review of one taxonomy term',
   'programs:accept-formalization-exceptions': 'records reviewed exceptions',
   'launch:review-exceptions': 'records reviewed launch exceptions',
@@ -58,7 +60,7 @@ const INSTRUMENTS_THAT_REFUSE_APPLY: Record<string, string> = {
  * stages. Lower it when one is converted or deleted. Raising it is the thing this guard exists
  * to make a visible, reviewed decision.
  */
-const PENDING_CONVERSION_CEILING = 117;
+const PENDING_CONVERSION_CEILING = 116;
 
 function commandsByScriptFile(): Map<string, string[]> {
   const scripts =

@@ -1506,7 +1506,7 @@ The repair only ever CLEARS a pointer and never picks a new destination: a cycle
 Clearing keeps the row, so it keeps occupying its slug and keeps its own description, citations and website, which is the `sole_surviving_record_of_slug` state the archived-row cleanup already refuses to delete.
 Do not delete a dead-end tombstone: all 47 on Development still carried live observations, so a source still publishes every one of those slugs and freeing them buys a re-mint on the next sweep.
 Applied to Development on 2026-09-23: 2,665 tombstones scanned, 5 cycles and 3 dangling pointers cleared, 39 archived-terminal rows kept, 2,618 resolving; a re-run reports 0 of both malformed causes.
-The dry run is also the standing audit for this class, which accumulated 47 rows with nothing watching it.
+The integrity gate now detects the malformed causes on every run as the `deadEndTombstoneChains` warning, through the same production walk (`walkResearchEntityTombstoneChainWithCause`) the repair uses, because this class accumulated 47 rows while only the script's dry run could see it (#3704).
 
 - (retired #3027) `research_entity_redirects`: a merged identity is kept as an archived `research_entities` row whose slug occupies the unique index and whose `canonicalGroupId` routes re-scraped evidence to the survivor, so the mapping lives on the row
 - `research_plans`
