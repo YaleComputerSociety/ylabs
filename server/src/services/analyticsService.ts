@@ -1260,8 +1260,7 @@ const computeSearchQualityAnalytics = async (
   const topQueries = byQueryAndEntityType.slice(0, 10);
   const topZeroResultQueries = (result?.topZeroResultQueries ??
     []) as SearchQualityQueryAnalytics[];
-  const highSearchLowResults = (result?.highSearchLowResults ??
-    []) as HighSearchLowResultsAction[];
+  const highSearchLowResults = (result?.highSearchLowResults ?? []) as HighSearchLowResultsAction[];
 
   const searchesThatReachedTheCorpus = overall.totalSearches - overall.degradedSearches;
   return {

@@ -68,8 +68,8 @@ The per-user table still lists every actor, maintainers included.
 A signed-in visitor is a distinct netid with any recorded event in the window, typed by that netid's most recent row.
 A `visitor` row is written once per cookie session, so counting only `login` and `visitor` rows missed a returning student whose session began before the window.
 Logins count `login` rows only.
-The per-user research views column counts `research_profile_open`, because `research_view` is emitted only by the fellowship detail route.
-Action needed ranks every query group with a repeated zero-result search, not only the 100 most searched.
+The per-user Profile Opens column (the `researchViews` field) counts `research_profile_open`, because `research_view` is emitted only by the fellowship detail route.
+Action needed and the top zero-result queries rank every query group with a zero-result search, not only the 100 most searched; action needed also requires at least 2 searches.
 
 The admin funnel reports source inspections, official-route attempts, application opens, and confirmed outcomes separately.
 Application opens include only `open_position` and `official_application` qualified categories.
