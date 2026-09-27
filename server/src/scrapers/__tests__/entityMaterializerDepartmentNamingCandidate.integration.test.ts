@@ -71,6 +71,12 @@ describe('a department winner that names no department (#3610)', () => {
       status: 'ACTIVE',
     });
     await OrgUnit.create({
+      slug: 'faculty-of-arts-and-sciences',
+      name: 'Faculty of Arts and Sciences',
+      kind: 'DIVISION',
+      status: 'ACTIVE',
+    });
+    await OrgUnit.create({
       slug: 'economics',
       name: 'Economics',
       kind: 'DEPARTMENT',
@@ -146,6 +152,30 @@ describe('a department winner that names no department (#3610)', () => {
       ['PUBLIC HEALTH & PREV MEDICINE'],
       'nih-reporter',
       0.4,
+    );
+
+    await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+    await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+
+    expect((await stored('example-lead-lab')).departments).toEqual(['Economics']);
+  });
+
+  it("leaves the stored department when the winner names only the row's own school", async () => {
+    await ResearchEntity.create({
+      slug: 'example-lead-lab',
+      name: 'Example Lead Lab',
+      kind: 'lab',
+      archived: false,
+      school: 'Faculty of Arts and Sciences',
+      departments: ['Economics'],
+    });
+    await seedObservation('example-lead-lab', 'name', 'Example Lead Lab', 'lab-microsite', 0.9);
+    await seedObservation(
+      'example-lead-lab',
+      'departments',
+      ['Faculty of Arts and Sciences'],
+      'dept-faculty-roster',
+      0.7,
     );
 
     await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });

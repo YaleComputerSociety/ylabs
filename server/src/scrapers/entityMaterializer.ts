@@ -2215,10 +2215,19 @@ export function leadPiSchoolInheritanceGate(input: {
 
 type DepartmentValueTest = (value: unknown) => boolean;
 
-async function departmentValueNamesADepartment(): Promise<DepartmentValueTest | null> {
+async function departmentValueNamesADepartment(
+  effectiveSchool: unknown,
+): Promise<DepartmentValueTest | null> {
   try {
     const canonicalizer = await getOrgUnitCanonicalizer();
-    return (value) => canonicalizer.canonicalizeDepartments(value).values.length > 0;
+    const schoolKey =
+      typeof effectiveSchool === 'string' && effectiveSchool.trim()
+        ? canonicalizer.canonicalizeSchool(effectiveSchool).value.trim().toLocaleLowerCase()
+        : '';
+    return (value) =>
+      canonicalizer
+        .canonicalizeDepartments(value)
+        .values.some((department) => department.toLocaleLowerCase() !== schoolKey);
   } catch {
     return null;
   }
@@ -3748,7 +3757,7 @@ export async function mergedSurvivorEvidence(
   // the next.
   // A school or campus label in the departments slot names no department, so it
   // cannot hold the field against a loser's real one (#3610).
-  const namesADepartment = await departmentValueNamesADepartment();
+  const namesADepartment = await departmentValueNamesADepartment(survivor.school);
   const holdsNoDepartment = (observation: any): boolean =>
     observation.field === 'departments' &&
     namesADepartment !== null &&
@@ -4620,7 +4629,9 @@ async function adoptDepartmentNamingCandidate(input: {
   const field = 'departments';
   const { set, entityDoc, confidenceByField } = input;
   if (input.manuallyLockedFields.includes(field) || !(field in set)) return 0;
-  const namesADepartment = await departmentValueNamesADepartment();
+  const namesADepartment = await departmentValueNamesADepartment(
+    'school' in set ? set.school : entityDoc?.school,
+  );
   if (!namesADepartment || namesADepartment(set[field])) return 0;
 
   const replacement = resolveFieldRanked(field, input.resolverObs, {
