@@ -148,6 +148,9 @@ Only navigation, fetch, and XHR breadcrumbs survive, reduced to their method, st
 Absolute URLs inside an exception message are scrubbed the same way, and a message the client writes itself must not interpolate a slug or key.
 A stack frame's `filename` and `abs_path` are scrubbed too, because the SDK falls back to the full page URL for a window error with no usable stack; only a same-origin bundled asset under `/assets/` with no query or fragment is kept verbatim, so source maps still resolve.
 `client/src/utils/__tests__/errorTrackingPayload.test.ts` runs the real SDK with its default integrations against a capturing transport and fails if a synthetic key or query value reaches the sent envelope.
+The browser can only deliver a report if `connect-src` allows the ingest host, and `server/src/middleware/securityHeaders.ts` derives that host from `VITE_SENTRY_DSN` on the same service rather than naming it.
+It accepts only an `https` DSN whose host has the `o<digits>.ingest[.<region>].sentry.io` shape and emits the bare origin, so the policy opens to Sentry exactly when a client DSN is configured and never carries the key, the project path, or a host of any other shape.
+A DSN set after deploy needs a restart for the header to change, and a rebuild for the client to report, so a redeploy covers both.
 
 ## Identity Joins Must Fail Closed
 

@@ -1,7 +1,12 @@
 import type { NextFunction, Request, Response } from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { CONTENT_SECURITY_POLICY, PERMISSIONS_POLICY, securityHeaders } from '../securityHeaders';
+import {
+  CONTENT_SECURITY_POLICY,
+  PERMISSIONS_POLICY,
+  securityHeaders,
+  sentryIngestOrigin,
+} from '../securityHeaders';
 
 const originalEnv = { ...process.env };
 
@@ -100,6 +105,45 @@ describe('securityHeaders', () => {
     expect(csp).not.toContain('http://localhost:4000');
     expect(connectDirective).not.toMatch(/\shttps:(?:\s|$)/);
     expect(csp).toContain('upgrade-insecure-requests');
+  });
+
+  it('allows the configured client Sentry ingest host in production connect-src', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.VITE_SENTRY_DSN = 'https://publickey@o123.ingest.us.sentry.io/456';
+    const { headers } = runMiddleware({ secure: false, headers: {} });
+    const connectDirective = (headers.get('Content-Security-Policy') || '')
+      .split('; ')
+      .find((directive) => directive.startsWith('connect-src '));
+
+    expect(connectDirective?.split(' ')).toContain('https://o123.ingest.us.sentry.io');
+    expect(connectDirective).not.toContain('publickey');
+    expect(connectDirective).not.toContain('/456');
+  });
+
+  it('adds no Sentry origin without a client DSN', () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.VITE_SENTRY_DSN;
+    const { headers } = runMiddleware({ secure: false, headers: {} });
+
+    expect(headers.get('Content-Security-Policy')).not.toContain('sentry.io');
+  });
+
+  it.each([
+    ['a non-Sentry host', 'https://publickey@collector.example.test/1'],
+    ['a look-alike host', 'https://publickey@o123.ingest.us.sentry.io.example.test/1'],
+    ['plain http', 'http://publickey@o123.ingest.us.sentry.io/1'],
+    ['an explicit port', 'https://publickey@o123.ingest.us.sentry.io:8443/1'],
+    ['a malformed value', 'not a url'],
+  ])('refuses %s as a connect-src origin', (_label, dsn) => {
+    expect(sentryIngestOrigin(dsn)).toBeUndefined();
+  });
+
+  it('emits only the parsed origin when the DSN carries trailing directive text', () => {
+    expect(
+      sentryIngestOrigin(
+        "https://publickey@o123.ingest.us.sentry.io/1; script-src 'unsafe-inline'",
+      ),
+    ).toBe('https://o123.ingest.us.sentry.io');
   });
 
   it('limits production image sources to self, local data/blob URLs, and trusted image origins', () => {
