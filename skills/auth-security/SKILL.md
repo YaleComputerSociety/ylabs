@@ -197,9 +197,9 @@ The server test suite must never read them either, and `server/src/test/hermetic
 | `FIRST_CONTACT_RATE_LIMIT_MAX` | No | Per-IP cookie-less request ceiling per 15 minutes for `firstContactLimiter`; defaults to 300 and is floored at 50, so a too-small value cannot lock out a NATed cohort. |
 | `YALIES_API_KEY` | No | API key for yalies.io. |
 | `OPENAI_API_KEY` | No | OpenAI key for Meilisearch embedder config and LLM extractors. |
-| `MEILISEARCH_HOST` | No | Meilisearch host. |
+| `MEILISEARCH_HOST` | Deployed | Meilisearch host; defaults to `http://localhost:7700` only outside deployed runtimes, and the server refuses to start without it when deployed. |
 | `MEILISEARCH_API_KEY` | No | Meilisearch API key. |
-| `MEILISEARCH_INDEX_PREFIX` | No | Environment index prefix. |
+| `MEILISEARCH_INDEX_PREFIX` | Deployed | Environment index prefix (`beta`, `prod`); unset locally, and the server refuses to start without it when deployed. |
 | `PORT` | No | Server port, default 4000. |
 | `SCRAPER_ENV` | No | Scraper write guards. |
 | `ALLOW_NON_PROD_SCRAPER_WRITES` | No | Enables scraper writes to non-prod DBs. |

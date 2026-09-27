@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
@@ -12,6 +12,7 @@ import {
   getResearchEntitySearchIndexSettings,
   invalidateResearchEntitySearchEmbedderCache,
   isResearchEntitySearchEmbedderConfigured,
+  readResearchEntitySearchEmbedderState,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL,
   RESEARCH_ENTITY_SEARCH_INDEX_NAME,
   RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
@@ -858,6 +859,70 @@ describe('isResearchEntitySearchEmbedderConfigured', () => {
       },
     });
     expect(configured).toBe(false);
+  });
+
+  it('does not cache a failed embedder check, so the next request asks again', async () => {
+    let calls = 0;
+    const index = {
+      getEmbedders: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error('meili unreachable');
+        return { default: {} };
+      },
+    };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(false);
+      expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(true);
+      expect(calls).toBe(2);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('logs a failed embedder check through the sanitized logger', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      await isResearchEntitySearchEmbedderConfigured({
+        getEmbedders: async () => {
+          throw new Error('meili unreachable at http://user:secret@meili.internal:7700');
+        },
+      });
+
+      expect(consoleError).toHaveBeenCalledTimes(1);
+      const logged = consoleError.mock.calls[0].map(String).join(' ');
+      expect(logged).toMatch(/embedder/i);
+      expect(logged).not.toContain('secret');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('reports a failed embedder check as unknown rather than absent', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      expect(
+        await readResearchEntitySearchEmbedderState({
+          getEmbedders: async () => {
+            throw new Error('meili unreachable');
+          },
+        }),
+      ).toBe('unknown');
+      expect(await readResearchEntitySearchEmbedderState({ getEmbedders: async () => ({}) })).toBe(
+        'absent',
+      );
+      invalidateResearchEntitySearchEmbedderCache();
+      expect(
+        await readResearchEntitySearchEmbedderState({
+          getEmbedders: async () => ({ default: {} }),
+        }),
+      ).toBe('configured');
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('caches the result until the cache is invalidated', async () => {

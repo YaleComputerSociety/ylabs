@@ -32,6 +32,7 @@ import { Signal } from '../models/signal';
 import { getMeiliIndex } from '../utils/meiliClient';
 import {
   isResearchEntitySearchEmbedderConfigured,
+  readResearchEntitySearchEmbedderState,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
 } from './researchEntitySearchIndexService';
@@ -1177,22 +1178,27 @@ export async function searchResearchGroupsViaMeili(
   }
 
   const index = await getMeiliIndex('researchentities');
+  let embedderStateUnknown = false;
   if (!isBrowseAllQuery) {
     if (normalizedQuery.aliasExpansionKeepsShorthand) {
       searchParams.attributesToSearchOn = TOPIC_ALIAS_QUERY_ATTRIBUTES;
-    } else if (await isResearchEntitySearchEmbedderConfigured(index)) {
-      searchParams.hybrid = {
-        semanticRatio: 0.8,
-        embedder: 'default',
-      };
-      searchParams.rankingScoreThreshold = HYBRID_RANKING_SCORE_THRESHOLD;
-      searchParams.showRankingScoreDetails = true;
-      // One request runs several hybrid queries over this same text, and
-      // Meilisearch embeds the query afresh for each one. Supplying the vector
-      // makes it skip its embedder, so the request pays at most one OpenAI round
-      // trip instead of one per query. See #3149.
-      const queryVector = await getResearchSearchQueryVector(meiliQueryText);
-      if (queryVector) searchParams.vector = queryVector;
+    } else {
+      const embedderState = await readResearchEntitySearchEmbedderState(index);
+      embedderStateUnknown = embedderState === 'unknown';
+      if (embedderState === 'configured') {
+        searchParams.hybrid = {
+          semanticRatio: 0.8,
+          embedder: 'default',
+        };
+        searchParams.rankingScoreThreshold = HYBRID_RANKING_SCORE_THRESHOLD;
+        searchParams.showRankingScoreDetails = true;
+        // One request runs several hybrid queries over this same text, and
+        // Meilisearch embeds the query afresh for each one. Supplying the vector
+        // makes it skip its embedder, so the request pays at most one OpenAI round
+        // trip instead of one per query. See #3149.
+        const queryVector = await getResearchSearchQueryVector(meiliQueryText);
+        if (queryVector) searchParams.vector = queryVector;
+      }
     }
   }
 
@@ -1252,7 +1258,7 @@ export async function searchResearchGroupsViaMeili(
     // Each attempt uses an immutable params object; degrading clones rather than
     // mutating, so already-issued calls keep the params they were sent.
     let params: Record<string, any> = searchParams;
-    let degraded = false;
+    let degraded = embedderStateUnknown;
     while (true) {
       try {
         return {

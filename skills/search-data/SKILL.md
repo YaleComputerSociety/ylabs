@@ -29,14 +29,19 @@ A working-style phrase (`wet lab`, `dry lab`, `wet bench`) resolves through `RES
 The Meilisearch client lives in `server/src/utils/meiliClient.ts`.
 It lazy-loads and caches the connection.
 Use `getMeiliIndex(name)` and `resolveIndexName(name)`.
+Every request is bounded by `MEILISEARCH_REQUEST_TIMEOUT_MS` (5 seconds), so a hung Meilisearch fails a search fast enough for the Mongo fallback to answer instead of holding the request for the runtime's default fetch timeout of several minutes.
+The bound is per HTTP request, so settings and document tasks are unaffected: those requests only enqueue, and `waitForTask` polls with its own overall timeout.
+The server refuses to start in a deployed runtime (`requiresDeployedRuntimeSecurity()`) unless both `MEILISEARCH_HOST` and `MEILISEARCH_INDEX_PREFIX` are set, because the local defaults would silently point Beta or Production at `localhost` or at the unprefixed Development index.
+The check runs in `app.ts` at startup rather than inside the client, so local scripts, which usually run with no `NODE_ENV`, keep the local defaults.
+The embedder check behind hybrid search (`readResearchEntitySearchEmbedderState`) caches `configured` and `absent` for five minutes but never caches a failed check: a thrown `getEmbedders()` is logged, reported as `unknown`, and makes that search keyword-only with `degraded: true`.
 
 Relevant config:
 
 | Variable                   | Purpose                                                    |
 | -------------------------- | ---------------------------------------------------------- |
-| `MEILISEARCH_HOST`         | Defaults to `http://localhost:7700`.                       |
+| `MEILISEARCH_HOST`         | Defaults to `http://localhost:7700` locally; required in deployed runtimes. |
 | `MEILISEARCH_API_KEY`      | Meilisearch API key.                                       |
-| `MEILISEARCH_INDEX_PREFIX` | Optional environment prefix, e.g. `beta_researchentities`. |
+| `MEILISEARCH_INDEX_PREFIX` | Environment prefix (`beta`, `prod`), giving e.g. `beta_researchentities`; unset locally, required in deployed runtimes. |
 | `OPENAI_API_KEY`           | Used by Meilisearch embedder config and LLM extractors.    |
 
 Documents sync via `meiliSyncService.ts` after upserts.

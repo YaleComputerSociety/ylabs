@@ -139,6 +139,7 @@ vi.mock('../utils/meiliClient', () => ({
   getMeiliClient: async () => searchFence.unreachableSurface(),
   getMeiliIndex: async () => searchFence.unreachableSurface(),
   resolveIndexName: (name: string) => name,
+  assertDeployedMeiliConnectionConfig: () => undefined,
 }));
 
 applyEnvironmentFence(process.env);

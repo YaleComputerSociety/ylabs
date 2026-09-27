@@ -20,6 +20,7 @@ import { sanitizeMongo } from './middleware/sanitizeMongo';
 import { csrfOriginGuard } from './middleware/csrfOriginGuard';
 import { createCorsOriginHandler } from './middleware/corsOrigin';
 import { sessionCookieName } from './utils/sessionCookie';
+import { assertDeployedMeiliConnectionConfig } from './utils/meiliClient';
 import {
   ensureAnonymousRateLimitId,
   firstContactLimiter,
@@ -112,6 +113,8 @@ if (!bypassRuntimeSecurity && trustedProxyAddressCount === 0) {
     'TRUSTED_PROXY_CIDRS must define at least one trusted proxy in deployed runtimes.',
   );
 }
+
+assertDeployedMeiliConnectionConfig();
 
 const normalizedPeerAddress = (value: string): string =>
   value.startsWith('::ffff:') && isIP(value.slice(7)) === 4 ? value.slice(7) : value;
