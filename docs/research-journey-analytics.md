@@ -129,8 +129,13 @@ It sends no user identity.
 The session principal (`AuthenticatedSessionUser` in `server/src/passport.ts`) carries a netid and nothing else that identifies the caller, and no stable non-reversible account handle exists to stand in for one, so the report carries no identity rather than a reversible or a newly invented one.
 The report quotes the matched route template rather than the concrete request path, because routes such as `/admin-grants/:netid/revoke` and `/users/:netid` would otherwise put a netid into a tag.
 `server/src/utils/__tests__/errorTracking.test.ts` fails if a netid reaches the payload, as identity or as a path segment.
-The server `Sentry.init` passes only the DSN, environment, and release, so the SDK's own defaults decide the rest.
-`sendDefaultPii` is unset there, which disables user info and request bodies and denies the SDK's PII header snippets, but it does not disable automatic request attachment, and what the default HTTP integration attaches to a server event has not been audited.
+The server SDK's defaults are not safe to inherit, and the audit that proved it is recorded in `server/src/utils/__tests__/errorTrackingPayload.test.ts`.
+With only a DSN, environment, and release, a server error event carried the concrete request URL with its netid and query string, every request header, the session cookie, a transaction name quoting the concrete path, console lines as breadcrumbs, and local variable values in stack frames.
+A session cookie with its signature is a credential, so that default hands the provider a way to act as the signed-in user.
+`buildErrorTrackingOptions` in `server/src/utils/errorTracking.ts` therefore turns every `dataCollection` category off, including `stackFrameVariables`, and `scrubServerEvent` reduces `event.request` to its method, rebuilds the transaction from the route template, drops every breadcrumb, and removes credentials from any URL quoted in an exception message.
+A message the server writes itself must still not interpolate a netid, email, or slug, because no scrubber can recognise one.
+The route template keeps its mount path even from the global error handler, where Express has already cleared `req.baseUrl`, by taking the leading request segments the template does not cover.
+That is safe only while every router is mounted at a static path, so mounting one at a param path means changing that recovery first.
 
 The client reports no user and scrubs every event before it leaves the browser, in `client/src/utils/errorReportScrubbing.ts`.
 The browser SDK's defaults would otherwise attach the concrete page URL, the `Referer` header, navigation and request breadcrumbs with concrete paths and query strings, and console and click breadcrumbs with uncontrolled text.

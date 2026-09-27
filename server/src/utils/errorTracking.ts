@@ -7,7 +7,59 @@ type ErrorTrackingConfig = {
   release?: string;
 };
 
-let initialized = false;
+const DATA_COLLECTION: Sentry.NodeOptions['dataCollection'] = {
+  userInfo: false,
+  cookies: false,
+  httpHeaders: { request: false, response: false },
+  httpBodies: [],
+  queryParams: false,
+  genAI: { inputs: false, outputs: false },
+  stackFrameVariables: false,
+};
+
+const URL_CREDENTIALS_PATTERN = /\/\/[^/\s:@]+:[^/\s@]+@/g;
+
+const scrubUrlCredentials = (text: string): string =>
+  text.replace(URL_CREDENTIALS_PATTERN, '//[Filtered]@');
+
+const reportedTag = (event: Sentry.ErrorEvent, name: string): string | undefined => {
+  const value = event.tags?.[name];
+  return typeof value === 'string' ? value : undefined;
+};
+
+export const scrubServerEvent = (event: Sentry.ErrorEvent): Sentry.ErrorEvent => {
+  const method = reportedTag(event, 'method') ?? event.request?.method;
+  const route = reportedTag(event, 'path');
+
+  return {
+    ...event,
+    user: undefined,
+    request: method ? { method } : undefined,
+    transaction: method && route ? `${method} ${route}` : undefined,
+    breadcrumbs: undefined,
+    exception: event.exception && {
+      ...event.exception,
+      values: event.exception.values?.map((exception) => ({
+        ...exception,
+        value: exception.value ? scrubUrlCredentials(exception.value) : exception.value,
+      })),
+    },
+  };
+};
+
+const dropBreadcrumb = (): null => null;
+
+export const buildErrorTrackingOptions = (
+  config: ErrorTrackingConfig & { dsn: string },
+): Sentry.NodeOptions => ({
+  dsn: config.dsn,
+  environment: config.environment,
+  release: config.release,
+  dataCollection: DATA_COLLECTION,
+  includeLocalVariables: false,
+  beforeSend: scrubServerEvent,
+  beforeBreadcrumb: dropBreadcrumb,
+});
 
 const getErrorTrackingConfig = (): ErrorTrackingConfig => ({
   dsn: process.env.SENTRY_DSN,
@@ -20,19 +72,31 @@ export const initializeErrorTracking = (config = getErrorTrackingConfig()) => {
     return false;
   }
 
-  if (!initialized) {
-    Sentry.init({
-      dsn: config.dsn,
-      environment: config.environment,
-      release: config.release,
-    });
-    initialized = true;
+  if (!Sentry.isInitialized()) {
+    Sentry.init(buildErrorTrackingOptions({ ...config, dsn: config.dsn }));
   }
 
   return true;
 };
 
 const UNMATCHED_ROUTE = 'unmatched';
+
+const COUNTABLE_TEMPLATE = /^[^*?()+]*$/;
+
+const pathSegments = (path: string): string[] => path.split('/').filter(Boolean);
+
+// Express clears `req.baseUrl` once a request leaves its router, so the global
+// error handler sees an empty one. The mount is recovered from the leading
+// request segments, which is safe only because every router is mounted at a
+// static path: mounting one at a param path would put its value into reports.
+const mountPathOf = (req: Request, template: string): string => {
+  if (typeof req.baseUrl === 'string' && req.baseUrl) return req.baseUrl;
+  if (!COUNTABLE_TEMPLATE.test(template) || typeof req.originalUrl !== 'string') return '';
+
+  const requestSegments = pathSegments(req.originalUrl.split('?')[0] ?? '');
+  const mountSegmentCount = requestSegments.length - pathSegments(template).length;
+  return mountSegmentCount > 0 ? `/${requestSegments.slice(0, mountSegmentCount).join('/')}` : '';
+};
 
 // A concrete request path can carry a netid, because routes such as
 // `/users/:netid` declare one as a param, so reports quote the matched route
@@ -46,8 +110,7 @@ const errorReportRoute = (req: Request): string => {
     return UNMATCHED_ROUTE;
   }
 
-  const mountPath = typeof req.baseUrl === 'string' ? req.baseUrl : '';
-  return `${mountPath}${template === '/' ? '' : template}` || '/';
+  return `${mountPathOf(req, template)}${template === '/' ? '' : template}` || '/';
 };
 
 export const captureServerError = (error: Error, req: Request) => {
