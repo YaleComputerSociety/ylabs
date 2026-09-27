@@ -398,6 +398,50 @@ export function buildLLMPrompt(
   return parts.join('\n').slice(0, MAX_PROMPT_CHARS);
 }
 
+const normalizeQuoteText = (text: string): string =>
+  text
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * The fetched page a model quote was copied from, or null when no page contains it. The
+ * model reads contact-redacted text, so a page matches on either form, and only
+ * whitespace and typographic quote or dash differences are forgiven.
+ */
+export function pageContainingQuote(
+  quote: string | undefined,
+  pages: readonly PromptSourcePage[],
+): PromptSourcePage | null {
+  const needle = normalizeQuoteText(quote || '');
+  if (!needle) return null;
+  return (
+    pages.find(
+      (page) =>
+        normalizeQuoteText(page.text).includes(needle) ||
+        normalizeQuoteText(redactDirectContactInfo(page.text)).includes(needle),
+    ) ?? null
+  );
+}
+
+const PAGE_QUOTE_FIELDS = [
+  'evidenceQuote',
+  'undergradRoleQuote',
+  'contactInstructionsQuote',
+  'explicitConstraintQuote',
+] as const;
+
+export function quoteFieldsNotOnPage(
+  extraction: LLMExtraction,
+  pages: readonly PromptSourcePage[],
+): string[] {
+  return PAGE_QUOTE_FIELDS.filter(
+    (field) => (extraction[field] || '').trim() && !pageContainingQuote(extraction[field], pages),
+  );
+}
+
 export function sourceUrlForExtraction(
   homePage: PromptSourcePage,
   subPages: PromptSourcePage[],
@@ -501,12 +545,14 @@ export function deriveCurrentUndergradCount(extraction: LLMExtraction): number {
  * will consume. Implements the rules:
  *
  *   - undergradAccessEvidence: emitted iff openToUndergrads is 'yes' or 'no';
- *     skipped on 'unclear'. Confidence override 0.5 (LLM-based, low-trust).
+ *     skipped on 'unclear', and skipped when its quote is on no fetched page. Confidence override 0.5 (LLM-based, low-trust).
  *   - currentUndergradCount: emitted iff evidenceSource is 'members_section'
  *     AND the recency/institution-gated count (deriveCurrentUndergradCount) is
  *     a positive integer. Open prose ("we have many undergrads") is too
  *     unreliable to write a count from, and alumni / non-Yale visiting undergrads
  *     never count toward it. Confidence 0.5.
+ *   - every quote field: emitted only when the quote is on a fetched page, and
+ *     cited to that page (#3592).
  *   - undergradEvidenceQuote: emitted iff evidenceQuote is non-empty, plausible,
  *     and passes the same recency/institution gate as currentUndergradCount, so
  *     a historical or non-Yale snippet never gets displayed as current evidence.
@@ -528,6 +574,14 @@ export function extractionToObservations(
 ): ObservationInput[] {
   const sourceUrls = sourceContext.sourceUrls?.filter(Boolean) ?? [sourceUrl];
   const quoteSourceUrl = sourceContext.quoteSourceUrl || sourceUrl;
+  const pages = sourceContext.sourcePages ?? [];
+  const quoteOnPage = (quote: string | undefined) => {
+    const text = (quote || '').trim();
+    const page = pageContainingQuote(text, pages);
+    return page ? { text, sourceUrl: page.url } : null;
+  };
+  const evidenceQuote = quoteOnPage(extraction.evidenceQuote);
+  const verdictIsBacked = !(extraction.evidenceQuote || '').trim() || evidenceQuote !== null;
   const base = {
     entityType: 'researchEntity' as const,
     entityKey: groupSlug,
@@ -535,7 +589,7 @@ export function extractionToObservations(
   };
   const out: ObservationInput[] = [];
 
-  if (extraction.openToUndergrads === 'yes') {
+  if (extraction.openToUndergrads === 'yes' && verdictIsBacked) {
     out.push({
       ...base,
       field: 'undergradAccessEvidence',
@@ -544,11 +598,11 @@ export function extractionToObservations(
         evidenceSource: extraction.evidenceSource,
         evidenceQuote: extraction.evidenceQuote,
         sourceUrls,
-        quoteSourceUrl,
+        quoteSourceUrl: evidenceQuote?.sourceUrl ?? quoteSourceUrl,
       },
       confidenceOverride: 0.5,
     });
-  } else if (extraction.openToUndergrads === 'no') {
+  } else if (extraction.openToUndergrads === 'no' && verdictIsBacked) {
     out.push({
       ...base,
       field: 'undergradAccessEvidence',
@@ -557,7 +611,7 @@ export function extractionToObservations(
         evidenceSource: extraction.evidenceSource,
         evidenceQuote: extraction.evidenceQuote,
         sourceUrls,
-        quoteSourceUrl,
+        quoteSourceUrl: evidenceQuote?.sourceUrl ?? quoteSourceUrl,
       },
       confidenceOverride: 0.5,
     });
@@ -573,13 +627,16 @@ export function extractionToObservations(
     });
   }
 
-  const quote = (extraction.evidenceQuote || '').trim();
-  if (quote && isPlausibleUndergradEvidenceQuote(quote) && isCurrentYaleUndergradEvidence(quote)) {
+  if (
+    evidenceQuote &&
+    isPlausibleUndergradEvidenceQuote(evidenceQuote.text) &&
+    isCurrentYaleUndergradEvidence(evidenceQuote.text)
+  ) {
     out.push({
       ...base,
-      sourceUrl: quoteSourceUrl,
+      sourceUrl: evidenceQuote.sourceUrl,
       field: 'undergradEvidenceQuote',
-      value: redactDirectContactInfo(quote).slice(0, 500),
+      value: redactDirectContactInfo(evidenceQuote.text).slice(0, 500),
       confidenceOverride: 0.5,
     });
   }
@@ -623,35 +680,35 @@ export function extractionToObservations(
     }
   }
 
-  const undergradRoleQuote = (extraction.undergradRoleQuote || '').trim();
+  const undergradRoleQuote = quoteOnPage(extraction.undergradRoleQuote);
   if (undergradRoleQuote) {
     out.push({
       ...base,
-      sourceUrl: quoteSourceUrl,
+      sourceUrl: undergradRoleQuote.sourceUrl,
       field: 'undergradRoleEvidenceQuote',
-      value: redactDirectContactInfo(undergradRoleQuote).slice(0, 500),
+      value: redactDirectContactInfo(undergradRoleQuote.text).slice(0, 500),
       confidenceOverride: 0.5,
     });
   }
 
-  const contactInstructionsQuote = (extraction.contactInstructionsQuote || '').trim();
+  const contactInstructionsQuote = quoteOnPage(extraction.contactInstructionsQuote);
   if (contactInstructionsQuote) {
     out.push({
       ...base,
-      sourceUrl: quoteSourceUrl,
+      sourceUrl: contactInstructionsQuote.sourceUrl,
       field: 'contactInstructionsQuote',
-      value: redactDirectContactInfo(contactInstructionsQuote).slice(0, 500),
+      value: redactDirectContactInfo(contactInstructionsQuote.text).slice(0, 500),
       confidenceOverride: 0.5,
     });
   }
 
-  const explicitConstraintQuote = (extraction.explicitConstraintQuote || '').trim();
+  const explicitConstraintQuote = quoteOnPage(extraction.explicitConstraintQuote);
   if (explicitConstraintQuote) {
     out.push({
       ...base,
-      sourceUrl: quoteSourceUrl,
+      sourceUrl: explicitConstraintQuote.sourceUrl,
       field: 'undergradConstraintQuote',
-      value: redactDirectContactInfo(explicitConstraintQuote).slice(0, 500),
+      value: redactDirectContactInfo(explicitConstraintQuote.text).slice(0, 500),
       confidenceOverride: 0.5,
     });
   }
@@ -1053,6 +1110,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     let llmFailed = 0;
     let processingFailed = 0;
     let contentUnchangedSkipped = 0;
+    let quotesNotOnPage = 0;
     const fetchAttempts: ScraperFetchMetric[] = [];
     const workPlannerPolicy = ctx.options.ignoreWorkPlanner
       ? undefined
@@ -1194,6 +1252,8 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           }
         }
 
+        const sourcePages = [{ url: homePage.url, text: homeText }, ...subPages];
+        quotesNotOnPage += quoteFieldsNotOnPage(extraction, sourcePages).length;
         let observations = extractionToObservations(
           lab.slug,
           sourceUrlForExtraction({ url: homePage.url, text: homeText }, subPages, extraction),
@@ -1207,7 +1267,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
               extraction,
             ),
             sourceTexts: [homeText, ...subPages.map((page) => page.text)],
-            sourcePages: [{ url: homePage.url, text: homeText }, ...subPages],
+            sourcePages,
             entityIdentity: lab,
           },
         );
@@ -1246,9 +1306,10 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: succeeded,
-      notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed, ${processingFailed} processing-failed, ${contentUnchangedSkipped} content-unchanged skipped, ${workPlannerMetrics.skippedFresh + workPlannerMetrics.skippedManualLock} workplanner-skipped)`,
+      notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed, ${processingFailed} processing-failed, ${contentUnchangedSkipped} content-unchanged skipped, ${quotesNotOnPage} quotes not on page, ${workPlannerMetrics.skippedFresh + workPlannerMetrics.skippedManualLock} workplanner-skipped)`,
       metrics: {
         workPlanner: workPlannerMetrics,
+        quotesNotOnPage,
       },
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };

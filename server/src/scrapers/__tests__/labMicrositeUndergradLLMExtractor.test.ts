@@ -21,6 +21,8 @@ import {
   LAB_UNDERGRAD_RESPONSE_FORMAT,
   LAB_UNDERGRAD_SYSTEM_PROMPT,
   extractionToObservations,
+  pageContainingQuote,
+  quoteFieldsNotOnPage,
   deriveCurrentUndergradCount,
   isHistoricalUndergradEvidence,
   namesNonYaleInstitution,
@@ -302,6 +304,84 @@ describe('LLM extraction contract', () => {
   });
 });
 
+describe('pageContainingQuote', () => {
+  const pages = [
+    { url: 'https://x.example/', text: 'Welcome to the lab.' },
+    {
+      url: 'https://x.example/join',
+      text: 'Undergraduates   help\nwith field work. Email pi.person@yale.edu to ask.',
+    },
+  ];
+
+  it('finds the page a quote was copied from across whitespace differences', () => {
+    expect(pageContainingQuote('Undergraduates help with field work.', pages)?.url).toBe(
+      'https://x.example/join',
+    );
+  });
+
+  it('matches a quote the model copied from the contact-redacted prompt text', () => {
+    expect(pageContainingQuote('Email [email redacted] to ask.', pages)?.url).toBe(
+      'https://x.example/join',
+    );
+  });
+
+  it('forgives typographic quotes and dashes but not a reworded sentence', () => {
+    const typographic = [
+      { url: 'https://x.example/', text: 'Students\u2019 projects \u2013 paid.' },
+    ];
+    expect(pageContainingQuote("Students' projects - paid.", typographic)).not.toBeNull();
+    expect(pageContainingQuote('Undergraduates assist with field work.', pages)).toBeNull();
+  });
+});
+
+describe('extractionToObservations quote grounding', () => {
+  const fixedDate = new Date('2026-04-27T12:00:00Z');
+  const pages = [
+    { url: 'https://x.example/', text: 'Welcome to the lab.' },
+    { url: 'https://x.example/join', text: 'Undergraduates help with field work.' },
+  ];
+
+  it('drops a paraphrased quote and the verdict it was offered to back', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'Undergraduates regularly join our field work.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+      contactInstructionsQuote: 'Email the PI to apply.',
+    };
+    const obs = extractionToObservations('lab-p', 'https://x.example/', ext, fixedDate, {
+      sourcePages: pages,
+    });
+    expect(obs.map((o) => o.field)).toEqual(['lastObservedAt']);
+    expect(quoteFieldsNotOnPage(ext, pages)).toEqual(['evidenceQuote', 'contactInstructionsQuote']);
+  });
+
+  it('cites each quote to the page that contains it', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'Undergraduates help with field work.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+      contactInstructionsQuote: 'Welcome to the lab.',
+    };
+    const obs = extractionToObservations('lab-c', 'https://x.example/', ext, fixedDate, {
+      sourcePages: pages,
+      quoteSourceUrl: 'https://x.example/',
+    });
+    expect(obs.find((o) => o.field === 'undergradEvidenceQuote')?.sourceUrl).toBe(
+      'https://x.example/join',
+    );
+    expect(obs.find((o) => o.field === 'contactInstructionsQuote')?.sourceUrl).toBe(
+      'https://x.example/',
+    );
+    expect(
+      (obs.find((o) => o.field === 'undergradAccessEvidence')?.value as any).quoteSourceUrl,
+    ).toBe('https://x.example/join');
+  });
+});
+
 describe('sourceUrlForExtraction', () => {
   it('returns the page whose text contains the evidence quote', () => {
     const ext: LLMExtraction = {
@@ -344,6 +424,13 @@ describe('extractionToObservations', () => {
     const obs = extractionToObservations('lab-foo', 'https://x.example/', ext, fixedDate, {
       sourceUrls: ['https://x.example/', 'https://x.example/join'],
       quoteSourceUrl: 'https://x.example/join',
+      sourcePages: [
+        { url: 'https://x.example/', text: 'Welcome to the lab.' },
+        {
+          url: 'https://x.example/join',
+          text: 'Joining. We welcome motivated undergraduates each semester.',
+        },
+      ],
     });
     expect(obs.find((o) => o.field === 'acceptingUndergrads')).toBeUndefined();
     const evidence = obs.find((o) => o.field === 'undergradAccessEvidence');
@@ -648,7 +735,11 @@ describe('extractionToObservations', () => {
       evidenceSource: 'explicit_text',
       joinPageUrl: null,
     };
-    const obs = extractionToObservations('lab-bar', 'https://x.example/', ext, fixedDate);
+    const obs = extractionToObservations('lab-bar', 'https://x.example/', ext, fixedDate, {
+      sourcePages: [
+        { url: 'https://x.example/', text: 'We do not accept undergraduate students.' },
+      ],
+    });
     expect(obs.find((o) => o.field === 'acceptingUndergrads')).toBeUndefined();
     const evidence = obs.find((o) => o.field === 'undergradAccessEvidence');
     expect(evidence!.confidenceOverride).toBe(0.5);
@@ -848,7 +939,9 @@ describe('extractionToObservations', () => {
       evidenceSource: 'explicit_text',
       joinPageUrl: null,
     };
-    const obs = extractionToObservations('lab-3', 'https://x/', ext, fixedDate);
+    const obs = extractionToObservations('lab-3', 'https://x/', ext, fixedDate, {
+      sourcePages: [{ url: 'https://x/', text: ext.evidenceQuote }],
+    });
     const quote = obs.find((o) => o.field === 'undergradEvidenceQuote');
     expect((quote!.value as string).length).toBe(500);
   });
@@ -864,7 +957,14 @@ describe('extractionToObservations', () => {
       contactInstructionsQuote: 'Apply using the form on this page.',
       explicitConstraintQuote: 'Prior Python experience preferred.',
     };
-    const obs = extractionToObservations('lab-4', 'https://x/', ext, fixedDate);
+    const obs = extractionToObservations('lab-4', 'https://x/', ext, fixedDate, {
+      sourcePages: [
+        {
+          url: 'https://x/',
+          text: 'We welcome students. Undergraduates help collect data. Apply using the form on this page. Prior Python experience preferred.',
+        },
+      ],
+    });
     expect(obs.find((o) => o.field === 'joinPageUrl')!.value).toBe('https://x.example/join');
     expect(obs.find((o) => o.field === 'undergradRoleEvidenceQuote')!.value).toBe(
       'Undergraduates help collect data.',
@@ -888,7 +988,14 @@ describe('extractionToObservations', () => {
       contactInstructionsQuote: 'Call 203-432-1234 or email manager@yale.edu.',
       explicitConstraintQuote: '',
     };
-    const obs = extractionToObservations('lab-5', 'https://x/', ext, fixedDate);
+    const obs = extractionToObservations('lab-5', 'https://x/', ext, fixedDate, {
+      sourcePages: [
+        {
+          url: 'https://x/',
+          text: 'Email pi.person@yale.edu to discuss undergraduate research. Call 203-432-1234 or email manager@yale.edu.',
+        },
+      ],
+    });
 
     expect(obs.find((o) => o.field === 'undergradEvidenceQuote')!.value).toBe(
       'Email [email redacted] to discuss undergraduate research.',
@@ -1552,7 +1659,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
         return {
           openToUndergrads: 'yes',
           currentUndergradCount: 0,
-          evidenceQuote: 'We welcome undergraduate researchers.',
+          evidenceQuote: 'We welcome undergraduate researchers each semester.',
           evidenceSource: 'explicit_text',
           joinPageUrl: null,
         };
@@ -1671,7 +1778,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
         ({
           openToUndergrads: 'yes',
           currentUndergradCount: 0,
-          evidenceQuote: 'We welcome undergraduates.',
+          evidenceQuote: 'We welcome undergraduate researchers each semester.',
           evidenceSource: 'explicit_text',
           joinPageUrl: null,
         }) satisfies LLMExtraction,
