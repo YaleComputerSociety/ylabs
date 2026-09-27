@@ -409,7 +409,7 @@ export function findPersonIdentifierFindings(documents, { strict = false } = {})
     );
   }
 
-  return findings.map(({ matched, ...finding }) => finding);
+  return findings.map(({ matched: _matched, ...finding }) => finding);
 }
 
 export function isFinding(entry) {
