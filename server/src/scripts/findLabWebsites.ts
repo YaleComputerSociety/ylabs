@@ -5,15 +5,13 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { materializationReadScopeFilter, materializeEntity } from '../scrapers/entityMaterializer';
-import { Observation } from '../models/observation';
+import { materializeEntity } from '../scrapers/entityMaterializer';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
+import { websiteIdentity } from '../scrapers/survivorOwnedWebsiteClear';
 import {
   isUnsourcedProvenanceRecord,
-  planUnsourcedProvenanceWebsiteUrlClear,
   storedWebsiteUrlProvenance,
 } from '../scrapers/unsourcedProvenanceWebsiteClear';
-import { listResearchEntityMergedInRows } from '../services/researchEntityCanonicalTombstone';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   buildLookupSubject,
@@ -265,25 +263,20 @@ async function buildCorpusSurnameCounts(): Promise<Map<string, number>> {
   return new Map([...fullNamesBySurname].map(([surname, names]) => [surname, names.size]));
 }
 
-async function observationsStatingAWebsite(row: {
+async function materializeDropsStoredWebsite(row: {
   _id: mongoose.Types.ObjectId;
-  slug?: unknown;
-}): Promise<Array<{ field?: unknown; value?: unknown }>> {
-  const mergedIn = await listResearchEntityMergedInRows(row._id);
-  const slugs = [row.slug, ...mergedIn.map((merged) => merged.slug)].filter(
-    (slug): slug is string => typeof slug === 'string' && slug.length > 0,
+  websiteUrl?: unknown;
+}): Promise<boolean> {
+  const plan = await materializeEntity(
+    'researchEntity',
+    { entityId: String(row._id) },
+    { dryRun: true },
   );
-  return (await Observation.find({
-    entityType: 'researchEntity',
-    field: { $in: ['websiteUrl', 'website', 'sourceUrls'] },
-    ...materializationReadScopeFilter(),
-    $or: [
-      { entityKey: { $in: slugs } },
-      { entityId: { $in: [row._id, ...mergedIn.map((merged) => merged._id)] } },
-    ],
-  })
-    .select('field value')
-    .lean()) as Array<{ field?: unknown; value?: unknown }>;
+  if (plan.entityId !== String(row._id)) return false;
+  const planned = plan.plannedSet ?? {};
+  const unset = plan.plannedUnset ?? {};
+  if (!('websiteUrl' in planned) && !('websiteUrl' in unset)) return false;
+  return websiteIdentity(planned.websiteUrl) !== websiteIdentity(row.websiteUrl);
 }
 
 async function reverifyStoredWebsites(
@@ -296,20 +289,14 @@ async function reverifyStoredWebsites(
     websiteUrl: { $type: 'string', $ne: '' },
   })
     .select(
-      'slug name studentVisibilityTier websiteUrl sourceUrls departments researchAreas fieldProvenance manuallyLockedFields',
+      'slug name studentVisibilityTier websiteUrl sourceUrls departments researchAreas fieldProvenance',
     )
     .lean()) as any[];
 
   const awaitingEvidence: Array<{ subject: LabSiteSubject; url: string }> = [];
   for (const row of candidates) {
     if (!isUnsourcedProvenanceRecord(storedWebsiteUrlProvenance(row))) continue;
-    const awaiting = planUnsourcedProvenanceWebsiteUrlClear({
-      stored: row,
-      staged: {},
-      observations: await observationsStatingAWebsite(row),
-      lockedFields: Array.isArray(row.manuallyLockedFields) ? row.manuallyLockedFields : [],
-    });
-    if (!awaiting) continue;
+    if (!(await materializeDropsStoredWebsite(row))) continue;
     const subject = buildLookupSubject(row, isUnambiguousSurname);
     if (subject) awaitingEvidence.push({ subject, url: String(row.websiteUrl).trim() });
   }
