@@ -52,6 +52,7 @@ import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike'
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { officialProfileUrlFromRosterEntry } from './leadProfileIdentity';
 import { officialNonGrantSourceUrl } from '../scrapers/accessMaterializer';
+import { SCHOOL_PROFILE_HOSTS } from '../scrapers/orgUnitCanonicalization';
 import { IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS } from './accessAcceptanceLevel';
 import { unwrapMicrosoftSafeLinksUrl } from '../utils/safeLinksUrl';
 
@@ -458,15 +459,41 @@ const exactDuplicateUrlRejectedPathPatterns = [
 // research home, so a shared URL on them is not a duplicate signal.
 const genericDuplicateSignalHosts = new Set(['api.nsf.gov', 'api.reporter.nih.gov']);
 
+const identityQueryParamsByPage: Readonly<Record<string, readonly string[]>> = {
+  'scholar.google.com/citations': ['user'],
+};
+
+const regionalScholarHost = /^(?:www\.)?scholar\.google\.[a-z]{2,3}(?:\.[a-z]{2})?$/;
+
+const schoolLandingPagePath = /^\/(?:research|opportunities)$/i;
+
+const hostWithoutWww = (hostname: string): string => hostname.toLowerCase().replace(/^www\./, '');
+
+const identityQueryParamsFor = (url: URL): readonly string[] =>
+  identityQueryParamsByPage[`${hostWithoutWww(url.hostname)}${url.pathname}`] || [];
+
+function identityQueryString(url: URL, identityParams: readonly string[]): string {
+  const kept = new URLSearchParams();
+  for (const param of identityParams) {
+    const value = url.searchParams.get(param)?.trim();
+    if (value) kept.set(param, value);
+  }
+  return kept.toString();
+}
+
+const isSchoolLandingPage = (url: URL, path: string): boolean =>
+  Object.hasOwn(SCHOOL_PROFILE_HOSTS, hostWithoutWww(url.hostname)) &&
+  schoolLandingPagePath.test(path);
+
 function normalizedExactDuplicateUrl(value: unknown): string {
   const raw = unwrapMicrosoftSafeLinksUrl(value);
   if (!/^https?:\/\//i.test(raw)) return '';
   try {
     const url = new URL(raw);
     url.hash = '';
-    url.search = '';
     url.protocol = 'https:';
     url.hostname = url.hostname.toLowerCase();
+    if (regionalScholarHost.test(url.hostname)) url.hostname = 'scholar.google.com';
     // A trailing default document addresses the same page as the directory, so
     // `/lab/x/index.aspx` and `/lab/x/` are one destination. Without this, two rows
     // citing one lab under the two spellings read as distinct and both serve (#2708).
@@ -475,6 +502,7 @@ function normalizedExactDuplicateUrl(value: unknown): string {
     if (url.hostname === 'medicine.yale.edu') {
       url.pathname = url.pathname.replace(/^\/[^/]+\/profile\//i, '/profile/');
     }
+    url.search = identityQueryString(url, identityQueryParamsFor(url));
     return url.toString();
   } catch {
     return '';
@@ -489,6 +517,8 @@ function isSpecificDuplicateSignalUrl(value: string): boolean {
     if (path === '/' && /(^|\.)yale\.edu$/i.test(url.hostname)) return false;
     if (genericDuplicateSignalHosts.has(url.hostname.toLowerCase())) return false;
     if (exactDuplicateUrlRejectedPathPatterns.some((pattern) => pattern.test(path))) return false;
+    if (isSchoolLandingPage(url, path)) return false;
+    if (identityQueryParamsFor(url).length > 0 && !url.search) return false;
     return true;
   } catch {
     return false;
