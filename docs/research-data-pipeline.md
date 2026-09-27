@@ -40,7 +40,7 @@ The research engine writes `ResearchEntity` records for `/research` and runs the
 The fellowship engine writes `Fellowship` records for `/programs` and runs the catalog sources in `FELLOWSHIP_SWEEP_SOURCES`: `yale-college-fellowships-office`, `yale-reu-programs`, `yale-health-sciences-summer-programs`, and `student-grants-database`.
 `validateScraperSweepManifest` asserts every registered orchestrator source is in exactly one engine, with the exception of the sources in `MANUAL_ONLY_SWEEP_SOURCES`, which stay registered, seeded and runnable by hand (`scrape run --source <name>`) but out of both automated manifests.
 The validator also refuses a manual-only name that is no longer registered, so the list cannot go stale.
-Each manual-only source records its reason next to its name in `runScraperSweep.ts`:
+Each manual-only source records its reason next to its name in `scrapers/manualOnlySweepSources.ts`, which `runScraperSweep.ts` re-exports:
 
 - `undergrad-fellowships-recipients` is a backward-looking recipients source with no clean public feed.
 - `federal-award-usaspending` can never acquire, because USAspending publishes no principal-investigator field: across the 293 Yale DOE, NASA and DoD awards its request returns, 1 description embeds a PI name and that name resolves ambiguously, so every sweep failed it on the barren-streak guard below (#3542, #3547).
