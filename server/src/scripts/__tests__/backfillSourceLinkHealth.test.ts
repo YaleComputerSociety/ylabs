@@ -83,3 +83,27 @@ describe('--checked-before', () => {
     });
   });
 });
+
+describe('--reprobe-healthy-after-days', () => {
+  it('parses the window and carries it through to the run', () => {
+    const options = parseSourceLinkHealthBackfillArgs(['--reprobe-healthy-after-days=7']);
+    expect(options.reprobeHealthyAfterDays).toBe(7);
+    expect(sourceLinkHealthRunOptions(options)).toEqual({
+      dryRun: true,
+      staleOnly: false,
+      reprobeHealthyAfterDays: 7,
+    });
+  });
+
+  it('rejects a non-positive window', () => {
+    expect(() => parseSourceLinkHealthBackfillArgs(['--reprobe-healthy-after-days=0'])).toThrow(
+      /--reprobe-healthy-after-days must be a positive integer/,
+    );
+  });
+
+  it('refuses to combine with --stale-only, which scopes by row instead', () => {
+    expect(() =>
+      parseSourceLinkHealthBackfillArgs(['--stale-only', '--reprobe-healthy-after-days=7']),
+    ).toThrow(/alternative scopes/);
+  });
+});

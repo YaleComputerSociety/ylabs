@@ -21,7 +21,9 @@ import {
   type HostThrottle,
 } from '../scrapers/utils/hostConcurrencyLimiter';
 import {
+  carryForwardSourceLinkHealthEntry,
   collectSourceLinkHealthCandidates,
+  planSourceLinkReprobe,
   resolveSourceLinkHealthEntry,
   storedSourceLinkHealthByUrl,
   type StoredSourceLinkHealthEntry,
@@ -39,6 +41,7 @@ export interface SourceLinkHealthBackfillOptions {
   explicitLimit: boolean;
   confirm: boolean;
   staleOnly: boolean;
+  reprobeHealthyAfterDays?: number;
   checkedBefore?: Date;
   output?: string;
 }
@@ -58,16 +61,21 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
     else if (arg === '--confirm-source-link-health') options.confirm = true;
     else if (arg === '--stale-only') options.staleOnly = true;
-    else if (arg.startsWith('--checked-before=')) {
+    else if (arg.startsWith('--reprobe-healthy-after-days=')) {
+      options.reprobeHealthyAfterDays = parsePositiveInt(
+        arg.slice('--reprobe-healthy-after-days='.length),
+        '--reprobe-healthy-after-days',
+      );
+    } else if (arg.startsWith('--checked-before=')) {
       options.checkedBefore = parseCheckedBefore(arg.slice('--checked-before='.length));
     } else if (arg === '--checked-before') {
       options.checkedBefore = parseCheckedBefore(argv[i + 1]);
       i += 1;
     } else if (arg.startsWith('--limit=')) {
-      options.limit = parsePositiveInt(arg.slice('--limit='.length));
+      options.limit = parsePositiveInt(arg.slice('--limit='.length), '--limit');
       options.explicitLimit = true;
     } else if (arg === '--limit') {
-      options.limit = parsePositiveInt(argv[i + 1]);
+      options.limit = parsePositiveInt(argv[i + 1], '--limit');
       options.explicitLimit = true;
       i += 1;
     } else if (arg === '--output') {
@@ -78,6 +86,11 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     } else {
       throw new Error(`Unknown source-link-health backfill argument: ${arg}`);
     }
+  }
+  if (options.staleOnly && options.reprobeHealthyAfterDays !== undefined) {
+    throw new Error(
+      '--stale-only and --reprobe-healthy-after-days are alternative scopes; pass one.',
+    );
   }
   return options;
 }
@@ -93,12 +106,12 @@ function parseCheckedBefore(value: string | undefined): Date {
   return parsed;
 }
 
-function parsePositiveInt(value: string | undefined): number {
+function parsePositiveInt(value: string | undefined, flag: string): number {
   if (!value || value.startsWith('--') || !/^[1-9]\d*$/.test(value)) {
-    throw new Error('--limit must be a positive integer');
+    throw new Error(`${flag} must be a positive integer`);
   }
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed)) throw new Error('--limit must be a positive integer');
+  if (!Number.isSafeInteger(parsed)) throw new Error(`${flag} must be a positive integer`);
   return parsed;
 }
 
@@ -118,6 +131,7 @@ export interface SourceLinkHealthRunOptions {
   dryRun: boolean;
   limit?: number;
   staleOnly: boolean;
+  reprobeHealthyAfterDays?: number;
   checkedBefore?: Date;
 }
 
@@ -132,6 +146,9 @@ export function sourceLinkHealthRunOptions(
     dryRun: options.dryRun,
     ...(options.explicitLimit ? { limit: options.limit } : {}),
     staleOnly: options.staleOnly,
+    ...(options.reprobeHealthyAfterDays !== undefined
+      ? { reprobeHealthyAfterDays: options.reprobeHealthyAfterDays }
+      : {}),
     ...(options.checkedBefore ? { checkedBefore: options.checkedBefore } : {}),
   };
 }
@@ -141,6 +158,13 @@ export interface SourceLinkHealthBackfillResult {
   scanned: number;
   skippedFresh: number;
   skippedAlreadyRechecked: number;
+  /**
+   * Row citations whose `HEALTHY` verdict was inside `--reprobe-healthy-after-days`
+   * and so were carried forward unprobed.
+   */
+  carriedFreshHealthy: number;
+  /** Rows every one of whose citations was carried forward, so nothing was written. */
+  unchangedRows: number;
   checked: number;
   updated: number;
   errors: number;
@@ -294,6 +318,7 @@ export async function runSourceLinkHealthBackfill(options: {
   dryRun: boolean;
   limit?: number;
   staleOnly?: boolean;
+  reprobeHealthyAfterDays?: number;
   checkedBefore?: Date;
   checkLink?: (url: string, requestGate?: HostSlotLimiter) => Promise<SourceLinkHealth>;
   /**
@@ -319,6 +344,8 @@ export async function runSourceLinkHealthBackfill(options: {
     scanned: 0,
     skippedFresh: 0,
     skippedAlreadyRechecked: 0,
+    carriedFreshHealthy: 0,
+    unchangedRows: 0,
     checked: 0,
     updated: 0,
     errors: 0,
@@ -387,7 +414,13 @@ export async function runSourceLinkHealthBackfill(options: {
 
     // Phase 1, no network: decide which entities are in scope and what each one
     // needs probed.
-    const plans: Array<{ entity: Record<string, unknown>; candidates: string[] }> = [];
+    const plans: Array<{
+      entity: Record<string, unknown>;
+      candidates: string[];
+      toProbe: string[];
+      carried: Map<string, StoredSourceLinkHealthEntry>;
+    }> = [];
+    const planNow = new Date();
     for (const entity of page) {
       if (options.limit && result.scanned >= options.limit) break;
       if (
@@ -415,7 +448,16 @@ export async function runSourceLinkHealthBackfill(options: {
         );
         const candidates = collectSourceLinkHealthCandidates(entity, signalSourceUrls);
         if (candidates.length === 0) continue;
-        plans.push({ entity, candidates });
+        const { toProbe, carried } =
+          options.reprobeHealthyAfterDays === undefined
+            ? { toProbe: candidates, carried: new Map<string, StoredSourceLinkHealthEntry>() }
+            : planSourceLinkReprobe(
+                candidates,
+                entity.sourceLinkHealth,
+                options.reprobeHealthyAfterDays,
+                planNow,
+              );
+        plans.push({ entity, candidates, toProbe, carried });
       } catch (error) {
         result.errors += 1;
         console.error(
@@ -426,7 +468,7 @@ export async function runSourceLinkHealthBackfill(options: {
     }
 
     await probeUncachedUrlsByHost(
-      plans.flatMap((plan) => plan.candidates),
+      plans.flatMap((plan) => plan.toProbe),
       healthCache,
       {
         checkLink,
@@ -441,14 +483,24 @@ export async function runSourceLinkHealthBackfill(options: {
 
     // Phase 3, no network: every verdict is cached, so assembling and writing a
     // row cannot pace anything.
-    for (const { entity, candidates } of plans) {
+    for (const { entity, candidates, carried } of plans) {
       try {
         const now = new Date();
         const storedByUrl = storedSourceLinkHealthByUrl(entity.sourceLinkHealth);
         const sourceLinkHealth: StoredSourceLinkHealthEntry[] = [];
+        let probedEntries = 0;
         for (const url of candidates) {
           const health = healthCache.get(url);
+          const carriedEntry = carried.get(url);
+          if (!health && carriedEntry) {
+            result.carriedFreshHealthy += 1;
+            result.byStatus[carriedEntry.healthStatus] =
+              (result.byStatus[carriedEntry.healthStatus] ?? 0) + 1;
+            sourceLinkHealth.push(carryForwardSourceLinkHealthEntry(url, carriedEntry));
+            continue;
+          }
           if (!health) continue;
+          probedEntries += 1;
           const resolved = resolveSourceLinkHealthEntry(url, health, storedByUrl.get(url), now);
           if (resolved.preservedDecisiveVerdict) result.preservedDecisiveVerdicts += 1;
           // Tally what is STORED, not what the probe returned, or the report claims
@@ -468,6 +520,13 @@ export async function runSourceLinkHealthBackfill(options: {
           }
         }
         if (sourceLinkHealth.length === 0) continue;
+        const storedCount = Array.isArray(entity.sourceLinkHealth)
+          ? entity.sourceLinkHealth.length
+          : 0;
+        if (probedEntries === 0 && sourceLinkHealth.length === storedCount) {
+          result.unchangedRows += 1;
+          continue;
+        }
 
         if (!options.dryRun) {
           await ResearchEntity.updateOne({ _id: entity._id }, { $set: { sourceLinkHealth } });

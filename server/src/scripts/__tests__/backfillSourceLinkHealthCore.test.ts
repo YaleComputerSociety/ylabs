@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { SOURCE_LINK_HEALTH_FRESHNESS_DAYS } from '../../services/sourceLinkHealth';
 import {
+  carryForwardSourceLinkHealthEntry,
   collectSourceLinkHealthCandidates,
   needsRecheckSince,
   needsSourceLinkHealthRefresh,
+  planSourceLinkReprobe,
+  SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS,
 } from '../backfillSourceLinkHealthCore';
 
 describe('collectSourceLinkHealthCandidates', () => {
@@ -252,5 +256,85 @@ describe('collectSourceLinkHealthCandidates covers every url the gate judges', (
         }),
       ).toEqual(['https://example-lab.yale.edu/']);
     }
+  });
+});
+
+describe('planSourceLinkReprobe', () => {
+  const now = new Date('2026-09-26T12:00:00Z');
+  const daysAgo = (days: number) => new Date(now.getTime() - days * 86_400_000);
+  const plan = (url: string, stored: unknown[]) => planSourceLinkReprobe([url], stored, 7, now);
+
+  it('keeps the sweep window inside the horizon a verdict counts as verification for', () => {
+    expect(SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS).toBeLessThan(
+      SOURCE_LINK_HEALTH_FRESHNESS_DAYS,
+    );
+  });
+
+  it('carries a HEALTHY verdict younger than the window forward unprobed', () => {
+    const url = 'https://example-lab.yale.edu/';
+    const stored = { url, healthStatus: 'HEALTHY', httpStatusCode: 200, checkedAt: daysAgo(2) };
+    const result = plan(url, [stored]);
+    expect(result.toProbe).toEqual([]);
+    expect(result.carried.get(url)).toBe(stored);
+  });
+
+  it('probes a HEALTHY verdict older than the window, undated, or dated in the future', () => {
+    const url = 'https://example-lab.yale.edu/';
+    for (const checkedAt of [daysAgo(7.5), undefined, daysAgo(-1)]) {
+      expect(plan(url, [{ url, healthStatus: 'HEALTHY', checkedAt }]).toProbe).toEqual([url]);
+    }
+  });
+
+  it('probes every verdict that is not HEALTHY however fresh it is', () => {
+    const url = 'https://example-lab.yale.edu/';
+    for (const healthStatus of ['UNAVAILABLE', 'UNKNOWN', 'REDIRECTED']) {
+      expect(plan(url, [{ url, healthStatus, checkedAt: daysAgo(0.1) }]).toProbe).toEqual([url]);
+    }
+  });
+
+  it('probes a url new to the row even when a sibling citation is fresh', () => {
+    const fresh = 'https://example-lab.yale.edu/';
+    const added = 'https://example.yale.edu/profile/example-person/';
+    const result = planSourceLinkReprobe(
+      [fresh, added],
+      [{ url: fresh, healthStatus: 'HEALTHY', checkedAt: daysAgo(1) }],
+      7,
+      now,
+    );
+    expect(result.toProbe).toEqual([added]);
+    expect([...result.carried.keys()]).toEqual([fresh]);
+  });
+
+  it('finds a stored verdict under a cosmetically different spelling, as the gate does', () => {
+    const result = plan('https://www.example-lab.yale.edu/research/', [
+      {
+        url: 'http://example-lab.yale.edu/research',
+        healthStatus: 'HEALTHY',
+        checkedAt: daysAgo(1),
+      },
+    ]);
+    expect(result.toProbe).toEqual([]);
+  });
+});
+
+describe('carryForwardSourceLinkHealthEntry', () => {
+  it('keeps the original verdict and its dates under the url the row now cites', () => {
+    const checkedAt = new Date('2026-09-20T00:00:00Z');
+    const lastAttemptedAt = new Date('2026-09-25T00:00:00Z');
+    expect(
+      carryForwardSourceLinkHealthEntry('https://example-lab.yale.edu/', {
+        url: 'http://example-lab.yale.edu',
+        healthStatus: 'HEALTHY',
+        httpStatusCode: 200,
+        checkedAt,
+        lastAttemptedAt,
+      }),
+    ).toEqual({
+      url: 'https://example-lab.yale.edu/',
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+      checkedAt,
+      lastAttemptedAt,
+    });
   });
 });
