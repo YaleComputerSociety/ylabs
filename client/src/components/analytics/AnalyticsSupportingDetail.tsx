@@ -156,7 +156,7 @@ const AnalyticsSupportingDetail = ({
       { header: 'Total Events', value: (row) => row.totalEvents },
       { header: 'Logins', value: (row) => row.logins },
       { header: 'Site Searches', value: (row) => row.searches },
-      { header: 'Research Views', value: (row) => row.researchViews },
+      { header: 'Profile Opens', value: (row) => row.researchViews },
       {
         header: 'Last Active',
         value: (row) => (row.lastActive ? formatDateTime(row.lastActive) : ''),
@@ -840,7 +840,7 @@ const AnalyticsSupportingDetail = ({
                 <option value="totalEvents">Total Events</option>
                 <option value="logins">Logins</option>
                 <option value="searches">Site searches</option>
-                <option value="researchViews">Research Views</option>
+                <option value="researchViews">Profile Opens</option>
               </select>
             </label>
 
@@ -948,7 +948,7 @@ const AnalyticsSupportingDetail = ({
                           onClick={() => updateUserActivitySort('researchViews')}
                           className="inline-flex min-h-[44px] items-center rounded-card px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                         >
-                          Research Views{sortLabel('researchViews')}
+                          Profile Opens{sortLabel('researchViews')}
                         </button>
                       </th>
                       <th className="px-4 py-3 text-left text-sm font-semibold text-ink-soft">
@@ -1067,7 +1067,7 @@ const AnalyticsSupportingDetail = ({
                       <p className="text-lg font-semibold text-ink">{selectedUser.user.searches}</p>
                     </div>
                     <div className="rounded-card bg-[var(--yr-panel)] p-3">
-                      <p className="text-muted">Research Views</p>
+                      <p className="text-muted">Profile Opens</p>
                       <p className="text-lg font-semibold text-ink">
                         {selectedUser.user.researchViews}
                       </p>
