@@ -722,6 +722,7 @@ The lane then re-gates every row citing a retired URL, because the collision can
 
 `dept-faculty-roster` has the same relational shape for group sites: a website one roster lists for two or more different people is nobody's own research home.
 The lane refuses such a URL for every sharer in the batch (#3614), and the `shared-roster-website-retire` sweep stage (`yarn --cwd server observations:retire-shared-roster-websites`, #3615) retires the lane's older claims of it, which a later run cannot retract.
+It counts every live claim a row carries, not only its latest, so one pass reaches a fixed point: judging by the latest claim alone let retiring it expose an older claim of a second group site.
 It supersedes only this lane's `websiteUrl` observations, keeps the URL on a row another lane independently asserts it for, and otherwise refuses it as `wrong_owner` and clears the stored value, for the same citation-promotion reason as above.
 A row whose `manuallyLockedFields` contains `websiteUrl` still has the lane's claims superseded but is neither refused nor cleared, because the lock is an operator decision.
 The same person listed in two departments is not a sharer, because that is duplicate-row work rather than a wrong URL.

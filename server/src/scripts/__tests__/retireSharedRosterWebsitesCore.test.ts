@@ -79,14 +79,14 @@ describe('planSharedRosterWebsiteRetirement', () => {
     expect(outcome.plans).toEqual([]);
   });
 
-  it('judges each row on its latest claim and retires every older claim of the shared value', () => {
+  it('judges every live claim, so retiring one shared URL cannot expose another', () => {
+    const second = 'https://second-group.example.org/';
     const outcome = planSharedRosterWebsiteRetirement({
       claims: [
-        claim('old', 'a', group, 1),
-        claim('new', 'a', group, 2),
-        claim('o2', 'b', group),
-        claim('moved', 'c', group, 1),
-        claim('now', 'c', 'https://own.example.org/', 2),
+        claim('a-old', 'a', second, 1),
+        claim('a-new', 'a', group, 2),
+        claim('b1', 'b', group),
+        claim('c1', 'c', second),
       ],
       personKeyByEntityKey: new Map([
         ['a', 'p1'],
@@ -96,8 +96,18 @@ describe('planSharedRosterWebsiteRetirement', () => {
       otherLaneSupport: new Set(),
       rowsBySlug,
     });
-    expect(outcome.plans.map((plan) => plan.slug)).toEqual(['a', 'b']);
-    expect(outcome.plans[0].supersedeObservationIds).toEqual(['new', 'old']);
+    expect(outcome.sharedUrls).toBe(2);
+    expect(outcome.plans.map((plan) => [plan.slug, plan.url]).sort()).toEqual(
+      [
+        ['a', group],
+        ['a', second],
+        ['b', group],
+        ['c', second],
+      ].sort(),
+    );
+    expect(outcome.plans.flatMap((plan) => plan.supersedeObservationIds).sort()).toEqual(
+      ['a-new', 'a-old', 'b1', 'c1'].sort(),
+    );
   });
 
   it('does not record a second refusal for a value already refused', () => {

@@ -163,10 +163,14 @@ async function main(): Promise<void> {
     observationsSuperseded = superseded.modifiedCount || 0;
 
     for (const plan of plans.filter((entry) => entry.refuse || entry.clearStored)) {
-      const row = inputs.rowsBySlug.get(plan.slug)!;
+      // Read fresh, because one row can carry two shared URLs and the second refusal must
+      // extend the list the first one wrote rather than the list loaded before either.
+      const fresh = (await ResearchEntity.findById(plan.entityId)
+        .select('fieldValueRefusals')
+        .lean()) as { fieldValueRefusals?: unknown } | null;
       const update: Record<string, unknown> = {};
       if (plan.refuse) {
-        update.$set = planFieldValueRefusal(row.fieldValueRefusals, {
+        update.$set = planFieldValueRefusal(fresh?.fieldValueRefusals, {
           field: 'websiteUrl',
           value: plan.url,
           rule: 'wrong_owner',
