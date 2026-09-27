@@ -27,6 +27,7 @@ Some lane labels name retired models (`user`, `researchGroupMember` in `observed
 **Confidence resolver.**
 A pure function that takes every observation for one `(entity, field)` pair and picks a winner.
 It groups by serialized value, weights each group by `sum(source.weight x recencyDecay(observedAt))`, adds an agreement bonus when more than one source backs a group, returns the highest-weighted value, and flags a conflict when the runner-up is close.
+A website URL (`websiteUrl`, `website`) observed over both `http://` and `https://` for the same host and path is one group whose value is the `https://` form, so a lane that copies an anchor's scheme cannot downgrade a served research website (#3577).
 A locked field short-circuits the whole thing and returns the locked value.
 Owner: `server/src/scrapers/confidenceResolver.ts`.
 
