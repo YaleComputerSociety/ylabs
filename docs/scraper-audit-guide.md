@@ -214,7 +214,8 @@ Expected report shape:
 
 - `accessSignals` should be `0`.
 - `researchEntity` and `user` observation counts should be nonzero.
-- Any configured source that fetched but yielded zero faculty is flagged: it carries an `empty` status in the `Departments:` notes summary and is named in a `WARNING: ... yielded no faculty` log line, signalling a likely site migration or renamed layout whose URL and extractor need re-verification.
+- Any configured source that fetched but yielded zero faculty is flagged: it carries an `empty` or `extractor-error` status in the `Departments:` notes summary and is named in a `WARNING: ... yielded no faculty` log line, signalling a likely site migration or renamed layout whose URL and extractor need re-verification.
+- A source whose page could not be fetched carries `fetch-failed` or `rendered-unavailable` and is named in a separate `could not be read` warning, and one that read only part of its roster carries `partial-read`; neither is a migration signal. A run where every attempted source failed to read is stored as a `failure`. `docs/research-data-pipeline.md` owns the full lane status table.
 
 Project impact:
 

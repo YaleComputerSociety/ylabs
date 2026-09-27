@@ -136,27 +136,52 @@ describe('official research-home roster acquisition', () => {
     expect(stale).toMatchObject({ state: 'stale', complete: false, members: [] });
   });
 
+  const runContext = (emit: (obs: unknown) => Promise<void>) => ({
+    scrapeRunId: 'run',
+    sourceId: 'source',
+    sourceName: 'official-research-home-roster',
+    sourceWeight: 0.95,
+    options: { dryRun: true, useCache: false, release: false },
+    emit,
+    log: vi.fn(),
+  });
+
   it('records optional source failure without emitting or archiving a roster snapshot', async () => {
     const emit = vi.fn(async () => undefined);
-    const scraper = new OfficialResearchHomeRosterScraper(
-      [config],
-      vi.fn().mockRejectedValue(new Error('offline')),
-    );
-    const result = await scraper.run({
-      scrapeRunId: 'run',
-      sourceId: 'source',
-      sourceName: 'official-research-home-roster',
-      sourceWeight: 0.95,
-      options: { dryRun: true, useCache: false, release: false },
-      emit,
-      log: vi.fn(),
+    const secondConfig: OfficialRosterConfig = {
+      ...config,
+      researchEntityKey: 'ysm-fixture-two',
+      url: 'https://medicine.yale.edu/lab/fixture-two/members/',
+    };
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === config.url) throw new Error('offline');
+      return page(card('Current Scholar', 'Graduate Student', '/lab/fixture/profile/current/'));
     });
+    const scraper = new OfficialResearchHomeRosterScraper([config, secondConfig], fetchPage);
+    const result = await scraper.run(runContext(emit));
 
     expect(result.notes).toContain('failed=1');
     expect(emit).toHaveBeenCalledWith(
       expect.objectContaining({
         field: 'rosterEnrichment',
         value: expect.objectContaining({ state: 'failed', complete: false, memberKeys: [] }),
+      }),
+    );
+  });
+
+  it('fails the run when every attempted roster fetch failed, so it is not recorded a success', async () => {
+    const emit = vi.fn(async () => undefined);
+    const scraper = new OfficialResearchHomeRosterScraper(
+      [config],
+      vi.fn().mockRejectedValue(new Error('offline')),
+    );
+
+    await expect(scraper.run(runContext(emit))).rejects.toThrow(
+      /every attempted official roster fetch failed/i,
+    );
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        value: expect.objectContaining({ state: 'failed', complete: false }),
       }),
     );
   });

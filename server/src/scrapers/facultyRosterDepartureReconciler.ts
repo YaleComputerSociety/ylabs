@@ -116,6 +116,48 @@ export function rosterHealthReadProvenance(
   return reused > 0 ? 'reused-within-sweep' : 'fetched';
 }
 
+/**
+ * Lane statuses `dept-faculty-roster` records when a lane did not read its whole
+ * roster in the run: the page could not be fetched or parsed, the pager stopped
+ * before the roster's end, `--limit` cut the lane short or never reached it, or no
+ * renderer was available.
+ */
+export const ROSTER_LANE_FAILED_READ_STATUSES: ReadonlySet<string> = new Set([
+  'fetch-failed',
+  'extractor-error',
+  'rendered-unavailable',
+  'rendered-extractor-error',
+]);
+export const ROSTER_LANE_PARTIAL_READ_STATUSES: ReadonlySet<string> = new Set([
+  'partial-read',
+  'skipped-by-limit',
+  'js-rendered-skip',
+]);
+
+export function rosterLaneStatusLeftRosterUnread(status: string): boolean {
+  return (
+    ROSTER_LANE_FAILED_READ_STATUSES.has(status) || ROSTER_LANE_PARTIAL_READ_STATUSES.has(status)
+  );
+}
+
+/**
+ * Whether this snapshot's lane left part of its roster unread in this run.
+ *
+ * Such a lane withholds its whole canonical department, not just itself. Several
+ * configs can resolve to one department, and absence is concluded from every lane
+ * failing to find somebody; a lane that did not read its pages has not failed to find
+ * anybody on them, so the other lanes' discovery cannot stand in for it (#3647).
+ * An `empty` lane withholds too: a fetched page that listed nobody is what a site
+ * migration looks like, so it is not evidence that its people are gone.
+ */
+export function rosterHealthRecordsAnIncompleteRead(
+  snapshot: DepartmentRosterHealthSnapshot,
+): boolean {
+  if (rosterHealthReadProvenance(snapshot) === 'not-read') return true;
+  const status = typeof snapshot.status === 'string' ? snapshot.status : '';
+  return status === 'empty' || rosterLaneStatusLeftRosterUnread(status);
+}
+
 /** When the snapshot's own run says it read the page, if it recorded that at all. */
 export function rosterHealthReadAt(snapshot: DepartmentRosterHealthSnapshot): Date | null {
   const raw = snapshot.read?.readAt;
@@ -451,6 +493,8 @@ export interface FacultyRosterDepartureResult {
   departmentsGoverningNothing: number;
   /** Departments whose read lost too much of their own previous discovery to be believed. */
   regressedDepartments: number;
+  /** Departments withheld because one of their lanes left its roster partly unread. */
+  incompleteReadDepartments: number;
   /**
    * How many snapshots landed in each admissibility state, so a department refused for
    * discovering nobody is legible rather than silently skipped (#3302).
@@ -631,8 +675,11 @@ export async function loadRosterObservedEntityKeys(): Promise<ReadonlySet<string
 }
 
 /**
- * The discovery count of each department's newest prior snapshot that found anybody,
- * keyed by canonical department name.
+ * The discovery count of each lane's newest prior snapshot that found anybody, keyed by
+ * the snapshot `entityKey` (its `deptKey`) rather than by canonical department. Two
+ * lanes can resolve to one department and list different people, so a department-keyed
+ * baseline compared one lane's full read against its sibling's count, judged it
+ * regressed, and let the sibling govern the department alone.
  *
  * Reads superseded observations on purpose. Each roster run supersedes the last, so a
  * department's previous reading exists only there, and a comparison against history is
@@ -656,25 +703,18 @@ export async function loadPreviousDiscoveryCounts(
     scrapeRunId: { $ne: currentRunObjectId },
   })
     .sort({ observedAt: 1 })
-    .select('value observedAt')
-    .lean()) as Array<{ value?: unknown }>;
+    .select('entityKey value observedAt')
+    .lean()) as Array<{ entityKey?: unknown; value?: unknown }>;
 
-  const byDept = new Map<string, number>();
-  const canonicalByRaw = new Map<string, string | null>();
+  const byLane = new Map<string, number>();
   for (const row of snapshots) {
     const snapshot = (row.value ?? {}) as DepartmentRosterHealthSnapshot;
     if (snapshot.complete !== true) continue;
     if (snapshotDiscoveredEntityKeys(snapshot).length === 0) continue;
-    const raw = typeof snapshot.deptName === 'string' ? snapshot.deptName : '';
-    if (!raw) continue;
-    if (!canonicalByRaw.has(raw)) {
-      canonicalByRaw.set(raw, await resolveGovernedDepartmentName(raw));
-    }
-    const deptName = canonicalByRaw.get(raw);
-    if (!deptName) continue;
-    byDept.set(deptName, snapshotDiscoveredEntityKeys(snapshot).length);
+    if (typeof row.entityKey !== 'string' || !row.entityKey) continue;
+    byLane.set(row.entityKey, snapshotDiscoveredEntityKeys(snapshot).length);
   }
-  return byDept;
+  return byLane;
 }
 
 async function countRosterGovernedEntities(
@@ -714,6 +754,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     frozenDepartments: 0,
     departmentsGoverningNothing: 0,
     regressedDepartments: 0,
+    incompleteReadDepartments: 0,
     planned: { ...EMPTY_DEPARTURE_PLAN },
     regatedEntities: 0,
     governedDepartments: [] as string[],
@@ -741,12 +782,15 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     entityType: 'departmentRosterHealth',
     field: DEPARTMENT_ROSTER_HEALTH_FIELD,
   })
-    .select('value observedAt')
+    .select('entityKey value observedAt')
     .lean()) as any[];
   if (snapshots.length === 0) return { ...base, outcome: 'no-roster-health-observations' };
 
   const scrapedDeptNames = new Set<string>();
   const healthyDiscoveredByDept = new Map<string, Set<string>>();
+  const frozenDiscoveredByDept = new Map<string, string[]>();
+  const incompletelyReadDeptNames = new Set<string>();
+  const regressedDeptNames = new Set<string>();
   // A run covers many departments read at different moments, so one scalar cannot
   // date them. It used to be overwritten by each snapshot in turn, so every entity
   // was stamped with whichever department happened to be last in the cursor (#3251).
@@ -763,7 +807,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
   const admissibilityCounts: Record<string, number> = {};
   let departmentsGoverningNothing = 0;
   const rosterObservedEntityKeys = await loadRosterObservedEntityKeys();
-  const previousDiscoveryByDept = await loadPreviousDiscoveryCounts(runObjectId);
+  const previousDiscoveryByLane = await loadPreviousDiscoveryCounts(runObjectId);
   let regressedDepartments = 0;
   let latestObservedAt = new Date();
 
@@ -792,6 +836,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
         snapshotObservedAtByDept.set(deptName, snapshotObservedAt);
       }
     }
+    if (rosterHealthRecordsAnIncompleteRead(snapshot)) incompletelyReadDeptNames.add(deptName);
     const admissibility = rosterHealthAdmissibility(snapshot);
     admissibilityCounts[admissibility] = (admissibilityCounts[admissibility] || 0) + 1;
     if (admissibility === 'read-discovered-nobody') {
@@ -808,9 +853,10 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     // department read 86 of 200 and froze at 0.43, while over the 124 rows the lane has
     // actually observed the same read scores 0.69 and passes (#3302).
     const governedCount = await countRosterGovernedEntities(deptName, rosterObservedEntityKeys);
-    const previousDiscovered = previousDiscoveryByDept.get(deptName) ?? null;
+    const previousDiscovered = previousDiscoveryByLane.get(snapshotObservation.entityKey) ?? null;
     if (rosterDiscoveryRegressed(previousDiscovered, discovered.length)) {
       regressedDepartments += 1;
+      regressedDeptNames.add(deptName);
       console.warn(
         `[faculty-departure] regressed department ${sanitizeLogValue(deptName)}: discovered ${discovered.length} against ${previousDiscovered} on its previous read, so this read does not govern`,
       );
@@ -826,6 +872,10 @@ export async function reconcileFacultyRosterDeparturesFromRun(
       console.warn(
         `[faculty-departure] frozen department ${sanitizeLogValue(deptName)}: discovered ${discovered.length} of ${governedCount} governed entities (below drop guard)`,
       );
+      frozenDiscoveredByDept.set(deptName, [
+        ...(frozenDiscoveredByDept.get(deptName) ?? []),
+        ...discovered,
+      ]);
       continue;
     }
     // Two roster configs can resolve to one canonical department, and they disagree
@@ -841,6 +891,31 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     } else {
       healthyDiscoveredByDept.set(deptName, new Set(discovered));
     }
+  }
+
+  // A frozen lane cannot govern, but the people it did list are still present, so a
+  // sibling lane that governs the department cannot conclude their absence.
+  for (const [deptName, discovered] of frozenDiscoveredByDept) {
+    const governingDiscovered = healthyDiscoveredByDept.get(deptName);
+    if (!governingDiscovered) continue;
+    for (const key of discovered) governingDiscovered.add(key);
+  }
+
+  let incompleteReadDepartments = 0;
+  for (const deptName of incompletelyReadDeptNames) {
+    if (!healthyDiscoveredByDept.delete(deptName)) continue;
+    incompleteReadDepartments += 1;
+    console.warn(
+      `[faculty-departure] withheld department ${sanitizeLogValue(deptName)}: one of its roster lanes left part of the roster unread in this run`,
+    );
+  }
+  // A regressed lane is distrusted for the same reason a truncated one is, so a sibling
+  // lane that passed cannot conclude absence for the people only the regressed lane lists.
+  for (const deptName of regressedDeptNames) {
+    if (!healthyDiscoveredByDept.delete(deptName)) continue;
+    console.warn(
+      `[faculty-departure] withheld department ${sanitizeLogValue(deptName)}: one of its roster lanes regressed against its own previous read`,
+    );
   }
 
   const evidenceFreshness: FacultyRosterDepartureEvidenceFreshness = {
@@ -860,6 +935,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     admissibilityCounts,
     departmentsGoverningNothing,
     regressedDepartments,
+    incompleteReadDepartments,
     unresolvedDepartments,
     governedDepartments: Array.from(healthyDiscoveredByDept.keys()),
   };

@@ -241,6 +241,7 @@ async function main(): Promise<void> {
       frozenDepartments: plan?.frozenDepartments ?? 0,
       ...(plan?.admissibilityCounts ? { admissibilityCounts: plan.admissibilityCounts } : {}),
       regressedDepartments: plan?.regressedDepartments ?? 0,
+      incompleteReadDepartments: plan?.incompleteReadDepartments ?? 0,
       liveEntities,
       entitiesWithLastSeen,
       entitiesWithAbsenceRecorded,

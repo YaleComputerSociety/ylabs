@@ -36,6 +36,7 @@ export interface FacultyDepartureLaneFacts {
   unresolvedDepartments: number;
   frozenDepartments: number;
   regressedDepartments?: number;
+  incompleteReadDepartments?: number;
   liveEntities: number;
   /** Rows the lane has ever recorded as present in a complete roster. */
   entitiesWithLastSeen: number;
