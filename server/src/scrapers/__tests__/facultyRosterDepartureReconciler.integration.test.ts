@@ -477,6 +477,41 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     expect(result.planned.record_first_absence).toBe(0);
   });
 
+  it('does not let a governing sibling lane record absence for people a frozen lane lists', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    const physicsKeys = ['lab-a', 'lab-b', 'lab-c', 'lab-d', 'lab-e', 'lab-f'];
+    const wrightKeys = ['lab-g', 'lab-h'];
+    for (const slug of [...physicsKeys, ...wrightKeys]) await seedEntity({ slug });
+    const seedLane = (entityKey: string, keys: string[], observedAt: string) =>
+      Observation.create({
+        entityType: 'departmentRosterHealth',
+        entityKey,
+        field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+        value: {
+          deptName: 'Physics',
+          status: 'ok',
+          complete: true,
+          discoveredEntityKeys: keys,
+          discoveredCount: keys.length,
+          read: FETCHED_READ,
+        },
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        confidence: 0.9,
+        scrapeRunId: new mongoose.Types.ObjectId(run),
+        observedAt: new Date(observedAt),
+      });
+    await seedLane('physics', physicsKeys, '2026-08-27T00:00:00.000Z');
+    await seedLane('wright-lab', wrightKeys, '2026-08-27T00:01:00.000Z');
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
+
+    expect(result.frozenDepartments).toBe(1);
+    expect(result.governedDepartments).toEqual(['Physics']);
+    expect(result.planned.record_first_absence).toBe(0);
+  });
+
   it('refuses to suppress on a snapshot whose run recorded no read of the page', async () => {
     const run = new mongoose.Types.ObjectId().toString();
     await seedEntity({ slug: 'lab-present' });

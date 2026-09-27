@@ -792,6 +792,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
 
   const scrapedDeptNames = new Set<string>();
   const healthyDiscoveredByDept = new Map<string, Set<string>>();
+  const frozenDiscoveredByDept = new Map<string, string[]>();
   const incompletelyReadDeptNames = new Set<string>();
   const regressedDeptNames = new Set<string>();
   // A run covers many departments read at different moments, so one scalar cannot
@@ -875,6 +876,10 @@ export async function reconcileFacultyRosterDeparturesFromRun(
       console.warn(
         `[faculty-departure] frozen department ${sanitizeLogValue(deptName)}: discovered ${discovered.length} of ${governedCount} governed entities (below drop guard)`,
       );
+      frozenDiscoveredByDept.set(deptName, [
+        ...(frozenDiscoveredByDept.get(deptName) ?? []),
+        ...discovered,
+      ]);
       continue;
     }
     // Two roster configs can resolve to one canonical department, and they disagree
@@ -890,6 +895,14 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     } else {
       healthyDiscoveredByDept.set(deptName, new Set(discovered));
     }
+  }
+
+  // A frozen lane cannot govern, but the people it did list are still present, so a
+  // sibling lane that governs the department cannot conclude their absence.
+  for (const [deptName, discovered] of frozenDiscoveredByDept) {
+    const governingDiscovered = healthyDiscoveredByDept.get(deptName);
+    if (!governingDiscovered) continue;
+    for (const key of discovered) governingDiscovered.add(key);
   }
 
   let incompleteReadDepartments = 0;
