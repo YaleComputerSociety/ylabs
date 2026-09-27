@@ -22,27 +22,10 @@ export type DescriptionCardJudge = (
  * objection, so a missing row or a test with no database never blocks a write.
  */
 export function createDescriptionCardJudge(): DescriptionCardJudge {
-  const rows = new Map<string, Promise<Record<string, unknown> | null>>();
+  const rows = new Map<string, Promise<JudgedRow | null>>();
   const loadRow = (subject: Pick<ObservationInput, 'entityId' | 'entityKey'>) => {
     const cacheKey = String(subject.entityId || subject.entityKey || '');
-    if (!rows.has(cacheKey)) {
-      rows.set(
-        cacheKey,
-        (async () => {
-          const { ResearchEntity } = await import('../models/researchEntity');
-          const or: Record<string, unknown>[] = [];
-          if (subject.entityKey) or.push({ slug: subject.entityKey });
-          if (subject.entityId && mongoose.isValidObjectId(subject.entityId)) {
-            or.push({ _id: new mongoose.Types.ObjectId(String(subject.entityId)) });
-          }
-          if (or.length === 0) return null;
-          return (await ResearchEntity.findOne({ $or: or }).select('-embedding').lean()) as Record<
-            string,
-            unknown
-          > | null;
-        })(),
-      );
-    }
+    if (!rows.has(cacheKey)) rows.set(cacheKey, loadJudgedRow(subject));
     return rows.get(cacheKey)!;
   };
   return async (subject, pair, context) => {
@@ -52,16 +35,48 @@ export function createDescriptionCardJudge(): DescriptionCardJudge {
     const { buildResearchEntityPublicDescriptionRepresentation } =
       await import('../services/researchEntityPublicDescription');
     const entity = {
-      ...row,
+      ...row.entity,
       fullDescription: pair.fullDescription,
       shortDescription: pair.shortDescription,
       ...(context.researchAreas !== undefined ? { researchAreas: context.researchAreas } : {}),
     };
     return (
-      buildResearchEntityPublicDescriptionRepresentation({ entity, leadMembers: [] }).quality
-        .cardState === 'complete'
+      buildResearchEntityPublicDescriptionRepresentation({
+        entity,
+        leadMembers: row.leadMembers,
+      }).quality.cardState === 'complete'
     );
   };
+}
+
+interface JudgedRow {
+  entity: Record<string, unknown>;
+  leadMembers: Array<Record<string, any>>;
+}
+
+async function loadJudgedRow(
+  subject: Pick<ObservationInput, 'entityId' | 'entityKey'>,
+): Promise<JudgedRow | null> {
+  const { ResearchEntity } = await import('../models/researchEntity');
+  const or: Record<string, unknown>[] = [];
+  if (subject.entityKey) or.push({ slug: subject.entityKey });
+  if (subject.entityId && mongoose.isValidObjectId(subject.entityId)) {
+    or.push({ _id: new mongoose.Types.ObjectId(String(subject.entityId)) });
+  }
+  if (or.length === 0) return null;
+  const entity = (await ResearchEntity.findOne({ $or: or }).select('-embedding').lean()) as Record<
+    string,
+    unknown
+  > | null;
+  if (!entity) return null;
+  const [{ getResearchEntityRosterByEntityId }, { studentVisibilityGateLeadRows }] =
+    await Promise.all([
+      import('../services/researchEntityMembershipAccessor'),
+      import('../services/studentVisibilityGateService'),
+    ]);
+  const roster = await getResearchEntityRosterByEntityId([entity._id]);
+  const leadMembers = studentVisibilityGateLeadRows([...roster.values()].flat());
+  return { entity, leadMembers };
 }
 
 /**

@@ -1,10 +1,20 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import mongoose from 'mongoose';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { LEAD_ROLE_LEGACY_LABELS } from '../../models/canonicalRoleMapping';
 import { Observation } from '../../models/observation';
+import { ResearchEntity } from '../../models/researchEntity';
+import { getResearchEntityRosterByEntityId } from '../../services/researchEntityMembershipAccessor';
 import {
+  createDescriptionCardJudge,
   isCardLosingDescriptionRefresh,
   type DescriptionCardJudge,
 } from '../descriptionCardRefreshGuard';
 import { appendObservations } from '../observationStore';
+
+vi.mock('../../services/researchEntityMembershipAccessor', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/researchEntityMembershipAccessor')>()),
+  getResearchEntityRosterByEntityId: vi.fn(),
+}));
 
 const GOOD =
   'The Example Lab studies how cells sense and respond to mechanical force in tissue repair.';
@@ -110,5 +120,64 @@ describe('appendObservations card refresh guard', () => {
     });
     const inserted = (insertMany.mock.calls[0]?.[0] ?? []) as Array<{ field: string }>;
     expect(inserted.map((doc) => doc.field)).toEqual(['fullDescription']);
+  });
+});
+
+describe('createDescriptionCardJudge', () => {
+  beforeAll(async () => {
+    await import('../../services/studentVisibilityGateService');
+    await import('../../services/researchEntityPublicDescription');
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  const rowId = new mongoose.Types.ObjectId();
+  const WRONG_SUBJECT =
+    "Wrong Person's expertise lies in molecular dynamics, protein folding, and cellular signaling across complex biological systems.";
+  const RIGHT_SUBJECT =
+    "Correct Person's research examines molecular dynamics and cellular signaling across complex biological systems.";
+
+  it("judges the pair against the row's own leads, as the gate does", async () => {
+    vi.spyOn(mongoose.connection, 'readyState', 'get').mockReturnValue(1);
+    vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
+      select: () => ({
+        lean: async () => ({
+          _id: rowId,
+          slug: 'correct-person-research',
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: ['https://example.yale.edu/profile/correct-person'],
+        }),
+      }),
+    } as any);
+    vi.mocked(getResearchEntityRosterByEntityId).mockResolvedValue(
+      new Map([
+        [
+          String(rowId),
+          [
+            {
+              researchEntityId: rowId,
+              personId: new mongoose.Types.ObjectId(),
+              role: [...LEAD_ROLE_LEGACY_LABELS][0],
+              state: 'CURRENT',
+              name: 'Correct Person',
+            } as any,
+          ],
+        ],
+      ]),
+    );
+    const judge = createDescriptionCardJudge();
+    const judgedSubject = { entityType: 'researchEntity' as const, entityId: String(rowId) };
+
+    expect(await judge(judgedSubject, { fullDescription: RIGHT_SUBJECT }, {})).toBe(true);
+    expect(await judge(judgedSubject, { fullDescription: WRONG_SUBJECT }, {})).toBe(false);
+  });
+
+  it('cannot judge without a connected database', async () => {
+    vi.spyOn(mongoose.connection, 'readyState', 'get').mockReturnValue(0);
+    const findOne = vi.spyOn(ResearchEntity, 'findOne');
+    expect(
+      await createDescriptionCardJudge()(subject, { fullDescription: GOOD }, {}),
+    ).toBeUndefined();
+    expect(findOne).not.toHaveBeenCalled();
   });
 });
