@@ -211,8 +211,11 @@ describe('SavedResearchPlans', () => {
         data: { savedResearchEntities: ['owner-lab'] },
       }),
     );
-    await waitFor(() => expect(screen.queryByText('Owner Lab')).toBeNull());
-    expect(screen.getByText('Other Lab')).toBeTruthy();
+    // The heading is what leaving the list means. The name also appears in the undo
+    // banner, which is the point of the banner, so the query has to be scoped to the
+    // list rather than to the document.
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Owner Lab' })).toBeNull());
+    expect(screen.getByRole('heading', { name: 'Other Lab' })).toBeTruthy();
   });
 
   it('shows an empty state with a browse CTA when nothing is saved', async () => {
@@ -553,5 +556,123 @@ describe('SavedResearchPlans', () => {
     const openLinks = screen.getAllByRole('link', { name: 'Open' });
     expect(openLinks[0].getAttribute('href')).toBe('/research/other-lab');
     expect(openLinks[1].getAttribute('href')).toBe('/research/owner-lab');
+  });
+
+  /**
+   * Unsaving is reversible: the plan lives in its own collection with no delete
+   * path, so the privateNotes survive and re-favouriting restores them. None of
+   * that was discoverable, which is the defect. Shneiderman's sixth rule is about
+   * the reassurance as much as the recovery.
+   */
+  it('offers an undo window after unsaving, and says the notes are kept', async () => {
+    withSavedPlans();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+
+    const undo = await screen.findByRole('button', { name: 'Undo' });
+    const region = undo.closest('[role="status"]');
+    expect(region?.getAttribute('aria-live')).toBe('polite');
+    expect(region?.textContent).toContain('Owner Lab');
+    expect(region?.textContent).toContain('Undo restores your notes too');
+  });
+
+  /**
+   * The load-bearing test. Unsaving destroys privateNotes server-side and
+   * re-favouriting does not restore them, measured with a control on a real
+   * account, so undo has to re-post the note it captured before the removal.
+   * Without this the banner would promise a restoration that does not happen.
+   */
+  it('restores the note, not just the row, when undo is used', async () => {
+    withSavedPlans();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    mockedAxios.put.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+
+    await waitFor(() =>
+      expect(
+        mockedAxios.put.mock.calls.some(
+          (call) =>
+            call[0] === '/users/savedResearchEntityPlans/id1' &&
+            (call[1] as { data?: { plan?: { privateNotes?: string } } })?.data?.plan
+              ?.privateNotes === 'Ask about rotations',
+        ),
+        'undo re-posts the captured note',
+      ).toBe(true),
+    );
+  });
+
+  /** A plan with no note needs no promise about notes, and must not re-post an empty one. */
+  it('promises nothing about notes when the plan had none', async () => {
+    withSavedPlans();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Other Lab');
+    mockedAxios.put.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /Remove Other Lab from saved plans/i }));
+
+    const undo = await screen.findByRole('button', { name: 'Undo' });
+    expect(undo.closest('[role="status"]')?.textContent).not.toContain('notes');
+
+    fireEvent.click(undo);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
+    const wroteANote = mockedAxios.put.mock.calls.some((call) =>
+      Boolean(
+        (call[1] as { data?: { plan?: { privateNotes?: string } } })?.data?.plan?.privateNotes,
+      ),
+    );
+    expect(wroteANote, 'undo invents no note for a plan that had none').toBe(false);
+  });
+
+  it('withdraws the undo affordance once it is used', async () => {
+    withSavedPlans();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
+  });
+
+  /** A confirmation dialog would add friction to warn about a loss that does not happen. */
+  it('does not interrupt the unsave with a confirmation', async () => {
+    withSavedPlans();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+
+    expect(screen.queryByText(/are you sure/i)).toBeNull();
+    expect(await screen.findByRole('button', { name: 'Undo' })).toBeTruthy();
   });
 });
