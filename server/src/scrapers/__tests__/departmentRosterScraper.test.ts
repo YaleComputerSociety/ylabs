@@ -2377,6 +2377,79 @@ describe('DepartmentRosterScraper.run', () => {
     ).toHaveLength(2);
   });
 
+  it('keeps a programme PI website that a non-faculty row also lists', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Robin Roster',
+        profileUrl: 'https://earlymodern.yale.edu/profile/robin-roster',
+        title: 'Professor of English',
+        labUrl: 'https://robinlab.example.org',
+      },
+      {
+        name: 'Ali Postdoc',
+        profileUrl: 'https://earlymodern.yale.edu/profile/ali-postdoc',
+        labUrl: 'https://robinlab.example.org',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.endsWith('/ali-postdoc')
+        ? '<html><body><h1>Ali Postdoc</h1><div class="job-title">Postdoctoral Associate</div></body></html>'
+        : '<html><body></body></html>',
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'early-modern-studies',
+        deptName: 'Early Modern Studies',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://earlymodern.yale.edu/people',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const websites = emitted
+      .filter((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl')
+      .map((o) => o.value);
+    expect(websites).toEqual(['https://robinlab.example.org']);
+  });
+
+  it('counts only admitted programme faculty toward --limit', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Sam Student', profileUrl: 'https://earlymodern.yale.edu/profile/sam-student' },
+      { name: 'Robin Roster', title: 'Professor of English' },
+      { name: 'Robin Roster', title: 'Professor of English' },
+      { name: 'Ada Second', title: 'Assistant Professor' },
+    ]);
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.endsWith('/sam-student')
+        ? '<html><body><h1>Sam Student</h1><div class="job-title">Graduate School Student</div></body></html>'
+        : '<html><body></body></html>',
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'early-modern-studies',
+        deptName: 'Early Modern Studies',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://earlymodern.yale.edu/people',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext({ limit: 2 });
+    await scraper.run(ctx);
+
+    const admittedNames = emitted
+      .filter((o) => o.entityType === 'user' && o.field === 'fname')
+      .map((o) => o.value);
+    expect(admittedNames).toEqual(['Robin', 'Ada']);
+  });
+
   it('walks every page of a paginated cross-listed programme directory', async () => {
     const pages = new Map<string, FacultyEntry[]>([
       ['https://earlymodern.yale.edu/people', [{ name: 'Robin Roster', title: 'Professor' }]],

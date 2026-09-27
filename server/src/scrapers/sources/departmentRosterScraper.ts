@@ -4114,23 +4114,20 @@ export class DepartmentRosterScraper implements IScraper {
             ctx.log,
           ),
         );
-        enriched.push({
-          entry,
-          personKey: entryToUserObservations(entry, dept, sourceUrl).entityKey,
-        });
+        if (dept.crossListedProgramme && !programmeRosterRowStatesFacultyRank(entry)) continue;
+        const personKey = entryToUserObservations(entry, dept, sourceUrl).entityKey;
+        const userDedupeKey = `${dept.deptKey}:${personKey}`;
+        if (seenUserKeys.has(userDedupeKey)) continue;
+        seenUserKeys.add(userDedupeKey);
+        enriched.push({ entry, personKey });
       }
 
       for (const { entry } of withoutSharedGroupWebsites(enriched)) {
-        if (totalFaculty >= limit) break;
-        if (dept.crossListedProgramme && !programmeRosterRowStatesFacultyRank(entry)) continue;
         const { observations: userObs, entityKey } = entryToUserObservations(
           entry,
           dept,
           sourceUrl,
         );
-        const userDedupeKey = `${dept.deptKey}:${entityKey}`;
-        if (seenUserKeys.has(userDedupeKey)) continue;
-        seenUserKeys.add(userDedupeKey);
         await ctx.emit(userObs);
         observations += userObs.length;
 
