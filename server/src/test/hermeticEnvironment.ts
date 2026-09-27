@@ -25,8 +25,6 @@ const UNREACHABLE_BACKEND_VALUES: Record<string, string> = {
   DEVELOPMENT_MONGODBURL: 'mongodb://127.0.0.1:1/ylabs-hermetic-fence',
   BETA_MONGODBURL: 'mongodb://127.0.0.1:1/ylabs-hermetic-fence',
   PRODUCTION_MONGODBURL: 'mongodb://127.0.0.1:1/ylabs-hermetic-fence',
-  FELLOWSHIP_REFRESH_BETA_DB: 'mongodb://127.0.0.1:1/ylabs-hermetic-fence',
-  FELLOWSHIP_REFRESH_PROD_DB: 'mongodb://127.0.0.1:1/ylabs-hermetic-fence',
   MEILISEARCH_HOST: 'http://127.0.0.1:1',
   MEILISEARCH_API_KEY: 'ylabs-hermetic-fence',
   MEILISEARCH_INDEX_PREFIX: 'ylabs_hermetic_fence',

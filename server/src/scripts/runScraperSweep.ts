@@ -61,9 +61,7 @@ export type ScraperSweepMode =
   | 'development-sample'
   | 'development-full'
   | 'development-incremental'
-  | 'fellowship-development-full'
-  | 'beta-plan'
-  | 'beta-fetch';
+  | 'fellowship-development-full';
 
 export interface ScraperSweepSource {
   name: string;
@@ -126,11 +124,10 @@ export function sweepSourcesForMode(mode: ScraperSweepMode): ScraperSweepSource[
 }
 
 interface ScraperSweepModeConfig {
-  environment: Extract<ScraperEnvironment, 'development' | 'beta'>;
-  database: 'Development' | 'Beta';
+  environment: Extract<ScraperEnvironment, 'development'>;
+  database: 'Development';
   writes: boolean;
   autoMaterialize: boolean;
-  stopOnFailure: boolean;
   scraperFlags: string[];
   confirmationFlag?: string;
   defaultConcurrency: number;
@@ -180,10 +177,6 @@ export interface ScraperSweepRunRow {
   materializationErrors?: number;
   exitCode?: number;
   error?: string;
-  betaRenderCommands?: {
-    plan: string;
-    apply: string;
-  };
 }
 
 export interface DevelopmentPostRunStage {
@@ -313,7 +306,6 @@ export interface FellowshipPostRunStage {
     | 'link-labels-backfill'
     | 'accepting-applications-invariant'
     | 'source-link-health'
-    | 'catalog-refresh'
     | 'research-relevance-audit'
     | 'freshness-audit'
     | 'dead-data-prune';
@@ -325,11 +317,6 @@ export interface FellowshipPostRunStage {
 
 export interface FellowshipPostRunStageOptions {
   applyOfficialSourceChangeSet?: boolean;
-  refreshFellowshipCatalog?: boolean;
-  fellowshipRefreshTarget?: string;
-  fellowshipRefreshRestoreToken?: string;
-  fellowshipRefreshLimit?: number;
-  sweepRefreshTarget?: string;
   applyLimit?: number;
   pruneDeadObservations?: boolean;
 }
@@ -343,7 +330,6 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     database: 'Development',
     writes: false,
     autoMaterialize: false,
-    stopOnFailure: false,
     scraperFlags: ['--limit', '100', '--use-cache', '--dry-run'],
     defaultConcurrency: 4,
   },
@@ -352,7 +338,6 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     database: 'Development',
     writes: true,
     autoMaterialize: true,
-    stopOnFailure: false,
     scraperFlags: ['--limit', '100', '--use-cache', '--auto-materialize'],
     defaultConcurrency: 4,
   },
@@ -361,7 +346,6 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     database: 'Development',
     writes: true,
     autoMaterialize: true,
-    stopOnFailure: false,
     scraperFlags: ['--ignore-work-planner', '--exhaustive', '--auto-materialize'],
     confirmationFlag: '--confirm-development-full-sweep',
     defaultConcurrency: 8,
@@ -371,7 +355,6 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     database: 'Development',
     writes: true,
     autoMaterialize: true,
-    stopOnFailure: false,
     scraperFlags: ['--exhaustive', '--auto-materialize'],
     confirmationFlag: '--confirm-development-incremental-sweep',
     defaultConcurrency: 8,
@@ -381,29 +364,9 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     database: 'Development',
     writes: true,
     autoMaterialize: true,
-    stopOnFailure: false,
     scraperFlags: ['--ignore-work-planner', '--exhaustive', '--auto-materialize'],
     confirmationFlag: '--confirm-fellowship-sweep',
     defaultConcurrency: 8,
-  },
-  'beta-plan': {
-    environment: 'beta',
-    database: 'Beta',
-    writes: false,
-    autoMaterialize: false,
-    stopOnFailure: true,
-    scraperFlags: ['--limit', '100', '--dry-run'],
-    defaultConcurrency: 1,
-  },
-  'beta-fetch': {
-    environment: 'beta',
-    database: 'Beta',
-    writes: true,
-    autoMaterialize: false,
-    stopOnFailure: true,
-    scraperFlags: ['--ignore-work-planner', '--exhaustive'],
-    confirmationFlag: '--confirm-beta-release-candidate',
-    defaultConcurrency: 1,
   },
 };
 
@@ -488,8 +451,7 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
     if (
       arg === '--confirm-development-full-sweep' ||
       arg === '--confirm-development-incremental-sweep' ||
-      arg === '--confirm-fellowship-sweep' ||
-      arg === '--confirm-beta-release-candidate'
+      arg === '--confirm-fellowship-sweep'
     ) {
       confirmations.add(arg);
       continue;
@@ -694,7 +656,7 @@ export function validateScraperSweepEnvironment(
   if (config.writes && env.ALLOW_NON_PROD_SCRAPER_WRITES !== 'true') {
     throw new Error(`${mode} requires ALLOW_NON_PROD_SCRAPER_WRITES=true`);
   }
-  if (config.environment === 'development' && config.autoMaterialize) {
+  if (config.autoMaterialize) {
     let meiliHost: URL;
     try {
       meiliHost = new URL(env.MEILISEARCH_HOST || '');
@@ -753,19 +715,6 @@ export function buildPruneDeadObservationsChildArgs(artifactPath: string): strin
     '--output',
     artifactPath,
   ];
-}
-
-function betaRenderCommands(sourceName: string, runId: string) {
-  const prefix = `/tmp/ylabs-beta-${sourceName}`;
-  return {
-    plan:
-      `SCRAPER_ENV=beta yarn --cwd server scrape materialize --run ${runId} ` +
-      `--dry-run --output ${prefix}-materialize-plan.json`,
-    apply:
-      `SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true ` +
-      `yarn --cwd server scrape materialize --run ${runId} ` +
-      `--confirm-materialize --output ${prefix}-materialize-result.json`,
-  };
 }
 
 type ScraperSweepArtifactSummary = Pick<
@@ -1505,21 +1454,10 @@ async function runDevelopmentPostRunStages(
   };
 }
 
-export const SCRAPER_SWEEP_REFRESH_FELLOWSHIPS_ENV = 'SCRAPER_SWEEP_REFRESH_FELLOWSHIPS';
-export const SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET_ENV =
-  'SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET';
-export const SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN_ENV =
-  'SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN';
 export const SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET_ENV =
   'SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET';
-export const FELLOWSHIP_REFRESH_RESTORE_TOKEN_ENV = 'FELLOWSHIP_REFRESH_RESTORE_TOKEN';
 
 const DEFAULT_FELLOWSHIP_POST_RUN_APPLY_LIMIT = 10000;
-const DEFAULT_FELLOWSHIP_REFRESH_LIMIT = 50;
-
-export function sweepFellowshipRefreshTarget(mode: ScraperSweepMode): string | undefined {
-  return MODE_CONFIG[mode].environment === 'beta' ? 'beta' : undefined;
-}
 
 export function resolveFellowshipPostRunOptions(
   mode: ScraperSweepMode,
@@ -1530,10 +1468,6 @@ export function resolveFellowshipPostRunOptions(
     applyOfficialSourceChangeSet: isSweepStageOptedIn(
       env[SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET_ENV],
     ),
-    refreshFellowshipCatalog: isSweepStageOptedIn(env[SCRAPER_SWEEP_REFRESH_FELLOWSHIPS_ENV]),
-    fellowshipRefreshTarget: env[SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET_ENV],
-    fellowshipRefreshRestoreToken: env[SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN_ENV],
-    sweepRefreshTarget: sweepFellowshipRefreshTarget(mode),
   };
 }
 
@@ -1542,31 +1476,12 @@ interface FellowshipPostRunStageDefinition {
   command: string;
   artifactName: string;
   buildArgs: (options: FellowshipPostRunStageOptions) => string[];
-  buildSecretEnv?: (options: FellowshipPostRunStageOptions) => NodeJS.ProcessEnv;
   isEnabled: (options: FellowshipPostRunStageOptions) => boolean;
   appendsOutputArtifact: boolean;
 }
 
 function fellowshipApplyLimit(options: FellowshipPostRunStageOptions): number {
   return options.applyLimit ?? DEFAULT_FELLOWSHIP_POST_RUN_APPLY_LIMIT;
-}
-
-export function fellowshipCatalogRefreshBlocker(
-  options: FellowshipPostRunStageOptions,
-): string | undefined {
-  if (!options.refreshFellowshipCatalog) {
-    return `${SCRAPER_SWEEP_REFRESH_FELLOWSHIPS_ENV} is not set`;
-  }
-  if (!options.fellowshipRefreshTarget || !options.fellowshipRefreshRestoreToken) {
-    return `${SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET_ENV} and ${SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN_ENV} are both required`;
-  }
-  if (!options.sweepRefreshTarget) {
-    return 'fellowships:refresh only accepts a beta or prod target, which no Development sweep mode can satisfy';
-  }
-  if (options.fellowshipRefreshTarget !== options.sweepRefreshTarget) {
-    return `the requested refresh target does not match this sweep's ${options.sweepRefreshTarget} target`;
-  }
-  return undefined;
 }
 
 export const FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS: FellowshipPostRunStageDefinition[] = [
@@ -1635,25 +1550,6 @@ export const FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS: FellowshipPostRunStageDefini
     appendsOutputArtifact: true,
   },
   {
-    name: 'catalog-refresh',
-    command: 'fellowships:refresh',
-    artifactName: 'fellowship-catalog-refresh.json',
-    buildArgs: (options) => {
-      const target = options.fellowshipRefreshTarget as string;
-      return [
-        `--target=${target}`,
-        `--confirm=execute-fellowship-refresh-${target}`,
-        '--execute',
-        `--limit=${options.fellowshipRefreshLimit ?? DEFAULT_FELLOWSHIP_REFRESH_LIMIT}`,
-      ];
-    },
-    buildSecretEnv: (options) => ({
-      [FELLOWSHIP_REFRESH_RESTORE_TOKEN_ENV]: options.fellowshipRefreshRestoreToken,
-    }),
-    isEnabled: (options) => !fellowshipCatalogRefreshBlocker(options),
-    appendsOutputArtifact: false,
-  },
-  {
     name: 'research-relevance-audit',
     command: 'programs:audit-research-relevance',
     artifactName: 'fellowship-research-relevance-audit.json',
@@ -1683,7 +1579,6 @@ interface PlannedFellowshipPostRunStage {
   name: FellowshipPostRunStage['name'];
   artifactPath?: string;
   args: string[];
-  secretEnv?: NodeJS.ProcessEnv;
 }
 
 function planFellowshipPostRunStages(
@@ -1696,7 +1591,6 @@ function planFellowshipPostRunStages(
     const artifactPath = definition.appendsOutputArtifact
       ? path.join(outputDirectory, definition.artifactName)
       : undefined;
-    const secretEnv = definition.buildSecretEnv?.(options);
     return {
       name: definition.name,
       ...(artifactPath ? { artifactPath } : {}),
@@ -1707,7 +1601,6 @@ function planFellowshipPostRunStages(
         ...definition.buildArgs(options),
         ...(artifactPath ? [`--output=${artifactPath}`] : []),
       ],
-      ...(secretEnv ? { secretEnv } : {}),
     };
   });
 }
@@ -1741,14 +1634,6 @@ async function runFellowshipPostRunStages(
   options: FellowshipPostRunStageOptions = {},
   ctx?: SweepRuntimeContext,
 ): Promise<ScraperSweepSummary['postRun']> {
-  const refreshBlocker = options.refreshFellowshipCatalog
-    ? fellowshipCatalogRefreshBlocker(options)
-    : undefined;
-  if (refreshBlocker) {
-    console.warn(
-      `[fellowship-post-run] catalog-refresh skipped: ${sanitizeLogValue(refreshBlocker)}`,
-    );
-  }
   const stages: FellowshipPostRunStage[] = [];
   for (const planned of planFellowshipPostRunStages(outputDirectory, options)) {
     const stepId = stageStepId(planned.name);
@@ -1778,7 +1663,7 @@ async function runFellowshipPostRunStages(
     ctx?.logger.logStart(stepId);
     const child = await childRunner('yarn', planned.args, {
       cwd: repoRoot,
-      env: planned.secretEnv ? { ...process.env, ...planned.secretEnv } : process.env,
+      env: process.env,
       logPath,
     });
     const exitCode = child.status ?? 1;
@@ -1856,7 +1741,6 @@ export async function runScraperSweep(
   const childRunner = dependencies.childRunner || spawnChild;
   const sweepSources = sweepSourcesForMode(options.mode);
   const rows = new Array<ScraperSweepRunRow>(sweepSources.length);
-  let stopped = false;
 
   if (resumed && sweepSources.some((source) => !store.isDone(sourceStepId(source.name)))) {
     const invalidated = store.clearStageSteps(startedAt);
@@ -1927,17 +1811,13 @@ export async function runScraperSweep(
       return undefined;
     }
     if (scraperSweepArtifactError(options.mode, artifact)) return undefined;
-    const row: ScraperSweepRunRow = {
+    return {
       sourceName: source.name,
       phase: source.phase,
       status: 'succeeded',
       artifactPath,
       ...artifact,
     };
-    if (options.mode === 'beta-fetch' && artifact.runId) {
-      row.betaRenderCommands = betaRenderCommands(source.name, artifact.runId);
-    }
-    return row;
   };
 
   const runSource = async (
@@ -1959,10 +1839,6 @@ export async function runScraperSweep(
       console.warn(
         `\n[${index + 1}/${sweepSources.length}] ${source.phase}: ${source.name} was marked done but its artifact is missing or invalid; re-running`,
       );
-    }
-    if (stopped) {
-      rows[index] = notRunRow(source, index);
-      return;
     }
     const logPath = `${artifactPath}.log`;
     console.log(
@@ -2000,7 +1876,6 @@ export async function runScraperSweep(
         exitCode,
         error,
       };
-      if (config.stopOnFailure) stopped = true;
     };
     if (child.error || exitCode !== 0 || !fs.existsSync(artifactPath)) {
       failStep(sanitizeLogValue(child.error || `scraper exited with status ${exitCode}`));
@@ -2014,17 +1889,13 @@ export async function runScraperSweep(
         failStep(artifactError);
         return;
       }
-      const row: ScraperSweepRunRow = {
+      rows[index] = {
         sourceName: source.name,
         phase: source.phase,
         status: 'succeeded',
         artifactPath,
         ...artifact,
       };
-      if (options.mode === 'beta-fetch' && artifact.runId) {
-        row.betaRenderCommands = betaRenderCommands(source.name, artifact.runId);
-      }
-      rows[index] = row;
       store.markDone(stepId, 'source', exitCode, now());
       logger.logDone(stepId, exitCode);
     } catch (error) {
@@ -2033,7 +1904,7 @@ export async function runScraperSweep(
   };
 
   const runBetweenPhasesPrune = async (phase: ScraperSweepPhase): Promise<void> => {
-    if (!options.pruneBetweenPhases || !isDeadObservationPruneSweepMode(options.mode) || stopped) {
+    if (!options.pruneBetweenPhases || !isDeadObservationPruneSweepMode(options.mode)) {
       return;
     }
     const stepId = pruneStepId(phase);
@@ -2069,12 +1940,6 @@ export async function runScraperSweep(
   try {
     for (const phase of orderedScraperSweepPhases(sweepSources)) {
       const phaseEntries = globalEntries.filter((entry) => entry.source.phase === phase);
-      if (stopped) {
-        for (const { source, index } of phaseEntries) {
-          if (!rows[index]) rows[index] = notRunRow(source, index);
-        }
-        continue;
-      }
       const phaseConcurrency = resolvePhaseConcurrency(options.mode, phase, options.concurrency);
       await runWithBoundedConcurrency(phaseEntries, phaseConcurrency, ({ source, index }) =>
         runSource(source, index, phaseConcurrency),

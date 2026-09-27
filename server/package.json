@@ -148,7 +148,6 @@
     "departments:audit-roster-lanes": "tsx src/scripts/auditRosterLanes.ts",
     "research-homes:audit-rosters": "tsx src/scripts/auditResearchHomeRosters.ts",
     "programs:backfill-accepting-applications-invariant": "tsx src/scripts/backfillFellowshipAcceptingApplicationsInvariant.ts",
-    "fellowships:refresh": "tsx src/scripts/fellowshipRefresh.ts",
     "fellowships:repair-duplicate-source-keys": "tsx src/scripts/repairDuplicateFellowshipSourceKeys.ts",
     "research:backfill-yale-status-cache": "tsx src/scripts/backfillYaleStatusCache.ts",
     "research-entity:record-departure": "tsx src/scripts/recordResearchEntityDeparture.ts",

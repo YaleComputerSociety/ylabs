@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  assertCommandAllowed,
+  assertWritesAllowed,
   parseInvocation,
   parseMongoTarget,
   validateProfileValues,
@@ -54,22 +54,11 @@ test('parses write mode without placing it in the child command', () => {
   );
 });
 
-test('blocks local Beta materialization and auto-materialization', () => {
+test('keeps the beta operator read-only because Beta is filled by promotion', () => {
   assert.throws(
-    () =>
-      assertCommandAllowed('beta-operator', [
-        'yarn',
-        '--cwd',
-        'server',
-        'scrape',
-        'run',
-        '--auto-materialize',
-      ]),
-    /Beta Render shell/,
+    () => assertWritesAllowed('beta-operator', true),
+    /read-only[\s\S]*beta:refresh-from-development:plan/,
   );
-  assert.throws(
-    () =>
-      assertCommandAllowed('beta-operator', ['yarn', '--cwd', 'server', 'scrape', 'materialize']),
-    /Beta Render shell/,
-  );
+  assert.doesNotThrow(() => assertWritesAllowed('beta-operator', false));
+  assert.doesNotThrow(() => assertWritesAllowed('development', true));
 });

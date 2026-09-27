@@ -80,9 +80,9 @@ describe('scraper sweep checkpoint', () => {
   it('does not resume a checkpoint recorded for a different mode', () => {
     const checkpointPath = path.join(dir, 'checkpoint.json');
     writeSweepCheckpointAtomic(checkpointPath, {
-      mode: 'beta-fetch',
+      mode: 'development-incremental',
       flags: '',
-      outputDirectory: path.join(dir, 'beta-out'),
+      outputDirectory: path.join(dir, 'incremental-out'),
       ownerPid: process.pid,
       createdAt: now().toISOString(),
       updatedAt: now().toISOString(),

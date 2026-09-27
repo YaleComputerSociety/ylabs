@@ -142,8 +142,7 @@ export function buildBetaReadinessCommands() {
   return {
     seedSources:
       'SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scrape:seed-sources --dry-run --output /tmp/ylabs-seed-sources-dry-run.json',
-    sourceRun:
-      'SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scrape run --source <source> --auto-materialize',
+    refreshFromDevelopment: 'yarn beta:refresh-from-development:plan',
     meiliRebuild:
       'SCRAPER_ENV=beta yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild',
   };
