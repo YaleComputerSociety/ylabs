@@ -5,11 +5,22 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS } from '../models/roleAssignment';
 import {
+  ARCHIVED_REASON_ABSENT,
+  archivedEntityArtifactPlanWriteCount,
+  archivedEntityRepairClasses,
   buildArchivedEntityArtifactRepairPlan,
+  dispositionMatchesScope,
+  resolveArchivedEntityDispositions,
+  summarizeArchivedEntityArtifactRepairPlanByClass,
   type ArchivedEntityArtifact,
   type ArchivedEntityArtifactRepairPlan,
   type ArchivedEntityArtifactType,
+  type ArchivedEntityDisposition,
+  type ArchivedEntityNode,
+  type ArchivedEntityRepairClass,
+  type ArchivedEntityRepairScope,
 } from './repairArchivedEntityArtifactsCore';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -20,7 +31,10 @@ dotenv.config();
 interface ArtifactSpec {
   artifactType: ArchivedEntityArtifactType;
   collection: string;
-  activeMatch?: Record<string, unknown>;
+  entityIdPath: string;
+  activeMatch: Record<string, unknown>;
+  projection: Record<string, 1>;
+  toArtifact: (row: Record<string, any>) => ArchivedEntityArtifact;
 }
 
 export interface RepairArchivedEntityArtifactsCliOptions {
@@ -30,17 +44,59 @@ export interface RepairArchivedEntityArtifactsCliOptions {
   limitProvided: boolean;
   maxApply: number;
   output?: string;
+  classes?: ArchivedEntityRepairClass[];
+  archivedReasons?: string[];
+  archivedSince?: string;
+  archivedBefore?: string;
+  entityIds?: string[];
+  artifactTypes?: ArchivedEntityArtifactType[];
 }
 
 const __filename = fileURLToPath(import.meta.url);
 
+export const MERGED_DUPLICATE_ROLE_EDGE_NOTE =
+  'Retired by research-entity:repair-archived-artifacts: duplicates a live edge on the merge survivor of its archived research entity (#3578).';
+export const NO_CANONICAL_ROLE_EDGE_NOTE =
+  'Retired by research-entity:repair-archived-artifacts: its research entity is archived with no merge survivor (#3578).';
+
+const ARTIFACT_TYPE_FLAGS: Record<string, ArchivedEntityArtifactType> = {
+  'role-assignment': 'RoleAssignment',
+  'access-signal': 'AccessSignal',
+};
+
 const ARTIFACT_SPECS: ArtifactSpec[] = [
   {
-    artifactType: 'ResearchEntityMember',
-    collection: 'research_entity_members',
-    activeMatch: { isCurrentMember: { $ne: false } },
+    artifactType: 'RoleAssignment',
+    collection: 'role_assignments',
+    entityIdPath: 'target.id',
+    activeMatch: {
+      archived: { $ne: true },
+      state: { $ne: 'HISTORICAL' },
+      'target.kind': 'RESEARCH_ENTITY',
+    },
+    projection: { _id: 1, target: 1, personId: 1, role: 1 },
+    toArtifact: (row) => ({
+      artifactType: 'RoleAssignment',
+      id: stringId(row._id),
+      researchEntityId: stringId(row.target?.id),
+      personId: stringId(row.personId),
+      role: stringId(row.role),
+    }),
   },
-  { artifactType: 'AccessSignal', collection: 'signals' },
+  {
+    artifactType: 'AccessSignal',
+    collection: 'signals',
+    entityIdPath: 'researchEntityId',
+    activeMatch: { archived: { $ne: true } },
+    projection: { _id: 1, researchEntityId: 1, type: 1, derivationKey: 1 },
+    toArtifact: (row) => ({
+      artifactType: 'AccessSignal',
+      id: stringId(row._id),
+      researchEntityId: stringId(row.researchEntityId),
+      signalType: stringId(row.type),
+      derivationKey: stringId(row.derivationKey),
+    }),
+  },
 ];
 const ARCHIVED_ARTIFACT_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
@@ -63,6 +119,117 @@ function parsePositiveInteger(value: string, optionName: string) {
     throw new Error(`${optionName} must be a positive integer`);
   }
   return parsed;
+}
+
+const SCOPE_FLAGS = [
+  '--class',
+  '--archived-reason',
+  '--archived-since',
+  '--archived-before',
+  '--entity-ids',
+  '--artifact-type',
+] as const;
+type ScopeFlag = (typeof SCOPE_FLAGS)[number];
+
+function parseScopeArg(
+  arg: string,
+  next: string | undefined,
+): { flag: ScopeFlag; value: string; consumedNext: boolean } | undefined {
+  if (arg === '--archived-reason-absent') {
+    return { flag: '--archived-reason', value: ARCHIVED_REASON_ABSENT, consumedNext: false };
+  }
+  for (const flag of SCOPE_FLAGS) {
+    if (arg.startsWith(`${flag}=`)) {
+      const value = arg.slice(flag.length + 1).trim();
+      if (!value) throw new Error(`${flag} requires a value`);
+      return { flag, value, consumedNext: false };
+    }
+    if (arg === flag) {
+      const value = next?.trim();
+      if (!value || value.startsWith('--')) throw new Error(`${flag} requires a value`);
+      return { flag, value, consumedNext: true };
+    }
+  }
+  return undefined;
+}
+
+function parseIsoDate(value: string, flag: string): string {
+  const parsed = new Date(value);
+  if (!/^\d{4}-\d{2}-\d{2}/.test(value) || Number.isNaN(parsed.getTime())) {
+    throw new Error(`${flag} must be an ISO date such as 2026-09-26 or 2026-09-26T21:00:00Z`);
+  }
+  return parsed.toISOString();
+}
+
+function commaList(value: string): string[] {
+  return value
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function pushUnique<T>(existing: T[] | undefined, values: T[]): T[] {
+  return [...new Set([...(existing || []), ...values])];
+}
+
+function applyScopeArg(
+  options: RepairArchivedEntityArtifactsCliOptions,
+  flag: ScopeFlag,
+  value: string,
+): void {
+  if (flag === '--class') {
+    const classes = commaList(value).map((repairClass) => {
+      if (!(archivedEntityRepairClasses as readonly string[]).includes(repairClass)) {
+        throw new Error(`--class must be one of ${archivedEntityRepairClasses.join(', ')}`);
+      }
+      return repairClass as ArchivedEntityRepairClass;
+    });
+    options.classes = pushUnique(options.classes, classes);
+    return;
+  }
+  if (flag === '--archived-reason') {
+    options.archivedReasons = pushUnique(options.archivedReasons, [value]);
+    return;
+  }
+  if (flag === '--archived-since') {
+    options.archivedSince = parseIsoDate(value, flag);
+    return;
+  }
+  if (flag === '--archived-before') {
+    options.archivedBefore = parseIsoDate(value, flag);
+    return;
+  }
+  if (flag === '--entity-ids') {
+    const ids = commaList(value).map((id) => {
+      const normalized = normalizeArchivedArtifactObjectId(id);
+      if (!normalized) throw new Error('--entity-ids must be a comma-separated list of ObjectIds');
+      return normalized.toLowerCase();
+    });
+    options.entityIds = pushUnique(options.entityIds, ids);
+    return;
+  }
+  const artifactTypes = commaList(value).map((artifactType) => {
+    const resolved = ARTIFACT_TYPE_FLAGS[artifactType];
+    if (!resolved) {
+      throw new Error(
+        `--artifact-type must be one of ${Object.keys(ARTIFACT_TYPE_FLAGS).join(', ')}`,
+      );
+    }
+    return resolved;
+  });
+  options.artifactTypes = pushUnique(options.artifactTypes, artifactTypes);
+}
+
+export function archivedEntityRepairScopeFromOptions(
+  options: RepairArchivedEntityArtifactsCliOptions,
+): ArchivedEntityRepairScope {
+  return {
+    ...(options.classes ? { classes: new Set(options.classes) } : {}),
+    ...(options.archivedReasons ? { archivedReasons: new Set(options.archivedReasons) } : {}),
+    ...(options.archivedSince ? { archivedSince: new Date(options.archivedSince) } : {}),
+    ...(options.archivedBefore ? { archivedBefore: new Date(options.archivedBefore) } : {}),
+    ...(options.entityIds ? { entityIds: new Set(options.entityIds) } : {}),
+  };
 }
 
 export function parseRepairArchivedEntityArtifactsArgs(
@@ -134,6 +301,13 @@ export function parseRepairArchivedEntityArtifactsArgs(
       continue;
     }
 
+    const scoped = parseScopeArg(arg, argv[index + 1]);
+    if (scoped) {
+      applyScopeArg(options, scoped.flag, scoped.value);
+      if (scoped.consumedNext) index += 1;
+      continue;
+    }
+
     throw new Error(`Unknown research-entity:repair-archived-artifacts argument: ${arg}`);
   }
 
@@ -146,14 +320,26 @@ export function assertArchivedEntityArtifactRepairApplyAllowed({
   limitProvided,
   maxApply,
   plannedWrites,
+  classes,
 }: {
   apply: boolean;
   confirmArchivedArtifactRepair?: boolean;
   limitProvided?: boolean;
   maxApply: number;
   plannedWrites: number;
+  classes?: ArchivedEntityRepairClass[];
 }): void {
   if (!apply) return;
+  if (!classes || classes.length !== 1) {
+    throw new Error(
+      '--apply requires exactly one --class so a run settles one archive class at a time for research-entity:repair-archived-artifacts',
+    );
+  }
+  if (classes[0] === 'merge-dead-end') {
+    throw new Error(
+      '--class=merge-dead-end has no survivor to relink to and is report-only; repair the tombstone chain first',
+    );
+  }
   if (limitProvided === false) {
     throw new Error(
       '--limit is required when --apply is set for research-entity:repair-archived-artifacts',
@@ -202,127 +388,114 @@ function objectId(value: unknown): mongoose.Types.ObjectId | undefined {
   return id ? new mongoose.Types.ObjectId(id) : undefined;
 }
 
-async function collectionExists(collectionName: string): Promise<boolean> {
-  const db = mongoose.connection.db;
-  if (!db) return false;
-  const matches = await db.listCollections({ name: collectionName }, { nameOnly: true }).toArray();
-  return matches.length > 0;
+function specFor(artifactType: ArchivedEntityArtifactType): ArtifactSpec {
+  const spec = ARTIFACT_SPECS.find((candidate) => candidate.artifactType === artifactType);
+  if (!spec) throw new Error(`No artifact spec for ${artifactType}`);
+  return spec;
 }
 
-async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
-  artifacts: ArchivedEntityArtifact[];
-  canonicalArtifacts: ArchivedEntityArtifact[];
-  plan: ArchivedEntityArtifactRepairPlan;
+async function loadEntityNodes(): Promise<{
+  archivedEntities: ArchivedEntityNode[];
+  nodesById: Map<string, ArchivedEntityNode>;
 }> {
-  const archivedEntities = await ResearchEntity.find({
-    archived: true,
-  })
-    .select('_id canonicalGroupId')
-    .lean();
-  const canonicalByArchivedId = new Map(
-    archivedEntities.map((entity: any) => [
-      stringId(entity._id),
-      stringId(entity.canonicalGroupId),
-    ]),
-  );
-  const archivedIds = [...canonicalByArchivedId.keys()]
+  const toNode = (row: any): ArchivedEntityNode => ({
+    id: stringId(row._id),
+    archived: row.archived === true,
+    canonicalGroupId: stringId(row.canonicalGroupId) || undefined,
+    archivedReason: typeof row.archivedReason === 'string' ? row.archivedReason : '',
+    archivedAt: row.archivedAt instanceof Date ? row.archivedAt : undefined,
+  });
+  const archivedEntities = (
+    await ResearchEntity.find({ archived: true })
+      .select('_id archived canonicalGroupId archivedReason archivedAt')
+      .lean()
+  ).map(toNode);
+  const nodesById = new Map(archivedEntities.map((node) => [node.id, node]));
+  const liveCanonicalIds = [
+    ...new Set(archivedEntities.map((node) => node.canonicalGroupId).filter(Boolean)),
+  ]
+    .filter((id) => !nodesById.has(id as string))
     .map(objectId)
     .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
-  const canonicalIds = [...new Set(canonicalByArchivedId.values())]
+  if (liveCanonicalIds.length > 0) {
+    const canonicalRows = await ResearchEntity.find({ _id: { $in: liveCanonicalIds } })
+      .select('_id archived canonicalGroupId archivedReason archivedAt')
+      .lean();
+    for (const row of canonicalRows) {
+      const node = toNode(row);
+      nodesById.set(node.id, node);
+    }
+  }
+  return { archivedEntities, nodesById };
+}
+
+async function loadArchivedEntityArtifactPlan(
+  limit: number,
+  scope: ArchivedEntityRepairScope,
+  artifactTypes: ArchivedEntityArtifactType[] | undefined,
+): Promise<{
+  scopedArchivedEntities: number;
+  artifacts: ArchivedEntityArtifact[];
+  plan: ArchivedEntityArtifactRepairPlan;
+}> {
+  const { archivedEntities, nodesById } = await loadEntityNodes();
+  const dispositions = await resolveArchivedEntityDispositions(archivedEntities, nodesById);
+  const scoped = new Map<string, ArchivedEntityDisposition>(
+    [...dispositions].filter(([, disposition]) => dispositionMatchesScope(disposition, scope)),
+  );
+  const scopedIds = [...scoped.keys()]
+    .map(objectId)
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  const survivorIds = [
+    ...new Set([...scoped.values()].map((disposition) => disposition.survivorId).filter(Boolean)),
+  ]
     .map(objectId)
     .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
   const artifacts: ArchivedEntityArtifact[] = [];
   const canonicalArtifacts: ArchivedEntityArtifact[] = [];
   const db = mongoose.connection.db;
-  if (!db || archivedIds.length === 0) {
+  if (!db || scopedIds.length === 0) {
     return {
+      scopedArchivedEntities: scoped.size,
       artifacts,
-      canonicalArtifacts,
-      plan: buildArchivedEntityArtifactRepairPlan({ artifacts, canonicalArtifacts }),
+      plan: buildArchivedEntityArtifactRepairPlan({ artifacts, dispositions: scoped }),
     };
   }
 
-  for (const spec of ARTIFACT_SPECS) {
+  const specs = ARTIFACT_SPECS.filter(
+    (spec) => !artifactTypes || artifactTypes.includes(spec.artifactType),
+  );
+  for (const spec of specs) {
     const remainingLimit = Math.max(0, limit - artifacts.length);
     if (remainingLimit === 0) break;
-    if (!(await collectionExists(spec.collection))) continue;
     const collection = db.collection(spec.collection);
     const [artifactRows, canonicalRows] = await Promise.all([
       collection
-        .find({
-          archived: { $ne: true },
-          ...(spec.activeMatch || {}),
-          researchEntityId: { $in: archivedIds },
-        })
+        .find({ ...spec.activeMatch, [spec.entityIdPath]: { $in: scopedIds } })
+        .sort({ _id: 1 })
         .limit(remainingLimit)
-        .project({
-          _id: 1,
-          researchEntityId: 1,
-          derivationKey: 1,
-          type: 1,
-          entryPathwayId: 1,
-          userId: 1,
-          role: 1,
-        })
+        .project(spec.projection)
         .toArray(),
-      collection
-        .find({
-          archived: { $ne: true },
-          ...(spec.activeMatch || {}),
-          researchEntityId: { $in: canonicalIds },
-        })
-        .project({
-          _id: 1,
-          researchEntityId: 1,
-          derivationKey: 1,
-          type: 1,
-          entryPathwayId: 1,
-          userId: 1,
-          role: 1,
-        })
-        .toArray(),
+      survivorIds.length > 0
+        ? collection
+            .find({ ...spec.activeMatch, [spec.entityIdPath]: { $in: survivorIds } })
+            .project(spec.projection)
+            .toArray()
+        : Promise.resolve([]),
     ]);
-
-    for (const row of artifactRows) {
-      const researchEntityId = stringId(row.researchEntityId);
-      artifacts.push({
-        artifactType: spec.artifactType,
-        id: stringId(row._id),
-        researchEntityId,
-        canonicalResearchEntityId: canonicalByArchivedId.get(researchEntityId) || '',
-        derivationKey: stringId(row.derivationKey),
-        signalType: stringId(row.type),
-        entryPathwayId: stringId(row.entryPathwayId),
-        userId: stringId(row.userId),
-        role: stringId(row.role),
-      });
-    }
-
-    for (const row of canonicalRows) {
-      const researchEntityId = stringId(row.researchEntityId);
-      canonicalArtifacts.push({
-        artifactType: spec.artifactType,
-        id: stringId(row._id),
-        researchEntityId,
-        canonicalResearchEntityId: researchEntityId,
-        derivationKey: stringId(row.derivationKey),
-        signalType: stringId(row.type),
-        entryPathwayId: stringId(row.entryPathwayId),
-        userId: stringId(row.userId),
-        role: stringId(row.role),
-      });
-    }
+    artifacts.push(...artifactRows.map(spec.toArtifact));
+    canonicalArtifacts.push(...canonicalRows.map(spec.toArtifact));
   }
 
   return {
+    scopedArchivedEntities: scoped.size,
     artifacts,
-    canonicalArtifacts,
-    plan: buildArchivedEntityArtifactRepairPlan({ artifacts, canonicalArtifacts }),
+    plan: buildArchivedEntityArtifactRepairPlan({
+      artifacts,
+      dispositions: scoped,
+      canonicalArtifacts,
+    }),
   };
-}
-
-function planWriteCount(plan: ArchivedEntityArtifactRepairPlan): number {
-  return plan.relink.length + plan.mergeAndArchive.length + plan.archiveWithoutCanonical.length;
 }
 
 function planSummary(plan: ArchivedEntityArtifactRepairPlan) {
@@ -334,26 +507,64 @@ function planSummary(plan: ArchivedEntityArtifactRepairPlan) {
   };
 }
 
-async function archiveArtifact(
-  collectionName: string,
-  id: string,
+function retireArtifactUpdate(
+  artifactType: ArchivedEntityArtifactType,
+  note: string,
   now: Date,
-  canonicalResearchEntityId?: string,
-) {
+): Record<string, unknown> {
+  if (artifactType === 'RoleAssignment') {
+    return {
+      $set: {
+        archived: true,
+        reviewStatus: DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS,
+        reviewNotes: note,
+      },
+    };
+  }
+  return { $set: { archived: true, lastMaterializedAt: now } };
+}
+
+async function retireArtifact(
+  artifactType: ArchivedEntityArtifactType,
+  id: string,
+  note: string,
+  now: Date,
+): Promise<number> {
   const db = mongoose.connection.db;
   const artifactObjectId = objectId(id);
   if (!db || !artifactObjectId) return 0;
-  const set: Record<string, unknown> = {
-    archived: true,
-    lastMaterializedAt: now,
-  };
-  const canonicalObjectId = objectId(canonicalResearchEntityId);
-  if (canonicalObjectId) {
-    set.researchEntityId = canonicalObjectId;
-  }
   const result = await db
-    .collection(collectionName)
-    .updateOne({ _id: artifactObjectId }, { $set: set });
+    .collection(specFor(artifactType).collection)
+    .updateOne(
+      { _id: artifactObjectId, archived: { $ne: true } },
+      retireArtifactUpdate(artifactType, note, now),
+    );
+  return result.modifiedCount || 0;
+}
+
+async function mergeSignalEvidenceIntoSurvivor(
+  duplicateId: string,
+  canonicalId: string,
+  now: Date,
+): Promise<number> {
+  const db = mongoose.connection.db;
+  const duplicateObjectId = objectId(duplicateId);
+  const canonicalObjectId = objectId(canonicalId);
+  if (!db || !duplicateObjectId || !canonicalObjectId) return 0;
+  const collection = db.collection(specFor('AccessSignal').collection);
+  const duplicate = await collection.findOne(
+    { _id: duplicateObjectId },
+    { projection: { 'source.evidenceIds': 1 } },
+  );
+  const evidenceIds = duplicate?.source?.evidenceIds;
+  if (!Array.isArray(evidenceIds) || evidenceIds.length === 0) return 0;
+  const result = await collection.updateOne(
+    { _id: canonicalObjectId },
+    {
+      $addToSet: { 'source.evidenceIds': { $each: evidenceIds } },
+      $set: { lastMaterializedAt: now },
+    },
+  );
   return result.modifiedCount || 0;
 }
 
@@ -365,73 +576,61 @@ async function applyRepairPlan(plan: ArchivedEntityArtifactRepairPlan) {
     mergedCanonicalArtifacts: 0,
     archivedMergedDuplicates: 0,
     archivedWithoutCanonical: 0,
-    childReferencesRelinked: 0,
   };
   if (!db) return counts;
 
   for (const item of plan.relink) {
-    const spec = ARTIFACT_SPECS.find((candidate) => candidate.artifactType === item.artifactType);
+    const spec = specFor(item.artifactType);
     const itemObjectId = objectId(item.id);
+    const archivedEntityObjectId = objectId(item.archivedEntityId);
     const canonicalObjectId = objectId(item.canonicalResearchEntityId);
-    if (!spec || !itemObjectId || !canonicalObjectId) continue;
+    if (!itemObjectId || !archivedEntityObjectId || !canonicalObjectId) continue;
+    const set: Record<string, unknown> = { [spec.entityIdPath]: canonicalObjectId };
+    if (item.artifactType === 'AccessSignal') set.lastMaterializedAt = now;
     try {
       const result = await db.collection(spec.collection).updateOne(
-        { _id: itemObjectId, archived: { $ne: true } },
         {
-          $set: {
-            researchEntityId: canonicalObjectId,
-            lastMaterializedAt: now,
-          },
+          _id: itemObjectId,
+          archived: { $ne: true },
+          [spec.entityIdPath]: archivedEntityObjectId,
         },
+        { $set: set },
       );
       counts.relinked += result.modifiedCount || 0;
     } catch (error: any) {
       if (error?.code !== 11000) throw error;
-      counts.archivedWithoutCanonical += await archiveArtifact(
-        spec.collection,
+      counts.archivedMergedDuplicates += await retireArtifact(
+        item.artifactType,
         item.id,
+        MERGED_DUPLICATE_ROLE_EDGE_NOTE,
         now,
-        item.canonicalResearchEntityId,
       );
     }
   }
 
   for (const item of plan.mergeAndArchive) {
-    const spec = ARTIFACT_SPECS.find((candidate) => candidate.artifactType === item.artifactType);
-    const duplicateObjectId = objectId(item.duplicateId);
-    const canonicalObjectId = objectId(item.canonicalId);
-    if (!spec || !duplicateObjectId || !canonicalObjectId) continue;
-    const collection = db.collection(spec.collection);
-    const duplicate = await collection.findOne(
-      { _id: duplicateObjectId },
-      { projection: { sourceEvidenceIds: 1, sourceUrls: 1 } },
-    );
-    const addToSet: Record<string, { $each: unknown[] }> = {};
-    if (Array.isArray(duplicate?.sourceEvidenceIds) && duplicate.sourceEvidenceIds.length > 0) {
-      addToSet.sourceEvidenceIds = { $each: duplicate.sourceEvidenceIds };
-    }
-    if (Array.isArray(duplicate?.sourceUrls) && duplicate.sourceUrls.length > 0) {
-      addToSet.sourceUrls = { $each: duplicate.sourceUrls };
-    }
-    if (Object.keys(addToSet).length > 0) {
-      const result = await collection.updateOne(
-        { _id: canonicalObjectId },
-        { $addToSet: addToSet, $set: { lastMaterializedAt: now } },
+    if (item.artifactType === 'AccessSignal') {
+      counts.mergedCanonicalArtifacts += await mergeSignalEvidenceIntoSurvivor(
+        item.duplicateId,
+        item.canonicalId,
+        now,
       );
-      counts.mergedCanonicalArtifacts += result.modifiedCount || 0;
     }
-
-    counts.archivedMergedDuplicates += await archiveArtifact(
-      spec.collection,
+    counts.archivedMergedDuplicates += await retireArtifact(
+      item.artifactType,
       item.duplicateId,
+      MERGED_DUPLICATE_ROLE_EDGE_NOTE,
       now,
     );
   }
 
   for (const item of plan.archiveWithoutCanonical) {
-    const spec = ARTIFACT_SPECS.find((candidate) => candidate.artifactType === item.artifactType);
-    if (!spec) continue;
-    counts.archivedWithoutCanonical += await archiveArtifact(spec.collection, item.id, now);
+    counts.archivedWithoutCanonical += await retireArtifact(
+      item.artifactType,
+      item.id,
+      NO_CANONICAL_ROLE_EDGE_NOTE,
+      now,
+    );
   }
 
   return counts;
@@ -439,13 +638,14 @@ async function applyRepairPlan(plan: ArchivedEntityArtifactRepairPlan) {
 
 async function main() {
   const options = parseRepairArchivedEntityArtifactsArgs(process.argv.slice(2));
-  assertArchivedEntityArtifactRepairApplyAllowed({
+  const applyGuardInput = {
     apply: options.apply,
     confirmArchivedArtifactRepair: options.confirmArchivedArtifactRepair,
     limitProvided: options.limitProvided,
     maxApply: options.maxApply,
-    plannedWrites: 0,
-  });
+    classes: options.classes,
+  };
+  assertArchivedEntityArtifactRepairApplyAllowed({ ...applyGuardInput, plannedWrites: 0 });
   const guard = assertScriptApplyAllowed({
     apply: options.apply,
     scriptName: 'research-entity:repair-archived-artifacts',
@@ -453,14 +653,13 @@ async function main() {
   });
 
   await initializeConnections();
-  const { artifacts, plan } = await loadArchivedEntityArtifactPlan(options.limit);
-  assertArchivedEntityArtifactRepairApplyAllowed({
-    apply: options.apply,
-    confirmArchivedArtifactRepair: options.confirmArchivedArtifactRepair,
-    limitProvided: options.limitProvided,
-    maxApply: options.maxApply,
-    plannedWrites: planWriteCount(plan),
-  });
+  const { scopedArchivedEntities, artifacts, plan } = await loadArchivedEntityArtifactPlan(
+    options.limit,
+    archivedEntityRepairScopeFromOptions(options),
+    options.artifactTypes,
+  );
+  const plannedWrites = archivedEntityArtifactPlanWriteCount(plan);
+  assertArchivedEntityArtifactRepairApplyAllowed({ ...applyGuardInput, plannedWrites });
   const applied = options.apply ? await applyRepairPlan(plan) : undefined;
   const report = buildRepairArchivedEntityArtifactsOutput(
     {
@@ -470,9 +669,12 @@ async function main() {
     },
     {
       mode: options.apply ? 'apply' : 'dry-run',
+      scopedArchivedEntities,
       scannedArtifacts: artifacts.length,
-      plannedWrites: planWriteCount(plan),
+      limitReached: artifacts.length >= options.limit,
+      plannedWrites,
       planSummary: planSummary(plan),
+      planByClass: summarizeArchivedEntityArtifactRepairPlanByClass(plan),
       plan,
       ...(applied ? { applied } : {}),
     },

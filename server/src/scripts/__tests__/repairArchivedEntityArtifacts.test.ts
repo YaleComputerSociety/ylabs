@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
+  archivedEntityRepairScopeFromOptions,
   assertArchivedEntityArtifactRepairApplyAllowed,
   buildRepairArchivedEntityArtifactsOutput,
   normalizeArchivedArtifactObjectId,
@@ -80,6 +81,7 @@ describe('repairArchivedEntityArtifacts CLI helpers', () => {
         confirmArchivedArtifactRepair: true,
         maxApply: 2,
         plannedWrites: 3,
+        classes: ['merge-survivor'],
       }),
     ).toThrow('Apply would modify 3 artifacts, above --max-apply.');
   });
@@ -99,6 +101,7 @@ describe('repairArchivedEntityArtifacts CLI helpers', () => {
         limitProvided: false,
         maxApply: 25,
         plannedWrites: 0,
+        classes: ['no-canonical'],
       }),
     ).toThrow(/--limit is required when --apply is set/);
 
@@ -118,6 +121,7 @@ describe('repairArchivedEntityArtifacts CLI helpers', () => {
         limitProvided: true,
         maxApply: 25,
         plannedWrites: 0,
+        classes: ['no-canonical'],
       }),
     ).toThrow(/--confirm-archived-artifact-repair is required/);
   });
@@ -130,6 +134,80 @@ describe('repairArchivedEntityArtifacts CLI helpers', () => {
         limitProvided: true,
         maxApply: 1,
         plannedWrites: 1,
+        classes: ['merge-survivor'],
+      }),
+    ).not.toThrow();
+  });
+
+  it('parses scope flags that pick which archived rows a run touches', () => {
+    const options = parseRepairArchivedEntityArtifactsArgs([
+      '--class=merge-survivor',
+      '--archived-reason',
+      'synthetic-merge',
+      '--archived-reason-absent',
+      '--archived-since=2026-09-26',
+      '--archived-before=2026-09-27T00:00:00Z',
+      '--entity-ids=507F1F77BCF86CD799439011,507f1f77bcf86cd799439012',
+      '--artifact-type=role-assignment',
+    ]);
+
+    expect(options).toMatchObject({
+      classes: ['merge-survivor'],
+      archivedReasons: ['synthetic-merge', '(none)'],
+      archivedSince: '2026-09-26T00:00:00.000Z',
+      archivedBefore: '2026-09-27T00:00:00.000Z',
+      entityIds: ['507f1f77bcf86cd799439011', '507f1f77bcf86cd799439012'],
+      artifactTypes: ['RoleAssignment'],
+    });
+    const scope = archivedEntityRepairScopeFromOptions(options);
+    expect([...(scope.classes || [])]).toEqual(['merge-survivor']);
+    expect(scope.archivedSince?.toISOString()).toBe('2026-09-26T00:00:00.000Z');
+    expect(scope.entityIds?.has('507f1f77bcf86cd799439012')).toBe(true);
+  });
+
+  it('rejects malformed scope flag values', () => {
+    expect(() => parseRepairArchivedEntityArtifactsArgs(['--class=everything'])).toThrow(
+      /--class must be one of/,
+    );
+    expect(() => parseRepairArchivedEntityArtifactsArgs(['--entity-ids=not-an-id'])).toThrow(
+      /--entity-ids must be a comma-separated list of ObjectIds/,
+    );
+    expect(() => parseRepairArchivedEntityArtifactsArgs(['--archived-since=yesterday'])).toThrow(
+      /--archived-since must be an ISO date/,
+    );
+    expect(() => parseRepairArchivedEntityArtifactsArgs(['--artifact-type=contact-route'])).toThrow(
+      /--artifact-type must be one of/,
+    );
+    expect(() => parseRepairArchivedEntityArtifactsArgs(['--class'])).toThrow(
+      /--class requires a value/,
+    );
+  });
+
+  it('requires exactly one actionable class before apply', () => {
+    const base = {
+      apply: true,
+      confirmArchivedArtifactRepair: true,
+      limitProvided: true,
+      maxApply: 10,
+      plannedWrites: 1,
+    };
+    expect(() => assertArchivedEntityArtifactRepairApplyAllowed(base)).toThrow(
+      /--apply requires exactly one --class/,
+    );
+    expect(() =>
+      assertArchivedEntityArtifactRepairApplyAllowed({
+        ...base,
+        classes: ['merge-survivor', 'no-canonical'],
+      }),
+    ).toThrow(/--apply requires exactly one --class/);
+    expect(() =>
+      assertArchivedEntityArtifactRepairApplyAllowed({ ...base, classes: ['merge-dead-end'] }),
+    ).toThrow(/report-only/);
+    expect(() =>
+      assertArchivedEntityArtifactRepairApplyAllowed({
+        ...base,
+        apply: false,
+        classes: undefined,
       }),
     ).not.toThrow();
   });

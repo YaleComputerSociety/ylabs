@@ -162,7 +162,7 @@ const RECOMMENDED_COMMANDS_BY_FAILURE: Record<PostMaterializationIntegrityFailur
   duplicateCurrentMembers: [SAME_PI_DEDUPE_REVIEW_COMMAND],
   currentMembersOnArchivedEntities: [
     betaCommand(
-      'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --output /tmp/ylabs-research-entity-dedupe.json',
+      'yarn --cwd server research-entity:repair-archived-artifacts --artifact-type=role-assignment --limit=5000 --output /tmp/ylabs-archived-entity-artifact-repair.json',
     ),
   ],
   duplicateAccessSignals: [
@@ -172,7 +172,7 @@ const RECOMMENDED_COMMANDS_BY_FAILURE: Record<PostMaterializationIntegrityFailur
   ],
   activeArtifactsOnArchivedEntities: [
     betaCommand(
-      'yarn --cwd server research-entity:repair-archived-artifacts --output /tmp/ylabs-archived-entity-artifact-repair.json',
+      'yarn --cwd server research-entity:repair-archived-artifacts --artifact-type=access-signal --limit=5000 --output /tmp/ylabs-archived-entity-artifact-repair.json',
     ),
   ],
 };
