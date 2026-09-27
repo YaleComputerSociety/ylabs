@@ -29,6 +29,8 @@ A body may name a person with no identifier in it at all, in ordinary prose, and
 ## What counts as a person-bearing identifier
 
 - An entity slug carrying a person-bearing prefix: `nih-pi-`, `nsf-pi-`, `ysm-faculty-`, `faculty-research-area-`.
+  A prefix partway through a hyphenated token counts too, so `screenshot-nih-pi-<name>.png` is still a slug.
+  The exception is a registered source or server script name that contains a prefix, such as `repair-nih-nsf-pi-center-lab-conflation`, which the scan allows by exact match on the whole token.
 - A directory profile path: `<host>.yale.edu/profile/<name>`, and the `people` and `faculty` variants.
 - A personal `@yale.edu` address.
   A role address such as `physics@yale.edu` is not person-bearing.
@@ -100,6 +102,12 @@ The body arm separates a finding from a note.
 A slug, a personal address and a netid remain findings unconditionally.
 Unlike a URL, none of them has a legitimate evidentiary use in a body.
 
+The one allowance is the synthetic fixture roster, `SYNTHETIC_FIXTURE_SURNAMES` in `scripts/check-no-person-identifiers-core.mjs`, which holds the invented surnames the detector's own tests use.
+The body scan lets an identifier or prose name built from one of them through, because a pull request about the detector has to quote its fixtures and the no-mistakes gate pastes its adversarial inputs into the body.
+The allowance tests only the identifier itself, meaning the slug from its prefix onward or a two-word prose name ending in a roster surname, so a fixture surname sitting next to another name does not let that other name through.
+The tests scan in strict mode, which ignores the roster, so they still prove every shape is flagged.
+Write a new test fixture from the roster rather than inventing another name, and widening the roster is a reviewed change that its pin test makes deliberate.
+
 Check a draft before posting it, which is the only moment the fix is free:
 
 ```
@@ -107,7 +115,7 @@ yarn security:identifiers:body /tmp/pr-body.md
 ```
 
 The prose-name rule is fuzzy on purpose and lives only on the body arm.
-Measured against the repository's own documentation, roughly nine in ten of its early matches were Title Case technical phrases rather than people; excluding headings, table rows, code fences, indented blocks, acronyms, quoted titles, and segments that do not read as prose cut that to eleven matches across all of `docs/` and `skills/`, two of which are real names.
+Measured against the repository's own documentation, roughly nine in ten of its early matches were Title Case technical phrases rather than people; excluding headings, table rows, code fences, indented blocks, acronyms (including plural ones such as `IDs` and `POSTs`, meaning any token that opens with two capitals), quoted titles, and segments that do not read as prose cut that to eleven matches across all of `docs/` and `skills/`, two of which are real names.
 A pull request body is shorter and far less dense in Title Case than those files, so treat that as an upper bound.
 The blocking arm never calls this rule, so a false positive cannot fail a required check.
 It can fail the body arm's own run, which is why `AGENTS.md` excepts `Person identifier scan` from "merge only when checks are green": the remedy for a Title Case product phrase matched as a name is a comment saying so, then a merge on the red.

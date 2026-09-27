@@ -1,21 +1,25 @@
 const PERSON_SLUG_PREFIXES = ['nih-pi-', 'nsf-pi-', 'ysm-faculty-', 'faculty-research-area-'];
 
+// The whole match is the enclosing hyphenated token, so the registered-name
+// allowance compares a full name; group 1 is the slug from the prefix onward.
 const PERSON_SLUG_RE = new RegExp(
-  `\\b(?:${PERSON_SLUG_PREFIXES.join('|')})[a-z0-9][a-z0-9+-]*`,
+  `\\b(?:[a-z0-9]+-)*((?:${PERSON_SLUG_PREFIXES.join('|')})[a-z0-9][a-z0-9+-]*)`,
   'gi',
 );
 
 /**
- * Registered scraper source names that collide with a person-slug prefix. A source
- * name identifies a scraper, so pairing it with a claim names no person, but the
- * prefixes cannot see the difference: `ysm-faculty-directory` reads as
- * `ysm-faculty-<surname>`.
+ * Registered scraper source names and server script names that contain a
+ * person-slug prefix. A source or script name identifies code, so pairing it with a
+ * claim names no person, but the prefixes cannot see the difference:
+ * `ysm-faculty-directory` reads as `ysm-faculty-<surname>`, and
+ * `repair-nih-nsf-pi-center-lab-conflation` contains `nsf-pi-center-...`.
  *
- * This is an exact-match allowance, not a token stoplist, so `ysm-faculty-directors`
- * or any longer slug that merely starts the same way is still flagged. The set is
- * pinned against `server/src/scrapers/seedSources.ts` by this script's test, so a
- * future source name that collides fails there rather than silently widening what
- * the gate ignores.
+ * This is an exact-match allowance on the whole hyphenated token, not a token
+ * stoplist, so `ysm-faculty-directors`, `legacy-ysm-faculty-directory`, or any other
+ * token that merely contains the same name is still flagged. The set is pinned
+ * against `server/src/scrapers/seedSources.ts` and the `server/package.json` script
+ * names by this script's test, so a future name that collides fails there rather
+ * than silently widening what the gate ignores.
  *
  * Without this, every pull request or issue body discussing the YSM directory
  * scraper is blocked, and the only way past is an `identifier-exempt:` line - which
@@ -23,10 +27,14 @@ const PERSON_SLUG_RE = new RegExp(
  * that has to be switched off to discuss ordinary work trains people to switch it
  * off, so a false positive here costs more than the match it catches.
  */
-const NON_PERSON_SOURCE_NAMES = new Set(['ysm-faculty-directory']);
+const REGISTERED_NON_PERSON_NAMES = new Set([
+  'ysm-faculty-directory',
+  'nih-nsf-pi-center-lab-conflation-repair',
+  'repair-nih-nsf-pi-center-lab-conflation',
+]);
 
-export const isRegisteredSourceName = (value) =>
-  NON_PERSON_SOURCE_NAMES.has(String(value || '').toLowerCase());
+export const isRegisteredName = (value) =>
+  REGISTERED_NON_PERSON_NAMES.has(String(value || '').toLowerCase());
 
 const PROFILE_PATH_RE =
   /\b[a-z0-9.-]*yale\.edu\/(?:profile|profiles|people|faculty)\/[A-Za-z0-9._%-]+/gi;
@@ -167,8 +175,12 @@ const NON_PERSON_TOKENS = new Set(
   ].map((token) => token.toLowerCase()),
 );
 
+// A leading capital pair covers plural acronyms (POSTs, IDs, URLs), which a
+// surname never opens with.
 const isAcronymOrCode = (token) =>
-  /\d/.test(token) || (token.length >= 2 && token === token.toUpperCase());
+  /\d/.test(token) ||
+  (token.length >= 2 && token === token.toUpperCase()) ||
+  /^[A-Z]{2}/.test(token);
 
 const isPersonShapedName = (candidate) =>
   candidate.split(/\s+/).every((token) => {
@@ -252,6 +264,23 @@ const slugSegment = (slug) => {
   return '';
 };
 
+// The invented people this script's own tests use. A body that discusses the
+// detector has to quote them, and the no-mistakes gate pastes its adversarial
+// fixtures into the pull request body, so the body scan lets them through while
+// the tests scan in strict mode to prove the same shapes are still flagged.
+// Changing this set also requires updating docs/person-identifier-convention.md.
+export const SYNTHETIC_FIXTURE_SURNAMES = Object.freeze(['marrowbane', 'fenwright']);
+
+const mentionsSyntheticFixture = (text) => {
+  const lowered = String(text || '').toLowerCase();
+  return SYNTHETIC_FIXTURE_SURNAMES.some((surname) => lowered.includes(surname));
+};
+
+const isSyntheticFixtureName = (name) => {
+  const tokens = String(name || '').split(/\s+/);
+  return tokens.length === 2 && SYNTHETIC_FIXTURE_SURNAMES.includes(tokens[1].toLowerCase());
+};
+
 const isPlaceholderSlug = (slug) => {
   const segment = slugSegment(slug);
   if (!segment) return true;
@@ -306,6 +335,7 @@ const profileUrlFindings = (document) => {
     const index = match.index || 0;
     const claimed = CLAIM_RE.test(sentenceAt(spans, index));
     return {
+      matched: match[0],
       label: document.label,
       line: lineNumberForIndex(content, index),
       rule: 'personal-profile-url',
@@ -335,6 +365,7 @@ const personClaimFindings = (document) => {
       const start = match.index || 0;
       if (isQuotedTitle(span.text, start, start + match[0].length)) continue;
       findings.push({
+        matched: match[0],
         label: document.label,
         line: lineNumberForIndex(content, span.start + (match.index || 0)),
         rule: 'person-claim-pairing',
@@ -351,31 +382,34 @@ export function isExempt(content) {
   return EXEMPTION_RE.test(String(content || ''));
 }
 
-export function findPersonIdentifierFindings(documents) {
+export function findPersonIdentifierFindings(documents, { strict = false } = {}) {
   const findings = [];
+  const isSynthetic = (text) => !strict && mentionsSyntheticFixture(text);
+  const isSyntheticName = (name) => !strict && isSyntheticFixtureName(name);
 
   for (const document of documents) {
     if (isExempt(document.content)) continue;
 
     findings.push(
       ...collect(document, PERSON_SLUG_RE, 'person-bearing-entity-slug', (match) =>
-        isPlaceholderSlug(match[0]) || isRegisteredSourceName(match[0])
+        isPlaceholderSlug(match[1]) || isRegisteredName(match[0]) || isSynthetic(match[1])
           ? null
           : 'a person-bearing slug prefix',
       ),
-      ...profileUrlFindings(document),
+      ...profileUrlFindings(document).filter((finding) => !isSynthetic(finding.matched)),
       ...collect(document, YALE_EMAIL_RE, 'personal-yale-address', (match) => {
         const localPart = match[1] || '';
         if (isRoleAddress(localPart)) return null;
         if (isPlaceholderAddress(localPart)) return null;
+        if (isSynthetic(localPart)) return null;
         return 'a personal yale.edu address';
       }),
       ...collect(document, NETID_LABELLED_RE, 'yale-netid', () => 'a Yale netid'),
-      ...personClaimFindings(document),
+      ...personClaimFindings(document).filter((finding) => !isSyntheticName(finding.matched)),
     );
   }
 
-  return findings;
+  return findings.map(({ matched: _matched, ...finding }) => finding);
 }
 
 export function isFinding(entry) {
