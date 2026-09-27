@@ -55,6 +55,35 @@ export function c4LosslessIngestDeclared(env: NodeJS.ProcessEnv = process.env): 
   return String(env.C4_LOSSLESS_INGEST ?? '').trim() !== '';
 }
 
+const isObjectIdLike = (value: string): boolean => /^[a-f0-9]{24}$/i.test(value);
+
+/**
+ * Slug, name and displayName for the given entity keys, read from the raw collection.
+ *
+ * Deliberately not through the `ResearchEntity` model: importing it into this module
+ * registers the model, and registration creates its indexes, which made two scripts'
+ * "performs no writes and drops no index in dry-run mode" tests fail.
+ */
+async function researchEntityNameRows(
+  keys: readonly string[],
+): Promise<Array<{ slug?: unknown; _id?: unknown; name?: unknown; displayName?: unknown }>> {
+  const db = mongoose.connection?.db;
+  if (!db || keys.length === 0) return [];
+  const objectIds = keys.filter(isObjectIdLike).map((key) => new mongoose.Types.ObjectId(key));
+  return db
+    .collection('research_entities')
+    .find(
+      {
+        $or: [
+          { slug: { $in: [...keys] } },
+          ...(objectIds.length ? [{ _id: { $in: objectIds } }] : []),
+        ],
+      },
+      { projection: { slug: 1, name: 1, displayName: 1 } },
+    )
+    .toArray() as any;
+}
+
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function entityKeyForProse(obs: { entityId?: string; entityKey?: string }): string {
@@ -373,9 +402,9 @@ interface AppendContext {
  */
 async function loadForeignDescriptionCiters(
   inputs: readonly ObservationInput[],
-): Promise<Map<string, Set<string>>> {
+): Promise<Map<string, Map<string, string>>> {
   const urls = ownershipGuardedCitedUrls(inputs);
-  const byUrl = new Map<string, Set<string>>();
+  const byUrl = new Map<string, Map<string, string>>();
   if (urls.length === 0) return byUrl;
 
   // Filtered by HOST and normalized in JS, never matched on the normalized string.
@@ -408,9 +437,26 @@ async function loadForeignDescriptionCiters(
     if (!wanted.has(url)) continue;
     const key = entityKeyForProse(row);
     if (!key) continue;
-    const existing = byUrl.get(url) ?? new Set<string>();
-    existing.add(key);
+    const existing = byUrl.get(url) ?? new Map<string, string>();
+    if (!existing.has(key)) existing.set(key, '');
     byUrl.set(url, existing);
+  }
+
+  // Names, resolved once for the whole batch. Subject identity is decided from them, and
+  // `citersAreOneSubject` treats a nameless citer as unprovable and therefore as a
+  // different subject - so leaving these empty would refuse EVERY multi-citer
+  // description rather than only the ones a page cannot be about (#3481).
+  const citerKeys = [...new Set([...byUrl.values()].flatMap((citers) => [...citers.keys()]))];
+  if (citerKeys.length > 0) {
+    const nameByKey = new Map<string, string>();
+    for (const row of await researchEntityNameRows(citerKeys)) {
+      const label = String((row as any).displayName || (row as any).name || '');
+      nameByKey.set(String((row as any).slug), label);
+      nameByKey.set(String((row as any)._id), label);
+    }
+    for (const citers of byUrl.values()) {
+      for (const key of [...citers.keys()]) citers.set(key, nameByKey.get(key) ?? '');
+    }
   }
   return byUrl;
 }
@@ -456,8 +502,12 @@ export async function appendObservations(
   for (const obs of candidateInputs) {
     const url = normalizeEvidenceUrl(obs.sourceUrl);
     const citers = foreignCitersByUrl.get(url);
-    const foreign = citers ? [...citers].filter((key) => key !== entityKeyForProse(obs)).length : 0;
-    if (refusesDescriptionOnSharedPage(obs, foreign)) ownershipRejected.push(obs);
+    const own = entityKeyForProse(obs);
+    const foreignNames = citers
+      ? [...citers.entries()].filter(([key]) => key !== own).map(([, name]) => name)
+      : [];
+    if (refusesDescriptionOnSharedPage({ ...obs, ownName: citers?.get(own) }, foreignNames))
+      ownershipRejected.push(obs);
     else ownedInputs.push(obs);
   }
   if (ownershipRejected.length > 0) {

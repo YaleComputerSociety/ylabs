@@ -3,6 +3,7 @@ import { observedEntityTypes } from '../../models/observation';
 import {
   DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS,
   OWNERSHIP_GUARDED_ENTITY_TYPE,
+  citersAreOneSubject,
   isOwnershipGuardedDescription,
   ownershipGuardedCitedUrls,
   refusesDescriptionOnSharedPage,
@@ -25,13 +26,18 @@ describe('description source ownership', () => {
   });
 
   it('refuses a description whose page two other entities already cite', () => {
-    expect(refusesDescriptionOnSharedPage(candidate(), 2)).toBe(true);
-    expect(refusesDescriptionOnSharedPage(candidate(), 130)).toBe(true);
+    expect(refusesDescriptionOnSharedPage(candidate(), ['Alpha Lab', 'Beta Lab'])).toBe(true);
+    expect(
+      refusesDescriptionOnSharedPage(
+        candidate(),
+        Array.from({ length: 130 }, (_, i) => `Subject ${i} Lab`),
+      ),
+    ).toBe(true);
   });
 
   it('allows a page one other entity cites, which is usually one subject stored twice', () => {
-    expect(refusesDescriptionOnSharedPage(candidate(), 1)).toBe(false);
-    expect(refusesDescriptionOnSharedPage(candidate(), 0)).toBe(false);
+    expect(refusesDescriptionOnSharedPage(candidate(), ['Alpha Lab'])).toBe(false);
+    expect(refusesDescriptionOnSharedPage(candidate(), [])).toBe(false);
   });
 
   it('pins the bar at a third citer, so widening it is a deliberate edit', () => {
@@ -41,18 +47,48 @@ describe('description source ownership', () => {
   it("exempts a person's own profile, which several of their rows legitimately cite", () => {
     const profile = candidate({ sourceUrl: 'https://medicine.yale.edu/profile/robin-hansen/' });
     expect(isOwnershipGuardedDescription(profile)).toBe(false);
-    expect(refusesDescriptionOnSharedPage(profile, 50)).toBe(false);
+    expect(
+      refusesDescriptionOnSharedPage(
+        profile,
+        Array.from({ length: 50 }, (_, i) => `Subject ${i} Lab`),
+      ),
+    ).toBe(false);
   });
 
   it('leaves every non-description field and non-research entity alone', () => {
-    expect(refusesDescriptionOnSharedPage(candidate({ field: 'websiteUrl' }), 50)).toBe(false);
-    expect(refusesDescriptionOnSharedPage(candidate({ field: 'title' }), 50)).toBe(false);
-    expect(refusesDescriptionOnSharedPage(candidate({ entityType: 'user' }), 50)).toBe(false);
+    expect(
+      refusesDescriptionOnSharedPage(
+        candidate({ field: 'websiteUrl' }),
+        Array.from({ length: 50 }, (_, i) => `Subject ${i} Lab`),
+      ),
+    ).toBe(false);
+    expect(
+      refusesDescriptionOnSharedPage(
+        candidate({ field: 'title' }),
+        Array.from({ length: 50 }, (_, i) => `Subject ${i} Lab`),
+      ),
+    ).toBe(false);
+    expect(
+      refusesDescriptionOnSharedPage(
+        candidate({ entityType: 'user' }),
+        Array.from({ length: 50 }, (_, i) => `Subject ${i} Lab`),
+      ),
+    ).toBe(false);
   });
 
   it('ignores an observation with no cited page at all', () => {
-    expect(refusesDescriptionOnSharedPage(candidate({ sourceUrl: '' }), 50)).toBe(false);
-    expect(refusesDescriptionOnSharedPage(candidate({ sourceUrl: 'not a url' }), 50)).toBe(false);
+    expect(
+      refusesDescriptionOnSharedPage(
+        candidate({ sourceUrl: '' }),
+        Array.from({ length: 50 }, (_, i) => `Subject ${i} Lab`),
+      ),
+    ).toBe(false);
+    expect(
+      refusesDescriptionOnSharedPage(
+        candidate({ sourceUrl: 'not a url' }),
+        Array.from({ length: 50 }, (_, i) => `Subject ${i} Lab`),
+      ),
+    ).toBe(false);
   });
 
   it('returns cited URLs normalized, so a lookup and a refusal test the same string', () => {
@@ -62,5 +98,101 @@ describe('description source ownership', () => {
       candidate({ field: 'websiteUrl', sourceUrl: 'https://ysph.yale.edu/ignored' }),
     ]);
     expect(urls).toEqual(['https://ysph.yale.edu/a/b']);
+  });
+});
+
+describe('citersAreOneSubject', () => {
+  it('reads a lab minted once per member as ONE subject, so its own page is not refused', () => {
+    // This is the defect the citer count shipped: medicine.yale.edu/lab/decamilli is cited
+    // by the real lab plus three member rows each minted as their own lab, so the count
+    // read 3 foreign citers and refused the lab's own description.
+    expect(
+      citersAreOneSubject([
+        'The De Camilli Lab',
+        'De Camilli Lab',
+        'De Camilli Lab',
+        'De Camilli Lab',
+      ]),
+    ).toBe(true);
+    expect(
+      refusesDescriptionOnSharedPage(
+        {
+          entityType: OWNERSHIP_GUARDED_ENTITY_TYPE,
+          field: 'fullDescription',
+          sourceUrl: 'https://medicine.yale.edu/lab/decamilli/',
+          ownName: 'The De Camilli Lab',
+        },
+        ['De Camilli Lab', 'De Camilli Lab', 'De Camilli Lab'],
+      ),
+    ).toBe(false);
+  });
+
+  it('still refuses a directory page whose citers share nothing', () => {
+    expect(citersAreOneSubject(['Jing Du Research', 'Frank Detterbeck Research'])).toBe(false);
+    expect(
+      refusesDescriptionOnSharedPage(
+        {
+          entityType: OWNERSHIP_GUARDED_ENTITY_TYPE,
+          field: 'fullDescription',
+          sourceUrl: 'https://ysph.yale.edu/school-of-public-health-faculty/directory-name',
+          ownName: 'Jing Du Research',
+        },
+        ['Frank Detterbeck Research', 'Kathleen Fenn Research'],
+      ),
+    ).toBe(true);
+  });
+
+  it('requires EVERY pair to share, so one lab plus an unrelated row is many subjects', () => {
+    // A some-pair test would call this one subject because two of the three match.
+    expect(citersAreOneSubject(['Flavell Lab', 'Flavell Lab', 'Bindra Lab'])).toBe(false);
+  });
+
+  it('ignores words that name no subject, so two different labs never match on "Lab"', () => {
+    expect(citersAreOneSubject(['Alpha Lab', 'Beta Lab'])).toBe(false);
+    expect(citersAreOneSubject(['Yale Research Program', 'Yale Research Program'])).toBe(false);
+  });
+
+  it('treats a nameless citer as unprovable, which refuses rather than serves', () => {
+    // Failing toward refusing a description is the side a student is better off on.
+    expect(citersAreOneSubject(['Flavell Lab', ''])).toBe(false);
+  });
+
+  it('is trivially true below two citers, so a single citer never refuses', () => {
+    expect(citersAreOneSubject([])).toBe(true);
+    expect(citersAreOneSubject(['Flavell Lab'])).toBe(true);
+  });
+});
+
+describe('a citer map with unresolved names refuses everything (#3481)', () => {
+  it('is why a loader must populate names, not just keys', () => {
+    // The ingest loader first shipped building the citer map with empty names, because
+    // the key alone was enough to dedupe. citersAreOneSubject treats a nameless citer as
+    // unprovable and therefore as a DIFFERENT subject, so empty names refuse every
+    // multi-citer description rather than only the ones a page cannot be about. This
+    // test exists so that regression fails here rather than in the corpus.
+    expect(citersAreOneSubject(['', '', ''])).toBe(false);
+    expect(
+      refusesDescriptionOnSharedPage(
+        {
+          entityType: OWNERSHIP_GUARDED_ENTITY_TYPE,
+          field: 'fullDescription',
+          sourceUrl: 'https://proberlab.yale.edu/research',
+          ownName: '',
+        },
+        ['', ''],
+      ),
+    ).toBe(true);
+    // With the names resolved, the same page and the same citers are one subject.
+    expect(
+      refusesDescriptionOnSharedPage(
+        {
+          entityType: OWNERSHIP_GUARDED_ENTITY_TYPE,
+          field: 'fullDescription',
+          sourceUrl: 'https://proberlab.yale.edu/research',
+          ownName: 'The Prober Lab',
+        },
+        ['Prober Lab', 'Prober Lab'],
+      ),
+    ).toBe(false);
   });
 });

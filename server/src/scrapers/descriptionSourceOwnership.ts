@@ -48,6 +48,8 @@ export interface DescriptionOwnershipCandidate {
   entityType: string;
   field: string;
   sourceUrl?: unknown;
+  /** The name of the row being written, so subject identity covers it too. */
+  ownName?: unknown;
 }
 
 /** Whether this observation is one the ownership bar applies to at all. */
@@ -59,6 +61,82 @@ export function isOwnershipGuardedDescription(candidate: DescriptionOwnershipCan
 }
 
 /**
+ * Words that appear in a research row's name without identifying WHOSE row it is, so
+ * two rows sharing only these share nothing.
+ */
+const NON_IDENTIFYING_NAME_TOKEN = new Set([
+  'lab',
+  'labs',
+  'laboratory',
+  'laboratories',
+  'group',
+  'team',
+  'center',
+  'centre',
+  'the',
+  'and',
+  'research',
+  'faculty',
+  'yale',
+  'program',
+  'programme',
+  'institute',
+  'core',
+  'facility',
+  'of',
+  'for',
+  'project',
+  'study',
+  'studies',
+]);
+
+const identifyingNameTokens = (name: unknown): Set<string> =>
+  new Set(
+    String(name ?? '')
+      .toLowerCase()
+      .replace(/[^a-z ]/g, ' ')
+      .split(/\s+/)
+      .filter((token) => token.length > 3 && !NON_IDENTIFYING_NAME_TOKEN.has(token)),
+  );
+
+/**
+ * Whether every row citing a page is the SAME subject stored more than once.
+ *
+ * This is the question the citer COUNT cannot answer, and getting that wrong shipped a
+ * guard that refused a lab's description from its own page. A lab minted once per member
+ * has several rows all citing one page - its own - so the count reads as institutional:
+ *
+ *   medicine.yale.edu/lab/decamilli, 4 citers
+ *     "The De Camilli Lab", "De Camilli Lab", "De Camilli Lab", "De Camilli Lab"
+ *
+ * Measured on Development, 72 of the 217 multi-citer description pages were one subject
+ * this way, so the count alone was wrong about a third of them and 234 rows were exposed
+ * (#3481).
+ *
+ * Every pair must share an identifying token. Requiring every pair rather than some pair
+ * is deliberate: a page cited by one lab's three rows AND one unrelated row is not about
+ * a single subject, and a some-pair test would call it one because two of the three
+ * match.
+ *
+ * A row whose name yields no identifying token cannot be shown to be the same subject as
+ * anything, so it makes the set many-subject and the page is refused. That fails toward
+ * refusing a description rather than toward serving another row's, which is the side a
+ * student is better off on.
+ */
+export function citersAreOneSubject(citerNames: readonly unknown[]): boolean {
+  const tokenSets = citerNames.map(identifyingNameTokens);
+  if (tokenSets.length < 2) return true;
+  for (const tokens of tokenSets) if (tokens.size === 0) return false;
+  for (let i = 0; i < tokenSets.length; i += 1) {
+    for (let j = i + 1; j < tokenSets.length; j += 1) {
+      const shares = [...tokenSets[i]].some((token) => tokenSets[j].has(token));
+      if (!shares) return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Refuse when the cited page is already the description source for at least
  * `DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS` other entities.
  *
@@ -67,10 +145,14 @@ export function isOwnershipGuardedDescription(candidate: DescriptionOwnershipCan
  */
 export function refusesDescriptionOnSharedPage(
   candidate: DescriptionOwnershipCandidate,
-  foreignCiters: number,
+  foreignCiterNames: readonly unknown[],
 ): boolean {
   if (!isOwnershipGuardedDescription(candidate)) return false;
-  return foreignCiters >= DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS;
+  if (foreignCiterNames.length < DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS) return false;
+  // The row being written is a citer too, so subject identity is decided over the whole
+  // set. Passing only the foreign names would let a page cited by one lab's three member
+  // rows read as one subject and still refuse the lab itself.
+  return !citersAreOneSubject([...foreignCiterNames, candidate.ownName]);
 }
 
 /**

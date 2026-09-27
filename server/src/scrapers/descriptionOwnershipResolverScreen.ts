@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import {
   OWNERSHIP_GUARDED_DESCRIPTION_FIELDS,
@@ -42,8 +43,9 @@ export interface OwnershipScreenResult<T> {
  */
 export function screenDescriptionsOnSharedPages<T extends OwnershipScreenableObservation>(
   observations: readonly T[],
-  foreignCitersByUrl: ReadonlyMap<string, ReadonlySet<string>>,
+  foreignCitersByUrl: ReadonlyMap<string, ReadonlyMap<string, string>>,
   ownEntityKeys: ReadonlySet<string>,
+  ownName?: unknown,
 ): OwnershipScreenResult<T> {
   const kept: T[] = [];
   const dropped: Array<{ field: string; citedUrl: string; foreignCiters: number }> = [];
@@ -52,6 +54,7 @@ export function screenDescriptionsOnSharedPages<T extends OwnershipScreenableObs
       entityType: String(observation.entityType ?? OWNERSHIP_GUARDED_ENTITY_TYPE),
       field: observation.field,
       sourceUrl: observation.sourceUrl,
+      ownName,
     };
     if (!isOwnershipGuardedDescription(candidate)) {
       kept.push(observation);
@@ -59,9 +62,11 @@ export function screenDescriptionsOnSharedPages<T extends OwnershipScreenableObs
     }
     const citedUrl = normalizeEvidenceUrl(observation.sourceUrl);
     const citers = foreignCitersByUrl.get(citedUrl);
-    const foreignCiters = citers ? [...citers].filter((key) => !ownEntityKeys.has(key)).length : 0;
-    if (refusesDescriptionOnSharedPage(candidate, foreignCiters)) {
-      dropped.push({ field: observation.field, citedUrl, foreignCiters });
+    const foreignNames = citers
+      ? [...citers.entries()].filter(([key]) => !ownEntityKeys.has(key)).map(([, name]) => name)
+      : [];
+    if (refusesDescriptionOnSharedPage(candidate, foreignNames)) {
+      dropped.push({ field: observation.field, citedUrl, foreignCiters: foreignNames.length });
       continue;
     }
     kept.push(observation);
@@ -92,7 +97,7 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
  * to 9,288 rows, for 400 roster rows, 40% of their materialization, while one read of
  * all 19,679 live citations takes about 0.7 s (#3568).
  */
-let citersByUrl: Map<string, Set<string>> | undefined;
+let citersByUrl: Map<string, Map<string, string>> | undefined;
 
 export function resetDescriptionOwnershipCitersCache(): void {
   citersByUrl = undefined;
@@ -109,7 +114,7 @@ const hostOfUrl = (url: string): string | undefined => {
 const citationHostPattern = (host: string): RegExp =>
   new RegExp(`^https?://(www\\.)?${escapeRegExp(host)}(/|$|\\?)`, 'i');
 
-async function loadAllDescriptionSourceCiters(): Promise<Map<string, Set<string>>> {
+async function loadAllDescriptionSourceCiters(): Promise<Map<string, Map<string, string>>> {
   const rows = (await Observation.find(
     {
       entityType: OWNERSHIP_GUARDED_ENTITY_TYPE,
@@ -118,7 +123,7 @@ async function loadAllDescriptionSourceCiters(): Promise<Map<string, Set<string>
     },
     { sourceUrl: 1, entityKey: 1, entityId: 1 },
   ).lean()) as any[];
-  const byUrl = new Map<string, Set<string>>();
+  const byUrl = new Map<string, Map<string, string>>();
   const patternByHost = new Map<string, RegExp>();
   for (const row of rows) {
     const key = String(row.entityKey || row.entityId || '');
@@ -132,24 +137,62 @@ async function loadAllDescriptionSourceCiters(): Promise<Map<string, Set<string>
       patternByHost.set(host, pattern);
     }
     if (!pattern.test(row.sourceUrl)) continue;
-    const existing = byUrl.get(url) ?? new Set<string>();
-    existing.add(key);
+    const existing = byUrl.get(url) ?? new Map<string, string>();
+    if (!existing.has(key)) existing.set(key, '');
     byUrl.set(url, existing);
+  }
+
+  // Subject identity is decided from NAMES, so every citer key is resolved once here.
+  // A citer COUNT cannot tell a faculty directory from a lab whose members were each
+  // minted as their own row, and that is the defect this replaces: 72 of 217 multi-citer
+  // pages on Development were one subject, so the count was wrong about a third of them
+  // and 234 rows were exposed (#3481).
+  const keys = [...new Set([...byUrl.values()].flatMap((citers) => [...citers.keys()]))];
+  if (keys.length > 0) {
+    // Raw collection, not the model: registering ResearchEntity here creates its indexes
+    // as a side effect, which two dry-run tests assert does not happen.
+    const db = mongoose.connection?.db;
+    const objectIds = keys
+      .filter((key) => /^[a-f0-9]{24}$/i.test(key))
+      .map((key) => new mongoose.Types.ObjectId(key));
+    const named = db
+      ? ((await db
+          .collection('research_entities')
+          .find(
+            {
+              $or: [
+                { slug: { $in: keys } },
+                ...(objectIds.length ? [{ _id: { $in: objectIds } }] : []),
+              ],
+            },
+            { projection: { slug: 1, name: 1, displayName: 1 } },
+          )
+          .toArray()) as any[])
+      : [];
+    const nameByKey = new Map<string, string>();
+    for (const row of named) {
+      const label = String(row.displayName || row.name || '');
+      nameByKey.set(String(row.slug), label);
+      nameByKey.set(String(row._id), label);
+    }
+    for (const citers of byUrl.values()) {
+      for (const key of [...citers.keys()]) citers.set(key, nameByKey.get(key) ?? '');
+    }
   }
   return byUrl;
 }
 
 export async function loadDescriptionSourceCiters(
   urls: readonly string[],
-): Promise<Map<string, Set<string>>> {
+): Promise<Map<string, Map<string, string>>> {
   const wanted = [...new Set(urls.map((url) => normalizeEvidenceUrl(url)).filter(Boolean))].filter(
     (url) => hostOfUrl(url),
   );
-  const result = new Map<string, Set<string>>();
+  const result = new Map<string, Map<string, string>>();
   if (wanted.length === 0) return result;
   citersByUrl ??= await loadAllDescriptionSourceCiters();
   for (const url of wanted) {
-    const entry = citersByUrl.get(url) ?? new Set<string>();
+    const entry = citersByUrl.get(url) ?? new Map<string, string>();
     citersByUrl.set(url, entry);
     result.set(url, entry);
   }

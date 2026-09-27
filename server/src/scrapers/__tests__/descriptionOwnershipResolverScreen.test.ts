@@ -12,8 +12,15 @@ const obs = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+// Each citer key maps to that row's NAME, because subject identity is decided from
+// names rather than from how many citers a page has.
 const citers = (map: Record<string, string[]>) =>
-  new Map(Object.entries(map).map(([url, keys]) => [url, new Set(keys)]));
+  new Map(
+    Object.entries(map).map(([url, keys]) => [
+      url,
+      new Map(keys.map((key) => [key, `${key} Lab`])),
+    ]),
+  );
 
 describe('screenDescriptionsOnSharedPages', () => {
   it('drops a description whose page two other rows already cite', () => {

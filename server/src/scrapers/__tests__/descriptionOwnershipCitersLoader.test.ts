@@ -72,7 +72,12 @@ describe('loadDescriptionSourceCiters (#3568)', () => {
       const wanted = batch.map((url) => normalizeEvidenceUrl(url)).filter(Boolean);
       expect([...result.keys()].sort()).toEqual([...new Set(wanted)].sort());
       for (const url of wanted) {
-        expect([...(result.get(url) ?? [])].sort()).toEqual([...referenceCitersFor(url)].sort());
+        // The loader now maps each citer KEY to that row's NAME, because subject identity
+        // is decided from names rather than from a citer count (#3481). The citer SET this
+        // test asserts is therefore the map's keys.
+        expect([...(result.get(url)?.keys() ?? [])].sort()).toEqual(
+          [...referenceCitersFor(url)].sort(),
+        );
       }
     }
   });
