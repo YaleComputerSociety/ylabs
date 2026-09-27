@@ -743,6 +743,7 @@ export const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup
 
 type IndexUrlAuthority = {
   assertsOwnershipOf: (entity: any, url: string) => boolean;
+  publishedOwnHomeOf: (entity: any) => boolean;
 };
 
 const indexUrlAuthorityOver = (entities: any[]): IndexUrlAuthority => {
@@ -755,17 +756,42 @@ const indexUrlAuthorityOver = (entities: any[]): IndexUrlAuthority => {
   return {
     assertsOwnershipOf: (entity: any, url: string): boolean =>
       indexAuthorityUrlByEntityId.get(studentVisibilityGateEntityIdKey(entity)) === url,
+    publishedOwnHomeOf: (entity: any): boolean =>
+      indexAuthorityUrlByEntityId.has(studentVisibilityGateEntityIdKey(entity)),
   };
 };
 
-const exactDuplicateGroupByCanonicalPreference = (
+/**
+ * Whether an index with authority over research homes vouches for this member in the
+ * contest over `url`.
+ *
+ * When some member publishes the URL as its own home, only an index that published
+ * that very URL settles the contest, so authority over a different address never
+ * outranks the row that owns this one. When nobody publishes it, the members collide
+ * on a citation none of them owns, typically the lead's profile page, and the
+ * already-public bonus in `exactDuplicateCanonicalScore` would otherwise decide: a
+ * transient demotion of the index-published row handed the canonical slot to its twin
+ * for good, so the outcome depended on the gate's previous output rather than on
+ * evidence (#3575).
+ */
+const indexVouchesForMemberInUrlContest = (
   { url, members }: ExactDuplicateUrlGroup,
+  authority: IndexUrlAuthority,
+): ((entity: any) => boolean) => {
+  const urlHasPublisher = members.some((entity) => entityPublishesUrlAsItsOwnHome(entity, url));
+  return urlHasPublisher
+    ? (entity) => authority.assertsOwnershipOf(entity, url)
+    : (entity) => authority.publishedOwnHomeOf(entity);
+};
+
+const exactDuplicateGroupByCanonicalPreference = (
+  group: ExactDuplicateUrlGroup,
   leadCountsByEntityId: Map<string, number>,
   authority: IndexUrlAuthority,
-): any[] =>
-  [...members].sort((a, b) => {
-    const byAuthority =
-      Number(authority.assertsOwnershipOf(b, url)) - Number(authority.assertsOwnershipOf(a, url));
+): any[] => {
+  const indexVouchesFor = indexVouchesForMemberInUrlContest(group, authority);
+  return [...group.members].sort((a, b) => {
+    const byAuthority = Number(indexVouchesFor(b)) - Number(indexVouchesFor(a));
     if (byAuthority !== 0) return byAuthority;
     const byScore =
       exactDuplicateCanonicalScore(b, leadCountsByEntityId) -
@@ -775,16 +801,31 @@ const exactDuplicateGroupByCanonicalPreference = (
       studentVisibilityGateEntitySortKey(b),
     );
   });
+};
 
-type ExactDuplicateUrlIdGroup = { url: string; memberIds: string[] };
+type ExactDuplicateUrlIdGroup = {
+  memberIds: string[];
+  indexOwnerIds: string[];
+  indexVouchedIds: string[];
+};
 
-const exactUrlDuplicateGroupEntityIds = (entities: any[]): ExactDuplicateUrlIdGroup[] =>
-  exactDuplicateUrlGroups(entities)
-    .map(({ url, members }) => ({
-      url,
-      memberIds: uniqueStrings(members.map((entity) => studentVisibilityGateEntityIdKey(entity))),
-    }))
+const exactUrlDuplicateGroupEntityIds = (entities: any[]): ExactDuplicateUrlIdGroup[] => {
+  const authority = indexUrlAuthorityOver(entities);
+  return exactDuplicateUrlGroups(entities)
+    .map((group) => {
+      const indexVouchesFor = indexVouchesForMemberInUrlContest(group, authority);
+      const idsOf = (members: any[]) =>
+        uniqueStrings(members.map((entity) => studentVisibilityGateEntityIdKey(entity)));
+      return {
+        memberIds: idsOf(group.members),
+        indexOwnerIds: idsOf(
+          group.members.filter((entity) => authority.assertsOwnershipOf(entity, group.url)),
+        ),
+        indexVouchedIds: idsOf(group.members.filter(indexVouchesFor)),
+      };
+    })
     .filter(({ memberIds }) => memberIds.length > 1);
+};
 
 export function selectExactUrlDuplicateRiskEntityIds(
   entities: any[],
@@ -853,7 +894,7 @@ const duplicateClusterByReleasePreference = (
   memberIds: string[],
   entityById: Map<string, any>,
   leadCountsByEntityId: Map<string, number>,
-  assertsIndexUrlOwnership: (entityId: string) => boolean,
+  indexAuthorityRank: (entityId: string) => number,
 ): string[] =>
   [...memberIds].sort((a, b) => {
     // A row with no lead and no lead exemption is held by `missing_lead` whatever
@@ -863,8 +904,7 @@ const duplicateClusterByReleasePreference = (
       Number(canClearLeadRequirement(entityById.get(b), leadCountsByEntityId.get(b) || 0)) -
       Number(canClearLeadRequirement(entityById.get(a), leadCountsByEntityId.get(a) || 0));
     if (byLeadReachability !== 0) return byLeadReachability;
-    const byIndexUrlAuthority =
-      Number(assertsIndexUrlOwnership(b)) - Number(assertsIndexUrlOwnership(a));
+    const byIndexUrlAuthority = indexAuthorityRank(b) - indexAuthorityRank(a);
     if (byIndexUrlAuthority !== 0) return byIndexUrlAuthority;
     const byScore =
       exactDuplicateCanonicalScore(entityById.get(b), leadCountsByEntityId) -
@@ -928,12 +968,14 @@ export function selectDuplicateGroupSurvivorEntityIds({
   const urlJoinedClusterRoots = new Set(
     urlGroups.map(({ memberIds }) => rootById.get(memberIds[0])),
   );
-  const sharedUrlsByClusterRoot = new Map<string, Set<string>>();
-  for (const { url, memberIds } of urlGroups) {
-    const root = rootById.get(memberIds[0]);
-    if (!root) continue;
-    sharedUrlsByClusterRoot.set(root, new Set([...(sharedUrlsByClusterRoot.get(root) || []), url]));
-  }
+  const indexOwnerIds = new Set(urlGroups.flatMap((group) => group.indexOwnerIds));
+  const indexVouchedIds = new Set(urlGroups.flatMap((group) => group.indexVouchedIds));
+  // Owning a shared address outranks a vouch in a contest nobody publishes: two
+  // index-published rows are both vouched on their lead's profile page, and only the
+  // ownership of an address the cluster shares still separates them without the
+  // already-public bonus.
+  const indexAuthorityRank = (entityId: string): number =>
+    indexOwnerIds.has(entityId) ? 2 : indexVouchedIds.has(entityId) ? 1 : 0;
   const membersByRoot = new Map<string, string[]>();
   for (const [id, root] of rootById) {
     membersByRoot.set(root, [...(membersByRoot.get(root) || []), id]);
@@ -943,15 +985,11 @@ export function selectDuplicateGroupSurvivorEntityIds({
   for (const [root, memberIds] of membersByRoot) {
     if (memberIds.length < 2 || !urlJoinedClusterRoots.has(root)) continue;
     if (memberIds.some((id) => !duplicateRiskEntityIds.has(id))) continue;
-    const clusterSharedUrls = sharedUrlsByClusterRoot.get(root) || new Set<string>();
     const released = duplicateClusterByReleasePreference(
       memberIds,
       entityById,
       leadCountsByEntityId,
-      (entityId) => {
-        const authorityUrl = researchHomeUrlUnderIndexAuthority(entityById.get(entityId));
-        return !!authorityUrl && clusterSharedUrls.has(authorityUrl);
-      },
+      indexAuthorityRank,
     )[0];
     if (released) survivorIds.add(released);
   }
