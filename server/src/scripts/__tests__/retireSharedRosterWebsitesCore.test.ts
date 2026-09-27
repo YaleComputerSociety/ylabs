@@ -9,11 +9,17 @@ const claim = (id: string, entityKey: string, value: string, day = 1) => ({
   value,
   observedAt: new Date(2026, 0, day),
 });
-const row = (slug: string, websiteUrl?: string, fieldValueRefusals?: unknown) => ({
+const row = (
+  slug: string,
+  websiteUrl?: string,
+  fieldValueRefusals?: unknown,
+  manuallyLockedFields?: string[],
+) => ({
   entityId: `id-${slug}`,
   slug,
   websiteUrl,
   fieldValueRefusals,
+  manuallyLockedFields,
 });
 
 describe('planSharedRosterWebsiteRetirement', () => {
@@ -113,6 +119,32 @@ describe('planSharedRosterWebsiteRetirement', () => {
     expect(outcome.plans.map((plan) => [plan.slug, plan.refuse])).toEqual([
       ['a', false],
       ['b', true],
+    ]);
+  });
+
+  it('neither refuses nor clears a website an operator has locked, but still retires the lane claim', () => {
+    const outcome = planSharedRosterWebsiteRetirement({
+      claims: [claim('o1', 'a', group), claim('o2', 'b', group)],
+      personKeyByEntityKey: new Map([
+        ['a', 'p1'],
+        ['b', 'p2'],
+      ]),
+      otherLaneSupport: new Set(),
+      rowsBySlug: new Map([
+        ['a', row('a', group, undefined, ['websiteUrl'])],
+        ['b', row('b')],
+      ]),
+    });
+    expect(
+      outcome.plans.map((plan) => [
+        plan.slug,
+        plan.refuse,
+        plan.clearStored,
+        plan.supersedeObservationIds,
+      ]),
+    ).toEqual([
+      ['a', false, false, ['o1']],
+      ['b', true, false, ['o2']],
     ]);
   });
 });

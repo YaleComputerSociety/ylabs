@@ -14,6 +14,7 @@ export interface SharedWebsiteRow {
   slug: string;
   websiteUrl?: unknown;
   fieldValueRefusals?: unknown;
+  manuallyLockedFields?: unknown;
 }
 
 export interface SharedWebsitePlan {
@@ -32,6 +33,9 @@ export interface SharedWebsiteOutcome {
   keptByOtherEvidence: number;
 }
 
+const websiteUrlIsLocked = (manuallyLockedFields: unknown): boolean =>
+  Array.isArray(manuallyLockedFields) && manuallyLockedFields.includes('websiteUrl');
+
 /**
  * Which of the roster lane's own `websiteUrl` claims #3614 now refuses: a URL the lane's
  * latest claims assign to two or more different people. Only this lane's observations are
@@ -40,6 +44,7 @@ export interface SharedWebsiteOutcome {
  *
  * Where nothing else supports the URL it is also refused, because the same URL sits in the
  * row's citations and citation promotion would copy it straight back into an emptied slot.
+ * A manually locked `websiteUrl` is neither refused nor cleared, because that is an operator decision.
  */
 export function planSharedRosterWebsiteRetirement(input: {
   claims: readonly LaneWebsiteClaim[];
@@ -80,7 +85,8 @@ export function planSharedRosterWebsiteRetirement(input: {
         .sort();
       const supported = input.otherLaneSupport.has(`${slug}|${key}`);
       if (supported) outcome.keptByOtherEvidence += 1;
-      const refuse = !supported && !valueIsRefused(row.fieldValueRefusals, 'websiteUrl', url);
+      const keep = supported || websiteUrlIsLocked(row.manuallyLockedFields);
+      const refuse = !keep && !valueIsRefused(row.fieldValueRefusals, 'websiteUrl', url);
       outcome.plans.push({
         entityId: row.entityId,
         slug,
@@ -88,7 +94,7 @@ export function planSharedRosterWebsiteRetirement(input: {
         valueKey: key,
         supersedeObservationIds,
         refuse,
-        clearStored: !supported && fieldValueRefusalKey('websiteUrl', row.websiteUrl) === key,
+        clearStored: !keep && fieldValueRefusalKey('websiteUrl', row.websiteUrl) === key,
       });
     }
   }

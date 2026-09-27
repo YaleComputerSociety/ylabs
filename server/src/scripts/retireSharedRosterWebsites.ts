@@ -110,7 +110,7 @@ async function loadInputs() {
   );
 
   const rowDocs = (await ResearchEntity.find({ slug: { $in: slugs }, archived: { $ne: true } })
-    .select('_id slug websiteUrl fieldValueRefusals studentVisibilityTier')
+    .select('_id slug websiteUrl fieldValueRefusals manuallyLockedFields studentVisibilityTier')
     .lean()) as unknown as Array<Record<string, unknown>>;
   const rowsBySlug = new Map<string, SharedWebsiteRow & { tier: string }>(
     rowDocs.map((doc) => [
@@ -120,6 +120,7 @@ async function loadInputs() {
         slug: text(doc.slug),
         websiteUrl: doc.websiteUrl,
         fieldValueRefusals: doc.fieldValueRefusals,
+        manuallyLockedFields: doc.manuallyLockedFields,
         tier: text(doc.studentVisibilityTier),
       },
     ]),
