@@ -477,10 +477,34 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       expect(result.planned.suppress_departed).toBe(0);
       expect(result.planned.record_first_absence).toBe(0);
       expect(result.governedDepartments).toEqual([]);
+      expect(result.incompleteReadDepartments).toBe(1);
       const unread = await readEntity('lab-unread');
       expect(unread?.activeAtYaleCache).not.toBe(false);
     },
   );
+
+  it('does not count a department no lane admitted as withheld by an incomplete read', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedDeptHealth(
+      run,
+      {
+        status: 'js-rendered-skip',
+        complete: false,
+        discoveredEntityKeys: [],
+        discoveredCount: 0,
+        read: { pagesRead: 0, readMode: 'none', cacheAllowed: false, readAt: null },
+      },
+      'Chemistry',
+    );
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.governedDepartments).toEqual(['Physics']);
+    expect(result.incompleteReadDepartments).toBe(0);
+  });
 
   it('dates a row from its own department rather than the last snapshot read', async () => {
     const run = new mongoose.Types.ObjectId().toString();

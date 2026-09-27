@@ -894,8 +894,10 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     }
   }
 
+  let incompleteReadDepartments = 0;
   for (const deptName of incompletelyReadDeptNames) {
     if (!healthyDiscoveredByDept.delete(deptName)) continue;
+    incompleteReadDepartments += 1;
     console.warn(
       `[faculty-departure] withheld department ${sanitizeLogValue(deptName)}: one of its roster lanes left part of the roster unread in this run`,
     );
@@ -918,7 +920,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     admissibilityCounts,
     departmentsGoverningNothing,
     regressedDepartments,
-    incompleteReadDepartments: incompletelyReadDeptNames.size,
+    incompleteReadDepartments,
     unresolvedDepartments,
     governedDepartments: Array.from(healthyDiscoveredByDept.keys()),
   };
