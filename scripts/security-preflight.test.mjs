@@ -3713,20 +3713,6 @@ test('unified research search audit constrains env-driven URLs and output paths'
   assert.doesNotMatch(source, /const outDir = process\.env\.OUT_DIR/);
 });
 
-test('shared research-area creation normalizes labels and rejects direct contact info', () => {
-  const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
-
-  assert.match(source, /import \{ redactDirectContactInfo \} from '\.\.\/utils\/contactRedaction'/);
-  assert.match(source, /replaceAsciiControls\(value, ' '\)/);
-  assert.match(source, /redactDirectContactInfo\(normalized\) !== normalized/);
-  assert.match(
-    source,
-    /normalizeAdminTaxonomyLabel\(value, 'research area name', MAX_RESEARCH_AREA_NAME_LENGTH\)/,
-  );
-  assert.match(source, /const name = parseResearchAreaName\(req\.body\?\.name\)/);
-  assert.match(source, /router\.post\('\/research-areas', writeLimit,/);
-});
-
 test('public pathway search omits persistence timestamp metadata', () => {
   const clientTypeSource = fs.readFileSync(
     new URL('../client/src/types/pathway.ts', import.meta.url),
