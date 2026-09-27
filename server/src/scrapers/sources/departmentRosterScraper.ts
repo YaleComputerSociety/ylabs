@@ -3561,7 +3561,18 @@ export function profileBelongsToRosterPerson(args: {
   return isPersonProfileOrDirectoryUrl(args.profileUrl);
 }
 
-async function enrichEntryFromOfficialProfile(
+/**
+ * The official profile is where most rows carry their lab link, so an entry whose
+ * profile went unread says nothing about the slot, whatever the roster card showed,
+ * and a profile refused as someone else's page is a refusal (#3135, #2647).
+ */
+function withUnreadProfileSlot(entry: FacultyEntry, outcome: 'unread' | 'refused'): FacultyEntry {
+  if (entry.labUrl) return entry;
+  if (outcome === 'refused') return { ...entry, labSlotAttestation: 'refused' };
+  return entry.labSlotAttestation === 'empty' ? { ...entry, labSlotAttestation: undefined } : entry;
+}
+
+export async function enrichEntryFromOfficialProfile(
   entry: FacultyEntry,
   sourceName: string,
   useCache: boolean,
@@ -3597,12 +3608,12 @@ async function enrichEntryFromOfficialProfile(
       log(
         `[profile] refused enrichment, cited profile names someone else: ${sanitizeLogValue(declaredProfileUrl)}`,
       );
-      return entry;
+      return withUnreadProfileSlot(entry, 'refused');
     }
     return mergeProfileEnrichment(entry, enrichment);
   } catch (err: any) {
     log(`[profile] fetch failed: ${sanitizeLogValue(err)}`);
-    return entry;
+    return withUnreadProfileSlot(entry, 'unread');
   }
 }
 

@@ -195,6 +195,31 @@ describe('extractProfile', () => {
   });
 });
 
+describe('the websiteUrl absence the research-entity mint asserts (#2647)', () => {
+  const absenceAssertions = (labWebsite?: { name: string; url: string }) => {
+    const profile = extractProfile(
+      profileHtml({ fullName: 'Jordan Rivers', meshKeywords: ['Heart Failure'], labWebsite }),
+      RIVERS,
+    )!;
+    return facultyToResearchEntityObservations(profile, 'ysm:jordan-rivers', NO_SURNAME_ROSTER)
+      .filter((observation) => observation.assertsNoValueFor)
+      .map((observation) => observation.assertsNoValueFor);
+  };
+
+  it('asserts the absence when the profile carries no lab link at all', () => {
+    expect(absenceAssertions()).toEqual([['websiteUrl']]);
+    expect(absenceAssertions({ name: 'Rivers Lab', url: '  ' })).toEqual([['websiteUrl']]);
+  });
+
+  it('asserts nothing when the profile carries a scheme-less lab link it cannot adopt', () => {
+    expect(absenceAssertions({ name: 'Rivers Lab', url: 'www.riverslab.example.org' })).toEqual([]);
+  });
+
+  it('asserts nothing when the profile carries a non-http lab link', () => {
+    expect(absenceAssertions({ name: 'Bad', url: 'javascript:alert(1)' })).toEqual([]);
+  });
+});
+
 describe('facultyToUserObservations', () => {
   it('keys on netid derived from a person-specific email and sources the profile page', () => {
     const profile = extractProfile(

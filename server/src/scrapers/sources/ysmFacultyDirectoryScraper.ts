@@ -106,6 +106,11 @@ export interface YsmFacultyProfile {
   description?: string;
   bio?: string;
   labUrl?: string;
+  /**
+   * `empty` only when the profile carries no lab-website link at all; a link the page
+   * carries and this lane cannot adopt is `refused`, which licenses no absence (#2647).
+   */
+  labSlotAttestation?: 'empty' | 'refused';
   labName?: string;
   labDescription?: string;
 }
@@ -258,11 +263,18 @@ function extractOrcid(research: Record<string, unknown>): string | undefined {
 function extractLabWebsite(
   research: Record<string, unknown>,
   about: Record<string, unknown>,
-): { url?: string; name?: string; description?: string } {
+): {
+  url?: string;
+  slotAttestation?: YsmFacultyProfile['labSlotAttestation'];
+  name?: string;
+  description?: string;
+} {
   const raw = (research.labWebsite || about.labWebsite) as Record<string, unknown> | null;
   const url = raw && isHttpUrl(raw.url) ? textValue(raw.url) : undefined;
+  const pageCarriesLink = Boolean(raw && textValue(raw.url));
   return {
     url,
+    ...(url ? {} : { slotAttestation: pageCarriesLink ? 'refused' : 'empty' }),
     name: url ? textValue(raw?.name) || undefined : undefined,
     description: url ? htmlToText(raw?.description) || undefined : undefined,
   };
@@ -312,6 +324,7 @@ export function extractProfile(html: string, faculty: RawYsmFaculty): YsmFaculty
     description: clippedText(htmlToText(research.researchDescription)),
     bio: clippedText(htmlToText(about.bio)),
     labUrl: labWebsite.url,
+    labSlotAttestation: labWebsite.slotAttestation,
     labName: labWebsite.name,
     labDescription: labWebsite.description,
   };
@@ -459,7 +472,7 @@ export function facultyToResearchEntityObservations(
   // link the page still carries - the opposite of the page having dropped it. Field
   // retraction cannot tell the two apart from the observation log, so the
   // distinction has to be stated here, at the only place that knows it (#2647).
-  const labSlotIsEmpty = !profile.labUrl;
+  const labSlotIsEmpty = !profile.labUrl && profile.labSlotAttestation === 'empty';
 
   const obs: ObservationInput[] = [
     {
