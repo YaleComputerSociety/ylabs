@@ -72,7 +72,8 @@ Logins count `login` rows only.
 Opening a program records one `fellowship_view`, and a click on its application link records one `ways_in_click` with kind `apply`; before #3766 each wrote a second row (`research_view` and `source_link_click`).
 A research save or removal records the surface it came from, so a removal on the Dashboard reads `saved_plans`.
 No `research_qualified_action` can be recorded while planning contexts have no source (#377), so when none was recorded in the range the funnel omits the qualified-route stage and the route tiles read as not recorded, the same treatment as the overall next-step rate.
-The per-user Profile Opens column (the `researchViews` field) counts `research_profile_open`, because `research_view` is emitted only by the fellowship detail route.
+The per-user Profile Opens column (the `researchViews` field) counts `research_profile_open`, because `research_view` was only ever emitted by the fellowship detail route and nothing emits it after #3766.
+Top Research Entities ranks research and profiles by `research_profile_open` and programs by `fellowship_view`; before #3766 it counted `research_view` and so listed programs only.
 Action needed and the top zero-result queries rank every query group with a zero-result search, not only the 100 most searched; action needed also requires at least 2 searches.
 
 The admin funnel reports source inspections, official-route attempts, application opens, and confirmed outcomes separately.
@@ -81,7 +82,7 @@ Official-route attempts include only the `open_position`, `official_application`
 Confirmed outcomes remain `outreach_outcome` records and are never inferred from route attempts.
 
 Search engagement is defined in [Topic matching and search engagement](topic-matching-and-search-engagement.md#search-engagement), and counts a `research_profile_open` or `research_save` as engagement.
-`research_view` is emitted only by the fellowship detail route, so before #3632 a research-surface search could never read as engaged: on Production, 0 of 39 research searches with results counted, against 25 that were followed by a profile open.
+`research_view` was only ever emitted by the fellowship detail route, so before #3632 a research-surface search could never read as engaged: on Production, 0 of 39 research searches with results counted, against 25 that were followed by a profile open.
 `research_profile_open.source` is the surface the student came from, carried in router state by the card, saved-plan, or related-profile link they followed, and `direct` only when no such link was followed.
 Links between profiles (related, affiliated, and similar research) record `related_research`.
 Opens recorded before #3632 all read `direct` and cannot be recovered.
