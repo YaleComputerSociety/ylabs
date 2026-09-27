@@ -369,9 +369,10 @@ The `/dashboard` planning workspace hydrates bounded entity summaries and treats
 
 Current behavior:
 
-- `/api/users/savedResearchEntityIds` returns canonical entity ids for optimistic UI state.
+- `/api/users/savedResearchEntityIds` returns public entity ids for optimistic UI state.
+A public entity id is the slug, the same value the public DTO serves as `_id` and `id` (`publicResearchEntityId`), so the detail page compares it with `group._id` and the dashboard with `entity.slug`; it is never the Mongo ObjectId, and a test pins the two to each other (#3637).
 - `/api/users/savedResearchEntities` returns allowlisted entity summaries, bounds `shortDescription` to 300 characters, and reports an archived, hidden, or deleted target as an `unavailableSavedResearchEntities` row instead of pruning it (#2174); see [`ResearchPlan`](#researchplan-research_plans) for the two reasons and what each promises the owner.
-- `PUT` and `DELETE /api/users/savedResearchEntities` add and remove entity-owned saves for the authenticated account.
+- `PUT` and `DELETE /api/users/savedResearchEntities` add and remove entity-owned saves for the authenticated account, accept a public id or a Mongo ObjectId, and answer with the same public id list.
 - `/api/users/savedResearchEntityPlans` stores the owning student's sanitized planning details, keyed by entity id.
 - `GET /api/users/savedResearchEntityPlans/export` exports saved entities without private notes.
 - `POST /api/users/savedResearchEntityPlans/export` includes private notes only when `includePrivateNotes: true` is explicitly supplied.

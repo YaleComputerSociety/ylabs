@@ -6,12 +6,14 @@ import {
   addWatchedPrograms,
   getSavedResearchEntityList,
   getSavedResearchEntityPlans,
+  getSavedResearchEntitySlugs,
   getWatchedProgramPlans,
   removeSavedResearchEntities,
   removeWatchedPrograms,
   updateSavedResearchEntityPlan,
   updateWatchedProgramPlan,
 } from '../researchPlanService';
+import { toPublicResearchEntityDto } from '../researchEntityDto';
 
 const NETID = 'teststud1';
 const ENTITY_ID = new mongoose.Types.ObjectId('64a0000000000000000000ab');
@@ -129,6 +131,17 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
     });
     const entityKey = ENTITY_ID.toHexString();
     expect(savedPlans[entityKey].privateNotes).toBe('slug-addressed note');
+  });
+
+  it('reports saved entities by the same id the public detail DTO serves (#3637)', async () => {
+    const storedEntity = await mongoose.connection
+      .db!.collection('research_entities')
+      .findOne({ _id: ENTITY_ID });
+    const servedId = toPublicResearchEntityDto(storedEntity!)._id;
+
+    expect(await addSavedResearchEntities(NETID, [ENTITY_ID.toHexString()])).toEqual([servedId]);
+    expect(await getSavedResearchEntitySlugs(NETID)).toEqual([servedId]);
+    expect(await removeSavedResearchEntities(NETID, [servedId])).toEqual([]);
   });
 
   it('rejects a plan update for a slug that resolves to no visible entity (#1051)', async () => {

@@ -85,11 +85,12 @@ function renderLabDetail(
   {
     isAuthenticated = true,
     routerState,
-  }: { isAuthenticated?: boolean; routerState?: unknown } = {},
+    savedResearchEntityIds = [],
+  }: { isAuthenticated?: boolean; routerState?: unknown; savedResearchEntityIds?: string[] } = {},
 ) {
   mockedAxios.get.mockImplementation((url: string) => {
     if (url === '/users/savedResearchEntityIds') {
-      return Promise.resolve({ data: { savedResearchEntityIds: [] } });
+      return Promise.resolve({ data: { savedResearchEntityIds } });
     }
     if (url === `/research/${DEFAULT_SLUG}`) {
       return Promise.resolve({ data: payload });
@@ -237,6 +238,27 @@ describe('LabDetail page', () => {
       '/users/savedResearchEntityIds',
       expect.anything(),
     );
+  });
+
+  it('shows an entity from the saved list as saved and unsaves it by its served id (#3637)', async () => {
+    const servedPayload: LabDetailPayload = {
+      ...basePayload,
+      group: { ...basePayload.group, _id: DEFAULT_SLUG },
+    };
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    mockedAxios.delete.mockResolvedValue({ data: { savedResearchEntityIds: [] } });
+    renderLabDetail(servedPayload, { savedResearchEntityIds: [DEFAULT_SLUG] });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Saved to Dashboard' }));
+
+    await waitFor(() =>
+      expect(mockedAxios.delete).toHaveBeenCalledWith('/users/savedResearchEntities', {
+        withCredentials: true,
+        data: { savedResearchEntities: [DEFAULT_SLUG] },
+      }),
+    );
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: 'Save research plan' })).toBeTruthy();
   });
 
   it('redirects an archived slug to the canonical entity slug', async () => {
