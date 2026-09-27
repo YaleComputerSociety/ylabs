@@ -86,7 +86,14 @@ describe('field-retraction contract declarability', () => {
   });
 
   it('refuses a field ingest can drop, because a rejection reads as a retraction', () => {
-    for (const field of ['fullDescription', 'shortDescription', 'researchAreas', 'methods', 'name', 'kind']) {
+    for (const field of [
+      'fullDescription',
+      'shortDescription',
+      'researchAreas',
+      'methods',
+      'name',
+      'kind',
+    ]) {
       expect(isIngestDroppableObservationField(field)).toBe(true);
       expect(() => assertDeclarableRetractionField(field, 'retractable')).toThrow(
         /ingest can drop/,
