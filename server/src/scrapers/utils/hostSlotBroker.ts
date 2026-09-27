@@ -48,9 +48,8 @@ export class HostSlotBroker {
     limiter: HostConcurrencyLimiter,
   ): Promise<HostSlotBroker> {
     fs.rmSync(socketPath, { force: true });
-    let broker: HostSlotBroker | undefined;
-    const server = net.createServer((socket) => broker!.serve(socket, limiter));
-    broker = new HostSlotBroker(server, socketPath);
+    const server = net.createServer((socket) => broker.serve(socket, limiter));
+    const broker = new HostSlotBroker(server, socketPath);
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
       server.listen(socketPath, () => {
