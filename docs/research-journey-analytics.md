@@ -31,7 +31,7 @@ The only access-conversion event is `research_qualified_action`.
 Its `actionCategory` is the `PlanningContextCategory` enum from `server/src/services/planningContextService.ts`: `open_position`, `official_application`, `reviewed_route`, or `qualified_participation`.
 The server rejects missing, stale, or mismatched qualifications and records the current server-owned category instead of trusting the client.
 
-Source review, profile open, impression, filter, save, compare, and plan events never count as access conversion.
+Source review, profile open, results view, filter, save, compare, and plan events never count as access conversion.
 `outreach_outcome` remains a separate self-reported outcome and is not inferred from any click.
 
 ## Privacy And Reliability

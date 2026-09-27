@@ -372,7 +372,7 @@ The Meilisearch client (`server/src/utils/meiliClient.ts`) exports:
 Analytics events are stored in MongoDB with a 3-year TTL.
 Route-level middleware logs successful server-observed events by wrapping `res.send` or `res.json`, so analytics stay outside controller and service business logic.
 
-The canonical research-student journey uses claim-specific events for terminal search outcomes, entity impressions, profile opens, source review, filter changes, entity save/removal, comparison, persisted plan updates, and qualified actions.
+The canonical research-student journey uses claim-specific events for terminal search outcomes, result-page views, profile opens, source review, filter changes, entity save/removal, comparison, persisted plan updates, and qualified actions.
 The complete event and payload contract is documented in [`docs/research-journey-analytics.md`](docs/research-journey-analytics.md).
 Legacy `research_view`, `pathway_save`, `ways_in_click`, `contact_route_click`, and `source_link_click` events remain for older profile, listing, and fellowship instrumentation, but they are not access conversions.
 
