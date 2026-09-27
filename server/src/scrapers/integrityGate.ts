@@ -744,31 +744,38 @@ export async function loadDeadEndTombstoneChains(
     archived: true,
     canonicalGroupId: { $ne: null },
   })
-    .select('_id slug archived canonicalGroupId')
-    .lean()) as unknown as Array<ResearchEntityTombstoneNode & { slug?: string }>;
+    .select('_id archived canonicalGroupId')
+    .lean()) as unknown as ResearchEntityTombstoneNode[];
   if (tombstones.length === 0) return [];
 
   const byId = new Map(tombstones.map((row) => [String(row._id), row]));
-  // The chain hops through archived rows, and every archived row with a pointer is already
-  // loaded above, so a hop that misses this map is either a live row or genuinely absent.
-  // Both need the collection, which is why this still reads rather than failing the hop.
-  const findById = async (id: string): Promise<ResearchEntityTombstoneNode | null> => {
-    const loaded = byId.get(id);
-    if (loaded) return loaded;
-    if (!mongoose.Types.ObjectId.isValid(id)) return null;
-    return (await ResearchEntity.findOne({ _id: new mongoose.Types.ObjectId(id) })
+  // Every archived row with a pointer is loaded above, so a chain can only leave that set on
+  // its final hop. One read of those final targets makes every hop a map lookup, and a target
+  // missing from the map is genuinely absent.
+  const finalTargetIds = [
+    ...new Set(
+      tombstones
+        .map((row) => String(row.canonicalGroupId))
+        .filter((id) => !byId.has(id) && mongoose.Types.ObjectId.isValid(id)),
+    ),
+  ];
+  if (finalTargetIds.length > 0) {
+    const targets = (await ResearchEntity.find({
+      _id: { $in: finalTargetIds.map((id) => new mongoose.Types.ObjectId(id)) },
+    })
       .select('_id archived canonicalGroupId')
-      .lean()) as ResearchEntityTombstoneNode | null;
-  };
+      .lean()) as unknown as ResearchEntityTombstoneNode[];
+    for (const target of targets) byId.set(String(target._id), target);
+  }
+  const findById = async (id: string) => byId.get(id) ?? null;
 
-  const malformed: Array<{ entityId: string; slug: string; terminalCause: string }> = [];
+  const malformed: Array<{ entityId: string; terminalCause: string }> = [];
   for (const tombstone of tombstones) {
     const chain = await walkResearchEntityTombstoneChainWithCause(tombstone, { findById });
     if (chain.canonical) continue;
     if (!tombstoneTerminalCauseIsMalformed(chain.terminalCause)) continue;
     malformed.push({
       entityId: String(tombstone._id),
-      slug: String(tombstone.slug ?? ''),
       terminalCause: String(chain.terminalCause),
     });
   }

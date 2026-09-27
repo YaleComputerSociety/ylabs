@@ -1,14 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
 import mongoose from 'mongoose';
 
-const rows = vi.hoisted(() => ({ tombstones: [] as any[], extra: new Map<string, any>() }));
+const rows = vi.hoisted(() => ({
+  tombstones: [] as any[],
+  extra: new Map<string, any>(),
+  findCalls: 0,
+}));
 
 vi.mock('../../models/researchEntity', () => ({
   ResearchEntity: {
-    find: () => ({ select: () => ({ lean: async () => rows.tombstones }) }),
-    findOne: (filter: any) => ({
-      select: () => ({ lean: async () => rows.extra.get(String(filter._id)) ?? null }),
-    }),
+    find: (filter: any) => {
+      rows.findCalls += 1;
+      const result = filter._id
+        ? filter._id.$in.map((id: any) => rows.extra.get(String(id))).filter(Boolean)
+        : rows.tombstones;
+      return { select: () => ({ lean: async () => result }) };
+    },
   },
 }));
 
@@ -55,6 +62,21 @@ describe('loadDeadEndTombstoneChains', () => {
     rows.tombstones = [tombstone(1, 'synthetic-a', 3)];
     rows.extra = new Map([[String(oid(3)), { _id: oid(3), archived: false }]]);
     expect(await loadDeadEndTombstoneChains(5)).toEqual([]);
+  });
+
+  it('reads every chain target in one query however many tombstones share it', async () => {
+    rows.tombstones = [
+      tombstone(1, 'synthetic-a', 3),
+      tombstone(2, 'synthetic-b', 3),
+      tombstone(4, 'synthetic-c', 5),
+    ];
+    rows.extra = new Map([
+      [String(oid(3)), { _id: oid(3), archived: false }],
+      [String(oid(5)), { _id: oid(5), archived: false }],
+    ]);
+    rows.findCalls = 0;
+    expect(await loadDeadEndTombstoneChains(5)).toEqual([]);
+    expect(rows.findCalls).toBe(2);
   });
 
   it('reports nothing when there are no tombstones at all', async () => {
