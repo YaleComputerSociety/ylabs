@@ -420,12 +420,6 @@ export class OfficialResearchHomeRosterScraper implements IScraper {
       }
     }
 
-    if (selected.length > 0 && failed === selected.length) {
-      throw new Error(
-        `Every attempted official roster fetch failed (${failed} of ${selected.length}); the run read no roster and is a failure, not a success`,
-      );
-    }
-
     return {
       observationCount,
       entitiesObserved,

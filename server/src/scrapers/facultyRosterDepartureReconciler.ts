@@ -119,7 +119,8 @@ export function rosterHealthReadProvenance(
 /**
  * Lane statuses `dept-faculty-roster` records when a lane did not read its whole
  * roster in the run: the page could not be fetched or parsed, the pager stopped
- * before the roster's end, or `--limit` cut the lane short or never reached it.
+ * before the roster's end, `--limit` cut the lane short or never reached it, or no
+ * renderer was available.
  */
 export const ROSTER_LANE_FAILED_READ_STATUSES: ReadonlySet<string> = new Set([
   'fetch-failed',
@@ -130,7 +131,14 @@ export const ROSTER_LANE_FAILED_READ_STATUSES: ReadonlySet<string> = new Set([
 export const ROSTER_LANE_PARTIAL_READ_STATUSES: ReadonlySet<string> = new Set([
   'partial-read',
   'skipped-by-limit',
+  'js-rendered-skip',
 ]);
+
+export function rosterLaneStatusLeftRosterUnread(status: string): boolean {
+  return (
+    ROSTER_LANE_FAILED_READ_STATUSES.has(status) || ROSTER_LANE_PARTIAL_READ_STATUSES.has(status)
+  );
+}
 
 /**
  * Whether this snapshot's lane left part of its roster unread in this run.
@@ -139,15 +147,15 @@ export const ROSTER_LANE_PARTIAL_READ_STATUSES: ReadonlySet<string> = new Set([
  * configs can resolve to one department, and absence is concluded from every lane
  * failing to find somebody; a lane that did not read its pages has not failed to find
  * anybody on them, so the other lanes' discovery cannot stand in for it (#3647).
+ * An `empty` lane withholds too: a fetched page that listed nobody is what a site
+ * migration looks like, so it is not evidence that its people are gone.
  */
 export function rosterHealthRecordsAnIncompleteRead(
   snapshot: DepartmentRosterHealthSnapshot,
 ): boolean {
   if (rosterHealthReadProvenance(snapshot) === 'not-read') return true;
   const status = typeof snapshot.status === 'string' ? snapshot.status : '';
-  return (
-    ROSTER_LANE_FAILED_READ_STATUSES.has(status) || ROSTER_LANE_PARTIAL_READ_STATUSES.has(status)
-  );
+  return status === 'empty' || rosterLaneStatusLeftRosterUnread(status);
 }
 
 /** When the snapshot's own run says it read the page, if it recorded that at all. */

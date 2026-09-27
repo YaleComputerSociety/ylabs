@@ -92,6 +92,7 @@ import { orgUnitMatchKey } from '../orgUnitCanonicalization';
 import {
   DEPARTMENT_ROSTER_HEALTH_FIELD,
   ROSTER_LANE_FAILED_READ_STATUSES,
+  rosterLaneStatusLeftRosterUnread,
 } from '../facultyRosterDepartureReconciler';
 import {
   isFacultyTitle,
@@ -162,12 +163,17 @@ export function collapseLaneOutcomesByDepartment(outcomes: LaneOutcome[]): LaneO
     existing.pagesRead += outcome.pagesRead;
     existing.pagesReusedWithinSweep =
       (existing.pagesReusedWithinSweep ?? 0) + (outcome.pagesReusedWithinSweep ?? 0);
-    if (existing.status === 'ok' && outcome.status !== 'ok') existing.status = outcome.status;
+    if (collapsedStatusYieldsTo(existing.status, outcome.status)) existing.status = outcome.status;
     if (existing.readMode === 'none' && outcome.readMode !== 'none') {
       existing.readMode = outcome.readMode;
     }
   }
   return Array.from(byDeptKey.values());
+}
+
+function collapsedStatusYieldsTo(existing: string, incoming: string): boolean {
+  if (existing === 'ok') return incoming !== 'ok';
+  return !rosterLaneStatusLeftRosterUnread(existing) && rosterLaneStatusLeftRosterUnread(incoming);
 }
 
 /** A lane that never tried to read: no renderer was available, or `--limit` ran out first. */

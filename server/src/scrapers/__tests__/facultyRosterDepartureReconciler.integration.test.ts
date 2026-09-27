@@ -438,43 +438,49 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     expect(result.evidenceFreshness.readProvenance['not-read']).toBe(1);
   });
 
-  it('does not govern a department when a sibling lane in the run recorded a partial read', async () => {
-    // Two configs can resolve to one canonical department. A lane that did not read its
-    // whole roster cannot have failed to find anybody on the pages it never saw, so its
-    // department's absence is not concluded from the other lane alone (#3647).
-    const run = new mongoose.Types.ObjectId().toString();
-    await seedEntity({ slug: 'lab-present' });
-    await seedEntity({ slug: 'lab-unread', absentFromRosterSinceRunId: priorRun });
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
-    await Observation.create({
-      entityType: 'departmentRosterHealth',
-      entityKey: 'wright-lab',
-      field: DEPARTMENT_ROSTER_HEALTH_FIELD,
-      value: {
-        deptName: 'Physics',
-        status: 'partial-read',
-        complete: false,
-        discoveredEntityKeys: ['lab-present'],
-        discoveredCount: 1,
-        read: FETCHED_READ,
-      },
-      sourceId: new mongoose.Types.ObjectId(),
-      sourceName: 'dept-faculty-roster',
-      confidence: 0.9,
-      scrapeRunId: new mongoose.Types.ObjectId(run),
-      observedAt: new Date('2026-08-27T00:00:00.000Z'),
-    });
-    fetchPage.mockResolvedValue(TOMBSTONE);
+  it.each<[string, string[]]>([
+    ['partial-read', ['lab-present']],
+    ['empty', []],
+  ])(
+    'does not govern a department when a sibling lane in the run recorded %s',
+    async (status, siblingDiscovered) => {
+      // Two configs can resolve to one canonical department. A lane that did not read its
+      // whole roster cannot have failed to find anybody on the pages it never saw, so its
+      // department's absence is not concluded from the other lane alone (#3647).
+      const run = new mongoose.Types.ObjectId().toString();
+      await seedEntity({ slug: 'lab-present' });
+      await seedEntity({ slug: 'lab-unread', absentFromRosterSinceRunId: priorRun });
+      await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+      await Observation.create({
+        entityType: 'departmentRosterHealth',
+        entityKey: 'wright-lab',
+        field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+        value: {
+          deptName: 'Physics',
+          status,
+          complete: false,
+          discoveredEntityKeys: siblingDiscovered,
+          discoveredCount: siblingDiscovered.length,
+          read: FETCHED_READ,
+        },
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        confidence: 0.9,
+        scrapeRunId: new mongoose.Types.ObjectId(run),
+        observedAt: new Date('2026-08-27T00:00:00.000Z'),
+      });
+      fetchPage.mockResolvedValue(TOMBSTONE);
 
-    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+      const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
-    expect(result.suppressed).toBe(0);
-    expect(result.planned.suppress_departed).toBe(0);
-    expect(result.planned.record_first_absence).toBe(0);
-    expect(result.governedDepartments).toEqual([]);
-    const unread = await readEntity('lab-unread');
-    expect(unread?.activeAtYaleCache).not.toBe(false);
-  });
+      expect(result.suppressed).toBe(0);
+      expect(result.planned.suppress_departed).toBe(0);
+      expect(result.planned.record_first_absence).toBe(0);
+      expect(result.governedDepartments).toEqual([]);
+      const unread = await readEntity('lab-unread');
+      expect(unread?.activeAtYaleCache).not.toBe(false);
+    },
+  );
 
   it('dates a row from its own department rather than the last snapshot read', async () => {
     const run = new mongoose.Types.ObjectId().toString();

@@ -48,6 +48,7 @@ import {
   csRenderedExtractor,
   csFacultyDataExtractor,
   chemEnvFacultyExtractor,
+  collapseLaneOutcomesByDepartment,
   type DeptConfig,
   type FacultyEntry,
   type FacultyExtractor,
@@ -5513,5 +5514,37 @@ describe('DepartmentRosterScraper.run read completeness (#3647)', () => {
     const result = await scraper.run(ctx);
 
     expect(result.notes).toContain('physics=empty');
+  });
+});
+
+describe('collapseLaneOutcomesByDepartment', () => {
+  const lane = (status: string, pagesRead: number) => ({
+    deptKey: 'som',
+    count: 0,
+    status,
+    pagesRead,
+    readMode: 'html' as const,
+    crossListedProgramme: false,
+  });
+
+  it.each(['partial-read', 'fetch-failed', 'skipped-by-limit'])(
+    'reports a later %s config rather than an earlier empty one',
+    (incomplete) => {
+      const [collapsed] = collapseLaneOutcomesByDepartment([
+        lane('ok', 1),
+        lane('empty', 1),
+        lane(incomplete, 0),
+      ]);
+      expect(collapsed.status).toBe(incomplete);
+      expect(collapsed.pagesRead).toBe(2);
+    },
+  );
+
+  it('keeps the first incomplete-read status when several configs left the roster unread', () => {
+    const [collapsed] = collapseLaneOutcomesByDepartment([
+      lane('partial-read', 1),
+      lane('fetch-failed', 0),
+    ]);
+    expect(collapsed.status).toBe('partial-read');
   });
 });
