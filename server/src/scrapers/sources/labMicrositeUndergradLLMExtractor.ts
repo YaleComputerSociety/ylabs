@@ -39,10 +39,7 @@ import { isBenchmarkModeActive } from '../snapshotBenchmarkMode';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
-import {
-  isPlausibleUndergradEvidenceQuote,
-  laneQuoteStatesUndergraduates,
-} from '../undergradEvidenceQuoteValidation';
+import { laneQuoteStatesUndergraduates } from '../undergradEvidenceQuoteValidation';
 import {
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
