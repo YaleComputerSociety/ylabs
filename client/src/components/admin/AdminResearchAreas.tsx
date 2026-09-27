@@ -93,7 +93,7 @@ const AdminResearchAreas = () => {
 
     try {
       await axios.post(
-        '/research-areas',
+        '/admin/research-areas',
         { name: newDraft.name.trim(), field: newDraft.field },
         { withCredentials: true },
       );

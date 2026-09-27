@@ -47,7 +47,24 @@ Defined in `server/src/middleware/auth.ts`.
 | `isAdmin` | active `AdminGrant` for the NetID (`hasActiveAdminGrant`). |
 
 There are no `userType`-based authorization guards.
-Admin-review write surfaces (research-area creation) use `isAdmin`; correction-report and listing-claim submission use `isAuthenticated`.
+Correction-report and listing-claim submission use `isAuthenticated`.
+
+## Admin audit log
+
+Every admin mutation lives on the admin router (`server/src/routes/admin.ts`, mounted at `/api/admin`), which runs `isAuthenticated`, `isAdmin`, and `adminAuditMutationLogger` ahead of every route.
+Research-area creation moved there as `POST /api/admin/research-areas` so it is audited like the rest of topic management (#3648).
+Do not guard a mutation with `isAdmin` on another router: it would bypass the logger.
+
+`adminAuditMutationLogger` (`server/src/middleware/adminAuditLogger.ts`) records one `AdminAuditEvent` per successful (2xx) `POST`/`PUT`/`PATCH`/`DELETE`, using the action vocabulary in `ADMIN_AUDIT_ROUTES`, keyed by method and the path relative to the admin router.
+A new admin mutation therefore needs an `ADMIN_AUDIT_ROUTES` entry, and a matching label in `client/src/components/analytics/analyticsPresentation.tsx` for the audit-log filter.
+`server/src/middleware/__tests__/adminAuditCoverage.test.ts` walks the mounted Express app and fails when an `isAdmin` mutation is outside the admin router, runs without the logger, has no entry, or when an entry names a route that no longer exists.
+At runtime a successful admin mutation with no entry logs a `console.warn` naming the method and route instead of passing silently.
+
+Audit writes are fail-soft by design.
+The event is written on `finish`, after the mutation has committed and the response has gone, so failing the request would report failure for a change that happened and invite a retry.
+Failing closed would need the event written before the mutation, in the same transaction, which would also turn an audit-collection outage into an outage of every admin surface.
+The most sensitive mutation, an admin grant or revoke, also keeps its own actor history on the `AdminGrant` document.
+A failed insert logs `console.error` naming the action and target type, and an event refused for an invalid actor or action logs `console.warn`; neither log carries the actor netid or target id.
 
 Client route guards:
 

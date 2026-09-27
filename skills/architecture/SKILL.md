@@ -134,7 +134,6 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | `/profiles`       | `profiles.ts`       | Varies.                                             |
 | `/analytics`      | `analytics.ts`      | Admin.                                              |
 | `/config`         | `config.ts`         | Public.                                             |
-| `/research-areas` | `researchAreas.ts`  | Admin for writes.                                   |
 | `/admin`          | `admin.ts`          | Admin.                                              |
 | `/seed`           | `seed.ts`           | Local development runtime only.                     |
 

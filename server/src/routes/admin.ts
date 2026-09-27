@@ -20,7 +20,7 @@ import {
   listAdminEntityCorrectionReports,
   reviewAdminEntityCorrectionReport,
 } from '../controllers/entityCorrectionReportController';
-import { buildSafeSearchRegex } from '../utils/regex';
+import { buildSafeSearchRegex, escapeRegex } from '../utils/regex';
 import {
   AdminGrantValidationError,
   AdminGrantConflictError,
@@ -399,6 +399,47 @@ router.get('/research-areas', async (_req: Request, res: Response) => {
   } catch (error) {
     console.error('Admin: Error fetching research areas:', sanitizeLogValue(error));
     res.status(500).json({ error: 'Failed to fetch research areas' });
+  }
+});
+
+const parseResearchAreaName = (value: unknown): string | undefined => {
+  try {
+    return normalizeAdminTaxonomyLabel(value, 'research area name', MAX_RESEARCH_AREA_NAME_LENGTH);
+  } catch {
+    return undefined;
+  }
+};
+
+const isResearchField = (value: unknown): value is ResearchField =>
+  Object.values(ResearchField).includes(value as ResearchField);
+
+router.post('/research-areas', writeLimit, async (req: Request, res: Response) => {
+  const name = parseResearchAreaName(req.body?.name);
+  if (!name) return res.status(400).json({ error: 'Invalid research area name' });
+
+  const field = req.body?.field;
+  if (!isResearchField(field)) return res.status(400).json({ error: 'Invalid field value' });
+
+  try {
+    const existing = await ResearchArea.findOne({
+      name: { $regex: new RegExp(`^${escapeRegex(name)}$`, 'i') },
+    });
+    if (existing) return res.status(409).json({ error: 'Research area already exists' });
+
+    const area = new ResearchArea({
+      name,
+      field,
+      colorKey: fieldColorKeys[field] || 'gray',
+      addedBy: currentActorNetid(req),
+      isDefault: false,
+    });
+    await area.save();
+
+    invalidateConfigCache();
+    res.status(201).json({ researchArea: adminResearchAreaDto(area) });
+  } catch (error) {
+    console.error('Admin: Error creating research area:', sanitizeLogValue(error));
+    res.status(500).json({ error: 'Failed to create research area' });
   }
 });
 

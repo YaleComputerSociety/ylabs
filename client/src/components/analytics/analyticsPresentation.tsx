@@ -7,6 +7,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'department.create': 'Department created',
   'department.update': 'Department edited',
   'department.delete': 'Department deleted',
+  'research_area.create': 'Topic created',
   'research_area.update': 'Topic edited',
   'research_area.delete': 'Topic deleted',
   'fellowship.update': 'Fellowship edited',
@@ -15,6 +16,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'fellowship.delete': 'Fellowship deleted',
   'access_review.manual_locks': 'Visibility locks changed',
   'access_review.record_review': 'Access review recorded',
+  'correction_report.review': 'Correction report reviewed',
 };
 
 export const auditActionLabel = (action: string): string => AUDIT_ACTION_LABELS[action] || action;
