@@ -102,6 +102,11 @@ The body arm separates a finding from a note.
 A slug, a personal address and a netid remain findings unconditionally.
 Unlike a URL, none of them has a legitimate evidentiary use in a body.
 
+The one allowance is the synthetic fixture roster, `SYNTHETIC_FIXTURE_SURNAMES` in `scripts/check-no-person-identifiers-core.mjs`, which holds the invented surnames the detector's own tests use.
+The body scan lets an identifier or prose name built from one of them through, because a pull request about the detector has to quote its fixtures and the no-mistakes gate pastes its adversarial inputs into the body.
+The tests scan in strict mode, which ignores the roster, so they still prove every shape is flagged.
+Write a new test fixture from the roster rather than inventing another name, and widening the roster is a reviewed change that its pin test makes deliberate.
+
 Check a draft before posting it, which is the only moment the fix is free:
 
 ```

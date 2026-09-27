@@ -264,6 +264,18 @@ const slugSegment = (slug) => {
   return '';
 };
 
+// The invented people this script's own tests use. A body that discusses the
+// detector has to quote them, and the no-mistakes gate pastes its adversarial
+// fixtures into the pull request body, so the body scan lets them through while
+// the tests scan in strict mode to prove the same shapes are still flagged.
+// Changing this set also requires updating docs/person-identifier-convention.md.
+export const SYNTHETIC_FIXTURE_SURNAMES = Object.freeze(['marrowbane', 'fenwright']);
+
+const mentionsSyntheticFixture = (text) => {
+  const lowered = String(text || '').toLowerCase();
+  return SYNTHETIC_FIXTURE_SURNAMES.some((surname) => lowered.includes(surname));
+};
+
 const isPlaceholderSlug = (slug) => {
   const segment = slugSegment(slug);
   if (!segment) return true;
@@ -318,6 +330,7 @@ const profileUrlFindings = (document) => {
     const index = match.index || 0;
     const claimed = CLAIM_RE.test(sentenceAt(spans, index));
     return {
+      matched: match[0],
       label: document.label,
       line: lineNumberForIndex(content, index),
       rule: 'personal-profile-url',
@@ -347,6 +360,7 @@ const personClaimFindings = (document) => {
       const start = match.index || 0;
       if (isQuotedTitle(span.text, start, start + match[0].length)) continue;
       findings.push({
+        matched: match[0],
         label: document.label,
         line: lineNumberForIndex(content, span.start + (match.index || 0)),
         rule: 'person-claim-pairing',
@@ -363,31 +377,33 @@ export function isExempt(content) {
   return EXEMPTION_RE.test(String(content || ''));
 }
 
-export function findPersonIdentifierFindings(documents) {
+export function findPersonIdentifierFindings(documents, { strict = false } = {}) {
   const findings = [];
+  const isSynthetic = (text) => !strict && mentionsSyntheticFixture(text);
 
   for (const document of documents) {
     if (isExempt(document.content)) continue;
 
     findings.push(
       ...collect(document, PERSON_SLUG_RE, 'person-bearing-entity-slug', (match) =>
-        isPlaceholderSlug(match[1]) || isRegisteredName(match[0])
+        isPlaceholderSlug(match[1]) || isRegisteredName(match[0]) || isSynthetic(match[0])
           ? null
           : 'a person-bearing slug prefix',
       ),
-      ...profileUrlFindings(document),
+      ...profileUrlFindings(document).filter((finding) => !isSynthetic(finding.matched)),
       ...collect(document, YALE_EMAIL_RE, 'personal-yale-address', (match) => {
         const localPart = match[1] || '';
         if (isRoleAddress(localPart)) return null;
         if (isPlaceholderAddress(localPart)) return null;
+        if (isSynthetic(localPart)) return null;
         return 'a personal yale.edu address';
       }),
       ...collect(document, NETID_LABELLED_RE, 'yale-netid', () => 'a Yale netid'),
-      ...personClaimFindings(document),
+      ...personClaimFindings(document).filter((finding) => !isSynthetic(finding.matched)),
     );
   }
 
-  return findings;
+  return findings.map(({ matched, ...finding }) => finding);
 }
 
 export function isFinding(entry) {

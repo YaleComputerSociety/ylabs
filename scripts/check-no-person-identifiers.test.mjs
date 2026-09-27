@@ -10,7 +10,10 @@ import {
   hasBlockingFindings,
   isDirectoryDumpCandidate,
   isRegisteredName,
+  SYNTHETIC_FIXTURE_SURNAMES,
 } from './check-no-person-identifiers-core.mjs';
+
+const scanStrict = (documents) => findPersonIdentifierFindings(documents, { strict: true });
 
 const body = (content) => [{ label: 'issue body', content }];
 
@@ -21,7 +24,7 @@ const rulesOf = (findings) =>
     .sort();
 
 test('flags each person-bearing identifier shape', () => {
-  const findings = findPersonIdentifierFindings(
+  const findings = scanStrict(
     body(
       [
         'The entity nih-pi-quilla-marrowbane serves a stale description.',
@@ -44,7 +47,7 @@ test('flags each person-bearing identifier shape', () => {
 });
 
 test('flags a prose name paired with a status claim, the case identifier shapes cannot reach', () => {
-  const findings = findPersonIdentifierFindings(
+  const findings = scanStrict(
     body(
       'The 5 refusals are the departures already researched: Quilla Marrowbane and Tobias Fenwright.',
     ),
@@ -55,9 +58,7 @@ test('flags a prose name paired with a status claim, the case identifier shapes 
 });
 
 test('never echoes the prose name it matched', () => {
-  const findings = findPersonIdentifierFindings(
-    body('Quilla Marrowbane has departed and the row is wrong.'),
-  );
+  const findings = scanStrict(body('Quilla Marrowbane has departed and the row is wrong.'));
 
   assert.ok(findings.length > 0);
   assert.ok(!JSON.stringify(findings).includes('Marrowbane'));
@@ -65,7 +66,7 @@ test('never echoes the prose name it matched', () => {
 });
 
 test('a claim about a predicate names nobody, so it stays clean', () => {
-  const findings = findPersonIdentifierFindings(
+  const findings = scanStrict(
     body(
       [
         'The 11 rows whose yaleStatusCache is departed still serve a dead citation.',
@@ -85,7 +86,7 @@ test('leaves institutional capitalised pairs alone, because a department is not 
     'The Jackson School page was permanently closed.',
     'Development and Production both serve the stale description.',
   ]) {
-    assert.deepEqual(rulesOf(findPersonIdentifierFindings(body(clean))), [], clean);
+    assert.deepEqual(rulesOf(scanStrict(body(clean))), [], clean);
   }
 });
 
@@ -98,12 +99,12 @@ test('ignores the shapes that made the prose rule noisy, measured against the re
     '    Indented Block Text is dead',
     '- Retired Paper Observation Materializer Is Dead',
   ]) {
-    assert.deepEqual(rulesOf(findPersonIdentifierFindings(body(clean))), [], clean);
+    assert.deepEqual(rulesOf(scanStrict(body(clean))), [], clean);
   }
 });
 
 test('a name inside backticks is still a person, so a code span is not an escape hatch', () => {
-  const findings = findPersonIdentifierFindings(
+  const findings = scanStrict(
     body('The row for `Quilla Marrowbane` is wrong because they departed.'),
   );
 
@@ -111,7 +112,7 @@ test('a name inside backticks is still a person, so a code span is not an escape
 });
 
 test('a sentence naming a person with no claim in it stays clean', () => {
-  const findings = findPersonIdentifierFindings(
+  const findings = scanStrict(
     body('Quilla Marrowbane matched the page title against the URL leaf.'),
   );
 
@@ -119,7 +120,7 @@ test('a sentence naming a person with no claim in it stays clean', () => {
 });
 
 test('a profile URL cited as working-link evidence is a note, not a finding', () => {
-  const findings = findPersonIdentifierFindings(
+  const findings = scanStrict(
     body(
       'The rewrite is confirmed by https://physics.yale.edu/profile/quilla-marrowbane resolving.',
     ),
@@ -133,7 +134,7 @@ test('a profile URL cited as working-link evidence is a note, not a finding', ()
 });
 
 test('the same profile URL becomes a finding once its sentence carries a claim', () => {
-  const findings = findPersonIdentifierFindings(
+  const findings = scanStrict(
     body('https://physics.yale.edu/profile/quilla-marrowbane is dead because they departed.'),
   );
 
@@ -148,7 +149,7 @@ test('a run of profile URLs is a finding whatever the prose says, because a list
     (_, index) => `https://physics.yale.edu/profile/person-${index} resolves.`,
   ).join('\n');
 
-  const findings = findPersonIdentifierFindings(body(urls));
+  const findings = scanStrict(body(urls));
 
   assert.equal(findings.length, DIRECTORY_DUMP_THRESHOLD);
   assert.ok(findings.every((finding) => finding.severity === 'finding'));
@@ -160,7 +161,7 @@ test('one fewer profile URL, with no claim, stays a note', () => {
     (_, index) => `https://physics.yale.edu/profile/person-${index} resolves.`,
   ).join('\n');
 
-  const findings = findPersonIdentifierFindings(body(urls));
+  const findings = scanStrict(body(urls));
 
   assert.equal(hasBlockingFindings(findings), false);
 });
@@ -172,14 +173,14 @@ test('flags every person-bearing slug prefix in use', () => {
     'ysm-faculty-quilla-marrowbane',
     'faculty-research-area-quilla-marrowbane',
   ]) {
-    const findings = findPersonIdentifierFindings(body(`row ${slug} is wrong`));
+    const findings = scanStrict(body(`row ${slug} is wrong`));
     assert.equal(findings.length, 1, slug);
     assert.equal(findings[0].rule, 'person-bearing-entity-slug');
   }
 });
 
 test('does not flag a registered source name that collides with a person-slug prefix', () => {
-  const findings = findPersonIdentifierFindings(
+  const findings = scanStrict(
     body('The ysm-faculty-directory scraper stopped asserting websiteUrl on 151 reads.'),
   );
 
@@ -187,9 +188,7 @@ test('does not flag a registered source name that collides with a person-slug pr
 });
 
 test('still flags a longer slug that merely starts like a registered source name', () => {
-  const findings = findPersonIdentifierFindings(
-    body('row ysm-faculty-directorate-of-marrowbane is wrong'),
-  );
+  const findings = scanStrict(body('row ysm-faculty-directorate-of-marrowbane is wrong'));
 
   assert.equal(rulesOf(findings).length, 1);
   assert.equal(findings[0].rule, 'person-bearing-entity-slug');
@@ -201,7 +200,7 @@ test('does not flag a registered script or source name that embeds a slug prefix
     '`yarn run | grep -c repair-nih-nsf-pi-center-lab-conflation` returned 1, so nothing is stale.',
     'The nih-nsf-pi-center-lab-conflation-repair source is not wrong.',
   ]) {
-    assert.deepEqual(rulesOf(findPersonIdentifierFindings(body(clean))), [], clean);
+    assert.deepEqual(rulesOf(scanStrict(body(clean))), [], clean);
   }
 });
 
@@ -213,14 +212,10 @@ test('still flags a person slug at the start of or inside a hyphenated token', (
     'slug=faculty-research-area-quilla-marrowbane is suppressed',
     'See /tmp/screenshot-nih-pi-quilla-marrowbane.png, the row is wrong.',
     'fixture-ysm-faculty-quilla-marrowbane.json shows it departed.',
-    'The legacy-ysm-faculty-directory row is stale.',
-    'The repair-nih-nsf-pi-center-lab-conflation-quilla row is stale.',
+    'The legacy-ysm-faculty-directory-marrowbane row is stale.',
+    'The repair-nih-nsf-pi-center-lab-conflation-marrowbane row is stale.',
   ]) {
-    assert.deepEqual(
-      rulesOf(findPersonIdentifierFindings(body(flagged))),
-      ['person-bearing-entity-slug'],
-      flagged,
-    );
+    assert.deepEqual(rulesOf(scanStrict(body(flagged))), ['person-bearing-entity-slug'], flagged);
   }
 });
 
@@ -230,7 +225,7 @@ test('a capitalised word before a plural acronym is not a name', () => {
     'Duplicate IDs were dropped, so the stale list is gone.',
     'Broken URLs are the defect this fixes.',
   ]) {
-    assert.deepEqual(rulesOf(findPersonIdentifierFindings(body(clean))), [], clean);
+    assert.deepEqual(rulesOf(scanStrict(body(clean))), [], clean);
   }
 });
 
@@ -239,10 +234,7 @@ test('an internally capitalised surname is still a name', () => {
     'Quilla McMarrowbane has departed and the row is wrong.',
     'Tobias DeFenwright has departed from the lab.',
   ]) {
-    assert.ok(
-      rulesOf(findPersonIdentifierFindings(body(flagged))).includes('person-claim-pairing'),
-      flagged,
-    );
+    assert.ok(rulesOf(scanStrict(body(flagged))).includes('person-claim-pairing'), flagged);
   }
 });
 
@@ -282,7 +274,7 @@ test('the registered-name allowance matches the colliding source and script name
 
 test('never echoes the identifier it matched, so CI logs cannot republish it', () => {
   const secretish = 'nih-pi-quilla-marrowbane';
-  const findings = findPersonIdentifierFindings(body(`row ${secretish} is wrong`));
+  const findings = scanStrict(body(`row ${secretish} is wrong`));
 
   assert.equal(findings.length, 1);
   assert.ok(!JSON.stringify(findings).includes('marrowbane'));
@@ -290,7 +282,7 @@ test('never echoes the identifier it matched, so CI logs cannot republish it', (
 });
 
 test('a predicate-style description is clean, so the convention passes its own gate', () => {
-  const findings = findPersonIdentifierFindings(
+  const findings = scanStrict(
     body(
       [
         'The 12 rows where manuallyLockedFields contains activeAtYaleCache serve a',
@@ -309,7 +301,7 @@ test('allows role addresses and documented placeholders', () => {
     'write to dnalab@yale.edu for the roster',
     'the shape is firstname.lastname@yale.edu',
   ]) {
-    assert.deepEqual(findPersonIdentifierFindings(body(clean)), [], clean);
+    assert.deepEqual(scanStrict(body(clean)), [], clean);
   }
 });
 
@@ -319,7 +311,7 @@ test('allows placeholder slugs that name nobody', () => {
     'the slug looks like ysm-faculty-placeholder',
     'the slug looks like nsf-pi-surname',
   ]) {
-    assert.deepEqual(findPersonIdentifierFindings(body(clean)), [], clean);
+    assert.deepEqual(scanStrict(body(clean)), [], clean);
   }
 });
 
@@ -329,11 +321,11 @@ test('an explicit exemption with a stated reason suppresses the findings', () =>
     'restore nih-pi-quilla-marrowbane from the pre-merge snapshot',
   ].join('\n');
 
-  assert.deepEqual(findPersonIdentifierFindings(body(content)), []);
+  assert.deepEqual(scanStrict(body(content)), []);
 });
 
 test('reports the line the identifier sits on', () => {
-  const findings = findPersonIdentifierFindings(
+  const findings = scanStrict(
     body(['clean line', 'clean line', 'row nih-pi-quilla-marrowbane is wrong'].join('\n')),
   );
 
@@ -399,4 +391,35 @@ test('ignores source files, which the body and review path already cover', () =>
   assert.equal(isDirectoryDumpCandidate('docs/research-model.md'), false);
   assert.equal(isDirectoryDumpCandidate('faculty_data.json'), true);
   assert.equal(isDirectoryDumpCandidate('data/roster.csv'), true);
+});
+
+test('pins the synthetic fixture roster, so widening it is a deliberate change', () => {
+  assert.deepEqual([...SYNTHETIC_FIXTURE_SURNAMES], ['marrowbane', 'fenwright']);
+});
+
+test('the body scan lets the synthetic fixtures through, so a detector pull request can quote its tests', () => {
+  const fixtures = [
+    'The entity nih-pi-quilla-marrowbane serves a stale description.',
+    'Its profile https://physics.yale.edu/people/quilla-marrowbane is wrong.',
+    'The roster lists quilla.marrowbane@yale.edu and the row is stale.',
+    'Quilla Marrowbane and Tobias Fenwright have departed and the rows are wrong.',
+  ].join('\n');
+
+  assert.deepEqual(rulesOf(findPersonIdentifierFindings(body(fixtures))), []);
+  assert.deepEqual(
+    rulesOf(scanStrict(body(fixtures))).sort(),
+    [
+      'person-bearing-entity-slug',
+      'person-claim-pairing',
+      'person-claim-pairing',
+      'personal-profile-url',
+      'personal-yale-address',
+    ].sort(),
+  );
+});
+
+test('a finding never carries the text it matched', () => {
+  const findings = scanStrict(body('Quilla Marrowbane has departed and the row is wrong.'));
+  assert.ok(findings.length > 0);
+  for (const finding of findings) assert.equal('matched' in finding, false);
 });
