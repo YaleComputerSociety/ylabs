@@ -79,9 +79,11 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
  * so a stored `.../directory-name/` never equals its own normalized form and an `$in`
  * on normalized values reads zero citers for a page 130 rows cite.
  *
- * Cached for the life of the process because a materialize sweep walks thousands of
- * rows whose candidate URLs repeat heavily - the repetition is the defect being
- * screened - so the uncached cost would be one query per row.
+ * Cached across rows because a materialize sweep walks thousands of rows whose
+ * candidate URLs repeat heavily - the repetition is the defect being screened - so
+ * the uncached cost would be one query per row. `appendObservations` and
+ * `retireObservations` in `observationStore.ts` drop the cache whenever they change
+ * a live description citation, so an in-process writer lane never reads a stale one.
  *
  * The cache is filled once, from every live description citation, and each row is
  * admitted under the same host pattern the per-host query used, so a lookup answers
