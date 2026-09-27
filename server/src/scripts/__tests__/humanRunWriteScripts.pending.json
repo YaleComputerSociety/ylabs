@@ -68,7 +68,6 @@
   "research-entity:refuse-dead-website-values",
   "research-entity:refuse-unasserted-descriptions",
   "research-entity:repair-archived-artifacts",
-  "research-entity:repair-sentence-shaped-chips",
   "research-entity:repair-unbacked-lab-names",
   "research-entity:resolve-lead-netids",
   "research-entity:retire-dead-citation-entities",

@@ -87,9 +87,10 @@ const RESEARCH_AREA_LIST_FIELDS = new Set(['researchAreas', 'topics', 'researchI
  * two places that cleaned a method chip were `researchEntityDto` at serve time and
  * `methodGrounding` inside one lane, so a chip from any other lane was hidden on the way
  * out and stored dirty - the shape #3428 records, where a serve-time guard without a
- * storage one leaves a repair script holding the line. Measured at the time: 4 live
- * `methods` observations carried a sentence-shaped chip against 0 of 15,943 on
- * `researchAreas`, where this sanitizer was already wired (#3612).
+ * storage one leaves a repair script holding the line. #3612 counted 4 live `methods`
+ * observations carrying a sentence-shaped chip, but that count filtered on a nonexistent
+ * `supersededAt` field; filtered on `superseded`, 0 of 2,442 live `methods` and 0 of
+ * 7,759 live `researchAreas` observations carry one (#3757).
  */
 const METHOD_LIST_FIELDS = new Set(['methods']);
 const PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
