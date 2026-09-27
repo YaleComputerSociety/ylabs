@@ -4,6 +4,7 @@
 import { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from '../models/analytics';
 import { ResearchEntity, Fellowship } from '../models/index';
 import { Account } from '../models/account';
+import { AdminGrant } from '../models/adminGrant';
 import { Researcher } from '../models/researcher';
 import { Types, type PipelineStage } from 'mongoose';
 import {
@@ -228,6 +229,7 @@ export interface SearchQualityAnalytics {
   uniqueSearchers: number;
   byQueryAndEntityType: SearchQualityQueryAnalytics[];
   topZeroResultQueries: SearchQualityQueryAnalytics[];
+  highSearchLowResults: HighSearchLowResultsAction[];
   topQueries: SearchQualityQueryAnalytics[];
   engagedSearches: number;
   returnedButIgnoredSearches: number;
@@ -343,7 +345,7 @@ export const MAX_USER_ANALYTICS_SEARCH_LENGTH = 120;
 const EVENT_COUNT_FIELDS: Record<string, AnalyticsEventType> = {
   logins: AnalyticsEventType.LOGIN,
   searches: AnalyticsEventType.SEARCH,
-  researchViews: AnalyticsEventType.RESEARCH_VIEW,
+  researchViews: AnalyticsEventType.RESEARCH_PROFILE_OPEN,
   fellowshipViews: AnalyticsEventType.FELLOWSHIP_VIEW,
   profileUpdates: AnalyticsEventType.PROFILE_UPDATE,
 };
@@ -529,6 +531,29 @@ const buildRangeTimestampMatch = (range: AnalyticsDateRange = {}): Record<string
   return Object.keys(timestamp).length > 0 ? { timestamp } : {};
 };
 
+/**
+ * Rows written by a maintainer, which every usage aggregate leaves out.
+ *
+ * Admin authority lives in `admin_grants`, and an admin's session records their
+ * persisted user type (usually `undergraduate`), so `userType: 'admin'` alone
+ * catches only legacy rows. A grant in any status counts, because the traffic a
+ * maintainer produced while holding it is still not student behaviour.
+ */
+const maintainerExclusionMatch = async (): Promise<Record<string, unknown>> => {
+  const maintainerNetids = (await AdminGrant.distinct('netid')) as string[];
+  return {
+    userType: { $ne: 'admin' },
+    ...(maintainerNetids.length > 0
+      ? { $expr: { $not: { $in: [{ $toLower: { $ifNull: ['$netid', ''] } }, maintainerNetids] } } }
+      : {}),
+  };
+};
+
+const buildUsageMatch = async (range: AnalyticsDateRange = {}): Promise<Record<string, any>> => ({
+  ...buildRangeTimestampMatch(range),
+  ...(await maintainerExclusionMatch()),
+});
+
 const parseActiveSince = (value?: string): Date | undefined => {
   if (!value) {
     return undefined;
@@ -632,6 +657,7 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
 
   const pipeline: PipelineStage[] = [
     { $match: match },
+    { $sort: { timestamp: 1 } },
     {
       $group: {
         _id: '$netid',
@@ -656,7 +682,9 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
         displayName: '$researcher.displayName',
         email: '$account.email',
         firstSeen: { $ifNull: ['$account.createdAt', '$firstEventAt'] },
-        lastActive: { $ifNull: ['$account.lastLoginAt', '$lastEventAt'] },
+        lastActive: {
+          $max: [{ $ifNull: ['$account.lastLoginAt', '$lastEventAt'] }, '$lastEventAt'],
+        },
         lastLogin: '$account.lastLoginAt',
       },
     },
@@ -986,6 +1014,35 @@ const zeroResultAfterProjection = {
   $and: [{ $lte: ['$resultCount', 0] }, { $ne: ['$degraded', true] }],
 };
 
+const zeroResultQueryGroupStages = [
+  {
+    $group: {
+      _id: {
+        query: '$normalizedQuery',
+        entityType: '$searchEntityType',
+      },
+      totalSearches: { $sum: 1 },
+      zeroResultSearches: {
+        $sum: { $cond: [zeroResultAfterProjection, 1, 0] },
+      },
+      uniqueSearchers: { $addToSet: '$netid' },
+      avgResultCount: { $avg: '$resultCount' },
+    },
+  },
+  {
+    $project: {
+      _id: 0,
+      query: '$_id.query',
+      entityType: '$_id.entityType',
+      totalSearches: 1,
+      zeroResultSearches: 1,
+      uniqueSearchers: { $size: '$uniqueSearchers' },
+      avgResultCount: { $round: ['$avgResultCount', 2] },
+    },
+  },
+  { $match: { zeroResultSearches: { $gt: 0 } } },
+];
+
 const computeSearchQualityAnalytics = async (
   range: AnalyticsDateRange = {},
 ): Promise<SearchQualityAnalytics> => {
@@ -993,7 +1050,7 @@ const computeSearchQualityAnalytics = async (
     {
       $match: {
         eventType: { $in: SEARCH_ATTRIBUTION_EVENT_TYPES },
-        ...buildRangeTimestampMatch(range),
+        ...(await buildUsageMatch(range)),
       },
     },
     {
@@ -1168,6 +1225,24 @@ const computeSearchQualityAnalytics = async (
           { $sort: { totalSearches: -1, zeroResultSearches: -1, query: 1 } },
           { $limit: 100 },
         ],
+        topZeroResultQueries: [
+          ...zeroResultQueryGroupStages,
+          { $sort: { zeroResultSearches: -1, totalSearches: -1, query: 1 } },
+          { $limit: 10 },
+        ],
+        highSearchLowResults: [
+          ...zeroResultQueryGroupStages,
+          { $match: { totalSearches: { $gte: 2 } } },
+          {
+            $addFields: {
+              zeroResultRate: {
+                $round: [{ $divide: ['$zeroResultSearches', '$totalSearches'] }, 4],
+              },
+            },
+          },
+          { $sort: { zeroResultRate: -1, zeroResultSearches: -1, totalSearches: -1, query: 1 } },
+          { $limit: 10 },
+        ],
       },
     },
   ]);
@@ -1183,15 +1258,9 @@ const computeSearchQualityAnalytics = async (
   const byQueryAndEntityType = (result?.byQueryAndEntityType ??
     []) as SearchQualityQueryAnalytics[];
   const topQueries = byQueryAndEntityType.slice(0, 10);
-  const topZeroResultQueries = [...byQueryAndEntityType]
-    .filter((query) => query.zeroResultSearches > 0)
-    .sort(
-      (a, b) =>
-        b.zeroResultSearches - a.zeroResultSearches ||
-        b.totalSearches - a.totalSearches ||
-        a.query.localeCompare(b.query),
-    )
-    .slice(0, 10);
+  const topZeroResultQueries = (result?.topZeroResultQueries ??
+    []) as SearchQualityQueryAnalytics[];
+  const highSearchLowResults = (result?.highSearchLowResults ?? []) as HighSearchLowResultsAction[];
 
   const searchesThatReachedTheCorpus = overall.totalSearches - overall.degradedSearches;
   return {
@@ -1205,6 +1274,7 @@ const computeSearchQualityAnalytics = async (
     uniqueSearchers: overall.uniqueSearchers,
     byQueryAndEntityType,
     topZeroResultQueries,
+    highSearchLowResults,
     topQueries,
     engagedSearches: overall.engagedSearches,
     returnedButIgnoredSearches: overall.returnedButIgnoredSearches,
@@ -1278,7 +1348,7 @@ export const getSearchQueryAnalytics = async (
   const limit = clampLimit(options.limit, 25, 100);
   const match: Record<string, any> = {
     eventType: AnalyticsEventType.SEARCH,
-    ...buildRangeTimestampMatch(range),
+    ...(await buildUsageMatch(range)),
   };
 
   const pipeline: PipelineStage[] = [
@@ -1430,7 +1500,7 @@ export const getFunnelAnalytics = async (
             AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
           ],
         },
-        ...buildRangeTimestampMatch(range),
+        ...(await buildUsageMatch(range)),
       },
     },
     {
@@ -1515,20 +1585,7 @@ export const getFunnelAnalytics = async (
 export const getActionNeededAnalytics = async (
   range: AnalyticsDateRange = {},
 ): Promise<ActionNeededAnalytics> => {
-  const searchQuality = await getSearchQualityAnalytics(range);
-  const highSearchLowResults = searchQuality.byQueryAndEntityType
-    .filter((query) => query.totalSearches >= 2 && query.zeroResultSearches > 0)
-    .map((query) => ({
-      ...query,
-      zeroResultRate: Number((query.zeroResultSearches / query.totalSearches).toFixed(4)),
-    }))
-    .sort(
-      (a, b) =>
-        b.zeroResultRate - a.zeroResultRate ||
-        b.zeroResultSearches - a.zeroResultSearches ||
-        b.totalSearches - a.totalSearches,
-    )
-    .slice(0, 10);
+  const { highSearchLowResults } = await getSearchQualityAnalytics(range);
 
   return {
     highSearchLowResults,
@@ -1541,15 +1598,11 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-  const rangeTimestampMatch = buildRangeTimestampMatch(range);
+  const rangeTimestampMatch = await buildUsageMatch(range);
 
   const visitorStats = await AnalyticsEvent.aggregate([
-    {
-      $match: {
-        eventType: { $in: [AnalyticsEventType.LOGIN, AnalyticsEventType.VISITOR] },
-        ...rangeTimestampMatch,
-      },
-    },
+    { $match: { ...rangeTimestampMatch } },
+    { $sort: { timestamp: -1 } },
     {
       $facet: {
         lifetimeVisitors: [
@@ -1678,6 +1731,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
           },
         ],
         totalLogins: [
+          { $match: { eventType: AnalyticsEventType.LOGIN } },
           {
             $group: {
               _id: null,
@@ -1688,6 +1742,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
         loginsLast7Days: [
           {
             $match: {
+              eventType: AnalyticsEventType.LOGIN,
               timestamp: { $gte: sevenDaysAgo },
             },
           },
@@ -1701,6 +1756,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
         loginsToday: [
           {
             $match: {
+              eventType: AnalyticsEventType.LOGIN,
               timestamp: { $gte: today },
             },
           },

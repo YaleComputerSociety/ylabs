@@ -7,6 +7,7 @@ import { MongoClient, ObjectId } from 'mongodb';
 vi.setConfig({ testTimeout: 60_000 });
 
 const mocks = vi.hoisted(() => ({
+  adminGrantDistinct: vi.fn(async () => [] as string[]),
   analyticsAggregate: vi.fn(),
   analyticsCreate: vi.fn(),
   analyticsFind: vi.fn(),
@@ -71,6 +72,10 @@ vi.mock('../../models/index', () => ({
   Fellowship: {
     find: mocks.fellowshipFind,
   },
+}));
+
+vi.mock('../../models/adminGrant', () => ({
+  AdminGrant: { distinct: mocks.adminGrantDistinct },
 }));
 
 vi.mock('../../models/account', () => ({
@@ -211,7 +216,7 @@ describe('per-user activity view aggregation', () => {
     vi.clearAllMocks();
   });
 
-  it('counts research views and fellowship views as separate per-user metrics', async () => {
+  it('counts research profile opens and fellowship views as separate per-user metrics', async () => {
     mocks.analyticsAggregate.mockResolvedValueOnce([{ users: [], total: 0 }]);
 
     await getUserAnalytics({});
@@ -222,7 +227,10 @@ describe('per-user activity view aggregation', () => {
     const fellowshipViewsAccumulator = groupStage.fellowshipViews?.$sum?.$cond?.[0]?.$eq;
 
     expect(groupStage).not.toHaveProperty('views');
-    expect(researchViewsAccumulator).toEqual(['$eventType', AnalyticsEventType.RESEARCH_VIEW]);
+    expect(researchViewsAccumulator).toEqual([
+      '$eventType',
+      AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+    ]);
     expect(fellowshipViewsAccumulator).toEqual(['$eventType', AnalyticsEventType.FELLOWSHIP_VIEW]);
   });
 });
