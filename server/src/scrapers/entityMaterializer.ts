@@ -81,6 +81,7 @@ import {
   ResolvedField,
 } from './confidenceResolver';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
+import { MaterializationChunkPrefetch } from './materializationChunkPrefetch';
 import {
   appendObservations,
   c4LosslessIngestEnabled,
@@ -241,6 +242,7 @@ import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
 interface MaterializeOptions {
   dryRun?: boolean;
+  chunkPrefetch?: MaterializationChunkPrefetch;
   syncMeilisearch?: boolean;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
   writeOnlyFields?: string[];
@@ -3516,9 +3518,12 @@ async function findEntityDocByIdentifier(
   entityType: ObservedEntityType,
   identifier: { entityId?: string; entityKey?: string },
   obs: any[],
+  prefetch?: MaterializationChunkPrefetch,
 ): Promise<any | null> {
   const entityId = normalizeMaterializerObjectId(identifier.entityId);
   if (entityId) {
+    const prefetched = prefetch?.entityDocForId(entityType, entityId);
+    if (prefetched?.hit) return prefetched.value;
     return Model.findById(entityId).lean();
   }
 
@@ -3530,6 +3535,8 @@ async function findEntityDocByIdentifier(
   const keyValue = uniqueKeyValueForIdentifier(entityType, identifier.entityKey, obs);
   if (!keyValue) return null;
 
+  const prefetched = prefetch?.entityDocForKey(entityType, keyValue);
+  if (prefetched?.hit) return prefetched.value;
   const exact = await Model.findOne({ [keyField]: keyValue }).lean();
   if (exact) return exact;
 
@@ -3583,17 +3590,21 @@ export async function entityIdAnchoredObservationsExcludedByEntityKeyScope(
   entityType: ObservedEntityType,
   entityId: string,
   entityKeyScopedObservations: MaterializerObservationLike[],
+  prefetch?: MaterializationChunkPrefetch,
 ): Promise<any[]> {
   const entityIdObjectId = toMaterializerObjectId(entityId);
   if (!entityIdObjectId) return [];
   const alreadyIncluded = new Set(
     entityKeyScopedObservations.map((observation) => String(observation._id)),
   );
-  const entityIdMatches = await Observation.find({
-    entityType,
-    ...materializationReadScopeFilter(),
-    entityId: entityIdObjectId,
-  }).lean();
+  const prefetched = prefetch?.observationsForId(entityType, entityIdObjectId);
+  const entityIdMatches = prefetched?.hit
+    ? (prefetched.value as any[])
+    : await Observation.find({
+        entityType,
+        ...materializationReadScopeFilter(),
+        entityId: entityIdObjectId,
+      }).lean();
   return entityIdMatches.filter(
     (observation: any) => !alreadyIncluded.has(String(observation._id)),
   );
@@ -3613,17 +3624,21 @@ export async function entityKeyAnchoredObservationsExcludedByEntityIdScope(
   entityId: string,
   entityKey: string | undefined,
   entityIdScopedObservations: MaterializerObservationLike[],
+  prefetch?: MaterializationChunkPrefetch,
 ): Promise<any[]> {
   if (!entityKey) return [];
   const entityIdObjectId = toMaterializerObjectId(entityId);
   const alreadyIncluded = new Set(
     entityIdScopedObservations.map((observation) => String(observation._id)),
   );
-  const entityKeyMatches = await Observation.find({
-    entityType,
-    ...materializationReadScopeFilter(),
-    entityKey,
-  }).lean();
+  const prefetched = prefetch?.observationsForKey(entityType, entityKey);
+  const entityKeyMatches = prefetched?.hit
+    ? (prefetched.value as any[])
+    : await Observation.find({
+        entityType,
+        ...materializationReadScopeFilter(),
+        entityKey,
+      }).lean();
   return entityKeyMatches.filter((observation: any) => {
     if (alreadyIncluded.has(String(observation._id))) return false;
     if (
@@ -3723,6 +3738,7 @@ export async function mergedSurvivorEvidence(
   entityType: ObservedEntityType,
   survivor: { _id?: unknown; slug?: unknown; [field: string]: unknown },
   loadedObservations: any[],
+  prefetch?: MaterializationChunkPrefetch,
 ): Promise<MergedSurvivorEvidence> {
   const survivorId = toMaterializerObjectId(survivor._id);
   const unmerged = {
@@ -3732,6 +3748,7 @@ export async function mergedSurvivorEvidence(
     droppedLoserWebsiteValues: [],
   };
   if (!survivorId) return unmerged;
+  if (prefetch?.hasNoMergedInRows(survivorId)) return unmerged;
   const mergedInRows = await listResearchEntityMergedInRows(survivorId);
   if (mergedInRows.length === 0) return unmerged;
 
@@ -4533,10 +4550,15 @@ export const NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY: ResearchEntityNameIdent
 
 export async function loadResearchEntityNameIdentityAuthority(
   researchEntityId: unknown,
+  prefetch?: MaterializationChunkPrefetch,
 ): Promise<ResearchEntityNameIdentityAuthority> {
+  const prefetchedLead = prefetch?.soleLeadPersonId(researchEntityId);
   return {
     knownPersonSurnames: await loadKnownPersonSurnameRoster(),
-    leadPersonName: await loadResearchEntityLeadPersonName(researchEntityId),
+    leadPersonName: await loadResearchEntityLeadPersonName(
+      researchEntityId,
+      prefetchedLead?.hit ? prefetchedLead.value : undefined,
+    ),
   };
 }
 
@@ -5836,7 +5858,12 @@ export async function materializeEntity(
   // still report fieldsWritten 0, so a corpus-wide field drop would look like a
   // clean run. Pinned by entityMaterializerEmptyObservationGuard.integration.test.ts
   // (#2467); do not remove without reading it.
-  const readObservations = await Observation.find(filter).lean();
+  const prefetchedObservations = identifier.entityId
+    ? options.chunkPrefetch?.observationsForId(entityType, identifier.entityId)
+    : options.chunkPrefetch?.observationsForKey(entityType, identifier.entityKey as string);
+  const readObservations = prefetchedObservations?.hit
+    ? (prefetchedObservations.value as any[])
+    : await Observation.find(filter).lean();
 
   // An operator quarantines a bad run's evidence with `invalidated: true`. Honour it
   // here, at the one point every write path reads evidence, so `materializeFromRun`,
@@ -5932,7 +5959,13 @@ export async function materializeEntity(
 
   let entityDoc: any = null;
   let entityIdString: string | undefined = identifier.entityId;
-  entityDoc = await findEntityDocByIdentifier(Model, entityType, identifier, obs);
+  entityDoc = await findEntityDocByIdentifier(
+    Model,
+    entityType,
+    identifier,
+    obs,
+    options.chunkPrefetch,
+  );
   if (entityDoc) entityIdString = String(entityDoc._id);
 
   // A merged shell's canonicalGroupId tombstone is the durable record that this
@@ -6048,6 +6081,7 @@ export async function materializeEntity(
       entityType,
       entityIdString,
       obs,
+      options.chunkPrefetch,
     );
     if (excludedObs.length > 0) obs = [...obs, ...excludedObs];
   }
@@ -6062,6 +6096,7 @@ export async function materializeEntity(
       entityIdString,
       entityKeyForScope,
       obs,
+      options.chunkPrefetch,
     );
     if (excludedByKeyScope.length > 0) obs = [...obs, ...excludedByKeyScope];
   }
@@ -6069,7 +6104,7 @@ export async function materializeEntity(
   let mergedInKeys: string[] = [];
   let droppedLoserWebsiteValues: unknown[] = [];
   if (isResearchEntityObservationType(entityType) && entityDoc && entityDoc.archived !== true) {
-    const merged = await mergedSurvivorEvidence(entityType, entityDoc, obs);
+    const merged = await mergedSurvivorEvidence(entityType, entityDoc, obs, options.chunkPrefetch);
     obs = merged.observations;
     mergedInKeys = merged.mergedInKeys;
     droppedLoserWebsiteValues = merged.droppedLoserWebsiteValues;
@@ -6251,7 +6286,10 @@ export async function materializeEntity(
   }
 
   const nameIdentityAuthority = isResearchEntityObservationType(entityType)
-    ? await loadResearchEntityNameIdentityAuthority(entityDoc?._id ?? entityIdString)
+    ? await loadResearchEntityNameIdentityAuthority(
+        entityDoc?._id ?? entityIdString,
+        options.chunkPrefetch,
+      )
     : NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY;
 
   const { set, unset, conflicts, fieldsWritten } = await projectFromLog(entityType, {
@@ -6282,6 +6320,15 @@ export async function materializeEntity(
       plannedUnset: unset,
     };
   }
+
+  options.chunkPrefetch?.markTouched(
+    entityIdString,
+    identifier.entityId,
+    identifier.entityKey,
+    entityDoc?._id,
+    textValue(entityDoc?.slug),
+  );
+  if (!entityDoc) options.chunkPrefetch?.markCreated();
 
   const entityScalarUnchanged =
     Boolean(entityDoc) &&
@@ -6441,7 +6488,8 @@ export async function materializeEntity(
     entityIdString &&
     isDeptRosterKey(identifier.entityKey)
   ) {
-    await foldDeptRosterShellIntoCanonicalResearchEntity(entityIdString);
+    const fold = await foldDeptRosterShellIntoCanonicalResearchEntity(entityIdString);
+    if (fold.folded) options.chunkPrefetch?.markTouched(fold.canonicalEntityId);
   }
 
   return {
@@ -6542,6 +6590,76 @@ async function reconcileOfficialRosterSnapshotsFromRun(
   return archived;
 }
 
+export const MATERIALIZATION_CHUNK_SIZE = 100;
+
+export interface ObservedEntityRow {
+  entityType: ObservedEntityType;
+  entityId?: string;
+  entityKey?: string;
+}
+
+export type ObservedEntityOutcome = { result: MaterializeResult } | { error: unknown };
+
+async function loadChunkPrefetch(
+  entityType: ObservedEntityType,
+  rows: readonly ObservedEntityRow[],
+): Promise<MaterializationChunkPrefetch | undefined> {
+  const researchEntityModel = isResearchEntityObservationType(entityType)
+    ? entityModelFor(entityType)
+    : undefined;
+  const keyField = researchEntityModel ? uniqueKeyFieldFor(entityType) : null;
+  try {
+    return await MaterializationChunkPrefetch.load({
+      entityType,
+      rows,
+      readScopeFilter: materializationReadScopeFilter(),
+      ...(researchEntityModel && keyField
+        ? { entityDocs: { model: researchEntityModel, keyField } }
+        : {}),
+    });
+  } catch (error) {
+    console.warn(
+      `materializeFromRun: chunk prefetch for ${entityType} failed, reading rows one by one:`,
+      sanitizeLogValue(error),
+    );
+    return undefined;
+  }
+}
+
+export async function materializeObservedEntitiesInChunks(
+  rows: readonly ObservedEntityRow[],
+  options: MaterializeOptions,
+  onRow: (row: ObservedEntityRow, outcome: ObservedEntityOutcome) => void,
+  chunkSize: number = MATERIALIZATION_CHUNK_SIZE,
+): Promise<void> {
+  let start = 0;
+  while (start < rows.length) {
+    const entityType = rows[start].entityType;
+    let end = start + 1;
+    while (end < rows.length && end - start < chunkSize && rows[end].entityType === entityType) {
+      end += 1;
+    }
+    const chunk = rows.slice(start, end);
+    const chunkPrefetch = await loadChunkPrefetch(entityType, chunk);
+    for (const row of chunk) {
+      let outcome: ObservedEntityOutcome;
+      try {
+        outcome = {
+          result: await materializeEntity(
+            row.entityType,
+            { entityId: row.entityId, entityKey: row.entityKey },
+            chunkPrefetch ? { ...options, chunkPrefetch } : options,
+          ),
+        };
+      } catch (error) {
+        outcome = { error };
+      }
+      onRow(row, outcome);
+    }
+    start = end;
+  }
+}
+
 export async function materializeFromRun(
   scrapeRunId: string,
   options: MaterializeOptions = {},
@@ -6618,33 +6736,31 @@ export async function materializeFromRun(
   let skipped = 0;
   let errors = 0;
   const postMaterializationMetrics = emptyPostMaterializationMetrics();
-  for (const row of distinct) {
-    const { entityType, entityId, entityKey } = row._id;
-    let res: MaterializeResult;
-    try {
-      res = await materializeEntity(
-        entityType,
-        {
-          entityId: entityId ? String(entityId) : undefined,
-          entityKey: entityKey || undefined,
-        },
-        options,
-      );
-    } catch (err: any) {
-      errors++;
-      console.error(
-        `materializeFromRun: ${entityType} ${entityKey || entityId} failed:`,
-        sanitizeLogValue(err),
-      );
-      continue;
-    }
-    materialized++;
-    if (res.created) created++;
-    else if (!res.skipped) updated++;
-    if (res.skipped) skipped++;
-    conflicts += res.conflicts;
-    addPostMaterializationMetrics(postMaterializationMetrics, res.postMaterializationMetrics);
-  }
+  await materializeObservedEntitiesInChunks(
+    distinct.map((row) => ({
+      entityType: row._id.entityType,
+      entityId: row._id.entityId ? String(row._id.entityId) : undefined,
+      entityKey: row._id.entityKey || undefined,
+    })),
+    options,
+    (row, outcome) => {
+      if ('error' in outcome) {
+        errors++;
+        console.error(
+          `materializeFromRun: ${row.entityType} ${row.entityKey || row.entityId} failed:`,
+          sanitizeLogValue(outcome.error),
+        );
+        return;
+      }
+      const res = outcome.result;
+      materialized++;
+      if (res.created) created++;
+      else if (!res.skipped) updated++;
+      if (res.skipped) skipped++;
+      conflicts += res.conflicts;
+      addPostMaterializationMetrics(postMaterializationMetrics, res.postMaterializationMetrics);
+    },
+  );
   const rosterMembersArchived = await reconcileOfficialRosterSnapshotsFromRun(scrapeRunId, options);
   const departureResult = await reconcileFacultyRosterDeparturesFromRun(scrapeRunId, options);
   // An operator who switched the lane on needs to see why it did nothing;
