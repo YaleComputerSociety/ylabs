@@ -75,6 +75,8 @@ const UNAVAILABLE_REASON_TEXT: Record<UnavailableSavedResearchEntity['reason'], 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 const MAX_PLAN_NOTES_LENGTH = 2000;
+/** Long enough to notice the message and reach the button, short enough not to linger. */
+const UNDO_WINDOW_MS = 10000;
 const MIN_COMPARE_ENTITIES = 2;
 const MAX_COMPARE_ENTITIES = 4;
 
@@ -230,8 +232,56 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     [stages],
   );
 
-  const unsavePlan = (slug: string) => {
+  /**
+   * Unsaving a research plan destroys its privateNotes, and re-favouriting does not
+   * bring them back. Measured with a control on a real account: the note survives a
+   * plain reload, and is gone after unsave then re-save then reload.
+   *
+   * That is data the product cannot regenerate, since the student wrote it, and it
+   * was going with a single click that had no confirmation and no way back. So undo
+   * has to restore the note as well as the row, which means capturing it here before
+   * the unsave rather than relying on the server to have kept it.
+   *
+   * An undo window is the right shape rather than a confirmation dialog:
+   * Shneiderman's sixth rule is about the reassurance as much as the recovery, and a
+   * dialog taxes every removal to guard against the rare regretted one.
+   */
+  const [undoableUnsave, setUndoableUnsave] = useState<{
+    slug: string;
+    entityId: string;
+    name: string;
+    note: string;
+  } | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => () => clearTimeout(undoTimerRef.current), []);
+
+  const unsavePlan = (slug: string, entityId: string, name: string) => {
+    // Read the note before the row leaves the list, because afterwards it is gone
+    // from both the server and this component's state.
+    const note = notes[entityId] || '';
     void setFavorite(slug, false);
+    clearTimeout(undoTimerRef.current);
+    setUndoableUnsave({ slug, entityId, name, note });
+    undoTimerRef.current = setTimeout(() => setUndoableUnsave(null), UNDO_WINDOW_MS);
+  };
+
+  const undoUnsave = async () => {
+    if (!undoableUnsave) return;
+    const { slug, entityId, note } = undoableUnsave;
+    clearTimeout(undoTimerRef.current);
+    setUndoableUnsave(null);
+
+    const restored = await setFavorite(slug, true);
+    // The note write is not gated on the favourite succeeding. Gating it means a
+    // failed re-favourite silently discards the only copy of the note, which is the
+    // loss this undo exists to prevent.
+    if (note) {
+      setNotes((current) => ({ ...current, [entityId]: note }));
+      await savePlanNote(entityId, note);
+    }
+    // Put the affordance back rather than stranding the student with no way to retry.
+    if (!restored) setUndoableUnsave(undoableUnsave);
   };
 
   // Keyed by entity id rather than slug: an unavailable target has no slug the list
@@ -320,6 +370,26 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
           remove it from your plans.
         </p>
       </div>
+
+      {undoableUnsave && (
+        <div
+          className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-panel-muted px-4 py-3"
+          role="status"
+          aria-live="polite"
+        >
+          <p className="text-sm text-ink-soft">
+            Removed <span className="font-semibold text-ink">{undoableUnsave.name}</span> from saved
+            research.{undoableUnsave.note ? ' Undo restores your notes too.' : ''}
+          </p>
+          <button
+            type="button"
+            onClick={() => void undoUnsave()}
+            className="yr-focus-ring inline-flex min-h-[44px] flex-shrink-0 items-center rounded-control border border-line-brand bg-brand-soft px-3 py-2 text-xs font-semibold text-brand transition-colors hover:bg-panel"
+          >
+            Undo
+          </button>
+        </div>
+      )}
 
       {unavailable.length > 0 && (
         <div
@@ -473,7 +543,9 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                       </Link>
                       <button
                         type="button"
-                        onClick={() => unsavePlan(entity.slug)}
+                        onClick={() =>
+                          unsavePlan(entity.slug, entity._id, entityDisplayName(entity))
+                        }
                         aria-label={`Remove ${entityDisplayName(entity)} from saved plans`}
                         className="inline-flex min-h-[44px] items-center rounded-control border border-[var(--yr-line)] px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 yr-focus-ring"
                       >
