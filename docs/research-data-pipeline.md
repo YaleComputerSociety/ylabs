@@ -1348,7 +1348,7 @@ Do not match a full source given name to a different Yale first name by initial 
 NIH PI matching applies the same leading-given-token rule; a lab named only after a surname (`Arnsten Lab`) never attaches a PI on the surname alone, because a shared surname can identify the wrong person, so it fails closed to ambiguity whenever any surname-compatible Yale faculty exists and to absence when none match (issue #562).
 
 The shared canonical-home resolver distinguishes a safe absence of memberships from one canonical official home and ambiguous or ineligible memberships.
-The NIH, NSF, NEH and USAspending lanes treat the safe-absence case as a counted refusal and mint nothing (#3561); only DOE still creates a synthetic shell there.
+The NIH, NSF, NEH, USAspending and DOE lanes treat the safe-absence case as a counted refusal and mint nothing (#3561, #3565).
 No grant scraper emits research-home observations for ambiguity, archived or grant-only candidates, or other ineligible memberships.
 Canonical-home enrichment emits grant evidence without replacing official identity or source URL fields.
 Ambiguous Yale user matches and archived or non-current lead memberships are ineligible, not safe absences.

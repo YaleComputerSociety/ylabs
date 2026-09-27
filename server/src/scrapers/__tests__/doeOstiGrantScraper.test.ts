@@ -215,9 +215,7 @@ describe('buildResearchEntityObservations', () => {
   });
 
   it('never emits a description field so abstract prose cannot leak', () => {
-    const fields = buildResearchEntityObservations(group, 'example-plasma-lab').map(
-      (o) => o.field,
-    );
+    const fields = buildResearchEntityObservations(group, 'example-plasma-lab').map((o) => o.field);
     expect(fields).not.toContain('fullDescription');
     expect(fields).not.toContain('description');
     expect(fields).not.toContain('shortDescription');
