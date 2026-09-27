@@ -445,10 +445,33 @@ describe('studentVisibilityGateService', () => {
       ]);
     });
 
+    it('does not group rows citing different profiles on a regional Scholar host', () => {
+      const ids = selectExactUrlDuplicateRiskEntityIds([
+        scholarCitingRow('first', 'https://scholar.google.co.uk/citations?user=AAAA1111'),
+        scholarCitingRow('second', 'https://scholar.google.co.uk/citations?user=BBBB2222'),
+        scholarCitingRow('third', 'https://scholar.google.de/citations?hl=de&user=CCCC3333'),
+        scholarCitingRow('fourth', 'https://scholar.google.de/citations?user=DDDD4444'),
+      ]);
+
+      expect([...ids]).toEqual([]);
+    });
+
+    it('groups one Scholar profile cited on a regional and the global host', () => {
+      const groups = exactDuplicateUrlGroups([
+        scholarCitingRow('first', 'https://scholar.google.co.uk/citations?user=AAAA1111&hl=en'),
+        scholarCitingRow('second', 'https://scholar.google.com/citations?user=AAAA1111'),
+      ]);
+
+      expect(groups.map((group) => group.url)).toEqual([
+        'https://scholar.google.com/citations?user=AAAA1111',
+      ]);
+    });
+
     it('never groups on a Scholar citations page that names no profile', () => {
       const groups = exactDuplicateUrlGroups([
         scholarCitingRow('first', 'https://scholar.google.com/citations?hl=en'),
         scholarCitingRow('second', 'https://scholar.google.com/citations'),
+        scholarCitingRow('third', 'https://scholar.google.co.uk/citations?hl=en'),
       ]);
 
       expect(groups).toEqual([]);

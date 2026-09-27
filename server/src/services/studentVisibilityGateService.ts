@@ -463,6 +463,8 @@ const identityQueryParamsByPage: Readonly<Record<string, readonly string[]>> = {
   'scholar.google.com/citations': ['user'],
 };
 
+const regionalScholarHost = /^(?:www\.)?scholar\.google\.[a-z]{2,3}(?:\.[a-z]{2})?$/;
+
 const schoolLandingPagePath = /^\/(?:research|opportunities)$/i;
 
 const hostWithoutWww = (hostname: string): string => hostname.toLowerCase().replace(/^www\./, '');
@@ -491,6 +493,7 @@ function normalizedExactDuplicateUrl(value: unknown): string {
     url.hash = '';
     url.protocol = 'https:';
     url.hostname = url.hostname.toLowerCase();
+    if (regionalScholarHost.test(url.hostname)) url.hostname = 'scholar.google.com';
     // A trailing default document addresses the same page as the directory, so
     // `/lab/x/index.aspx` and `/lab/x/` are one destination. Without this, two rows
     // citing one lab under the two spellings read as distinct and both serve (#2708).
