@@ -10,7 +10,9 @@ import { classifyCommand, isGuardedRepo, planGuard } from './gh-identifier-guard
 
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 const GUARDED = 'YaleComputerSociety/does-not-exist-guard-test';
-const FLAGGED_NETID = 'zzq9999';
+// The body scan allows the synthetic zz?99 netid shape, so a fixture that must be
+// refused end to end has to sit just outside it.
+const FLAGGED_NETID = 'zzq1111';
 const FLAGGED = `The row keyed netid: ${FLAGGED_NETID} is stale.`;
 const FLAGGED_COMMENT = `Closing because netid ${FLAGGED_NETID} departed.`;
 const CLEAN = 'The 12 rows where manuallyLockedFields contains activeAtYaleCache are stale.';
