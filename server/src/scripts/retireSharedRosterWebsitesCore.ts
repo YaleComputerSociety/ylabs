@@ -40,9 +40,10 @@ const websiteUrlIsLocked = (manuallyLockedFields: unknown): boolean =>
  * Which of the roster lane's own `websiteUrl` claims #3614 now refuses: a URL the lane's
  * live claims assign to two or more different people. Every live claim counts, not only a
  * row's latest, because retiring the latest exposes the next one: on Development a first
- * pass judged by the latest claim left 5 rows holding an older claim of a second group site. Only this lane's observations are
- * retired, and a row where another lane independently asserts the same URL keeps it, so a
- * group site's true owner is not stripped where evidence of ownership exists.
+ * pass judged by the latest claim left 5 rows holding an older claim of a second group site.
+ * Only this lane's observations are retired, and a row where another lane independently
+ * asserts the same URL keeps it, so a group site's true owner is not stripped where evidence
+ * of ownership exists.
  *
  * Where nothing else supports the URL it is also refused, because the same URL sits in the
  * row's citations and citation promotion would copy it straight back into an emptied slot.
