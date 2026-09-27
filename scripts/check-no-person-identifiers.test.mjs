@@ -195,11 +195,13 @@ test('still flags a longer slug that merely starts like a registered source name
   assert.equal(findings[0].rule, 'person-bearing-entity-slug');
 });
 
-test('does not flag a registered script or source name that embeds a slug prefix', () => {
+// The two script-command cases this used to assert went with the script itself (#3765). A
+// retired SOURCE name keeps its allowance, because retiring a source does not stop it being
+// discussed; a deleted script name loses it, which is the pin working rather than a gap.
+test('does not flag a registered source name that embeds a slug prefix', () => {
   for (const clean of [
-    'The `research-homes:repair-nih-nsf-pi-center-lab-conflation` entry stays and is not wrong.',
-    '`yarn run | grep -c repair-nih-nsf-pi-center-lab-conflation` returned 1, so nothing is stale.',
-    'The nih-nsf-pi-center-lab-conflation-repair source is not wrong.',
+    'The nih-nsf-pi-center-lab-conflation-repair source is retired and is not wrong.',
+    'The ysm-faculty-directory lane wrote 1,102 name observations and none is a graft.',
   ]) {
     assert.deepEqual(rulesOf(scanStrict(body(clean))), [], clean);
   }
@@ -252,6 +254,18 @@ test('the registered-name allowance matches the colliding source and script name
   );
   assert.ok(declared.length > 20, 'expected to parse the seedSources name list');
 
+  // A retired source name is still a registered name: it stays in the codebase and stored
+  // `fieldProvenance` still cites it, so it has to keep its allowance (#3765).
+  const dispatch = await readFile(
+    new URL('../server/src/scrapers/sourceDispatch.ts', import.meta.url),
+    'utf8',
+  );
+  const retiredBlock = dispatch.slice(dispatch.indexOf('RETIRED_SOURCE_NAMES'));
+  const retired = [
+    ...retiredBlock.slice(0, retiredBlock.indexOf('];')).matchAll(/'([a-z0-9-]+)'/g),
+  ].map((match) => match[1]);
+  assert.ok(retired.length > 10, 'expected to parse the retired source name list');
+
   const serverScripts = JSON.parse(
     await readFile(new URL('../server/package.json', import.meta.url), 'utf8'),
   ).scripts;
@@ -259,16 +273,12 @@ test('the registered-name allowance matches the colliding source and script name
 
   const containsSlugPrefix = (name) =>
     /(?:^|-)(?:nih-pi-|nsf-pi-|ysm-faculty-|faculty-research-area-)/.test(name);
-  const colliding = [...declared, ...scriptNames].filter(containsSlugPrefix);
+  const colliding = [...declared, ...retired, ...scriptNames].filter(containsSlugPrefix);
 
   for (const name of colliding) {
     assert.ok(isRegisteredName(name), `${name} collides with a person-slug prefix`);
   }
-  for (const name of [
-    'ysm-faculty-directory',
-    'nih-nsf-pi-center-lab-conflation-repair',
-    'repair-nih-nsf-pi-center-lab-conflation',
-  ]) {
+  for (const name of ['ysm-faculty-directory', 'nih-nsf-pi-center-lab-conflation-repair']) {
     assert.ok(colliding.includes(name), `${name} is no longer a registered name`);
   }
 });

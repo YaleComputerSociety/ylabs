@@ -128,15 +128,6 @@ export const sourceCoverageRegistry = {
     notes:
       "LLM synthesis over a research home's already-harvested evidence to fill a coverage gap it can support. Emits description fields only, never access, route or opportunity evidence.",
   },
-  'nih-nsf-pi-center-lab-conflation-repair': {
-    priority: 3,
-    tier: 'DERIVED_OFFICIAL',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['ENTITY_IDENTITY'],
-    defaultConfidence: 'LOW',
-    notes:
-      'Separates a grant-derived shell that conflated a principal investigator, a centre and a laboratory into one row. Records the corrected identity it can support from the grant record itself.',
-  },
   'visibility-repair-queue': {
     priority: 3,
     tier: 'DERIVED_OFFICIAL',

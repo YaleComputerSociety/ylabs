@@ -38,6 +38,12 @@ export const RETIRED_SOURCE_NAMES: string[] = [
   // Superseded by 'lab-microsite-description-llm' and 'lab-microsite-undergrad-llm'.
   'lab-microsite-llm',
   'ylabs-listing',
+  // Registered as a source but never asserted anything: 0 observations were ever written
+  // under this name. Its writer set fields directly and hand-authored `fieldProvenance`
+  // instead, leaving 18 provenance entries on 14 rows that cite a lane with no evidence
+  // behind it. Retired rather than erased, because those citations name it and the row is
+  // kept for audit (#3765).
+  'nih-nsf-pi-center-lab-conflation-repair',
   // One-time local JSON imports; the import path no longer exists.
   'root-yale-history-faculty-json',
   'root-yale-medicine-labs-json',
@@ -68,8 +74,6 @@ export const SCRIPT_DRIVEN_SOURCE_OWNERS: Record<string, string> = {
     'yarn --cwd server research-homes:backfill-school-from-profile-host',
   'school-host-mismatch-backfill': 'yarn --cwd server research-homes:backfill-school-host-mismatch',
   'coverage-synthesis-llm': 'yarn --cwd server research-entity:coverage-synthesis',
-  'nih-nsf-pi-center-lab-conflation-repair':
-    'yarn --cwd server research-homes:repair-nih-nsf-pi-center-lab-conflation',
   'visibility-repair-queue': 'yarn --cwd server beta:repair-queue',
   // Not operator-invoked: the materializer records it while projecting any row, so the
   // "command" is a materialize of that row rather than a lane an operator can run.

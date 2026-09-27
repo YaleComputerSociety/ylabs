@@ -529,15 +529,6 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
-    name: 'nih-nsf-pi-center-lab-conflation-repair',
-    displayName: 'NIH/NSF PI-centre-lab conflation repair',
-    description:
-      'Separates a grant-derived shell that conflated a principal investigator, a centre and a laboratory into one row. Records the corrected identity it can support from the grant record itself.',
-    baseUrl: '',
-    defaultWeight: 0.6,
-    cadence: 'monthly',
-  },
-  {
     name: 'visibility-repair-queue',
     displayName: 'Visibility repair queue',
     description:
