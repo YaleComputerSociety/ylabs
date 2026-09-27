@@ -1,4 +1,5 @@
 import fs from 'fs';
+import mongoose from 'mongoose';
 import os from 'os';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
@@ -22,6 +23,17 @@ describe('repairArchivedEntityArtifacts CLI helpers', () => {
         toString: () => '507f1f77bcf86cd799439011',
       }),
     ).toBeUndefined();
+    expect(
+      normalizeArchivedArtifactObjectId({
+        toHexString: () => '507f1f77bcf86cd799439011',
+      }),
+    ).toBeUndefined();
+    expect(normalizeArchivedArtifactObjectId('zzzzzzzzzzzzzzzzzzzzzzzz')).toBeUndefined();
+    expect(normalizeArchivedArtifactObjectId(507)).toBeUndefined();
+    expect(normalizeArchivedArtifactObjectId(null)).toBeUndefined();
+    expect(
+      normalizeArchivedArtifactObjectId(new mongoose.Types.ObjectId('507f1f77bcf86cd799439011')),
+    ).toBe('507f1f77bcf86cd799439011');
   });
 
   it('parses dry-run/apply safety and output flags', () => {
