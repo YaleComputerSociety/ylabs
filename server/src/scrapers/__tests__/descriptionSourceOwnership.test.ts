@@ -162,3 +162,37 @@ describe('citersAreOneSubject', () => {
     expect(citersAreOneSubject(['Flavell Lab'])).toBe(true);
   });
 });
+
+describe('a citer map with unresolved names refuses everything (#3481)', () => {
+  it('is why a loader must populate names, not just keys', () => {
+    // The ingest loader first shipped building the citer map with empty names, because
+    // the key alone was enough to dedupe. citersAreOneSubject treats a nameless citer as
+    // unprovable and therefore as a DIFFERENT subject, so empty names refuse every
+    // multi-citer description rather than only the ones a page cannot be about. This
+    // test exists so that regression fails here rather than in the corpus.
+    expect(citersAreOneSubject(['', '', ''])).toBe(false);
+    expect(
+      refusesDescriptionOnSharedPage(
+        {
+          entityType: OWNERSHIP_GUARDED_ENTITY_TYPE,
+          field: 'fullDescription',
+          sourceUrl: 'https://proberlab.yale.edu/research',
+          ownName: '',
+        },
+        ['', ''],
+      ),
+    ).toBe(true);
+    // With the names resolved, the same page and the same citers are one subject.
+    expect(
+      refusesDescriptionOnSharedPage(
+        {
+          entityType: OWNERSHIP_GUARDED_ENTITY_TYPE,
+          field: 'fullDescription',
+          sourceUrl: 'https://proberlab.yale.edu/research',
+          ownName: 'The Prober Lab',
+        },
+        ['Prober Lab', 'Prober Lab'],
+      ),
+    ).toBe(false);
+  });
+});

@@ -438,9 +438,25 @@ async function loadForeignDescriptionCiters(
     const key = entityKeyForProse(row);
     if (!key) continue;
     const existing = byUrl.get(url) ?? new Map<string, string>();
-    // Name resolved below in one batch; the key is enough to dedupe citers here.
     if (!existing.has(key)) existing.set(key, '');
     byUrl.set(url, existing);
+  }
+
+  // Names, resolved once for the whole batch. Subject identity is decided from them, and
+  // `citersAreOneSubject` treats a nameless citer as unprovable and therefore as a
+  // different subject - so leaving these empty would refuse EVERY multi-citer
+  // description rather than only the ones a page cannot be about (#3481).
+  const citerKeys = [...new Set([...byUrl.values()].flatMap((citers) => [...citers.keys()]))];
+  if (citerKeys.length > 0) {
+    const nameByKey = new Map<string, string>();
+    for (const row of await researchEntityNameRows(citerKeys)) {
+      const label = String((row as any).displayName || (row as any).name || '');
+      nameByKey.set(String((row as any).slug), label);
+      nameByKey.set(String((row as any)._id), label);
+    }
+    for (const citers of byUrl.values()) {
+      for (const key of [...citers.keys()]) citers.set(key, nameByKey.get(key) ?? '');
+    }
   }
   return byUrl;
 }
