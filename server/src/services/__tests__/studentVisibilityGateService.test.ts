@@ -25,6 +25,7 @@ import {
   RESEARCH_HOME_URL_INDEX_AUTHORITY_SOURCE_NAMES,
   runStudentVisibilityGateForPlans,
   selectDuplicateGroupSurvivorEntityIds,
+  exactDuplicateUrlGroups,
   selectExactUrlDuplicateRiskEntityIds,
   type StudentVisibilityGatePlan,
 } from '../studentVisibilityGateService';
@@ -407,6 +408,75 @@ describe('studentVisibilityGateService', () => {
       const ids = selectExactUrlDuplicateRiskEntityIds([aliasingCanonical, ...shells]);
 
       expect([...ids].sort()).toEqual(['b-shell', 'c-shell', 'd-shell', 'e-shell']);
+    });
+
+    const scholarCitingRow = (id: string, scholarUrl: string) => ({
+      _id: id,
+      slug: `${id}-slug`,
+      name: `${id} Faculty Research`,
+      entityType: 'FACULTY_RESEARCH_AREA',
+      sourceUrls: [scholarUrl],
+    });
+
+    it('does not group rows citing different Google Scholar profiles (#3624)', () => {
+      const ids = selectExactUrlDuplicateRiskEntityIds([
+        scholarCitingRow('first', 'https://scholar.google.com/citations?user=AAAA1111&hl=en'),
+        scholarCitingRow('second', 'https://scholar.google.com/citations?user=BBBB2222'),
+        scholarCitingRow(
+          'third',
+          'https://scholar.google.com/citations?hl=en&user=CCCC3333&view_op=list_works',
+        ),
+      ]);
+
+      expect([...ids]).toEqual([]);
+    });
+
+    it('still groups rows citing the same Google Scholar profile under different tracking params', () => {
+      const groups = exactDuplicateUrlGroups([
+        scholarCitingRow('first', 'https://scholar.google.com/citations?user=AAAA1111&hl=en'),
+        scholarCitingRow(
+          'second',
+          'http://scholar.google.com/citations?view_op=list_works&user=AAAA1111#top',
+        ),
+      ]);
+
+      expect(groups.map((group) => group.url)).toEqual([
+        'https://scholar.google.com/citations?user=AAAA1111',
+      ]);
+    });
+
+    it('never groups on a Scholar citations page that names no profile', () => {
+      const groups = exactDuplicateUrlGroups([
+        scholarCitingRow('first', 'https://scholar.google.com/citations?hl=en'),
+        scholarCitingRow('second', 'https://scholar.google.com/citations'),
+      ]);
+
+      expect(groups).toEqual([]);
+    });
+
+    it('does not group unrelated rows on a school-level research or opportunities landing page', () => {
+      const citing = (id: string, url: string) => ({
+        _id: id,
+        slug: `${id}-slug`,
+        name: `${id} Lab`,
+        entityType: 'LAB',
+        sourceUrls: [url],
+      });
+      const groups = exactDuplicateUrlGroups([
+        citing('art-a', 'https://www.art.yale.edu/opportunities'),
+        citing('art-b', 'https://art.yale.edu/opportunities/'),
+        citing('ysm-a', 'https://medicine.yale.edu/research'),
+        citing('ysm-b', 'https://medicine.yale.edu/research/'),
+        citing('lab-a', 'https://medicine.yale.edu/lab/example/research'),
+        citing('lab-b', 'https://medicine.yale.edu/lab/example/research/'),
+        citing('own-a', 'https://examplelab.yale.edu/research'),
+        citing('own-b', 'https://examplelab.yale.edu/research'),
+      ]);
+
+      expect(groups.map((group) => group.url).sort()).toEqual([
+        'https://examplelab.yale.edu/research',
+        'https://medicine.yale.edu/lab/example/research',
+      ]);
     });
   });
 

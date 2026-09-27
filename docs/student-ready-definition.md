@@ -95,6 +95,13 @@ The lane's own completion check has to ask the same question for the same reason
 Yield is small and worth quoting honestly: widening the filter took the candidate set from 279 to 438 rows and one apply run resolved 3 of them, 2 of which the gate then released to students.
 The durable gain is reach rather than that run's count, because the lane now covers 126 of the 131 sole-`missing_lead` rows instead of leaving a permanent hole under them.
 
+### Which citations can group rows
+
+Normalization clears the query string, because it is usually tracking, except where the query string is the page's identity: a Google Scholar `citations` URL keeps its `user` parameter, so two rows citing different people's profiles no longer fold into one group, while the same profile under different tracking parameters still does.
+A Scholar `citations` URL with no `user` names no profile and never groups.
+A school site's bare `/research` or `/opportunities` page (a host in `SCHOOL_PROFILE_HOSTS`, path exactly one segment) is a landing or listing page that unrelated research cites, so it is not a duplicate signal; a lab's own page with that word deeper in its path still groups.
+Measured on Development on 2026-09-27 over the gate's own groups, this dissolved exactly three groups (the Scholar `citations` group, the School of Art `/opportunities` group, and the School of Medicine `/research` group), created none, and cleared `exact_url_duplicate_risk` from 6 rows, 2 of which the gate then promotes (#3624).
+
 ### Which row is canonical when several cite one URL
 
 `exact_url_duplicate_risk` does not judge a row on its own: it groups rows by normalized citation and flags everyone except the group's canonical, so the canonical choice decides which of the colliding rows a student can reach.
