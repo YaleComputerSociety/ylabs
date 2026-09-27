@@ -16,6 +16,7 @@ import { getMeiliIndex } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { dropDomainIncoherentUnsourcedResearchAreas } from '../utils/researchAreaDomainCoherence';
+import { withoutMeshSourcedGeographicResearchAreas } from '../scrapers/utils/meshGeographicDescriptors';
 import {
   isSyntheticResearchHomeMetadataDescription,
   revoiceFirstPersonResearchLead,
@@ -493,7 +494,7 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
 
   if (Array.isArray(out.researchAreas)) {
     const coherentAreas = dropDomainIncoherentUnsourcedResearchAreas(
-      out.researchAreas,
+      withoutMeshSourcedGeographicResearchAreas(out.researchAreas, out.fieldProvenance),
       out.fieldProvenance,
       {
         name: out.name,

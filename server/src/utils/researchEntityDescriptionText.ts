@@ -13,6 +13,7 @@ import { normalizeResearchAreaList } from './researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from './researchAreaLabelHygiene';
 import { filterProseResearchAreaChips } from './profileResearchTerms';
 import { dropDomainIncoherentUnsourcedResearchAreas } from './researchAreaDomainCoherence';
+import { withoutMeshSourcedGeographicResearchAreas } from '../scrapers/utils/meshGeographicDescriptors';
 import { isCareerFactSentence, splitDescriptionSentences } from './careerBiographyDescription';
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 import {
@@ -3088,7 +3089,10 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
       LEAD_GUARD_WITHHELD_PROSE
     ];
     const coherent = dropDomainIncoherentUnsourcedResearchAreas(
-      next.researchAreas as string[],
+      withoutMeshSourcedGeographicResearchAreas(
+        next.researchAreas as string[],
+        next.fieldProvenance,
+      ),
       next.fieldProvenance,
       {
         name: next.name,
