@@ -48,6 +48,12 @@ Each manual-only source records its reason next to its name in `runScraperSweep.
 - `undergrad-research-posting` can never acquire today, because its only configured page never existed and no official public Yale page publishes postings in the shape it reads, so its page list is empty (#3550).
   Development holds 5 runs for it, all `failure` with 0 observations, so every sweep failed it on the barren-streak guard below (#3553).
   It returns to the research sweep when a real page is configured, and #3551 tracks a possible replacement source.
+- `lab-microsite-undergrad-llm` is not precise enough to refresh automatically (#3636).
+  #3569 measured its served `undergradEvidenceQuote` badge precision at 18/50 = 0.36 (95% Wilson interval 0.24 to 0.50) and its grounding precision at 18/38 = 0.47.
+  19 of those 50 quotes are an absence note the model wrote rather than text from a page, and that shape matches 299 of the 925 rows the lane serves, so the student-facing badge was withdrawn (#3607).
+  It is also the slowest lane: about 4 to 19 labs per minute over 4,808 labs projects to 15 to 20 hours of a sweep, and it was deferred from the 2026-09-26 sweep by operator decision.
+  Leaving the sweep also stops its description emits refreshing automatically; a manual run still refreshes both.
+  It returns to the research sweep when #3592 (the quote must appear on a fetched page) lands and a re-measure with `yarn --cwd server journey:eval --case=undergrad-evidence-quote-precision` clears the #3569 thresholds.
 
 `department-undergrad-research` dual-writes (its `program` records materialize as `Fellowship` while its `lab` records materialize as `ResearchEntity` access-evidence); it lives in the research engine because access-evidence is research-side.
 The registered sources in each engine are grouped into ordered phases that run in sequence in the order the phases first appear in the manifest: `identity`, `discovery`, `funding`, `relationships`, and `content-access`.
@@ -127,6 +133,7 @@ The preflight has two checks, and either failing stops the sweep before any sour
 
 A canary cannot catch a failure that only appears at full scale, such as the `official-profile-pi-backfill` observation sort that overflowed memory on the whole corpus (#3543).
 On a resume the canary covers only the sources the checkpoint does not already record as `done`.
+The canary list is the sweep manifest, so a manual-only source is never canaried.
 
 #### Checkpoint, resume, and structured logging
 
