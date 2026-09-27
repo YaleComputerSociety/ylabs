@@ -219,6 +219,23 @@ describe("a merged survivor's own lab-identity lane owns its website (#3585)", (
     expect(await storedWebsiteUrl(survivor._id)).toBe(LOSER_LAB_URL);
   });
 
+  it('clears a loser-only legacy website even when websiteUrl is locked', async () => {
+    const survivor = await seedMergedSurvivor({
+      website: LOSER_LAB_URL,
+      manuallyLockedFields: ['websiteUrl'],
+    });
+    await seedObservation(LOSER_SLUG, 'website', LOSER_LAB_URL, 'dept-faculty-roster');
+
+    await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
+
+    const stored = await ResearchEntity.findById(survivor._id).lean<{
+      website?: string;
+      websiteUrl?: string;
+    }>();
+    expect(stored?.website ?? '').toBe('');
+    expect(stored?.websiteUrl).toBe(LOSER_LAB_URL);
+  });
+
   it('leaves a locked website alone', async () => {
     const survivor = await seedMergedSurvivor({ manuallyLockedFields: ['websiteUrl'] });
 

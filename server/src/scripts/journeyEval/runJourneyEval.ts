@@ -25,6 +25,10 @@ import {
   mergedSurvivorEvidence,
 } from '../../scrapers/entityMaterializer';
 import {
+  invalidatedScrapeRunIds,
+  partitionObservationsByInvalidatedRun,
+} from '../../scrapers/invalidatedScrapeRuns';
+import {
   websiteIdentitiesStatedBy,
   websiteIdentity,
 } from '../../scrapers/survivorOwnedWebsiteClear';
@@ -128,13 +132,17 @@ function parseArgs(argv: string[]): JourneyEvalArgs {
 async function readOwnedSlotSurvivorWebsite(
   survivor: Record<string, unknown>,
   readServedWebsiteUrl: (slug: string) => Promise<unknown>,
+  invalidatedRunIds: string[],
 ): Promise<SurvivorWebsiteObservation | null> {
   const slug = String(survivor.slug);
-  const own = await Observation.find({
-    entityType: 'researchEntity',
-    ...materializationReadScopeFilter(),
-    $or: [{ entityKey: slug }, { entityId: survivor._id }],
-  }).lean();
+  const { kept: own } = partitionObservationsByInvalidatedRun(
+    await Observation.find({
+      entityType: 'researchEntity',
+      ...materializationReadScopeFilter(),
+      $or: [{ entityKey: slug }, { entityId: survivor._id }],
+    }).lean(),
+    invalidatedRunIds,
+  );
   const merged = await mergedSurvivorEvidence('researchEntity', survivor, own);
   if (!merged.survivorLaneOwnsWebsite) return null;
   const lockedFields = Array.isArray(survivor.manuallyLockedFields)
@@ -210,11 +218,13 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
         .toArray();
       const readServedWebsiteUrl = async (slug: string) =>
         (await getResearchGroupDetail(slug))?.researchEntity?.websiteUrl;
+      const invalidatedRunIds = await invalidatedScrapeRunIds();
       const observations: SurvivorWebsiteObservation[] = [];
       for (const survivor of survivors) {
         const observation = await readOwnedSlotSurvivorWebsite(
           survivor as Record<string, unknown>,
           readServedWebsiteUrl,
+          invalidatedRunIds,
         );
         if (observation) observations.push(observation);
       }

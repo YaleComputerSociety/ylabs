@@ -115,11 +115,11 @@ import {
 import { planDirectoryGraftCitationRetraction } from './directoryGraftCitations';
 import { planRefusedStoredWebsiteUrlClear } from './refusedStoredWebsiteUrl';
 import {
-  SURVIVOR_OWNED_WEBSITE_FIELDS,
   isDroppedLoserWebsite,
   planSurvivorOwnedWebsiteClear,
   websiteIdentitiesStatedBy,
   websiteIdentity,
+  type SurvivorOwnedWebsiteField,
 } from './survivorOwnedWebsiteClear';
 import { planRefusedStoredDescriptionClears } from './refusedStoredDescription';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
@@ -5326,6 +5326,22 @@ export async function projectFromLog(
     // websiteUrl resolves after the #613 sourceUrls projection: it clears a profile-page
     // websiteUrl the entity already cites, so it has to see the projection this same pass
     // or the duplicate way-in stays live until the next materialization (issue #2352).
+    const clearLoserOnlySurvivorWebsite = (field: SurvivorOwnedWebsiteField) => {
+      const clearsLoserOnlyWebsite = planSurvivorOwnedWebsiteClear({
+        field,
+        stored: entityDoc,
+        staged: set,
+        droppedLoserValues: droppedLoserWebsiteValues,
+        lockedFields: manuallyLockedFields,
+      });
+      if (!clearsLoserOnlyWebsite) return;
+      console.log(
+        `[survivor-owned-website] cleared a ${field} only a merged-in loser's evidence backed`,
+      );
+      set[field] = '';
+      fieldsWritten++;
+    };
+    clearLoserOnlySurvivorWebsite('website');
     if (!manuallyLockedFields.includes('websiteUrl')) {
       // The vocabulary that already knows this URL is not a research home now stops
       // the write instead of only annotating an audit (#3167). It screens the
@@ -5362,21 +5378,7 @@ export async function projectFromLog(
         );
         delete set.websiteUrl;
       }
-      for (const field of SURVIVOR_OWNED_WEBSITE_FIELDS) {
-        const clearsLoserOnlyWebsite = planSurvivorOwnedWebsiteClear({
-          field,
-          stored: entityDoc,
-          staged: set,
-          droppedLoserValues: droppedLoserWebsiteValues,
-          lockedFields: manuallyLockedFields,
-        });
-        if (!clearsLoserOnlyWebsite) continue;
-        console.log(
-          `[survivor-owned-website] cleared a ${field} only a merged-in loser's evidence backed`,
-        );
-        set[field] = '';
-        fieldsWritten++;
-      }
+      clearLoserOnlySurvivorWebsite('websiteUrl');
       // Ordered ahead of the promotion deliberately: emptying the slot here lets the
       // promotion below refill it from an admissible citation on this same pass, so a
       // row trades a refused research home for its best evidenced one rather than for
