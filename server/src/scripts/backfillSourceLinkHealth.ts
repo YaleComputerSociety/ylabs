@@ -16,6 +16,8 @@ import {
 } from '../scrapers/utils/resolverCircuitBreaker';
 import {
   HOST_THROTTLE_OVERRIDES,
+  HostConcurrencyLimiter,
+  type HostSlotLimiter,
   type HostThrottle,
 } from '../scrapers/utils/hostConcurrencyLimiter';
 import {
@@ -189,8 +191,9 @@ const hostOf = (url: string): string => {
  * must not consume a host's delay.
  *
  * A host with a measured budget (`hostThrottleFor`) is the one exception to serial:
- * it gets that budget's requests in flight, with starts spaced by the larger of the
- * pace and the budget's interval. `medicine.yale.edu` holds 3,529 of the 9,052 URLs a
+ * it gets that budget's requests in flight, and every request, a probe's GET fallback
+ * and retries included, takes a slot spaced by the larger of the pace and the budget's
+ * interval. `medicine.yale.edu` holds 3,529 of the 9,052 URLs a
  * Development pass probes, at about 2 s a probe, so one-at-a-time on that host alone
  * was most of the 110-minute stage (#3568).
  */
@@ -198,7 +201,7 @@ export async function probeUncachedUrlsByHost(
   urls: readonly string[],
   healthCache: Map<string, SourceLinkHealth>,
   deps: {
-    checkLink: (url: string) => Promise<SourceLinkHealth>;
+    checkLink: (url: string, requestGate?: HostSlotLimiter) => Promise<SourceLinkHealth>;
     hostConcurrency: number;
     paceDelayMs: number;
     sleep: (ms: number) => Promise<void>;
@@ -223,9 +226,9 @@ export async function probeUncachedUrlsByHost(
   }
   if (byHost.size === 0) return;
 
-  const probe = async (url: string): Promise<void> => {
+  const probe = async (url: string, requestGate?: HostSlotLimiter): Promise<void> => {
     try {
-      const health = await deps.checkLink(url);
+      const health = await deps.checkLink(url, requestGate);
       healthCache.set(url, health);
       deps.result.checked += 1;
       // A verdict of UNAVAILABLE carrying no HTTP status is the shape a
@@ -253,22 +256,17 @@ export async function probeUncachedUrlsByHost(
   };
 
   const probeWithinBudget = async (bucket: string[], budget: HostThrottle): Promise<void> => {
-    const spacingMs = Math.max(deps.paceDelayMs, budget.minIntervalMs);
+    const requestGate = new HostConcurrencyLimiter(budget.concurrency, {
+      minIntervalMs: Math.max(deps.paceDelayMs, budget.minIntervalMs),
+      sleep: deps.sleep,
+    });
     let next = 0;
-    let startTurn: Promise<void> = Promise.resolve();
-    const awaitStartTurn = (index: number): Promise<void> => {
-      startTurn = startTurn.then(() =>
-        index > 0 && spacingMs > 0 ? deps.sleep(spacingMs) : undefined,
-      );
-      return startTurn;
-    };
     const lane = async (): Promise<void> => {
       while (next < bucket.length) {
-        const index = next;
+        const url = bucket[next];
         next += 1;
-        await awaitStartTurn(index);
         deps.resolverBreaker?.assertHealthy();
-        await probe(bucket[index]);
+        await probe(url, requestGate);
       }
     };
     await Promise.all(
@@ -297,7 +295,7 @@ export async function runSourceLinkHealthBackfill(options: {
   limit?: number;
   staleOnly?: boolean;
   checkedBefore?: Date;
-  checkLink?: (url: string) => Promise<SourceLinkHealth>;
+  checkLink?: (url: string, requestGate?: HostSlotLimiter) => Promise<SourceLinkHealth>;
   /**
    * Page size, overridable only so a test can cross a page boundary without seeding
    * a full page of rows. Not a CLI flag: an operator has no reason to tune it.

@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from '../utils/ssrfGuard';
 import { DEFAULT_RETRYABLE_STATUSES } from '../scrapers/utils/httpFetch';
+import { type HostSlotLimiter, withHostSlot } from '../scrapers/utils/hostConcurrencyLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   isDepartmentRosterProvenanceUrl,
@@ -394,7 +395,10 @@ function probeResultForBlockedUrl(error: unknown): SourceLinkProbeResult {
   return { errorCode, ...(privateAddressHost ? { privateAddressHost: true } : {}) };
 }
 
-export async function probeSourceLink(url: string): Promise<SourceLinkProbeResult> {
+export async function probeSourceLink(
+  url: string,
+  requestGate?: HostSlotLimiter,
+): Promise<SourceLinkProbeResult> {
   let safeUrl: URL;
   try {
     safeUrl = await assertPublicHttpUrl(url);
@@ -404,17 +408,20 @@ export async function probeSourceLink(url: string): Promise<SourceLinkProbeResul
 
   const requestedUrl = safeUrl.toString();
   const agents = ssrfSafeAgents();
-  const request = (method: 'HEAD' | 'GET') =>
-    axios.request({
-      url: requestedUrl,
-      method,
-      maxRedirects: 5,
-      timeout: PROBE_TIMEOUT_MS,
-      httpAgent: agents.httpAgent,
-      httpsAgent: agents.httpsAgent,
-      responseType: method === 'GET' ? 'stream' : 'json',
-      validateStatus: () => true,
-    });
+  const request = (method: 'HEAD' | 'GET') => {
+    const send = () =>
+      axios.request({
+        url: requestedUrl,
+        method,
+        maxRedirects: 5,
+        timeout: PROBE_TIMEOUT_MS,
+        httpAgent: agents.httpAgent,
+        httpsAgent: agents.httpsAgent,
+        responseType: method === 'GET' ? 'stream' : 'json',
+        validateStatus: () => true,
+      });
+    return requestGate ? withHostSlot(requestedUrl, send, requestGate) : send();
+  };
 
   // `responseUrl`, lower-case `u`, is what `follow-redirects` sets on the Node
   // IncomingMessage. `responseURL` is the browser XHR spelling and is ALWAYS
@@ -485,8 +492,11 @@ export async function probeSourceLink(url: string): Promise<SourceLinkProbeResul
   return result;
 }
 
-export async function checkSourceLinkHealth(url: string): Promise<SourceLinkHealth> {
-  return classifySourceLinkHealth(await probeSourceLink(url));
+export async function checkSourceLinkHealth(
+  url: string,
+  requestGate?: HostSlotLimiter,
+): Promise<SourceLinkHealth> {
+  return classifySourceLinkHealth(await probeSourceLink(url, requestGate));
 }
 
 /**

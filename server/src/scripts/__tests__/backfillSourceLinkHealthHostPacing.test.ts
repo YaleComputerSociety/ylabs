@@ -4,7 +4,7 @@
  * URLs each returned `200` when re-probed individually. The run was rate-limiting
  * itself, so ~400 verdicts degraded on request pattern alone (#2664).
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY,
   DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS,
@@ -12,6 +12,7 @@ import {
   probeUncachedUrlsByHost,
 } from '../backfillSourceLinkHealth';
 import type { SourceLinkHealth } from '../../services/sourceLinkHealth';
+import type { HostSlotLimiter } from '../../scrapers/utils/hostConcurrencyLimiter';
 
 const healthy = (): SourceLinkHealth => ({ healthStatus: 'HEALTHY' });
 
@@ -181,22 +182,48 @@ describe('probeUncachedUrlsByHost', () => {
   });
 
   describe('a host with a measured budget (#3568)', () => {
-    const slowHarness = () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const slowHarness = (requestDurationsMs: readonly number[] = [1_000]) => {
       const h = harness();
       const inFlightByHost = new Map<string, number>();
+      const requestStartsByHost = new Map<string, number[]>();
       return {
         ...h,
-        checkLink: async (url: string) => {
+        requestStartsByHost,
+        sleep: (ms: number) => {
+          h.sleeps.push(ms);
+          return new Promise<void>((resolve) => setTimeout(resolve, ms));
+        },
+        checkLink: async (url: string, requestGate?: HostSlotLimiter) => {
           const host = new URL(url).hostname;
-          const next = (inFlightByHost.get(host) ?? 0) + 1;
-          inFlightByHost.set(host, next);
-          h.maxInFlightByHost.set(host, Math.max(h.maxInFlightByHost.get(host) ?? 0, next));
           h.order.push(url);
-          await new Promise((resolve) => setTimeout(resolve, 5));
-          inFlightByHost.set(host, (inFlightByHost.get(host) ?? 1) - 1);
+          for (const durationMs of requestDurationsMs) {
+            const release = requestGate ? await requestGate.acquire(host) : () => undefined;
+            requestStartsByHost.set(host, [...(requestStartsByHost.get(host) ?? []), Date.now()]);
+            const next = (inFlightByHost.get(host) ?? 0) + 1;
+            inFlightByHost.set(host, next);
+            h.maxInFlightByHost.set(host, Math.max(h.maxInFlightByHost.get(host) ?? 0, next));
+            await new Promise((resolve) => setTimeout(resolve, durationMs));
+            inFlightByHost.set(host, (inFlightByHost.get(host) ?? 1) - 1);
+            release();
+          }
           return healthy();
         },
       };
+    };
+
+    const gapsBetween = (starts: readonly number[]): number[] =>
+      starts.slice(1).map((at, i) => at - starts[i]);
+
+    const runToCompletion = async (probing: Promise<void>): Promise<void> => {
+      await vi.runAllTimersAsync();
+      await probing;
     };
 
     it('probes the budgeted host at its concurrency and every other host one at a time', async () => {
@@ -206,54 +233,88 @@ describe('probeUncachedUrlsByHost', () => {
         ...Array.from({ length: 6 }, (_, i) => `https://one.yale.edu/${i}`),
       ];
 
-      await probeUncachedUrlsByHost(urls, new Map(), {
-        checkLink: h.checkLink,
-        hostConcurrency: 4,
-        paceDelayMs: 250,
-        sleep: h.sleep,
-        result: h.result,
-        hostThrottleFor: measuredHostBudget,
-      });
+      await runToCompletion(
+        probeUncachedUrlsByHost(urls, new Map(), {
+          checkLink: h.checkLink,
+          hostConcurrency: 4,
+          paceDelayMs: 250,
+          sleep: h.sleep,
+          result: h.result,
+          hostThrottleFor: measuredHostBudget,
+        }),
+      );
 
       expect(h.maxInFlightByHost.get('medicine.yale.edu')).toBe(2);
       expect(h.maxInFlightByHost.get('one.yale.edu')).toBe(1);
       expect(h.result.checked).toBe(12);
-      expect(h.sleeps.filter((ms) => ms === 400)).toHaveLength(5);
-      expect(h.sleeps.filter((ms) => ms === 250)).toHaveLength(5);
+      const medicineGaps = gapsBetween(h.requestStartsByHost.get('medicine.yale.edu') ?? []);
+      expect(medicineGaps).toHaveLength(5);
+      expect(medicineGaps.every((gap) => gap >= 400)).toBe(true);
+      expect(gapsBetween(h.requestStartsByHost.get('one.yale.edu') ?? [])).toEqual([
+        1_250, 1_250, 1_250, 1_250, 1_250,
+      ]);
     });
 
     it('never spaces a budgeted host tighter than the pace', async () => {
       const h = slowHarness();
 
-      await probeUncachedUrlsByHost(
-        Array.from({ length: 3 }, (_, i) => `https://medicine.yale.edu/lab/${i}/`),
-        new Map(),
-        {
-          checkLink: h.checkLink,
-          hostConcurrency: 4,
-          paceDelayMs: 900,
-          sleep: h.sleep,
-          result: h.result,
-          hostThrottleFor: measuredHostBudget,
-        },
+      await runToCompletion(
+        probeUncachedUrlsByHost(
+          Array.from({ length: 3 }, (_, i) => `https://medicine.yale.edu/lab/${i}/`),
+          new Map(),
+          {
+            checkLink: h.checkLink,
+            hostConcurrency: 4,
+            paceDelayMs: 900,
+            sleep: h.sleep,
+            result: h.result,
+            hostThrottleFor: measuredHostBudget,
+          },
+        ),
       );
 
-      expect(h.sleeps).toEqual([900, 900]);
+      expect(gapsBetween(h.requestStartsByHost.get('medicine.yale.edu') ?? [])).toEqual([900, 900]);
+    });
+
+    it('spaces every request of a probe, not only its start', async () => {
+      const h = slowHarness([50, 1_000]);
+
+      await runToCompletion(
+        probeUncachedUrlsByHost(
+          Array.from({ length: 3 }, (_, i) => `https://medicine.yale.edu/lab/${i}/`),
+          new Map(),
+          {
+            checkLink: h.checkLink,
+            hostConcurrency: 4,
+            paceDelayMs: 250,
+            sleep: h.sleep,
+            result: h.result,
+            hostThrottleFor: measuredHostBudget,
+          },
+        ),
+      );
+
+      const gaps = gapsBetween(h.requestStartsByHost.get('medicine.yale.edu') ?? []);
+      expect(gaps).toHaveLength(5);
+      expect(gaps.every((gap) => gap >= 400)).toBe(true);
+      expect(h.maxInFlightByHost.get('medicine.yale.edu')).toBe(2);
     });
 
     it('stays serial on every host when no budget is supplied', async () => {
       const h = slowHarness();
 
-      await probeUncachedUrlsByHost(
-        Array.from({ length: 4 }, (_, i) => `https://medicine.yale.edu/lab/${i}/`),
-        new Map(),
-        {
-          checkLink: h.checkLink,
-          hostConcurrency: 4,
-          paceDelayMs: 0,
-          sleep: h.sleep,
-          result: h.result,
-        },
+      await runToCompletion(
+        probeUncachedUrlsByHost(
+          Array.from({ length: 4 }, (_, i) => `https://medicine.yale.edu/lab/${i}/`),
+          new Map(),
+          {
+            checkLink: h.checkLink,
+            hostConcurrency: 4,
+            paceDelayMs: 0,
+            sleep: h.sleep,
+            result: h.result,
+          },
+        ),
       );
 
       expect(h.maxInFlightByHost.get('medicine.yale.edu')).toBe(1);
