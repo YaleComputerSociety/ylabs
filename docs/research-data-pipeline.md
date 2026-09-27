@@ -855,7 +855,7 @@ The `disabled` outcome is also stated in the materialize log rather than passed 
 2. `departmentRosterHealth` observations are the reconciler's only input, and there were **0** in Beta and Production and **1** in Development when this was measured on 2026-09-05.
 `departmentRosterScraper` emits one per configured department per run, so the input appears only after a roster sweep.
 **That gate has since opened on Development**: on 2026-09-22 it holds 125 live roster-health observations across 12 runs, so enabling the lane now reaches live rows where it provably could not before.
-Since #3251 a snapshot also records what its lane read, in `read: { pagesRead, readMode, cacheAllowed, readAt }`, and a snapshot whose run recorded no read is not authoritative.
+Since #3251 a snapshot also records what its lane read, in `read: { pagesRead, readMode, cacheAllowed, pagesReusedWithinSweep, readAt }` (the last since #3568), and a snapshot whose run recorded no read is not authoritative.
 Read that before believing a plan.
 The run-level `fetchMetrics` is not a substitute and was not one before either: only the rendered-browser branch pushed an attempt, so a run whose 112 HTML lanes each fetched reported `summary.total: 0`, and that zero was read once as "the fetch layer was never entered".
 Every snapshot written before #3251 classifies as `unrecorded` and governs nothing until a roster run supersedes it.
