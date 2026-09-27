@@ -234,6 +234,7 @@ Expected collections:
 Audit focus:
 
 - Quotes are real and traceable to `sourceUrl`/`quoteSourceUrl`.
+The lane now enforces this for its own quote fields, so a nonzero `quotesNotOnPage` in the run report is the model paraphrasing, and each one was dropped rather than stored.
 - LLM evidence remains low-trust and conservative.
 - No access signal overstates availability from a generic join page.
 - Direct emails and phone numbers are redacted from public quote/excerpt fields unless a guarded contact policy explicitly allows display.
