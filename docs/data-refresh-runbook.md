@@ -2,14 +2,16 @@
 
 Status: canonical operator runbook
 
-Last updated: 2026-09-18
+Last updated: 2026-09-27
 
 ## Purpose
 
 Use this runbook to refresh Yale research data without confusing Development, Beta, and Production targets.
-The local machine performs network fetches, which do not require Yale VPN.
-The Beta Render service performs Beta materialization and Beta Meilisearch synchronization.
-Production receives data only through the guarded accepted-Beta promotion.
+Scraper sweeps run only against Development, from the local machine, and need no Yale VPN.
+Beta receives the accepted Development dataset only through the guarded `beta:refresh-from-development` mirror.
+Production receives data only through the guarded accepted-Beta promotion, `production:promote-beta-copy`.
+Each promotion is followed by a re-gate and a search reindex on its target, run from that environment's Render shell.
+The scrape CLI refuses any `run`, `cron`, or `materialize` write against Beta or Production, and `docs/decisions.md` records why (2026-09-27).
 
 ## Source Reachability Preflight
 
@@ -68,7 +70,7 @@ The replacement operator should:
 1. Confirm their access to GitHub, Render, MongoDB Atlas, and Meilisearch.
 2. Start Development infrastructure and complete the one-record reachability preflight.
 3. Run a bounded Development scrape and verify the local application and local search.
-4. Run a bounded Beta dry-run, identify the saved artifact and `run.id`, and explain where Beta materialization occurs.
+4. Run the Development-to-Beta mirror dry-run, read its plan, and explain why Beta is never scraped directly.
 5. Walk through the Production dry-run, restore-point, search, and smoke gates without applying the Production promotion.
 
 Never store personal Yale credentials for a scheduled job.
@@ -78,56 +80,51 @@ A hosted scraping runner still needs four things this runbook does not yet descr
 - The `renderedFetch` toolchain, which shells out to `scraplingBridge.py` and needs python3, Scrapling, and a browser in the image. Five sources depend on it, including `dept-faculty-roster` and `centers-institutes-index`.
 - A home for the one hand-placed input directory that `undergrad-fellowships-recipients` reads.
 - MongoDB Atlas access-list entries for the runner's egress addresses, which means the runner needs stable outbound addressing.
-- A decision about which environment a hosted fetch writes to, since `beta:refresh-from-development` and a Beta-hosted fetch would overwrite each other.
+- Development credentials only, because a hosted fetch writes to Development like every other sweep.
 
 Until that runner exists, use a semester calendar reminder and this operator checklist rather than an unattended scraping cron.
-Render automation remains appropriate for materialization, Meilisearch synchronization, and gates.
+Render automation remains appropriate for Beta and Production re-gating, Meilisearch reindexing, and read-only gates.
 
-## Environment Sizing and Where the Release Candidate Is Built
+## The Model: Sweep Development, Promote Everything Else
 
-Development holds a representative sample for script and scraper testing and dry runs, not a full copy of the dataset.
-The full release candidate is built and run at scale on Beta.
-This keeps two full copies of the roughly one million document dataset out of Development and Beta at the same time, which matters on a constrained Atlas tier.
-
-Under this model Development proves correctness and Beta is the single full-scale environment.
+Development is the only environment a scraper writes to.
+Every sweep, bounded or exhaustive, runs there and materializes there, and every stored-data fix is applied and verified there.
+Beta and Production never fetch anything: each receives whole-collection copies of an accepted upstream environment, then re-gates and reindexes.
 
 Development responsibilities:
 
 - Validate scraper and script logic with bounded runs such as `scrape:development:all:plan` and `scrape:development:all:sample`.
-- Keep every registered source and representative edge cases present so a dry run is trustworthy.
-- Stay disposable and cheap to reset.
+- Run the full or incremental exhaustive sweep that produces the release candidate, with its post-run gates.
+- Hold the evidence log, because `observations` stay in Development.
 
 Beta responsibilities:
 
-- Run the full exhaustive release-candidate fetch at scale with `scrape:beta:all:fetch`.
-- Materialize, gate, and audit the accepted dataset as described in Phase 3.
+- Receive the accepted Development dataset through `beta:refresh-from-development`, as described in Phase 2.
+- Re-gate, reindex, audit, and serve the candidate for human review, as described in Phase 3.
 - Serve as the accepted source for the guarded Beta to Production promotion.
 
-Tradeoffs this model accepts:
+Production responsibilities:
 
-- The Beta fetch repeats network work already done in a prior Development sweep rather than reusing it.
-- Development validates correctness rather than scale, so scale and query-cost review happens on Beta and ProductionCopy.
-- Development must stay representative enough that a passing dry run is trustworthy, so keep the full source list rather than trimming to a tiny subset.
+- Receive the accepted Beta dataset through `production:promote-beta-copy`, as described in Phase 4.
+- Rebuild search and pass the smoke gate, as described in Phase 5.
 
-The alternative model runs the full exhaustive sweep on Development and mirrors the accepted result up with `beta:refresh-from-development`.
-Choose it when running the Yale fetch once and copying the result is worth keeping the swept dataset in Development.
-The mirror no longer implies a second full copy: it leaves the evidence log behind, so it moves about 23,000 documents rather than 436,026.
+The mirror and the promotion leave the evidence log behind, so each moves about 23,000 documents rather than 436,026.
 See "Observations stay in Development" below for what that costs on the target.
-Phase 1 below documents that optional full Development sweep, and Phase 2 documents the primary Beta release-candidate fetch.
+
+A scrape against Beta or Production is refused by the CLI rather than documented as an alternative.
+Two write paths into one environment overwrite each other, and a Beta that was scraped directly holds evidence that Development, the only environment anyone measures, has never seen.
 
 ## Fixed Environment Responsibilities
 
-| Environment | MongoDB                      | Meilisearch                               | Responsibility                                                                         |
-| ----------- | ---------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------- |
-| Development | Atlas `Development` database | Local Docker                              | Representative-sample script and scraper testing, dry runs, and disposable experiments |
-| Beta        | Atlas `Beta` database        | Render private service with `beta` prefix | Clean staging candidate and human audit                                                |
-| Production  | Atlas `Production` database  | Render private service with `prod` prefix | Accepted live data only                                                                |
+| Environment | MongoDB                      | Meilisearch                               | Responsibility                                                                |
+| ----------- | ---------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------- |
+| Development | Atlas `Development` database | Local Docker                              | Every scraper sweep, materialization, data repair, and disposable experiment |
+| Beta        | Atlas `Beta` database        | Render private service with `beta` prefix | Mirrored staging candidate and human audit                                    |
+| Production  | Atlas `Production` database  | Render private service with `prod` prefix | Accepted live data only                                                       |
 
-Development data may be promoted into Beta only through the guarded research-data mirror described below.
+Development data reaches Beta only through the guarded research-data mirror described below.
 The mirror replaces approved research and evidence collections while preserving Beta operational collections and sanitizing copied account state.
-The tested scraper code may instead be rerun against Beta from the local machine when a source-level refresh is required.
-The local Beta run writes observations only.
-The Beta Render service materializes those observations by run ID and updates its private Meilisearch indexes.
+Beta data reaches Production only through the guarded accepted-Beta promotion.
 
 ### Observations stay in Development
 
@@ -164,22 +161,18 @@ Copied telemetry would attribute one environment's student behavior to another, 
 
 ## Where Each Step Runs
 
-| Step                                     | Execution location              | MongoDB target                     | Meilisearch target              |
-| ---------------------------------------- | ------------------------------- | ---------------------------------- | ------------------------------- |
-| Development scrape and test              | Local machine, any network      | Atlas `Development`                | Local Docker `researchentities` |
-| Beta fetch                               | Local machine, any network      | Atlas `Beta`                       | None                            |
-| Beta materialization and search rebuild  | Beta Render shell               | Atlas `Beta`                       | `beta_researchentities`         |
-| Beta-to-Production promotion             | Local approved operator machine | Atlas `Beta` to Atlas `Production` | None                            |
-| Production search rebuild and smoke test | Production Render shell         | Atlas `Production`                 | `prod_researchentities`         |
+| Step                                             | Execution location              | MongoDB target                            | Meilisearch target              |
+| ------------------------------------------------ | ------------------------------- | ----------------------------------------- | ------------------------------- |
+| Development sweep, repair, and gates             | Local machine, any network      | Atlas `Development`                       | Local Docker `researchentities` |
+| Development-to-Beta mirror                       | Local approved operator machine | Atlas `Development` to Atlas `Beta`       | None                            |
+| Beta re-gate, reindex, and audit                 | Beta Render shell               | Atlas `Beta`                              | `beta_researchentities`         |
+| Beta-to-Production promotion                     | Local approved operator machine | Atlas `Beta` to Atlas `Production`        | None                            |
+| Production re-gate, reindex, and smoke test      | Production Render shell         | Atlas `Production`                        | `prod_researchentities`         |
 
-Complete the Development and Beta steps for each source.
-Promote to Production only once, after every accepted source has been materialized and audited in Beta.
-Development is the local iteration environment.
-Beta is the staging environment, and its network fetch still runs locally rather than on Beta Render.
-The local Beta fetch writes observations to Atlas Beta without touching Meilisearch.
-The Beta Render shell materializes those observations and updates Beta Meilisearch.
-The Beta-to-Production MongoDB promotion runs locally and touches no Yale host because it only connects to Atlas.
-The Production Render shell rebuilds Production Meilisearch after the local promotion finishes.
+Finish the Development sweep and its gates before touching Beta.
+Mirror to Beta once, after the whole Development candidate is accepted, and promote to Production once, after Beta is audited.
+The two copies run locally and touch no Yale host, because they only connect to Atlas.
+The Render shells re-gate and reindex after each copy, because the private Meilisearch services are reachable only from inside Render.
 
 In the Render dashboard, use the shell attached to the Beta web service for Phase 3 and the shell attached to the Production web service for Phase 5.
 Never run a Beta Meilisearch command in the Production shell or a Production Meilisearch command in the Beta shell.
@@ -195,10 +188,10 @@ test -d server
 
 - Never point ordinary local development at the `Beta` or `Production` database.
 - Never give the Development or Beta database user access to `Production`.
-- Never add `--auto-materialize` to a local Beta operator run.
+- Never run a scrape, sweep, or `scrape materialize` write against Beta or Production; the CLI refuses it, and the fix belongs in Development followed by promotion.
 - Never copy Development into Beta outside the guarded research-data mirror.
 - Never copy Development sessions, analytics, caches, locks, or experimental operational data into Beta.
-- Never run the production copy without a reviewed dry-run and a real Production restore point.
+- Never run the production copy without a reviewed dry-run.
 - Never assume that changing MongoDB also updates a Render-private Meilisearch index.
 
 ## One-Time Local Setup
@@ -207,10 +200,11 @@ Create the two uncommitted environment profiles:
 
 ```bash
 cp server/.env.example server/.env
-cp server/.env.beta-operator.example server/.env.beta-operator
 ```
 
-Fill in placeholders in both files.
+Fill in the placeholders in `server/.env`.
+Then create `server/.env.beta-operator` holding only a `MONGODBURL` for the Atlas `Beta` database.
+The Development-to-Beta mirror reads its Beta target from that file, and `yarn profile:beta` uses it for read-only Beta audits; the profile refuses `--write`.
 The Development Atlas credential must have read/write roles for `Development` only.
 The Beta Atlas credential must have read/write roles for `Beta` only.
 Do not place a Production MongoDB URL in either file.
@@ -282,7 +276,7 @@ This is a snapshot refresh rather than continuous replication.
 Local scraping and materialization can intentionally change Development after the sync.
 Running the standard sync again replaces the approved Atlas Development mirror with the latest accepted Beta snapshot and clears all non-mirror Development collections.
 
-## Phase 1: Development Validation - Run Locally
+## Phase 1: Development Sweep - Run Locally
 
 Complete the Source Reachability Preflight before running a full source.
 
@@ -341,8 +335,7 @@ yarn scrape:development:all:sample
 ```
 
 Fix and rerun individual sources until the bounded sweep has no unexplained failures, conflicts, unsafe contact data, or missing credentials.
-Under the primary model the release candidate is fetched at scale on Beta in Phase 2, so the bounded Development sample above is the normal stopping point.
-Run the full Development sweep below only for the optional fetch-once-and-mirror model described in Environment Sizing:
+Then run the full Development sweep, which builds the release candidate that Phase 2 mirrors to Beta:
 
 ```bash
 yarn scrape:development:all:full
@@ -383,7 +376,8 @@ yarn scrape:development:fellowships:full
 ```
 
 That command runs only the fellowship catalog sources and the fellowship post-run chain (the `programs:*` backfills plus the two report-only `programs:audit-*` stages), so it never touches `ResearchEntity` data.
-Both of its opt-in stages stay off unless you set their flags: `SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET=1` to replay the curated official-source change-set, and `SCRAPER_SWEEP_REFRESH_FELLOWSHIPS=1` (plus a target and restore token) for `fellowships:refresh`, which no Development sweep can satisfy and which therefore stays skipped here.
+Its one opt-in stage stays off unless you set `SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET=1` to replay the curated official-source change-set.
+The fellowship catalog reaches Beta and Production through the same mirror and promotion as the research corpus.
 
 Use targeted single-source commands while repairing a failed source:
 
@@ -403,7 +397,7 @@ Every post-run stage that ran writes one JSON artifact into the printed sweep di
 
 Coverage is not a claim of absolute Yale ground truth.
 Compare source discovery counts, eligible candidate counts, observations, materialized entities, field coverage, and quality failures with the last accepted Beta baseline.
-Investigate unexpected decreases, unexpected zero-count sources, sharp changes in source yield, duplicate growth, unresolved references, unsafe contacts, and trust-contract failures before moving to Beta.
+Investigate unexpected decreases, unexpected zero-count sources, sharp changes in source yield, duplicate growth, unresolved references, unsafe contacts, and trust-contract failures before mirroring to Beta.
 
 With `yarn dev:server` running, verify the local search endpoint:
 
@@ -420,17 +414,21 @@ Inspect the local application and local search after each materialized source.
 
 Stop this phase if the report status is not `success`, materialization errors are nonzero, conflicts are unexplained, or public contact data is unsafe.
 
-## Phase 2: Beta Staging Fetch - Run Locally
+## Phase 2: Development-to-Beta Mirror - Run Locally
 
-### Fast path: mirror an accepted Development research dataset
-
-Use this path when the complete Development dataset already passed the same release quality gates and rerunning every scraper against Beta would duplicate accepted work.
+Run this phase only after the exhaustive Development sweep has succeeded and its data-quality review has been accepted.
+It is the only way data enters Beta.
 The command replaces only the approved research-discovery, identity-spine, source-audit, and base-support collections, with account state sanitized.
 It preserves Beta operational collections such as sessions, analytics, admin grants, student workflows, locks, caches, and release queues.
 It leaves `observations` in Development unless `--include-observations` is passed, so review the plan's `observationPolicy` line before applying.
 It never writes to Meilisearch.
-After the mirror, rebuild Beta Meilisearch and re-gate on Beta; do not run `scrape materialize` against a Beta that holds no observations.
 The mirror replaces whole documents rather than merging fields, so a mirrored row can serve a worse individual field than the row it replaced even when the mirror is newer; [research-data-pipeline.md](research-data-pipeline.md) owns the known `websiteUrl` case and the repair command for it.
+
+Before changing Beta, record its backup or manual recovery artifact and run the Beta diagnostic from the Beta Render shell:
+
+```bash
+SCRAPER_ENV=beta yarn --cwd server beta:readiness
+```
 
 Generate and review the plan locally:
 
@@ -446,52 +444,13 @@ yarn beta:refresh-from-development:apply
 ```
 
 Stop if the result does not report `"status": "applied"` or any post-copy target count differs from its source copy count.
-Continue with the Beta Meilisearch rebuild and strict readiness gate in Phase 3.
 
-The source-level Beta fetch below remains the supported path when Development has not passed the release gates or the operator needs fresh Beta observations and exact Beta run IDs.
-
-Beta Render does not perform the fetch.
-The local machine performs the fetch while targeting Atlas `Beta`.
-Run this phase only after the exhaustive all-source Development sweep has succeeded and its data-quality review has been accepted.
-
-Before changing Beta, record its backup or manual recovery artifact and run the Beta diagnostic from the Beta Render shell:
-
-```bash
-SCRAPER_ENV=beta yarn --cwd server beta:readiness
-```
-
-On the local machine, confirm that the Beta profile resolves correctly:
-
-```bash
-yarn scrape:beta list
-```
-
-Run a bounded dry-run of the complete, dependency-ordered source manifest:
-
-```bash
-yarn scrape:beta:all:plan
-```
-
-Run the exhaustive Beta release-candidate fetch after reviewing the bounded plan:
-
-```bash
-yarn scrape:beta:all:fetch
-```
-
-The Beta fetch uses the same canonical sweep manifest and exhaustive candidate behavior that passed in Development.
-It bypasses freshness skips, stops at the first failed source, and never materializes locally.
-The runner prints an output directory under `/tmp`.
-Open its `summary.json`.
-Each successful row contains the exact run ID and the Beta Render plan and apply commands for Phase 3.
-
-Stop if the summary does not report every manifest source as successful with zero failed or not-run sources, a source unexpectedly returns zero observations, or any report contains unexplained errors.
-
-## Phase 3: Beta Materialization and Search - Run in the Beta Render Shell
+## Phase 3: Beta Gate, Search, and Audit - Run in the Beta Render Shell
 
 Run these commands from the Beta Render shell.
 The Render environment must resolve MongoDB to `Beta`, Meilisearch to the private Beta service, and `MEILISEARCH_INDEX_PREFIX` to `beta`.
 
-Before materializing, verify the Beta Render environment without printing credentials:
+Verify the Beta Render environment without printing credentials:
 
 ```bash
 test "$SCRAPER_ENV" = 'beta'
@@ -503,91 +462,45 @@ node --input-type=module --eval '
 '
 ```
 
-For each successful source row in the local Beta `summary.json`, copy its source name and exact run ID into the Beta Render shell:
+Do not run `scrape materialize` here.
+The mirror left the observations in Development, so a materialize would derive fields from an empty trail, and the CLI refuses the write in any case.
+
+Re-gate visibility first, because freshly copied rows do not carry a usable tier until a gate pass runs:
 
 ```bash
-export SOURCE_NAME='<sourceName from summary.json>'
-export RUN_ID='<runId from summary.json>'
-test -n "$SOURCE_NAME"
-test -n "$RUN_ID"
+SCRAPER_ENV=beta   yarn --cwd server student-visibility:gate   --collection=all   --apply   --confirm-student-visibility-apply   --max-apply=100000
 ```
 
-Preview materialization for the recorded run:
+Run the Beta gates:
 
 ```bash
-SCRAPER_ENV=beta \
-  yarn --cwd server scrape materialize \
-  --run "$RUN_ID" \
-  --dry-run \
-  --output "/tmp/ylabs-beta-${SOURCE_NAME}-materialize-plan.json"
-```
+SCRAPER_ENV=beta   yarn --cwd server beta:data-quality   --strict   --include-samples   --progress   --output /tmp/ylabs-beta-data-quality.json
 
-Review the plan and then materialize the same run:
+SCRAPER_ENV=beta   yarn --cwd server scraper:integrity-gate   --include-samples
 
-```bash
-SCRAPER_ENV=beta \
-ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  yarn --cwd server scrape materialize \
-  --run "$RUN_ID" \
-  --confirm-materialize \
-  --output "/tmp/ylabs-beta-${SOURCE_NAME}-materialize-result.json"
-```
-
-This command updates Beta MongoDB and upserts the affected Beta ResearchEntity search documents.
-It does not require another Yale network fetch.
-Repeat the two materialization commands for every successful row in the Beta sweep summary.
-
-Run the Beta gates after all accepted source runs are materialized:
-
-```bash
-SCRAPER_ENV=beta \
-  yarn --cwd server beta:data-quality \
-  --strict \
-  --include-samples \
-  --progress \
-  --output /tmp/ylabs-beta-data-quality.json
-
-SCRAPER_ENV=beta \
-  yarn --cwd server scraper:integrity-gate \
-  --include-samples
-
-SCRAPER_ENV=beta \
-  yarn --cwd server launch:trust-contract \
-  --collection=all \
-  --mode=student-ready-only \
-  --strict
+SCRAPER_ENV=beta   yarn --cwd server launch:trust-contract   --collection=all   --mode=student-ready-only   --strict
 ```
 
 Create and verify the required Beta Meilisearch restore point or export.
-Store its reference in the Beta Render environment as `PFR3_MEILI_RESTORE_POINT`.
-Then fully rebuild the Beta ResearchEntity index so deleted or archived MongoDB records cannot remain as stale search documents:
+Then rebuild the Beta search index after the gate, never before it, because the gate writes the tiers the index carries.
+Follow [the reindex runbook](meilisearch-reindex-runbook.md), which owns the command, the required variables, and how to confirm the rebuilt count:
 
 ```bash
-test "$MEILISEARCH_INDEX_PREFIX" = 'beta'
-test -n "$PFR3_MEILI_RESTORE_POINT"
-
-SCRAPER_ENV=beta \
-  yarn --cwd server meili:rebuild-research-entities \
-  --clear \
-  --confirm-meili-rebuild \
-  --output /tmp/ylabs-beta-researchentities-rebuild.json
+node scripts/reindex-search-index.mjs beta
+node scripts/reindex-search-index.mjs beta --apply
 ```
 
-Confirm that the rebuild artifact reports the expected indexed count.
 Then run the strict Beta readiness gate:
 
 ```bash
-SCRAPER_ENV=beta \
-  yarn --cwd server beta:readiness \
-  --confirm-beta-backup \
-  --strict \
-  --output /tmp/ylabs-beta-readiness-final.json
+SCRAPER_ENV=beta   yarn --cwd server beta:readiness   --confirm-beta-backup   --strict   --output /tmp/ylabs-beta-readiness-final.json
 ```
 
 Audit the Beta website after the gates pass.
 Test broad search, known entity detail pages, access evidence, source links, and representative edge cases.
 
 Stop before Production if any strict gate fails or the Beta UI does not match the accepted data.
+A defect found on Beta is fixed in Development, verified there, and mirrored again, never patched on Beta.
 
 ## Phase 4: Beta-to-Production MongoDB Promotion - Run Locally
 
@@ -732,18 +645,15 @@ Stop if the reference is missing:
 test -n "$PFR3_MEILI_RESTORE_POINT"
 ```
 
-Rebuild the Production ResearchEntity index from the newly promoted Production MongoDB:
+Re-gate visibility and then rebuild the Production search index from the newly promoted Production MongoDB, in that order.
+`docs/release-process.md` ("Promoting data, not just code") owns the gate command and why the order matters, and [the reindex runbook](meilisearch-reindex-runbook.md) owns the reindex command:
 
 ```bash
-SCRAPER_ENV=production \
-CONFIRM_PROD_SCRAPE=true \
-  yarn --cwd server meili:rebuild-research-entities \
-  --clear \
-  --confirm-meili-rebuild \
-  --output /tmp/ylabs-production-researchentities-rebuild.json
+node scripts/reindex-search-index.mjs production
+node scripts/reindex-search-index.mjs production --apply
 ```
 
-Confirm that the rebuild artifact reports the expected indexed count.
+Confirm that the reindex reports the expected indexed count.
 Run the Production smoke from the same Render shell:
 
 ```bash
@@ -756,13 +666,11 @@ Do not declare the refresh complete until MongoDB promotion, the Meilisearch reb
 
 Save the following references in the shared semester refresh record:
 
-- The source names and Development sample and full artifacts.
-- The Beta fetch artifacts and exact `run.id` values.
-- The Beta materialization artifacts.
-- The Beta data-quality, integrity, trust-contract, Meilisearch, and readiness artifacts.
-- The Production Atlas restore point.
+- The Development sweep output directory and its `summary.json`.
+- The Development-to-Beta mirror plan and result artifacts.
+- The Beta visibility-gate, data-quality, integrity, trust-contract, Meilisearch, and readiness artifacts.
 - The Production promotion dataset version and plan.
-- The Production Meilisearch restore point and ResearchEntity rebuild artifact.
+- The Production Meilisearch restore point and reindex output.
 - The Production smoke results.
 - The operator name, reviewer name, date, and any accepted exceptions.
 
@@ -770,19 +678,18 @@ The refresh is incomplete if any required artifact, restore point, or independen
 
 ## Fast Decision Table
 
-| Situation                                    | Action                                                                                         |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Need more data for debugging                 | Run a larger Development scrape locally                                                        |
-| Development looks correct                    | Rerun the source against Beta with `scrape:beta:write`                                         |
-| Beta observations were fetched               | Materialize the exact run ID from the Beta Render shell                                        |
-| Beta search is stale                         | Rerun Beta materialization for the accepted run ID or use the documented Beta rebuild recovery |
-| Beta gates fail                              | Stop and repair Beta                                                                           |
-| Production restore point is missing          | Stop before Production apply                                                                   |
-| Production Mongo succeeded but search failed | Keep the Mongo result, repair/rebuild Meilisearch, and do not claim completion                 |
+| Situation                                    | Action                                                                              |
+| -------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Need more data for debugging                 | Run a larger Development scrape locally                                             |
+| Development looks correct                    | Mirror it to Beta with `beta:refresh-from-development`                              |
+| Beta shows a data defect                     | Fix it in Development, verify there, and mirror again                               |
+| Beta search is stale                         | Re-gate, then reindex Beta from the Beta Render shell                               |
+| Beta gates fail                              | Stop, fix in Development, and mirror again                                          |
+| Production Mongo succeeded but search failed | Keep the Mongo result, reindex Production, and do not claim completion              |
 
 ## Recovery
 
 Local Development is disposable and can be reset from the accepted Beta snapshot or a new scrape.
-Beta recovery uses the recorded Beta backup or a fresh controlled reseed.
+Beta recovery uses the recorded Beta backup or a fresh mirror from an accepted Development dataset.
 Production recovery restores the recorded pre-promotion Atlas restore point and then rebuilds Meilisearch.
 Never use a Development database copy as a Production rollback.

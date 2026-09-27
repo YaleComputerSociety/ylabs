@@ -2,7 +2,11 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { resolveScraperEnvironment, summarizeMongoUrl } from '../scrapers/scraperEnvironment';
+import {
+  promotionOnlyScraperWriteRefusal,
+  resolveScraperEnvironment,
+  summarizeMongoUrl,
+} from '../scrapers/scraperEnvironment';
 import type { ScraperEnvironment } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -17,7 +21,6 @@ export interface BetaSeedEnvironmentCliOptions {
   seedSources: boolean;
   runReadiness: boolean;
   rebuildMeili: boolean;
-  sources: string[];
   artifactDir: string;
   output?: string;
 }
@@ -66,7 +69,6 @@ export function parseBetaSeedEnvironmentArgs(argv: string[]): BetaSeedEnvironmen
     seedSources: true,
     runReadiness: true,
     rebuildMeili: true,
-    sources: [],
     artifactDir: DEFAULT_ARTIFACT_DIR,
   };
 
@@ -97,25 +99,10 @@ export function parseBetaSeedEnvironmentArgs(argv: string[]): BetaSeedEnvironmen
       options.rebuildMeili = false;
       continue;
     }
-    if (arg === '--source') {
-      options.sources.push(parseRequiredValue(argv[index + 1], '--source'));
-      index += 1;
-      continue;
-    }
-    if (arg.startsWith('--source=')) {
-      options.sources.push(parseRequiredValue(arg.slice('--source='.length), '--source'));
-      continue;
-    }
-    if (arg === '--sources') {
-      options.sources.push(...parseSourceList(parseRequiredValue(argv[index + 1], '--sources')));
-      index += 1;
-      continue;
-    }
-    if (arg.startsWith('--sources=')) {
-      options.sources.push(
-        ...parseSourceList(parseRequiredValue(arg.slice('--sources='.length), '--sources')),
+    if (/^--sources?(=|$)/.test(arg)) {
+      throw new Error(
+        `beta:seed-environment no longer runs scrapers. ${promotionOnlyScraperWriteRefusal('beta')}`,
       );
-      continue;
     }
     if (arg === '--artifact-dir') {
       options.artifactDir = resolveSafeArtifactDir(argv[index + 1]);
@@ -139,7 +126,6 @@ export function parseBetaSeedEnvironmentArgs(argv: string[]): BetaSeedEnvironmen
     throw new Error(`Unknown beta seed argument: ${arg}`);
   }
 
-  options.sources = Array.from(new Set(options.sources));
   return options;
 }
 
@@ -158,13 +144,6 @@ function resolveSafeArtifactDir(value: string | undefined): string {
   return path.dirname(
     resolveSafeJsonReportOutputPath(path.join(parsed, 'artifact-root.json'), '--artifact-dir'),
   );
-}
-
-function parseSourceList(value: string): string[] {
-  return value
-    .split(',')
-    .map((source) => source.trim())
-    .filter(Boolean);
 }
 
 export function assertBetaSeedAllowed(args: {
@@ -255,20 +234,6 @@ export function buildBetaSeedPlan(
     });
   }
 
-  for (const source of options.sources) {
-    const output = path.join(artifactDir, `source-${safeArtifactName(source)}-report.json`);
-    steps.push({
-      name: `run-source-${source}`,
-      description: `Run and materialize accepted Beta source ${source}.`,
-      command: 'yarn',
-      args: ['scrape', 'run', '--source', source, '--auto-materialize', '--output', output],
-      cwd: SERVER_ROOT,
-      env: betaWriteEnv,
-      writes: true,
-      output,
-    });
-  }
-
   if (options.rebuildMeili) {
     steps.push({
       name: 'rebuild-research-entity-meili-index',
@@ -319,10 +284,6 @@ export function buildBetaSeedPlan(
     generatedAt: new Date().toISOString(),
     steps,
   };
-}
-
-function safeArtifactName(value: string): string {
-  return value.replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '') || 'source';
 }
 
 export function writeBetaSeedOutput(report: unknown, output?: string): void {

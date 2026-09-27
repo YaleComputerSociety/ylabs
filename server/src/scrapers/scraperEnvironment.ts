@@ -107,6 +107,19 @@ export function assertScraperEnvironmentMatchesMongoTarget(args: {
   }
 }
 
+export function isPromotionOnlyEnvironment(environment: ScraperEnvironment): boolean {
+  return environment === 'beta' || environment === 'production';
+}
+
+export function promotionOnlyScraperWriteRefusal(environment: ScraperEnvironment): string {
+  return (
+    `SCRAPER_ENV=${environment} refuses scraper writes: sweeps and scrapes write only to Development, ` +
+    'and Beta and Production receive data only through promotion. ' +
+    'Run the scrape against Development, then promote with yarn beta:refresh-from-development:plan and :apply, ' +
+    'and yarn --cwd server production:promote-beta-copy (docs/data-refresh-runbook.md).'
+  );
+}
+
 export function applyScraperEnvironmentGuards(args: {
   command: 'run' | 'cron' | 'materialize' | 'report';
   options: ScraperOptions;
@@ -153,27 +166,16 @@ export function applyScraperEnvironmentGuards(args: {
     }
   }
 
-  if (environment === 'production') {
-    const confirmed = env.CONFIRM_PROD_SCRAPE === 'true';
-    const writes =
-      args.command === 'run' || args.command === 'cron'
-        ? !options.dryRun
-        : args.command === 'materialize' && !options.dryRun;
+  const writes =
+    (args.command === 'run' || args.command === 'cron' || args.command === 'materialize') &&
+    !options.dryRun;
+  if (writes && isPromotionOnlyEnvironment(environment)) {
+    throw new Error(promotionOnlyScraperWriteRefusal(environment));
+  }
 
-    if (writes && !options.release) {
-      throw new Error('Production scraper writes require --release.');
-    }
-
-    if (writes && !confirmed) {
-      throw new Error(
-        'Production scraper writes require CONFIRM_PROD_SCRAPE=true in the environment.',
-      );
-    }
-
-    if (options.useCache) {
-      options.useCache = false;
-      warnings.push('SCRAPER_ENV=production; disabling --use-cache.');
-    }
+  if (environment === 'production' && options.useCache) {
+    options.useCache = false;
+    warnings.push('SCRAPER_ENV=production; disabling --use-cache.');
   }
 
   return {

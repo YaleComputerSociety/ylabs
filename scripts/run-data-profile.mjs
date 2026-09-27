@@ -15,12 +15,14 @@ const PROFILES = {
     environment: 'development',
     database: 'Development',
     requireRemoteMongo: true,
+    writable: true,
   },
   'beta-operator': {
     file: path.join(REPO_ROOT, 'server', '.env.beta-operator'),
     environment: 'beta',
     database: 'Beta',
     requireRemoteMongo: true,
+    writable: false,
   },
 };
 
@@ -97,13 +99,10 @@ export function parseInvocation(argv) {
   };
 }
 
-export function assertCommandAllowed(profileName, command) {
-  if (
-    profileName === 'beta-operator' &&
-    (command.includes('--auto-materialize') || command.includes('materialize'))
-  ) {
+export function assertWritesAllowed(profileName, writesEnabled) {
+  if (writesEnabled && !PROFILES[profileName]?.writable) {
     throw new Error(
-      'The local Beta operator may fetch observations only. Materialize the run from the Beta Render shell so it updates Beta Meilisearch.',
+      `The ${profileName} profile is read-only. Scrapes and repairs run against Development, and Beta receives data only through promotion: yarn beta:refresh-from-development:plan, then yarn beta:refresh-from-development:apply (docs/data-refresh-runbook.md).`,
     );
   }
 }
@@ -125,7 +124,7 @@ export function run(argv = process.argv.slice(2)) {
 
   const values = dotenv.parse(fs.readFileSync(profile.file));
   const { target } = validateProfileValues(invocation.profileName, values);
-  assertCommandAllowed(invocation.profileName, invocation.command);
+  assertWritesAllowed(invocation.profileName, invocation.writesEnabled);
 
   const childEnv = {
     ...process.env,

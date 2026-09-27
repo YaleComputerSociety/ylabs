@@ -162,9 +162,27 @@ describe('scraper CLI helpers', () => {
         'run',
         { source: 'orcid', release: true },
         'mongodb+srv://example.mongodb.net/Production',
-        { SCRAPER_ENV: 'production', CONFIRM_PROD_SCRAPE: 'false' } as NodeJS.ProcessEnv,
+        { SCRAPER_ENV: 'production', CONFIRM_PROD_SCRAPE: 'true' } as NodeJS.ProcessEnv,
       ),
-    ).toThrow(/CONFIRM_PROD_SCRAPE=true/);
+    ).toThrow(/Beta and Production receive data only through promotion/);
+
+    expect(() =>
+      cli.buildScraperCliPreflight(
+        'run',
+        { source: 'orcid' },
+        'mongodb+srv://example.mongodb.net/Beta',
+        { SCRAPER_ENV: 'beta', ALLOW_NON_PROD_SCRAPER_WRITES: 'true' } as NodeJS.ProcessEnv,
+      ),
+    ).toThrow(/Beta and Production receive data only through promotion/);
+
+    expect(() =>
+      cli.buildScraperCliPreflight(
+        'materialize',
+        { run: 'run-1', 'confirm-materialize': true },
+        'mongodb+srv://example.mongodb.net/Beta',
+        { SCRAPER_ENV: 'beta', ALLOW_NON_PROD_SCRAPER_WRITES: 'true' } as NodeJS.ProcessEnv,
+      ),
+    ).toThrow(/Beta and Production receive data only through promotion/);
 
     expect(() =>
       cli.buildScraperCliPreflight(
@@ -206,8 +224,11 @@ describe('scraper CLI helpers', () => {
       cli.buildScraperCliPreflight(
         'materialize',
         { run: 'run-1' },
-        'mongodb+srv://example.mongodb.net/Beta',
-        { SCRAPER_ENV: 'beta', ALLOW_NON_PROD_SCRAPER_WRITES: 'true' } as NodeJS.ProcessEnv,
+        'mongodb+srv://example.mongodb.net/Development',
+        {
+          SCRAPER_ENV: 'development',
+          ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
+        } as NodeJS.ProcessEnv,
       ),
     ).toThrow(/--confirm-materialize is required/);
 
@@ -215,8 +236,11 @@ describe('scraper CLI helpers', () => {
       cli.buildScraperCliPreflight(
         'materialize',
         { run: 'run-1', 'confirm-materialize': true },
-        'mongodb+srv://example.mongodb.net/Beta',
-        { SCRAPER_ENV: 'beta', ALLOW_NON_PROD_SCRAPER_WRITES: 'true' } as NodeJS.ProcessEnv,
+        'mongodb+srv://example.mongodb.net/Development',
+        {
+          SCRAPER_ENV: 'development',
+          ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
+        } as NodeJS.ProcessEnv,
       ),
     ).toMatchObject({
       command: 'materialize',

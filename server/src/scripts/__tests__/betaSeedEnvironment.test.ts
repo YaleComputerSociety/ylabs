@@ -10,12 +10,9 @@ import {
 } from '../betaSeedEnvironment';
 
 describe('betaSeedEnvironment CLI helpers', () => {
-  it('parses dry-run defaults and explicit source lists', () => {
+  it('parses dry-run defaults', () => {
     expect(
       parseBetaSeedEnvironmentArgs([
-        '--source',
-        'ysm-atoz-index',
-        '--sources=centers-institutes-index,dept-faculty-roster',
         '--artifact-dir',
         '/tmp/ylabs-beta-seed',
         '--output=/tmp/ylabs-beta-seed-plan.json',
@@ -26,7 +23,6 @@ describe('betaSeedEnvironment CLI helpers', () => {
       seedSources: true,
       runReadiness: true,
       rebuildMeili: true,
-      sources: ['ysm-atoz-index', 'centers-institutes-index', 'dept-faculty-roster'],
       artifactDir: '/tmp/ylabs-beta-seed',
       output: '/tmp/ylabs-beta-seed-plan.json',
     });
@@ -47,15 +43,19 @@ describe('betaSeedEnvironment CLI helpers', () => {
       seedSources: false,
       runReadiness: false,
       rebuildMeili: false,
-      sources: [],
     });
   });
 
+  it.each(['--source', '--source=ysm-atoz-index', '--sources', '--sources=ysm-atoz-index'])(
+    'refuses %s, because Beta receives scraped data only through promotion',
+    (flag) => {
+      expect(() => parseBetaSeedEnvironmentArgs([flag])).toThrow(
+        /no longer runs scrapers[\s\S]*beta:refresh-from-development:plan/,
+      );
+    },
+  );
+
   it('rejects malformed arguments', () => {
-    expect(() => parseBetaSeedEnvironmentArgs(['--source'])).toThrow(/--source requires a value/);
-    expect(() => parseBetaSeedEnvironmentArgs(['--source=--apply'])).toThrow(
-      /--source requires a value/,
-    );
     expect(() => parseBetaSeedEnvironmentArgs(['--artifact-dir'])).toThrow(
       /--artifact-dir requires a path/,
     );
@@ -91,12 +91,9 @@ describe('betaSeedEnvironment CLI helpers', () => {
     ).toThrow(/beta:seed-environment must run with SCRAPER_ENV=beta/);
   });
 
-  it('builds a dry-run plan that seeds metadata, selected source runs, Meili, and checks', () => {
+  it('builds a dry-run plan that seeds metadata, Meili, and checks without running a scraper', () => {
     const plan = buildBetaSeedPlan(
-      parseBetaSeedEnvironmentArgs([
-        '--source=ysm-atoz-index',
-        '--artifact-dir=/tmp/ylabs-beta-seed',
-      ]),
+      parseBetaSeedEnvironmentArgs(['--artifact-dir=/tmp/ylabs-beta-seed']),
       {
         environment: 'beta',
         dbLabel: 'cluster.example.test/Beta',
@@ -112,7 +109,6 @@ describe('betaSeedEnvironment CLI helpers', () => {
       'beta-readiness-preflight',
       'seed-source-metadata-dry-run',
       'seed-source-metadata-apply',
-      'run-source-ysm-atoz-index',
       'rebuild-research-entity-meili-index',
       'beta-readiness-acceptance',
     ]);
@@ -129,17 +125,7 @@ describe('betaSeedEnvironment CLI helpers', () => {
         '/tmp/ylabs-beta-seed/seed-sources-apply.json',
       ],
     });
-    expect(plan.steps.find((step) => step.name === 'run-source-ysm-atoz-index')).toMatchObject({
-      args: [
-        'scrape',
-        'run',
-        '--source',
-        'ysm-atoz-index',
-        '--auto-materialize',
-        '--output',
-        '/tmp/ylabs-beta-seed/source-ysm-atoz-index-report.json',
-      ],
-    });
+    expect(plan.steps.flatMap((step) => step.args)).not.toContain('run');
     expect(() =>
       buildBetaSeedPlan(
         {

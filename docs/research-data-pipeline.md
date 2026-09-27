@@ -80,8 +80,9 @@ The sweep modes fix the environment, database, write posture, and confirmation f
 | `development-full` | development / Development | yes | yes | `--confirm-development-full-sweep` (`--exhaustive --ignore-work-planner`) |
 | `development-incremental` | development / Development | yes | yes | `--confirm-development-incremental-sweep` (`--exhaustive`) |
 | `fellowship-development-full` | development / Development | yes | yes | `--confirm-fellowship-sweep` (fellowship engine only, `--exhaustive --ignore-work-planner`) |
-| `beta-plan` | beta / Beta | no | no | none (dry-run, stop-on-failure) |
-| `beta-fetch` | beta / Beta | yes | no (Render materializes) | `--confirm-beta-release-candidate` (`--exhaustive`, stop-on-failure) |
+
+Every mode targets Development, because sweeps run only there (decision 2026-09-27 in `docs/decisions.md`).
+Beta and Production receive the swept result through promotion, and the scrape CLI refuses any `run`, `cron`, or `materialize` write against either of them.
 
 Only the two `--limit 100` modes pass `--use-cache`.
 An exhaustive mode always fetches live and writes no `scrape_snapshots` rows, because the cache persists every fetched payload for 24 hours and one cached `development-full` sweep wrote about 3.5 GB of it, pushed the Development Atlas cluster over its space quota, and failed 19 sources (#3536).
@@ -111,8 +112,7 @@ On 2026-09-26 `medicine.yale.edu` carried about 18,600 discovery requests shared
   If the broker cannot be reached, the child logs one warning and fetches every page from the site.
 - Post-run stages run after the broker closes, so `source-link-health` still probes each URL live.
 
-Development modes require a local Meilisearch host and an empty `MEILISEARCH_INDEX_PREFIX`; the sweep refuses a non-local Development Meili target.
-Beta modes fetch observations into the `Beta` database and emit per-source `betaRenderCommands` (dry-run materialize plan plus apply) so the Beta Render service materializes the recorded run ID; local Beta runs never materialize.
+The materializing modes require a local Meilisearch host and an empty `MEILISEARCH_INDEX_PREFIX`; the sweep refuses a non-local Development Meili target.
 
 #### Preflight: fail a broken sweep in minutes, not hours
 
@@ -158,7 +158,7 @@ Because every child's stdout and stderr now redirect into its own step log, chil
 
 `--force-llm` (off by default) threads `--force-llm` into every per-source `scrape run` child, re-running paid LLM extraction even when a page's content hash is unchanged; use it for a full re-derivation pass.
 `--prune-between-phases` (off by default) runs the gated dead-observation prune (`observations:prune-dead`) between phases and adds a final `dead-data-prune` post-run stage to both engines' chains, so a `--force-llm` run can hold storage headroom without a separate watchdog process.
-Both the between-phases hook and the final stage are restricted to the Development-database write modes (`development-full`, `development-incremental`, `fellowship-development-full`), matching the rest of the post-run chain: a Beta or Prod sweep never deletes mid-run, because in `beta-fetch` materialization is deferred to the Beta Render service and nothing has consumed the run yet.
+Both the between-phases hook and the final stage are restricted to the Development-database write modes (`development-full`, `development-incremental`, `fellowship-development-full`), matching the rest of the post-run chain, so a bounded plan or sample sweep never deletes mid-run.
 The between-phases prune is best-effort: a prune failure is logged to `errors.log` and does not stop the sweep.
 
 The two exhaustive Development modes (`development-full`, `development-incremental`) run a fixed chain of post-run stages after every source has fetched and materialized:
@@ -178,13 +178,13 @@ The two exhaustive Development modes (`development-full`, `development-increment
 13. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
 14. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
-The `researcher-dedupe`, `eponymous-fra-merge`, both URL-identity dedupe stages, and merge-residue deletion stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value: `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. One flag gates the whole URL-identity family, because `url-identity-dedupe` and `website-url-identity-dedupe` are two keys onto one question and an operator suppressing URL-keyed merges wants both off. `url-identity-dedupe` was opt-in until #2699; it defaults on because the never-demote survivor resolution defers rather than demotes (#2070) and because the whole post-run set is unreachable outside Development, so the flag only ever gated Dev. Every `SCRAPER_SWEEP_*` stage flag in either engine parses through the one shared helper pair in `server/src/scripts/sweepStageFlags.ts`, so the accepted truthy values (`1`, `true`, `yes`, `y`, `on`, `enable`, `enabled`) and falsey values (`0`, `false`, `no`, `n`, `off`, `disable`, `disabled`) are identical for every flag. These post-run stages never run on Beta or Prod sweeps, so those paths are unaffected.
+The `researcher-dedupe`, `eponymous-fra-merge`, both URL-identity dedupe stages, and merge-residue deletion stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value: `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. One flag gates the whole URL-identity family, because `url-identity-dedupe` and `website-url-identity-dedupe` are two keys onto one question and an operator suppressing URL-keyed merges wants both off. `url-identity-dedupe` was opt-in until #2699; it defaults on because the never-demote survivor resolution defers rather than demotes (#2070) and because the whole post-run set is unreachable outside Development, so the flag only ever gated Dev. Every `SCRAPER_SWEEP_*` stage flag in either engine parses through the one shared helper pair in `server/src/scripts/sweepStageFlags.ts`, so the accepted truthy values (`1`, `true`, `yes`, `y`, `on`, `enable`, `enabled`) and falsey values (`0`, `false`, `no`, `n`, `off`, `disable`, `disabled`) are identical for every flag.
 
 The post-run chain is defined once as a declarative registry (`DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `runScraperSweep.ts`, issue #2050): each stage owns its command, args builder, enable predicate, and optional typed result contract, and both the plan builder and the runner derive from it.
 A stage that declares a result contract but exits successfully without a readable, valid result artifact fails loud rather than silently dropping its delta.
 Every merge-applying stage declares one, so `summary.json` carries its counts and an exit code is never the only evidence the stage ran: `researcher-dedupe` reports `researcherDedupeDelta`, `eponymous-fra-merge` reports `mergeDelta`, and both `url-identity-dedupe` and `website-url-identity-dedupe` report `urlIdentityDedupeDelta`, whose fields are enumerated in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md).
 
-The `fellowship-development-full` mode runs the fellowship engine's own post-run chain (`FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS`, issue #2172), which wires the existing `programs:*` / `fellowships:refresh` scripts against the freshly scraped catalog in this order:
+The `fellowship-development-full` mode runs the fellowship engine's own post-run chain (`FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS`, issue #2172), which wires the existing `programs:*` scripts against the freshly scraped catalog in this order:
 
 1. `classification-backfill` (`programs:backfill-classification --apply`)
 2. `global-regions-backfill` (`programs:backfill-global-regions --apply`)
@@ -192,19 +192,16 @@ The `fellowship-development-full` mode runs the fellowship engine's own post-run
 4. `link-labels-backfill` (`programs:backfill-link-labels --apply`)
 5. `accepting-applications-invariant` (`programs:backfill-accepting-applications-invariant --apply`)
 6. `source-link-health` (`programs:backfill-source-link-health --apply`)
-7. `catalog-refresh` (`fellowships:refresh`, opt-in and off by default)
-8. `research-relevance-audit` (`programs:audit-research-relevance`, report-only)
-9. `freshness-audit` (`programs:audit-freshness`, report-only)
-10. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
+7. `research-relevance-audit` (`programs:audit-research-relevance`, report-only)
+8. `freshness-audit` (`programs:audit-freshness`, report-only)
+9. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 Each backfill applies with the script's own confirm flag (production writes are blocked by each script's own apply guard, so the Development mode is safe), and the two audits run report-only.
 `classification-backfill` is the one stage that can decline to write: it refuses an apply that would cost a program row its student-visible tier or replace a served `studentFacingCategory`, and the sweep never passes either flag that overrides those refusals, so the stage fails rather than demoting or relabelling a served row unattended (see "`programs:backfill-classification` asserts and never retracts" below).
 Every stage that takes an `--output` path is held to a report contract: a stage that exits successfully without a readable, valid JSON report at the path recorded in `summary.json` fails loud, and a stage that writes no report records no `artifactPath` at all.
 `official-sources-backfill` is opt-in via `SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET=1` because `programs:backfill-official-sources` is not a general recomputation: with no `--input` it replays the committed one-shot curated change-set at `server/src/scripts/data/programOfficialSourceBackfill.json`, so running it on every sweep would overwrite each listed record's freshly scraped `sourceUrl` with a frozen hand-researched value.
-`catalog-refresh` is off by default because `fellowships:refresh` only accepts a `beta` or `prod` target and refuses any target that does not match `SCRAPER_ENV`, so no Development sweep mode can satisfy it; it is opt-in via `SCRAPER_SWEEP_REFRESH_FELLOWSHIPS=1` plus `SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET` and `SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN`, and stays skipped (with a logged reason) unless all three are set *and* the requested target matches the sweep mode's own target, so opting in during a Development sweep skips the stage instead of failing it.
-The restore token reaches `fellowships:refresh` through the child environment (`FELLOWSHIP_REFRESH_RESTORE_TOKEN`) rather than argv, so it never appears in the host process table.
+The former `catalog-refresh` stage and its `fellowships:refresh` command wrote the fellowship catalog straight into Beta or Production, so both were removed with the Beta sweep modes; the catalog now reaches Beta and Production the same way the research corpus does, through promotion.
 No `Fellowship`/`/programs` Meilisearch rebuild stage is wired because there is no programs search-index script; `researchEntity` is the only Meilisearch-syncable type.
-The beta modes (`beta-plan`, `beta-fetch`) still run `RESEARCH_SWEEP_SOURCES` only; a beta fellowship sweep is a possible follow-up.
 The two engines can therefore be scheduled, gated, and reasoned about on independent cadences.
 
 ### A dead acquisition lane is a failed run, not a warning
@@ -1498,9 +1495,8 @@ Before production promotion:
 - Source reports must show `materialization.errors = 0`, or any nonzero count must block promotion for that source.
 - Known warnings must be documented in the promotion's GitHub issue before promotion.
 - Production must have a fresh Atlas backup or restore point before any copy or write.
-- The operator must choose exactly one promotion lane: accepted Beta copy or guarded production delta.
+- The accepted Beta copy is the only promotion lane; no scraper writes to Beta or Production (decision 2026-09-27).
 - Meilisearch must be rebuilt or synced after accepted Mongo writes.
-- Recurring scraper jobs stay disabled until the manual production gate and smoke checks pass.
 
 The operator decision packet in [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md) is the promotion record for lane, backup/restore point, rollback owner, smoke owner, accepted warnings, run IDs, and rollback drill status. Do not infer a lane from pipeline state alone; the operator must fill the packet before production writes or copy operations.
 The presence of that packet is not acceptance by itself; blank fields mean the production gate is blocked.
@@ -1514,8 +1510,7 @@ There is no logistics acquisition to gate, so no audit runs before one.
 
 Rollback drills are dry-run-only until an operator approves production action:
 
-- Lane A accepted Beta copy: identify the Production backup or point-in-time restore timestamp, the copied collection set, the Atlas restore owner, and the Meilisearch rebuild sequence.
-- Lane B guarded production delta: identify the source to disable, the plan to stop additional source runs, the pre-run backup or restore point, and the threshold for restoring broad bad materialization.
+- Accepted Beta copy: identify the Production backup or point-in-time restore timestamp, the copied collection set, the Atlas restore owner, and the Meilisearch rebuild sequence.
 
 ## Retention Posture
 

@@ -32,7 +32,6 @@ Its Meilisearch is the local Docker container in `compose.yaml`, bound to `127.0
 
 **Beta and Production are Render private services, so run their reindex from the Render shell for that service, not from a laptop.**
 The Meilisearch private service is addressed as `http://<meili-private-service>:7700`, which only resolves inside Render's network.
-`scripts/run-data-profile.mjs` says the same thing from the other direction: its `beta-operator` profile refuses any materialize command with "Materialize the run from the Beta Render shell so it updates Beta Meilisearch."
 A local run against a private host cannot connect, so it fails rather than half-finishing, but it also means a local attempt is wasted effort.
 
 ## Which command per environment

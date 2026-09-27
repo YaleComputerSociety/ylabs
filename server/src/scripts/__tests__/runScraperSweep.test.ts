@@ -17,7 +17,6 @@ import {
   buildPruneDeadObservationsChildArgs,
   buildScraperSweepChildArgs,
   declareMaterializationReadScopeForChildren,
-  fellowshipCatalogRefreshBlocker,
   fellowshipPostRunArtifactError,
   isDeadObservationPruneSweepMode,
   isSweepPreflightEnabled,
@@ -41,7 +40,6 @@ import {
   runWithBoundedConcurrency,
   scraperSweepArtifactError,
   scraperSweepModes,
-  sweepFellowshipRefreshTarget,
   sweepSourcesForMode,
   validateScraperSweepEnvironment,
   validateScraperSweepManifest,
@@ -194,7 +192,6 @@ describe('runScraperSweep', () => {
   it('selects the engine sources by mode', () => {
     expect(sweepSourcesForMode('development-full')).toBe(RESEARCH_SWEEP_SOURCES);
     expect(sweepSourcesForMode('development-incremental')).toBe(RESEARCH_SWEEP_SOURCES);
-    expect(sweepSourcesForMode('beta-fetch')).toBe(RESEARCH_SWEEP_SOURCES);
     expect(sweepSourcesForMode('fellowship-development-full')).toBe(FELLOWSHIP_SWEEP_SOURCES);
   });
 
@@ -245,8 +242,6 @@ describe('runScraperSweep', () => {
     );
     expect(enabled(['--mode=development-plan'])).toBe(false);
     expect(enabled(['--mode=development-sample'])).toBe(false);
-    expect(enabled(['--mode=beta-plan'])).toBe(false);
-    expect(enabled(['--mode=beta-fetch', '--confirm-beta-release-candidate'])).toBe(false);
     const disabled = parseScraperSweepArgs([
       '--mode=development-full',
       '--confirm-development-full-sweep',
@@ -283,19 +278,31 @@ describe('runScraperSweep', () => {
     }
   });
 
-  it('requires explicit confirmation for full Development and Beta fetch sweeps', () => {
+  it('requires explicit confirmation for the full Development sweep', () => {
     expect(() => parseScraperSweepArgs(['--mode=development-full'])).toThrow(
       /confirm-development-full-sweep/,
-    );
-    expect(() => parseScraperSweepArgs(['--mode=beta-fetch'])).toThrow(
-      /confirm-beta-release-candidate/,
     );
     expect(
       parseScraperSweepArgs(['--mode=development-full', '--confirm-development-full-sweep']).mode,
     ).toBe('development-full');
-    expect(
-      parseScraperSweepArgs(['--mode=beta-fetch', '--confirm-beta-release-candidate']).mode,
-    ).toBe('beta-fetch');
+  });
+
+  it('offers only Development sweep modes, because Beta and Production are filled by promotion', () => {
+    expect(scraperSweepModes().sort()).toEqual([
+      'development-full',
+      'development-incremental',
+      'development-plan',
+      'development-sample',
+      'fellowship-development-full',
+    ]);
+    for (const retired of ['beta-plan', 'beta-fetch']) {
+      expect(() => parseScraperSweepArgs([`--mode=${retired}`])).toThrow(
+        `Unknown scraper sweep mode: ${retired}`,
+      );
+    }
+    expect(() =>
+      parseScraperSweepArgs(['--mode=development-plan', '--confirm-beta-release-candidate']),
+    ).toThrow('Unknown scraper sweep argument: --confirm-beta-release-candidate');
   });
 
   it('requires explicit confirmation for the fellowship Development sweep', () => {
@@ -371,7 +378,6 @@ describe('runScraperSweep', () => {
     expect(resolvePhaseConcurrency('development-full', 'discovery', 12)).toBe(12);
     expect(resolvePhaseConcurrency('development-full', 'content-access', 8)).toBe(2);
     expect(resolvePhaseConcurrency('development-full', 'relationships', 8)).toBe(2);
-    expect(resolvePhaseConcurrency('beta-fetch', 'discovery')).toBe(1);
     expect(resolvePhaseConcurrency('development-full', 'discovery', 1)).toBe(1);
   });
 
@@ -427,17 +433,6 @@ describe('runScraperSweep', () => {
       '--output',
       '/tmp/yale-directory.json',
     ]);
-    const betaArgs = buildScraperSweepChildArgs(
-      'beta-fetch',
-      'yale-directory',
-      '/tmp/yale-directory.json',
-    );
-    expect(betaArgs).toContain('--ignore-work-planner');
-    expect(betaArgs).toContain('--exhaustive');
-    expect(betaArgs).not.toContain('--limit');
-    expect(betaArgs).not.toContain('--auto-materialize');
-    expect(betaArgs).not.toContain('--use-cache');
-
     const developmentArgs = buildScraperSweepChildArgs(
       'development-full',
       'yale-directory',
@@ -470,7 +465,6 @@ describe('runScraperSweep', () => {
     const cachingModes = argsByMode.filter(({ args }) => args.includes('--use-cache'));
 
     expect(exhaustiveModes.map(({ mode }) => mode).sort()).toEqual([
-      'beta-fetch',
       'development-full',
       'development-incremental',
       'fellowship-development-full',
@@ -506,20 +500,14 @@ describe('runScraperSweep', () => {
       }),
     ).toMatch(/materialization reported 2 errors/);
     expect(
-      scraperSweepArtifactError('beta-fetch', {
+      scraperSweepArtifactError('development-plan', {
         runId: 'run-2',
         runStatus: 'success',
         materializationErrors: 3,
       }),
     ).toBeUndefined();
     expect(
-      scraperSweepArtifactError('beta-fetch', {
-        runId: 'run-2',
-        runStatus: 'success',
-      }),
-    ).toBeUndefined();
-    expect(
-      scraperSweepArtifactError('beta-fetch', {
+      scraperSweepArtifactError('development-full', {
         runStatus: 'success',
       }),
     ).toMatch(/missing run.id/);
@@ -891,19 +879,14 @@ describe('runScraperSweep', () => {
     },
   );
 
-  it.each([
-    'beta-plan',
-    'beta-fetch',
-    'development-plan',
-    'development-sample',
-    'fellowship-development-full',
-  ] as const)('produces no development post-run stage options for the %s mode', (mode) => {
-    expect(resolveDevelopmentPostRunOptions(mode, {}, sinceIso)).toBeUndefined();
-  });
+  it.each(['development-plan', 'development-sample', 'fellowship-development-full'] as const)(
+    'produces no development post-run stage options for the %s mode',
+    (mode) => {
+      expect(resolveDevelopmentPostRunOptions(mode, {}, sinceIso)).toBeUndefined();
+    },
+  );
 
   it.each([
-    'beta-plan',
-    'beta-fetch',
     'development-plan',
     'development-sample',
     'development-full',
@@ -954,69 +937,6 @@ describe('runScraperSweep', () => {
       'programs:audit-research-relevance',
       '--output=/tmp/fellowship-sweep/fellowship-research-relevance-audit.json',
     ]);
-  });
-
-  it('omits the beta/prod-only catalog refresh stage in the Development fellowship sweep by default', () => {
-    const options = resolveFellowshipPostRunOptions('fellowship-development-full', {});
-    expect(options).toMatchObject({ refreshFellowshipCatalog: false });
-    expect(
-      buildFellowshipPostRunStages('/tmp/fellowship-sweep', options).map((stage) => stage.name),
-    ).not.toContain('catalog-refresh');
-  });
-
-  it('skips the catalog refresh in a Development sweep even when fully opted in', () => {
-    const options = resolveFellowshipPostRunOptions('fellowship-development-full', {
-      SCRAPER_SWEEP_REFRESH_FELLOWSHIPS: 'true',
-      SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET: 'beta',
-      SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN: 'restore-abc',
-    });
-    expect(sweepFellowshipRefreshTarget('fellowship-development-full')).toBeUndefined();
-    expect(fellowshipCatalogRefreshBlocker(options!)).toMatch(/beta or prod target/);
-    expect(
-      buildFellowshipPostRunStages('/tmp/fellowship-sweep', options).map((stage) => stage.name),
-    ).not.toContain('catalog-refresh');
-  });
-
-  it('rejects a refresh target that disagrees with the sweep target', () => {
-    expect(
-      fellowshipCatalogRefreshBlocker({
-        refreshFellowshipCatalog: true,
-        fellowshipRefreshTarget: 'prod',
-        fellowshipRefreshRestoreToken: 'restore-abc',
-        sweepRefreshTarget: 'beta',
-      }),
-    ).toMatch(/does not match/);
-  });
-
-  it('wires a beta-targeted catalog refresh without putting the restore token in argv', () => {
-    const refresh = buildFellowshipPostRunStages('/tmp/fellowship-sweep', {
-      refreshFellowshipCatalog: true,
-      fellowshipRefreshTarget: 'beta',
-      fellowshipRefreshRestoreToken: 'restore-abc',
-      sweepRefreshTarget: 'beta',
-    }).find((stage) => stage.name === 'catalog-refresh');
-    expect(refresh?.args).toEqual([
-      '--cwd',
-      'server',
-      'fellowships:refresh',
-      '--target=beta',
-      '--confirm=execute-fellowship-refresh-beta',
-      '--execute',
-      '--limit=50',
-    ]);
-    expect(refresh?.args.join(' ')).not.toContain('restore-abc');
-    expect(refresh?.secretEnv).toEqual({ FELLOWSHIP_REFRESH_RESTORE_TOKEN: 'restore-abc' });
-    expect(refresh?.artifactPath).toBeUndefined();
-  });
-
-  it('keeps catalog refresh disabled when opted in without a target or restore token', () => {
-    const optedInOnly = resolveFellowshipPostRunOptions('fellowship-development-full', {
-      SCRAPER_SWEEP_REFRESH_FELLOWSHIPS: 'true',
-    });
-    expect(fellowshipCatalogRefreshBlocker(optedInOnly!)).toMatch(/both required/);
-    expect(
-      buildFellowshipPostRunStages('/tmp/fellowship-sweep', optedInOnly).map((stage) => stage.name),
-    ).not.toContain('catalog-refresh');
   });
 
   it('keeps the one-shot official-source change-set replay opt-in', () => {
@@ -1119,21 +1039,20 @@ describe('runScraperSweep', () => {
     ).toThrow(/ALLOW_NON_PROD_SCRAPER_WRITES/);
   });
 
-  it('requires Beta writes and never accepts a Production target', () => {
-    expect(() =>
-      validateScraperSweepEnvironment('beta-fetch', {
-        SCRAPER_ENV: 'beta',
-        MONGODBURL: 'mongodb+srv://example.invalid/Beta',
-        ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
-      }),
-    ).not.toThrow();
-    expect(() =>
-      validateScraperSweepEnvironment('beta-fetch', {
-        SCRAPER_ENV: 'production',
-        MONGODBURL: 'mongodb+srv://example.invalid/Production',
-        ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
-      }),
-    ).toThrow(/SCRAPER_ENV=beta/);
+  it.each([
+    ['beta', 'Beta'],
+    ['production', 'Production'],
+  ])('refuses to sweep a %s target in every mode', (environment, database) => {
+    for (const mode of scraperSweepModes()) {
+      expect(() =>
+        validateScraperSweepEnvironment(mode, {
+          SCRAPER_ENV: environment,
+          MONGODBURL: `mongodb+srv://example.invalid/${database}`,
+          ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
+          MEILISEARCH_HOST: 'http://127.0.0.1:7700',
+        }),
+      ).toThrow(/requires SCRAPER_ENV=development/);
+    }
   });
 
   it('derives the post-run plan from the stage registry in a single source of truth', () => {
@@ -1381,8 +1300,6 @@ describe('runScraperSweep', () => {
     expect(isDeadObservationPruneSweepMode('fellowship-development-full')).toBe(true);
     expect(isDeadObservationPruneSweepMode('development-plan')).toBe(false);
     expect(isDeadObservationPruneSweepMode('development-sample')).toBe(false);
-    expect(isDeadObservationPruneSweepMode('beta-plan')).toBe(false);
-    expect(isDeadObservationPruneSweepMode('beta-fetch')).toBe(false);
   });
 
   it('omits the fellowship dead-data-prune stage by default and appends it last when enabled', () => {

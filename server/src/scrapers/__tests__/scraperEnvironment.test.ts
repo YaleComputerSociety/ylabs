@@ -3,6 +3,7 @@ import {
   applyObservationPruneEnvironmentGuards,
   applyScraperEnvironmentGuards,
   assertScraperEnvironmentMatchesMongoTarget,
+  promotionOnlyScraperWriteRefusal,
   resolveMongoDatabaseName,
   resolveScraperEnvironment,
   summarizeMongoUrl,
@@ -213,68 +214,51 @@ describe('applyScraperEnvironmentGuards', () => {
     expect(guarded.warnings).toEqual([]);
   });
 
-  it('blocks production writes without --release', () => {
-    expect(() =>
-      applyScraperEnvironmentGuards({
-        command: 'run',
-        options: { ...baseOptions, dryRun: false, release: false },
-        autoMaterialize: false,
-        env: {
-          SCRAPER_ENV: 'production',
-          CONFIRM_PROD_SCRAPE: 'true',
-        },
-      }),
-    ).toThrow('Production scraper writes require --release.');
+  it.each([
+    ['run', 'beta', 'Beta', { ALLOW_NON_PROD_SCRAPER_WRITES: 'true' }],
+    ['cron', 'beta', 'Beta', { ALLOW_NON_PROD_SCRAPER_WRITES: 'true' }],
+    ['materialize', 'beta', 'Beta', { ALLOW_NON_PROD_SCRAPER_WRITES: 'true' }],
+    ['run', 'production', 'Prod', { CONFIRM_PROD_SCRAPE: 'true' }],
+    ['cron', 'production', 'Prod', { CONFIRM_PROD_SCRAPE: 'true' }],
+    ['materialize', 'production', 'Prod', { CONFIRM_PROD_SCRAPE: 'true' }],
+  ] as const)(
+    'refuses a %s write against %s and points at the promotion path',
+    (command, environment, database, confirmations) => {
+      expect(() =>
+        applyScraperEnvironmentGuards({
+          command,
+          options: { ...baseOptions, dryRun: false, release: true },
+          autoMaterialize: true,
+          mongoUrl: `mongodb+srv://example.invalid/${database}`,
+          env: { SCRAPER_ENV: environment, ...confirmations },
+        }),
+      ).toThrow(promotionOnlyScraperWriteRefusal(environment));
+    },
+  );
+
+  it('names both promotion commands in the refusal', () => {
+    expect(promotionOnlyScraperWriteRefusal('beta')).toMatch(/beta:refresh-from-development:plan/);
+    expect(promotionOnlyScraperWriteRefusal('production')).toMatch(/production:promote-beta-copy/);
   });
 
-  it('blocks production writes without confirmation env var', () => {
-    expect(() =>
-      applyScraperEnvironmentGuards({
-        command: 'run',
-        options: { ...baseOptions, dryRun: false, release: true },
-        autoMaterialize: false,
-        env: { SCRAPER_ENV: 'production' },
-      }),
-    ).toThrow('CONFIRM_PROD_SCRAPE=true');
-  });
-
-  it('allows confirmed production release writes and disables cache', () => {
-    const guarded = applyScraperEnvironmentGuards({
+  it('still allows read-only dry runs against Beta and Production', () => {
+    const beta = applyScraperEnvironmentGuards({
       command: 'run',
-      options: { ...baseOptions, dryRun: false, release: true, useCache: true },
-      autoMaterialize: true,
-      env: {
-        SCRAPER_ENV: 'production',
-        CONFIRM_PROD_SCRAPE: 'true',
-      },
+      options: { ...baseOptions, dryRun: true },
+      autoMaterialize: false,
+      mongoUrl: 'mongodb+srv://example.invalid/Beta',
+      env: { SCRAPER_ENV: 'beta', ALLOW_NON_PROD_SCRAPER_WRITES: 'true' },
     });
+    expect(beta.options.dryRun).toBe(true);
 
-    expect(guarded.options.dryRun).toBe(false);
-    expect(guarded.options.release).toBe(true);
-    expect(guarded.options.useCache).toBe(false);
-    expect(guarded.autoMaterialize).toBe(true);
-  });
-
-  it('treats cron as a confirmed production release write', () => {
-    expect(() =>
-      applyScraperEnvironmentGuards({
-        command: 'cron',
-        options: { ...baseOptions, dryRun: false, release: false },
-        autoMaterialize: true,
-        env: {
-          SCRAPER_ENV: 'production',
-          CONFIRM_PROD_SCRAPE: 'true',
-        },
-      }),
-    ).toThrow('Production scraper writes require --release.');
-
-    expect(() =>
-      applyScraperEnvironmentGuards({
-        command: 'cron',
-        options: { ...baseOptions, dryRun: false, release: true },
-        autoMaterialize: true,
-        env: { SCRAPER_ENV: 'production' },
-      }),
-    ).toThrow('CONFIRM_PROD_SCRAPE=true');
+    const production = applyScraperEnvironmentGuards({
+      command: 'materialize',
+      options: { ...baseOptions, dryRun: true, useCache: true },
+      autoMaterialize: false,
+      mongoUrl: 'mongodb+srv://example.invalid/Prod',
+      env: { SCRAPER_ENV: 'production' },
+    });
+    expect(production.options.dryRun).toBe(true);
+    expect(production.options.useCache).toBe(false);
   });
 });

@@ -201,7 +201,7 @@ The server test suite must never read them either, and `server/src/test/hermetic
 - `server/src/passport.ts` controls CAS auth and `Account` login (via `accountService`).
 - `server/src/db/connections.ts` controls database connections and migration mode.
 - `server/src/app.ts` controls CORS, rate limits, session settings, route mounting, and security middleware.
-- Production scraper writes require explicit guardrails with `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`.
+- Scraper writes against Beta or Production are refused outright by `applyScraperEnvironmentGuards`; both environments receive data only through promotion. Promotion and other guarded Production scripts still require `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`.
 
 ## Environment variables
 
@@ -224,7 +224,7 @@ The server test suite must never read them either, and `server/src/test/hermetic
 | `PORT` | No | Server port, default 4000. |
 | `SCRAPER_ENV` | No | Scraper write guards. |
 | `ALLOW_NON_PROD_SCRAPER_WRITES` | No | Enables scraper writes to non-prod DBs. |
-| `CONFIRM_PROD_SCRAPE` | No | Enables production scraper writes with production env. |
+| `CONFIRM_PROD_SCRAPE` | No | Confirms guarded Production writes such as the promotion and reindex; scraper writes against Production are refused regardless. |
 | `SCRAPER_DEVELOPMENT_DB_NAME` | No | Overrides the exact Development database name expected by scraper guards. |
 | `SCRAPER_BETA_DB_NAME` | No | Overrides the exact Beta database name expected by scraper guards. |
 | `SCRAPER_PRODUCTION_DB_NAME` | No | Overrides the exact Production database name expected by scraper guards. |
