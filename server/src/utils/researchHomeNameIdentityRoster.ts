@@ -50,22 +50,64 @@ export async function loadKnownPersonSurnameRoster(): Promise<ReadonlySet<string
  * needs: a roster says an eponym is somebody's surname, and only the lead says
  * whether that somebody is this record (#2369).
  */
-export async function loadResearchEntityLeadPersonName(researchEntityId: unknown): Promise<string> {
+export async function loadResearchEntityLeadPersonName(
+  researchEntityId: unknown,
+  prefetchedLeadPersonId?: string,
+): Promise<string> {
   const entityId = serializedDocumentId(researchEntityId);
   if (!entityId) return '';
-  const lead = await RoleAssignment.findOne({
+  const personId =
+    prefetchedLeadPersonId !== undefined
+      ? prefetchedLeadPersonId
+      : serializedDocumentId(
+          (
+            (await RoleAssignment.findOne({
+              'target.kind': 'RESEARCH_ENTITY',
+              'target.id': entityId,
+              role: { $in: RESEARCH_HOME_LEAD_ROLES },
+              archived: { $ne: true },
+              state: { $ne: 'HISTORICAL' },
+            })
+              .select('personId')
+              .lean()) as { personId?: unknown } | null
+          )?.personId,
+        );
+  if (!personId) return '';
+  const person = await Researcher.findById(personId).select('displayName').lean();
+  return String((person as { displayName?: unknown } | null)?.displayName || '');
+}
+
+/**
+ * The person each research entity's own lead role assignments name, by entity id,
+ * for a caller that reads many entities at once. An entity with more than one lead
+ * assignment lists every assignment, so a caller that needs the single answer
+ * `loadResearchEntityLeadPersonName` would give can tell when it cannot know it.
+ */
+export async function loadResearchEntityLeadPersonIds(
+  researchEntityIds: readonly string[],
+): Promise<Map<string, string[]>> {
+  const personIdsByEntityId = new Map<string, string[]>(
+    researchEntityIds.map((entityId) => [entityId, []]),
+  );
+  if (researchEntityIds.length === 0) return personIdsByEntityId;
+  const assignments = await RoleAssignment.find({
     'target.kind': 'RESEARCH_ENTITY',
-    'target.id': entityId,
+    'target.id': { $in: [...researchEntityIds] },
     role: { $in: RESEARCH_HOME_LEAD_ROLES },
     archived: { $ne: true },
     state: { $ne: 'HISTORICAL' },
   })
-    .select('personId')
+    .select('target.id personId')
     .lean();
-  const personId = serializedDocumentId((lead as { personId?: unknown } | null)?.personId);
-  if (!personId) return '';
-  const person = await Researcher.findById(personId).select('displayName').lean();
-  return String((person as { displayName?: unknown } | null)?.displayName || '');
+  for (const assignment of assignments as Array<{
+    target?: { id?: unknown };
+    personId?: unknown;
+  }>) {
+    const entityId = serializedDocumentId(assignment.target?.id);
+    const bucket = entityId ? personIdsByEntityId.get(entityId) : undefined;
+    if (bucket) bucket.push(serializedDocumentId(assignment.personId) || '');
+  }
+  return personIdsByEntityId;
 }
 
 /**

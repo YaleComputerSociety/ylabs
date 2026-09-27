@@ -273,6 +273,15 @@ The CLI calls it after `orchestrator.run` returns, so a scraper that throws (run
 Nothing else re-enumerates observations by key: `research-entity:rematerialize` selects by `research_entities.slug` and reports `found: false` for a key with no entity row, and the synthesis lanes enumerate existing entities.
 There is no corpus-wide materialize pass.
 
+`materializeFromRun` materializes its rows in their usual order, in chunks of up to 100 same-type rows (`materializeObservedEntitiesInChunks`, #3568).
+For each chunk, `MaterializationChunkPrefetch` reads once what each row would otherwise read on its own: the row's observations, and for research rows the stored document, the observations anchored to the row's other identifier, whether any merged-in row points at it, and its lead role assignment.
+Observation reads carry the per-row query's index hint, so each row sees its observations in the same order, because the resolver breaks an exact tie by array order.
+An entity with more than one lead assignment, a merged survivor, and a tombstoned or C4-adopted canonical all read live.
+In an apply run a row marks its own id and slug, and a fold marks its canonical, before anything is written.
+From then on every answer about a marked row reads live, and so does every "no document" answer after a create in the chunk.
+A prefetch that fails falls back to per-row reads.
+Dry-run projections were measured identical, apart from the wall-clock `lastObservedAt` and confidence decay of at most 1.5e-6, on 600 sampled Development rows from three lanes.
+
 The consequence is a stable failure mode rather than a transient one.
 Observations from an interrupted run stay live and unsuperseded forever, no entity is ever minted for their `entityKey`, and no later sweep revisits them, because supersession keys on `observationFingerprint` within a source lane rather than on whether the lane was ever materialized.
 Measured on Development for issue #2383: 978 of 1,508 stranded keys (10,828 of 14,592 live observations) were emitted only by runs that never reached `success`, including 521 of the 527 keys carrying a complete faculty observation set with no identifiable target.
