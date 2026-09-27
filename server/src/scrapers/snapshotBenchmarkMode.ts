@@ -27,9 +27,17 @@ export interface CapturedPage {
 }
 
 export class BenchmarkReplayNetworkError extends Error {
-  constructor() {
+  /**
+   * The refused request. Axios hands a request-interceptor rejection to the response error
+   * handlers, and the per-host limiter releases its slot from `error.config`, so without it
+   * every refused request leaks a slot until the host's budget is gone and replay hangs.
+   */
+  readonly config?: InternalAxiosRequestConfig;
+
+  constructor(config?: InternalAxiosRequestConfig) {
     super('benchmark replay: network requests are disabled');
     this.name = 'BenchmarkReplayNetworkError';
+    this.config = config;
   }
 }
 
@@ -132,9 +140,9 @@ export const isBenchmarkModeActive = (): boolean => mode !== null;
 
 export const isLiveModelReplayActive = (): boolean => mode?.kind === 'replay' && mode.liveModel;
 
-export function refuseBenchmarkReplayNetwork(): never {
+export function refuseBenchmarkReplayNetwork(config?: InternalAxiosRequestConfig): never {
   if (mode?.kind === 'replay') mode.networkBlocks += 1;
-  throw new BenchmarkReplayNetworkError();
+  throw new BenchmarkReplayNetworkError(config);
 }
 
 function serveFrozenModelResponse(
@@ -180,7 +188,7 @@ export function beginBenchmarkReplay(
       }
       replay.missed.add(key);
     }
-    return refuseBenchmarkReplayNetwork();
+    return refuseBenchmarkReplayNetwork(config);
   });
   mode = replay;
 }
