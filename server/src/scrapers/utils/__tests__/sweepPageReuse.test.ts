@@ -220,7 +220,7 @@ describe('attachSweepPageReuse', () => {
 
     expect(hits['/page']).toBe(2);
     expect(store.stats().lookups).toBe(0);
-    expect(SWEEP_PAGE_REUSE_HOSTS).toEqual(['medicine.yale.edu', 'ysph.yale.edu']);
+    expect(SWEEP_PAGE_REUSE_HOSTS).toEqual(['medicine.yale.edu']);
   });
 
   it('reads live inside withoutSweepPageReuse, and neither looks up nor stores there', async () => {

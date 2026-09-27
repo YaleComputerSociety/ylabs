@@ -232,7 +232,7 @@ describe('runScraperSweep', () => {
     try {
       const summary = sweepPageReuseSummary(withPages);
       expect(summary).toMatchObject({
-        hosts: ['medicine.yale.edu', 'ysph.yale.edu'],
+        hosts: ['medicine.yale.edu'],
         maxBytes: 16 * 1024 * 1024,
         heldBytes: 0,
       });

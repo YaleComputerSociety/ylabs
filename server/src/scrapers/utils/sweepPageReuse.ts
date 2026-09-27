@@ -15,7 +15,6 @@ import axios, {
 } from 'axios';
 import type { ScraperFetchMetrics, ScraperResult } from '../types';
 import { lineReader, writeLine } from './brokerWire';
-import { HOST_THROTTLE_OVERRIDES } from './hostConcurrencyLimiter';
 import { SCRAPER_HOST_SLOT_BROKER_ENV } from './hostSlotBroker';
 import {
   CALLER_OWNED_REQUEST_HEADERS,
@@ -36,7 +35,7 @@ export const DEFAULT_SWEEP_PAGE_REUSE_MAX_BYTES = 1024 * MEBIBYTE;
 export const SWEEP_PAGE_REUSE_MAX_PAGE_BYTES = 8 * MEBIBYTE;
 export const SWEEP_PAGE_REUSE_LOOKUP_TIMEOUT_MS = 5_000;
 
-export const SWEEP_PAGE_REUSE_HOSTS: readonly string[] = Object.keys(HOST_THROTTLE_OVERRIDES);
+export const SWEEP_PAGE_REUSE_HOSTS: readonly string[] = ['medicine.yale.edu'];
 
 const PERMANENT_REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 308]);
 

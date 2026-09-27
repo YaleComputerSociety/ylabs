@@ -215,7 +215,7 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     for (const call of sourceCalls) expect(call.args).toContain('--force-llm');
     for (const call of sourceCalls) expect(call.pageReuse).toBe('1');
     expect(firstSummary.pageReuse).toMatchObject({
-      hosts: ['medicine.yale.edu', 'ysph.yale.edu'],
+      hosts: ['medicine.yale.edu'],
       lookups: 0,
       maxBytes: 1024 * 1024 * 1024,
     });
