@@ -58,6 +58,10 @@ Client route guards:
 | `PublicRoute` | Renders for logged-out and authenticated users alike. |
 | `UnprivateRoute` | No auth required. |
 
+`PrivateRoute` and `AdminRoute` share one signed-out contract: they redirect to `/login` with `state.from` set to the requested path, query, and hash, and they `replace` the guarded entry so Back does not loop through `/login`.
+`AdminRoute` also replaces the entry when it sends a signed-in non-admin home.
+`SignInButton` normalizes `state.from` to a same-origin path before building the CAS `redirect` parameter, and the server's `safeRedirectTarget` in `passport.ts` validates it again, so the return path can never become an open redirect.
+
 ## Validation middleware
 
 Exported from `server/src/middleware/`:

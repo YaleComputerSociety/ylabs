@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import FellowshipSearchContext, {
@@ -85,7 +85,48 @@ const renderModal = (override: Partial<Fellowship> = {}) =>
     </MemoryRouter>,
   );
 
+const LocationProbe = () => {
+  const location = useLocation();
+  return <span data-testid="current-location">{`${location.pathname}${location.search}`}</span>;
+};
+
+const renderModalAt = (path: string, onClose: () => void) =>
+  render(
+    <MemoryRouter initialEntries={[path]}>
+      <LocationProbe />
+      <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
+        <FellowshipModal
+          fellowship={fellowship}
+          isOpen
+          isFavorite={false}
+          onClose={onClose}
+          toggleFavorite={vi.fn()}
+        />
+      </FellowshipSearchContext.Provider>
+    </MemoryRouter>,
+  );
+
 describe('FellowshipModal', () => {
+  it('leaves the programs page URL to the host when a filter chip closes the modal', () => {
+    const onClose = vi.fn();
+    renderModalAt('/programs?program=program-1', onClose);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Master’s Student' }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('current-location').textContent).toBe('/programs?program=program-1');
+  });
+
+  it('opens the programs page when a filter chip is chosen from another page', () => {
+    const onClose = vi.fn();
+    renderModalAt('/dashboard', onClose);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Master’s Student' }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('current-location').textContent).toBe('/programs');
+  });
+
   it('makes source-backed research application requirements scannable', () => {
     renderModal({
       researchFocused: true,

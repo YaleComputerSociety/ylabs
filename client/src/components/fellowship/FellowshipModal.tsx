@@ -2,7 +2,7 @@
  * Detail modal for viewing full fellowship information.
  */
 import React, { useContext, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { safeHttpUrl, safeMailtoHref } from '../../utils/url';
@@ -102,6 +102,8 @@ const trackFellowshipApplyClick = (fellowshipId: string, href: string) => {
   });
 };
 
+const PROGRAMS_PATH = '/programs';
+
 const sectionHeadingClass = 'mb-3 text-xs font-semibold uppercase tracking-wider text-muted';
 
 const FellowshipModal = ({
@@ -112,6 +114,7 @@ const FellowshipModal = ({
   toggleFavorite,
 }: FellowshipModalProps) => {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const {
     setSelectedYearOfStudy,
     setSelectedTermOfAward,
@@ -249,7 +252,9 @@ const FellowshipModal = ({
       payload: { waysInKind: 'best_next_step', label: filterType },
     });
     onClose();
-    void navigate('/programs');
+    if (pathname !== PROGRAMS_PATH) {
+      void navigate(PROGRAMS_PATH);
+    }
   };
 
   const hasContactInfo =
