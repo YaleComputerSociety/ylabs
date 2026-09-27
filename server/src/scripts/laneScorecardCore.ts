@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import type { ObservedEntityType } from '../models/observation';
+import { isRefusedObservationField } from '../scrapers/observationFieldSanitizer';
 import {
   observationAssertsRefusedValue,
   refusalLaneEvidenceFields,
@@ -28,6 +30,7 @@ export interface FieldScore {
 
 export interface LaneReplayScore {
   emitted: number;
+  refusedAtIngest: number;
   knownWrong: number;
   labelsMatched: number;
   labelCount: number;
@@ -94,10 +97,15 @@ export function scoreLaneReplay(
   const byField = new Map<string, FieldScore>();
   const matchedLabels = new Set<string>();
   let knownWrong = 0;
+  let refusedAtIngest = 0;
 
   for (const observation of observations) {
     const field = text(observation.field);
     if (!field) continue;
+    if (isRefusedObservationField(text(observation.entityType) as ObservedEntityType, field)) {
+      refusedAtIngest += 1;
+      continue;
+    }
     const score = byField.get(field) ?? {
       field,
       emitted: 0,
@@ -125,7 +133,8 @@ export function scoreLaneReplay(
   }
 
   return {
-    emitted: observations.length,
+    emitted: observations.length - refusedAtIngest,
+    refusedAtIngest,
     knownWrong,
     labelsMatched: matchedLabels.size,
     labelCount: labels.length,

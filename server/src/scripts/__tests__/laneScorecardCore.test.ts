@@ -84,6 +84,22 @@ describe('scoreLaneReplay', () => {
   });
 });
 
+describe('scoreLaneReplay ingest refusals', () => {
+  it('does not score a value the observation store refuses at ingest', () => {
+    const score = scoreLaneReplay(
+      [
+        { entityType: 'researchEntity', entityKey: 'row-a', field: 'kind', value: 'lab' },
+        { entityType: 'researchEntity', entityKey: 'row-a', field: 'entityType', value: 'LAB' },
+      ],
+      [label('row-a', 'kind', 'lab'), label('row-a', 'entityType', 'LAB')],
+    );
+    expect(score.emitted).toBe(1);
+    expect(score.refusedAtIngest).toBe(1);
+    expect(score.knownWrong).toBe(1);
+    expect(score.byField.map((field) => field.field)).toEqual(['entityType']);
+  });
+});
+
 describe('plannedOutputFingerprint', () => {
   const a = { entityType: 'researchEntity', entityKey: 'row-a', field: 'name', value: 'A' };
   const b = { entityType: 'researchEntity', entityKey: 'row-b', field: 'name', value: 'B' };
@@ -149,6 +165,7 @@ describe('run-clock fields', () => {
 describe('summarizeLiveModelRuns', () => {
   const score = (fingerprint: string, fields: Record<string, number>): LaneReplayScore => ({
     emitted: Object.values(fields).reduce((sum, count) => sum + count, 0),
+    refusedAtIngest: 0,
     knownWrong: 0,
     labelsMatched: 0,
     labelCount: 0,

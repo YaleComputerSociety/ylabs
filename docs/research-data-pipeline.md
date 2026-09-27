@@ -703,7 +703,7 @@ One source declares a contract and one field is retractable, covering 766 of the
 Whether those pages dropped their links is not measurable until those sources declare a witness contract, so contract coverage is a prerequisite for diagnosing this backlog rather than only for fixing it.
 
 Widening coverage is not a configuration change.
-`dept-faculty-roster` holds 15 of the 26 and emits `websiteUrl` only when `entry.labUrl` is set, which looks like the contracted source's shape but is not: `labUrl` is left unset by four refusal paths as well as by a genuinely empty entry, so testing `!entry.labUrl` would reintroduce exactly what #2647 measured, where 2 of 4 planned retractions were refusals of links the page still carried.
+`dept-faculty-roster` holds 15 of the 26 and emits `websiteUrl` only when `entry.labUrl` is set, which looks like the contracted source's shape but is not: `labUrl` is left unset by several refusal paths, a website the same roster lists for two or more people among them, as well as by a genuinely empty entry, so testing `!entry.labUrl` would reintroduce exactly what #2647 measured, where 2 of 4 planned retractions were refusals of links the page still carried.
 An honest contract for a source needs a parse-time "no candidate was present at all" signal kept distinct from every refusal path, which is what `labSlotIsEmpty` is on the contracted source.
 
 ### Value refusal: how a repair persists without freezing a field

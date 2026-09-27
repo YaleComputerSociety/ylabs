@@ -47,6 +47,7 @@ import {
   type DeptConfig,
   type FacultyEntry,
   type FacultyExtractor,
+  withoutSharedGroupWebsites,
 } from '../sources/departmentRosterScraper';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -2374,6 +2375,79 @@ describe('DepartmentRosterScraper.run', () => {
     expect(
       emitted.filter((o) => o.entityType === 'user' && o.field === 'departments'),
     ).toHaveLength(2);
+  });
+
+  it('keeps a programme PI website that a non-faculty row also lists', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Robin Roster',
+        profileUrl: 'https://earlymodern.yale.edu/profile/robin-roster',
+        title: 'Professor of English',
+        labUrl: 'https://robinlab.example.org',
+      },
+      {
+        name: 'Ali Postdoc',
+        profileUrl: 'https://earlymodern.yale.edu/profile/ali-postdoc',
+        labUrl: 'https://robinlab.example.org',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.endsWith('/ali-postdoc')
+        ? '<html><body><h1>Ali Postdoc</h1><div class="job-title">Postdoctoral Associate</div></body></html>'
+        : '<html><body></body></html>',
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'early-modern-studies',
+        deptName: 'Early Modern Studies',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://earlymodern.yale.edu/people',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const websites = emitted
+      .filter((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl')
+      .map((o) => o.value);
+    expect(websites).toEqual(['https://robinlab.example.org']);
+  });
+
+  it('counts only admitted programme faculty toward --limit', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Sam Student', profileUrl: 'https://earlymodern.yale.edu/profile/sam-student' },
+      { name: 'Robin Roster', title: 'Professor of English' },
+      { name: 'Robin Roster', title: 'Professor of English' },
+      { name: 'Ada Second', title: 'Assistant Professor' },
+    ]);
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.endsWith('/sam-student')
+        ? '<html><body><h1>Sam Student</h1><div class="job-title">Graduate School Student</div></body></html>'
+        : '<html><body></body></html>',
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'early-modern-studies',
+        deptName: 'Early Modern Studies',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://earlymodern.yale.edu/people',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext({ limit: 2 });
+    await scraper.run(ctx);
+
+    const admittedNames = emitted
+      .filter((o) => o.entityType === 'user' && o.field === 'fname')
+      .map((o) => o.value);
+    expect(admittedNames).toEqual(['Robin', 'Ada']);
   });
 
   it('walks every page of a paginated cross-listed programme directory', async () => {
@@ -5093,5 +5167,42 @@ describe('DepartmentRosterScraper lane execution', () => {
 
     expect(result.notes).toBe('Departments: wanted=1');
     expect(htmlFetcher.mock.calls.some((call) => String(call[0]).includes('skipped.'))).toBe(false);
+  });
+});
+
+describe('withoutSharedGroupWebsites', () => {
+  const item = (personKey: string, labUrl?: string) => ({
+    personKey,
+    entry: { name: `Person ${personKey}`, labUrl } as Parameters<
+      typeof withoutSharedGroupWebsites
+    >[0][number]['entry'],
+  });
+
+  it('refuses a website the roster lists for two different people, for both', () => {
+    const out = withoutSharedGroupWebsites([
+      item('a', 'https://group.example.org/'),
+      item('b', 'http://www.group.example.org'),
+      item('c', 'https://own.example.org/'),
+    ]);
+    expect(out[0].entry.labUrl).toBeUndefined();
+    expect(out[0].entry.labSlotAttestation).toBe('refused');
+    expect(out[1].entry.labUrl).toBeUndefined();
+    expect(out[2].entry.labUrl).toBe('https://own.example.org/');
+  });
+
+  it('keeps a website one person is listed with twice', () => {
+    const out = withoutSharedGroupWebsites([
+      item('a', 'https://own.example.org/'),
+      item('a', 'https://own.example.org/'),
+    ]);
+    expect(out.map((entry) => entry.entry.labUrl)).toEqual([
+      'https://own.example.org/',
+      'https://own.example.org/',
+    ]);
+  });
+
+  it('never marks a row with no website', () => {
+    const [out] = withoutSharedGroupWebsites([item('a')]);
+    expect(out.entry.labSlotAttestation).toBeUndefined();
   });
 });

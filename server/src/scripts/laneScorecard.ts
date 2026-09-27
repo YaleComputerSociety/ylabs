@@ -77,6 +77,21 @@ interface StoredBenchmark {
   only?: string[];
   limit?: number;
   labels?: BenchmarkLabel[];
+  plannedObservationCount?: number;
+}
+
+/**
+ * A replay that plans nothing where its capture planned values measured the environment,
+ * not the lane: an LLM lane with no API key emits zero and says so in a log line. Stored,
+ * that row reads as a lane with no known-wrong values at all.
+ */
+export function emptyReplayReason(
+  benchmark: Pick<StoredBenchmark, 'plannedObservationCount'>,
+  score: { emitted: number; refusedAtIngest: number },
+): string | undefined {
+  const captured = benchmark.plannedObservationCount ?? 0;
+  if (captured === 0 || score.emitted + score.refusedAtIngest > 0) return undefined;
+  return `replay planned no values where the capture planned ${captured}`;
 }
 
 async function replayBenchmark(
@@ -131,6 +146,7 @@ async function main(): Promise<void> {
   const codeSha = currentCodeSha();
   const databaseName = mongoose.connection.db?.databaseName ?? 'unknown';
   const results: Array<Record<string, unknown>> = [];
+  const unscored: Array<{ benchmarkId: string; reason: string }> = [];
   for (const benchmark of benchmarks) {
     const pages = (await LaneBenchmarkPage.find({ benchmarkId: benchmark.benchmarkId })
       .select('sourceName requestKey payload fetchedAt')
@@ -154,6 +170,11 @@ async function main(): Promise<void> {
       continue;
     }
     const { score, replay, truncated } = await replayBenchmark(benchmark, pages);
+    const emptyReason = emptyReplayReason(benchmark, score);
+    if (emptyReason) {
+      unscored.push({ benchmarkId: benchmark.benchmarkId, reason: emptyReason });
+      continue;
+    }
     const snapshot = {
       measuredAt: new Date(),
       environment: guard.environment,
@@ -174,6 +195,7 @@ async function main(): Promise<void> {
     mode: options.liveModelRuns ? 'live-model' : options.dryRun ? 'dry-run' : 'apply',
     benchmarks: results.length,
     stored: options.dryRun ? 0 : results.length,
+    unscored,
     results,
   };
   console.log(JSON.stringify(report, null, 2));
@@ -182,6 +204,7 @@ async function main(): Promise<void> {
     fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
   }
   await mongoose.disconnect();
+  if (unscored.length > 0) process.exitCode = 1;
 }
 
 const invokedDirectly =

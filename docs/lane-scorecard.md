@@ -72,6 +72,11 @@ A `readAt` key inside a value is masked first, because it is the moment the lane
 Every other date still counts, including a page-stated deadline serialized as a full instant.
 Fingerprints stored before this masking landed are not comparable with later ones.
 
+- `refusedAtIngest` counts planned values the observation store would refuse outright, such as the retired `kind` field, and they are left out of `emitted` and `knownWrong`, because a value that is never stored cannot be wrong on a served row.
+Before this, three `ysm-faculty-directory` known-wrong values were `kind` claims that never reached the log.
+
+A replay that plans nothing where its capture planned values is not stored and makes the run exit non-zero, because it measured the environment rather than the lane: an LLM lane with no `OPENAI_API_KEY` emits zero, and stored as a score that row would read as a lane with no wrong values at all.
+
 The ratio to watch is `knownWrong / labeledEntityEmitted`, never `1 - knownWrong / emitted`.
 A refusal is a negative label only, and a value no refusal names is unjudged rather than correct, which is the defect #3514 removed from the identity harness.
 
