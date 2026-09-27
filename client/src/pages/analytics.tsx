@@ -3,6 +3,7 @@
  */
 import {
   FormEvent,
+  SetStateAction,
   Suspense,
   lazy,
   useCallback,
@@ -17,6 +18,8 @@ import type { CorpusQualityResponse } from '../components/analytics/corpusQualit
 import swal from 'sweetalert';
 import { clientErrorMessage } from '../utils/clientErrorMessage';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import useLatestRequest from '../hooks/useLatestRequest';
+import useDebouncedCallback from '../hooks/useDebouncedCallback';
 import UserContext from '../contexts/UserContext';
 import {
   AnalyticsActionNeededResponse,
@@ -72,6 +75,50 @@ const defaultAuditEvents: AdminAuditEventsResponse = {
   totalPages: 1,
 };
 
+interface UserActivityQuery {
+  search: string;
+  userType: string;
+  sort: UserActivitySort;
+  order: SortOrder;
+  limit: number;
+  offset: number;
+}
+
+type UserActivityRefinement = Partial<Omit<UserActivityQuery, 'offset'>>;
+
+const initialUserActivityQuery: UserActivityQuery = {
+  search: '',
+  userType: 'all',
+  sort: 'lastActive',
+  order: 'desc',
+  limit: 25,
+  offset: 0,
+};
+
+interface AuditQuery {
+  actor: string;
+  action: string;
+  targetType: string;
+  page: number;
+}
+
+type AuditRefinement = Partial<Omit<AuditQuery, 'page'>>;
+
+const initialAuditQuery: AuditQuery = {
+  actor: '',
+  action: 'all',
+  targetType: 'all',
+  page: 1,
+};
+
+const SEARCH_INPUT_DEBOUNCE_MS = 300;
+
+const refinementChangesQuery = <Query extends object>(query: Query, refinement: Partial<Query>) =>
+  (Object.keys(refinement) as Array<keyof Query>).some((key) => refinement[key] !== query[key]);
+
+const resolveStateAction = (action: SetStateAction<number>, current: number) =>
+  typeof action === 'function' ? action(current) : action;
+
 const defaultAdminAccess: AdminAccessResponse = {
   activeCount: 0,
   grants: [],
@@ -106,19 +153,14 @@ const Analytics = () => {
     useState<AnalyticsUserActivityResponse>(defaultUserActivity);
   const [isUserActivityLoading, setIsUserActivityLoading] = useState(false);
   const [userActivityError, setUserActivityError] = useState<string | null>(null);
-  const [userSearch, setUserSearch] = useState('');
-  const [userTypeFilter, setUserTypeFilter] = useState('all');
-  const [userActivityLimit, setUserActivityLimit] = useState(25);
-  const [userActivityOffset, setUserActivityOffset] = useState(0);
-  const [userActivitySort, setUserActivitySort] = useState<UserActivitySort>('lastActive');
-  const [userActivityOrder, setUserActivityOrder] = useState<SortOrder>('desc');
+  const [userSearchInput, setUserSearchInput] = useState('');
+  const [userActivityQuery, setUserActivityQuery] =
+    useState<UserActivityQuery>(initialUserActivityQuery);
   const [auditEvents, setAuditEvents] = useState<AdminAuditEventsResponse>(defaultAuditEvents);
   const [isAuditLoading, setIsAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
-  const [auditActorFilter, setAuditActorFilter] = useState('');
-  const [auditActionFilter, setAuditActionFilter] = useState('all');
-  const [auditTargetTypeFilter, setAuditTargetTypeFilter] = useState('all');
-  const [auditPage, setAuditPage] = useState(1);
+  const [auditActorInput, setAuditActorInput] = useState('');
+  const [auditQuery, setAuditQuery] = useState<AuditQuery>(initialAuditQuery);
   const [selectedNetid, setSelectedNetid] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<AnalyticsUserDrilldownResponse | null>(null);
   const [isSelectedUserLoading, setIsSelectedUserLoading] = useState(false);
@@ -169,67 +211,115 @@ const Analytics = () => {
     }
   }, [analyticsRange]);
 
+  const userActivityRequest = useLatestRequest();
+  const auditRequest = useLatestRequest();
+  const selectedUserRequest = useLatestRequest();
+
+  const refineUserActivityQuery = useCallback((refinement: UserActivityRefinement) => {
+    setUserActivityQuery((query) =>
+      refinementChangesQuery(query, refinement) ? { ...query, ...refinement, offset: 0 } : query,
+    );
+  }, []);
+
+  const setUserActivityOffset = useCallback((offset: SetStateAction<number>) => {
+    setUserActivityQuery((query) => ({
+      ...query,
+      offset: resolveStateAction(offset, query.offset),
+    }));
+  }, []);
+
+  const commitUserSearch = useDebouncedCallback(
+    (search: string) => refineUserActivityQuery({ search: search.trim() }),
+    SEARCH_INPUT_DEBOUNCE_MS,
+  );
+
+  const changeUserSearch = (search: string) => {
+    setUserSearchInput(search);
+    commitUserSearch(search);
+  };
+
+  const refineAuditQuery = useCallback((refinement: AuditRefinement) => {
+    setAuditQuery((query) =>
+      refinementChangesQuery(query, refinement) ? { ...query, ...refinement, page: 1 } : query,
+    );
+  }, []);
+
+  const setAuditPage = (page: SetStateAction<number>) => {
+    setAuditQuery((query) => ({ ...query, page: resolveStateAction(page, query.page) }));
+  };
+
+  const commitAuditActor = useDebouncedCallback(
+    (actor: string) => refineAuditQuery({ actor: actor.trim().toLowerCase() }),
+    SEARCH_INPUT_DEBOUNCE_MS,
+  );
+
+  const changeAuditActor = (actor: string) => {
+    setAuditActorInput(actor);
+    commitAuditActor(actor);
+  };
+
   const fetchUserActivity = useCallback(async () => {
+    const request = userActivityRequest.begin();
     setIsUserActivityLoading(true);
     setUserActivityError(null);
     try {
       const response = await axios.get<AnalyticsUserActivityResponse>('/analytics/users', {
         withCredentials: true,
+        signal: request.signal,
         params: {
-          search: userSearch.trim() || undefined,
-          userType: userTypeFilter === 'all' ? undefined : userTypeFilter,
-          sort: userActivitySort,
-          direction: userActivityOrder,
-          limit: userActivityLimit,
-          offset: userActivityOffset,
+          search: userActivityQuery.search || undefined,
+          userType: userActivityQuery.userType === 'all' ? undefined : userActivityQuery.userType,
+          sort: userActivityQuery.sort,
+          direction: userActivityQuery.order,
+          limit: userActivityQuery.limit,
+          offset: userActivityQuery.offset,
         },
       });
+      if (!request.isCurrent()) return;
       setUserActivity({
         ...defaultUserActivity,
         ...response.data,
         users: response.data.users || [],
       });
     } catch {
+      if (!request.isCurrent()) return;
       console.error('Error fetching user analytics.');
       setUserActivityError('Failed to load user activity data');
     } finally {
-      setIsUserActivityLoading(false);
+      if (request.isCurrent()) setIsUserActivityLoading(false);
     }
-  }, [
-    userActivityLimit,
-    userActivityOffset,
-    userActivityOrder,
-    userActivitySort,
-    userSearch,
-    userTypeFilter,
-  ]);
+  }, [userActivityQuery, userActivityRequest]);
 
   const fetchAuditEvents = useCallback(async () => {
+    const request = auditRequest.begin();
     setIsAuditLoading(true);
     setAuditError(null);
     try {
       const response = await axios.get<AdminAuditEventsResponse>('/admin/audit-events', {
         withCredentials: true,
+        signal: request.signal,
         params: {
-          actor: auditActorFilter.trim().toLowerCase() || undefined,
-          action: auditActionFilter === 'all' ? undefined : auditActionFilter,
-          targetType: auditTargetTypeFilter === 'all' ? undefined : auditTargetTypeFilter,
-          page: auditPage,
+          actor: auditQuery.actor || undefined,
+          action: auditQuery.action === 'all' ? undefined : auditQuery.action,
+          targetType: auditQuery.targetType === 'all' ? undefined : auditQuery.targetType,
+          page: auditQuery.page,
           pageSize: defaultAuditEvents.pageSize,
         },
       });
+      if (!request.isCurrent()) return;
       setAuditEvents({
         ...defaultAuditEvents,
         ...response.data,
         events: response.data.events || [],
       });
     } catch {
+      if (!request.isCurrent()) return;
       console.error('Error fetching admin audit events.');
       setAuditError('Failed to load admin audit log');
     } finally {
-      setIsAuditLoading(false);
+      if (request.isCurrent()) setIsAuditLoading(false);
     }
-  }, [auditActionFilter, auditActorFilter, auditPage, auditTargetTypeFilter]);
+  }, [auditQuery, auditRequest]);
 
   const fetchAdminAccess = useCallback(async () => {
     setAdminAccessError(null);
@@ -342,26 +432,39 @@ const Analytics = () => {
     [fetchAdminAccess],
   );
 
-  const fetchSelectedUser = useCallback(async (netid: string) => {
-    setIsSelectedUserLoading(true);
+  const selectNetid = useCallback((netid: string | null) => {
+    setSelectedNetid(netid);
+    setSelectedUser(null);
     setSelectedUserError(null);
-    try {
-      const response = await axios.get<AnalyticsUserDrilldownResponse>(
-        `/analytics/users/${encodeURIComponent(netid)}`,
-        { withCredentials: true },
-      );
-      setSelectedUser({
-        ...response.data,
-        events: response.data.events || [],
-      });
-    } catch {
-      console.error('Error fetching user drilldown.');
-      setSelectedUser(null);
-      setSelectedUserError('Failed to load NetID activity');
-    } finally {
-      setIsSelectedUserLoading(false);
-    }
+    setIsSelectedUserLoading(netid !== null);
   }, []);
+
+  const fetchSelectedUser = useCallback(
+    async (netid: string) => {
+      const request = selectedUserRequest.begin();
+      setIsSelectedUserLoading(true);
+      setSelectedUserError(null);
+      try {
+        const response = await axios.get<AnalyticsUserDrilldownResponse>(
+          `/analytics/users/${encodeURIComponent(netid)}`,
+          { withCredentials: true, signal: request.signal },
+        );
+        if (!request.isCurrent()) return;
+        setSelectedUser({
+          ...response.data,
+          events: response.data.events || [],
+        });
+      } catch {
+        if (!request.isCurrent()) return;
+        console.error('Error fetching user drilldown.');
+        setSelectedUser(null);
+        setSelectedUserError('Failed to load NetID activity');
+      } finally {
+        if (request.isCurrent()) setIsSelectedUserLoading(false);
+      }
+    },
+    [selectedUserRequest],
+  );
 
   const fetchCorpusQuality = useCallback(async () => {
     setIsCorpusQualityLoading(true);
@@ -429,14 +532,6 @@ const Analytics = () => {
   }, [data, fetchAdminAccess, fetchUserActivity]);
 
   useEffect(() => {
-    setUserActivityOffset(0);
-  }, [userSearch, userTypeFilter, userActivitySort, userActivityOrder, userActivityLimit]);
-
-  useEffect(() => {
-    setAuditPage(1);
-  }, [auditActorFilter, auditActionFilter, auditTargetTypeFilter]);
-
-  useEffect(() => {
     if (data) {
       void fetchAuditEvents();
     }
@@ -458,10 +553,9 @@ const Analytics = () => {
     if (selectedNetid) {
       void fetchSelectedUser(selectedNetid);
     } else {
-      setSelectedUser(null);
-      setSelectedUserError(null);
+      selectedUserRequest.cancel();
     }
-  }, [fetchSelectedUser, selectedNetid]);
+  }, [fetchSelectedUser, selectedNetid, selectedUserRequest]);
 
   if (isLoading) {
     return (
@@ -490,20 +584,19 @@ const Analytics = () => {
   }
 
   const updateUserActivitySort = (sort: UserActivitySort) => {
-    if (sort === userActivitySort) {
-      setUserActivityOrder(userActivityOrder === 'asc' ? 'desc' : 'asc');
+    if (sort === userActivityQuery.sort) {
+      refineUserActivityQuery({ order: userActivityQuery.order === 'asc' ? 'desc' : 'asc' });
       return;
     }
 
-    setUserActivitySort(sort);
-    setUserActivityOrder('desc');
+    refineUserActivityQuery({ sort, order: 'desc' });
   };
 
   const sortLabel = (sort: UserActivitySort) => {
-    if (sort !== userActivitySort) {
+    if (sort !== userActivityQuery.sort) {
       return '';
     }
-    return userActivityOrder === 'asc' ? ' ^' : ' v';
+    return userActivityQuery.order === 'asc' ? ' ^' : ' v';
   };
 
   const adminAccessHistory = adminAccess.history || [];
@@ -992,8 +1085,8 @@ const Analytics = () => {
               </span>
               <input
                 type="search"
-                value={auditActorFilter}
-                onChange={(event) => setAuditActorFilter(event.target.value)}
+                value={auditActorInput}
+                onChange={(event) => changeAuditActor(event.target.value)}
                 placeholder="e.g. abc1234"
                 className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               />
@@ -1003,8 +1096,8 @@ const Analytics = () => {
                 Action
               </span>
               <select
-                value={auditActionFilter}
-                onChange={(event) => setAuditActionFilter(event.target.value)}
+                value={auditQuery.action}
+                onChange={(event) => refineAuditQuery({ action: event.target.value })}
                 className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               >
                 <option value="all">All actions</option>
@@ -1020,8 +1113,8 @@ const Analytics = () => {
                 Target Type
               </span>
               <select
-                value={auditTargetTypeFilter}
-                onChange={(event) => setAuditTargetTypeFilter(event.target.value)}
+                value={auditQuery.targetType}
+                onChange={(event) => refineAuditQuery({ targetType: event.target.value })}
                 className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               >
                 <option value="all">All targets</option>
@@ -1195,22 +1288,22 @@ const Analytics = () => {
             userActivity={userActivity}
             isUserActivityLoading={isUserActivityLoading}
             userActivityError={userActivityError}
-            userSearch={userSearch}
-            setUserSearch={setUserSearch}
-            userTypeFilter={userTypeFilter}
-            setUserTypeFilter={setUserTypeFilter}
-            userActivitySort={userActivitySort}
-            setUserActivitySort={setUserActivitySort}
-            userActivityOrder={userActivityOrder}
-            setUserActivityOrder={setUserActivityOrder}
-            userActivityLimit={userActivityLimit}
-            setUserActivityLimit={setUserActivityLimit}
+            userSearch={userSearchInput}
+            setUserSearch={changeUserSearch}
+            userTypeFilter={userActivityQuery.userType}
+            setUserTypeFilter={(userType) => refineUserActivityQuery({ userType })}
+            userActivitySort={userActivityQuery.sort}
+            setUserActivitySort={(sort) => refineUserActivityQuery({ sort })}
+            userActivityOrder={userActivityQuery.order}
+            setUserActivityOrder={(order) => refineUserActivityQuery({ order })}
+            userActivityLimit={userActivityQuery.limit}
+            setUserActivityLimit={(limit) => refineUserActivityQuery({ limit })}
             setUserActivityOffset={setUserActivityOffset}
             fetchUserActivity={() => void fetchUserActivity()}
             updateUserActivitySort={updateUserActivitySort}
             sortLabel={sortLabel}
             selectedNetid={selectedNetid}
-            setSelectedNetid={setSelectedNetid}
+            setSelectedNetid={selectNetid}
             selectedUser={selectedUser}
             isSelectedUserLoading={isSelectedUserLoading}
             selectedUserError={selectedUserError}
