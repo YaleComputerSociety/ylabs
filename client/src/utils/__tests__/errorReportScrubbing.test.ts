@@ -127,4 +127,34 @@ describe('scrubErrorEvent', () => {
       'Failed to load https://yalelabs.io/api/research/:param',
     );
   });
+
+  it('scrubs stack frame locations but keeps bundled asset files for source maps', () => {
+    const assetUrl = `${window.location.origin}/assets/index-abc123.js`;
+    const pageUrl = `${window.location.origin}/research/person/${SYNTHETIC_KEY}?q=${SYNTHETIC_QUERY}`;
+    const event: ErrorEvent = {
+      type: undefined,
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            stacktrace: {
+              frames: [
+                { filename: assetUrl, abs_path: assetUrl },
+                { filename: pageUrl, abs_path: pageUrl },
+                { filename: `${assetUrl}?q=${SYNTHETIC_QUERY}` },
+              ],
+            },
+          },
+        ],
+      },
+    };
+
+    const frames = scrubErrorEvent(event).exception?.values?.[0]?.stacktrace?.frames;
+
+    expectNoSyntheticValue(frames);
+    expect(frames?.[0]).toEqual({ filename: assetUrl, abs_path: assetUrl });
+    expect(frames?.[1]?.filename).toBe(
+      `${window.location.origin}/research/person/:param?[Filtered]`,
+    );
+  });
 });

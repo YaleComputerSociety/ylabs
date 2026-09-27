@@ -41,4 +41,20 @@ describe('client error report payload', () => {
     expect(payload).not.toContain(SYNTHETIC_KEY);
     expect(payload).not.toContain(SYNTHETIC_QUERY);
   });
+
+  it('sends no person key or query value from a window error without a stack', async () => {
+    Sentry.init({
+      ...buildErrorTrackingOptions({ dsn: 'https://public@example.com/1', environment: 'test' }),
+      transport: capturingTransport,
+    });
+
+    window.history.pushState({}, '', `/research/person/${SYNTHETIC_KEY}?q=${SYNTHETIC_QUERY}`);
+    window.onerror?.('synthetic window error', '', 0, 0, undefined);
+    await Sentry.flush(2000);
+
+    const payload = sentEnvelopes.join('\n');
+    expect(payload).toContain('synthetic window error');
+    expect(payload).not.toContain(SYNTHETIC_KEY);
+    expect(payload).not.toContain(SYNTHETIC_QUERY);
+  });
 });
