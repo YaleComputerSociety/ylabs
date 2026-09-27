@@ -224,6 +224,7 @@ describe('Analytics page', () => {
             zeroResultRate: 0.2,
             engagedSearches: 6,
             returnedButIgnoredSearches: 10,
+            degradedSearches: 3,
             engagementRate: 0.3,
             attributionWindowMinutes: 30,
             avgResults: 7.5,
@@ -322,6 +323,8 @@ describe('Analytics page', () => {
     expect(screen.getAllByText('quantum materials')).toHaveLength(1);
     expect(screen.getAllByText('Used a qualified route')).toHaveLength(1);
     expect(screen.getByText('Returned but ignored')).toBeTruthy();
+    const degradedRow = screen.getByText('Degraded, not counted as zero-result').parentElement;
+    expect(degradedRow?.textContent).toContain('3');
     expect(screen.getByRole('link', { name: 'High-Impact Diagnostics' }).getAttribute('href')).toBe(
       '#high-impact-diagnostics',
     );

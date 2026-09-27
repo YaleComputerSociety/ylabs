@@ -330,6 +330,26 @@ describe('analytics routes', () => {
     expect(res.body).toEqual({ error: 'Failed to fetch search quality analytics' });
   });
 
+  it('does not count a degraded search as a search with results', async () => {
+    mocks.getSearchQualityAnalytics.mockResolvedValue({
+      totalSearches: 10,
+      degradedSearches: 3,
+      zeroResultSearches: 2,
+      zeroResultRate: 0.2857,
+      uniqueSearchers: 4,
+      byQueryAndEntityType: [],
+      topZeroResultQueries: [],
+      topQueries: [],
+      engagedSearches: 0,
+      returnedButIgnoredSearches: 0,
+    });
+
+    const res = await invokeRouteHandler('/search-quality');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.searchesWithResults).toBe(5);
+  });
+
   it('does not leak internal messages from user analytics route failures', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.getUserAnalytics.mockRejectedValue(

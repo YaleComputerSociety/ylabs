@@ -214,6 +214,7 @@ export interface AnalyticsSearchQualityQuery {
 export interface AnalyticsSearchQualityResponse {
   range?: AnalyticsRange;
   totalSearches?: number;
+  degradedSearches?: number;
   searchesWithResults?: number;
   zeroResultSearches?: number;
   zeroResultRate?: number;

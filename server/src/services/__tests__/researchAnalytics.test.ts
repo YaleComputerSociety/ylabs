@@ -210,6 +210,32 @@ describe('research analytics event emission', () => {
     expect(JSON.stringify(events)).not.toContain('searchId');
   });
 
+  it('keeps a degraded search outcome distinct from a real zero-result search', async () => {
+    const events: LogEventParams[] = [];
+
+    await emitResearchEvent(
+      {
+        eventType: AnalyticsEventType.RESEARCH_SEARCH,
+        user,
+        entityType: undefined,
+        entityId: undefined,
+        dedupeKey: 'search:fixture-degraded',
+        payload: {
+          outcome: 'degraded',
+          resultCountBucket: '0',
+          searchKind: 'query',
+          filterCountBucket: '0',
+        },
+      },
+      async (event) => {
+        events.push(event);
+        return 'recorded' as const;
+      },
+    );
+
+    expect(events[0]?.metadata).toMatchObject({ outcome: 'degraded' });
+  });
+
   it('records a result page as one event carrying its ordered entity ids', async () => {
     const events: LogEventParams[] = [];
 

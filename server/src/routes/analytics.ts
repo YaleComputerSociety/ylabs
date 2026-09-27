@@ -348,7 +348,10 @@ router.get(
       const analytics = await getSearchQualityAnalytics(parseAnalyticsRange(request.query.range));
       response.status(200).json({
         ...analytics,
-        searchesWithResults: Math.max(analytics.totalSearches - analytics.zeroResultSearches, 0),
+        searchesWithResults: Math.max(
+          analytics.totalSearches - analytics.degradedSearches - analytics.zeroResultSearches,
+          0,
+        ),
         avgResultsPerSearch:
           analytics.byQueryAndEntityType.length > 0
             ? analytics.byQueryAndEntityType.reduce(

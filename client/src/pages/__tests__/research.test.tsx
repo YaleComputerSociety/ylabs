@@ -3102,3 +3102,93 @@ describe('Research zero-result recovery', () => {
     });
   });
 });
+
+describe('Research degraded search notice', () => {
+  const degradedNoticeName = 'Search is limited right now';
+
+  it('replaces the coverage-gap recovery with a limited-search notice when a degraded search finds nothing', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      searchRequests.push(body as Record<string, unknown>);
+      return researchSearchResponse([], { degraded: body.q !== '' });
+    });
+
+    renderResearch(departments, ['/research?q=quantum+materials+physics']);
+
+    const notice = await screen.findByRole('region', { name: degradedNoticeName });
+    expect(notice.textContent).toContain('does not mean no research matches');
+    expect(screen.queryByRole('region', { name: 'Ways to recover this search' })).toBeNull();
+    expect(document.body.textContent).not.toContain('coverage gap');
+    expect(screen.getByRole('status').textContent).toContain('No results could be confirmed');
+    expect(within(notice).getByRole('button', { name: 'Browse all research' })).toBeTruthy();
+    expect(searchRequests.some((request) => request.suggestionProbe === true)).toBe(false);
+
+    const requestsBeforeRetry = searchRequests.length;
+    fireEvent.click(within(notice).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(searchRequests.length).toBeGreaterThan(requestsBeforeRetry));
+    expect(searchRequests[searchRequests.length - 1]).toMatchObject({
+      q: 'quantum materials physics',
+    });
+  });
+
+  it('keeps the results and explains that they may be incomplete when a degraded search finds some', async () => {
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return body.q === 'machine learning'
+        ? researchSearchResponse([researchEntity], { degraded: true })
+        : researchSearchResponse([]);
+    });
+
+    renderResearch(departments, ['/research?q=machine+learning']);
+
+    expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
+    const notice = screen.getByRole('region', { name: degradedNoticeName });
+    expect(notice.textContent).toContain('may be missing');
+    expect(within(notice).queryByRole('button', { name: 'Browse all research' })).toBeNull();
+  });
+
+  it('shows no notice for a healthy zero-result search', async () => {
+    mockSearchResponses((url) =>
+      url === '/research/search' ? researchSearchResponse([]) : unexpectedSearchEndpoint(url),
+    );
+
+    renderResearch(departments, ['/research?q=quantum+materials+physics']);
+
+    await screen.findByRole('region', { name: 'Ways to recover this search' });
+    expect(screen.queryByRole('region', { name: degradedNoticeName })).toBeNull();
+  });
+
+  it('tells a student browsing that the listing is limited rather than empty', async () => {
+    mockSearchResponses((url) =>
+      url === '/research/search'
+        ? researchSearchResponse([], { degraded: true })
+        : unexpectedSearchEndpoint(url),
+    );
+
+    renderResearch();
+
+    const notice = await screen.findByRole('region', { name: degradedNoticeName });
+    expect(within(notice).getByRole('button', { name: 'Try again' })).toBeTruthy();
+    expect(screen.queryByText(/No research matches these filters/)).toBeNull();
+  });
+
+  it('records a degraded search as its own outcome, never as a zero-result search', async () => {
+    mockSearchResponses((url, body) =>
+      url === '/research/search'
+        ? researchSearchResponse([], { degraded: body.q !== '' })
+        : unexpectedSearchEndpoint(url),
+    );
+
+    renderResearch(departments, ['/research?q=quantum+materials+physics']);
+
+    await screen.findByRole('region', { name: degradedNoticeName });
+    await flushResearchAnalytics();
+    const searchJourneyEvents = mockedAxios.post.mock.calls
+      .filter(([url]) => url === '/analytics/research/batch')
+      .flatMap(([, body]) => body.events)
+      .filter((event) => event.eventType === 'research_search');
+    expect(searchJourneyEvents).toHaveLength(1);
+    expect(searchJourneyEvents[0].payload).toMatchObject({ outcome: 'degraded' });
+  });
+});

@@ -22,7 +22,11 @@ import {
 import type { ResearchEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeResearchEntityShortDescription } from '../utils/descriptionHygiene';
-import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
+import {
+  LEAD_GUARD_WITHHELD_PROSE,
+  type LeadGuardWithheldProse,
+  sanitizeServedResearchEntityCopyFields,
+} from '../utils/researchEntityDescriptionText';
 import {
   gateAcceptedDerivedCardSubstitute,
   isUngroundedSynthesizedCard,
@@ -82,6 +86,40 @@ export function servedResearchEntityCopy(
     }
   }
   return sanitizeServedResearchEntityCopyFields(bounded, leadMemberNames);
+}
+
+/**
+ * The entity with every copy field that `leadMemberNames` guards withheld, for a serve
+ * path whose roster read failed.
+ *
+ * An empty lead list is a structural no-op for the mismatched-person-name strip and
+ * weakens the organization and other-person biography checks, so serving a stored
+ * card after a failed read serves it with those guards off. The row stays findable by
+ * its name, topics, and departments, and the card falls back to a topic summary, which
+ * names no person. The `displayName` alias is withheld too, because the organization
+ * check that refuses it keys on the lead names; `name` is kept as the heading fallback.
+ * The withheld prose still rides along as chip-coherence evidence, the same way the
+ * sanitizer's own withholds do, so unsourced topic chips are not lost as collateral.
+ * A row whose read succeeded with no leads is not this case and keeps its copy.
+ */
+export function withoutLeadGuardedCopy<T extends Record<string, any>>(entity: T): T {
+  const withheld: Record<string | symbol, any> = { ...entity };
+  const withheldProse: LeadGuardWithheldProse = {
+    shortDescription: String(entity.shortDescription || '').slice(
+      0,
+      MAX_SERVED_RESEARCH_ENTITY_TEXT_LENGTH,
+    ),
+    fullDescription: String(entity.fullDescription || '').slice(
+      0,
+      MAX_SERVED_RESEARCH_ENTITY_TEXT_LENGTH,
+    ),
+  };
+  withheld[LEAD_GUARD_WITHHELD_PROSE] = withheldProse;
+  for (const field of SERVED_COPY_TEXT_FIELDS) {
+    if (typeof withheld[field] === 'string') withheld[field] = '';
+  }
+  if (typeof withheld.displayName === 'string') withheld.displayName = '';
+  return withheld as T;
 }
 
 export function servedShortDescriptionString(value: unknown): string {

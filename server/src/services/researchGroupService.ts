@@ -38,6 +38,7 @@ import {
 } from './researchEntitySearchIndexService';
 import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
 import { servedCitationUrl } from './servedCitationPolicy';
+import { withoutLeadGuardedCopy } from './servedResearchEntityCard';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
 import { buildSourceFieldContributions } from '../utils/servedFieldContributionLabels';
@@ -108,10 +109,11 @@ import { maxReachableResearchSearchPage } from './researchSearchPagination';
  *
  * The browse/search DTO cannot run the mismatched-person-name guard without these,
  * so a card opening on a possessive name that is not one of the record's own leads
- * reached students unrepaired while the detail page repaired it (#2240). Degrades
- * to no names rather than failing the request: a list response with today's cards
- * is strictly better than no list at all, and the detail page remains the stricter
- * surface either way.
+ * reached students unrepaired while the detail page repaired it (#2240). A failed
+ * read does not fail the request, because a list is better than no list, but it is
+ * reported as `unavailable` rather than as an empty map: no names switches those
+ * guards off, so the caller serves the rows through `withoutLeadGuardedCopy` and a
+ * list response says it is degraded.
  *
  * Takes whole entity documents, not ids, because the derivation the detail page runs
  * reads `rosterEnrichment` off the row to decide whether an official-roster row is
@@ -124,9 +126,25 @@ import { maxReachableResearchSearchPage } from './researchSearchPagination';
  * lead row anywhere cannot resolve to a lead, while a person who does needs every row
  * they hold for the collapse to pick the same one the detail page picks.
  */
+export interface PublicLeadMemberNameRead {
+  byEntityId: ReadonlyMap<string, readonly string[]>;
+  unavailable: boolean;
+}
+
+export const leadGuardedServingInput = <T extends Record<string, any>>(
+  entity: T,
+  read: PublicLeadMemberNameRead,
+): { entity: T; leadMemberNames: readonly string[] } =>
+  read.unavailable
+    ? { entity: withoutLeadGuardedCopy(entity), leadMemberNames: [] }
+    : {
+        entity,
+        leadMemberNames: read.byEntityId.get(researchGroupDocumentId(entity._id)) || [],
+      };
+
 export const optionalPublicLeadMemberNames = async (
   entities: Array<Record<string, any>>,
-): Promise<Map<string, readonly string[]>> => {
+): Promise<PublicLeadMemberNameRead> => {
   const byEntityId = new Map<string, readonly string[]>();
   try {
     const rosterByEntityId = await getResearchEntityRosterByEntityId(
@@ -143,9 +161,15 @@ export const optionalPublicLeadMemberNames = async (
     }
   } catch (error) {
     console.error('Optional research lead-name enrichment failed:', sanitizeLogValue(error));
+    return { byEntityId: new Map(), unavailable: true };
   }
-  return byEntityId;
+  return { byEntityId, unavailable: false };
 };
+
+const leadMemberNameAliasOptions = (read: PublicLeadMemberNameRead) => ({
+  leadMemberNamesByEntityId: read.byEntityId,
+  leadMemberNamesUnavailable: read.unavailable,
+});
 
 const optionalPlanningContexts = async (entityIds: any[]) => {
   try {
@@ -1127,7 +1151,7 @@ export async function searchResearchGroupsViaMeili(
       });
     const pageEntities = filteredCandidates.slice(offset, offset + safePageSize);
     const pageEntityIds = pageEntities.map((entity) => entity._id);
-    const [planningContextResult, leadMemberNamesByEntityId] = await Promise.all([
+    const [planningContextResult, leadMemberNameRead] = await Promise.all([
       optionalPlanningContexts(pageEntityIds),
       optionalPublicLeadMemberNames(pageEntities),
     ]);
@@ -1142,9 +1166,12 @@ export async function searchResearchGroupsViaMeili(
         page: safePage,
         pageSize: safePageSize,
         facetDistribution: requestedFacetDistribution,
-        degraded: planningContextResult.degraded,
+        degraded: planningContextResult.degraded || leadMemberNameRead.unavailable,
       },
-      { includeOperatorFields: safeOptions.includeNonPublic, leadMemberNamesByEntityId },
+      {
+        includeOperatorFields: safeOptions.includeNonPublic,
+        ...leadMemberNameAliasOptions(leadMemberNameRead),
+      },
     );
   }
 
@@ -1552,7 +1579,7 @@ export async function searchResearchGroupsViaMeili(
   // Meilisearch primary key is `serializedDocumentId(_id)`, the same serialization
   // the lead-name map is keyed by, so the DTO's per-hit lookup matches on either
   // path's `_id`.
-  const [planningContextResult, leadMemberNamesByEntityId] = await Promise.all([
+  const [planningContextResult, leadMemberNameRead] = await Promise.all([
     optionalPlanningContexts(visibleHitIds),
     optionalPublicLeadMemberNames(visibleEntities as Array<Record<string, any>>),
   ]);
@@ -1587,9 +1614,12 @@ export async function searchResearchGroupsViaMeili(
       page: safePage,
       pageSize: safePageSize,
       facetDistribution: facetDistribution ?? requestedFacetDistribution,
-      degraded: degraded || planningContextResult.degraded,
+      degraded: degraded || planningContextResult.degraded || leadMemberNameRead.unavailable,
     },
-    { includeOperatorFields: safeOptions.includeNonPublic, leadMemberNamesByEntityId },
+    {
+      includeOperatorFields: safeOptions.includeNonPublic,
+      ...leadMemberNameAliasOptions(leadMemberNameRead),
+    },
   );
 }
 
@@ -1763,7 +1793,7 @@ const searchResearchGroupsViaMongoFallback = async (
     sort,
   );
   const pageEntities = sortedCandidates.slice(offset, offset + safePageSize);
-  const leadMemberNamesByEntityId = await optionalPublicLeadMemberNames(pageEntities);
+  const leadMemberNameRead = await optionalPublicLeadMemberNames(pageEntities);
   return addResearchEntitySearchAliases(
     {
       hits: pageEntities.map((entity) => ({
@@ -1776,7 +1806,10 @@ const searchResearchGroupsViaMongoFallback = async (
       facetDistribution,
       degraded: true,
     },
-    { includeOperatorFields: options.includeNonPublic, leadMemberNamesByEntityId },
+    {
+      includeOperatorFields: options.includeNonPublic,
+      ...leadMemberNameAliasOptions(leadMemberNameRead),
+    },
   ) as ResearchGroupSearchResult;
 };
 
@@ -2350,13 +2383,15 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
     false,
   );
 
-  const relatedLeadNamesByEntityId = await optionalPublicLeadMemberNames(publicRelatedEntities);
+  const relatedLeadNameRead = await optionalPublicLeadMemberNames(publicRelatedEntities);
   const publicEntitiesByInternalId = new Map(
-    publicRelatedEntities.map((entity) => {
-      const entityId = researchGroupDocumentId(entity._id);
-      const leadMemberNames = relatedLeadNamesByEntityId.get(entityId) || [];
+    publicRelatedEntities.map((relatedEntity) => {
+      const { entity, leadMemberNames } = leadGuardedServingInput(
+        relatedEntity,
+        relatedLeadNameRead,
+      );
       return [
-        entityId,
+        researchGroupDocumentId(relatedEntity._id),
         toPublicResearchEntitySummaryDto(
           sanitizeResearchEntityPublicDescriptionFields(entity, leadMemberNames),
           leadMemberNames,
@@ -2512,15 +2547,14 @@ export async function listSimilarResearchEntities(
   const summaryCandidates = withServablePublicResearchEntities(candidateEntities, {}, false).filter(
     (candidate) => !isExcludedKey(researchGroupDocumentId(candidate._id), candidate.slug),
   );
-  const candidateLeadNamesByEntityId = await optionalPublicLeadMemberNames(summaryCandidates);
+  const candidateLeadNameRead = await optionalPublicLeadMemberNames(summaryCandidates);
   const summariesByInternalId = new Map(
     summaryCandidates.map((candidate) => {
-      const entityId = researchGroupDocumentId(candidate._id);
-      const leadMemberNames = candidateLeadNamesByEntityId.get(entityId) || [];
+      const { entity, leadMemberNames } = leadGuardedServingInput(candidate, candidateLeadNameRead);
       return [
-        entityId,
+        researchGroupDocumentId(candidate._id),
         toPublicResearchEntitySummaryDto(
-          sanitizeResearchEntityPublicDescriptionFields(candidate, leadMemberNames),
+          sanitizeResearchEntityPublicDescriptionFields(entity, leadMemberNames),
           leadMemberNames,
         ),
       ];

@@ -15,7 +15,7 @@ import {
   withPublicDescriptionGateFields,
 } from './researchEntityPublicDescription';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
-import { optionalPublicLeadMemberNames } from './researchGroupService';
+import { leadGuardedServingInput, optionalPublicLeadMemberNames } from './researchGroupService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { NotFoundError } from '../utils/errors';
 import { resolveAccountIdByNetid } from './accountService';
@@ -385,7 +385,7 @@ const resolveSavedResearchEntities = async (
     entities.map((entity: any) => [(serializedDocumentId(entity._id) || '').toLowerCase(), entity]),
   );
   const servableEntities = entities.filter(servesSavedResearchEntity);
-  const leadMemberNamesByEntityId = await optionalPublicLeadMemberNames(servableEntities);
+  const leadMemberNameRead = await optionalPublicLeadMemberNames(servableEntities);
 
   const savedResearchEntities: SavedResearchEntitySummary[] = [];
   const unavailableSavedResearchEntities: UnavailableSavedResearchEntity[] = [];
@@ -399,12 +399,8 @@ const resolveSavedResearchEntities = async (
       unavailableSavedResearchEntities.push({ _id: id, reason: 'UNAVAILABLE' });
       continue;
     }
-    savedResearchEntities.push(
-      savedResearchEntitySummary(
-        entity,
-        leadMemberNamesByEntityId.get(serializedDocumentId(entity._id) || '') || [],
-      ),
-    );
+    const guarded = leadGuardedServingInput(entity, leadMemberNameRead);
+    savedResearchEntities.push(savedResearchEntitySummary(guarded.entity, guarded.leadMemberNames));
   }
   return { savedResearchEntities, unavailableSavedResearchEntities };
 };

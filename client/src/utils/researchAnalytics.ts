@@ -31,7 +31,7 @@ export type PlanningContextCategory =
 
 export type ResearchJourneyPayload =
   | {
-      outcome: 'results' | 'zero_results' | 'error';
+      outcome: 'results' | 'zero_results' | 'degraded' | 'error';
       resultCountBucket: '0' | '1-5' | '6-20' | '21-50' | '51+';
       searchKind: 'query' | 'filtered' | 'department';
       filterCountBucket: '0' | '1' | '2' | '3+';

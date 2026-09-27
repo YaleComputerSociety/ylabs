@@ -1183,6 +1183,79 @@ describe('researchEntityDto', () => {
     expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(entity.fullDescription);
   });
 
+  it('serves no description copy when the page lead names could not be read', () => {
+    const entity = {
+      _id: '6a05677c7c6d4fba869fbb83',
+      slug: 'dept-econ-hollis-quintrell-three',
+      name: 'Hollis Quintrell Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      researchAreas: ['Coral Reef Ecology'],
+      shortDescription:
+        "Marguerite Delacroix's research examines coral reef resilience under thermal stress.",
+      fullDescription:
+        "Marguerite Delacroix's research examines coral reef resilience under thermal stress.",
+    };
+
+    const [card] = addResearchEntitySearchAliases(
+      { hits: [entity] },
+      { leadMemberNamesByEntityId: new Map(), leadMemberNamesUnavailable: true },
+    ).researchEntities;
+
+    expect(card.name).toBe('Hollis Quintrell Faculty Research');
+    expect(card.researchAreas).toEqual(['Coral Reef Ecology']);
+    expect(JSON.stringify(card)).not.toContain('Marguerite Delacroix');
+    expect(JSON.stringify(card)).not.toContain('thermal stress');
+  });
+
+  it('keeps unsourced topic chips the withheld copy supports when the page lead names could not be read', () => {
+    const entity = {
+      _id: '6a05677c7c6d4fba869fbb85',
+      slug: 'dept-psych-quokka-cognition',
+      name: 'Quokka Cognition Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      departments: ['Psychology'],
+      researchAreas: ['animal cognition', 'spatial memory', 'behavioral ecology'],
+      shortDescription:
+        'Studies animal cognition, spatial memory, and behavioral ecology in marsupials.',
+      fullDescription:
+        'The lab studies animal cognition, spatial memory, and behavioral ecology in wild marsupials.',
+    };
+
+    const [card] = addResearchEntitySearchAliases(
+      { hits: [entity] },
+      { leadMemberNamesByEntityId: new Map(), leadMemberNamesUnavailable: true },
+    ).researchEntities;
+
+    expect(card.researchAreas).toEqual([
+      'animal cognition',
+      'spatial memory',
+      'behavioral ecology',
+    ]);
+    expect(JSON.stringify(card)).not.toContain('wild marsupials');
+  });
+
+  it('withholds the displayName alias when the page lead names could not be read', () => {
+    const entity = {
+      _id: '6a05677c7c6d4fba869fbb84',
+      slug: 'dept-econ-hollis-quintrell-four',
+      name: 'Hollis Quintrell Faculty Research',
+      displayName: 'Tidewater Marine Institute',
+      kind: 'center',
+      entityType: 'CENTER',
+      researchAreas: ['Coral Reef Ecology'],
+    };
+
+    const [card] = addResearchEntitySearchAliases(
+      { hits: [entity] },
+      { leadMemberNamesByEntityId: new Map(), leadMemberNamesUnavailable: true },
+    ).researchEntities;
+
+    expect(card.name).toBe('Hollis Quintrell Faculty Research');
+    expect(JSON.stringify(card)).not.toContain('Tidewater Marine Institute');
+  });
+
   it('disambiguates two student-visible entities sharing an identical name (#1211)', () => {
     const result = addResearchEntitySearchAliases({
       hits: [
