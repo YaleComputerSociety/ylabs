@@ -7,6 +7,11 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
+import { websiteIdentity } from '../scrapers/survivorOwnedWebsiteClear';
+import {
+  isUnsourcedProvenanceRecord,
+  storedWebsiteUrlProvenance,
+} from '../scrapers/unsourcedProvenanceWebsiteClear';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   buildLookupSubject,
@@ -44,6 +49,7 @@ const CONSECUTIVE_FAILURE_LIMIT = 8;
 interface Args {
   apply: boolean;
   confirm: boolean;
+  reverifyStored: boolean;
   limit: number;
   skip: number;
   maxApply: number;
@@ -51,12 +57,20 @@ interface Args {
 }
 
 export function parseArgs(argv: string[]): Args {
-  const args: Args = { apply: false, confirm: false, limit: 25, skip: 0, maxApply: 50 };
+  const args: Args = {
+    apply: false,
+    confirm: false,
+    reverifyStored: false,
+    limit: 25,
+    skip: 0,
+    maxApply: 50,
+  };
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === '--apply' || arg === '--mode=apply') args.apply = true;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') args.apply = false;
     else if (arg === '--confirm-find-lab-websites') args.confirm = true;
+    else if (arg === '--reverify-stored') args.reverifyStored = true;
     else if (arg.startsWith('--limit=')) args.limit = positiveInteger(arg.slice('--limit='.length));
     else if (arg === '--limit') args.limit = positiveInteger(argv[++index]);
     else if (arg.startsWith('--skip=')) args.skip = nonNegativeInteger(arg.slice('--skip='.length));
@@ -249,11 +263,78 @@ async function buildCorpusSurnameCounts(): Promise<Map<string, number>> {
   return new Map([...fullNamesBySurname].map(([surname, names]) => [surname, names.size]));
 }
 
+async function materializeDropsStoredWebsite(row: {
+  _id: mongoose.Types.ObjectId;
+  websiteUrl?: unknown;
+}): Promise<boolean> {
+  const plan = await materializeEntity(
+    'researchEntity',
+    { entityId: String(row._id) },
+    { dryRun: true },
+  );
+  if (plan.entityId !== String(row._id)) return false;
+  const planned = plan.plannedSet ?? {};
+  const unset = plan.plannedUnset ?? {};
+  if (!('websiteUrl' in planned) && !('websiteUrl' in unset)) return false;
+  return websiteIdentity(planned.websiteUrl) !== websiteIdentity(row.websiteUrl);
+}
+
+async function reverifyStoredWebsites(
+  args: Args,
+  isUnambiguousSurname: (surname: string) => boolean,
+  corpusSurnames: Set<string>,
+): Promise<{ findings: Finding[]; population: number }> {
+  const candidates = (await ResearchEntity.find({
+    archived: { $ne: true },
+    websiteUrl: { $type: 'string', $ne: '' },
+  })
+    .select(
+      'slug name studentVisibilityTier websiteUrl sourceUrls departments researchAreas fieldProvenance',
+    )
+    .lean()) as any[];
+
+  const awaitingEvidence: Array<{ subject: LabSiteSubject; url: string }> = [];
+  for (const row of candidates) {
+    if (!isUnsourcedProvenanceRecord(storedWebsiteUrlProvenance(row))) continue;
+    if (!(await materializeDropsStoredWebsite(row))) continue;
+    const subject = buildLookupSubject(row, isUnambiguousSurname);
+    if (subject) awaitingEvidence.push({ subject, url: String(row.websiteUrl).trim() });
+  }
+  awaitingEvidence.sort((left, right) =>
+    left.subject.entitySlug.localeCompare(right.subject.entitySlug),
+  );
+
+  const findings: Finding[] = [];
+  for (const { subject, url } of awaitingEvidence.slice(args.skip, args.skip + args.limit)) {
+    const page = await fetchPage(url);
+    await sleep(DELAY_MS);
+    const verdict = judgePage(url, page.status, page.title, page.text, subject, corpusSurnames);
+    findings.push({
+      subject,
+      verdicts: [verdict],
+      ...(isAdoptableLabSite(verdict) ? { adopted: verdict } : {}),
+    });
+    process.stderr.write(`\r${findings.length}/${awaitingEvidence.length}`);
+  }
+  process.stderr.write('\n');
+  return { findings, population: awaitingEvidence.length };
+}
+
 async function run(
   args: Args,
 ): Promise<{ findings: Finding[]; population: number; ambiguousSurnames: number }> {
   const ambiguity = await buildCorpusSurnameCounts();
   const isUnambiguousSurname = (surname: string) => (ambiguity.get(surname) ?? 0) <= 1;
+  const ambiguousSurnames = [...ambiguity.values()].filter((count) => count > 1).length;
+
+  if (args.reverifyStored) {
+    const reverified = await reverifyStoredWebsites(
+      args,
+      isUnambiguousSurname,
+      new Set(ambiguity.keys()),
+    );
+    return { ...reverified, ambiguousSurnames };
+  }
 
   const entities = await ResearchEntity.find({
     archived: { $ne: true },
@@ -313,11 +394,7 @@ async function run(
     process.stderr.write(`\r${findings.length}/${selected.length}`);
   }
   process.stderr.write('\n');
-  return {
-    findings,
-    population,
-    ambiguousSurnames: [...ambiguity.values()].filter((count) => count > 1).length,
-  };
+  return { findings, population, ambiguousSurnames };
 }
 
 async function main() {
@@ -398,6 +475,7 @@ async function main() {
     environment: guard.environment,
     db: guard.dbLabel,
     mode: args.apply ? 'apply' : 'dry-run',
+    subjectPopulation: args.reverifyStored ? 'reverify-stored' : 'needs-lab-website',
     ambiguousSurnamesWithheldFromEponymArm: ambiguousSurnames,
     population,
     skipped: args.skip,

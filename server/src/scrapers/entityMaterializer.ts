@@ -122,6 +122,7 @@ import {
   websiteIdentity,
   type SurvivorOwnedWebsiteField,
 } from './survivorOwnedWebsiteClear';
+import { planUnsourcedProvenanceWebsiteUrlClear } from './unsourcedProvenanceWebsiteClear';
 import { planRefusedStoredDescriptionClears } from './refusedStoredDescription';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import type { ReportPostMaterializationMetrics } from './runReport';
@@ -5587,6 +5588,20 @@ export async function projectFromLog(
         delete set.websiteUrl;
       }
       clearLoserOnlySurvivorWebsite('websiteUrl');
+      if (
+        planUnsourcedProvenanceWebsiteUrlClear({
+          stored: entityDoc,
+          staged: set,
+          observations: materializationObs,
+          lockedFields: manuallyLockedFields,
+        })
+      ) {
+        console.log(
+          '[unsourced-provenance-website-url] cleared a websiteUrl written without evidence',
+        );
+        set.websiteUrl = '';
+        fieldsWritten++;
+      }
       // Ordered ahead of the promotion deliberately: emptying the slot here lets the
       // promotion below refill it from an admissible citation on this same pass, so a
       // row trades a refused research home for its best evidenced one rather than for
