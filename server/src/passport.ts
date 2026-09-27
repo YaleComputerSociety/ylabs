@@ -609,6 +609,9 @@ const casLogin = function (
   )(req, res, next);
 };
 
+export const visitorDedupeKey = (visitedAt: Date): string =>
+  `visitor:${visitedAt.toISOString().slice(0, 10)}`;
+
 const router = express.Router();
 
 router.use(async (req, res, next) => {
@@ -622,18 +625,23 @@ router.use(async (req, res, next) => {
   }
 
   if (req.isAuthenticated() && !req.session!.visitorLogged) {
+    req.session!.visitorLogged = true;
     const user = req.user as any;
+    const visitedAt = new Date();
+    // The SPA's first requests arrive in parallel, each with its own copy of
+    // the cookie session, so the session flag alone cannot stop a duplicate;
+    // the per-day dedupe key makes the unique index the guard.
     const visitorOutcome = await logEvent({
       eventType: AnalyticsEventType.VISITOR,
       netid: user.netId,
       userType: user.userType || 'unknown',
+      dedupeKey: visitorDedupeKey(visitedAt),
       metadata: {
-        timestamp: new Date(),
+        timestamp: visitedAt,
         loginMethod: 'cookie',
       },
     });
     authDebug(`Visitor analytics event ${visitorOutcome} (cookie login)`);
-    req.session!.visitorLogged = true;
   }
   next();
 });
