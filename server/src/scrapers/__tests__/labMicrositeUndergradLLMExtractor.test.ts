@@ -341,6 +341,54 @@ describe('extractionToObservations quote grounding', () => {
     { url: 'https://x.example/join', text: 'Undergraduates help with field work.' },
   ];
 
+  it('drops a verdict the model offered no quote for', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+    };
+    const obs = extractionToObservations('lab-q', 'https://x.example/', ext, fixedDate, {
+      sourcePages: pages,
+    });
+    expect(obs.map((o) => o.field)).toEqual(['lastObservedAt']);
+  });
+
+  it('counts only roster snippets that are on a fetched page', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 2,
+      currentUndergradEvidenceQuotes: [
+        'Undergraduates help with field work.',
+        'Jane Doe, Yale College',
+      ],
+      evidenceQuote: 'Undergraduates help with field work.',
+      evidenceSource: 'members_section',
+      joinPageUrl: null,
+    };
+    const obs = extractionToObservations('lab-r', 'https://x.example/', ext, fixedDate, {
+      sourcePages: pages,
+    });
+    expect(obs.find((o) => o.field === 'currentUndergradCount')?.value).toBe(1);
+    expect(quoteFieldsNotOnPage(ext, pages)).toEqual(['currentUndergradEvidenceQuotes[1]']);
+  });
+
+  it('zeroes a rosterless count whose backing quote is on no fetched page', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 3,
+      evidenceQuote: 'Undergraduate researchers: Alice, Bob, Carol',
+      evidenceSource: 'members_section',
+      joinPageUrl: null,
+    };
+    const obs = extractionToObservations('lab-f', 'https://x.example/', ext, fixedDate, {
+      sourcePages: pages,
+    });
+    expect(obs.find((o) => o.field === 'currentUndergradCount')?.value).toBe(0);
+    expect(obs.find((o) => o.field === 'undergradAccessEvidence')).toBeUndefined();
+  });
+
   it('drops a paraphrased quote and the verdict it was offered to back', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'yes',
@@ -770,7 +818,9 @@ describe('extractionToObservations', () => {
       evidenceSource: 'members_section',
       joinPageUrl: null,
     };
-    const obs1 = extractionToObservations('lab-1', 'https://x/', fromMembers, fixedDate);
+    const obs1 = extractionToObservations('lab-1', 'https://x/', fromMembers, fixedDate, {
+      sourcePages: [{ url: 'https://x/', text: fromMembers.evidenceQuote }],
+    });
     const count1 = obs1.find((o) => o.field === 'currentUndergradCount');
     expect(count1).toBeDefined();
     expect(count1!.value).toBe(4);
@@ -788,7 +838,10 @@ describe('extractionToObservations', () => {
   });
 
   const countObservationValue = (ext: LLMExtraction): number | undefined => {
-    const obs = extractionToObservations('lab-count', 'https://x/', ext, fixedDate);
+    const pageText = [ext.evidenceQuote, ...(ext.currentUndergradEvidenceQuotes ?? [])].join('\n');
+    const obs = extractionToObservations('lab-count', 'https://x/', ext, fixedDate, {
+      sourcePages: [{ url: 'https://x/', text: pageText }],
+    });
     return obs.find((o) => o.field === 'currentUndergradCount')?.value as number | undefined;
   };
 

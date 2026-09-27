@@ -437,9 +437,15 @@ export function quoteFieldsNotOnPage(
   extraction: LLMExtraction,
   pages: readonly PromptSourcePage[],
 ): string[] {
-  return PAGE_QUOTE_FIELDS.filter(
+  const fields: string[] = PAGE_QUOTE_FIELDS.filter(
     (field) => (extraction[field] || '').trim() && !pageContainingQuote(extraction[field], pages),
   );
+  (extraction.currentUndergradEvidenceQuotes ?? []).forEach((quote, index) => {
+    if ((quote || '').trim() && !pageContainingQuote(quote, pages)) {
+      fields.push(`currentUndergradEvidenceQuotes[${index}]`);
+    }
+  });
+  return fields;
 }
 
 export function sourceUrlForExtraction(
@@ -527,8 +533,8 @@ function isCurrentYaleUndergradEvidence(quote?: string): boolean {
  *     (the strengthened prompt requires one snippet per counted undergrad), the
  *     count is derived from the subset of snippets that clear both gates.
  *   - When no roster is present (legacy cache or an omitted array), fall back to
- *     the LLM integer but zero it when the single backing `evidenceQuote` shows a
- *     historical or non-Yale marker, so a contaminated count never survives.
+ *     the LLM integer but zero it when the single backing `evidenceQuote` is empty
+ *     or shows a historical or non-Yale marker, so a contaminated count never survives.
  */
 export function deriveCurrentUndergradCount(extraction: LLMExtraction): number {
   const roster = extraction.currentUndergradEvidenceQuotes;
@@ -537,7 +543,8 @@ export function deriveCurrentUndergradCount(extraction: LLMExtraction): number {
   }
   const rawCount = extraction.currentUndergradCount;
   if (!Number.isInteger(rawCount) || rawCount <= 0) return 0;
-  return isCurrentYaleUndergradEvidence(extraction.evidenceQuote) ? rawCount : 0;
+  const quote = (extraction.evidenceQuote || '').trim();
+  return quote && isCurrentYaleUndergradEvidence(quote) ? rawCount : 0;
 }
 
 /**
@@ -545,10 +552,11 @@ export function deriveCurrentUndergradCount(extraction: LLMExtraction): number {
  * will consume. Implements the rules:
  *
  *   - undergradAccessEvidence: emitted iff openToUndergrads is 'yes' or 'no';
- *     skipped on 'unclear', and skipped when its quote is on no fetched page. Confidence override 0.5 (LLM-based, low-trust).
+ *     skipped on 'unclear', and skipped unless its quote is on a fetched page. Confidence override 0.5 (LLM-based, low-trust).
  *   - currentUndergradCount: emitted iff evidenceSource is 'members_section'
  *     AND the recency/institution-gated count (deriveCurrentUndergradCount) is
- *     a positive integer. Open prose ("we have many undergrads") is too
+ *     a positive integer, counted only from roster snippets and quotes that are
+ *     on a fetched page. Open prose ("we have many undergrads") is too
  *     unreliable to write a count from, and alumni / non-Yale visiting undergrads
  *     never count toward it. Confidence 0.5.
  *   - every quote field: emitted only when the quote is on a fetched page, and
@@ -581,7 +589,6 @@ export function extractionToObservations(
     return page ? { text, sourceUrl: page.url } : null;
   };
   const evidenceQuote = quoteOnPage(extraction.evidenceQuote);
-  const verdictIsBacked = !(extraction.evidenceQuote || '').trim() || evidenceQuote !== null;
   const base = {
     entityType: 'researchEntity' as const,
     entityKey: groupSlug,
@@ -589,7 +596,7 @@ export function extractionToObservations(
   };
   const out: ObservationInput[] = [];
 
-  if (extraction.openToUndergrads === 'yes' && verdictIsBacked) {
+  if (extraction.openToUndergrads === 'yes' && evidenceQuote) {
     out.push({
       ...base,
       field: 'undergradAccessEvidence',
@@ -598,11 +605,11 @@ export function extractionToObservations(
         evidenceSource: extraction.evidenceSource,
         evidenceQuote: extraction.evidenceQuote,
         sourceUrls,
-        quoteSourceUrl: evidenceQuote?.sourceUrl ?? quoteSourceUrl,
+        quoteSourceUrl: evidenceQuote.sourceUrl,
       },
       confidenceOverride: 0.5,
     });
-  } else if (extraction.openToUndergrads === 'no' && verdictIsBacked) {
+  } else if (extraction.openToUndergrads === 'no' && evidenceQuote) {
     out.push({
       ...base,
       field: 'undergradAccessEvidence',
@@ -611,7 +618,7 @@ export function extractionToObservations(
         evidenceSource: extraction.evidenceSource,
         evidenceQuote: extraction.evidenceQuote,
         sourceUrls,
-        quoteSourceUrl: evidenceQuote?.sourceUrl ?? quoteSourceUrl,
+        quoteSourceUrl: evidenceQuote.sourceUrl,
       },
       confidenceOverride: 0.5,
     });
@@ -622,7 +629,13 @@ export function extractionToObservations(
     out.push({
       ...base,
       field: 'currentUndergradCount',
-      value: deriveCurrentUndergradCount(extraction),
+      value: deriveCurrentUndergradCount({
+        ...extraction,
+        evidenceQuote: evidenceQuote?.text ?? '',
+        currentUndergradEvidenceQuotes: extraction.currentUndergradEvidenceQuotes?.filter(
+          (quote) => pageContainingQuote(quote, pages) !== null,
+        ),
+      }),
       confidenceOverride: 0.5,
     });
   }
