@@ -175,6 +175,11 @@ A `departments` observation that names no department (a school, a campus, or a f
 The materializer adopts the next-ranked observation that does name one, even at lower confidence, and when none does it leaves the stored departments alone, because a label that names no department is not evidence that the row has none.
 For the same reason such a label cannot hold the field against a merged-in loser's real department.
 A row with no stored department still gets the label as `orgAffiliationLabels[]` search text.
+When a department roster wins `departments`, the field is the union of every roster page that currently lists the person, because each page is an independent appointment rather than a rival value (#3621).
+This is the one field where a merged-in loser's roster reading combines with the survivor's instead of yielding to it, and only while the survivor has a roster reading of its own; every other #3584 precedence rule stands.
+A loser's roster reading joins the union only after a roster has won on the survivor's own evidence, so it never adds weight toward that win.
+Only values that name a department combine, and only values read within 14 days of the row's newest roster read, since a department observation's fingerprint carries its value and a page that stops listing the person never supersedes its old value.
+The stored order is kept, so an existing home department stays first.
 `org-units:reclassify-sections` is the one-time catalog correction that moved the twelve `DEPARTMENT` rows parented to another department onto the new kind; `research-homes:backfill-org-units` is the served-data half that adds the rolled-up parent to existing rows.
 `org-units:seed-catalog-gaps` grows the catalog itself, and its `create-department` gaps take a `kind`, so a School of Medicine section (Surgical Oncology under Surgery, General Internal Medicine under Internal Medicine) is seeded at the section altitude rather than as a peer of its own parent.
 Yale HR strings are added as verbatim aliases rather than taught to the denoiser: #2500 measured that stripping a leading all-caps token by rule was wrong every time it fired, and a bare alias would be worse, because "Cardiology" names both an Internal Medicine section and a Pediatrics one, so only the coded string ("MEDINT Cardiology") says which.
