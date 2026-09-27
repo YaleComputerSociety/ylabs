@@ -74,6 +74,7 @@
     "observations:retire-school-as-department": "tsx src/scripts/retireSchoolAsDepartmentObservations.ts",
     "observations:retire-deploy-host-citations": "tsx src/scripts/retireEphemeralDeployHostCitations.ts",
     "observations:retire-organization-identity-websites": "tsx src/scripts/retireOrganizationIdentityWebsiteGrafts.ts",
+    "observations:retire-shared-roster-websites": "tsx src/scripts/retireSharedRosterWebsites.ts",
     "data:repair-legacy-person-page-urls": "tsx src/scripts/repairLegacyPersonPageUrls.ts",
     "data:drop-dead-citations": "tsx src/scripts/dropSupersededDeadCitations.ts",
     "data:find-lab-websites": "tsx src/scripts/findLabWebsites.ts",
