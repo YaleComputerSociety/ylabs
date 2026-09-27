@@ -34,8 +34,11 @@ const appendDescription = (entityKey: string, sourceUrl: string) =>
     },
   );
 
+// The loader now maps each citer KEY to that row's NAME, because subject identity is
+// decided from names rather than from a citer count (#3481). This test is about which
+// rows cite a page, so it reads the keys.
 const citersOf = async (url: string) =>
-  [...((await loadDescriptionSourceCiters([url])).values().next().value ?? [])].sort();
+  [...((await loadDescriptionSourceCiters([url])).values().next().value?.keys() ?? [])].sort();
 
 describe('description citer snapshot against in-process observation writes (#3568)', () => {
   beforeAll(async () => {
