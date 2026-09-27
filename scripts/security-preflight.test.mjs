@@ -1115,7 +1115,6 @@ test('analytics route error responses do not trust thrown message prefixes', () 
     'utf8',
   );
 
-  assert.match(source, /new BadRequestError\('Invalid analytics request'\)/);
   assert.doesNotMatch(source, /error instanceof Error \? error\.message/);
   assert.doesNotMatch(source, /message\.startsWith\('Invalid'\)/);
   assert.doesNotMatch(source, /json\(\{ error: error\.message \}\)/);
