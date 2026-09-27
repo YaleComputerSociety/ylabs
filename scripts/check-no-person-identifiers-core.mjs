@@ -12,14 +12,21 @@ const PERSON_SLUG_RE = new RegExp(
  * person-slug prefix. A source or script name identifies code, so pairing it with a
  * claim names no person, but the prefixes cannot see the difference:
  * `ysm-faculty-directory` reads as `ysm-faculty-<surname>`, and
- * `repair-nih-nsf-pi-center-lab-conflation` contains `nsf-pi-center-...`.
+ * `nih-nsf-pi-center-lab-conflation-repair` contains `nsf-pi-center-...`.
  *
  * This is an exact-match allowance on the whole hyphenated token, not a token
  * stoplist, so `ysm-faculty-directors`, `legacy-ysm-faculty-directory`, or any other
- * token that merely contains the same name is still flagged. The set is pinned
- * against `server/src/scrapers/seedSources.ts` and the `server/package.json` script
- * names by this script's test, so a future name that collides fails there rather
- * than silently widening what the gate ignores.
+ * token that merely contains the same name is still flagged. The set is pinned by this
+ * script's test against three registries: the seed list in
+ * `server/src/scrapers/seedSources.ts`, `RETIRED_SOURCE_NAMES` in
+ * `server/src/scrapers/sourceDispatch.ts`, and the `server/package.json` script names.
+ * So a future name that collides fails there rather than silently widening what the gate
+ * ignores, and a name removed from all three has to stop being ignored.
+ *
+ * A RETIRED source name counts, because retiring a source does not stop it being
+ * discussed: the name stays in the codebase and stored `fieldProvenance` still cites it,
+ * so a body explaining why it was retired would otherwise be blocked by the gate for
+ * naming code (#3765).
  *
  * Without this, every pull request or issue body discussing the YSM directory
  * scraper is blocked, and the only way past is an `identifier-exempt:` line - which
@@ -30,7 +37,6 @@ const PERSON_SLUG_RE = new RegExp(
 const REGISTERED_NON_PERSON_NAMES = new Set([
   'ysm-faculty-directory',
   'nih-nsf-pi-center-lab-conflation-repair',
-  'repair-nih-nsf-pi-center-lab-conflation',
 ]);
 
 export const isRegisteredName = (value) =>

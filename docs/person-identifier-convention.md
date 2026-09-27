@@ -30,7 +30,9 @@ A body may name a person with no identifier in it at all, in ordinary prose, and
 
 - An entity slug carrying a person-bearing prefix: `nih-pi-`, `nsf-pi-`, `ysm-faculty-`, `faculty-research-area-`.
   A prefix partway through a hyphenated token counts too, so `screenshot-nih-pi-<name>.png` is still a slug.
-  The exception is a registered source or server script name that contains a prefix, such as `repair-nih-nsf-pi-center-lab-conflation`, which the scan allows by exact match on the whole token.
+  The exception is a registered source or server script name that contains a prefix, such as `ysm-faculty-directory`, which the scan allows by exact match on the whole token.
+  The allowance is pinned by test against three registries: the seed list in `seedSources.ts`, `RETIRED_SOURCE_NAMES` in `sourceDispatch.ts`, and the `server/package.json` script names.
+  A retired source name keeps its allowance, because retiring a source does not stop it being discussed and stored `fieldProvenance` still cites it; a name that leaves all three loses it, which is what stops the set drifting into a stoplist.
 - A directory profile path: `<host>.yale.edu/profile/<name>`, and the `people` and `faculty` variants.
 - A personal `@yale.edu` address.
   A role address such as `physics@yale.edu` is not person-bearing.

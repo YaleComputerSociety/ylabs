@@ -88,7 +88,6 @@
   "research-homes:backfill-website-urls",
   "research-homes:clear-directory-index-descriptions",
   "research-homes:inherit-lead-department",
-  "research-homes:repair-nih-nsf-pi-center-lab-conflation",
   "research:backfill-yale-status-cache",
   "research:quality-search-review",
   "researchers:repair-person-name-noise",
