@@ -105,6 +105,7 @@ const PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
 export const INGEST_REJECTABLE_RESEARCH_ENTITY_FIELDS: ReadonlySet<string> = new Set([
   ...ENTITY_NAME_FIELDS,
   ...RESEARCH_AREA_LIST_FIELDS,
+  ...METHOD_LIST_FIELDS,
   ...PROSE_FIELDS,
 ]);
 /**
