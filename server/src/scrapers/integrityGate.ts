@@ -98,7 +98,7 @@ export interface BuildPostMaterializationIntegrityInput {
   activeArtifactsOnArchivedEntities?: ActiveArtifactOnArchivedEntity[];
   warnings?: PostMaterializationIntegrityWarning[];
   limit?: number;
-  countCap?: number;
+  truncatedChecks?: PostMaterializationIntegrityFailureName[];
   populationCounts?: Partial<Record<PostMaterializationIntegrityFailureName, number>>;
   sourceRunId?: string;
 }
@@ -107,9 +107,7 @@ export interface PostMaterializationIntegritySummary {
   status: PostMaterializationIntegrityStatus;
   sourceRunId?: string;
   counts: Record<PostMaterializationIntegrityFailureName, number>;
-  countIsLowerBound: Record<PostMaterializationIntegrityFailureName, boolean>;
   countLabels: Record<PostMaterializationIntegrityFailureName, string>;
-  countCap?: number;
   failureNames: PostMaterializationIntegrityFailureName[];
   samples: {
     samePiSameNameResearchEntities: SamePiNameDuplicateGroup[];
@@ -147,10 +145,6 @@ const FAILURE_ORDER: PostMaterializationIntegrityFailureName[] = [
   'duplicateAccessSignals',
   'activeArtifactsOnArchivedEntities',
 ];
-
-const CHECKS_CAPPED_BY_QUERY_LIMIT: ReadonlySet<PostMaterializationIntegrityFailureName> = new Set(
-  FAILURE_ORDER.filter((name) => name !== 'duplicatePeople'),
-);
 
 const SAME_PI_DEDUPE_REVIEW_COMMAND = betaCommand(
   'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --accepted-decisions=/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json --allow-empty-decisions --decision-template-output /tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json --output /tmp/ylabs-research-entity-dedupe.json',
@@ -226,10 +220,10 @@ export function buildPostMaterializationIntegritySummary(
     duplicateAccessSignals: input.duplicateAccessSignalGroups?.length || 0,
     activeArtifactsOnArchivedEntities: input.activeArtifactsOnArchivedEntities?.length || 0,
   };
-  const { counts, countIsLowerBound, countLabels } = resolveIntegrityCounts(
+  const { counts, countLabels } = resolveIntegrityCounts(
     sampledCounts,
     input.populationCounts || {},
-    input.countCap,
+    new Set(input.truncatedChecks),
   );
   const failureNames = FAILURE_ORDER.filter((name) => counts[name] > 0);
   const warnings = enrichIntegrityWarnings(input.warnings || []);
@@ -241,9 +235,7 @@ export function buildPostMaterializationIntegritySummary(
     status: failureNames.length > 0 ? 'failure' : 'pass',
     sourceRunId: input.sourceRunId,
     counts,
-    countIsLowerBound,
     countLabels,
-    ...(input.countCap !== undefined ? { countCap: input.countCap } : {}),
     failureNames,
     samples: {
       samePiSameNameResearchEntities: sample(input.samePiNameDuplicateGroups, limit),
@@ -262,24 +254,18 @@ export function buildPostMaterializationIntegritySummary(
 function resolveIntegrityCounts(
   sampledCounts: Record<PostMaterializationIntegrityFailureName, number>,
   populationCounts: Partial<Record<PostMaterializationIntegrityFailureName, number>>,
-  countCap: number | undefined,
-): Pick<PostMaterializationIntegritySummary, 'counts' | 'countIsLowerBound' | 'countLabels'> {
+  truncatedChecks: ReadonlySet<PostMaterializationIntegrityFailureName>,
+): Pick<PostMaterializationIntegritySummary, 'counts' | 'countLabels'> {
   const counts = {} as Record<PostMaterializationIntegrityFailureName, number>;
-  const countIsLowerBound = {} as Record<PostMaterializationIntegrityFailureName, boolean>;
   const countLabels = {} as Record<PostMaterializationIntegrityFailureName, string>;
   for (const name of FAILURE_ORDER) {
     const population = populationCounts[name];
     const count = population ?? sampledCounts[name];
-    const lowerBound =
-      population === undefined &&
-      countCap !== undefined &&
-      CHECKS_CAPPED_BY_QUERY_LIMIT.has(name) &&
-      count >= countCap;
+    const lowerBound = population === undefined && truncatedChecks.has(name);
     counts[name] = count;
-    countIsLowerBound[name] = lowerBound;
     countLabels[name] = lowerBound ? `at least ${count}` : String(count);
   }
-  return { counts, countIsLowerBound, countLabels };
+  return { counts, countLabels };
 }
 
 function recommendedCommandsForFailures(
@@ -370,17 +356,26 @@ async function loadResearcherNetidCollisionGroups(): Promise<DuplicatePersonGrou
 
 async function loadDuplicatePeopleIntegrity(): Promise<{
   groups: DuplicatePersonGroup[];
+  truncated: boolean;
   warnings: PostMaterializationIntegrityWarning[];
 }> {
-  const [emailGroups, orcidGroups, netidGroups] = await Promise.all([
+  const groupsByField = await Promise.all([
     loadIdentityCollisionGroups(Account, 'email', 'email'),
     loadIdentityCollisionGroups(Researcher, 'orcid', 'identifiers.orcid'),
     loadResearcherNetidCollisionGroups(),
   ]);
-  return { groups: [...emailGroups, ...orcidGroups, ...netidGroups], warnings: [] };
+  return {
+    groups: groupsByField.flat(),
+    truncated: groupsByField.some(
+      (groups) => groups.length >= DUPLICATE_PEOPLE_SCAN_LIMIT_PER_FIELD,
+    ),
+    warnings: [],
+  };
 }
 
-async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameDuplicateGroup[]> {
+async function loadSamePiNameDuplicateGroups(
+  limit: number,
+): Promise<{ groups: SamePiNameDuplicateGroup[]; truncated: boolean }> {
   const rows = await RoleAssignment.aggregate([
     {
       $match: {
@@ -439,7 +434,7 @@ async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameD
     { $limit: SAME_PI_ENTITY_SCAN_LIMIT },
   ]);
 
-  return buildSamePiNameDuplicateGroupsFromDedupeRows(
+  const groups = buildSamePiNameDuplicateGroupsFromDedupeRows(
     rows.map((row: any) => {
       const personId = stringId(row._id?.personId);
       const { first, last } = splitName(stringId(row.personDisplayName));
@@ -451,7 +446,11 @@ async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameD
         entities: row.entities || [],
       };
     }),
-  ).slice(0, limit);
+  );
+  return {
+    groups: groups.slice(0, limit),
+    truncated: rows.length >= SAME_PI_ENTITY_SCAN_LIMIT || groups.length >= limit,
+  };
 }
 
 export function buildSamePiNameDuplicateGroupsFromDedupeRows(
@@ -870,7 +869,7 @@ export async function runPostMaterializationIntegrityGate(
   const limit = normalizePostMaterializationIntegrityLimit(options.limit);
   const queryLimit = options.includeSamples ? limit : 1;
   const [
-    samePiNameDuplicateGroups,
+    samePiNameDuplicates,
     officialLabUrlDuplicateGroups,
     duplicatePersonIntegrity,
     duplicateCurrentMemberGroups,
@@ -893,8 +892,21 @@ export async function runPostMaterializationIntegrityGate(
     loadArchivedEntityPopulationCounts(),
   ]);
 
+  const reachesQueryLimit = (rows: unknown[]) => rows.length >= queryLimit;
+  const truncatedChecks = (
+    [
+      ['samePiSameNameResearchEntities', samePiNameDuplicates.truncated],
+      ['officialLabUrlResearchEntities', reachesQueryLimit(officialLabUrlDuplicateGroups)],
+      ['duplicatePeople', duplicatePersonIntegrity.truncated],
+      ['duplicateCurrentMembers', reachesQueryLimit(duplicateCurrentMemberGroups)],
+      ['duplicateAccessSignals', reachesQueryLimit(duplicateAccessSignalGroups)],
+    ] as const
+  )
+    .filter(([, truncated]) => truncated)
+    .map(([name]) => name);
+
   return buildPostMaterializationIntegritySummary({
-    samePiNameDuplicateGroups,
+    samePiNameDuplicateGroups: samePiNameDuplicates.groups,
     officialLabUrlDuplicateGroups,
     duplicatePersonGroups: duplicatePersonIntegrity.groups,
     duplicateCurrentMemberGroups,
@@ -903,7 +915,7 @@ export async function runPostMaterializationIntegrityGate(
     activeArtifactsOnArchivedEntities,
     warnings: [...warnings, ...duplicatePersonIntegrity.warnings, ...deadEndTombstoneChainWarnings],
     limit: options.includeSamples ? limit : 0,
-    countCap: queryLimit,
+    truncatedChecks,
     populationCounts,
     sourceRunId: options.sourceRunId,
   });

@@ -71,8 +71,39 @@ describe('runPostMaterializationIntegrityGate', () => {
 
     expect(summary.counts.currentMembersOnArchivedEntities).toBe(1391);
     expect(summary.counts.activeArtifactsOnArchivedEntities).toBe(707);
-    expect(summary.countIsLowerBound.currentMembersOnArchivedEntities).toBe(false);
-    expect(summary.countIsLowerBound.activeArtifactsOnArchivedEntities).toBe(false);
-    expect(summary.countCap).toBe(1);
+    expect(summary.countLabels.currentMembersOnArchivedEntities).toBe('1391');
+    expect(summary.countLabels.activeArtifactsOnArchivedEntities).toBe('707');
+  });
+
+  it('labels duplicate people as a lower bound when an identity scan reaches its cap', async () => {
+    modelMocks.aggregate.mockReset();
+    modelMocks.aggregate.mockImplementation(async (pipeline: any[] = []) => {
+      const scansIdentity = pipeline.some((stage) => stage?.$group?.personIds);
+      if (!scansIdentity) return [];
+      const scanLimit = pipeline[pipeline.length - 1]?.$limit ?? 0;
+      return Array.from({ length: scanLimit }, (_, index) => ({
+        _id: `synthetic-${index}`,
+        personIds: [`person-${index}-a`, `person-${index}-b`],
+      }));
+    });
+
+    const summary = await runPostMaterializationIntegrityGate({});
+
+    expect(summary.counts.duplicatePeople).toBeGreaterThan(0);
+    expect(summary.countLabels.duplicatePeople).toBe(`at least ${summary.counts.duplicatePeople}`);
+  });
+
+  it('keeps an exact label for duplicate people below the identity scan cap', async () => {
+    modelMocks.aggregate.mockReset();
+    modelMocks.aggregate.mockImplementation(async (pipeline: any[] = []) => {
+      const scansIdentity = pipeline.some((stage) => stage?.$group?.personIds);
+      if (!scansIdentity) return [];
+      return [{ _id: 'synthetic', personIds: ['person-a', 'person-b'] }];
+    });
+
+    const summary = await runPostMaterializationIntegrityGate({});
+
+    expect(summary.counts.duplicatePeople).toBe(3);
+    expect(summary.countLabels.duplicatePeople).toBe('3');
   });
 });

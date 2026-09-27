@@ -95,15 +95,6 @@ describe('scraperIntegrityGate CLI helpers', () => {
             duplicateAccessSignals: 0,
             activeArtifactsOnArchivedEntities: 0,
           },
-          countIsLowerBound: {
-            samePiSameNameResearchEntities: false,
-            officialLabUrlResearchEntities: false,
-            duplicatePeople: false,
-            duplicateCurrentMembers: false,
-            currentMembersOnArchivedEntities: false,
-            duplicateAccessSignals: false,
-            activeArtifactsOnArchivedEntities: false,
-          },
           countLabels: {
             samePiSameNameResearchEntities: '1',
             officialLabUrlResearchEntities: '0',
@@ -215,7 +206,7 @@ describe('scraperIntegrityGate CLI helpers', () => {
     );
   });
 
-  it('reports a count that reaches its own query cap as a lower bound', () => {
+  it('labels a count as a lower bound only when its check reports truncation', () => {
     const cappedRows = Array.from({ length: 25 }, (_, index) => ({
       officialLabUrl: `https://medicine.yale.edu/lab/synthetic-${index}/`,
       entityIds: [`entity-${index}-a`, `entity-${index}-b`],
@@ -231,15 +222,12 @@ describe('scraperIntegrityGate CLI helpers', () => {
           signalIds: ['signal-a', 'signal-b'],
         },
       ],
-      countCap: 25,
+      truncatedChecks: ['officialLabUrlResearchEntities'],
     });
 
     expect(summary.counts.officialLabUrlResearchEntities).toBe(25);
-    expect(summary.countIsLowerBound.officialLabUrlResearchEntities).toBe(true);
     expect(summary.countLabels.officialLabUrlResearchEntities).toBe('at least 25');
-    expect(summary.countIsLowerBound.duplicateAccessSignals).toBe(false);
     expect(summary.countLabels.duplicateAccessSignals).toBe('1');
-    expect(summary.countCap).toBe(25);
   });
 
   it('reports a measured population instead of the capped sample length', () => {
@@ -252,28 +240,14 @@ describe('scraperIntegrityGate CLI helpers', () => {
         currentMembersOnArchivedEntities: 1391,
         activeArtifactsOnArchivedEntities: 0,
       },
-      countCap: 25,
+      truncatedChecks: ['currentMembersOnArchivedEntities'],
     });
 
     expect(summary.counts.currentMembersOnArchivedEntities).toBe(1391);
-    expect(summary.countIsLowerBound.currentMembersOnArchivedEntities).toBe(false);
     expect(summary.countLabels.currentMembersOnArchivedEntities).toBe('1391');
     expect(summary.samples.currentMembersOnArchivedEntities).toHaveLength(25);
     expect(summary.counts.activeArtifactsOnArchivedEntities).toBe(0);
     expect(summary.failureNames).toEqual(['currentMembersOnArchivedEntities']);
-  });
-
-  it('never marks duplicate people as capped, because that check is not bounded by the query cap', () => {
-    const summary = buildPostMaterializationIntegritySummary({
-      duplicatePersonGroups: [
-        { identityField: 'netid', identityValue: 'zz0000', userIds: ['user-a', 'user-b'] },
-      ],
-      countCap: 1,
-    });
-
-    expect(summary.counts.duplicatePeople).toBe(1);
-    expect(summary.countIsLowerBound.duplicatePeople).toBe(false);
-    expect(summary.countLabels.duplicatePeople).toBe('1');
   });
 
   it('builds duplicate access-signal groups from repeated signal identities', () => {
