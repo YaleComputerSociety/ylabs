@@ -942,6 +942,7 @@ Absence from a snapshot is only evidence when the snapshot's lane read the whole
 Before this a walk that stopped on a later page's fetch failure or at the 20-page cap reported `ok` whenever it had read anybody, so the people on its unread pages were recorded absent and became suppression candidates on the next run, and the truncated discovery also became the next read's retention baseline.
 `--limit` did the same to the development-sample sweep, and a department whose sibling config the limit never reached published the first config's people as the whole department.
 `loadPreviousDiscoveryCounts` reads only `complete: true` snapshots, so a partial read no longer lowers the baseline either.
+It keys each baseline by the lane's own `deptKey` rather than by canonical department, because two lanes of one department list different people, and a department-keyed baseline judged one lane's full read regressed against its sibling's count and let the sibling govern alone.
 
 A lane's incomplete read withholds its whole canonical department in that run, not just its own snapshot (`rosterHealthRecordsAnIncompleteRead`).
 Several configs resolve to one department (Economics and School of Management, Physics and Wright Laboratory), and absence is concluded from every lane failing to find somebody; a lane that did not read its pages has not failed to find anybody on them, so the union of the other lanes cannot stand in for it.
