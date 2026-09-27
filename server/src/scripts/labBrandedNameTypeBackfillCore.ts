@@ -15,9 +15,9 @@
  * moment, and writes the resolved fields in the same pass. Emitting the evidence
  * is what makes the correction durable: a bare field write is reverted by the next
  * materialization, because the roster keeps asserting `FACULTY_RESEARCH_AREA` at
- * 0.7-0.8 and nothing outranks it. That is the same trap
- * `repairLabNamedFacultyResearchTypes` had to answer with a `manuallyLockedFields`
- * entry, and an observation answers it without freezing the field (#2612).
+ * 0.7-0.8 and nothing outranks it. That is the same trap the since-deleted
+ * hand-judged repair (#3675) had to answer with a `manuallyLockedFields` entry, and
+ * an observation answers it without freezing the field (#2612).
  *
  * Which page the brand was read from decides whether there is anything to back the
  * correction. The lane runs against whatever URL a row offered, and for some rows

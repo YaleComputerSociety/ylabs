@@ -488,9 +488,9 @@ export interface ResearchEntityHostOwnerIdentity {
 // authority, because importing it back would make the two mutually dependent.
 //
 // Deliberately WIDER than that module's `PERSON_SCOPED_ENTITY_TYPES`, which omits
-// `FACULTY_RESEARCH`: both retired types persist wherever
-// `research-entity:consolidate-faculty-type` has not run, and omitting either leaves
-// this refusal unreachable on exactly those stored rows. Widening the name-identity
+// `FACULTY_RESEARCH`: nothing rewrites either retired type since the one-off
+// consolidation was deleted (#3675), so a stored row may still carry one, and omitting
+// either leaves this refusal unreachable on exactly those stored rows. Widening the name-identity
 // set instead would change served `displayName` on legacy rows, which is a different
 // decision from this one and needs its own measurement (Development holds 0 rows of
 // either retired type today, so neither set is load-bearing there).

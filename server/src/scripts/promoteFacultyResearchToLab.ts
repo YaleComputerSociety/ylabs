@@ -29,8 +29,8 @@ import {
  * The promotion is evidence-backed rather than a bare field write. `entityType` is
  * asserted by the department roster at 0.7-0.8 on every materialization, so a write
  * with no observation behind it is reverted the next time the row materializes -
- * which is why `repairLabNamedFacultyResearchTypes` needed a `manuallyLockedFields`
- * entry to make the same correction stick. A probe observation outranks the roster
+ * which is why the since-deleted hand-judged repair (#3675) needed a
+ * `manuallyLockedFields` entry to make the same correction stick. A probe observation outranks the roster
  * and needs no lock (#2686, #2612).
  */
 const PROBE_SOURCE_NAME = 'lab-site-type-probe';

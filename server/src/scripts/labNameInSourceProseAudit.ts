@@ -168,7 +168,7 @@ async function main(): Promise<void> {
     );
     if (result.review.length > 0) {
       console.log(
-        `${result.review.length} candidates await a human judgement. This audit writes nothing: record accepted rows as a checked-in list, the way repairLabNamedFacultyResearchTypes does. Use --output to read the proposed names, which carry person names and so never go to stdout.`,
+        `${result.review.length} candidates await a human judgement. This audit writes nothing: fix an accepted class in the lane that emits it, and record a single-row judgement as a refusal. Use --output to read the proposed names, which carry person names and so never go to stdout.`,
       );
       process.exitCode = UNREVIEWED_EXIT_CODE;
     }

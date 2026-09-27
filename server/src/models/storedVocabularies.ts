@@ -46,3 +46,32 @@ export const labSiteVerificationStates = [
   'unreachable',
 ] as const;
 export type LabSiteVerificationState = (typeof labSiteVerificationStates)[number];
+
+/**
+ * The canonical person-scoped research-record type, and the two retired spellings that
+ * mean the same thing on rows written before the consolidation.
+ *
+ * Lives here rather than beside the repair that once rewrote them, which is where it was:
+ * `models/__tests__/researchAccessModels.test.ts` imported it out of `scripts/`, so the
+ * models layer depended on a one-off script and the vocabulary could not outlive it. The
+ * retired spellings are stored data, so they are the models layer's to name (#3675).
+ *
+ * No lane under `scrapers/sources/` emits either retired value, and Development holds 0
+ * rows carrying one, so nothing consolidates them any more. Several readers still tolerate
+ * them deliberately, and that tolerance is what this vocabulary is for.
+ */
+export const CANONICAL_FACULTY_RESEARCH_ENTITY_TYPE = 'FACULTY_RESEARCH_AREA' as const;
+
+export const LEGACY_FACULTY_RESEARCH_ENTITY_TYPES = [
+  'INDIVIDUAL_RESEARCH',
+  'FACULTY_RESEARCH',
+] as const;
+export type LegacyFacultyResearchEntityType = (typeof LEGACY_FACULTY_RESEARCH_ENTITY_TYPES)[number];
+
+const LEGACY_FACULTY_RESEARCH_ENTITY_TYPE_SET: ReadonlySet<string> = new Set(
+  LEGACY_FACULTY_RESEARCH_ENTITY_TYPES,
+);
+
+export function isLegacyFacultyResearchEntityType(value?: string | null): boolean {
+  return typeof value === 'string' && LEGACY_FACULTY_RESEARCH_ENTITY_TYPE_SET.has(value.trim());
+}
