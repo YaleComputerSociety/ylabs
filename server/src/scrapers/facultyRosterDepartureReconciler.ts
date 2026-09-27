@@ -793,6 +793,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
   const scrapedDeptNames = new Set<string>();
   const healthyDiscoveredByDept = new Map<string, Set<string>>();
   const incompletelyReadDeptNames = new Set<string>();
+  const regressedDeptNames = new Set<string>();
   // A run covers many departments read at different moments, so one scalar cannot
   // date them. It used to be overwritten by each snapshot in turn, so every entity
   // was stamped with whichever department happened to be last in the cursor (#3251).
@@ -858,6 +859,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     const previousDiscovered = previousDiscoveryByLane.get(snapshotObservation.entityKey) ?? null;
     if (rosterDiscoveryRegressed(previousDiscovered, discovered.length)) {
       regressedDepartments += 1;
+      regressedDeptNames.add(deptName);
       console.warn(
         `[faculty-departure] regressed department ${sanitizeLogValue(deptName)}: discovered ${discovered.length} against ${previousDiscovered} on its previous read, so this read does not govern`,
       );
@@ -896,6 +898,14 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     incompleteReadDepartments += 1;
     console.warn(
       `[faculty-departure] withheld department ${sanitizeLogValue(deptName)}: one of its roster lanes left part of the roster unread in this run`,
+    );
+  }
+  // A regressed lane is distrusted for the same reason a truncated one is, so a sibling
+  // lane that passed cannot conclude absence for the people only the regressed lane lists.
+  for (const deptName of regressedDeptNames) {
+    if (!healthyDiscoveredByDept.delete(deptName)) continue;
+    console.warn(
+      `[faculty-departure] withheld department ${sanitizeLogValue(deptName)}: one of its roster lanes regressed against its own previous read`,
     );
   }
 

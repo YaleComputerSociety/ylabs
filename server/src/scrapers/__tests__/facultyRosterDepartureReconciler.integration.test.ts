@@ -436,6 +436,47 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     expect(result.planned.record_first_absence).toBe(0);
   });
 
+  it('does not let a sibling lane govern alone when the other lane regressed', async () => {
+    // A regressed read is distrusted exactly like a truncated one, so the people only
+    // that lane lists cannot be concluded absent from the sibling lane's read (#3647).
+    const run = new mongoose.Types.ObjectId().toString();
+    const earlier = new mongoose.Types.ObjectId().toString();
+    const physicsKeys = ['lab-a', 'lab-b', 'lab-g', 'lab-h'];
+    const wrightEarlier = ['lab-c', 'lab-d'];
+    for (const slug of [...physicsKeys, ...wrightEarlier]) await seedEntity({ slug });
+    const seedLane = (runId: string, entityKey: string, keys: string[], observedAt: string) =>
+      Observation.create({
+        entityType: 'departmentRosterHealth',
+        entityKey,
+        field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+        value: {
+          deptName: 'Physics',
+          status: 'ok',
+          complete: true,
+          discoveredEntityKeys: keys,
+          discoveredCount: keys.length,
+          read: FETCHED_READ,
+        },
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        confidence: 0.9,
+        scrapeRunId: new mongoose.Types.ObjectId(runId),
+        observedAt: new Date(observedAt),
+      });
+    await seedLane(earlier, 'physics', physicsKeys, '2026-08-20T00:00:00.000Z');
+    await seedLane(earlier, 'wright-lab', wrightEarlier, '2026-08-20T00:01:00.000Z');
+    await seedLane(run, 'physics', physicsKeys, '2026-08-27T00:00:00.000Z');
+    await seedLane(run, 'wright-lab', ['lab-c'], '2026-08-27T00:01:00.000Z');
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
+
+    expect(result.regressedDepartments).toBe(1);
+    expect(result.frozenDepartments).toBe(0);
+    expect(result.governedDepartments).toEqual([]);
+    expect(result.planned.record_first_absence).toBe(0);
+  });
+
   it('refuses to suppress on a snapshot whose run recorded no read of the page', async () => {
     const run = new mongoose.Types.ObjectId().toString();
     await seedEntity({ slug: 'lab-present' });

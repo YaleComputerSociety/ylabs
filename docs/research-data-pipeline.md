@@ -950,6 +950,8 @@ Every status in the table except `ok` withholds, `empty` and `js-rendered-skip` 
 `empty` means the page listed no rows at all, not that the lane emitted nobody new, so a tab sharing its `deptKey` with an earlier tab that re-lists the same people stays `ok` rather than withholding its department on every run.
 When several configs share one `deptKey`, the collapsed status is the first incomplete-read status among them, so an `empty` config cannot mask a sibling's `partial-read` or `fetch-failed`.
 The pass reports as `incompleteReadDepartments` only the departments this rule withheld, so a department that no lane admitted in the first place is not counted.
+A lane whose read regressed against its own previous read withholds its department the same way, because the regression guard distrusts that read for the same reason, so a sibling lane that passed cannot conclude absence for the people only the regressed lane lists; the count stays in `regressedDepartments`.
+A lane the drop guard freezes does not withhold, because the drop guard compares one lane against the whole department's governed rows, so a small sibling lane such as a School of Management tab would freeze on every run and permanently withhold its department.
 
 A run in which every attempted lane failed to read throws, so it is stored as a `failure` rather than a `success`, and so does an `official-research-home-rosters` run in which every roster fetch failed.
 Without that, a lane whose every page was unreachable still emitted its honest not-read snapshot, which counted as an observation, so the barren-streak guard could never fire and the run read healthy.
