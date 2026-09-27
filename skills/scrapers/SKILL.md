@@ -74,6 +74,14 @@ A missing screen mints a whole class, and the class is expensive: the row inheri
 The graft repair that later withdraws the name and website does **not** retract the prose, so the row keeps serving another lab's description.
 So when a wrong row turns out to be a whole title class, extend the screen and then retire the rows the screen would now refuse; do not patch the row.
 
+### Asking whether a title owns research
+
+The three screens above decide whether a profile may MINT. They are the wrong instrument for deciding whether an existing row should be RETIRED, because `FACULTY_KEYWORDS` deliberately holds `postdoctoral`, `research associate` and `research scientist`, so a faculty test and a subordinate-rank test disagree about trainees by construction.
+
+For the retirement-side question use `utils/titleResearchOwnership.ts`, a rank lattice: phrases with explicit verdicts, matched as spans anywhere in the title, longest span winning an overlap. `yarn --cwd server research-entity:audit-title-research-ownership` is its read-only instrument and has no `--apply`.
+
+Four earlier mechanisms each broke on a stored title, and the module's test file pins one case per failure. Before proposing a fifth string rule, read that list: the recurring lesson is that a title names ranks without saying whose rank each one is. `docs/research-data-pipeline.md` owns the reasoning, the measured buckets, and why the lead-edge second witness reaches only 2 of 103 rows.
+
 ## Safety rules (write guards)
 
 - Non-production environments default to dry-run. Set `ALLOW_NON_PROD_SCRAPER_WRITES=true` to write to a dev DB.
