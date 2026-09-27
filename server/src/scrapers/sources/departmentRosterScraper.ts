@@ -3620,12 +3620,12 @@ const labUrlIdentity = (url: string): string => fieldValueRefusalKey('websiteUrl
 
 /**
  * A website one roster lists for two or more different people is a group site, not any
- * one of them's own research home, so it is refused for all of them rather than handed to
+ * one of them's own research website, so it is refused for all of them rather than handed to
  * whichever row materializes first. Measured on Development before this landed: 20 URLs
  * this lane assigned to 2 to 5 different people, 20 of those rows already refused
  * `wrong_owner` by an operator and 37 still served as the row's own website.
  *
- * The same person listed twice is not a sharer, because their rows are one research home
+ * The same person listed twice is not a sharer, because their rows are one research entity
  * however many departments print them, which is duplicate-row work rather than a wrong URL.
  * Stripping marks the slot `refused`, never empty, because the page still carries the link
  * (#3135).
