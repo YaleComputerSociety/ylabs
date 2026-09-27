@@ -692,6 +692,68 @@ describe('getAnalytics research coverage and range scoping', () => {
     }
   });
 
+  it('ranks top entities from profile opens and program views, and keeps program views out of the research breakdowns', async () => {
+    primeAnalyticsMocks();
+
+    await getAnalytics();
+
+    const researchPipeline = mocks.analyticsAggregate.mock.calls.find((call) =>
+      call[0].some((stage: Record<string, any>) => stage.$facet && stage.$facet.topEntities),
+    )![0];
+
+    const server = await MongoMemoryServer.create();
+    const client = new MongoClient(server.getUri());
+    try {
+      await client.connect();
+      const db = client.db('analytics_top_entities');
+      const fellowshipId = new ObjectId();
+      const researchEntityId = new ObjectId().toString();
+
+      await db.collection('analyticsevents').insertMany([
+        ...['viewer01', 'viewer02', 'viewer02'].map((netid) => ({
+          eventType: AnalyticsEventType.FELLOWSHIP_VIEW,
+          netid,
+          userType: 'undergraduate',
+          fellowshipId,
+          metadata: { entityType: 'fellowship' },
+          timestamp: new Date(),
+        })),
+        {
+          eventType: AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+          netid: 'viewer01',
+          userType: 'undergraduate',
+          entityType: 'research_entity',
+          entityId: researchEntityId,
+          timestamp: new Date(),
+        },
+      ]);
+
+      const [result] = await db.collection('analyticsevents').aggregate(researchPipeline).toArray();
+
+      expect(result.topEntities).toEqual([
+        {
+          entityType: 'fellowship',
+          entityId: fellowshipId.toString(),
+          views: 3,
+          uniqueViewers: 2,
+        },
+        {
+          entityType: 'research_entity',
+          entityId: researchEntityId,
+          views: 1,
+          uniqueViewers: 1,
+        },
+      ]);
+      expect(result.byEventType.map((row: { eventType: string }) => row.eventType)).toEqual([
+        AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+      ]);
+      expect(result.byUserType).toEqual([{ userType: 'undergraduate', count: 1 }]);
+    } finally {
+      await client.close();
+      await server.stop();
+    }
+  });
+
   it('resolves top research entity ids to human-readable names and hrefs', async () => {
     const researchEntityId = '507f1f77bcf86cd799439011';
     const fellowshipId = '507f1f77bcf86cd799439012';
@@ -781,6 +843,48 @@ describe('getAnalytics research coverage and range scoping', () => {
         uniqueViewers: 1,
         name: 'Jane Doe',
         href: '/profile/prof-netid',
+      },
+    ]);
+  });
+  it('resolves research profile opens recorded by slug to a name and href', async () => {
+    const slug = 'synthetic-quokka-lab';
+    primeAnalyticsMocks();
+    mocks.analyticsAggregate.mockResolvedValue([
+      {
+        ...eventFacetStub,
+        topEntities: [
+          { entityType: 'research_entity', entityId: slug, views: 2, uniqueViewers: 1 },
+        ],
+      },
+    ]);
+    mocks.researchEntityAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 0, active: 0 }],
+        byType: [],
+        byVisibilityTier: [],
+        freshness: [],
+        scholarly: [],
+      },
+    ]);
+    mocks.researchEntityFind.mockImplementation((query: any) => ({
+      select: () => ({
+        lean: async () =>
+          query.$or?.some((clause: any) => clause.slug?.$in?.includes(slug))
+            ? [{ _id: '507f1f77bcf86cd799439013', name: 'Quokka Lab', slug }]
+            : [],
+      }),
+    }));
+
+    const analytics = await getAnalytics();
+
+    expect(analytics.research.topEntities).toEqual([
+      {
+        entityType: 'research_entity',
+        entityId: slug,
+        views: 2,
+        uniqueViewers: 1,
+        name: 'Quokka Lab',
+        href: `/research/${slug}`,
       },
     ]);
   });

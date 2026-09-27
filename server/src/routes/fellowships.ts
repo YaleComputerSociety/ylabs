@@ -7,7 +7,6 @@ import * as fellowshipController from '../controllers/fellowshipController';
 import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/index';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { logResearchEventOnSuccess } from '../services/researchAnalytics';
 
 const router = Router();
 
@@ -57,7 +56,6 @@ router.put(
   isAuthenticated,
   validateObjectId('id'),
   logFellowshipEvent(AnalyticsEventType.FELLOWSHIP_VIEW),
-  logResearchEventOnSuccess(AnalyticsEventType.RESEARCH_VIEW, 'fellowship'),
   fellowshipController.addViewToFellowship,
 );
 

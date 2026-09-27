@@ -745,15 +745,31 @@ const Analytics = () => {
             />
             <DashboardMetric
               title="Official-route reach"
-              value={formatNumber(journeyMetrics.officialRouteAttempts)}
-              context={`Students who clicked an application, open-position, or reviewed-route link in ${selectedRangeLabel}.`}
+              value={
+                journeyMetrics.officialRouteAttempts === null
+                  ? 'not recorded'
+                  : formatNumber(journeyMetrics.officialRouteAttempts)
+              }
+              context={
+                journeyMetrics.officialRouteAttempts === null
+                  ? `No qualified-action events were recorded in ${selectedRangeLabel}, so this is unmeasured rather than zero.`
+                  : `Students who clicked an application, open-position, or reviewed-route link in ${selectedRangeLabel}.`
+              }
               tooltip="Distinct students who clicked at least one official-route link: application, open position, or reviewed route."
               tone="blue"
             />
             <DashboardMetric
               title="Application opens"
-              value={formatNumber(journeyMetrics.applicationOpens)}
-              context={`Students who opened an application or open-position link in ${selectedRangeLabel}.`}
+              value={
+                journeyMetrics.applicationOpens === null
+                  ? 'not recorded'
+                  : formatNumber(journeyMetrics.applicationOpens)
+              }
+              context={
+                journeyMetrics.applicationOpens === null
+                  ? `No qualified-action events were recorded in ${selectedRangeLabel}, so this is unmeasured rather than zero.`
+                  : `Students who opened an application or open-position link in ${selectedRangeLabel}.`
+              }
               tooltip="Distinct students who opened an application or open-position link. A subset of official-route reach."
               tone="green"
             />

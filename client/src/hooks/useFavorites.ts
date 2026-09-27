@@ -8,6 +8,7 @@ import swal from 'sweetalert';
 import {
   createResearchAnalyticsInteractionId,
   trackResearchEvent,
+  type ResearchSaveSurface,
 } from '../utils/researchAnalytics';
 
 type FavoritesKind = 'researchPlans' | 'watchedPrograms';
@@ -69,7 +70,7 @@ export const useFavorites = (
   }, [reload]);
 
   const setFavorite = useCallback(
-    async (id: string, favorite: boolean) => {
+    async (id: string, favorite: boolean, surface: ResearchSaveSurface = 'profile') => {
       const previous = favIds;
       setFavIds((prev) =>
         favorite ? [id, ...prev.filter((x) => x !== id)] : prev.filter((x) => x !== id),
@@ -91,7 +92,7 @@ export const useFavorites = (
             eventType: 'research_save',
             entityType: 'research_entity',
             entityId: id,
-            payload: { operation: favorite ? 'save' : 'remove', surface: 'profile' },
+            payload: { operation: favorite ? 'save' : 'remove', surface },
             dedupeKey: createResearchAnalyticsInteractionId('save'),
           });
         }

@@ -7,6 +7,14 @@ import FellowshipSearchContext, {
 } from '../../../contexts/FellowshipSearchContext';
 import type { Fellowship } from '../../../types/types';
 import FellowshipModal from '../FellowshipModal';
+import { trackResearchEvent } from '../../../utils/researchAnalytics';
+
+vi.mock('../../../utils/researchAnalytics', async () => ({
+  ...(await vi.importActual<typeof import('../../../utils/researchAnalytics')>(
+    '../../../utils/researchAnalytics',
+  )),
+  trackResearchEvent: vi.fn(),
+}));
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -143,6 +151,34 @@ describe('FellowshipModal', () => {
       'href',
       fellowship.applicationLink,
     );
+  });
+
+  it('records one application event per application-link click', () => {
+    render(
+      <MemoryRouter>
+        <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
+          <FellowshipModal
+            fellowship={fellowship}
+            isOpen
+            isFavorite={false}
+            onClose={vi.fn()}
+            toggleFavorite={vi.fn()}
+          />
+        </FellowshipSearchContext.Provider>
+      </MemoryRouter>,
+    );
+    vi.mocked(trackResearchEvent).mockClear();
+
+    fireEvent.click(screen.getByRole('link', { name: /Apply Now/i }));
+
+    expect(vi.mocked(trackResearchEvent).mock.calls.map(([event]) => event)).toEqual([
+      {
+        eventType: 'ways_in_click',
+        entityType: 'fellowship',
+        entityId: fellowship.id,
+        payload: { waysInKind: 'apply', label: 'Apply' },
+      },
+    ]);
   });
 
   it('contains keyboard focus, closes on Escape, and returns focus to the exact trigger', () => {

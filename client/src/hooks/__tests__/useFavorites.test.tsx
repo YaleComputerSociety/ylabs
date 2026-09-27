@@ -108,6 +108,29 @@ describe('useFavorites', () => {
     expect(batchCall?.[2]).toEqual({ withCredentials: true });
   });
 
+  it('records the surface a removal came from', async () => {
+    mockedAxios.get.mockResolvedValueOnce({ data: { savedResearchEntityIds: ['entity-1'] } });
+    mockedAxios.delete.mockResolvedValueOnce({ data: { savedResearchEntityIds: [] } });
+    mockedAxios.post.mockResolvedValueOnce({ status: 202 });
+    const { result } = renderHook(() => useFavorites('researchPlans'));
+    await waitFor(() => expect(result.current.favIds).toEqual(['entity-1']));
+
+    await act(async () => {
+      await result.current.setFavorite('entity-1', false, 'saved_plans');
+    });
+    await flushResearchAnalytics();
+
+    const events = mockedAxios.post.mock.calls
+      .filter(([url]) => url === '/analytics/research/batch')
+      .flatMap(([, body]) => (body as { events: unknown[] }).events);
+    expect(events).toEqual([
+      expect.objectContaining({
+        eventType: 'research_save',
+        payload: { operation: 'remove', surface: 'saved_plans' },
+      }),
+    ]);
+  });
+
   it('does not record a save when the canonical mutation fails', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mockedAxios.get.mockResolvedValueOnce({ data: { savedResearchEntityIds: [] } });

@@ -28,6 +28,7 @@ import type { FellowshipQuickFilter } from '../reducers/fellowshipSearchReducer'
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import { getFellowshipCycleStatus } from '../utils/fellowshipCycle';
+import { createFellowship } from '../utils/createFellowship';
 import {
   getProgramJourneyStatus,
   programKindLabel,
@@ -342,14 +343,19 @@ const Fellowships = () => {
     }
     if (isModalOpen && requestedProgramId === selectedProgramId) return;
 
+    const openedInPage = wasProgramModalOpenedInPage(location.state);
     let isLatestRequest = true;
     axios
       .get(`/programs/${encodeURIComponent(requestedProgramId)}`)
       .then((response) => {
         if (!isLatestRequest) return;
-        const program = response.data?.program || response.data?.fellowship;
-        if (program) {
+        const rawProgram = response.data?.program || response.data?.fellowship;
+        if (rawProgram) {
+          const program = createFellowship(rawProgram);
           dispatch({ type: 'OPEN_DETAIL_MODAL', item: program });
+          if (!openedInPage) {
+            axios.put(`fellowships/${program.id}/addView`).catch(() => {});
+          }
         }
       })
       .catch(() => {
@@ -360,7 +366,7 @@ const Fellowships = () => {
     return () => {
       isLatestRequest = false;
     };
-  }, [requestedProgramId, selectedProgramId, isModalOpen, setSearchParams]);
+  }, [requestedProgramId, selectedProgramId, isModalOpen, setSearchParams, location.state]);
 
   const closeProgramModal = () => {
     if (wasProgramModalOpenedInPage(location.state)) {

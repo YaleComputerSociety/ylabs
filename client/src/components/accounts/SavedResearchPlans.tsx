@@ -260,7 +260,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     // Read the note before the row leaves the list, because afterwards it is gone
     // from both the server and this component's state.
     const note = notes[entityId] || '';
-    void setFavorite(slug, false);
+    void setFavorite(slug, false, 'saved_plans');
     clearTimeout(undoTimerRef.current);
     setUndoableUnsave({ slug, entityId, name, note });
     undoTimerRef.current = setTimeout(() => setUndoableUnsave(null), UNDO_WINDOW_MS);
@@ -272,7 +272,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     clearTimeout(undoTimerRef.current);
     setUndoableUnsave(null);
 
-    const restored = await setFavorite(slug, true);
+    const restored = await setFavorite(slug, true, 'saved_plans');
     // The note write is not gated on the favourite succeeding. Gating it means a
     // failed re-favourite silently discards the only copy of the note, which is the
     // loss this undo exists to prevent.
@@ -287,7 +287,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   // Keyed by entity id rather than slug: an unavailable target has no slug the list
   // can trust, and the remove endpoint accepts either.
   const removeUnavailablePlan = async (entityId: string) => {
-    if (await setFavorite(entityId, false)) {
+    if (await setFavorite(entityId, false, 'saved_plans')) {
       setUnavailable((current) => current.filter((item) => item._id !== entityId));
     }
   };

@@ -819,6 +819,24 @@ describe('Programs page', () => {
     expect(detailFetches).toHaveLength(1);
   });
 
+  it('records one view for a program opened from a direct link, keyed by its stored id', async () => {
+    mockedAxios.put.mockResolvedValue({ data: {} });
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/programs/f1') {
+        const { id: _id, ...stored } = baseFellowship({ id: 'f1', title: 'Deep Linked Program' });
+        return Promise.resolve({ data: { program: { ...stored, _id: 'f1' } } });
+      }
+      return Promise.resolve({ data: { watchedProgramIds: [] } });
+    });
+
+    renderPage([], {}, ['/programs?program=f1']);
+
+    await screen.findByRole('dialog', { name: 'Deep Linked Program' });
+    await waitFor(() =>
+      expect(mockedAxios.put.mock.calls.map((call) => call[0])).toEqual(['fellowships/f1/addView']),
+    );
+  });
+
   describe('program modal history', () => {
     const openProgram = () =>
       baseFellowship({
@@ -853,6 +871,24 @@ describe('Programs page', () => {
         expect(screen.queryByRole('dialog', { name: 'Browse Opened Program' })).toBeNull(),
       );
       expect(currentLocation().textContent).toBe('/programs');
+    });
+
+    it('leaves view recording to the card when a program is opened from browse', async () => {
+      mockedAxios.put.mockResolvedValue({ data: {} });
+      const program = openProgram();
+      mockProgramDetail(program);
+      renderPage([program]);
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Open program open-1' }));
+      await screen.findByRole('dialog', { name: 'Browse Opened Program' });
+      await userEvent.click(screen.getByRole('button', { name: 'Browser back' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Browser forward' }));
+      await screen.findByRole('dialog', { name: 'Browse Opened Program' });
+
+      const addViewCalls = mockedAxios.put.mock.calls.filter((call) =>
+        String(call[0]).endsWith('/addView'),
+      );
+      expect(addViewCalls).toHaveLength(0);
     });
 
     it('reopens the program when the student presses Forward after Back', async () => {
