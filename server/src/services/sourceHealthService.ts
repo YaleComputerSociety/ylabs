@@ -1,4 +1,5 @@
 import { isRetiredSourceName, scriptDrivenSourceOwner } from '../scrapers/sourceDispatch';
+import { sourceIsExpectedToRecur } from '../scrapers/sourceYieldGuard';
 import { serializedDocumentId } from '../utils/idSerialization';
 
 export type SourceHealthRisk = 'ok' | 'warn' | 'error';
@@ -182,11 +183,12 @@ function riskForSource(
       action: 'Add or seed source coverage metadata before trusting broad rollout.',
     };
   }
+  const recurringRunExpected = sourceIsExpectedToRecur(source);
   if (!latestRun) {
-    if (source.cadence === 'event' || source.coverage.tier === 'MANUAL_OVERRIDE') {
+    if (source.cadence === 'event' || !recurringRunExpected) {
       return {
         risk: 'ok',
-        action: 'Event-driven source; no scheduled scraper run is expected.',
+        action: 'Event-driven or manual-only source; no scheduled scraper run is expected.',
       };
     }
     const scriptDrivenLane = scriptDrivenSourceOwner(source.name);
@@ -200,6 +202,14 @@ function riskForSource(
       risk: 'warn',
       action: 'No recent run recorded; run a bounded dry run before seeding.',
       nextCommand: noRecentRunCommand(source.name),
+    };
+  }
+  if (latestRun.status === 'failure' && !recurringRunExpected) {
+    return {
+      risk: 'ok',
+      action:
+        'Latest manual run failed, but this source is manual-only or MANUAL_OVERRIDE with no recurring run expectation, so the failure is not a broken-lane signal; read its report before the next manual run.',
+      nextCommand: latestRunReportCommand,
     };
   }
   if (latestRun.status === 'failure') {

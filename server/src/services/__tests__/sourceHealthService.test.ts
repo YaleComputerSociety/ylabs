@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MANUAL_ONLY_SWEEP_SOURCES } from '../../scrapers/manualOnlySweepSources';
 import { buildSourceHealthRows } from '../sourceHealthService';
 
 describe('sourceHealthService', () => {
@@ -187,7 +188,68 @@ describe('sourceHealthService', () => {
     );
 
     expect(rows[0].risk).toBe('ok');
-    expect(rows[0].action).toMatch(/Event-driven source/i);
+    expect(rows[0].action).toMatch(/Event-driven or manual-only source/i);
+  });
+
+  it('does not raise a manual-only source to error risk for a failed run (#3582)', () => {
+    const manualOnlySource = MANUAL_ONLY_SWEEP_SOURCES[0];
+    const rows = buildSourceHealthRows(
+      [
+        {
+          name: manualOnlySource,
+          enabled: true,
+          cadence: 'weekly',
+          coverage: { priority: 10, tier: 'THIRD_PARTY_ENRICHMENT' },
+        },
+        {
+          name: 'swept-source',
+          enabled: true,
+          cadence: 'weekly',
+          coverage: { priority: 20, tier: 'THIRD_PARTY_ENRICHMENT' },
+        },
+      ],
+      [
+        {
+          _id: 'manual-run',
+          sourceName: manualOnlySource,
+          status: 'failure',
+          startedAt: '2026-09-26T12:00:00.000Z',
+          observationCount: 0,
+        },
+        {
+          _id: 'swept-run',
+          sourceName: 'swept-source',
+          status: 'failure',
+          startedAt: '2026-09-26T12:00:00.000Z',
+          observationCount: 0,
+        },
+      ],
+    );
+
+    const bySource = new Map(rows.map((row) => [row.sourceName, row]));
+    expect(bySource.get(manualOnlySource)).toMatchObject({
+      risk: 'ok',
+      action: expect.stringMatching(/manual-only/i),
+      nextCommand: expect.stringContaining('scrape report --run manual-run'),
+    });
+    expect(bySource.get('swept-source')?.risk).toBe('error');
+  });
+
+  it('expects no scheduled run from a manual-only source that has never run', () => {
+    const rows = buildSourceHealthRows(
+      [
+        {
+          name: MANUAL_ONLY_SWEEP_SOURCES[0],
+          enabled: true,
+          cadence: 'monthly',
+          coverage: { priority: 10, tier: 'DERIVED_OFFICIAL' },
+        },
+      ],
+      [],
+    );
+
+    expect(rows[0].risk).toBe('ok');
+    expect(rows[0].nextCommand).toBeUndefined();
   });
 
   it('does not stringify arbitrary run ids while building operator commands', () => {

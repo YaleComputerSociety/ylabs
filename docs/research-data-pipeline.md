@@ -1488,6 +1488,8 @@ A workable second witness has to be something a person in somebody else's group 
 `buildOrchestrator()` is the authority for the first: the CLI, the cron, and the sweep all resolve a name through it, so a row it does not name fails with "No scraper registered with name" no matter what the row says.
 `scrapers:audit-freshness` therefore computes overdue and never-crawled over sweep-registered rows only, reports script-driven lanes next to the command that runs each one, lists retired rows separately, and fails rather than reporting phantom work when a registered scraper has no row, a row is `unowned`, or a retired lane's row is still enabled.
 Admin source health reads the same classification, so a retired row is `ok` with its retirement stated rather than a warning asking an operator to confirm a decision the repo already made, and a script-driven lane with no scrape run names its command instead of suggesting a crawl that would fail.
+Source health and the freshness worklist also share one recurrence rule, `sourceIsExpectedToRecur` in `scrapers/sourceYieldGuard.ts`: a source that is disabled, `MANUAL_OVERRIDE`, or in the sweep's manual-only set (`scrapers/manualOnlySweepSources.ts`) has no recurring run expectation, so it never reads as stale and its latest failed run is `ok` with the report command rather than `error` risk (#3582).
+Only the recurrence rule reads the manual-only set: the barren-streak guard still uses `sourceIsExpectedToYield`, so a deliberate manual run of a manual-only lane that acquires nothing is still a failed run the operator sees.
 Every scraper in `registry.ts` must also have a `seedSources.ts` entry, because applying the seed is the only remediation the audit's missing-row block accepts.
 
 ## Canonical Collections

@@ -329,6 +329,7 @@ A `Signal` may now target an `OrgUnit` through `orgUnitId`, and exactly one of `
 `department-undergrad-research` reads a department's own course page and emits an `orgUnit` observation only when a sentence on that page names the route and names credit or a catalog code; the materializer turns it into a `COURSE_CREDIT_PATHWAY` signal on the department, and `getResearchGroupDetail` inherits it at read time as `departmentCourseCreditRoutes`, attributed to the department by name.
 Nothing is ever written onto an entity, so the department-to-all-entities fan-out is impossible by construction rather than by policy.
 Measured on Development: 19 of 40 department pages state a route, producing 19 signals, all on an `OrgUnit` and none on an entity, reaching 517 of 3,314 served entity pages.
+The Beta data-quality scorecard audits the two targets as two edges: `signals.researchEntityId` is required only on a signal with no `orgUnitId`, and `signals.orgUnitId` must resolve to an `org_units` row, so a department-scoped signal no longer reads as a broken entity reference (#3582).
 See `docs/decisions.md` for the recorded decision.
 
 Under the organizational/program dead-end gate (issue #1359), a lead-exempt entity with no attached lead and no reachable alternate access path (a linked related entity or a discovered people/get-involved/programs/undergraduate-research/directed-research page) is still held at `operator_review` with `missing_alternate_access_path` rather than auto-published.

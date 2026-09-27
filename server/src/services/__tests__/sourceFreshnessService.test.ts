@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MANUAL_ONLY_SWEEP_SOURCES } from '../../scrapers/manualOnlySweepSources';
 import {
   classifySourceFreshness,
   computeSourceFreshness,
@@ -23,6 +24,20 @@ describe('classifySourceFreshness', () => {
 
   it('excludes disabled sources entirely', () => {
     expect(classifySourceFreshness({ name: 'off', enabled: false }, NOW)).toBeNull();
+  });
+
+  it('exempts a manual-only sweep source from a re-crawl expectation (#3582)', () => {
+    const entry = classifySourceFreshness(
+      {
+        name: MANUAL_ONLY_SWEEP_SOURCES[0],
+        enabled: true,
+        lastCrawledAt: daysAgo(9999),
+        coverage: { tier: 'THIRD_PARTY_ENRICHMENT' },
+      },
+      NOW,
+    );
+
+    expect(entry).toBeNull();
   });
 
   it('exempts MANUAL_OVERRIDE sources from a re-crawl expectation', () => {

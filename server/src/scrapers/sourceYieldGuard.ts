@@ -12,6 +12,7 @@
  * records `fetchMetrics` at all, so a fetch-gated guard could never fire.
  */
 import { ScrapeRun } from '../models/scrapeRun';
+import { isManualOnlySweepSource } from './manualOnlySweepSources';
 import type { ScraperMetrics } from './types';
 
 export const BARREN_RUN_STREAK_FAILURE_THRESHOLD = 3;
@@ -77,6 +78,12 @@ export function barrenRunStreak(runsNewestFirst: RunYieldFacts[]): number {
 export function sourceIsExpectedToYield(source: YieldExpectationSource): boolean {
   if (source.enabled === false) return false;
   return source.coverage?.tier !== 'MANUAL_OVERRIDE';
+}
+
+export function sourceIsExpectedToRecur(
+  source: YieldExpectationSource & { name?: string },
+): boolean {
+  return sourceIsExpectedToYield(source) && !isManualOnlySweepSource(source.name);
 }
 
 export function resolveBarrenStreakFailure(args: {
