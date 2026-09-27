@@ -185,3 +185,149 @@ export function summarizeLiveModelRuns(scores: readonly LaneReplayScore[]): Live
     })),
   };
 }
+
+export interface GoldLabel {
+  entityKey: string;
+  field: string;
+  expected: 'present' | 'absent';
+  acceptable?: string[];
+  judgedPageUrl?: string;
+  note?: string;
+}
+
+export interface GoldFieldScore {
+  field: string;
+  labeled: number;
+  truePositive: number;
+  falsePositive: number;
+  falseNegative: number;
+  trueNegative: number;
+  precision: number | null;
+  recall: number | null;
+}
+
+const MIN_CONTAINED_QUOTE_CHARS = 20;
+
+const normalizedGoldText = (value: string): string =>
+  value
+    .replace(/\[(?:email|phone) redacted\]/gi, ' ')
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[–—]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+/**
+ * The comparable part of a planned value: an access verdict is judged on the verdict alone,
+ * because the quote beside it is judged under its own field.
+ */
+export function goldValueKey(field: string, value: unknown): string {
+  if (field === 'undergradAccessEvidence' && value && typeof value === 'object') {
+    return normalizedGoldText(
+      String((value as { openToUndergrads?: unknown }).openToUndergrads ?? ''),
+    );
+  }
+  if (typeof value === 'string') return normalizedGoldText(value);
+  return normalizedGoldText(JSON.stringify(value ?? null));
+}
+
+/**
+ * A planned value matches an acceptable one when either contains the other, so a quote the
+ * lane trims to a clause of a judged sentence still counts, but a fragment too short to carry
+ * a claim does not.
+ */
+export function goldValueMatches(emitted: string, acceptable: readonly string[]): boolean {
+  return acceptable.some((candidate) => {
+    const judged = normalizedGoldText(candidate);
+    if (!judged || !emitted) return false;
+    if (emitted === judged || emitted.includes(judged)) return true;
+    return emitted.length >= MIN_CONTAINED_QUOTE_CHARS && judged.includes(emitted);
+  });
+}
+
+/**
+ * Precision and recall against hand-judged labels, per field (#3588). Each label is one
+ * `(entityKey, field)` judged against the frozen benchmark page: `absent` means the lane
+ * should emit nothing, `present` lists the values a reader accepted. An emission on an
+ * unlabeled pair is unjudged and counted nowhere, per #3514.
+ */
+export function scoreGoldLabels(
+  observations: readonly PlannedObservation[],
+  goldLabels: readonly GoldLabel[],
+  slugByEntityId: ReadonlyMap<string, string> = new Map(),
+): GoldFieldScore[] {
+  const emittedByPair = new Map<string, string[]>();
+  for (const observation of observations) {
+    const field = text(observation.field);
+    if (!field || text(observation.entityType) !== 'researchEntity') continue;
+    if (isRefusedObservationField('researchEntity', field)) continue;
+    const slug =
+      text(observation.entityKey) || slugByEntityId.get(idText(observation.entityId)) || '';
+    const key = `${slug}\u0000${field}`;
+    emittedByPair.set(key, [
+      ...(emittedByPair.get(key) ?? []),
+      goldValueKey(field, observation.value),
+    ]);
+  }
+
+  const byField = new Map<string, GoldFieldScore>();
+  for (const label of goldLabels) {
+    const score = byField.get(label.field) ?? {
+      field: label.field,
+      labeled: 0,
+      truePositive: 0,
+      falsePositive: 0,
+      falseNegative: 0,
+      trueNegative: 0,
+      precision: null,
+      recall: null,
+    };
+    byField.set(label.field, score);
+    score.labeled += 1;
+    const emitted = (emittedByPair.get(`${label.entityKey}\u0000${label.field}`) ?? []).filter(
+      Boolean,
+    );
+    if (label.expected === 'absent') {
+      if (emitted.length > 0) score.falsePositive += 1;
+      else score.trueNegative += 1;
+      continue;
+    }
+    if (emitted.length === 0) score.falseNegative += 1;
+    else if (emitted.some((value) => goldValueMatches(value, label.acceptable ?? [])))
+      score.truePositive += 1;
+    else score.falsePositive += 1;
+  }
+
+  for (const score of byField.values()) {
+    const claimed = score.truePositive + score.falsePositive;
+    const expected = score.truePositive + score.falseNegative;
+    score.precision = claimed > 0 ? score.truePositive / claimed : null;
+    score.recall = expected > 0 ? score.truePositive / expected : null;
+  }
+  return [...byField.values()].sort((a, b) => a.field.localeCompare(b.field));
+}
+
+export interface GoldRateSpread {
+  field: string;
+  precision: CountSpread | null;
+  recall: CountSpread | null;
+}
+
+/** The live-model band of precision and recall, over the runs where the rate was defined. */
+export function summarizeGoldRuns(runs: readonly GoldFieldScore[][]): GoldRateSpread[] {
+  const fields = [...new Set(runs.flatMap((run) => run.map((score) => score.field)))].sort();
+  const rates = (field: string, key: 'precision' | 'recall') =>
+    runs
+      .map((run) => run.find((score) => score.field === field)?.[key])
+      .filter((rate): rate is number => typeof rate === 'number');
+  return fields.map((field) => {
+    const precision = rates(field, 'precision');
+    const recall = rates(field, 'recall');
+    return {
+      field,
+      precision: precision.length > 0 ? spreadOf(precision) : null,
+      recall: recall.length > 0 ? spreadOf(recall) : null,
+    };
+  });
+}

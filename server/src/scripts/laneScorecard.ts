@@ -19,7 +19,14 @@ import {
   runLaneDry,
   slugsForPlannedEntities,
 } from './laneBenchmarkRun';
-import { scoreLaneReplay, summarizeLiveModelRuns, type BenchmarkLabel } from './laneScorecardCore';
+import {
+  scoreGoldLabels,
+  scoreLaneReplay,
+  summarizeGoldRuns,
+  summarizeLiveModelRuns,
+  type BenchmarkLabel,
+  type GoldLabel,
+} from './laneScorecardCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -77,6 +84,7 @@ interface StoredBenchmark {
   only?: string[];
   limit?: number;
   labels?: BenchmarkLabel[];
+  goldLabels?: GoldLabel[];
   plannedObservationCount?: number;
 }
 
@@ -111,13 +119,15 @@ async function replayBenchmark(
   } finally {
     replay = finishBenchmarkReplay();
   }
+  const slugByEntityId = await slugsForPlannedEntities(run.observations);
   const score = scoreLaneReplay(
     run.observations,
     benchmark.labels ?? [],
-    await slugsForPlannedEntities(run.observations),
+    slugByEntityId,
     runClockFieldsFor(benchmark.sourceName),
   );
-  return { score, replay, truncated: run.truncated };
+  const gold = scoreGoldLabels(run.observations, benchmark.goldLabels ?? [], slugByEntityId);
+  return { score, gold, replay, truncated: run.truncated };
 }
 
 async function main(): Promise<void> {
@@ -154,10 +164,12 @@ async function main(): Promise<void> {
     if (options.liveModelRuns) {
       if (!pages.some((page) => page.sourceName === MODEL_RESPONSE_NAMESPACE)) continue;
       const scores = [];
+      const golds = [];
       const replays = [];
       for (let runIndex = 0; runIndex < options.liveModelRuns; runIndex += 1) {
         const run = await replayBenchmark(benchmark, pages, { liveModel: true });
         scores.push(run.score);
+        golds.push(run.gold);
         replays.push(run.replay);
       }
       results.push({
@@ -166,10 +178,11 @@ async function main(): Promise<void> {
         codeSha,
         replays,
         liveModel: summarizeLiveModelRuns(scores),
+        ...(benchmark.goldLabels?.length ? { liveModelGold: summarizeGoldRuns(golds) } : {}),
       });
       continue;
     }
-    const { score, replay, truncated } = await replayBenchmark(benchmark, pages);
+    const { score, gold, replay, truncated } = await replayBenchmark(benchmark, pages);
     const emptyReason = emptyReplayReason(benchmark, score);
     if (emptyReason) {
       unscored.push({ benchmarkId: benchmark.benchmarkId, reason: emptyReason });
@@ -185,6 +198,7 @@ async function main(): Promise<void> {
       pagesServed: replay.pagesServed,
       pagesMissed: replay.pagesMissed,
       ...score,
+      gold,
     };
     if (!options.dryRun) await LaneScorecardSnapshot.create(snapshot);
     results.push({ ...snapshot, networkBlocks: replay.networkBlocks, truncated });

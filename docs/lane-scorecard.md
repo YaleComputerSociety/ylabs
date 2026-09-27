@@ -80,6 +80,32 @@ A replay that plans nothing where its capture planned values is not stored and m
 The ratio to watch is `knownWrong / labeledEntityEmitted`, never `1 - knownWrong / emitted`.
 A refusal is a negative label only, and a value no refusal names is unjudged rather than correct, which is the defect #3514 removed from the identity harness.
 
+## Hand-judged labels
+
+Refusals can only say a lane is wrong, so a benchmark can also carry hand-judged gold labels, which say what it should have emitted (#3588).
+A label is one `(entityKey, field)` pair judged against the frozen benchmark page, never the live page, so the judgement and the input it judges cannot drift apart.
+`absent` means the lane should emit nothing for that field, and `present` lists the page text a reader accepted, of which an emitted value must contain one, or be a clause of one at least 20 characters long.
+An access verdict is judged on `openToUndergrads` alone, because its quote is judged under its own field.
+
+```bash
+yarn --cwd server lane:benchmark-label --id=<benchmark-id> --file=<labels.json>
+yarn --cwd server lane:benchmark-label --id=<benchmark-id> --file=<labels.json> --apply --confirm-lane-benchmark-label
+```
+
+The file is a JSON array of `{ entityKey, field, expected, acceptable, judgedPageUrl, note }`, and it lives under `/tmp`, never in the repository, because a label quotes a page that can name a person.
+The command refuses a label outside the benchmark's scope, a `present` label with nothing acceptable, and a repeated pair, and it refuses to overwrite existing labels without `--replace`.
+Leave a pair unlabeled when the frozen page cannot settle it, such as a page that captured only site chrome: an unlabeled pair is counted nowhere, which is honest, while a guessed label is a wrong instrument.
+
+Each scorecard row then carries `gold`, one entry per labeled field with true and false positives, false negatives, true negatives, precision, and recall.
+A rate is `null` when its denominator is zero, never `0` or `1`.
+A live-model run reports the band of each rate as `liveModelGold`.
+
+The first gold benchmark is `undergrad-llm-gold-v1` on Development: 42 labs drawn from three strata of the lane's population, of which 38 were labeled for `undergradEvidenceQuote`, 11 `present` and 27 `absent`.
+Its first replay read precision 8 of 12 and recall 8 of 11.
+Three live-model runs over the same frozen pages read precision 0.57 to 0.58 and recall 0.64 to 0.73, so the captured answers were a favourable draw and the lane's own band sits below the frozen number.
+Quote the band, not the frozen replay, when judging the lane rather than its code.
+The sample over-represents rows that already carry a quote, so the rate describes the lane on these strata rather than the corpus, and at this size one row moves precision by about 8 points.
+
 Two replays of unchanged code must give the same fingerprint.
 If they do not, the lane depends on something the benchmark did not freeze, and its numbers are not comparable until that is found.
 

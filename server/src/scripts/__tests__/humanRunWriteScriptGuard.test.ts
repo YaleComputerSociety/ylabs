@@ -32,6 +32,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
   'launch:review-exceptions': 'records reviewed launch exceptions',
   'lane:benchmark-capture':
     'freezes a new lane benchmark, a deliberate one-time act per scope; the replay is the sweep stage',
+  'lane:benchmark-label':
+    'attaches hand judgements read off a frozen benchmark page, an operator judgement per row',
   'db:build-indexes': 'builds declared indexes, a reviewed schema operation',
   'research-entity:rematerialize': 're-derives rows on demand through the engine itself',
   'observations:catch-up-materialize': 'drains the materialize backlog through the engine itself',
