@@ -61,11 +61,13 @@ import {
   splitName,
 } from '../utils/scraperHelpers';
 import { LEAD_ROLE_LEGACY_LABELS } from '../../models/canonicalRoleMapping';
+import { forEachInOrderWithPrefetch } from '../utils/boundedConcurrency';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const PROFILE_FETCH_THROTTLE_MS = 150;
+const PROFILE_FETCH_LOOKAHEAD = 4;
 const QUEUED_PI_BACKFILL_KEY = 'medicine-pi-backfill';
 const VISIBLE_PROFILE_BIO_BACKFILL_KEY = 'visible-profile-bio-backfill';
 const PROFILE_RESEARCH_HOME_BACKFILL_KEY = 'profile-research-home-backfill';
@@ -3245,6 +3247,12 @@ async function websiteUrlOwnedByAnotherEntity(
   return Boolean(ownerRecord && idValue(ownerRecord._id) !== idValue(entity._id || entity.id));
 }
 
+interface FetchedProfile {
+  profileUrl: string;
+  html: string;
+  failures: Array<{ profileUrl: string; error: string }>;
+}
+
 export class OfficialProfilePiBackfillScraper implements IScraper {
   readonly name = SOURCE_NAME;
   readonly displayName = 'Official profile PI backfill';
@@ -3368,8 +3376,18 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     const homesRefusedByReason: Record<string, number> = {};
     let fetchAttempts = 0;
 
-    for (const entity of entities) {
-      if (runOnlyWebsiteObservationBackfill) {
+    let fetchTurn: Promise<void> = Promise.resolve();
+    const awaitFetchTurn = (): Promise<void> => {
+      const spaced = fetchAttempts > 0 && this.profileFetchThrottleMs > 0;
+      fetchAttempts += 1;
+      fetchTurn = fetchTurn.then(() =>
+        spaced ? this.delay(this.profileFetchThrottleMs) : undefined,
+      );
+      return fetchTurn;
+    };
+
+    if (runOnlyWebsiteObservationBackfill) {
+      for (const entity of entities) {
         const websiteUrl = textValue(entity.leadDirectWebsiteUrl || entity.sourceUrlWebsiteUrl);
         if (!websiteUrl) continue;
         let candidateHost: URL | null = null;
@@ -3382,10 +3400,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
           const leadNames: string[] = entity.leadDirectWebsiteUrl
             ? entity.leadDirectWebsiteLeadNames || []
             : entity.sourceUrlWebsiteLeadNames || [];
-          if (fetchAttempts > 0 && this.profileFetchThrottleMs > 0) {
-            await this.delay(this.profileFetchThrottleMs);
-          }
-          fetchAttempts += 1;
+          await awaitFetchTurn();
           const owned = await candidateWebsiteOwnedByLead(
             websiteUrl,
             leadNames,
@@ -3405,175 +3420,192 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         await ctx.emit(observations);
         emitted += observations.length;
         observed += 1;
-        continue;
       }
+    }
 
-      const candidates = runOnlyVisibleProfileBioBackfill
+    const profileCandidatesFor = (entity: Record<string, any>): string[] =>
+      runOnlyVisibleProfileBioBackfill
         ? visibleBioProfileUrlsForUser(entity)
         : uniqueStrings([
             ...officialProfileUrlsForEntity(entity),
             ...officialProfileUrlsForUser(entity),
           ]);
-      if (candidates.length === 0) continue;
+    const fetchFirstProfile = async (entity: Record<string, any>): Promise<FetchedProfile> => {
+      const failures: FetchedProfile['failures'] = [];
+      for (const candidateProfileUrl of orderedProfileFetchCandidates(
+        profileCandidatesFor(entity),
+      )) {
+        try {
+          await awaitFetchTurn();
+          const html = await this.htmlFetcher(candidateProfileUrl, ctx.options.useCache, this.name);
+          return { profileUrl: candidateProfileUrl, html, failures };
+        } catch (err: any) {
+          failures.push({ profileUrl: candidateProfileUrl, error: sanitizeLogValue(err) });
+        }
+      }
+      return { profileUrl: '', html: '', failures };
+    };
+    const profileEntities = runOnlyWebsiteObservationBackfill
+      ? []
+      : entities.filter((entity) => profileCandidatesFor(entity).length > 0);
 
-      try {
-        let profileUrl = '';
-        let html = '';
-        for (const candidateProfileUrl of orderedProfileFetchCandidates(candidates)) {
-          try {
-            if (fetchAttempts > 0 && this.profileFetchThrottleMs > 0) {
-              await this.delay(this.profileFetchThrottleMs);
-            }
-            fetchAttempts += 1;
-            html = await this.htmlFetcher(candidateProfileUrl, ctx.options.useCache, this.name);
-            profileUrl = candidateProfileUrl;
-            break;
-          } catch (err: any) {
+    await forEachInOrderWithPrefetch(
+      profileEntities,
+      PROFILE_FETCH_LOOKAHEAD,
+      fetchFirstProfile,
+      async (entity, fetched) => {
+        const candidates = profileCandidatesFor(entity);
+        try {
+          if (fetched.status === 'rejected') throw fetched.reason;
+          const { profileUrl, html, failures } = fetched.value;
+          for (const failure of failures) {
             ctx.log('Profile fetch failed', {
               entityId: officialProfileDocumentId(entity._id),
-              profileUrl: candidateProfileUrl,
-              error: sanitizeLogValue(err),
+              profileUrl: failure.profileUrl,
+              error: failure.error,
             });
           }
-        }
-        if (!profileUrl) continue;
-        const observations: ObservationInput[] = [];
-        let profileIdentity: OfficialProfileIdentity | null | undefined;
-        let resolvedExistingUser: ExistingProfileUser | null | undefined;
+          if (!profileUrl) return;
+          const observations: ObservationInput[] = [];
+          let profileIdentity: OfficialProfileIdentity | null | undefined;
+          let resolvedExistingUser: ExistingProfileUser | null | undefined;
 
-        const identityForProfile = (options?: OfficialProfileIdentityOptions) => {
-          if (!options && profileIdentity !== undefined) return profileIdentity;
-          const identity = extractOfficialProfileIdentity(html, profileUrl, entity, options);
-          if (!options) profileIdentity = identity;
-          return identity;
-        };
+          const identityForProfile = (options?: OfficialProfileIdentityOptions) => {
+            if (!options && profileIdentity !== undefined) return profileIdentity;
+            const identity = extractOfficialProfileIdentity(html, profileUrl, entity, options);
+            if (!options) profileIdentity = identity;
+            return identity;
+          };
 
-        const existingUserForIdentity = async (identity: OfficialProfileIdentity) => {
-          if (resolvedExistingUser !== undefined) return resolvedExistingUser;
-          resolvedExistingUser = await this.userResolver(identity);
-          return resolvedExistingUser;
-        };
+          const existingUserForIdentity = async (identity: OfficialProfileIdentity) => {
+            if (resolvedExistingUser !== undefined) return resolvedExistingUser;
+            resolvedExistingUser = await this.userResolver(identity);
+            return resolvedExistingUser;
+          };
 
-        if (runQueuedPiBackfill || runVisibleProfileBioBackfill) {
-          const visibleExistingUser =
-            runVisibleProfileBioBackfill && textValue(entity.netid)
-              ? {
-                  _id: idValue(entity._id),
-                  netid: textValue(entity.netid),
-                  email: textValue(entity.email),
+          if (runQueuedPiBackfill || runVisibleProfileBioBackfill) {
+            const visibleExistingUser =
+              runVisibleProfileBioBackfill && textValue(entity.netid)
+                ? {
+                    _id: idValue(entity._id),
+                    netid: textValue(entity.netid),
+                    email: textValue(entity.email),
+                  }
+                : null;
+            const identity = identityForProfile({
+              requireEmail: false,
+            });
+            if (identity) {
+              const existingUser = visibleExistingUser || (await existingUserForIdentity(identity));
+              if (existingUser) {
+                observations.push(
+                  ...identityToUserObservations(identity, existingUser, {
+                    includeProfileEnrichment: runVisibleProfileBioBackfill,
+                    includeIdentityEnrichment: !runVisibleProfileBioBackfill,
+                  }),
+                );
+                if (runQueuedPiBackfill) {
+                  observations.push(
+                    ...identityToResearchEntityPiObservations(identity, existingUser, entity),
+                  );
                 }
-              : null;
-          const identity = identityForProfile({
-            requireEmail: false,
-          });
-          if (identity) {
-            const existingUser = visibleExistingUser || (await existingUserForIdentity(identity));
-            if (existingUser) {
+              } else if (runQueuedPiBackfill) {
+                const inferredNetid = yaleNetidFromEmail(identity.email);
+                if (inferredNetid) {
+                  const inferredUser = {
+                    netid: inferredNetid,
+                    email: identity.email.toLowerCase(),
+                  };
+                  observations.push(
+                    ...identityToUserObservations(identity, inferredUser, {
+                      includeProfileEnrichment: true,
+                      includeIdentityEnrichment: true,
+                    }),
+                    ...identityToResearchEntityPiKeyObservations(identity, inferredNetid, entity),
+                  );
+                }
+              }
+            }
+          }
+
+          if (runProfileDescriptionBackfill) {
+            const identity = identityForProfile({
+              requireEmail: false,
+              expectedPeople: entity.leadUsers,
+            });
+            if (identity) {
+              if (shouldEmitProfileDescriptionBackfillForEntity(entity)) {
+                observations.push(
+                  ...identityToResearchEntityDescriptionObservations(identity, entity),
+                );
+              }
               observations.push(
-                ...identityToUserObservations(identity, existingUser, {
-                  includeProfileEnrichment: runVisibleProfileBioBackfill,
-                  includeIdentityEnrichment: !runVisibleProfileBioBackfill,
-                }),
+                ...identityToResearchEntityDepartmentObservations(identity, entity),
               );
-              if (runQueuedPiBackfill) {
+              const existingUser = await existingUserForIdentity(identity);
+              if (existingUser) {
                 observations.push(
                   ...identityToResearchEntityPiObservations(identity, existingUser, entity),
                 );
-              }
-            } else if (runQueuedPiBackfill) {
-              const inferredNetid = yaleNetidFromEmail(identity.email);
-              if (inferredNetid) {
-                const inferredUser = {
-                  netid: inferredNetid,
-                  email: identity.email.toLowerCase(),
-                };
-                observations.push(
-                  ...identityToUserObservations(identity, inferredUser, {
-                    includeProfileEnrichment: true,
-                    includeIdentityEnrichment: true,
-                  }),
-                  ...identityToResearchEntityPiKeyObservations(identity, inferredNetid, entity),
-                );
+              } else {
+                const inferredNetid = yaleNetidFromEmail(identity.email);
+                if (inferredNetid) {
+                  const inferredUser = {
+                    netid: inferredNetid,
+                    email: identity.email.toLowerCase(),
+                  };
+                  observations.push(
+                    ...identityToUserObservations(identity, inferredUser, {
+                      includeProfileEnrichment: true,
+                      includeIdentityEnrichment: true,
+                    }),
+                    ...identityToResearchEntityPiKeyObservations(identity, inferredNetid, entity),
+                  );
+                }
               }
             }
           }
-        }
 
-        if (runProfileDescriptionBackfill) {
-          const identity = identityForProfile({
-            requireEmail: false,
-            expectedPeople: entity.leadUsers,
+          if (runProfileResearchHomeBackfill) {
+            const identity = extractOfficialProfileIdentity(html, profileUrl, entity, {
+              requireEmail: false,
+              expectedPeople: entity.leadUsers,
+            });
+            const [home] = extractOfficialProfileResearchHomes(html, profileUrl);
+            // Named so the run can report WHY a home was withheld. A silent refusal is
+            // indistinguishable from a guard that never ran: this lane withholds by
+            // emitting nothing, so absence of a graft in the observation log is evidence
+            // about the corpus rather than about the guard, and neither the #1484 nor the
+            // #3529 arm could be told apart from a profile that simply linked nothing
+            // contentious (#3537).
+            const homeRefusal: string | null = !home
+              ? null
+              : !identity
+                ? 'no-profile-identity'
+                : (await websiteUrlOwnedByAnotherEntity(home.url, entity))
+                  ? 'website-owned-by-another-entity'
+                  : profileLinkedHomeRefusal(entity, home, identity.displayName);
+            if (homeRefusal) {
+              homesRefusedByReason[homeRefusal] = (homesRefusedByReason[homeRefusal] ?? 0) + 1;
+            } else if (identity && home) {
+              observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
+              homesAdopted += 1;
+            }
+          }
+
+          if (observations.length === 0) return;
+          await ctx.emit(observations);
+          emitted += observations.length;
+          observed += 1;
+        } catch (err: any) {
+          ctx.log('Profile fetch failed', {
+            entityId: officialProfileDocumentId(entity._id),
+            profileUrl: preferredOfficialProfileUrl(candidates),
+            error: sanitizeLogValue(err),
           });
-          if (identity) {
-            if (shouldEmitProfileDescriptionBackfillForEntity(entity)) {
-              observations.push(
-                ...identityToResearchEntityDescriptionObservations(identity, entity),
-              );
-            }
-            observations.push(...identityToResearchEntityDepartmentObservations(identity, entity));
-            const existingUser = await existingUserForIdentity(identity);
-            if (existingUser) {
-              observations.push(
-                ...identityToResearchEntityPiObservations(identity, existingUser, entity),
-              );
-            } else {
-              const inferredNetid = yaleNetidFromEmail(identity.email);
-              if (inferredNetid) {
-                const inferredUser = {
-                  netid: inferredNetid,
-                  email: identity.email.toLowerCase(),
-                };
-                observations.push(
-                  ...identityToUserObservations(identity, inferredUser, {
-                    includeProfileEnrichment: true,
-                    includeIdentityEnrichment: true,
-                  }),
-                  ...identityToResearchEntityPiKeyObservations(identity, inferredNetid, entity),
-                );
-              }
-            }
-          }
         }
-
-        if (runProfileResearchHomeBackfill) {
-          const identity = extractOfficialProfileIdentity(html, profileUrl, entity, {
-            requireEmail: false,
-            expectedPeople: entity.leadUsers,
-          });
-          const [home] = extractOfficialProfileResearchHomes(html, profileUrl);
-          // Named so the run can report WHY a home was withheld. A silent refusal is
-          // indistinguishable from a guard that never ran: this lane withholds by
-          // emitting nothing, so absence of a graft in the observation log is evidence
-          // about the corpus rather than about the guard, and neither the #1484 nor the
-          // #3529 arm could be told apart from a profile that simply linked nothing
-          // contentious (#3537).
-          const homeRefusal: string | null = !home
-            ? null
-            : !identity
-              ? 'no-profile-identity'
-              : (await websiteUrlOwnedByAnotherEntity(home.url, entity))
-                ? 'website-owned-by-another-entity'
-                : profileLinkedHomeRefusal(entity, home, identity.displayName);
-          if (homeRefusal) {
-            homesRefusedByReason[homeRefusal] = (homesRefusedByReason[homeRefusal] ?? 0) + 1;
-          } else if (identity && home) {
-            observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
-            homesAdopted += 1;
-          }
-        }
-
-        if (observations.length === 0) continue;
-        await ctx.emit(observations);
-        emitted += observations.length;
-        observed += 1;
-      } catch (err: any) {
-        ctx.log('Profile fetch failed', {
-          entityId: officialProfileDocumentId(entity._id),
-          profileUrl: preferredOfficialProfileUrl(candidates),
-          error: sanitizeLogValue(err),
-        });
-      }
-    }
+      },
+    );
 
     const refusalSummary = Object.entries(homesRefusedByReason)
       .sort(([a], [b]) => a.localeCompare(b))

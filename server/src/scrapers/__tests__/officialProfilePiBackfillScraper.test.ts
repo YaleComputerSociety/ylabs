@@ -4785,3 +4785,105 @@ describe('officialProfilePiBackfillScraper', () => {
     );
   });
 });
+
+describe('OfficialProfilePiBackfillScraper.run profile prefetch (#3568)', () => {
+  const secondProfileHtml = profileHtml
+    .replace(/Jules Fixture/g, 'Second Person')
+    .replace(/jules\.fixture@yale\.edu/g, 'second.fixture@yale.edu')
+    .replace(/jules-fixture/g, 'second-fixture');
+  const users = [
+    {
+      _id: 'user-1',
+      netid: 'fixture106',
+      email: 'jules.fixture@yale.edu',
+      name: 'Jules Fixture',
+      slug: 'jules-fixture',
+      websiteUrl: 'https://medicine.yale.edu/profile/jules-fixture/',
+    },
+    {
+      _id: 'user-3',
+      netid: 'fixture303',
+      email: 'gone.fixture@yale.edu',
+      name: 'Gone Fixture',
+      slug: 'gone-fixture',
+      websiteUrl: 'https://medicine.yale.edu/profile/gone-fixture/',
+    },
+    {
+      _id: 'user-2',
+      netid: 'sp123',
+      email: 'second.fixture@yale.edu',
+      name: 'Second Person',
+      slug: 'second-fixture',
+      websiteUrl: 'https://medicine.yale.edu/profile/second-fixture/',
+    },
+  ];
+
+  function scraperOver(
+    selected: typeof users,
+    fetcher: (url: string) => Promise<string>,
+    delay: (ms: number) => Promise<void> = async () => undefined,
+  ) {
+    return new OfficialProfilePiBackfillScraper(
+      fetcher,
+      vi.fn(async () => []),
+      vi.fn(async () => null),
+      vi.fn(async () => selected),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      25,
+      delay,
+    );
+  }
+
+  const pageFor = async (url: string): Promise<string> => {
+    if (url.includes('gone-fixture')) throw new Error('Request failed with status code 404');
+    return url.includes('second-fixture') ? secondProfileHtml : profileHtml;
+  };
+
+  it('fetches ahead but emits exactly what one-entity-at-a-time runs emit, in selection order', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const fetcher = vi.fn(async (url: string) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, url.includes('jules-fixture') ? 40 : 5));
+      inFlight -= 1;
+      return pageFor(url);
+    });
+    const delay = vi.fn(async () => undefined);
+    const emitted: ObservationInput[] = [];
+    const ctx = visibleBioContextFor(emitted);
+
+    const result = await scraperOver(users, fetcher, delay).run(ctx);
+
+    const serial: ObservationInput[] = [];
+    for (const user of users) {
+      await scraperOver([user], pageFor).run(visibleBioContextFor(serial));
+    }
+    expect(maxInFlight).toBe(3);
+    expect(emitted).toEqual(serial);
+    expect(result.entitiesObserved).toBe(2);
+    expect(delay).toHaveBeenCalledTimes(2);
+    expect(ctx.log).toHaveBeenCalledWith(
+      'Profile fetch failed',
+      expect.objectContaining({ profileUrl: 'https://medicine.yale.edu/profile/gone-fixture/' }),
+    );
+  });
+
+  it('spaces fetch starts by the lane throttle even while fetches overlap', async () => {
+    const started: number[] = [];
+    let clock = 0;
+    const fetcher = vi.fn(async (url: string) => {
+      started.push(clock);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return pageFor(url);
+    });
+    const delay = vi.fn(async (ms: number) => {
+      clock += ms;
+    });
+
+    await scraperOver(users, fetcher, delay).run(visibleBioContextFor([]));
+
+    expect(started).toEqual([0, 25, 50]);
+  });
+});
