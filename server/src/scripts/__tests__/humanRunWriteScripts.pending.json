@@ -69,7 +69,6 @@
   "research-entity:refuse-unasserted-descriptions",
   "research-entity:repair-archived-artifacts",
   "research-entity:repair-dead-end-tombstones",
-  "research-entity:repair-link-chrome-names",
   "research-entity:repair-sentence-shaped-chips",
   "research-entity:repair-unbacked-lab-names",
   "research-entity:resolve-lead-netids",

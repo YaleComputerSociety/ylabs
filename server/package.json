@@ -174,7 +174,6 @@
     "research-areas:retire-listing-item-harvests": "tsx src/scripts/retireListingItemResearchAreas.ts",
     "research-homes:clear-directory-index-descriptions": "tsx src/scripts/clearDirectoryIndexDescriptions.ts",
     "research-entity:repair-unbacked-lab-names": "tsx src/scripts/repairUnbackedLabNames.ts",
-    "research-entity:repair-link-chrome-names": "tsx src/scripts/repairLinkChromeEntityNames.ts",
     "data:repair-invisible-format-characters": "tsx src/scripts/repairInvisibleFormatCharacters.ts",
     "data:repair-glued-sentence-boundaries": "tsx src/scripts/repairGluedSentenceBoundaries.ts",
     "research-entity:repair-sentence-shaped-chips": "tsx src/scripts/repairSentenceShapedChips.ts",
