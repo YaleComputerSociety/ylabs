@@ -4668,8 +4668,20 @@ describe('DepartmentRosterScraper.run', () => {
       blocked: false,
       fetchMode: 'scrapling',
     });
+    const readable: DeptConfig = {
+      deptKey: 'econ',
+      deptName: 'Economics',
+      schoolName: 'FAS',
+      url: 'https://example.invalid/econ',
+      paginated: false,
+      extractor: () => [{ name: 'Econ Person', email: 'ep123@yale.edu' }],
+    };
 
-    const scraper = new DepartmentRosterScraper(configs, renderedFetcher);
+    const scraper = new DepartmentRosterScraper(
+      [...configs, readable],
+      renderedFetcher,
+      vi.fn(async () => '<html></html>'),
+    );
     const { ctx } = makeContext();
     const result = await scraper.run(ctx);
 
