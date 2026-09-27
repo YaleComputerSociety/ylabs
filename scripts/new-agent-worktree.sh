@@ -14,7 +14,7 @@ Environment:
   SKIP_INSTALL=1        Skip dependency install (resolve deps manually).
 
 Creates an isolated git worktree and branch for parallel agent work, installs
-dependencies, and reserves a free client dev-server port so multiple agents can
+dependencies and the gh identifier guard, and reserves a free client dev-server port so multiple agents can
 run and test independently without ever switching branches in the primary
 checkout.
 
@@ -57,6 +57,9 @@ fi
 
 mkdir -p "$WORKTREE_ROOT"
 git -C "$REPO_ROOT" worktree add -b "$BRANCH" "$WORKTREE_DIR" "$BASE_REF"
+
+(cd "$REPO_ROOT" && scripts/install-gh-identifier-guard.sh) ||
+  echo "WARNING: the gh identifier guard is not installed, so gh bodies are not checked before posting." >&2
 
 if [ "${SKIP_INSTALL:-0}" != "1" ]; then
   (cd "$WORKTREE_DIR" && yarn)

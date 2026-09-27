@@ -95,20 +95,18 @@ This applies to whoever or whatever writes it, automation included: never put a 
 Write "the 12 rows where `manuallyLockedFields` contains `activeAtYaleCache`" rather than naming the rows.
 A flagged body cannot be repaired by editing it, because GitHub serves every prior revision to anyone without an account, so the draft is the only chance.
 Scan it before it exists anywhere public: `yarn security:identifiers:body <file>`, or `node scripts/check-no-person-identifiers.mjs --body-file <file>` when yarn is unavailable.
-The `Person identifier scan` check fails when a posted body is flagged.
-It is not a required check and it cannot unpublish the text, so treat a failure as "rewrite by predicate now and know the original is already public", never as a gate to wait on.
+The enforcement is the `gh` identifier guard, which runs that scan on every `gh` issue, pull request, comment, and API body for this organisation and refuses to post a flagged one, so nothing reaches GitHub.
+`scripts/new-agent-worktree.sh` installs it, and `scripts/install-gh-identifier-guard.sh` installs it on its own; a host without it has no protection at all, because there is no after-the-fact bot.
+A refusal from the guard means rewrite by predicate and re-run, never call the real `gh` directly and never add an `identifier-exempt:` line to get past it.
 
 ### Merging
 
 - Merge only when CI checks are all green and the PR is mergeable on its current head.
-`Person identifier scan` is the one exception, because it is not required and its prose-name rule is fuzzy on purpose: a red run means "read the finding", never "wait for green".
-Rewrite the body by predicate when the pairing is real, and when the match is a Title Case product phrase rather than a person, say so in a comment and merge on the red.
-Never clear a red scan with an `identifier-exempt:` line, which suppresses the whole body including a real name elsewhere in it.
 - Squash-merge with a clean Conventional-Commit message derived from the PR title: `gh pr merge <n> --squash --admin --delete-branch`.
 - `--admin` is load-bearing here rather than a shortcut, and the reason is worth knowing so it is not "cleaned up". Protection on this repository is **rulesets**, not classic branch protection, so `GET /branches/beta/protection` answers 404 and that 404 means nothing; read `gh api repos/YaleComputerSociety/ylabs/rulesets`.
 `require CI on beta` requires `test-and-build` and `student-journey-smoke`, requires **one approving review**, and blocks force pushes; `protect main (production)` additionally requires `release-hold` and allows merge commits only.
 A sole maintainer cannot approve their own PR, so without the Admin bypass nothing merges at all.
-- What `--admin` may and may not be used for: the review requirement, the watchdog's bot flow, and a red `Person identifier scan` that has been read and answered, yes.
+- What `--admin` may and may not be used for: the review requirement and the watchdog's bot flow, yes.
 To get past a red `test-and-build` or `student-journey-smoke`, never; fix the check or report the blocker.
 The bypass is unconditional, so the flag really will override a failing suite, which makes the restraint the contract rather than the configuration.
 - The `Closes #<n>` link auto-closes the linked issue on merge; confirm it closed.

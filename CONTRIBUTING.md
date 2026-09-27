@@ -129,7 +129,9 @@ Scan it before it exists anywhere public:
 yarn security:identifiers:body <file>
 ```
 
-The `Person identifier scan` check is advisory and cannot unpublish text, so a red run means "read the finding and rewrite now", never "wait for green".
+The `gh` identifier guard enforces this before posting: it runs the same scan on every `gh` issue, pull request, comment, and API body for this organisation and refuses a flagged one, so the text never reaches GitHub.
+`scripts/new-agent-worktree.sh` installs it; on any other checkout run `scripts/install-gh-identifier-guard.sh` once.
+There is no after-the-fact bot, so a host without the guard has only your own scan.
 See [docs/person-identifier-convention.md](docs/person-identifier-convention.md).
 
 ## Merge
@@ -137,7 +139,7 @@ See [docs/person-identifier-convention.md](docs/person-identifier-convention.md)
 Merge when CI is green and the pull request is mergeable on its current head.
 
 `beta` is protected by the `require CI on beta` ruleset, which requires `test-and-build` and `student-journey-smoke` to pass, requires one approving review, and blocks force pushes.
-`Person identifier scan` is deliberately not required, for the reason above, and `release-hold` applies only to pull requests into `main`.
+`release-hold` applies only to pull requests into `main`.
 Protection is configured as rulesets rather than classic branch protection, so inspect it with `gh api repos/YaleComputerSociety/ylabs/rulesets`; the `branches/beta/protection` endpoint reports 404 here and does not mean what it appears to mean.
 
 ```bash
