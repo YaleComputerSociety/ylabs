@@ -432,12 +432,16 @@ const Analytics = () => {
     [fetchAdminAccess],
   );
 
-  const selectNetid = useCallback((netid: string | null) => {
-    setSelectedNetid(netid);
-    setSelectedUser(null);
-    setSelectedUserError(null);
-    setIsSelectedUserLoading(netid !== null);
-  }, []);
+  const selectNetid = useCallback(
+    (netid: string | null) => {
+      if (netid === selectedNetid) return;
+      setSelectedNetid(netid);
+      setSelectedUser(null);
+      setSelectedUserError(null);
+      setIsSelectedUserLoading(netid !== null);
+    },
+    [selectedNetid],
+  );
 
   const fetchSelectedUser = useCallback(
     async (netid: string) => {

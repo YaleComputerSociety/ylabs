@@ -232,6 +232,27 @@ describe('Analytics admin fetches ignore superseded responses', () => {
     expect(aside.getByText('Loading recent events…')).toBeTruthy();
   });
 
+  it('keeps the loaded drilldown when the selected row is clicked again', async () => {
+    await renderWithInitialPages();
+    const scope = within(userSection());
+
+    fireEvent.click(scope.getByText('fixa001'));
+    await settle(
+      findPending((request) => request.url === '/analytics/users/fixa001'),
+      drilldown(ROW_A, 'alpha query'),
+    );
+    await waitFor(() => {
+      expect(scope.getByText('Query: alpha query')).toBeTruthy();
+    });
+
+    fireEvent.click(within(userSection().querySelector('table') as HTMLElement).getByText('fixa001'));
+
+    const aside = within(userSection().querySelector('aside') as HTMLElement);
+    expect(aside.getByRole('heading', { name: 'Sample Alpha' })).toBeTruthy();
+    expect(aside.getByText('Query: alpha query')).toBeTruthy();
+    expect(aside.queryByText('Loading recent events…')).toBeNull();
+  });
+
   it('keeps the latest selection when an earlier drilldown response lands last', async () => {
     await renderWithInitialPages();
     const scope = within(userSection());
