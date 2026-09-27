@@ -109,6 +109,47 @@ describe('sanitizeObservationField', () => {
     });
   });
 
+  // `methods` is a chip list this sanitizer did not cover at all: the only two places
+  // that cleaned a method chip were the serve-time DTO and one lane's grounding helper,
+  // so a chip from any other lane was hidden on the way out and stored dirty (#3612).
+  describe('method chip list', () => {
+    it('drops a chip that is a whole sentence and trims a chip that ends on a stop', () => {
+      const result = sanitizeObservationField('researchEntity', 'methods', [
+        'Cryo-electron microscopy',
+        'We use single-cell RNA sequencing to profile immune populations.',
+        'Patch-clamp electrophysiology.',
+      ]);
+      expect(result.rejected).toBe(false);
+      expect(result.value).toEqual(['Cryo-electron microscopy', 'Patch-clamp electrophysiology']);
+    });
+
+    it('rejects the observation when every chip is sentence-shaped, rather than storing an empty list', () => {
+      const result = sanitizeObservationField('researchEntity', 'methods', [
+        'We combine imaging and sequencing to study how cells divide.',
+      ]);
+      expect(result.rejected).toBe(true);
+      expect(result.reason).toBe('method-chip-sentence-shaped');
+    });
+
+    it('leaves a clean method list untouched', () => {
+      const result = sanitizeObservationField('researchEntity', 'methods', [
+        'Mass spectrometry',
+        'X-ray crystallography',
+      ]);
+      expect(result.rejected).toBe(false);
+      expect(result.value).toEqual(['Mass spectrometry', 'X-ray crystallography']);
+    });
+
+    // The research-area arm also filters topic-vocabulary leakage and section labels,
+    // which say nothing about a method, so the two arms stay separate rather than one
+    // routing through the other.
+    it('does not apply the research-area leakage filter to a method chip', () => {
+      const result = sanitizeObservationField('researchEntity', 'methods', ['Research Areas']);
+      expect(result.rejected).toBe(false);
+      expect(result.value).toEqual(['Research Areas']);
+    });
+  });
+
   describe('research-area list (leak class A: section labels as research areas)', () => {
     it('drops leaked section labels but keeps genuine topics', () => {
       const result = sanitizeObservationField('researchEntity', 'researchAreas', [
