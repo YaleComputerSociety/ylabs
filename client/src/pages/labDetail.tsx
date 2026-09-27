@@ -430,13 +430,7 @@ const DecisionSummary = ({
   const description = sanitizeResearchEntityCopy(rawDescription, group);
   useEffect(() => {
     if (description) return;
-    captureClientError(
-      new Error(
-        `Public research description invariant failed for ${String(
-          group.slug || group._id || 'unknown',
-        )}`,
-      ),
-    );
+    captureClientError(new Error('Public research description invariant failed'));
   }, [description, group._id, group.slug]);
   const grantSummary = formatGrantSummary(group);
   const pastAdvisees = formatPastAdvisees(group);

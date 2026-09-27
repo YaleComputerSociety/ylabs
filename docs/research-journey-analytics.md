@@ -118,10 +118,19 @@ It sends no user identity.
 The session principal (`AuthenticatedSessionUser` in `server/src/passport.ts`) carries a netid and nothing else that identifies the caller, and no stable non-reversible account handle exists to stand in for one, so the report carries no identity rather than a reversible or a newly invented one.
 The report quotes the matched route template rather than the concrete request path, because routes such as `/admin-grants/:netid/revoke` and `/users/:netid` would otherwise put a netid into a tag.
 `server/src/utils/__tests__/errorTracking.test.ts` fails if a netid reaches the payload, as identity or as a path segment.
-`client/src/utils/errorTracking.ts` sets no user at all.
+The server `Sentry.init` passes only the DSN, environment, and release, so the SDK's own defaults decide the rest.
+`sendDefaultPii` is unset there, which disables user info and request bodies and denies the SDK's PII header snippets, but it does not disable automatic request attachment, and what the default HTTP integration attaches to a server event has not been audited.
 
-`Sentry.init` passes only the DSN, environment, and release, so the SDK's own defaults decide the rest.
-`sendDefaultPii` is unset, which disables user info and request bodies and denies the SDK's PII header snippets, but it does not disable automatic request attachment, and what the default HTTP integration attaches to a server event has not been audited.
+The client reports no user and scrubs every event before it leaves the browser, in `client/src/utils/errorReportScrubbing.ts`.
+The browser SDK's defaults would otherwise attach the concrete page URL, the `Referer` header, navigation and request breadcrumbs with concrete paths and query strings, and console and click breadcrumbs with uncontrolled text.
+On `/research/person/:publicKey` and `/research/:slug` that is a person-bearing value.
+A path keeps only the segments on a fixed list of static route words and reports every other segment as `:param`, so the list fails closed: a route it does not know loses readability, never privacy.
+Adding a client route or an API path with new static words means adding them to that list if the reports should name them.
+A query string reports as `?[Filtered]`, a fragment is dropped, and request headers other than `User-Agent` are dropped.
+Only navigation, fetch, and XHR breadcrumbs survive, reduced to their method, status, and scrubbed URLs.
+Absolute URLs inside an exception message are scrubbed the same way, and a message the client writes itself must not interpolate a slug or key.
+A stack frame's `filename` and `abs_path` are scrubbed too, because the SDK falls back to the full page URL for a window error with no usable stack; only a same-origin bundled asset under `/assets/` with no query or fragment is kept verbatim, so source maps still resolve.
+`client/src/utils/__tests__/errorTrackingPayload.test.ts` runs the real SDK with its default integrations against a capturing transport and fails if a synthetic key or query value reaches the sent envelope.
 
 ## Identity Joins Must Fail Closed
 

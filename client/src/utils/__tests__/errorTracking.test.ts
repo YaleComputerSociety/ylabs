@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { initializeErrorTracking } from '../errorTracking';
+import { scrubBreadcrumb, scrubErrorEvent } from '../errorReportScrubbing';
 import * as Sentry from '@sentry/react';
 
 vi.mock('@sentry/react', () => ({
@@ -27,6 +28,9 @@ describe('client errorTracking', () => {
       dsn: 'https://public@example.com/1',
       environment: 'staging',
       release: 'abc123',
+      sendDefaultPii: false,
+      beforeSend: scrubErrorEvent,
+      beforeBreadcrumb: scrubBreadcrumb,
     });
   });
 });
