@@ -85,10 +85,10 @@ Two arms, with different strengths, because a single mechanism cannot cover both
 It fails on a committed data file that holds many distinct personal addresses or profile URLs, which is the shape of a scraped directory dump.
 It deliberately ignores anything under a test or fixture path, because synthetic identifiers there are intentional, and it ignores source files.
 
-**Blocking before posting.** `scripts/gh-identifier-guard.mjs`, installed as a `gh` shim ahead of the real binary on PATH, on issue, pull request, comment, review, merge, and API bodies.
-For a `YaleComputerSociety` repository it scans the title and body before `gh` runs, and when a rule fires it prints the rule names and counts, never the matched text, and exits without calling GitHub.
+**Blocking before posting.** `scripts/gh-identifier-guard.mjs`, installed as a `gh` shim ahead of the real binary on PATH, on issue, pull request, comment, review, merge, close and reopen comment, and API bodies, GraphQL mutations included.
+For a call that targets a `YaleComputerSociety` repository, whether through `-R`, `GH_REPO`, the checkout remote, an API endpoint, or a URL argument, it scans the title and body before `gh` runs, and when a rule fires it prints the rule names and counts, never the matched text, and exits without calling GitHub.
 It also refuses when the scanner itself is missing, so a broken install fails closed rather than posting unchecked.
-`scripts/new-agent-worktree.sh` installs it through `scripts/install-gh-identifier-guard.sh`, and `scripts/gh-identifier-guard.test.mjs` pins that a flagged body never reaches the real `gh` and a clean one reaches it unchanged.
+`scripts/new-agent-worktree.sh` installs it through `scripts/install-gh-identifier-guard.sh`, which refuses to overwrite a `gh` there that is not a guard shim, and `scripts/gh-identifier-guard.test.mjs` pins that a flagged body never reaches the real `gh` and a clean one reaches it unchanged.
 There is no after-the-fact bot: a comment on text GitHub already serves cannot unpublish it, so the workflow that posted one was removed (#3682).
 
 The body arm separates a finding from a note.

@@ -1,20 +1,36 @@
 export const GUARDED_ORG = 'YaleComputerSociety/';
 
 export const PUBLISHING_SUBCOMMANDS = {
-  pr: new Set(['create', 'edit', 'comment', 'review', 'merge']),
-  issue: new Set(['create', 'edit', 'comment']),
+  pr: new Set(['create', 'edit', 'comment', 'review', 'merge', 'close', 'reopen']),
+  issue: new Set(['create', 'edit', 'comment', 'close', 'reopen']),
 };
 
-const API_TEXT_FIELDS = new Set(['body', 'title', 'message']);
+const COMMENTING_ACTIONS = new Set(['close', 'reopen']);
+
+const API_TEXT_FIELDS = new Set(['body', 'title', 'message', 'query']);
+
+const API_FIELD_FLAGS = ['-f', '--raw-field', '-F', '--field'];
+
+const attachedValue = (arg, name) => {
+  if (name.startsWith('--')) return arg.startsWith(`${name}=`) ? arg.slice(name.length + 1) : null;
+  if (!arg.startsWith(name) || arg.length === name.length) return null;
+  const rest = arg.slice(name.length);
+  return rest.startsWith('=') ? rest.slice(1) : rest;
+};
 
 export const optionValues = (args, names) => {
   const values = [];
   for (let i = 0; i < args.length; i += 1) {
+    if (names.includes(args[i])) {
+      if (i + 1 < args.length) values.push(args[i + 1]);
+      i += 1;
+      continue;
+    }
     for (const name of names) {
-      if (args[i] === name) {
-        if (i + 1 < args.length) values.push(args[i + 1]);
-      } else if (name.startsWith('--') && args[i].startsWith(`${name}=`)) {
-        values.push(args[i].slice(name.length + 1));
+      const value = attachedValue(args[i], name);
+      if (value !== null) {
+        values.push(value);
+        break;
       }
     }
   }
@@ -33,17 +49,35 @@ export const classifyCommand = (args) => {
 export const targetRepo = (args, { envRepo, originUrl }) =>
   optionValue(args, ['-R', '--repo']) ?? envRepo ?? originUrl ?? '';
 
-export const isGuardedRepo = (repo) => String(repo).includes(GUARDED_ORG);
+export const isGuardedRepo = (repo) =>
+  String(repo).toLowerCase().includes(GUARDED_ORG.toLowerCase());
+
+const apiFields = (args) =>
+  optionValues(args, API_FIELD_FLAGS).map((field) => {
+    const [key, ...rest] = field.split('=');
+    return { key: key.replace(/\[\]$/, ''), value: rest.join('=') };
+  });
+
+const isGraphqlMutation = (args) =>
+  args.includes('graphql') &&
+  apiFields(args).some(({ key, value }) => key === 'query' && /\bmutation\b/.test(value));
+
+const targetsGuardedRepo = (args, context) =>
+  isGuardedRepo(targetRepo(args, context)) || args.some(isGuardedRepo) || isGraphqlMutation(args);
+
+const fillsFromCommits = (args) =>
+  args.some((arg) => arg.startsWith('--fill') || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(arg));
 
 export const collectPublishingText = (args, { readBodyFile, branchCommitMessages }) => {
+  const [group, action] = args;
   const texts = [
     ...optionValues(args, ['-t', '--title']),
     ...optionValues(args, ['-b', '--body']),
     ...optionValues(args, ['-F', '--body-file']).map(readBodyFile),
     ...optionValues(args, ['--subject']),
   ];
-  const [group, action] = args;
-  if (group === 'pr' && action === 'create' && args.some((arg) => arg.startsWith('--fill'))) {
+  if (COMMENTING_ACTIONS.has(action)) texts.push(...optionValues(args, ['-c', '--comment']));
+  if (group === 'pr' && action === 'create' && fillsFromCommits(args)) {
     texts.push(branchCommitMessages(optionValue(args, ['-B', '--base']) ?? 'beta'));
   }
   return texts;
@@ -51,10 +85,8 @@ export const collectPublishingText = (args, { readBodyFile, branchCommitMessages
 
 export const collectApiText = (args, { readBodyFile }) => {
   const texts = [];
-  for (const field of optionValues(args, ['-f', '--raw-field', '-F', '--field'])) {
-    const [key, ...rest] = field.split('=');
-    if (!API_TEXT_FIELDS.has(key.replace(/\[\]$/, ''))) continue;
-    const value = rest.join('=');
+  for (const { key, value } of apiFields(args)) {
+    if (!API_TEXT_FIELDS.has(key)) continue;
     texts.push(value.startsWith('@') ? readBodyFile(value.slice(1)) : value);
   }
   const input = optionValue(args, ['--input']);
@@ -65,7 +97,7 @@ export const collectApiText = (args, { readBodyFile }) => {
 export const planGuard = (args, context) => {
   const command = classifyCommand(args);
   if (command.kind === 'other') return { action: 'passthrough' };
-  if (!isGuardedRepo(targetRepo(args, context))) return { action: 'passthrough' };
+  if (!targetsGuardedRepo(args, context)) return { action: 'passthrough' };
 
   const collect = command.kind === 'api' ? collectApiText : collectPublishingText;
   const texts = collect(args, context).filter((text) => String(text).trim() !== '');

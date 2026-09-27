@@ -102,6 +102,68 @@ test('an explicit -R or GH_REPO outranks the checkout remote', () => {
   );
 });
 
+test('scans the comment that close and reopen post', () => {
+  for (const args of [
+    ['pr', 'close', '12', '-c', FLAGGED_PROSE],
+    ['issue', 'reopen', '3', `--comment=${FLAGGED_PROSE}`],
+  ]) {
+    const plan = planGuard(args, context());
+    assert.equal(plan.action, 'scan', args.join(' '));
+    assert.equal(plan.text, FLAGGED_PROSE);
+  }
+});
+
+test('treats pr create -f as --fill and scans the commit messages', () => {
+  const plan = planGuard(
+    ['pr', 'create', '-f'],
+    context({ branchCommitMessages: () => FLAGGED_PROSE }),
+  );
+
+  assert.equal(plan.action, 'scan');
+  assert.equal(plan.text, FLAGGED_PROSE);
+});
+
+test('reads attached short-flag values', () => {
+  assert.equal(
+    planGuard(['issue', 'create', '-t', 'x', `-b${FLAGGED_SLUG}`], context()).text,
+    `x\n\n${FLAGGED_SLUG}`,
+  );
+  assert.equal(planGuard(['issue', 'create', `-b=${FLAGGED_SLUG}`], context()).text, FLAGGED_SLUG);
+  assert.equal(
+    planGuard(['api', 'repos/x/y/issues', `-fbody=${FLAGGED_SLUG}`], context()).text,
+    FLAGGED_SLUG,
+  );
+});
+
+test('guards a repository named by an API endpoint or URL outside the checkout', () => {
+  const outside = context({ originUrl: '' });
+
+  assert.equal(
+    planGuard(['api', `repos/${GUARDED}/issues/1/comments`, '-f', `body=${FLAGGED_SLUG}`], outside)
+      .action,
+    'scan',
+  );
+  assert.equal(
+    planGuard(
+      ['pr', 'comment', `https://github.com/${GUARDED}/pull/12`, '-b', FLAGGED_SLUG],
+      outside,
+    ).action,
+    'scan',
+  );
+});
+
+test('scans a GraphQL mutation wherever it runs, and passes a read query through', () => {
+  const outside = context({ originUrl: 'git@github.com:cli/cli.git' });
+  const mutation = `mutation{addComment(input:{subjectId:"x",body:"${FLAGGED_PROSE}"}){clientMutationId}}`;
+
+  const plan = planGuard(['api', 'graphql', '-f', `query=${mutation}`], outside);
+  assert.equal(plan.action, 'scan');
+  assert.equal(plan.text, mutation);
+  assert.deepEqual(planGuard(['api', 'graphql', '-f', 'query={viewer{login}}'], outside), {
+    action: 'passthrough',
+  });
+});
+
 test('passes through commands that publish nothing', () => {
   for (const args of [['auth', 'status'], ['pr', 'view', '1'], ['issue', 'list'], ['--version']]) {
     assert.equal(classifyCommand(args).kind, 'other', args.join(' '));
@@ -181,4 +243,36 @@ test('fails closed when the scanner is missing, instead of posting unchecked', (
   assert.equal(result.status, 1);
   assert.match(result.stderr, /scanner is missing/);
   assert.equal(fs.existsSync(log), false);
+});
+
+const runInstaller = (binDir) =>
+  spawnSync(
+    'bash',
+    [path.join(scriptsDir, 'install-gh-identifier-guard.sh'), path.dirname(scriptsDir)],
+    {
+      encoding: 'utf8',
+      env: { ...process.env, GH_GUARD_BIN_DIR: binDir },
+    },
+  );
+
+test('the installer refuses to overwrite a gh that is not a guard shim', () => {
+  const { dir } = makeFakeGh();
+  const realGh = fs.readFileSync(path.join(dir, 'gh'), 'utf8');
+
+  const result = runInstaller(dir);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /not a guard shim/);
+  assert.equal(fs.readFileSync(path.join(dir, 'gh'), 'utf8'), realGh);
+  assert.deepEqual(fs.readdirSync(dir), ['gh']);
+});
+
+test('the installer writes the shim into an empty directory and is idempotent', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-guard-install-'));
+
+  assert.equal(runInstaller(dir).status, 0);
+  const again = runInstaller(dir);
+  assert.equal(again.status, 0, again.stderr);
+  assert.match(again.stdout, /already current/);
+  assert.match(fs.readFileSync(path.join(dir, 'gh'), 'utf8'), /gh-identifier-guard\.mjs/);
 });

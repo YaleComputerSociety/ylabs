@@ -40,14 +40,16 @@ fi
 SHIM_CONTENT="#!/bin/sh
 GH_IDENTIFIER_GUARD_SHIM=\"\$0\" exec node \"${GUARD}\" \"\$@\""
 
+if [ -e "$SHIM" ] && ! grep -q 'gh-identifier-guard' "$SHIM" 2>/dev/null; then
+  echo "gh guard: ${SHIM} is not a guard shim, so it was left untouched and nothing was installed." >&2
+  echo "gh guard: set GH_GUARD_BIN_DIR to a directory ahead of the real gh on PATH and re-run." >&2
+  exit 1
+fi
+
 mkdir -p "$BIN_DIR"
 if [ -f "$SHIM" ] && [ "$(cat "$SHIM")" = "$SHIM_CONTENT" ]; then
   echo "gh guard: ${SHIM} is already current."
 else
-  if [ -e "$SHIM" ] && ! grep -q 'gh-identifier-guard' "$SHIM" 2>/dev/null; then
-    cp "$SHIM" "${SHIM}.pre-identifier-guard"
-    echo "gh guard: kept the previous ${SHIM} as ${SHIM}.pre-identifier-guard"
-  fi
   printf '%s\n' "$SHIM_CONTENT" > "$SHIM"
   chmod +x "$SHIM"
   echo "gh guard: installed ${SHIM} -> ${GUARD}"
