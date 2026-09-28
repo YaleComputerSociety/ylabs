@@ -159,7 +159,7 @@ const GUARDED_QUERY_WRITES = [
   'findOneAndReplace',
 ] as const;
 
-// A raw `collection` handle bypasses this, so no writer may author an entry through one.
+// A raw `collection` handle bypasses this; rawResearchEntityWriteGuard.test.ts keeps raw writers to a reviewed list.
 export function registerFieldProvenanceBackingGuard(schema: mongoose.Schema): void {
   for (const operation of GUARDED_QUERY_WRITES) {
     schema.pre(operation, function guardQueryWrite(this: mongoose.Query<unknown, unknown>) {
