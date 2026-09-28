@@ -787,6 +787,10 @@ A SUFFIXED unit line ("Director of Research") is a functional directorate and st
 Dedupe prefers the role-bearing card rather than the first card in the DOM, because a page whose A-Z roster precedes its leadership block would otherwise drop the director's role and leave the center with no lead.
 - `normalizeName` is the single owner of peeling a credential clause off a display name, and a degree missing from its list is not cosmetic: the clause survives, `splitName` reads the last credential as the surname, and the member is keyed and served under a surname that is a degree abbreviation.
 
+- A member the roster stops listing is retired by the lane itself, never by hand (#3781).
+Each read emits a `centerRosterHealth` snapshot of every member key, role claim and membership key it listed, and two admitted reads that omit a claim retire its observations and end this source's role edge for it, including a stale lead edge; `docs/research-data-pipeline.md` has the admission rules and the freeze guards.
+So a config must keep one center entity key to itself, and a pager change must still end on the roster's own end, or the snapshot stops being admissible.
+
 Then clear the borrowed URL with `yarn --cwd server observations:retire-organization-identity-websites`.
 Order matters: clearing the link before the organization exists drops the corpus's only edge to it (#2385), which is why #2529 held these rows back.
 Ownership is decided on the REDIRECT-RESOLVED page rather than on the URL string, and the owner must be an organization by NAME as well as by `entityType`: measured on Development, the type-only owner set offered `nih-pi-<surname>` rows typed `INITIATIVE` and one person's `faculty-research-area-*` row typed `CENTER` as the owner of that same person's other row, which is a duplicate-row problem wearing an organization's type.

@@ -1489,7 +1489,7 @@ describe('CentersInstitutesScraper.run', () => {
     getSpy.mockRestore();
   });
 
-  it('stops paginating a repeat-page roster after the first page that adds no new members', async () => {
+  it('stops paginating a repeat-page roster after two consecutive pages that add no new members', async () => {
     const repeatExt = vi.fn(
       (): ExtractorResult => ({
         members: [
@@ -1517,8 +1517,7 @@ describe('CentersInstitutesScraper.run', () => {
     const { ctx, emitted } = makeContext();
     await scraper.run(ctx);
 
-    // Page 0 yields the members; page 1 repeats them (no new) and terminates.
-    expect(repeatExt).toHaveBeenCalledTimes(2);
+    expect(repeatExt).toHaveBeenCalledTimes(3);
     const memberKeys = emitted
       .filter((o) => o.entityType === 'researchGroupMember' && o.field === 'role')
       .map((o) => o.entityKey);

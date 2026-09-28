@@ -26,6 +26,14 @@
  * one-row config change.
  */
 import { RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD } from '../entityMaterializer';
+import {
+  buildCenterRosterHealthSnapshot,
+  CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+  CENTER_ROSTER_HEALTH_FIELD,
+  type CenterRosterReadMember,
+  type CenterRosterStopReason,
+} from '../centerRosterRetirement';
+import { officialProfileIdentityKey, rosterMembershipKey } from '../utils/rosterMembershipKey';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
@@ -55,6 +63,7 @@ import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_PAGES_PER_CENTER = 30;
+const CONSECUTIVE_REPEATED_PAGES_TO_STOP = 2;
 
 export type CenterKind = 'center' | 'institute' | 'program' | 'initiative';
 export type MemberRole = 'director' | 'co-director' | 'core-faculty' | 'affiliated';
@@ -1719,6 +1728,56 @@ export function centerMemberRelationshipObservationsForEntityKey(
   ];
 }
 
+export interface CenterRosterReadOutcome {
+  pagesRead: number;
+  readMode: 'html' | 'rendered';
+  stopReason: CenterRosterStopReason;
+}
+
+export function centerRosterReadMember(
+  member: CenterMember,
+  memberObs: readonly ObservationInput[],
+  relationshipObs: readonly ObservationInput[],
+): CenterRosterReadMember | null {
+  const memberKey = memberObs[0]?.entityKey || '';
+  if (!memberKey) return null;
+  const role = member.role || 'core-faculty';
+  return {
+    memberKey,
+    role,
+    membershipKey: rosterMembershipKey(officialProfileIdentityKey(member.profileUrl || ''), role),
+    relationshipKey: relationshipObs[0]?.entityKey || '',
+  };
+}
+
+export function centerRosterHealthObservation(
+  config: CenterConfig,
+  members: readonly CenterRosterReadMember[],
+  sourceUrl: string,
+  read: CenterRosterReadOutcome,
+  options: { cacheAllowed: boolean; readAt?: Date },
+): ObservationInput {
+  const readAt = options.readAt ?? new Date();
+  const entityKey = centerEntityKey(config);
+  return {
+    entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+    entityKey,
+    field: CENTER_ROSTER_HEALTH_FIELD,
+    value: buildCenterRosterHealthSnapshot({
+      centerKey: config.centerKey,
+      entityKey,
+      members,
+      pagesRead: read.pagesRead,
+      readMode: read.readMode,
+      stopReason: read.stopReason,
+      cacheAllowed: options.cacheAllowed,
+      readAt,
+    }),
+    sourceUrl,
+    observedAt: readAt,
+  };
+}
+
 /**
  * Deterministic entity key for a child ResearchGroup discovered on a meta-index
  * page (Jackson School). Empty string when the child name does not slugify.
@@ -1819,13 +1878,14 @@ export class CentersInstitutesScraper implements IScraper {
       allMembers: CenterMember[],
       allChildCenters: ChildCenter[],
       sourceUrl: string,
-      pagesFetched: number,
+      read: CenterRosterReadOutcome,
     ): Promise<void> => {
       const { observations: groupObs } = centerToGroupObservations(config, allMembers, sourceUrl);
       await ctx.emit(groupObs);
       totalObs += groupObs.length;
 
       const seenMemberSlugs = new Set<string>();
+      const readMembers: CenterRosterReadMember[] = [];
       for (const member of allMembers) {
         const cleaned = normalizeName(member.name);
         const slug = slugify(cleaned);
@@ -1843,7 +1903,15 @@ export class CentersInstitutesScraper implements IScraper {
           await ctx.emit(relationshipObs);
           totalObs += relationshipObs.length;
         }
+        const readMember = centerRosterReadMember(member, memberObs, relationshipObs);
+        if (readMember) readMembers.push(readMember);
       }
+
+      const snapshot = centerRosterHealthObservation(config, readMembers, sourceUrl, read, {
+        cacheAllowed: Boolean(ctx.options.useCache),
+      });
+      await ctx.emit(snapshot);
+      totalObs += 1;
 
       for (const child of allChildCenters) {
         let engagementUrl: string | undefined;
@@ -1894,7 +1962,7 @@ export class CentersInstitutesScraper implements IScraper {
       }
 
       ctx.log(
-        `[${config.centerKey}] ${seenMemberSlugs.size} members, ${allChildCenters.length} child centers (${pagesFetched} page(s))`,
+        `[${config.centerKey}] ${seenMemberSlugs.size} members, ${allChildCenters.length} child centers (${read.pagesRead} page(s), ${read.stopReason})`,
       );
       perCenter.push({
         key: config.centerKey,
@@ -1969,13 +2037,11 @@ export class CentersInstitutesScraper implements IScraper {
           continue;
         }
 
-        await emitCenterResults(
-          config,
-          result.members || [],
-          result.childCenters || [],
-          pageUrl,
-          1,
-        );
+        await emitCenterResults(config, result.members || [], result.childCenters || [], pageUrl, {
+          pagesRead: 1,
+          readMode: 'rendered',
+          stopReason: 'rendered-page',
+        });
         centersProcessed++;
         continue;
       }
@@ -1986,10 +2052,10 @@ export class CentersInstitutesScraper implements IScraper {
       let firstPageUrl: string | null = null;
       let pagesFetched = 0;
       const maxPages = config.paginated ? MAX_PAGES_PER_CENTER : 1;
-      let lastPageHadNewEntries = true;
-      let fetchFailed = false;
+      let consecutiveRepeatedPages = 0;
+      let stopReason: CenterRosterStopReason = 'page-cap';
 
-      for (let pageIdx = 0; pageIdx < maxPages && lastPageHadNewEntries; pageIdx++) {
+      for (let pageIdx = 0; pageIdx < maxPages; pageIdx++) {
         const pageUrl = pageUrlForIndex(config.url, pageIdx);
         if (!firstPageUrl) firstPageUrl = pageUrl;
         let html: string;
@@ -1999,7 +2065,7 @@ export class CentersInstitutesScraper implements IScraper {
           ctx.log(
             `[${config.centerKey}] fetch failed for configured page: ${sanitizeLogValue(err)}`,
           );
-          fetchFailed = true;
+          stopReason = 'fetch-failed';
           break;
         }
         pagesFetched++;
@@ -2010,30 +2076,48 @@ export class CentersInstitutesScraper implements IScraper {
           ctx.log(
             `[${config.centerKey}] extractor error on configured page: ${sanitizeLogValue(err)}`,
           );
+          stopReason = 'extractor-error';
           break;
         }
-        const newMembers = (result.members ?? []).filter((member) => {
+        const pageMembers = result.members ?? [];
+        const pageChildCenters = result.childCenters ?? [];
+        if (pageMembers.length === 0 && pageChildCenters.length === 0) {
+          stopReason = 'empty-page';
+          break;
+        }
+        const newMembers = pageMembers.filter((member) => {
           const key = `member:${slugify(normalizeName(member.name))}`;
           if (key === 'member:' || seenPaginationKeys.has(key)) return false;
           seenPaginationKeys.add(key);
           return true;
         });
-        const newChildCenters = (result.childCenters ?? []).filter((child) => {
+        const newChildCenters = pageChildCenters.filter((child) => {
           const key = `child:${slugify(child.name)}`;
           if (key === 'child:' || seenPaginationKeys.has(key)) return false;
           seenPaginationKeys.add(key);
           return true;
         });
         if (newMembers.length === 0 && newChildCenters.length === 0) {
-          lastPageHadNewEntries = false;
-          break;
+          consecutiveRepeatedPages++;
+          if (!config.paginated || consecutiveRepeatedPages >= CONSECUTIVE_REPEATED_PAGES_TO_STOP) {
+            stopReason = config.paginated ? 'repeated-page' : 'not-paginated';
+            break;
+          }
+          continue;
         }
+        consecutiveRepeatedPages = 0;
         allMembers.push(...newMembers);
         allChildCenters.push(...newChildCenters);
-        if (!config.paginated) break;
+        if (!config.paginated) {
+          stopReason = 'not-paginated';
+          break;
+        }
       }
 
-      if (fetchFailed && allMembers.length === 0 && allChildCenters.length === 0) {
+      if (
+        pagesFetched === 0 ||
+        (stopReason === 'fetch-failed' && allMembers.length === 0 && allChildCenters.length === 0)
+      ) {
         perCenter.push({ key: config.centerKey, status: 'fetch-failed', count: 0 });
         centersProcessed++;
         continue;
@@ -2041,7 +2125,11 @@ export class CentersInstitutesScraper implements IScraper {
 
       const sourceUrl = firstPageUrl || config.url;
 
-      await emitCenterResults(config, allMembers, allChildCenters, sourceUrl, pagesFetched);
+      await emitCenterResults(config, allMembers, allChildCenters, sourceUrl, {
+        pagesRead: pagesFetched,
+        readMode: 'html',
+        stopReason,
+      });
       centersProcessed++;
     }
 
