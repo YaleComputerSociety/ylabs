@@ -14,6 +14,7 @@ import {
 } from '../utils/servedResearchEntityTitle';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { warmControlledVocabularyHeadings } from '../utils/controlledVocabularyHeadings';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { dropDomainIncoherentUnsourcedResearchAreas } from '../utils/researchAreaDomainCoherence';
 import { withoutMeshSourcedGeographicResearchAreas } from '../scrapers/utils/meshGeographicDescriptors';
@@ -104,6 +105,12 @@ export interface ResearchEntitySearchIndexRebuildOptions {
   getIndex?: typeof getMeiliIndex;
   fetchPage?: (page: number, pageSize: number) => Promise<any[]>;
   fetchMemberNames?: (entityIds: unknown[]) => Promise<ResearchEntitySearchMemberNameMap>;
+  /**
+   * Injectable for the same reason the index and the page fetch are: a rebuild test has no
+   * database, and a warm that reached for one would make every rebuild assertion wait for a
+   * connection timeout instead of asserting.
+   */
+  warmVocabulary?: () => Promise<unknown>;
 }
 
 export interface ResearchEntitySearchIndexRebuildResult {
@@ -724,8 +731,15 @@ async function assertMeiliSettingsTaskSucceeded(
 export async function rebuildResearchEntitySearchIndex(
   options: ResearchEntitySearchIndexRebuildOptions = {},
 ): Promise<ResearchEntitySearchIndexRebuildResult> {
+  // Validated before anything reaches the network or the database, so a bad argument still
+  // fails on the argument rather than on a connection timeout.
   const pageSize = normalizeRebuildPageSize(options.pageSize);
   const clearExisting = options.clearExisting ?? false;
+  // A rebuild runs in its own process, so it warms the controlled vocabulary itself rather
+  // than inheriting the server's warm. Without it every index document holds the fragments and
+  // the facet offers them as filter values (#3807). Warmed here, at the batch entry point,
+  // rather than in the per-document builder, which `syncEntity` also calls once per row.
+  await (options.warmVocabulary || warmControlledVocabularyHeadings)();
   const index = await (options.getIndex || getMeiliIndex)(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
   const fetchPage = options.fetchPage || fetchResearchEntityPage;
   const fetchMemberNames = options.fetchMemberNames || fetchResearchEntitySearchMemberNames;
