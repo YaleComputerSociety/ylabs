@@ -11,6 +11,7 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { onInterrupt } from './interruptCleanup';
 import { appendObservations, getSourceByName } from './observationStore';
+import { currentProcessCodeSha } from './scrapeRunCodeIdentity';
 import { currentScrapeRunOwner, startScrapeRunHeartbeat } from './scrapeRunLiveness';
 import { readPriorRunYieldFacts, resolveBarrenStreakFailure } from './sourceYieldGuard';
 import { withHttpCacheFetchMetrics, withHttpValidatorCacheScope } from './utils/httpValidatorCache';
@@ -88,6 +89,7 @@ export class ScraperOrchestrator {
       startedAt,
       heartbeatAt: startedAt,
       owner: currentScrapeRunOwner(ownership.lockOwnerId),
+      codeSha: currentProcessCodeSha(),
       status: 'running',
       options: options as any,
       invalidated: options.benchmarkRun === true,

@@ -85,6 +85,22 @@
  * removed, so every row whose stored value this clears goes back through
  * `planStudentVisibilityGate`/`applyStudentVisibilityGatePlans` rather than
  * keeping a tier decided about evidence it no longer has.
+ *
+ * An absence claim is only as good as the code that made it (#3824). The log is
+ * append-only, so when a lane is fixed because it asserted an empty slot it had not
+ * read, every claim the old code made stays live and still counts toward the quorum.
+ * Measured on Development after #3666: all 24 planned `websiteUrl` retractions had at
+ * least one claim from pre-fix runs, and only 10 had two post-fix ones. So a contract
+ * declares `absenceClaimCutoffs`, one per fixed field, naming the fix PR, its commit,
+ * and its merge time, and `disregardPreFixAbsenceClaims` drops every claim whose run
+ * did not carry the fix before the quorum is counted. The read itself still counts as
+ * a later complete read that said nothing, so the quorum has to be met by post-fix
+ * claims alone. Whether a run carried the fix is decided by ancestry when the run
+ * recorded its commit (`ScrapeRun.codeSha`), because a run started after the merge on
+ * a stale checkout still runs the old code (#3814), and by the merge time only when no
+ * commit was recorded or git cannot resolve it. A run that cannot be found is refused.
+ * Declaring a new cutoff is part of landing any fix to a lane's absence-claim path,
+ * and a field has at most one: the latest fix, whose commit contains the earlier ones.
  */
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
@@ -108,6 +124,7 @@ import {
   probeSourceLink,
   type SourceLinkProbeResult,
 } from '../services/sourceLinkHealth';
+import { gitCommitIsAncestor, isFullCommitSha } from './scrapeRunCodeIdentity';
 import {
   INGEST_REJECTABLE_PERSON_NAME_FIELDS,
   INGEST_REJECTABLE_RESEARCH_ENTITY_FIELDS,
@@ -134,8 +151,22 @@ export interface SourceFieldRetractionContract {
    */
   witnessFields: readonly string[];
   retractableFields: readonly string[];
+  absenceClaimCutoffs?: readonly AbsenceClaimCutoff[];
   notes: string;
 }
+
+export interface AbsenceClaimCutoff {
+  field: string;
+  fixedBy: string;
+  fixCommit: string;
+  fixMergedAt: Date;
+}
+
+const ABSENCE_CLAIM_FIX_3666: Omit<AbsenceClaimCutoff, 'field'> = {
+  fixedBy: '#3666',
+  fixCommit: '63ece2c57056f38e588b0c733e59827ba9691f83',
+  fixMergedAt: new Date('2026-09-27T16:51:32Z'),
+};
 
 /**
  * Only sources whose emit path has been read end to end belong here.
@@ -158,11 +189,16 @@ export interface SourceFieldRetractionContract {
  * nothing. #2385 records that dropping that edge strands the real lab, which
  * `observations:retarget-foreign-lab-websites` exists to repair rather than retract.
  *
+ * Both of those lanes asserted `empty` on unread or refused profiles until #3666, so
+ * each declares that fix as its `websiteUrl` cutoff; #3135 and #3658 predate it and are
+ * contained in its commit.
+ *
  * `yse-faculty-directory` qualifies for one case only. It emits `slug` and
  * `sourceUrls` for every entity it mints, and states `assertsNoValueFor:
  * ['websiteUrl']` only when it withdrew a lab because the linked site is known or
  * probed dead (#3452). A refused link and an empty slot state nothing, because
- * `extractLabUrl` can decline a link the page still carries.
+ * `extractLabUrl` can decline a link the page still carries. It declares no cutoff
+ * because its claim path has not been fixed since #3566 introduced it.
  *
  * `ysm-atoz-index` does not qualify either, for the opposite reason: a delisted
  * lab vanishes from the index entirely, so it emits no witness and no partial
@@ -172,6 +208,7 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
   'ysm-faculty-directory': {
     witnessFields: ['slug', 'sourceUrls'],
     retractableFields: ['websiteUrl'],
+    absenceClaimCutoffs: [{ field: 'websiteUrl', ...ABSENCE_CLAIM_FIX_3666 }],
     notes:
       'Reads one official profile per entity and emits slug plus sourceUrls unconditionally. It states assertsNoValueFor: [websiteUrl] only when the profile carries no lab link at all, so a classifyProfileLabWebsite refusal of a link the page still carries retracts nothing (#2647).',
   },
@@ -184,6 +221,7 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
   'dept-faculty-roster': {
     witnessFields: ['slug', 'sourceUrls'],
     retractableFields: ['websiteUrl'],
+    absenceClaimCutoffs: [{ field: 'websiteUrl', ...ABSENCE_CLAIM_FIX_3666 }],
     notes:
       'Emits slug and sourceUrls on every entity it mints. It states assertsNoValueFor: [websiteUrl] only on a positively attested empty lab-website slot (FacultyEntry.labSlotAttestation === "empty"), which every parse that reads labUrl must set and which is never set when a candidate link was seen and not adopted. A parse that routes a single destination link, or that never looked, leaves the claim unmade (#3135). An unread profile withdraws the empty a roster card attested, and a profile refused as naming someone else records refused.',
   },
@@ -276,6 +314,29 @@ export function assertFieldRetractionContractsAreDeclarable(
     for (const field of contract.retractableFields) {
       assertDeclarableRetractionField(field, 'retractable');
     }
+    const cutFields = new Set<string>();
+    for (const cutoff of contract.absenceClaimCutoffs ?? []) {
+      if (!contract.retractableFields.includes(cutoff.field)) {
+        throw new Error(
+          `${sourceName} declares an absence-claim cutoff for ${JSON.stringify(cutoff.field)}, which is not a retractable field.`,
+        );
+      }
+      if (cutFields.has(cutoff.field)) {
+        throw new Error(
+          `${sourceName} declares more than one cutoff for ${JSON.stringify(cutoff.field)}; keep only the latest fix.`,
+        );
+      }
+      cutFields.add(cutoff.field);
+      if (!isFullCommitSha(cutoff.fixCommit)) {
+        throw new Error(`${sourceName} cutoff for ${cutoff.field} must name a full fix commit.`);
+      }
+      if (!/^#\d+$/.test(cutoff.fixedBy)) {
+        throw new Error(`${sourceName} cutoff for ${cutoff.field} must name its fix PR as #<n>.`);
+      }
+      if (!(cutoff.fixMergedAt instanceof Date) || Number.isNaN(cutoff.fixMergedAt.getTime())) {
+        throw new Error(`${sourceName} cutoff for ${cutoff.field} must carry a valid merge time.`);
+      }
+    }
   }
 }
 
@@ -303,6 +364,49 @@ export interface FieldRetractionCompleteRead {
    * nothing for it (#2647).
    */
   assertsNoValueFor: readonly string[];
+  /** Claims in `assertsNoValueFor` made by lane code that predates the field's fix. */
+  preFixAbsenceClaims?: readonly string[];
+}
+
+export interface FieldRetractionRunProvenance {
+  startedAt?: Date;
+  codeSha?: string;
+}
+
+export type CommitIsAncestor = (ancestor: string, descendant: string) => boolean | undefined;
+
+export function runCarriesAbsenceClaimFix(
+  run: FieldRetractionRunProvenance | undefined,
+  cutoff: AbsenceClaimCutoff,
+  commitIsAncestor: CommitIsAncestor,
+): boolean {
+  if (!run) return false;
+  if (run.codeSha) {
+    const containsFix = commitIsAncestor(cutoff.fixCommit, run.codeSha);
+    if (containsFix !== undefined) return containsFix;
+  }
+  return run.startedAt instanceof Date && run.startedAt.getTime() >= cutoff.fixMergedAt.getTime();
+}
+
+export function disregardPreFixAbsenceClaims(
+  completeReads: readonly FieldRetractionCompleteRead[],
+  contract: SourceFieldRetractionContract,
+  runsById: ReadonlyMap<string, FieldRetractionRunProvenance>,
+  commitIsAncestor: CommitIsAncestor,
+): FieldRetractionCompleteRead[] {
+  const cutoffs = contract.absenceClaimCutoffs ?? [];
+  if (cutoffs.length === 0) return [...completeReads];
+  return completeReads.map((read) => {
+    const run = runsById.get(read.scrapeRunId);
+    const preFix = cutoffs
+      .filter(
+        (cutoff) =>
+          read.assertsNoValueFor.includes(cutoff.field) &&
+          !runCarriesAbsenceClaimFix(run, cutoff, commitIsAncestor),
+      )
+      .map((cutoff) => cutoff.field);
+    return { ...read, preFixAbsenceClaims: preFix };
+  });
 }
 
 export interface FieldRetractionCandidateObservation {
@@ -348,6 +452,7 @@ export function completeReadsSupportingRetraction(
     if (read.scrapeRunId === observation.scrapeRunId) continue;
     if (!(read.observedAt.getTime() > observation.observedAt.getTime())) continue;
     if (!read.assertsNoValueFor.includes(field)) continue;
+    if (read.preFixAbsenceClaims?.includes(field)) continue;
     runIds.add(read.scrapeRunId);
   }
   return Array.from(runIds);
@@ -472,6 +577,16 @@ export interface FieldRetractionCounts {
   soleHolderValueWithheld: number;
   /** Sole-holder value retracted because a probe positively found it dead. */
   soleHolderValueProbedDead: number;
+  /** Per field with a declared cutoff: what disregarding pre-fix claims changed. */
+  preFixAbsenceClaims: Record<string, PreFixAbsenceClaimCounts>;
+}
+
+export interface PreFixAbsenceClaimCounts {
+  /** Absence claims, one per (entity, run), made by runs on pre-fix lane code. */
+  excludedClaims: number;
+  /** Observations that would have been retracted had those claims counted. */
+  heldObservations: number;
+  heldEntities: number;
 }
 
 export interface FieldRetractionPlan {
@@ -515,7 +630,23 @@ export function planFieldRetractions(input: {
     sharedBoilerplateValue: 0,
     soleHolderValueWithheld: 0,
     soleHolderValueProbedDead: 0,
+    preFixAbsenceClaims: {},
   };
+  const heldEntitiesByField = new Map<string, Set<string>>();
+  for (const cutoff of input.contract.absenceClaimCutoffs ?? []) {
+    counts.preFixAbsenceClaims[cutoff.field] = {
+      excludedClaims: 0,
+      heldObservations: 0,
+      heldEntities: 0,
+    };
+    heldEntitiesByField.set(cutoff.field, new Set());
+  }
+  for (const read of input.completeReads) {
+    for (const field of read.preFixAbsenceClaims ?? []) {
+      const tally = counts.preFixAbsenceClaims[field];
+      if (tally) tally.excludedClaims += 1;
+    }
+  }
 
   const entitiesByValue = new Map<string, Set<string>>();
   for (const observation of input.activeObservations) {
@@ -544,6 +675,19 @@ export function planFieldRetractions(input: {
       completeReads,
       minCompleteReads: input.minCompleteReads,
     });
+    const tally = counts.preFixAbsenceClaims[observation.field];
+    if (
+      tally &&
+      verdict !== 'retract' &&
+      classifyFieldRetraction({
+        observation,
+        completeReads: completeReads.map((read) => ({ ...read, preFixAbsenceClaims: [] })),
+        minCompleteReads: input.minCompleteReads,
+      }) === 'retract'
+    ) {
+      tally.heldObservations += 1;
+      heldEntitiesByField.get(observation.field)?.add(observation.entityKey);
+    }
     if (verdict === 'source-has-not-reread') {
       counts.sourceHasNotReread += 1;
       continue;
@@ -574,6 +718,9 @@ export function planFieldRetractions(input: {
   counts.candidateEntities = new Set(
     Array.from(assertingEntitiesByField.values()).flatMap((entities) => Array.from(entities)),
   ).size;
+  for (const [field, entities] of heldEntitiesByField) {
+    counts.preFixAbsenceClaims[field].heldEntities = entities.size;
+  }
 
   const frozenFields: FrozenFieldRetraction[] = [];
   const frozen = new Set<string>();
@@ -813,6 +960,7 @@ const emptyCounts = (): FieldRetractionCounts => ({
   sharedBoilerplateValue: 0,
   soleHolderValueWithheld: 0,
   soleHolderValueProbedDead: 0,
+  preFixAbsenceClaims: {},
 });
 
 const emptyResult = (outcome: FieldRetractionOutcome, dryRun: boolean): FieldRetractionResult => ({
@@ -898,6 +1046,28 @@ export async function loadCompleteReads(
     });
   }
   return reads;
+}
+
+async function loadRunProvenance(
+  scrapeRunIds: readonly string[],
+): Promise<Map<string, FieldRetractionRunProvenance>> {
+  const ids = [...new Set(scrapeRunIds)]
+    .filter((id) => mongoose.isValidObjectId(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  if (ids.length === 0) return new Map();
+  const rows = (await ScrapeRun.find({ _id: { $in: ids } })
+    .select('_id startedAt codeSha')
+    .lean()) as Array<{ _id: unknown; startedAt?: unknown; codeSha?: unknown }>;
+  const runs = new Map<string, FieldRetractionRunProvenance>();
+  for (const row of rows) {
+    const id = serializedDocumentId(row._id);
+    if (!id) continue;
+    runs.set(id, {
+      startedAt: row.startedAt instanceof Date ? row.startedAt : undefined,
+      codeSha: isFullCommitSha(row.codeSha) ? row.codeSha : undefined,
+    });
+  }
+  return runs;
 }
 
 async function loadActiveRetractableObservations(
@@ -1118,6 +1288,7 @@ export async function reconcileFieldRetractions(options: {
   sourceName: string;
   dryRun?: boolean;
   probeValue?: (value: string) => Promise<RetractionProbeVerdict>;
+  commitIsAncestor?: CommitIsAncestor;
 }): Promise<FieldRetractionResult> {
   const dryRun = options.dryRun === true;
   const contract = fieldRetractionContractFor(options.sourceName);
@@ -1130,11 +1301,20 @@ export async function reconcileFieldRetractions(options: {
   const candidateEntityKeys = Array.from(
     new Set(activeObservations.map((observation) => observation.entityKey)),
   );
-  const completeReads = await loadCompleteReads(
+  const loadedReads = await loadCompleteReads(
     options.sourceName,
     contract.witnessFields,
     candidateEntityKeys,
   );
+  const completeReads =
+    (contract.absenceClaimCutoffs ?? []).length > 0
+      ? disregardPreFixAbsenceClaims(
+          loadedReads,
+          contract,
+          await loadRunProvenance(loadedReads.map((read) => read.scrapeRunId)),
+          options.commitIsAncestor ?? gitCommitIsAncestor,
+        )
+      : loadedReads;
   if (completeReads.length === 0) {
     return { ...emptyResult('no-complete-reads', dryRun), sourceName: options.sourceName };
   }

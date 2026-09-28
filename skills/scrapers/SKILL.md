@@ -139,6 +139,7 @@ Before #2498 only `cronRunner` took the lock, so two operators or two agents cou
 
 Every exit path of the orchestrator writes a terminal status: `success`, `partial`, `failure`, or `interrupted` on `SIGINT`/`SIGTERM` (#3595).
 A running row carries `heartbeatAt`, renewed every minute, and `owner: { host, pid, lockOwnerId }`.
+It also records `codeSha`, the commit the process loaded (`scrapeRunCodeIdentity.ts`), so which code produced a run's observations is answered by ancestry rather than by comparing a merge time with `startedAt` (#3824).
 Only a `SIGKILL` or a crash still leaves a row `running`, and its heartbeat stops.
 
 - Never ask "is anything running" with a bare `status: 'running'`.
@@ -544,9 +545,12 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
 - `fieldRetraction.ts` - how the engine stops asserting a field a source dropped (#2542).
   Observations are append-only and supersede on fingerprint, so before this a source could only change a field by asserting something new: a profile that drops its lab-website link emits nothing for `websiteUrl`, the last assertion stays live and unopposed, and no re-scrape or rematerialization could withdraw it.
   The unit of evidence is a **complete read** - a run in which the source emitted every field it emits unconditionally on a successful read (`witnessFields`) for one entity - so a retraction is licensed by a positive record that the source looked again, never by a missing row.
-  Two later complete reads carrying no assertion retire the stale observation through `retireObservations`; zero later complete reads mean the source has not looked and nothing happens.
+  Two later complete reads that each state `assertsNoValueFor: [F]` retire the stale observation through `retireObservations`; a later read silent about F retracts nothing (#2647), and zero later complete reads mean the source has not looked and nothing happens.
   Do NOT declare a source retraction-capable without reading its emit path end to end, and never declare a field ingest can drop: `assertDeclarableRetractionField` refuses quality-guarded prose, the sanitizer's rejectable lists, and enum-validated fields, because for those an ingest rejection is indistinguishable from a retraction and `isRegressiveProseRefresh` would become the trigger for deleting the incumbent it exists to protect.
-  `dept-faculty-roster` is deliberately excluded despite the identical emit shape (a `profileBelongsToRosterPerson` mismatch drops `labUrl` while keeping the citation, so a wrong-person refusal reads as a delisting, and #2385 says that edge is re-homed rather than retracted), and so is `ysm-atoz-index` (a delisted lab leaves the index entirely, emitting no witness, which is `ysmLabDelistingReconciler`'s cohort).
+  `dept-faculty-roster` qualifies only through `labSlotAttestation` (#3135): a `profileBelongsToRosterPerson` mismatch records `refused` and an unread profile withdraws the card's `empty` (#3666), so neither states an absence; `ysm-atoz-index` is excluded (a delisted lab leaves the index entirely, emitting no witness, which is `ysmLabDelistingReconciler`'s cohort).
+  An absence claim counts only when its run carried the lane's latest fix to its absence-claim path (#3824): the contract's `absenceClaimCutoffs` names the fix PR, full commit, and merge time per field, and `disregardPreFixAbsenceClaims` drops older claims before the two-read quorum is counted, so the quorum comes from post-fix claims alone.
+  A run is judged by ancestry of its recorded `scrape_runs.codeSha`, falling back to `startedAt` against the merge time only when no commit was recorded or git cannot resolve it; a run that cannot be found is refused.
+  When you fix a lane that asserted an absence it had not established, replace that field's cutoff with your fix in the same PR, or every claim the old code made keeps counting.
   The stored value is cleared only when the retraction removed the LAST live observation for the field and the stored value is still the retracted one; with rival evidence surviving the resolver decides next pass.
   That positive condition is what distinguishes this from adding the field to `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`, which reads an absence and would therefore also unset a value whose observation was merely pruned.
   Locked fields are skipped whatever the reason, and every cleared row is re-gated through `planStudentVisibilityGate`.
