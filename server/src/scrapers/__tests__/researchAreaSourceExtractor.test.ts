@@ -113,6 +113,49 @@ describe('candidateAreaUrlsForDoc and candidateAreaEntitiesFromDocs', () => {
     expect(candidates.map((candidate) => candidate.slug)).toEqual(['empty-lab']);
   });
 
+  it('admits a non-empty row only when the evidence-backed set is supplied and omits it', () => {
+    const docs = [
+      {
+        _id: 'f',
+        slug: 'unbacked-areas',
+        websiteUrl: 'https://example.edu/research/f',
+        researchAreas: ['Neuroscience'],
+      },
+      {
+        _id: 'g',
+        slug: 'backed-areas',
+        websiteUrl: 'https://example.edu/research/g',
+        researchAreas: ['Neuroscience'],
+      },
+      {
+        _id: 'h',
+        slug: 'locked-areas',
+        websiteUrl: 'https://example.edu/research/h',
+        researchAreas: ['Neuroscience'],
+        manuallyLockedFields: ['researchAreas'],
+      },
+    ];
+    expect(candidateAreaEntitiesFromDocs(docs).map((candidate) => candidate.slug)).toEqual([]);
+    expect(
+      candidateAreaEntitiesFromDocs(docs, { evidenceBackedRowIds: new Set(['g']) }).map(
+        (candidate) => candidate.slug,
+      ),
+    ).toEqual(['unbacked-areas']);
+  });
+
+  it('never admits a row whose researchAreas are manually locked', () => {
+    const candidates = candidateAreaEntitiesFromDocs([
+      {
+        _id: 'i',
+        slug: 'locked-empty',
+        websiteUrl: 'https://example.edu/research/i',
+        researchAreas: [],
+        manuallyLockedFields: ['researchAreas'],
+      },
+    ]);
+    expect(candidates).toEqual([]);
+  });
+
   it('treats whitespace-only stored areas as empty', () => {
     const candidates = candidateAreaEntitiesFromDocs([
       {

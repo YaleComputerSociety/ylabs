@@ -791,7 +791,7 @@ function hasNonEmptyStringArray(...values: unknown[]): boolean {
   return values.some((value) => Array.isArray(value) && value.length > 0);
 }
 
-const DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA']);
+export const DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA']);
 
 // LAB/FACULTY_RESEARCH_AREA entities seeded from PI-centric sources (NIH RePORTER,
 // ORCID, official-profile PI backfill) carry a fullDescription but no researchAreas

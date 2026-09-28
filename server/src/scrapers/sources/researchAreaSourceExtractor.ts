@@ -20,6 +20,10 @@ import {
   getResearchAreaCanonicalizer,
   type ResearchAreaCanonicalizer,
 } from '../researchAreaCanonicalization';
+import {
+  loadResearchAreaEvidenceBackedRowIds,
+  researchAreasAreManuallyLocked,
+} from '../researchAreaEvidence';
 import { extractLabHomepageDescription } from './ysmAtoZScraper';
 import {
   DEFAULT_SOURCE_CONCURRENCY,
@@ -169,13 +173,29 @@ export function candidateAreaUrlsForDoc(doc: CandidateAreaEntityDoc): string[] {
     .sort((a, b) => areaSourceUrlPriority(a) - areaSourceUrlPriority(b) || a.localeCompare(b));
 }
 
+export interface CandidateAreaSelectionOptions {
+  only?: string[];
+  evidenceBackedRowIds?: ReadonlySet<string>;
+}
+
+function hasResearchAreasToRead(
+  doc: CandidateAreaEntityDoc,
+  evidenceBackedRowIds: ReadonlySet<string> | undefined,
+): boolean {
+  if (hasEmptyResearchAreas(doc.researchAreas)) return true;
+  if (!evidenceBackedRowIds) return false;
+  const rowId = idValue(doc._id);
+  return rowId.length > 0 && !evidenceBackedRowIds.has(rowId);
+}
+
 export function candidateAreaEntitiesFromDocs(
   docs: CandidateAreaEntityDoc[],
-  options: { only?: string[] } = {},
+  options: CandidateAreaSelectionOptions = {},
 ): CandidateAreaEntity[] {
   const keys = uniqueStrings(options.only || []);
   return docs.flatMap((doc) => {
-    if (!hasEmptyResearchAreas(doc.researchAreas)) return [];
+    if (researchAreasAreManuallyLocked(doc)) return [];
+    if (!hasResearchAreasToRead(doc, options.evidenceBackedRowIds)) return [];
     const urls = candidateAreaUrlsForDoc(doc);
     if (urls.length === 0) return [];
     const candidate: CandidateAreaEntity = {
@@ -389,7 +409,9 @@ async function defaultFetchPage(url: string): Promise<FetchedAreaPage | null> {
   return { url: res.request?.res?.responseUrl || safeUrlText, html: String(res.data || '') };
 }
 
-async function defaultEntityFinder(
+// Only a scoped run reaches a row whose stored areas no live evidence backs: an unscoped
+// sweep would otherwise fan out to a live fetch for every such row on every run (#3836).
+export async function findResearchAreaCandidateEntities(
   options: { only?: string[]; exhaustive?: boolean } = {},
 ): Promise<CandidateAreaEntity[]> {
   const only = uniqueStrings(options.only || []);
@@ -406,9 +428,10 @@ async function defaultEntityFinder(
         ],
       }
     : {};
-  const emptyAreasFilter = {
-    $or: [{ researchAreas: { $exists: false } }, { researchAreas: { $size: 0 } }],
-  };
+  const emptyAreasFilter = only.length
+    ? {}
+    : { $or: [{ researchAreas: { $exists: false } }, { researchAreas: { $size: 0 } }] };
+  const unlockedFilter = { manuallyLockedFields: { $ne: 'researchAreas' } };
   const urlFilter = {
     $or: [
       { websiteUrl: /^https?:\/\//i },
@@ -417,7 +440,15 @@ async function defaultEntityFinder(
     ],
   };
   const query = ResearchEntity.find(
-    { $and: [{ archived: { $ne: true } }, emptyAreasFilter, urlFilter, identityFilter] },
+    {
+      $and: [
+        { archived: { $ne: true } },
+        unlockedFilter,
+        emptyAreasFilter,
+        urlFilter,
+        identityFilter,
+      ],
+    },
     {
       _id: 1,
       slug: 1,
@@ -433,8 +464,13 @@ async function defaultEntityFinder(
   if (!only.length && !options.exhaustive) {
     query.limit(MAX_CANDIDATE_SCAN);
   }
-  const docs = await query.lean();
-  return candidateAreaEntitiesFromDocs(docs as CandidateAreaEntityDoc[], { only });
+  const docs = (await query.lean()) as CandidateAreaEntityDoc[];
+  const evidenceBackedRowIds = only.length
+    ? await loadResearchAreaEvidenceBackedRowIds(
+        docs.filter((doc) => !hasEmptyResearchAreas(doc.researchAreas)),
+      )
+    : undefined;
+  return candidateAreaEntitiesFromDocs(docs, { only, evidenceBackedRowIds });
 }
 
 async function defaultWorkPlanLoader(
@@ -469,7 +505,7 @@ export class ResearchAreaSourceExtractor implements IScraper {
   constructor(deps: ResearchAreaSourceExtractorDeps = {}) {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
     this.canonicalizerLoader = deps.canonicalizerLoader || getResearchAreaCanonicalizer;
-    this.entityFinder = deps.entityFinder || defaultEntityFinder;
+    this.entityFinder = deps.entityFinder || findResearchAreaCandidateEntities;
     this.workPlanLoader = deps.workPlanLoader || defaultWorkPlanLoader;
   }
 
