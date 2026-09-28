@@ -91,3 +91,74 @@ export const scrapeRunInterruptionReasons = [
   'legacy_abandoned',
 ] as const;
 export type ScrapeRunInterruptionReason = (typeof scrapeRunInterruptionReasons)[number];
+
+/**
+ * Whether a stored row is one person's research rather than the collective that publishes
+ * its page.
+ *
+ * The single owner of that question, and it lives here because the question is a property
+ * of the stored `entityType` vocabulary. Nine `PERSON_SCOPED_*` declarations existed before
+ * this, across `utils/`, `services/` and `scripts/`, and six of them meant this and
+ * disagreed anyway (#3602).
+ *
+ * The disagreements were measured on real rows rather than reconciled by union, because the
+ * whole failure mode here is a set that widened by accident:
+ *
+ * - Only two person-scoped types exist in the corpus at all: 3,526 live `FACULTY_RESEARCH_AREA`
+ *   and 877 live `LAB`. `FACULTY_RESEARCH`, `INDIVIDUAL_RESEARCH` and `FACULTY_PROJECT` have
+ *   **zero rows, ever**, so every difference confined to those three was unexercised, including
+ *   the one `researchHomeNameIdentityAuthority` documented as a deliberate widening.
+ * - The one difference that was exercised is `LAB`, by 877 rows, and it appeared in the
+ *   visibility gate's copy. Including `LAB` there changes nothing: the shared-citation signal
+ *   flags 277 rows with it and 277 without, 0 newly flagged and 0 lost, so the exclusion was
+ *   inert rather than load-bearing.
+ *
+ * The retired spellings stay in the set because rows written before the consolidation may
+ * still carry them and this question must answer the same way for those rows; see
+ * [[LEGACY_FACULTY_RESEARCH_ENTITY_TYPES]] above.
+ *
+ * Three sets are deliberately NOT folded in, because they ask a different question and their
+ * names now say so: `NON_LAB_PERSON_SCOPED_ENTITY_TYPES` in two repairs that rewrite a row
+ * whose NAME claims a lab while its type does not, and `LAB_ENTITY_TYPES` in the lab-website
+ * retarget, which picks which of a lead's homes is the lab. Folding either into this one would
+ * make a repair rewrite legitimate `LAB` rows. `labDescriptionSynthesis` asks the same
+ * non-lab question to choose a person prompt over a lab prompt, and names it the same way.
+ *
+ * The client cannot import this module, so `PERSON_SCOPED_CITING_ENTITY_TYPES` in
+ * client/src/utils/researchDetailSources.ts mirrors this set; changing it here requires
+ * updating that copy.
+ */
+export const PERSON_SCOPED_RESEARCH_ENTITY_TYPES: ReadonlySet<string> = new Set([
+  'LAB',
+  'FACULTY_RESEARCH_AREA',
+  'FACULTY_PROJECT',
+  'FACULTY_RESEARCH',
+  'INDIVIDUAL_RESEARCH',
+]);
+
+export const PERSON_SCOPED_RESEARCH_ENTITY_KINDS: ReadonlySet<string> = new Set([
+  'lab',
+  'individual',
+  'solo',
+]);
+
+export function isPersonScopedResearchEntityType(entityType: unknown): boolean {
+  return (
+    typeof entityType === 'string' &&
+    PERSON_SCOPED_RESEARCH_ENTITY_TYPES.has(entityType.trim().toUpperCase())
+  );
+}
+
+/**
+ * `entityType` decides when the row states one, and `kind` is the fallback for a row that
+ * does not. Reading `kind` first would let a derived value outrank the stored type.
+ */
+export function isPersonScopedResearchEntityShape(row: {
+  entityType?: unknown;
+  kind?: unknown;
+}): boolean {
+  const entityType = typeof row.entityType === 'string' ? row.entityType.trim() : '';
+  if (entityType) return isPersonScopedResearchEntityType(entityType);
+  const kind = typeof row.kind === 'string' ? row.kind.trim().toLowerCase() : '';
+  return kind !== '' && PERSON_SCOPED_RESEARCH_ENTITY_KINDS.has(kind);
+}

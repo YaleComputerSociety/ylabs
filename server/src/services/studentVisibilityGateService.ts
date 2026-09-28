@@ -1,4 +1,5 @@
 import { Signal } from '../models/signal';
+import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { Fellowship } from '../models/fellowship';
 import { Observation } from '../models/observation';
@@ -625,18 +626,12 @@ function exactDuplicateCanonicalScore(
  */
 export const SHARED_CITATION_PERSON_ROW_THRESHOLD = 25;
 
-const PERSON_SCOPED_GATE_ENTITY_TYPES = new Set([
-  'FACULTY_RESEARCH_AREA',
-  'FACULTY_RESEARCH',
-  'INDIVIDUAL_RESEARCH',
-]);
-
 export function selectSharedCitationOnlyEntityIds(
   entities: any[],
   threshold: number = SHARED_CITATION_PERSON_ROW_THRESHOLD,
 ): Set<string> {
   const personRows = entities.filter((entity) =>
-    PERSON_SCOPED_GATE_ENTITY_TYPES.has(String(entity?.entityType || '')),
+    isPersonScopedResearchEntityType(entity?.entityType),
   );
   const personRowsPerUrl = new Map<string, number>();
   for (const entity of personRows) {

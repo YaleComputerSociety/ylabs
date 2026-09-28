@@ -9,6 +9,7 @@
  * since, so the plan is a one-time repair rather than a guard against a live
  * producer.
  */
+import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 
 export const UNEVIDENCED_MEMBER_EDGE_RETIREMENT_NOTE =
   'Retired by role-assignments:retire-unevidenced-member-edges (#3161): a non-lead member edge on a person-scoped entity citing no rosterProvenance. No page asserts this membership.';
@@ -26,19 +27,6 @@ export const LEAD_ROLE_ASSIGNMENT_ROLES = new Set([
   'LEAD',
   'FACULTY_LEAD',
   'PRINCIPAL_INVESTIGATOR',
-]);
-
-/**
- * A person-scoped entity is one whose page reads as one person's research. On an
- * organization, an unattributed `CORE_FACULTY` edge is an attribution gap on a
- * body that genuinely has hundreds of affiliated faculty, which is a different
- * decision and deliberately not this repair: including them would turn a 53-edge
- * repair into a 1,019-edge one.
- */
-export const PERSON_SCOPED_ENTITY_TYPES = new Set([
-  'LAB',
-  'FACULTY_RESEARCH_AREA',
-  'FACULTY_PROJECT',
 ]);
 
 export interface UnevidencedMemberEdgeInput {
@@ -116,7 +104,7 @@ export function planUnevidencedMemberEdgeRetirements(
       skipped.unknownEntity += 1;
       continue;
     }
-    if (!PERSON_SCOPED_ENTITY_TYPES.has(entity.entityType)) {
+    if (!isPersonScopedResearchEntityType(entity.entityType)) {
       skipped.notPersonScoped += 1;
       continue;
     }

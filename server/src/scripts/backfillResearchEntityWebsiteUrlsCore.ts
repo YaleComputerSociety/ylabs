@@ -1,4 +1,5 @@
 import { isExternalScholarlyPlatformHost } from '../utils/externalScholarlyPlatforms';
+import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 import {
   isBoilerplatePlatformHostUrl,
   isDepartmentRosterProvenanceUrl,
@@ -117,14 +118,6 @@ export function isMultiTenantHostRootWebsiteUrl(
   return isMultiTenantAcademicHostRootUrl(value, entity);
 }
 
-const PERSON_SCOPED_RESEARCH_HOME_TYPES: ReadonlySet<string> = new Set([
-  'LAB',
-  'FACULTY_RESEARCH_AREA',
-  'FACULTY_PROJECT',
-  'FACULTY_RESEARCH',
-  'INDIVIDUAL_RESEARCH',
-]);
-
 /**
  * A faculty roster or members list is legitimate evidence about the department or
  * centre that publishes it, and a graft on a person's row. `retireGraftedDirectoryUrls`
@@ -140,8 +133,7 @@ export function isRosterPageWebsiteUrlForPerson(
   value: unknown,
   entity?: ResearchEntityHostOwnerIdentity,
 ): boolean {
-  const entityType = typeof entity?.entityType === 'string' ? entity.entityType : '';
-  if (!PERSON_SCOPED_RESEARCH_HOME_TYPES.has(entityType)) return false;
+  if (!isPersonScopedResearchEntityType(entity?.entityType)) return false;
   const url = cleanString(value);
   if (!url) return false;
   return isSharedPeopleRosterUrl(url) || isDepartmentRosterProvenanceUrl(url);

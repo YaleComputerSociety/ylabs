@@ -132,7 +132,10 @@ export function isSharedInstitutionalResourceUrl(value: unknown): boolean {
     .some((segment) => SHARED_INSTITUTIONAL_PATH_SEGMENT_RE.test(segment));
 }
 
-const PERSON_SCOPED_LAB_TYPES = new Set(['LAB']);
+// Not a person-scope test, despite what this was called: it picks which of a lead's homes is
+// the LAB one. `models/storedVocabularies.ts` owns person scope and includes LAB, so folding
+// this into it would make every person-scoped home a candidate (#3602).
+const LAB_ENTITY_TYPES = new Set(['LAB']);
 
 /**
  * The one research home a declared lead's website may be moved to, or none.
@@ -147,7 +150,7 @@ export function resolveRetargetTarget(
   homes: RetargetCandidateResearchHome[],
 ): RetargetCandidateResearchHome | null {
   const labs = homes.filter((home) =>
-    PERSON_SCOPED_LAB_TYPES.has(textValue(home.entityType).toUpperCase()),
+    LAB_ENTITY_TYPES.has(textValue(home.entityType).toUpperCase()),
   );
   if (labs.length === 1) return labs[0];
   if (labs.length > 1) return null;
