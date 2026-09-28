@@ -11,47 +11,17 @@ Track tactical work in GitHub issues and keep transient artifacts outside `docs/
 The browse card read `pastUndergradAdvisees` and `typicalUndergradRoles`, the pathway badge read `CURRENT_UNDERGRADS`, `PAST_UNDERGRADS` and a `FACULTY_SUPERVISION` signal nothing mints, and the `hostsUndergrads` filter and saved plans read a stored flag that also counted `CURRENT_UNDERGRADS` and `FACULTY_SUPERVISES_STUDENT_PROJECTS`.
 On Development that flag was set on 290 unarchived rows while the card showed the badge on 5.
 
-There is now one predicate, `UNDERGRAD_HOSTING_SIGNAL_TYPES` in `server/src/services/accessAcceptanceLevel.ts`, and every surface reads it: the API serves `hasUndergradHostingEvidence` on each research entity, the card reads that flag instead of re-deriving it, and saved plans use the same row-level test.
+There is now one predicate, `entityHasHostedUndergraduates` in `server/src/services/accessAcceptanceLevel.ts`, over one input, `pastUndergradAdvisees`, the field that mints `PAST_UNDERGRADS`.
+Every surface reads it: the API serves `hasUndergradHostingEvidence` on each research entity, the card reads that flag instead of re-deriving it, saved plans use the same test, and `researchEntityBrowseRankService` writes the stored flag the filter reads from it too.
+The stored flag is no longer derived from `AccessSignal` rows, because the access materializer never archives a signal it stops deriving, so a lingering `PAST_UNDERGRADS` signal would keep a row in the filter after its card lost the badge.
 Supervising student projects is a separate claim with its own badge.
 
 `CURRENT_UNDERGRADS` is held out because its stored input is not yet trustworthy.
 A hand-read of 20 stored `lab-microsite-undergrad-llm` counts against their cited pages found 13 backed, while the lane's current page-grounded code scored 6 of 6 on `undergrad-llm-gold-v2`, so the gap is counts written by older runs.
 Re-admitting it needs those counts re-derived and re-measured, not a code change here, which #3789 tracks.
 
-The served flag is derived from `pastUndergradAdvisees` at request time, because that is exactly the field that mints `PAST_UNDERGRADS`, so the card is right on deploy.
-The stored `hasUndergradHostingEvidence` that the filter reads converges when `researchEntityBrowseRankService` next runs.
-## 2026-09-27: A Provenance Entry Names Its Observation, And An Attribution Nothing Backs Is Retired, Not The Value (#3769)
-
-A `fieldProvenance` entry says a lane stands behind a value, and the only thing a lane can stand behind is an observation.
-#3769 found 18 entries citing a repair lane that wrote 0 observations, and measuring the class found 467 such entries across 33 source names on Development (2026-09-28), 102 of them on `student_ready` rows, with one writer still producing the shape: `inheritSchoolFromLeadPi` appended observations after #3375 but still stamped provenance with neither id, and still wrote the value when the append was skipped.
-
-Decided, in the order the issue asked:
-
-1. **The 2 live rows' values are right, and the attribution on them is wrong twice.**
-The repair wrote `LAB`; both rows now hold `FACULTY_RESEARCH_AREA`, which is exactly what the grant lanes' current code emits for a grant shell, so a later writer changed the value and left the attribution behind.
-The provenance is stale as well as unbacked.
-2. **Clear the attribution, never the field.**
-Clearing the field is worse on every row the measurement reached: an `entityType` falls back to the schema default `LAB`, which is the value these rows were correctly moved off, and a cleared description can drop a row's tier.
-Whether a value is right is a lane question (a re-scrape) or an operator one (a refusal), and it is answered on evidence; the attribution is the one thing already known to be false.
-An absent entry reads as "no recorded source", which is true, and it makes the row visible to instruments that key on a missing entry, such as `isUnbackedLabNameShell`, which a false entry was exempting.
-`websiteUrl` stays the exception #3586 already made, because an unbacked `websiteUrl` is itself a served citation and `sourceUrls` can refill the slot on the same pass.
-3. **Served exposure is zero for #3769 and not zero for the class.**
-`entityType` is not in `servedFieldContributionLabels` and the 4 `fullDescription` entries are on archived rows, so no student sees the #3769 attribution.
-Across the class, 57 entries on served rows attach a `sourceUrl` to a labelled field, so `buildSourceFieldContributions` told a student a page supplied a Research summary, Topics, Name or Department when no lane read it for that field.
-
-What makes it a class fix rather than 467 row fixes:
-
-- **The write path refuses the shape.** The `ResearchEntity` model throws on any Mongoose write of an entry with no `observationId`, unless its source is a listed non-observation authority (`models/fieldProvenanceBacking.ts`).
-The list holds one name, `description-derived-research-area`, because it is recomputed from the row's own description on every resolve; a one-shot repair never qualifies, since the whole point is that it cannot re-derive itself.
-- **The one live writer is converted rather than exempted.** Lead-PI inheritance writes a value only once its own observation of that value exists, and records that observation in the entry.
-- **The residue retires on resolve.** `planNeverBackedFieldProvenanceRetirement` unsets an entry whose lane has no observation of that field on the row, live or superseded, and writes no field and needs no lock, so a second pass plans nothing.
-
-Never-backed is kept distinct from history, because the repository forbids pruning history and the two share a shape.
-An `observationId` that resolves to a superseded observation or to nothing, a bare `sourceId` (the #2897 residue), and an entry whose lane did observe the field are all kept: 34,901 history entries, 527 attributed to a real `Source`, and 142 real-but-unrecorded ones.
-What the stage retires is an attribution to a claim that was never made.
-The instrument that separates them is sound only while superseded observations are retained, and on Development the oldest superseded observation is as old as the log itself (2026-05-14), so no claim has been pruned out from under one of these entries; if pruning ever runs, an entry with no id cannot be protected by it, which is a further reason the write path now refuses to create one.
-
-Measured predictions for the Development operation, 2026-09-28: 414 entries on 284 rows retire (58 live, 43 entries on `student_ready` rows); 47 on locked fields are left to the lock release path, 142 are kept as real assertions, and 6 sit on rows with no live observation, which no projection can reach and which are recorded here rather than patched.
+The served flag is derived at request time, so the card, the pathway badge and saved plans are right on deploy.
+The stored `hasUndergradHostingEvidence` that the `hostsUndergrads` filter reads is stored data, so this half is done only after `yarn --cwd server research-homes:backfill-browse-rank` has run against Development and the filtered browse output has been re-read.
 
 ## 2026-09-27: Person Identifiers Are Refused Before Posting, Not Reported After (#3682)
 
@@ -923,7 +893,7 @@ It has no reachable reader, measured at `2275702f`.
 Beta and Production each hold 4183 live rows from it, all `confidence=LOW` with `confidenceScore` capped at 0.4 by `Math.min(0.4, ...)` in the derivation itself, so the confidence is structural rather than incidental.
 `signalCountsTowardAcceptance`, `accessSignalCount` in the gate, `reachOutPlausibleSignalCreditsActionEvidence`, and `countResearchEntityAlternateAccessPaths` all exclude the two keys by denylist.
 `researchEntityBrowseRankService` over-fetches every access signal but feeds only `hasUndergradHostingEvidenceFromSignals`, whose set is `PAST_UNDERGRADS`/`CURRENT_UNDERGRADS`/`FACULTY_SUPERVISES_STUDENT_PROJECTS`.
-That set is `PAST_UNDERGRADS` alone since #3593, recorded in its own entry above.
+Since #3593 it reads no signals at all, recorded in its own entry above.
 `researchEntitySearchIndexService` reads no signals.
 On the client, `accessSignals` reach only `buildResearchDetailSources`, which drops anything `LOW` via `isCitableAccessSignal`, so 0 of 4183 contribute even a citation, and no code path renders a signal excerpt at all.
 The one reader that does see them is `researchEntityEvidenceCoverage`, where `hasAccess = accessSignals.length > 0` has no derivation-key filter; that feeds a scrape-run diagnostic report, is not served and gates nothing, and losing these rows makes `missing_access_evidence` correct rather than wrong.

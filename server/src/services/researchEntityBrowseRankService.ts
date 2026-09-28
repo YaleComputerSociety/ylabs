@@ -2,7 +2,7 @@
  * Persistence + Meilisearch sync for the ResearchEntity browse-ranking score.
  *
  * The pure scorer lives in researchEntityBrowseRank.ts. This module gathers the
- * joins the scorer needs (lead members, active access-signal types, whether the
+ * joins the scorer needs (lead members, whether the
  * entity hosts affiliated research homes), writes the
  * resulting `browseRankScore` onto the ResearchEntity document, and re-syncs the
  * affected docs to the `researchentities` Meilisearch index so the default
@@ -10,13 +10,8 @@
  */
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
-import { Signal } from '../models/signal';
-import { accessSignalTypes as ACCESS_SIGNAL_TYPES } from '../models/researchAccessTypes';
 import { computeResearchEntityBrowseRank } from './researchEntityBrowseRank';
-import {
-  hasUndergradHostingEvidenceFromSignals,
-  type AccessSignalConfidenceInput,
-} from './accessAcceptanceLevel';
+import { entityHasHostedUndergraduates } from './accessAcceptanceLevel';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 import { syncEntity } from './meiliSyncService';
@@ -51,35 +46,6 @@ const entitiesHostingAffiliations = async (entityIds: any[]): Promise<Set<string
   return hosting;
 };
 
-const accessSignalsByEntityId = async (
-  entityIds: any[],
-): Promise<Map<string, AccessSignalConfidenceInput[]>> => {
-  if (entityIds.length === 0) return new Map();
-  const signals = await Signal.find({
-    researchEntityId: { $in: entityIds },
-    type: { $in: ACCESS_SIGNAL_TYPES },
-    archived: { $ne: true },
-  })
-    .select('researchEntityId type confidence confidenceScore derivationKey source.excerpt')
-    .lean();
-  const byId = new Map<string, AccessSignalConfidenceInput[]>();
-  for (const signal of signals as any[]) {
-    const key = browseRankDocumentId(signal.researchEntityId);
-    if (!key || !signal.type) continue;
-    byId.set(key, [
-      ...(byId.get(key) || []),
-      {
-        type: String(signal.type),
-        confidence: signal.confidence,
-        confidenceScore: signal.confidenceScore,
-        derivationKey: signal.derivationKey,
-        excerpt: signal.source?.excerpt,
-      },
-    ]);
-  }
-  return byId;
-};
-
 export interface RecomputeBrowseRankOptions {
   /** When true, compute and report but do not write to Mongo or Meilisearch. */
   dryRun?: boolean;
@@ -96,7 +62,7 @@ export interface RecomputeBrowseRankResult {
 
 /**
  * Recompute browseRankScore for the given entity ids (loaded with their lead
- * members and active access signals), persist, and re-sync to Meilisearch.
+ * members), persist, and re-sync to Meilisearch.
  */
 export async function recomputeBrowseRankForEntities(
   entityIds: any[],
@@ -110,9 +76,8 @@ export async function recomputeBrowseRankForEntities(
 
   const entities = (await ResearchEntity.find({ _id: { $in: entityIds } }).lean()) as any[];
   const ids = entities.map((entity) => entity._id);
-  const [leadMembers, accessSignals, hostingAffiliations] = await Promise.all([
+  const [leadMembers, hostingAffiliations] = await Promise.all([
     leadMembersByEntityId(ids),
-    accessSignalsByEntityId(ids),
     entitiesHostingAffiliations(ids),
   ]);
 
@@ -121,14 +86,13 @@ export async function recomputeBrowseRankForEntities(
   for (const entity of entities) {
     const id = browseRankDocumentId(entity._id);
     if (!id) continue;
-    const entitySignals = accessSignals.get(id) || [];
     const score = computeResearchEntityBrowseRank({
       entity,
       leadMembers: leadMembers.get(id) || [],
       hostsAffiliatedResearchHomes: hostingAffiliations.has(id),
     });
     scoresByEntityId.set(id, score);
-    const undergradHostingEvidence = hasUndergradHostingEvidenceFromSignals(entitySignals);
+    const undergradHostingEvidence = entityHasHostedUndergraduates(entity);
 
     const scoreUnchanged = (entity.browseRankScore ?? 0) === score;
     const hostingUnchanged =

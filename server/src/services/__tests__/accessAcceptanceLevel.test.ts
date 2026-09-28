@@ -6,8 +6,6 @@ import {
   ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY,
   canonicalAcceptanceLevelFromSignals,
   entityHasHostedUndergraduates,
-  hasPastUndergradAdvisees,
-  hasUndergradHostingEvidenceFromSignals,
 } from '../accessAcceptanceLevel';
 
 describe('accessAcceptanceLevel', () => {
@@ -106,44 +104,25 @@ describe('accessAcceptanceLevel', () => {
   });
 });
 
-describe('hasUndergradHostingEvidenceFromSignals (#1054)', () => {
-  it('is true for past undergraduates in the lab (#3593)', () => {
-    expect(hasUndergradHostingEvidenceFromSignals([{ type: 'PAST_UNDERGRADS' }])).toBe(true);
-  });
-
-  it('holds out stored current counts and treats student projects as a separate claim (#3593)', () => {
-    expect(hasUndergradHostingEvidenceFromSignals([{ type: 'CURRENT_UNDERGRADS' }])).toBe(false);
+describe('entityHasHostedUndergraduates (#3593)', () => {
+  it('is true for a row with past undergraduate advisees', () => {
     expect(
-      hasUndergradHostingEvidenceFromSignals([{ type: 'FACULTY_SUPERVISES_STUDENT_PROJECTS' }]),
-    ).toBe(false);
-  });
-
-  it('agrees with the row-level predicate the serving path reads, on the field that mints the signal', () => {
-    for (const pastUndergradAdvisees of [
-      undefined,
-      [],
-      [{ name: 'Synthetic Advisee', count: 0 }],
-      [{ name: 'Synthetic Advisee', count: 2 }],
-      [{ name: 'Synthetic Advisee' }],
-    ]) {
-      const signals = hasPastUndergradAdvisees(pastUndergradAdvisees)
-        ? [{ type: 'PAST_UNDERGRADS' }]
-        : [];
-      expect(entityHasHostedUndergraduates({ pastUndergradAdvisees })).toBe(
-        hasUndergradHostingEvidenceFromSignals(signals),
-      );
-    }
-  });
-
-  it('is false for generic outreach signals that only lift the broad acceptance tier', () => {
-    expect(hasUndergradHostingEvidenceFromSignals([])).toBe(false);
+      entityHasHostedUndergraduates({
+        pastUndergradAdvisees: [{ name: 'Synthetic Advisee', count: 2 }],
+      }),
+    ).toBe(true);
     expect(
-      hasUndergradHostingEvidenceFromSignals([
-        { type: 'REACH_OUT_PLAUSIBLE' },
-        { type: 'CONTACT_INSTRUCTIONS_EXIST' },
-        { type: 'APPLICATION_FORM_EXISTS' },
-        { type: 'NOT_CURRENTLY_AVAILABLE' },
-      ]),
+      entityHasHostedUndergraduates({ pastUndergradAdvisees: [{ name: 'Synthetic Advisee' }] }),
+    ).toBe(true);
+  });
+
+  it('is false with no advisees or only zero counts', () => {
+    expect(entityHasHostedUndergraduates({})).toBe(false);
+    expect(entityHasHostedUndergraduates({ pastUndergradAdvisees: [] })).toBe(false);
+    expect(
+      entityHasHostedUndergraduates({
+        pastUndergradAdvisees: [{ name: 'Synthetic Advisee', count: 0 }],
+      }),
     ).toBe(false);
   });
 });
