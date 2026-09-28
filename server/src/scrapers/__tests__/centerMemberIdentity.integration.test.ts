@@ -90,7 +90,9 @@ const fetcherFor =
     return html;
   };
 
-const profilePage = (options: { canonical?: string; email?: string; netid?: string } = {}) => {
+const profilePage = (
+  options: { canonical?: string; email?: string; netid?: string; links?: string[] } = {},
+) => {
   const head = options.canonical ? `<link rel="canonical" href="${options.canonical}">` : '';
   const jsonLd = options.netid
     ? `<script type="application/ld+json">${JSON.stringify({
@@ -99,7 +101,8 @@ const profilePage = (options: { canonical?: string; email?: string; netid?: stri
       })}</script>`
     : '';
   const mail = options.email ? `<a href="mailto:${options.email}">Email</a>` : '';
-  return `<html><head>${head}${jsonLd}</head><body><h1>Profile</h1>${mail}</body></html>`;
+  const links = (options.links ?? []).map((href) => `<a href="${href}">Related</a>`).join('');
+  return `<html><head>${head}${jsonLd}</head><body><h1>Profile</h1>${mail}${links}</body></html>`;
 };
 
 const afterAMoment = () => new Promise((resolve) => setTimeout(resolve, 5));
@@ -286,6 +289,37 @@ describe(
       });
       const served = await servedNames();
       expect(served.filter((name) => name === 'Avery Synthetic')).toHaveLength(1);
+    });
+
+    it('keeps resolving the listing after its page gains a link between reads', async () => {
+      const avery = await accountHolder('Avery', { officialUrl: officialProfileUrl('Avery') });
+      const stale = await edgeOn(avery, 'CORE_FACULTY');
+
+      await runLane({
+        [centerProfileUrl('Avery')]: profilePage({ canonical: officialProfileUrl('Avery') }),
+      });
+      const firstObservedAt = (await edgeById(stale))?.rosterProvenance?.observedAt;
+
+      await runLane({
+        [centerProfileUrl('Avery')]: profilePage({
+          canonical: officialProfileUrl('Avery'),
+          links: [officialProfileUrl('Blair')],
+        }),
+      });
+
+      expect(await researchersNamed('Avery')).toBe(1);
+      const edges = await liveEdgesOf(avery);
+      expect(edges.map((row) => String(row._id))).toEqual([String(stale)]);
+      expect(edges[0].rosterProvenance?.identityBasis).toBe('identity-evidence');
+      expect(new Date(edges[0].rosterProvenance.observedAt).getTime()).toBeGreaterThan(
+        new Date(firstObservedAt).getTime(),
+      );
+      expect(
+        await Observation.countDocuments({
+          field: 'profileIdentityEvidence',
+          superseded: { $ne: true },
+        }),
+      ).toBe(1);
     });
 
     it("joins the listing through the member's own Yale email", async () => {
