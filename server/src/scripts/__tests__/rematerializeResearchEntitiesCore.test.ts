@@ -15,8 +15,13 @@ import {
   provenanceReconciliationChanges,
   slugsCarryingUnbackedProvenance,
   rematerializeChangeAffectsVisibilityGate,
+  rematerializeComparedFields,
+  rematerializeEntityReportFromChanges,
   rematerializeFailureMessage,
+  rematerializeReportedChanges,
   rematerializeSkipReasonForEntity,
+  rematerializeStateAfterPlan,
+  summarizeRematerializeEntities,
   researchEntityFieldIsStranded,
   selectRematerializeRegateEntityIds,
 } from '../rematerializeResearchEntitiesCore';
@@ -582,5 +587,101 @@ describe('the foreign-contact cohort (#3609)', () => {
     );
 
     expect(cohort.size).toBe(0);
+  });
+});
+
+describe('the change set covers every field the run may write (#3822)', () => {
+  const syntheticEmail = 'synthetic-coordinator@example.edu';
+  const syntheticName = 'Synthetic Coordinator';
+  const stored = { name: 'Example Lab', contactEmail: syntheticEmail, contactName: syntheticName };
+  const comparedFields = rematerializeComparedFields([]);
+
+  it('compares the contact fields a run can write and the fields a scope names', () => {
+    for (const field of ['contactEmail', 'contactName', 'contactRole']) {
+      expect(comparedFields).toContain(field);
+    }
+    expect(rematerializeComparedFields(['location'])).toContain('location');
+    expect(new Set(comparedFields).size).toBe(comparedFields.length);
+  });
+
+  it('counts a --foreign-contact apply that clears one field as one changed entity', () => {
+    const afterReload = { name: 'Example Lab', contactName: syntheticName };
+    const report = rematerializeEntityReportFromChanges({
+      slug: 'example-lab',
+      entityId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+      materializerFieldsWritten: 1,
+      changes: rematerializeReportedChanges(stored, afterReload, comparedFields),
+      foreignContact: true,
+    });
+
+    expect(report.changes).toEqual([{ field: 'contactEmail', withheld: 'cleared' }]);
+    expect(report.clearedContactFields).toEqual(['contactEmail']);
+    expect(report.fieldsWritten).toBe(1);
+    expect(summarizeRematerializeEntities([report], { foreignContact: true })).toEqual({
+      entitiesChanged: 1,
+      fieldsWritten: 1,
+      clearedContactFields: 1,
+    });
+    expect(selectRematerializeRegateEntityIds([report])).toEqual(['aaaaaaaaaaaaaaaaaaaaaaaa']);
+  });
+
+  it('never prints a contact value into the report, whether the field was cleared or replaced', () => {
+    const changes = rematerializeReportedChanges(
+      stored,
+      { name: 'Example Lab', contactName: 'Replacement Coordinator', contactRole: 'Lab Manager' },
+      comparedFields,
+    );
+    const report = rematerializeEntityReportFromChanges({
+      slug: 'example-lab',
+      changes,
+      foreignContact: true,
+    });
+    const serialized = JSON.stringify(report);
+
+    expect(changes).toEqual([
+      { field: 'contactEmail', withheld: 'cleared' },
+      { field: 'contactName', withheld: 'replaced' },
+      { field: 'contactRole', withheld: 'set' },
+    ]);
+    expect(report.clearedContactFields).toEqual(['contactEmail']);
+    for (const value of [syntheticEmail, syntheticName, 'Replacement Coordinator', 'Lab Manager']) {
+      expect(serialized).not.toContain(value);
+    }
+  });
+
+  it('reports the same changes for a dry run and for the apply that performs its plan', () => {
+    const before = { ...stored, websiteUrl: 'https://example.org/lab' };
+    const fields = rematerializeComparedFields([]);
+    const planned = rematerializeStateAfterPlan(
+      before,
+      { name: 'Example Research Lab' },
+      { websiteUrl: '', contactEmail: '' },
+      fields,
+    );
+    const reloadedAfterApply = { name: 'Example Research Lab', contactName: syntheticName };
+
+    const dryRun = rematerializeReportedChanges(before, planned, fields);
+    expect(rematerializeReportedChanges(before, reloadedAfterApply, fields)).toEqual(dryRun);
+    expect(dryRun).toEqual([
+      { field: 'name', before: 'Example Lab', after: 'Example Research Lab' },
+      { field: 'websiteUrl', before: 'https://example.org/lab', after: undefined },
+      { field: 'contactEmail', withheld: 'cleared' },
+    ]);
+  });
+
+  it('counts an entity with no measured change as unchanged whatever the materializer planned', () => {
+    const report = rematerializeEntityReportFromChanges({
+      slug: 'example-lab',
+      materializerFieldsWritten: 2,
+      changes: rematerializeReportedChanges(stored, stored, comparedFields),
+      foreignContact: true,
+    });
+    expect(report.fieldsWritten).toBe(0);
+    expect(report.materializerFieldsWritten).toBe(2);
+    expect(summarizeRematerializeEntities([report], { foreignContact: true })).toEqual({
+      entitiesChanged: 0,
+      fieldsWritten: 0,
+      clearedContactFields: 0,
+    });
   });
 });

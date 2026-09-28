@@ -259,6 +259,87 @@ function valuesEqual(left: unknown, right: unknown): boolean {
   );
 }
 
+/**
+ * A contact value is withheld from every served payload, and this report is written to
+ * files an operator pastes around, so a contact change is recorded by field name and
+ * direction and never by value.
+ */
+export interface RematerializeWithheldFieldChange {
+  field: string;
+  withheld: 'set' | 'replaced' | 'cleared';
+}
+
+export type RematerializeReportedChange =
+  | RematerializeFieldChange
+  | RematerializeWithheldFieldChange;
+
+function isWithheldChange(
+  change: RematerializeReportedChange,
+): change is RematerializeWithheldFieldChange {
+  return 'withheld' in change;
+}
+
+/**
+ * Every field the run may write, so a write outside the tracked list cannot read as no
+ * change (#3822). The contact fields are always compared because an unscoped pass can
+ * write them too; their values never reach the report.
+ */
+export function rematerializeComparedFields(writeOnlyFields: readonly string[]): string[] {
+  return Array.from(
+    new Set([
+      ...REMATERIALIZE_TRACKED_FIELDS,
+      ...writeOnlyFields,
+      ...RESEARCH_ENTITY_CONTACT_FIELDS,
+    ]),
+  );
+}
+
+/**
+ * The row a dry run's plan would leave, in the same shape an apply re-reads, so the
+ * two modes diff the same way. A re-read omits an unset field, which is why the apply
+ * side must not fall back to the stored value for an absent key.
+ */
+export function rematerializeStateAfterPlan(
+  before: Record<string, unknown>,
+  plannedSet: Record<string, unknown>,
+  plannedUnset: Record<string, unknown>,
+  fields: readonly string[],
+): Record<string, unknown> {
+  const after: Record<string, unknown> = {};
+  for (const field of fields) {
+    if (Object.prototype.hasOwnProperty.call(plannedUnset, field)) continue;
+    const value = Object.prototype.hasOwnProperty.call(plannedSet, field)
+      ? plannedSet[field]
+      : before[field];
+    if (value !== undefined) after[field] = value;
+  }
+  return after;
+}
+
+export function rematerializeReportedChanges(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  fields: readonly string[],
+): RematerializeReportedChange[] {
+  const changes: RematerializeReportedChange[] = [];
+  for (const field of fields) {
+    const beforeValue = before[field];
+    const afterValue = after[field];
+    if (valuesEqual(beforeValue, afterValue)) continue;
+    if (RESEARCH_ENTITY_CONTACT_FIELDS.includes(field)) {
+      const withheld = researchEntityFieldIsStranded(afterValue)
+        ? 'cleared'
+        : researchEntityFieldIsStranded(beforeValue)
+          ? 'set'
+          : 'replaced';
+      changes.push({ field, withheld });
+      continue;
+    }
+    changes.push({ field, before: beforeValue, after: afterValue });
+  }
+  return changes;
+}
+
 export function buildRematerializeFieldChanges(
   before: Record<string, unknown>,
   plannedSet: Record<string, unknown>,
@@ -379,13 +460,13 @@ export function provenanceReconciliationChanges(
 }
 
 export function countProvenanceReconciliation(
-  entities: ReadonlyArray<{ changes: RematerializeFieldChange[] }>,
+  entities: ReadonlyArray<{ changes: RematerializeReportedChange[] }>,
 ): { retired: number; relinked: number } {
   let retired = 0;
   let relinked = 0;
   for (const entity of entities) {
     for (const change of entity.changes) {
-      if (!change.field.startsWith('fieldProvenance.')) continue;
+      if (isWithheldChange(change) || !change.field.startsWith('fieldProvenance.')) continue;
       if (change.after === undefined) retired += 1;
       else relinked += 1;
     }
@@ -394,7 +475,7 @@ export function countProvenanceReconciliation(
 }
 
 export function rematerializeChangeAffectsVisibilityGate(
-  changes: RematerializeFieldChange[],
+  changes: RematerializeReportedChange[],
 ): boolean {
   return changes.some((change) => change.field !== 'studentVisibilityTier');
 }
@@ -405,11 +486,66 @@ export interface RematerializeEntityReport {
   entityId?: string;
   studentVisibilityTierBefore?: unknown;
   fieldsWritten?: number;
+  materializerFieldsWritten?: number;
   conflicts?: number;
-  changes: RematerializeFieldChange[];
+  changes: RematerializeReportedChange[];
   clearedContactFields?: string[];
   skipped?: string;
   error?: string;
+}
+
+/**
+ * `fieldsWritten` and `clearedContactFields` are read off `changes`, the same list
+ * `entitiesChanged` counts, so the three cannot disagree. The materializer's own count
+ * is kept apart because it also counts a planned value equal to the stored one.
+ */
+export function rematerializeEntityReportFromChanges(input: {
+  slug: string;
+  entityId?: string;
+  studentVisibilityTierBefore?: unknown;
+  materializerFieldsWritten?: number;
+  conflicts?: number;
+  changes: RematerializeReportedChange[];
+  foreignContact: boolean;
+  skipped?: string;
+}): RematerializeEntityReport {
+  return {
+    slug: input.slug,
+    found: true,
+    entityId: input.entityId,
+    studentVisibilityTierBefore: input.studentVisibilityTierBefore,
+    fieldsWritten: input.changes.length,
+    materializerFieldsWritten: input.materializerFieldsWritten,
+    conflicts: input.conflicts,
+    changes: input.changes,
+    ...(input.foreignContact
+      ? {
+          clearedContactFields: input.changes
+            .filter((change) => isWithheldChange(change) && change.withheld === 'cleared')
+            .map((change) => change.field),
+        }
+      : {}),
+    skipped: input.skipped,
+  };
+}
+
+export function summarizeRematerializeEntities(
+  entities: readonly RematerializeEntityReport[],
+  options: { foreignContact: boolean },
+): { entitiesChanged: number; fieldsWritten: number; clearedContactFields?: number } {
+  let entitiesChanged = 0;
+  let fieldsWritten = 0;
+  let clearedContactFields = 0;
+  for (const entity of entities) {
+    if (entity.changes.length > 0) entitiesChanged += 1;
+    fieldsWritten += entity.changes.length;
+    clearedContactFields += entity.clearedContactFields?.length ?? 0;
+  }
+  return {
+    entitiesChanged,
+    fieldsWritten,
+    ...(options.foreignContact ? { clearedContactFields } : {}),
+  };
 }
 
 /**
@@ -466,7 +602,7 @@ export interface RematerializeRegateCandidate {
   entityId?: string;
   found: boolean;
   skipped?: string;
-  changes: RematerializeFieldChange[];
+  changes: RematerializeReportedChange[];
 }
 
 export function selectRematerializeRegateEntityIds(
