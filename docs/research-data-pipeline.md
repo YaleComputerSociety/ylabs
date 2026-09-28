@@ -771,6 +771,17 @@ Before that clear runs against stored rows, `data:find-lab-websites --reverify-s
 Measured on Development on 2026-09-27: 18 live rows stored a `websiteUrl` no active observation, loser observation or citation backs; 9 carried the unsourced-provenance shape, the lane's judge adopted 8 of them, and a whole-corpus dry-run projection changed exactly those 9 served values and no other.
 Five more were a `centers-institutes-index` roster page asserted as `websiteUrl` and refused by the write gate, which left an earlier landing page standing with nothing behind it; that lane now emits a declared `homeUrl` and never a refused crawl URL.
 
+The same shape on any other field is handled by attribution rather than by value (#3769).
+The model refuses to persist a `fieldProvenance` entry that carries no `observationId` unless its source is listed in `NON_OBSERVATION_PROVENANCE_AUTHORITIES` (`models/fieldProvenanceBacking.ts`), on every Mongoose write path: `updateOne`, `updateMany`, `findOneAndUpdate`, `replaceOne`, `findOneAndReplace`, `save`, `insertMany` and `bulkWrite`.
+The only listed authority is `description-derived-research-area`, which the materializer recomputes from the row's own description on every resolve.
+`$unset` and a subpath repoint of `sourceUrl` author no attribution and are allowed.
+For stored residue, `planNeverBackedFieldProvenanceRetirement` (`scrapers/neverBackedFieldProvenance.ts`) runs at the end of `projectFromLog` and unsets an entry that names a lane, carries neither `observationId` nor `sourceId`, is not a listed authority, sits on no locked field, and whose lane has no observation of that field on the row at all, live or superseded.
+It clears the attribution and never the value: the value stays exactly as evidenced, which is by nothing, and a later lane observation re-attributes it through the normal projection.
+Everything else is history and is kept: an `observationId` that resolves to a superseded observation or to nothing (a pruned one), a bare `sourceId` (the #2897 residue), and an unrecorded-id entry whose lane really did observe the field.
+It needs no lock and a second pass plans nothing, so it is a derivation rather than a repair.
+It cannot reach a row with no live observation, since `materializeEntity` returns before projecting one; measured on Development on 2026-09-28 that was 6 entries.
+For rows no sweep re-materializes, `yarn --cwd server research-entity:rematerialize --unbacked-provenance [--include-archived]` selects every row carrying such an entry by predicate and runs the materializer with `onlyRetireNeverBackedProvenance`, which writes the provenance unsets and nothing else, then re-gates the rows it changed; it is dry-run by default and `--apply --confirm-rematerialize` is Development-only.
+
 Measured on Development on 2026-09-23, and it corrects a root cause recorded elsewhere as "merged but inert, because no source asserts absence" (#3135).
 Absence is asserted: 90 live observations carry a non-empty `assertsNoValueFor`.
 What has never happened is a retraction, of which there have been zero.
@@ -846,6 +857,8 @@ In every case exactly one current lead (PI or director) must resolve to a single
 Only the school half additionally requires that the department's parent chain reaches a school; `department-only` does not, because the department is the field the row is missing and an unmapped parent should not withhold it.
 In `department-only` mode the row's own `school` and `schools[]` are deleted from the update before the write, because `applyResearchEntityOrgUnitCanonicalization` derives a parent school from the department it just set: without that guard a School of the Environment row whose PI is appointed in Genetics would be rewritten to School of Medicine.
 The write goes through `applyResearchEntityOrgUnitCanonicalization` and records `fieldProvenance`/`confidenceByField` for whichever of `school` and `departments` it actually set, under `lead-pi-school-inheritance`, so an inherited value is attributable in admin and audit surfaces and still loses to a real roster observation.
+Evidence comes first: the step appends a `lead-pi-school-inheritance` observation for each inherited field, writes the value only when a live observation of that exact value exists, and records that observation's `observationId` and `sourceId` in the provenance entry.
+When the observation cannot be recorded (an unseeded environment, or `appendObservations` refusing it) the step writes nothing at all, because a value written anyway is the unbacked attribution #3769 found 142 stored entries of.
 It honors `manuallyLockedFields`, never overwrites an existing school, `schools[]`, or `departments[]`, and skips the multi-PI org kinds (`center`/`institute`/`program`) so one director can never guess a whole cross-school center's school.
 It fails closed on every other outcome (locked, both facets already present, ambiguous or missing lead, no department, or a department that does not canonicalize), so a wrong value is never guessed.
 Because this is a materialize-time step rather than a repair script, re-running the engine reapplies it instead of erasing it, and it reaches rows that do not exist yet.

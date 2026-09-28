@@ -7,6 +7,7 @@ import {
   defineCanonicalSchemaVersion,
 } from './canonicalSchemaVersion';
 import { archiveAttributionFields } from './entityArchival';
+import { registerFieldProvenanceBackingGuard } from './fieldProvenanceBacking';
 import {
   fieldLockProvenanceSchema,
   fieldProvenanceSchema,
@@ -522,6 +523,8 @@ researchEntitySchema.index({ offersIndependentStudy: 1 });
 researchEntitySchema.index({ studentVisibilityTier: 1, archived: 1 });
 researchEntitySchema.index({ studentVisibilityComputedAt: -1 });
 researchEntitySchema.index({ studentVisibilityEvaluatedAt: -1 });
+
+registerFieldProvenanceBackingGuard(researchEntitySchema);
 
 export const ResearchEntity =
   mongoose.models.ResearchEntity ||

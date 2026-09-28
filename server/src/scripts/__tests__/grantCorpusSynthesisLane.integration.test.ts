@@ -28,6 +28,7 @@ import {
   type CoverageSynthesisLLMFn,
 } from '../../scrapers/coverageSynthesis';
 import {
+  LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
   materializeEntity,
   materializationReadScopeFilter,
 } from '../../scrapers/entityMaterializer';
@@ -250,6 +251,11 @@ describe('grant-corpus research synthesis + PI-to-school inheritance lane (#2158
         defaultWeight: GRANT_CORPUS_DESCRIPTION_CONFIDENCE,
       },
       { name: 'nih-reporter', displayName: 'NIH RePORTER', defaultWeight: 0.8 },
+      {
+        name: LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
+        displayName: 'Lead PI school inheritance',
+        defaultWeight: 0.6,
+      },
       {
         name: 'lab-microsite-description-llm',
         displayName: 'Lab microsite description LLM',

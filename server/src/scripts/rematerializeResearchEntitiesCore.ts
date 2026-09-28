@@ -1,3 +1,7 @@
+import {
+  fieldProvenanceEntries,
+  fieldProvenanceEntryNamesALaneWithoutEvidence,
+} from '../models/fieldProvenanceBacking';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 export interface RematerializeResearchEntitiesArgs {
@@ -5,6 +9,7 @@ export interface RematerializeResearchEntitiesArgs {
   apply: boolean;
   confirmRematerialize: boolean;
   reclaimStrandedField?: string;
+  unbackedProvenance: boolean;
   onlyFields: string[];
   includeArchived: boolean;
   output?: string;
@@ -111,6 +116,7 @@ export function parseRematerializeResearchEntitiesArgs(
     slugs: [],
     apply: false,
     confirmRematerialize: false,
+    unbackedProvenance: false,
     onlyFields: [],
     includeArchived: false,
   };
@@ -132,6 +138,10 @@ export function parseRematerializeResearchEntitiesArgs(
     }
     if (arg === '--include-archived') {
       args.includeArchived = true;
+      continue;
+    }
+    if (arg === '--unbacked-provenance') {
+      args.unbackedProvenance = true;
       continue;
     }
     if (arg.startsWith('--slugs=')) {
@@ -177,8 +187,11 @@ export function parseRematerializeResearchEntitiesArgs(
     throw new Error(`Unknown rematerialize argument: ${arg}`);
   }
 
-  if (!slugsProvided && !args.reclaimStrandedField) {
-    throw new Error('--slugs or --reclaim-stranded is required');
+  if (!slugsProvided && !args.reclaimStrandedField && !args.unbackedProvenance) {
+    throw new Error('--slugs, --reclaim-stranded or --unbacked-provenance is required');
+  }
+  if (args.unbackedProvenance && args.reclaimStrandedField) {
+    throw new Error('--unbacked-provenance writes provenance only, so it cannot reclaim a field');
   }
   // A reclaim run selects its cohort by one field being empty, and an unscoped
   // rematerialize over that cohort rewrites every tracked field - which is how a
@@ -245,6 +258,34 @@ export function buildRematerializeFieldChanges(
     }
   }
   return changes;
+}
+
+export function slugsCarryingUnbackedProvenance(
+  rows: ReadonlyArray<{ slug?: unknown; fieldProvenance?: unknown }>,
+): string[] {
+  const slugs = new Set<string>();
+  for (const row of rows) {
+    if (typeof row.slug !== 'string' || !row.slug) continue;
+    const unbacked = fieldProvenanceEntries(row.fieldProvenance).some(([, entry]) =>
+      fieldProvenanceEntryNamesALaneWithoutEvidence(entry),
+    );
+    if (unbacked) slugs.add(row.slug);
+  }
+  return Array.from(slugs).sort();
+}
+
+export function retiredProvenanceChanges(
+  before: unknown,
+  after: unknown,
+): RematerializeFieldChange[] {
+  const remaining = new Set(fieldProvenanceEntries(after).map(([field]) => field));
+  return fieldProvenanceEntries(before)
+    .filter(([field]) => !remaining.has(field))
+    .map(([field, entry]) => ({
+      field: `fieldProvenance.${field}`,
+      before: (entry as { sourceName?: unknown } | null)?.sourceName ?? null,
+      after: undefined,
+    }));
 }
 
 export function rematerializeChangeAffectsVisibilityGate(

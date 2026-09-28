@@ -116,8 +116,16 @@ describe("an eponymous lab's own site supplies the lead it was held for (#1930)"
       websiteUrl: RESEARCH_HOME,
       sourceUrls: [RESEARCH_HOME],
       fieldProvenance: {
-        shortDescription: { sourceName: 'lab-microsite-description', sourceUrl: RESEARCH_HOME },
-        fullDescription: { sourceName: 'lab-microsite-description', sourceUrl: RESEARCH_HOME },
+        shortDescription: {
+          sourceName: 'lab-microsite-description',
+          sourceUrl: RESEARCH_HOME,
+          observationId: new mongoose.Types.ObjectId(),
+        },
+        fullDescription: {
+          sourceName: 'lab-microsite-description',
+          sourceUrl: RESEARCH_HOME,
+          observationId: new mongoose.Types.ObjectId(),
+        },
       },
     });
     entityId = entity._id as mongoose.Types.ObjectId;

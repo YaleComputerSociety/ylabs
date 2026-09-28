@@ -73,8 +73,9 @@ describe('a websiteUrl written without evidence clears on materialize (#3586)', 
     });
   };
 
+  // Inserted past the model on purpose: this is the stored shape the model now refuses to write (#3769).
   const seedRow = async (fields: Record<string, unknown> = {}) => {
-    const row = await ResearchEntity.create({
+    const { insertedId } = await ResearchEntity.collection.insertOne({
       slug: SLUG,
       name: 'Synthetic Member Research',
       kind: 'individual',
@@ -94,7 +95,7 @@ describe('a websiteUrl written without evidence clears on materialize (#3586)', 
     });
     await seedObservation('name', 'Synthetic Member Research', 'dept-faculty-roster');
     await seedObservation('sourceUrls', [PROFILE_URL], 'dept-faculty-roster');
-    return row;
+    return { _id: insertedId as mongoose.Types.ObjectId };
   };
 
   const storedWebsiteUrl = async (id: mongoose.Types.ObjectId) =>
