@@ -214,6 +214,7 @@ describe('title-derived center leadership', () => {
       'core-faculty',
     );
     expect(roleFor('Former Director of the Alpha Foundation')).toBe('core-faculty');
+    expect(roleFor('Former Alpha Foundation Research Director')).toBe('core-faculty');
   });
 
   it('does not make the director of another unit a lead of this one', () => {

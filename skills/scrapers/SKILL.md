@@ -773,7 +773,7 @@ Mint it through a `DEFAULT_CENTER_CONFIGS` row in `centersInstitutesScraper.ts` 
 The rule exists because the Cowles config once crawled another center's roster on `egc.yale.edu` and attributed every member to the Cowles row (#3703); with no declared home there was nothing to compare against, so an undeclared home is refused too.
 A roster genuinely published by a partner site goes in `sharedRosterSite` with a non-empty `reason`, never by pointing `url` at the other host.
 - On a shared professional-title theme (the economics `node-teaser` theme) a title lists every directorship the person holds or held, so `inferRole` only reads a director clause that is current and names this center or no unit at all: a "former" or emeritus directorship, a year range that has already ended, a DGS or DUS post, and "Director of" or "Director, <unit>" naming another unit stay roster members.
-Measured on the Cowles roster, 14 of the 16 title-derived leads were one of those.
+Measured on the Cowles roster, 15 of the 16 director-titled members were one of those, leaving only the current director as a lead.
 - `extraSourceUrls` cites further pages of the center's own site, such as its mission page, as provenance.
 - On the shared YSM `profile-grid-item` theme use `profileGridLeadershipExtractor`.
 A leadership card there carries TWO title paragraphs, a unit-scoped role line ("Director", "Deputy Director") and then the person's full professional title; an ordinary roster card carries only the professional title.

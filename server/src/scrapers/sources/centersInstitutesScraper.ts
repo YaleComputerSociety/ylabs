@@ -352,7 +352,7 @@ function directorshipNamedUnit(clause: string): string | undefined {
   return commaUnit && ORGANIZATION_NOUN.test(commaUnit) ? commaUnit : undefined;
 }
 const FORMER_DIRECTORSHIP =
-  /\bformer(?:ly)?\s+(?:\S+\s+)?\S*director\b|\bdirector\s+emerit(?:us|a)\b|\bemerit(?:us|a)\s+\S*director\b/i;
+  /\bformer(?:ly)?\s+(?:\S+\s+){0,4}\S*director\b|\bdirector\s+emerit(?:us|a)\b|\bemerit(?:us|a)\s+\S*director\b/i;
 const CLOSED_YEAR_RANGE = /\b((?:19|20)\d{2})\s*[-\u2013\u2014]\s*((?:19|20)?\d{2})\b/g;
 
 function closedRangeEndYear(startText: string, endText: string): number {
