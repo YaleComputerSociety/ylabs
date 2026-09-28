@@ -140,7 +140,7 @@ The canary list is the sweep manifest, so a manual-only source is never canaried
 A sweep executes the code in its own checkout's working tree, never the code on `beta`.
 Every stage is spawned with `cwd` set to the repository root, so whatever `HEAD` is at the moment a stage launches is what that stage runs.
 
-`summary.json` records that commit as `codeSha`, which is the only thing that makes a stage's behaviour attributable after the fact.
+`summary.json` records that commit as `codeSha`, which makes a stage's behaviour attributable after the fact; each scrape run a stage writes also records its own `codeSha` (#3824).
 Read it rather than the merge time of a fix: a fix merged while a sweep is running reaches none of its stages, because nothing pulls the checkout mid-run.
 
 If the checkout moves during a run, each later stage is refused rather than spawned, and the refusal is recorded in `summary.json` as `codeDrift` naming both commits.
