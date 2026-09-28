@@ -1295,6 +1295,7 @@ export function planStoredCitationReadmission(input: {
   condemned: ReadonlySet<string>;
   entity: ResearchEntityHostOwnerIdentity;
   citationIdentity?: ResearchEntityIdentity | null;
+  sourceLinkHealth?: unknown;
 }): string[] | null {
   const stored = Array.isArray(input.stored)
     ? input.stored.filter((url): url is string => typeof url === 'string' && Boolean(url.trim()))
@@ -1302,6 +1303,7 @@ export function planStoredCitationReadmission(input: {
   // Nothing was going to be written, so there is nothing to shrink and nothing to restore.
   if (stored.length === 0 || !Array.isArray(input.planned)) return null;
   const planned = input.planned.filter((url): url is string => typeof url === 'string');
+  const plannedProfileDestinations = new Set(planned.map(normalizeOfficialProfileDestination));
   // Called without an identity on purpose, so only the URL-shape filter runs: the identity arm
   // would refuse a cross-school page the row legitimately cites, which is a retraction with no
   // positive reason (#2945).
@@ -1310,6 +1312,12 @@ export function planStoredCitationReadmission(input: {
     (url) =>
       !input.condemned.has(url) &&
       !planned.includes(url) &&
+      !(
+        isLikelyOfficialPersonProfileUrl(url) &&
+        plannedProfileDestinations.has(normalizeOfficialProfileDestination(url))
+      ) &&
+      !planned.some((next) => isRetiredProfilePathForSamePerson(url, next)) &&
+      !isKnownDeadSourceUrl(input.sourceLinkHealth, url) &&
       !isDirectoryGraftCitation(url, input.entity) &&
       !(
         input.citationIdentity &&
@@ -5649,7 +5657,10 @@ export async function projectFromLog(
       const leadProfileUrl = officialLeadProfileSourceUrl(
         materializationObs,
         entityDoc?.sourceLinkHealth,
-        currentSourceUrls,
+        [
+          ...currentSourceUrls,
+          ...(Array.isArray(entityDoc?.sourceUrls) ? (entityDoc?.sourceUrls as unknown[]) : []),
+        ],
         researchEntityIdentityWithCitationsThroughThisPass(
           sourceEntityIdentity,
           entityDoc?.sourceUrls,
@@ -5958,6 +5969,7 @@ export async function projectFromLog(
         entityDoc?.sourceUrls,
         Array.isArray(set.sourceUrls) ? (set.sourceUrls as unknown[]) : [],
       ),
+      sourceLinkHealth: entityDoc?.sourceLinkHealth,
     });
     if (readmittedCitations) {
       set.sourceUrls = readmittedCitations;

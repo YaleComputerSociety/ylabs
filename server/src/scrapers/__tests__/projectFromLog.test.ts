@@ -722,6 +722,80 @@ describe('projectFromLog', () => {
     expect(result.set.sourceUrls).toEqual([canonicalProfileUrl]);
   });
 
+  describe('when the resolver re-asserts only part of the stored list', () => {
+    const labSite = 'https://quimbylab.example.org/';
+    const retiredProfilePath = 'https://example-dept.yale.edu/people/haiqun-quimby/';
+    const canonicalProfileUrl = 'https://example-dept.yale.edu/profile/haiqun-quimby';
+    const projectWith = (options: {
+      stored: string[];
+      leadSourceUrl: string;
+      sourceLinkHealth?: unknown[];
+    }) =>
+      projectFromLog(
+        'researchEntity',
+        researchEntityInput({
+          resolved: {
+            name: resolvedField('Haiqun Quimby Lab'),
+            sourceUrls: resolvedField([labSite]),
+          },
+          materializationObs: [
+            {
+              field: 'inferredDirectorName',
+              value: 'Haiqun Quimby',
+              sourceUrl: options.leadSourceUrl,
+              confidence: 0.6,
+            },
+          ],
+          entityDoc: {
+            _id: 'f'.repeat(24),
+            kind: 'lab',
+            entityType: 'LAB',
+            slug: 'quimby-lab-hq249',
+            name: 'Haiqun Quimby Lab',
+            school: 'School of Medicine',
+            departments: ['Internal Medicine'],
+            sourceUrls: options.stored,
+            ...(options.sourceLinkHealth ? { sourceLinkHealth: options.sourceLinkHealth } : {}),
+            confidenceByField: {},
+          },
+        }),
+      );
+
+    it('does not hand back a retired profile path the lead profile supersedes', async () => {
+      const result = await projectWith({
+        stored: [labSite, retiredProfilePath],
+        leadSourceUrl: canonicalProfileUrl,
+      });
+      expect(result.set.sourceUrls).toEqual([labSite, canonicalProfileUrl]);
+    });
+
+    it('does not hand back a second spelling of the profile this pass minted', async () => {
+      const result = await projectWith({
+        stored: [labSite, `${canonicalProfileUrl}/`],
+        leadSourceUrl: canonicalProfileUrl,
+      });
+      expect(result.set.sourceUrls).toEqual([labSite, canonicalProfileUrl]);
+    });
+
+    it('does not mint a retired profile path beside the stored successor', async () => {
+      const result = await projectWith({
+        stored: [labSite, canonicalProfileUrl],
+        leadSourceUrl: retiredProfilePath,
+      });
+      expect(result.set.sourceUrls).toEqual([canonicalProfileUrl, labSite]);
+    });
+
+    it('does not hand back a stored citation the corpus knows is gone', async () => {
+      const goneGrantRecord = 'https://reporter.nih.gov/project-details/10000003';
+      const result = await projectWith({
+        stored: [labSite, goneGrantRecord],
+        leadSourceUrl: canonicalProfileUrl,
+        sourceLinkHealth: [{ url: goneGrantRecord, healthStatus: 'UNAVAILABLE' }],
+      });
+      expect(result.set.sourceUrls).toEqual([labSite, canonicalProfileUrl]);
+    });
+  });
+
   it('writes nothing new when the resolver staged no citation at all', async () => {
     const stored = 'https://reporter.nih.gov/project-details/10000002';
     const result = await projectFromLog(
