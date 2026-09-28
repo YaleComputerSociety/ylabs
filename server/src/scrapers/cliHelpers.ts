@@ -243,6 +243,10 @@ export function scrapeCliCompletionOutcome(input: {
     errors.push(
       `ScrapeRun ${input.runId} finished with status failure; read its errors with "yarn --cwd server scrape report --run ${input.runId}".`,
     );
+  } else if (input.runStatus === 'interrupted') {
+    errors.push(
+      `ScrapeRun ${input.runId} was interrupted before it finished, so its observations are incomplete; re-run the source rather than materializing this run.`,
+    );
   } else if (input.runStatus === 'partial') {
     warnings.push(
       `ScrapeRun ${input.runId} finished with status partial, so its coverage is incomplete; read its errors with "yarn --cwd server scrape report --run ${input.runId}".`,

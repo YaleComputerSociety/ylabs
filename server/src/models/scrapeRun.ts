@@ -5,6 +5,7 @@
  * tracks counts and errors, and supports rollback ("invalidate this run's observations").
  */
 import mongoose from 'mongoose';
+import { scrapeRunInterruptionReasons, scrapeRunStatuses } from './storedVocabularies';
 
 const scrapeRunSchema = new mongoose.Schema(
   {
@@ -33,8 +34,35 @@ const scrapeRunSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['running', 'success', 'failure', 'partial'],
+      enum: scrapeRunStatuses,
       default: 'running',
+    },
+    heartbeatAt: {
+      type: Date,
+      required: false,
+    },
+    owner: {
+      type: new mongoose.Schema(
+        {
+          host: String,
+          pid: Number,
+          lockOwnerId: String,
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
+    interruption: {
+      type: new mongoose.Schema(
+        {
+          reason: { type: String, enum: scrapeRunInterruptionReasons },
+          signal: String,
+          detectedAt: Date,
+          detectedBy: String,
+        },
+        { _id: false },
+      ),
+      default: undefined,
     },
     observationCount: {
       type: Number,

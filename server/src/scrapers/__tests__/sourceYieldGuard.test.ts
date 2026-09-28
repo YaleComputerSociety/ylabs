@@ -34,6 +34,7 @@ describe('classifyRunYield', () => {
 
   it('treats a still-running or invalidated run as inconclusive', () => {
     expect(classifyRunYield({ status: 'running', observationCount: 0 })).toBe('inconclusive');
+    expect(classifyRunYield({ status: 'interrupted', observationCount: 0 })).toBe('inconclusive');
     expect(classifyRunYield({ status: 'success', observationCount: 9, invalidated: true })).toBe(
       'inconclusive',
     );

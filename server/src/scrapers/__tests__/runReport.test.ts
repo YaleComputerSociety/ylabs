@@ -125,6 +125,36 @@ describe('buildScrapeRunReport', () => {
     );
   });
 
+  it('says whether a run still marked running is alive (#3595)', () => {
+    const report = (run: Record<string, unknown>) =>
+      buildScrapeRunReport(
+        {
+          _id: 'run-open',
+          sourceName: 'ysm-atoz-index',
+          status: 'running',
+          startedAt: new Date('2026-05-17T19:13:21Z'),
+          ...run,
+        },
+        [],
+      );
+
+    const legacy = report({});
+    expect(legacy.run.liveness).toBe('unverifiable');
+    expect(legacy.warnings.join(' ')).toContain('predates run heartbeats');
+
+    const stale = report({ heartbeatAt: new Date('2026-05-17T20:00:00Z') });
+    expect(stale.run.liveness).toBe('stale');
+    expect(stale.run.heartbeatAt).toBe('2026-05-17T20:00:00.000Z');
+    expect(stale.warnings.join(' ')).toContain('scrape-runs:reconcile-stale');
+
+    const interrupted = report({
+      status: 'interrupted',
+      finishedAt: new Date('2026-05-17T20:00:00Z'),
+    });
+    expect(interrupted.run).not.toHaveProperty('liveness');
+    expect(interrupted.warnings.join(' ')).toContain('interrupted');
+  });
+
   it('does not expect logistics claims from legacy microsite runs', () => {
     const report = buildScrapeRunReport(
       {

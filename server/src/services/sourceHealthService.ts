@@ -1,5 +1,6 @@
 import { isRetiredSourceName, scriptDrivenSourceOwner } from '../scrapers/sourceDispatch';
 import { sourceIsExpectedToRecur } from '../scrapers/sourceYieldGuard';
+import { classifyScrapeRunLiveness, isAbandonedScrapeRun } from '../scrapers/scrapeRunLiveness';
 import { serializedDocumentId } from '../utils/idSerialization';
 
 export type SourceHealthRisk = 'ok' | 'warn' | 'error';
@@ -29,6 +30,7 @@ export interface SourceHealthRunInput {
   status: string;
   startedAt?: Date | string;
   finishedAt?: Date | string;
+  heartbeatAt?: Date | string;
   observationCount?: number;
   materializationErrors?: number;
   materializationConflicts?: number;
@@ -49,7 +51,10 @@ export interface SourceHealthRow {
     success: number;
     partial: number;
     failure: number;
+    interrupted: number;
     running: number;
+    unverifiable: number;
+    abandoned: number;
   };
   latestRun?: {
     id: string;
@@ -144,7 +149,8 @@ function commandArg(value: string): string {
 
 function riskForSource(
   source: SourceHealthSourceInput,
-  latestRun?: SourceHealthRunInput,
+  latestRun: SourceHealthRunInput | undefined,
+  now: Date,
 ): {
   risk: SourceHealthRisk;
   action: string;
@@ -221,9 +227,31 @@ function riskForSource(
     };
   }
   if (latestRun.status === 'running') {
+    if (classifyScrapeRunLiveness(latestRun, now) === 'live') {
+      return {
+        risk: 'warn',
+        action: 'Latest run is in progress and heartbeating; read its report once it finishes.',
+      };
+    }
+    if (!isAbandonedScrapeRun(latestRun, now)) {
+      return {
+        risk: 'warn',
+        action:
+          'Latest run is marked running but predates run heartbeats, so it cannot be told apart from a live run; read its report once it finishes, or reconcile it after 72 hours.',
+      };
+    }
     return {
       risk: 'warn',
-      action: 'Latest run is still marked running; verify it is not stale.',
+      action:
+        'Latest run is marked running but no process is heartbeating it, so it was abandoned; close it with scrape-runs:reconcile-stale and rerun the source.',
+      nextCommand: RECONCILE_STALE_RUNS_COMMAND,
+    };
+  }
+  if (latestRun.status === 'interrupted') {
+    return {
+      risk: 'warn',
+      action: 'Latest run was interrupted before it finished; rerun the source.',
+      nextCommand: latestRunReportCommand,
     };
   }
   if ((latestRun.materializationErrors || 0) > 0) {
@@ -257,9 +285,12 @@ function riskForSource(
   };
 }
 
+const RECONCILE_STALE_RUNS_COMMAND = 'yarn --cwd server scrape-runs:reconcile-stale --dry-run';
+
 export function buildSourceHealthRows(
   sources: SourceHealthSourceInput[],
   runs: SourceHealthRunInput[],
+  now: Date = new Date(),
 ): SourceHealthRow[] {
   const runsBySource = new Map<string, SourceHealthRunInput[]>();
   for (const run of runs) {
@@ -281,7 +312,7 @@ export function buildSourceHealthRows(
     .map((source) => {
       const sourceRuns = runsBySource.get(source.name) || [];
       const latestRun = sourceRuns[0];
-      const risk = riskForSource(source, latestRun);
+      const risk = riskForSource(source, latestRun, now);
       const latestRunId = stringifyId(latestRun?._id);
 
       return {
@@ -298,7 +329,15 @@ export function buildSourceHealthRows(
           success: sourceRuns.filter((run) => run.status === 'success').length,
           partial: sourceRuns.filter((run) => run.status === 'partial').length,
           failure: sourceRuns.filter((run) => run.status === 'failure').length,
-          running: sourceRuns.filter((run) => run.status === 'running').length,
+          interrupted: sourceRuns.filter((run) => run.status === 'interrupted').length,
+          running: sourceRuns.filter((run) => classifyScrapeRunLiveness(run, now) === 'live')
+            .length,
+          unverifiable: sourceRuns.filter(
+            (run) =>
+              classifyScrapeRunLiveness(run, now) === 'unverifiable' &&
+              !isAbandonedScrapeRun(run, now),
+          ).length,
+          abandoned: sourceRuns.filter((run) => isAbandonedScrapeRun(run, now)).length,
         },
         latestRun: latestRun
           ? {

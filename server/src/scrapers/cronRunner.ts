@@ -128,6 +128,7 @@ export async function runScraperCron(
     const { runId: nextRunId, result: scrapeResult } = await deps.orchestrator.run(
       input.sourceName,
       runOptions,
+      { lockOwnerId: ownerId },
     );
     runId = nextRunId;
     const materializationResult = await deps.materializeFromRun(runId, { dryRun: false });
@@ -146,7 +147,8 @@ export async function runScraperCron(
       await deps.markSourceCrawled(input.sourceName, input.now ?? new Date());
     }
     const report = await deps.getScrapeRunReport(runId);
-    const exitCode = materializationResult.errors > 0 || report.run.status === 'failure' ? 1 : 0;
+    const exitCode =
+      materializationResult.errors > 0 || runStatusFailsTheJob(report.run.status) ? 1 : 0;
 
     await deps.releaseScrapeJobLock({
       environment: input.environment,
@@ -224,6 +226,10 @@ async function loadCronSource(
     name: (source as any).name,
     enabled: (source as any).enabled,
   };
+}
+
+function runStatusFailsTheJob(status: unknown): boolean {
+  return status === 'failure' || status === 'interrupted';
 }
 
 function createCronOwnerId(environment: ScraperEnvironment, sourceName: string): string {

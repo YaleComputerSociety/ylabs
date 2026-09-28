@@ -144,12 +144,16 @@ describe('runScraperCron', () => {
       deps,
     );
 
-    expect(deps.orchestrator.run).toHaveBeenCalledWith('openalex', {
-      dryRun: false,
-      useCache: false,
-      release: true,
-      triggeredBy: 'cron',
-    });
+    expect(deps.orchestrator.run).toHaveBeenCalledWith(
+      'openalex',
+      {
+        dryRun: false,
+        useCache: false,
+        release: true,
+        triggeredBy: 'cron',
+      },
+      { lockOwnerId: 'owner-1' },
+    );
     expect(deps.materializeFromRun).toHaveBeenCalledWith('run-1', { dryRun: false });
     expect(deps.reclaimInferredPiLeads).toHaveBeenCalledWith({ apply: true, scope: 'all' });
     expect(deps.runStudentVisibilityGate).toHaveBeenCalledWith({
@@ -241,6 +245,28 @@ describe('runScraperCron', () => {
     expect(deps.releaseScrapeJobLock).toHaveBeenCalledWith(
       expect.objectContaining({ releaseReason: 'failure', lastRunId: 'run-1' }),
     );
+  });
+
+  it('exits nonzero when the run was interrupted before it finished (#3595)', async () => {
+    const deps = makeDeps({
+      getScrapeRunReport: vi
+        .fn()
+        .mockResolvedValue({ run: { id: 'run-1', status: 'interrupted' } }),
+    });
+
+    const result = await runScraperCron(
+      {
+        sourceName: 'openalex',
+        environment: 'production',
+        options: { dryRun: false, useCache: false, release: true },
+        ownerId: 'owner-1',
+        now: NOW,
+        heartbeatIntervalMs: 0,
+      },
+      deps,
+    );
+
+    expect(result.exitCode).toBe(1);
   });
 
   it('completes the run when the inferred-PI lead reclaim throws', async () => {

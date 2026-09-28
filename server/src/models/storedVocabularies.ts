@@ -75,3 +75,19 @@ const LEGACY_FACULTY_RESEARCH_ENTITY_TYPE_SET: ReadonlySet<string> = new Set(
 export function isLegacyFacultyResearchEntityType(value?: string | null): boolean {
   return typeof value === 'string' && LEGACY_FACULTY_RESEARCH_ENTITY_TYPE_SET.has(value.trim());
 }
+
+export const scrapeRunStatuses = [
+  'running',
+  'success',
+  'failure',
+  'partial',
+  'interrupted',
+] as const;
+export type ScrapeRunStatus = (typeof scrapeRunStatuses)[number];
+
+export const scrapeRunInterruptionReasons = [
+  'signal',
+  'heartbeat_stale',
+  'legacy_abandoned',
+] as const;
+export type ScrapeRunInterruptionReason = (typeof scrapeRunInterruptionReasons)[number];
