@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { Account } from '../models/account';
 import { Researcher, isValidOrcid } from '../models/researcher';
 import {
+  isRosterIdentityBasis,
   RoleAssignment,
   roleAssignmentReattachWrite,
   type RoleAssignmentReviewStatus,
@@ -218,6 +219,7 @@ export interface CanonicalMemberIdentity {
   orcid?: unknown;
   displayName?: unknown;
   hasCanonicalSourceReference?: boolean;
+  resolvedPersonId?: mongoose.Types.ObjectId;
 }
 
 export interface CanonicalMemberFacts {
@@ -259,6 +261,9 @@ const cleanRosterProvenance = (
   if (freshnessExpiresAt) cleaned.freshnessExpiresAt = freshnessExpiresAt;
   const adoptedAt = coerceProvenanceDate(provenance.adoptedAt);
   if (adoptedAt) cleaned.adoptedAt = adoptedAt;
+  if (isRosterIdentityBasis(provenance.identityBasis)) {
+    cleaned.identityBasis = provenance.identityBasis;
+  }
   return Object.keys(cleaned).length > 0 ? cleaned : undefined;
 };
 
@@ -569,6 +574,41 @@ async function resolveOrCreateNameOnlyResearcherId(
   }
 }
 
+async function liveResearcherId(
+  personId: mongoose.Types.ObjectId | undefined,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  if (!personId) return undefined;
+  const live = await Researcher.findOne({ _id: personId, archived: { $ne: true } })
+    .select('_id')
+    .lean();
+  return toObjectId((live as { _id?: unknown } | null)?._id);
+}
+
+/**
+ * Whether a name-only mint under this display name would stand beside a researcher who
+ * already carries an identity (an account, a netid or an ORCID) under the same name.
+ *
+ * The comparison is the one the mint and the accountless-shell dedupe both make, the
+ * canonical display name compared without case or spacing, so the answer here is exactly
+ * whether the mint would produce a row that dedupe folds back by name (#3802).
+ */
+export async function identifiedResearcherHoldsDisplayName(displayName: unknown): Promise<boolean> {
+  const tokens = canonicalPersonName(trimmed(displayName)).split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+  const namesake = await Researcher.findOne({
+    displayName: new RegExp(`^\\s*${tokens.map(escapeRegex).join('\\s+')}\\s*$`, 'i'),
+    archived: { $ne: true },
+    $or: [
+      { accountId: { $exists: true, $ne: null } },
+      { 'identifiers.netid': { $exists: true, $nin: [null, ''] } },
+      { 'identifiers.orcid': { $exists: true, $nin: [null, ''] } },
+    ],
+  })
+    .select('_id')
+    .lean();
+  return Boolean(namesake);
+}
+
 export async function resolveOrCreateResearcherIdForIdentity(
   identity: CanonicalMemberIdentity,
 ): Promise<mongoose.Types.ObjectId | undefined> {
@@ -692,8 +732,9 @@ export async function writeCanonicalMembership(
   const reviewStatus = reviewStatusForLegacyMembership(facts, state, resolution);
 
   try {
-    const accountId = await resolveOrCreateAccountId(identity);
-    const personId = await resolveOrCreateResearcherId(identity, accountId);
+    const personId =
+      (await liveResearcherId(identity.resolvedPersonId)) ??
+      (await resolveOrCreateResearcherId(identity, await resolveOrCreateAccountId(identity)));
     if (!personId) return refused('refused-person');
 
     const upsert = buildCanonicalRoleAssignmentUpsert(personId, entityObjectId, facts.legacyRole, {

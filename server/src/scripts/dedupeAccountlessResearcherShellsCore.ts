@@ -1,3 +1,5 @@
+import { observedPersonNameAgreesWith } from '../scrapers/utils/personNameAgreement';
+
 export function normalizeResearcherName(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -122,12 +124,15 @@ export type ShellMergeReason =
   | 'ORCID_CONFLICT'
   | 'NETID_CONFLICT';
 
+export const SHELL_FOLD_IDENTITIES = ['netid', 'roster-identity', 'name'] as const;
+export type ShellFoldIdentity = (typeof SHELL_FOLD_IDENTITIES)[number];
+
 export interface ShellMergeDecision {
   merge: boolean;
   canonicalId?: string;
   reason: ShellMergeReason;
   /** Which identity decided the fold, so a netid fold cannot hide inside a name count. */
-  matchedOn?: 'netid' | 'name';
+  matchedOn?: ShellFoldIdentity;
 }
 
 export interface ShellIdentity extends ResearcherIdentityLike {
@@ -166,13 +171,58 @@ function decideNetidFold(
   return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'netid' };
 }
 
+export interface RosterIdentityCandidate extends CanonicalCandidate {
+  displayName?: unknown;
+}
+
+/**
+ * A roster lane that proved who a listing names (its profile URL, or a Yale profile URL,
+ * email or netid the listing's own page states) records that on the edge it writes as
+ * `rosterProvenance.identityBasis`. A shell that holds an edge under the same source and
+ * membership key on the same entity was minted for that same listing before the lane could
+ * prove it, so the listing itself joins the two rows (#3802). The name only vetoes, as it
+ * does for every identity join, and two agreeing holders resolve to nobody.
+ */
+function decideRosterIdentityFold(
+  shell: ShellIdentity,
+  rosterIdentityCandidates: ReadonlyArray<RosterIdentityCandidate>,
+): ShellMergeDecision | undefined {
+  const shellName = typeof shell.displayName === 'string' ? shell.displayName : '';
+  if (!shellName) return undefined;
+  const shellStrength = identityTierStrength(researcherIdentityTier(shell));
+  const agreeing = new Map<string, RosterIdentityCandidate>();
+  for (const candidate of rosterIdentityCandidates) {
+    if (candidate.id === shell.id) continue;
+    if (identityTierStrength(candidate.tier) <= shellStrength) continue;
+    if (!observedPersonNameAgreesWith(candidate.displayName, shellName)) continue;
+    agreeing.set(candidate.id, candidate);
+  }
+  if (agreeing.size === 0) return undefined;
+  if (agreeing.size > 1) {
+    return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn: 'roster-identity' };
+  }
+  const [target] = agreeing.values();
+  const shellOrcid = cleanOrcid(shell.orcid);
+  if (shellOrcid && target.orcid && shellOrcid !== target.orcid) {
+    return { merge: false, reason: 'ORCID_CONFLICT', matchedOn: 'roster-identity' };
+  }
+  const shellNetid = bareNetid(shell.netid);
+  if (shellNetid && target.netid && shellNetid !== target.netid) {
+    return { merge: false, reason: 'NETID_CONFLICT', matchedOn: 'roster-identity' };
+  }
+  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'roster-identity' };
+}
+
 export function decideShellMerge(
   shell: ShellIdentity,
   canonicalNameIndex: Map<string, CanonicalCandidate[]>,
   canonicalNetidIndex: Map<string, CanonicalCandidate[]> = new Map(),
+  rosterIdentityCandidates: ReadonlyArray<RosterIdentityCandidate> = [],
 ): ShellMergeDecision {
   const byNetid = decideNetidFold(shell, canonicalNetidIndex);
   if (byNetid) return byNetid;
+  const byRosterIdentity = decideRosterIdentityFold(shell, rosterIdentityCandidates);
+  if (byRosterIdentity) return byRosterIdentity;
 
   const name = normalizeResearcherName(shell.displayName);
   if (!name) return { merge: false, reason: 'NO_NAME' };
@@ -209,6 +259,23 @@ export interface RoleAssignmentEdge {
   targetKind?: unknown;
   targetId?: unknown;
   role?: unknown;
+}
+
+export interface RosterMembershipEdge {
+  personId?: unknown;
+  targetKind?: unknown;
+  targetId?: unknown;
+  sourceName?: unknown;
+  membershipKey?: unknown;
+}
+
+export function rosterMembershipEdgeKey(edge: RosterMembershipEdge): string | undefined {
+  const kind = typeof edge.targetKind === 'string' ? edge.targetKind : '';
+  const id = edge.targetId === undefined || edge.targetId === null ? '' : String(edge.targetId);
+  const source = typeof edge.sourceName === 'string' ? edge.sourceName.trim() : '';
+  const membershipKey = typeof edge.membershipKey === 'string' ? edge.membershipKey.trim() : '';
+  if (!kind || !id || !source || !membershipKey) return undefined;
+  return `${kind}::${id}::${source}::${membershipKey}`;
 }
 
 export function roleAssignmentEdgeKey(edge: RoleAssignmentEdge): string {

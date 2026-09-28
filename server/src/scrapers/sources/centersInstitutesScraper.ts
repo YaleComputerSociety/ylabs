@@ -13,8 +13,9 @@
  *     downstream tooling can join against User by name)
  *   - one ResearchGroupMember observation per member, keyed
  *     `center-<centerKey>:<member-slug>` with role 'core-faculty' (default) or
- *     'director' when the title clearly indicates leadership. The materializer
- *     can resolve the User by name (lname + fname) at write time.
+ *     'director' when the title clearly indicates leadership, plus the identity
+ *     evidence the member's own Yale profile page states. The materializer joins a
+ *     member to a researcher only through that evidence, never by name (#3802).
  *
  * Centers DO NOT have a single PI — they are intentionally many-to-many.
  *
@@ -34,6 +35,14 @@ import {
   type CenterRosterStopReason,
 } from '../centerRosterRetirement';
 import { officialProfileIdentityKey, rosterMembershipKey } from '../utils/rosterMembershipKey';
+import {
+  extractRosterMemberIdentityEvidence,
+  isYaleHostedUrl,
+  ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
+  type RosterMemberIdentityEvidence,
+} from '../utils/rosterMemberIdentityEvidence';
+import { mapWithConcurrency } from '../utils/mapWithConcurrency';
+import { fetchPageWithPolicy } from '../utils/httpFetch';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
@@ -64,6 +73,8 @@ const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_PAGES_PER_CENTER = 30;
 const CONSECUTIVE_REPEATED_PAGES_TO_STOP = 2;
+const MEMBER_PROFILE_FETCH_CONCURRENCY = 4;
+const MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX = 'member-identity-evidence:v1:';
 
 export type CenterKind = 'center' | 'institute' | 'program' | 'initiative';
 export type MemberRole = 'director' | 'co-director' | 'core-faculty' | 'affiliated';
@@ -74,6 +85,7 @@ export interface CenterMember {
   profileUrl?: string;
   title?: string;
   role?: MemberRole;
+  identityEvidence?: RosterMemberIdentityEvidence;
 }
 
 /** A child research entity discovered on a parent index page (Jackson School). */
@@ -1546,6 +1558,14 @@ function pageUrlForIndex(baseUrl: string, pageIndex: number): string {
   }
 }
 
+export type MemberPageFetcher = (url: string) => Promise<string>;
+
+// medicine.yale.edu answers a burst of member pages with 403, so these go through the shared
+// per-host limiter and its 403/429/5xx backoff rather than the roster fetch.
+async function fetchMemberProfilePage(url: string): Promise<string> {
+  return (await fetchPageWithPolicy(url, { timeoutMs: FETCH_TIMEOUT_MS })).html;
+}
+
 async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
@@ -1626,9 +1646,8 @@ export function centerToGroupObservations(
 /**
  * Build the ResearchGroupMember observation set for one member.
  *
- * The materializer resolves the `inferredUserName` (lname + fname) into a
- * userId at write time. We deliberately keep the join logic out of the scraper
- * — extractors stay pure and the Yale-name → User mapping lives in one place.
+ * The materializer decides who the member is from the profile URL and the page's
+ * identity evidence; the join logic stays out of the scraper so extractors stay pure.
  */
 export function memberToObservations(
   member: CenterMember,
@@ -1665,6 +1684,13 @@ export function memberObservationsForEntityKey(
   }
   if (member.title) {
     obs.push({ ...base, field: 'title', value: member.title });
+  }
+  if (member.identityEvidence) {
+    obs.push({
+      ...base,
+      field: ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
+      value: member.identityEvidence,
+    });
   }
   return obs;
 }
@@ -1840,6 +1866,7 @@ export class CentersInstitutesScraper implements IScraper {
     private readonly configs: CenterConfig[] = DEFAULT_CENTER_CONFIGS,
     private readonly renderedFetcher: RenderedFetcher | null = createScraplingRenderedFetcher(),
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
+    private readonly memberPageFetcher: MemberPageFetcher = fetchMemberProfilePage,
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -1885,12 +1912,19 @@ export class CentersInstitutesScraper implements IScraper {
       totalObs += groupObs.length;
 
       const seenMemberSlugs = new Set<string>();
-      const readMembers: CenterRosterReadMember[] = [];
-      for (const member of allMembers) {
-        const cleaned = normalizeName(member.name);
-        const slug = slugify(cleaned);
-        if (!slug || seenMemberSlugs.has(slug)) continue;
+      const uniqueMembers = allMembers.filter((member) => {
+        const slug = slugify(normalizeName(member.name));
+        if (!slug || seenMemberSlugs.has(slug)) return false;
         seenMemberSlugs.add(slug);
+        return true;
+      });
+      const listedMembers = await this.withMemberIdentityEvidence(
+        config.centerKey,
+        uniqueMembers,
+        ctx,
+      );
+      const readMembers: CenterRosterReadMember[] = [];
+      for (const member of listedMembers) {
         const memberObs = memberToObservations(member, config, sourceUrl);
         if (memberObs.length > 0) {
           await ctx.emit(memberObs);
@@ -1938,10 +1972,18 @@ export class CentersInstitutesScraper implements IScraper {
           const childKey = childCenterEntityKey(config, child);
           const memberSourceUrl = engagementUrl || child.url;
           const seenChildMemberSlugs = new Set<string>();
-          for (const member of childMembers) {
+          const uniqueChildMembers = childMembers.filter((member) => {
             const slug = slugify(normalizeName(member.name));
-            if (!slug || seenChildMemberSlugs.has(slug)) continue;
+            if (!slug || seenChildMemberSlugs.has(slug)) return false;
             seenChildMemberSlugs.add(slug);
+            return true;
+          });
+          const listedChildMembers = await this.withMemberIdentityEvidence(
+            childKey,
+            uniqueChildMembers,
+            ctx,
+          );
+          for (const member of listedChildMembers) {
             const memberObs = memberObservationsForEntityKey(childKey, member, memberSourceUrl);
             if (memberObs.length > 0) {
               await ctx.emit(memberObs);
@@ -2154,6 +2196,54 @@ export class CentersInstitutesScraper implements IScraper {
       notes: `Centers: ${summary}`,
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
+  }
+
+  private async withMemberIdentityEvidence(
+    rosterKey: string,
+    members: CenterMember[],
+    ctx: ScraperContext,
+  ): Promise<CenterMember[]> {
+    const profiled = members
+      .filter((member) => isYaleHostedUrl(member.profileUrl))
+      .slice(0, ctx.options.limit ?? Infinity);
+    const evidenceByMember = new Map<CenterMember, RosterMemberIdentityEvidence>();
+    await mapWithConcurrency(profiled, MEMBER_PROFILE_FETCH_CONCURRENCY, async (member) => {
+      const evidence = await this.readMemberIdentityEvidence(member, ctx);
+      if (evidence) evidenceByMember.set(member, evidence);
+    });
+    if (profiled.length > 0) {
+      ctx.log(
+        `[${rosterKey}] member identity evidence: ${evidenceByMember.size} of ${profiled.length} profile page(s) read`,
+      );
+    }
+    return members.map((member) => {
+      const identityEvidence = evidenceByMember.get(member);
+      return identityEvidence ? { ...member, identityEvidence } : member;
+    });
+  }
+
+  // Only the extracted evidence is cached, never the page: a center's member pages run to
+  // hundreds of megabytes, and caching them whole fills the Development quota.
+  private async readMemberIdentityEvidence(
+    member: CenterMember,
+    ctx: ScraperContext,
+  ): Promise<RosterMemberIdentityEvidence | undefined> {
+    const profileUrl = member.profileUrl || '';
+    const cacheKey = `${MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX}${profileUrl}`;
+    if (ctx.options.useCache) {
+      const cached = await getCached<RosterMemberIdentityEvidence>(this.name, cacheKey);
+      if (cached) return cached;
+    }
+    let html: string;
+    try {
+      html = await this.memberPageFetcher(profileUrl);
+    } catch {
+      return undefined;
+    }
+    if (typeof html !== 'string' || !html) return undefined;
+    const evidence = extractRosterMemberIdentityEvidence(html, profileUrl, member.name);
+    if (ctx.options.useCache) await setCached(this.name, cacheKey, evidence);
+    return evidence;
   }
 
   /**

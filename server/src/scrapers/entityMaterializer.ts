@@ -153,7 +153,12 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from '../utils/urlSafety';
 import { normalizePersonNameCasing } from './utils/personNameCasing';
 import { sanitizePersonName } from '../utils/personNameHygiene';
-import { givenNamesEquivalent, surnamesCompatible } from './utils/piNameMatch';
+import { observedPersonNameAgreesWith } from './utils/personNameAgreement';
+import {
+  parseRosterMemberIdentityEvidence,
+  ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
+  type RosterMemberIdentityEvidence,
+} from './utils/rosterMemberIdentityEvidence';
 import { splitName } from './utils/scraperHelpers';
 import { isTraineeLevelTitle } from '../utils/traineeLevelTitle';
 import {
@@ -194,6 +199,7 @@ import {
   archiveCanonicalRoleAssignmentsForPersons,
   adoptUnprovenancedRoleAssignments,
   archiveSupersededCanonicalRoleAssignments,
+  identifiedResearcherHoldsDisplayName,
   materializeCanonicalMembership,
   writeCanonicalMembership,
   type CanonicalMembershipOutcome,
@@ -230,7 +236,11 @@ import {
   supersedesOfficialProfileUrl,
 } from '../scripts/backfillResearcherOfficialProfileLinksCore';
 import { canonicalScholarCitationUrl } from '../scripts/promoteScholarCandidateProfileLinksCore';
-import { RoleAssignment, type RoleAssignmentRosterProvenance } from '../models/roleAssignment';
+import {
+  RoleAssignment,
+  type RoleAssignmentRosterProvenance,
+  type RosterIdentityBasis,
+} from '../models/roleAssignment';
 import {
   reconcileFacultyRosterDeparturesFromRun,
   type FacultyRosterDepartureOutcome,
@@ -1673,6 +1683,113 @@ async function findUniqueResearcherForRosterMember(
   return researchers.length === 1 ? researchers[0] : null;
 }
 
+export type RosterMemberUnresolvedReason =
+  | 'no-identity-evidence'
+  | 'evidence-names-nobody'
+  | 'evidence-names-someone-else'
+  | 'evidence-ambiguous';
+
+export type RosterMemberIdentity =
+  | { researcher: any; basis: RosterIdentityBasis }
+  | { researcher: null; unresolved: RosterMemberUnresolvedReason };
+
+async function liveResearcherForAccount(accountId: unknown): Promise<any | null> {
+  if (!accountId) return null;
+  return Researcher.findOne({ accountId, archived: { $ne: true } })
+    .select('_id displayName')
+    .lean();
+}
+
+async function liveResearchersHoldingNetid(netid: string): Promise<any[]> {
+  const accounts: any[] = await Account.find({ netid })
+    .limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT)
+    .lean();
+  const byAccount = await Promise.all(
+    accounts.filter(accountIsLive).map((account) => liveResearcherForAccount(account._id)),
+  );
+  const byIdentifier: any[] = await Researcher.find({
+    'identifiers.netid': netid,
+    archived: { $ne: true },
+  })
+    .select('_id displayName')
+    .limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT)
+    .lean();
+  return [...byAccount, ...byIdentifier].filter(Boolean);
+}
+
+async function researchersNamedByIdentityEvidence(
+  evidence: RosterMemberIdentityEvidence,
+): Promise<any[]> {
+  const named = new Map<string, any>();
+  const add = (researcher: any) => {
+    if (researcher?._id) named.set(String(researcher._id), researcher);
+  };
+  const claimantsByUrl = await liveResearchersClaimingOfficialProfileUrls(
+    evidence.linkedProfileUrls,
+  );
+  for (const claimants of claimantsByUrl.values()) {
+    if (claimants.length === 1) add(claimants[0]);
+  }
+  for (const email of evidence.emails) {
+    const account = await soleLiveAccountClaimingEmail(email);
+    add(await liveResearcherForAccount(account?._id));
+  }
+  for (const netid of evidence.netids) {
+    for (const researcher of await liveResearchersHoldingNetid(netid)) add(researcher);
+  }
+  return [...named.values()];
+}
+
+/**
+ * Who a roster listing names, decided only by identity evidence: the listing's profile
+ * URL, or a Yale profile URL, email or netid its own profile page states. A name never
+ * joins; it only vetoes a candidate the evidence reached, as every other lane's email and
+ * profile-page join does, and two agreeing candidates resolve to nobody (#3802).
+ */
+export async function resolveRosterMemberIdentity(
+  resolved: Record<string, ResolvedField>,
+  listedName: string,
+): Promise<RosterMemberIdentity> {
+  const byProfileUrl = await findUniqueResearcherForRosterMember(resolved);
+  if (byProfileUrl) return { researcher: byProfileUrl, basis: 'profile-url' };
+  const evidenceField = resolved[ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD];
+  const evidence = evidenceField?.hasConflict
+    ? null
+    : parseRosterMemberIdentityEvidence(evidenceField?.value);
+  if (!evidence || !listedName) return { researcher: null, unresolved: 'no-identity-evidence' };
+  const named = await researchersNamedByIdentityEvidence(evidence);
+  if (named.length === 0) return { researcher: null, unresolved: 'evidence-names-nobody' };
+  const agreeing = named.filter((researcher) =>
+    observedPersonNameAgreesWith(researcher.displayName, listedName),
+  );
+  if (agreeing.length === 0) {
+    return { researcher: null, unresolved: 'evidence-names-someone-else' };
+  }
+  if (agreeing.length > 1) return { researcher: null, unresolved: 'evidence-ambiguous' };
+  return { researcher: agreeing[0], basis: 'identity-evidence' };
+}
+
+/**
+ * Sources whose unresolved listing is not minted as a name-only person when a researcher
+ * with an identity already holds the name: such a mint is folded back by the
+ * accountless-shell dedupe on the name alone, and the lane re-mints it on its next read,
+ * so the center serves the person twice between the two (#3802). Adding a source needs
+ * the same measurement of what its refused listings cost.
+ */
+const SOURCES_THAT_REFUSE_A_NAMESAKE_MINT: ReadonlySet<string> = new Set([
+  CENTERS_INSTITUTES_SOURCE_NAME,
+]);
+
+async function listingWouldMintANamesake(
+  plan: RosterMemberCanonicalPlan,
+  identity: RosterMemberIdentity,
+): Promise<boolean> {
+  if (identity.researcher || plan.personReferenceId) return false;
+  const sourceName = textValue(plan.facts.rosterProvenance?.sourceName);
+  if (!SOURCES_THAT_REFUSE_A_NAMESAKE_MINT.has(sourceName)) return false;
+  return identifiedResearcherHoldsDisplayName(plan.facts.displayName);
+}
+
 const DIRECTOR_NAME_CANDIDATE_LIMIT = 40;
 
 /**
@@ -1927,7 +2044,11 @@ async function materializeRosterMember(
   }
 
   const researchEntityId = normalizeMaterializerObjectId(entity._id) || '';
-  const researcher = await findUniqueResearcherForRosterMember(resolved);
+  const listedName =
+    textValue(resolved.name?.value) ||
+    memberNameFromInferredUserName(resolved.inferredUserName?.value);
+  const identity = await resolveRosterMemberIdentity(resolved, listedName);
+  const researcher = identity.researcher;
   const memberIdentity = researcher?._id
     ? await canonicalResearcherIdentity(idValue(researcher._id))
     : undefined;
@@ -1943,6 +2064,21 @@ async function materializeRosterMember(
       resolved,
       skipped: 'missing-required-fields',
     };
+  }
+  if (await listingWouldMintANamesake(plan, identity)) {
+    return {
+      entityType: 'researchGroupMember',
+      entityId: materializerDocumentId(entity._id),
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved,
+      skipped: 'unresolved-identity-namesake',
+    };
+  }
+  if ('basis' in identity && plan.facts.rosterProvenance) {
+    plan.facts.rosterProvenance.identityBasis = identity.basis;
   }
 
   if (options.dryRun) {
@@ -2001,6 +2137,10 @@ async function materializeRosterMember(
     orcid: memberIdentity?.orcid,
     displayName: plan.facts.displayName ?? '',
     hasCanonicalSourceReference: Boolean(plan.personReferenceId),
+    resolvedPersonId:
+      'basis' in identity && identity.basis === 'identity-evidence'
+        ? toMaterializerObjectId(plan.personReferenceId)
+        : undefined,
   });
   await adoptListedPersonUnprovenancedEdges(researchEntityId, plan, personId);
   return {
@@ -4201,6 +4341,49 @@ function officialProfileIdentityUrlKey(value: unknown): string {
 
 const OFFICIAL_PROFILE_URL_JOIN_CANDIDATE_LIMIT = 10;
 
+// The stored link is matched on the identity key rather than the literal string, so a
+// scheme, a `www.` label, a trailing slash or a tracking query does not hide a researcher
+// who already carries the same page.
+const officialProfileUrlStoredPatterns = (identityKeys: readonly string[]): RegExp[] =>
+  identityKeys.map(
+    (identityKey) =>
+      new RegExp(`^https?://(?:www\\.)?${escapeRegex(identityKey)}/*(?:[?#].*)?$`, 'i'),
+  );
+
+const researcherOfficialProfileIdentityKeys = (researcher: any): string[] =>
+  (Array.isArray(researcher?.profileLinks) ? researcher.profileLinks : [])
+    .filter((link: ResearcherProfileLink) => link?.kind === 'YALE_OFFICIAL')
+    .map((link: ResearcherProfileLink) => officialProfileIdentityUrlKey(link.url));
+
+const OFFICIAL_PROFILE_URL_CLAIMANTS_LIMIT = 200;
+
+async function liveResearchersClaimingOfficialProfileUrls(
+  observedUrls: string[],
+): Promise<Map<string, any[]>> {
+  const identityKeys = uniqueStrings(observedUrls.map(officialProfileIdentityUrlKey));
+  const claimantsByKey = new Map<string, any[]>();
+  if (identityKeys.length === 0) return claimantsByKey;
+  const candidates: any[] = await Researcher.find({
+    archived: { $ne: true },
+    profileLinks: {
+      $elemMatch: {
+        kind: 'YALE_OFFICIAL',
+        url: { $in: officialProfileUrlStoredPatterns(identityKeys) },
+      },
+    },
+  })
+    .select('_id displayName profileLinks')
+    .limit(OFFICIAL_PROFILE_URL_CLAIMANTS_LIMIT)
+    .lean();
+  for (const candidate of candidates) {
+    for (const key of new Set(researcherOfficialProfileIdentityKeys(candidate))) {
+      if (!identityKeys.includes(key)) continue;
+      claimantsByKey.set(key, [...(claimantsByKey.get(key) ?? []), candidate]);
+    }
+  }
+  return claimantsByKey;
+}
+
 /**
  * A `yale.edu/people/…` or `yale.edu/profile/…` page belongs to one person, so a
  * live researcher already carrying it as a `YALE_OFFICIAL` link is a per-person join
@@ -4217,13 +4400,7 @@ async function soleLiveResearcherClaimingOfficialProfileUrl(
 ): Promise<any | undefined> {
   const identityKeys = uniqueStrings(observedUrls.map(officialProfileIdentityUrlKey));
   if (identityKeys.length === 0) return undefined;
-  // The stored link is matched on the identity key rather than the literal string, so
-  // a scheme, a `www.` label, a trailing slash or a tracking query does not hide a
-  // researcher who already carries the same page.
-  const storedUrlPatterns = identityKeys.map(
-    (identityKey) =>
-      new RegExp(`^https?://(?:www\\.)?${escapeRegex(identityKey)}/*(?:[?#].*)?$`, 'i'),
-  );
+  const storedUrlPatterns = officialProfileUrlStoredPatterns(identityKeys);
   const candidates: any[] = await Researcher.find({
     archived: { $ne: true },
     profileLinks: {
@@ -4243,28 +4420,6 @@ async function soleLiveResearcherClaimingOfficialProfileUrl(
     ),
   );
   return claiming.length === 1 ? claiming[0] : undefined;
-}
-
-/**
- * The email join and the inferred-director profile-URL join have no name resolver
- * behind them, so they carry their own name check: the observed name must agree on
- * surname and given name with the researcher that key already backs. Reuses the same
- * comparators as `resolveResearcherIdForPersonName` so every lane agrees on what
- * "same person" means.
- */
-function observedPersonNameAgreesWith(
-  storedDisplayName: unknown,
-  observedDisplayName: string,
-): boolean {
-  const stored = splitName(textValue(storedDisplayName));
-  const observed = splitName(observedDisplayName);
-  if (!stored.last || !observed.last) return false;
-  if (!surnamesCompatible(observed.last, stored.last)) return false;
-  if (!stored.first || !observed.first) return false;
-  return (
-    stored.first.toLowerCase() === observed.first.toLowerCase() ||
-    givenNamesEquivalent(observed.first, stored.first)
-  );
 }
 
 /**

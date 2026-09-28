@@ -878,6 +878,9 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   // One snapshot per center per run for the same reason; `centersInstitutesRosterSite.test.ts`
   // holds every config to a distinct center entity key so two configs cannot share a row.
   'centerRosterHealth',
+  // A member page's identity evidence changes whenever the page adds or reorders a
+  // Yale link, and two active readings conflict, which blinds identity resolution (#3802).
+  'profileIdentityEvidence',
 ]);
 
 export function usesLatestWinsFingerprint(input: { entityType: string; field: string }): boolean {
