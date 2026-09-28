@@ -419,7 +419,8 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
   `websiteUrl` derivation runs after the #613 lead-profile `sourceUrls` projection on the same pass, so a freshly projected profile citation is visible to the clear decision immediately instead of one materialization later.
   The opposite ordering governs the other direction, and reading it backwards resurrects a retracted value.
   `planStoredCitationReadmission` gives back the stored citations a pass did not re-derive, because `sourceUrls` is deliberately absent from `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS` and silence must not retract: without it, any materialize with no fresh scrape in the same pass dropped a real citation, 42 of them across 37 live rows on Development, mostly official profile pages on `student_ready` rows (#3476).
-  It runs after every arm that derives from a citation, never before them.
+  It runs after every arm that derives a `websiteUrl` from a citation, never before them.
+  It runs before the Yale-status derivation and the #1802 provenance fallback, because both read the list the pass will write: after them, a restored in-memoriam page sits beside an active status and an already-sourced row accrues a provenance url.
   Re-admitting first makes a stale citation an authoritative input, so a `websiteUrl` retraction retires its observation and the promotion arm then re-adopts the same site from the citation the retraction was about (#2542, #3452).
   Removal still needs a positive reason, and there are two kinds: what an arm actually dropped this pass is recorded as it happens, and the arms' own predicates run again over the candidates, because an arm only ever saw what the pass derived and a stored graft the pass never re-derived was never offered to it.
   The sanitizer's identity arm is deliberately not one of those predicates - it refuses a cross-school page a row legitimately cites, which is a retraction with no reason (#2945).

@@ -1283,11 +1283,14 @@ export function withoutSupersededProfileSourceUrls(
  * uncondemned. Their predicates therefore run again over the candidates, which is a different
  * thing from feeding the candidates to the arms that DERIVE from a citation.
  *
- * This runs after every arm that DERIVES from a citation, and that ordering is the whole point.
- * Re-admitting before them makes a stale citation an authoritative input: a `websiteUrl`
- * retraction retires its observation, the promotion arm then reads the list and re-adopts the
- * same site from the citation, and #2542's and #3452's "the next pass keeps it absent" both
- * fail. The stored citation is evidence the row was seen, not evidence of what it says now.
+ * This runs after every arm that DERIVES a `websiteUrl` from a citation, and that ordering is the
+ * whole point. Re-admitting before them makes a stale citation an authoritative input: a
+ * `websiteUrl` retraction retires its observation, the promotion arm then reads the list and
+ * re-adopts the same site from the citation, and #2542's and #3452's "the next pass keeps it
+ * absent" both fail. The stored citation is evidence the row was seen, not evidence of what it
+ * says now. It runs before the Yale-status derivation and the #1802 provenance fallback, because
+ * both read the list the pass will write: after them, a restored in-memoriam page would sit
+ * beside an active status, and an already-sourced row would accrue a provenance url.
  */
 export function planStoredCitationReadmission(input: {
   stored: unknown;
@@ -5607,7 +5610,7 @@ export async function projectFromLog(
     if (!manuallyLockedFields.includes('sourceUrls')) {
       // Every arm in this block derives from the resolver's list, exactly as before. The stored
       // citations this pass does not re-derive are re-admitted at the END of the projection
-      // instead, by `readmitUncondemnedStoredCitations` (#3476), for a reason worth stating:
+      // instead, by `planStoredCitationReadmission` (#3476), for a reason worth stating:
       // making the stored list an INPUT here resurrects what a retraction just removed. A
       // `websiteUrl` retraction retires its observation, and then the promotion arm below reads
       // the citation list and re-adopts the same site from the stale citation, so #2542's and
@@ -5879,6 +5882,25 @@ export async function projectFromLog(
       set.undergradEvidenceQuote = '';
       fieldsWritten++;
     }
+    const readmittedCitations = planStoredCitationReadmission({
+      stored: entityDoc?.sourceUrls,
+      planned: set.sourceUrls,
+      condemned: citationsCondemnedThisPass,
+      entity: {
+        entityType: set.entityType ?? entityDoc?.entityType,
+        kind: set.kind ?? entityDoc?.kind,
+      },
+      citationIdentity: researchEntityIdentityWithCitationsThroughThisPass(
+        sourceEntityIdentity,
+        entityDoc?.sourceUrls,
+        Array.isArray(set.sourceUrls) ? (set.sourceUrls as unknown[]) : [],
+      ),
+      sourceLinkHealth: entityDoc?.sourceLinkHealth,
+    });
+    if (readmittedCitations) {
+      set.sourceUrls = readmittedCitations;
+      fieldsWritten++;
+    }
     if (yaleStatusCacheIsWritable({ manuallyLockedFields })) {
       const populatedYaleStatusField = (setValue: unknown, docValue: unknown): unknown => {
         if (typeof setValue === 'string') return setValue.trim().length > 0 ? setValue : docValue;
@@ -5955,25 +5977,6 @@ export async function projectFromLog(
           fieldsWritten++;
         }
       }
-    }
-    const readmittedCitations = planStoredCitationReadmission({
-      stored: entityDoc?.sourceUrls,
-      planned: set.sourceUrls,
-      condemned: citationsCondemnedThisPass,
-      entity: {
-        entityType: set.entityType ?? entityDoc?.entityType,
-        kind: set.kind ?? entityDoc?.kind,
-      },
-      citationIdentity: researchEntityIdentityWithCitationsThroughThisPass(
-        sourceEntityIdentity,
-        entityDoc?.sourceUrls,
-        Array.isArray(set.sourceUrls) ? (set.sourceUrls as unknown[]) : [],
-      ),
-      sourceLinkHealth: entityDoc?.sourceLinkHealth,
-    });
-    if (readmittedCitations) {
-      set.sourceUrls = readmittedCitations;
-      fieldsWritten++;
     }
   }
   set.confidenceByField = confidenceByField;

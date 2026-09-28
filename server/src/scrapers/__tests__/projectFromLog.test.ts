@@ -796,6 +796,67 @@ describe('projectFromLog', () => {
     });
   });
 
+  it('derives the Yale status from the citations it hands back', async () => {
+    const ownProfile = 'https://medicine.yale.edu/profile/synthetic-person-fixture/';
+    const memorialPage = 'https://news.yale.edu/2020/01/01/in-memoriam-synthetic-person-fixture';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: {
+          name: resolvedField('Synthetic Person Fixture Lab'),
+          sourceUrls: resolvedField([ownProfile]),
+        },
+        entityDoc: {
+          _id: 'd'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          slug: 'synthetic-person-fixture-lab',
+          name: 'Synthetic Person Fixture Lab',
+          sourceUrls: [ownProfile, memorialPage],
+          activeAtYaleCache: false,
+          yaleStatusCache: 'departed',
+          yaleStatusReasonCache: 'deceased',
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect(result.set.sourceUrls).toEqual([memorialPage, ownProfile]);
+    expect(result.set.activeAtYaleCache).toBe(false);
+    expect(result.set.yaleStatusReasonCache).toBe('deceased');
+  });
+
+  it('does not append a provenance url to a row whose stored citations it hands back', async () => {
+    const grantRecord = 'https://reporter.nih.gov/project-details/10000004';
+    const provenancePage = 'https://medicine.yale.edu/shared-listing/synthetic-roster';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: {
+          name: resolvedField('Synthetic Person Fixture Lab'),
+          sourceUrls: resolvedField([]),
+        },
+        materializationObs: [
+          {
+            field: 'name',
+            value: 'Synthetic Person Fixture Lab',
+            sourceUrl: provenancePage,
+            confidence: 0.9,
+          },
+        ],
+        entityDoc: {
+          _id: 'd'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          slug: 'synthetic-person-fixture-lab',
+          name: 'Synthetic Person Fixture Lab',
+          sourceUrls: [grantRecord],
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect(result.set.sourceUrls).toEqual([grantRecord]);
+  });
+
   it('writes nothing new when the resolver staged no citation at all', async () => {
     const stored = 'https://reporter.nih.gov/project-details/10000002';
     const result = await projectFromLog(
