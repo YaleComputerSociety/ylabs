@@ -38,27 +38,15 @@ export function classifyScrapeRunLiveness(
   return now.getTime() - heartbeat <= staleHeartbeatMs ? 'live' : 'stale';
 }
 
-export function liveScrapeRunFilter(
+export function isAbandonedScrapeRun(
+  run: ScrapeRunLivenessFacts,
   now: Date = new Date(),
-  staleHeartbeatMs: number = SCRAPE_RUN_STALE_HEARTBEAT_MS,
-): Record<string, unknown> {
-  return {
-    status: 'running',
-    heartbeatAt: { $gt: new Date(now.getTime() - staleHeartbeatMs) },
-  };
-}
-
-export async function findLiveScrapeRuns(
-  input: { now?: Date; sourceName?: string } = {},
-): Promise<Array<Record<string, unknown>>> {
-  const filter = {
-    ...liveScrapeRunFilter(input.now),
-    ...(input.sourceName ? { sourceName: input.sourceName } : {}),
-  };
-  return (await ScrapeRun.find(filter)
-    .select('sourceName startedAt heartbeatAt owner triggeredBy')
-    .sort({ startedAt: -1 })
-    .lean()) as unknown as Array<Record<string, unknown>>;
+): boolean {
+  const liveness = classifyScrapeRunLiveness(run, now);
+  if (liveness === 'stale') return true;
+  if (liveness !== 'unverifiable') return false;
+  const started = timeOf(run.startedAt);
+  return started !== undefined && now.getTime() - started > SCRAPE_RUN_LEGACY_ABANDONED_AFTER_MS;
 }
 
 export interface ScrapeRunOwner {

@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   classifyScrapeRunLiveness,
   isLocalProcessAlive,
-  liveScrapeRunFilter,
+  isAbandonedScrapeRun,
+  SCRAPE_RUN_LEGACY_ABANDONED_AFTER_MS,
   SCRAPE_RUN_STALE_HEARTBEAT_MS,
   startScrapeRunHeartbeat,
 } from '../scrapeRunLiveness';
@@ -41,11 +42,27 @@ describe('classifyScrapeRunLiveness (#3595)', () => {
     );
   });
 
-  it('builds a query that matches only running rows with a fresh heartbeat', () => {
-    expect(liveScrapeRunFilter(NOW)).toEqual({
-      status: 'running',
-      heartbeatAt: { $gt: ago(SCRAPE_RUN_STALE_HEARTBEAT_MS) },
-    });
+  it('calls a running row abandoned when its heartbeat stopped or it predates heartbeats by 72 hours', () => {
+    expect(
+      isAbandonedScrapeRun(
+        { status: 'running', heartbeatAt: ago(SCRAPE_RUN_STALE_HEARTBEAT_MS + 1) },
+        NOW,
+      ),
+    ).toBe(true);
+    expect(isAbandonedScrapeRun({ status: 'running', heartbeatAt: ago(60_000) }, NOW)).toBe(false);
+    expect(
+      isAbandonedScrapeRun(
+        { status: 'running', startedAt: ago(SCRAPE_RUN_LEGACY_ABANDONED_AFTER_MS + 1) },
+        NOW,
+      ),
+    ).toBe(true);
+    expect(
+      isAbandonedScrapeRun(
+        { status: 'running', startedAt: ago(SCRAPE_RUN_LEGACY_ABANDONED_AFTER_MS - 1) },
+        NOW,
+      ),
+    ).toBe(false);
+    expect(isAbandonedScrapeRun({ status: 'success', startedAt: ago(0) }, NOW)).toBe(false);
   });
 
   it('sees this process as alive and an unused pid as gone', () => {

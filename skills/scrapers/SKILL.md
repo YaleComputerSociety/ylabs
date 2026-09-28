@@ -137,7 +137,7 @@ A running row carries `heartbeatAt`, renewed every minute, and `owner: { host, p
 Only a `SIGKILL` or a crash still leaves a row `running`, and its heartbeat stops.
 
 - Never ask "is anything running" with a bare `status: 'running'`.
-  Use `classifyScrapeRunLiveness`, `liveScrapeRunFilter` or `findLiveScrapeRuns` from `scrapeRunLiveness.ts`: only `live` (heartbeat within 15 minutes) means a writer is working, and a `running` row with no `heartbeatAt` predates the heartbeat and proves nothing.
+  Use `classifyScrapeRunLiveness` (or `isAbandonedScrapeRun`) from `scrapeRunLiveness.ts`: only `live` (heartbeat within 15 minutes) means a writer is working, and a `running` row with no `heartbeatAt` predates the heartbeat and proves nothing.
 - `scrape_job_locks` is still the live-writer signal for a source, read through `findHeldScrapeJobLock`.
 - Close dead rows with `yarn --cwd server scrape-runs:reconcile-stale`, which is dry-run by default.
   `--apply --confirm-reconcile-stale-scrape-runs` closes a row as `interrupted` only when its heartbeat is stale, or when it predates heartbeats and is older than 72 hours, and never when its heartbeat is fresh, its source lock is held, or its owner pid is alive on this host.
@@ -597,7 +597,7 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
   A run is `inconclusive` (stepped over, neither counted nor a reset) when it is invalidated, still running, scoped by `options.only`, or had every planned target skipped by the work planner; `sourceIsExpectedToYield` exempts only a disabled source and the `MANUAL_OVERRIDE` tier, mirroring `classifySourceFreshness`.
   `docs/research-data-pipeline.md` owns the rule and why each part of it is load-bearing.
 - `scrapeJobLock.ts` - acquire/heartbeat/release helpers wrapping the `ScrapeJobLock` model, plus `withScrapeJobLock`, the one lifecycle every writer goes through.
-- `scrapeRunLiveness.ts` - the `ScrapeRun` heartbeat, owner stamp, and `classifyScrapeRunLiveness`/`liveScrapeRunFilter`, the only honest way to ask whether a run is alive.
+- `scrapeRunLiveness.ts` - the `ScrapeRun` heartbeat, owner stamp, and `classifyScrapeRunLiveness`/`isAbandonedScrapeRun`, the only honest way to ask whether a run is alive.
 - `interruptCleanup.ts` - `onInterrupt`, the single `SIGINT`/`SIGTERM` handler that settles every registered cleanup (run status, lock release) before re-raising the signal.
   The lock is keyed `environment:sourceName`, so it serializes writers on ONE source and leaves parallel work on different sources alone.
   `startScrapeJobLockHeartbeat` renews the lease during a long run; `findHeldScrapeJobLock` reports a live holder for a read-only caller without competing for the lock, and treats an expired lease as no holder because `acquireScrapeJobLock` would take it.

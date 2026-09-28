@@ -1,6 +1,6 @@
 import { isRetiredSourceName, scriptDrivenSourceOwner } from '../scrapers/sourceDispatch';
 import { sourceIsExpectedToRecur } from '../scrapers/sourceYieldGuard';
-import { classifyScrapeRunLiveness } from '../scrapers/scrapeRunLiveness';
+import { classifyScrapeRunLiveness, isAbandonedScrapeRun } from '../scrapers/scrapeRunLiveness';
 import { serializedDocumentId } from '../utils/idSerialization';
 
 export type SourceHealthRisk = 'ok' | 'warn' | 'error';
@@ -53,6 +53,7 @@ export interface SourceHealthRow {
     failure: number;
     interrupted: number;
     running: number;
+    unverifiable: number;
     abandoned: number;
   };
   latestRun?: {
@@ -232,6 +233,13 @@ function riskForSource(
         action: 'Latest run is in progress and heartbeating; read its report once it finishes.',
       };
     }
+    if (!isAbandonedScrapeRun(latestRun, now)) {
+      return {
+        risk: 'warn',
+        action:
+          'Latest run is marked running but predates run heartbeats, so it cannot be told apart from a live run; read its report once it finishes, or reconcile it after 72 hours.',
+      };
+    }
     return {
       risk: 'warn',
       action:
@@ -324,9 +332,12 @@ export function buildSourceHealthRows(
           interrupted: sourceRuns.filter((run) => run.status === 'interrupted').length,
           running: sourceRuns.filter((run) => classifyScrapeRunLiveness(run, now) === 'live')
             .length,
-          abandoned: sourceRuns.filter((run) =>
-            ['stale', 'unverifiable'].includes(classifyScrapeRunLiveness(run, now)),
+          unverifiable: sourceRuns.filter(
+            (run) =>
+              classifyScrapeRunLiveness(run, now) === 'unverifiable' &&
+              !isAbandonedScrapeRun(run, now),
           ).length,
+          abandoned: sourceRuns.filter((run) => isAbandonedScrapeRun(run, now)).length,
         },
         latestRun: latestRun
           ? {

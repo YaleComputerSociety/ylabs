@@ -328,7 +328,7 @@ describe('sourceHealthService', () => {
         heartbeatAt: '2026-09-27T11:59:00.000Z',
       });
       expect(row.action).toContain('in progress');
-      expect(row.recentRuns).toMatchObject({ running: 1, abandoned: 0 });
+      expect(row.recentRuns).toMatchObject({ running: 1, unverifiable: 0, abandoned: 0 });
     });
 
     it('reads a run whose heartbeat stopped as abandoned, not running', () => {
@@ -342,9 +342,18 @@ describe('sourceHealthService', () => {
       expect(row.recentRuns).toMatchObject({ running: 0, abandoned: 1 });
     });
 
-    it('reads a run that predates heartbeats as abandoned, not running', () => {
+    it('reads a run that predates heartbeats by more than 72 hours as abandoned', () => {
       const row = rowFor({ status: 'running', startedAt: '2026-05-17T19:13:21.000Z' });
-      expect(row.recentRuns).toMatchObject({ running: 0, abandoned: 1 });
+      expect(row.nextCommand).toContain('scrape-runs:reconcile-stale');
+      expect(row.recentRuns).toMatchObject({ running: 0, unverifiable: 0, abandoned: 1 });
+    });
+
+    it('reads a recent run that predates heartbeats as unverifiable, not abandoned', () => {
+      const row = rowFor({ status: 'running', startedAt: '2026-09-27T09:00:00.000Z' });
+      expect(row.action).toContain('predates run heartbeats');
+      expect(row.action).not.toContain('abandoned');
+      expect(row.nextCommand).toBeUndefined();
+      expect(row.recentRuns).toMatchObject({ running: 0, unverifiable: 1, abandoned: 0 });
     });
 
     it('reads an interrupted run as needing a rerun', () => {

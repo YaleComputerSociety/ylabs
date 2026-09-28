@@ -244,7 +244,8 @@ The contract now has three parts.
   The orchestrator stamps `heartbeatAt` at creation and every `SCRAPE_RUN_HEARTBEAT_INTERVAL_MS` (1 minute), and records `owner: { host, pid, lockOwnerId }`, where `lockOwnerId` is the `ScrapeJobLock` owner for a writing CLI or cron run.
   `classifyScrapeRunLiveness` in `scrapers/scrapeRunLiveness.ts` reads a row as `finished`, `live` (heartbeat within `SCRAPE_RUN_STALE_HEARTBEAT_MS`, 15 minutes), `stale`, or `unverifiable` (a `running` row that predates heartbeats).
   Only `live` means a writer is working.
-  Ask "is anything running" with `liveScrapeRunFilter` or `findLiveScrapeRuns`, never with a bare `status: 'running'`; `sourceHealthService` and `runReport` already do, and `recentRuns` now reports `running` (live), `abandoned` (stale or unverifiable) and `interrupted` separately.
+  Ask "is anything running" with `classifyScrapeRunLiveness`, never with a bare `status: 'running'`; `sourceHealthService` and `runReport` already do.
+  `recentRuns` reports `running` (live), `unverifiable` (predates heartbeats and started within 72 hours), `abandoned` (stale, or predates heartbeats and started more than 72 hours ago, per `isAbandonedScrapeRun`) and `interrupted` separately.
 - **A run that died without a word is closed by a command, not by a reader.**
   A `SIGKILL`, an out-of-memory kill or a host crash runs no handler, so its row stays `running` with a heartbeat that stops.
   `yarn --cwd server scrape-runs:reconcile-stale` is dry-run by default and reports every `running` row with a verdict.
