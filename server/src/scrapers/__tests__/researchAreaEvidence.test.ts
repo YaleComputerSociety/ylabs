@@ -32,9 +32,9 @@ describe('isLiveResearchAreaStatement', () => {
 
   it('refuses a superseded, rolled-back, empty, or other-field observation', () => {
     expect(isLiveResearchAreaStatement(statement({ superseded: true }))).toBe(false);
-    expect(
-      isLiveResearchAreaStatement(statement({ rollback: { rolledBackAt: new Date() } })),
-    ).toBe(false);
+    expect(isLiveResearchAreaStatement(statement({ rollback: { rolledBackAt: new Date() } }))).toBe(
+      false,
+    );
     expect(isLiveResearchAreaStatement(statement({ value: [] }))).toBe(false);
     expect(isLiveResearchAreaStatement(statement({ value: ['  '] }))).toBe(false);
     expect(isLiveResearchAreaStatement(statement({ field: 'methods' }))).toBe(false);
