@@ -140,7 +140,7 @@ The canary list is the sweep manifest, so a manual-only source is never canaried
 A sweep executes the code in its own checkout's working tree, never the code on `beta`.
 Every stage is spawned with `cwd` set to the repository root, so whatever `HEAD` is at the moment a stage launches is what that stage runs.
 
-`summary.json` records that commit as `codeSha`, which is the only thing that makes a stage's behaviour attributable after the fact.
+`summary.json` records that commit as `codeSha`, which makes a stage's behaviour attributable after the fact; each scrape run a stage writes also records its own `codeSha` (#3824).
 Read it rather than the merge time of a fix: a fix merged while a sweep is running reaches none of its stages, because nothing pulls the checkout mid-run.
 
 If the checkout moves during a run, each later stage is refused rather than spawned, and the refusal is recorded in `summary.json` as `codeDrift` naming both commits.
@@ -260,6 +260,7 @@ The contract now has three parts.
   The signal write shares one handler with the job-lock release (`scrapers/interruptCleanup.ts`), so neither cleanup can kill the process while the other is still writing, and both must settle inside `INTERRUPT_CLEANUP_TIMEOUT_MS` (5 seconds) because the sweep sends `SIGKILL` 10 seconds after its `SIGTERM`.
 - **A running run proves it is alive.**
   The orchestrator stamps `heartbeatAt` at creation and every `SCRAPE_RUN_HEARTBEAT_INTERVAL_MS` (1 minute), and records `owner: { host, pid, lockOwnerId }`, where `lockOwnerId` is the `ScrapeJobLock` owner for a writing CLI or cron run.
+  It also records `codeSha`, the commit the process loaded (`scrapers/scrapeRunCodeIdentity.ts`: a declared `SOURCE_COMMIT`, `RENDER_GIT_COMMIT` or `GIT_COMMIT`, else the checkout's `HEAD` when the process started), so a reader can ask by ancestry whether a fix was in the run (#3824); runs before that change carry none.
   `classifyScrapeRunLiveness` in `scrapers/scrapeRunLiveness.ts` reads a row as `finished`, `live` (heartbeat within `SCRAPE_RUN_STALE_HEARTBEAT_MS`, 15 minutes), `stale`, or `unverifiable` (a `running` row that predates heartbeats).
   Only `live` means a writer is working.
   Ask "is anything running" with `classifyScrapeRunLiveness`, never with a bare `status: 'running'`; `sourceHealthService` and `runReport` already do.
@@ -767,6 +768,17 @@ Three guards, all failing closed:
 - A complete read, not a run. A partial fetch, a content-hash skip, or an SSRF refusal emits no witness and licenses nothing.
 - Two complete reads (`FIELD_RETRACTION_MIN_COMPLETE_READS`), mirroring the two-run rule in `facultyRosterDepartureReconciler` and `ysmLabDelistingReconciler`, so one anomalous parse cannot retract.
 - A drop guard (`FIELD_RETRACTION_MAX_ABSENT_FRACTION`, 0.5), the inverse of the fraction those two lanes already use, over the entities that hold a live assertion for the field rather than over everything read. A broken selector stops asserting for every holder at once and persists across runs, so it defeats the two-read rule and only the cohort shape separates it from a handful of genuine delistings. Above the ceiling the whole (source, field) pair is frozen for the pass and reported; it is never applied partially. The fraction only applies above `FIELD_RETRACTION_DROP_GUARD_MIN_POPULATION` (20) holders, because three of five holders dropping a link is an ordinary month at that scale and a ceiling there would freeze small sources permanently while protecting nothing; below the floor the two-read rule and the operator's `--max-apply` ceiling are the bounds.
+
+An absence claim counts only when the run that made it carried the lane's latest fix to its absence-claim path (#3824).
+The log is append-only, so a fix to a lane that asserted empty slots it had not read leaves every claim the old code made live, and those claims kept counting toward the two-read quorum.
+Measured on Development on 2026-09-28: all 24 planned `websiteUrl` retractions had at least one claim from a run before #3666 merged, and only 10 had two post-fix claims.
+Each contract therefore declares `absenceClaimCutoffs`, at most one per field, naming the fix PR, its full commit, and its merge time; `dept-faculty-roster` and `ysm-faculty-directory` declare #3666 for `websiteUrl`, and `yse-faculty-directory` declares none because its claim path has not changed since #3566 introduced it.
+`disregardPreFixAbsenceClaims` drops a claim whose run did not carry the fix before the quorum is counted, and the read still counts as a later complete read that said nothing, so the quorum has to come from post-fix claims alone.
+A run that recorded its commit (`scrape_runs.codeSha`) is decided by ancestry, because a run started after the merge on a stale checkout still runs the old code; a run with no recorded commit, or one git cannot resolve (a shallow clone), is decided by its `startedAt` against the merge time; a run that cannot be found is refused.
+The dry-run report's `preFixAbsenceClaimsExcluded` states, per source and field, the claims excluded, and the observations and entities they would otherwise have retracted.
+A fix to any lane's absence-claim path replaces that field's cutoff in a follow-up PR that names the fix's squash-merge commit, which contains the earlier fixes, and its GitHub merge time.
+The fix PR cannot declare it, because every merge is a squash, so its commit does not exist until it merges and its branch head is not an ancestor of any post-merge run.
+No retraction apply for that field runs until the follow-up lands.
 
 The stored value is cleared only when the retraction removed the last live observation for that field **and** the stored value is still the retracted one, folded through `normalizeWebsiteUrlIdentityKey`.
 A retraction on a merged-in loser's key decides and clears on the live survivor that key's tombstone chain reaches, with the survivor's locks, and counts rival evidence across every key and id merged into the survivor; keys of one survivor retracting the same field in one pass are decided together, and the sole-holder probe withholding any of them cancels the survivor's clear (#3609).

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parseArgs, totalPlannedRetractions } from '../reconcileFieldRetractions';
+import {
+  parseArgs,
+  summarizePreFixAbsenceClaimExclusions,
+  totalPlannedRetractions,
+} from '../reconcileFieldRetractions';
 import { fieldRetractionContracts } from '../../scrapers/fieldRetraction';
 
 describe('observations:reconcile-field-retractions arguments', () => {
@@ -66,5 +70,42 @@ describe('observations:reconcile-field-retractions arguments', () => {
         },
       ]),
     ).toBe(2);
+  });
+
+  it('reports the pre-fix claims each source and field excluded', () => {
+    expect(
+      summarizePreFixAbsenceClaimExclusions([
+        {
+          outcome: 'planned',
+          sourceName: 'fixture-source-a',
+          dryRun: true,
+          counts: {
+            preFixAbsenceClaims: {
+              websiteUrl: { excludedClaims: 7, heldObservations: 3, heldEntities: 2 },
+            },
+          } as any,
+          frozenFields: [],
+          regatedEntities: 0,
+          retractions: [],
+        },
+        {
+          outcome: 'planned',
+          sourceName: 'fixture-source-b',
+          dryRun: true,
+          counts: { preFixAbsenceClaims: {} } as any,
+          frozenFields: [],
+          regatedEntities: 0,
+          retractions: [],
+        },
+      ]),
+    ).toEqual([
+      {
+        sourceName: 'fixture-source-a',
+        field: 'websiteUrl',
+        excludedClaims: 7,
+        heldObservations: 3,
+        heldEntities: 2,
+      },
+    ]);
   });
 });

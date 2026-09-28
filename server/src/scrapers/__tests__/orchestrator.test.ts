@@ -29,6 +29,7 @@ vi.mock('../../services/researchEntityEvidenceCoverage', () => ({
 }));
 
 import { ScraperOrchestrator } from '../orchestrator';
+import { currentProcessCodeSha } from '../scrapeRunCodeIdentity';
 
 function priorRuns(rows: Array<Record<string, unknown>>) {
   return {
@@ -125,6 +126,21 @@ describe('ScraperOrchestrator', () => {
     await orchestrator.run('fixture-source', options);
 
     expect(mocks.scrapeRunCreate.mock.calls.map(([row]) => row.invalidated)).toEqual([true, false]);
+  });
+
+  it('records the commit this process runs on the run it opens', async () => {
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register({
+      name: 'fixture-source',
+      displayName: 'Fixture source',
+      run: async () => ({ observationCount: 0, entitiesObserved: 0 }),
+    });
+
+    await orchestrator.run('fixture-source', { dryRun: true, useCache: true, release: false });
+
+    const [row] = mocks.scrapeRunCreate.mock.calls[0];
+    expect(row).toHaveProperty('codeSha', currentProcessCodeSha());
+    expect(currentProcessCodeSha()).toMatch(/^[0-9a-f]{40}$/);
   });
 
   it('fails a run whose source has now emitted nothing on three consecutive runs', async () => {

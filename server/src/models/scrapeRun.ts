@@ -41,6 +41,10 @@ const scrapeRunSchema = new mongoose.Schema(
       type: Date,
       required: false,
     },
+    codeSha: {
+      type: String,
+      required: false,
+    },
     owner: {
       type: new mongoose.Schema(
         {
