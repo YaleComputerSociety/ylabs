@@ -766,6 +766,12 @@ function reachesResearchEntities(site: RawWriteSite): boolean {
   return site.collections.includes(RESEARCH_ENTITIES) || site.collections.includes(UNRESOLVED);
 }
 
+function writesOnlyOtherNamedCollections(site: RawWriteSite): boolean {
+  return (
+    !reachesResearchEntities(site) && site.collections.every((name) => !name.startsWith('model:'))
+  );
+}
+
 function corpusName(file: string): string {
   return path.relative(SERVER_SRC, file).split(path.sep).join('/');
 }
@@ -1012,7 +1018,8 @@ describe('a raw write to research_entities is a reviewed exception, never a new 
 
   it('never authors a whole provenance entry or its source name through a raw handle', () => {
     expect(
-      reaching
+      sites
+        .filter((site) => !writesOnlyOtherNamedCollections(site))
         .filter((site) => site.authoredProvenanceKeys.some((key) => !key.startsWith(ANY_KEY)))
         .map((site) => `${site.file}:${site.line} ${site.authoredProvenanceKeys.join(', ')}`),
       'A provenance entry must pass the model guard, which refuses one that names no observation (#3769).',
