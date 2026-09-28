@@ -48,6 +48,7 @@ const MODEL_ENDPOINT_PREFIX = 'https://api.openai.com/';
 interface CaptureMode {
   kind: 'capture';
   pages: Map<string, CapturedPage>;
+  requested: Set<string>;
   requestInterceptorId: number;
   responseInterceptorId: number;
 }
@@ -101,12 +102,15 @@ export function beginBenchmarkCapture(): void {
   const capture: CaptureMode = {
     kind: 'capture',
     pages: new Map(),
+    requested: new Set(),
     requestInterceptorId: -1,
     responseInterceptorId: -1,
   };
   capture.requestInterceptorId = axios.interceptors.request.use((config) => {
     if (isModelRequest(config)) {
-      modelRequestKeyByConfig.set(config, modelRequestKey(config.url as string, config.data));
+      const requestKey = modelRequestKey(config.url as string, config.data);
+      modelRequestKeyByConfig.set(config, requestKey);
+      capture.requested.add(benchmarkPageKey(MODEL_RESPONSE_NAMESPACE, requestKey));
     }
     return config;
   });
@@ -126,12 +130,27 @@ export function beginBenchmarkCapture(): void {
 }
 
 export function finishBenchmarkCapture(): CapturedPage[] {
+  return finishBenchmarkCaptureWithCoverage().pages;
+}
+
+/**
+ * The captured pages, and how many distinct requests the capture made but could not freeze:
+ * a page fetch or a model call that failed while capturing. A replay misses exactly those and
+ * nothing else, so any miss beyond this count means the lane now asks for something the
+ * benchmark never held, which is a changed prompt or a drifted target set, not a score.
+ */
+export function finishBenchmarkCaptureWithCoverage(): {
+  pages: CapturedPage[];
+  unfrozenRequestCount: number;
+} {
   if (mode?.kind !== 'capture') throw new Error('no benchmark capture is active');
   axios.interceptors.request.eject(mode.requestInterceptorId);
   axios.interceptors.response.eject(mode.responseInterceptorId);
   const pages = [...mode.pages.values()];
+  const frozen = new Set(mode.pages.keys());
+  const unfrozenRequestCount = [...mode.requested].filter((key) => !frozen.has(key)).length;
   mode = null;
-  return pages;
+  return { pages, unfrozenRequestCount };
 }
 
 export const isBenchmarkReplayActive = (): boolean => mode?.kind === 'replay';
@@ -226,7 +245,10 @@ export function benchmarkFrozenMetadata(sourceName: string, requestKey: string):
 
 export function benchmarkCacheRead(sourceName: string, requestKey: string): BenchmarkCacheRead {
   if (!mode) return { handled: false };
-  if (mode.kind === 'capture') return { handled: true, payload: null };
+  if (mode.kind === 'capture') {
+    mode.requested.add(benchmarkPageKey(sourceName, requestKey));
+    return { handled: true, payload: null };
+  }
   const key = benchmarkPageKey(sourceName, requestKey);
   if (!mode.pages.has(key)) {
     mode.missed.add(key);

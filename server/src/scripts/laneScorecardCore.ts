@@ -334,3 +334,58 @@ export function summarizeGoldRuns(runs: readonly GoldFieldScore[][]): GoldRateSp
     };
   });
 }
+
+export interface ReplayMissBaselineInput {
+  unfrozenRequestCount?: unknown;
+  codeSha?: unknown;
+}
+
+export interface StoredReplayRun {
+  codeSha?: unknown;
+  pagesMissed?: unknown;
+  measuredAt?: unknown;
+}
+
+const measuredTime = (value: unknown): number => {
+  const time = value instanceof Date ? value.getTime() : new Date(String(value ?? '')).getTime();
+  return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
+};
+
+/**
+ * How many requests a replay of this benchmark may miss and still be a score. A capture that
+ * recorded its unfrozen requests says so directly; an older one falls back to the first replay
+ * taken at its own capture commit, which is the only replay known to have measured the same
+ * code against the same pages. With neither, no miss can be explained.
+ */
+export function allowedReplayMisses(
+  benchmark: ReplayMissBaselineInput,
+  runs: readonly StoredReplayRun[],
+): number | undefined {
+  if (typeof benchmark.unfrozenRequestCount === 'number') return benchmark.unfrozenRequestCount;
+  const captureSha = typeof benchmark.codeSha === 'string' ? benchmark.codeSha : '';
+  if (!captureSha) return undefined;
+  const baseline = [...runs]
+    .filter((run) => run.codeSha === captureSha && typeof run.pagesMissed === 'number')
+    .sort((a, b) => measuredTime(a.measuredAt) - measuredTime(b.measuredAt))[0];
+  return baseline ? (baseline.pagesMissed as number) : undefined;
+}
+
+/**
+ * Why a replay is not a score of the lane, if it is not. Missing more than the capture left
+ * unfrozen means the lane asked for something the benchmark never held, most often a changed
+ * prompt whose model requests no longer match the frozen answers, so the replay measured the
+ * gap rather than the lane (#3816).
+ */
+export function staleReplayReason(
+  pagesMissed: number,
+  allowedMisses: number | undefined,
+): string | undefined {
+  if (allowedMisses === undefined) {
+    return pagesMissed > 0
+      ? `replay missed ${pagesMissed} request(s) and the benchmark records no clean baseline; recapture it`
+      : undefined;
+  }
+  return pagesMissed > allowedMisses
+    ? `replay missed ${pagesMissed} request(s) where the capture left ${allowedMisses} unfrozen; the lane now asks for something this benchmark never held, so recapture it`
+    : undefined;
+}

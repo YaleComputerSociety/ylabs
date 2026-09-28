@@ -6,6 +6,8 @@ import {
   summarizeLiveModelRuns,
   type BenchmarkLabel,
   type LaneReplayScore,
+  allowedReplayMisses,
+  staleReplayReason,
 } from '../laneScorecardCore';
 
 const wrongSite = 'https://example.org/someone-elses-lab';
@@ -203,5 +205,44 @@ describe('summarizeLiveModelRuns', () => {
 
   it('refuses an empty set of runs', () => {
     expect(() => summarizeLiveModelRuns([])).toThrow(/at least one run/);
+  });
+});
+
+describe('allowedReplayMisses', () => {
+  it('uses the count the capture recorded', () => {
+    expect(allowedReplayMisses({ unfrozenRequestCount: 2, codeSha: 'a' }, [])).toBe(2);
+  });
+
+  it('falls back to the first replay stored at the capture commit', () => {
+    const runs = [
+      { codeSha: 'b', pagesMissed: 6, measuredAt: new Date(3) },
+      { codeSha: 'a', pagesMissed: 1, measuredAt: new Date(2) },
+      { codeSha: 'a', pagesMissed: 0, measuredAt: new Date(1) },
+    ];
+    expect(allowedReplayMisses({ codeSha: 'a' }, runs)).toBe(0);
+  });
+
+  it('knows nothing without a count or a replay at the capture commit', () => {
+    expect(
+      allowedReplayMisses({ codeSha: 'a' }, [{ codeSha: 'b', pagesMissed: 0 }]),
+    ).toBeUndefined();
+    expect(allowedReplayMisses({}, [{ codeSha: 'b', pagesMissed: 0 }])).toBeUndefined();
+  });
+});
+
+describe('staleReplayReason', () => {
+  it('accepts misses up to what the capture left unfrozen', () => {
+    expect(staleReplayReason(2, 2)).toBeUndefined();
+    expect(staleReplayReason(0, undefined)).toBeUndefined();
+  });
+
+  it('refuses a replay that missed more than the capture left unfrozen', () => {
+    expect(staleReplayReason(39, 2)).toMatch(
+      /missed 39 request\(s\) where the capture left 2 unfrozen/,
+    );
+  });
+
+  it('refuses any miss it cannot explain', () => {
+    expect(staleReplayReason(2, undefined)).toMatch(/no clean baseline/);
   });
 });

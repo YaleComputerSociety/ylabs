@@ -5,7 +5,10 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { LaneBenchmark, LaneBenchmarkPage } from '../models/laneBenchmark';
 import { ResearchEntity } from '../models/researchEntity';
-import { beginBenchmarkCapture, finishBenchmarkCapture } from '../scrapers/snapshotBenchmarkMode';
+import {
+  beginBenchmarkCapture,
+  finishBenchmarkCaptureWithCoverage,
+} from '../scrapers/snapshotBenchmarkMode';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { liveFieldValueRefusals } from '../utils/researchEntityFieldValueRefusals';
 import {
@@ -109,11 +112,12 @@ async function main(): Promise<void> {
 
   beginBenchmarkCapture();
   let pages;
+  let unfrozenRequestCount = 0;
   let run;
   try {
     run = await runLaneDry(args);
   } finally {
-    pages = finishBenchmarkCapture();
+    ({ pages, unfrozenRequestCount } = finishBenchmarkCaptureWithCoverage());
   }
   if (run.truncated) throw new Error('The lane planned more values than the capture can hold');
 
@@ -134,6 +138,7 @@ async function main(): Promise<void> {
     benchmarkId: args.benchmarkId,
     sourceName: args.sourceName,
     pageCount: pages.length,
+    unfrozenRequestCount,
     plannedObservationCount: run.observations.length,
     researchEntitiesPlanned: slugs.size,
     labelCount: labels.length,
@@ -157,6 +162,7 @@ async function main(): Promise<void> {
         databaseName: mongoose.connection.db?.databaseName ?? 'unknown',
         codeSha: currentCodeSha(),
         pageCount: pages.length,
+        unfrozenRequestCount,
         plannedObservationCount: run.observations.length,
         labels,
       });

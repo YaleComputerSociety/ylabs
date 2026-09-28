@@ -47,6 +47,9 @@ const laneBenchmarkSchema = new mongoose.Schema(
     databaseName: { type: String, required: true },
     codeSha: { type: String, required: false },
     pageCount: { type: Number, required: true },
+    // Requests the capture made but could not freeze. A replay may miss this many and no more
+    // (#3816).
+    unfrozenRequestCount: { type: Number, required: false },
     plannedObservationCount: { type: Number, required: true },
     labels: { type: [benchmarkLabelSchema], default: [] },
     goldLabels: { type: [goldLabelSchema], default: [] },

@@ -7,6 +7,7 @@ import {
   beginBenchmarkCapture,
   beginBenchmarkReplay,
   finishBenchmarkCapture,
+  finishBenchmarkCaptureWithCoverage,
   finishBenchmarkReplay,
   isBenchmarkModeActive,
   MODEL_RESPONSE_NAMESPACE,
@@ -31,6 +32,17 @@ const liveModel = (answer: string) => async (config: any) => ({
 });
 
 describe('snapshot benchmark mode', () => {
+  it('counts the requests a capture made but could not freeze', async () => {
+    beginBenchmarkCapture();
+    await getCached('lane-a', 'fetched');
+    await setCached('lane-a', 'fetched', '<html>ok</html>');
+    await getCached('lane-a', 'failed-fetch');
+    await getCached('lane-a', 'failed-fetch');
+    const { pages, unfrozenRequestCount } = finishBenchmarkCaptureWithCoverage();
+    expect(pages).toHaveLength(1);
+    expect(unfrozenRequestCount).toBe(1);
+  });
+
   afterEach(() => {
     try {
       finishBenchmarkCapture();
