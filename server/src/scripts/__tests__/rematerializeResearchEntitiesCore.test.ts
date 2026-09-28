@@ -8,6 +8,7 @@ import {
   assertRematerializeApplyAllowed,
   buildRematerializeFieldChanges,
   collectRematerializeEntityReports,
+  foreignContactFieldsByRow,
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
   countProvenanceReconciliation,
@@ -43,7 +44,7 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
 
   it('requires --slugs when no reclaim mode is given', () => {
     expect(() => parseRematerializeResearchEntitiesArgs(['--apply'])).toThrow(
-      '--slugs, --reclaim-stranded or --unbacked-provenance is required',
+      '--slugs, --reclaim-stranded, --unbacked-provenance or --foreign-contact is required',
     );
   });
 
@@ -249,6 +250,7 @@ describe('assertRematerializeApplyAllowed', () => {
     onlyFields: [],
     includeArchived: false,
     unbackedProvenance: false,
+    foreignContact: false,
   };
 
   it('is a no-op for dry-run', () => {
@@ -511,5 +513,51 @@ describe('withDerivedMaterializerFields', () => {
       'entityType',
       'kind',
     ]);
+  });
+});
+
+describe('the foreign-contact cohort (#3609)', () => {
+  const rowId = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+  const row = (fields: Record<string, unknown>) => ({
+    _id: rowId,
+    slug: 'example-survivor-lab',
+    ...fields,
+  });
+
+  it('runs alone and needs no slug list', () => {
+    expect(parseRematerializeResearchEntitiesArgs(['--foreign-contact']).foreignContact).toBe(true);
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs(['--foreign-contact', '--unbacked-provenance']),
+    ).toThrow('runs on its own');
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs(['--foreign-contact', '--only-fields=websiteUrl']),
+    ).toThrow('already scoped');
+  });
+
+  it('selects a stored contact field that only foreign evidence states, by field name', () => {
+    const cohort = foreignContactFieldsByRow(
+      [row({ contactEmail: 'coordinator@example.edu', contactRole: 'Lab Manager' })],
+      [
+        { entityKey: 'ysm-example-merged-loser', field: 'contactEmail' },
+        { entityKey: 'example-survivor-lab', field: 'contactRole' },
+      ],
+    );
+
+    expect(Object.fromEntries(cohort)).toEqual({ 'example-survivor-lab': ['contactEmail'] });
+  });
+
+  it('leaves a row whose contact is keyed to it by id, a locked field, and an empty field', () => {
+    const cohort = foreignContactFieldsByRow(
+      [
+        row({ contactEmail: 'coordinator@example.edu', contactName: '  ' }),
+        {
+          ...row({ contactRole: 'Lab Manager', manuallyLockedFields: ['contactRole'] }),
+          slug: 'example-locked-lab',
+        },
+      ],
+      [{ entityId: rowId, entityKey: 'some-other-key', field: 'contactEmail' }],
+    );
+
+    expect(cohort.size).toBe(0);
   });
 });

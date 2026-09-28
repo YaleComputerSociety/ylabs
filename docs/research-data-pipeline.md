@@ -786,6 +786,9 @@ Two live observations stating the same value are ambiguous and the entry is left
 This matters where the projection itself leaves the entry standing, and in the provenance-only pass below, which writes none of the projection's own entries.
 For rows no sweep re-materializes, `yarn --cwd server research-entity:rematerialize --unbacked-provenance [--include-archived]` selects every row carrying such an entry by predicate and runs the materializer with `onlyReconcileFieldProvenance`, which plans both stages against the stored row and writes the provenance unsets and relinks and nothing else, then re-gates the rows it changed; the report counts `retiredProvenanceEntries` and `relinkedProvenanceEntries` apart, it is dry-run by default, and `--apply --confirm-rematerialize` is Development-only.
 
+A contact field stands on a row only while a live observation keyed to that row states it (#3609): a merged-in loser's contact, or one read under another key that resolved onto the row, is dropped before resolving and a stored one is cleared on the row's next own-key pass.
+`yarn --cwd server research-entity:rematerialize --foreign-contact` selects the rows that still store such a field, scopes the materializer to the three contact fields, reports `clearedContactFields` by field name, and re-gates the rows it cleared; it is dry-run by default and `--apply --confirm-rematerialize` is Development-only.
+
 Measured on Development on 2026-09-23, and it corrects a root cause recorded elsewhere as "merged but inert, because no source asserts absence" (#3135).
 Absence is asserted: 90 live observations carry a non-empty `assertsNoValueFor`.
 What has never happened is a retraction, of which there have been zero.

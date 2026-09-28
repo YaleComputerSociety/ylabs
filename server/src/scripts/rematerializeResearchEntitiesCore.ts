@@ -2,6 +2,10 @@ import {
   fieldProvenanceEntries,
   fieldProvenanceEntryNamesALaneWithoutEvidence,
 } from '../models/fieldProvenanceBacking';
+import {
+  RESEARCH_ENTITY_CONTACT_FIELDS,
+  observationIsKeyedToRow,
+} from '../scrapers/rowKeyedContactEvidence';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 export interface RematerializeResearchEntitiesArgs {
@@ -10,6 +14,7 @@ export interface RematerializeResearchEntitiesArgs {
   confirmRematerialize: boolean;
   reclaimStrandedField?: string;
   unbackedProvenance: boolean;
+  foreignContact: boolean;
   onlyFields: string[];
   includeArchived: boolean;
   output?: string;
@@ -117,6 +122,7 @@ export function parseRematerializeResearchEntitiesArgs(
     apply: false,
     confirmRematerialize: false,
     unbackedProvenance: false,
+    foreignContact: false,
     onlyFields: [],
     includeArchived: false,
   };
@@ -142,6 +148,10 @@ export function parseRematerializeResearchEntitiesArgs(
     }
     if (arg === '--unbacked-provenance') {
       args.unbackedProvenance = true;
+      continue;
+    }
+    if (arg === '--foreign-contact') {
+      args.foreignContact = true;
       continue;
     }
     if (arg.startsWith('--slugs=')) {
@@ -187,11 +197,24 @@ export function parseRematerializeResearchEntitiesArgs(
     throw new Error(`Unknown rematerialize argument: ${arg}`);
   }
 
-  if (!slugsProvided && !args.reclaimStrandedField && !args.unbackedProvenance) {
-    throw new Error('--slugs, --reclaim-stranded or --unbacked-provenance is required');
+  if (
+    !slugsProvided &&
+    !args.reclaimStrandedField &&
+    !args.unbackedProvenance &&
+    !args.foreignContact
+  ) {
+    throw new Error(
+      '--slugs, --reclaim-stranded, --unbacked-provenance or --foreign-contact is required',
+    );
   }
   if (args.unbackedProvenance && args.reclaimStrandedField) {
     throw new Error('--unbacked-provenance writes provenance only, so it cannot reclaim a field');
+  }
+  if (args.foreignContact && (args.unbackedProvenance || args.reclaimStrandedField)) {
+    throw new Error('--foreign-contact writes contact fields only, so it runs on its own');
+  }
+  if (args.foreignContact && args.onlyFields.length > 0) {
+    throw new Error('--foreign-contact is already scoped to the contact fields');
   }
   // A reclaim run selects its cohort by one field being empty, and an unscoped
   // rematerialize over that cohort rewrites every tracked field - which is how a
@@ -258,6 +281,47 @@ export function buildRematerializeFieldChanges(
     }
   }
   return changes;
+}
+
+export interface ForeignContactCandidateRow {
+  _id?: unknown;
+  slug?: unknown;
+  manuallyLockedFields?: unknown;
+  [field: string]: unknown;
+}
+
+/**
+ * The rows `--foreign-contact` reaches: a live row storing an unlocked contact field
+ * that no live observation keyed to the row states (#3609). Returns field names only,
+ * never a value, because the report is pasted around.
+ */
+export function foreignContactFieldsByRow(
+  rows: readonly ForeignContactCandidateRow[],
+  liveContactObservations: ReadonlyArray<{
+    entityId?: unknown;
+    entityKey?: unknown;
+    field?: unknown;
+  }>,
+): Map<string, string[]> {
+  const byRow = new Map<string, string[]>();
+  for (const row of rows) {
+    if (typeof row.slug !== 'string' || !row.slug) continue;
+    const locked = Array.isArray(row.manuallyLockedFields) ? row.manuallyLockedFields : [];
+    const backed = new Set(
+      liveContactObservations
+        .filter((observation) => observationIsKeyedToRow(observation, row))
+        .map((observation) => String(observation.field)),
+    );
+    const foreign = RESEARCH_ENTITY_CONTACT_FIELDS.filter(
+      (field) =>
+        typeof row[field] === 'string' &&
+        (row[field] as string).trim().length > 0 &&
+        !locked.includes(field) &&
+        !backed.has(field),
+    );
+    if (foreign.length > 0) byRow.set(row.slug, foreign);
+  }
+  return byRow;
 }
 
 export function slugsCarryingUnbackedProvenance(
@@ -339,6 +403,7 @@ export interface RematerializeEntityReport {
   fieldsWritten?: number;
   conflicts?: number;
   changes: RematerializeFieldChange[];
+  clearedContactFields?: string[];
   skipped?: string;
   error?: string;
 }

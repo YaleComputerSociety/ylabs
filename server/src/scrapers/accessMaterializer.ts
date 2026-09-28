@@ -21,6 +21,7 @@ import {
   isExplicitUndergradUnavailabilityPhrase,
   isPlausibleUndergradEvidenceQuote,
 } from './undergradEvidenceQuoteValidation';
+import { CONTACT_FIELDS_SIGNAL_DERIVATION_KEY } from './rowKeyedContactEvidence';
 
 export { isExplicitUndergradUnavailabilityPhrase };
 
@@ -521,7 +522,7 @@ export function deriveAccessArtifactsFromObservations(
     accessSignals.push(
       makeSignal({
         researchEntityId,
-        derivationKey: 'signal:CONTACT_INSTRUCTIONS_EXIST:CONTACT_FIELDS',
+        derivationKey: CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
         type: 'CONTACT_INSTRUCTIONS_EXIST',
         score,
         observations: contactObservations,

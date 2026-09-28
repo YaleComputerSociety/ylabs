@@ -53,6 +53,10 @@ import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike'
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { officialProfileUrlFromRosterEntry } from './leadProfileIdentity';
 import { officialNonGrantSourceUrl } from '../scrapers/accessMaterializer';
+import {
+  CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
+  foreignContactFieldSignalIds,
+} from '../scrapers/rowKeyedContactEvidence';
 import { SCHOOL_PROFILE_HOSTS } from '../scrapers/orgUnitCanonicalization';
 import { IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS } from './accessAcceptanceLevel';
 import { unwrapMicrosoftSafeLinksUrl } from '../utils/safeLinksUrl';
@@ -1893,6 +1897,16 @@ async function planResearchEntityGateUpdates(
         .lean()
     : entities;
   const entityIds = entities.map((entity: any) => entity._id);
+  const foreignContactSignalIds = await foreignContactFieldSignalIds(
+    await Signal.find({
+      researchEntityId: { $in: entityIds },
+      derivationKey: CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
+      archived: false,
+    })
+      .select('_id researchEntityId derivationKey source.evidenceIds')
+      .lean(),
+    entities as any[],
+  );
 
   const [
     rosterByEntityId,
@@ -1907,6 +1921,9 @@ async function planResearchEntityGateUpdates(
           researchEntityId: { $in: entityIds },
           type: { $in: [...accessSignalTypes] },
           archived: false,
+          _id: {
+            $nin: [...foreignContactSignalIds].map((id) => new mongoose.Types.ObjectId(id)),
+          },
           'source.url': { $regex: '^https?://', $options: 'i' },
           derivationKey: { $nin: Array.from(IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS) },
         },
