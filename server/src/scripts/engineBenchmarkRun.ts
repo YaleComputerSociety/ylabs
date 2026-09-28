@@ -5,13 +5,17 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
 import { materializationReadScopeFilter, materializeEntity } from '../scrapers/entityMaterializer';
 import { FrozenMaterializationInput } from '../scrapers/frozenMaterializationInput';
+import { loadResearchEntityNameIdentityAuthority } from '../scrapers/entityMaterializer';
 import { invalidatedScrapeRunIds } from '../scrapers/invalidatedScrapeRuns';
 import {
   planStudentVisibilityGate,
   type ResearchEntityGateRowInput,
 } from '../services/studentVisibilityGateService';
 import { computeResearchEntityStudentVisibility } from '../services/studentVisibilityTier';
-import { loadKnownPersonSurnameRoster } from '../utils/researchHomeNameIdentityRoster';
+import {
+  loadKnownPersonSurnameRoster,
+  loadResearchEntityLeadPersonIds,
+} from '../utils/researchHomeNameIdentityRoster';
 import { labelsFromCapturedRows, type ReplayedRow } from './engineBenchmarkCore';
 
 export const ENGINE_BENCHMARK_ENTITY_TYPE = 'researchEntity';
@@ -121,6 +125,15 @@ export async function captureEngineBenchmark(
     ).map((row: any) => String(row.canonicalGroupId)),
   );
 
+  // The one prefetch answer that is neither an observation nor the row itself. Loaded with the
+  // same corpus reader the chunk prefetch uses, and collapsed the same way: a row with more than
+  // one distinct lead person has no sole lead, which is the absence the engine reads.
+  const leadPersonIds = await loadResearchEntityLeadPersonIds(entityIds);
+  const soleLeadByEntityId = new Map<string, string>();
+  for (const [id, personIds] of leadPersonIds) {
+    if (new Set(personIds).size <= 1) soleLeadByEntityId.set(id, personIds[0] ?? '');
+  }
+
   const rows: Array<Record<string, unknown>> = [];
   let observationCount = 0;
   for (const slug of slugs) {
@@ -140,6 +153,11 @@ export async function captureEngineBenchmark(
       entityDoc: doc.toObject ? doc.toObject() : doc,
       observations,
       hasMergedInRows: mergedInSurvivorIds.has(entityId),
+      soleLeadPersonId: soleLeadByEntityId.get(entityId),
+      // The resolved lead name, not just the sole-lead shortcut: a row with two or more distinct
+      // leads has no sole lead, so the engine falls through to a corpus read that no frozen
+      // observation set can cover (#3589).
+      leadPersonName: (await loadResearchEntityNameIdentityAuthority(doc._id)).leadPersonName,
       gateInput: plan?.gateInput ?? null,
       capturedTier: plan?.tier,
       capturedReasons: plan?.reasons ?? [],
@@ -232,6 +250,12 @@ export async function replayEngineBenchmark(benchmarkId: string): Promise<Engine
     })),
   );
 
+  // Pinned from the instant the input was captured rather than from a constant, so recency
+  // decay still means what it meant when the evidence was read (#3589). With a wall clock the
+  // resolver recomputes `confidenceByField` on every replay and two replays of identical code
+  // disagree by construction: measured on the first capture, 67 of 90 rows differed on that
+  // field alone.
+  const replayNow = new Date((benchmark as any).capturedAt ?? Date.now());
   const knownPersonSurnames = new Set<string>((benchmark as any).knownPersonSurnames ?? []);
   const capturedInvalidatedRuns = [...((benchmark as any).invalidatedScrapeRunIds ?? [])].sort();
   const liveInvalidatedRuns = [...(await invalidatedScrapeRunIds())].sort();
@@ -245,7 +269,12 @@ export async function replayEngineBenchmark(benchmarkId: string): Promise<Engine
       { entityKey: captured.entityKey },
       {
         dryRun: true,
+        now: replayNow,
         chunkPrefetch: frozen,
+        nameIdentityAuthority: {
+          knownPersonSurnames,
+          leadPersonName: String(captured.leadPersonName ?? ''),
+        },
         synthesizeCardDescription: async () => {
           cardSynthesisRequested += 1;
           return '';

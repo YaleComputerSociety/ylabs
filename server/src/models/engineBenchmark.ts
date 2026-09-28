@@ -66,6 +66,7 @@ const engineBenchmarkRowSchema = new mongoose.Schema(
     observations: { type: [mongoose.Schema.Types.Mixed], default: [] },
     hasMergedInRows: { type: Boolean, required: true, default: false },
     soleLeadPersonId: { type: String, required: false },
+    leadPersonName: { type: String, required: false },
     gateInput: { type: mongoose.Schema.Types.Mixed, required: false, default: null },
     capturedTier: { type: String, required: false },
     capturedReasons: { type: [String], default: [] },

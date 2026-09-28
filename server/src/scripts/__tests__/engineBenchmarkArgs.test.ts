@@ -48,6 +48,26 @@ describe('parseEngineBenchmarkArgs', () => {
   });
 });
 
+describe('a run whose replays disagree stores nothing', () => {
+  /**
+   * A replay that does not agree with itself cannot be compared to a later one, so storing it
+   * would put a row in the trend no future run can be measured against. Pinned by reading the
+   * source, because the guard is a refusal to write and a behavioural test would need a
+   * deliberately nondeterministic engine to exercise it.
+   */
+  it('gates the snapshot write on the replays agreeing', () => {
+    const source = fs.readFileSync(
+      path.join(SERVER_ROOT, 'src/scripts/engineBenchmark.ts'),
+      'utf8',
+    );
+
+    expect(source).toContain('const reproducible = fingerprints.length === 1;');
+    expect(source).toContain(
+      'if (!options.dryRun && reproducible) await EngineBenchmarkSnapshot.create(',
+    );
+  });
+});
+
 describe('the engine benchmark is registered where it has to be', () => {
   /**
    * A sweep stage names an npm script by string, so a stage whose command does not exist

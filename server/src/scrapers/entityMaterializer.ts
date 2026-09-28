@@ -317,6 +317,27 @@ interface MaterializeOptions {
    * judged on an answer produced under the wider rule.
    */
   auditFieldLocksIgnoringRecord?: readonly string[];
+  /**
+   * The instant the projection is evaluated at, for a replay that has to be reproducible.
+   *
+   * `confidenceResolver` weights every observation by `recencyDecay(observedAt, now, halfLife)`
+   * and `confidenceByField` is a stored field, so with a wall clock two runs over identical
+   * evidence compute different confidences and no frozen-input benchmark can hold still (#3589).
+   * Only the engine benchmark passes it, from the instant its input was captured, so decay stays
+   * meaningful rather than being switched off.
+   */
+  now?: Date;
+  /**
+   * The lead-person name and surname roster to project against, for a replay that must not read
+   * the corpus.
+   *
+   * `loadResearchEntityNameIdentityAuthority` resolves a lead name from the roster whenever the
+   * prefetch cannot answer with a sole lead, and the prefetch deliberately cannot for a row with
+   * two or more distinct leads. That live read is what kept 6 of 90 benchmark rows reporting an
+   * unfrozen input after their sole-lead answers were frozen (#3589), so the benchmark supplies
+   * the authority it captured instead.
+   */
+  nameIdentityAuthority?: ResearchEntityNameIdentityAuthority;
 }
 
 function defaultMaterializerCardSynthesizer(
@@ -6833,10 +6854,14 @@ export async function materializeEntity(
   // next pass over it decides on evidence.
   const descriptionEntityKind = descriptionEntityKindForResearchEntity(entityDoc);
 
+  // One instant for the whole projection, so the resolver's recency decay and every
+  // date the projection derives agree with each other and with a later replay (#3589).
+  const projectionNow = options.now ?? new Date();
   const resolved = resolveAllFields(refusalScreen.kept, {
     manuallyLockedFields,
     manualValues,
     descriptionEntityKind,
+    now: projectionNow,
   });
   if (isResearchEntityObservationType(entityType)) {
     const grantEvidence = aggregateResearchEntityGrantEvidence(materializationObs);
@@ -6895,12 +6920,14 @@ export async function materializeEntity(
     }
   }
 
-  const nameIdentityAuthority = isResearchEntityObservationType(entityType)
-    ? await loadResearchEntityNameIdentityAuthority(
-        entityDoc?._id ?? entityIdString,
-        options.chunkPrefetch,
-      )
-    : NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY;
+  const nameIdentityAuthority =
+    options.nameIdentityAuthority ??
+    (isResearchEntityObservationType(entityType)
+      ? await loadResearchEntityNameIdentityAuthority(
+          entityDoc?._id ?? entityIdString,
+          options.chunkPrefetch,
+        )
+      : NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY);
 
   const projection = await projectFromLog(entityType, {
     resolved,
@@ -6914,7 +6941,7 @@ export async function materializeEntity(
     undergradEvidenceQuoteWithdrawnBy,
     droppedLoserWebsiteValues,
     loserRosterReads,
-    now: new Date(),
+    now: projectionNow,
     synthesizeCardDescription: options.synthesizeCardDescription,
     writeOnlyFields: options.writeOnlyFields,
     provenanceOnly: options.onlyReconcileFieldProvenance,
