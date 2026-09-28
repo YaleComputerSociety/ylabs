@@ -5,6 +5,43 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-28: A Merged-In Loser's Evidence Is Carried, Owned By Field Class, And Retired On Its Own Key (#3609)
+
+#3609 asked for the opposite of what the log supports, so this entry diverges from its title on purpose.
+The issue proposed retiring a loser's evidence when the survivor's own complete reads stop emitting the loser's key, on the premise that a loser key is never read again.
+Measured on Development on 2026-09-28 between 04:10 and 05:05 UTC, read only, with a peer sweep writing, the premise does not hold.
+3,195 tombstones reach a live survivor, 1,704 survivors resolve over them, and of the 2,492 slots on `student_ready` survivors whose provenance cites a live loser observation, 948 come from a source that has written that loser key again since the loser was last updated.
+For those sources the loser key is still the live key for the page, so retiring by key would retire current evidence.
+Retirement already reaches loser keys: 51 loser-keyed `websiteUrl` observations had been retired by field retraction reading the loser key itself, and the issue's proposal, survivor-key reads retiring loser-keyed evidence, reached 4 observations and 0 stored values.
+
+What a survivor may take from a loser, by field class:
+
+1. **Identity is the survivor's own** (`name`, `entityType`, `kind`, `school`, the lead fields; #3567).
+A loser never restates who the survivor is.
+2. **Contact is row-keyed only** (#3609, the entry below).
+A loser's contact never fills a survivor, because contact is fail-closed.
+3. **A website a survivor's own lab-identity lane typed is the survivor's** (#3585).
+4. **Every other field is carried, not re-keyed** (#3560).
+A loser's live observation may fill a field the survivor holds no evidence for, and it keeps the loser's key and trust, so history stays where it was written.
+
+How that carried evidence stops backing the survivor:
+
+- **It retires on the loser key, through the ordinary field-retraction path**, which is where the source that wrote it keeps reading.
+The gap was the step after: the stored-value clear read the row whose slug is the loser key, the archived loser, so a retraction cleared a value nobody is served and left the survivor serving it, and it read the loser's locks instead of the survivor's.
+Now a loser key's state is the survivor its tombstone chain reaches: the survivor's stored value and locks decide, the clear lands on the survivor, and rival evidence is counted across every key and id merged into that survivor, because any of them refills the field on the next resolve.
+Two keys of one survivor retracting the same field in one pass are decided together, so the survivor clears once instead of each key deferring to the other.
+- **A survivor-key read never retires loser-keyed evidence.** It is a read of a different key, and often a different page (of the 779 slots whose source now reads the survivor instead, 116 are the same page), so it says nothing about what the loser's page states; that is the #2647 lesson that silence is not absence, one key over.
+- **Nothing is pruned.** A retired observation is superseded with a reason, and provenance that cites it is history.
+
+A dry run on Development on 2026-09-28 at 05:04 UTC, with the change, planned for `ysm-faculty-directory` 14 retirements and 8 stored clears, and for `dept-faculty-roster` 39 retirements and 5 clears, every clear on a live row.
+22 of the retirements are on loser keys, 2 of the clears land on a survivor through one, and 10 clears are deferred to the resolver because another merged-in row still states the field.
+The same dry run on the code before the change planned 3 of its clears onto archived losers.
+
+What stays, recorded by predicate rather than patched:
+
+- 765 slots on `student_ready` survivors cite a live loser observation whose source has read neither key since, so no evidence exists either way and no lane can decide them until it reads again.
+- 449 survivors cite a superseded loser `entityType` observation and hold no live `entityType` observation of their own; a loser never restates identity, so no resolve plans the field, and the value stands on history rather than on evidence.
+
 ## 2026-09-28: A Contact Stands On A Row Only While Evidence Keyed To That Row States It (#3609)
 
 Contact is fail-closed, and #3609 found two ways a contact reached a row from a page that was not about it.

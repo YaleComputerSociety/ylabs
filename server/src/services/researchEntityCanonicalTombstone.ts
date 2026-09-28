@@ -154,6 +154,47 @@ export async function listResearchEntityMergedInRows(
   return mergedIn;
 }
 
+/**
+ * `listResearchEntityMergedInRows` for many survivors at once, one query per hop
+ * rather than per survivor, for a pass that reasons about a whole candidate set.
+ */
+export async function listResearchEntityMergedInRowsBySurvivor(
+  survivorIds: ReadonlyArray<string | mongoose.Types.ObjectId>,
+  maxHops: number = MAX_RESEARCH_ENTITY_TOMBSTONE_HOPS,
+): Promise<Map<string, MergedInResearchEntityRow[]>> {
+  const bySurvivor = new Map<string, MergedInResearchEntityRow[]>();
+  const rootOf = new Map<string, string>();
+  let frontier: mongoose.Types.ObjectId[] = [];
+  for (const id of survivorIds) {
+    if (!mongoose.Types.ObjectId.isValid(String(id))) continue;
+    const key = String(id);
+    if (rootOf.has(key)) continue;
+    rootOf.set(key, key);
+    bySurvivor.set(key, []);
+    frontier.push(new mongoose.Types.ObjectId(key));
+  }
+
+  for (let hop = 0; hop < maxHops && frontier.length > 0; hop += 1) {
+    const rows = (await ResearchEntity.find({
+      canonicalGroupId: { $in: frontier },
+      archived: true,
+    })
+      .select('_id slug canonicalGroupId')
+      .lean()) as Array<MergedInResearchEntityRow & { canonicalGroupId?: unknown }>;
+    frontier = [];
+    for (const row of rows) {
+      const id = String(row._id);
+      if (rootOf.has(id)) continue;
+      const root = rootOf.get(String(row.canonicalGroupId));
+      if (!root) continue;
+      rootOf.set(id, root);
+      bySurvivor.get(root)?.push({ _id: row._id, slug: row.slug });
+      frontier.push(row._id);
+    }
+  }
+  return bySurvivor;
+}
+
 export interface ResearchEntityCanonicalLookup {
   slug?: string;
   entityId?: string | mongoose.Types.ObjectId;
