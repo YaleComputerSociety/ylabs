@@ -18,14 +18,17 @@ import { resolveResearchEntityCanonicalIdentity } from '../services/researchEnti
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
-  REMATERIALIZE_TRACKED_FIELDS,
   assertRematerializeApplyAllowed,
-  buildRematerializeFieldChanges,
   collectRematerializeEntityReports,
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
+  rematerializeComparedFields,
+  rematerializeEntityReportFromChanges,
   rematerializeFailureMessage,
+  rematerializeReportedChanges,
   rematerializeSkipReasonForEntity,
+  rematerializeStateAfterPlan,
+  summarizeRematerializeEntities,
   researchEntityFieldIsStranded,
   countProvenanceReconciliation,
   provenanceReconciliationChanges,
@@ -42,27 +45,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-const SELECT_FIELDS = `${REMATERIALIZE_TRACKED_FIELDS.join(' ')} archived`;
-
-async function loadTrackedFields(slug: string): Promise<Record<string, unknown> | null> {
+async function loadComparedFields(
+  slug: string,
+  fields: readonly string[],
+): Promise<Record<string, unknown> | null> {
   const doc = await ResearchEntity.findOne({ slug })
-    .select(SELECT_FIELDS)
+    .select(`${fields.join(' ')} archived`)
     .lean<Record<string, unknown>>();
   return doc || null;
-}
-
-async function loadStoredContactFields(slug: string): Promise<string[]> {
-  const doc = await ResearchEntity.findOne({ slug })
-    .select(RESEARCH_ENTITY_CONTACT_FIELDS.join(' '))
-    .lean<Record<string, unknown>>();
-  return RESEARCH_ENTITY_CONTACT_FIELDS.filter(
-    (field) => typeof doc?.[field] === 'string' && (doc[field] as string).trim().length > 0,
-  );
-}
-
-async function contactFieldsClearedSince(slug: string, before: string[]): Promise<string[]> {
-  const after = new Set(await loadStoredContactFields(slug));
-  return before.filter((field) => !after.has(field));
 }
 
 async function loadFieldProvenance(slug: string): Promise<unknown> {
@@ -96,7 +86,9 @@ async function processSlug(
   onlyReconcileFieldProvenance: boolean,
   foreignContact = false,
 ): Promise<RematerializeEntityReport> {
-  const before = await loadTrackedFields(slug);
+  const writeOnlyFields = foreignContact ? [...RESEARCH_ENTITY_CONTACT_FIELDS] : onlyFields;
+  const comparedFields = rematerializeComparedFields(writeOnlyFields);
+  const before = await loadComparedFields(slug, comparedFields);
   if (!before) return { slug, found: false, changes: [] };
   const provenanceBefore = onlyReconcileFieldProvenance
     ? await loadFieldProvenance(slug)
@@ -122,24 +114,18 @@ async function processSlug(
     };
   }
 
-  const contactBefore = foreignContact ? await loadStoredContactFields(slug) : [];
   const result = await materializeEntity(
     'researchEntity',
     { entityKey: slug },
     {
       dryRun: !apply,
-      ...(onlyFields.length > 0 ? { writeOnlyFields: onlyFields } : {}),
-      ...(foreignContact ? { writeOnlyFields: [...RESEARCH_ENTITY_CONTACT_FIELDS] } : {}),
+      ...(writeOnlyFields.length > 0 ? { writeOnlyFields } : {}),
       ...(onlyReconcileFieldProvenance ? { onlyReconcileFieldProvenance } : {}),
     },
   );
 
-  let plannedSet: Record<string, unknown> = result.plannedSet || {};
+  const plannedSet: Record<string, unknown> = result.plannedSet || {};
   const plannedUnset: Record<string, unknown> = result.plannedUnset || {};
-  if (apply) {
-    const after = await loadTrackedFields(slug);
-    plannedSet = (after as Record<string, unknown>) || {};
-  }
 
   const changes = onlyReconcileFieldProvenance
     ? provenanceReconciliationChanges(
@@ -148,26 +134,23 @@ async function processSlug(
           ? await loadFieldProvenance(slug)
           : provenanceAfterPlan(provenanceBefore, plannedSet, plannedUnset),
       )
-    : buildRematerializeFieldChanges(before, plannedSet, plannedUnset);
-  return {
+    : rematerializeReportedChanges(
+        before,
+        apply
+          ? (await loadComparedFields(slug, comparedFields)) || {}
+          : rematerializeStateAfterPlan(before, plannedSet, plannedUnset, comparedFields),
+        comparedFields,
+      );
+  return rematerializeEntityReportFromChanges({
     slug,
-    found: true,
     entityId: result.entityId,
     studentVisibilityTierBefore: before.studentVisibilityTier,
-    fieldsWritten: result.fieldsWritten,
+    materializerFieldsWritten: result.fieldsWritten,
     conflicts: result.conflicts,
     changes,
-    ...(foreignContact
-      ? {
-          clearedContactFields: apply
-            ? await contactFieldsClearedSince(slug, contactBefore)
-            : contactBefore.filter((field) =>
-                Object.prototype.hasOwnProperty.call(plannedUnset, field),
-              ),
-        }
-      : {}),
+    foreignContact,
     skipped: result.skipped,
-  };
+  });
 }
 
 async function discoverStrandedFieldSlugs(field: string): Promise<string[]> {
@@ -348,14 +331,7 @@ async function main() {
   let regate: RematerializeRegateSummary | undefined;
   let regateError: string | undefined;
   if (args.apply) {
-    const regateEntityIds = Array.from(
-      new Set([
-        ...selectRematerializeRegateEntityIds(entities),
-        ...entities
-          .filter((entity) => (entity.clearedContactFields ?? []).length > 0 && entity.entityId)
-          .map((entity) => entity.entityId as string),
-      ]),
-    );
+    const regateEntityIds = selectRematerializeRegateEntityIds(entities);
     if (regateEntityIds.length > 0) {
       try {
         regate = await regateRematerializedEntities(regateEntityIds);
@@ -368,6 +344,7 @@ async function main() {
   const provenanceReconciliation = args.unbackedProvenance
     ? countProvenanceReconciliation(entities)
     : undefined;
+  const summary = summarizeRematerializeEntities(entities, { foreignContact: args.foreignContact });
   const report = {
     generatedAt: new Date().toISOString(),
     environment: guard.environment,
@@ -379,9 +356,7 @@ async function main() {
     discoveredUnbackedProvenanceCount: discoveredUnbackedProvenanceSlugs?.length,
     foreignContact: args.foreignContact,
     discoveredForeignContactCount: discoveredForeignContactSlugs?.length,
-    clearedContactFields: args.foreignContact
-      ? entities.reduce((total, entity) => total + (entity.clearedContactFields?.length ?? 0), 0)
-      : undefined,
+    clearedContactFields: summary.clearedContactFields,
     retiredProvenanceEntries: provenanceReconciliation?.retired,
     relinkedProvenanceEntries: provenanceReconciliation?.relinked,
     onlyFields: args.onlyFields,
@@ -391,7 +366,8 @@ async function main() {
     entitiesMissing: entities
       .filter((entity) => !entity.found && !entity.error)
       .map((entity) => entity.slug),
-    entitiesChanged: entities.filter((entity) => entity.changes.length > 0).length,
+    entitiesChanged: summary.entitiesChanged,
+    fieldsWritten: summary.fieldsWritten,
     entitiesSkipped: entities.filter((entity) => entity.skipped).length,
     entitiesFailed: failed.map((entity) => ({ slug: entity.slug, error: entity.error })),
     regate,

@@ -820,6 +820,10 @@ For rows no sweep re-materializes, `yarn --cwd server research-entity:rematerial
 
 A contact field stands on a row only while a live observation keyed to that row states it (#3609): a merged-in loser's contact, or one read under another key that resolved onto the row, is dropped before resolving and a stored one is cleared on the row's next own-key pass.
 `yarn --cwd server research-entity:rematerialize --foreign-contact` selects the rows that still store such a field, scopes the materializer to the three contact fields, reports `clearedContactFields` by field name, and re-gates the rows it cleared; it is dry-run by default and `--apply --confirm-rematerialize` is Development-only.
+Every rematerialize report measures one change list per row over every field the run may write: the tracked fields, the `--only-fields` scope, and the three contact fields (#3822).
+A contact change is recorded as `{ field, withheld: 'set' | 'replaced' | 'cleared' }` and never carries a value.
+`entitiesChanged`, `fieldsWritten` and `clearedContactFields` are all read off that list, so they cannot disagree; the materializer's own count, which also counts a planned value equal to the stored one, is reported per row as `materializerFieldsWritten`.
+An apply diffs the row it re-reads, and a dry run diffs the row its plan would leave in the same shape, so an unset field reads as a change in both modes.
 
 Measured on Development on 2026-09-23, and it corrects a root cause recorded elsewhere as "merged but inert, because no source asserts absence" (#3135).
 Absence is asserted: 90 live observations carry a non-empty `assertsNoValueFor`.
