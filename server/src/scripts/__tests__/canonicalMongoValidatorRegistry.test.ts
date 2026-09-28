@@ -135,7 +135,13 @@ describe('canonical MongoDB validator registry', () => {
     // gate covers: no environment applies these validators (#752 declined), so a review
     // here approves what would be applied and asserts nothing about stored data (#3396).
     //
-    // Reviewed for #3799. The only drift is role_assignments.rosterProvenance gaining
+    // Reviewed for #3802. The only drift is role_assignments.rosterProvenance gaining
+    // identityBasis, an optional string limited to 'profile-url' and 'identity-evidence',
+    // which a roster lane stamps on an edge whose person it resolved by identity evidence
+    // rather than minting a name-only person. Edges the lane minted for, and every edge it
+    // never wrote, carry none. No other collection or property changed.
+    //
+    // Reviewed for #3799 before that. The only drift is role_assignments.rosterProvenance gaining
     // adoptedAt: { bsonType: ['date','null'] }, which the centers-institutes-index lane
     // stamps when it adopts a provenance-less edge of a person it lists. It is optional
     // because every edge the lane wrote itself, and every edge it has not adopted,
@@ -156,6 +162,6 @@ describe('canonical MongoDB validator registry', () => {
     expect(
       canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS),
       'The declared canonical validator contracts changed. This gate governs the declaration in canonicalMongoValidatorRegistry.ts and nothing else: no environment applies these validators, so a green run is not evidence that any collection is validated, and a red run is not an outage. Describe the drift in the comment above, then update the expected fingerprint. Only `yarn --cwd server model-refactor:validators-assert --environment <env>` reads the database.',
-    ).toBe('36eb1bebda74ce4ac6466cbc386cfb2dce79003c7efc27bbf6e8c394ce0f56fb');
+    ).toBe('31d9ce0388704cd4cd2677e44e6be469003fcd0e4f08b075c8d5cc86c0a701be');
   });
 });

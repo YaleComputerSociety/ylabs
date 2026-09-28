@@ -805,6 +805,10 @@ Dedupe prefers the role-bearing card rather than the first card in the DOM, beca
 - A member the roster stops listing is retired by the lane itself, never by hand (#3781).
 Each read emits a `centerRosterHealth` snapshot of every member key, role claim and membership key it listed, and two admitted reads that omit a claim retire its observations and end this source's role edge for it, including a stale lead edge; `docs/research-data-pipeline.md` has the admission rules and the freeze guards.
 A read also adopts the provenance-less edges of a person it lists whose profile URL resolves to one researcher, so that pass governs them too (#3799); adoption never follows a name and never touches an edge that names a source.
+- A listing's profile URL is usually a page the center hosts itself, which no researcher carries, so the lane follows each Yale-hosted member page and emits what it states as `profileIdentityEvidence`: the page's canonical and linked Yale person pages, the member's own Yale email, and a netid only where the page's Person metadata labels one (#3802).
+The materializer joins the listing to a researcher only through that evidence, with the name as a veto and never as the join, and two agreeing people resolve to nobody; `resolveRosterMemberIdentity` in `entityMaterializer.ts` owns the order.
+An unresolved listing whose exact name an account-, netid- or ORCID-holding researcher already carries is not minted (`unresolved-identity-namesake`), because the accountless-shell dedupe folds such a mint back by name and the next read mints it again, which is how one person served twice on a center.
+The page is never cached whole, only the extracted evidence, and a `--limit` run reads at most that many member pages per roster so the canary stays bounded.
 So a config must keep one center entity key to itself, and a pager change must still end on the roster's own end, or the snapshot stops being admissible.
 
 Then clear the borrowed URL with `yarn --cwd server observations:retire-organization-identity-websites`.

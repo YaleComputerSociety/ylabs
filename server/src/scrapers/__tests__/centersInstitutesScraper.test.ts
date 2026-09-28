@@ -1765,6 +1765,58 @@ describe('CentersInstitutesScraper.run child crawl', () => {
   });
 });
 
+describe('CentersInstitutesScraper member identity evidence (#3802)', () => {
+  const rosterUrl = 'https://fixture-center.example.edu/people';
+  const profileUrl = (slug: string) => `https://fixture-center.yale.edu/profile/${slug}/`;
+  const members = ['avery', 'blair', 'casey'].map((slug) => ({
+    name: `${slug[0].toUpperCase()}${slug.slice(1)} Synthetic`,
+    profileUrl: profileUrl(slug),
+  }));
+  const evidenceConfig: CenterConfig = {
+    centerKey: 'fixture-evidence',
+    centerName: 'Fixture Evidence Center',
+    schoolName: '',
+    kind: 'center',
+    url: rosterUrl,
+    homeUrl: 'https://fixture-center.example.edu/',
+    extractor: () => ({
+      members: [...members, { name: 'Devon Synthetic', profileUrl: 'https://lab.example.org/' }],
+    }),
+  };
+  const fetcher = vi.fn(async (url: string) =>
+    url === rosterUrl
+      ? '<html></html>'
+      : '<html><head><link rel="canonical" href="https://fixture-dept.yale.edu/profile/x/"></head></html>',
+  );
+
+  it("emits what each member's Yale profile page states, and follows no off-Yale link", async () => {
+    fetcher.mockClear();
+    const { ctx, emitted } = makeContext();
+    await new CentersInstitutesScraper([evidenceConfig], null, fetcher, (url) => fetcher(url)).run(
+      ctx,
+    );
+
+    const evidence = emitted.filter((o) => o.field === 'profileIdentityEvidence');
+    expect(evidence).toHaveLength(3);
+    expect(evidence[0].value).toMatchObject({
+      pageUrl: profileUrl('avery'),
+      linkedProfileUrls: [profileUrl('avery'), 'https://fixture-dept.yale.edu/profile/x/'],
+    });
+    expect(fetcher.mock.calls.map(([url]) => url)).not.toContain('https://lab.example.org/');
+  });
+
+  it('reads no more member pages per roster than a bounded run allows', async () => {
+    fetcher.mockClear();
+    const { ctx, emitted } = makeContext({ limit: 1 });
+    await new CentersInstitutesScraper([evidenceConfig], null, fetcher, (url) => fetcher(url)).run(
+      ctx,
+    );
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(emitted.filter((o) => o.field === 'profileIdentityEvidence')).toHaveLength(1);
+  });
+});
+
 describe('profileGridLeadershipExtractor', () => {
   const card = (
     slug: string,

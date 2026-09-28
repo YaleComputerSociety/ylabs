@@ -34,6 +34,12 @@ export interface RoleAssignmentTarget {
   id: mongoose.Types.ObjectId;
 }
 
+export const rosterIdentityBases = ['profile-url', 'identity-evidence'] as const;
+export type RosterIdentityBasis = (typeof rosterIdentityBases)[number];
+
+export const isRosterIdentityBasis = (value: unknown): value is RosterIdentityBasis =>
+  typeof value === 'string' && (rosterIdentityBases as readonly string[]).includes(value);
+
 export interface RoleAssignmentRosterProvenance {
   sourceName?: string;
   sourceUrl?: string;
@@ -44,6 +50,7 @@ export interface RoleAssignmentRosterProvenance {
   observedAt?: Date;
   freshnessExpiresAt?: Date;
   adoptedAt?: Date;
+  identityBasis?: RosterIdentityBasis;
 }
 
 export interface RoleAssignmentRecord {
@@ -149,6 +156,7 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
           observedAt: { type: Date },
           freshnessExpiresAt: { type: Date },
           adoptedAt: { type: Date },
+          identityBasis: { type: String, enum: rosterIdentityBases },
         },
         { _id: false },
       ),
