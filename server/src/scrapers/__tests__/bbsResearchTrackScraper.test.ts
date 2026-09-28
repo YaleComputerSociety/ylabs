@@ -4,7 +4,7 @@ import {
   BbsResearchTrackScraper,
   bbsGraftObservations,
   bbsProfileSlugFromUrl,
-  bbsTrackResearchAreaLabel,
+  bbsTrackResearchAreaLabels,
   buildBbsMatchIndex,
   normalizeMatchUrl,
   parseBbsProfileLinks,
@@ -68,21 +68,56 @@ function makeContext(options: Partial<ScraperContext['options']> = {}): {
 }
 
 describe('BBS track slug to research-area mapping', () => {
-  it('maps all nine track slugs to a concise label', () => {
+  it('maps all nine track slugs to at least one chip', () => {
     expect(BBS_TRACKS).toHaveLength(9);
     for (const track of BBS_TRACKS) {
-      expect(bbsTrackResearchAreaLabel(track.slug)).toBe(track.researchArea);
-      expect(track.researchArea.length).toBeGreaterThan(0);
+      expect(bbsTrackResearchAreaLabels(track.slug)).toEqual(track.researchAreas);
+      expect(track.researchAreas.length).toBeGreaterThan(0);
     }
-    expect(bbsTrackResearchAreaLabel('cbb')).toBe('Computational Biology & Bioinformatics');
-    expect(bbsTrackResearchAreaLabel('mcbgd')).toBe(
-      'Molecular Cell Biology, Genetics & Development',
-    );
   });
 
-  it('is case-insensitive and returns undefined for an unknown slug', () => {
-    expect(bbsTrackResearchAreaLabel('IMMUNOLOGY')).toBe('Immunology');
-    expect(bbsTrackResearchAreaLabel('not-a-track')).toBeUndefined();
+  it('is case-insensitive and returns nothing for an unknown slug', () => {
+    expect(bbsTrackResearchAreaLabels('IMMUNOLOGY')).toEqual(['Immunology']);
+    expect(bbsTrackResearchAreaLabels('not-a-track')).toEqual([]);
+  });
+
+  /**
+   * A programme name is not a topic. For 38 served rows one of these three was the whole of
+   * "Best fit for", so a student read "a fit for one of these four fields" without being told
+   * which (#3806). Each now names fields a student can read, which asserts no more than the
+   * single-field tracks already do on the same evidence.
+   */
+  it('names the several fields a multi-field track spans, never the programme', () => {
+    expect(bbsTrackResearchAreaLabels('m2p2')).toEqual([
+      'Molecular Medicine',
+      'Pharmacology',
+      'Physiology',
+    ]);
+    expect(bbsTrackResearchAreaLabels('mcbgd')).toEqual([
+      'Molecular Cell Biology',
+      'Genetics',
+      'Developmental Biology',
+    ]);
+    expect(bbsTrackResearchAreaLabels('bbsb')).toEqual([
+      'Biochemistry',
+      'Quantitative Biology',
+      'Biophysics',
+      'Structural Biology',
+    ]);
+  });
+
+  /**
+   * The shape rule behind the three above, pinned so a tenth track cannot reintroduce it: a
+   * chip that lists several fields with a comma or an ampersand is a programme name.
+   * "Computational Biology & Bioinformatics" is the one allowed conjunction, because it names
+   * one field under two conventional names rather than two fields.
+   */
+  it('grafts no chip that reads as a programme name', () => {
+    const conjoined = BBS_TRACKS.flatMap((track) => track.researchAreas).filter(
+      (chip) => /,/.test(chip) || /\s&\s/.test(chip),
+    );
+
+    expect(conjoined).toEqual(['Computational Biology & Bioinformatics']);
   });
 });
 

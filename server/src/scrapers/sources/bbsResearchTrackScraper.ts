@@ -47,69 +47,84 @@ export interface BbsTrack {
   /** Track path segment under `/bbs/people/`, also used to filter with `--only`. */
   slug: string;
   url: string;
-  /** Human-readable research-area facet label grafted for every PI in the track. */
-  researchArea: string;
+  /**
+   * The research-area chips grafted for every PI in the track. A list rather than one
+   * label because three of the nine tracks are named after several fields at once, and a
+   * programme name is not a topic (#3806).
+   */
+  researchAreas: string[];
 }
 
 /**
- * The nine BBS research tracks and the concise research-area label each maps to.
- * Labels are the curated facet chip, not the raw slug or the full program name,
- * kept short enough to survive research-area label hygiene and read as a topic.
+ * The nine BBS research tracks and the research-area chips each maps to.
+ *
+ * Chips are the curated facet values, not the raw slug and not the programme name. Six
+ * tracks are named after a single field and map to it directly. The other three are named
+ * after the several fields they span, and each is listed as those fields rather than as its
+ * programme name: a chip reading "Molecular Medicine, Pharmacology & Physiology" tells a
+ * student they are a fit for one of three things without saying which, and for 38 served
+ * rows it was the whole of "Best fit for" (#3806).
+ *
+ * Splitting them asserts no more than the single-field tracks already do. Membership of the
+ * immunology track is grafted as `Immunology` on the same evidence and at the same 0.7
+ * confidence, so membership of a track that spans pharmacology is grafted as
+ * `Pharmacology`. What changes is that each chip now names a field a student can read.
  */
 export const BBS_TRACKS: BbsTrack[] = [
   {
     slug: 'bbsb',
     url: 'https://medicine.yale.edu/bbs/people/bbsb/',
-    researchArea: 'Biochemistry, Quantitative Biology, Biophysics & Structural Biology',
+    researchAreas: ['Biochemistry', 'Quantitative Biology', 'Biophysics', 'Structural Biology'],
   },
   {
     slug: 'cbb',
     url: 'https://medicine.yale.edu/bbs/people/cbb/',
-    researchArea: 'Computational Biology & Bioinformatics',
+    researchAreas: ['Computational Biology & Bioinformatics'],
   },
   {
     slug: 'human-genome-sciences',
     url: 'https://medicine.yale.edu/bbs/people/human-genome-sciences/',
-    researchArea: 'Human Genome Sciences',
+    researchAreas: ['Human Genome Sciences'],
   },
   {
     slug: 'immunology',
     url: 'https://medicine.yale.edu/bbs/people/immunology/',
-    researchArea: 'Immunology',
+    researchAreas: ['Immunology'],
   },
   {
     slug: 'm2p2',
     url: 'https://medicine.yale.edu/bbs/people/m2p2/',
-    researchArea: 'Molecular Medicine, Pharmacology & Physiology',
+    researchAreas: ['Molecular Medicine', 'Pharmacology', 'Physiology'],
   },
   {
     slug: 'mcbgd',
     url: 'https://medicine.yale.edu/bbs/people/mcbgd/',
-    researchArea: 'Molecular Cell Biology, Genetics & Development',
+    researchAreas: ['Molecular Cell Biology', 'Genetics', 'Developmental Biology'],
   },
   {
     slug: 'microbiology',
     url: 'https://medicine.yale.edu/bbs/people/microbiology/',
-    researchArea: 'Microbiology',
+    researchAreas: ['Microbiology'],
   },
   {
     slug: 'neuroscience',
     url: 'https://medicine.yale.edu/bbs/people/neuroscience/',
-    researchArea: 'Neuroscience',
+    researchAreas: ['Neuroscience'],
   },
   {
     slug: 'plantmolbio',
     url: 'https://medicine.yale.edu/bbs/people/plantmolbio/',
-    researchArea: 'Plant Molecular Biology',
+    researchAreas: ['Plant Molecular Biology'],
   },
 ];
 
-export const BBS_TRACK_RESEARCH_AREAS: Record<string, string> = Object.fromEntries(
-  BBS_TRACKS.map((track) => [track.slug, track.researchArea]),
+export const BBS_TRACK_RESEARCH_AREAS: Record<string, string[]> = Object.fromEntries(
+  BBS_TRACKS.map((track) => [track.slug, track.researchAreas]),
 );
 
-export function bbsTrackResearchAreaLabel(slug: string): string | undefined {
-  return BBS_TRACK_RESEARCH_AREAS[slug.trim().toLowerCase()];
+/** The chips a track grafts, or an empty list when the slug names no track. */
+export function bbsTrackResearchAreaLabels(slug: string): string[] {
+  return BBS_TRACK_RESEARCH_AREAS[slug.trim().toLowerCase()] ?? [];
 }
 
 export interface BbsFacultyRef {
@@ -589,15 +604,15 @@ export class BbsResearchTrackScraper implements IScraper {
       for (const ref of faculty) {
         const existing = byProfileSlug.get(ref.profileSlug);
         if (existing) {
-          if (!existing.researchAreas.includes(track.researchArea)) {
-            existing.researchAreas.push(track.researchArea);
+          for (const area of track.researchAreas) {
+            if (!existing.researchAreas.includes(area)) existing.researchAreas.push(area);
           }
         } else {
           byProfileSlug.set(ref.profileSlug, {
             name: ref.name,
             profileSlug: ref.profileSlug,
             profileUrl: ref.profileUrl,
-            researchAreas: [track.researchArea],
+            researchAreas: [...track.researchAreas],
           });
         }
       }
