@@ -7,6 +7,7 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
 import { materializeEntity } from '../scrapers/entityMaterializer';
+import { fieldProvenanceEntries } from '../models/fieldProvenanceBacking';
 import {
   applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
@@ -26,7 +27,8 @@ import {
   rematerializeFailureMessage,
   rematerializeSkipReasonForEntity,
   researchEntityFieldIsStranded,
-  retiredProvenanceChanges,
+  countProvenanceReconciliation,
+  provenanceReconciliationChanges,
   selectRematerializeRegateEntityIds,
   slugsCarryingUnbackedProvenance,
   type RematerializeEntityReport,
@@ -54,21 +56,20 @@ async function loadFieldProvenance(slug: string): Promise<unknown> {
   return doc?.fieldProvenance;
 }
 
-function provenanceWithoutUnsetEntries(
+function provenanceAfterPlan(
   provenance: unknown,
+  plannedSet: Record<string, unknown>,
   plannedUnset: Record<string, unknown>,
 ): Record<string, unknown> {
-  const remaining: Record<string, unknown> = {};
-  const entries =
-    provenance && typeof provenance === 'object'
-      ? Object.entries(provenance as Record<string, unknown>)
-      : [];
-  for (const [field, entry] of entries) {
-    if (!Object.prototype.hasOwnProperty.call(plannedUnset, `fieldProvenance.${field}`)) {
-      remaining[field] = entry;
-    }
+  const planned: Record<string, unknown> = {};
+  for (const [field, entry] of fieldProvenanceEntries(provenance)) {
+    const path = `fieldProvenance.${field}`;
+    if (Object.prototype.hasOwnProperty.call(plannedUnset, path)) continue;
+    planned[field] = Object.prototype.hasOwnProperty.call(plannedSet, path)
+      ? plannedSet[path]
+      : entry;
   }
-  return remaining;
+  return planned;
 }
 
 async function processSlug(
@@ -76,11 +77,11 @@ async function processSlug(
   apply: boolean,
   onlyFields: string[],
   includeArchived: boolean,
-  onlyRetireNeverBackedProvenance: boolean,
+  onlyReconcileFieldProvenance: boolean,
 ): Promise<RematerializeEntityReport> {
   const before = await loadTrackedFields(slug);
   if (!before) return { slug, found: false, changes: [] };
-  const provenanceBefore = onlyRetireNeverBackedProvenance
+  const provenanceBefore = onlyReconcileFieldProvenance
     ? await loadFieldProvenance(slug)
     : undefined;
 
@@ -110,7 +111,7 @@ async function processSlug(
     {
       dryRun: !apply,
       ...(onlyFields.length > 0 ? { writeOnlyFields: onlyFields } : {}),
-      ...(onlyRetireNeverBackedProvenance ? { onlyRetireNeverBackedProvenance } : {}),
+      ...(onlyReconcileFieldProvenance ? { onlyReconcileFieldProvenance } : {}),
     },
   );
 
@@ -121,12 +122,12 @@ async function processSlug(
     plannedSet = (after as Record<string, unknown>) || {};
   }
 
-  const changes = onlyRetireNeverBackedProvenance
-    ? retiredProvenanceChanges(
+  const changes = onlyReconcileFieldProvenance
+    ? provenanceReconciliationChanges(
         provenanceBefore,
         apply
           ? await loadFieldProvenance(slug)
-          : provenanceWithoutUnsetEntries(provenanceBefore, plannedUnset),
+          : provenanceAfterPlan(provenanceBefore, plannedSet, plannedUnset),
       )
     : buildRematerializeFieldChanges(before, plannedSet, plannedUnset);
   return {
@@ -294,6 +295,9 @@ async function main() {
     }
   }
 
+  const provenanceReconciliation = args.unbackedProvenance
+    ? countProvenanceReconciliation(entities)
+    : undefined;
   const report = {
     generatedAt: new Date().toISOString(),
     environment: guard.environment,
@@ -303,9 +307,8 @@ async function main() {
     discoveredStrandedCount: discoveredSlugs?.length,
     unbackedProvenance: args.unbackedProvenance,
     discoveredUnbackedProvenanceCount: discoveredUnbackedProvenanceSlugs?.length,
-    retiredProvenanceEntries: args.unbackedProvenance
-      ? entities.reduce((total, entity) => total + entity.changes.length, 0)
-      : undefined,
+    retiredProvenanceEntries: provenanceReconciliation?.retired,
+    relinkedProvenanceEntries: provenanceReconciliation?.relinked,
     onlyFields: args.onlyFields,
     includeArchived: args.includeArchived,
     requestedSlugs: slugs,

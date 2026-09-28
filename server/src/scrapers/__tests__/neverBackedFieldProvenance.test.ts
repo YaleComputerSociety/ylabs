@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DERIVED_RESEARCH_AREA_SOURCE_NAME } from '../../models/fieldProvenanceBacking';
-import { planNeverBackedFieldProvenanceRetirement } from '../neverBackedFieldProvenance';
+import {
+  planNeverBackedFieldProvenanceRetirement,
+  planUnrecordedProvenanceObservationRelink,
+} from '../neverBackedFieldProvenance';
 
 const lane = { sourceName: 'synthetic-retired-repair', sourceUrl: 'https://example.org/' };
 
@@ -67,5 +70,108 @@ describe('planNeverBackedFieldProvenanceRetirement', () => {
     expect(
       await plan(new Map([['entityType', lane]]) as unknown as Record<string, unknown>).result,
     ).toEqual(['entityType']);
+  });
+});
+
+describe('planUnrecordedProvenanceObservationRelink (#3788)', () => {
+  const entry = {
+    sourceName: 'synthetic-inheriting-lane',
+    sourceUrl: '',
+    observedAt: new Date('2026-09-01T00:00:00Z'),
+    confidence: 0.5,
+  };
+  const observation = {
+    _id: 'synthetic-observation',
+    sourceId: 'synthetic-source',
+    value: ['Synthetic Department'],
+  };
+
+  const relink = (
+    overrides: Partial<Parameters<typeof planUnrecordedProvenanceObservationRelink>[0]> = {},
+    live: unknown[] = [observation],
+  ) => {
+    const liveObservations = vi.fn().mockResolvedValue(live);
+    return {
+      liveObservations,
+      result: planUnrecordedProvenanceObservationRelink({
+        stored: {
+          _id: 'synthetic-id',
+          slug: 'synthetic-row',
+          departments: ['Synthetic Department'],
+          fieldProvenance: { departments: entry },
+        },
+        set: {},
+        unset: {},
+        lockedFields: [],
+        liveObservations,
+        ...overrides,
+      }),
+    };
+  };
+
+  it('cites the one live observation of the lane that states the stored value, in schema key order', async () => {
+    const { liveObservations, result } = relink();
+    const planned = await result;
+    expect(planned).toEqual({
+      departments: {
+        sourceId: 'synthetic-source',
+        sourceName: 'synthetic-inheriting-lane',
+        sourceUrl: '',
+        observationId: 'synthetic-observation',
+        observedAt: entry.observedAt,
+        confidence: 0.5,
+      },
+    });
+    expect(Object.keys(planned.departments)).toEqual([
+      'sourceId',
+      'sourceName',
+      'sourceUrl',
+      'observationId',
+      'observedAt',
+      'confidence',
+    ]);
+    expect(liveObservations).toHaveBeenCalledWith({
+      entityKey: 'synthetic-row',
+      entityId: 'synthetic-id',
+      field: 'departments',
+      sourceName: 'synthetic-inheriting-lane',
+    });
+  });
+
+  it('leaves an ambiguous or unmatched entry alone rather than guessing', async () => {
+    expect(await relink({}, [observation, { ...observation, _id: 'another' }]).result).toEqual({});
+    expect(await relink({}, [{ ...observation, value: ['Another Department'] }]).result).toEqual(
+      {},
+    );
+    expect(await relink({}, []).result).toEqual({});
+  });
+
+  it('compares against the value the row will hold after this pass', async () => {
+    expect(await relink({ set: { departments: ['Another Department'] } }).result).toEqual({});
+    expect(await relink({ unset: { departments: '' } }).result).toEqual({});
+  });
+
+  it('defers to the pass itself, to a lock, and to a scope, and never asks about an entry that carries evidence', async () => {
+    const { liveObservations, result } = relink({
+      stored: {
+        _id: 'synthetic-id',
+        slug: 'synthetic-row',
+        departments: ['Synthetic Department'],
+        school: 'Synthetic School',
+        name: 'Synthetic Name',
+        entityType: 'LAB',
+        fieldProvenance: {
+          departments: entry,
+          school: entry,
+          name: entry,
+          entityType: { ...entry, observationId: 'already-recorded' },
+        },
+      },
+      set: { 'fieldProvenance.departments': { ...entry, observationId: 'written-this-pass' } },
+      lockedFields: ['school'],
+      scopedFields: ['departments', 'school', 'entityType'],
+    });
+    expect(await result).toEqual({});
+    expect(liveObservations).not.toHaveBeenCalled();
   });
 });

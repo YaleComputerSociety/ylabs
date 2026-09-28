@@ -160,7 +160,7 @@ describe('a fieldProvenance entry naming a lane that never observed the field re
     const plan = await materializeEntity(
       'researchEntity',
       { entityKey: SLUG },
-      { dryRun: true, onlyRetireNeverBackedProvenance: true },
+      { dryRun: true, onlyReconcileFieldProvenance: true },
     );
     expect(plan.plannedSet).toEqual({});
     expect(plan.plannedUnset).toEqual({ 'fieldProvenance.entityType': '' });
@@ -168,7 +168,7 @@ describe('a fieldProvenance entry naming a lane that never observed the field re
     await materializeEntity(
       'researchEntity',
       { entityKey: SLUG },
-      { onlyRetireNeverBackedProvenance: true },
+      { onlyReconcileFieldProvenance: true },
     );
 
     const after = await stored();

@@ -124,7 +124,10 @@ import {
   type SurvivorOwnedWebsiteField,
 } from './survivorOwnedWebsiteClear';
 import { planUnsourcedProvenanceWebsiteUrlClear } from './unsourcedProvenanceWebsiteClear';
-import { planNeverBackedFieldProvenanceRetirement } from './neverBackedFieldProvenance';
+import {
+  planNeverBackedFieldProvenanceRetirement,
+  planUnrecordedProvenanceObservationRelink,
+} from './neverBackedFieldProvenance';
 import { planRefusedStoredDescriptionClears } from './refusedStoredDescription';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import type { ReportPostMaterializationMetrics } from './runReport';
@@ -250,7 +253,7 @@ interface MaterializeOptions {
   syncMeilisearch?: boolean;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
   writeOnlyFields?: string[];
-  onlyRetireNeverBackedProvenance?: boolean;
+  onlyReconcileFieldProvenance?: boolean;
   /**
    * Ignore the named locks, each only if it is revisitable on this row, so the
    * projection reports what the engine would derive for them today. Off everywhere
@@ -4623,6 +4626,7 @@ export interface ProjectFromLogInput {
   now: Date;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
   writeOnlyFields?: string[];
+  provenanceOnly?: boolean;
   applyDescriptionResearchAreaDerivation?: typeof applyDescriptionResearchAreaDerivation;
   applyResearchEntityOrgUnitCanonicalization?: typeof applyResearchEntityOrgUnitCanonicalization;
   applyResearchEntityResearchAreaCanonicalization?: typeof applyResearchEntityResearchAreaCanonicalization;
@@ -4641,6 +4645,7 @@ export interface ProjectFromLogResult {
    */
   storedTextNormalization: StoredTextNormalizationPlan;
   retiredProvenanceFields: string[];
+  relinkedProvenance: Record<string, Record<string, unknown>>;
 }
 
 export const RESEARCH_ENTITY_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as const;
@@ -5867,16 +5872,34 @@ export async function projectFromLog(
   }
   // After the scope restriction, which drops any `unset` key it does not name, so the
   // retirement is scoped by passing the scope through rather than by being filtered.
+  // A provenance-only pass writes none of this projection, so it plans against the stored row.
+  const projectedWrites = input.provenanceOnly ? { set: {}, unset: {} } : { set, unset };
   const retiredProvenanceFields = isResearchEntityObservationType(entityType)
     ? await planNeverBackedFieldProvenanceRetirement({
         stored: entityDoc as Record<string, unknown> | null,
-        set,
-        unset,
+        ...projectedWrites,
         lockedFields: manuallyLockedFields,
         scopedFields,
       })
     : [];
-  for (const field of retiredProvenanceFields) unset[`fieldProvenance.${field}`] = '';
+  const retiredUnset = Object.fromEntries(
+    retiredProvenanceFields.map((field) => [`fieldProvenance.${field}`, '' as const]),
+  );
+  Object.assign(unset, retiredUnset);
+  const relinkedProvenance = isResearchEntityObservationType(entityType)
+    ? await planUnrecordedProvenanceObservationRelink({
+        stored: entityDoc as Record<string, unknown> | null,
+        set: projectedWrites.set,
+        unset: { ...projectedWrites.unset, ...retiredUnset },
+        lockedFields: manuallyLockedFields,
+        scopedFields,
+      })
+    : {};
+  if (!input.provenanceOnly) {
+    for (const [field, entry] of Object.entries(relinkedProvenance)) {
+      set[`fieldProvenance.${field}`] = entry;
+    }
+  }
   return {
     set,
     unset,
@@ -5885,6 +5908,7 @@ export async function projectFromLog(
     fieldsWritten,
     storedTextNormalization,
     retiredProvenanceFields,
+    relinkedProvenance,
   };
 }
 
@@ -6505,11 +6529,17 @@ export async function materializeEntity(
     now: new Date(),
     synthesizeCardDescription: options.synthesizeCardDescription,
     writeOnlyFields: options.writeOnlyFields,
+    provenanceOnly: options.onlyReconcileFieldProvenance,
   });
   const { conflicts } = projection;
-  const { set, unset, fieldsWritten } = options.onlyRetireNeverBackedProvenance
+  const { set, unset, fieldsWritten } = options.onlyReconcileFieldProvenance
     ? {
-        set: {},
+        set: Object.fromEntries(
+          Object.entries(projection.relinkedProvenance).map(([field, entry]) => [
+            `fieldProvenance.${field}`,
+            entry,
+          ]),
+        ),
         unset: Object.fromEntries(
           projection.retiredProvenanceFields.map((field) => [`fieldProvenance.${field}`, '']),
         ) as Record<string, ''>,
@@ -6531,7 +6561,7 @@ export async function materializeEntity(
     };
   }
 
-  if (options.onlyRetireNeverBackedProvenance && !entityDoc) {
+  if (options.onlyReconcileFieldProvenance && !entityDoc) {
     return {
       entityType,
       entityId: entityIdString,
@@ -6668,7 +6698,7 @@ export async function materializeEntity(
     indexStale = !fresh || !(await syncEntity(entityType, fresh));
   }
 
-  if (options.onlyRetireNeverBackedProvenance) {
+  if (options.onlyReconcileFieldProvenance) {
     return {
       entityType,
       entityId: entityIdString,

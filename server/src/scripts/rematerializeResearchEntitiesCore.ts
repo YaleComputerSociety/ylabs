@@ -274,18 +274,55 @@ export function slugsCarryingUnbackedProvenance(
   return Array.from(slugs).sort();
 }
 
-export function retiredProvenanceChanges(
+function recordedObservationId(entry: unknown): string | undefined {
+  const observationId = (entry as { observationId?: unknown } | null)?.observationId;
+  return observationId === undefined || observationId === null || String(observationId) === ''
+    ? undefined
+    : String(observationId);
+}
+
+/**
+ * One change per entry that named a lane without evidence before the pass and was either
+ * retired (`after` undefined) or relinked to the observation it cites (`after` names it).
+ */
+export function provenanceReconciliationChanges(
   before: unknown,
   after: unknown,
 ): RematerializeFieldChange[] {
-  const remaining = new Set(fieldProvenanceEntries(after).map(([field]) => field));
-  return fieldProvenanceEntries(before)
-    .filter(([field]) => !remaining.has(field))
-    .map(([field, entry]) => ({
-      field: `fieldProvenance.${field}`,
-      before: (entry as { sourceName?: unknown } | null)?.sourceName ?? null,
-      after: undefined,
-    }));
+  const remaining = new Map(fieldProvenanceEntries(after));
+  const changes: RematerializeFieldChange[] = [];
+  for (const [field, entry] of fieldProvenanceEntries(before)) {
+    if (!fieldProvenanceEntryNamesALaneWithoutEvidence(entry)) continue;
+    const sourceName = (entry as { sourceName?: unknown } | null)?.sourceName ?? null;
+    if (!remaining.has(field)) {
+      changes.push({ field: `fieldProvenance.${field}`, before: sourceName, after: undefined });
+      continue;
+    }
+    const observationId = recordedObservationId(remaining.get(field));
+    if (observationId) {
+      changes.push({
+        field: `fieldProvenance.${field}`,
+        before: sourceName,
+        after: { sourceName, observationId },
+      });
+    }
+  }
+  return changes;
+}
+
+export function countProvenanceReconciliation(
+  entities: ReadonlyArray<{ changes: RematerializeFieldChange[] }>,
+): { retired: number; relinked: number } {
+  let retired = 0;
+  let relinked = 0;
+  for (const entity of entities) {
+    for (const change of entity.changes) {
+      if (!change.field.startsWith('fieldProvenance.')) continue;
+      if (change.after === undefined) retired += 1;
+      else relinked += 1;
+    }
+  }
+  return { retired, relinked };
 }
 
 export function rematerializeChangeAffectsVisibilityGate(
