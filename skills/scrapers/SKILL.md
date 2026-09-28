@@ -594,13 +594,13 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
 - `sourceYieldGuard.ts` - fails a run whose source has emitted zero observations on `BARREN_RUN_STREAK_FAILURE_THRESHOLD` (3) consecutive runs, so a dead acquisition lane cannot read as `success` (#2607).
   The orchestrator persists `status: 'failure'` with the reason in `run.errors`, which is what `scraperSweepArtifactError` and `sourceHealthService` already escalate; no new reporting surface.
   It is deliberately NOT gated on a recorded successful fetch, because none of the six dead Development lanes records `fetchMetrics` at all and a fetch-gated guard would fire on none of them.
-  A run is `inconclusive` (stepped over, neither counted nor a reset) when it is invalidated, still running, scoped by `options.only`, or had every planned target skipped by the work planner; `sourceIsExpectedToYield` exempts only a disabled source and the `MANUAL_OVERRIDE` tier, mirroring `classifySourceFreshness`.
+  A run is `inconclusive` (stepped over, neither counted nor a reset) when it is invalidated, still running, interrupted, scoped by `options.only`, or had every planned target skipped by the work planner; `sourceIsExpectedToYield` exempts only a disabled source and the `MANUAL_OVERRIDE` tier, mirroring `classifySourceFreshness`.
   `docs/research-data-pipeline.md` owns the rule and why each part of it is load-bearing.
 - `scrapeJobLock.ts` - acquire/heartbeat/release helpers wrapping the `ScrapeJobLock` model, plus `withScrapeJobLock`, the one lifecycle every writer goes through.
-- `scrapeRunLiveness.ts` - the `ScrapeRun` heartbeat, owner stamp, and `classifyScrapeRunLiveness`/`isAbandonedScrapeRun`, the only honest way to ask whether a run is alive.
-- `interruptCleanup.ts` - `onInterrupt`, the single `SIGINT`/`SIGTERM` handler that settles every registered cleanup (run status, lock release) before re-raising the signal.
   The lock is keyed `environment:sourceName`, so it serializes writers on ONE source and leaves parallel work on different sources alone.
   `startScrapeJobLockHeartbeat` renews the lease during a long run; `findHeldScrapeJobLock` reports a live holder for a read-only caller without competing for the lock, and treats an expired lease as no holder because `acquireScrapeJobLock` would take it.
+- `scrapeRunLiveness.ts` - the `ScrapeRun` heartbeat, owner stamp, and `classifyScrapeRunLiveness`/`isAbandonedScrapeRun`, the only honest way to ask whether a run is alive.
+- `interruptCleanup.ts` - `onInterrupt`, the single `SIGINT`/`SIGTERM` handler that settles every registered cleanup (run status, lock release) before re-raising the signal.
 - `seedSources.ts` - populates active `Source` rows from the coverage registry and disables retained historical rows for retired sources.
   Every scraper registered in `registry.ts` needs a seed entry here, because `validateScraperSweepSourceRows` refuses to start a sweep without the row and `scrapers:audit-freshness` blocks on it; applying the seed is the remediation, so a registered scraper the seed does not declare leaves the audit failing with nothing an operator can do.
 - `sourceDispatch.ts` - owns `RETIRED_SOURCE_NAMES` and declares which lanes are script-driven, so a worklist can tell runnable work from work that cannot be done (#2619).

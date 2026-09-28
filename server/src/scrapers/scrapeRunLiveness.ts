@@ -38,10 +38,7 @@ export function classifyScrapeRunLiveness(
   return now.getTime() - heartbeat <= staleHeartbeatMs ? 'live' : 'stale';
 }
 
-export function isAbandonedScrapeRun(
-  run: ScrapeRunLivenessFacts,
-  now: Date = new Date(),
-): boolean {
+export function isAbandonedScrapeRun(run: ScrapeRunLivenessFacts, now: Date = new Date()): boolean {
   const liveness = classifyScrapeRunLiveness(run, now);
   if (liveness === 'stale') return true;
   if (liveness !== 'unverifiable') return false;
