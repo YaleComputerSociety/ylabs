@@ -103,6 +103,7 @@ import {
   WORKING_STYLE_PHRASE_MAX_TOKENS,
 } from './searchTopicAliases';
 import { maxReachableResearchSearchPage } from './researchSearchPagination';
+import { warmServedResearchAreaVocabulary } from '../utils/controlledVocabularyHeadings';
 
 /**
  * The page's lead display names, batched for the whole hit set in one roster read
@@ -1155,6 +1156,9 @@ export async function searchResearchGroupsViaMeili(
   sort: ResearchGroupSearchSort = {},
   options: ResearchGroupSearchOptions = {},
 ): Promise<ResearchGroupSearchResult> {
+  // Same reason as `getResearchGroupDetail`: a browse hit carries research-area chips too, and
+  // a script that reads browse must see the chips a student sees (#3817).
+  await warmServedResearchAreaVocabulary();
   const safeFilters = sanitizeResearchGroupSearchFilters(filters || {});
   const safeOptions = sanitizeResearchGroupSearchOptions(options);
   const safePageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize) || 24));
@@ -3173,6 +3177,13 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   affiliatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
   similarResearchEntities: PublicResearchEntitySummaryDto[];
 } | null> {
+  // The research-area splitter reads the controlled vocabulary synchronously, so it has to be
+  // loaded before this builds a DTO (#3817). Warmed at the two service entry points every
+  // caller already goes through rather than at each script entry: a per-script list has to be
+  // kept in step with the scripts that exist, and #3807 shipped with exactly that gap, so the
+  // served scoreboard reported chips no student was served. Cached, so after the first call
+  // this is one timestamp comparison.
+  await warmServedResearchAreaVocabulary();
   const normalizedSlug = normalizeResearchDetailSlug(slug);
   if (!normalizedSlug) return null;
 
