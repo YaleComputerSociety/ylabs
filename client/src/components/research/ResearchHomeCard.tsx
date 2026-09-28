@@ -9,7 +9,7 @@ import {
   type ResearchCluster,
 } from '../../utils/researchDiscoveryAdapters';
 import ArrowRightIcon from '../shared/ArrowRightIcon';
-import { formatTitleCaseLabel } from '../../utils/displayText';
+import { formatTitleCaseLabel, formatTopicChipLabel } from '../../utils/displayText';
 import { sanitizeResearchEntityCopy } from '../../utils/researchEntityCopy';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/url';
 import { principalInvestigatorLinkFromResearchEntity } from '../../utils/principalInvestigatorLinks';
@@ -252,7 +252,7 @@ const ResearchHomeCard = ({
           ))}
           {alwaysVisibleTopicBadges.map((label) => (
             <span key={label} className="yr-pill yr-pill-blue yr-pill-compact px-2 py-0.5">
-              {formatTitleCaseLabel(label)}
+              {formatTopicChipLabel(label)}
             </span>
           ))}
           {desktopOnlyTopicBadges.map((label) => (
@@ -260,7 +260,7 @@ const ResearchHomeCard = ({
               key={label}
               className="yr-pill yr-pill-blue hidden yr-pill-compact px-2 py-0.5 sm:inline-flex"
             >
-              {formatTitleCaseLabel(label)}
+              {formatTopicChipLabel(label)}
             </span>
           ))}
           {mobileMoreCount > 0 && (
