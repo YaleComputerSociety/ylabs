@@ -630,6 +630,118 @@ describe('projectFromLog', () => {
     confidenceByField: {},
   });
 
+  // A materialize with no fresh scrape in the same pass used to replace the stored list with
+  // the resolver's shorter one, so silence did the retracting: 60 of 2,676 live rows dropped a
+  // real citation, including grant records and personal lab sites (#3476). `sourceUrls` is
+  // deliberately absent from `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`, so removal needs a
+  // positive reason.
+  it('keeps a stored citation the current log does not re-assert', async () => {
+    const ownProfile = 'https://medicine.yale.edu/profile/synthetic-person-fixture/';
+    const grantRecord = 'https://reporter.nih.gov/project-details/10000001';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: {
+          name: resolvedField('Synthetic Person Fixture Lab'),
+          // The log asserts only the profile this pass; the grant record is stored and silent.
+          sourceUrls: resolvedField([ownProfile]),
+        },
+        entityDoc: {
+          _id: 'd'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          slug: 'nih-pi-synthetic-person-fixture',
+          name: 'Synthetic Person Fixture Lab',
+          sourceUrls: [grantRecord],
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect(result.set.sourceUrls).toEqual([grantRecord, ownProfile]);
+  });
+
+  it('still removes a stored citation a positive reason condemns', async () => {
+    const ownProfile = 'https://medicine.yale.edu/profile/synthetic-person-fixture/';
+    const roster = 'https://applied.math.yale.edu/people/faculty';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: {
+          name: resolvedField('Synthetic Person Fixture Research'),
+          sourceUrls: resolvedField([ownProfile]),
+        },
+        entityDoc: {
+          _id: 'd'.repeat(24),
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          slug: 'dept-applied-mathematics-synthetic-person-fixture',
+          name: 'Synthetic Person Fixture Research',
+          // A roster cited by a person row is a graft, and a map pin is refused by the
+          // sanitizer vocabulary. Neither may come back through the union.
+          sourceUrls: [roster, 'https://www.google.com/maps/place/synthetic-building'],
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect(result.set.sourceUrls).toEqual([ownProfile]);
+  });
+
+  // The re-admission has to tell "an arm dropped this" from "the pass never derived this",
+  // which is what the condemned set carries. The #2522 supersession is the case that needs it:
+  // its relation is between two URLs rather than a property of one, so it cannot be re-derived
+  // from the candidate alone, and handing the retired path back would restore exactly the
+  // forever-cited dead page #2522 removed.
+  it('does not hand back a stored citation an arm dropped this pass', async () => {
+    const retiredProfilePath = 'https://example-dept.yale.edu/people/haiqun-quimby/';
+    const canonicalProfileUrl = 'https://example-dept.yale.edu/profile/haiqun-quimby';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Haiqun Quimby Lab') },
+        materializationObs: [
+          {
+            field: 'inferredDirectorName',
+            value: 'Haiqun Quimby',
+            sourceUrl: canonicalProfileUrl,
+            confidence: 0.6,
+          },
+        ],
+        entityDoc: {
+          _id: 'f'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          slug: 'quimby-lab-hq249',
+          name: 'Haiqun Quimby Lab',
+          school: 'School of Medicine',
+          departments: ['Internal Medicine'],
+          sourceUrls: [retiredProfilePath],
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect(result.set.sourceUrls).toEqual([canonicalProfileUrl]);
+  });
+
+  it('writes nothing new when the resolver staged no citation at all', async () => {
+    const stored = 'https://reporter.nih.gov/project-details/10000002';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Synthetic Person Fixture Lab') },
+        entityDoc: {
+          _id: 'd'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          slug: 'nih-pi-synthetic-person-fixture',
+          name: 'Synthetic Person Fixture Lab',
+          sourceUrls: [stored],
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect('sourceUrls' in result.set).toBe(false);
+  });
+
   it('retracts a roster citation from a person-scoped row with no live sourceUrls observation', async () => {
     const result = await projectFromLog(
       'researchEntity',
