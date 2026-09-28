@@ -163,6 +163,15 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
             // fail loud without these keys is the contract working (#2050, #3309).
             plannedClears: 0,
             completed: true,
+            // The stale-run reap stage refuses a report that is not a scoped apply run, so
+            // the stub answers its contract too (#3841).
+            mode: 'apply',
+            heartbeatStaleOnly: true,
+            startedBefore: '2026-01-01T00:00:00.000Z',
+            running: 0,
+            planned: 0,
+            closed: 0,
+            changedSinceRead: 0,
           })}\n`,
         );
       }
