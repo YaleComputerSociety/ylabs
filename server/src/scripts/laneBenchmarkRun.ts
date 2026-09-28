@@ -39,6 +39,7 @@ export interface LaneBenchmarkSpec {
   sourceName: string;
   only: string[];
   limit?: number;
+  sourceConcurrency?: number;
 }
 
 export function assertBenchmarkableLane(sourceName: string): void {
@@ -66,6 +67,7 @@ export async function runLaneDry(spec: LaneBenchmarkSpec): Promise<{
     explain: true,
     explainLimit: EXPLAIN_EVERYTHING,
     ignoreWorkPlanner: true,
+    ...(spec.sourceConcurrency ? { sourceConcurrency: spec.sourceConcurrency } : {}),
     only: spec.only.length > 0 ? spec.only : undefined,
     limit: spec.limit,
     triggeredBy: 'cli',
