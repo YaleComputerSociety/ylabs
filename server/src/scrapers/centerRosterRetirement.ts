@@ -33,7 +33,7 @@
  * source's name under this center's key prefix, and role edges whose
  * `rosterProvenance.sourceName` is this source. An edge whose membership key or
  * person-and-role another source still asserts is left alone, and so is a relationship
- * whose target another source still names.
+ * whose target another source, or a relationship key this read still lists, names.
  *
  * Retirement writes no field and no lock. Observations are retired through the
  * `superseded` plus `rollback` shape both read scopes honour, an edge is ended
@@ -844,7 +844,10 @@ export async function applyCenterRosterRetirementPlan(
 }
 
 export type CenterRosterRetirementOutcome =
-  'invalid-run-id' | 'no-center-roster-read' | 'planned' | 'reconciled';
+  | 'invalid-run-id'
+  | 'no-center-roster-read'
+  | 'planned'
+  | 'reconciled';
 
 export interface CenterRosterRetirementCenterResult {
   entityKey: string;
