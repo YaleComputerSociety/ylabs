@@ -25,6 +25,17 @@ const ENTITY_REGISTRY: Record<SyncableEntityType, EntityIndexConfig> = {
   },
 };
 
+/**
+ * The index primary key for a row, read the same way the document builder reads it, so a
+ * delete addresses the document an add would have written.
+ */
+const indexDocumentId = (doc: any): string | undefined => {
+  const raw = doc?._id ?? doc?.id;
+  if (raw == null) return undefined;
+  const id = String(raw);
+  return id.length > 0 ? id : undefined;
+};
+
 const getConfig = (entityType: string): EntityIndexConfig | null => {
   return (ENTITY_REGISTRY as Record<string, EntityIndexConfig>)[entityType] ?? null;
 };
@@ -33,14 +44,36 @@ export const isSyncableEntityType = (entityType: string): entityType is Syncable
   return getConfig(entityType) !== null;
 };
 
+/**
+ * A row that is archived must not hold an index document, whatever path is syncing it.
+ *
+ * Archiving a row removed it from the rebuild's query but nothing removed the document
+ * it already had, so the index accumulated rows that serve no page. `deleteFromIndex`
+ * existed, but only four specific paths called it, and every future archiving path would
+ * have had to remember. Deciding it HERE is what makes that impossible to forget: this is
+ * the one chokepoint `syncEntity` and `syncEntities` both pass through, the same reason
+ * the uncitable-host and description-ownership refusals live at their write chokepoints
+ * rather than in each caller (#3449).
+ *
+ * Measured on Development twelve hours after a `--clear` rebuild: 4 archived rows had
+ * already re-accumulated documents, and an earlier rebuild found 307 of them, so the
+ * drift is continuous rather than a one-off.
+ */
+const isArchivedRow = (doc: any): boolean => doc?.archived === true;
+
 export const syncEntity = async (entityType: string, doc: any): Promise<boolean> => {
   const config = getConfig(entityType);
   if (!config || !doc) return false;
 
   try {
+    const index = await getMeiliIndex(config.indexName);
+    if (isArchivedRow(doc)) {
+      const archivedId = indexDocumentId(doc);
+      if (archivedId) await index.deleteDocument(archivedId);
+      return true;
+    }
     const meiliDoc = await config.transform(doc);
     if (!meiliDoc) return false;
-    const index = await getMeiliIndex(config.indexName);
     await index.addDocuments([meiliDoc], { primaryKey: config.primaryKey });
     return true;
   } catch (error) {
@@ -61,13 +94,19 @@ export const syncEntities = async (entityType: string, docs: any[]): Promise<num
   if (!config || !docs || docs.length === 0) return 0;
 
   try {
+    const index = await getMeiliIndex(config.indexName);
+    // Archived rows are removed rather than transformed, so a batch mixing live and
+    // archived rows leaves the index holding only the live ones.
+    const archivedIds = docs.filter(isArchivedRow).map(indexDocumentId).filter(Boolean);
+    if (archivedIds.length > 0) await index.deleteDocuments(archivedIds as string[]);
+    const liveDocs = docs.filter((doc) => !isArchivedRow(doc));
+    if (liveDocs.length === 0) return 0;
     const meiliDocs = config.transformMany
-      ? await config.transformMany(docs)
-      : (await Promise.all(docs.map(config.transform))).filter(
+      ? await config.transformMany(liveDocs)
+      : (await Promise.all(liveDocs.map(config.transform))).filter(
           (meiliDoc): meiliDoc is Record<string, any> => meiliDoc !== null,
         );
     if (meiliDocs.length === 0) return 0;
-    const index = await getMeiliIndex(config.indexName);
     await index.addDocuments(meiliDocs, { primaryKey: config.primaryKey });
     return meiliDocs.length;
   } catch (error) {

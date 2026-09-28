@@ -4,9 +4,11 @@ import mongoose from 'mongoose';
 const mocks = vi.hoisted(() => {
   const addDocuments = vi.fn();
   const deleteDocument = vi.fn();
+  const deleteDocuments = vi.fn();
   return {
     addDocuments,
     deleteDocument,
+    deleteDocuments,
     roleAssignmentFind: vi.fn(),
     personFind: vi.fn(),
     accountFind: vi.fn(),
@@ -14,6 +16,7 @@ const mocks = vi.hoisted(() => {
     getMeiliIndex: vi.fn(async (_name: string) => ({
       addDocuments,
       deleteDocument,
+      deleteDocuments,
     })),
   };
 });
@@ -248,5 +251,54 @@ describe('deleteFromIndex', () => {
   it('swallows Meilisearch errors', async () => {
     mocks.deleteDocument.mockRejectedValueOnce(new Error('boom'));
     await expect(deleteFromIndex('researchEntity', 'id-1')).resolves.toBeUndefined();
+  });
+});
+
+describe('an archived row leaves the index (#3449)', () => {
+  beforeEach(() => {
+    mocks.addDocuments.mockClear();
+    mocks.deleteDocument.mockClear();
+    mocks.deleteDocuments.mockClear();
+  });
+
+  it('deletes rather than indexes a single archived row', async () => {
+    const id = new mongoose.Types.ObjectId();
+    await expect(
+      syncEntity('researchEntity', { _id: id, slug: 'a-row', archived: true }),
+    ).resolves.toBe(true);
+    expect(mocks.deleteDocument).toHaveBeenCalledWith(String(id));
+    expect(mocks.addDocuments).not.toHaveBeenCalled();
+  });
+
+  it('keeps indexing a row that is not archived', async () => {
+    const id = new mongoose.Types.ObjectId();
+    await syncEntity('researchEntity', { _id: id, slug: 'a-row', archived: false });
+    expect(mocks.deleteDocument).not.toHaveBeenCalled();
+    expect(mocks.addDocuments).toHaveBeenCalled();
+  });
+
+  it('splits a mixed batch: archived ids deleted, live rows indexed', async () => {
+    const liveId = new mongoose.Types.ObjectId();
+    const archivedId = new mongoose.Types.ObjectId();
+    const written = await syncEntities('researchEntity', [
+      { _id: liveId, slug: 'live-row' },
+      { _id: archivedId, slug: 'archived-row', archived: true },
+    ]);
+    expect(mocks.deleteDocuments).toHaveBeenCalledWith([String(archivedId)]);
+    expect(written).toBe(1);
+  });
+
+  it('still deletes when every row in the batch is archived', async () => {
+    const a = new mongoose.Types.ObjectId();
+    const b = new mongoose.Types.ObjectId();
+    const written = await syncEntities('researchEntity', [
+      { _id: a, slug: 'x', archived: true },
+      { _id: b, slug: 'y', archived: true },
+    ]);
+    // Returns 0 because nothing was indexed, but the deletes must still have happened:
+    // an all-archived batch is exactly the shape a dedupe pass produces.
+    expect(mocks.deleteDocuments).toHaveBeenCalledWith([String(a), String(b)]);
+    expect(mocks.addDocuments).not.toHaveBeenCalled();
+    expect(written).toBe(0);
   });
 });
