@@ -26,6 +26,11 @@ export const BENCHMARKABLE_LANES: ReadonlySet<string> = new Set([
   'student-grants-database',
 ]);
 
+export const SOURCE_CONCURRENCY_LANES: ReadonlySet<string> = new Set([
+  'lab-microsite-undergrad-llm',
+  'lab-microsite-description-llm',
+]);
+
 const RUN_CLOCK_FIELDS_BY_LANE: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['lab-microsite-undergrad-llm', new Set(['lastObservedAt'])],
 ]);
@@ -46,6 +51,14 @@ export function assertBenchmarkableLane(sourceName: string): void {
   if (!BENCHMARKABLE_LANES.has(sourceName)) {
     throw new Error(
       `${sourceName} is not benchmarkable. Supported: ${[...BENCHMARKABLE_LANES].join(', ')}`,
+    );
+  }
+}
+
+export function assertLaneHonorsSourceConcurrency(sourceName: string): void {
+  if (!SOURCE_CONCURRENCY_LANES.has(sourceName)) {
+    throw new Error(
+      `${sourceName} does not honor --source-concurrency. Supported: ${[...SOURCE_CONCURRENCY_LANES].join(', ')}`,
     );
   }
 }

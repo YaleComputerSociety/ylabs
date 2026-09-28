@@ -16,6 +16,7 @@ yarn --cwd server lane:benchmark-capture --source=dept-faculty-roster --only=<ke
 ```
 
 `--source-concurrency=<n>` caps how many fetches the lane makes at once during capture, so a capture against a host that throttles, such as the Yale sites, can run at `1`.
+Only `lab-microsite-undergrad-llm` and `lab-microsite-description-llm` read that cap, so capture refuses the flag for any other lane rather than silently fetching at the lane's default.
 Replay makes no fetches, so it needs no such cap.
 
 Capture runs the lane as a dry run and records every page it would have written to `scrape_snapshots` into `lane_benchmark_pages`, which has no TTL.

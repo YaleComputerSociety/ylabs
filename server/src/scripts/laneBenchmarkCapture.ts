@@ -13,6 +13,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { liveFieldValueRefusals } from '../utils/researchEntityFieldValueRefusals';
 import {
   assertBenchmarkableLane,
+  assertLaneHonorsSourceConcurrency,
   currentCodeSha,
   runLaneDry,
   slugsForPlannedEntities,
@@ -77,6 +78,7 @@ export function parseCaptureArgs(argv: string[]): CaptureArgs {
     throw new Error(`${SCRIPT_NAME} requires --only or --limit, so the benchmark is a fixed scope`);
   }
   assertBenchmarkableLane(args.sourceName);
+  if (args.sourceConcurrency !== undefined) assertLaneHonorsSourceConcurrency(args.sourceName);
   return args as CaptureArgs;
 }
 
