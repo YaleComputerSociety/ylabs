@@ -485,9 +485,9 @@ export interface ResearchEntityHostOwnerIdentity {
 }
 
 /**
- * The single definition of "this row is one person's research rather than the
- * collective that publishes the page". Every refusal scoped by who cites a URL shares
- * it, because two definitions of person scope let the serve-time gate and the
+ * "This row is one person's research rather than the collective that publishes the
+ * page", as owned by `isPersonScopedResearchEntityShape` in models/storedVocabularies.ts.
+ * Every refusal scoped by who cites a URL shares it, because two definitions of person scope let the serve-time gate and the
  * promotion path disagree about the same stored field, and a row the DTO hides is then
  * re-promoted on the next materialization (#2579).
  */
