@@ -273,7 +273,7 @@ export type RematerializeReportedChange =
   | RematerializeFieldChange
   | RematerializeWithheldFieldChange;
 
-function isWithheldChange(
+export function isWithheldChange(
   change: RematerializeReportedChange,
 ): change is RematerializeWithheldFieldChange {
   return 'withheld' in change;

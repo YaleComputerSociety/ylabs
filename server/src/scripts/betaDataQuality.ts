@@ -185,8 +185,6 @@ interface DuplicateEntityCluster {
     website?: string;
     websiteUrl?: string;
     sourceUrls?: string[];
-    contactName?: string;
-    contactEmail?: string;
   }>;
 }
 
@@ -788,8 +786,6 @@ async function buildDuplicateEntityNames(includeSamples: boolean): Promise<{
           website: 1,
           websiteUrl: 1,
           sourceUrls: 1,
-          contactName: 1,
-          contactEmail: 1,
         },
       },
       { $match: { normalizedName: { $ne: '' } } },
@@ -822,8 +818,6 @@ async function buildDuplicateEntityNames(includeSamples: boolean): Promise<{
         website: optionalString(entity.website),
         websiteUrl: optionalString(entity.websiteUrl),
         sourceUrls: asStringArray(entity.sourceUrls),
-        contactName: optionalString(entity.contactName),
-        contactEmail: optionalString(entity.contactEmail),
       })),
     };
     return {

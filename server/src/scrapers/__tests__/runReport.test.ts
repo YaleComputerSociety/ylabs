@@ -356,6 +356,25 @@ describe('buildScrapeRunReport', () => {
     );
   });
 
+  it('withholds conflicting contact values from the materialization conflict review', () => {
+    const contactValues = ['Roster Synthetic Contact', 'Page Synthetic Contact 555-010-0199'];
+    const review = buildMaterializationConflictReview(1, {
+      activeObservations: contactValues.map((value, index) => ({
+        entityType: 'researchEntity',
+        entityKey: 'synthetic-contact-row',
+        field: 'contactName',
+        value,
+        sourceName: index === 0 ? 'source-a' : 'source-b',
+        confidence: 0.9 - index * 0.02,
+        observedAt: new Date('2026-05-01T12:00:00Z'),
+      })),
+    });
+
+    expect(review?.samples[0]).toMatchObject({ field: 'contactName', distinctValues: 2 });
+    const serialized = JSON.stringify(review);
+    for (const value of contactValues) expect(serialized).not.toContain(value);
+  });
+
   it('classifies materialization conflict review samples by operator category', () => {
     const review = buildMaterializationConflictReview(3, {
       activeObservations: [

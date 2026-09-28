@@ -38,6 +38,8 @@ export function isResearchEntityContactField(field: unknown): boolean {
   return typeof field === 'string' && CONTACT_FIELDS.has(field);
 }
 
+export const WITHHELD_CONTACT_VALUE_PREVIEW = '[contact value withheld]';
+
 export function withoutForeignContactObservations<T extends KeyedObservation & { field?: unknown }>(
   observations: T[],
   row: ContactEvidenceRow,

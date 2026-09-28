@@ -823,4 +823,60 @@ describe('stale observation conflict review', () => {
       'tsx src/scripts/staleObservationConflictReview.ts',
     );
   });
+
+  it('writes a review artifact that withholds conflicting contact values', () => {
+    const contactValues = [
+      'Earlier Synthetic Contact',
+      'Latest Synthetic Contact',
+      'Synthetic Role 555-010-0177',
+    ];
+    const summary = buildStaleObservationConflictSummary({
+      sourceName: 'dept-faculty-roster',
+      limit: 10,
+      sampleSize: 5,
+      groups: ['contactName', 'contactRole'].map((field, index) => ({
+        sourceName: 'dept-faculty-roster',
+        entityType: 'researchEntity',
+        entityKey: 'synthetic-contact-row',
+        field,
+        observations: [
+          {
+            id: `${field}-old`,
+            value: contactValues[index === 0 ? 0 : 2],
+            observedAt: new Date('2026-05-01T12:00:00Z'),
+          },
+          {
+            id: `${field}-latest`,
+            value: index === 0 ? contactValues[1] : 'Latest synthetic role',
+            observedAt: new Date('2026-05-03T12:00:00Z'),
+          },
+        ],
+      })),
+    });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-stale-contact-'));
+    const output = path.join(dir, 'review.json');
+    const templatePath = path.join(dir, 'template.json');
+
+    try {
+      writeStaleObservationConflictReviewOutput(summary, output);
+      writeStaleObservationDecisionTemplate(
+        buildStaleObservationDecisionTemplate(summary.plans),
+        templatePath,
+      );
+      const written = fs.readFileSync(output, 'utf8') + fs.readFileSync(templatePath, 'utf8');
+
+      expect(summary.candidateGroups).toBe(2);
+      for (const value of [...contactValues, 'Latest synthetic role']) {
+        expect(written).not.toContain(value);
+      }
+      expect(summary.samples[0]).toMatchObject({
+        field: 'contactName',
+        distinctValueCount: 2,
+        keepObservationId: 'contactName-latest',
+        supersedeObservationIds: ['contactName-old'],
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

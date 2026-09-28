@@ -6,6 +6,10 @@ import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { resolveField, type ResolverObservation } from '../scrapers/confidenceResolver';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import {
+  WITHHELD_CONTACT_VALUE_PREVIEW,
+  isResearchEntityContactField,
+} from '../scrapers/rowKeyedContactEvidence';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -909,8 +913,10 @@ function buildCandidateSample(
     sourceNames,
     resolvedConfidence: resolved.confidence,
     contributingSources: resolved.contributingSources.slice().sort(),
-    conflictingValuePreviews: (resolved.conflictingValues || []).slice(0, 3).map(previewValue),
-    valuePreviewsBySource: buildValuePreviewsBySource(group.observations),
+    conflictingValuePreviews: (resolved.conflictingValues || [])
+      .slice(0, 3)
+      .map((value) => previewValue(value, group.field)),
+    valuePreviewsBySource: buildValuePreviewsBySource(group.observations, group.field),
   };
 }
 
@@ -929,6 +935,7 @@ function toResolverObservation(
 
 function buildValuePreviewsBySource(
   observations: CrossSourceObservationConflictObservation[],
+  field: string,
 ): CrossSourceObservationValuePreview[] {
   const bySource = new Map<string, CrossSourceObservationConflictObservation[]>();
   for (const observation of observations) {
@@ -943,7 +950,7 @@ function buildValuePreviewsBySource(
       sourceName,
       observationIds: sourceObservations.map((observation) => observation.id),
       valuePreviews: Array.from(
-        new Set(sourceObservations.map((observation) => previewValue(observation.value))),
+        new Set(sourceObservations.map((observation) => previewValue(observation.value, field))),
       ),
     }));
 }
@@ -1284,7 +1291,8 @@ function serializeValue(value: unknown): string {
   return `x:${String(value)}`;
 }
 
-function previewValue(value: unknown): string {
+function previewValue(value: unknown, field: string): string {
+  if (isResearchEntityContactField(field)) return WITHHELD_CONTACT_VALUE_PREVIEW;
   const raw = typeof value === 'string' ? value : JSON.stringify(value);
   return redactDirectContactInfo(String(raw ?? '')).slice(0, MAX_VALUE_PREVIEW_LENGTH);
 }

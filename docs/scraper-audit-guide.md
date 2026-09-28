@@ -116,7 +116,9 @@ npx -y corepack@0.34.7 yarn --cwd server scrape report --run <scrapeRunId> --out
 When a run has nonzero `materialization.conflicts`, the saved report also includes
 `quality.materializationConflictReview`. That review is read-only and samples active
 Observation conflicts for the entities touched by the run, with field/source counts,
-bounded samples, and direct contact details redacted from value previews. It omits
+bounded samples, and direct contact details redacted from value previews; a conflict on
+`contactEmail`, `contactName` or `contactRole` shows `[contact value withheld]` in place
+of every value, as do the stale and cross-source observation conflict reviews. It omits
 materializer-managed fields such as `lastObservedAt`, which are set by the materializer
 rather than resolved from scraper observations. The review includes `categoryCounts`,
 `actionableConflictCount`, and per-sample `reviewCategory` values for additive metadata,
