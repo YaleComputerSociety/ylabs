@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 
 /**
@@ -79,6 +80,42 @@ export async function warmControlledVocabularyHeadings(
   }
   cached = { headings, loadedAt: now };
   return headings;
+}
+
+let servedWarmFailureReported = false;
+
+/**
+ * The warm as a serve path may call it: never throws, and never turns a vocabulary read into a
+ * failed page.
+ *
+ * Called from the two service entry points every served-DTO caller goes through, so the server,
+ * every measurement script and any future caller are covered by one place rather than by a list
+ * of script entries that has to be kept in step (#3817). #3807 shipped with that list-shaped
+ * gap, and the served scoreboard reported chips no student was served.
+ *
+ * A failure degrades to today's behaviour, which is a split heading, and says so once: a
+ * vocabulary read that fails silently on every request is the inert-fix shape again.
+ */
+export async function warmServedResearchAreaVocabulary(): Promise<void> {
+  // A serve path with no connection cannot serve, so there is nothing to warm and the read
+  // would only buffer. Without this guard every unit test of the two entry points waits out
+  // mongoose's ten-second buffering timeout: one such test failed outright and the suite
+  // around it took seventeen minutes. Mongoose reports 1 for connected.
+  if (mongoose.connection.readyState !== 1) return;
+  try {
+    await warmControlledVocabularyHeadings();
+  } catch (error) {
+    if (servedWarmFailureReported) return;
+    servedWarmFailureReported = true;
+    console.error(
+      '[research-area] controlled vocabulary warm failed on a serve path, so a multi-part heading will be split (#3817):',
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
+export function resetServedWarmFailureReport(): void {
+  servedWarmFailureReported = false;
 }
 
 let unwarmedSplitReported = false;
