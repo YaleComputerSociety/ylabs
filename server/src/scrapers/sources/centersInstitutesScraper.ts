@@ -319,14 +319,23 @@ function organizationNameInitialisms(words: string[]): string[] {
   return [initials.join(''), withoutYale.join('')].filter((initialism) => initialism.length >= 2);
 }
 
+function distinctiveWordRuns(words: string[]): string[] {
+  const runs: string[][] = [[]];
+  for (const word of words) {
+    if (ORGANIZATION_NAME_FILLER_WORDS.has(word)) runs.push([]);
+    else runs[runs.length - 1].push(word);
+  }
+  return runs.filter((run) => run.length > 0).map((run) => run.join(' '));
+}
+
 function organizationTextNamesUnit(organizationText: string, unitName: string): boolean {
   const unitWords = organizationNameWords(unitName);
-  const distinctive = new Set(
-    unitWords.filter((word) => !ORGANIZATION_NAME_FILLER_WORDS.has(word)),
-  );
+  const unitProperName = distinctiveWordRuns(unitWords)[0];
   const initialisms = new Set(organizationNameInitialisms(unitWords));
-  return organizationNameWords(organizationText).some(
-    (word) => distinctive.has(word) || initialisms.has(word),
+  const textWords = organizationNameWords(organizationText);
+  return (
+    textWords.some((word) => initialisms.has(word)) ||
+    (unitProperName !== undefined && distinctiveWordRuns(textWords).includes(unitProperName))
   );
 }
 
@@ -342,8 +351,25 @@ function directorshipNamedUnit(clause: string): string | undefined {
   const commaUnit = clause.match(DIRECTORSHIP_COMMA_NAMED_UNIT)?.[1];
   return commaUnit && ORGANIZATION_NOUN.test(commaUnit) ? commaUnit : undefined;
 }
-const HISTORICAL_TENURE =
-  /\b(?:19|20)\d{2}\s*[-\u2013\u2014]\s*(?:19|20)?\d{2}\b|\bformer(?:ly)?\b|\bemerit(?:us|a)\b/i;
+const FORMER_DIRECTORSHIP =
+  /\bformer(?:ly)?\s+(?:\S+\s+)?\S*director\b|\bdirector\s+emerit(?:us|a)\b|\bemerit(?:us|a)\s+\S*director\b/i;
+const CLOSED_YEAR_RANGE = /\b((?:19|20)\d{2})\s*[-\u2013\u2014]\s*((?:19|20)?\d{2})\b/g;
+
+function closedRangeEndYear(startText: string, endText: string): number {
+  const start = Number(startText);
+  if (endText.length === 4) return Number(endText);
+  const end = Math.floor(start / 100) * 100 + Number(endText);
+  return end < start ? end + 100 : end;
+}
+
+function isHistoricalDirectorship(clause: string): boolean {
+  if (FORMER_DIRECTORSHIP.test(clause)) return true;
+  const endYears = [...clause.matchAll(CLOSED_YEAR_RANGE)].map(([, start, end]) =>
+    closedRangeEndYear(start, end),
+  );
+  const currentYear = new Date().getFullYear();
+  return endYears.length > 0 && endYears.every((endYear) => endYear < currentYear);
+}
 const ACADEMIC_PROGRAM_DIRECTORSHIP =
   /\bdirector\s+of\s+(?:graduate|undergraduate)\s+(?:studies|admissions)\b/i;
 
@@ -359,7 +385,7 @@ function directorClausesForUnit(title: string, unitName: string | undefined): st
     .split(/[;|\n]/)
     .map((clause) => clause.trim())
     .filter((clause) => /\bdirector\b/i.test(clause))
-    .filter((clause) => !HISTORICAL_TENURE.test(clause))
+    .filter((clause) => !isHistoricalDirectorship(clause))
     .filter((clause) => !ACADEMIC_PROGRAM_DIRECTORSHIP.test(clause))
     .filter((clause) => {
       if (!unitName) return true;

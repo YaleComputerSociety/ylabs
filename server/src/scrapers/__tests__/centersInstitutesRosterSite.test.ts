@@ -235,7 +235,30 @@ describe('title-derived center leadership', () => {
     ).toBe('director');
   });
 
+  it('does not make the director of a sibling unit sharing a word a lead of this one', () => {
+    const eastAsian = 'Council on East Asian Studies';
+    expect(roleFor('Director of the Council on Middle East Studies', eastAsian)).toBe(
+      'core-faculty',
+    );
+    expect(roleFor('Director of the Council on South Asian Studies', eastAsian)).toBe(
+      'core-faculty',
+    );
+    expect(roleFor('Director of the Council on East Asian Studies', eastAsian)).toBe('director');
+    expect(
+      roleFor('Director of the European Union Studies Program', 'European Studies Council'),
+    ).toBe('core-faculty');
+  });
+
   it('keeps a directorship ending in the present as current', () => {
     expect(roleFor('Alpha Foundation Director (2020-present)')).toBe('director');
+  });
+
+  it('keeps a fixed term that has not yet ended as current', () => {
+    expect(roleFor('Alpha Foundation Director (2024-2099)')).toBe('director');
+  });
+
+  it('keeps a current directorship joined to an emeritus title', () => {
+    expect(roleFor('Professor Emeritus and Director of the Alpha Foundation')).toBe('director');
+    expect(roleFor('Director Emeritus of the Alpha Foundation')).toBe('core-faculty');
   });
 });
