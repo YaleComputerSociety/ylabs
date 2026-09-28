@@ -27,7 +27,7 @@ import {
 import { Researcher, type ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
 import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
-import { foreignContactFieldSignalIds } from '../scrapers/rowKeyedContactEvidence';
+import { foreignContactFieldSignalIds } from '../scrapers/accessMaterializer';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { Signal } from '../models/signal';
 import { getMeiliIndex } from '../utils/meiliClient';

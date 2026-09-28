@@ -19,7 +19,8 @@ Decided:
 - **The projection refuses foreign contact evidence.** `materializeEntity` drops foreign contact observations before resolving, from every entry point, so a survivor-key pass and a loser-key pass agree.
 A pass that read the row under its own key or id also clears a stored contact field no row-keyed live observation states; a pass entered through another key does not, because it has not seen the row's own evidence.
 Contact is the one field class that clears on empty this way, because a contact nobody can show was read from a page about the row is worse than no contact.
-- **The serve path withholds what the store still holds.** The access materializer upserts and never archives, so the detail route withholds a contact-field signal whose evidence is not keyed to the row and the visibility gate does not count it as a way in.
+- **The serve path withholds what the store still holds.** The access materializer upserts and never archives, so the detail route withholds a contact-field signal whose excerpt the row's own live contact observations do not re-derive, and the visibility gate does not count it as a way in.
+The excerpt is re-derived rather than the stored evidence id checked, because that id names only the single best contact observation while the excerpt combines the best of each contact field.
 The stored signal and the loser's observations stay: they are history, and nothing here prunes either.
 - **Every other field class is unchanged here.** Each keeps the #3560 rule, under which a loser may fill what the survivor has no evidence for; how that evidence is retired is a separate decision.
 

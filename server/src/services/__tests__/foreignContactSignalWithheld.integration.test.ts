@@ -24,7 +24,7 @@ const CONTACT_EXCERPT = 'Official contact listed: Example Coordinator, Lab Manag
 const INSTRUCTIONS_EXCERPT = 'Email the lab manager with a short note about your interests.';
 const INDEX_URL = 'https://medicine.example.edu/labs/a-to-z/';
 
-const seed = async (contactEvidenceKey: string) => {
+const seed = async (contactEvidenceKey: string, roleEvidenceKey = contactEvidenceKey) => {
   const db = mongoose.connection.db;
   if (!db) throw new Error('no db');
   const entityId = new mongoose.Types.ObjectId();
@@ -64,6 +64,20 @@ const seed = async (contactEvidenceKey: string) => {
     observedAt: new Date('2026-09-01T00:00:00Z'),
     superseded: false,
   });
+  const roleEvidenceId = new mongoose.Types.ObjectId();
+  await db.collection('observations').insertOne({
+    _id: roleEvidenceId,
+    entityType: 'researchEntity',
+    entityKey: roleEvidenceKey,
+    field: 'contactRole',
+    value: 'Lab Manager',
+    sourceId: new mongoose.Types.ObjectId(),
+    sourceName: 'ysm-atoz-index',
+    sourceUrl: INDEX_URL,
+    confidence: 0.95,
+    observedAt: new Date('2026-09-01T00:00:00Z'),
+    superseded: false,
+  });
   await db.collection('signals').insertMany([
     {
       _id: new mongoose.Types.ObjectId(),
@@ -73,7 +87,11 @@ const seed = async (contactEvidenceKey: string) => {
       archived: false,
       confidence: 'HIGH',
       observedAt: new Date('2026-09-01T00:00:00Z'),
-      source: { url: INDEX_URL, excerpt: CONTACT_EXCERPT, evidenceIds: [evidenceId] },
+      source: {
+        url: INDEX_URL,
+        excerpt: CONTACT_EXCERPT,
+        evidenceIds: [roleEvidenceKey === SLUG ? roleEvidenceId : evidenceId],
+      },
     },
     {
       _id: new mongoose.Types.ObjectId(),
@@ -127,6 +145,21 @@ describe('a contact signal whose evidence names another row is not served (#3609
       expect(await servedExcerpts()).toEqual([INSTRUCTIONS_EXCERPT]);
     },
   );
+
+  it('withholds a signal whose stored evidence is the row own but whose excerpt names a loser contact', async () => {
+    await seed(LOSER, SLUG);
+
+    expect(await servedExcerpts()).toEqual([INSTRUCTIONS_EXCERPT]);
+  });
+
+  it('withholds the signal once its row-keyed evidence is superseded', async () => {
+    await seed(SLUG);
+    await mongoose.connection
+      .db!.collection('observations')
+      .updateMany({ field: 'contactName' }, { $set: { superseded: true } });
+
+    expect(await servedExcerpts()).toEqual([INSTRUCTIONS_EXCERPT]);
+  });
 
   it('serves the contact-field signal when its evidence is keyed to the row', async () => {
     await seed(SLUG);

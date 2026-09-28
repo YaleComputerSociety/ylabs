@@ -52,11 +52,11 @@ import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk'
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { officialProfileUrlFromRosterEntry } from './leadProfileIdentity';
-import { officialNonGrantSourceUrl } from '../scrapers/accessMaterializer';
 import {
-  CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
   foreignContactFieldSignalIds,
-} from '../scrapers/rowKeyedContactEvidence';
+  officialNonGrantSourceUrl,
+} from '../scrapers/accessMaterializer';
+import { CONTACT_FIELDS_SIGNAL_DERIVATION_KEY } from '../scrapers/rowKeyedContactEvidence';
 import { SCHOOL_PROFILE_HOSTS } from '../scrapers/orgUnitCanonicalization';
 import { IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS } from './accessAcceptanceLevel';
 import { unwrapMicrosoftSafeLinksUrl } from '../utils/safeLinksUrl';
@@ -1903,7 +1903,7 @@ async function planResearchEntityGateUpdates(
       derivationKey: CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
       archived: false,
     })
-      .select('_id researchEntityId derivationKey source.evidenceIds')
+      .select('_id researchEntityId derivationKey source.excerpt')
       .lean(),
     entities as any[],
   );

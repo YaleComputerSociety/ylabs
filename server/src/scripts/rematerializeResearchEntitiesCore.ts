@@ -301,23 +301,26 @@ export function foreignContactFieldsByRow(
     entityId?: unknown;
     entityKey?: unknown;
     field?: unknown;
+    value?: unknown;
   }>,
 ): Map<string, string[]> {
+  const statement = (field: unknown, value: unknown) =>
+    `${String(field)}\u0000${typeof value === 'string' ? value.trim() : ''}`;
   const byRow = new Map<string, string[]>();
   for (const row of rows) {
     if (typeof row.slug !== 'string' || !row.slug) continue;
     const locked = Array.isArray(row.manuallyLockedFields) ? row.manuallyLockedFields : [];
-    const backed = new Set(
+    const statedByRow = new Set(
       liveContactObservations
         .filter((observation) => observationIsKeyedToRow(observation, row))
-        .map((observation) => String(observation.field)),
+        .map((observation) => statement(observation.field, observation.value)),
     );
     const foreign = RESEARCH_ENTITY_CONTACT_FIELDS.filter(
       (field) =>
         typeof row[field] === 'string' &&
         (row[field] as string).trim().length > 0 &&
         !locked.includes(field) &&
-        !backed.has(field),
+        !statedByRow.has(statement(field, row[field])),
     );
     if (foreign.length > 0) byRow.set(row.slug, foreign);
   }

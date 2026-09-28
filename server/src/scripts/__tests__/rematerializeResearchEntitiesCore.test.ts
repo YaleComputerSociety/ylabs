@@ -538,12 +538,28 @@ describe('the foreign-contact cohort (#3609)', () => {
     const cohort = foreignContactFieldsByRow(
       [row({ contactEmail: 'coordinator@example.edu', contactRole: 'Lab Manager' })],
       [
-        { entityKey: 'ysm-example-merged-loser', field: 'contactEmail' },
-        { entityKey: 'example-survivor-lab', field: 'contactRole' },
+        {
+          entityKey: 'ysm-example-merged-loser',
+          field: 'contactEmail',
+          value: 'coordinator@example.edu',
+        },
+        { entityKey: 'example-survivor-lab', field: 'contactRole', value: 'Lab Manager' },
       ],
     );
 
     expect(Object.fromEntries(cohort)).toEqual({ 'example-survivor-lab': ['contactEmail'] });
+  });
+
+  it('selects a stored contact field whose row-keyed observation states a different value', () => {
+    const cohort = foreignContactFieldsByRow(
+      [row({ contactName: 'Loser Coordinator' })],
+      [
+        { entityKey: 'ysm-example-merged-loser', field: 'contactName', value: 'Loser Coordinator' },
+        { entityKey: 'example-survivor-lab', field: 'contactName', value: 'Survivor Coordinator' },
+      ],
+    );
+
+    expect(Object.fromEntries(cohort)).toEqual({ 'example-survivor-lab': ['contactName'] });
   });
 
   it('leaves a row whose contact is keyed to it by id, a locked field, and an empty field', () => {
@@ -555,7 +571,14 @@ describe('the foreign-contact cohort (#3609)', () => {
           slug: 'example-locked-lab',
         },
       ],
-      [{ entityId: rowId, entityKey: 'some-other-key', field: 'contactEmail' }],
+      [
+        {
+          entityId: rowId,
+          entityKey: 'some-other-key',
+          field: 'contactEmail',
+          value: ' coordinator@example.edu ',
+        },
+      ],
     );
 
     expect(cohort.size).toBe(0);

@@ -228,7 +228,7 @@ async function discoverForeignContactSlugs(): Promise<string[]> {
       { entityKey: { $in: rows.map((row) => String(row.slug || '')).filter(Boolean) } },
     ],
   })
-    .select('entityId entityKey field')
+    .select('entityId entityKey field value')
     .lean();
   return Array.from(foreignContactFieldsByRow(rows, observations).keys()).sort();
 }
