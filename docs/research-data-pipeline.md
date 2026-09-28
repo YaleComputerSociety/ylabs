@@ -1461,6 +1461,7 @@ This is a read-only contract audit over the visibility gate.
 It fails launch if visible records are not launch-grade.
 The report keeps its violation sample bounded to 50 rows and lists current public visibility violations before ordinary held rows so every exposed invalid record remains actionable when the held backlog is larger than the sample.
 Use the returned repair lanes and commands as the fix plan, then re-run the visibility gate and contract audit.
+Every returned command carries the `SCRAPER_ENV` of the environment the audit measured, so a Development audit prints Development commands and a Beta audit prints Beta commands (#3818).
 
 YSM A-to-Z lab records use full-name PI inference when the lab name includes first-name context, such as `Ya-Chi Ho Lab`. The entity materializer converts accepted `inferredPiUserId` observations into canonical PI `RoleAssignment` rows so public detail pages and visibility computation share the same lead evidence.
 
