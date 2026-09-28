@@ -41,6 +41,7 @@ What stays, recorded by predicate rather than patched:
 
 - 765 slots on `student_ready` survivors cite a live loser observation whose source has read neither key since, so no evidence exists either way and no lane can decide them until it reads again.
 - 449 survivors cite a superseded loser `entityType` observation and hold no live `entityType` observation of their own; a loser never restates identity, so no resolve plans the field, and the value stands on history rather than on evidence.
+
 ## 2026-09-28: A Contact Stands On A Row Only While Evidence Keyed To That Row States It (#3609)
 
 Contact is fail-closed, and #3609 found two ways a contact reached a row from a page that was not about it.

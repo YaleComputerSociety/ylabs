@@ -426,8 +426,9 @@ export interface PlannedFieldRetraction {
   observationIds: string[];
   clearsStoredValue: boolean;
   /**
-   * The retracted values, and how many distinct entities this source asserts each
-   * of them for. A value asserted for many entities cannot be any one of their
+   * The retracted values, and how many distinct stored rows this source asserts
+   * each of them for, a survivor and its merged-in keys counting once. A value
+   * asserted for many entities cannot be any one of their
    * research websites, so the count is the ownership signal - see
    * `classifyRetractionValueOwnership`.
    */
