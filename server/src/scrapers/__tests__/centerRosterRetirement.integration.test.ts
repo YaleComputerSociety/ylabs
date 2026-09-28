@@ -3,7 +3,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const meiliMocks = vi.hoisted(() => ({
-  syncEntities: vi.fn(async () => {}),
+  syncEntities: vi.fn(async (..._args: unknown[]) => {}),
   syncEntity: vi.fn(async () => true),
   deleteFromIndex: vi.fn(async () => {}),
 }));
@@ -13,6 +13,20 @@ vi.mock('../../services/meiliSyncService', async () => {
     '../../services/meiliSyncService',
   );
   return { ...actual, ...meiliMocks };
+});
+
+const gateMocks = vi.hoisted(() => ({ gateChangesNothing: false }));
+
+vi.mock('../../services/studentVisibilityGateService', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../services/studentVisibilityGateService')
+  >('../../services/studentVisibilityGateService');
+  return {
+    ...actual,
+    applyStudentVisibilityGatePlans: (
+      plans: Parameters<typeof actual.applyStudentVisibilityGatePlans>[0],
+    ) => actual.applyStudentVisibilityGatePlans(gateMocks.gateChangesNothing ? [] : plans),
+  };
 });
 
 vi.mock('../../services/researchEntityBrowseRankService', async () => {
@@ -27,10 +41,16 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { ResearchEntityRelationship } from '../../models/researchEntityRelationship';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { ScrapeRun } from '../../models/scrapeRun';
 import { getResearchGroupDetail } from '../../services/researchGroupService';
-import { CENTER_ROSTER_RETIREMENT_REASON } from '../centerRosterRetirement';
+import {
+  applyCenterRosterRetirementPlan,
+  CENTER_ROSTER_RETIREMENT_REASON,
+  type CenterRosterGovernedObservation,
+  type CenterRosterRetirementPlan,
+} from '../centerRosterRetirement';
 import { materializeEntity, materializeFromRun } from '../entityMaterializer';
 import { appendObservations } from '../observationStore';
 import {
@@ -180,13 +200,16 @@ describe(
     }, 60000);
 
     afterAll(async () => {
-        await mongoose.disconnect();
+      await mongoose.disconnect();
       await replSet.stop();
     });
 
     beforeEach(async () => {
       clearC4Flags();
-        const db = mongoose.connection.db;
+      gateMocks.gateChangesNothing = false;
+      meiliMocks.syncEntities.mockReset();
+      meiliMocks.syncEntities.mockImplementation(async () => {});
+      const db = mongoose.connection.db;
       if (!db) throw new Error('no db');
       for (const name of [
         'observations',
@@ -266,6 +289,127 @@ describe(
       expect((await currentEdges('Avery')).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
       const director = (await edgesFor('Avery')).find((edge) => edge.role === 'DIRECTOR');
       expect(director).toMatchObject({ state: 'HISTORICAL' });
+    });
+
+    it('re-syncs the center search document after the retirement ends its edges', async () => {
+      await runLane([ROSTER]);
+      await runLane([withoutMember('Finley')]);
+      const currentFinleyEdgesAtEachCenterSync: number[] = [];
+      meiliMocks.syncEntities.mockImplementation(async (...args: unknown[]) => {
+        const docs = args[1] as Array<{ slug?: unknown }>;
+        if (docs.some((doc) => doc?.slug === CENTER_SLUG)) {
+          currentFinleyEdgesAtEachCenterSync.push((await currentEdges('Finley')).length);
+        }
+      });
+
+      gateMocks.gateChangesNothing = true;
+      await runLane([withoutMember('Finley')]);
+      gateMocks.gateChangesNothing = false;
+
+      expect(await currentEdges('Finley')).toHaveLength(0);
+      expect(currentFinleyEdgesAtEachCenterSync.at(-1)).toBe(0);
+    });
+
+    it('keeps the edge of a member still listed under a changed profile URL', async () => {
+      const moved = {
+        ...ROSTER[1],
+        profileUrl: 'https://fixture-center.example.edu/faculty/blair-synthetic',
+      };
+      const rosterWithMovedProfile = [ROSTER[0], moved, ...ROSTER.slice(2)];
+      await runLane([ROSTER]);
+      await runLane([rosterWithMovedProfile]);
+      await runLane([rosterWithMovedProfile]);
+
+      const current = await currentEdges('Blair');
+      expect(current.map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
+      expect(current[0].rosterProvenance.membershipKey).toContain('/faculty/blair-synthetic|');
+
+      await runLane([rosterWithMovedProfile]);
+      expect((await currentEdges('Blair')).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
+    });
+
+    it('keeps a relationship whose target a key this source still lists resolves to', async () => {
+      await runLane([ROSTER]);
+      const centerEntityId = String(await centerId());
+      const { _id: _centerObjectId, ...centerFields } = (await ResearchEntity.findById(
+        await centerId(),
+      ).lean()) as any;
+      const target = await ResearchEntity.create({
+        ...centerFields,
+        name: 'Synthetic Fixture Lab',
+        slug: 'synthetic-fixture-lab',
+      });
+      const targetId = String(target._id);
+      const relationship = await ResearchEntityRelationship.create({
+        sourceResearchEntityId: await centerId(),
+        targetResearchEntityId: target._id,
+        relationshipType: 'AFFILIATED_LAB',
+      });
+      const targetClaim = (
+        entityKey: string,
+        value: string,
+        superseded = false,
+      ): CenterRosterGovernedObservation => ({
+        observationId: String(new mongoose.Types.ObjectId()),
+        entityKey,
+        field: 'targetEntityKey',
+        value,
+        scrapeRunId: String(new mongoose.Types.ObjectId()),
+        observedAt: new Date(),
+        superseded,
+      });
+      const plan: CenterRosterRetirementPlan = {
+        entityKey: CENTER_SLUG,
+        verdict: 'retire',
+        retiredMemberKeys: [],
+        retiredRoleClaims: [],
+        retiredProfileClaims: [],
+        retiredRelationshipKeys: [`${CENTER_SLUG}:old-spelling`],
+        retiredEdges: [],
+        observationIds: [],
+        counts: {} as CenterRosterRetirementPlan['counts'],
+      };
+      const deps = {
+        membershipKeysAssertedByOtherSources: async () => new Set<string>(),
+        personRolesAssertedByOtherSources: async () => new Set<string>(),
+        relationshipTargetIdsAssertedByOtherSources: async () => new Set<string>(),
+        resolveRelationshipTargetId: async () => targetId,
+        rematerializeMemberKey: async () => {},
+      };
+      const inputs = (relationshipObservations: CenterRosterGovernedObservation[]) => ({
+        centerEntityId,
+        reads: [],
+        memberObservations: [],
+        relationshipObservations,
+        edges: [],
+        protectedMembershipKeys: new Set<string>(),
+        protectedPersonRoles: new Set<string>(),
+      });
+      const isArchived = async () =>
+        ((await ResearchEntityRelationship.findById(relationship._id).lean()) as any).archived ===
+        true;
+
+      await applyCenterRosterRetirementPlan(
+        plan,
+        inputs([
+          targetClaim(`${CENTER_SLUG}:old-spelling`, 'old-spelling-target'),
+          targetClaim(`${CENTER_SLUG}:new-spelling`, 'new-spelling-target'),
+        ]),
+        deps,
+        new Date(),
+      );
+      expect(await isArchived()).toBe(false);
+
+      await applyCenterRosterRetirementPlan(
+        plan,
+        inputs([
+          targetClaim(`${CENTER_SLUG}:old-spelling`, 'old-spelling-target'),
+          targetClaim(`${CENTER_SLUG}:new-spelling`, 'new-spelling-target', true),
+        ]),
+        deps,
+        new Date(),
+      );
+      expect(await isArchived()).toBe(true);
     });
 
     it('retires nothing when the later reads fail with a 404, a fetch error, or an under-read', async () => {

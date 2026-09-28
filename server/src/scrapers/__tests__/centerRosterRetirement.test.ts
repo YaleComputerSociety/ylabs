@@ -202,6 +202,37 @@ describe('planCenterRosterRetirement', () => {
     expect(plan.retiredMemberKeys).toEqual([]);
   });
 
+  it('retires a stale profile URL claim of a member two reads list under another URL', () => {
+    const movedAlpha: CenterRosterReadMember = {
+      ...readMember('alpha'),
+      membershipKey: 'official-profile:https://fixture.example.edu/faculty/alpha|core-faculty',
+    };
+    const listedWithMovedAlpha = [movedAlpha, ...listed(SLUGS.slice(1))];
+    const plan = planCenterRosterRetirement({
+      ...fullGoverned(),
+      memberObservations: [
+        ...memberObservations(SLUGS, 1),
+        {
+          observationId: 'alpha-moved-profileUrl-2',
+          entityKey: `${CENTER}:alpha`,
+          field: 'profileUrl',
+          value: 'https://fixture.example.edu/faculty/alpha',
+          scrapeRunId: 'run-2',
+          observedAt: at(2),
+          superseded: false,
+        },
+      ],
+      reads: [read('run-2', 2, listedWithMovedAlpha), read('run-3', 3, listedWithMovedAlpha)],
+    });
+    expect(plan.retiredProfileClaims).toEqual([
+      `${CENTER}:alpha|official-profile:https://fixture.example.edu/people/alpha`,
+    ]);
+    expect(plan.observationIds).toContain('alpha-profileUrl-1');
+    expect(plan.observationIds).not.toContain('alpha-moved-profileUrl-2');
+    expect(plan.retiredMemberKeys).toEqual([]);
+    expect(plan.retiredRoleClaims).toEqual([]);
+  });
+
   it('freezes the center when two reads would retire more than half of its members', () => {
     const plan = planCenterRosterRetirement({
       ...fullGoverned(),
