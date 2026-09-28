@@ -184,6 +184,7 @@ export interface DevelopmentPostRunStage {
     | 'visibility-gate'
     | 'search-rebuild'
     | 'lane-scorecard'
+    | 'engine-benchmark'
     | 'coverage-audit'
     | 'data-quality'
     | 'integrity-gate'
@@ -1226,6 +1227,17 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     command: 'lane:scorecard',
     artifactName: 'development-lane-scorecard.json',
     buildArgs: () => ['--apply', '--confirm-lane-scorecard'],
+    isEnabled: () => true,
+  },
+  {
+    // Replays resolve, derive and gate against the frozen engine benchmark, so the stored
+    // trend moves only when engine code does (#3589). Deliberately does not pass
+    // `--capture`: a sweep that re-froze the input every run would compare each run against
+    // itself and could never show a regression. Capture is an operator step.
+    name: 'engine-benchmark',
+    command: 'engine:benchmark',
+    artifactName: 'development-engine-benchmark.json',
+    buildArgs: () => ['--apply', '--confirm-engine-benchmark', '--replays=2'],
     isEnabled: () => true,
   },
   {
