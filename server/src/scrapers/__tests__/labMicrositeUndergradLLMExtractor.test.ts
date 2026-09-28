@@ -432,6 +432,20 @@ describe('extractionToObservations quote grounding', () => {
   });
 });
 
+describe('namesNonYaleInstitution visiting scope (#3775)', () => {
+  it('reads visiting as a visitor only when it modifies a student or researcher', () => {
+    expect(
+      namesNonYaleInstitution(
+        'We welcome undergraduates, post-bacs, graduate students, postdoctoral fellows and visiting faculty.',
+      ),
+    ).toBe(false);
+    expect(namesNonYaleInstitution('She is a visiting senior undergraduate this summer.')).toBe(
+      true,
+    );
+    expect(namesNonYaleInstitution('A visiting student joined the group.')).toBe(true);
+  });
+});
+
 describe('pagesWithinEntityScope (#3764)', () => {
   const page = (url: string) => ({ url, text: 'text' });
 

@@ -68,7 +68,21 @@ const SELF_REFERENTIAL_DEGREE_HISTORY_PATTERN =
   /\b(?:completed|received|earned|holds?|has)\b[^.!?]{0,60}\b(?:her|his|their|my)\b[^.!?]{0,30}\b(?:undergraduate|bachelor'?s?)\s+degree\b/i;
 
 const ALUMNI_OR_HISTORICAL_POPULATION_PATTERN =
-  /\balumn(?:i|us|ae|a)\b|\bformer\s+undergrad(?:uate)?s?\b|\b(?:has|have)\s+graduated\b|\bclass\s+of\s+\d{4}\b/i;
+  /\balumn(?:i|us|ae|a)\b|\bformer\s+undergrad(?:uate)?s?\b|\b(?:has|have)\s+graduated\b/i;
+
+const CLASS_YEAR = /\bclass\s+of\s+((?:19|20)\d{2})\b/gi;
+const COMMENCEMENT_MONTH_INDEX = 5;
+
+/**
+ * A class year names alumni only once it has graduated: "class of 2027" read in 2026 is a
+ * current student (#3775). Commencement is in May, so a class whose year has arrived counts as
+ * graduated from June.
+ */
+export function namesGraduatedClassYear(quote: string, now: Date = new Date()): boolean {
+  const year = now.getFullYear();
+  const graduatedThrough = now.getMonth() >= COMMENCEMENT_MONTH_INDEX ? year : year - 1;
+  return [...quote.matchAll(CLASS_YEAR)].some((match) => Number(match[1]) <= graduatedThrough);
+}
 
 const VISITING_SCHOLAR_POPULATION_PATTERN =
   /\bvisiting\s+(?:scholars?|researchers?|students?|fellows?|undergrads?|undergraduates?)\b/i;
@@ -122,6 +136,7 @@ export function isPlausibleUndergradEvidenceQuote(quote: string | undefined | nu
   if (RESUME_EDUCATION_LINE_PATTERN.test(text)) return false;
   if (SELF_REFERENTIAL_DEGREE_HISTORY_PATTERN.test(text)) return false;
   if (ALUMNI_OR_HISTORICAL_POPULATION_PATTERN.test(text)) return false;
+  if (namesGraduatedClassYear(text)) return false;
   if (VISITING_SCHOLAR_POPULATION_PATTERN.test(text)) return false;
   if (quoteExplicitlyDeclinesUndergraduates(text)) return false;
   if (isExplicitUndergradUnavailabilityPhrase(text)) return false;
@@ -143,6 +158,9 @@ const UNDERGRADUATE_CONTEXT_CUE =
 const BARE_POPULATION_HEADING =
   /^\W*(?:(?:current|former|our)\s+)?(?:undergrad(?:uate)?s?|college\s+students?)(?:\s+(?:research|lab|laboratory|students?|researchers?|members?|interns?|assistants?)){0,3}\W*$/i;
 
+const UNDERGRADUATE_AS_TEACHING_MODIFIER =
+  /(?:\b|(?<=[a-z]))undergrad(?:uate)?s?\s+(?:(?:and|or|&)\s+(?:[a-z-]+\s+)?)?(?:courses?|class(?:es)?|majors?|curricul(?:um|a)|degrees?|education|teaching|advising|admissions?|coursework|seminars?|lectures?(?:\s+courses?)?)\b|\bdirector\s+of\s+undergraduate\s+studies\b/gi;
+
 /**
  * The microsite lane's own admission rule for a quote that backs "Has hosted undergraduate
  * researchers" (#3764). The shared plausibility check accepts a bare "students", which on a lab
@@ -151,9 +169,10 @@ const BARE_POPULATION_HEADING =
  * the looser rule because its pages are about undergraduates by construction.
  */
 export function laneQuoteStatesUndergraduates(quote: string | undefined | null): boolean {
-  const text = (quote || '').trim();
-  if (!isPlausibleUndergradEvidenceQuote(text)) return false;
-  if (BARE_POPULATION_HEADING.test(text)) return false;
+  const raw = (quote || '').trim();
+  if (!isPlausibleUndergradEvidenceQuote(raw)) return false;
+  if (BARE_POPULATION_HEADING.test(raw)) return false;
+  const text = raw.replace(UNDERGRADUATE_AS_TEACHING_MODIFIER, ' ');
   return (
     EXPLICIT_UNDERGRADUATE_POPULATION.test(text) ||
     UNDERGRADUATE_PROGRAM_ACRONYM.test(text) ||
