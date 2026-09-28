@@ -677,9 +677,26 @@ describe('researchEntityDto', () => {
       slug: 'stale-lab',
       name: 'Stale Lab',
       hasUndergradHostingEvidence: true,
-      currentUndergradCount: 3,
     });
     expect(staleFlag.hasUndergradHostingEvidence).toBeUndefined();
+
+    const rosterCount = toPublicResearchEntityDto({
+      id: 'entity-roster',
+      slug: 'roster-lab',
+      name: 'Roster Lab',
+      currentUndergradCount: 3,
+      fieldProvenance: { currentUndergradCount: { sourceName: 'lab-microsite-undergrad-llm' } },
+    });
+    expect(rosterCount.hasUndergradHostingEvidence).toBe(true);
+
+    const retiredCount = toPublicResearchEntityDto({
+      id: 'entity-retired',
+      slug: 'retired-lab',
+      name: 'Retired Lab',
+      currentUndergradCount: 3,
+      fieldProvenance: { currentUndergradCount: { sourceName: 'research-entity-cache-backfill' } },
+    });
+    expect(retiredCount.hasUndergradHostingEvidence).toBeUndefined();
   });
 
   it('withholds a current-undergraduate count held only by the retired cache backfill (#3789)', () => {

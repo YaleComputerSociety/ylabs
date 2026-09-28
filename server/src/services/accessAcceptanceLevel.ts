@@ -1,4 +1,5 @@
 import { accessSignalTypes } from '../models/researchAccessTypes';
+import { RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE } from '../scrapers/undergradEvidenceQuoteValidation';
 
 export type AccessAcceptanceLevel = 'verified' | 'likely' | 'none';
 
@@ -104,17 +105,25 @@ export function hasPastUndergradAdvisees(value: unknown): boolean {
  * The one definition of "Has hosted undergraduate researchers" (#3593): evidence that
  * undergraduates have been in the lab. The served flag behind the browse card, the pathway
  * badge and saved plans, and the stored flag the `hostsUndergrads` filter reads, are all this
- * predicate over `pastUndergradAdvisees`, so they cannot disagree about a row. Supervising
- * student projects is a separate claim with its own badge.
+ * predicate, so they cannot disagree about a row. Supervising student projects is a separate
+ * claim with its own badge.
  *
- * CURRENT_UNDERGRADS is held out deliberately. Its only live source is the microsite lane's
- * `currentUndergradCount`, and a hand-read of 20 stored counts on Development (2026-09-28)
- * found 13 backed by the cited page; the lane's current, page-grounded code scored 6 of 6 on
- * the gold benchmark, so the gap is stale stored counts. Re-admit it once those are
- * re-derived and re-measured (#3789).
+ * A current roster count joined the predicate once it was re-derived from grounded roster
+ * lines (#3789): after that re-run, 28 of 30 stored positive counts sampled on Development
+ * (2026-09-28) were backed by the cited page, against 13 of 20 before it. A count held only by
+ * the retired cache backfill carried no roster to check, so it still does not count.
  */
 export function entityHasHostedUndergraduates(entity: {
   pastUndergradAdvisees?: unknown;
+  currentUndergradCount?: unknown;
+  fieldProvenance?: { currentUndergradCount?: { sourceName?: unknown } };
 }): boolean {
-  return hasPastUndergradAdvisees(entity.pastUndergradAdvisees);
+  if (hasPastUndergradAdvisees(entity.pastUndergradAdvisees)) return true;
+  const count = Number(entity.currentUndergradCount);
+  return (
+    Number.isFinite(count) &&
+    count > 0 &&
+    entity.fieldProvenance?.currentUndergradCount?.sourceName !==
+      RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE
+  );
 }

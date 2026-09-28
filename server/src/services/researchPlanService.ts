@@ -145,7 +145,7 @@ export const boundSavedResearchEntitySummaryText = (
 // official-roster lead and make the saved card strip a name its own detail page
 // keeps (#2240).
 export const savedResearchEntityProjection = withPublicDescriptionGateFields(
-  '_id slug departments school pastUndergradAdvisees rosterEnrichment',
+  '_id slug departments school pastUndergradAdvisees currentUndergradCount rosterEnrichment',
 );
 
 const asBoolean = (value: unknown): boolean => value === true;
