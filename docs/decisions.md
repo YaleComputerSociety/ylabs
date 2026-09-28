@@ -5,6 +5,28 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-28: A Contact Stands On A Row Only While Evidence Keyed To That Row States It (#3609)
+
+Contact is fail-closed, and #3609 found two ways a contact reached a row from a page that was not about it.
+A merge resolves the survivor over its tombstoned losers' observations (#3560), so a loser's `contactEmail`, `contactName` and `contactRole` filled a survivor that had none of its own.
+And a lane whose own key resolved onto an existing row wrote its contact into that row under a key the row's own resolve never reads.
+Measured on Development on 2026-09-28 at 04:35 UTC, with a peer sweep writing: 29 live rows store a contact field that only such foreign evidence states, 28 of them `student_ready`, 25 through a merge and 4 through another key; 176 of the 205 rows storing any contact field are backed by their own evidence.
+The contact-field access signal is what students saw: the detail route serves its excerpt, which names the contact person and role, and 30 such signals cite foreign evidence, 28 of them on `student_ready` rows.
+
+Decided:
+
+- **An observation is keyed to a row when its `entityId` is the row's id, or when it has none and its `entityKey` is the row's slug.** That is the one predicate (`scrapers/rowKeyedContactEvidence.ts`), and it is deliberately narrower than "the row's resolve set", because the resolve set is exactly where the foreign evidence came from.
+- **The projection refuses foreign contact evidence.** `materializeEntity` drops foreign contact observations before resolving, from every entry point, so a survivor-key pass and a loser-key pass agree.
+A pass that read the row under its own key or id also clears a stored contact field no row-keyed live observation states; a pass entered through another key does not, because it has not seen the row's own evidence.
+Contact is the one field class that clears on empty this way, because a contact nobody can show was read from a page about the row is worse than no contact.
+- **The serve path withholds what the store still holds.** The access materializer upserts and never archives, so the detail route withholds a contact-field signal whose excerpt the row's own live contact observations do not re-derive, and the visibility gate does not count it as a way in.
+The excerpt is re-derived rather than the stored evidence id checked, because that id names only the single best contact observation while the excerpt combines the best of each contact field.
+The stored signal and the loser's observations stay: they are history, and nothing here prunes either.
+- **Every other field class is unchanged here.** Each keeps the #3560 rule, under which a loser may fill what the survivor has no evidence for; how that evidence is retired is a separate decision.
+
+The serve half reaches students on deploy.
+The stored half is a data operation: `yarn --cwd server research-entity:rematerialize --foreign-contact`, dry run then `--apply --confirm-rematerialize`, which a dry run on the date above planned as 87 contact fields cleared on 29 rows and 0 tier changes on re-gate.
+
 ## 2026-09-28: One Hosted-Undergraduates Predicate, Past Undergraduates Only For Now (#3593)
 
 "Has hosted undergraduate researchers" had four definitions.

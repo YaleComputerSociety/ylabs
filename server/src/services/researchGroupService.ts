@@ -27,6 +27,7 @@ import {
 import { Researcher, type ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
 import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
+import { foreignContactFieldSignalIds } from '../scrapers/accessMaterializer';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { Signal } from '../models/signal';
 import { getMeiliIndex } from '../utils/meiliClient';
@@ -3261,9 +3262,12 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     ...publicGroup,
     fieldProvenance: (group as any).fieldProvenance,
   });
-  const publicAccessSignals = (accessSignals as any[]).map((signal) =>
-    publicAccessSignalForResearchDetail(signal, group),
-  );
+  const foreignContactSignalIds = await foreignContactFieldSignalIds(accessSignals as any[], [
+    group as any,
+  ]);
+  const publicAccessSignals = (accessSignals as any[])
+    .filter((signal) => !foreignContactSignalIds.has(String(signal._id)))
+    .map((signal) => publicAccessSignalForResearchDetail(signal, group));
   const relationshipPayload = await listResearchEntityRelationshipPayload((group as any)._id);
   const structuralRelationExclusionKeys = [
     ...relationshipPayload.relatedResearchEntities,

@@ -129,6 +129,10 @@ import {
   websiteIdentity,
   type SurvivorOwnedWebsiteField,
 } from './survivorOwnedWebsiteClear';
+import {
+  RESEARCH_ENTITY_CONTACT_FIELDS,
+  withoutForeignContactObservations,
+} from './rowKeyedContactEvidence';
 import { planUnsourcedProvenanceWebsiteUrlClear } from './unsourcedProvenanceWebsiteClear';
 import {
   planNeverBackedFieldProvenanceRetirement,
@@ -4784,6 +4788,7 @@ export interface ProjectFromLogInput {
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
   writeOnlyFields?: string[];
   provenanceOnly?: boolean;
+  readRowUnderOwnIdentity?: boolean;
   applyDescriptionResearchAreaDerivation?: typeof applyDescriptionResearchAreaDerivation;
   applyResearchEntityOrgUnitCanonicalization?: typeof applyResearchEntityOrgUnitCanonicalization;
   applyResearchEntityResearchAreaCanonicalization?: typeof applyResearchEntityResearchAreaCanonicalization;
@@ -6046,7 +6051,12 @@ export async function projectFromLog(
 
   if (isResearchEntityObservationType(entityType) && entityDoc) {
     const fieldsWithLiveObservation = new Set(resolverObs.map((o) => o.field));
-    for (const field of CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS) {
+    // Only a pass that read the row under its own key or id has seen all of the
+    // row's own contact evidence; a pass entered through another key has not (#3609).
+    const clearableFields = input.readRowUnderOwnIdentity
+      ? [...CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS, ...RESEARCH_ENTITY_CONTACT_FIELDS]
+      : CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS;
+    for (const field of clearableFields) {
       if (manuallyLockedFields.includes(field)) continue;
       if (field in set) continue;
       if (fieldsWithLiveObservation.has(field)) continue;
@@ -6542,6 +6552,25 @@ export async function materializeEntity(
     }
   }
 
+  let foreignContactWithheld = false;
+  if (isResearchEntityObservationType(entityType) && entityDoc) {
+    const rowKeyedObs = withoutForeignContactObservations(obs, entityDoc);
+    foreignContactWithheld = rowKeyedObs.length !== obs.length;
+    obs = rowKeyedObs;
+    if (obs.length === 0) {
+      return {
+        entityType,
+        entityId: materializerDocumentId(entityDoc._id),
+        entityKey: identifier.entityKey,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved: {},
+        skipped: 'no-row-keyed-evidence',
+      };
+    }
+  }
+
   const storedLockedFields: string[] = (entityDoc && entityDoc.manuallyLockedFields) || [];
   // `reviseRevisitableFieldLocks` asks what this projection would produce if the
   // named locks were not there, which is the only way to learn whether the engine
@@ -6734,6 +6763,11 @@ export async function materializeEntity(
     synthesizeCardDescription: options.synthesizeCardDescription,
     writeOnlyFields: options.writeOnlyFields,
     provenanceOnly: options.onlyReconcileFieldProvenance,
+    readRowUnderOwnIdentity:
+      Boolean(entityDoc) &&
+      (mergedInKeys.length > 0 ||
+        (Boolean(identifier.entityKey) && identifier.entityKey === textValue(entityDoc?.slug)) ||
+        (Boolean(identifier.entityId) && identifier.entityId === entityIdString)),
   });
   const { conflicts } = projection;
   const { set, unset, fieldsWritten } = options.onlyReconcileFieldProvenance
@@ -6929,7 +6963,7 @@ export async function materializeEntity(
         researchEntityId: entityIdString,
         entityKey: identifier.entityKey,
       },
-      mergedInKeys.length > 0 ? (obs as AccessObservation[]) : undefined,
+      mergedInKeys.length > 0 || foreignContactWithheld ? (obs as AccessObservation[]) : undefined,
     );
     postMaterializationMetrics = {
       entryPathways: 0,

@@ -21,6 +21,12 @@ import {
   isExplicitUndergradUnavailabilityPhrase,
   isPlausibleUndergradEvidenceQuote,
 } from './undergradEvidenceQuoteValidation';
+import {
+  CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
+  RESEARCH_ENTITY_CONTACT_FIELDS,
+  observationIsKeyedToRow,
+  type ContactEvidenceRow,
+} from './rowKeyedContactEvidence';
 
 export { isExplicitUndergradUnavailabilityPhrase };
 
@@ -232,6 +238,31 @@ function contactSignalExcerpt(input: {
   if (parts.length > 0) return `Official contact listed: ${parts.join(', ')}.`;
   if (input.contactEmail) return 'Official contact email listed.';
   return 'Official contact listed.';
+}
+
+function deriveContactFieldsSignal(
+  researchEntityId: string,
+  byField: Map<string, AccessObservation[]>,
+): DerivedAccessSignal | undefined {
+  const contactObservations = [
+    ...(byField.get('contactName') || []),
+    ...(byField.get('contactEmail') || []),
+    ...(byField.get('contactRole') || []),
+  ];
+  const contactEmail = firstString(bestObservation(byField.get('contactEmail') || [])?.value);
+  const contactName = firstString(bestObservation(byField.get('contactName') || [])?.value);
+  const contactRole = firstString(bestObservation(byField.get('contactRole') || [])?.value);
+  if (contactObservations.length === 0 || !(contactEmail || contactName || contactRole)) {
+    return undefined;
+  }
+  return makeSignal({
+    researchEntityId,
+    derivationKey: CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
+    type: 'CONTACT_INSTRUCTIONS_EXIST',
+    score: maxConfidence(contactObservations),
+    observations: contactObservations,
+    excerpt: contactSignalExcerpt({ contactName, contactRole, contactEmail }),
+  });
 }
 
 function makeSignal(input: {
@@ -508,27 +539,8 @@ export function deriveAccessArtifactsFromObservations(
     );
   }
 
-  const contactObservations = [
-    ...(byField.get('contactName') || []),
-    ...(byField.get('contactEmail') || []),
-    ...(byField.get('contactRole') || []),
-  ];
-  const contactEmail = firstString(bestObservation(byField.get('contactEmail') || [])?.value);
-  const contactName = firstString(bestObservation(byField.get('contactName') || [])?.value);
-  const contactRole = firstString(bestObservation(byField.get('contactRole') || [])?.value);
-  if (contactObservations.length > 0 && (contactEmail || contactName || contactRole)) {
-    const score = maxConfidence(contactObservations);
-    accessSignals.push(
-      makeSignal({
-        researchEntityId,
-        derivationKey: 'signal:CONTACT_INSTRUCTIONS_EXIST:CONTACT_FIELDS',
-        type: 'CONTACT_INSTRUCTIONS_EXIST',
-        score,
-        observations: contactObservations,
-        excerpt: contactSignalExcerpt({ contactName, contactRole, contactEmail }),
-      }),
-    );
-  }
+  const contactFieldsSignal = deriveContactFieldsSignal(researchEntityId, byField);
+  if (contactFieldsSignal) accessSignals.push(contactFieldsSignal);
 
   return filterArtifactsByValidatedClaims({
     accessSignals: uniqueByDerivationKey(accessSignals),
@@ -674,4 +686,54 @@ export async function materializeAccessForResearchGroup(
     staleEvidenceSkipped: 0,
     errors: 0,
   };
+}
+
+interface ContactSignalLike {
+  _id?: unknown;
+  researchEntityId?: unknown;
+  derivationKey?: unknown;
+  source?: { excerpt?: unknown } | null;
+}
+
+const idText = (value: unknown): string => (value == null ? '' : String(value).trim());
+
+// The access materializer upserts and never archives, so a contact signal derived
+// before #3609 is withheld here at serve time and kept as history. Its stored
+// evidence id names only the single best contact observation while its excerpt
+// combines the best of each contact field, so the excerpt itself is re-derived.
+export async function foreignContactFieldSignalIds(
+  signals: readonly ContactSignalLike[],
+  rows: readonly ContactEvidenceRow[],
+): Promise<Set<string>> {
+  const contactSignals = signals.filter(
+    (signal) => signal.derivationKey === CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
+  );
+  if (contactSignals.length === 0) return new Set();
+  const rowIds = rows
+    .map((row) => toAccessMaterializerObjectId(row._id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  const slugs = rows.map((row) => idText(row.slug)).filter(Boolean);
+  const liveContactObservations = (await Observation.find({
+    entityType: { $in: ['researchEntity', 'researchGroup'] },
+    superseded: false,
+    field: { $in: [...RESEARCH_ENTITY_CONTACT_FIELDS] },
+    $or: [{ entityId: { $in: rowIds } }, { entityKey: { $in: slugs } }],
+  }).lean()) as unknown as AccessObservation[];
+  const rowsById = new Map(rows.map((row) => [idText(row._id), row]));
+
+  const foreign = new Set<string>();
+  for (const signal of contactSignals) {
+    const row = rowsById.get(idText(signal.researchEntityId));
+    const byField = new Map<string, AccessObservation[]>();
+    for (const observation of liveContactObservations) {
+      if (!row || !observationIsKeyedToRow(observation, row)) continue;
+      byField.set(observation.field, [...(byField.get(observation.field) || []), observation]);
+    }
+    const rowKeyedExcerpt = deriveContactFieldsSignal(idText(row?._id), byField)?.excerpt;
+    const statedByRow =
+      rowKeyedExcerpt !== undefined &&
+      sanitizeEvidenceExcerpt(rowKeyedExcerpt) === firstString(signal.source?.excerpt);
+    if (!statedByRow) foreign.add(idText(signal._id));
+  }
+  return foreign;
 }
