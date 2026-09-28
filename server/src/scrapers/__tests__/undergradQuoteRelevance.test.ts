@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   quotePageIsAboutAnotherEntity,
   quoteStatesAnUndergraduateAccessFact,
+  rosterSnippetNamesAnUndergraduate,
 } from '../undergradQuoteRelevance';
 
 describe('quoteStatesAnUndergraduateAccessFact', () => {
@@ -82,5 +83,26 @@ describe('quotePageIsAboutAnotherEntity', () => {
       false,
     );
     expect(quotePageIsAboutAnotherEntity('not a url', person)).toBe(false);
+  });
+});
+
+describe('rosterSnippetNamesAnUndergraduate (#3789)', () => {
+  it.each([
+    'Alice',
+    'Jordan Example Undergraduate Research Assistant',
+    'Riley Example, Yale College Class of 2028',
+    'Sam ExampleSeniorSam joined the group to work on gap extraction',
+  ])('counts %s', (snippet) => {
+    expect(rosterSnippetNamesAnUndergraduate(snippet)).toBe(true);
+  });
+
+  it.each([
+    'Sam Example, Senior Software Developer',
+    'Pat Example, PhD student',
+    'Casey Example, Postdoctoral Associate',
+    'Taylor Example completed her undergraduate degree at another university',
+    '',
+  ])('does not count %j', (snippet) => {
+    expect(rosterSnippetNamesAnUndergraduate(snippet)).toBe(false);
   });
 });

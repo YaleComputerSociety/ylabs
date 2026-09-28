@@ -1,4 +1,7 @@
-import { laneQuoteStatesUndergraduates } from './undergradEvidenceQuoteValidation';
+import {
+  laneQuoteStatesUndergraduates,
+  namesAnUndergraduateMarker,
+} from './undergradEvidenceQuoteValidation';
 import {
   isPersonProfileOrDirectoryUrl,
   isUmbrellaPageCitedByPerson,
@@ -15,10 +18,33 @@ const NON_ACCESS_UNDERGRADUATE_SPANS: readonly RegExp[] = [
   /(?<!\bduring\s+)\b(?:his|her|their|my)\s+undergrad(?:uate)?\s+(?:degree|education|training|studies)\b/gi,
 ];
 
-export function quoteStatesAnUndergraduateAccessFact(quote: string | undefined | null): boolean {
-  let rest = (quote || '').trim();
+const withoutNonAccessSpans = (text: string | undefined | null): string => {
+  let rest = (text || '').trim();
   for (const span of NON_ACCESS_UNDERGRADUATE_SPANS) rest = rest.replace(span, ' ');
-  return laneQuoteStatesUndergraduates(rest.replace(/\s+/g, ' ').trim());
+  return rest.replace(/\s+/g, ' ').trim();
+};
+
+export function quoteStatesAnUndergraduateAccessFact(quote: string | undefined | null): boolean {
+  return laneQuoteStatesUndergraduates(withoutNonAccessSpans(quote));
+}
+
+const NON_UNDERGRADUATE_ROSTER_ROLE =
+  /\b(?:(?:senior|junior|lead|principal|staff|chief)\s+)?(?:(?:software|research|data|lab(?:oratory)?|administrative|project|clinical|program)\s+)?(?:developer|engineer|scientist|administrator|manager|technician|analyst|coordinator|director)\b|\b(?:post-?docs?|postdoctoral|ph\.?\s?d\.?(?:\s+(?:student|candidate))?|graduate\s+students?|grad\s+students?|doctoral|faculty|professor|resident|lecturer|instructor)\b/i;
+
+/**
+ * Whether a roster line may be a current undergraduate (#3789). The line is read under a
+ * section heading the model chose, so a bare name counts: a roster lists names, not claims. A
+ * line is refused when it names a non-undergraduate role, a staff title, or the member's own
+ * past degree, unless an undergraduate marker survives beside it, as in "Undergraduate Research
+ * Assistant". On the gold benchmark an allow-list read dropped 12 of 20 real roster lines.
+ */
+export function rosterSnippetNamesAnUndergraduate(snippet: string | undefined | null): boolean {
+  const raw = (snippet || '').trim();
+  if (!raw) return false;
+  const rest = withoutNonAccessSpans(raw);
+  if (namesAnUndergraduateMarker(rest)) return true;
+  if (rest !== raw.replace(/\s+/g, ' ')) return false;
+  return !NON_UNDERGRADUATE_ROSTER_ROLE.test(raw);
 }
 
 const LAB_HOST_LABEL = /(?:lab|labs|group|project)/i;

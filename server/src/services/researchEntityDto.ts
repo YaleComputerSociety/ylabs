@@ -522,6 +522,13 @@ export function toPublicResearchEntityDto(
         if (!withheld) dto[field] = publicTextValue(group[field]);
         continue;
       }
+      if (field === 'currentUndergradCount') {
+        const retired =
+          group.fieldProvenance?.currentUndergradCount?.sourceName ===
+          RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE;
+        if (!retired) dto[field] = publicTextValue(group[field]);
+        continue;
+      }
       if (field === 'profileResearchAreas') {
         dto[field] = publicResearchAreaArray(served[field]);
         continue;

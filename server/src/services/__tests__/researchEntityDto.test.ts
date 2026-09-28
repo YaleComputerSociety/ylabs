@@ -682,6 +682,26 @@ describe('researchEntityDto', () => {
     expect(staleFlag.hasUndergradHostingEvidence).toBeUndefined();
   });
 
+  it('withholds a current-undergraduate count held only by the retired cache backfill (#3789)', () => {
+    const retired = toPublicResearchEntityDto({
+      id: 'entity-retired-count',
+      slug: 'retired-count-lab',
+      name: 'Retired Count Lab',
+      currentUndergradCount: 4,
+      fieldProvenance: { currentUndergradCount: { sourceName: 'research-entity-cache-backfill' } },
+    });
+    expect(retired.currentUndergradCount).toBeUndefined();
+
+    const live = toPublicResearchEntityDto({
+      id: 'entity-live-count',
+      slug: 'live-count-lab',
+      name: 'Live Count Lab',
+      currentUndergradCount: 2,
+      fieldProvenance: { currentUndergradCount: { sourceName: 'lab-microsite-undergrad-llm' } },
+    });
+    expect(live.currentUndergradCount).toBe(2);
+  });
+
   it('splits bare comma-delimited research-area blobs while preserving enumeration titles', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-area-split',

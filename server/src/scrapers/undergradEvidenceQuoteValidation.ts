@@ -165,13 +165,22 @@ const BARE_POPULATION_HEADING =
  * navigation heading, which names no one. The department undergraduate-research lane keeps
  * the looser rule because its pages are about undergraduates by construction.
  */
-export function laneQuoteStatesUndergraduates(quote: string | undefined | null): boolean {
-  const text = (quote || '').trim();
-  if (!isPlausibleUndergradEvidenceQuote(text)) return false;
-  if (BARE_POPULATION_HEADING.test(text)) return false;
+/**
+ * Whether text carries an undergraduate marker at all, with none of the quote-shape checks a
+ * standalone evidence quote needs. A roster line is read under a section heading that already
+ * says who the people are, so it has no population word of its own to check.
+ */
+export function namesAnUndergraduateMarker(text: string): boolean {
   return (
     EXPLICIT_UNDERGRADUATE_POPULATION.test(text) ||
     UNDERGRADUATE_PROGRAM_ACRONYM.test(text) ||
     UNDERGRADUATE_CONTEXT_CUE.test(text)
   );
+}
+
+export function laneQuoteStatesUndergraduates(quote: string | undefined | null): boolean {
+  const text = (quote || '').trim();
+  if (!isPlausibleUndergradEvidenceQuote(text)) return false;
+  if (BARE_POPULATION_HEADING.test(text)) return false;
+  return namesAnUndergraduateMarker(text);
 }

@@ -39,7 +39,10 @@ import { isBenchmarkModeActive } from '../snapshotBenchmarkMode';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
-import { quoteStatesAnUndergraduateAccessFact } from '../undergradQuoteRelevance';
+import {
+  quoteStatesAnUndergraduateAccessFact,
+  rosterSnippetNamesAnUndergraduate,
+} from '../undergradQuoteRelevance';
 import {
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
@@ -632,19 +635,18 @@ function isCurrentYaleUndergradEvidence(quote?: string): boolean {
  *   - When the LLM supplies a per-person `currentUndergradEvidenceQuotes` roster
  *     (the strengthened prompt requires one snippet per counted undergrad), the
  *     count is derived from the subset of snippets that clear both gates.
- *   - When no roster is present (legacy cache or an omitted array), fall back to
- *     the LLM integer but zero it when the single backing `evidenceQuote` is empty
- *     or shows a historical or non-Yale marker, so a contaminated count never survives.
+ *   - Each snippet must also carry an undergraduate marker once teaching, degree and
+ *     title mentions are set aside, so a staff title or a member's own degree is not
+ *     counted as a student (#3789).
+ *   - With no roster the count is zero: the bare LLM integer backed 13 of 20 stored
+ *     counts on a hand-read, so it is never trusted on its own (#3789).
  */
 export function deriveCurrentUndergradCount(extraction: LLMExtraction): number {
   const roster = extraction.currentUndergradEvidenceQuotes;
-  if (Array.isArray(roster)) {
-    return roster.filter((quote) => isCurrentYaleUndergradEvidence(quote)).length;
-  }
-  const rawCount = extraction.currentUndergradCount;
-  if (!Number.isInteger(rawCount) || rawCount <= 0) return 0;
-  const quote = (extraction.evidenceQuote || '').trim();
-  return quote && isCurrentYaleUndergradEvidence(quote) ? rawCount : 0;
+  if (!Array.isArray(roster)) return 0;
+  return roster.filter(
+    (quote) => isCurrentYaleUndergradEvidence(quote) && rosterSnippetNamesAnUndergraduate(quote),
+  ).length;
 }
 
 /**
@@ -653,12 +655,10 @@ export function deriveCurrentUndergradCount(extraction: LLMExtraction): number {
  *
  *   - undergradAccessEvidence: emitted iff openToUndergrads is 'yes' or 'no';
  *     skipped on 'unclear', and skipped unless its quote is on a fetched page. Confidence override 0.5 (LLM-based, low-trust).
- *   - currentUndergradCount: emitted iff evidenceSource is 'members_section'
- *     AND the recency/institution-gated count (deriveCurrentUndergradCount) is
- *     a positive integer, counted only from roster snippets and quotes that are
- *     on a fetched page. Open prose ("we have many undergrads") is too
- *     unreliable to write a count from, and alumni / non-Yale visiting undergrads
- *     never count toward it. Confidence 0.5.
+ *   - currentUndergradCount: emitted on every completed read, and zero when no
+ *     grounded roster snippet survives the gates in deriveCurrentUndergradCount.
+ *     The field is latest-wins, so a re-read replaces a stale positive (#3789).
+ *     Confidence 0.5.
  *   - every quote field: emitted only when the quote is on a fetched page, and
  *     cited to that page (#3592).
  *   - undergradEvidenceQuote: emitted iff evidenceQuote is non-empty, plausible,
@@ -725,20 +725,18 @@ export function extractionToObservations(
   }
   // 'unclear' → no observation
 
-  if (extraction.evidenceSource === 'members_section') {
-    out.push({
-      ...base,
-      field: 'currentUndergradCount',
-      value: deriveCurrentUndergradCount({
-        ...extraction,
-        evidenceQuote: evidenceQuote?.text ?? '',
-        currentUndergradEvidenceQuotes: extraction.currentUndergradEvidenceQuotes?.filter(
-          (quote) => pageContainingQuote(quote, pages) !== null,
-        ),
-      }),
-      confidenceOverride: 0.5,
-    });
-  }
+  out.push({
+    ...base,
+    field: 'currentUndergradCount',
+    value: deriveCurrentUndergradCount({
+      ...extraction,
+      evidenceQuote: evidenceQuote?.text ?? '',
+      currentUndergradEvidenceQuotes: extraction.currentUndergradEvidenceQuotes?.filter(
+        (quote) => pageContainingQuote(quote, pages) !== null,
+      ),
+    }),
+    confidenceOverride: 0.5,
+  });
 
   if (
     evidenceQuote &&

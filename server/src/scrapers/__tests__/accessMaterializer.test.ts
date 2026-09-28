@@ -76,6 +76,18 @@ describe('deriveAccessArtifactsFromObservations', () => {
     ]);
   });
 
+  it('mints no current-undergraduates signal from the retired cache-backfill lane (#3789)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'currentUndergradCount',
+        value: 4,
+        sourceName: 'research-entity-cache-backfill',
+        confidence: 0.5,
+      }),
+    ]);
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain('CURRENT_UNDERGRADS');
+  });
+
   it('turns listed current undergrads into exploratory outreach evidence', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({ field: 'currentUndergradCount', value: 2, confidence: 0.5 }),
