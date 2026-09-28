@@ -113,8 +113,8 @@ The tests scan in strict mode, which ignores the roster, so they still prove eve
 Write a new test fixture from the roster rather than inventing another name, and widening the roster is a reviewed change that its pin test makes deliberate.
 
 A roster of surnames does not scale to a driver that invents its own people, which is what the `no-mistakes` gate's live-validation drivers do, so two consecutive pull requests failed the body scan on entirely synthetic data (#3540).
-The second allowance is therefore a marker convention rather than a name list: `SYNTHETIC_FIXTURE_MARKERS` holds `fixture`, `sample`, `synthetic`, `placeholder` and `example`, and the body scan clears a slug or an address local part whose **final** segment is one of them.
-So `ysm-faculty-<given>-fixture` and `<given>.sample@yale.edu` are read as invented, while `nih-pi-fixture-<surname>` and `fixture.<surname>@yale.edu` still flag, because the marker is not last and the thing in the surname position is a name.
+The second allowance is therefore a marker convention rather than a name list: `SYNTHETIC_FIXTURE_MARKERS` holds `fixture`, `sample`, `synthetic`, `placeholder` and `example`, and the body scan clears a slug, an address local part or a directory profile URL's leaf whose **final** segment is one of them.
+So `ysm-faculty-<given>-fixture`, `<given>.sample@yale.edu` and `.../profile/<given>-fixture/` are read as invented, while `nih-pi-fixture-<surname>`, `fixture.<surname>@yale.edu` and `.../profile/fixture-<surname>/` still flag, because the marker is not last and the thing in the surname position is a name.
 Prefer a marker over the surname roster when writing a fixture, because it needs no change here to add one.
 
 The set was chosen against the live corpus rather than by taste: 0 of 9,119 research-entity slugs end in any marker, 0 carry one as a segment at all, and 0 of 11,155 researcher addresses have a local part ending in one.
