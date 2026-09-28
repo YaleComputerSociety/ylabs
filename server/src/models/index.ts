@@ -23,6 +23,16 @@ export {
   LANE_BENCHMARK_PAGE_COLLECTION,
 } from './laneBenchmark';
 export { LaneScorecardSnapshot, LANE_SCORECARD_SNAPSHOT_COLLECTION } from './laneScorecardSnapshot';
+export {
+  EngineBenchmark,
+  EngineBenchmarkRow,
+  ENGINE_BENCHMARK_COLLECTION,
+  ENGINE_BENCHMARK_ROW_COLLECTION,
+} from './engineBenchmark';
+export {
+  EngineBenchmarkSnapshot,
+  ENGINE_BENCHMARK_SNAPSHOT_COLLECTION,
+} from './engineBenchmarkSnapshot';
 export { Observation, type ObservedEntityType } from './observation';
 export { ScrapeRun } from './scrapeRun';
 export { ScrapeSnapshot } from './scrapeSnapshot';

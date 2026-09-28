@@ -148,6 +148,11 @@ const EXCLUDED_BETA_COLLECTIONS = [
   'gate_scorecard_snapshots',
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a
   // lane benchmark is a frozen input captured here, and its scorecards are its history.
+  // The engine benchmark is the same thing one layer up: a frozen observation set and
+  // stored row captured in this environment, and the trend measured against it.
+  'engine_benchmarks',
+  'engine_benchmark_rows',
+  'engine_benchmark_snapshots',
   'lane_benchmarks',
   'lane_benchmark_pages',
   'lane_scorecard_snapshots',

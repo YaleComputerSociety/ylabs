@@ -82,7 +82,10 @@ import {
   ResolvedField,
 } from './confidenceResolver';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
-import { MaterializationChunkPrefetch } from './materializationChunkPrefetch';
+import {
+  MaterializationChunkPrefetch,
+  type MaterializationReadSource,
+} from './materializationChunkPrefetch';
 import {
   appendObservations,
   c4LosslessIngestEnabled,
@@ -249,7 +252,7 @@ import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
 interface MaterializeOptions {
   dryRun?: boolean;
-  chunkPrefetch?: MaterializationChunkPrefetch;
+  chunkPrefetch?: MaterializationReadSource;
   syncMeilisearch?: boolean;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
   writeOnlyFields?: string[];
@@ -3554,7 +3557,7 @@ async function findEntityDocByIdentifier(
   entityType: ObservedEntityType,
   identifier: { entityId?: string; entityKey?: string },
   obs: any[],
-  prefetch?: MaterializationChunkPrefetch,
+  prefetch?: MaterializationReadSource,
 ): Promise<any | null> {
   const entityId = normalizeMaterializerObjectId(identifier.entityId);
   if (entityId) {
@@ -3626,7 +3629,7 @@ export async function entityIdAnchoredObservationsExcludedByEntityKeyScope(
   entityType: ObservedEntityType,
   entityId: string,
   entityKeyScopedObservations: MaterializerObservationLike[],
-  prefetch?: MaterializationChunkPrefetch,
+  prefetch?: MaterializationReadSource,
 ): Promise<any[]> {
   const entityIdObjectId = toMaterializerObjectId(entityId);
   if (!entityIdObjectId) return [];
@@ -3660,7 +3663,7 @@ export async function entityKeyAnchoredObservationsExcludedByEntityIdScope(
   entityId: string,
   entityKey: string | undefined,
   entityIdScopedObservations: MaterializerObservationLike[],
-  prefetch?: MaterializationChunkPrefetch,
+  prefetch?: MaterializationReadSource,
 ): Promise<any[]> {
   if (!entityKey) return [];
   const entityIdObjectId = toMaterializerObjectId(entityId);
@@ -3775,7 +3778,7 @@ export async function mergedSurvivorEvidence(
   entityType: ObservedEntityType,
   survivor: { _id?: unknown; slug?: unknown; [field: string]: unknown },
   loadedObservations: any[],
-  prefetch?: MaterializationChunkPrefetch,
+  prefetch?: MaterializationReadSource,
 ): Promise<MergedSurvivorEvidence> {
   const survivorId = toMaterializerObjectId(survivor._id);
   const unmerged = {
@@ -4599,7 +4602,7 @@ export const NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY: ResearchEntityNameIdent
 
 export async function loadResearchEntityNameIdentityAuthority(
   researchEntityId: unknown,
-  prefetch?: MaterializationChunkPrefetch,
+  prefetch?: MaterializationReadSource,
 ): Promise<ResearchEntityNameIdentityAuthority> {
   const prefetchedLead = prefetch?.soleLeadPersonId(researchEntityId);
   return {

@@ -105,6 +105,26 @@ export interface StudentVisibilityGatePlan {
   sourceNames: string[];
   nextRepairAction: string;
   hasResolvedLead?: boolean;
+  /**
+   * The per-row inputs this verdict was reached on, reported so the engine benchmark can
+   * freeze them (#3589). Every one of them is either corpus-wide (the duplicate and
+   * shared-citation flags) or a join (the counts, the lead rows), so a benchmark that
+   * recomputed them from a scoped read would be measuring its own reimplementation
+   * rather than the gate. Read here, never rebuilt.
+   */
+  gateInput?: ResearchEntityGateRowInput;
+}
+
+/** The serializable half of `ResearchEntityStudentVisibilityInput`, minus the record itself. */
+export interface ResearchEntityGateRowInput {
+  leadMembers: Array<Record<string, any>>;
+  accessSignalCount: number;
+  actionablePathwayCount: number;
+  openPostedOpportunityCount: number;
+  duplicateRisk: boolean;
+  exactUrlDuplicateRisk: boolean;
+  citationsSharedAcrossPersonRows: boolean;
+  relatedEntityAccessPathCount: number;
 }
 
 export interface VisibilityQueueUpsert {
@@ -2110,8 +2130,7 @@ async function planResearchEntityGateUpdates(
     const recordId = studentVisibilityGateDocumentId(entity._id);
     const leadMembers = leadsByEntityId.get(recordId) || [];
     const isDuplicateGroupSurvivor = duplicateGroupSurvivorEntityIds.has(recordId);
-    const result = computeResearchEntityStudentVisibility({
-      entity,
+    const gateInput: ResearchEntityGateRowInput = {
       leadMembers,
       accessSignalCount: accessCounts.get(recordId) || 0,
       actionablePathwayCount: 0,
@@ -2131,6 +2150,10 @@ async function planResearchEntityGateUpdates(
         exactUrlDuplicateRiskEntityIds.has(recordId),
       citationsSharedAcrossPersonRows: sharedCitationOnlyEntityIds.has(recordId),
       relatedEntityAccessPathCount: alternateAccessPathCounts.get(recordId) || 0,
+    };
+    const result = computeResearchEntityStudentVisibility({
+      entity,
+      ...gateInput,
       knownPersonSurnames,
     });
     return {
@@ -2148,6 +2171,7 @@ async function planResearchEntityGateUpdates(
       sourceNames: sourceNamesByEntityId.get(recordId) || [],
       nextRepairAction: nextRepairActionForReasons(result.reasons),
       hasResolvedLead: leadMembers.length > 0,
+      gateInput,
     };
   });
 }

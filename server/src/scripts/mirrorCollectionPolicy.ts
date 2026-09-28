@@ -13,6 +13,9 @@ export const NEVER_COPY_COLLECTIONS = [
   'lane_benchmarks',
   'lane_benchmark_pages',
   'lane_scorecard_snapshots',
+  'engine_benchmarks',
+  'engine_benchmark_rows',
+  'engine_benchmark_snapshots',
 ];
 
 export function assertNoNeverCopyCollections(collectionNames: string[]): void {

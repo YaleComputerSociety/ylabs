@@ -61,6 +61,26 @@ function groupBy<T>(items: readonly T[], keyOf: (item: T) => string | undefined)
 }
 
 /**
+ * The reads `materializeEntity` will accept from somewhere other than the live
+ * collections. Named as an interface rather than left as the prefetch class's shape
+ * because a second implementation answers from a frozen benchmark instead of from a
+ * chunk of the corpus (#3589), and the two differ on what a miss means: a chunk miss
+ * falls through to a live read on purpose, while a benchmark miss is an input the
+ * capture failed to freeze and has to be counted.
+ */
+export interface MaterializationReadSource {
+  readonly entityType: string;
+  markTouched(...identifiers: unknown[]): void;
+  markCreated(): void;
+  observationsForKey(entityType: string, entityKey: string): PrefetchLookup<unknown[]>;
+  observationsForId(entityType: string, entityId: unknown): PrefetchLookup<unknown[]>;
+  entityDocForId(entityType: string, entityId: unknown): PrefetchLookup<unknown | null>;
+  entityDocForKey(entityType: string, keyValue: string): PrefetchLookup<unknown | null>;
+  hasNoMergedInRows(survivorId: unknown): boolean;
+  soleLeadPersonId(entityId: unknown): PrefetchLookup<string>;
+}
+
+/**
  * One chunk's worth of the reads `materializeEntity` would otherwise make row by row.
  *
  * Every answer is the same query the row makes, run once for the chunk, and each
@@ -73,7 +93,7 @@ function groupBy<T>(items: readonly T[], keyOf: (item: T) => string | undefined)
  * to write through `markTouched`/`markCreated` and every answer about a touched row,
  * or an absence after any create, becomes a miss and the row reads live (#3568).
  */
-export class MaterializationChunkPrefetch {
+export class MaterializationChunkPrefetch implements MaterializationReadSource {
   private readonly observationsByKey = new Map<string, unknown[]>();
   private readonly observationsById = new Map<string, unknown[]>();
   private readonly entityDocsById = new Map<string, unknown | null>();
