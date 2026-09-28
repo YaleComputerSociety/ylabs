@@ -19,6 +19,7 @@ import {
   getUserAnalyticsDrilldown,
 } from '../services/analyticsService';
 import { getCorpusQualityDashboard } from '../services/corpusQualityDashboardService';
+import { getLaneBenchmarkDashboard } from '../services/laneBenchmarkDashboardService';
 import { validateNetid } from '../middleware/validation';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { BadRequestError } from '../utils/errors';
@@ -305,6 +306,15 @@ router.get(
   isAdmin,
   asyncHandler(async (_request: Request, response: Response) => {
     response.status(200).json(await getCorpusQualityDashboard());
+  }),
+);
+
+router.get(
+  '/lane-benchmarks',
+  isAuthenticated,
+  isAdmin,
+  asyncHandler(async (_request: Request, response: Response) => {
+    response.status(200).json(await getLaneBenchmarkDashboard());
   }),
 );
 

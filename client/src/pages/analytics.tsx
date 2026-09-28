@@ -15,6 +15,7 @@ import {
 } from 'react';
 import axios from '../utils/axios';
 import type { CorpusQualityResponse } from '../components/analytics/corpusQualityTypes';
+import type { LaneBenchmarkResponse } from '../components/analytics/laneBenchmarkTypes';
 import swal from 'sweetalert';
 import { clientErrorMessage } from '../utils/clientErrorMessage';
 import useDocumentTitle from '../hooks/useDocumentTitle';
@@ -184,6 +185,9 @@ const Analytics = () => {
   const [corpusQuality, setCorpusQuality] = useState<CorpusQualityResponse | null>(null);
   const [isCorpusQualityLoading, setIsCorpusQualityLoading] = useState(false);
   const [corpusQualityError, setCorpusQualityError] = useState<string | null>(null);
+  const [laneBenchmarks, setLaneBenchmarks] = useState<LaneBenchmarkResponse | null>(null);
+  const [isLaneBenchmarksLoading, setIsLaneBenchmarksLoading] = useState(false);
+  const [laneBenchmarksError, setLaneBenchmarksError] = useState<string | null>(null);
   const [isImpactLoading, setIsImpactLoading] = useState(false);
   const [impactError, setImpactError] = useState<string | null>(null);
 
@@ -487,6 +491,23 @@ const Analytics = () => {
     }
   }, []);
 
+  const fetchLaneBenchmarks = useCallback(async () => {
+    setIsLaneBenchmarksLoading(true);
+    setLaneBenchmarksError(null);
+
+    try {
+      const response = await axios.get<LaneBenchmarkResponse>('/analytics/lane-benchmarks', {
+        withCredentials: true,
+      });
+      setLaneBenchmarks(response.data);
+    } catch {
+      console.error('Error fetching lane benchmarks.');
+      setLaneBenchmarksError('Failed to load lane benchmarks');
+    } finally {
+      setIsLaneBenchmarksLoading(false);
+    }
+  }, []);
+
   const fetchImpactAnalytics = useCallback(async () => {
     setIsImpactLoading(true);
     setImpactError(null);
@@ -552,6 +573,12 @@ const Analytics = () => {
       void fetchCorpusQuality();
     }
   }, [data, fetchCorpusQuality]);
+
+  useEffect(() => {
+    if (data) {
+      void fetchLaneBenchmarks();
+    }
+  }, [data, fetchLaneBenchmarks]);
 
   useEffect(() => {
     if (selectedNetid) {
@@ -1305,6 +1332,9 @@ const Analytics = () => {
             corpusQuality={corpusQuality}
             isCorpusQualityLoading={isCorpusQualityLoading}
             corpusQualityError={corpusQualityError}
+            laneBenchmarks={laneBenchmarks}
+            isLaneBenchmarksLoading={isLaneBenchmarksLoading}
+            laneBenchmarksError={laneBenchmarksError}
             userActivity={userActivity}
             isUserActivityLoading={isUserActivityLoading}
             userActivityError={userActivityError}

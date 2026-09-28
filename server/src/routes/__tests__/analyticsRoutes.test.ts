@@ -102,6 +102,13 @@ describe('analytics routes', () => {
     vi.clearAllMocks();
   });
 
+  it('serves the lane benchmark panel only to an authenticated admin (#3591)', () => {
+    const route = routeByPath('/lane-benchmarks');
+    expect(route).toBeTruthy();
+    const guards = route.stack.slice(0, -1).map((layer: any) => layer.handle.name);
+    expect(guards).toEqual(expect.arrayContaining(['isAuthenticated', 'isAdmin']));
+  });
+
   it('exposes the search-query analytics endpoint used by the analytics dashboard', () => {
     expect(routeByPath('/search-queries')).toBeTruthy();
   });
