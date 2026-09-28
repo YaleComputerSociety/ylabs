@@ -148,6 +148,44 @@ export const isCorruptResearchAreaLabel = (value: unknown): boolean => {
   return isLowercaseSentenceFragment(collapsed);
 };
 
+/**
+ * A label so broad it distinguishes nothing, and so wrong for all three jobs a topic does:
+ * it groups thousands of unlike rows as a facet, tells a student nothing about fit as
+ * guidance, and matches everything as a search term. "Best fit for: Diseases" is the
+ * clearest case.
+ *
+ * Deliberately a closed list of whole labels rather than a prefix or word rule. The
+ * qualified forms are all legitimate topics - "Infectious Diseases", "Medical Education",
+ * "Cancer Therapeutics" - so anything matching a stem would take the good ones with it.
+ * Measured on Development: 12 labels over 80 served chip mentions, against 6,519 distinct
+ * chips, and only 2 rows are left with no topic at all.
+ *
+ * A single-word umbrella is not automatically empty either, which is why this is a list and
+ * not a word count: "Neuroscience", "Chemistry" and "Immunology" are single words and are
+ * the most useful chips in the corpus.
+ */
+const CONTENTLESS_RESEARCH_AREA_LABELS: ReadonlySet<string> = new Set([
+  'diseases',
+  'education',
+  'engineering',
+  'evaluation',
+  'health',
+  'humanities',
+  'management',
+  'medicine',
+  'methods',
+  'policy',
+  'research',
+  'science',
+  'sciences',
+  'technology',
+  'therapeutics',
+]);
+
+export const isContentlessResearchAreaLabel = (value: unknown): boolean =>
+  typeof value === 'string' &&
+  CONTENTLESS_RESEARCH_AREA_LABELS.has(value.replace(/\s+/g, ' ').trim().toLowerCase());
+
 export const sanitizeResearchAreaLabel = (value: unknown): string => {
   if (typeof value !== 'string') return '';
   const collapsed = value.replace(/\s+/g, ' ').trim();
@@ -159,6 +197,7 @@ export const sanitizeResearchAreaLabel = (value: unknown): string => {
   if (!trimmed) return '';
   if (isNarrativeProseResearchAreaLabel(trimmed)) return '';
   if (isCorruptResearchAreaLabel(trimmed)) return '';
+  if (isContentlessResearchAreaLabel(trimmed)) return '';
   return trimmed;
 };
 

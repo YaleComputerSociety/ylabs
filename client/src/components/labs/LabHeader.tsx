@@ -6,7 +6,7 @@
  */
 import { ResearchGroup } from '../../types/researchGroup';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
-import { formatTitleCaseLabel } from '../../utils/displayText';
+import { formatTopicChipLabel } from '../../utils/displayText';
 import { useConfig } from '../../hooks/useConfig';
 import { ensureHttpPrefix } from '../../utils/url';
 import {
@@ -116,7 +116,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
           <div className="flex flex-wrap gap-1.5">
             {visibleProfileResearchAreas.map((area) => (
               <span key={area} className="yr-pill ">
-                {formatTitleCaseLabel(area)}
+                {formatTopicChipLabel(area)}
               </span>
             ))}
           </div>

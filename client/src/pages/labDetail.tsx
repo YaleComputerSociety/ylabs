@@ -53,7 +53,7 @@ import {
 } from '../utils/researchDetailSources';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeMailtoHref, safeRouteSegment } from '../utils/url';
 import { officialProfileUrlFromMemberUser } from '../utils/principalInvestigatorLinks';
-import { formatTitleCaseLabel } from '../utils/displayText';
+import { formatTitleCaseLabel, formatTopicChipLabel } from '../utils/displayText';
 import {
   decisionHeadingLabel,
   entityKindLabel,
@@ -534,7 +534,7 @@ const DecisionSummary = ({
                     key={topic}
                     className="rounded-card border border-line-brand bg-brand-soft px-2.5 py-1 text-xs font-medium text-brand"
                   >
-                    {formatTitleCaseLabel(topic)}
+                    {formatTopicChipLabel(topic)}
                   </span>
                 ))}
               </div>

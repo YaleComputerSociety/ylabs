@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   endsWithChipSentenceStop,
+  isContentlessResearchAreaLabel,
   isCorruptResearchAreaLabel,
   isNarrativeProseResearchAreaLabel,
   isSentenceShapedChip,
@@ -366,4 +367,51 @@ describe('endsWithChipSentenceStop', () => {
     expect(endsWithChipSentenceStop('Immunology')).toBe(false);
     expect(endsWithChipSentenceStop(undefined)).toBe(false);
   });
+});
+
+describe('a contentless umbrella label is refused for every job a topic does', () => {
+  /**
+   * These distinguish nothing: as a facet they group thousands of unlike rows, as guidance
+   * they tell a student nothing about fit, and as a search term they match everything.
+   * Measured on Development: 12 labels over 80 served chip mentions.
+   */
+  it.each(['Diseases', 'Education', 'Technology', 'Therapeutics', 'Medicine', 'Research'])(
+    'refuses %s',
+    (label) => {
+      expect(sanitizeResearchAreaLabel(label)).toBe('');
+      expect(isContentlessResearchAreaLabel(label)).toBe(true);
+    },
+  );
+
+  it('refuses it whatever its casing or spacing, because a chip arrives either way', () => {
+    expect(sanitizeResearchAreaLabel('  diseases ')).toBe('');
+    expect(sanitizeResearchAreaLabel('TECHNOLOGY')).toBe('');
+  });
+
+  /**
+   * The qualified forms are the legitimate topics, and a stem or prefix rule would take
+   * them with it. This is why the refusal is a closed list of whole labels.
+   */
+  it.each([
+    'Infectious Diseases',
+    'Medical Education',
+    'Cancer Therapeutics',
+    'Digital Technology',
+    'Health Policy',
+    'Translational Medicine',
+  ])('keeps the qualified topic %s', (label) => {
+    expect(sanitizeResearchAreaLabel(label)).toBe(label);
+    expect(isContentlessResearchAreaLabel(label)).toBe(false);
+  });
+
+  /**
+   * A single word is not the test, which is the mistake this rule is shaped to avoid: the
+   * most useful chips in the corpus are single words.
+   */
+  it.each(['Neuroscience', 'Chemistry', 'Immunology', 'Epidemiology', 'Genomics'])(
+    'keeps the single-word topic %s',
+    (label) => {
+      expect(sanitizeResearchAreaLabel(label)).toBe(label);
+    },
+  );
 });
