@@ -107,6 +107,12 @@ Three live-model runs over the same frozen pages read precision 0.57 to 0.58 and
 Quote the band, not the frozen replay, when judging the lane rather than its code.
 After #3764 fixed the four false-badge shapes the labels found, the frozen replay read precision 7 of 7 and recall 7 of 11, and three live-model runs read precision 0.88 to 1.00 and recall 0.55 to 0.64.
 The recall given up is a bare "Undergraduate Students" heading on a page that does list an undergraduate below it: the heading alone names no one, so the lane now needs the roster line itself.
+
+`undergrad-llm-gold-v2` re-captures the same 42 labs, because #3762 changed the page text the prompt carries for six of them, which turned their frozen v1 answers into misses.
+A frozen answer is keyed by the exact request, so any change to the page-to-prompt step stales a benchmark in this way; re-capture, and carry a label over only when the lab's frozen page text is unchanged or has been re-read.
+Of v1's 38 labels, 35 carried unchanged, 2 were re-read and kept, and 1 dropped because v2 captured no home page.
+On v2, #3775 moved the frozen replay from precision 7 of 8 and recall 7 of 11 to 9 of 9 and 9 of 11.
+Three live-model runs on v2 then read precision 1.00 and recall 0.82 in every run.
 The sample over-represents rows that already carry a quote, so the rate describes the lane on these strata rather than the corpus, and at this size one row moves precision by about 8 points.
 
 Two replays of unchanged code must give the same fingerprint.

@@ -595,7 +595,8 @@ const HISTORICAL_UNDERGRAD_EVIDENCE_PATTERNS: RegExp[] = [
  * snippet names a clearly non-Yale institution or marks the person as visiting.
  */
 const NON_YALE_INSTITUTION_PATTERNS: RegExp[] = [
-  /\bvisiting\b/i,
+  /\bvisiting\s+(?:[a-z-]+\s+){0,2}(?:undergrad\w*|students?|scholars?|researchers?|interns?|fellows?)\b/i,
+  /\bvisiting\s*(?:,|from\b)/i,
   /\buniversit(?:y|ies)\b/i,
   /\bpolytechnic\b/i,
   /\binstitute\s+of\s+technolog/i,

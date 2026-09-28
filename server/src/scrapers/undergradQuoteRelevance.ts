@@ -8,9 +8,9 @@ import {
 const NON_ACCESS_UNDERGRADUATE_SPANS: readonly RegExp[] = [
   /\b(?:co-?)?(?:teach(?:es|ing)?|taught|instructs?|lectur(?:es|ing))(?:\s+(?!(?:and|or|but)\b)[\w-]+){0,4}?\s+undergrad(?:uate)?s?\b(?:(?:\s+(?!undergrad)[\w-]+){0,5}?\s+(?:courses?|classes|seminars?|surveys?|lectures?|curriculum|students?|levels?)\b)?/gi,
   /\b(?:courses?(?:\s+and\s+seminars?)?|course\s+type)\s*:?\s*undergrad(?:uate)?\b/gi,
-  /\bundergrad(?:uate)?\s+(?:and\s+graduate\s+)?(?:courses?|teaching|classes|seminars?|curriculum|lectures?)\b/gi,
+  /\bundergrad(?:uate)?\s+(?:(?:and|or|&)\s+(?:[a-z-]+\s+)?)?(?:courses?|teaching|classes|seminars?|curriculum|lectures?)\b(?!\s+credit)/gi,
   /\b(?:(?:associate|assistant|deputy|co-)\s*)?(?:director|dean|registrar|chair)\s+of\s+(?:[\w&,]+\s+){0,6}?undergrad(?:uate)?\s+(?:studies|education|research|affairs|admissions|programs?|curriculum)\b/gi,
-  /\bundergrad(?:uate)?\s+(?:major|programs?|degrees?|curriculum|concentrations?|certificates?|admissions?)\b/gi,
+  /\bundergrad(?:uate)?\s+(?:major|programs?|degree(?!s)|curriculum|concentrations?|certificates?|admissions?)\b/gi,
   /(?<!\b(?:his|her|their|my|during)\s+)\bundergrad(?:uate)?\s+(?:studies|education)\b/gi,
   /(?<!\bduring\s+)\b(?:his|her|their|my)\s+undergrad(?:uate)?\s+(?:degree|education|training|studies)\b/gi,
 ];

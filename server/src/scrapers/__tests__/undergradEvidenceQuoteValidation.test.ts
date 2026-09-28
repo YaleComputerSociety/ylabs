@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   isModelSearchNote,
+  namesGraduatedClassYear,
   laneQuoteStatesUndergraduates,
   isPlausibleUndergradEvidenceQuote,
   quoteExplicitlyDeclinesUndergraduates,
 } from '../undergradEvidenceQuoteValidation';
+import { quoteStatesAnUndergraduateAccessFact } from '../undergradQuoteRelevance';
 
 describe('isPlausibleUndergradEvidenceQuote (#1387)', () => {
   it('accepts genuine undergrad-access quotes', () => {
@@ -203,5 +205,66 @@ describe('laneQuoteStatesUndergraduates (#3764)', () => {
       ),
     ).toBe(true);
     expect(laneQuoteStatesUndergraduates('Internships for Yale students')).toBe(false);
+  });
+});
+
+describe('namesGraduatedClassYear (#3775)', () => {
+  const september2026 = new Date(2026, 8, 27);
+  const march2026 = new Date(2026, 2, 1);
+
+  it('reads a future class year as a current student and a past one as alumni', () => {
+    expect(namesGraduatedClassYear('Yale College, class of 2027', september2026)).toBe(false);
+    expect(namesGraduatedClassYear('Yale College, class of 2025', september2026)).toBe(true);
+  });
+
+  it('counts a class as graduated from June of its year', () => {
+    expect(namesGraduatedClassYear('class of 2026', september2026)).toBe(true);
+    expect(namesGraduatedClassYear('class of 2026', march2026)).toBe(false);
+  });
+});
+
+describe('undergraduate as a teaching modifier (#3775)', () => {
+  it('does not read courses, a major, or a teaching title as hosting undergraduates', () => {
+    for (const quote of [
+      'We offer a range of undergraduate and graduate courses across the humanities.',
+      'A range of undergraduate and undergraduate courses across the humanities.',
+      'Professor Example / Director of Undergraduate Studies',
+      'She received an award for undergraduate teaching at Yale.',
+      'He completed his undergraduate degree in chemistry.',
+    ]) {
+      expect(quoteStatesAnUndergraduateAccessFact(quote), quote).toBe(false);
+    }
+  });
+
+  it('still reads a lab member who joined as an undergraduate or trainees at that level', () => {
+    for (const quote of [
+      'Sam first joined the lab during his undergraduate studies.',
+      'The program trains psychology trainees at the undergraduate level.',
+      'We teach undergraduate courses and welcome undergraduates into the lab each summer.',
+      'Undergraduate majors in MCDB often join our lab.',
+      'Yale students can earn undergraduate course credit for research in the lab.',
+      'Students pursuing undergraduate degrees work in the lab.',
+    ]) {
+      expect(quoteStatesAnUndergraduateAccessFact(quote), quote).toBe(true);
+    }
+  });
+});
+
+describe('a program name or a faculty member own degree is not hosting evidence (#3775)', () => {
+  it('discounts the undergraduate major as a program and a degree from Yale College as a bio', () => {
+    for (const quote of [
+      'Questions? Reach out to our director of undergraduate studies about the undergraduate major.',
+      'After receiving his undergraduate degree in archaeology from Yale College, he completed a doctorate elsewhere.',
+    ]) {
+      expect(quoteStatesAnUndergraduateAccessFact(quote), quote).toBe(false);
+    }
+  });
+
+  it('keeps plural majors, who are people', () => {
+    expect(
+      quoteStatesAnUndergraduateAccessFact(
+        'Undergraduate majors in biology join the lab each summer.',
+      ),
+    ).toBe(true);
   });
 });
