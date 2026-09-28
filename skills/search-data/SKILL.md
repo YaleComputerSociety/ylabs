@@ -272,10 +272,13 @@ Before this, the page was the keyword leg's order with semantic-only rows append
 Rank rather than score, because the scores are not on one scale: measured offline with the index's own embedding model, off-topic queries reach similarities real topics do not, and no absolute or relative cutoff separated them, while the semantic leg's order was right.
 Every k and weight swept beat the keyword-first merge, and a semantic weight of 2 cost a person-name query its correct first result.
 
-An empty keyword leg runs no semantic leg, so a query that matches nothing keeps the thresholded path and its #823 noise protection.
-When the best keyword hit matches every word and a person-name field, `leadProfessorNames` or `professorNames` (`keywordLegTopHitIsNameMatch`), semantic-only rows are withheld, because the semantic neighbours of a name are other people with similar names.
-An entity title does not count, because titles carry topic words (`Robotics Lab`).
-Meili omits the `words` rule under `matchingStrategy: 'all'`, so an absent rule counts as a full match there.
+Two guards shape the fused list.
+When the all-words keyword leg of a multi-word query is empty, it is re-run with `matchingStrategy: 'last'`, so a phrase no row carries in full (`immigration policy`, or a `queryOnly` alias word such as `kids` inside a phrase) still has keyword evidence to anchor the fusion.
+It was measured as part of the design: without it, concept queries scored 0.74 rather than 0.80 and question-style queries 0.65 rather than 0.72 nDCG@10 on the development set.
+A keyword leg still empty after that runs no semantic leg, so a query that matches nothing keeps the thresholded path and its #823 noise protection.
+When every query word is matched exactly, as a whole word, inside a person-name field (`leadProfessorNames` or `professorNames`) on the best keyword hit, semantic-only rows are withheld (`keywordLegTopHitIsNameMatch`), because the semantic neighbours of a name are other people with similar names.
+An entity title does not count, because titles carry topic words (`Robotics Lab`), and neither does a topic word that only matches a surname, a typo match, or a prefix match, so `green chemistry` under a lead named Green keeps its meaning-based rows.
+The keyword leg therefore also retrieves the two name fields, which the check reads through `_matchesPosition`.
 A withheld result reports only the rows it serves as its total, because the companion count still includes the withheld rows.
 A failed semantic leg falls back to the keyword-first order and marks the search degraded; `floorWeakSemanticOnlyHits` and `promoteExactAliasFieldMatches` now run only on that fallback path.
 A whole-query shorthand that keeps its typed alias (`ai`) still searches topic fields keyword-only and is unchanged.

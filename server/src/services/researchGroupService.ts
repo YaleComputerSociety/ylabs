@@ -987,24 +987,50 @@ export const fuseKeywordAndSemanticRankings = <T>(
 
 const PERSON_NAME_ATTRIBUTES = new Set(['leadProfessorNames', 'professorNames']);
 
-// A query whose best keyword hit matches every word and a person's name is someone
-// looking for a person, and the semantic neighbours of a name are
-// other people with similar names: the blind judges preferred production on 7 of
-// 15 name queries until those rows were withheld. An entity title is not a person
-// name, because titles carry topic words ("Robotics Lab"). See #3797.
-export const keywordLegTopHitIsNameMatch = (keywordLegHits: any[]): boolean => {
+// A query is a person search only when every one of its words is matched, exactly,
+// inside a person's name on the best keyword hit. The semantic neighbours of a name
+// are other people with similar names: the blind judges preferred production on 7
+// of 15 name queries until those rows were withheld. An entity title is not a
+// person name, because titles carry topic words ("Robotics Lab"), and a typo or
+// prefix match is not one either, so `green chemistry` under a lead named Green or
+// `brain` reaching Braun keeps its meaning-based rows. See #3797.
+const normalizeNameMatchText = (value: string): string =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+const exactPersonNameMatches = (hit: any): Set<string> => {
+  const matched = new Set<string>();
+  for (const attribute of PERSON_NAME_ATTRIBUTES) {
+    const positions = hit?._matchesPosition?.[attribute];
+    if (!Array.isArray(positions)) continue;
+    const values = hit?.[attribute];
+    for (const position of positions) {
+      const value = Array.isArray(values) ? values[position?.indices?.[0] ?? 0] : values;
+      if (typeof value !== 'string') continue;
+      const end = position.start + position.length;
+      // Read the offsets as characters and as bytes; the wrong reading yields a
+      // fragment that cannot equal a whole query word. Only a span that is a whole
+      // word of the name counts, because a prefix match highlights exactly the
+      // typed word ("stone" inside "Stoneman").
+      const readings = [value, Buffer.from(value)].map((text) => {
+        const before = text.slice(Math.max(0, position.start - 1), position.start).toString();
+        const after = text.slice(end, end + 1).toString();
+        const span = text.slice(position.start, end).toString();
+        return /[\p{L}\p{N}]/u.test(before) || /[\p{L}\p{N}]/u.test(after) ? '' : span;
+      });
+      for (const span of readings) if (span) matched.add(normalizeNameMatchText(span));
+    }
+  }
+  return matched;
+};
+
+export const keywordLegTopHitIsNameMatch = (
+  keywordLegHits: any[],
+  queryTokens: string[],
+): boolean => {
   const top = keywordLegHits[0];
-  if (!top) return false;
-  // Meili omits the `words` rule under `matchingStrategy: 'all'`, where every
-  // word matched by definition, so an absent rule is a full match.
-  const words = top._rankingScoreDetails?.words;
-  const matchedEveryWord = !words || words.matchingWords === words.maxMatchingWords;
-  const matchedAttributes = Object.keys(top._matchesPosition ?? {}).map(
-    (attribute) => attribute.split('.')[0],
-  );
-  return (
-    matchedEveryWord && matchedAttributes.some((attribute) => PERSON_NAME_ATTRIBUTES.has(attribute))
-  );
+  if (!top || queryTokens.length === 0) return false;
+  const matched = exactPersonNameMatches(top);
+  return queryTokens.every((token) => matched.has(normalizeNameMatchText(token)));
 };
 
 /**
@@ -1569,17 +1595,18 @@ export async function searchResearchGroupsViaMeili(
   // partial typo garbage. See #2732.
   const runsHybridLegs =
     Boolean(finalSearchParams.hybrid) && finalSearchParams.rankingScoreThreshold !== undefined;
-  const searchKeywordLeg = async (): Promise<any[]> => {
+  const searchKeywordLeg = async (matchingStrategy?: string): Promise<any[]> => {
     try {
       const keywordLegResult = await index.search(meiliQueryText, {
         filter: filterString,
         ...(finalSearchParams.sort ? { sort: finalSearchParams.sort } : {}),
-        ...(finalSearchParams.matchingStrategy
-          ? { matchingStrategy: finalSearchParams.matchingStrategy }
-          : {}),
+        ...(matchingStrategy ? { matchingStrategy } : {}),
         showRankingScoreDetails: true,
         showMatchesPosition: true,
-        attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
+        attributesToRetrieve: [
+          ...RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
+          ...PERSON_NAME_ATTRIBUTES,
+        ],
         page: 1,
         hitsPerPage: finalSearchParams.hitsPerPage ?? HYBRID_CANDIDATE_POOL_SIZE,
       });
@@ -1596,9 +1623,22 @@ export async function searchResearchGroupsViaMeili(
   // copy is a coincidental typo, and it keeps the pool's position, because the
   // keyword relevance is the part that was garbage. Dropping it instead would
   // lose a match the search had already recovered. See #2732.
-  const genuineKeywordLegHits = runsHybridLegs
-    ? dropCoincidentalTypoOnlyHits(await searchKeywordLeg()).hits
+  let genuineKeywordLegHits = runsHybridLegs
+    ? dropCoincidentalTypoOnlyHits(await searchKeywordLeg(finalSearchParams.matchingStrategy)).hits
     : [];
+  // A phrase no single row carries in full ("immigration policy", "wind power")
+  // left the keyword leg empty, so the fusion had nothing to anchor it. Rows
+  // matching the phrase's leading words are the next best evidence; a query
+  // matching nothing at all still takes the thresholded path below. Measured as
+  // part of the design: removing it cost concept queries 0.80 to 0.74 and
+  // question-style queries 0.72 to 0.65 nDCG@10 on the development set. See #3797.
+  if (
+    runsHybridLegs &&
+    genuineKeywordLegHits.length === 0 &&
+    finalSearchParams.matchingStrategy === 'all'
+  ) {
+    genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(await searchKeywordLeg('last')).hits;
+  }
 
   const semanticLegHits = await (async (): Promise<any[]> => {
     if (!runsHybridLegs || sort.sortBy || genuineKeywordLegHits.length === 0) return [];
@@ -1621,7 +1661,7 @@ export async function searchResearchGroupsViaMeili(
 
   const fuseRankings = semanticLegHits.length > 0;
   const withholdSemanticOnlyRows =
-    fuseRankings && keywordLegTopHitIsNameMatch(genuineKeywordLegHits);
+    fuseRankings && keywordLegTopHitIsNameMatch(genuineKeywordLegHits, normalizedQuery.tokens);
   const { hits: keywordFilteredHits, dropped: droppedCoincidentalHits } = fuseRankings
     ? (() => {
         const fused = fuseKeywordAndSemanticRankings(genuineKeywordLegHits, semanticLegHits, {
