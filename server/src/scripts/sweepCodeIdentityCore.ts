@@ -2,19 +2,13 @@
  * A sweep runs the code in its checkout's working tree, not the code on `beta`.
  *
  * Every stage is spawned with `cwd: repoRoot`, so whatever `HEAD` happens to be at the moment a
- * stage launches is what that stage executes. Nothing pins it, so a `git pull` in that checkout
- * during a run silently changes the code mid-sweep.
+ * stage launches is what that stage executes, and a `git pull` in that checkout during a run
+ * changes the code mid-sweep.
  *
- * Measured on the Development full sweep of 2026-09-28, which ran 00:38Z to past 06:40Z: `HEAD`
- * fast-forwarded six times during the run, and the 24 source stages split across two different
- * commits, 11 under the commit in force at 00:40Z and 13 under a commit that landed at 05:07Z.
- * A fix merged at 05:16Z reached none of them, while the sweep's own summary recorded no code
- * identity at all, so nothing in the artifacts could have revealed either fact (#3476 follow-up).
- *
- * Two consequences, and the second is why this fails closed rather than only recording. Stage
- * results are not attributable after the fact, because a stage's behaviour depends on a commit
- * nobody wrote down. And a stage can apply a defect the checkout predates, which for a data
- * sweep means writing values a merged fix had already removed.
+ * Stage results are therefore not attributable unless the commit is recorded, and a stage can
+ * re-apply a defect the checkout predates, which is why a moved checkout fails closed rather than
+ * only being recorded. The measured incident and the operator contract live in
+ * docs/research-data-pipeline.md ("The commit a sweep runs").
  *
  * `null` where a checkout with no git metadata cannot answer the question.
  */
