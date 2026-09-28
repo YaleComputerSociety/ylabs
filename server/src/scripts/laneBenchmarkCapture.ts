@@ -13,6 +13,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { liveFieldValueRefusals } from '../utils/researchEntityFieldValueRefusals';
 import {
   assertBenchmarkableLane,
+  assertLaneHonorsSourceConcurrency,
   currentCodeSha,
   runLaneDry,
   slugsForPlannedEntities,
@@ -32,6 +33,7 @@ export interface CaptureArgs {
   benchmarkId: string;
   only: string[];
   limit?: number;
+  sourceConcurrency?: number;
   dryRun: boolean;
   confirmed: boolean;
 }
@@ -54,7 +56,12 @@ export function parseCaptureArgs(argv: string[]): CaptureArgs {
         .split(',')
         .map((entry) => entry.trim())
         .filter(Boolean);
-    else if (arg.startsWith('--limit=')) {
+    else if (arg.startsWith('--source-concurrency=')) {
+      const concurrency = Number(arg.slice('--source-concurrency='.length));
+      if (!Number.isInteger(concurrency) || concurrency < 1)
+        throw new Error('--source-concurrency must be a positive integer');
+      args.sourceConcurrency = concurrency;
+    } else if (arg.startsWith('--limit=')) {
       const limit = Number(arg.slice('--limit='.length));
       if (!Number.isInteger(limit) || limit < 1)
         throw new Error('--limit must be a positive integer');
@@ -71,6 +78,7 @@ export function parseCaptureArgs(argv: string[]): CaptureArgs {
     throw new Error(`${SCRIPT_NAME} requires --only or --limit, so the benchmark is a fixed scope`);
   }
   assertBenchmarkableLane(args.sourceName);
+  if (args.sourceConcurrency !== undefined) assertLaneHonorsSourceConcurrency(args.sourceName);
   return args as CaptureArgs;
 }
 

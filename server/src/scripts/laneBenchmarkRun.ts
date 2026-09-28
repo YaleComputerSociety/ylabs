@@ -26,6 +26,11 @@ export const BENCHMARKABLE_LANES: ReadonlySet<string> = new Set([
   'student-grants-database',
 ]);
 
+export const SOURCE_CONCURRENCY_LANES: ReadonlySet<string> = new Set([
+  'lab-microsite-undergrad-llm',
+  'lab-microsite-description-llm',
+]);
+
 const RUN_CLOCK_FIELDS_BY_LANE: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['lab-microsite-undergrad-llm', new Set(['lastObservedAt'])],
 ]);
@@ -39,12 +44,21 @@ export interface LaneBenchmarkSpec {
   sourceName: string;
   only: string[];
   limit?: number;
+  sourceConcurrency?: number;
 }
 
 export function assertBenchmarkableLane(sourceName: string): void {
   if (!BENCHMARKABLE_LANES.has(sourceName)) {
     throw new Error(
       `${sourceName} is not benchmarkable. Supported: ${[...BENCHMARKABLE_LANES].join(', ')}`,
+    );
+  }
+}
+
+export function assertLaneHonorsSourceConcurrency(sourceName: string): void {
+  if (!SOURCE_CONCURRENCY_LANES.has(sourceName)) {
+    throw new Error(
+      `${sourceName} does not honor --source-concurrency. Supported: ${[...SOURCE_CONCURRENCY_LANES].join(', ')}`,
     );
   }
 }
@@ -66,6 +80,7 @@ export async function runLaneDry(spec: LaneBenchmarkSpec): Promise<{
     explain: true,
     explainLimit: EXPLAIN_EVERYTHING,
     ignoreWorkPlanner: true,
+    ...(spec.sourceConcurrency ? { sourceConcurrency: spec.sourceConcurrency } : {}),
     only: spec.only.length > 0 ? spec.only : undefined,
     limit: spec.limit,
     triggeredBy: 'cli',
