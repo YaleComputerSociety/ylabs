@@ -1080,6 +1080,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: 'FAS',
         kind: 'center',
         url: 'https://example.invalid/cowles',
+        homeUrl: 'https://example.invalid/',
         extractor: cowlesExt,
       },
       {
@@ -1088,6 +1089,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'institute',
         url: 'https://example.invalid/wti',
+        homeUrl: 'https://example.invalid/',
         extractor: wuTsaiExt,
       },
     ];
@@ -1138,6 +1140,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: 'FAS',
         kind: 'center',
         url: 'https://example.invalid/a',
+        homeUrl: 'https://example.invalid/',
         extractor: a,
       },
       {
@@ -1146,6 +1149,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'institute',
         url: 'https://example.invalid/b',
+        homeUrl: 'https://example.invalid/',
         extractor: b,
       },
     ];
@@ -1170,6 +1174,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://x/a',
+        homeUrl: 'https://x/',
         extractor: ext,
       },
       {
@@ -1178,6 +1183,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://x/b',
+        homeUrl: 'https://x/',
         extractor: ext,
       },
       {
@@ -1186,6 +1192,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://x/c',
+        homeUrl: 'https://x/',
         extractor: ext,
       },
     ];
@@ -1207,6 +1214,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://x/a',
+        homeUrl: 'https://x/',
         extractor: ext,
       },
     ];
@@ -1231,6 +1239,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://will-fail.invalid/page',
+        homeUrl: 'https://will-fail.invalid/',
         extractor: failing,
       },
       {
@@ -1239,6 +1248,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://example.invalid/working',
+        homeUrl: 'https://example.invalid/',
         extractor: working,
       },
     ];
@@ -1273,6 +1283,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'institute',
         url: 'https://gated.invalid/people',
+        homeUrl: 'https://gated.invalid/',
         extractor: stubExt,
         jsRenderedSkip: true,
         skipReason: 'CAS-only behind login',
@@ -1283,6 +1294,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://open.invalid/people',
+        homeUrl: 'https://open.invalid/',
         extractor: liveExt,
       },
     ];
@@ -1321,6 +1333,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'institute',
         url: 'https://gated.invalid/people',
+        homeUrl: 'https://gated.invalid/',
         extractor: staticExt,
         renderedExtractor: renderedExt,
         renderWaitSelector: '.grid__user',
@@ -1346,6 +1359,7 @@ describe('CentersInstitutesScraper.run', () => {
     });
     expect(renderedExt).toHaveBeenCalledWith('<html><body>hydrated cards</body></html>', {
       pageUrl: 'https://gated.invalid/people#rendered',
+      centerName: 'Gated Institute',
     });
     expect(staticExt).not.toHaveBeenCalled();
     expect(getSpy).not.toHaveBeenCalled();
@@ -1369,6 +1383,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'institute',
         url: 'https://gated.invalid/people',
+        homeUrl: 'https://gated.invalid/',
         extractor: staticExt,
         renderedExtractor: renderedExt,
         jsRenderedSkip: true,
@@ -1402,6 +1417,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'institute',
         url: 'https://gated.invalid/people',
+        homeUrl: 'https://gated.invalid/',
         extractor: staticExt,
         renderedExtractor: renderedExt,
         jsRenderedSkip: true,
@@ -1450,6 +1466,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: 'Jackson School of Global Affairs',
         kind: 'center',
         url: 'https://jackson.yale.edu/centers-initiatives/',
+        homeUrl: 'https://jackson.yale.edu/',
         extractor: metaExt,
       },
     ];
@@ -1488,6 +1505,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://example.invalid/repeat/people',
+        homeUrl: 'https://example.invalid/',
         paginated: true,
         extractor: repeatExt,
       },
@@ -1527,6 +1545,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://example.invalid/paged/people',
+        homeUrl: 'https://example.invalid/',
         paginated: true,
         extractor: pagedExt,
       },
@@ -1665,6 +1684,7 @@ describe('CentersInstitutesScraper.run child crawl', () => {
     schoolName: 'Jackson School of Global Affairs',
     kind: 'center',
     url: 'https://jackson.yale.edu/centers-initiatives/',
+    homeUrl: 'https://jackson.yale.edu/',
     extractor: (): ExtractorResult => ({
       members: [],
       childCenters: [
@@ -1868,7 +1888,7 @@ describe('profileGridLeadershipExtractor', () => {
 describe('DEFAULT_CENTER_CONFIGS websiteUrl', () => {
   it('emits every declared landing page, so none is silently dropped by the write gate', () => {
     const dropped = DEFAULT_CENTER_CONFIGS.filter(
-      (config) => config.homeUrl && !config.entityKey,
+      (config) => config.homeUrl && config.homeUrl !== config.url && !config.entityKey,
     ).flatMap((config) => {
       const { observations } = centerToGroupObservations(config, [], config.url);
       const emitted = observations.find((o) => o.field === 'websiteUrl')?.value;
