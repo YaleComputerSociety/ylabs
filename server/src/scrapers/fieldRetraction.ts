@@ -99,8 +99,10 @@
  * recorded its commit (`ScrapeRun.codeSha`), because a run started after the merge on
  * a stale checkout still runs the old code (#3814), and by the merge time only when no
  * commit was recorded or git cannot resolve it. A run that cannot be found is refused.
- * Declaring a new cutoff is part of landing any fix to a lane's absence-claim path,
- * and a field has at most one: the latest fix, whose commit contains the earlier ones.
+ * A fix to a lane's absence-claim path gets its cutoff in a follow-up PR naming the
+ * squash-merge commit and merge time, which do not exist until the fix merges; no
+ * retraction apply for that field runs before it lands. A field has at most one
+ * cutoff: the latest fix, whose commit contains the earlier ones.
  */
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';

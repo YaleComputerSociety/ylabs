@@ -776,7 +776,9 @@ Each contract therefore declares `absenceClaimCutoffs`, at most one per field, n
 `disregardPreFixAbsenceClaims` drops a claim whose run did not carry the fix before the quorum is counted, and the read still counts as a later complete read that said nothing, so the quorum has to come from post-fix claims alone.
 A run that recorded its commit (`scrape_runs.codeSha`) is decided by ancestry, because a run started after the merge on a stale checkout still runs the old code; a run with no recorded commit, or one git cannot resolve (a shallow clone), is decided by its `startedAt` against the merge time; a run that cannot be found is refused.
 The dry-run report's `preFixAbsenceClaimsExcluded` states, per source and field, the claims excluded, and the observations and entities they would otherwise have retracted.
-Landing a fix to any lane's absence-claim path includes replacing that field's cutoff with the new fix, whose commit contains the earlier ones.
+A fix to any lane's absence-claim path replaces that field's cutoff in a follow-up PR that names the fix's squash-merge commit, which contains the earlier fixes, and its GitHub merge time.
+The fix PR cannot declare it, because every merge is a squash, so its commit does not exist until it merges and its branch head is not an ancestor of any post-merge run.
+No retraction apply for that field runs until the follow-up lands.
 
 The stored value is cleared only when the retraction removed the last live observation for that field **and** the stored value is still the retracted one, folded through `normalizeWebsiteUrlIdentityKey`.
 A retraction on a merged-in loser's key decides and clears on the live survivor that key's tombstone chain reaches, with the survivor's locks, and counts rival evidence across every key and id merged into the survivor; keys of one survivor retracting the same field in one pass are decided together, and the sole-holder probe withholding any of them cancels the survivor's clear (#3609).
