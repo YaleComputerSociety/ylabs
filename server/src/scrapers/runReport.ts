@@ -12,6 +12,7 @@ import { Source } from '../models/source';
 import type { ScraperFetchMetrics, ScraperMetrics } from './types';
 import { resolveField, type ResolverObservation } from './confidenceResolver';
 import { workPlannerSkippedEveryTarget } from './sourceYieldGuard';
+import { classifyScrapeRunLiveness, type ScrapeRunLiveness } from './scrapeRunLiveness';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -40,6 +41,7 @@ export interface ReportScrapeRun {
   triggeredBy?: string;
   startedAt?: Date | string;
   finishedAt?: Date | string;
+  heartbeatAt?: Date | string;
   observationCount?: number;
   entitiesObserved?: number;
   entitiesCreated?: number;
@@ -174,6 +176,8 @@ export interface ScrapeRunReport {
     startedAt?: string;
     finishedAt?: string;
     durationSeconds?: number;
+    heartbeatAt?: string;
+    liveness?: ScrapeRunLiveness;
     invalidated: boolean;
     options: Record<string, unknown>;
   };
@@ -849,6 +853,19 @@ export function buildScrapeRunReport(
     warnings.push('Run failed; do not materialize without inspecting errors.');
   if (run.status === 'partial')
     warnings.push('Run completed partially; inspect source-level logs/errors.');
+  const liveness = classifyScrapeRunLiveness(run);
+  if (liveness === 'stale')
+    warnings.push(
+      'Run is marked running but its heartbeat has stopped, so no process is working on it; close it with scrape-runs:reconcile-stale.',
+    );
+  if (liveness === 'unverifiable')
+    warnings.push(
+      'Run is marked running but predates run heartbeats, so the status is not evidence of a live writer.',
+    );
+  if (run.status === 'interrupted')
+    warnings.push(
+      'Run was interrupted before it finished; its observations are incomplete, so re-run the source rather than materializing this run.',
+    );
   if (run.invalidated) warnings.push('Run has been invalidated.');
   if (reportedObservationCount === 0 && !workPlannerSkippedAll) {
     warnings.push('Run produced zero observations.');
@@ -930,6 +947,8 @@ export function buildScrapeRunReport(
       startedAt: iso(run.startedAt),
       finishedAt: iso(run.finishedAt),
       durationSeconds: durationSeconds(run.startedAt, run.finishedAt),
+      ...(run.heartbeatAt ? { heartbeatAt: iso(run.heartbeatAt) } : {}),
+      ...(liveness !== 'finished' ? { liveness } : {}),
       invalidated: !!run.invalidated,
       options: run.options || {},
     },

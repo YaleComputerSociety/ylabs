@@ -125,23 +125,28 @@ Before #2498 only `cronRunner` took the lock, so two operators or two agents cou
 - The lock is keyed `environment:sourceName`, so parallel work on **different** sources is unaffected. Only same-source writers serialize.
 - `scrape:sweep` spawns `scrape run` children, so the sweep inherits the fence without carrying lock code of its own.
 - A crashed holder does not wedge a source: `acquireScrapeJobLock` takes over a lease older than `DEFAULT_SCRAPE_JOB_LOCK_LEASE_MS` (30 minutes), and `startScrapeJobLockHeartbeat` renews the lease every minute so a long legitimate run keeps its lock.
-- An interrupted holder does not wedge it either: `withScrapeJobLock` releases the lock on `SIGINT` or `SIGTERM` and then re-raises the signal, so a Ctrl-C or a `kill` frees the source immediately instead of blocking the operator's own retry for the rest of the lease.
+- An interrupted holder does not wedge it either: `withScrapeJobLock` releases the lock on `SIGINT` or `SIGTERM` through `onInterrupt`, which also closes the run as `interrupted`, and then re-raises the signal, so a Ctrl-C or a `kill` frees the source immediately instead of blocking the operator's own retry for the rest of the lease.
 - A release that cannot be written is logged and swallowed, because rewriting a completed write as a failure, or replacing a scrape's real error with a Mongo error from the cleanup, is worse than a lock that expires on its own.
 - Losing the lease mid-run is reported, not ignored: a renewal that matches no row means the row no longer belongs to this process, so the command prints `LOCK LOST` and exits nonzero rather than reporting an exclusive write it did not have.
 - The lock row records the same provenance for a CLI writer as for cron: `releaseReason` follows the run's own outcome, and `lastRunId` names the run.
 
-### `scrape_runs.status` is not a liveness signal
+### `scrape_runs.status` is read through a heartbeat
 
-Do not build a concurrency, liveness, or health check on `status`.
-Nothing reaps a stale `running` row. Measured on Development: **40** rows sit in `status: running`, every one `triggeredBy: cli`, with start times spread from 2026-05-17 to 2026-09-18 against 2,018 rows in total.
-A `running` row therefore means "a run started and never wrote a terminal status", not "a writer is alive".
+Every exit path of the orchestrator writes a terminal status: `success`, `partial`, `failure`, or `interrupted` on `SIGINT`/`SIGTERM` (#3595).
+A running row carries `heartbeatAt`, renewed every minute, and `owner: { host, pid, lockOwnerId }`.
+Only a `SIGKILL` or a crash still leaves a row `running`, and its heartbeat stops.
 
-The stored values are also not enum-valid.
-The schema enum is `[running, success, failure, partial]`, and Development holds 2 rows with `completed` and 1 with `failed`, written by raw operator updates that bypass the validator (the #2137 family).
-Any status check must treat the stored set as open, not as the enum.
-
-`scrape_job_locks` is the live-writer signal, read through `findHeldScrapeJobLock`.
-It was empty before this change for the same reason `running` is unreliable: the only path that wrote it never ran.
+- Never ask "is anything running" with a bare `status: 'running'`.
+  Use `classifyScrapeRunLiveness`, `liveScrapeRunFilter` or `findLiveScrapeRuns` from `scrapeRunLiveness.ts`: only `live` (heartbeat within 15 minutes) means a writer is working, and a `running` row with no `heartbeatAt` predates the heartbeat and proves nothing.
+- `scrape_job_locks` is still the live-writer signal for a source, read through `findHeldScrapeJobLock`.
+- Close dead rows with `yarn --cwd server scrape-runs:reconcile-stale`, which is dry-run by default.
+  `--apply --confirm-reconcile-stale-scrape-runs` closes a row as `interrupted` only when its heartbeat is stale, or when it predates heartbeats and is older than 72 hours, and never when its heartbeat is fresh, its source lock is held, or its owner pid is alive on this host.
+  It refuses every target except Development, and its bounds can be raised but not lowered.
+  Do not run it with `--apply` while a sweep is running unless you have read its dry run: a sweep started on code older than #3595 writes rows with no heartbeat, which only the lock and the 72-hour bound protect.
+- A new signal cleanup goes through `onInterrupt` in `interruptCleanup.ts`, never its own `process.once` plus re-raise, because two handlers that each re-raise race and the first kills the process while the other is still writing.
+- The stored values are not enum-valid: Development holds 2 rows with `completed` and 1 with `failed`, written by raw operator updates that bypass the validator (the #2137 family).
+  Any status check must treat the stored set as open, not as the enum.
+  `docs/research-data-pipeline.md` ("A run record always ends terminal") owns the full contract and every consumer of `interrupted`.
 
 ### A failure must reach the run status and the exit code
 
@@ -592,6 +597,8 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
   A run is `inconclusive` (stepped over, neither counted nor a reset) when it is invalidated, still running, scoped by `options.only`, or had every planned target skipped by the work planner; `sourceIsExpectedToYield` exempts only a disabled source and the `MANUAL_OVERRIDE` tier, mirroring `classifySourceFreshness`.
   `docs/research-data-pipeline.md` owns the rule and why each part of it is load-bearing.
 - `scrapeJobLock.ts` - acquire/heartbeat/release helpers wrapping the `ScrapeJobLock` model, plus `withScrapeJobLock`, the one lifecycle every writer goes through.
+- `scrapeRunLiveness.ts` - the `ScrapeRun` heartbeat, owner stamp, and `classifyScrapeRunLiveness`/`liveScrapeRunFilter`, the only honest way to ask whether a run is alive.
+- `interruptCleanup.ts` - `onInterrupt`, the single `SIGINT`/`SIGTERM` handler that settles every registered cleanup (run status, lock release) before re-raising the signal.
   The lock is keyed `environment:sourceName`, so it serializes writers on ONE source and leaves parallel work on different sources alone.
   `startScrapeJobLockHeartbeat` renews the lease during a long run; `findHeldScrapeJobLock` reports a live holder for a read-only caller without competing for the lock, and treats an expired lease as no holder because `acquireScrapeJobLock` would take it.
 - `seedSources.ts` - populates active `Source` rows from the coverage registry and disables retained historical rows for retired sources.

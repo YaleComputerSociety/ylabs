@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IScraper } from '../types';
 
 const mocks = vi.hoisted(() => ({
@@ -333,5 +333,158 @@ describe('ScraperOrchestrator', () => {
     expect(logged).not.toContain('ada@example.edu');
 
     consoleLog.mockRestore();
+  });
+  describe('run lifecycle (#3595)', () => {
+    const OPTIONS = { dryRun: false, dbReview: false, useCache: false, release: true };
+
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    function statusWrites(): string[] {
+      return mocks.scrapeRunUpdateOne.mock.calls
+        .map(([, update]) => (update as { $set?: { status?: string } }).$set?.status)
+        .filter((status): status is string => typeof status === 'string');
+    }
+
+    it('opens a run with a heartbeat and the owning host, pid and lock owner', async () => {
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        run: async () => ({ observationCount: 0, entitiesObserved: 0 }),
+      });
+
+      await orchestrator.run('fixture-source', OPTIONS, { lockOwnerId: 'scrape-cli-run:host:1:x' });
+
+      const created = mocks.scrapeRunCreate.mock.calls[0]?.[0];
+      expect(created.status).toBe('running');
+      expect(created.heartbeatAt).toEqual(created.startedAt);
+      expect(created.owner).toEqual({
+        host: expect.any(String),
+        pid: process.pid,
+        lockOwnerId: 'scrape-cli-run:host:1:x',
+      });
+    });
+
+    it('heartbeats a long run and stops once the run is terminal', async () => {
+      vi.useFakeTimers();
+      let finish: () => void = () => undefined;
+      const orchestrator = new ScraperOrchestrator({ runHeartbeatIntervalMs: 1_000 });
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        run: () =>
+          new Promise((resolve) => {
+            finish = () => resolve({ observationCount: 0, entitiesObserved: 0 });
+          }),
+      });
+
+      const running = orchestrator.run('fixture-source', OPTIONS);
+      await vi.advanceTimersByTimeAsync(3_500);
+      const beats = () =>
+        mocks.scrapeRunUpdateOne.mock.calls.filter(
+          ([filter, update]) =>
+            (filter as { status?: string }).status === 'running' &&
+            (update as { $set?: { heartbeatAt?: Date } }).$set?.heartbeatAt instanceof Date,
+        ).length;
+      expect(beats()).toBe(3);
+
+      finish();
+      await running;
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(beats()).toBe(3);
+      expect(statusWrites()).toEqual(['success']);
+    });
+
+    it('marks an interrupted run interrupted before the signal is re-raised', async () => {
+      const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+      const listenersBefore = process.listeners('SIGTERM').length;
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        async run(ctx) {
+          await ctx.emit({
+            entityType: 'researchEntity',
+            entityKey: 'fixture-lab',
+            field: 'shortDescription',
+            value: 'Fixture lab studies source-backed research.',
+          });
+          const handler = process.listeners('SIGTERM').at(-1) as () => void;
+          handler();
+          await new Promise((resolve) => setImmediate(resolve));
+          return { observationCount: 1, entitiesObserved: 1 };
+        },
+      });
+
+      await orchestrator.run('fixture-source', OPTIONS);
+
+      const interruptedWrite = mocks.scrapeRunUpdateOne.mock.calls.find(
+        ([, update]) => (update as { $set?: { status?: string } }).$set?.status === 'interrupted',
+      );
+      expect(interruptedWrite?.[0]).toEqual({ _id: 'run-1', status: 'running' });
+      expect(interruptedWrite?.[1]).toMatchObject({
+        $set: {
+          status: 'interrupted',
+          finishedAt: expect.any(Date),
+          interruption: { reason: 'signal', signal: 'SIGTERM' },
+        },
+      });
+      expect(statusWrites()).toEqual(['interrupted']);
+      expect(kill).toHaveBeenCalledWith(process.pid, 'SIGTERM');
+      expect(process.listeners('SIGTERM').length).toBe(listenersBefore);
+    });
+
+    it('detaches its signal handlers when the run finishes normally', async () => {
+      const listenersBefore = process.listeners('SIGINT').length;
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        async run() {
+          expect(process.listeners('SIGINT').length).toBe(listenersBefore + 1);
+          return { observationCount: 0, entitiesObserved: 0 };
+        },
+      });
+
+      await orchestrator.run('fixture-source', OPTIONS);
+
+      expect(process.listeners('SIGINT').length).toBe(listenersBefore);
+    });
+
+    it('keeps the scrape error when the failure write itself fails', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      mocks.scrapeRunUpdateOne.mockRejectedValue(new Error('write refused'));
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        async run() {
+          throw new Error('the lane broke');
+        },
+      });
+
+      await expect(orchestrator.run('fixture-source', OPTIONS)).rejects.toThrow('the lane broke');
+      expect(consoleError.mock.calls.flat().join(' ')).toContain('write refused');
+    });
+
+    it('records a failure when the terminal success write throws', async () => {
+      mocks.scrapeRunUpdateOne
+        .mockRejectedValueOnce(new Error('success write lost'))
+        .mockResolvedValue({ modifiedCount: 1 });
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        run: async () => ({ observationCount: 0, entitiesObserved: 0 }),
+      });
+
+      await expect(orchestrator.run('fixture-source', OPTIONS)).rejects.toThrow(
+        'success write lost',
+      );
+      expect(statusWrites()).toEqual(['success', 'failure']);
+    });
   });
 });

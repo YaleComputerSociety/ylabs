@@ -107,20 +107,21 @@ async function runUnderScrapeJobLock(input: {
   sourceName: string;
   ownerLabel: string;
   refusal: string;
-  run: () => Promise<ScrapeCliLockedOutcome>;
+  run: (lockOwnerId: string) => Promise<ScrapeCliLockedOutcome>;
 }): Promise<boolean> {
+  const ownerId = createScrapeJobLockOwnerId(input.ownerLabel);
   const guarded = await withScrapeJobLock<ScrapeCliLockedOutcome>(
     {
       environment: input.environment,
       sourceName: input.sourceName,
-      ownerId: createScrapeJobLockOwnerId(input.ownerLabel),
+      ownerId,
       label: 'scrape cli',
       describeRelease: (outcome) => ({
         releaseReason: outcome.failed ? 'failure' : 'success',
         lastRunId: outcome.runId,
       }),
     },
-    input.run,
+    () => input.run(ownerId),
   );
 
   if (guarded.acquired) {
@@ -296,10 +297,11 @@ Concurrency:
         `Running scraper "${sourceName}" with options:`,
         JSON.stringify(guard.options, null, 2),
       );
-      const performRun = async (): Promise<ScrapeCliLockedOutcome> => {
+      const performRun = async (lockOwnerId?: string): Promise<ScrapeCliLockedOutcome> => {
         const { runId, result, explainedObservations, explainTruncated } = await orchestrator.run(
           sourceName,
           guard.options,
+          { lockOwnerId },
         );
         console.log(`\nScrapeRun ${runId} finished:`);
         console.log(JSON.stringify(result, null, 2));

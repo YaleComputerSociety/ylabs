@@ -224,12 +224,37 @@ Four properties of the rule are load-bearing.
 
 - **It is not gated on a recorded successful fetch.** The issue proposed `fetched > 0 && attributed == 0` as the cheap unambiguous guard, and on real data it is inert: none of the six dead lanes records `fetchMetrics` at all (467 of 2,009 Development runs do), so a fetch-gated guard would have fired on zero of them.
 - **The streak, not a single run, is the trigger.** A source can legitimately have nothing new to say once, so one barren run stays `success` and is left to the sweep's report-only count.
-- **An `inconclusive` run is stepped over rather than counted or treated as a reset.** A run is inconclusive when it is `invalidated` or still `running`, when `options.only` scoped it to a handful of entities so its silence says nothing about the lane, or when the work planner skipped every target it planned (`workPlannerSkippedEveryTarget`, the same predicate `runReport` uses for its warning, so the two cannot drift).
+- **An `inconclusive` run is stepped over rather than counted or treated as a reset.** A run is inconclusive when it is `invalidated`, still `running`, or `interrupted`, when `options.only` scoped it to a handful of entities so its silence says nothing about the lane, or when the work planner skipped every target it planned (`workPlannerSkippedEveryTarget`, the same predicate `runReport` uses for its warning, so the two cannot drift).
   Without the step-over an alternating history would never accumulate a streak; with a reset instead, one quarantined run would hide a dead lane indefinitely.
 - **A source with no re-crawl expectation has no yield expectation either.** `sourceIsExpectedToYield` exempts a disabled source and the `MANUAL_OVERRIDE` tier, mirroring `classifySourceFreshness`.
   That is the whole exemption list; do not grow it into a denylist of lanes that need operator-supplied input, because "it needs a CSV" is indistinguishable from "it is dead" when the lane has produced nothing for eleven runs.
 
 The history read is bounded to the most recent `BARREN_RUN_HISTORY_SCAN_LIMIT` (12) runs of the source, so running out of history settles the question conservatively as "no failure".
+
+### A run record always ends terminal, and `running` is read through a heartbeat
+
+Before #3595 an interrupted run never closed its `scrape_runs` record, so 48 Development rows read `running` for up to four months and a question as simple as "is a sweep running?" invented activity.
+The contract now has three parts.
+
+- **Every exit path of `ScraperOrchestrator.run` writes a terminal status.**
+  A normal return writes `success`, `partial` or `failure`, a thrown error writes `failure`, and `SIGINT` or `SIGTERM` writes `interrupted` with `interruption: { reason: 'signal', signal }` before the signal is re-raised.
+  A failed `failure` write is logged and the scrape's own error is rethrown, so the cleanup never replaces the real fault.
+  The signal write shares one handler with the job-lock release (`scrapers/interruptCleanup.ts`), so neither cleanup can kill the process while the other is still writing, and both must settle inside `INTERRUPT_CLEANUP_TIMEOUT_MS` (5 seconds) because the sweep sends `SIGKILL` 10 seconds after its `SIGTERM`.
+- **A running run proves it is alive.**
+  The orchestrator stamps `heartbeatAt` at creation and every `SCRAPE_RUN_HEARTBEAT_INTERVAL_MS` (1 minute), and records `owner: { host, pid, lockOwnerId }`, where `lockOwnerId` is the `ScrapeJobLock` owner for a writing CLI or cron run.
+  `classifyScrapeRunLiveness` in `scrapers/scrapeRunLiveness.ts` reads a row as `finished`, `live` (heartbeat within `SCRAPE_RUN_STALE_HEARTBEAT_MS`, 15 minutes), `stale`, or `unverifiable` (a `running` row that predates heartbeats).
+  Only `live` means a writer is working.
+  Ask "is anything running" with `liveScrapeRunFilter` or `findLiveScrapeRuns`, never with a bare `status: 'running'`; `sourceHealthService` and `runReport` already do, and `recentRuns` now reports `running` (live), `abandoned` (stale or unverifiable) and `interrupted` separately.
+- **A run that died without a word is closed by a command, not by a reader.**
+  A `SIGKILL`, an out-of-memory kill or a host crash runs no handler, so its row stays `running` with a heartbeat that stops.
+  `yarn --cwd server scrape-runs:reconcile-stale` is dry-run by default and reports every `running` row with a verdict.
+  It closes a row as `interrupted` only when its heartbeat is older than the stale bound, or when it predates heartbeats and started more than 72 hours ago (`legacy_abandoned`), and it keeps any row whose heartbeat is fresh, whose source holds a live `ScrapeJobLock`, or whose owner process is still alive on this host.
+  The bounds can be raised with `--stale-after-minutes` and `--legacy-older-than-hours` but never lowered.
+  Each write pins the `heartbeatAt` it read, so a run that beat after the plan was built is left alone, and `finishedAt` is set to the last sign of life rather than the time of the cleanup.
+  `--apply` requires `--confirm-reconcile-stale-scrape-runs` and refuses any target that is not Development, because Beta and Production receive `scrape_runs` only through promotion.
+
+`interrupted` is a stored value, so every consumer handles it: the sweep fails the step (any status other than `success`), `scrape run` and `runScraperCron` exit nonzero, `runReport` warns not to materialize the run, `sourceHealthService` rates it `warn` with a rerun action, and the barren-streak guard steps over it as `inconclusive`.
+Treat the stored set as open anyway, because Development still holds a few `completed` and `failed` rows written by raw updates that bypassed the validator.
 
 ### Faculty Researcher spine creation
 
@@ -276,7 +301,7 @@ The `archived-cleanup` stage enforces a fail-closed redirect invariant (issue #2
 ### Materialization is run-scoped, so an interrupted run strands its observations
 
 `materializeFromRun` is the only entry point that enumerates observations, and it is scoped to a single `scrapeRunId`.
-The CLI calls it after `orchestrator.run` returns, so a scraper that throws (run left `failure`) or a process killed mid-run (run left `running`) never reaches the call at all.
+The CLI calls it after `orchestrator.run` returns, so a scraper that throws (run left `failure`) or a process interrupted mid-run (run left `interrupted`, or `running` until `scrape-runs:reconcile-stale` closes it after a `SIGKILL` or a crash) never reaches the call at all.
 Nothing else re-enumerates observations by key: `research-entity:rematerialize` selects by `research_entities.slug` and reports `found: false` for a key with no entity row, and the synthesis lanes enumerate existing entities.
 There is no corpus-wide materialize pass.
 

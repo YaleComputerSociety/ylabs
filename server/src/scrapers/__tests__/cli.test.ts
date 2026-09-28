@@ -596,6 +596,16 @@ describe('a scrape command whose run or materialization did not complete cleanly
     expect(partial.warnings.join(' ')).toContain('partial');
   });
 
+  it('fails a run that was interrupted before it finished (#3595)', async () => {
+    const cli = await import('../cliHelpers');
+    const interrupted = cli.scrapeCliCompletionOutcome({
+      runId: 'run-1',
+      runStatus: 'interrupted',
+    });
+    expect(interrupted.exitCode).toBe(1);
+    expect(interrupted.errors.join(' ')).toContain('interrupted');
+  });
+
   it('stays quiet for a clean run', async () => {
     const cli = await import('../cliHelpers');
     expect(

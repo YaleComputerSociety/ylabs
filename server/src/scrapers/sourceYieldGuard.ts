@@ -54,7 +54,9 @@ function isEntityScopedRun(options?: RunYieldFacts['options']): boolean {
 }
 
 export function classifyRunYield(run: RunYieldFacts): RunYieldClass {
-  if (run.invalidated || run.status === 'running') return 'inconclusive';
+  if (run.invalidated || run.status === 'running' || run.status === 'interrupted') {
+    return 'inconclusive';
+  }
   if ((run.observationCount || 0) > 0) return 'productive';
   if (isEntityScopedRun(run.options)) return 'inconclusive';
   if (workPlannerSkippedEveryTarget(run.metrics)) return 'inconclusive';

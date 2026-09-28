@@ -306,4 +306,56 @@ describe('sourceHealthService', () => {
       "SCRAPER_ENV=beta yarn --cwd server scrape run --source 'unsafe-source; touch /tmp/pwned #' --dry-run --limit 25",
     );
   });
+  describe('a run marked running (#3595)', () => {
+    const NOW = new Date('2026-09-27T12:00:00.000Z');
+    const source = {
+      name: 'fixture-source',
+      displayName: 'Fixture source',
+      enabled: true,
+      coverage: { priority: 10, artifactTypes: ['Observation'] },
+    };
+    const rowFor = (run: Record<string, unknown>) =>
+      buildSourceHealthRows(
+        [source],
+        [{ _id: 'run-1', sourceName: 'fixture-source', observationCount: 0, ...run } as never],
+        NOW,
+      )[0];
+
+    it('reads a heartbeating run as in progress', () => {
+      const row = rowFor({
+        status: 'running',
+        startedAt: '2026-09-27T11:00:00.000Z',
+        heartbeatAt: '2026-09-27T11:59:00.000Z',
+      });
+      expect(row.action).toContain('in progress');
+      expect(row.recentRuns).toMatchObject({ running: 1, abandoned: 0 });
+    });
+
+    it('reads a run whose heartbeat stopped as abandoned, not running', () => {
+      const row = rowFor({
+        status: 'running',
+        startedAt: '2026-09-27T09:00:00.000Z',
+        heartbeatAt: '2026-09-27T10:00:00.000Z',
+      });
+      expect(row.action).toContain('abandoned');
+      expect(row.nextCommand).toContain('scrape-runs:reconcile-stale');
+      expect(row.recentRuns).toMatchObject({ running: 0, abandoned: 1 });
+    });
+
+    it('reads a run that predates heartbeats as abandoned, not running', () => {
+      const row = rowFor({ status: 'running', startedAt: '2026-05-17T19:13:21.000Z' });
+      expect(row.recentRuns).toMatchObject({ running: 0, abandoned: 1 });
+    });
+
+    it('reads an interrupted run as needing a rerun', () => {
+      const row = rowFor({
+        status: 'interrupted',
+        startedAt: '2026-09-27T09:00:00.000Z',
+        finishedAt: '2026-09-27T10:00:00.000Z',
+      });
+      expect(row.risk).toBe('warn');
+      expect(row.action).toContain('interrupted');
+      expect(row.recentRuns).toMatchObject({ interrupted: 1, running: 0 });
+    });
+  });
 });
