@@ -622,6 +622,7 @@ describe('researchEntitySearchIndexService', () => {
         : [];
 
     const result = await rebuildResearchEntitySearchIndex({
+      warmVocabulary: async () => new Set<string>(),
       pageSize: 2,
       clearExisting: true,
       getIndex: async () => fakeIndex,
@@ -684,6 +685,7 @@ describe('researchEntitySearchIndexService', () => {
       page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [];
     const run = () =>
       rebuildResearchEntitySearchIndex({
+        warmVocabulary: async () => new Set<string>(),
         pageSize: 5,
         getIndex: async () => fakeIndex as any,
         fetchPage,
@@ -724,6 +726,7 @@ describe('researchEntitySearchIndexService', () => {
 
     await expect(
       rebuildResearchEntitySearchIndex({
+        warmVocabulary: async () => new Set<string>(),
         pageSize: 5,
         getIndex: async () => fakeIndex as any,
         fetchPage: async () => [],
@@ -745,6 +748,7 @@ describe('researchEntitySearchIndexService', () => {
 
     await expect(
       rebuildResearchEntitySearchIndex({
+        warmVocabulary: async () => new Set<string>(),
         pageSize: 5,
         getIndex: async () => fakeIndex as any,
         fetchPage: async () => [],
@@ -762,6 +766,7 @@ describe('researchEntitySearchIndexService', () => {
 
     await expect(
       rebuildResearchEntitySearchIndex({
+        warmVocabulary: async () => new Set<string>(),
         pageSize: 5,
         getIndex: async () => fakeIndex as any,
         fetchPage: async () => [],
@@ -786,6 +791,7 @@ describe('researchEntitySearchIndexService', () => {
     };
 
     await rebuildResearchEntitySearchIndex({
+      warmVocabulary: async () => new Set<string>(),
       pageSize: 2,
       getIndex: async () => fakeIndex,
       fetchPage: async (page: number) =>
@@ -832,6 +838,7 @@ describe('researchEntitySearchIndexService', () => {
 
     await expect(
       rebuildResearchEntitySearchIndex({
+        warmVocabulary: async () => new Set<string>(),
         pageSize: 9007199254740992,
         getIndex: async () => {
           getIndexCalls += 1;
@@ -1045,6 +1052,7 @@ describe('rebuildResearchEntitySearchIndex archived exclusion', () => {
       },
     };
     await rebuildResearchEntitySearchIndex({
+      warmVocabulary: async () => new Set<string>(),
       pageSize: 50,
       clearExisting: true,
       getIndex: async () => fakeIndex as any,

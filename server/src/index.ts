@@ -4,6 +4,7 @@
 import app from './app';
 import dotenv from 'dotenv';
 import { initializeConnections, startMongoKeepAlive } from './db/connections';
+import { warmControlledVocabularyHeadings } from './utils/controlledVocabularyHeadings';
 import { startGateRefreshScheduler } from './scripts/gateRefreshScheduler';
 import { startCorpusQualitySnapshotScheduler } from './services/corpusQualitySnapshotScheduler';
 import { sanitizeLogValue } from './utils/logSanitizer';
@@ -18,6 +19,19 @@ const port = process.env.PORT || 4000;
 const startApp = async () => {
   try {
     await initializeConnections();
+
+    // Before the first request, because the research-area splitter reads this set
+    // synchronously and an unloaded set means a published controlled-vocabulary heading is
+    // served as fragments (#3807). Warmed here rather than in the connection layer, which
+    // must not import a model: doing so pulled the observation schema into every consumer of
+    // `initializeConnections` and broke its own suite. Non-fatal, like the missing-index log:
+    // a failed vocabulary read is a degraded chip, never a reason to refuse to boot.
+    await warmControlledVocabularyHeadings().catch((error: unknown) =>
+      console.error(
+        '[research-area] controlled vocabulary warm failed, so multi-part headings will be split:',
+        sanitizeLogValue(error),
+      ),
+    );
 
     app.listen(port, () => {
       console.log(`Server is ready at: ${port} 🐶`);
