@@ -29,7 +29,6 @@ const run = (overrides: Partial<LaneBenchmarkRun> = {}): LaneBenchmarkRun => ({
 
 const response = (benchmarks: LaneBenchmarkResponse['benchmarks']): LaneBenchmarkResponse => ({
   benchmarks,
-  historyLimit: 20,
   measurementCollection: 'lane_scorecard_snapshots',
   refreshCommand: 'yarn --cwd server lane:scorecard --apply --confirm-lane-scorecard',
 });
@@ -89,6 +88,34 @@ describe('LaneBenchmarkPanel', () => {
       />,
     );
     expect(screen.getByText(/the frozen input leaked/)).toBeInTheDocument();
+  });
+
+  it('shows a lane with no gold labels getting worse on known wrong and input coverage', () => {
+    render(
+      <LaneBenchmarkPanel
+        isLoading={false}
+        error={null}
+        laneBenchmarks={response([
+          {
+            benchmarkId: 'dept-roster',
+            sourceName: 'dept-faculty-roster',
+            runs: 2,
+            change: 'code-changed',
+            latest: run({ gold: [], knownWrong: 2, labeledEntityEmitted: 8, pagesMissed: 3 }),
+            previous: run({
+              gold: [],
+              codeSha: 'fdf1464d4e457ba1',
+              outputFingerprint: 'fp-before',
+              knownWrong: 1,
+              labeledEntityEmitted: 8,
+              pagesMissed: 2,
+            }),
+          },
+        ])}
+      />,
+    );
+    expect(screen.getByText('+12.5 pts')).toHaveClass('text-rose-700');
+    expect(screen.getByText('+1 missed')).toHaveClass('text-rose-700');
   });
 
   it('shows the loading, error and empty states', () => {

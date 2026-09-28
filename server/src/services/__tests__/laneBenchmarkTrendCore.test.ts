@@ -30,19 +30,23 @@ const row = (overrides: Record<string, unknown> = {}): Record<string, unknown> =
 });
 
 describe('buildLaneBenchmarkTrend', () => {
-  it('reads the latest and previous replay and sums the labeled population across fields', () => {
-    const trend = buildLaneBenchmarkTrend('undergrad-llm-gold-v2', [
-      row(),
-      row({
-        measuredAt: new Date('2026-09-27T00:00:00Z'),
-        codeSha: 'bbb',
-        outputFingerprint: 'fp-0',
-      }),
-    ]);
+  it('reads the latest and previous replay, counts every stored replay, and sums the labeled population', () => {
+    const trend = buildLaneBenchmarkTrend(
+      'undergrad-llm-gold-v2',
+      [
+        row(),
+        row({
+          measuredAt: new Date('2026-09-27T00:00:00Z'),
+          codeSha: 'bbb',
+          outputFingerprint: 'fp-0',
+        }),
+      ],
+      31,
+    );
     expect(trend).toMatchObject({
       benchmarkId: 'undergrad-llm-gold-v2',
       sourceName: 'lab-microsite-undergrad-llm',
-      runs: 2,
+      runs: 31,
       change: 'code-changed',
       latest: { measuredAt: '2026-09-28T00:00:00.000Z', labeledEntityEmitted: 5, pagesMissed: 2 },
     });
@@ -50,20 +54,22 @@ describe('buildLaneBenchmarkTrend', () => {
   });
 
   it('returns nothing for a benchmark with no replay yet', () => {
-    expect(buildLaneBenchmarkTrend('empty', [])).toBeNull();
+    expect(buildLaneBenchmarkTrend('empty', [], 0)).toBeNull();
   });
 
   it('keeps an undefined rate null rather than zero', () => {
-    const trend = buildLaneBenchmarkTrend('x', [
-      row({ gold: [{ field: 'f', labeled: 1, trueNegative: 1, precision: null, recall: null }] }),
-    ]);
+    const trend = buildLaneBenchmarkTrend(
+      'x',
+      [row({ gold: [{ field: 'f', labeled: 1, trueNegative: 1, precision: null, recall: null }] })],
+      1,
+    );
     expect(trend?.latest.gold[0]).toMatchObject({ precision: null, recall: null, truePositive: 0 });
   });
 });
 
 describe('classifyLaneBenchmarkChange', () => {
   const dto = (codeSha: string | null, outputFingerprint: string) =>
-    buildLaneBenchmarkTrend('x', [row({ codeSha, outputFingerprint })])!.latest;
+    buildLaneBenchmarkTrend('x', [row({ codeSha, outputFingerprint })], 1)!.latest;
 
   it.each([
     ['a first replay', dto('aaa', 'fp-1'), null, 'first-run'],

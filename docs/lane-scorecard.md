@@ -66,11 +66,13 @@ Every capture and replay still goes through the orchestrator, so each one leaves
 `/analytics` shows every stored benchmark in the "Is each lane getting better?" panel, served by the admin-only `GET /analytics/lane-benchmarks` (#3591).
 Each benchmark shows its latest stored replay, and each change compares it with the replay stored before it, never with a live run.
 Known wrong is shown over its labeled population, input coverage as pages served and missed, and each hand-labeled field as precision and recall with their counts.
+Each of those carries its change from the previous replay, so a lane with no hand labels still shows whether it got better or worse.
 
 The panel reads the output fingerprint and the code version together, because a fingerprint is a pure function of the frozen input and the code:
 
 - Same fingerprint: the lane emitted exactly what it emitted before.
-- New fingerprint and new code: the change is the code's, which is what a scorecard exists to show.
+- New fingerprint and new code: the change came with a code change, which is what a scorecard exists to show.
+  The code version is the repository head, not the lane's own code, so an input leak that surfaces across an unrelated commit reads here too; only two replays on the same head prove a leak.
 - New fingerprint and the same code: the frozen input leaked, so the benchmark depends on something it did not freeze and its numbers are not comparable until that is found.
 - New fingerprint with no recorded code version on either side: the change cannot be attributed.
 

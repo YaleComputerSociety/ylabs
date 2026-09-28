@@ -1,4 +1,8 @@
-import type { LaneBenchmarkChange, LaneBenchmarkGold } from './laneBenchmarkTypes';
+import type {
+  LaneBenchmarkChange,
+  LaneBenchmarkGold,
+  LaneBenchmarkRun,
+} from './laneBenchmarkTypes';
 
 export const LANE_BENCHMARK_CHANGE_LABEL: Record<LaneBenchmarkChange, string> = {
   'first-run': 'First replay',
@@ -14,6 +18,11 @@ export const formatRate = (value: number | null): string =>
 export const formatCounts = (numerator: number, denominator: number): string =>
   `${numerator} of ${denominator}`;
 
+const pointsBetween = (now: number | null | undefined, before: number | null | undefined) =>
+  typeof now === 'number' && typeof before === 'number'
+    ? Math.round((now - before) * 1000) / 10
+    : null;
+
 /**
  * The change in a gold rate from the previous replay, in percentage points. A rate that was
  * undefined on either side has no change, which is not the same as no movement.
@@ -26,9 +35,24 @@ export function goldRateDelta(
 ): number | null {
   const now = latest.find((entry) => entry.field === field)?.[key];
   const before = previous?.find((entry) => entry.field === field)?.[key];
-  if (typeof now !== 'number' || typeof before !== 'number') return null;
-  return Math.round((now - before) * 1000) / 10;
+  return pointsBetween(now, before);
 }
+
+const knownWrongRate = (run: LaneBenchmarkRun): number | null =>
+  run.labeledEntityEmitted > 0 ? run.knownWrong / run.labeledEntityEmitted : null;
+
+export const knownWrongRateDelta = (
+  latest: LaneBenchmarkRun,
+  previous: LaneBenchmarkRun | null,
+): number | null => pointsBetween(knownWrongRate(latest), previous && knownWrongRate(previous));
+
+export const pagesMissedDelta = (
+  latest: LaneBenchmarkRun,
+  previous: LaneBenchmarkRun | null,
+): number | null => (previous ? latest.pagesMissed - previous.pagesMissed : null);
+
+export const formatCountDelta = (delta: number | null): string =>
+  delta === null ? '' : `${delta > 0 ? '+' : ''}${delta}`;
 
 export const formatPointDelta = (points: number | null): string =>
   points === null ? '' : `${points > 0 ? '+' : ''}${points.toFixed(1)} pts`;

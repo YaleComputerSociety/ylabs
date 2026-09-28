@@ -1,10 +1,13 @@
 import { formatDateTime, formatNumber } from './analyticsPresentation';
 import {
   LANE_BENCHMARK_CHANGE_LABEL,
+  formatCountDelta,
   formatCounts,
   formatPointDelta,
   formatRate,
   goldRateDelta,
+  knownWrongRateDelta,
+  pagesMissedDelta,
 } from './laneBenchmarkMetrics';
 import type {
   LaneBenchmarkChange,
@@ -20,15 +23,26 @@ const CHANGE_CLASS: Record<LaneBenchmarkChange, string> = {
   unattributed: 'text-amber-700',
 };
 
-const deltaClass = (points: number | null): string =>
-  points === null || points === 0
-    ? 'text-muted'
-    : points > 0
-      ? 'text-emerald-700'
-      : 'text-rose-700';
+const deltaClass = (delta: number, higherIsBetter: boolean): string =>
+  delta === 0 ? 'text-muted' : delta > 0 === higherIsBetter ? 'text-emerald-700' : 'text-rose-700';
+
+const Delta = ({
+  delta,
+  label,
+  higherIsBetter,
+}: {
+  delta: number | null;
+  label: string;
+  higherIsBetter: boolean;
+}) =>
+  delta === null ? null : (
+    <span className={`ml-1 ${deltaClass(delta, higherIsBetter)}`}>{label}</span>
+  );
 
 const BenchmarkRow = ({ trend }: { trend: LaneBenchmarkTrend }) => {
   const { latest, previous } = trend;
+  const knownWrongDelta = knownWrongRateDelta(latest, previous);
+  const missedDelta = pagesMissedDelta(latest, previous);
   return (
     <div className="border-b border-[var(--yr-line)] py-3 last:border-b-0">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -49,12 +63,22 @@ const BenchmarkRow = ({ trend }: { trend: LaneBenchmarkTrend }) => {
           <dt className="text-muted">Known wrong</dt>
           <dd className="tabular-nums text-ink">
             {formatCounts(latest.knownWrong, latest.labeledEntityEmitted)} labeled
+            <Delta
+              delta={knownWrongDelta}
+              label={formatPointDelta(knownWrongDelta)}
+              higherIsBetter={false}
+            />
           </dd>
         </div>
         <div>
           <dt className="text-muted">Input coverage</dt>
           <dd className="tabular-nums text-ink">
             {formatNumber(latest.pagesServed)} served, {formatNumber(latest.pagesMissed)} missed
+            <Delta
+              delta={missedDelta}
+              label={`${formatCountDelta(missedDelta)} missed`}
+              higherIsBetter={false}
+            />
           </dd>
         </div>
         {latest.gold.map((gold) => {
@@ -73,18 +97,14 @@ const BenchmarkRow = ({ trend }: { trend: LaneBenchmarkTrend }) => {
               <dd className="tabular-nums text-ink">
                 precision {formatRate(gold.precision)} (
                 {formatCounts(gold.truePositive, gold.truePositive + gold.falsePositive)})
-                {precisionDelta !== null && (
-                  <span className={`ml-1 ${deltaClass(precisionDelta)}`}>
-                    {formatPointDelta(precisionDelta)}
-                  </span>
-                )}
+                <Delta
+                  delta={precisionDelta}
+                  label={formatPointDelta(precisionDelta)}
+                  higherIsBetter
+                />
                 {' · '}recall {formatRate(gold.recall)} (
                 {formatCounts(gold.truePositive, gold.truePositive + gold.falseNegative)})
-                {recallDelta !== null && (
-                  <span className={`ml-1 ${deltaClass(recallDelta)}`}>
-                    {formatPointDelta(recallDelta)}
-                  </span>
-                )}
+                <Delta delta={recallDelta} label={formatPointDelta(recallDelta)} higherIsBetter />
               </dd>
             </div>
           );

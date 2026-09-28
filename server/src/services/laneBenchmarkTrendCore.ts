@@ -27,11 +27,7 @@ export interface LaneBenchmarkRunDto {
  * was not frozen after all, which is an instrument fault and never a lane regression (#3591).
  */
 export type LaneBenchmarkChange =
-  | 'first-run'
-  | 'unchanged'
-  | 'code-changed'
-  | 'input-leak'
-  | 'unattributed';
+  'first-run' | 'unchanged' | 'code-changed' | 'input-leak' | 'unattributed';
 
 export interface LaneBenchmarkTrendDto {
   benchmarkId: string;
@@ -98,6 +94,7 @@ export function classifyLaneBenchmarkChange(
 export function buildLaneBenchmarkTrend(
   benchmarkId: string,
   rowsNewestFirst: readonly Record<string, unknown>[],
+  runs: number,
 ): LaneBenchmarkTrendDto | null {
   const [latestRow, previousRow] = rowsNewestFirst;
   if (!latestRow) return null;
@@ -106,7 +103,7 @@ export function buildLaneBenchmarkTrend(
   return {
     benchmarkId,
     sourceName: text(latestRow.sourceName),
-    runs: rowsNewestFirst.length,
+    runs,
     latest,
     previous,
     change: classifyLaneBenchmarkChange(latest, previous),

@@ -12,6 +12,18 @@ const mocks = vi.hoisted(() => ({
   emitResearchEvent: vi.fn(),
   existingResearchEntityIds: vi.fn(),
   researchEntityExists: vi.fn(),
+  getLaneBenchmarkDashboard: vi.fn(),
+  hasActiveAdminGrant: vi.fn(),
+}));
+
+vi.mock('../../services/adminGrantService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/adminGrantService')>()),
+  hasActiveAdminGrant: mocks.hasActiveAdminGrant,
+}));
+
+vi.mock('../../services/laneBenchmarkDashboardService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/laneBenchmarkDashboardService')>()),
+  getLaneBenchmarkDashboard: mocks.getLaneBenchmarkDashboard,
 }));
 
 vi.mock('../../models/analytics', async (importOriginal) => ({
@@ -76,6 +88,37 @@ const invokeRouteHandler = async (path: string, request: any = {}) => {
   return response;
 };
 
+const dispatchRoute = (path: string, request: any = {}) => {
+  const route = routeByPath(path);
+  expect(route).toBeTruthy();
+  const requestWithDefaults = { query: {}, params: {}, ...request };
+  return new Promise<any>((resolve) => {
+    const response = {
+      statusCode: 200,
+      body: undefined as unknown,
+      status(code: number) {
+        this.statusCode = code;
+        return this;
+      },
+      json(body: unknown) {
+        this.body = body;
+        resolve(this);
+        return this;
+      },
+    } as any;
+    const dispatch = (index: number) => {
+      void route.stack[index].handle(requestWithDefaults, response, (error?: unknown) => {
+        if (error !== undefined) {
+          errorHandler(error as Error, requestWithDefaults, response, vi.fn());
+          return;
+        }
+        dispatch(index + 1);
+      });
+    };
+    dispatch(0);
+  });
+};
+
 const middlewareNames = () =>
   (router as any).stack
     .filter((layer: any) => !layer.route)
@@ -102,11 +145,30 @@ describe('analytics routes', () => {
     vi.clearAllMocks();
   });
 
-  it('serves the lane benchmark panel only to an authenticated admin (#3591)', () => {
-    const route = routeByPath('/lane-benchmarks');
-    expect(route).toBeTruthy();
-    const guards = route.stack.slice(0, -1).map((layer: any) => layer.handle.name);
-    expect(guards).toEqual(expect.arrayContaining(['isAuthenticated', 'isAdmin']));
+  it('refuses the lane benchmark panel to a signed-out request (#3591)', async () => {
+    const res = await dispatchRoute('/lane-benchmarks');
+
+    expect(res.statusCode).toBe(401);
+    expect(mocks.getLaneBenchmarkDashboard).not.toHaveBeenCalled();
+  });
+
+  it('refuses the lane benchmark panel to a signed-in user without an admin grant', async () => {
+    mocks.hasActiveAdminGrant.mockResolvedValue(false);
+
+    const res = await dispatchRoute('/lane-benchmarks', { user: { netId: 'test123' } });
+
+    expect(res.statusCode).toBe(403);
+    expect(mocks.getLaneBenchmarkDashboard).not.toHaveBeenCalled();
+  });
+
+  it('serves the lane benchmark panel to an admin', async () => {
+    mocks.hasActiveAdminGrant.mockResolvedValue(true);
+    mocks.getLaneBenchmarkDashboard.mockResolvedValue({ benchmarks: [] });
+
+    const res = await dispatchRoute('/lane-benchmarks', { user: { netId: 'test123' } });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ benchmarks: [] });
   });
 
   it('exposes the search-query analytics endpoint used by the analytics dashboard', () => {

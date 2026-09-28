@@ -4,7 +4,6 @@ import {
 } from '../models/laneScorecardSnapshot';
 import { buildLaneBenchmarkTrend, type LaneBenchmarkTrendDto } from './laneBenchmarkTrendCore';
 
-export const LANE_BENCHMARK_HISTORY_LIMIT = 20;
 export const LANE_BENCHMARK_REFRESH_COMMAND =
   'yarn --cwd server lane:scorecard --apply --confirm-lane-scorecard';
 
@@ -13,7 +12,6 @@ const LANE_BENCHMARK_RUN_PROJECTION =
 
 export interface LaneBenchmarkDashboard {
   benchmarks: LaneBenchmarkTrendDto[];
-  historyLimit: number;
   measurementCollection: string;
   refreshCommand: string;
 }
@@ -24,16 +22,18 @@ export async function getLaneBenchmarkDashboard(): Promise<LaneBenchmarkDashboar
     .sort();
   const trends = await Promise.all(
     benchmarkIds.map(async (benchmarkId) => {
-      const rows = await LaneScorecardSnapshot.find({ benchmarkId }, LANE_BENCHMARK_RUN_PROJECTION)
-        .sort({ measuredAt: -1 })
-        .limit(LANE_BENCHMARK_HISTORY_LIMIT)
-        .lean();
-      return buildLaneBenchmarkTrend(benchmarkId, rows as Record<string, unknown>[]);
+      const [latestTwo, runs] = await Promise.all([
+        LaneScorecardSnapshot.find({ benchmarkId }, LANE_BENCHMARK_RUN_PROJECTION)
+          .sort({ measuredAt: -1 })
+          .limit(2)
+          .lean(),
+        LaneScorecardSnapshot.countDocuments({ benchmarkId }),
+      ]);
+      return buildLaneBenchmarkTrend(benchmarkId, latestTwo as Record<string, unknown>[], runs);
     }),
   );
   return {
     benchmarks: trends.filter((trend): trend is LaneBenchmarkTrendDto => trend !== null),
-    historyLimit: LANE_BENCHMARK_HISTORY_LIMIT,
     measurementCollection: LANE_SCORECARD_SNAPSHOT_COLLECTION,
     refreshCommand: LANE_BENCHMARK_REFRESH_COMMAND,
   };
