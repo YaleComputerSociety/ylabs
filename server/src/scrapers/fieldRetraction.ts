@@ -90,6 +90,12 @@ import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { ScrapeRun } from '../models/scrapeRun';
+import {
+  MAX_RESEARCH_ENTITY_TOMBSTONE_HOPS,
+  listResearchEntityMergedInRowsBySurvivor,
+  walkResearchEntityTombstoneChain,
+  type ResearchEntityTombstoneNode,
+} from '../services/researchEntityCanonicalTombstone';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -596,6 +602,21 @@ export function planFieldRetractions(input: {
     }
   }
 
+  // Several keys can store into one row (a survivor and its merged-in losers), so
+  // whether rival evidence survives is decided per stored row and field, not per key.
+  const retractingByStoredRowField = new Map<string, { observations: number; values: unknown[] }>();
+  for (const group of retractedByKey.values()) {
+    if (frozen.has(group.field)) continue;
+    const entity = entityStates.get(group.entityKey);
+    if (!entity || entity.manuallyLockedFields.includes(group.field)) continue;
+    const key = `${entity.entityId}\u0000${group.field}`;
+    const total = retractingByStoredRowField.get(key) ?? { observations: 0, values: [] };
+    total.observations += group.observationIds.length;
+    total.values.push(...group.values);
+    retractingByStoredRowField.set(key, total);
+  }
+  const clearDecidedForStoredRowField = new Set<string>();
+
   const retractions: PlannedFieldRetraction[] = [];
   for (const group of retractedByKey.values()) {
     if (frozen.has(group.field)) continue;
@@ -608,15 +629,23 @@ export function planFieldRetractions(input: {
       counts.lockedSkipped += 1;
       continue;
     }
+    const storedRowField = `${entity.entityId}\u0000${group.field}`;
+    const retracting = retractingByStoredRowField.get(storedRowField) ?? {
+      observations: group.observationIds.length,
+      values: group.values,
+    };
     const liveCount = entity.liveObservationCountByField[group.field] ?? 0;
-    const rivalEvidenceSurvives = liveCount > group.observationIds.length;
+    const rivalEvidenceSurvives = liveCount > retracting.observations;
+    const clearAlreadyDecided = clearDecidedForStoredRowField.has(storedRowField);
+    clearDecidedForStoredRowField.add(storedRowField);
     const clearsStoredValue =
+      !clearAlreadyDecided &&
       !rivalEvidenceSurvives &&
-      storedValueIsRetractedValue(entity.storedValues[group.field], group.values);
+      storedValueIsRetractedValue(entity.storedValues[group.field], retracting.values);
     counts.retractedObservations += group.observationIds.length;
     if (clearsStoredValue) counts.storedValuesCleared += 1;
-    else if (rivalEvidenceSurvives) counts.deferredToResolver += 1;
-    else if (normalizedComparableValue(entity.storedValues[group.field])) {
+    else if (!clearAlreadyDecided && rivalEvidenceSurvives) counts.deferredToResolver += 1;
+    else if (!clearAlreadyDecided && normalizedComparableValue(entity.storedValues[group.field])) {
       counts.storedValueDiverged += 1;
     }
     // Raw values, not `normalizedComparableValue` output: the identity key drops the
@@ -896,52 +925,128 @@ async function loadActiveRetractableObservations(
  * whether clearing the stored value is safe turns on whether the corpus still has
  * any assertion for that field, and a rival source's assertion is exactly what
  * must stop the clear.
+ *
+ * A key whose row was merged away stores nothing a student sees: its evidence backs
+ * the live survivor its tombstone chain reaches (#3560). So that key's state is the
+ * survivor's stored value and locks, and the live evidence counted is every key and
+ * id merged into the survivor, since any of them can still refill the field (#3609).
  */
 async function loadEntityStates(
   entityKeys: string[],
   retractableFields: readonly string[],
 ): Promise<FieldRetractionEntityState[]> {
   if (entityKeys.length === 0) return [];
-  const entities = (await ResearchEntity.find({ slug: { $in: entityKeys } })
-    .select(['slug', 'manuallyLockedFields', ...retractableFields].join(' '))
+  const selection = [
+    'slug',
+    'archived',
+    'canonicalGroupId',
+    'manuallyLockedFields',
+    ...retractableFields,
+  ].join(' ');
+  const keyed = (await ResearchEntity.find({ slug: { $in: entityKeys } })
+    .select(selection)
     .lean()) as any[];
 
-  const liveCounts = (await Observation.aggregate([
+  const rowsById = new Map<string, any>(keyed.map((row) => [String(row._id), row]));
+  let pending = keyed.filter((row) => row.archived === true && row.canonicalGroupId);
+  for (let hop = 0; hop < MAX_RESEARCH_ENTITY_TOMBSTONE_HOPS && pending.length > 0; hop += 1) {
+    const unloaded = [...new Set(pending.map((row) => String(row.canonicalGroupId)))].filter(
+      (id) => !rowsById.has(id) && mongoose.isValidObjectId(id),
+    );
+    const loaded =
+      unloaded.length > 0
+        ? ((await ResearchEntity.find({
+            _id: { $in: unloaded.map((id) => new mongoose.Types.ObjectId(id)) },
+          })
+            .select(selection)
+            .lean()) as any[])
+        : [];
+    for (const row of loaded) rowsById.set(String(row._id), row);
+    pending = loaded.filter((row) => row.archived === true && row.canonicalGroupId);
+  }
+  const findLoadedById = async (id: string) =>
+    (rowsById.get(id) as ResearchEntityTombstoneNode | undefined) ?? null;
+
+  const storedRowByKey = new Map<string, any>();
+  for (const entity of keyed) {
+    const entityKey = typeof entity.slug === 'string' ? entity.slug : '';
+    if (!entityKey) continue;
+    const storedRow =
+      entity.archived === true && entity.canonicalGroupId
+        ? ((await walkResearchEntityTombstoneChain(entity, { findById: findLoadedById })) ?? entity)
+        : entity;
+    storedRowByKey.set(entityKey, storedRow);
+  }
+
+  const mergedInBySurvivor = await listResearchEntityMergedInRowsBySurvivor(
+    [...storedRowByKey.values()].filter((row) => row.archived !== true).map((row) => row._id),
+  );
+  const evidenceKeysByStoredRow = new Map<string, { keys: Set<string>; ids: Set<string> }>();
+  for (const storedRow of storedRowByKey.values()) {
+    const storedRowId = serializedDocumentId(storedRow._id) || '';
+    if (!storedRowId || evidenceKeysByStoredRow.has(storedRowId)) continue;
+    const merged = mergedInBySurvivor.get(storedRowId) ?? [];
+    evidenceKeysByStoredRow.set(storedRowId, {
+      keys: new Set(
+        [storedRow.slug, ...merged.map((row) => row.slug)].filter(
+          (slug): slug is string => typeof slug === 'string' && slug.length > 0,
+        ),
+      ),
+      ids: new Set([storedRowId, ...merged.map((row) => String(row._id))]),
+    });
+  }
+  const allEvidenceKeys = [...evidenceKeysByStoredRow.values()].flatMap(({ keys }) => [...keys]);
+  const allEvidenceIds = [...evidenceKeysByStoredRow.values()].flatMap(({ ids }) =>
+    [...ids]
+      .filter((id) => mongoose.isValidObjectId(id))
+      .map((id) => new mongoose.Types.ObjectId(id)),
+  );
+
+  const liveEvidence = (await Observation.aggregate([
     {
       $match: {
         entityType: 'researchEntity',
-        entityKey: { $in: entityKeys },
+        $or: [{ entityKey: { $in: allEvidenceKeys } }, { entityId: { $in: allEvidenceIds } }],
         field: { $in: [...retractableFields] },
         superseded: { $ne: true },
       },
     },
-    { $group: { _id: { entityKey: '$entityKey', field: '$field' }, count: { $sum: 1 } } },
-  ])) as Array<{ _id: { entityKey: string; field: string }; count: number }>;
+    {
+      $group: {
+        _id: { entityKey: '$entityKey', entityId: '$entityId', field: '$field' },
+        count: { $sum: 1 },
+      },
+    },
+  ])) as Array<{ _id: { entityKey?: string; entityId?: unknown; field: string }; count: number }>;
 
-  const countsByEntity = new Map<string, Record<string, number>>();
-  for (const row of liveCounts) {
-    const forEntity = countsByEntity.get(row._id.entityKey) ?? {};
-    forEntity[row._id.field] = row.count;
-    countsByEntity.set(row._id.entityKey, forEntity);
+  const countsByStoredRow = new Map<string, Record<string, number>>();
+  for (const [storedRowId, { keys, ids }] of evidenceKeysByStoredRow) {
+    const counts: Record<string, number> = {};
+    for (const row of liveEvidence) {
+      const entityId = serializedDocumentId(row._id.entityId) || '';
+      const backsThisRow = entityId ? ids.has(entityId) : keys.has(String(row._id.entityKey || ''));
+      if (backsThisRow) counts[row._id.field] = (counts[row._id.field] ?? 0) + row.count;
+    }
+    countsByStoredRow.set(storedRowId, counts);
   }
 
-  return entities
-    .map((entity) => {
-      const entityId = serializedDocumentId(entity._id) || '';
-      const entityKey = typeof entity.slug === 'string' ? entity.slug : '';
-      const storedValues: Record<string, unknown> = {};
-      for (const field of retractableFields) storedValues[field] = entity[field];
-      return {
-        entityId,
-        entityKey,
-        manuallyLockedFields: Array.isArray(entity.manuallyLockedFields)
-          ? entity.manuallyLockedFields.filter((value: unknown) => typeof value === 'string')
-          : [],
-        storedValues,
-        liveObservationCountByField: countsByEntity.get(entityKey) ?? {},
-      };
-    })
-    .filter((entity) => entity.entityId && entity.entityKey);
+  const states: FieldRetractionEntityState[] = [];
+  for (const [entityKey, storedRow] of storedRowByKey) {
+    const entityId = serializedDocumentId(storedRow._id) || '';
+    if (!entityId) continue;
+    const storedValues: Record<string, unknown> = {};
+    for (const field of retractableFields) storedValues[field] = storedRow[field];
+    states.push({
+      entityId,
+      entityKey,
+      manuallyLockedFields: Array.isArray(storedRow.manuallyLockedFields)
+        ? storedRow.manuallyLockedFields.filter((value: unknown) => typeof value === 'string')
+        : [],
+      storedValues,
+      liveObservationCountByField: countsByStoredRow.get(entityId) ?? {},
+    });
+  }
+  return states;
 }
 
 /**
