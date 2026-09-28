@@ -29,6 +29,28 @@ const report = (
   });
 
 describe('buildLaunchTrustContractReport', () => {
+  it('points every command at the environment it measured, never a fixed one', () => {
+    const held = plan({
+      recordId: 'held-1',
+      tier: 'operator_review',
+      reasons: ['missing_action_evidence'],
+    });
+    const result = buildLaunchTrustContractReport([held], {
+      collection: 'all',
+      mode: 'student-ready-only',
+      environment: 'production',
+    });
+    const commands = [
+      ...result.requiredCommands,
+      ...result.repairLanes.map((lane) => lane.command),
+    ];
+    expect(commands.length).toBeGreaterThan(0);
+    for (const command of commands) {
+      expect(command).toMatch(/^SCRAPER_ENV=production /);
+      expect(command).not.toContain('SCRAPER_ENV=beta');
+    }
+  });
+
   it('passes when every scanned record is launch-grade student_ready', () => {
     const result = report([plan(), plan({ recordId: 'entity-2', label: 'Another Trusted Lab' })]);
 
@@ -66,7 +88,7 @@ describe('buildLaunchTrustContractReport', () => {
       count: 1,
       command: expect.stringContaining('beta:repair-queue'),
     });
-    expect(result.repairLanes[0].command).toMatch(/^SCRAPER_ENV=beta /);
+    expect(result.repairLanes[0].command).toMatch(/^SCRAPER_ENV=development /);
     expect(result.repairLanes[0].command).toContain('--stage=action_evidence');
     expect(result.repairLanes[0].command).toContain('--mode=dry-run');
     expect(result.repairLanes[0].command).toContain('--retry-blocked');
@@ -127,7 +149,7 @@ describe('buildLaunchTrustContractReport', () => {
       'pi_identity',
     ]);
     expect(result.repairLanes[0].command).toContain('beta:repair-queue');
-    expect(result.repairLanes[0].command).toMatch(/^SCRAPER_ENV=beta /);
+    expect(result.repairLanes[0].command).toMatch(/^SCRAPER_ENV=development /);
     expect(result.repairLanes[0].command).toContain('--mode=dry-run');
     expect(result.repairLanes[0].command).toContain('--retry-blocked');
     expect(result.repairLanes[0].command).toContain(
@@ -135,7 +157,7 @@ describe('buildLaunchTrustContractReport', () => {
     );
     expect(result.repairLanes[0].command).not.toContain('--mode=apply');
     expect(result.repairLanes[1].command).toContain('beta:repair-queue');
-    expect(result.repairLanes[1].command).toMatch(/^SCRAPER_ENV=beta /);
+    expect(result.repairLanes[1].command).toMatch(/^SCRAPER_ENV=development /);
     expect(result.repairLanes[1].command).toContain('--stage=pi_identity');
     expect(result.repairLanes[1].command).toContain('--mode=dry-run');
     expect(result.repairLanes[1].command).toContain('--retry-blocked');
@@ -144,7 +166,7 @@ describe('buildLaunchTrustContractReport', () => {
     );
     expect(result.repairLanes[1].command).not.toContain('--mode=apply');
     expect(result.requiredCommands[0]).toContain('student-visibility:gate');
-    expect(result.requiredCommands[0]).toMatch(/^SCRAPER_ENV=beta /);
+    expect(result.requiredCommands[0]).toMatch(/^SCRAPER_ENV=development /);
     expect(result.requiredCommands[0]).toContain('--mode=dry-run');
     expect(result.requiredCommands[0]).toContain(
       '--output /tmp/ylabs-student-visibility-gate.json',
@@ -224,7 +246,7 @@ describe('buildLaunchTrustContractReport', () => {
       stage: 'review_exception',
       count: 1,
     });
-    expect(result.repairLanes[0].command).toMatch(/^SCRAPER_ENV=beta /);
+    expect(result.repairLanes[0].command).toMatch(/^SCRAPER_ENV=development /);
     expect(result.repairLanes[0].command).toContain('launch:review-exceptions');
     expect(result.repairLanes[0].command).toContain(
       '--decision-template-output /tmp/ylabs-launch-review-exceptions-template.json',
