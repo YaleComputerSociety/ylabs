@@ -185,8 +185,10 @@ import {
 } from '../scripts/backfillResearchEntityWebsiteUrlsCore';
 import {
   archiveCanonicalRoleAssignmentsForPersons,
+  adoptUnprovenancedRoleAssignments,
   archiveSupersededCanonicalRoleAssignments,
   materializeCanonicalMembership,
+  writeCanonicalMembership,
   type CanonicalMembershipOutcome,
   type CanonicalMemberFacts,
   resolveCanonicalResearcherId,
@@ -255,7 +257,11 @@ import {
   yaleStatusCacheIsWritable,
 } from '../utils/researchEntityYaleStatus';
 import { isRevisitableFieldLockOnEntity } from '../utils/researchEntityFieldLocks';
-import { canonicalRoleForLegacy, LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
+import {
+  canonicalRoleForLegacy,
+  LEAD_ROLE_LEGACY_LABELS,
+  LEGACY_ROLE_BY_CANONICAL,
+} from '../models/canonicalRoleMapping';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -604,6 +610,7 @@ type RosterMemberCanonicalPlan = {
   role: string;
   matchName: string;
   personReferenceId: string;
+  identityKey: string;
   facts: CanonicalMemberFacts;
   fieldsResolved: number;
   conflicts: number;
@@ -1692,6 +1699,7 @@ export function buildRosterMemberCanonicalPlan(
     role,
     matchName: name,
     personReferenceId: userId,
+    identityKey,
     facts: {
       legacyRole: role,
       displayName: name || undefined,
@@ -1739,6 +1747,53 @@ async function findCanonicalRosterMatch(
     return Boolean(name) && textValue(entry.name).toLowerCase() === name;
   };
   return { roster, matches };
+}
+
+/**
+ * Only a lane whose edges a two-read retirement governs may adopt, because adopting hands
+ * the edge to that lane's retirement: `official-research-home-roster` ends an edge on a
+ * single snapshot that omits it, which would end an adopted edge on the read that adopted
+ * it. Adding a source here requires that its retirement meet the same two-read rule.
+ */
+const SOURCES_THAT_ADOPT_UNPROVENANCED_EDGES: ReadonlySet<string> = new Set([
+  CENTERS_INSTITUTES_SOURCE_NAME,
+]);
+
+/**
+ * The person must be the one the listing's profile URL resolved to, never a name match, so
+ * a namesake's edge is not adopted (#3799).
+ */
+async function adoptListedPersonUnprovenancedEdges(
+  researchEntityId: string,
+  plan: RosterMemberCanonicalPlan,
+  personId: mongoose.Types.ObjectId | undefined,
+): Promise<number> {
+  const provenance = plan.facts.rosterProvenance;
+  const sourceName = textValue(provenance?.sourceName);
+  const listedRole = canonicalRoleForLegacy(plan.role);
+  const listedMembershipKey = textValue(provenance?.membershipKey);
+  if (
+    !personId ||
+    !plan.personReferenceId ||
+    !plan.identityKey ||
+    !listedRole ||
+    !listedMembershipKey ||
+    !SOURCES_THAT_ADOPT_UNPROVENANCED_EDGES.has(sourceName)
+  ) {
+    return 0;
+  }
+  return adoptUnprovenancedRoleAssignments(researchEntityId, {
+    personId,
+    sourceName,
+    sourceUrl: textValue(provenance?.sourceUrl) || undefined,
+    profileUrl: textValue(provenance?.profileUrl) || undefined,
+    listedRole,
+    listedMembershipKey,
+    listedObservedAt: provenance?.observedAt ?? new Date(),
+    membershipKeyForRole: (role) =>
+      rosterMembershipKey(plan.identityKey, LEGACY_ROLE_BY_CANONICAL[role] ?? ''),
+    adoptedAt: new Date(),
+  });
 }
 
 async function materializeRosterMember(
@@ -1846,6 +1901,11 @@ async function materializeRosterMember(
       (entry) => entry.isCurrentMember && LEAD_MEMBER_ROLES.has(entry.role) && matches(entry),
     );
     if (existingLead) {
+      await adoptListedPersonUnprovenancedEdges(
+        researchEntityId,
+        plan,
+        toMaterializerObjectId(plan.personReferenceId),
+      );
       return {
         entityType: 'researchGroupMember',
         entityId: materializerDocumentId(entity._id),
@@ -1860,13 +1920,14 @@ async function materializeRosterMember(
   }
 
   const existing = roster.some((entry) => entry.role === resolvedRole && matches(entry));
-  const outcome = await materializeCanonicalMembership(researchEntityId, plan.facts, {
+  const { outcome, personId } = await writeCanonicalMembership(researchEntityId, plan.facts, {
     netid: memberIdentity?.netid,
     email: memberIdentity?.email,
     orcid: memberIdentity?.orcid,
     displayName: plan.facts.displayName ?? '',
     hasCanonicalSourceReference: Boolean(plan.personReferenceId),
   });
+  await adoptListedPersonUnprovenancedEdges(researchEntityId, plan, personId);
   return {
     entityType: 'researchGroupMember',
     entityId: materializerDocumentId(entity._id),
