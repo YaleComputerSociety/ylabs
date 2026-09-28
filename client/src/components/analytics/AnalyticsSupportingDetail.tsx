@@ -14,6 +14,8 @@ import {
 import { SortOrder, UserActivitySort } from './analyticsTypes';
 import BarChart from './charts/BarChart';
 import CorpusQualityPanel from './CorpusQualityPanel';
+import LaneBenchmarkPanel from './LaneBenchmarkPanel';
+import type { LaneBenchmarkResponse } from './laneBenchmarkTypes';
 import type { CorpusQualityResponse } from './corpusQualityTypes';
 import ScrollableTableRegion from './ScrollableTableRegion';
 import { csvTimestampSuffix, downloadRowsAsCsv } from '../../utils/csvExport';
@@ -50,6 +52,9 @@ export interface AnalyticsSupportingDetailProps {
   corpusQuality: CorpusQualityResponse | null;
   isCorpusQualityLoading: boolean;
   corpusQualityError: string | null;
+  laneBenchmarks: LaneBenchmarkResponse | null;
+  isLaneBenchmarksLoading: boolean;
+  laneBenchmarksError: string | null;
   userActivity: AnalyticsUserActivityResponse;
   isUserActivityLoading: boolean;
   userActivityError: string | null;
@@ -88,6 +93,9 @@ const AnalyticsSupportingDetail = ({
   corpusQuality,
   isCorpusQualityLoading,
   corpusQualityError,
+  laneBenchmarks,
+  isLaneBenchmarksLoading,
+  laneBenchmarksError,
   userActivity,
   isUserActivityLoading,
   userActivityError,
@@ -231,6 +239,14 @@ const AnalyticsSupportingDetail = ({
             corpusQuality={corpusQuality}
             isLoading={isCorpusQualityLoading}
             error={corpusQualityError}
+          />
+        </div>
+
+        <div className="mb-6">
+          <LaneBenchmarkPanel
+            laneBenchmarks={laneBenchmarks}
+            isLoading={isLaneBenchmarksLoading}
+            error={laneBenchmarksError}
           />
         </div>
 
