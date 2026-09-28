@@ -53,7 +53,7 @@ describe('createScraplingRenderedFetcher', () => {
       expect(seedRedirectCheck).not.toHaveBeenCalled();
       expect(mocks.execFile).not.toHaveBeenCalled();
     } finally {
-      expect(finishBenchmarkReplay()).toEqual({
+      expect(finishBenchmarkReplay()).toMatchObject({
         pagesServed: 0,
         pagesMissed: 0,
         networkBlocks: 1,

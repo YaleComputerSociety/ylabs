@@ -65,7 +65,11 @@ describe('snapshot benchmark mode', () => {
     expect(await getCached('lane-a', 'k')).toBe('body');
     await setCached('lane-a', 'k', 'overwritten');
     expect(await getCached('lane-a', 'k')).toBe('body');
-    expect(finishBenchmarkReplay()).toEqual({ pagesServed: 1, pagesMissed: 0, networkBlocks: 0 });
+    expect(finishBenchmarkReplay()).toMatchObject({
+      pagesServed: 1,
+      pagesMissed: 0,
+      networkBlocks: 0,
+    });
   });
 
   it('treats a page the capture never saw as a counted miss, not a fetch', async () => {
@@ -74,7 +78,11 @@ describe('snapshot benchmark mode', () => {
     await expect(axios.get('https://example.invalid/unseen')).rejects.toBeInstanceOf(
       BenchmarkReplayNetworkError,
     );
-    expect(finishBenchmarkReplay()).toEqual({ pagesServed: 0, pagesMissed: 1, networkBlocks: 1 });
+    expect(finishBenchmarkReplay()).toMatchObject({
+      pagesServed: 0,
+      pagesMissed: 1,
+      networkBlocks: 1,
+    });
   });
 
   it('blocks the network during replay and restores it afterwards', async () => {
@@ -134,7 +142,11 @@ describe('snapshot benchmark mode', () => {
     beginBenchmarkReplay(pages);
     const response = await axios.post(MODEL_URL, modelBody('page text'));
     expect(response.data.choices[0].message.content).toBe('yes');
-    expect(finishBenchmarkReplay()).toEqual({ pagesServed: 1, pagesMissed: 0, networkBlocks: 0 });
+    expect(finishBenchmarkReplay()).toMatchObject({
+      pagesServed: 1,
+      pagesMissed: 0,
+      networkBlocks: 0,
+    });
   });
 
   it('counts a changed prompt as a miss rather than serving the old answer', async () => {
@@ -146,7 +158,11 @@ describe('snapshot benchmark mode', () => {
     await expect(axios.post(MODEL_URL, modelBody('page text, cleaned'))).rejects.toBeInstanceOf(
       BenchmarkReplayNetworkError,
     );
-    expect(finishBenchmarkReplay()).toEqual({ pagesServed: 0, pagesMissed: 1, networkBlocks: 1 });
+    expect(finishBenchmarkReplay()).toMatchObject({
+      pagesServed: 0,
+      pagesMissed: 1,
+      networkBlocks: 1,
+    });
   });
 
   it('lets a model call through in a live-model replay but still blocks page fetches', async () => {
@@ -158,7 +174,11 @@ describe('snapshot benchmark mode', () => {
     await expect(axios.get('https://example.invalid/')).rejects.toBeInstanceOf(
       BenchmarkReplayNetworkError,
     );
-    expect(finishBenchmarkReplay()).toEqual({ pagesServed: 0, pagesMissed: 0, networkBlocks: 1 });
+    expect(finishBenchmarkReplay()).toMatchObject({
+      pagesServed: 0,
+      pagesMissed: 0,
+      networkBlocks: 1,
+    });
   });
 
   it("reads past a lane's cached model answer only in a live-model replay", async () => {

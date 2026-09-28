@@ -10,10 +10,10 @@ import type { PlannedObservation } from './laneScorecardCore';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Lanes whose output is a function of the pages they fetch, through `getCached` or
- * `fetchPageWithPolicy`, and the model responses they receive over the default axios instance
- * (#3526, #3587). A rendered-page lane is excluded because its fetch bypasses the cache, and so
- * are the two center LLM lanes, whose raw `axios.get` page fetch is frozen by neither.
+ * Lanes whose output is a function of the pages they fetch, through `getCached`,
+ * `fetchPageWithPolicy` or the Scrapling renderer, and the model responses they receive over the
+ * default axios instance (#3526, #3587, #3590). The two center LLM lanes stay out, because their
+ * raw `axios.get` page fetch is frozen by none of those.
  */
 export const BENCHMARKABLE_LANES: ReadonlySet<string> = new Set([
   'dept-faculty-roster',
@@ -22,6 +22,8 @@ export const BENCHMARKABLE_LANES: ReadonlySet<string> = new Set([
   'ysm-atoz-index',
   'lab-microsite-undergrad-llm',
   'lab-microsite-description-llm',
+  'centers-institutes-index',
+  'student-grants-database',
 ]);
 
 const RUN_CLOCK_FIELDS_BY_LANE: ReadonlyMap<string, ReadonlySet<string>> = new Map([

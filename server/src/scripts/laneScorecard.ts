@@ -12,6 +12,10 @@ import {
   MODEL_RESPONSE_NAMESPACE,
   type CapturedPage,
 } from '../scrapers/snapshotBenchmarkMode';
+import {
+  isRenderedFetchMetadataKey,
+  RENDERED_FETCH_BENCHMARK_NAMESPACE,
+} from '../scrapers/renderedFetch';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   currentCodeSha,
@@ -102,6 +106,32 @@ export function emptyReplayReason(
   return `replay planned no values where the capture planned ${captured}`;
 }
 
+/**
+ * A replay is compared only once it has resolved something from the frozen input (#3590). A
+ * lane that served none of its captured pages, or a rendered lane that served none of its
+ * captured renders, measured a renderer or fetch path that never engaged, and scoring it would
+ * read an instrument fault as a lane change.
+ */
+export function unresolvedReplayReason(
+  pages: readonly Pick<CapturedPage, 'sourceName' | 'requestKey'>[],
+  replay: { pagesServed: number; servedByNamespace: Record<string, number> },
+): string | undefined {
+  const frozenPages = pages.filter((page) => !isRenderedFetchMetadataKey(page.requestKey));
+  if (frozenPages.length > 0 && replay.pagesServed === 0) {
+    return `replay served none of the ${frozenPages.length} frozen pages`;
+  }
+  const frozenRenders = frozenPages.filter(
+    (page) => page.sourceName === RENDERED_FETCH_BENCHMARK_NAMESPACE,
+  ).length;
+  if (
+    frozenRenders > 0 &&
+    (replay.servedByNamespace[RENDERED_FETCH_BENCHMARK_NAMESPACE] ?? 0) === 0
+  ) {
+    return `replay served none of the ${frozenRenders} frozen renders, so the renderer never engaged`;
+  }
+  return undefined;
+}
+
 async function replayBenchmark(
   benchmark: StoredBenchmark,
   pages: readonly CapturedPage[],
@@ -183,7 +213,8 @@ async function main(): Promise<void> {
       continue;
     }
     const { score, gold, replay, truncated } = await replayBenchmark(benchmark, pages);
-    const emptyReason = emptyReplayReason(benchmark, score);
+    const emptyReason =
+      emptyReplayReason(benchmark, score) ?? unresolvedReplayReason(pages, replay);
     if (emptyReason) {
       unscored.push({ benchmarkId: benchmark.benchmarkId, reason: emptyReason });
       continue;
