@@ -86,6 +86,8 @@ export interface ExtractorResult {
 /** Context handed to each extractor — used to absolutize relative URLs. */
 export interface ExtractorCtx {
   pageUrl: string;
+  /** The entity the roster is being read for, so a title-derived role can be scoped to it. */
+  centerName?: string;
 }
 
 /** Pure HTML → structured rows. No I/O. */
@@ -126,10 +128,19 @@ export interface CenterConfig {
    * a member-roster subpage distinct from the entity's own landing page (e.g. a
    * West Campus institute whose members live under `/institutes/<slug>/<slug>-labs`
    * while its identity page is `/institutes/<slug>`). Also added to `sourceUrls`.
-   * Defaults to `url` when unset. Ignored in `entityKey` enrichment mode, where the
-   * owning source keeps the identity website.
+   * Required in practice: the roster `url` must sit on this site
+   * (`centerRosterSiteRefusal`), and a config without one is refused. Ignored for
+   * `websiteUrl` and `sourceUrls` in `entityKey` enrichment mode, where the owning
+   * source keeps the identity website.
    */
   homeUrl?: string;
+  /**
+   * A partner site that publishes this center's roster on its behalf. The roster
+   * guard accepts `url` on this site as well as on `homeUrl`, and only with a
+   * non-empty `reason`, so a cross-site roster is a reviewed decision rather than a
+   * copied URL.
+   */
+  sharedRosterSite?: { url: string; reason: string };
   /**
    * Further pages of the center's own site to cite as provenance, such as the
    * mission or about page. These reach the description lane through `sourceUrls`:
@@ -156,6 +167,73 @@ export interface CenterConfig {
    * `organizationalDeadEnd` (#1359).
    */
   crawlChildCenters?: boolean;
+}
+
+export type CenterRosterSiteRefusal =
+  | 'no-declared-home'
+  | 'unparseable-url'
+  | 'shared-roster-site-without-reason'
+  | 'roster-off-center-host'
+  | 'roster-outside-center-path';
+
+function parseSiteUrl(value: string | undefined): URL | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function siteHost(url: URL): string {
+  return url.hostname.toLowerCase().replace(/^www\./, '');
+}
+
+function sitePathPrefix(url: URL): string {
+  return url.pathname.toLowerCase().replace(/\/+$/, '');
+}
+
+function pageIsWithinSite(page: URL, site: URL): boolean {
+  if (siteHost(page) !== siteHost(site)) return false;
+  const prefix = sitePathPrefix(site);
+  if (!prefix) return true;
+  const path = sitePathPrefix(page);
+  return path === prefix || path.startsWith(`${prefix}/`);
+}
+
+/**
+ * Every member a roster yields is attributed to this config's entity, so the
+ * roster page has to be published by that entity: on the host of its declared
+ * `homeUrl`, and under the home page's path when the host is shared by several
+ * units (medicine.yale.edu, macmillan.yale.edu, westcampus.yale.edu). A roster
+ * on any other site is another organization's membership (#3703), and a config
+ * with no declared home has nothing to check against, so both fail closed.
+ * `sharedRosterSite` is the explicit, reasoned exception for a roster genuinely
+ * published by a partner site on the center's behalf.
+ */
+export function centerRosterPageSiteRefusal(
+  config: CenterConfig,
+  pageUrl: string,
+): CenterRosterSiteRefusal | null {
+  if (!config.homeUrl) return 'no-declared-home';
+  const home = parseSiteUrl(config.homeUrl);
+  const page = parseSiteUrl(pageUrl);
+  if (!home || !page) return 'unparseable-url';
+  const sites = [home];
+  if (config.sharedRosterSite) {
+    if (!config.sharedRosterSite.reason.trim()) return 'shared-roster-site-without-reason';
+    const shared = parseSiteUrl(config.sharedRosterSite.url);
+    if (!shared) return 'unparseable-url';
+    sites.push(shared);
+  }
+  if (!sites.some((site) => siteHost(site) === siteHost(page))) return 'roster-off-center-host';
+  if (!sites.some((site) => pageIsWithinSite(page, site))) return 'roster-outside-center-path';
+  return null;
+}
+
+export function centerRosterSiteRefusal(config: CenterConfig): CenterRosterSiteRefusal | null {
+  return centerRosterPageSiteRefusal(config, config.url);
 }
 
 export function centerEntityKey(config: CenterConfig): string {
@@ -198,15 +276,107 @@ function flipLastFirst(name: string): string {
   return `${m[2].trim()} ${m[1].trim()}`;
 }
 
+const ORGANIZATION_NAME_FILLER_WORDS = new Set([
+  'a',
+  'and',
+  'at',
+  'center',
+  'centre',
+  'committee',
+  'council',
+  'for',
+  'foundation',
+  'in',
+  'initiative',
+  'institute',
+  'institution',
+  'of',
+  'on',
+  'program',
+  'research',
+  'school',
+  'studies',
+  'the',
+  'university',
+  'yale',
+]);
+
+const INITIALISM_SKIPPED_WORDS = new Set(['a', 'and', 'at', 'for', 'in', 'of', 'on', 'the']);
+
+function organizationNameWords(name: string): string[] {
+  return name
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function organizationNameInitialisms(words: string[]): string[] {
+  const initials = words.filter((word) => !INITIALISM_SKIPPED_WORDS.has(word)).map((w) => w[0]);
+  const withoutYale = words
+    .filter((word) => word !== 'yale' && !INITIALISM_SKIPPED_WORDS.has(word))
+    .map((w) => w[0]);
+  return [initials.join(''), withoutYale.join('')].filter((initialism) => initialism.length >= 2);
+}
+
+function organizationTextNamesUnit(organizationText: string, unitName: string): boolean {
+  const unitWords = organizationNameWords(unitName);
+  const distinctive = new Set(
+    unitWords.filter((word) => !ORGANIZATION_NAME_FILLER_WORDS.has(word)),
+  );
+  const initialisms = new Set(organizationNameInitialisms(unitWords));
+  return organizationNameWords(organizationText).some(
+    (word) => distinctive.has(word) || initialisms.has(word),
+  );
+}
+
+const DIRECTORSHIP_OF_NAMED_UNIT =
+  /\bdirector\s+(?:of|for|at)\s+(?:the\s+)?([^,;]+?)(?:\s+and\s+|,|$)/i;
+const DIRECTORSHIP_COMMA_NAMED_UNIT = /\bdirector\s*,\s*([^,;]+)/i;
+const ORGANIZATION_NOUN =
+  /\b(?:center|centre|institute|program|programme|lab|laboratory|council|initiative|foundation|school|department|office|project|committee)\b/i;
+
+function directorshipNamedUnit(clause: string): string | undefined {
+  const ofUnit = clause.match(DIRECTORSHIP_OF_NAMED_UNIT)?.[1];
+  if (ofUnit) return ofUnit;
+  const commaUnit = clause.match(DIRECTORSHIP_COMMA_NAMED_UNIT)?.[1];
+  return commaUnit && ORGANIZATION_NOUN.test(commaUnit) ? commaUnit : undefined;
+}
+const HISTORICAL_TENURE =
+  /\b(?:19|20)\d{2}\s*[-\u2013\u2014]\s*(?:19|20)?\d{2}\b|\bformer(?:ly)?\b|\bemerit(?:us|a)\b/i;
+const ACADEMIC_PROGRAM_DIRECTORSHIP =
+  /\bdirector\s+of\s+(?:graduate|undergraduate)\s+(?:studies|admissions)\b/i;
+
+/**
+ * A professional title lists every directorship the person holds or has held
+ * anywhere, so only a clause that is current and does not name some other unit
+ * can make the person a lead of the unit being read: on a shared economics theme
+ * a past director's "(2011-14)" and another center's "Faculty Director of ..."
+ * both read as this center's director otherwise.
+ */
+function directorClausesForUnit(title: string, unitName: string | undefined): string[] {
+  return title
+    .split(/[;|\n]/)
+    .map((clause) => clause.trim())
+    .filter((clause) => /\bdirector\b/i.test(clause))
+    .filter((clause) => !HISTORICAL_TENURE.test(clause))
+    .filter((clause) => !ACADEMIC_PROGRAM_DIRECTORSHIP.test(clause))
+    .filter((clause) => {
+      if (!unitName) return true;
+      const namedUnit = directorshipNamedUnit(clause);
+      return !namedUnit || organizationTextNamesUnit(namedUnit, unitName);
+    });
+}
+
 /** Heuristic: classify member role from their title string. */
-function inferRole(title: string | undefined): MemberRole {
+function inferRole(title: string | undefined, unitName?: string): MemberRole {
   if (!title) return 'core-faculty';
-  const t = title.toLowerCase();
+  const t = directorClausesForUnit(title, unitName).join('; ').toLowerCase();
   if (/\b(co[- ]?director|associate director|deputy director|interim director)\b/.test(t)) {
     return 'co-director';
   }
   if (/\bdirector\b/.test(t)) return 'director';
-  if (/\baffiliated|affiliate\b/.test(t)) return 'affiliated';
+  if (/\baffiliated|affiliate\b/.test(title.toLowerCase())) return 'affiliated';
   return 'core-faculty';
 }
 
@@ -216,7 +386,7 @@ function inferRole(title: string | undefined): MemberRole {
 
 /**
  * Generic Drupal "node-teaser--person" extractor — used by the Yale Economics
- * theme, which Tobin, Cowles/EGC, and MacMillan all share.
+ * theme, which Tobin, Cowles, and MacMillan all share.
  *   <article class="node-teaser node-teaser--person ...">
  *     <div class="node-teaser__heading"><a href="/people/<slug>"><span>Name</span></a></div>
  *     <div class="node-teaser__professional-title">Title…</div>
@@ -233,7 +403,7 @@ export const nodeTeaserPersonExtractor: CenterExtractor = (html, ctx) => {
     const href = link.attr('href') || '';
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
     const title = card.find('.node-teaser__professional-title').first().text().trim() || undefined;
-    members.push({ name, profileUrl, title, role: inferRole(title) });
+    members.push({ name, profileUrl, title, role: inferRole(title, ctx.centerName) });
   });
   return { members };
 };
@@ -957,7 +1127,8 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: 'Yale Faculty of Arts and Sciences',
     kind: 'center',
     departments: ['Economics'],
-    url: 'https://egc.yale.edu/people/faculty',
+    url: 'https://cowles.yale.edu/cowles-researchers',
+    homeUrl: 'https://cowles.yale.edu/',
     paginated: true,
     extractor: nodeTeaserPersonExtractor,
   },
@@ -1170,6 +1341,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     kind: 'center',
     departments: ['Genetics'],
     url: 'https://medicine.yale.edu/genetics/research/ycga/people/',
+    homeUrl: 'https://medicine.yale.edu/genetics/research/ycga/',
     paginated: false,
     extractor: ycgaExtractor,
   },
@@ -1189,6 +1361,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'center',
     url: 'https://dissc.yale.edu/about/dissc-faculty-and-staff',
+    homeUrl: 'https://dissc.yale.edu/',
     paginated: false,
     extractor: referenceCardPeopleExtractor,
   },
@@ -1198,6 +1371,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'institute',
     url: 'https://fds.yale.edu/people/',
+    homeUrl: 'https://fds.yale.edu/',
     paginated: false,
     extractor: fdsUsersGridExtractor,
     entityKey: 'research-yale-yale-institute-for-foundations-of-data-science',
@@ -1208,6 +1382,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'center',
     url: 'https://naturalcarboncapture.yale.edu/people',
+    homeUrl: 'https://naturalcarboncapture.yale.edu/',
     paginated: false,
     extractor: naturalCarbonCaptureExtractor,
     entityKey: 'yse-natural-carbon-capture',
@@ -1269,6 +1444,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'institute',
     url: 'https://westcampus.yale.edu/institutes/yale-cancer-biology-institute',
+    homeUrl: 'https://westcampus.yale.edu/institutes/yale-cancer-biology-institute',
     paginated: false,
     extractor: customCardLabsExtractor,
   },
@@ -1278,6 +1454,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: 'Jackson School of Global Affairs',
     kind: 'center',
     url: 'https://jackson.yale.edu/centers-initiatives/',
+    homeUrl: 'https://jackson.yale.edu/centers-initiatives/',
     paginated: false,
     extractor: jacksonCentersExtractor,
     crawlChildCenters: true,
@@ -1289,6 +1466,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     kind: 'institute',
     departments: ['Medicine', 'Nursing', 'Public Health'],
     url: 'https://medicine.yale.edu/yigh/faculty-support-initiative/affiliated-faculty/',
+    homeUrl: 'https://medicine.yale.edu/yigh/',
     paginated: false,
     extractor: yighAffiliatedFacultyExtractor,
   },
@@ -1380,7 +1558,7 @@ export function centerToGroupObservations(
     ...new Set(
       [
         sourceUrl,
-        config.homeUrl && config.homeUrl !== sourceUrl ? config.homeUrl : '',
+        !config.entityKey && config.homeUrl && config.homeUrl !== sourceUrl ? config.homeUrl : '',
         ...(config.extraSourceUrls || []),
       ].filter(Boolean),
     ),
@@ -1598,6 +1776,19 @@ export class CentersInstitutesScraper implements IScraper {
     let centersProcessed = 0;
     const perCenter: Array<{ key: string; status: string; count: number }> = [];
     const fetchAttempts: ScraperFetchMetric[] = [];
+    const rosterSiteRefusals: Array<{ key: string; reason: CenterRosterSiteRefusal }> = [];
+
+    const refuseRosterSite = (
+      config: CenterConfig,
+      pageUrl: string,
+      reason: CenterRosterSiteRefusal,
+    ): void => {
+      ctx.log(
+        `[${config.centerKey}] refused - roster page ${sanitizeLogValue(pageUrl)} is not on the center's own site (${reason}); no members emitted`,
+      );
+      rosterSiteRefusals.push({ key: config.centerKey, reason });
+      perCenter.push({ key: config.centerKey, status: `roster-site-refused:${reason}`, count: 0 });
+    };
 
     const emitCenterResults = async (
       config: CenterConfig,
@@ -1692,6 +1883,13 @@ export class CentersInstitutesScraper implements IScraper {
       if (onlyFilter && !onlyFilter.has(config.centerKey.toLowerCase())) continue;
       if (centersProcessed >= limit) break;
 
+      const rosterSiteRefusal = centerRosterSiteRefusal(config);
+      if (rosterSiteRefusal) {
+        refuseRosterSite(config, config.url, rosterSiteRefusal);
+        centersProcessed++;
+        continue;
+      }
+
       if (config.jsRenderedSkip) {
         if (!this.renderedFetcher) {
           ctx.log(
@@ -1728,10 +1926,17 @@ export class CentersInstitutesScraper implements IScraper {
         }
 
         const pageUrl = rendered.result.url || config.url;
+        const renderedSiteRefusal = centerRosterPageSiteRefusal(config, pageUrl);
+        if (renderedSiteRefusal) {
+          refuseRosterSite(config, pageUrl, renderedSiteRefusal);
+          centersProcessed++;
+          continue;
+        }
         let result: ExtractorResult;
         try {
           result = (config.renderedExtractor || config.extractor)(rendered.result.html, {
             pageUrl,
+            centerName: config.centerName,
           });
         } catch (err: any) {
           ctx.log(`[${config.centerKey}] rendered extractor error: ${sanitizeLogValue(err)}`);
@@ -1776,7 +1981,7 @@ export class CentersInstitutesScraper implements IScraper {
         pagesFetched++;
         let result: ExtractorResult;
         try {
-          result = config.extractor(html, { pageUrl });
+          result = config.extractor(html, { pageUrl, centerName: config.centerName });
         } catch (err: any) {
           ctx.log(
             `[${config.centerKey}] extractor error on configured page: ${sanitizeLogValue(err)}`,
@@ -1822,6 +2027,14 @@ export class CentersInstitutesScraper implements IScraper {
     ctx.log(
       `Emitted ${totalObs} observations across ${centersProcessed} centers, ${totalMembers} members, ${totalChildCenters} child centers (${summary})`,
     );
+
+    if (rosterSiteRefusals.length > 0) {
+      ctx.log(
+        `Refused ${rosterSiteRefusals.length} center roster(s) off the center's own site: ${rosterSiteRefusals
+          .map((refusal) => `${refusal.key} (${refusal.reason})`)
+          .join(', ')}`,
+      );
+    }
 
     return {
       observationCount: totalObs,
