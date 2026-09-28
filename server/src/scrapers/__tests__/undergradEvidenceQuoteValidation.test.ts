@@ -240,6 +240,9 @@ describe('undergraduate as a teaching modifier (#3775)', () => {
       'Sam first joined the lab during his undergraduate studies.',
       'The program trains psychology trainees at the undergraduate level.',
       'We teach undergraduate courses and welcome undergraduates into the lab each summer.',
+      'Undergraduate majors in MCDB often join our lab.',
+      'Yale students can earn undergraduate course credit for research in the lab.',
+      'Students pursuing undergraduate degrees work in the lab.',
     ]) {
       expect(laneQuoteStatesUndergraduates(quote), quote).toBe(true);
     }
