@@ -111,6 +111,5 @@
   "sources:repair-superseded-entity-source-urls",
   "sources:repair-vanity-host-citations",
   "sources:strip-directory-loaders",
-  "unregistered:collapsePersonPageCitationMirrors.ts",
   "visibility:retire-stale-launch-overrides"
 ]
