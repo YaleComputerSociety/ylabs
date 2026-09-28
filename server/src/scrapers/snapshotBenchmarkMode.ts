@@ -197,19 +197,32 @@ export function finishBenchmarkReplay(): {
   pagesServed: number;
   pagesMissed: number;
   networkBlocks: number;
+  servedByNamespace: Record<string, number>;
 } {
   if (mode?.kind !== 'replay') throw new Error('no benchmark replay is active');
   axios.interceptors.request.eject(mode.interceptorId);
+  const servedByNamespace: Record<string, number> = {};
+  for (const key of mode.served) {
+    const namespace = key.slice(0, key.indexOf('\u0000'));
+    servedByNamespace[namespace] = (servedByNamespace[namespace] ?? 0) + 1;
+  }
   const outcome = {
     pagesServed: mode.served.size,
     pagesMissed: mode.missed.size,
     networkBlocks: mode.networkBlocks,
+    servedByNamespace,
   };
   mode = null;
   return outcome;
 }
 
 export type BenchmarkCacheRead = { handled: false } | { handled: true; payload: unknown };
+
+/** A frozen value read without counting it as a served or missed page, for capture metadata. */
+export function benchmarkFrozenMetadata(sourceName: string, requestKey: string): unknown {
+  if (mode?.kind !== 'replay') return undefined;
+  return mode.pages.get(benchmarkPageKey(sourceName, requestKey));
+}
 
 export function benchmarkCacheRead(sourceName: string, requestKey: string): BenchmarkCacheRead {
   if (!mode) return { handled: false };

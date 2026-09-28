@@ -7,11 +7,16 @@ import { initializeConnections } from '../db/connections';
 import { LaneBenchmark, LaneBenchmarkPage } from '../models/laneBenchmark';
 import { LaneScorecardSnapshot } from '../models/laneScorecardSnapshot';
 import {
+  BenchmarkReplayNetworkError,
   beginBenchmarkReplay,
   finishBenchmarkReplay,
   MODEL_RESPONSE_NAMESPACE,
   type CapturedPage,
 } from '../scrapers/snapshotBenchmarkMode';
+import {
+  isRenderedFetchMetadataKey,
+  RENDERED_FETCH_BENCHMARK_NAMESPACE,
+} from '../scrapers/renderedFetch';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   currentCodeSha,
@@ -102,7 +107,38 @@ export function emptyReplayReason(
   return `replay planned no values where the capture planned ${captured}`;
 }
 
-async function replayBenchmark(
+/**
+ * A replay is compared only once it has resolved something from the frozen input (#3590). A
+ * lane that served none of its captured pages, or a rendered lane that served none of its
+ * captured renders, measured a renderer or fetch path that never engaged, and scoring it would
+ * read an instrument fault as a lane change.
+ */
+export function unresolvedReplayReason(
+  pages: readonly Pick<CapturedPage, 'sourceName' | 'requestKey'>[],
+  replay: { pagesServed: number; servedByNamespace: Record<string, number> },
+): string | undefined {
+  const frozenPages = pages.filter((page) => !isRenderedFetchMetadataKey(page.requestKey));
+  if (frozenPages.length > 0 && replay.pagesServed === 0) {
+    return `replay served none of the ${frozenPages.length} frozen pages`;
+  }
+  const frozenRenders = frozenPages.filter(
+    (page) => page.sourceName === RENDERED_FETCH_BENCHMARK_NAMESPACE,
+  ).length;
+  if (
+    frozenRenders > 0 &&
+    (replay.servedByNamespace[RENDERED_FETCH_BENCHMARK_NAMESPACE] ?? 0) === 0
+  ) {
+    return `replay served none of the ${frozenRenders} frozen renders, so the renderer never engaged`;
+  }
+  return undefined;
+}
+
+/**
+ * A lane that requests a page or render its capture never froze is refused at the network
+ * boundary. That refusal is this benchmark's instrument fault, so it is reported as unscored
+ * rather than aborting the sweep before any other benchmark stores its row.
+ */
+export async function replayBenchmark(
   benchmark: StoredBenchmark,
   pages: readonly CapturedPage[],
   replayOptions: { liveModel?: boolean } = {},
@@ -116,6 +152,12 @@ async function replayBenchmark(
       only: benchmark.only ?? [],
       limit: benchmark.limit,
     });
+  } catch (error) {
+    if (!(error instanceof BenchmarkReplayNetworkError)) throw error;
+    return {
+      refusedReason:
+        'replay requested a page or render the capture never froze, so the lane aborted',
+    } as const;
   } finally {
     replay = finishBenchmarkReplay();
   }
@@ -127,7 +169,7 @@ async function replayBenchmark(
     runClockFieldsFor(benchmark.sourceName),
   );
   const gold = scoreGoldLabels(run.observations, benchmark.goldLabels ?? [], slugByEntityId);
-  return { score, gold, replay, truncated: run.truncated };
+  return { refusedReason: undefined, score, gold, replay, truncated: run.truncated };
 }
 
 async function main(): Promise<void> {
@@ -166,11 +208,20 @@ async function main(): Promise<void> {
       const scores = [];
       const golds = [];
       const replays = [];
+      let refusedReason: string | undefined;
       for (let runIndex = 0; runIndex < options.liveModelRuns; runIndex += 1) {
         const run = await replayBenchmark(benchmark, pages, { liveModel: true });
+        if (run.refusedReason) {
+          refusedReason = run.refusedReason;
+          break;
+        }
         scores.push(run.score);
         golds.push(run.gold);
         replays.push(run.replay);
+      }
+      if (refusedReason) {
+        unscored.push({ benchmarkId: benchmark.benchmarkId, reason: refusedReason });
+        continue;
       }
       results.push({
         benchmarkId: benchmark.benchmarkId,
@@ -182,8 +233,14 @@ async function main(): Promise<void> {
       });
       continue;
     }
-    const { score, gold, replay, truncated } = await replayBenchmark(benchmark, pages);
-    const emptyReason = emptyReplayReason(benchmark, score);
+    const replayed = await replayBenchmark(benchmark, pages);
+    if (replayed.refusedReason) {
+      unscored.push({ benchmarkId: benchmark.benchmarkId, reason: replayed.refusedReason });
+      continue;
+    }
+    const { score, gold, replay, truncated } = replayed;
+    const emptyReason =
+      emptyReplayReason(benchmark, score) ?? unresolvedReplayReason(pages, replay);
     if (emptyReason) {
       unscored.push({ benchmarkId: benchmark.benchmarkId, reason: emptyReason });
       continue;

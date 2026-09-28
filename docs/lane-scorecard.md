@@ -21,9 +21,20 @@ It also freezes the live refusals on every row the lane planned a value for, so 
 A benchmark is frozen once captured: the command refuses an id that already exists, and a new scope is a new benchmark.
 
 Only lanes whose output is a function of the pages they fetch and the model answers they receive can be benchmarked, and `BENCHMARKABLE_LANES` in `server/src/scripts/laneBenchmarkRun.ts` lists them.
-Pages are frozen at `getCached` and at `fetchPageWithPolicy`.
+Pages are frozen at `getCached`, at `fetchPageWithPolicy`, and at the Scrapling renderer.
 A `fetchPageWithPolicy` fetch that failed with an HTTP status is frozen as that status, so a sub-page that answered 404 at capture answers 404 on replay rather than counting as a miss.
-A rendered-page lane is excluded because its fetch bypasses both, and so are the two center LLM lanes, which fetch with a raw `axios.get`.
+The two center LLM lanes stay out, because they fetch with a raw `axios.get` that none of those freeze.
+
+A rendered page is frozen at `createScraplingRenderedFetcher`, the one place every rendered lane gets its renderer (#3590).
+Capture records whether a renderer existed at all, because a lane with no renderer takes a different path from one whose render returns nothing, and it records every render, including a null or blocked result.
+Replay reproduces both: no renderer when the capture had none, and otherwise a renderer that serves the frozen render or counts a miss and refuses.
+During capture and replay the renderer freeze is the only record of a render, so the lane's own rendered-page cache stays out of the benchmark and every usable render on replay is served by the frozen renderer.
+A benchmark captured before #3590 has no record of the renderer, so it replays as it did before: the renderer the replay environment builds refuses every call, and a render is served only from the lane's rendered-page cache the capture froze.
+`centers-institutes-index` and `student-grants-database` joined `BENCHMARKABLE_LANES` on this basis.
+
+A replay is compared only once it has resolved something from the frozen input.
+One that served none of its frozen pages, or a rendered lane that served none of its frozen renders, is reported as unscored rather than scored, because it measured a path that never engaged.
+A lane that aborts because it requested a page or render the capture never froze is reported as unscored too, so one such benchmark does not stop the sweep before the others store their rows.
 
 An LLM lane is benchmarkable because capture also freezes every model call (#3587).
 Each chat-completion response is stored keyed by a hash of the exact request body, and replay serves it, so two replays of unchanged code give the same fingerprint.
@@ -39,7 +50,7 @@ yarn --cwd server lane:scorecard --apply --confirm-lane-scorecard
 ```
 
 Replay serves only benchmark pages and blocks the default axios instance, so a page the capture never saw is a counted miss and never a fetch.
-The Scrapling renderer refuses every call during replay too, so a lane's rendered fallback serves only a rendered page the capture froze and never renders one live.
+A live Scrapling renderer built before a replay began still refuses every call during it, so no replay renders a page live.
 The SSRF guard skips its DNS lookup during replay, because nothing can connect, and a live lookup would let the resolver rather than lane code decide which targets reach the cache.
 The work planner is ignored during both capture and replay, because it skips targets by when they were last scraped, which is a property of the clock and not of the code.
 A lane that also reads the live corpus to choose its targets is only as frozen as that read, and `pagesMissed` is where that drift shows.

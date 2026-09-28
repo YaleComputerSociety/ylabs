@@ -5,7 +5,14 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from './../utils/ssrfGuard';
-import { isBenchmarkReplayActive, refuseBenchmarkReplayNetwork } from './snapshotBenchmarkMode';
+import {
+  benchmarkCacheRead,
+  benchmarkCacheWrite,
+  benchmarkFrozenMetadata,
+  isBenchmarkModeActive,
+  isBenchmarkReplayActive,
+  refuseBenchmarkReplayNetwork,
+} from './snapshotBenchmarkMode';
 import { getCached, setCached } from './snapshotCache';
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -126,7 +133,8 @@ export async function fetchUsableRenderedPage({
 }: UsableRenderedPageRequest): Promise<RenderedFetchResult | null> {
   if (!renderedFetcher) return null;
   const cacheKey = `${RENDERED_PAGE_CACHE_KEY_PREFIX}${request.url}`;
-  if (useCache) {
+  const useLaneCache = useCache && !isRendererRecordedByBenchmark();
+  if (useLaneCache) {
     const cached = await getCached<RenderedFetchResult>(sourceName, cacheKey);
     if (cached && renderedPageFailureReason(cached) === null) return cached;
   }
@@ -134,7 +142,7 @@ export async function fetchUsableRenderedPage({
   if (!result) return null;
   const failureReason = renderedPageFailureReason(result);
   if (failureReason !== null) return { ...result, html: '', blockedReason: failureReason };
-  if (useCache) await setCached(sourceName, cacheKey, result);
+  if (useLaneCache) await setCached(sourceName, cacheKey, result);
   return result;
 }
 
@@ -327,8 +335,81 @@ function boundedRenderedFetchTimeout(value: unknown, fallback: number): number {
   );
 }
 
+export const RENDERED_FETCH_BENCHMARK_NAMESPACE = 'rendered-fetch';
+const RENDERER_ENABLED_KEY = 'renderer:enabled';
+
+export const isRenderedFetchMetadataKey = (requestKey: string): boolean =>
+  requestKey === RENDERER_ENABLED_KEY;
+
+export const renderedFetchBenchmarkKey = (request: RenderedFetchRequest): string =>
+  `render:v1:${request.url}\u0000${request.waitSelector ?? ''}\u0000${request.mode ?? ''}`;
+
+interface FrozenRender {
+  result: RenderedFetchResult | null;
+}
+
+/**
+ * A benchmark freezes a rendered page the way it freezes a fetched one (#3590). Capture records
+ * whether a renderer existed at all, because a lane with no renderer behaves differently from
+ * one whose render returns nothing, and every result the renderer gave, including a null or a
+ * blocked page. Replay reproduces both: no renderer when capture had none, and otherwise a
+ * renderer that serves the frozen result or counts a miss and refuses.
+ */
 export function createScraplingRenderedFetcher(
   options: ScraplingRenderedFetcherOptions = {},
+): RenderedFetcher | null {
+  return withBenchmarkRenderedFetcher(createLiveScraplingRenderedFetcher(options));
+}
+
+export function withBenchmarkRenderedFetcher(live: RenderedFetcher | null): RenderedFetcher | null {
+  if (isBenchmarkReplayActive()) return frozenRenderedFetcher(live);
+  return isBenchmarkModeActive() ? recordingRenderedFetcher(live) : live;
+}
+
+const frozenRendererEnablement = (): { enabled?: unknown } | undefined =>
+  benchmarkFrozenMetadata(RENDERED_FETCH_BENCHMARK_NAMESPACE, RENDERER_ENABLED_KEY) as
+    | { enabled?: unknown }
+    | undefined;
+
+/**
+ * Whether the renderer freeze is the record of every render, so the lane's own rendered-page
+ * cache must stay out of it: during capture, and during a replay of a benchmark that recorded
+ * its renderer. A benchmark captured before #3590 froze its renders only in that lane cache.
+ */
+const isRendererRecordedByBenchmark = (): boolean =>
+  isBenchmarkModeActive() &&
+  (!isBenchmarkReplayActive() || frozenRendererEnablement() !== undefined);
+
+function frozenRenderedFetcher(live: RenderedFetcher | null): RenderedFetcher | null {
+  const enablement = frozenRendererEnablement();
+  if (enablement === undefined) return live;
+  if (enablement.enabled !== true) return null;
+  return async (request) => {
+    const frozen = benchmarkCacheRead(
+      RENDERED_FETCH_BENCHMARK_NAMESPACE,
+      renderedFetchBenchmarkKey(request),
+    );
+    if (frozen.handled && frozen.payload) return (frozen.payload as FrozenRender).result;
+    return refuseBenchmarkReplayNetwork();
+  };
+}
+
+function recordingRenderedFetcher(live: RenderedFetcher | null): RenderedFetcher | null {
+  benchmarkCacheWrite(RENDERED_FETCH_BENCHMARK_NAMESPACE, RENDERER_ENABLED_KEY, {
+    enabled: live !== null,
+  });
+  if (!live) return null;
+  return async (request) => {
+    const result = await live(request);
+    benchmarkCacheWrite(RENDERED_FETCH_BENCHMARK_NAMESPACE, renderedFetchBenchmarkKey(request), {
+      result,
+    } satisfies FrozenRender);
+    return result;
+  };
+}
+
+function createLiveScraplingRenderedFetcher(
+  options: ScraplingRenderedFetcherOptions,
 ): RenderedFetcher | null {
   const enabled = options.enabled ?? process.env.SCRAPLING_RENDERER_ENABLED === 'true';
   if (!enabled) return null;
