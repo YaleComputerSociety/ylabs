@@ -190,6 +190,13 @@ import {
   getResearchEntityRoster,
   type ResearchEntityRosterEntry,
 } from '../services/researchEntityMembershipAccessor';
+import { officialProfileIdentityKey, rosterMembershipKey } from './utils/rosterMembershipKey';
+import {
+  CENTERS_INSTITUTES_SOURCE_NAME,
+  reconcileCenterRosterRetirementsFromRun,
+  type CenterRosterRetirementDeps,
+  type CenterRosterRetirementResult,
+} from './centerRosterRetirement';
 import {
   resolveResearcherIdForPersonName,
   type ResearcherPersonNameResolution,
@@ -242,7 +249,7 @@ import {
   yaleStatusCacheIsWritable,
 } from '../utils/researchEntityYaleStatus';
 import { isRevisitableFieldLockOnEntity } from '../utils/researchEntityFieldLocks';
-import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
+import { canonicalRoleForLegacy, LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -1659,10 +1666,9 @@ export function buildRosterMemberCanonicalPlan(
   const userId = idValue(user?._id);
   const profileUrl = textValue(resolved.profileUrl?.value);
   const identityKey =
-    textValue(resolved.identityKey?.value) ||
-    (profileUrl ? `official-profile:${profileUrl.toLowerCase()}` : '');
+    textValue(resolved.identityKey?.value) || officialProfileIdentityKey(profileUrl);
   const membershipKey =
-    textValue(resolved.membershipKey?.value) || (identityKey ? `${identityKey}|${role}` : '');
+    textValue(resolved.membershipKey?.value) || rosterMembershipKey(identityKey, role);
   if ((!name && !userId) || (!userId && !identityKey)) {
     return null;
   }
@@ -2956,6 +2962,29 @@ function latestObservationDate(observations: Array<{ observedAt?: Date }>): Date
   return new Date(Math.max(...timestamps));
 }
 
+async function resolveRelationshipTarget(
+  researchEntityModel: Pick<typeof ResearchEntity, 'findOne' | 'find' | 'findById'>,
+  targetEntityKey: string,
+): Promise<{
+  canonicalFacultyResearchAreaTarget: { _id?: unknown } | null;
+  target: { _id?: unknown; name?: unknown; slug?: string } | null;
+  resolvedTarget: { _id?: unknown; slug?: unknown } | null;
+}> {
+  const canonicalFacultyResearchAreaTarget =
+    (await findExistingResearchEntityByFacultyResearchAreaIdentity(researchEntityModel as any, {
+      entityKey: targetEntityKey,
+      entityType: 'FACULTY_RESEARCH_AREA',
+    })) as { _id?: unknown } | null;
+  const target = (await researchEntityModel
+    .findOne({ slug: targetEntityKey, archived: { $ne: true } }, { _id: 1, name: 1, slug: 1 })
+    .lean()) as { _id?: unknown; name?: unknown; slug?: string } | null;
+  return {
+    canonicalFacultyResearchAreaTarget,
+    target,
+    resolvedTarget: canonicalFacultyResearchAreaTarget || target,
+  };
+}
+
 async function materializeResearchEntityRelationship(
   identifier: { entityId?: string; entityKey?: string },
   observations: any[],
@@ -2996,15 +3025,8 @@ async function materializeResearchEntityRelationship(
     .lean()) as { _id?: unknown } | null;
   if (!source?._id) return skip('source-not-resolved');
 
-  const canonicalFacultyResearchAreaTarget =
-    (await findExistingResearchEntityByFacultyResearchAreaIdentity(researchEntityModel as any, {
-      entityKey: targetEntityKey,
-      entityType: 'FACULTY_RESEARCH_AREA',
-    })) as { _id?: unknown } | null;
-  const target = (await researchEntityModel
-    .findOne({ slug: targetEntityKey, archived: { $ne: true } }, { _id: 1, name: 1, slug: 1 })
-    .lean()) as { _id?: unknown; name?: unknown; slug?: string } | null;
-  const resolvedTarget = canonicalFacultyResearchAreaTarget || target;
+  const { canonicalFacultyResearchAreaTarget, target, resolvedTarget } =
+    await resolveRelationshipTarget(researchEntityModel, targetEntityKey);
   if (!resolvedTarget?._id) return skip('target-not-resolved');
 
   if (options.dryRun) {
@@ -6832,6 +6854,159 @@ async function reconcileOfficialRosterSnapshotsFromRun(
   return archived;
 }
 
+const liveOtherSourceObservations = (filter: Record<string, unknown>) =>
+  Observation.find({
+    ...filter,
+    ...materializationReadScopeFilter(),
+    sourceName: { $ne: CENTERS_INSTITUTES_SOURCE_NAME },
+  })
+    .select('entityKey field value sourceName observedAt confidence sourceUrl')
+    .lean() as Promise<any[]>;
+
+async function centerMembershipKeysAssertedByOtherSources(
+  centerEntityKey: string,
+): Promise<Set<string>> {
+  const slugRows = await liveOtherSourceObservations({
+    entityType: 'researchGroupMember',
+    field: RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD,
+    value: centerEntityKey,
+  });
+  const memberKeys = uniqueStrings(slugRows.map((row) => textValue(row.entityKey)));
+  if (memberKeys.length === 0) return new Set();
+  const rows = await liveOtherSourceObservations({
+    entityType: 'researchGroupMember',
+    entityKey: { $in: memberKeys },
+    field: { $in: ['profileUrl', 'role', 'identityKey', 'membershipKey'] },
+  });
+  const bySourceAndKey = new Map<string, Record<string, string>>();
+  for (const row of rows) {
+    const group = `${textValue(row.sourceName)}\u0000${textValue(row.entityKey)}`;
+    const fields = bySourceAndKey.get(group) ?? {};
+    fields[textValue(row.field)] = textValue(row.value);
+    bySourceAndKey.set(group, fields);
+  }
+  const keys = new Set<string>();
+  for (const fields of bySourceAndKey.values()) {
+    const role = normalizeMemberRole(fields.role);
+    const identityKey = fields.identityKey || officialProfileIdentityKey(fields.profileUrl || '');
+    const membershipKey = fields.membershipKey || rosterMembershipKey(identityKey, role);
+    if (membershipKey) keys.add(membershipKey);
+  }
+  return keys;
+}
+
+async function centerPersonRolesAssertedByOtherSources(
+  centerEntityKey: string,
+): Promise<Set<string>> {
+  const rows = await liveOtherSourceObservations({
+    entityType: 'researchEntity',
+    entityKey: centerEntityKey,
+    field: {
+      $in: [
+        'inferredDirectorName',
+        'inferredDirectorUserName',
+        'inferredDirectorRole',
+        'inferredDirectorProfileUrl',
+      ],
+    },
+  });
+  const bySource = new Map<string, any[]>();
+  for (const row of rows) {
+    const source = textValue(row.sourceName);
+    bySource.set(source, [...(bySource.get(source) ?? []), row]);
+  }
+  const personRoles = new Set<string>();
+  for (const sourceRows of bySource.values()) {
+    const fieldValue = (field: string) => sourceRows.find((row) => row.field === field)?.value;
+    const userName = fieldValue('inferredDirectorUserName');
+    if (!userName) continue;
+    const profileUrl = textValue(fieldValue('inferredDirectorProfileUrl'));
+    const lookupFields: Record<string, ResolvedField> = {
+      inferredUserName: {
+        value: userName,
+        confidence: 1,
+        contributingSources: [],
+        hasConflict: false,
+      },
+    };
+    if (profileUrl) {
+      lookupFields.profileUrl = {
+        value: profileUrl,
+        confidence: 1,
+        contributingSources: [],
+        hasConflict: false,
+      };
+    }
+    const name =
+      textValue(fieldValue('inferredDirectorName')) || memberNameFromInferredUserName(userName);
+    const researcher =
+      (await findUniqueResearcherForRosterMember(lookupFields)) ||
+      (await findUniqueResearcherByObservedDirectorName(name));
+    const researcherId = idValue(researcher?._id);
+    if (!researcherId) continue;
+    const legacyRole =
+      textValue(fieldValue('inferredDirectorRole')).toLowerCase() === 'co-director'
+        ? 'co-director'
+        : 'director';
+    const role = canonicalRoleForLegacy(legacyRole);
+    if (role) personRoles.add(`${researcherId}|${role}`);
+  }
+  return personRoles;
+}
+
+async function centerRelationshipTargetIdsAssertedByOtherSources(
+  centerEntityKey: string,
+): Promise<Set<string>> {
+  const sourceRows = await liveOtherSourceObservations({
+    entityType: 'researchEntityRelationship',
+    field: 'sourceEntityKey',
+    value: centerEntityKey,
+  });
+  const relationshipKeys = uniqueStrings(sourceRows.map((row) => textValue(row.entityKey)));
+  if (relationshipKeys.length === 0) return new Set();
+  const targetRows = await liveOtherSourceObservations({
+    entityType: 'researchEntityRelationship',
+    entityKey: { $in: relationshipKeys },
+    field: 'targetEntityKey',
+  });
+  const targetIds = new Set<string>();
+  for (const targetKey of uniqueStrings(targetRows.map((row) => textValue(row.value)))) {
+    const targetId = await resolveCenterRelationshipTargetId(targetKey);
+    if (targetId) targetIds.add(targetId);
+  }
+  return targetIds;
+}
+
+async function resolveCenterRelationshipTargetId(targetEntityKey: string): Promise<string | null> {
+  const { resolvedTarget } = await resolveRelationshipTarget(ResearchEntity, targetEntityKey);
+  return normalizeMaterializerObjectId(resolvedTarget?._id) || null;
+}
+
+export function centerRosterRetirementDeps(
+  options: MaterializeOptions,
+): CenterRosterRetirementDeps {
+  return {
+    membershipKeysAssertedByOtherSources: centerMembershipKeysAssertedByOtherSources,
+    personRolesAssertedByOtherSources: centerPersonRolesAssertedByOtherSources,
+    relationshipTargetIdsAssertedByOtherSources: centerRelationshipTargetIdsAssertedByOtherSources,
+    resolveRelationshipTargetId: resolveCenterRelationshipTargetId,
+    rematerializeMemberKey: async (memberKey: string) => {
+      await materializeEntity('researchGroupMember', { entityKey: memberKey }, options);
+    },
+  };
+}
+
+function logCenterRosterRetirement(result: CenterRosterRetirementResult): void {
+  const acted = result.centers.filter((center) => center.verdict === 'retire');
+  const frozen = result.centers.filter((center) => center.verdict === 'frozen');
+  const notAdmitted = result.centers.filter((center) => !center.verdict);
+  const sum = (key: 'retiredMemberKeys' | 'retiredEdges' | 'retiredLeadEdges') =>
+    acted.reduce((total, center) => total + (center.counts?.[key] ?? 0), 0);
+  console.info(
+    `[center-roster-retirement] ${result.dryRun ? 'planned' : 'reconciled'} ${result.centers.length} center read(s): ${acted.length} retiring (${sum('retiredMemberKeys')} member keys, ${sum('retiredEdges')} role edges of which ${sum('retiredLeadEdges')} leads), ${frozen.length} frozen, ${notAdmitted.length} read(s) not admitted`,
+  );
+}
+
 export const MATERIALIZATION_CHUNK_SIZE = 100;
 
 export interface ObservedEntityRow {
@@ -6951,7 +7126,9 @@ export async function materializeFromRun(
     {
       $match: {
         scrapeRunId: runObjectId,
-        entityType: { $nin: ['paper', 'departmentRosterHealth', 'ysmLabIndexHealth'] },
+        entityType: {
+          $nin: ['paper', 'departmentRosterHealth', 'ysmLabIndexHealth', 'centerRosterHealth'],
+        },
       },
     },
     {
@@ -7014,6 +7191,14 @@ export async function materializeFromRun(
     );
   }
   const rosterMembersArchived = await reconcileOfficialRosterSnapshotsFromRun(scrapeRunId, options);
+  const centerRosterRetirement = await reconcileCenterRosterRetirementsFromRun(
+    scrapeRunId,
+    centerRosterRetirementDeps(options),
+    { dryRun: options.dryRun },
+  );
+  if (centerRosterRetirement.outcome !== 'no-center-roster-read') {
+    logCenterRosterRetirement(centerRosterRetirement);
+  }
   const departureResult = await reconcileFacultyRosterDeparturesFromRun(scrapeRunId, options);
   // An operator who switched the lane on needs to see why it did nothing;
   // silence made three separate dormancy causes invisible at once (#2410).

@@ -28,6 +28,7 @@ export const observedEntityTypes = [
   'fellowship',
   'departmentRosterHealth',
   'ysmLabIndexHealth',
+  'centerRosterHealth',
   'orgUnit',
 ] as const;
 

@@ -1,0 +1,368 @@
+import mongoose from 'mongoose';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const meiliMocks = vi.hoisted(() => ({
+  syncEntities: vi.fn(async () => {}),
+  syncEntity: vi.fn(async () => true),
+  deleteFromIndex: vi.fn(async () => {}),
+}));
+
+vi.mock('../../services/meiliSyncService', async () => {
+  const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
+    '../../services/meiliSyncService',
+  );
+  return { ...actual, ...meiliMocks };
+});
+
+vi.mock('../../services/researchEntityBrowseRankService', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../services/researchEntityBrowseRankService')
+  >('../../services/researchEntityBrowseRankService');
+  return {
+    ...actual,
+    recomputeBrowseRankForEntities: vi.fn().mockResolvedValue({ updated: 0, indexSyncFailures: 0 }),
+  };
+});
+
+import { Observation } from '../../models/observation';
+import { ResearchEntity } from '../../models/researchEntity';
+import { RoleAssignment } from '../../models/roleAssignment';
+import { ScrapeRun } from '../../models/scrapeRun';
+import { getResearchGroupDetail } from '../../services/researchGroupService';
+import { CENTER_ROSTER_RETIREMENT_REASON } from '../centerRosterRetirement';
+import { materializeEntity, materializeFromRun } from '../entityMaterializer';
+import { appendObservations } from '../observationStore';
+import {
+  CentersInstitutesScraper,
+  type CenterConfig,
+  type CenterMember,
+  type HtmlFetcher,
+} from '../sources/centersInstitutesScraper';
+import type { ObservationInput, ScraperContext } from '../types';
+import { clearC4Flags } from './c4FlagTestEnv';
+
+const SOURCE_NAME = 'centers-institutes-index';
+const SOURCE_ID = new mongoose.Types.ObjectId();
+const HOME_URL = 'https://fixture-center.example.edu/';
+const ROSTER_URL = 'https://fixture-center.example.edu/people';
+const CENTER_SLUG = 'center-fixture-synthetic';
+
+const member = (first: string, role: CenterMember['role'] = 'core-faculty'): CenterMember => ({
+  name: `${first} Synthetic`,
+  role,
+  profileUrl: `https://fixture-center.example.edu/people/${first.toLowerCase()}-synthetic`,
+});
+
+const ROSTER = [
+  member('Avery', 'director'),
+  member('Blair'),
+  member('Casey'),
+  member('Devon'),
+  member('Emery'),
+  member('Finley'),
+];
+
+const config = (overrides: Partial<CenterConfig> = {}): CenterConfig => ({
+  centerKey: 'fixture-synthetic',
+  centerName: 'Fixture Synthetic Center',
+  schoolName: '',
+  kind: 'center',
+  url: ROSTER_URL,
+  homeUrl: HOME_URL,
+  paginated: false,
+  extractor: (html: string) => ({ members: JSON.parse(html) as CenterMember[] }),
+  ...overrides,
+});
+
+type Page = CenterMember[] | Error;
+
+const fetcherFor =
+  (pages: Page[]): HtmlFetcher =>
+  async (url: string) => {
+    const pageIndex = Number(new URL(url).searchParams.get('page') || '0');
+    const page = pages[pageIndex] ?? [];
+    if (page instanceof Error) throw page;
+    return JSON.stringify(page);
+  };
+
+const notFound = (): Error =>
+  Object.assign(new Error('Request failed with status code 404'), { response: { status: 404 } });
+
+const afterAMoment = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+async function runLane(
+  pages: Page[],
+  options: { config?: CenterConfig; useCache?: boolean } = {},
+): Promise<string> {
+  await afterAMoment();
+  const scrapeRunId = new mongoose.Types.ObjectId();
+  await ScrapeRun.create({
+    _id: scrapeRunId,
+    sourceId: SOURCE_ID,
+    sourceName: SOURCE_NAME,
+    status: 'running',
+  });
+  const emitted: ObservationInput[] = [];
+  const ctx: ScraperContext = {
+    scrapeRunId: String(scrapeRunId),
+    sourceId: String(SOURCE_ID),
+    sourceName: SOURCE_NAME,
+    sourceWeight: 0.8,
+    options: { dryRun: false, useCache: options.useCache === true, release: false },
+    emit: async (obs) => {
+      emitted.push(...(Array.isArray(obs) ? obs : [obs]));
+    },
+    log: () => {},
+  };
+  await new CentersInstitutesScraper([options.config ?? config()], null, fetcherFor(pages)).run(
+    ctx,
+  );
+  await appendObservations(emitted, {
+    scrapeRunId: String(scrapeRunId),
+    sourceId: String(SOURCE_ID),
+    sourceName: SOURCE_NAME,
+    sourceWeight: 0.8,
+    dryRun: false,
+  });
+  await materializeFromRun(String(scrapeRunId));
+  return String(scrapeRunId);
+}
+
+const centerId = async () => {
+  const entity = (await ResearchEntity.findOne({ slug: CENTER_SLUG }).select('_id').lean()) as any;
+  return entity._id;
+};
+
+const edgesFor = async (first: string) => {
+  const edges = (await RoleAssignment.find({ 'target.id': await centerId() }).lean()) as any[];
+  return edges.filter((edge) =>
+    String(edge.rosterProvenance?.membershipKey || '').includes(
+      `/${first.toLowerCase()}-synthetic|`,
+    ),
+  );
+};
+
+const currentEdges = async (first: string) =>
+  (await edgesFor(first)).filter((edge) => edge.state !== 'HISTORICAL' && edge.archived !== true);
+
+const servedMemberNames = async (): Promise<string[]> => {
+  await ResearchEntity.updateOne(
+    { slug: CENTER_SLUG },
+    {
+      $set: {
+        studentVisibilityTier: 'student_ready',
+        fullDescription:
+          'The center convenes faculty who study synthetic fixtures and the methods used to test them.',
+      },
+    },
+  );
+  const detail = await getResearchGroupDetail(CENTER_SLUG);
+  if (!detail) throw new Error('the fixture center is not served');
+  return (detail?.members ?? [])
+    .map((entry: any) => String(entry.user?.displayName || ''))
+    .filter(Boolean)
+    .sort();
+};
+
+const withoutMember = (first: string) => ROSTER.filter((entry) => !entry.name.startsWith(first));
+
+describe(
+  'centers-institutes-index retires members its complete roster reads stop listing (#3781)',
+  { timeout: 120000 },
+  () => {
+    let replSet: MongoMemoryReplSet;
+
+    beforeAll(async () => {
+      replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+      await mongoose.connect(replSet.getUri());
+      await Observation.syncIndexes();
+    }, 60000);
+
+    afterAll(async () => {
+        await mongoose.disconnect();
+      await replSet.stop();
+    });
+
+    beforeEach(async () => {
+      clearC4Flags();
+        const db = mongoose.connection.db;
+      if (!db) throw new Error('no db');
+      for (const name of [
+        'observations',
+        'research_entities',
+        'research_entity_relationships',
+        'researchers',
+        'role_assignments',
+        'scrape_runs',
+        'accounts',
+      ]) {
+        await db.collection(name).deleteMany({});
+      }
+    });
+
+    it('keeps a member one complete read omits and retires it after the second', async () => {
+      await runLane([ROSTER]);
+      expect(await currentEdges('Finley')).toHaveLength(1);
+
+      await runLane([withoutMember('Finley')]);
+      expect(await currentEdges('Finley')).toHaveLength(1);
+
+      await runLane([withoutMember('Finley')]);
+      expect(await currentEdges('Finley')).toHaveLength(0);
+      expect((await edgesFor('Finley'))[0]).toMatchObject({ state: 'HISTORICAL' });
+      expect(await currentEdges('Blair')).toHaveLength(1);
+
+      const retired = (await Observation.find({
+        entityKey: {
+          $regex: '^center-fixture-synthetic:(finley-synthetic|faculty-research-area-finley)',
+        },
+      }).lean()) as any[];
+      expect(retired.length).toBeGreaterThan(0);
+      for (const row of retired) {
+        expect(row.superseded).toBe(true);
+        expect(row.rollback?.reason).toBe(CENTER_ROSTER_RETIREMENT_REASON);
+      }
+
+      const served = await servedMemberNames();
+      expect(served.some((name) => name.startsWith('Finley'))).toBe(false);
+      expect(served.some((name) => name.startsWith('Blair'))).toBe(true);
+    });
+
+    it('does not resurrect a retired member on the next materialization or run', async () => {
+      await runLane([ROSTER]);
+      await runLane([withoutMember('Finley')]);
+      await runLane([withoutMember('Finley')]);
+      expect(await currentEdges('Finley')).toHaveLength(0);
+
+      const result = await materializeEntity('researchGroupMember', {
+        entityKey: `${CENTER_SLUG}:finley-synthetic`,
+      });
+      expect(result.fieldsWritten).toBe(0);
+      await materializeEntity('researchEntity', { entityKey: CENTER_SLUG });
+      await runLane([withoutMember('Finley')]);
+      expect(await currentEdges('Finley')).toHaveLength(0);
+    });
+
+    it('revives a retired member only when a later read lists it again', async () => {
+      await runLane([ROSTER]);
+      await runLane([withoutMember('Finley')]);
+      await runLane([withoutMember('Finley')]);
+      expect(await currentEdges('Finley')).toHaveLength(0);
+
+      await runLane([ROSTER]);
+      expect(await currentEdges('Finley')).toHaveLength(1);
+    });
+
+    it('ends a stale lead edge once two complete reads list the person under another role', async () => {
+      await runLane([ROSTER]);
+      expect((await currentEdges('Avery')).map((edge) => edge.role)).toEqual(['DIRECTOR']);
+
+      const demoted = [member('Avery'), ...ROSTER.slice(1)];
+      await runLane([demoted]);
+      expect((await currentEdges('Avery')).map((edge) => edge.role)).toContain('DIRECTOR');
+
+      await runLane([demoted]);
+      expect((await currentEdges('Avery')).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
+      const director = (await edgesFor('Avery')).find((edge) => edge.role === 'DIRECTOR');
+      expect(director).toMatchObject({ state: 'HISTORICAL' });
+    });
+
+    it('retires nothing when the later reads fail with a 404, a fetch error, or an under-read', async () => {
+      await runLane([ROSTER]);
+      await runLane([notFound()]);
+      await runLane([new Error('socket hang up')]);
+      const paged = config({ paginated: true });
+      await runLane([withoutMember('Finley'), notFound()], { config: paged });
+      await runLane([withoutMember('Finley'), notFound()], { config: paged });
+
+      for (const first of ['Avery', 'Blair', 'Casey', 'Devon', 'Emery', 'Finley']) {
+        expect(await currentEdges(first)).toHaveLength(1);
+      }
+      expect(
+        await Observation.countDocuments({ 'rollback.reason': CENTER_ROSTER_RETIREMENT_REASON }),
+      ).toBe(0);
+    });
+
+    it('retires nothing from an empty page, a refused roster, or cache-permitted reads', async () => {
+      await runLane([ROSTER]);
+      await runLane([[]]);
+      await runLane([[]]);
+      const refused = config({ url: 'https://another-center.example.edu/people' });
+      await runLane([withoutMember('Finley')], { config: refused });
+      await runLane([withoutMember('Finley')], { config: refused });
+      await runLane([withoutMember('Finley')], { useCache: true });
+      await runLane([withoutMember('Finley')], { useCache: true });
+
+      expect(await currentEdges('Finley')).toHaveLength(1);
+      expect(
+        await Observation.countDocuments({ 'rollback.reason': CENTER_ROSTER_RETIREMENT_REASON }),
+      ).toBe(0);
+    });
+
+    it('freezes the center when the reads would retire most of what it governs', async () => {
+      await runLane([ROSTER]);
+      await runLane([ROSTER.slice(0, 2)]);
+      await runLane([ROSTER.slice(0, 2)]);
+
+      for (const first of ['Casey', 'Devon', 'Emery', 'Finley']) {
+        expect(await currentEdges(first)).toHaveLength(1);
+      }
+      expect(
+        await Observation.countDocuments({ 'rollback.reason': CENTER_ROSTER_RETIREMENT_REASON }),
+      ).toBe(0);
+    });
+
+    it('leaves a lead another source still names, and edges another source wrote', async () => {
+      await appendObservations(
+        [
+          { field: 'inferredDirectorName', value: 'Avery Synthetic' },
+          { field: 'inferredDirectorUserName', value: { fname: 'Avery', lname: 'Synthetic' } },
+          { field: 'inferredDirectorRole', value: 'director' },
+          { field: 'inferredDirectorProfileUrl', value: ROSTER[0].profileUrl },
+        ].map((row) => ({
+          entityType: 'researchEntity' as const,
+          entityKey: CENTER_SLUG,
+          sourceUrl: `${HOME_URL}leadership`,
+          ...row,
+        })),
+        {
+          scrapeRunId: String(new mongoose.Types.ObjectId()),
+          sourceId: String(new mongoose.Types.ObjectId()),
+          sourceName: 'center-director-llm',
+          sourceWeight: 0.8,
+          dryRun: false,
+        },
+      );
+      await runLane([ROSTER]);
+      const otherPerson = new mongoose.Types.ObjectId();
+      await RoleAssignment.create({
+        personId: otherPerson,
+        target: { kind: 'RESEARCH_ENTITY', id: await centerId() },
+        role: 'CO_DIRECTOR',
+        state: 'UNKNOWN',
+        confidence: 0.8,
+        reviewStatus: 'UNREVIEWED',
+        archived: false,
+        rosterProvenance: {
+          sourceName: 'center-director-llm',
+          membershipKey:
+            'official-profile:https://fixture-center.example.edu/people/other|co-director',
+          observedAt: new Date(Date.now() - 1000),
+        },
+      });
+
+      await runLane([withoutMember('Avery')]);
+      await runLane([withoutMember('Avery')]);
+
+      const directors = (await RoleAssignment.find({
+        'target.id': await centerId(),
+        role: 'DIRECTOR',
+        state: { $ne: 'HISTORICAL' },
+      }).lean()) as any[];
+      expect(directors).toHaveLength(1);
+      const foreign = (await RoleAssignment.findOne({ personId: otherPerson }).lean()) as any;
+      expect(foreign.state).toBe('UNKNOWN');
+    });
+  },
+);

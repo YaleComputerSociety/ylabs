@@ -875,6 +875,9 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   // 176 live snapshots spanned 113 departments because a changed roster took a new
   // fingerprint instead of superseding its predecessor (#3251).
   'departmentRosterHealth',
+  // One snapshot per center per run for the same reason; `centersInstitutesRosterSite.test.ts`
+  // holds every config to a distinct center entity key so two configs cannot share a row.
+  'centerRosterHealth',
 ]);
 
 export function usesLatestWinsFingerprint(input: { entityType: string; field: string }): boolean {

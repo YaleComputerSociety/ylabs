@@ -1045,6 +1045,29 @@ The lane honours `manuallyLockedFields`: a row that locks `studentVisibilitySupp
 The marker is appended to any existing suppression reason rather than replacing it, because that field is a comma-joined list read by substring elsewhere.
 The result names why a pass did nothing (`disabled`, `dry-run`, `invalid-run-id`, `no-index-health-observation`, `index-not-authoritative`, `drop-guard-frozen`, `reconciled`) and separates `held` (suppression withheld because the microsite answered as alive) from `unchanged` (nothing to decide), so a healthy run cannot look like a run that withheld dozens of suppressions.
 
+### Center roster retirement: members a complete read no longer lists
+
+`centers-institutes-index` keys every roster member as its own observation (`<center>:<member>`), so a member the roster stops listing is never re-asserted, never superseded, and keeps its role edge forever, including a stale lead edge (#3781).
+`centerRosterRetirement.ts` closes that gap from evidence the lane states itself, and runs from `materializeFromRun` after every entity of the run is projected.
+
+Each read of a center emits one `centerRosterHealth` observation naming every member key, role claim, membership key and relationship key it listed, with `status`, `complete` and a `read` block (`pagesRead`, `readMode`, `cacheAllowed`, `stopReason`, `readAt`).
+Only a read that reached the roster's own end (`not-paginated`, `empty-page`, `repeated-page`, or a single rendered page), listed at least one member, and did not run with `--use-cache` is admitted.
+A refused roster site, a first-page fetch failure or `404`, and an unavailable render emit no snapshot at all; a later-page failure, an extractor error and the page cap record `partial-read`; an empty page records `empty`.
+A cache-permitted read is excluded because two runs inside the snapshot cache's 24-hour lifetime replay one fetch, which would let one parse satisfy the two-read rule; the exhaustive sweep modes never pass `--use-cache`.
+The pager now stops on two consecutive pages that add nobody, the rule `walkRosterLanePages` uses, because a 1-based Drupal pager repeats page 0 once and then continues.
+
+A claim retires only when two admitted reads in distinct runs, both after the claim was last observed and after the last read that listed it, omit it.
+Three populations are judged, each scoped to this source on this center: member observation keys (every field is retired), role claims of members still listed (a stale `director` observation for a person now listed as `core-faculty`), and role edges whose `rosterProvenance.sourceName` is this source, matched on the `rosterProvenance.membershipKey` the materializer stamps (`utils/rosterMembershipKey.ts` owns that string for both sides).
+An edge with no membership key or no `observedAt` is never judged, and an edge whose membership key another source's live member observations produce, or whose person and lead role another source's live `inferredDirector*` observations name, is left alone.
+
+The pass freezes a center, retiring nothing and warning, when the retiring share of its member keys, edges or relationship keys exceeds `CENTER_ROSTER_MAX_ABSENT_FRACTION` (0.5), or when the latest read lists fewer than `CENTER_ROSTER_DISCOVERY_RETENTION_MIN_FRACTION` (0.75) of the largest admitted read on record.
+There is no population floor, so a small center that genuinely halves stays frozen until the larger read ages out of observation retention, which keeps the last three runs per source.
+
+Retirement writes no field and no lock.
+Observations get `superseded` plus `rollback.rolledBackAt`, which both read scopes honour, so the next materialization has nothing to rebuild the claim from; an edge is ended with `state: HISTORICAL` and `endedAt`, the same write an official-roster departure makes, so a later read that lists the person again revives it through the ordinary upsert; a relationship is archived unless another source's live relationship observations resolve to the same target.
+Members still listed whose edge was ended are re-materialized in the same pass, so a demoted lead gets its current role edge at once, and the center is re-gated.
+Role edges that carry no `rosterProvenance` at all predate provenance and cannot be attributed to any lane, so this pass never touches them.
+
 ### Link-health verdicts, and what each one licenses
 
 `sourceLinkHealth` records one probe verdict per cited URL, written by `research-homes:backfill-source-link-health` and read at render time by `isUnavailableResearchWebsiteCtaUrl` to hide a dead website CTA.

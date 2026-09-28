@@ -38,6 +38,7 @@ describe('the observation subject vocabulary and the product entity-type vocabul
       'fellowship',
       'departmentRosterHealth',
       'ysmLabIndexHealth',
+      'centerRosterHealth',
       'orgUnit',
     ]);
   });

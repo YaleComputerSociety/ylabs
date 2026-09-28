@@ -8,6 +8,7 @@ vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
 import {
   CentersInstitutesScraper,
   DEFAULT_CENTER_CONFIGS,
+  centerEntityKey,
   centerRosterPageSiteRefusal,
   centerRosterSiteRefusal,
   directoryListingCardExtractor,
@@ -119,6 +120,11 @@ describe('DEFAULT_CENTER_CONFIGS roster sites', () => {
       return refusal ? [`${config.centerKey}: ${refusal}`] : [];
     });
     expect(refused).toEqual([]);
+  });
+
+  it('gives every config its own center entity key, so one roster read never speaks for another', () => {
+    const keys = DEFAULT_CENTER_CONFIGS.map(centerEntityKey);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
   it('checks real roster subpages, so the guard is not vacuous', () => {
