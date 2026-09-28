@@ -20,6 +20,7 @@ import {
 import {
   isExplicitUndergradUnavailabilityPhrase,
   isPlausibleUndergradEvidenceQuote,
+  RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
 } from './undergradEvidenceQuoteValidation';
 import {
   CONTACT_FIELDS_SIGNAL_DERIVATION_KEY,
@@ -383,8 +384,11 @@ export function deriveAccessArtifactsFromObservations(
     }
   }
 
+  // The retired cache-backfill lane carried no roster snippet a count could be checked
+  // against, so its counts cannot back a current-undergraduates signal (#3789).
   const currentUndergradObservations = (byField.get('currentUndergradCount') || []).filter(
-    (obs) => undergradCount(obs.value) > 0,
+    (obs) =>
+      undergradCount(obs.value) > 0 && obs.sourceName !== RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
   );
   if (currentUndergradObservations.length > 0) {
     const score = maxConfidence(currentUndergradObservations);

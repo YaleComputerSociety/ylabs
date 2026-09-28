@@ -36,7 +36,10 @@ import {
   type LLMExtraction,
   type FetchedPage,
   type WorkPlanLoaderFn,
+  DEFAULT_MODEL,
 } from '../sources/labMicrositeUndergradLLMExtractor';
+import { computeVersionedContentHash } from '../contentHashGate';
+import { UNDERGRAD_EXTRACTION_PROMPT_HASH } from '../prompts';
 import type { ObservationInput, ScraperContext } from '../types';
 import { isFullDescriptionRestatementOfShortDescription } from '../../utils/researchEntityDescriptionQuality';
 
@@ -354,7 +357,7 @@ describe('extractionToObservations quote grounding', () => {
     const obs = extractionToObservations('lab-q', 'https://x.example/', ext, fixedDate, {
       sourcePages: pages,
     });
-    expect(obs.map((o) => o.field)).toEqual(['lastObservedAt']);
+    expect(obs.map((o) => o.field).sort()).toEqual(['currentUndergradCount', 'lastObservedAt']);
   });
 
   it('counts only roster snippets that are on a fetched page', () => {
@@ -403,7 +406,7 @@ describe('extractionToObservations quote grounding', () => {
     const obs = extractionToObservations('lab-p', 'https://x.example/', ext, fixedDate, {
       sourcePages: pages,
     });
-    expect(obs.map((o) => o.field)).toEqual(['lastObservedAt']);
+    expect(obs.map((o) => o.field).sort()).toEqual(['currentUndergradCount', 'lastObservedAt']);
     expect(quoteFieldsNotOnPage(ext, pages)).toEqual(['evidenceQuote', 'contactInstructionsQuote']);
   });
 
@@ -570,8 +573,7 @@ describe('extractionToObservations', () => {
       sourceUrls: ['https://x.example/', 'https://x.example/join'],
       quoteSourceUrl: 'https://x.example/join',
     });
-    // count not emitted because evidenceSource is explicit_text, not members_section
-    expect(obs.find((o) => o.field === 'currentUndergradCount')).toBeUndefined();
+    expect(obs.find((o) => o.field === 'currentUndergradCount')?.value).toBe(0);
     // quote was emitted
     const quote = obs.find((o) => o.field === 'undergradEvidenceQuote');
     expect(quote!.value).toBe('We welcome motivated undergraduates each semester.');
@@ -887,20 +889,27 @@ describe('extractionToObservations', () => {
     expect(obs.find((o) => o.field === 'undergradAccessEvidence')).toBeUndefined();
     expect(obs.find((o) => o.field === 'undergradEvidenceQuote')).toBeUndefined();
     // Only lastObservedAt
-    expect(obs).toHaveLength(1);
-    expect(obs[0].field).toBe('lastObservedAt');
+    expect(obs.map((o) => o.field).sort()).toEqual(['currentUndergradCount', 'lastObservedAt']);
+    expect(obs.find((o) => o.field === 'currentUndergradCount')?.value).toBe(0);
   });
 
-  it('emits currentUndergradCount only when evidenceSource is members_section', () => {
+  it('emits currentUndergradCount on every read, zero without a grounded roster (#3789)', () => {
+    const roster = [
+      'Alice, undergraduate researcher',
+      'Bob, undergraduate researcher',
+      'Carol, undergraduate researcher',
+      'Dan, undergraduate researcher',
+    ];
     const fromMembers: LLMExtraction = {
       openToUndergrads: 'yes',
       currentUndergradCount: 4,
       evidenceQuote: 'Undergraduates: Alice, Bob, Carol, Dan',
       evidenceSource: 'members_section',
       joinPageUrl: null,
+      currentUndergradEvidenceQuotes: roster,
     };
     const obs1 = extractionToObservations('lab-1', 'https://x/', fromMembers, fixedDate, {
-      sourcePages: [{ url: 'https://x/', text: fromMembers.evidenceQuote }],
+      sourcePages: [{ url: 'https://x/', text: [fromMembers.evidenceQuote, ...roster].join('\n') }],
     });
     const count1 = obs1.find((o) => o.field === 'currentUndergradCount');
     expect(count1).toBeDefined();
@@ -915,7 +924,7 @@ describe('extractionToObservations', () => {
       joinPageUrl: null,
     };
     const obs2 = extractionToObservations('lab-2', 'https://x/', fromProse, fixedDate);
-    expect(obs2.find((o) => o.field === 'currentUndergradCount')).toBeUndefined();
+    expect(obs2.find((o) => o.field === 'currentUndergradCount')?.value).toBe(0);
   });
 
   const countObservationValue = (ext: LLMExtraction): number | undefined => {
@@ -991,7 +1000,7 @@ describe('extractionToObservations', () => {
     expect(countObservationValue(ext)).toBe(0);
   });
 
-  it('falls back to the raw count for legacy extractions with a clean quote (#1314)', () => {
+  it('never trusts the raw count without a roster, even beside a clean quote (#3789)', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'yes',
       currentUndergradCount: 4,
@@ -999,8 +1008,24 @@ describe('extractionToObservations', () => {
       evidenceSource: 'members_section',
       joinPageUrl: null,
     };
-    expect(deriveCurrentUndergradCount(ext)).toBe(4);
-    expect(countObservationValue(ext)).toBe(4);
+    expect(deriveCurrentUndergradCount(ext)).toBe(0);
+    expect(countObservationValue(ext)).toBe(0);
+  });
+
+  it('does not count a staff title or a member own degree as a current undergraduate (#3789)', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 3,
+      evidenceQuote: 'Lab members',
+      evidenceSource: 'members_section',
+      joinPageUrl: null,
+      currentUndergradEvidenceQuotes: [
+        'Sam Example, Senior Software Developer',
+        'Taylor Example completed her undergraduate degree at another university',
+        'Riley Example, Yale College Class of 2028',
+      ],
+    };
+    expect(deriveCurrentUndergradCount(ext)).toBe(1);
   });
 
   it('zeroes a legacy count whose only backing quote is historical or non-Yale (#1314)', () => {
@@ -1350,6 +1375,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
         evidenceQuote: 'We welcome undergraduate researchers each semester.',
         evidenceSource: 'members_section',
         joinPageUrl: null,
+        currentUndergradEvidenceQuotes: ['Alice', 'Bob', 'Carol'],
       }),
     );
     const labFinder = async (): Promise<CandidateLab[]> => [
@@ -1407,6 +1433,63 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(evidence!.confidenceOverride).toBe(0.5);
     expect(evidence!.entityKey).toBe('smith-lab');
     expect(emitted.find((o) => o.field === 'currentUndergradCount')!.value).toBe(3);
+  });
+
+  describe('re-deriving a stored current-undergraduate count (#3789)', () => {
+    const smithLab = async (): Promise<CandidateLab[]> => [
+      {
+        _id: '1',
+        slug: 'smith-lab',
+        name: 'The Smith Lab',
+        websiteUrl: 'https://smith.example.com/',
+      },
+    ];
+    const noRosterAnswer: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 3,
+      evidenceQuote: 'We welcome undergraduate researchers each semester.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+    };
+    const runWith = async (pages: Record<string, string>) => {
+      const scraper = newTestScraper({
+        fetchPage: makeFetchPage(pages),
+        callLLM: async () => noRosterAnswer,
+        labFinder: smithLab,
+        apiKey: 'sk-test',
+      });
+      const { ctx, emitted } = makeContext();
+      await scraper.run(ctx);
+      return emitted;
+    };
+
+    it('writes a zero when every linked page was read and no roster line survives', async () => {
+      const emitted = await runWith({
+        'https://smith.example.com/': HOME_HTML,
+        'https://smith.example.com/people': PEOPLE_HTML,
+      });
+      expect(emitted.find((o) => o.field === 'currentUndergradCount')?.value).toBe(0);
+    });
+
+    it('withholds a zero when a sub-page the home page links to failed to fetch', async () => {
+      const emitted = await runWith({ 'https://smith.example.com/': HOME_HTML });
+      expect(emitted.some((o) => o.field === 'currentUndergradCount')).toBe(false);
+    });
+
+    it('stores a content hash that a hash from before the roster-only count does not match', async () => {
+      const emitted = await runWith({
+        'https://smith.example.com/': HOME_HTML,
+        'https://smith.example.com/people': PEOPLE_HTML,
+      });
+      const priorContractHash = computeVersionedContentHash(
+        [htmlToPromptText(HOME_HTML), htmlToPromptText(PEOPLE_HTML)].join('\n'),
+        UNDERGRAD_EXTRACTION_PROMPT_HASH,
+        DEFAULT_MODEL,
+      );
+      const stored = emitted.find((o) => o.field === 'sourceContentHash')?.value;
+      expect(stored).toEqual(expect.any(String));
+      expect(stored).not.toBe(priorContractHash);
+    });
   });
 
   it('discovers sub-pages from the resolved final home page URL', async () => {

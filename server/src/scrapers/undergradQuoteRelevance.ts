@@ -1,4 +1,7 @@
-import { laneQuoteStatesUndergraduates } from './undergradEvidenceQuoteValidation';
+import {
+  laneQuoteStatesUndergraduates,
+  namesAnUndergraduateMarker,
+} from './undergradEvidenceQuoteValidation';
 import {
   isPersonProfileOrDirectoryUrl,
   isUmbrellaPageCitedByPerson,
@@ -15,10 +18,39 @@ const NON_ACCESS_UNDERGRADUATE_SPANS: readonly RegExp[] = [
   /(?<!\bduring\s+)\b(?:his|her|their|my)\s+undergrad(?:uate)?\s+(?:degree|education|training|studies)\b/gi,
 ];
 
-export function quoteStatesAnUndergraduateAccessFact(quote: string | undefined | null): boolean {
-  let rest = (quote || '').trim();
+const withoutNonAccessSpans = (text: string | undefined | null): string => {
+  let rest = (text || '').trim();
   for (const span of NON_ACCESS_UNDERGRADUATE_SPANS) rest = rest.replace(span, ' ');
-  return laneQuoteStatesUndergraduates(rest.replace(/\s+/g, ' ').trim());
+  return rest.replace(/\s+/g, ' ').trim();
+};
+
+export function quoteStatesAnUndergraduateAccessFact(quote: string | undefined | null): boolean {
+  return laneQuoteStatesUndergraduates(withoutNonAccessSpans(quote));
+}
+
+const NON_UNDERGRADUATE_ROSTER_ROLE =
+  /\b(?:(?:senior|junior|lead|principal|staff|chief)\s+)?(?:(?:software|research|data|lab(?:oratory)?|administrative|project|clinical|program)\s+)?(?:developer|engineer|scientist|administrator|manager|technician|analyst|coordinator|director)\b|\b(?:post-?docs?|postdoctoral|ph\.?\s?d\.?(?:\s+(?:student|candidate))?|graduate\s+students?|grad\s+students?|doctoral|faculty|professor|resident|lecturer|instructor|master'?s(?:\s+(?:students?|candidates?))?|m\.?s\.?\s+(?:students?|candidates?)|m\.?p\.?h\.?|m\.d\.|md(?:\s+(?:students?|candidates?)|[-/]ph\.?d)|medical\s+students?|rotation(?:\s+students?)?|rotating\s+students?|research\s+associates?|fellows?)\b/i;
+
+const UNDERGRADUATE_OWN_ROSTER_ROLE =
+  /\b(?:undergrad(?:uate)?|yale\s+college|summer|SURF|STARS)\s+(?:(?:research|lab(?:oratory)?|summer|student)\s+){0,2}(?:fellows?|interns?|associates?|assistants?|technicians?|researchers?|scholars?|students?)\b/gi;
+
+/**
+ * Whether a roster line may be a current undergraduate (#3789). The line is read under a
+ * section heading the model chose, so a bare name counts: a roster lists names, not claims. A
+ * line is refused when it names a non-undergraduate role or a staff title outside the member's
+ * own undergraduate role phrase, as in "Undergraduate Research Fellow", so a graduate student
+ * who mentors undergraduates is not counted. A line naming the member's own past degree is
+ * refused unless an undergraduate marker survives beside it. On the gold benchmark an
+ * allow-list read dropped 12 of 20 real roster lines.
+ */
+export function rosterSnippetNamesAnUndergraduate(snippet: string | undefined | null): boolean {
+  const raw = (snippet || '').trim();
+  if (!raw) return false;
+  if (NON_UNDERGRADUATE_ROSTER_ROLE.test(raw.replace(UNDERGRADUATE_OWN_ROSTER_ROLE, ' '))) {
+    return false;
+  }
+  const rest = withoutNonAccessSpans(raw);
+  return namesAnUndergraduateMarker(rest) || rest === raw.replace(/\s+/g, ' ');
 }
 
 const LAB_HOST_LABEL = /(?:lab|labs|group|project)/i;
