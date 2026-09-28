@@ -658,6 +658,31 @@ describe(
       }
     });
 
+    it('adopts nothing when the listing writes for a namesake rather than its profile researcher', async () => {
+      const namesake = (
+        await Researcher.create({
+          displayName: member('Emery').name,
+          profileLinks: [],
+          archived: false,
+        })
+      )._id as mongoose.Types.ObjectId;
+      await seedCenterWithoutAnAdmittedRead();
+      await Researcher.create({
+        displayName: member('Emery').name,
+        profileLinks: [],
+        archived: false,
+        profile: { websiteUrl: member('Emery').profileUrl },
+      });
+      const namesakeEdge = await unprovenancedEdge(namesake, 'DIRECTOR');
+
+      await runLane([ROSTER]);
+      await runLane([ROSTER]);
+
+      const row = await edge(namesakeEdge);
+      expect(row.rosterProvenance?.sourceName).toBeUndefined();
+      expect(row.state).toBe('UNKNOWN');
+    });
+
     it('leaves an edge another source wrote for a listed person untouched', async () => {
       const blair = await listedAccountHolder('Blair');
       await seedCenterWithoutAnAdmittedRead();

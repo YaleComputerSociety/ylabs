@@ -1772,9 +1772,10 @@ async function adoptListedPersonUnprovenancedEdges(
   const sourceName = textValue(provenance?.sourceName);
   const listedRole = canonicalRoleForLegacy(plan.role);
   const listedMembershipKey = textValue(provenance?.membershipKey);
+  const profilePersonId = toMaterializerObjectId(plan.personReferenceId);
   if (
     !personId ||
-    !plan.personReferenceId ||
+    !profilePersonId?.equals(personId) ||
     !plan.identityKey ||
     !listedRole ||
     !listedMembershipKey ||
@@ -1783,7 +1784,7 @@ async function adoptListedPersonUnprovenancedEdges(
     return 0;
   }
   return adoptUnprovenancedRoleAssignments(researchEntityId, {
-    personId,
+    personId: profilePersonId,
     sourceName,
     sourceUrl: textValue(provenance?.sourceUrl) || undefined,
     profileUrl: textValue(provenance?.profileUrl) || undefined,
