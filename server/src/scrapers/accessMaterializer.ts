@@ -7,6 +7,7 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { hasPastUndergradAdvisees } from '../services/accessAcceptanceLevel';
 import { isPubliclyUnreachableSourceUrl } from '../services/sourceLinkHealth';
 import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -207,15 +208,6 @@ function isCourseArray(value: unknown): value is Array<{ code?: string; title?: 
 function isSeniorProjectCourse(course: { code?: string; title?: string }): boolean {
   const title = (course.title || '').trim();
   return /senior (essay|thesis|project)/i.test(title);
-}
-
-function hasPastAdvisees(value: unknown): boolean {
-  if (!Array.isArray(value)) return false;
-  return value.some((row) => {
-    if (!row || typeof row !== 'object') return false;
-    const count = Number((row as any).count ?? 1);
-    return count > 0;
-  });
 }
 
 function undergradCount(value: unknown): number {
@@ -469,7 +461,7 @@ export function deriveAccessArtifactsFromObservations(
   }
 
   const pastAdviseeObservations = (byField.get('pastUndergradAdvisees') || []).filter((obs) =>
-    hasPastAdvisees(obs.value),
+    hasPastUndergradAdvisees(obs.value),
   );
   if (pastAdviseeObservations.length > 0) {
     const score = maxConfidence(pastAdviseeObservations);

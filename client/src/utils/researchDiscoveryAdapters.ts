@@ -440,13 +440,10 @@ export const buildWayInBadgesFromEntity = (entity: ResearchEntity | undefined): 
   // 50 quotes are not on the page they cite. So the field cannot back a
   // student-facing claim at all until that lane improves, tracked on #3592.
   //
-  // The remaining fields stay. They come from roster and manual lanes and are
-  // trustworthy when populated; they are simply empty corpus-wide right now
-  // (#3579), so this derivation will light up again when a lane fills them
-  // rather than needing to be rebuilt.
-  const hasUndergradEvidence =
-    (entity.pastUndergradAdvisees?.length ?? 0) > 0 ||
-    (entity.typicalUndergradRoles?.length ?? 0) > 0;
+  // The badge reads the served flag rather than re-deriving it here, so it
+  // cannot disagree with the `hostsUndergrads` browse filter or saved plans,
+  // which read the same server predicate (#3593).
+  const hasUndergradEvidence = entity.hasUndergradHostingEvidence === true;
   const hasStudentProjectEvidence =
     entity.offersIndependentStudy === true || (entity.independentStudyCourses?.length ?? 0) > 0;
 
@@ -467,12 +464,7 @@ export const buildWayInBadges = (
   };
 
   addBadge('Contact route', pathways.some(hasContactRoute));
-  addBadge(
-    'Undergrad evidence',
-    signalTypes.some((signal) =>
-      ['CURRENT_UNDERGRADS', 'PAST_UNDERGRADS', 'FACULTY_SUPERVISION'].includes(signal),
-    ),
-  );
+  addBadge('Undergrad evidence', signalTypes.includes('PAST_UNDERGRADS'));
   addBadge('Student project evidence', signalTypes.includes('FACULTY_SUPERVISES_STUDENT_PROJECTS'));
 
   return badges.slice(0, 5);

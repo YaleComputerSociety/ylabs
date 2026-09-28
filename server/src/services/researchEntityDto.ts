@@ -31,6 +31,7 @@ import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityName
 import { personScopedResearchEntityNameNamesSomethingElseByUrlPath } from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import { entityHasHostedUndergraduates } from './accessAcceptanceLevel';
 import {
   isModelSearchNote,
   RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
@@ -528,6 +529,8 @@ export function toPublicResearchEntityDto(
       dto[field] = publicTextValue(group[field]);
     }
   }
+
+  if (entityHasHostedUndergraduates(group)) dto.hasUndergradHostingEvidence = true;
 
   if (options.forList) {
     dto.cardDescription = resolveResearchHomeCardSummary({

@@ -5,6 +5,21 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-28: One Hosted-Undergraduates Predicate, Past Undergraduates Only For Now (#3593)
+
+"Has hosted undergraduate researchers" had four definitions.
+The browse card read `pastUndergradAdvisees` and `typicalUndergradRoles`, the pathway badge read `CURRENT_UNDERGRADS`, `PAST_UNDERGRADS` and a `FACULTY_SUPERVISION` signal nothing mints, and the `hostsUndergrads` filter and saved plans read a stored flag that also counted `CURRENT_UNDERGRADS` and `FACULTY_SUPERVISES_STUDENT_PROJECTS`.
+On Development that flag was set on 290 unarchived rows while the card showed the badge on 5.
+
+There is now one predicate, `UNDERGRAD_HOSTING_SIGNAL_TYPES` in `server/src/services/accessAcceptanceLevel.ts`, and every surface reads it: the API serves `hasUndergradHostingEvidence` on each research entity, the card reads that flag instead of re-deriving it, and saved plans use the same row-level test.
+Supervising student projects is a separate claim with its own badge.
+
+`CURRENT_UNDERGRADS` is held out because its stored input is not yet trustworthy.
+A hand-read of 20 stored `lab-microsite-undergrad-llm` counts against their cited pages found 13 backed, while the lane's current page-grounded code scored 6 of 6 on `undergrad-llm-gold-v2`, so the gap is counts written by older runs.
+Re-admitting it needs those counts re-derived and re-measured, not a code change here, which #3789 tracks.
+
+The served flag is derived from `pastUndergradAdvisees` at request time, because that is exactly the field that mints `PAST_UNDERGRADS`, so the card is right on deploy.
+The stored `hasUndergradHostingEvidence` that the filter reads converges when `researchEntityBrowseRankService` next runs.
 ## 2026-09-27: A Provenance Entry Names Its Observation, And An Attribution Nothing Backs Is Retired, Not The Value (#3769)
 
 A `fieldProvenance` entry says a lane stands behind a value, and the only thing a lane can stand behind is an observation.
@@ -908,6 +923,7 @@ It has no reachable reader, measured at `2275702f`.
 Beta and Production each hold 4183 live rows from it, all `confidence=LOW` with `confidenceScore` capped at 0.4 by `Math.min(0.4, ...)` in the derivation itself, so the confidence is structural rather than incidental.
 `signalCountsTowardAcceptance`, `accessSignalCount` in the gate, `reachOutPlausibleSignalCreditsActionEvidence`, and `countResearchEntityAlternateAccessPaths` all exclude the two keys by denylist.
 `researchEntityBrowseRankService` over-fetches every access signal but feeds only `hasUndergradHostingEvidenceFromSignals`, whose set is `PAST_UNDERGRADS`/`CURRENT_UNDERGRADS`/`FACULTY_SUPERVISES_STUDENT_PROJECTS`.
+That set is `PAST_UNDERGRADS` alone since #3593, recorded in its own entry above.
 `researchEntitySearchIndexService` reads no signals.
 On the client, `accessSignals` reach only `buildResearchDetailSources`, which drops anything `LOW` via `isCitableAccessSignal`, so 0 of 4183 contribute even a citation, and no code path renders a signal excerpt at all.
 The one reader that does see them is `researchEntityEvidenceCoverage`, where `hasAccess = accessSignals.length > 0` has no derivation-key filter; that feeds a scrape-run diagnostic report, is not served and gates nothing, and losing these rows makes `missing_access_evidence` correct rather than wrong.

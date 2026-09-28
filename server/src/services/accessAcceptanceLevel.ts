@@ -91,17 +91,37 @@ export function canonicalAcceptanceLevelFromSignals(
   return strongest >= ACCEPTANCE_VERIFIED_CONFIDENCE_FLOOR ? 'verified' : 'likely';
 }
 
-// Signals that specifically evidence a research home hosting or supervising
-// undergraduate researchers, as opposed to the generic outreach-plausibility
-// signals (REACH_OUT_PLAUSIBLE, CONTACT_INSTRUCTIONS_EXIST, ...) that lift the
-// broad `accessAcceptanceLevel` tier. These are the same signals that drive the
-// "Undergrad evidence" discovery badge, and back the "Has hosted undergrads
-// before" browse filter. See #1054.
-export const UNDERGRAD_HOSTING_SIGNAL_TYPES: ReadonlySet<string> = new Set([
-  'PAST_UNDERGRADS',
-  'CURRENT_UNDERGRADS',
-  'FACULTY_SUPERVISES_STUDENT_PROJECTS',
-]);
+// The one definition of "Has hosted undergraduate researchers" (#3593): evidence that
+// undergraduates have been in the lab. The browse badge, the pathway badge, saved plans, and
+// the `hostsUndergrads` browse filter all read it, so they cannot disagree about a row.
+// Supervising student projects is a separate claim with its own badge.
+//
+// CURRENT_UNDERGRADS is held out deliberately. Its only live source is the microsite lane's
+// `currentUndergradCount`, and a hand-read of 20 stored counts on Development (2026-09-28)
+// found 13 backed by the cited page; the lane's current, page-grounded code scored 6 of 6 on
+// the gold benchmark, so the gap is stale stored counts. Re-admit it once those are
+// re-derived and re-measured (#3789).
+export const UNDERGRAD_HOSTING_SIGNAL_TYPES: ReadonlySet<string> = new Set(['PAST_UNDERGRADS']);
+
+export function hasPastUndergradAdvisees(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  return value.some((row) => {
+    if (!row || typeof row !== 'object') return false;
+    const count = Number((row as { count?: unknown }).count ?? 1);
+    return count > 0;
+  });
+}
+
+/**
+ * The same predicate read off a stored row rather than its signals, because `PAST_UNDERGRADS`
+ * is minted from exactly this field. Serving this keeps the badge right the moment it deploys,
+ * while the stored `hasUndergradHostingEvidence` waits for the browse-rank job.
+ */
+export function entityHasHostedUndergraduates(entity: {
+  pastUndergradAdvisees?: unknown;
+}): boolean {
+  return hasPastUndergradAdvisees(entity.pastUndergradAdvisees);
+}
 
 export function hasUndergradHostingEvidenceFromSignals(
   signals: AccessSignalConfidenceInput[],
