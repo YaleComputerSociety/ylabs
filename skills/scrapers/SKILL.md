@@ -152,7 +152,7 @@ Only a `SIGKILL`, a crash, or a terminal write that exhausted its retries still 
   It refuses every target except Development, and its bounds can be raised but not lowered.
   Do not run it with `--apply` while a sweep is running unless you have read its dry run: a sweep started on code older than #3595 writes rows with no heartbeat, which only the lock and the 72-hour bound protect.
 - Every Development sweep already reaps heartbeat-stale rows: its first post-run stage, `stale-scrape-run-reap`, runs the command with `--heartbeat-stale-only --started-before <sweep start>`.
-  That closes only `heartbeat_stale` rows (stale heartbeat, owner pid not alive on this host, no held source lock) that started before the sweep, and keeps pre-heartbeat rows as `legacy_operator_only`, so a `legacy_abandoned` row still needs the operator-run command.
+  That closes only `heartbeat_stale` rows (stale heartbeat, owner not a live process on this host, no held source lock) that started before the sweep, and keeps pre-heartbeat rows as `legacy_operator_only`, so a `legacy_abandoned` row still needs the operator-run command.
 - A new signal cleanup goes through `onInterrupt` in `interruptCleanup.ts`, never its own `process.once` plus re-raise, because two handlers that each re-raise race and the first kills the process while the other is still writing.
 - The stored values are not enum-valid: Development holds 2 rows with `completed` and 1 with `failed`, written by raw operator updates that bypass the validator (the #2137 family).
   Any status check must treat the stored set as open, not as the enum.

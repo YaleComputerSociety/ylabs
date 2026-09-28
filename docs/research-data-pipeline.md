@@ -280,7 +280,7 @@ The contract now has four parts.
 - **The Development sweep reaps heartbeat-stale runs on every run.**
   Until this stage existed nothing scheduled the command, which is how the stuck rows accumulated.
   The first Development post-run stage, `stale-scrape-run-reap`, runs it with `--apply --heartbeat-stale-only --started-before <sweep start>`.
-  It closes a row only when it is `heartbeat_stale`: its heartbeat is older than the stale bound, its owner pid is not alive on this host, and its source holds no live `ScrapeJobLock`.
+  It closes a row only when it is `heartbeat_stale`: its heartbeat is older than the stale bound, its owner is not a live process on this host, and its source holds no live `ScrapeJobLock`.
   It never closes a row with a fresh heartbeat, a live owner or a held lock, and never one that started at or after the sweep began (`started_at_or_after_cutoff`), so the sweep's own runs are left for the next sweep.
   A row that predates heartbeats is kept as `legacy_operator_only` when it is past the 72-hour bound, or `legacy_too_recent` when it is not, because its start time is its only sign of life; closing those stays the operator-run command without `--heartbeat-stale-only`.
 
