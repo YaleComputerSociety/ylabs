@@ -35,9 +35,9 @@ describe('extractRosterMemberIdentityEvidence (#3802)', () => {
       page(
         '',
         '<a href="mailto:avery.synthetic@yale.edu">Email</a>' +
-          '<a href="mailto:center.office@yale.edu">Office</a>' +
+          '<a href="mailto:center.contact@yale.edu">Office</a>' +
           '<a href="mailto:avery.synthetic@example.org">Personal</a>' +
-          '<p>Contact blair.synthetic@yale.edu or avery.synthetic2@yale.edu</p>',
+          '<p>Contact blair.synthetic2@yale.edu or avery.synthetic2@yale.edu</p>',
       ),
       PAGE_URL,
       MEMBER,

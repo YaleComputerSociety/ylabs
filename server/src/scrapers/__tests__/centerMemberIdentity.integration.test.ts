@@ -323,10 +323,10 @@ describe(
     });
 
     it("joins the listing through the member's own Yale email", async () => {
-      const blair = await accountHolder('Blair', { email: 'blair.synthetic@yale.edu' });
+      const blair = await accountHolder('Blair', { email: 'blair.synthetic2@yale.edu' });
 
       await runLane({
-        [centerProfileUrl('Blair')]: profilePage({ email: 'blair.synthetic@yale.edu' }),
+        [centerProfileUrl('Blair')]: profilePage({ email: 'blair.synthetic2@yale.edu' }),
       });
 
       expect(await researchersNamed('Blair')).toBe(1);
@@ -377,7 +377,7 @@ describe(
 
     it('resolves to nobody when the evidence reaches two agreeing people', async () => {
       await accountHolder('Blair', {
-        email: 'blair.synthetic@yale.edu',
+        email: 'blair.synthetic2@yale.edu',
         displayName: 'Blair Synthetic',
       });
       await accountHolder('Blair', {
@@ -390,7 +390,7 @@ describe(
         {
           [centerProfileUrl('Blair')]: profilePage({
             canonical: officialProfileUrl('Blair'),
-            email: 'blair.synthetic@yale.edu',
+            email: 'blair.synthetic2@yale.edu',
           }),
         },
         [member('Blair')],
