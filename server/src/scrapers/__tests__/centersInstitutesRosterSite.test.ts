@@ -10,6 +10,7 @@ import {
   DEFAULT_CENTER_CONFIGS,
   centerRosterPageSiteRefusal,
   centerRosterSiteRefusal,
+  directoryListingCardExtractor,
   nodeTeaserPersonExtractor,
   type CenterConfig,
   type ExtractorResult,
@@ -261,5 +262,17 @@ describe('title-derived center leadership', () => {
   it('keeps a current directorship joined to an emeritus title', () => {
     expect(roleFor('Professor Emeritus and Director of the Alpha Foundation')).toBe('director');
     expect(roleFor('Director Emeritus of the Alpha Foundation')).toBe('core-faculty');
+  });
+
+  it('leaves director roles on rosters outside the shared economics theme unfiltered', () => {
+    const html = `<html><body><ul><li class="directory-listing-card">
+      <h3><a class="directory-listing-card__heading-link" href="/people/sample">Sample Member</a></h3>
+      <div class="directory-listing-card__subheading"><div>Director</div></div>
+      <div class="directory-listing-card__snippet"><div>Previously a fellow (2010-2014) and former program director elsewhere.</div></div>
+    </li></ul></body></html>`;
+    const [member] = directoryListingCardExtractor(html, {
+      pageUrl: 'https://alpha.example.edu/people',
+    }).members;
+    expect(member.role).toBe('director');
   });
 });

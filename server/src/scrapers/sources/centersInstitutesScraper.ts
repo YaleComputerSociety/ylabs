@@ -370,8 +370,6 @@ function isHistoricalDirectorship(clause: string): boolean {
   const currentYear = new Date().getFullYear();
   return endYears.length > 0 && endYears.every((endYear) => endYear < currentYear);
 }
-const ACADEMIC_PROGRAM_DIRECTORSHIP =
-  /\bdirector\s+of\s+(?:graduate|undergraduate)\s+(?:studies|admissions)\b/i;
 
 /**
  * A professional title lists every directorship the person holds or has held
@@ -381,14 +379,14 @@ const ACADEMIC_PROGRAM_DIRECTORSHIP =
  * both read as this center's director otherwise.
  */
 function directorClausesForUnit(title: string, unitName: string | undefined): string[] {
-  return title
+  const directorClauses = title
     .split(/[;|\n]/)
     .map((clause) => clause.trim())
-    .filter((clause) => /\bdirector\b/i.test(clause))
+    .filter((clause) => /\bdirector\b/i.test(clause));
+  if (!unitName) return directorClauses;
+  return directorClauses
     .filter((clause) => !isHistoricalDirectorship(clause))
-    .filter((clause) => !ACADEMIC_PROGRAM_DIRECTORSHIP.test(clause))
     .filter((clause) => {
-      if (!unitName) return true;
       const namedUnit = directorshipNamedUnit(clause);
       return !namedUnit || organizationTextNamesUnit(namedUnit, unitName);
     });
