@@ -117,7 +117,10 @@ import {
   planStoredTextNormalization,
   type StoredTextNormalizationPlan,
 } from './storedTextNormalization';
-import { planDirectoryGraftCitationRetraction } from './directoryGraftCitations';
+import {
+  isDirectoryGraftCitation,
+  planDirectoryGraftCitationRetraction,
+} from './directoryGraftCitations';
 import { planRefusedStoredWebsiteUrlClear } from './refusedStoredWebsiteUrl';
 import {
   isDroppedLoserWebsite,
@@ -1260,6 +1263,73 @@ export function withoutSupersededProfileSourceUrls(
   return sourceUrls
     .filter((url): url is string => typeof url === 'string' && url.trim().length > 0)
     .filter((url) => !isRetiredProfilePathForSamePerson(url, leadProfileUrl));
+}
+
+/**
+ * A citation the current log does not re-assert is not thereby retracted.
+ *
+ * `sourceUrls` is deliberately absent from `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`, but the
+ * projection used to write the resolver's list over the stored one, so silence did the
+ * retracting: any materialize without a fresh scrape in the same pass - a rematerialize, a
+ * catch-up, a gate re-derive - dropped a real citation. Measured on Development, 60 of the
+ * first 2,676 live rows examined lost one, including grant records and personal lab sites
+ * (#3476).
+ *
+ * Removal still happens and still needs a positive reason. Two kinds of reason reach here.
+ * `condemned` carries what the arms actually dropped this pass - the different-person
+ * retraction, the #613 profile supersession, the directory-graft stage, the vocabulary filter -
+ * and anything they dropped stays gone. But those arms only ever saw what the pass derived, so
+ * a stored graft the pass never re-derived was never offered to them and would come back
+ * uncondemned. Their predicates therefore run again over the candidates, which is a different
+ * thing from feeding the candidates to the arms that DERIVE from a citation.
+ *
+ * This runs after every arm that DERIVES a `websiteUrl` from a citation, and that ordering is the
+ * whole point. Re-admitting before them makes a stale citation an authoritative input: a
+ * `websiteUrl` retraction retires its observation, the promotion arm then reads the list and
+ * re-adopts the same site from the citation, and #2542's and #3452's "the next pass keeps it
+ * absent" both fail. The stored citation is evidence the row was seen, not evidence of what it
+ * says now. It runs before the Yale-status derivation and the #1802 provenance fallback, because
+ * both read the list the pass will write: after them, a restored in-memoriam page would sit
+ * beside an active status, and an already-sourced row would accrue a provenance url.
+ */
+export function planStoredCitationReadmission(input: {
+  stored: unknown;
+  planned: unknown;
+  condemned: ReadonlySet<string>;
+  entity: ResearchEntityHostOwnerIdentity;
+  citationIdentity?: ResearchEntityIdentity | null;
+  sourceLinkHealth?: unknown;
+}): string[] | null {
+  const stored = Array.isArray(input.stored)
+    ? input.stored.filter((url): url is string => typeof url === 'string' && Boolean(url.trim()))
+    : [];
+  // Nothing was going to be written, so there is nothing to shrink and nothing to restore.
+  if (stored.length === 0 || !Array.isArray(input.planned)) return null;
+  const planned = input.planned.filter((url): url is string => typeof url === 'string');
+  const plannedProfileDestinations = new Set(planned.map(normalizeOfficialProfileDestination));
+  // Called without an identity on purpose, so only the URL-shape filter runs: the identity arm
+  // would refuse a cross-school page the row legitimately cites, which is a retraction with no
+  // positive reason (#2945).
+  const admissible = sanitizeResearchEntitySourceUrlsForMaterialization(stored) as string[];
+  const readmitted = admissible.filter(
+    (url) =>
+      !input.condemned.has(url) &&
+      !planned.includes(url) &&
+      !(
+        isLikelyOfficialPersonProfileUrl(url) &&
+        plannedProfileDestinations.has(normalizeOfficialProfileDestination(url))
+      ) &&
+      !planned.some((next) => isRetiredProfilePathForSamePerson(url, next)) &&
+      !isKnownDeadSourceUrl(input.sourceLinkHealth, url) &&
+      !isDirectoryGraftCitation(url, input.entity) &&
+      !(
+        input.citationIdentity &&
+        personProfileSourceIsADifferentPersonThanCitedOwner(url, input.citationIdentity)
+      ),
+  );
+  if (readmitted.length === 0) return null;
+  // Stored order first, so the row's own citation order is stable and this pass appends.
+  return [...readmitted, ...planned].filter((url, index, all) => all.indexOf(url) === index);
 }
 
 const LEAD_IDENTITY_OBSERVATION_FIELDS = new Set([
@@ -5536,12 +5606,35 @@ export async function projectFromLog(
     // The detail-page official-profile CTA reads only entity.sourceUrls, so a
     // lead's official profile page must land there or the way-in disappears
     // even though it is a known source (issue #613).
+    const citationsCondemnedThisPass = new Set<string>();
     if (!manuallyLockedFields.includes('sourceUrls')) {
+      // Every arm in this block derives from the resolver's list, exactly as before. The stored
+      // citations this pass does not re-derive are re-admitted at the END of the projection
+      // instead, by `planStoredCitationReadmission` (#3476), for a reason worth stating:
+      // making the stored list an INPUT here resurrects what a retraction just removed. A
+      // `websiteUrl` retraction retires its observation, and then the promotion arm below reads
+      // the citation list and re-adopts the same site from the stale citation, so #2542's and
+      // #3452's "the next pass keeps it absent" both failed. Re-admission has to sit after
+      // every derivation that reads a citation, not before them.
       const storedSourceUrls = Array.isArray(set.sourceUrls)
         ? (set.sourceUrls as unknown[])
         : Array.isArray(entityDoc?.sourceUrls)
           ? (entityDoc?.sourceUrls as unknown[])
           : [];
+      // Every citation any arm below drops, so the re-admission can tell a removal with a
+      // positive reason from a citation the pass merely did not re-derive. Staging through one
+      // function is what makes that complete: an arm that assigns `set.sourceUrls` directly
+      // would have its removal read as silence and be handed straight back.
+      const stageSourceUrls = (next: unknown): void => {
+        const before = Array.isArray(set.sourceUrls)
+          ? (set.sourceUrls as unknown[])
+          : storedSourceUrls;
+        const after = Array.isArray(next) ? (next as unknown[]) : [];
+        for (const url of before) {
+          if (typeof url === 'string' && !after.includes(url)) citationsCondemnedThisPass.add(url);
+        }
+        set.sourceUrls = next;
+      };
       const citationIdentity = researchEntityIdentityWithCitationsThroughThisPass(
         sourceEntityIdentity,
         entityDoc?.sourceUrls,
@@ -5561,13 +5654,16 @@ export async function projectFromLog(
           )
         : storedSourceUrls;
       if (currentSourceUrls.length !== storedSourceUrls.length) {
-        set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization(currentSourceUrls);
+        stageSourceUrls(sanitizeResearchEntitySourceUrlsForMaterialization(currentSourceUrls));
         fieldsWritten++;
       }
       const leadProfileUrl = officialLeadProfileSourceUrl(
         materializationObs,
         entityDoc?.sourceLinkHealth,
-        currentSourceUrls,
+        [
+          ...currentSourceUrls,
+          ...(Array.isArray(entityDoc?.sourceUrls) ? (entityDoc?.sourceUrls as unknown[]) : []),
+        ],
         researchEntityIdentityWithCitationsThroughThisPass(
           sourceEntityIdentity,
           entityDoc?.sourceUrls,
@@ -5581,8 +5677,10 @@ export async function projectFromLog(
           (url) => normalizeOfficialProfileDestination(url) === leadDestination,
         );
         if (!alreadyPresent || retained.length !== currentSourceUrls.length) {
-          set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization(
-            alreadyPresent ? retained : [...retained, leadProfileUrl],
+          stageSourceUrls(
+            sanitizeResearchEntitySourceUrlsForMaterialization(
+              alreadyPresent ? retained : [...retained, leadProfileUrl],
+            ),
           );
           fieldsWritten++;
         }
@@ -5606,7 +5704,7 @@ export async function projectFromLog(
         );
       }
       if (graftRetraction.removed.length > 0) {
-        set.sourceUrls = graftRetraction.next;
+        stageSourceUrls(graftRetraction.next);
         fieldsWritten++;
       }
     }
@@ -5782,6 +5880,25 @@ export async function projectFromLog(
         `[stored-undergrad-evidence-quote] cleared a ${storedQuoteClear.reason} undergradEvidenceQuote`,
       );
       set.undergradEvidenceQuote = '';
+      fieldsWritten++;
+    }
+    const readmittedCitations = planStoredCitationReadmission({
+      stored: entityDoc?.sourceUrls,
+      planned: set.sourceUrls,
+      condemned: citationsCondemnedThisPass,
+      entity: {
+        entityType: set.entityType ?? entityDoc?.entityType,
+        kind: set.kind ?? entityDoc?.kind,
+      },
+      citationIdentity: researchEntityIdentityWithCitationsThroughThisPass(
+        sourceEntityIdentity,
+        entityDoc?.sourceUrls,
+        Array.isArray(set.sourceUrls) ? (set.sourceUrls as unknown[]) : [],
+      ),
+      sourceLinkHealth: entityDoc?.sourceLinkHealth,
+    });
+    if (readmittedCitations) {
+      set.sourceUrls = readmittedCitations;
       fieldsWritten++;
     }
     if (yaleStatusCacheIsWritable({ manuallyLockedFields })) {
