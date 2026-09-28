@@ -159,13 +159,6 @@ const BARE_POPULATION_HEADING =
   /^\W*(?:(?:current|former|our)\s+)?(?:undergrad(?:uate)?s?|college\s+students?)(?:\s+(?:research|lab|laboratory|students?|researchers?|members?|interns?|assistants?)){0,3}\W*$/i;
 
 /**
- * The microsite lane's own admission rule for a quote that backs "Has hosted undergraduate
- * researchers" (#3764). The shared plausibility check accepts a bare "students", which on a lab
- * site is usually a postdoc, rotation, or PhD invitation, and a bare "Undergraduate Students"
- * navigation heading, which names no one. The department undergraduate-research lane keeps
- * the looser rule because its pages are about undergraduates by construction.
- */
-/**
  * Whether text carries an undergraduate marker at all, with none of the quote-shape checks a
  * standalone evidence quote needs. A roster line is read under a section heading that already
  * says who the people are, so it has no population word of its own to check.
@@ -178,6 +171,13 @@ export function namesAnUndergraduateMarker(text: string): boolean {
   );
 }
 
+/**
+ * The microsite lane's own admission rule for a quote that backs "Has hosted undergraduate
+ * researchers" (#3764). The shared plausibility check accepts a bare "students", which on a lab
+ * site is usually a postdoc, rotation, or PhD invitation, and a bare "Undergraduate Students"
+ * navigation heading, which names no one. The department undergraduate-research lane keeps
+ * the looser rule because its pages are about undergraduates by construction.
+ */
 export function laneQuoteStatesUndergraduates(quote: string | undefined | null): boolean {
   const text = (quote || '').trim();
   if (!isPlausibleUndergradEvidenceQuote(text)) return false;

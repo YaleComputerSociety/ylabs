@@ -92,6 +92,8 @@ describe('rosterSnippetNamesAnUndergraduate (#3789)', () => {
     'Jordan Example Undergraduate Research Assistant',
     'Riley Example, Yale College Class of 2028',
     'Sam ExampleSeniorSam joined the group to work on gap extraction',
+    'Val Example, Undergraduate Research Fellow',
+    'Quinn Example, SURF Fellow',
   ])('counts %s', (snippet) => {
     expect(rosterSnippetNamesAnUndergraduate(snippet)).toBe(true);
   });
@@ -101,6 +103,13 @@ describe('rosterSnippetNamesAnUndergraduate (#3789)', () => {
     'Pat Example, PhD student',
     'Casey Example, Postdoctoral Associate',
     'Taylor Example completed her undergraduate degree at another university',
+    'Kim Example, Research Associate',
+    "Lee Example, Master's student",
+    'Ash Example, MD student',
+    'Ash Example, Medical Student',
+    'Rae Example, Rotation student',
+    'Val Example, Research Fellow',
+    'Pat Example, PhD student, mentors undergraduate researchers',
     '',
   ])('does not count %j', (snippet) => {
     expect(rosterSnippetNamesAnUndergraduate(snippet)).toBe(false);

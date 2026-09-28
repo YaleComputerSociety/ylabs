@@ -110,6 +110,9 @@ const MAX_SUBPAGES_FETCHED = 3;
 const UNDERGRAD_ACCESS_EVIDENCE_FIELD = 'undergradAccessEvidence';
 const UNDERGRAD_EVIDENCE_QUOTE_FIELD = 'undergradEvidenceQuote';
 const MIN_READABLE_PAGE_TEXT_CHARS = 200;
+// Part of the content-hash contract: bumping it makes an unchanged page re-derive its
+// observations on the next read, served from the answer cache when one is held (#3789).
+const OBSERVATION_DERIVATION_VERSION = 'roster-only-undergrad-count-v1';
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -635,9 +638,9 @@ function isCurrentYaleUndergradEvidence(quote?: string): boolean {
  *   - When the LLM supplies a per-person `currentUndergradEvidenceQuotes` roster
  *     (the strengthened prompt requires one snippet per counted undergrad), the
  *     count is derived from the subset of snippets that clear both gates.
- *   - Each snippet must also carry an undergraduate marker once teaching, degree and
- *     title mentions are set aside, so a staff title or a member's own degree is not
- *     counted as a student (#3789).
+ *   - Each snippet must also pass rosterSnippetNamesAnUndergraduate: a bare name
+ *     counts, while a staff title, a graduate role or a member's own degree does not
+ *     (#3789).
  *   - With no roster the count is zero: the bare LLM integer backed 13 of 20 stored
  *     counts on a hand-read, so it is never trusted on its own (#3789).
  */
@@ -655,10 +658,11 @@ export function deriveCurrentUndergradCount(extraction: LLMExtraction): number {
  *
  *   - undergradAccessEvidence: emitted iff openToUndergrads is 'yes' or 'no';
  *     skipped on 'unclear', and skipped unless its quote is on a fetched page. Confidence override 0.5 (LLM-based, low-trust).
- *   - currentUndergradCount: emitted on every completed read, and zero when no
- *     grounded roster snippet survives the gates in deriveCurrentUndergradCount.
- *     The field is latest-wins, so a re-read replaces a stale positive (#3789).
- *     Confidence 0.5.
+ *   - currentUndergradCount: emitted on every read, and zero when no grounded
+ *     roster snippet survives the gates in deriveCurrentUndergradCount. The field
+ *     is latest-wins, so a re-read replaces a stale positive (#3789). A zero is
+ *     withheld when readIsComplete is false, so a sub-page the home page links to
+ *     that failed to fetch cannot erase a count it backed. Confidence 0.5.
  *   - every quote field: emitted only when the quote is on a fetched page, and
  *     cited to that page (#3592).
  *   - undergradEvidenceQuote: emitted iff evidenceQuote is non-empty, plausible,
@@ -678,6 +682,7 @@ export function extractionToObservations(
     sourceTexts?: string[];
     sourcePages?: PromptSourcePage[];
     entityIdentity?: ResearchEntityIdentity;
+    readIsComplete?: boolean;
   } = {},
 ): ObservationInput[] {
   const sourceUrls = sourceContext.sourceUrls?.filter(Boolean) ?? [sourceUrl];
@@ -725,18 +730,21 @@ export function extractionToObservations(
   }
   // 'unclear' → no observation
 
-  out.push({
-    ...base,
-    field: 'currentUndergradCount',
-    value: deriveCurrentUndergradCount({
-      ...extraction,
-      evidenceQuote: evidenceQuote?.text ?? '',
-      currentUndergradEvidenceQuotes: extraction.currentUndergradEvidenceQuotes?.filter(
-        (quote) => pageContainingQuote(quote, pages) !== null,
-      ),
-    }),
-    confidenceOverride: 0.5,
+  const currentUndergradCount = deriveCurrentUndergradCount({
+    ...extraction,
+    evidenceQuote: evidenceQuote?.text ?? '',
+    currentUndergradEvidenceQuotes: extraction.currentUndergradEvidenceQuotes?.filter(
+      (quote) => pageContainingQuote(quote, pages) !== null,
+    ),
   });
+  if (currentUndergradCount > 0 || sourceContext.readIsComplete !== false) {
+    out.push({
+      ...base,
+      field: 'currentUndergradCount',
+      value: currentUndergradCount,
+      confidenceOverride: 0.5,
+    });
+  }
 
   if (
     evidenceQuote &&
@@ -1288,6 +1296,10 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         }
         const homeText = htmlToPromptText(homePage.html);
 
+        const linkedSubPageUrls = new Set(
+          discoverSubPageUrls(homePage.html, homePage.url).map(normalizeCandidateUrl),
+        );
+        let linkedSubPageUnread = false;
         const subPages: PromptSourcePage[] = [];
         for (const candidate of candidateCrawlUrls(homePage.html, homePage.url)) {
           if (subPages.length >= MAX_SUBPAGES_FETCHED) break;
@@ -1296,7 +1308,10 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           );
           fetchAttempts.push(measuredSubPage.metric);
           const fetched = measuredSubPage.result;
-          if (!fetched) continue;
+          if (!fetched) {
+            if (linkedSubPageUrls.has(candidate)) linkedSubPageUnread = true;
+            continue;
+          }
           const text = htmlToPromptText(fetched.html);
           if (!text) continue;
           subPages.push({ url: fetched.url, text });
@@ -1340,6 +1355,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           [homeText, ...subPages.map((page) => page.text)].join('\n'),
           UNDERGRAD_EXTRACTION_PROMPT_HASH,
           this.model,
+          OBSERVATION_DERIVATION_VERSION,
         );
         const storedContentHash = ctx.options.forceLlm
           ? undefined
@@ -1416,6 +1432,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
             sourceTexts: [homeText, ...subPages.map((page) => page.text)],
             sourcePages,
             entityIdentity: lab,
+            readIsComplete: !linkedSubPageUnread,
           },
         );
         if ((lab.manuallyLockedFields || []).includes(UNDERGRAD_ACCESS_EVIDENCE_FIELD)) {

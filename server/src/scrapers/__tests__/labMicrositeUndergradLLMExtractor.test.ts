@@ -36,7 +36,10 @@ import {
   type LLMExtraction,
   type FetchedPage,
   type WorkPlanLoaderFn,
+  DEFAULT_MODEL,
 } from '../sources/labMicrositeUndergradLLMExtractor';
+import { computeVersionedContentHash } from '../contentHashGate';
+import { UNDERGRAD_EXTRACTION_PROMPT_HASH } from '../prompts';
 import type { ObservationInput, ScraperContext } from '../types';
 import { isFullDescriptionRestatementOfShortDescription } from '../../utils/researchEntityDescriptionQuality';
 
@@ -1329,16 +1332,14 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
   it('rejects unsafe runtime limits before loading candidate labs', async () => {
     const fetchPage = vi.fn();
     const callLLM = vi.fn();
-    const labFinder = vi.fn(
-      async (): Promise<CandidateLab[]> => [
-        {
-          _id: '1',
-          slug: 'smith-lab',
-          name: 'Smith Lab',
-          websiteUrl: 'https://smith.example.edu/',
-        },
-      ],
-    );
+    const labFinder = vi.fn(async (): Promise<CandidateLab[]> => [
+      {
+        _id: '1',
+        slug: 'smith-lab',
+        name: 'Smith Lab',
+        websiteUrl: 'https://smith.example.edu/',
+      },
+    ]);
     const scraper = newTestScraper({
       fetchPage,
       callLLM,
@@ -1430,6 +1431,63 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(evidence!.confidenceOverride).toBe(0.5);
     expect(evidence!.entityKey).toBe('smith-lab');
     expect(emitted.find((o) => o.field === 'currentUndergradCount')!.value).toBe(3);
+  });
+
+  describe('re-deriving a stored current-undergraduate count (#3789)', () => {
+    const smithLab = async (): Promise<CandidateLab[]> => [
+      {
+        _id: '1',
+        slug: 'smith-lab',
+        name: 'The Smith Lab',
+        websiteUrl: 'https://smith.example.com/',
+      },
+    ];
+    const noRosterAnswer: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 3,
+      evidenceQuote: 'We welcome undergraduate researchers each semester.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+    };
+    const runWith = async (pages: Record<string, string>) => {
+      const scraper = newTestScraper({
+        fetchPage: makeFetchPage(pages),
+        callLLM: async () => noRosterAnswer,
+        labFinder: smithLab,
+        apiKey: 'sk-test',
+      });
+      const { ctx, emitted } = makeContext();
+      await scraper.run(ctx);
+      return emitted;
+    };
+
+    it('writes a zero when every linked page was read and no roster line survives', async () => {
+      const emitted = await runWith({
+        'https://smith.example.com/': HOME_HTML,
+        'https://smith.example.com/people': PEOPLE_HTML,
+      });
+      expect(emitted.find((o) => o.field === 'currentUndergradCount')?.value).toBe(0);
+    });
+
+    it('withholds a zero when a sub-page the home page links to failed to fetch', async () => {
+      const emitted = await runWith({ 'https://smith.example.com/': HOME_HTML });
+      expect(emitted.some((o) => o.field === 'currentUndergradCount')).toBe(false);
+    });
+
+    it('stores a content hash that a hash from before the roster-only count does not match', async () => {
+      const emitted = await runWith({
+        'https://smith.example.com/': HOME_HTML,
+        'https://smith.example.com/people': PEOPLE_HTML,
+      });
+      const priorContractHash = computeVersionedContentHash(
+        [htmlToPromptText(HOME_HTML), htmlToPromptText(PEOPLE_HTML)].join('\n'),
+        UNDERGRAD_EXTRACTION_PROMPT_HASH,
+        DEFAULT_MODEL,
+      );
+      const stored = emitted.find((o) => o.field === 'sourceContentHash')?.value;
+      expect(stored).toEqual(expect.any(String));
+      expect(stored).not.toBe(priorContractHash);
+    });
   });
 
   it('discovers sub-pages from the resolved final home page URL', async () => {
@@ -1544,15 +1602,13 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       'https://fresh.example.com/':
         '<html><body><h1>Fresh Lab</h1><p>Undergraduates join projects.</p></body></html>',
     });
-    const callLLM = vi.fn(
-      async (): Promise<LLMExtraction> => ({
-        openToUndergrads: 'yes',
-        currentUndergradCount: 0,
-        evidenceQuote: 'Undergraduates join projects.',
-        evidenceSource: 'explicit_text',
-        joinPageUrl: null,
-      }),
-    );
+    const callLLM = vi.fn(async (): Promise<LLMExtraction> => ({
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'Undergraduates join projects.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+    }));
     const workPlanLoader = vi.fn(async (lab, policy) => ({
       entityType: policy.entityType,
       entityKey: lab.slug,
@@ -2084,9 +2140,8 @@ describe('LabMicrositeUndergradLLMExtractor one-lab failure isolation (#3558)', 
         throw new RangeError('Maximum call stack size exceeded');
       },
     } as unknown as LLMExtraction;
-    const callLLM = vi.fn(
-      async ({ userPrompt }: { userPrompt: string }): Promise<LLMExtraction> =>
-        userPrompt.includes('Failing Lab') ? unreadableExtraction : extraction,
+    const callLLM = vi.fn(async ({ userPrompt }: { userPrompt: string }): Promise<LLMExtraction> =>
+      userPrompt.includes('Failing Lab') ? unreadableExtraction : extraction,
     );
     const scraper = newTestScraper({
       fetchPage: makeFetchPage({
