@@ -2023,9 +2023,10 @@ test('research entity browse-rank service ids use safe serialization for map key
     source,
     /const browseRankDocumentId = \(value: unknown\): string => serializedDocumentId\(value\) \|\| ''/,
   );
-  assert.match(source, /const key = browseRankDocumentId\(signal\.researchEntityId\)/);
+  assert.match(source, /const key = browseRankDocumentId\(relationship\.sourceResearchEntityId\)/);
   assert.match(source, /const id = browseRankDocumentId\(entity\._id\)/);
   assert.doesNotMatch(source, /String\(signal\.researchEntityId/);
+  assert.doesNotMatch(source, /String\(relationship\.sourceResearchEntityId/);
   assert.doesNotMatch(source, /String\(entity\._id\)/);
 });
 

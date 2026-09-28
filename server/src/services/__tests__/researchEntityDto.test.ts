@@ -663,6 +663,25 @@ describe('researchEntityDto', () => {
     );
   });
 
+  it('serves the hosted-undergraduates flag from the row, not from a stale stored flag (#3593)', () => {
+    const hosted = toPublicResearchEntityDto({
+      id: 'entity-hosted',
+      slug: 'hosted-lab',
+      name: 'Hosted Lab',
+      pastUndergradAdvisees: [{ name: 'Synthetic Advisee', count: 1 }],
+    });
+    expect(hosted.hasUndergradHostingEvidence).toBe(true);
+
+    const staleFlag = toPublicResearchEntityDto({
+      id: 'entity-stale',
+      slug: 'stale-lab',
+      name: 'Stale Lab',
+      hasUndergradHostingEvidence: true,
+      currentUndergradCount: 3,
+    });
+    expect(staleFlag.hasUndergradHostingEvidence).toBeUndefined();
+  });
+
   it('splits bare comma-delimited research-area blobs while preserving enumeration titles', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-area-split',

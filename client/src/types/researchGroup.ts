@@ -127,6 +127,8 @@ export interface ResearchGroup {
   undergradEvidenceQuote?: string;
   /** Past undergrad advisees discovered via thesis/STARS/etc. scrapers. */
   pastUndergradAdvisees?: PastUndergradAdvisee[];
+  /** Served by the API from the one hosted-undergraduates predicate the browse filter also uses. */
+  hasUndergradHostingEvidence?: boolean;
   /** True when the lab is reachable via an independent-study course. */
   offersIndependentStudy?: boolean;
   independentStudyCourses?: IndependentStudyCourse[];

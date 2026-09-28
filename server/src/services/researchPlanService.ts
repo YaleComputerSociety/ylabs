@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { entityHasHostedUndergraduates } from './accessAcceptanceLevel';
 import { ResearchEntity, ResearchPlan } from '../models/index';
 import { readPrograms } from './programService';
 import {
@@ -144,7 +145,7 @@ export const boundSavedResearchEntitySummaryText = (
 // official-roster lead and make the saved card strip a name its own detail page
 // keeps (#2240).
 export const savedResearchEntityProjection = withPublicDescriptionGateFields(
-  '_id slug departments school hasUndergradHostingEvidence rosterEnrichment',
+  '_id slug departments school pastUndergradAdvisees rosterEnrichment',
 );
 
 const asBoolean = (value: unknown): boolean => value === true;
@@ -322,7 +323,7 @@ export const normalizeResearchPlanUpdate = (plan: ResearchPlanInput): Record<str
 const servedUndergraduateAccessFields = (
   entity: any,
 ): Pick<SavedResearchEntitySummary, 'hasUndergradHostingEvidence'> =>
-  entity.hasUndergradHostingEvidence === true ? { hasUndergradHostingEvidence: true } : {};
+  entityHasHostedUndergraduates(entity) ? { hasUndergradHostingEvidence: true } : {};
 
 /**
  * A saved-list card, built through the same lead-name-aware sanitizer the browse card

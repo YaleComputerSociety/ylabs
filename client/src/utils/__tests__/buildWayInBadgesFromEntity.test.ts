@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildWayInBadgesFromEntity } from '../researchDiscoveryAdapters';
+import { buildWayInBadges, buildWayInBadgesFromEntity } from '../researchDiscoveryAdapters';
+import type { PathwaySearchHit } from '../../types/pathway';
 import type { ResearchEntity } from '../../types/researchGroup';
 
 const entity = (fields: Partial<ResearchEntity>): ResearchEntity =>
@@ -15,11 +16,22 @@ describe('buildWayInBadgesFromEntity', () => {
     expect(buildWayInBadgesFromEntity(undefined)).toEqual([]);
   });
 
+  it('reads undergraduate evidence from the served hosted flag (#3593)', () => {
+    expect(buildWayInBadgesFromEntity(entity({ hasUndergradHostingEvidence: true }))).toEqual([
+      'Undergrad evidence',
+    ]);
+  });
+
+  /**
+   * The badge must not re-derive hosting from raw fields: the server owns the one
+   * predicate the browse filter and saved plans also read, so a field the server
+   * does not count, such as a roster count it holds out, must not light the badge.
+   */
   it.each([
-    ['past advisees', { pastUndergradAdvisees: [{}] as ResearchEntity['pastUndergradAdvisees'] }],
+    ['a current undergraduate count', { currentUndergradCount: 3 }],
     ['typical roles', { typicalUndergradRoles: ['Data analysis'] }],
-  ])('reads undergraduate evidence from %s', (_label, fields) => {
-    expect(buildWayInBadgesFromEntity(entity(fields))).toEqual(['Undergrad evidence']);
+  ])('does not re-derive hosting from %s', (_label, fields) => {
+    expect(buildWayInBadgesFromEntity(entity(fields))).toEqual([]);
   });
 
   /**
@@ -68,12 +80,32 @@ describe('buildWayInBadgesFromEntity', () => {
   it('never claims a contact route', () => {
     const everything = entity({
       offersIndependentStudy: true,
-      typicalUndergradRoles: ['Field work'],
+      hasUndergradHostingEvidence: true,
     });
 
     expect(buildWayInBadgesFromEntity(everything)).toEqual([
       'Undergrad evidence',
       'Student project evidence',
     ]);
+  });
+});
+
+describe('buildWayInBadges hosting signals (#3593)', () => {
+  const pathwayWith = (signalType: string) =>
+    ({ evidence: [{ signalType }], bestNextStepCategory: '' }) as unknown as PathwaySearchHit;
+
+  it('reads undergraduate evidence from past undergraduates only', () => {
+    expect(buildWayInBadges(undefined, [pathwayWith('PAST_UNDERGRADS')])).toContain(
+      'Undergrad evidence',
+    );
+    for (const held of ['CURRENT_UNDERGRADS', 'FACULTY_SUPERVISION']) {
+      expect(buildWayInBadges(undefined, [pathwayWith(held)])).not.toContain('Undergrad evidence');
+    }
+  });
+
+  it('keeps supervised student projects as their own badge', () => {
+    expect(
+      buildWayInBadges(undefined, [pathwayWith('FACULTY_SUPERVISES_STUDENT_PROJECTS')]),
+    ).toEqual(['Student project evidence']);
   });
 });

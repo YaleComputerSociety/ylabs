@@ -97,26 +97,25 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     expect(await scoreOf(initiative._id)).toBe(await scoreOf(lab._id));
   });
 
-  it('persists hasUndergradHostingEvidence only for undergrad-specific signals, not generic outreach (#1054)', async () => {
+  it('persists hasUndergradHostingEvidence from the row the card reads, not from lingering signals (#3593)', async () => {
     const hosting = await createEntity('lab-hosting', 'LAB');
+    const staleSignalOnly = await createEntity('lab-stale-signal', 'LAB');
     const outreachOnly = await createEntity('lab-outreach-only', 'LAB');
-    const notAvailableWithOutreach = await createEntity('lab-not-available', 'LAB');
 
-    await Signal.create({ researchEntityId: hosting._id, type: 'PAST_UNDERGRADS' });
-    await Signal.create({ researchEntityId: outreachOnly._id, type: 'REACH_OUT_PLAUSIBLE' });
-    await Signal.create({
-      researchEntityId: notAvailableWithOutreach._id,
-      type: 'REACH_OUT_PLAUSIBLE',
-    });
-    await Signal.create({
-      researchEntityId: notAvailableWithOutreach._id,
-      type: 'NOT_CURRENTLY_AVAILABLE',
-    });
-
-    await recomputeBrowseRankForEntities(
-      [hosting._id, outreachOnly._id, notAvailableWithOutreach._id],
-      { sync: false },
+    await ResearchEntity.updateOne(
+      { _id: hosting._id },
+      { $set: { pastUndergradAdvisees: [{ name: 'Synthetic Advisee', count: 1 }] } },
     );
+    await Signal.create({ researchEntityId: staleSignalOnly._id, type: 'PAST_UNDERGRADS' });
+    await Signal.create({ researchEntityId: outreachOnly._id, type: 'REACH_OUT_PLAUSIBLE' });
+    await ResearchEntity.updateOne(
+      { _id: staleSignalOnly._id },
+      { $set: { hasUndergradHostingEvidence: true } },
+    );
+
+    await recomputeBrowseRankForEntities([hosting._id, staleSignalOnly._id, outreachOnly._id], {
+      sync: false,
+    });
 
     const evidenceOf = async (id: mongoose.Types.ObjectId): Promise<boolean> => {
       const doc = await ResearchEntity.findById(id).lean<{
@@ -126,7 +125,7 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     };
 
     expect(await evidenceOf(hosting._id)).toBe(true);
+    expect(await evidenceOf(staleSignalOnly._id)).toBe(false);
     expect(await evidenceOf(outreachOnly._id)).toBe(false);
-    expect(await evidenceOf(notAvailableWithOutreach._id)).toBe(false);
   });
 });

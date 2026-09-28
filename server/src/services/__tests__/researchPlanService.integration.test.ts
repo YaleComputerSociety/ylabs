@@ -293,7 +293,7 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
       fullDescription:
         'This research studies molecular dynamics, protein folding, and cellular signaling across complex biological systems.',
       sourceUrls: ['https://example.yale.edu/labs/open-lab'],
-      hasUndergradHostingEvidence: true,
+      pastUndergradAdvisees: [{ name: 'Synthetic Advisee', count: 1 }],
       archived: false,
     });
 

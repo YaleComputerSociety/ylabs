@@ -5,6 +5,24 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-28: One Hosted-Undergraduates Predicate, Past Undergraduates Only For Now (#3593)
+
+"Has hosted undergraduate researchers" had four definitions.
+The browse card read `pastUndergradAdvisees` and `typicalUndergradRoles`, the pathway badge read `CURRENT_UNDERGRADS`, `PAST_UNDERGRADS` and a `FACULTY_SUPERVISION` signal nothing mints, and the `hostsUndergrads` filter and saved plans read a stored flag that also counted `CURRENT_UNDERGRADS` and `FACULTY_SUPERVISES_STUDENT_PROJECTS`.
+On Development that flag was set on 290 unarchived rows while the card showed the badge on 5.
+
+There is now one predicate, `entityHasHostedUndergraduates` in `server/src/services/accessAcceptanceLevel.ts`, over one input, `pastUndergradAdvisees`, the field that mints `PAST_UNDERGRADS`.
+Every surface reads it: the API serves `hasUndergradHostingEvidence` on each research entity, the card reads that flag instead of re-deriving it, saved plans use the same test, and `researchEntityBrowseRankService` writes the stored flag the filter reads from it too.
+The stored flag is no longer derived from `AccessSignal` rows, because the access materializer never archives a signal it stops deriving, so a lingering `PAST_UNDERGRADS` signal would keep a row in the filter after its card lost the badge.
+Supervising student projects is a separate claim with its own badge.
+
+`CURRENT_UNDERGRADS` is held out because its stored input is not yet trustworthy.
+A hand-read of 20 stored `lab-microsite-undergrad-llm` counts against their cited pages found 13 backed, while the lane's current page-grounded code scored 6 of 6 on `undergrad-llm-gold-v2`, so the gap is counts written by older runs.
+Re-admitting it needs those counts re-derived and re-measured, not a code change here, which #3789 tracks.
+
+The served flag is derived at request time, so the card, the pathway badge and saved plans are right on deploy.
+The stored `hasUndergradHostingEvidence` that the `hostsUndergrads` filter reads is stored data, so this half is done only after `yarn --cwd server research-homes:backfill-browse-rank` has run against Development and the filtered browse output has been re-read.
+
 ## 2026-09-27: A Provenance Entry Names Its Observation, And An Attribution Nothing Backs Is Retired, Not The Value (#3769)
 
 A `fieldProvenance` entry says a lane stands behind a value, and the only thing a lane can stand behind is an observation.
@@ -911,6 +929,7 @@ It has no reachable reader, measured at `2275702f`.
 Beta and Production each hold 4183 live rows from it, all `confidence=LOW` with `confidenceScore` capped at 0.4 by `Math.min(0.4, ...)` in the derivation itself, so the confidence is structural rather than incidental.
 `signalCountsTowardAcceptance`, `accessSignalCount` in the gate, `reachOutPlausibleSignalCreditsActionEvidence`, and `countResearchEntityAlternateAccessPaths` all exclude the two keys by denylist.
 `researchEntityBrowseRankService` over-fetches every access signal but feeds only `hasUndergradHostingEvidenceFromSignals`, whose set is `PAST_UNDERGRADS`/`CURRENT_UNDERGRADS`/`FACULTY_SUPERVISES_STUDENT_PROJECTS`.
+Since #3593 it reads no signals at all, recorded in its own entry above.
 `researchEntitySearchIndexService` reads no signals.
 On the client, `accessSignals` reach only `buildResearchDetailSources`, which drops anything `LOW` via `isCitableAccessSignal`, so 0 of 4183 contribute even a citation, and no code path renders a signal excerpt at all.
 The one reader that does see them is `researchEntityEvidenceCoverage`, where `hasAccess = accessSignals.length > 0` has no derivation-key filter; that feeds a scrape-run diagnostic report, is not served and gates nothing, and losing these rows makes `missing_access_evidence` correct rather than wrong.

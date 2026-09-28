@@ -5,7 +5,7 @@ import {
   IDENTIFIED_FACULTY_LEAD_WAYS_IN_DERIVATION_KEY,
   ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY,
   canonicalAcceptanceLevelFromSignals,
-  hasUndergradHostingEvidenceFromSignals,
+  entityHasHostedUndergraduates,
 } from '../accessAcceptanceLevel';
 
 describe('accessAcceptanceLevel', () => {
@@ -104,24 +104,25 @@ describe('accessAcceptanceLevel', () => {
   });
 });
 
-describe('hasUndergradHostingEvidenceFromSignals (#1054)', () => {
-  it('is true for any undergrad-specific hosting/supervision signal', () => {
-    expect(hasUndergradHostingEvidenceFromSignals([{ type: 'PAST_UNDERGRADS' }])).toBe(true);
-    expect(hasUndergradHostingEvidenceFromSignals([{ type: 'CURRENT_UNDERGRADS' }])).toBe(true);
+describe('entityHasHostedUndergraduates (#3593)', () => {
+  it('is true for a row with past undergraduate advisees', () => {
     expect(
-      hasUndergradHostingEvidenceFromSignals([{ type: 'FACULTY_SUPERVISES_STUDENT_PROJECTS' }]),
+      entityHasHostedUndergraduates({
+        pastUndergradAdvisees: [{ name: 'Synthetic Advisee', count: 2 }],
+      }),
+    ).toBe(true);
+    expect(
+      entityHasHostedUndergraduates({ pastUndergradAdvisees: [{ name: 'Synthetic Advisee' }] }),
     ).toBe(true);
   });
 
-  it('is false for generic outreach signals that only lift the broad acceptance tier', () => {
-    expect(hasUndergradHostingEvidenceFromSignals([])).toBe(false);
+  it('is false with no advisees or only zero counts', () => {
+    expect(entityHasHostedUndergraduates({})).toBe(false);
+    expect(entityHasHostedUndergraduates({ pastUndergradAdvisees: [] })).toBe(false);
     expect(
-      hasUndergradHostingEvidenceFromSignals([
-        { type: 'REACH_OUT_PLAUSIBLE' },
-        { type: 'CONTACT_INSTRUCTIONS_EXIST' },
-        { type: 'APPLICATION_FORM_EXISTS' },
-        { type: 'NOT_CURRENTLY_AVAILABLE' },
-      ]),
+      entityHasHostedUndergraduates({
+        pastUndergradAdvisees: [{ name: 'Synthetic Advisee', count: 0 }],
+      }),
     ).toBe(false);
   });
 });
