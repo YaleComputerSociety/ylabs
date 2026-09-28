@@ -126,3 +126,26 @@ describe('entityHasHostedUndergraduates (#3593)', () => {
     ).toBe(false);
   });
 });
+
+describe('entityHasHostedUndergraduates with a current roster count (#3789)', () => {
+  it('counts a grounded roster count from the microsite lane', () => {
+    expect(
+      entityHasHostedUndergraduates({
+        currentUndergradCount: 2,
+        fieldProvenance: { currentUndergradCount: { sourceName: 'lab-microsite-undergrad-llm' } },
+      }),
+    ).toBe(true);
+  });
+
+  it('does not count a zero, or a count held only by the retired cache backfill', () => {
+    expect(entityHasHostedUndergraduates({ currentUndergradCount: 0 })).toBe(false);
+    expect(
+      entityHasHostedUndergraduates({
+        currentUndergradCount: 5,
+        fieldProvenance: {
+          currentUndergradCount: { sourceName: 'research-entity-cache-backfill' },
+        },
+      }),
+    ).toBe(false);
+  });
+});

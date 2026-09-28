@@ -78,6 +78,7 @@ Supervising student projects is a separate claim with its own badge.
 `CURRENT_UNDERGRADS` is held out because its stored input is not yet trustworthy.
 A hand-read of 20 stored `lab-microsite-undergrad-llm` counts against their cited pages found 13 backed, while the lane's current page-grounded code scored 6 of 6 on `undergrad-llm-gold-v2`, so the gap is counts written by older runs.
 Re-admitting it needs those counts re-derived and re-measured, not a code change here, which #3789 tracks.
+It was re-admitted on 2026-09-28 after the #3789 re-run re-derived those counts from grounded roster lines: 28 of 30 stored positive counts then sampled on Development were backed by the cited page, against 13 of 20 before, and a count held only by the retired cache backfill still does not count.
 
 The served flag is derived at request time, so the card, the pathway badge and saved plans are right on deploy.
 The stored `hasUndergradHostingEvidence` that the `hostsUndergrads` filter reads is stored data, so this half is done only after `yarn --cwd server research-homes:backfill-browse-rank` has run against Development and the filtered browse output has been re-read.
