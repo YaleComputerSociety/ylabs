@@ -34,6 +34,7 @@ A benchmark captured before #3590 has no record of the renderer, so it replays a
 
 A replay is compared only once it has resolved something from the frozen input.
 One that served none of its frozen pages, or a rendered lane that served none of its frozen renders, is reported as unscored rather than scored, because it measured a path that never engaged.
+A lane that aborts because it requested a page or render the capture never froze is reported as unscored too, so one such benchmark does not stop the sweep before the others store their rows.
 
 An LLM lane is benchmarkable because capture also freezes every model call (#3587).
 Each chat-completion response is stored keyed by a hash of the exact request body, and replay serves it, so two replays of unchanged code give the same fingerprint.

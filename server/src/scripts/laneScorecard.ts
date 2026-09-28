@@ -155,7 +155,8 @@ export async function replayBenchmark(
   } catch (error) {
     if (!(error instanceof BenchmarkReplayNetworkError)) throw error;
     return {
-      refusedReason: 'replay requested a page or render the capture never froze, so the lane aborted',
+      refusedReason:
+        'replay requested a page or render the capture never froze, so the lane aborted',
     } as const;
   } finally {
     replay = finishBenchmarkReplay();
