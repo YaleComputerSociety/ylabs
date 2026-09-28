@@ -39,9 +39,11 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
   };
 });
 
+import { Account } from '../../models/account';
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { ResearchEntityRelationship } from '../../models/researchEntityRelationship';
+import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { ScrapeRun } from '../../models/scrapeRun';
 import { getResearchGroupDetail } from '../../services/researchGroupService';
@@ -507,6 +509,269 @@ describe(
       expect(directors).toHaveLength(1);
       const foreign = (await RoleAssignment.findOne({ personId: otherPerson }).lean()) as any;
       expect(foreign.state).toBe('UNKNOWN');
+    });
+  },
+);
+
+describe(
+  'centers-institutes-index adopts provenance-less edges of the people it lists (#3799)',
+  { timeout: 120000 },
+  () => {
+    let replSet: MongoMemoryReplSet;
+
+    beforeAll(async () => {
+      replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+      await mongoose.connect(replSet.getUri());
+      await Observation.syncIndexes();
+    }, 60000);
+
+    afterAll(async () => {
+      await mongoose.disconnect();
+      await replSet.stop();
+    });
+
+    beforeEach(async () => {
+      clearC4Flags();
+      gateMocks.gateChangesNothing = false;
+      meiliMocks.syncEntities.mockReset();
+      meiliMocks.syncEntities.mockImplementation(async () => {});
+      const db = mongoose.connection.db;
+      if (!db) throw new Error('no db');
+      for (const name of [
+        'observations',
+        'research_entities',
+        'research_entity_relationships',
+        'researchers',
+        'role_assignments',
+        'scrape_runs',
+        'accounts',
+      ]) {
+        await db.collection(name).deleteMany({});
+      }
+    });
+
+    const LONG_AGO = new Date('2026-01-15T00:00:00Z');
+
+    const accountHolder = async (first: string, profileUrl?: string) => {
+      const netid = `${first.toLowerCase()}syn`;
+      const account = await Account.create({
+        netid,
+        email: `${netid}@fixture.example.edu`,
+        status: 'UNKNOWN',
+        archived: false,
+      });
+      const researcher = await Researcher.create({
+        displayName: `${first} Synthetic`,
+        accountId: account._id,
+        profileLinks: [],
+        archived: false,
+        ...(profileUrl ? { profile: { websiteUrl: profileUrl } } : {}),
+      });
+      return researcher._id as mongoose.Types.ObjectId;
+    };
+
+    const listedAccountHolder = (first: string) => accountHolder(first, member(first).profileUrl);
+
+    const unprovenancedEdge = async (
+      personId: mongoose.Types.ObjectId,
+      role: string,
+      rosterProvenance?: Record<string, unknown>,
+    ) =>
+      (
+        await RoleAssignment.create({
+          personId,
+          target: { kind: 'RESEARCH_ENTITY', id: await centerId() },
+          role,
+          state: 'UNKNOWN',
+          confidence: 0.5,
+          reviewStatus: 'UNREVIEWED',
+          archived: false,
+          startedAt: LONG_AGO,
+          ...(rosterProvenance ? { rosterProvenance } : {}),
+        })
+      )._id;
+
+    const edge = async (id: unknown) => (await RoleAssignment.findById(id).lean()) as any;
+
+    const personEdges = async (personId: mongoose.Types.ObjectId) =>
+      (await RoleAssignment.find({ personId, 'target.id': await centerId() }).lean()) as any[];
+
+    const seedCenterWithoutAnAdmittedRead = (roster: CenterMember[] = ROSTER) =>
+      runLane([roster], { useCache: true });
+
+    it("adopts a listed person's edge of an unlisted role and ends it after two complete reads", async () => {
+      const blair = await listedAccountHolder('Blair');
+      await seedCenterWithoutAnAdmittedRead();
+      const stale = await unprovenancedEdge(blair, 'DIRECTOR');
+
+      await runLane([ROSTER]);
+      const adopted = await edge(stale);
+      expect(adopted.state).toBe('UNKNOWN');
+      expect(adopted.rosterProvenance).toMatchObject({
+        sourceName: SOURCE_NAME,
+        membershipKey: `official-profile:${member('Blair').profileUrl}|director`,
+      });
+      expect(adopted.rosterProvenance.adoptedAt).toBeInstanceOf(Date);
+      expect(adopted.rosterProvenance.observedAt.getTime()).toBe(LONG_AGO.getTime());
+
+      await runLane([ROSTER]);
+      expect((await edge(stale)).state).toBe('HISTORICAL');
+      const current = (await personEdges(blair)).filter((row) => row.state !== 'HISTORICAL');
+      expect(current.map((row) => row.role)).toEqual(['CORE_FACULTY']);
+    });
+
+    it("adopts a listed person's edge of the listed role in place, without a second edge", async () => {
+      const casey = await listedAccountHolder('Casey');
+      await seedCenterWithoutAnAdmittedRead(withoutMember('Casey'));
+      const existing = await unprovenancedEdge(casey, 'CORE_FACULTY');
+
+      await runLane([ROSTER]);
+      const edges = await personEdges(casey);
+      expect(edges).toHaveLength(1);
+      expect(String(edges[0]._id)).toBe(String(existing));
+      expect(edges[0].rosterProvenance).toMatchObject({
+        sourceName: SOURCE_NAME,
+        membershipKey: `official-profile:${member('Casey').profileUrl}|core-faculty`,
+      });
+
+      await runLane([withoutMember('Casey')]);
+      expect((await edge(existing)).state).not.toBe('HISTORICAL');
+      await runLane([withoutMember('Casey')]);
+      expect((await edge(existing)).state).toBe('HISTORICAL');
+    });
+
+    it('adopts nothing for a person the roster does not list, or a namesake it cannot resolve', async () => {
+      const unlisted = await accountHolder('Gale');
+      const namesake = await accountHolder('Devon');
+      await seedCenterWithoutAnAdmittedRead();
+      const unlistedEdge = await unprovenancedEdge(unlisted, 'CORE_FACULTY');
+      const namesakeEdge = await unprovenancedEdge(namesake, 'DIRECTOR');
+
+      await runLane([ROSTER]);
+      await runLane([ROSTER]);
+      await runLane([ROSTER]);
+
+      for (const id of [unlistedEdge, namesakeEdge]) {
+        const row = await edge(id);
+        expect(row.rosterProvenance?.sourceName).toBeUndefined();
+        expect(row.state).toBe('UNKNOWN');
+      }
+    });
+
+    it('adopts nothing when the listing writes for a namesake rather than its profile researcher', async () => {
+      const namesake = (
+        await Researcher.create({
+          displayName: member('Emery').name,
+          profileLinks: [],
+          archived: false,
+        })
+      )._id as mongoose.Types.ObjectId;
+      await seedCenterWithoutAnAdmittedRead();
+      await Researcher.create({
+        displayName: member('Emery').name,
+        profileLinks: [],
+        archived: false,
+        profile: { websiteUrl: member('Emery').profileUrl },
+      });
+      const namesakeEdge = await unprovenancedEdge(namesake, 'DIRECTOR');
+
+      await runLane([ROSTER]);
+      await runLane([ROSTER]);
+
+      const row = await edge(namesakeEdge);
+      expect(row.rosterProvenance?.sourceName).toBeUndefined();
+      expect(row.state).toBe('UNKNOWN');
+    });
+
+    it('leaves an edge another source wrote for a listed person untouched', async () => {
+      const blair = await listedAccountHolder('Blair');
+      await seedCenterWithoutAnAdmittedRead();
+      const foreign = await unprovenancedEdge(blair, 'DIRECTOR', {
+        sourceName: 'nsf-award-search',
+        observedAt: LONG_AGO,
+      });
+
+      await runLane([ROSTER]);
+      await runLane([ROSTER]);
+      await runLane([ROSTER]);
+
+      const row = await edge(foreign);
+      expect(row.state).toBe('UNKNOWN');
+      expect(row.rosterProvenance.sourceName).toBe('nsf-award-search');
+      expect(row.rosterProvenance.membershipKey).toBeUndefined();
+    });
+
+    it('adopts a lead edge on the already-lead path and then serves the person once, under the listed role', async () => {
+      const blair = await listedAccountHolder('Blair');
+      await seedCenterWithoutAnAdmittedRead(withoutMember('Blair'));
+      const stale = await unprovenancedEdge(blair, 'DIRECTOR');
+      await RoleAssignment.updateOne({ _id: stale }, { $set: { state: 'CURRENT' } });
+
+      await runLane([ROSTER]);
+      const adopted = await edge(stale);
+      expect(adopted.rosterProvenance).toMatchObject({
+        sourceName: SOURCE_NAME,
+        membershipKey: `official-profile:${member('Blair').profileUrl}|director`,
+      });
+      expect(adopted.rosterProvenance.observedAt.getTime()).toBe(LONG_AGO.getTime());
+      expect((await personEdges(blair)).map((row) => row.role)).toEqual(['DIRECTOR']);
+
+      await runLane([ROSTER]);
+      expect((await edge(stale)).state).toBe('HISTORICAL');
+
+      await runLane([ROSTER]);
+      const current = (await personEdges(blair)).filter((row) => row.state !== 'HISTORICAL');
+      expect(current.map((row) => row.role)).toEqual(['CORE_FACULTY']);
+      const served = await servedMemberNames();
+      expect(served.filter((name) => name === member('Blair').name)).toHaveLength(1);
+    });
+
+    it("leaves a listed person's provenance-less edge on another entity untouched", async () => {
+      const blair = await listedAccountHolder('Blair');
+      await seedCenterWithoutAnAdmittedRead();
+      const elsewhere = (
+        await RoleAssignment.create({
+          personId: blair,
+          target: { kind: 'RESEARCH_ENTITY', id: new mongoose.Types.ObjectId() },
+          role: 'DIRECTOR',
+          state: 'UNKNOWN',
+          confidence: 0.5,
+          reviewStatus: 'UNREVIEWED',
+          archived: false,
+          startedAt: LONG_AGO,
+        })
+      )._id;
+
+      await runLane([ROSTER]);
+      await runLane([ROSTER]);
+      await runLane([ROSTER]);
+
+      const row = await edge(elsewhere);
+      expect(row.rosterProvenance?.sourceName).toBeUndefined();
+      expect(row.state).toBe('UNKNOWN');
+    });
+
+    it('freezes the center when adopted edges would make most of what it governs retire', async () => {
+      const people = [];
+      for (const entry of ROSTER) {
+        people.push(await listedAccountHolder(entry.name.split(' ')[0]));
+      }
+      await seedCenterWithoutAnAdmittedRead();
+      const adopted = [];
+      for (const personId of people) {
+        adopted.push(await unprovenancedEdge(personId, 'PI'));
+        adopted.push(await unprovenancedEdge(personId, 'STAFF'));
+      }
+
+      await runLane([ROSTER]);
+      await runLane([ROSTER]);
+      await runLane([ROSTER]);
+
+      for (const id of adopted) {
+        const row = await edge(id);
+        expect(row.rosterProvenance.sourceName).toBe(SOURCE_NAME);
+        expect(row.state).toBe('UNKNOWN');
+      }
     });
   },
 );

@@ -43,6 +43,7 @@ export interface RoleAssignmentRosterProvenance {
   membershipKey?: string;
   observedAt?: Date;
   freshnessExpiresAt?: Date;
+  adoptedAt?: Date;
 }
 
 export interface RoleAssignmentRecord {
@@ -147,6 +148,7 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
           membershipKey: { type: String, trim: true, maxlength: 512 },
           observedAt: { type: Date },
           freshnessExpiresAt: { type: Date },
+          adoptedAt: { type: Date },
         },
         { _id: false },
       ),

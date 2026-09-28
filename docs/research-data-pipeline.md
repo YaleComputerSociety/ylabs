@@ -1070,7 +1070,17 @@ There is no population floor, so a small center that genuinely halves stays froz
 Retirement writes no field and no lock.
 Observations get `superseded` plus `rollback.rolledBackAt`, which both read scopes honour, so the next materialization has nothing to rebuild the claim from; an edge is ended with `state: HISTORICAL` and `endedAt`, the same write an official-roster departure makes, so a later read that lists the person again revives it through the ordinary upsert; a relationship is archived unless another source's live relationship observations, or a relationship key this source still asserts, resolve to the same target.
 Members still listed whose edge or claim was retired are re-materialized in the same pass, so a demoted lead gets its current role edge at once; the center is then re-gated and its search document re-synced, because the gate re-indexes only a row whose tier changed and the document carries the roster's names.
-Role edges that carry no `rosterProvenance` at all predate provenance and cannot be attributed to any lane, so this pass never touches them.
+Role edges that carry no `rosterProvenance` at all predate provenance, and this pass never judges an edge that names no source.
+
+A read can hand such an edge to this pass by adopting it (#3799).
+When the lane materializes a listed member whose profile URL resolves to exactly one researcher, the canonical upsert already stamps this source's provenance onto that person's provenance-less edge of the listed role, because it matches on person, target and role; `adoptUnprovenancedRoleAssignments` then stamps the person's remaining provenance-less edges on the same center, whose roles the read does not state.
+An adopted edge of an unlisted role gets the membership key `<identity>|<its own role>`, an `observedAt` taken from the edge itself rather than from the read, and `rosterProvenance.adoptedAt`, so the read that adopted it already counts as the first read that omits it and the ordinary two-read rule and freeze guards govern it from then on.
+Adoption follows only the identity the listing's profile URL proves, never a name, so a namesake's edge is never adopted; it never touches an edge whose provenance names any source; and only a source whose retirement meets the two-read rule may adopt (`SOURCES_THAT_ADOPT_UNPROVENANCED_EDGES`), because `official-research-home-roster` ends an edge on a single snapshot.
+
+Measured read-only on Development against one live read of every config on 2026-09-28: 968 live provenance-less edges on 12 center rows, 20 of them lead edges, all created on one migration date.
+Adoption reaches 1 of them, because the upsert had already adopted every edge whose person and role a read restates.
+824 are edges of a person the read lists under the same display name whose center-hosted profile URL resolves to no researcher, so the materializer resolves the listing to a separate name-only person and the center serves the name twice; that identity split is a lane defect, not something adoption may bridge.
+The remaining 143 are edges no read and no other source supports, recorded for operator judgement on #3799.
 
 ### Link-health verdicts, and what each one licenses
 
