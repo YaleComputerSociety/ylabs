@@ -1324,8 +1324,6 @@ export function classifyHarvestedResearchHomeName(args: {
   return foreign ? 'ANOTHER_PERSONS_LAB' : 'OWN_IDENTITY';
 }
 
-// The sets moved to `models/storedVocabularies.ts`, which owns the question (#3602).
-
 /**
  * Whether an entity's identity is a person or a person's lab, so an umbrella
  * organization name can never be its own name. Organization-shaped entities

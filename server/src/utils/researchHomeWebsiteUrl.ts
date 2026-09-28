@@ -484,19 +484,6 @@ export interface ResearchEntityHostOwnerIdentity {
   kind?: unknown;
 }
 
-// Entity shapes whose identity is a person or a person's lab. Restated here rather
-// than imported from `researchHomeNameIdentityAuthority.ts`, the name-identity
-// authority, because importing it back would make the two mutually dependent.
-//
-// Was deliberately WIDER than the name authority's own copy, which omitted
-// `FACULTY_RESEARCH`: nothing rewrites either retired type since the one-off
-// consolidation was deleted (#3675), so a stored row may still carry one, and omitting
-// either leaves this refusal unreachable on exactly those stored rows. Widening the name-identity
-// set instead would change served `displayName` on legacy rows, which is a different
-// decision from this one and needs its own measurement (Development holds 0 rows of
-// either retired type today, so neither set is load-bearing there).
-// The set moved to `models/storedVocabularies.ts`, which owns the question (#3602).
-
 /**
  * The single definition of "this row is one person's research rather than the
  * collective that publishes the page". Every refusal scoped by who cites a URL shares

@@ -65,11 +65,10 @@ export type FacultyResearchPromotionHoldReason =
   | 'website_declares_no_lab';
 
 /**
- * Promoting a row out of `FACULTY_RESEARCH_AREA` removes it from
- * `isPersonScopedResearchEntityType`, so the shared-citation defence in
- * studentVisibilityGateService stops examining it. This threshold must stay in
- * step with SHARED_CITATION_PERSON_ROW_THRESHOLD there, or a row whose every
- * citation is a widely-shared page could be promoted past the gate (#2460).
+ * Promoting a row to `LAB` keeps it person-scoped, so the shared-citation defence
+ * in studentVisibilityGateService still examines it afterwards. This threshold must
+ * stay in step with SHARED_CITATION_PERSON_ROW_THRESHOLD there, or a promotion would
+ * write a row the gate then hides for citing only widely-shared pages (#2460).
  */
 export const SHARED_CITATION_PROMOTION_THRESHOLD = 25;
 

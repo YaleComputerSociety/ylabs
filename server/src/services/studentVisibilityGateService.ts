@@ -626,7 +626,6 @@ function exactDuplicateCanonicalScore(
  */
 export const SHARED_CITATION_PERSON_ROW_THRESHOLD = 25;
 
-// The set moved to `models/storedVocabularies.ts`, which owns the question (#3602).
 export function selectSharedCitationOnlyEntityIds(
   entities: any[],
   threshold: number = SHARED_CITATION_PERSON_ROW_THRESHOLD,

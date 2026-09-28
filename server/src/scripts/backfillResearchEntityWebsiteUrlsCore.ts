@@ -118,8 +118,6 @@ export function isMultiTenantHostRootWebsiteUrl(
   return isMultiTenantAcademicHostRootUrl(value, entity);
 }
 
-// The set moved to `models/storedVocabularies.ts`, which owns the question (#3602).
-
 /**
  * A faculty roster or members list is legitimate evidence about the department or
  * centre that publishes it, and a graft on a person's row. `retireGraftedDirectoryUrls`

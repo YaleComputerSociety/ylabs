@@ -9,10 +9,10 @@
  * since, so the plan is a one-time repair rather than a guard against a live
  * producer.
  */
+import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 
 export const UNEVIDENCED_MEMBER_EDGE_RETIREMENT_NOTE =
   'Retired by role-assignments:retire-unevidenced-member-edges (#3161): a non-lead member edge on a person-scoped entity citing no rosterProvenance. No page asserts this membership.';
-import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 
 /**
  * A lead edge is out of scope. The lead-graft lanes own it, it is the only edge
@@ -29,14 +29,6 @@ export const LEAD_ROLE_ASSIGNMENT_ROLES = new Set([
   'PRINCIPAL_INVESTIGATOR',
 ]);
 
-/**
- * A person-scoped entity is one whose page reads as one person's research. On an
- * organization, an unattributed `CORE_FACULTY` edge is an attribution gap on a
- * body that genuinely has hundreds of affiliated faculty, which is a different
- * decision and deliberately not this repair: including them would turn a 53-edge
- * repair into a 1,019-edge one.
- */
-// The set moved to `models/storedVocabularies.ts`, which owns the question (#3602).
 export interface UnevidencedMemberEdgeInput {
   id: string;
   entityId: string;

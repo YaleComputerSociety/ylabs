@@ -30,8 +30,6 @@ const stringEntries = (value: unknown): string[] =>
  * row and for the fellowship records `department-undergrad-research` writes, and is
  * a graft only on a person (#2609). So the entity is required, not optional.
  */
-// The set moved to `models/storedVocabularies.ts`, which owns the question (#3602).
-
 /**
  * A faculty roster or index page cited on a person-scoped row. `isSharedPeopleRosterUrl`
  * and `isDepartmentRosterProvenanceUrl` already recognise these pages but are not

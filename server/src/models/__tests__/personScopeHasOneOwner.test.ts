@@ -56,12 +56,20 @@ describe('person scope', () => {
  * today; this stops tomorrow, because the failure mode is a second copy added in good faith by
  * someone who could not find the first.
  *
- * A narrower question is still allowed, and has to name itself: a declaration whose name says
- * `NON_LAB_PERSON_SCOPED` is asking "person-scoped and not a lab", which two repairs need
- * because they rewrite a row whose NAME claims a lab while its type does not.
+ * A narrower or opposite question is still allowed, and has to name itself: a declaration whose
+ * name starts `NON_` is asking something else, as `NON_LAB_PERSON_SCOPED_*` asks "person-scoped
+ * and not a lab" and `NON_PERSON_ORG_ENTITY_TYPES` asks "an organization". The one sanctioned
+ * copy is the client mirror, which cannot import the server module and is listed by file and name.
  */
 describe('no second definition of person scope', () => {
-  const sourceRoot = path.resolve(__dirname, '..', '..');
+  const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+  const scannedRoots = [path.join('server', 'src'), path.join('client', 'src')];
+  const owner = path.join('server', 'src', 'models', 'storedVocabularies.ts');
+  const sanctionedMirrors = [
+    `${path.join('client', 'src', 'utils', 'researchDetailSources.ts')}: PERSON_SCOPED_CITING_ENTITY_TYPES`,
+  ];
+  const personScopeDeclaration =
+    /\b(?:const|let|var)\s+([A-Z_]*PERSON_SCOPED[A-Z_]*|[A-Z_]*PERSON[A-Z_]*_ENTITY_(?:TYPES|KINDS))\b/g;
 
   const sourceFiles = (dir: string): string[] =>
     readdirSync(dir).flatMap((entry) => {
@@ -69,24 +77,24 @@ describe('no second definition of person scope', () => {
       if (statSync(full).isDirectory()) {
         return entry === '__tests__' || entry === 'node_modules' ? [] : sourceFiles(full);
       }
-      return entry.endsWith('.ts') ? [full] : [];
+      return /\.tsx?$/.test(entry) ? [full] : [];
     });
 
   it('declares the set in exactly one place', () => {
     const declarations: string[] = [];
-    for (const file of sourceFiles(sourceRoot)) {
-      const relative = path.relative(sourceRoot, file);
-      if (relative === path.join('models', 'storedVocabularies.ts')) continue;
-      for (const line of readFileSync(file, 'utf8').split('\n')) {
-        const match = /\b(PERSON_SCOPED[A-Z_]*)\s*(?::[^=]*)?=/.exec(line);
-        if (!match) continue;
-        if (match[1].startsWith('NON_LAB_PERSON_SCOPED')) continue;
-        declarations.push(`${relative}: ${match[1]}`);
+    for (const root of scannedRoots) {
+      for (const file of sourceFiles(path.join(repoRoot, root))) {
+        const relative = path.relative(repoRoot, file);
+        if (relative === owner) continue;
+        for (const match of readFileSync(file, 'utf8').matchAll(personScopeDeclaration)) {
+          if (match[1].startsWith('NON_')) continue;
+          declarations.push(`${relative}: ${match[1]}`);
+        }
       }
     }
     expect(
       declarations,
-      'person scope has one owner in models/storedVocabularies.ts. A narrower question is fine and must say so in its name, as NON_LAB_PERSON_SCOPED_* does.',
-    ).toEqual([]);
+      'person scope has one owner in server/src/models/storedVocabularies.ts. A narrower question is fine and must say so in its name, as NON_LAB_PERSON_SCOPED_* does.',
+    ).toEqual(sanctionedMirrors);
   });
 });

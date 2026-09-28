@@ -121,7 +121,12 @@ export type ScrapeRunInterruptionReason = (typeof scrapeRunInterruptionReasons)[
  * names now say so: `NON_LAB_PERSON_SCOPED_ENTITY_TYPES` in two repairs that rewrite a row
  * whose NAME claims a lab while its type does not, and `LAB_ENTITY_TYPES` in the lab-website
  * retarget, which picks which of a lead's homes is the lab. Folding either into this one would
- * make a repair rewrite legitimate `LAB` rows.
+ * make a repair rewrite legitimate `LAB` rows. `labDescriptionSynthesis` asks the same
+ * non-lab question to choose a person prompt over a lab prompt, and names it the same way.
+ *
+ * The client cannot import this module, so `PERSON_SCOPED_CITING_ENTITY_TYPES` in
+ * client/src/utils/researchDetailSources.ts mirrors this set; changing it here requires
+ * updating that copy.
  */
 export const PERSON_SCOPED_RESEARCH_ENTITY_TYPES: ReadonlySet<string> = new Set([
   'LAB',
