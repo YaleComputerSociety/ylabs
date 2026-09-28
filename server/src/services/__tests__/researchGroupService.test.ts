@@ -90,6 +90,9 @@ vi.mock('../undergraduateLogisticsService', () => ({
 
 import {
   orderCandidatesByKeywordLeg,
+  fuseKeywordAndSemanticRankings,
+  keywordLegTopHitIsNameMatch,
+  SEMANTIC_LEG_SIZE,
   currentResearchEntityMemberFilter,
   dedupeSameNameLeadMembers,
   dropCoincidentalTypoOnlyHits,
@@ -452,6 +455,24 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(normalizeResearchSearchQuery('infectious disease')).toMatchObject({
       isTopicAliasQuery: true,
       aliasTerms: expect.arrayContaining(['epidemiology', 'microbiology']),
+    });
+  });
+
+  it('expands a topic alias only when it is the whole query (#3797)', () => {
+    expect(normalizeResearchSearchQuery('drug addiction')).toMatchObject({
+      query: 'drug addiction',
+      tokens: ['drug', 'addiction'],
+      isTopicAliasQuery: false,
+      isAliasExpanded: false,
+      aliasTerms: null,
+    });
+    expect(normalizeResearchSearchQuery('neuro ethics')).toMatchObject({
+      query: 'neuro ethics',
+      isAliasExpanded: false,
+    });
+    expect(normalizeResearchSearchQuery('drug')).toMatchObject({
+      isTopicAliasQuery: true,
+      aliasTerms: expect.arrayContaining(['pharmacology', 'drug discovery']),
     });
   });
 
@@ -1253,8 +1274,8 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(hybridCalls).toHaveLength(3);
     hybridCalls.forEach(([, params]) => expect(params.vector).toEqual(queryVector));
     const keywordLegCalls = mocks.search.mock.calls.filter(([, params]) => !params.hybrid);
-    expect(keywordLegCalls).toHaveLength(1);
-    expect(keywordLegCalls[0][1]).not.toHaveProperty('vector');
+    expect(keywordLegCalls.map(([, params]) => params.matchingStrategy)).toEqual(['all', 'last']);
+    keywordLegCalls.forEach(([, params]) => expect(params).not.toHaveProperty('vector'));
   });
 
   it('omits the vector when no embedding is available so Meilisearch embeds the query itself (#3149)', async () => {
@@ -1564,6 +1585,101 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.estimatedTotalHits).toBe(1);
   });
 
+  describe('fuseKeywordAndSemanticRankings (#3797)', () => {
+    const hit = (id: string) => ({ id });
+
+    it('ranks by summed reciprocal rank, so a row both legs rank highly beats a single-leg leader', () => {
+      const fused = fuseKeywordAndSemanticRankings(
+        [hit('exact-tag'), hit('both'), hit('keyword-only')],
+        [hit('both'), hit('semantic-only')],
+      );
+      expect(fused.map((h) => h.id)).toEqual([
+        'both',
+        'exact-tag',
+        'semantic-only',
+        'keyword-only',
+      ]);
+    });
+
+    it('keeps only keyword rows, in fused order, when asked to withhold semantic-only rows', () => {
+      const fused = fuseKeywordAndSemanticRankings(
+        [hit('a'), hit('b')],
+        [hit('b'), hit('semantic-only')],
+        { keywordRowsOnly: true },
+      );
+      expect(fused.map((h) => h.id)).toEqual(['b', 'a']);
+    });
+
+    it('reads no deeper than the semantic leg size', () => {
+      const semantic = Array.from({ length: SEMANTIC_LEG_SIZE + 5 }, (_, i) => hit(`s${i}`));
+      expect(fuseKeywordAndSemanticRankings([], semantic)).toHaveLength(SEMANTIC_LEG_SIZE);
+    });
+  });
+
+  describe('keywordLegTopHitIsNameMatch (#3797)', () => {
+    const lead = (name: string, spans: Array<[number, number]>) => ({
+      leadProfessorNames: [name],
+      _matchesPosition: {
+        leadProfessorNames: spans.map(([start, length]) => ({ start, length, indices: [0] })),
+      },
+    });
+
+    it('is true when every query word is matched exactly inside a person name', () => {
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            lead('Ada Fixture', [
+              [0, 3],
+              [4, 7],
+            ]),
+          ],
+          ['ada', 'fixture'],
+        ),
+      ).toBe(true);
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            {
+              professorNames: ['Other Person', "Ada O'Fixture"],
+              _matchesPosition: { professorNames: [{ start: 4, length: 9, indices: [1] }] },
+            },
+          ],
+          ['ofixture'],
+        ),
+      ).toBe(true);
+    });
+
+    it('is false when a topic word only happens to match a surname', () => {
+      const greenLead = {
+        ...lead('Pat Green', [[4, 5]]),
+        _matchesPosition: {
+          ...lead('Pat Green', [[4, 5]])._matchesPosition,
+          researchAreas: [{ start: 0, length: 9 }],
+        },
+      };
+      expect(keywordLegTopHitIsNameMatch([greenLead], ['green', 'chemistry'])).toBe(false);
+    });
+
+    it('is false for a typo or prefix match inside a name', () => {
+      expect(keywordLegTopHitIsNameMatch([lead('Sam Braun', [[4, 5]])], ['brain'])).toBe(false);
+      expect(keywordLegTopHitIsNameMatch([lead('Sam Stoneman', [[4, 5]])], ['stone'])).toBe(false);
+      expect(keywordLegTopHitIsNameMatch([lead('Sam Stoneman', [[4, 8]])], ['stoneman'])).toBe(
+        true,
+      );
+    });
+
+    it('is false for an entity title match, no hits, or no query words', () => {
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [{ name: 'Robotics Lab', _matchesPosition: { name: [{ start: 0, length: 8 }] } }],
+          ['robotics'],
+        ),
+      ).toBe(false);
+      expect(keywordLegTopHitIsNameMatch([], ['ada'])).toBe(false);
+      expect(keywordLegTopHitIsNameMatch([lead('Ada Fixture', [[0, 3]])], [])).toBe(false);
+    });
+  });
+
   describe('orderCandidatesByKeywordLeg', () => {
     const pooled = { id: 'a' };
     const alsoPooled = { id: 'b' };
@@ -1832,7 +1948,15 @@ describe('searchResearchGroupsViaMeili', () => {
     const poolParams = mocks.search.mock.calls[0][1];
     const keywordLegParams = mocks.search.mock.calls[2][1];
     expect(poolParams.attributesToRetrieve).toEqual(['id', 'departments', 'researchAreas']);
-    expect(keywordLegParams.attributesToRetrieve).toEqual(['id', 'departments', 'researchAreas']);
+    // The keyword leg also reads the two person-name fields, which the name guard
+    // needs to see what text a match covered (#3797).
+    expect(keywordLegParams.attributesToRetrieve).toEqual([
+      'id',
+      'departments',
+      'researchAreas',
+      'leadProfessorNames',
+      'professorNames',
+    ]);
     // The keyword leg is identified by carrying no hybrid block, and it still
     // asks for the ranking-score details the typo filter reads.
     expect(keywordLegParams).not.toHaveProperty('hybrid');
@@ -2031,6 +2155,116 @@ describe('searchResearchGroupsViaMeili', () => {
         'pooled-semantic-lab',
       ]);
       expect(result.estimatedTotalHits).toBe(1);
+    });
+
+    describe('rank fusion with the semantic leg (#3797)', () => {
+      const exactTagHit = {
+        ...typoCorrectedKeywordHit,
+        id: '67d8928150621bcef434a1f1',
+        slug: 'single-exact-tag',
+        name: 'Single Exact Tag',
+        _rankingScoreDetails: { words: { matchingWords: 1, maxMatchingWords: 1 } },
+      };
+      const topicalLab = {
+        ...typoCorrectedKeywordHit,
+        id: '67d8928150621bcef434a1f2',
+        slug: 'topical-lab',
+        name: 'Topical Lab',
+        _rankingScoreDetails: { words: { matchingWords: 1, maxMatchingWords: 1 } },
+      };
+      const semanticOnlyLab = {
+        ...semanticNeighbour,
+        id: '67d8928150621bcef434a1f3',
+        slug: 'semantic-only-lab',
+        name: 'Semantic Only Lab',
+      };
+
+      it('fuses the keyword and semantic rankings so a row both legs rank highly leads', async () => {
+        mocks.search
+          .mockResolvedValueOnce({ hits: [exactTagHit], estimatedTotalHits: 3, totalHits: 3 })
+          .mockResolvedValueOnce({ hits: [], totalHits: 3 })
+          .mockResolvedValueOnce({ hits: [exactTagHit, topicalLab] })
+          .mockResolvedValueOnce({ hits: [topicalLab, semanticOnlyLab] });
+        mocks.researchEntityFind.mockReturnValue(
+          queryResult([servable(exactTagHit), servable(topicalLab), servable(semanticOnlyLab)]),
+        );
+
+        const result = await searchResearchGroupsViaMeili('robotics', {}, 1, 18);
+
+        const semanticLegParams = mocks.search.mock.calls[3][1];
+        expect(semanticLegParams.hybrid).toMatchObject({ semanticRatio: 1 });
+        expect(semanticLegParams).not.toHaveProperty('rankingScoreThreshold');
+        expect(semanticLegParams).toMatchObject({ hitsPerPage: SEMANTIC_LEG_SIZE });
+        expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+          'topical-lab',
+          'single-exact-tag',
+          'semantic-only-lab',
+        ]);
+      });
+
+      it('withholds semantic-only rows when the best keyword hit is a name match', async () => {
+        const namedLab = {
+          ...exactTagHit,
+          leadProfessorNames: ['Ada Fixture'],
+          _matchesPosition: {
+            leadProfessorNames: [
+              { start: 0, length: 3, indices: [0] },
+              { start: 4, length: 7, indices: [0] },
+            ],
+          },
+        };
+        mocks.search
+          .mockResolvedValueOnce({ hits: [semanticOnlyLab], estimatedTotalHits: 2, totalHits: 2 })
+          .mockResolvedValueOnce({ hits: [], totalHits: 2 })
+          .mockResolvedValueOnce({ hits: [namedLab] })
+          .mockResolvedValueOnce({ hits: [semanticOnlyLab, namedLab] });
+        mocks.researchEntityFind.mockReturnValue(
+          queryResult([servable(namedLab), servable(semanticOnlyLab)]),
+        );
+
+        const result = await searchResearchGroupsViaMeili('ada fixture', {}, 1, 18);
+
+        expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+          'single-exact-tag',
+        ]);
+        expect(result.estimatedTotalHits).toBe(1);
+      });
+
+      it('keeps the keyword-first order when the semantic leg fails, and says so', async () => {
+        mocks.search
+          .mockResolvedValueOnce({ hits: [semanticOnlyLab], estimatedTotalHits: 2, totalHits: 2 })
+          .mockResolvedValueOnce({ hits: [], totalHits: 2 })
+          .mockResolvedValueOnce({ hits: [topicalLab] })
+          .mockRejectedValueOnce(new Error('semantic leg unavailable'));
+        mocks.researchEntityFind.mockReturnValue(
+          queryResult([servable(topicalLab), servable(semanticOnlyLab)]),
+        );
+
+        const result = await searchResearchGroupsViaMeili('robotics', {}, 1, 18);
+
+        expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+          'topical-lab',
+          'semantic-only-lab',
+        ]);
+        expect(result.degraded).toBe(true);
+      });
+
+      it('runs no semantic leg under an explicit sort, which the student chose over relevance', async () => {
+        mocks.search
+          .mockResolvedValueOnce({ hits: [topicalLab], estimatedTotalHits: 1, totalHits: 1 })
+          .mockResolvedValueOnce({ hits: [], totalHits: 1 })
+          .mockResolvedValueOnce({ hits: [topicalLab] });
+        mocks.researchEntityFind.mockReturnValue(queryResult([servable(topicalLab)]));
+
+        await searchResearchGroupsViaMeili('robotics', {}, 1, 18, {
+          sortBy: 'lastObservedAt',
+          sortOrder: 'desc',
+        } as never);
+
+        expect(
+          mocks.search.mock.calls.filter(([, params]) => params.hybrid?.semanticRatio === 1),
+        ).toHaveLength(0);
+      });
     });
 
     it('reports a total that covers the merged keyword rows so pagination can reach them', async () => {

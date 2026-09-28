@@ -14,6 +14,7 @@ The old client-side `embeddingService.ts` path was removed.
 Do not reintroduce client-side embedding calls for Research search.
 Research search normalizes student queries in `researchGroupService.searchResearchGroupsViaMeili`.
 It strips low-value words such as `professor`, `lab`, and `research` when meaningful terms remain, expands curated aliases for `ai`, `ml`, `nlp`, `cv`, `neuro`, and `psych`, and treats an alias query whose expansion still carries the typed shorthand as a keyword-only search over topic-oriented fields.
+An alias expands only when it is the whole query: inside a phrase each expansion term counted as a query word in Meili's `words` rule, so `drug addiction` served drug-discovery rows, and the typed words now go through unexpanded while the index synonyms widen each one, except a `queryOnly` cluster's word (`drug`, `kids`, `climate`), which the index does not carry, so the semantic leg supplies its meaning (#3797).
 Filler stripping is decided per token by `isStudentQueryFiller`, not by a flat word list, because a question-frame verb and a real field name can be the same word: `studies`, `work`, and `working` name fields the corpus carries (192 `researchAreas` and 11 `departments` contain "studies"; also "Sex Work" and "Working Memory"), so `work` and `working` are dropped only where they govern a preposition (currently `on` or `with`, per `QUESTION_FRAME_VERB_PREPOSITIONS`) and `studies` is never dropped.
 Adding such a word to `STUDENT_QUERY_STOP_WORDS` silently narrows every query that names the field to its remaining tokens; the regression tests for both directions live in `researchGroupService.test.ts`.
 Department shorthands resolve through the `department` clusters in `searchTopicAliases.ts`, which expand to the canonical term and drop the shorthand itself, so a query-only abbreviation no document carries (`orgo`, `ochem`) belongs there rather than in a `topical` cluster and stays out of the corpus-side Meili synonyms.
@@ -239,6 +240,7 @@ So `searchResearchGroupsViaMeili` issues a third companion query with no `hybrid
 The keyword leg needs no noise floor of its own, because a keyword search returns nothing at all for a query the corpus does not contain, where hybrid k-NN returns the nearest vectors however dissimilar (#823).
 
 `orderCandidatesByKeywordLeg` then orders the candidate set by that leg's own ranking and appends the pool rows it did not return.
+Since #3797 that keyword-first order is only the fallback for a failed semantic leg; the served order is the rank fusion described in "The two legs are merged by rank, not by score" below.
 The first round of this fix merged the other way round, pool order first with the keyword rows appended, and that re-imported the defect the separate leg exists to avoid: the pool is ordered by the blended score, so the keyword matches inside it were still ranked by an embedding similarity a typo moves wholesale, and a keyword row the pool did not hold sat behind every pooled row whatever its keyword relevance.
 The leg is queried precisely because the blended score cannot represent it, so the blended score must not order its rows either.
 
@@ -261,6 +263,34 @@ A perturbation that damages an alias key loses the whole expansion, because `res
 And `rankingRules` places `exactness` above `typo`, so a term the corpus contains verbatim partitions its clean query's matches from its misspelling's corrected ones: that is the whole of the `topic-neuroscience` regression in the numbers above, where both pages stay on topic at precision 1.0 but share almost no row.
 
 A reported total is floored at the locally reachable pool length: the companion count only counts what cleared the blended cutoff, so on its own it would end the client's pagination walk before the keyword-leg rows.
+
+### The two legs are merged by rank, not by score (#3797)
+
+When the keyword leg returns rows and no explicit sort is chosen, the served order is a reciprocal rank fusion of the keyword leg and a pure semantic leg (`semanticRatio: 1`, top `SEMANTIC_LEG_SIZE` = 100, no threshold), in `fuseKeywordAndSemanticRankings`, with k = `RANK_FUSION_K` (60) and equal weights.
+Pool rows neither leg returned follow the fused list, so paging still reaches them.
+Before this, the page was the keyword leg's order with semantic-only rows appended, so over 42 realistic queries 80% of top-10 slots came from a tag-field keyword match and 1% from meaning alone, and a single exact tag (`Robotics` on a surgeon) outranked every lab listing the topic among several.
+Rank rather than score, because the scores are not on one scale: measured offline with the index's own embedding model, off-topic queries reach similarities real topics do not, and no absolute or relative cutoff separated them, while the semantic leg's order was right.
+Every k and weight swept beat the keyword-first merge, and a semantic weight of 2 cost a person-name query its correct first result.
+
+Two guards shape the fused list.
+When the all-words keyword leg of a multi-word query is empty, it is re-run with `matchingStrategy: 'last'`, so a phrase no row carries in full (`immigration policy`, or a `queryOnly` alias word such as `kids` inside a phrase) still has keyword evidence to anchor the fusion.
+It was measured as part of the design: without it, concept queries scored 0.74 rather than 0.80 and question-style queries 0.65 rather than 0.72 nDCG@10 on the development set.
+A keyword leg still empty after that runs no semantic leg, so a query that matches nothing keeps the thresholded path and its #823 noise protection.
+When every query word is matched exactly, as a whole word, inside a person-name field (`leadProfessorNames` or `professorNames`) on the best keyword hit, semantic-only rows are withheld (`keywordLegTopHitIsNameMatch`), because the semantic neighbours of a name are other people with similar names.
+An entity title does not count, because titles carry topic words (`Robotics Lab`), and neither does a topic word that only matches a surname, a typo match, or a prefix match, so `green chemistry` under a lead named Green keeps its meaning-based rows.
+The keyword leg therefore also retrieves the two name fields, which the check reads through `_matchesPosition`.
+A withheld result reports only the rows it serves as its total, because the companion count still includes the withheld rows.
+A failed semantic leg falls back to the keyword-first order and marks the search degraded; `floorWeakSemanticOnlyHits` and `promoteExactAliasFieldMatches` now run only on that fallback path.
+A whole-query shorthand that keeps its typed alias (`ai`) still searches topic fields keyword-only and is unchanged.
+
+Measured before merging, graded by gpt-5-mini (95% relevant-versus-not agreement with gpt-5 on a 30-query sample) and blind by Claude Opus.
+On 157 development queries, nDCG@10 rose from about 0.77 to 0.89 and Opus preferred the new order 101 to 25.
+On 52 held-out real student queries nobody tuned against, nDCG@10 rose from 0.723 to 0.812, top-1 accuracy from 0.712 to 0.865, junk rows per query fell from 1.83 to 1.42, and Opus preferred it 28 to 14, which puts the honest gain at about half the development-set figure.
+Re-embedding with a description-first template helped the development set and lowered held-out top-1 accuracy, so the embedder template is unchanged.
+The weakest remaining classes are ambiguous single words (`machine`, `trade`, `quant`) and access-style searches (`freshman`, `undergraduate internship`), which topic search cannot answer.
+
+A free-text-guarded shorthand is a one-way synonym: `cv` expands to `computer vision`, and no topic expands to `cv`, because `computer vision -> cv` matched the "CV" link on unrelated profiles.
+That is an index settings change, so it reaches search only after the settings are pushed and the index rebuilt.
 
 ### A student's working-style words are not the corpus's (#2715)
 

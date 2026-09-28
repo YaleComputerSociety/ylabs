@@ -629,12 +629,13 @@ export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearch
   const queryTokens = meaningfulTokens.length > 0 ? meaningfulTokens : tokens;
   const aliasExpansion = resolveTopicAliasExpansion(queryTokens);
   const workingStyle = expandWorkingStylePhrases(queryTokens);
-  const hasPerTokenAliasExpansion = workingStyle.terms.some(
-    (token) => STUDENT_QUERY_ALIASES[token] !== undefined,
-  );
-  const expandedTerms = aliasExpansion
-    ? aliasExpansion
-    : workingStyle.terms.flatMap((token) => STUDENT_QUERY_ALIASES[token] || [token]);
+  // A topic alias expands only when it is the whole query. Inside a phrase every
+  // expansion term counts as a query word in Meili's `words` rule, so "drug
+  // addiction" became six words and drug-discovery rows outranked addiction
+  // research on the alias vocabulary alone. The index synonyms widen each typed
+  // word without adding words, except a query-only cluster's, which the index
+  // does not carry and the semantic leg answers instead. See #3797.
+  const expandedTerms = aliasExpansion ? aliasExpansion : workingStyle.terms;
   const normalizedTerms = uniqueQueryTerms(expandedTerms);
   const typedShorthand = queryTokens.join(' ');
   const keepsShorthand =
@@ -646,8 +647,7 @@ export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearch
     query: normalizedTerms.join(' ').slice(0, MAX_SEARCH_QUERY_LENGTH),
     tokens: queryTokens,
     isTopicAliasQuery: aliasExpansion !== null,
-    isAliasExpanded:
-      aliasExpansion !== null || hasPerTokenAliasExpansion || workingStyle.expandedAPhrase,
+    isAliasExpanded: aliasExpansion !== null || workingStyle.expandedAPhrase,
     aliasExpansionKeepsShorthand: keepsShorthand,
     aliasExpandsToSingleCanonicalPhrase:
       aliasExpansion !== null && !keepsShorthand && normalizedTerms.length === 1,
@@ -949,6 +949,88 @@ export const orderCandidatesByKeywordLeg = <T>(poolHits: T[], keywordLegHits: T[
   const hitId = (hit: any): string => String(hit?.id ?? hit?._id);
   const keywordLegIds = new Set(keywordLegHits.map(hitId));
   return [...keywordLegHits, ...pool.filter((hit) => !keywordLegIds.has(hitId(hit)))];
+};
+
+// Reciprocal rank fusion merges the two legs by position rather than by score,
+// because a semantic similarity and a keyword score are not on one scale: measured
+// on Development, off-topic queries reach similarities real topics do not, so no
+// cutoff separates them, while the semantic leg's ORDER is right. k=60 is the
+// published default and both legs weigh the same; every k and weight swept beat
+// the keyword-first merge, and a heavier semantic weight cost a person-name query
+// its correct first result. See #3797.
+export const RANK_FUSION_K = 60;
+export const SEMANTIC_LEG_SIZE = 100;
+
+const candidateHitId = (hit: any): string => String(hit?.id ?? hit?._id);
+
+export const fuseKeywordAndSemanticRankings = <T>(
+  keywordLegHits: T[],
+  semanticLegHits: T[],
+  { keywordRowsOnly = false }: { keywordRowsOnly?: boolean } = {},
+): T[] => {
+  const scores = new Map<string, number>();
+  const hitsById = new Map<string, T>();
+  const addLeg = (hits: T[]) =>
+    hits.forEach((hit, rank) => {
+      const id = candidateHitId(hit);
+      scores.set(id, (scores.get(id) ?? 0) + 1 / (RANK_FUSION_K + rank + 1));
+      if (!hitsById.has(id)) hitsById.set(id, hit);
+    });
+  addLeg(keywordLegHits);
+  addLeg(semanticLegHits.slice(0, SEMANTIC_LEG_SIZE));
+  const keywordIds = new Set(keywordLegHits.map(candidateHitId));
+  return [...scores.entries()]
+    .filter(([id]) => !keywordRowsOnly || keywordIds.has(id))
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => hitsById.get(id) as T);
+};
+
+const PERSON_NAME_ATTRIBUTES = new Set(['leadProfessorNames', 'professorNames']);
+
+// A query is a person search only when every one of its words is matched, exactly,
+// inside a person's name on the best keyword hit. The semantic neighbours of a name
+// are other people with similar names: the blind judges preferred production on 7
+// of 15 name queries until those rows were withheld. An entity title is not a
+// person name, because titles carry topic words ("Robotics Lab"), and a typo or
+// prefix match is not one either, so `green chemistry` under a lead named Green or
+// `brain` reaching Braun keeps its meaning-based rows. See #3797.
+const normalizeNameMatchText = (value: string): string =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+const exactPersonNameMatches = (hit: any): Set<string> => {
+  const matched = new Set<string>();
+  for (const attribute of PERSON_NAME_ATTRIBUTES) {
+    const positions = hit?._matchesPosition?.[attribute];
+    if (!Array.isArray(positions)) continue;
+    const values = hit?.[attribute];
+    for (const position of positions) {
+      const value = Array.isArray(values) ? values[position?.indices?.[0] ?? 0] : values;
+      if (typeof value !== 'string') continue;
+      const end = position.start + position.length;
+      // Read the offsets as characters and as bytes; the wrong reading yields a
+      // fragment that cannot equal a whole query word. Only a span that is a whole
+      // word of the name counts, because a prefix match highlights exactly the
+      // typed word ("stone" inside "Stoneman").
+      const readings = [value, Buffer.from(value)].map((text) => {
+        const before = text.slice(Math.max(0, position.start - 1), position.start).toString();
+        const after = text.slice(end, end + 1).toString();
+        const span = text.slice(position.start, end).toString();
+        return /[\p{L}\p{N}]/u.test(before) || /[\p{L}\p{N}]/u.test(after) ? '' : span;
+      });
+      for (const span of readings) if (span) matched.add(normalizeNameMatchText(span));
+    }
+  }
+  return matched;
+};
+
+export const keywordLegTopHitIsNameMatch = (
+  keywordLegHits: any[],
+  queryTokens: string[],
+): boolean => {
+  const top = keywordLegHits[0];
+  if (!top || queryTokens.length === 0) return false;
+  const matched = exactPersonNameMatches(top);
+  return queryTokens.every((token) => matched.has(normalizeNameMatchText(token)));
 };
 
 /**
@@ -1511,19 +1593,20 @@ export async function searchResearchGroupsViaMeili(
   // nothing at all for such a query (measured: zero hits for `kayaking`,
   // `origami`, `zzzzqqq`), and `dropCoincidentalTypoOnlyHits` still removes
   // partial typo garbage. See #2732.
-  const keywordLegHits = await (async (): Promise<any[]> => {
-    if (!finalSearchParams.hybrid || finalSearchParams.rankingScoreThreshold === undefined) {
-      return [];
-    }
+  const runsHybridLegs =
+    Boolean(finalSearchParams.hybrid) && finalSearchParams.rankingScoreThreshold !== undefined;
+  const searchKeywordLeg = async (matchingStrategy?: string): Promise<any[]> => {
     try {
       const keywordLegResult = await index.search(meiliQueryText, {
         filter: filterString,
         ...(finalSearchParams.sort ? { sort: finalSearchParams.sort } : {}),
-        ...(finalSearchParams.matchingStrategy
-          ? { matchingStrategy: finalSearchParams.matchingStrategy }
-          : {}),
+        ...(matchingStrategy ? { matchingStrategy } : {}),
         showRankingScoreDetails: true,
-        attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
+        showMatchesPosition: true,
+        attributesToRetrieve: [
+          ...RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
+          ...PERSON_NAME_ATTRIBUTES,
+        ],
         page: 1,
         hitsPerPage: finalSearchParams.hitsPerPage ?? HYBRID_CANDIDATE_POOL_SIZE,
       });
@@ -1532,7 +1615,7 @@ export async function searchResearchGroupsViaMeili(
       console.error('Optional keyword-leg candidate query failed:', sanitizeLogValue(error));
       return [];
     }
-  })();
+  };
 
   // #1015's garbage rule runs on each leg's own retrieval before the merge, so
   // ordering by the keyword leg changes rank without changing membership. A row
@@ -1540,13 +1623,64 @@ export async function searchResearchGroupsViaMeili(
   // copy is a coincidental typo, and it keeps the pool's position, because the
   // keyword relevance is the part that was garbage. Dropping it instead would
   // lose a match the search had already recovered. See #2732.
-  const genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(keywordLegHits).hits;
-  const { hits: keywordFilteredHits, dropped: droppedCoincidentalHits } =
-    dropCoincidentalTypoOnlyHits(orderCandidatesByKeywordLeg(hits || [], genuineKeywordLegHits));
-  const reorderedPool = promoteExactAliasFieldMatches(
-    floorWeakSemanticOnlyHits(keywordFilteredHits),
-    normalizedQuery.aliasTerms,
-  );
+  let genuineKeywordLegHits = runsHybridLegs
+    ? dropCoincidentalTypoOnlyHits(await searchKeywordLeg(finalSearchParams.matchingStrategy)).hits
+    : [];
+  // A phrase no single row carries in full ("immigration policy", "wind power")
+  // left the keyword leg empty, so the fusion had nothing to anchor it. Rows
+  // matching the phrase's leading words are the next best evidence; a query
+  // matching nothing at all still takes the thresholded path below. Measured as
+  // part of the design: removing it cost concept queries 0.80 to 0.74 and
+  // question-style queries 0.72 to 0.65 nDCG@10 on the development set. See #3797.
+  if (
+    runsHybridLegs &&
+    genuineKeywordLegHits.length === 0 &&
+    finalSearchParams.matchingStrategy === 'all'
+  ) {
+    genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(await searchKeywordLeg('last')).hits;
+  }
+
+  const semanticLegHits = await (async (): Promise<any[]> => {
+    if (!runsHybridLegs || sort.sortBy || genuineKeywordLegHits.length === 0) return [];
+    try {
+      const semanticLegResult = await index.search(meiliQueryText, {
+        filter: filterString,
+        hybrid: { ...finalSearchParams.hybrid, semanticRatio: 1 },
+        ...(finalSearchParams.vector ? { vector: finalSearchParams.vector } : {}),
+        attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
+        page: 1,
+        hitsPerPage: SEMANTIC_LEG_SIZE,
+      });
+      return Array.isArray(semanticLegResult?.hits) ? semanticLegResult.hits : [];
+    } catch (error) {
+      console.error('Optional semantic-leg candidate query failed:', sanitizeLogValue(error));
+      degraded = true;
+      return [];
+    }
+  })();
+
+  const fuseRankings = semanticLegHits.length > 0;
+  const withholdSemanticOnlyRows =
+    fuseRankings && keywordLegTopHitIsNameMatch(genuineKeywordLegHits, normalizedQuery.tokens);
+  const { hits: keywordFilteredHits, dropped: droppedCoincidentalHits } = fuseRankings
+    ? (() => {
+        const fused = fuseKeywordAndSemanticRankings(genuineKeywordLegHits, semanticLegHits, {
+          keywordRowsOnly: withholdSemanticOnlyRows,
+        });
+        if (withholdSemanticOnlyRows) return { hits: fused, dropped: 0 };
+        const fusedIds = new Set(fused.map(candidateHitId));
+        const poolRemainder = dropCoincidentalTypoOnlyHits(
+          (hits || []).filter((hit: any) => !fusedIds.has(candidateHitId(hit))),
+        );
+        return { hits: [...fused, ...poolRemainder.hits], dropped: poolRemainder.dropped };
+      })()
+    : dropCoincidentalTypoOnlyHits(orderCandidatesByKeywordLeg(hits || [], genuineKeywordLegHits));
+  const reorderedPool = fuseRankings
+    ? keywordFilteredHits
+    : promoteExactAliasFieldMatches(
+        floorWeakSemanticOnlyHits(keywordFilteredHits),
+        normalizedQuery.aliasTerms,
+      );
   // The reorder helpers run across the whole fixed candidate pool so the ordering
   // is stable, then the requested page window is sliced locally. Non-thresholded
   // queries already come back pre-paginated from Meilisearch, so they are used
@@ -1600,11 +1734,17 @@ export async function searchResearchGroupsViaMeili(
   // through the pool, and the client stops its pagination walk once a short page
   // reaches the reported total, so the locally reachable pool is a floor on the
   // count rather than something the count may fall below. See #2732.
+  // Withheld semantic-only rows still count in the companion total, so a withheld
+  // result reports only the rows it can serve.
   const locallyReachableHits = paginateHybridPoolLocally ? reorderedPool.length : 0;
+  const companionTotalHits =
+    typeof resolvedTotalHits === 'number' && !withholdSemanticOnlyRows
+      ? resolvedTotalHits - droppedCoincidentalHits
+      : 0;
   const adjustedTotalHits = Math.max(
     normalizedHits.length,
     locallyReachableHits,
-    typeof resolvedTotalHits === 'number' ? resolvedTotalHits - droppedCoincidentalHits : 0,
+    companionTotalHits,
   );
 
   return addResearchEntitySearchAliases(
