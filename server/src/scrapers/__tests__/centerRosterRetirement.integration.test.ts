@@ -701,6 +701,56 @@ describe(
       expect(row.rosterProvenance.membershipKey).toBeUndefined();
     });
 
+    it('adopts a lead edge on the already-lead path and then serves the person once, under the listed role', async () => {
+      const blair = await listedAccountHolder('Blair');
+      await seedCenterWithoutAnAdmittedRead(withoutMember('Blair'));
+      const stale = await unprovenancedEdge(blair, 'DIRECTOR');
+      await RoleAssignment.updateOne({ _id: stale }, { $set: { state: 'CURRENT' } });
+
+      await runLane([ROSTER]);
+      const adopted = await edge(stale);
+      expect(adopted.rosterProvenance).toMatchObject({
+        sourceName: SOURCE_NAME,
+        membershipKey: `official-profile:${member('Blair').profileUrl}|director`,
+      });
+      expect(adopted.rosterProvenance.observedAt.getTime()).toBe(LONG_AGO.getTime());
+      expect((await personEdges(blair)).map((row) => row.role)).toEqual(['DIRECTOR']);
+
+      await runLane([ROSTER]);
+      expect((await edge(stale)).state).toBe('HISTORICAL');
+
+      await runLane([ROSTER]);
+      const current = (await personEdges(blair)).filter((row) => row.state !== 'HISTORICAL');
+      expect(current.map((row) => row.role)).toEqual(['CORE_FACULTY']);
+      const served = await servedMemberNames();
+      expect(served.filter((name) => name === member('Blair').name)).toHaveLength(1);
+    });
+
+    it("leaves a listed person's provenance-less edge on another entity untouched", async () => {
+      const blair = await listedAccountHolder('Blair');
+      await seedCenterWithoutAnAdmittedRead();
+      const elsewhere = (
+        await RoleAssignment.create({
+          personId: blair,
+          target: { kind: 'RESEARCH_ENTITY', id: new mongoose.Types.ObjectId() },
+          role: 'DIRECTOR',
+          state: 'UNKNOWN',
+          confidence: 0.5,
+          reviewStatus: 'UNREVIEWED',
+          archived: false,
+          startedAt: LONG_AGO,
+        })
+      )._id;
+
+      await runLane([ROSTER]);
+      await runLane([ROSTER]);
+      await runLane([ROSTER]);
+
+      const row = await edge(elsewhere);
+      expect(row.rosterProvenance?.sourceName).toBeUndefined();
+      expect(row.state).toBe('UNKNOWN');
+    });
+
     it('freezes the center when adopted edges would make most of what it governs retire', async () => {
       const people = [];
       for (const entry of ROSTER) {
