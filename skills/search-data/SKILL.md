@@ -14,7 +14,7 @@ The old client-side `embeddingService.ts` path was removed.
 Do not reintroduce client-side embedding calls for Research search.
 Research search normalizes student queries in `researchGroupService.searchResearchGroupsViaMeili`.
 It strips low-value words such as `professor`, `lab`, and `research` when meaningful terms remain, expands curated aliases for `ai`, `ml`, `nlp`, `cv`, `neuro`, and `psych`, and treats an alias query whose expansion still carries the typed shorthand as a keyword-only search over topic-oriented fields.
-An alias expands only when it is the whole query: inside a phrase each expansion term counted as a query word in Meili's `words` rule, so `drug addiction` served drug-discovery rows, and the typed words now go through unexpanded while the index synonyms widen each one (#3797).
+An alias expands only when it is the whole query: inside a phrase each expansion term counted as a query word in Meili's `words` rule, so `drug addiction` served drug-discovery rows, and the typed words now go through unexpanded while the index synonyms widen each one, except a `queryOnly` cluster's word (`drug`, `kids`, `climate`), which the index does not carry, so the semantic leg supplies its meaning (#3797).
 Filler stripping is decided per token by `isStudentQueryFiller`, not by a flat word list, because a question-frame verb and a real field name can be the same word: `studies`, `work`, and `working` name fields the corpus carries (192 `researchAreas` and 11 `departments` contain "studies"; also "Sex Work" and "Working Memory"), so `work` and `working` are dropped only where they govern a preposition (currently `on` or `with`, per `QUESTION_FRAME_VERB_PREPOSITIONS`) and `studies` is never dropped.
 Adding such a word to `STUDENT_QUERY_STOP_WORDS` silently narrows every query that names the field to its remaining tokens; the regression tests for both directions live in `researchGroupService.test.ts`.
 Department shorthands resolve through the `department` clusters in `searchTopicAliases.ts`, which expand to the canonical term and drop the shorthand itself, so a query-only abbreviation no document carries (`orgo`, `ochem`) belongs there rather than in a `topical` cluster and stays out of the corpus-side Meili synonyms.
@@ -272,10 +272,11 @@ Before this, the page was the keyword leg's order with semantic-only rows append
 Rank rather than score, because the scores are not on one scale: measured offline with the index's own embedding model, off-topic queries reach similarities real topics do not, and no absolute or relative cutoff separated them, while the semantic leg's order was right.
 Every k and weight swept beat the keyword-first merge, and a semantic weight of 2 cost a person-name query its correct first result.
 
-Two guards shape the fused list.
-When the all-words keyword leg of a multi-word query is empty, it is re-run with `matchingStrategy: 'last'`, so a phrase no row carries in full (`immigration policy`) still has keyword evidence to anchor the fusion; a query that matches nothing even then keeps the thresholded path and its #823 noise protection.
-When the best keyword hit matches a name field on every word (`keywordLegTopHitIsNameMatch`), semantic-only rows are withheld, because the semantic neighbours of a name are other people with similar names.
+An empty keyword leg runs no semantic leg, so a query that matches nothing keeps the thresholded path and its #823 noise protection.
+When the best keyword hit matches every word and a person-name field, `leadProfessorNames` or `professorNames` (`keywordLegTopHitIsNameMatch`), semantic-only rows are withheld, because the semantic neighbours of a name are other people with similar names.
+An entity title does not count, because titles carry topic words (`Robotics Lab`).
 Meili omits the `words` rule under `matchingStrategy: 'all'`, so an absent rule counts as a full match there.
+A withheld result reports only the rows it serves as its total, because the companion count still includes the withheld rows.
 A failed semantic leg falls back to the keyword-first order and marks the search degraded; `floorWeakSemanticOnlyHits` and `promoteExactAliasFieldMatches` now run only on that fallback path.
 A whole-query shorthand that keeps its typed alias (`ai`) still searches topic fields keyword-only and is unchanged.
 

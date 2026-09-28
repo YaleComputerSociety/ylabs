@@ -1274,8 +1274,8 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(hybridCalls).toHaveLength(3);
     hybridCalls.forEach(([, params]) => expect(params.vector).toEqual(queryVector));
     const keywordLegCalls = mocks.search.mock.calls.filter(([, params]) => !params.hybrid);
-    expect(keywordLegCalls.map(([, params]) => params.matchingStrategy)).toEqual(['all', 'last']);
-    keywordLegCalls.forEach(([, params]) => expect(params).not.toHaveProperty('vector'));
+    expect(keywordLegCalls).toHaveLength(1);
+    expect(keywordLegCalls[0][1]).not.toHaveProperty('vector');
   });
 
   it('omits the vector when no embedding is available so Meilisearch embeds the query itself (#3149)', async () => {
@@ -1622,7 +1622,7 @@ describe('searchResearchGroupsViaMeili', () => {
       _rankingScoreDetails: { words: { matchingWords, maxMatchingWords: 2 } },
     });
 
-    it('is true when the best hit matches a name field on every query word', () => {
+    it('is true when the best hit matches a person name on every query word', () => {
       expect(keywordLegTopHitIsNameMatch([top({ leadProfessorNames: [{}] })])).toBe(true);
       expect(keywordLegTopHitIsNameMatch([top({ 'professorNames.0': [{}] })])).toBe(true);
     });
@@ -1630,14 +1630,20 @@ describe('searchResearchGroupsViaMeili', () => {
     it('treats an absent words rule as a full match, as Meili reports it under matchingStrategy all', () => {
       expect(
         keywordLegTopHitIsNameMatch([
-          { _matchesPosition: { name: [{}] }, _rankingScoreDetails: {} },
+          { _matchesPosition: { leadProfessorNames: [{}] }, _rankingScoreDetails: {} },
         ]),
       ).toBe(true);
     });
 
-    it('is false for a topic match, a partial name match, or no hits', () => {
+    it('is false for a topic match, an entity title match, a partial name match, or no hits', () => {
       expect(keywordLegTopHitIsNameMatch([top({ researchAreas: [{}] })])).toBe(false);
-      expect(keywordLegTopHitIsNameMatch([top({ name: [{}] }, 1)])).toBe(false);
+      expect(keywordLegTopHitIsNameMatch([top({ name: [{}], displayName: [{}] })])).toBe(false);
+      expect(
+        keywordLegTopHitIsNameMatch([
+          { _matchesPosition: { name: [{}] }, _rankingScoreDetails: {} },
+        ]),
+      ).toBe(false);
+      expect(keywordLegTopHitIsNameMatch([top({ leadProfessorNames: [{}] }, 1)])).toBe(false);
       expect(keywordLegTopHitIsNameMatch([])).toBe(false);
     });
   });
@@ -2175,6 +2181,7 @@ describe('searchResearchGroupsViaMeili', () => {
         expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
           'single-exact-tag',
         ]);
+        expect(result.estimatedTotalHits).toBe(1);
       });
 
       it('keeps the keyword-first order when the semantic leg fails, and says so', async () => {

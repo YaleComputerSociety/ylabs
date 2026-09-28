@@ -632,8 +632,9 @@ export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearch
   // A topic alias expands only when it is the whole query. Inside a phrase every
   // expansion term counts as a query word in Meili's `words` rule, so "drug
   // addiction" became six words and drug-discovery rows outranked addiction
-  // research on the alias vocabulary alone. The index synonyms still widen each
-  // typed word without adding words. See #3797.
+  // research on the alias vocabulary alone. The index synonyms widen each typed
+  // word without adding words, except a query-only cluster's, which the index
+  // does not carry and the semantic leg answers instead. See #3797.
   const expandedTerms = aliasExpansion ? aliasExpansion : workingStyle.terms;
   const normalizedTerms = uniqueQueryTerms(expandedTerms);
   const typedShorthand = queryTokens.join(' ');
@@ -984,17 +985,13 @@ export const fuseKeywordAndSemanticRankings = <T>(
     .map(([id]) => hitsById.get(id) as T);
 };
 
-const PERSON_NAME_ATTRIBUTES = new Set([
-  'name',
-  'displayName',
-  'leadProfessorNames',
-  'professorNames',
-]);
+const PERSON_NAME_ATTRIBUTES = new Set(['leadProfessorNames', 'professorNames']);
 
-// A query whose best keyword hit matches a name field on every word is someone
-// looking for a person or a named lab, and the semantic neighbours of a name are
+// A query whose best keyword hit matches every word and a person's name is someone
+// looking for a person, and the semantic neighbours of a name are
 // other people with similar names: the blind judges preferred production on 7 of
-// 15 name queries until those rows were withheld. See #3797.
+// 15 name queries until those rows were withheld. An entity title is not a person
+// name, because titles carry topic words ("Robotics Lab"). See #3797.
 export const keywordLegTopHitIsNameMatch = (keywordLegHits: any[]): boolean => {
   const top = keywordLegHits[0];
   if (!top) return false;
@@ -1572,12 +1569,14 @@ export async function searchResearchGroupsViaMeili(
   // partial typo garbage. See #2732.
   const runsHybridLegs =
     Boolean(finalSearchParams.hybrid) && finalSearchParams.rankingScoreThreshold !== undefined;
-  const searchKeywordLeg = async (matchingStrategy?: string): Promise<any[]> => {
+  const searchKeywordLeg = async (): Promise<any[]> => {
     try {
       const keywordLegResult = await index.search(meiliQueryText, {
         filter: filterString,
         ...(finalSearchParams.sort ? { sort: finalSearchParams.sort } : {}),
-        ...(matchingStrategy ? { matchingStrategy } : {}),
+        ...(finalSearchParams.matchingStrategy
+          ? { matchingStrategy: finalSearchParams.matchingStrategy }
+          : {}),
         showRankingScoreDetails: true,
         showMatchesPosition: true,
         attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
@@ -1597,20 +1596,9 @@ export async function searchResearchGroupsViaMeili(
   // copy is a coincidental typo, and it keeps the pool's position, because the
   // keyword relevance is the part that was garbage. Dropping it instead would
   // lose a match the search had already recovered. See #2732.
-  let genuineKeywordLegHits = runsHybridLegs
-    ? dropCoincidentalTypoOnlyHits(await searchKeywordLeg(finalSearchParams.matchingStrategy)).hits
+  const genuineKeywordLegHits = runsHybridLegs
+    ? dropCoincidentalTypoOnlyHits(await searchKeywordLeg()).hits
     : [];
-  // A phrase no single row carries in full ("immigration policy", "wind power")
-  // left the keyword leg empty, so the fusion had nothing to anchor it. Rows
-  // matching the phrase's leading words are the next best evidence; a query
-  // matching nothing at all still takes the thresholded path below. See #3797.
-  if (
-    runsHybridLegs &&
-    genuineKeywordLegHits.length === 0 &&
-    finalSearchParams.matchingStrategy === 'all'
-  ) {
-    genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(await searchKeywordLeg('last')).hits;
-  }
 
   const semanticLegHits = await (async (): Promise<any[]> => {
     if (!runsHybridLegs || sort.sortBy || genuineKeywordLegHits.length === 0) return [];
@@ -1706,11 +1694,17 @@ export async function searchResearchGroupsViaMeili(
   // through the pool, and the client stops its pagination walk once a short page
   // reaches the reported total, so the locally reachable pool is a floor on the
   // count rather than something the count may fall below. See #2732.
+  // Withheld semantic-only rows still count in the companion total, so a withheld
+  // result reports only the rows it can serve.
   const locallyReachableHits = paginateHybridPoolLocally ? reorderedPool.length : 0;
+  const companionTotalHits =
+    typeof resolvedTotalHits === 'number' && !withholdSemanticOnlyRows
+      ? resolvedTotalHits - droppedCoincidentalHits
+      : 0;
   const adjustedTotalHits = Math.max(
     normalizedHits.length,
     locallyReachableHits,
-    typeof resolvedTotalHits === 'number' ? resolvedTotalHits - droppedCoincidentalHits : 0,
+    companionTotalHits,
   );
 
   return addResearchEntitySearchAliases(
