@@ -14,6 +14,10 @@ import { resolveField, type ResolverObservation } from './confidenceResolver';
 import { workPlannerSkippedEveryTarget } from './sourceYieldGuard';
 import { classifyScrapeRunLiveness, type ScrapeRunLiveness } from './scrapeRunLiveness';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import {
+  WITHHELD_CONTACT_VALUE_PREVIEW,
+  isResearchEntityContactField,
+} from './rowKeyedContactEvidence';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -344,7 +348,8 @@ function serializeValue(value: unknown): string {
   }
 }
 
-function previewValue(value: unknown): string {
+function previewValue(value: unknown, field: string): string {
+  if (isResearchEntityContactField(field)) return WITHHELD_CONTACT_VALUE_PREVIEW;
   let raw: string;
   if (typeof value === 'string') raw = value;
   else {
@@ -542,7 +547,9 @@ export function buildMaterializationConflictReview(
       sourceNames,
       resolvedConfidence: resolved.confidence,
       contributingSources: resolved.contributingSources.slice().sort(),
-      conflictingValuePreviews: (resolved.conflictingValues || []).slice(0, 3).map(previewValue),
+      conflictingValuePreviews: (resolved.conflictingValues || [])
+        .slice(0, 3)
+        .map((value) => previewValue(value, group.field)),
     });
   }
 

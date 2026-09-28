@@ -483,4 +483,58 @@ describe('cross-source observation conflict review', () => {
       'tsx src/scripts/crossSourceObservationConflictReview.ts',
     );
   });
+
+  it('writes a review artifact that withholds conflicting contact values', () => {
+    const contactValues = ['Department Synthetic Contact', 'Roster Synthetic Contact 555-010-0188'];
+    const summary = buildCrossSourceObservationConflictSummary({
+      limit: 10,
+      sampleSize: 5,
+      planLimit: 5,
+      groups: [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'synthetic-contact-row',
+          field: 'contactName',
+          observations: [
+            {
+              id: 'dept-contact',
+              sourceName: 'department-undergrad-research',
+              value: contactValues[0],
+              observedAt: new Date('2026-05-01T12:00:00Z'),
+              confidence: 0.7,
+            },
+            {
+              id: 'roster-contact',
+              sourceName: 'dept-faculty-roster',
+              value: contactValues[1],
+              observedAt: new Date('2026-05-01T12:00:00Z'),
+              confidence: 0.7,
+            },
+          ],
+        },
+      ],
+    });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-cross-source-contact-'));
+    const output = path.join(dir, 'review.json');
+    const templatePath = path.join(dir, 'template.json');
+
+    try {
+      writeCrossSourceObservationConflictReviewOutput(summary, output);
+      writeCrossSourceObservationDecisionTemplate(
+        buildCrossSourceObservationDecisionTemplate(summary.plans),
+        templatePath,
+      );
+      const written = fs.readFileSync(output, 'utf8') + fs.readFileSync(templatePath, 'utf8');
+
+      expect(summary.candidateGroups).toBe(1);
+      for (const value of contactValues) expect(written).not.toContain(value);
+      expect(summary.samples[0]).toMatchObject({
+        field: 'contactName',
+        distinctValueCount: 2,
+        sourceNames: ['department-undergrad-research', 'dept-faculty-roster'],
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

@@ -1,11 +1,17 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
   MERGE_REMATERIALIZE_AUDITED_FIELDS,
   assertMergeRematerializeApplyAllowed,
   classifyMergeRematerializeChange,
   classifyMergeRematerializeChanges,
+  mergeRematerializeDryRunChanges,
+  mergeRematerializeFilledChanges,
   parseMergeRematerializeDriftArgs,
   summarizeMergeRematerializeDrift,
+  writeMergeRematerializeDriftReport,
   type MergeRematerializeEntityReport,
 } from '../mergeRematerializeDriftCore';
 
@@ -94,6 +100,98 @@ describe('summarizeMergeRematerializeDrift', () => {
       { field: 'kind', before: 'lab', after: 'individual' },
     ]);
     expect(changes.map((change) => change.kind)).toEqual(['recovered', 'replaced']);
+  });
+});
+
+describe('merge rematerialize drift report contact values', () => {
+  const storedContact = {
+    contactEmail: 'stored-contact@example.test',
+    contactName: 'Stored Synthetic Contact',
+    contactRole: 'Stored Synthetic Role',
+  };
+  const plannedContact = {
+    contactEmail: 'planned-contact@example.test',
+    contactName: 'Planned Synthetic Contact 555-010-0142',
+  };
+  const contactValues = [...Object.values(storedContact), ...Object.values(plannedContact)];
+
+  it('records a drifting contact field by direction and still classifies it', () => {
+    const changes = mergeRematerializeDryRunChanges(
+      { ...storedContact, contactEmail: '', fullDescription: '' },
+      { ...plannedContact, fullDescription: 'Synthetic recovered prose.' },
+      { contactRole: '' },
+    );
+
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        { field: 'contactEmail', withheld: 'set', kind: 'recovered' },
+        { field: 'contactName', withheld: 'replaced', kind: 'replaced' },
+        { field: 'contactRole', withheld: 'cleared', kind: 'emptied' },
+        {
+          field: 'fullDescription',
+          before: '',
+          after: 'Synthetic recovered prose.',
+          kind: 'recovered',
+        },
+      ]),
+    );
+    expect(changes).toHaveLength(4);
+  });
+
+  it('records a fill-only apply of a contact field without its value', () => {
+    const changes = mergeRematerializeFilledChanges({ ...storedContact, methods: [] }, [
+      'contactName',
+      'methods',
+    ]);
+    expect(changes).toEqual([
+      { field: 'contactName', withheld: 'set', kind: 'recovered' },
+      { field: 'methods', before: [], after: undefined, kind: 'recovered' },
+    ]);
+  });
+
+  it('writes a report file that counts contact drift and carries no contact value', () => {
+    const entities: MergeRematerializeEntityReport[] = [
+      {
+        entityId: 'synthetic-survivor',
+        slug: 'synthetic-survivor-lab',
+        archivedTwinCount: 1,
+        changes: mergeRematerializeDryRunChanges(
+          { ...storedContact, contactEmail: '' },
+          plannedContact,
+          { contactRole: '' },
+        ),
+      },
+      {
+        entityId: 'synthetic-applied',
+        slug: 'synthetic-applied-lab',
+        archivedTwinCount: 1,
+        filledFields: ['contactEmail'],
+        changes: mergeRematerializeFilledChanges(storedContact, ['contactEmail']),
+      },
+    ];
+    const summary = summarizeMergeRematerializeDrift(entities);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'merge-drift-report-'));
+    const output = path.join(dir, 'report.json');
+
+    try {
+      writeMergeRematerializeDriftReport(output, { summary, entities });
+      const written = fs.readFileSync(output, 'utf8');
+
+      for (const value of contactValues) expect(written).not.toContain(value);
+      expect(written).not.toMatch(/@example\.test|555-010/);
+      expect(summary.fieldsByKind).toEqual({
+        recovered: { contactEmail: 2 },
+        emptied: { contactRole: 1 },
+        replaced: { contactName: 1 },
+      });
+      expect(JSON.parse(written).entities[0].changes).toContainEqual({
+        field: 'contactName',
+        withheld: 'replaced',
+        kind: 'replaced',
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

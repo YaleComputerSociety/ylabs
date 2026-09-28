@@ -101,6 +101,7 @@ Across 1,259 survivors it found 910 with recoverable evidence (784 lead links, 1
 Description arbitration already has length and trust gates in the plan builders, so the merge gains evidence and never trades it.
 
 Run the audit before changing the fill-only rule, and read `entitiesWithEmptiedEvidence` first: a re-projection that empties a served field is the failure this whole lane exists to prevent.
+Its `--output` report records a drifting `contactEmail`, `contactName` or `contactRole` as `{ field, withheld: 'set' | 'replaced' | 'cleared', kind }` and never carries the value, so contact drift is still counted in `fieldsByKind` without a contact reaching the file.
 
 ## Data preserved on merge
 

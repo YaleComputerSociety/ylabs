@@ -6,6 +6,10 @@ import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import {
+  WITHHELD_CONTACT_VALUE_PREVIEW,
+  isResearchEntityContactField,
+} from '../scrapers/rowKeyedContactEvidence';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -1040,10 +1044,10 @@ function buildCandidateSample(
     distinctValueCount,
     keepObservationId: keep.id,
     keepObservedAt: formatOptionalDate(keep.observedAt),
-    keepValuePreview: previewValue(keep.value),
+    keepValuePreview: previewValue(keep.value, group.field),
     supersedeObservationIds: supersedeCandidates.map((observation) => observation.id),
     supersedeValuePreviews: supersedeCandidates.map((observation) =>
-      previewValue(observation.value),
+      previewValue(observation.value, group.field),
     ),
   };
 }
@@ -1277,7 +1281,8 @@ function serializeValue(value: unknown): string {
   return `p:${String(value)}`;
 }
 
-function previewValue(value: unknown): string {
+function previewValue(value: unknown, field: string): string {
+  if (isResearchEntityContactField(field)) return WITHHELD_CONTACT_VALUE_PREVIEW;
   let raw: string;
   if (typeof value === 'string') {
     raw = value;
