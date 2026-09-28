@@ -17,6 +17,7 @@ describe('quoteStatesAnUndergraduateAccessFact', () => {
       'Our Undergraduate Program',
       'He completed his undergraduate education at a state university with a degree in chemistry.',
       'She contributes to the center by lecturing in the undergraduate course on sleep.',
+      'She completed her undergraduate studies at a state university.',
     ];
     for (const quote of notAccess)
       expect(quoteStatesAnUndergraduateAccessFact(quote), quote).toBe(false);
@@ -29,6 +30,11 @@ describe('quoteStatesAnUndergraduateAccessFact', () => {
       'A current member first joined the lab during his undergraduate studies.',
       'We welcome inquiries from prospective postdocs, graduate students, and undergraduate researchers.',
       'Undergraduate Students and RAs Example Person Undergraduate RA',
+      'She teaches and mentors undergraduate researchers in her lab.',
+      'The professor teaches courses and welcomes undergraduates to join the lab.',
+      'Undergraduate courses are taught by lab members, and undergraduates can join the lab.',
+      'We welcome undergraduate majors in biology to join our research.',
+      'He teaches undergraduates and welcomes undergraduate students to join the lab.',
     ];
     for (const quote of access)
       expect(quoteStatesAnUndergraduateAccessFact(quote), quote).toBe(true);
