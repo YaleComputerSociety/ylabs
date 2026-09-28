@@ -197,16 +197,22 @@ async function main(): Promise<void> {
     byFieldDelta: delta.byField,
     gateTierDelta: delta.gateTiers,
   };
-  if (!options.dryRun) await EngineBenchmarkSnapshot.create(snapshot);
+  // A replay that does not agree with itself cannot be compared to a later one, so storing it
+  // would put a row in the trend that no future run can be measured against. Refused rather than
+  // stored-and-flagged: #3418 and #2513 are both cases where a row nobody could interpret was
+  // read as a signal anyway.
+  const reproducible = fingerprints.length === 1;
+  if (!options.dryRun && reproducible) await EngineBenchmarkSnapshot.create(snapshot);
 
   const report = {
     script: SCRIPT_NAME,
     mode: options.dryRun ? 'dry-run' : 'apply',
-    stored: options.dryRun ? 0 : 1,
+    stored: options.dryRun || !reproducible ? 0 : 1,
     ...(capture ? { capture } : {}),
     replays: options.replays,
     distinctFingerprints: fingerprints.length,
     fingerprintChangeIsAttributable: fingerprintChangeIsAttributable(snapshot),
+    ...(reproducible ? {} : { notStored: 'the replays disagreed, so this run is not comparable' }),
     ...(fingerprints.length > 1
       ? { replayDisagreement: diffEngineReplays(replays[0], replays[1]) }
       : {}),

@@ -74,6 +74,38 @@ const expectReplayResolvedSomething = (
   expect(planned.length).toBeGreaterThan(0);
 };
 
+const RIVAL_SOURCE = 'fixture-engine-rival-source';
+
+/**
+ * A second, older, lower-weighted assertion of the same field, so the resolver has a real
+ * recency-decay decision to make and `confidenceByField` becomes a function of `now`.
+ */
+const seedRivalDescription = async (): Promise<void> => {
+  const db = mongoose.connection.db;
+  if (!db) throw new Error('no db');
+  const entity = await db.collection('research_entities').findOne({ slug: SLUG });
+  if (!entity) throw new Error('fixture row missing');
+  await db.collection('sources').insertOne({
+    _id: new mongoose.Types.ObjectId(),
+    name: RIVAL_SOURCE,
+    weight: 0.6,
+  });
+  await db.collection('observations').insertOne({
+    _id: new mongoose.Types.ObjectId(),
+    entityType: 'researchEntity',
+    entityKey: SLUG,
+    entityId: (entity as { _id: unknown })._id,
+    field: 'fullDescription',
+    value:
+      'An older account of the same group, describing shell-formation work across three field sites rather than four.',
+    sourceName: RIVAL_SOURCE,
+    sourceUrl: 'https://biology.example.edu/intertidal/archive/',
+    confidence: 0.6,
+    superseded: false,
+    observedAt: new Date('2025-03-01T00:00:00.000Z'),
+  });
+};
+
 const deleteLiveCorpus = async (): Promise<void> => {
   const db = mongoose.connection.db;
   if (!db) throw new Error('no db');
@@ -145,6 +177,45 @@ describe('the engine benchmark replays a frozen input rather than the corpus (#3
     expect(engineOutputFingerprint(afterDeletion.rows)).toBe(
       engineOutputFingerprint(beforeDeletion.rows),
     );
+  }, 120000);
+
+  /**
+   * The defect the first real capture found. `confidenceResolver` weights every observation by
+   * `recencyDecay(observedAt, now, halfLife)` and `confidenceByField` is a stored field, so with
+   * a wall clock two replays of identical code computed different confidences: 67 of 90 rows
+   * differed on that field alone and the benchmark reported itself unattributable. Pinning the
+   * instant from the capture is what makes the digest hold; masking the field would have gone
+   * green by making the instrument blind to a real change in engine output.
+   */
+  it('resolves the same confidence on two replays, because the clock is pinned', async () => {
+    // Two rival observations of one field, from sources of different weight and read months
+    // apart. That is what makes confidence clock-sensitive: a single observation normalises to 1
+    // whatever the instant, so the original one-observation fixture could not have caught this.
+    await seedRivalDescription();
+    await captureEngineBenchmark({ benchmarkId: BENCHMARK_ID, perScopeLimit: 5 });
+
+    const first = await replayEngineBenchmark(BENCHMARK_ID);
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const second = await replayEngineBenchmark(BENCHMARK_ID);
+
+    const confidence = (rows: typeof first.rows) =>
+      rows.map((row) => JSON.stringify(row.plannedSet.confidenceByField ?? null));
+    expect(confidence(first.rows).join('|')).not.toBe('null');
+    expect(confidence(first.rows)).toEqual(confidence(second.rows));
+    expect(engineOutputFingerprint(first.rows)).toBe(engineOutputFingerprint(second.rows));
+  }, 120000);
+
+  /**
+   * The sole-lead answer is the one prefetch read that is neither an observation nor the row
+   * itself, and the first capture froze none of it, so all 90 rows fell through to a live read
+   * and reported incomplete input.
+   */
+  it('freezes the sole-lead answer, so a replayed row reports no unfrozen read', async () => {
+    await captureEngineBenchmark({ benchmarkId: BENCHMARK_ID, perScopeLimit: 5 });
+
+    const replay = await replayEngineBenchmark(BENCHMARK_ID);
+
+    expect(replay.rows.flatMap((row) => row.unfrozenReads)).toEqual([]);
   }, 120000);
 
   it('reports a gate verdict for the replayed row', async () => {
