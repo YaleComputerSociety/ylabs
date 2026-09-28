@@ -71,6 +71,15 @@ describe('searchTopicAliases source of truth', () => {
     }
   });
 
+  it('makes a free-text-guarded shorthand a one-way synonym, so no topic expands to "cv" (#3797)', () => {
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS.cv).toEqual(
+      expect.arrayContaining(['computer vision', 'computational vision']),
+    );
+    for (const [term, targets] of Object.entries(RESEARCH_ENTITY_MEILI_SYNONYMS)) {
+      if (term !== 'cv') expect(targets).not.toContain('cv');
+    }
+  });
+
   it('guards only the ambiguous short abbreviations against free-text false positives', () => {
     expect([...STUDENT_TOPIC_TEXT_ALIAS_FREE_TEXT_GUARDED]).toEqual(['cv']);
     expect(RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS).toEqual(

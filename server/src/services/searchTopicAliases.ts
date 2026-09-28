@@ -204,10 +204,21 @@ export function buildResearchEntityMeiliSynonyms(
   clusters: TopicAliasCluster[],
   governedAreaAliases: Record<string, string[]>,
 ): Record<string, string[]> {
+  const synonymClusters = clusters.filter(
+    (cluster) => cluster.kind === 'topical' && !cluster.queryOnly,
+  );
+  // A free-text-guarded shorthand is ambiguous in prose, so it may expand to its
+  // topic but no topic may expand to it: `computer vision -> cv` matched the "CV"
+  // (curriculum vitae) link on economics and finance profiles and left no relevant
+  // row in the top 6. See #3797.
+  const oneWayTerms = new Set(
+    synonymClusters
+      .filter((cluster) => cluster.freeTextGuarded)
+      .flatMap((cluster) => cluster.shortAliases ?? [])
+      .map(normalizeSynonymTerm),
+  );
   const families: string[][] = [
-    ...clusters
-      .filter((cluster) => cluster.kind === 'topical' && !cluster.queryOnly)
-      .map(clusterFamily),
+    ...synonymClusters.map(clusterFamily),
     ...Object.entries(governedAreaAliases).map(([canonical, aliases]) =>
       dedupeInOrder([canonical, ...aliases]),
     ),
@@ -216,7 +227,7 @@ export function buildResearchEntityMeiliSynonyms(
   for (const family of families) {
     const normalized = dedupeInOrder(family.map(normalizeSynonymTerm));
     for (const term of normalized) {
-      const others = normalized.filter((other) => other !== term);
+      const others = normalized.filter((other) => other !== term && !oneWayTerms.has(other));
       synonyms[term] = dedupeInOrder([...(synonyms[term] ?? []), ...others]);
     }
   }
