@@ -337,12 +337,7 @@ const isSyntheticFixtureSlug = (slug) => {
 // is a person and still flags. Without this arm a driver's seeded profile URLs read as dump
 // shape, which is how one body reported 46 of them (#3540).
 const isSyntheticFixtureProfileUrl = (url) => {
-  const segments = String(url || '')
-    .split('?')[0]
-    .split('#')[0]
-    .split('/')
-    .filter(Boolean);
-  const leaf = segments.at(-1) || '';
+  const leaf = url.slice(url.lastIndexOf('/') + 1);
   const parts = leaf.split(/[._-]/).filter(Boolean);
   return parts.length > 1 && endsOnSyntheticMarker(parts);
 };

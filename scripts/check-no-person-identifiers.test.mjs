@@ -243,12 +243,9 @@ test('clears a run of seeded profile paths, and still reports a run of real ones
 
   const realRun = [
     'Rows to check:',
-    'https://medicine.yale.edu/profile/alessandra-whitcombe/',
-    'https://medicine.yale.edu/profile/bartholomew-quillfeather/',
-    'https://ysph.yale.edu/profile/cordelia-ashgrove/',
-    'https://medicine.yale.edu/profile/desmond-fairweather/',
-    'https://medicine.yale.edu/profile/evangeline-thornbury/',
-    'https://medicine.yale.edu/profile/finnegan-ravensworth/',
+    ...[1, 2, 3, 4, 5, 6].map(
+      (index) => `https://medicine.yale.edu/profile/given${index}-family${index}/`,
+    ),
   ].join('\n');
   assert.ok(rulesOf(scanBody(body(realRun))).length > 0, 'real run must still report');
 });
@@ -256,12 +253,12 @@ test('clears a run of seeded profile paths, and still reports a run of real ones
 // Terminal position is the whole safety argument, so it is pinned from both directions.
 test('still flags a marker word that is not the final segment', () => {
   for (const flagged of [
-    ['The row nih-pi-fixture-whitcombe is wrong.', 'person-bearing-entity-slug'],
-    ['The row ysm-faculty-sample-whitcombe departed.', 'person-bearing-entity-slug'],
-    ['fixture.whitcombe@yale.edu departed.', 'personal-yale-address'],
-    ['sample.whitcombe@yale.edu is suppressed.', 'personal-yale-address'],
+    ['The row nih-pi-fixture-family1 is wrong.', 'person-bearing-entity-slug'],
+    ['The row ysm-faculty-sample-family1 departed.', 'person-bearing-entity-slug'],
+    ['fixture.family1@yale.edu departed.', 'personal-yale-address'],
+    ['sample.family1@yale.edu is suppressed.', 'personal-yale-address'],
     [
-      'See https://medicine.yale.edu/profile/fixture-whitcombe/ which is stale.',
+      'See https://medicine.yale.edu/profile/fixture-family1/ which is stale.',
       'personal-profile-url',
     ],
   ]) {
