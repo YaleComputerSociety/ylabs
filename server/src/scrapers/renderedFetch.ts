@@ -400,8 +400,10 @@ function recordingRenderedFetcher(live: RenderedFetcher | null): RenderedFetcher
   });
   if (!live) return null;
   return async (request) => {
+    const requestKey = renderedFetchBenchmarkKey(request);
+    benchmarkCacheRead(RENDERED_FETCH_BENCHMARK_NAMESPACE, requestKey);
     const result = await live(request);
-    benchmarkCacheWrite(RENDERED_FETCH_BENCHMARK_NAMESPACE, renderedFetchBenchmarkKey(request), {
+    benchmarkCacheWrite(RENDERED_FETCH_BENCHMARK_NAMESPACE, requestKey, {
       result,
     } satisfies FrozenRender);
     return result;

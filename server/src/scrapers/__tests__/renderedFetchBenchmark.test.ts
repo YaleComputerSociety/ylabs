@@ -10,6 +10,7 @@ import {
   beginBenchmarkCapture,
   beginBenchmarkReplay,
   finishBenchmarkCapture,
+  finishBenchmarkCaptureWithCoverage,
   finishBenchmarkReplay,
 } from '../snapshotBenchmarkMode';
 import { unresolvedReplayReason } from '../../scripts/laneScorecard';
@@ -66,6 +67,23 @@ describe('rendered fetches under a benchmark (#3590)', () => {
       withBenchmarkRenderedFetcher(null)!({ url: 'https://example.org/unseen' }),
     ).rejects.toBeInstanceOf(BenchmarkReplayNetworkError);
     expect(finishBenchmarkReplay()).toMatchObject({ pagesMissed: 1, networkBlocks: 1 });
+  });
+
+  it('counts a render that failed at capture as unfrozen, matching the miss its replay makes', async () => {
+    beginBenchmarkCapture();
+    await expect(
+      withBenchmarkRenderedFetcher(async () => {
+        throw new Error('the target no longer resolves');
+      })!(request),
+    ).rejects.toThrow();
+    const { pages, unfrozenRequestCount } = finishBenchmarkCaptureWithCoverage();
+    expect(unfrozenRequestCount).toBe(1);
+
+    beginBenchmarkReplay(pages);
+    await expect(withBenchmarkRenderedFetcher(null)!(request)).rejects.toBeInstanceOf(
+      BenchmarkReplayNetworkError,
+    );
+    expect(finishBenchmarkReplay().pagesMissed).toBe(unfrozenRequestCount);
   });
 
   it('engages the frozen renderer when a lane fetches through its rendered-page cache', async () => {
