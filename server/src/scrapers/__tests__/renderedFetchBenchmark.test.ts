@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  fetchUsableRenderedPage,
   RENDERED_FETCH_BENCHMARK_NAMESPACE,
   withBenchmarkRenderedFetcher,
   type RenderedFetcher,
@@ -65,6 +66,46 @@ describe('rendered fetches under a benchmark (#3590)', () => {
       withBenchmarkRenderedFetcher(null)!({ url: 'https://example.org/unseen' }),
     ).rejects.toBeInstanceOf(BenchmarkReplayNetworkError);
     expect(finishBenchmarkReplay()).toMatchObject({ pagesMissed: 1, networkBlocks: 1 });
+  });
+
+  it('engages the frozen renderer when a lane fetches through its rendered-page cache', async () => {
+    const fetchThroughLane = (renderedFetcher: RenderedFetcher | null) =>
+      fetchUsableRenderedPage({ sourceName: 'lane', useCache: true, request, renderedFetcher });
+    beginBenchmarkCapture();
+    await fetchThroughLane(withBenchmarkRenderedFetcher(async () => rendered));
+    const pages = finishBenchmarkCapture();
+
+    beginBenchmarkReplay(pages);
+    expect(await fetchThroughLane(withBenchmarkRenderedFetcher(null))).toEqual(rendered);
+    const replay = finishBenchmarkReplay();
+    expect(replay.servedByNamespace[RENDERED_FETCH_BENCHMARK_NAMESPACE]).toBe(1);
+    expect(replay.pagesMissed).toBe(0);
+    expect(unresolvedReplayReason(pages, replay)).toBeUndefined();
+  });
+
+  it('replays a benchmark captured before the renderer was recorded from its lane cache', async () => {
+    const pages = [
+      {
+        sourceName: 'lane',
+        requestKey: `rendered-page:v1:${request.url}`,
+        payload: rendered,
+        fetchedAt: new Date(),
+      },
+    ];
+    beginBenchmarkReplay(pages);
+    const live: RenderedFetcher = vi.fn(async () => rendered);
+    const replayed = withBenchmarkRenderedFetcher(live);
+    expect(replayed).toBe(live);
+    expect(
+      await fetchUsableRenderedPage({
+        sourceName: 'lane',
+        useCache: true,
+        request,
+        renderedFetcher: replayed,
+      }),
+    ).toEqual(rendered);
+    expect(live).not.toHaveBeenCalled();
+    expect(finishBenchmarkReplay()).toMatchObject({ pagesServed: 1, pagesMissed: 0 });
   });
 
   it('gives replay no renderer when the capture had none', () => {

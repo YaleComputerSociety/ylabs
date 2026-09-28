@@ -28,7 +28,8 @@ The two center LLM lanes stay out, because they fetch with a raw `axios.get` tha
 A rendered page is frozen at `createScraplingRenderedFetcher`, the one place every rendered lane gets its renderer (#3590).
 Capture records whether a renderer existed at all, because a lane with no renderer takes a different path from one whose render returns nothing, and it records every render, including a null or blocked result.
 Replay reproduces both: no renderer when the capture had none, and otherwise a renderer that serves the frozen render or counts a miss and refuses.
-A benchmark captured before #3590 has no record of the renderer, so it replays with none.
+During capture and replay the renderer freeze is the only record of a render, so the lane's own rendered-page cache stays out of the benchmark and every usable render on replay is served by the frozen renderer.
+A benchmark captured before #3590 has no record of the renderer, so it replays as it did before: the renderer the replay environment builds refuses every call, and a render is served only from the lane's rendered-page cache the capture froze.
 `centers-institutes-index` and `student-grants-database` joined `BENCHMARKABLE_LANES` on this basis.
 
 A replay is compared only once it has resolved something from the frozen input.
