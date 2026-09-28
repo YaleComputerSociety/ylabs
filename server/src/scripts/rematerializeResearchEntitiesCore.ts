@@ -309,7 +309,8 @@ export function foreignContactFieldsByRow(
   const byRow = new Map<string, string[]>();
   for (const row of rows) {
     if (typeof row.slug !== 'string' || !row.slug) continue;
-    const locked = Array.isArray(row.manuallyLockedFields) ? row.manuallyLockedFields : [];
+    const isLocked = (field: string) =>
+      Array.isArray(row.manuallyLockedFields) && row.manuallyLockedFields.includes(field);
     const statedByRow = new Set(
       liveContactObservations
         .filter((observation) => observationIsKeyedToRow(observation, row))
@@ -319,7 +320,7 @@ export function foreignContactFieldsByRow(
       (field) =>
         typeof row[field] === 'string' &&
         (row[field] as string).trim().length > 0 &&
-        !locked.includes(field) &&
+        !isLocked(field) &&
         !statedByRow.has(statement(field, row[field])),
     );
     if (foreign.length > 0) byRow.set(row.slug, foreign);
