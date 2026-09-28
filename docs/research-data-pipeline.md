@@ -146,6 +146,7 @@ Read it rather than the merge time of a fix: a fix merged while a sweep is runni
 If the checkout moves during a run, each later stage is refused rather than spawned, and the refusal is recorded in `summary.json` as `codeDrift` naming both commits.
 This fails closed because the alternative is silent: a stage running newer or older code than the stages before it can re-apply a defect the checkout predates, and for a sweep that writes data that means storing values a merged fix had already removed.
 A refusal does no work, so the checkpoint survives and a resume re-runs the refused stages once the checkout is back on the commit the run started.
+The checkpoint records that commit when the run begins, so a resume keeps it as the run's `codeSha` and keeps refusing until `HEAD` returns to it, and each refusal is kept in the checkpoint so every later `summary.json` of the run still reports it.
 Restart the sweep instead when the intent is to adopt the newer commit.
 
 This was measured on the Development full sweep of 2026-09-28, which ran from 00:38Z to past 06:40Z.

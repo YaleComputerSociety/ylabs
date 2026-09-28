@@ -537,5 +537,30 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     // Recoverable rather than lost: the checkpoint survives so a resume re-runs the refused
     // stages once the checkout is back on the commit the run started.
     expect(fs.existsSync(checkpointFor(mode))).toBe(true);
+
+    const firstRefusals = summary.codeDrift?.length ?? 0;
+    let resumedSpawns = 0;
+    const onMovedCheckout = await runScraperSweep(options, {
+      childRunner: async (command, args, childOptions) => {
+        resumedSpawns++;
+        return spawned.runner(command, args, childOptions);
+      },
+      readHeadSha: () => moved,
+    });
+
+    expect(onMovedCheckout.codeSha).toBe(started);
+    expect(resumedSpawns).toBe(0);
+    expect(onMovedCheckout.codeDrift?.length ?? 0).toBeGreaterThan(firstRefusals);
+    expect(onMovedCheckout.codeDrift?.slice(0, firstRefusals)).toEqual(summary.codeDrift);
+    expect(fs.existsSync(checkpointFor(mode))).toBe(true);
+
+    const onStartedCheckout = await runScraperSweep(options, {
+      childRunner: spawned.runner,
+      readHeadSha: () => started,
+    });
+
+    expect(onStartedCheckout.codeSha).toBe(started);
+    expect(onStartedCheckout.failed).toBe(0);
+    expect(onStartedCheckout.codeDrift).toEqual(onMovedCheckout.codeDrift);
   }, 180_000);
 });

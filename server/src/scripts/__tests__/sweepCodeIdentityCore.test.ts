@@ -3,12 +3,12 @@ import { planSweepCodeDriftRefusal, sweepCodeIdentityFrom } from '../sweepCodeId
 
 describe('sweepCodeIdentityFrom', () => {
   it('reads a commit a checkout reports', () => {
-    expect(sweepCodeIdentityFrom('36474ed54abc')).toEqual({ sha: '36474ed54abc', readable: true });
+    expect(sweepCodeIdentityFrom('36474ed54abc')).toBe('36474ed54abc');
   });
 
   it('reports unreadable rather than guessing when the checkout answers with nothing', () => {
     for (const value of ['', '   ', 'fatal: not a git repository', undefined, null, 42]) {
-      expect(sweepCodeIdentityFrom(value)).toEqual({ sha: null, readable: false });
+      expect(sweepCodeIdentityFrom(value)).toBeNull();
     }
   });
 });

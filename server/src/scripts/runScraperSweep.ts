@@ -1742,9 +1742,11 @@ export async function runScraperSweep(
   const startedAt = now();
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
   const checkpointPath = checkpointPathForMode(options.mode, os.tmpdir(), repoRoot);
+  const readHeadSha = dependencies.readHeadSha || defaultHeadShaReader;
   const { store, resumed } = SweepCheckpointStore.start({
     mode: options.mode,
     flags: sweepCheckpointFlagSignature(options),
+    codeSha: sweepCodeIdentityFrom(readHeadSha(repoRoot)),
     checkpointPath,
     outputDirectory: defaultScraperSweepOutputDirectory(options.mode, startedAt),
     now: startedAt,
@@ -1759,9 +1761,7 @@ export async function runScraperSweep(
   );
   const logger = new SweepRunLogger(outputDirectory, now);
   const ctx: SweepRuntimeContext = { store, logger, now };
-  const readHeadSha = dependencies.readHeadSha || defaultHeadShaReader;
-  const sweepCodeSha = sweepCodeIdentityFrom(readHeadSha(repoRoot)).sha;
-  const codeDrift: SweepCodeDriftRefusal[] = [];
+  const sweepCodeSha = store.codeSha;
   console.log(
     sweepCodeSha
       ? `Sweep code: ${sweepCodeSha} (the checkout's HEAD, which is what every stage runs)`
@@ -1775,12 +1775,12 @@ export async function runScraperSweep(
     const refusal = planSweepCodeDriftRefusal({
       stage: stageLabel,
       startedSha: sweepCodeSha,
-      currentSha: sweepCodeIdentityFrom(readHeadSha(repoRoot)).sha,
+      currentSha: sweepCodeIdentityFrom(readHeadSha(repoRoot)),
     });
     if (!refusal) return spawnStageChild(command, args, childOptions);
     // Fails closed and does no work, which is what keeps the run resumable: the stage is recorded
     // failed, so a resume re-runs it once the checkout is back at the commit the run started on.
-    codeDrift.push(refusal);
+    store.recordCodeDrift(refusal, now());
     console.error(`[sweep-code] ${refusal.message}`);
     return { status: 1, error: new Error(refusal.message) };
   };
@@ -2048,7 +2048,7 @@ export async function runScraperSweep(
     finishedAt: now().toISOString(),
     outputDirectory,
     codeSha: sweepCodeSha,
-    ...(codeDrift.length > 0 ? { codeDrift } : {}),
+    ...(store.codeDrift.length > 0 ? { codeDrift: store.codeDrift } : {}),
     sourceCount: rows.length,
     succeeded: rows.filter((row) => row.status === 'succeeded').length,
     failed: rows.filter((row) => row.status === 'failed').length,

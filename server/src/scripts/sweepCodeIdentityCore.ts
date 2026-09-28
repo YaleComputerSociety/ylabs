@@ -15,11 +15,12 @@
  * results are not attributable after the fact, because a stage's behaviour depends on a commit
  * nobody wrote down. And a stage can apply a defect the checkout predates, which for a data
  * sweep means writing values a merged fix had already removed.
+ *
+ * `null` where a checkout with no git metadata cannot answer the question.
  */
-export interface SweepCodeIdentity {
-  sha: string | null;
-  /** Absent rather than false: a checkout with no git metadata cannot answer the question. */
-  readable: boolean;
+export function sweepCodeIdentityFrom(rawSha: unknown): string | null {
+  const sha = typeof rawSha === 'string' ? rawSha.trim() : '';
+  return /^[0-9a-f]{7,40}$/i.test(sha) ? sha : null;
 }
 
 export type SweepCodeDriftRefusal = {
@@ -28,11 +29,6 @@ export type SweepCodeDriftRefusal = {
   currentSha: string;
   message: string;
 };
-
-export function sweepCodeIdentityFrom(rawSha: unknown): SweepCodeIdentity {
-  const sha = typeof rawSha === 'string' ? rawSha.trim() : '';
-  return /^[0-9a-f]{7,40}$/i.test(sha) ? { sha, readable: true } : { sha: null, readable: false };
-}
 
 /**
  * The refusal, or `null` to proceed.
