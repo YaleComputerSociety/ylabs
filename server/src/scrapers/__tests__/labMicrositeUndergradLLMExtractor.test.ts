@@ -1307,14 +1307,16 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
   it('rejects unsafe runtime limits before loading candidate labs', async () => {
     const fetchPage = vi.fn();
     const callLLM = vi.fn();
-    const labFinder = vi.fn(async (): Promise<CandidateLab[]> => [
-      {
-        _id: '1',
-        slug: 'smith-lab',
-        name: 'Smith Lab',
-        websiteUrl: 'https://smith.example.edu/',
-      },
-    ]);
+    const labFinder = vi.fn(
+      async (): Promise<CandidateLab[]> => [
+        {
+          _id: '1',
+          slug: 'smith-lab',
+          name: 'Smith Lab',
+          websiteUrl: 'https://smith.example.edu/',
+        },
+      ],
+    );
     const scraper = newTestScraper({
       fetchPage,
       callLLM,
@@ -1519,13 +1521,15 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       'https://fresh.example.com/':
         '<html><body><h1>Fresh Lab</h1><p>Undergraduates join projects.</p></body></html>',
     });
-    const callLLM = vi.fn(async (): Promise<LLMExtraction> => ({
-      openToUndergrads: 'yes',
-      currentUndergradCount: 0,
-      evidenceQuote: 'Undergraduates join projects.',
-      evidenceSource: 'explicit_text',
-      joinPageUrl: null,
-    }));
+    const callLLM = vi.fn(
+      async (): Promise<LLMExtraction> => ({
+        openToUndergrads: 'yes',
+        currentUndergradCount: 0,
+        evidenceQuote: 'Undergraduates join projects.',
+        evidenceSource: 'explicit_text',
+        joinPageUrl: null,
+      }),
+    );
     const workPlanLoader = vi.fn(async (lab, policy) => ({
       entityType: policy.entityType,
       entityKey: lab.slug,
@@ -2057,8 +2061,9 @@ describe('LabMicrositeUndergradLLMExtractor one-lab failure isolation (#3558)', 
         throw new RangeError('Maximum call stack size exceeded');
       },
     } as unknown as LLMExtraction;
-    const callLLM = vi.fn(async ({ userPrompt }: { userPrompt: string }): Promise<LLMExtraction> =>
-      userPrompt.includes('Failing Lab') ? unreadableExtraction : extraction,
+    const callLLM = vi.fn(
+      async ({ userPrompt }: { userPrompt: string }): Promise<LLMExtraction> =>
+        userPrompt.includes('Failing Lab') ? unreadableExtraction : extraction,
     );
     const scraper = newTestScraper({
       fetchPage: makeFetchPage({
