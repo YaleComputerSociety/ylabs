@@ -63,7 +63,7 @@ Every capture and replay still goes through the orchestrator, so each one leaves
 
 ## The analytics panel
 
-`/analytics` shows every stored benchmark in the "Is each lane getting better?" panel, served by the admin-only `GET /analytics/lane-benchmarks` (#3591).
+`/analytics` shows every stored benchmark in the "Is each lane getting better?" panel, served by the admin-only `GET /api/analytics/lane-benchmarks` (#3591).
 Each benchmark shows its latest stored replay, and each change compares it with the replay stored before it, never with a live run.
 Known wrong is shown over its labeled population, input coverage as pages served and missed, and each hand-labeled field as precision and recall with their counts.
 Each of those carries its change from the previous replay, so a lane with no hand labels still shows whether it got better or worse.
