@@ -727,6 +727,7 @@ export function isRetiredProgramResearchEntityType(value: unknown): boolean {
  */
 export function winningObservedEntityTypeIsRetiredProgram(
   observations: MaterializerObservationLike[],
+  now: Date = new Date(),
 ): boolean {
   const entityTypeObservations: ResolverObservation[] = observations
     .filter((observation) => observation.field === 'entityType')
@@ -738,7 +739,7 @@ export function winningObservedEntityTypeIsRetiredProgram(
       observedAt: observation.observedAt instanceof Date ? observation.observedAt : new Date(0),
     }));
   if (entityTypeObservations.length === 0) return false;
-  const [winner] = resolveFieldRanked('entityType', entityTypeObservations);
+  const [winner] = resolveFieldRanked('entityType', entityTypeObservations, { now });
   return isRetiredProgramResearchEntityType(winner?.value);
 }
 
@@ -754,6 +755,7 @@ export function winningObservedEntityTypeIsRetiredProgram(
  */
 export function healedEntityTypeForRetiredProgramObservations(
   observations: MaterializerObservationLike[],
+  now: Date = new Date(),
 ): ResearchEntityType | undefined {
   const kindObservations: ResolverObservation[] = observations
     .filter((observation) => observation.field === 'kind')
@@ -765,7 +767,7 @@ export function healedEntityTypeForRetiredProgramObservations(
       observedAt: observation.observedAt instanceof Date ? observation.observedAt : new Date(0),
     }));
   if (kindObservations.length === 0) return undefined;
-  const [winner] = resolveFieldRanked('kind', kindObservations);
+  const [winner] = resolveFieldRanked('kind', kindObservations, { now });
   const kind = textValue(winner?.value).toLowerCase();
   if (!researchGroupKinds.includes(kind as ResearchGroupKind)) return undefined;
   return mapResearchGroupKindToEntityType(kind);
@@ -2021,7 +2023,10 @@ async function materializeRosterMember(
     confidence: o.confidence,
     observedAt: o.observedAt,
   }));
-  const resolved = withResolvedFieldProvenance(resolveAllFields(resolverObs), observations);
+  const resolved = withResolvedFieldProvenance(
+    resolveAllFields(resolverObs, { now: options.now ?? new Date() }),
+    observations,
+  );
   const researchGroupKey = textValue(resolved[RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD]?.value);
   if (!researchGroupKey) {
     const unreadAlias = unreadResearchEntitySlugAlias(resolved);
@@ -3301,7 +3306,10 @@ async function materializeResearchEntityRelationship(
     confidence: o.confidence,
     observedAt: o.observedAt,
   }));
-  const resolved = withResolvedFieldProvenance(resolveAllFields(resolverObs), observations);
+  const resolved = withResolvedFieldProvenance(
+    resolveAllFields(resolverObs, { now: options.now ?? new Date() }),
+    observations,
+  );
 
   const skip = (skipped: string): MaterializeResult => ({
     entityType: 'researchEntityRelationship',
@@ -4543,7 +4551,7 @@ async function materializeUserIdentityToResearcher(
     confidence: o.confidence,
     observedAt: o.observedAt,
   }));
-  const resolved = resolveAllFields(resolverObs);
+  const resolved = resolveAllFields(resolverObs, { now: options.now ?? new Date() });
   const resolvedValue = (field: string): unknown => resolved[field]?.value;
 
   const netid =
@@ -5009,6 +5017,8 @@ export const RESEARCH_ENTITY_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as c
  * discard the only text a future lane could repair.
  */
 function adoptServableFullDescription(input: {
+  /** The instant the projection is evaluated at, so recency decay is reproducible (#3839). */
+  now: Date;
   entityType: ObservedEntityType;
   set: Record<string, unknown>;
   confidenceByField: Record<string, number>;
@@ -5042,6 +5052,7 @@ function adoptServableFullDescription(input: {
   if (!textValue(servedValue) || servesAsDescription(servedValue)) return 0;
 
   const replacement = resolveFieldRanked(field, input.resolverObs, {
+    now: input.now,
     manuallyLockedFields: input.manuallyLockedFields,
     manualValues: input.manualValues,
     descriptionEntityKind: descriptionEntityKindForResearchEntity(entityDoc),
@@ -5096,6 +5107,8 @@ async function adoptDepartmentNamingCandidate(input: {
   manualValues: Record<string, unknown>;
   materializationObs: MaterializerObservationLike[];
   sourceEntityIdentity: ResearchEntityIdentity | undefined;
+  /** The instant the projection is evaluated at, so recency decay is reproducible (#3839). */
+  now: Date;
 }): Promise<number> {
   const field = 'departments';
   const { set, entityDoc, confidenceByField } = input;
@@ -5106,6 +5119,7 @@ async function adoptDepartmentNamingCandidate(input: {
   if (namesADepartment(set[field])) return 0;
 
   const replacement = resolveFieldRanked(field, input.resolverObs, {
+    now: input.now,
     manuallyLockedFields: input.manuallyLockedFields,
     manualValues: input.manualValues,
   }).find((candidate) => namesADepartment(candidate.value));
@@ -5242,6 +5256,8 @@ async function combineDepartmentRosterAppointments(input: {
  * can never leave a record nameless.
  */
 function enforceResearchEntityNameAuthority(input: {
+  /** The instant the projection is evaluated at, so recency decay is reproducible (#3839). */
+  now: Date;
   entityType: ObservedEntityType;
   set: Record<string, unknown>;
   unset: Record<string, ''>;
@@ -5327,6 +5343,7 @@ function enforceResearchEntityNameAuthority(input: {
     }
 
     const replacement = resolveFieldRanked(field, input.resolverObs, {
+      now: input.now,
       manuallyLockedFields: input.manuallyLockedFields,
       manualValues: input.manualValues,
       descriptionEntityKind: descriptionEntityKindForResearchEntity(entityDoc),
@@ -5585,6 +5602,7 @@ export async function projectFromLog(
   }
   if (isResearchEntityObservationType(entityType)) {
     fieldsWritten += enforceResearchEntityNameAuthority({
+      now: input.now,
       entityType,
       set,
       unset,
@@ -5599,6 +5617,7 @@ export async function projectFromLog(
       nameIdentityAuthority: input.nameIdentityAuthority,
     });
     fieldsWritten += adoptServableFullDescription({
+      now: input.now,
       entityType,
       set,
       confidenceByField,
@@ -5610,6 +5629,7 @@ export async function projectFromLog(
       materializationObs,
     });
     fieldsWritten += await adoptDepartmentNamingCandidate({
+      now: input.now,
       entityType,
       set,
       confidenceByField,
@@ -5666,6 +5686,7 @@ export async function projectFromLog(
         isHighConfidencePersonBio(candidateText) || isCareerBiographyDescription(candidateText);
       if (!winnerFullUseful) {
         const rankedFull = resolveFieldRanked('fullDescription', resolverObs, {
+          now: input.now,
           manuallyLockedFields,
           manualValues,
           descriptionEntityKind: descriptionEntityKindForResearchEntity(entityDoc),
@@ -6625,9 +6646,12 @@ export async function materializeEntity(
   if (
     isResearchEntityObservationType(entityType) &&
     !entityDoc &&
-    winningObservedEntityTypeIsRetiredProgram(obs)
+    winningObservedEntityTypeIsRetiredProgram(obs, options.now ?? new Date())
   ) {
-    const healedEntityType = healedEntityTypeForRetiredProgramObservations(obs);
+    const healedEntityType = healedEntityTypeForRetiredProgramObservations(
+      obs,
+      options.now ?? new Date(),
+    );
     if (!healedEntityType) {
       return {
         entityType,
@@ -6899,6 +6923,7 @@ export async function materializeEntity(
         // silently blanked a served description - the same "demoted, never
         // dropped" failure the ranked walk below already exists to prevent.
         const replacement = resolveFieldRanked(shellGatedField, resolverObs, {
+          now: projectionNow,
           manuallyLockedFields,
           manualValues,
           descriptionEntityKind,
