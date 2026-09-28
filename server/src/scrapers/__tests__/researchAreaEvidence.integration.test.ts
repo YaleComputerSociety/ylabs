@@ -118,6 +118,7 @@ describe('research-area evidence against a real store (#3836)', () => {
 
       expect(candidates.map((candidate) => candidate.slug).sort()).toEqual([
         'example-empty',
+        'example-locked-empty',
         'example-unbacked',
       ]);
     });
@@ -127,7 +128,10 @@ describe('research-area evidence against a real store (#3836)', () => {
 
       const candidates = await findResearchAreaCandidateEntities({});
 
-      expect(candidates.map((candidate) => candidate.slug)).toEqual(['example-empty']);
+      expect(candidates.map((candidate) => candidate.slug).sort()).toEqual([
+        'example-empty',
+        'example-locked-empty',
+      ]);
     });
   });
 });

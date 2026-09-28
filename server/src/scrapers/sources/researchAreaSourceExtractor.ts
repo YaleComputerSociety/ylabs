@@ -183,7 +183,7 @@ function hasResearchAreasToRead(
   evidenceBackedRowIds: ReadonlySet<string> | undefined,
 ): boolean {
   if (hasEmptyResearchAreas(doc.researchAreas)) return true;
-  if (!evidenceBackedRowIds) return false;
+  if (!evidenceBackedRowIds || researchAreasAreManuallyLocked(doc)) return false;
   const rowId = idValue(doc._id);
   return rowId.length > 0 && !evidenceBackedRowIds.has(rowId);
 }
@@ -194,7 +194,6 @@ export function candidateAreaEntitiesFromDocs(
 ): CandidateAreaEntity[] {
   const keys = uniqueStrings(options.only || []);
   return docs.flatMap((doc) => {
-    if (researchAreasAreManuallyLocked(doc)) return [];
     if (!hasResearchAreasToRead(doc, options.evidenceBackedRowIds)) return [];
     const urls = candidateAreaUrlsForDoc(doc);
     if (urls.length === 0) return [];
@@ -431,7 +430,6 @@ export async function findResearchAreaCandidateEntities(
   const emptyAreasFilter = only.length
     ? {}
     : { $or: [{ researchAreas: { $exists: false } }, { researchAreas: { $size: 0 } }] };
-  const unlockedFilter = { manuallyLockedFields: { $ne: 'researchAreas' } };
   const urlFilter = {
     $or: [
       { websiteUrl: /^https?:\/\//i },
@@ -440,15 +438,7 @@ export async function findResearchAreaCandidateEntities(
     ],
   };
   const query = ResearchEntity.find(
-    {
-      $and: [
-        { archived: { $ne: true } },
-        unlockedFilter,
-        emptyAreasFilter,
-        urlFilter,
-        identityFilter,
-      ],
-    },
+    { $and: [{ archived: { $ne: true } }, emptyAreasFilter, urlFilter, identityFilter] },
     {
       _id: 1,
       slug: 1,

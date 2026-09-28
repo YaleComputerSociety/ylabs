@@ -143,7 +143,7 @@ describe('candidateAreaUrlsForDoc and candidateAreaEntitiesFromDocs', () => {
     ).toEqual(['unbacked-areas']);
   });
 
-  it('never admits a row whose researchAreas are manually locked', () => {
+  it('keeps admitting an empty-area row whatever its locks, as before the widening', () => {
     const candidates = candidateAreaEntitiesFromDocs([
       {
         _id: 'i',
@@ -153,7 +153,7 @@ describe('candidateAreaUrlsForDoc and candidateAreaEntitiesFromDocs', () => {
         manuallyLockedFields: ['researchAreas'],
       },
     ]);
-    expect(candidates).toEqual([]);
+    expect(candidates.map((candidate) => candidate.slug)).toEqual(['locked-empty']);
   });
 
   it('treats whitespace-only stored areas as empty', () => {
