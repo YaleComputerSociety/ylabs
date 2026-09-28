@@ -26,7 +26,9 @@ import {
   rematerializeFailureMessage,
   rematerializeSkipReasonForEntity,
   researchEntityFieldIsStranded,
+  retiredProvenanceChanges,
   selectRematerializeRegateEntityIds,
+  slugsCarryingUnbackedProvenance,
   type RematerializeEntityReport,
 } from './rematerializeResearchEntitiesCore';
 
@@ -45,14 +47,42 @@ async function loadTrackedFields(slug: string): Promise<Record<string, unknown> 
   return doc || null;
 }
 
+async function loadFieldProvenance(slug: string): Promise<unknown> {
+  const doc = await ResearchEntity.findOne({ slug })
+    .select('fieldProvenance')
+    .lean<{ fieldProvenance?: unknown }>();
+  return doc?.fieldProvenance;
+}
+
+function provenanceWithoutUnsetEntries(
+  provenance: unknown,
+  plannedUnset: Record<string, unknown>,
+): Record<string, unknown> {
+  const remaining: Record<string, unknown> = {};
+  const entries =
+    provenance && typeof provenance === 'object'
+      ? Object.entries(provenance as Record<string, unknown>)
+      : [];
+  for (const [field, entry] of entries) {
+    if (!Object.prototype.hasOwnProperty.call(plannedUnset, `fieldProvenance.${field}`)) {
+      remaining[field] = entry;
+    }
+  }
+  return remaining;
+}
+
 async function processSlug(
   slug: string,
   apply: boolean,
   onlyFields: string[],
   includeArchived: boolean,
+  onlyRetireNeverBackedProvenance: boolean,
 ): Promise<RematerializeEntityReport> {
   const before = await loadTrackedFields(slug);
   if (!before) return { slug, found: false, changes: [] };
+  const provenanceBefore = onlyRetireNeverBackedProvenance
+    ? await loadFieldProvenance(slug)
+    : undefined;
 
   const redirectCanonical = await resolveResearchEntityCanonicalIdentity({
     slug,
@@ -77,7 +107,11 @@ async function processSlug(
   const result = await materializeEntity(
     'researchEntity',
     { entityKey: slug },
-    { dryRun: !apply, ...(onlyFields.length > 0 ? { writeOnlyFields: onlyFields } : {}) },
+    {
+      dryRun: !apply,
+      ...(onlyFields.length > 0 ? { writeOnlyFields: onlyFields } : {}),
+      ...(onlyRetireNeverBackedProvenance ? { onlyRetireNeverBackedProvenance } : {}),
+    },
   );
 
   let plannedSet: Record<string, unknown> = result.plannedSet || {};
@@ -87,7 +121,14 @@ async function processSlug(
     plannedSet = (after as Record<string, unknown>) || {};
   }
 
-  const changes = buildRematerializeFieldChanges(before, plannedSet, plannedUnset);
+  const changes = onlyRetireNeverBackedProvenance
+    ? retiredProvenanceChanges(
+        provenanceBefore,
+        apply
+          ? await loadFieldProvenance(slug)
+          : provenanceWithoutUnsetEntries(provenanceBefore, plannedUnset),
+      )
+    : buildRematerializeFieldChanges(before, plannedSet, plannedUnset);
   return {
     slug,
     found: true,
@@ -139,6 +180,17 @@ async function discoverStrandedFieldSlugs(field: string): Promise<string[]> {
     if (researchEntityFieldIsStranded(entity[field])) strandedSlugs.add(entity.slug);
   }
   return Array.from(strandedSlugs).sort();
+}
+
+async function discoverUnbackedProvenanceSlugs(includeArchived: boolean): Promise<string[]> {
+  const rows = await ResearchEntity.find(
+    includeArchived
+      ? { fieldProvenance: { $exists: true } }
+      : { fieldProvenance: { $exists: true }, archived: { $ne: true } },
+  )
+    .select('slug fieldProvenance')
+    .lean<Array<{ slug?: string; fieldProvenance?: unknown }>>();
+  return slugsCarryingUnbackedProvenance(rows);
 }
 
 function writeReport(report: Record<string, unknown>, output?: string): void {
@@ -218,9 +270,14 @@ async function main() {
     discoveredSlugs = await discoverStrandedFieldSlugs(args.reclaimStrandedField);
     slugs = Array.from(new Set([...slugs, ...discoveredSlugs]));
   }
+  let discoveredUnbackedProvenanceSlugs: string[] | undefined;
+  if (args.unbackedProvenance) {
+    discoveredUnbackedProvenanceSlugs = await discoverUnbackedProvenanceSlugs(args.includeArchived);
+    slugs = Array.from(new Set([...slugs, ...discoveredUnbackedProvenanceSlugs]));
+  }
 
   const entities = await collectRematerializeEntityReports(slugs, (slug) =>
-    processSlug(slug, args.apply, args.onlyFields, args.includeArchived),
+    processSlug(slug, args.apply, args.onlyFields, args.includeArchived, args.unbackedProvenance),
   );
   const failed = entities.filter((entity) => entity.error);
 
@@ -244,6 +301,11 @@ async function main() {
     mode: args.apply ? 'apply' : 'dry-run',
     reclaimStrandedField: args.reclaimStrandedField,
     discoveredStrandedCount: discoveredSlugs?.length,
+    unbackedProvenance: args.unbackedProvenance,
+    discoveredUnbackedProvenanceCount: discoveredUnbackedProvenanceSlugs?.length,
+    retiredProvenanceEntries: args.unbackedProvenance
+      ? entities.reduce((total, entity) => total + entity.changes.length, 0)
+      : undefined,
     onlyFields: args.onlyFields,
     includeArchived: args.includeArchived,
     requestedSlugs: slugs,

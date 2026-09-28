@@ -93,6 +93,7 @@ describe('a stored undergradEvidenceQuote the evidence no longer backs clears on
       fieldProvenance: {
         undergradEvidenceQuote: {
           sourceName: LANE,
+          observationId: new mongoose.Types.ObjectId(),
           sourceUrl: LAB_URL,
           observedAt: new Date('2026-09-01T00:00:00Z'),
           confidence: 0.5,

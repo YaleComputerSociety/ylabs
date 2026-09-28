@@ -5,24 +5,11 @@
  * no observation the pass reads states the value; an absent observation alone never
  * clears, because retention can prune the evidence behind a real value.
  */
+import { fieldProvenanceEntryNamesALaneWithoutEvidence } from '../models/fieldProvenanceBacking';
 import { websiteIdentitiesStatedBy, websiteIdentity } from './survivorOwnedWebsiteClear';
 
-export interface WebsiteUrlProvenanceRecord {
-  sourceName?: unknown;
-  sourceId?: unknown;
-  observationId?: unknown;
-}
-
-function isPresent(value: unknown): boolean {
-  return value !== undefined && value !== null && String(value).trim().length > 0;
-}
-
 export function isUnsourcedProvenanceRecord(provenance: unknown): boolean {
-  if (!provenance || typeof provenance !== 'object') return false;
-  const record = provenance as WebsiteUrlProvenanceRecord;
-  return (
-    isPresent(record.sourceName) && !isPresent(record.sourceId) && !isPresent(record.observationId)
-  );
+  return fieldProvenanceEntryNamesALaneWithoutEvidence(provenance);
 }
 
 export function storedWebsiteUrlProvenance(stored: unknown): unknown {

@@ -106,6 +106,7 @@ describe('materializeEntity refuses a name that identifies nothing or names some
       fieldProvenance: {
         displayName: {
           sourceName: 'lab-microsite-description-llm',
+          observationId: new mongoose.Types.ObjectId(),
           sourceUrl: 'https://www.example.com/rafferty-duchamp/',
         },
       },
@@ -204,6 +205,7 @@ describe('materializeEntity refuses a name that identifies nothing or names some
       fieldProvenance: {
         displayName: {
           sourceName: 'official-profile-pi-backfill',
+          observationId: new mongoose.Types.ObjectId(),
           sourceUrl: 'https://medicine.example.edu/liver-center/',
         },
       },

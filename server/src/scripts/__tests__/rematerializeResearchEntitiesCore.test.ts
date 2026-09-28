@@ -10,6 +10,8 @@ import {
   collectRematerializeEntityReports,
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
+  retiredProvenanceChanges,
+  slugsCarryingUnbackedProvenance,
   rematerializeChangeAffectsVisibilityGate,
   rematerializeFailureMessage,
   rematerializeSkipReasonForEntity,
@@ -40,8 +42,21 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
 
   it('requires --slugs when no reclaim mode is given', () => {
     expect(() => parseRematerializeResearchEntitiesArgs(['--apply'])).toThrow(
-      '--slugs or --reclaim-stranded is required',
+      '--slugs, --reclaim-stranded or --unbacked-provenance is required',
     );
+  });
+
+  it('selects the unbacked-provenance cohort without slugs, and never alongside a reclaim', () => {
+    expect(parseRematerializeResearchEntitiesArgs(['--unbacked-provenance'])).toMatchObject({
+      unbackedProvenance: true,
+      slugs: [],
+    });
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs([
+        '--unbacked-provenance',
+        '--reclaim-stranded=methods',
+      ]),
+    ).toThrow('cannot reclaim a field');
   });
 
   it('rejects malformed slugs', () => {
@@ -232,6 +247,7 @@ describe('assertRematerializeApplyAllowed', () => {
     confirmRematerialize: true,
     onlyFields: [],
     includeArchived: false,
+    unbackedProvenance: false,
   };
 
   it('is a no-op for dry-run', () => {
@@ -263,6 +279,39 @@ describe('assertRematerializeApplyAllowed', () => {
 
   it('allows apply against Development', () => {
     expect(() => assertRematerializeApplyAllowed(base, 'cluster/Development')).not.toThrow();
+  });
+});
+
+describe('the unbacked-provenance cohort (#3769)', () => {
+  const lane = { sourceName: 'synthetic-retired-repair', sourceUrl: 'https://example.org/' };
+
+  it('selects a row by an entry naming a lane with no evidence id, and no other row', () => {
+    expect(
+      slugsCarryingUnbackedProvenance([
+        { slug: 'row-b', fieldProvenance: { entityType: lane } },
+        { slug: 'row-a', fieldProvenance: new Map([['school', lane]]) },
+        { slug: 'row-c', fieldProvenance: { name: { ...lane, observationId: 'x' } } },
+        { slug: 'row-d', fieldProvenance: { name: { ...lane, sourceId: 'x' } } },
+        {
+          slug: 'row-e',
+          fieldProvenance: {
+            researchAreas: { sourceName: 'description-derived-research-area', sourceUrl: '' },
+          },
+        },
+        { slug: '', fieldProvenance: { entityType: lane } },
+      ]),
+    ).toEqual(['row-a', 'row-b']);
+  });
+
+  it('reports each retired entry as a change, so the re-gate runs for it', () => {
+    const changes = retiredProvenanceChanges(
+      { entityType: lane, name: { ...lane, observationId: 'x' } },
+      { name: { ...lane, observationId: 'x' } },
+    );
+    expect(changes).toEqual([
+      { field: 'fieldProvenance.entityType', before: 'synthetic-retired-repair', after: undefined },
+    ]);
+    expect(rematerializeChangeAffectsVisibilityGate(changes)).toBe(true);
   });
 });
 

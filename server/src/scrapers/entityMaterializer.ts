@@ -8,6 +8,7 @@
 import mongoose from 'mongoose';
 import { Observation, ObservedEntityType } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { DERIVED_RESEARCH_AREA_SOURCE_NAME } from '../models/fieldProvenanceBacking';
 import {
   archivedEntityUpdate,
   DEPT_ROSTER_SHELL_FOLD_ARCHIVE_REASON,
@@ -123,6 +124,7 @@ import {
   type SurvivorOwnedWebsiteField,
 } from './survivorOwnedWebsiteClear';
 import { planUnsourcedProvenanceWebsiteUrlClear } from './unsourcedProvenanceWebsiteClear';
+import { planNeverBackedFieldProvenanceRetirement } from './neverBackedFieldProvenance';
 import { planRefusedStoredDescriptionClears } from './refusedStoredDescription';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import type { ReportPostMaterializationMetrics } from './runReport';
@@ -248,6 +250,7 @@ interface MaterializeOptions {
   syncMeilisearch?: boolean;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
   writeOnlyFields?: string[];
+  onlyRetireNeverBackedProvenance?: boolean;
   /**
    * Ignore the named locks, each only if it is revisitable on this row, so the
    * projection reports what the engine would derive for them today. Off everywhere
@@ -775,7 +778,7 @@ async function applyDescriptionResearchAreaDerivation(
  * through the canonical vocabulary and its aliases: the page named the subject, not
  * the facet. A reader, and any later ranking, can tell the two apart.
  */
-export const DERIVED_RESEARCH_AREA_SOURCE_NAME = 'description-derived-research-area';
+export { DERIVED_RESEARCH_AREA_SOURCE_NAME };
 // Below every lane that read an area off a page, because an inference from prose is
 // weaker evidence than a source that named the area.
 const DERIVED_RESEARCH_AREA_CONFIDENCE = 0.4;
@@ -1410,10 +1413,11 @@ function fieldProvenanceForResolvedObservation(
   const contributingSources = new Set(resolved.contributingSources);
   const match = observations
     .filter(
-      (obs) => obs.field === field && obs.sourceName && contributingSources.has(obs.sourceName),
+      (obs) =>
+        obs._id && obs.field === field && obs.sourceName && contributingSources.has(obs.sourceName),
     )
     .find((obs) => comparableObservationValue(obs.value) === resolvedValue);
-  if (!match) return null;
+  if (!match?._id) return null;
 
   // `observationId` is the reference observation retention reads to decide a row
   // is still cited (`OBSERVATION_REFERENCE_SPECS`), so writing the observation's
@@ -1430,7 +1434,7 @@ function fieldProvenanceForResolvedObservation(
     ...(match.sourceId ? { sourceId: match.sourceId } : {}),
     sourceName: match.sourceName,
     sourceUrl: match.sourceUrl || '',
-    ...(match._id ? { observationId: match._id } : {}),
+    observationId: match._id,
     observedAt: match.observedAt || new Date(),
     confidence: match.confidence ?? resolved.confidence,
   };
@@ -2322,26 +2326,35 @@ export async function inheritSchoolFromLeadPi(
     return { inherited: true, ...(derivedSchool ? { school: derivedSchool } : {}), departments };
   }
 
-  if (derivedSchool) {
-    set['confidenceByField.school'] = LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE;
-    set['fieldProvenance.school'] = {
-      sourceName: LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
-      observedAt: new Date(),
-      confidence: LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE,
-    };
-  }
-  if (existingDepartments.length === 0) {
-    set['confidenceByField.departments'] = LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE;
-    set['fieldProvenance.departments'] = {
-      sourceName: LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
-      observedAt: new Date(),
-      confidence: LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE,
-    };
-  }
+  const inheritedFields = [
+    ...(derivedSchool ? ['school'] : []),
+    ...(existingDepartments.length === 0 ? ['departments'] : []),
+  ];
   const assertion = await assertLeadPiInheritanceObservations(researchEntityId, {
     ...(derivedSchool ? { school: derivedSchool } : {}),
     ...(existingDepartments.length === 0 ? { departments } : {}),
   });
+  const evidence = await leadPiInheritanceEvidence(researchEntityId, {
+    ...(derivedSchool ? { school: derivedSchool } : {}),
+    ...(existingDepartments.length === 0 ? { departments } : {}),
+  });
+  if (inheritedFields.some((field) => !evidence.has(field))) {
+    return {
+      inherited: false,
+      observationSkipped: assertion.observationSkipped ?? 'observation-refused',
+    };
+  }
+  for (const [field, observation] of evidence) {
+    set[`confidenceByField.${field}`] = LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE;
+    set[`fieldProvenance.${field}`] = {
+      sourceId: observation.sourceId,
+      sourceName: LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
+      sourceUrl: observation.sourceUrl || '',
+      observationId: observation._id,
+      observedAt: observation.observedAt,
+      confidence: LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE,
+    };
+  }
   await withResearchEntityWriteTransaction((session) =>
     ResearchEntity.updateOne({ _id: researchEntityId }, { $set: set }, { session }),
   );
@@ -2378,6 +2391,39 @@ export async function rederiveLeadPiOrgUnit(
   };
 }
 
+interface LeadPiInheritanceObservation {
+  _id: mongoose.Types.ObjectId;
+  sourceId?: mongoose.Types.ObjectId;
+  sourceUrl?: string;
+  observedAt?: Date;
+}
+
+async function leadPiInheritanceEvidence(
+  researchEntityId: string,
+  values: { school?: string; departments?: string[] },
+): Promise<Map<string, LeadPiInheritanceObservation>> {
+  const evidence = new Map<string, LeadPiInheritanceObservation>();
+  const fields = Object.keys(values);
+  if (fields.length === 0) return evidence;
+  const observations = await Observation.find({
+    entityType: 'researchEntity',
+    entityId: researchEntityId,
+    sourceName: LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
+    field: { $in: fields },
+    superseded: false,
+  })
+    .sort({ observedAt: -1 })
+    .select('_id field value sourceId sourceUrl observedAt')
+    .lean<Array<LeadPiInheritanceObservation & { field: string; value?: unknown }>>();
+  for (const observation of observations) {
+    if (evidence.has(observation.field)) continue;
+    const asserted = values[observation.field as keyof typeof values];
+    if (JSON.stringify(observation.value) !== JSON.stringify(asserted)) continue;
+    evidence.set(observation.field, observation);
+  }
+  return evidence;
+}
+
 /**
  * Asserts the inherited org unit as evidence, so the value is reachable by a later
  * retraction instead of persisting because nothing clears it.
@@ -2386,9 +2432,9 @@ export async function rederiveLeadPiOrgUnit(
  * only, so an observation appended here is not read until the NEXT projection and the
  * row would serve nothing in between.
  *
- * A missing Source row degrades to the write alone rather than throwing, because this
- * runs inside every materialize and an unseeded environment must not stop the
- * projection. The registration is pinned by a test instead.
+ * A missing Source row degrades to no write rather than throwing, because this runs
+ * inside every materialize and an unseeded environment must not stop the projection;
+ * writing the value anyway would author provenance no observation backs (#3769).
  */
 export async function assertLeadPiInheritanceObservations(
   researchEntityId: string,
@@ -4594,6 +4640,7 @@ export interface ProjectFromLogResult {
    * refusals in particular are invisible in a `$set` by construction.
    */
   storedTextNormalization: StoredTextNormalizationPlan;
+  retiredProvenanceFields: string[];
 }
 
 export const RESEARCH_ENTITY_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as const;
@@ -5811,15 +5858,34 @@ export async function projectFromLog(
   });
   Object.assign(set, storedTextNormalization.set);
 
-  if (input.writeOnlyFields && input.writeOnlyFields.length > 0) {
-    fieldsWritten = restrictMaterializerSetToFields(
-      set,
-      unset,
-      confidenceByField,
-      withDerivedMaterializerFields(input.writeOnlyFields),
-    );
+  const scopedFields =
+    input.writeOnlyFields && input.writeOnlyFields.length > 0
+      ? withDerivedMaterializerFields(input.writeOnlyFields)
+      : undefined;
+  if (scopedFields) {
+    fieldsWritten = restrictMaterializerSetToFields(set, unset, confidenceByField, scopedFields);
   }
-  return { set, unset, confidenceByField, conflicts, fieldsWritten, storedTextNormalization };
+  // After the scope restriction, which drops any `unset` key it does not name, so the
+  // retirement is scoped by passing the scope through rather than by being filtered.
+  const retiredProvenanceFields = isResearchEntityObservationType(entityType)
+    ? await planNeverBackedFieldProvenanceRetirement({
+        stored: entityDoc as Record<string, unknown> | null,
+        set,
+        unset,
+        lockedFields: manuallyLockedFields,
+        scopedFields,
+      })
+    : [];
+  for (const field of retiredProvenanceFields) unset[`fieldProvenance.${field}`] = '';
+  return {
+    set,
+    unset,
+    confidenceByField,
+    conflicts,
+    fieldsWritten,
+    storedTextNormalization,
+    retiredProvenanceFields,
+  };
 }
 
 function isDuplicateKeyMongoError(error: unknown): boolean {
@@ -6424,7 +6490,7 @@ export async function materializeEntity(
       )
     : NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY;
 
-  const { set, unset, conflicts, fieldsWritten } = await projectFromLog(entityType, {
+  const projection = await projectFromLog(entityType, {
     resolved,
     nameIdentityAuthority,
     manuallyLockedFields,
@@ -6440,6 +6506,16 @@ export async function materializeEntity(
     synthesizeCardDescription: options.synthesizeCardDescription,
     writeOnlyFields: options.writeOnlyFields,
   });
+  const { conflicts } = projection;
+  const { set, unset, fieldsWritten } = options.onlyRetireNeverBackedProvenance
+    ? {
+        set: {},
+        unset: Object.fromEntries(
+          projection.retiredProvenanceFields.map((field) => [`fieldProvenance.${field}`, '']),
+        ) as Record<string, ''>,
+        fieldsWritten: 0,
+      }
+    : projection;
 
   if (options.dryRun) {
     return {
@@ -6452,6 +6528,19 @@ export async function materializeEntity(
       resolved,
       plannedSet: set,
       plannedUnset: unset,
+    };
+  }
+
+  if (options.onlyRetireNeverBackedProvenance && !entityDoc) {
+    return {
+      entityType,
+      entityId: entityIdString,
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts,
+      created: false,
+      resolved,
+      skipped: 'no-scoped-fields',
     };
   }
 
@@ -6488,7 +6577,8 @@ export async function materializeEntity(
     // access, logistics, browse-rank) still run; they have their own change
     // detection and can change independently of the scalar projection.
     if (!entityScalarUnchanged) {
-      const update: Record<string, unknown> = { $set: set };
+      const update: Record<string, unknown> = {};
+      if (Object.keys(set).length > 0) update.$set = set;
       if (Object.keys(unset).length > 0) update.$unset = unset;
       // The scraper path writes the entire corpus, so without runValidators every
       // schema enum on every materialized field was documentation rather than a
@@ -6576,6 +6666,20 @@ export async function materializeEntity(
   if (isSyncableEntityType(entityType) && entityIdString && !entityScalarUnchanged) {
     const fresh = await Model.findById(entityIdString).lean();
     indexStale = !fresh || !(await syncEntity(entityType, fresh));
+  }
+
+  if (options.onlyRetireNeverBackedProvenance) {
+    return {
+      entityType,
+      entityId: entityIdString,
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts,
+      created,
+      resolved,
+      ...(indexStale ? { indexSyncFailed: true as const } : {}),
+      ...(entityScalarUnchanged ? { skipped: 'unchanged' as const } : {}),
+    };
   }
 
   let postMaterializationMetrics: ReportPostMaterializationMetrics | undefined;

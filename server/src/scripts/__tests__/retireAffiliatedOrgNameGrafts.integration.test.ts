@@ -62,7 +62,12 @@ describe('retireAffiliatedOrgNameGrafts finishes the repair on the document (#23
   it('clears the served displayName in the same pass that retires the observation', async () => {
     await seedEntity({
       displayName: AFFILIATION_GRAFT,
-      fieldProvenance: { displayName: { sourceName: 'lab-microsite-description-llm' } },
+      fieldProvenance: {
+        displayName: {
+          sourceName: 'lab-microsite-description-llm',
+          observationId: new mongoose.Types.ObjectId(),
+        },
+      },
     });
     await seedGraftObservation();
 
