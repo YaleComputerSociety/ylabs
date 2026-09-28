@@ -39,6 +39,7 @@ const WRITTEN_ARGUMENT_BY_METHOD = new Map<string, number | null>([
   ['rename', null],
 ]);
 const NON_AUTHORING_PROPERTIES = new Set(['filter', '$unset', '$pull', '$pullAll']);
+const STORED_DOCUMENT_READS = new Set(['find', 'findOne', 'findById', 'aggregate', 'distinct']);
 const WRITING_STAGES = new Set(['$out', '$merge']);
 
 /**
@@ -604,7 +605,20 @@ function analyzeModule(
     return [ANY_KEY];
   };
 
+  const readsStoredDocuments = (node: ts.Node): boolean => {
+    if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) {
+      return false;
+    }
+    if (!STORED_DOCUMENT_READS.has(node.expression.name.text)) return false;
+    const receiver = node.expression.expression;
+    return (
+      rawHandleNames(receiver, 0) !== null ||
+      !ownerCollectionNames(receiver).has(UNRESOLVED)
+    );
+  };
+
   const visitKeys = (node: ts.Node, seen: Set<unknown>, keys: string[]): void => {
+    if (readsStoredDocuments(node)) return;
     if (ts.isPropertyAssignment(node)) {
       if (ts.isComputedPropertyName(node.name)) {
         keys.push(...keyPatternsOf(node.name.expression, 0));
@@ -764,12 +778,6 @@ function productionSourceFiles(root: string): string[] {
 
 function reachesResearchEntities(site: RawWriteSite): boolean {
   return site.collections.includes(RESEARCH_ENTITIES) || site.collections.includes(UNRESOLVED);
-}
-
-function writesOnlyOtherNamedCollections(site: RawWriteSite): boolean {
-  return (
-    !reachesResearchEntities(site) && site.collections.every((name) => !name.startsWith('model:'))
-  );
 }
 
 function corpusName(file: string): string {
@@ -954,6 +962,27 @@ describe('the raw-write detector recognises the call shapes that bypass the mode
     ]);
   });
 
+  it('does not read the schema of a model it only queries as keys a write authors', () => {
+    const modules: Record<string, string> = {
+      'model.ts': `export const ResearchEntity = model('ResearchEntity', { fieldProvenance: {} });`,
+    };
+    const readModule: ReadModule = (_fromFile, specifier) => {
+      const fileName = `${specifier.replace('./', '')}.ts`;
+      return modules[fileName] ? { fileName, source: modules[fileName] } : null;
+    };
+    const sites = findRawWriteSites(
+      'fixture.ts',
+      `
+        import { ResearchEntity } from './model';
+        const rows = await ResearchEntity.find({}).lean();
+        const stored = await db.collection('research_entities').findOne({});
+        await db.collection('signals').updateOne({}, { $set: { key: rows[0].slug, at: stored.at } });
+      `,
+      readModule,
+    );
+    expect(sites.map((site) => site.authoredProvenanceKeys)).toEqual([[]]);
+  });
+
   it('finds a write on a handle held in a loop, a callback, a destructured binding, or an import', () => {
     const sites = sitesIn(`
       import { handleFor } from './handles';
@@ -1019,7 +1048,6 @@ describe('a raw write to research_entities is a reviewed exception, never a new 
   it('never authors a whole provenance entry or its source name through a raw handle', () => {
     expect(
       sites
-        .filter((site) => !writesOnlyOtherNamedCollections(site))
         .filter((site) => site.authoredProvenanceKeys.some((key) => !key.startsWith(ANY_KEY)))
         .map((site) => `${site.file}:${site.line} ${site.authoredProvenanceKeys.join(', ')}`),
       'A provenance entry must pass the model guard, which refuses one that names no observation (#3769).',
