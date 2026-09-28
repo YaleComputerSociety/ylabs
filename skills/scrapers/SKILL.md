@@ -769,10 +769,10 @@ Mint it through a `DEFAULT_CENTER_CONFIGS` row in `centersInstitutesScraper.ts` 
 - Give `homeUrl` the page the identity URL RESOLVES to, not the vanity host.
 `eric.yale.edu` redirects to a canonical `medicine.yale.edu` path, and using the vanity host leaves the center and the rows that borrowed it holding two different strings for one page, which is also why the duplicate-URL visibility reason never fires on them.
 - Every config declares `homeUrl`, and its roster `url` must be on that site: the same host, and under the home page's path when the host is shared by several units (`medicine.yale.edu`, `macmillan.yale.edu`, `westcampus.yale.edu`).
-`centerRosterSiteRefusal` enforces it at run time, where a refused config fetches nothing and reports `roster-site-refused:<reason>` in the run notes, and `centersInstitutesRosterSite.test.ts` fails CI on any shipped config it refuses.
+`centerRosterSiteRefusal` enforces it at run time, where a refused config fetches nothing and reports `roster-site-refused:<reason>` in the run summary log, and `centersInstitutesRosterSite.test.ts` fails CI on any shipped config it refuses.
 The rule exists because the Cowles config once crawled another center's roster on `egc.yale.edu` and attributed every member to the Cowles row (#3703); with no declared home there was nothing to compare against, so an undeclared home is refused too.
 A roster genuinely published by a partner site goes in `sharedRosterSite` with a non-empty `reason`, never by pointing `url` at the other host.
-- On a shared professional-title theme (the economics `node-teaser` theme) a title lists every directorship the person holds or held, so `inferRole` only reads a director clause that is current and names this center: a year-ranged past directorship, a DGS or DUS post, and "Director of" or "Director, <unit>" naming another unit stay roster members.
+- On a shared professional-title theme (the economics `node-teaser` theme) a title lists every directorship the person holds or held, so `inferRole` only reads a director clause that is current and names this center or no unit at all: a "former" or emeritus directorship, a year range that has already ended, a DGS or DUS post, and "Director of" or "Director, <unit>" naming another unit stay roster members.
 Measured on the Cowles roster, 14 of the 16 title-derived leads were one of those.
 - `extraSourceUrls` cites further pages of the center's own site, such as its mission page, as provenance.
 - On the shared YSM `profile-grid-item` theme use `profileGridLeadershipExtractor`.
