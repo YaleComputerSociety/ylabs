@@ -158,9 +158,6 @@ const UNDERGRADUATE_CONTEXT_CUE =
 const BARE_POPULATION_HEADING =
   /^\W*(?:(?:current|former|our)\s+)?(?:undergrad(?:uate)?s?|college\s+students?)(?:\s+(?:research|lab|laboratory|students?|researchers?|members?|interns?|assistants?)){0,3}\W*$/i;
 
-const UNDERGRADUATE_AS_TEACHING_MODIFIER =
-  /\b(?:undergrad(?:uate)?\s+)?(?:degree|b\.?[as]\.?|graduated|graduating)\b[^.]{0,60}\bfrom\s+yale\s+college\b|(?:\b|(?<=[a-z]))undergrad(?:uate)?s?\s+(?:(?:and|or|&)\s+(?:[a-z-]+\s+)?)?(?:courses?|class(?:es)?|major(?!s)|degree(?!s)|curricul(?:um|a)|education|teaching|advising|admissions?|coursework|seminars?|lectures?(?:\s+courses?)?)\b(?!\s+credit)|\bdirector\s+of\s+undergraduate\s+studies\b/gi;
-
 /**
  * The microsite lane's own admission rule for a quote that backs "Has hosted undergraduate
  * researchers" (#3764). The shared plausibility check accepts a bare "students", which on a lab
@@ -169,10 +166,9 @@ const UNDERGRADUATE_AS_TEACHING_MODIFIER =
  * the looser rule because its pages are about undergraduates by construction.
  */
 export function laneQuoteStatesUndergraduates(quote: string | undefined | null): boolean {
-  const raw = (quote || '').trim();
-  if (!isPlausibleUndergradEvidenceQuote(raw)) return false;
-  if (BARE_POPULATION_HEADING.test(raw)) return false;
-  const text = raw.replace(UNDERGRADUATE_AS_TEACHING_MODIFIER, ' ');
+  const text = (quote || '').trim();
+  if (!isPlausibleUndergradEvidenceQuote(text)) return false;
+  if (BARE_POPULATION_HEADING.test(text)) return false;
   return (
     EXPLICIT_UNDERGRADUATE_POPULATION.test(text) ||
     UNDERGRADUATE_PROGRAM_ACRONYM.test(text) ||

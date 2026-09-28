@@ -6,6 +6,7 @@ import {
   isPlausibleUndergradEvidenceQuote,
   quoteExplicitlyDeclinesUndergraduates,
 } from '../undergradEvidenceQuoteValidation';
+import { quoteStatesAnUndergraduateAccessFact } from '../undergradQuoteRelevance';
 
 describe('isPlausibleUndergradEvidenceQuote (#1387)', () => {
   it('accepts genuine undergrad-access quotes', () => {
@@ -231,7 +232,7 @@ describe('undergraduate as a teaching modifier (#3775)', () => {
       'She received an award for undergraduate teaching at Yale.',
       'He completed his undergraduate degree in chemistry.',
     ]) {
-      expect(laneQuoteStatesUndergraduates(quote), quote).toBe(false);
+      expect(quoteStatesAnUndergraduateAccessFact(quote), quote).toBe(false);
     }
   });
 
@@ -244,7 +245,7 @@ describe('undergraduate as a teaching modifier (#3775)', () => {
       'Yale students can earn undergraduate course credit for research in the lab.',
       'Students pursuing undergraduate degrees work in the lab.',
     ]) {
-      expect(laneQuoteStatesUndergraduates(quote), quote).toBe(true);
+      expect(quoteStatesAnUndergraduateAccessFact(quote), quote).toBe(true);
     }
   });
 });
@@ -255,13 +256,15 @@ describe('a program name or a faculty member own degree is not hosting evidence 
       'Questions? Reach out to our director of undergraduate studies about the undergraduate major.',
       'After receiving his undergraduate degree in archaeology from Yale College, he completed a doctorate elsewhere.',
     ]) {
-      expect(laneQuoteStatesUndergraduates(quote), quote).toBe(false);
+      expect(quoteStatesAnUndergraduateAccessFact(quote), quote).toBe(false);
     }
   });
 
   it('keeps plural majors, who are people', () => {
     expect(
-      laneQuoteStatesUndergraduates('Undergraduate majors in biology join the lab each summer.'),
+      quoteStatesAnUndergraduateAccessFact(
+        'Undergraduate majors in biology join the lab each summer.',
+      ),
     ).toBe(true);
   });
 });
