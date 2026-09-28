@@ -135,6 +135,23 @@ A canary cannot catch a failure that only appears at full scale, such as the `of
 On a resume the canary covers only the sources the checkpoint does not already record as `done`.
 The canary list is the sweep manifest, so a manual-only source is never canaried.
 
+#### The commit a sweep runs
+
+A sweep executes the code in its own checkout's working tree, never the code on `beta`.
+Every stage is spawned with `cwd` set to the repository root, so whatever `HEAD` is at the moment a stage launches is what that stage runs.
+
+`summary.json` records that commit as `codeSha`, which is the only thing that makes a stage's behaviour attributable after the fact.
+Read it rather than the merge time of a fix: a fix merged while a sweep is running reaches none of its stages, because nothing pulls the checkout mid-run.
+
+If the checkout moves during a run, each later stage is refused rather than spawned, and the refusal is recorded in `summary.json` as `codeDrift` naming both commits.
+This fails closed because the alternative is silent: a stage running newer or older code than the stages before it can re-apply a defect the checkout predates, and for a sweep that writes data that means storing values a merged fix had already removed.
+A refusal does no work, so the checkpoint survives and a resume re-runs the refused stages once the checkout is back on the commit the run started.
+Restart the sweep instead when the intent is to adopt the newer commit.
+
+This was measured on the Development full sweep of 2026-09-28, which ran from 00:38Z to past 06:40Z.
+`HEAD` fast-forwarded six times during the run, and the 24 source stages split across two different commits: 11 ran the commit in force at 00:40Z and 13 ran a commit that landed at 05:07Z.
+A fix that merged at 05:16Z reached none of them, and because the summary recorded no commit at all, nothing in the artifacts could have revealed either fact.
+
 #### Checkpoint, resume, and structured logging
 
 The sweep is resumable and observable so a long run that dies mid-way does not restart from scratch (issue #2182).
