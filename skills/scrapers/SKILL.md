@@ -140,7 +140,9 @@ Before #2498 only `cronRunner` took the lock, so two operators or two agents cou
 Every exit path of the orchestrator writes a terminal status: `success`, `partial`, `failure`, or `interrupted` on `SIGINT`/`SIGTERM` (#3595).
 A running row carries `heartbeatAt`, renewed every minute, and `owner: { host, pid, lockOwnerId }`.
 It also records `codeSha`, the commit the process loaded (`scrapeRunCodeIdentity.ts`), so which code produced a run's observations is answered by ancestry rather than by comparing a merge time with `startedAt` (#3824).
-Only a `SIGKILL` or a crash still leaves a row `running`, and its heartbeat stops.
+Every terminal write, the signal write included, is retried by `writeScrapeRunTerminalStatus` (`scrapeRunTerminalWrite.ts`): three attempts with 500 ms then 1,500 ms backoff, a 4-second deadline on the signal path so the re-raise still fits the 5-second budget, and one clear log line when every attempt fails.
+Never write a terminal `ScrapeRun` status with a bare `updateOne`.
+Only a `SIGKILL`, a crash, or a terminal write that exhausted its retries still leaves a row `running`, and its heartbeat stops.
 
 - Never ask "is anything running" with a bare `status: 'running'`.
   Use `classifyScrapeRunLiveness` (or `isAbandonedScrapeRun`) from `scrapeRunLiveness.ts`: only `live` (heartbeat within 15 minutes) means a writer is working, and a `running` row with no `heartbeatAt` predates the heartbeat and proves nothing.
@@ -149,6 +151,8 @@ Only a `SIGKILL` or a crash still leaves a row `running`, and its heartbeat stop
   `--apply --confirm-reconcile-stale-scrape-runs` closes a row as `interrupted` only when its heartbeat is stale, or when it predates heartbeats and is older than 72 hours, and never when its heartbeat is fresh, its source lock is held, or its owner pid is alive on this host.
   It refuses every target except Development, and its bounds can be raised but not lowered.
   Do not run it with `--apply` while a sweep is running unless you have read its dry run: a sweep started on code older than #3595 writes rows with no heartbeat, which only the lock and the 72-hour bound protect.
+- Every Development sweep already reaps heartbeat-stale rows: its first post-run stage, `stale-scrape-run-reap`, runs the command with `--heartbeat-stale-only --started-before <sweep start>`.
+  That closes only `heartbeat_stale` rows (stale heartbeat, owner pid not alive on this host, no held source lock) that started before the sweep, and keeps pre-heartbeat rows as `legacy_operator_only`, so a `legacy_abandoned` row still needs the operator-run command.
 - A new signal cleanup goes through `onInterrupt` in `interruptCleanup.ts`, never its own `process.once` plus re-raise, because two handlers that each re-raise race and the first kills the process while the other is still writing.
 - The stored values are not enum-valid: Development holds 2 rows with `completed` and 1 with `failed`, written by raw operator updates that bypass the validator (the #2137 family).
   Any status check must treat the stored set as open, not as the enum.

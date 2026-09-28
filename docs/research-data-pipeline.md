@@ -184,26 +184,27 @@ The between-phases prune is best-effort: a prune failure is logged to `errors.lo
 
 The two exhaustive Development modes (`development-full`, `development-incremental`) run a fixed chain of post-run stages after every source has fetched and materialized:
 
-1. `researcher-dedupe` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_DEDUPE_RESEARCHERS=0`)
-2. `eponymous-fra-merge` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_AUTO_MERGE_FRA=0`)
-3. `url-identity-dedupe` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES=0`)
-4. `website-url-identity-dedupe` (the same lane family keyed on the whole normalized `websiteUrl` rather than a Yale `/lab/` or `/profile/` path; gated by the same flag)
-5. `source-link-health` (`research-homes:backfill-source-link-health --apply --reprobe-healthy-after-days=7`; ordered before the gate because the gate reads `sourceLinkHealth`; `--full-link-health-reprobe` on the sweep drops the window and probes every URL)
-6. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
-7. `search-rebuild` (`meili:rebuild-research-entities --clear`)
-8. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
-9. `coverage-audit`
-10. `data-quality` (`beta:data-quality --strict`)
-11. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
-12. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
-13. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
-14. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
+1. `stale-scrape-run-reap` (`scrape-runs:reconcile-stale --apply --heartbeat-stale-only --started-before <sweep start>`; first, so a later stage failing cannot skip it; see "A run record always ends terminal")
+2. `researcher-dedupe` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_DEDUPE_RESEARCHERS=0`)
+3. `eponymous-fra-merge` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_AUTO_MERGE_FRA=0`)
+4. `url-identity-dedupe` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES=0`)
+5. `website-url-identity-dedupe` (the same lane family keyed on the whole normalized `websiteUrl` rather than a Yale `/lab/` or `/profile/` path; gated by the same flag)
+6. `source-link-health` (`research-homes:backfill-source-link-health --apply --reprobe-healthy-after-days=7`; ordered before the gate because the gate reads `sourceLinkHealth`; `--full-link-health-reprobe` on the sweep drops the window and probes every URL)
+7. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
+8. `search-rebuild` (`meili:rebuild-research-entities --clear`)
+9. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
+10. `coverage-audit`
+11. `data-quality` (`beta:data-quality --strict`)
+12. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
+13. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
+14. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
+15. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 The `researcher-dedupe`, `eponymous-fra-merge`, both URL-identity dedupe stages, and merge-residue deletion stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value: `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. One flag gates the whole URL-identity family, because `url-identity-dedupe` and `website-url-identity-dedupe` are two keys onto one question and an operator suppressing URL-keyed merges wants both off. `url-identity-dedupe` was opt-in until #2699; it defaults on because the never-demote survivor resolution defers rather than demotes (#2070) and because the whole post-run set is unreachable outside Development, so the flag only ever gated Dev. Every `SCRAPER_SWEEP_*` stage flag in either engine parses through the one shared helper pair in `server/src/scripts/sweepStageFlags.ts`, so the accepted truthy values (`1`, `true`, `yes`, `y`, `on`, `enable`, `enabled`) and falsey values (`0`, `false`, `no`, `n`, `off`, `disable`, `disabled`) are identical for every flag.
 
 The post-run chain is defined once as a declarative registry (`DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `runScraperSweep.ts`, issue #2050): each stage owns its command, args builder, enable predicate, and optional typed result contract, and both the plan builder and the runner derive from it.
 A stage that declares a result contract but exits successfully without a readable, valid result artifact fails loud rather than silently dropping its delta.
-Every merge-applying stage declares one, so `summary.json` carries its counts and an exit code is never the only evidence the stage ran: `researcher-dedupe` reports `researcherDedupeDelta`, `eponymous-fra-merge` reports `mergeDelta`, and both `url-identity-dedupe` and `website-url-identity-dedupe` report `urlIdentityDedupeDelta`, whose fields are enumerated in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md).
+Every merge-applying stage declares one, so `summary.json` carries its counts and an exit code is never the only evidence the stage ran: `stale-scrape-run-reap` reports `staleScrapeRunReapDelta` (`running`, `planned`, `closed`, `changedSinceRead`, `keptByReason`) and fails its contract if its report is not an apply scoped to heartbeat-stale runs or plans any other reason, `researcher-dedupe` reports `researcherDedupeDelta`, `eponymous-fra-merge` reports `mergeDelta`, and both `url-identity-dedupe` and `website-url-identity-dedupe` report `urlIdentityDedupeDelta`, whose fields are enumerated in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md).
 
 The `fellowship-development-full` mode runs the fellowship engine's own post-run chain (`FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS`, issue #2172), which wires the existing `programs:*` scripts against the freshly scraped catalog in this order:
 
@@ -252,11 +253,15 @@ The history read is bounded to the most recent `BARREN_RUN_HISTORY_SCAN_LIMIT` (
 ### A run record always ends terminal, and `running` is read through a heartbeat
 
 Before #3595 an interrupted run never closed its `scrape_runs` record, so 48 Development rows read `running` for up to four months and a question as simple as "is a sweep running?" invented activity.
-The contract now has three parts.
+The contract now has four parts.
 
 - **Every exit path of `ScraperOrchestrator.run` writes a terminal status.**
   A normal return writes `success`, `partial` or `failure`, a thrown error writes `failure`, and `SIGINT` or `SIGTERM` writes `interrupted` with `interruption: { reason: 'signal', signal }` before the signal is re-raised.
+  Every terminal write, the signal write included, goes through `writeScrapeRunTerminalStatus` (`scrapers/scrapeRunTerminalWrite.ts`): up to three attempts with 500 ms and then 1,500 ms of backoff, so a transient Atlas DNS failure no longer leaves a finished run `running` with its real outcome only in the console.
+  When every attempt fails it logs one line naming the status, the attempt count and the last error, and says the row stays `running` until the stale-run stage or the command below closes it.
   A failed `failure` write is logged and the scrape's own error is rethrown, so the cleanup never replaces the real fault.
+  An exhausted `success` or `partial` write is thrown as `ScrapeRunTerminalWriteError` and is not re-recorded as `failure`, because the scrape itself did not fail.
+  The signal write carries a 4-second deadline (`SCRAPE_RUN_INTERRUPT_WRITE_DEADLINE_MS`): a hung attempt is abandoned at the deadline and no retry starts whose backoff would pass it, so the handler still re-raises the signal inside the shared budget.
   The signal write shares one handler with the job-lock release (`scrapers/interruptCleanup.ts`), so neither cleanup can kill the process while the other is still writing, and both must settle inside `INTERRUPT_CLEANUP_TIMEOUT_MS` (5 seconds) because the sweep sends `SIGKILL` 10 seconds after its `SIGTERM`.
 - **A running run proves it is alive.**
   The orchestrator stamps `heartbeatAt` at creation and every `SCRAPE_RUN_HEARTBEAT_INTERVAL_MS` (1 minute), and records `owner: { host, pid, lockOwnerId }`, where `lockOwnerId` is the `ScrapeJobLock` owner for a writing CLI or cron run.
@@ -265,13 +270,19 @@ The contract now has three parts.
   Only `live` means a writer is working.
   Ask "is anything running" with `classifyScrapeRunLiveness`, never with a bare `status: 'running'`; `sourceHealthService` and `runReport` already do.
   `recentRuns` reports `running` (live), `unverifiable` (predates heartbeats and started within 72 hours), `abandoned` (stale, or predates heartbeats and started more than 72 hours ago, per `isAbandonedScrapeRun`) and `interrupted` separately.
-- **A run that died without a word is closed by a command, not by a reader.**
+- **A run that died without a word is closed by a writer, not by a reader.**
   A `SIGKILL`, an out-of-memory kill or a host crash runs no handler, so its row stays `running` with a heartbeat that stops.
   `yarn --cwd server scrape-runs:reconcile-stale` is dry-run by default and reports every `running` row with a verdict.
   It closes a row as `interrupted` only when its heartbeat is older than the stale bound, or when it predates heartbeats and started more than 72 hours ago (`legacy_abandoned`), and it keeps any row whose heartbeat is fresh, whose source holds a live `ScrapeJobLock`, or whose owner process is still alive on this host.
   The bounds can be raised with `--stale-after-minutes` and `--legacy-older-than-hours` but never lowered.
   Each write pins the `heartbeatAt` it read, so a run that beat after the plan was built is left alone, and `finishedAt` is set to the last sign of life rather than the time of the cleanup.
   `--apply` requires `--confirm-reconcile-stale-scrape-runs` and refuses any target that is not Development, because Beta and Production receive `scrape_runs` only through promotion.
+- **The Development sweep reaps heartbeat-stale runs on every run.**
+  Until this stage existed nothing scheduled the command, which is how the stuck rows accumulated.
+  The first Development post-run stage, `stale-scrape-run-reap`, runs it with `--apply --heartbeat-stale-only --started-before <sweep start>`.
+  It closes a row only when it is `heartbeat_stale`: its heartbeat is older than the stale bound, its owner pid is not alive on this host, and its source holds no live `ScrapeJobLock`.
+  It never closes a row with a fresh heartbeat, a live owner or a held lock, and never one that started at or after the sweep began (`started_at_or_after_cutoff`), so the sweep's own runs are left for the next sweep.
+  A row that predates heartbeats is kept as `legacy_operator_only` when it is past the 72-hour bound, or `legacy_too_recent` when it is not, because its start time is its only sign of life; closing those stays the operator-run command without `--heartbeat-stale-only`.
 
 `interrupted` is a stored value, so every consumer handles it: the sweep fails the step (any status other than `success`), `scrape run` and `runScraperCron` exit nonzero, `runReport` warns not to materialize the run, `sourceHealthService` rates it `warn` with a rerun action, and the barren-streak guard steps over it as `inconclusive`.
 Treat the stored set as open anyway, because Development still holds a few `completed` and `failed` rows written by raw updates that bypassed the validator.

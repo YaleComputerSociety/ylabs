@@ -29,7 +29,12 @@ vi.mock('../../services/researchEntityEvidenceCoverage', () => ({
 }));
 
 import { ScraperOrchestrator } from '../orchestrator';
+import { INTERRUPT_CLEANUP_TIMEOUT_MS } from '../interruptCleanup';
 import { currentProcessCodeSha } from '../scrapeRunCodeIdentity';
+import {
+  SCRAPE_RUN_INTERRUPT_WRITE_DEADLINE_MS,
+  ScrapeRunTerminalWriteError,
+} from '../scrapeRunTerminalWrite';
 
 function priorRuns(rows: Array<Record<string, unknown>>) {
   return {
@@ -470,8 +475,10 @@ describe('ScraperOrchestrator', () => {
       expect(process.listeners('SIGINT').length).toBe(listenersBefore);
     });
 
-    it('keeps the scrape error when the failure write itself fails', async () => {
+    it('keeps the scrape error when every failure write attempt fails', async () => {
+      vi.useFakeTimers();
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       mocks.scrapeRunUpdateOne.mockRejectedValue(new Error('write refused'));
       const orchestrator = new ScraperOrchestrator();
       orchestrator.register({
@@ -482,11 +489,43 @@ describe('ScraperOrchestrator', () => {
         },
       });
 
-      await expect(orchestrator.run('fixture-source', OPTIONS)).rejects.toThrow('the lane broke');
-      expect(consoleError.mock.calls.flat().join(' ')).toContain('write refused');
+      const running = expect(orchestrator.run('fixture-source', OPTIONS)).rejects.toThrow(
+        'the lane broke',
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      await running;
+      expect(statusWrites()).toEqual(['failure', 'failure', 'failure']);
+      const logged = consoleError.mock.calls.flat().join(' ');
+      expect(logged).toContain('after 3 attempt(s)');
+      expect(logged).toContain('write refused');
     });
 
-    it('records a failure when the terminal success write throws', async () => {
+    it('retries a failed failure write and still surfaces the scrape error', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      mocks.scrapeRunUpdateOne
+        .mockRejectedValueOnce(new Error('transient DNS failure'))
+        .mockResolvedValue({ modifiedCount: 1 });
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        async run() {
+          throw new Error('the lane broke');
+        },
+      });
+
+      const running = expect(orchestrator.run('fixture-source', OPTIONS)).rejects.toThrow(
+        'the lane broke',
+      );
+      await vi.advanceTimersByTimeAsync(1_000);
+      await running;
+      expect(statusWrites()).toEqual(['failure', 'failure']);
+    });
+
+    it('records success when the terminal success write succeeds on a retry', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       mocks.scrapeRunUpdateOne
         .mockRejectedValueOnce(new Error('success write lost'))
         .mockResolvedValue({ modifiedCount: 1 });
@@ -497,10 +536,100 @@ describe('ScraperOrchestrator', () => {
         run: async () => ({ observationCount: 0, entitiesObserved: 0 }),
       });
 
-      await expect(orchestrator.run('fixture-source', OPTIONS)).rejects.toThrow(
-        'success write lost',
+      const running = orchestrator.run('fixture-source', OPTIONS);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(running).resolves.toMatchObject({ runId: 'run-1' });
+      expect(statusWrites()).toEqual(['success', 'success']);
+    });
+
+    it('never rewrites a successful scrape as a failure when its success write is exhausted', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      mocks.scrapeRunUpdateOne.mockRejectedValue(new Error('success write lost'));
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        run: async () => ({ observationCount: 0, entitiesObserved: 0 }),
+      });
+
+      const running = expect(orchestrator.run('fixture-source', OPTIONS)).rejects.toThrow(
+        ScrapeRunTerminalWriteError,
       );
-      expect(statusWrites()).toEqual(['success', 'failure']);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await running;
+      expect(statusWrites()).toEqual(['success', 'success', 'success']);
+      expect(consoleError.mock.calls.flat().join(' ')).toContain('stays running');
+    });
+
+    it('retries the interrupted write and re-raises the signal inside the cleanup budget', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+      let interruptedAttempts = 0;
+      mocks.scrapeRunUpdateOne.mockImplementation((_filter: unknown, update: any) => {
+        if (update.$set?.status !== 'interrupted') return Promise.resolve({ modifiedCount: 1 });
+        interruptedAttempts += 1;
+        return interruptedAttempts === 1
+          ? Promise.reject(new Error('transient DNS failure'))
+          : Promise.resolve({ modifiedCount: 1 });
+      });
+      let release: () => void = () => undefined;
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        run: () =>
+          new Promise((resolve) => {
+            release = () => resolve({ observationCount: 0, entitiesObserved: 0 });
+          }),
+      });
+
+      const running = orchestrator.run('fixture-source', OPTIONS);
+      await vi.advanceTimersByTimeAsync(0);
+      (process.listeners('SIGTERM').at(-1) as () => void)();
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(statusWrites()).toEqual(['interrupted', 'interrupted']);
+      expect(kill).toHaveBeenCalledWith(process.pid, 'SIGTERM');
+      release();
+      await running;
+      expect(statusWrites()).toEqual(['interrupted', 'interrupted']);
+    });
+
+    it('gives up on a hung interrupted write before the cleanup budget runs out', async () => {
+      vi.useFakeTimers();
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+      mocks.scrapeRunUpdateOne.mockImplementation((_filter: unknown, update: any) =>
+        update.$set?.status === 'interrupted'
+          ? new Promise(() => undefined)
+          : Promise.resolve({ modifiedCount: 1 }),
+      );
+      let release: () => void = () => undefined;
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        run: () =>
+          new Promise((resolve) => {
+            release = () => resolve({ observationCount: 0, entitiesObserved: 0 });
+          }),
+      });
+
+      const running = orchestrator.run('fixture-source', OPTIONS);
+      await vi.advanceTimersByTimeAsync(0);
+      (process.listeners('SIGTERM').at(-1) as () => void)();
+      await vi.advanceTimersByTimeAsync(SCRAPE_RUN_INTERRUPT_WRITE_DEADLINE_MS - 1);
+      expect(kill).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(kill).toHaveBeenCalledWith(process.pid, 'SIGTERM');
+      expect(SCRAPE_RUN_INTERRUPT_WRITE_DEADLINE_MS).toBeLessThan(INTERRUPT_CLEANUP_TIMEOUT_MS);
+      expect(consoleError.mock.calls.flat().join(' ')).toContain('interrupted status');
+      release();
+      await running;
     });
   });
 });
