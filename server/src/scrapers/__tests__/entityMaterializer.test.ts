@@ -19,6 +19,7 @@ import {
   officialLeadProfileSourceUrl,
   officialProfileObservationMatchesUser,
   sanitizeResearchEntitySourceUrlsForMaterialization,
+  planStoredCitationReadmission,
   withoutSupersededProfileSourceUrls,
   selectOfficialProfileObservationUserMatch,
   shouldIgnoreObservationForEntityMaterialization,
@@ -410,6 +411,33 @@ describe('entityMaterializer post-materialization metrics', () => {
         'https://example-dept.yale.edu/people/robin-oexample',
       ),
     ).toEqual(['https://example-dept.yale.edu/profile/robin-oexample']);
+  });
+
+  // The helper re-derives the predicates it knows about, but `condemned` is what makes an arm's
+  // removal respected in general: it carries what an arm actually dropped this pass, so an arm
+  // added to the projection later has its removal honoured without anyone remembering to teach
+  // this helper a matching predicate. Without it the next arm's removal is silently undone,
+  // which is the failure #3476 exists to stop.
+  it('respects a removal recorded by an arm even when no predicate here re-derives it (#3476)', () => {
+    const labSite = 'https://example-lab.example.com/';
+    const droppedByAnArm = 'https://example-dept.yale.edu/centers/example-initiative/';
+    expect(
+      planStoredCitationReadmission({
+        stored: [labSite, droppedByAnArm],
+        planned: [labSite],
+        condemned: new Set([droppedByAnArm]),
+        entity: { entityType: 'LAB', kind: 'lab' },
+      }),
+    ).toBeNull();
+    // The same candidate, uncondemned, is exactly what re-admission is for.
+    expect(
+      planStoredCitationReadmission({
+        stored: [labSite, droppedByAnArm],
+        planned: [labSite],
+        condemned: new Set(),
+        entity: { entityType: 'LAB', kind: 'lab' },
+      }),
+    ).toEqual([droppedByAnArm, labSite]);
   });
 
   it('coerces a bare-string sourceUrls observation into an array instead of passing it through as a scalar (#observation-array-integrity)', () => {
