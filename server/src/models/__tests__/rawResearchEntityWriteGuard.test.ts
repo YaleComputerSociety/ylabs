@@ -611,10 +611,7 @@ function analyzeModule(
     }
     if (!STORED_DOCUMENT_READS.has(node.expression.name.text)) return false;
     const receiver = node.expression.expression;
-    return (
-      rawHandleNames(receiver, 0) !== null ||
-      !ownerCollectionNames(receiver).has(UNRESOLVED)
-    );
+    return rawHandleNames(receiver, 0) !== null || !ownerCollectionNames(receiver).has(UNRESOLVED);
   };
 
   const visitKeys = (node: ts.Node, seen: Set<unknown>, keys: string[]): void => {
