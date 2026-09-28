@@ -10,7 +10,8 @@ import {
   collectRematerializeEntityReports,
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
-  retiredProvenanceChanges,
+  countProvenanceReconciliation,
+  provenanceReconciliationChanges,
   slugsCarryingUnbackedProvenance,
   rematerializeChangeAffectsVisibilityGate,
   rematerializeFailureMessage,
@@ -304,7 +305,7 @@ describe('the unbacked-provenance cohort (#3769)', () => {
   });
 
   it('reports each retired entry as a change, so the re-gate runs for it', () => {
-    const changes = retiredProvenanceChanges(
+    const changes = provenanceReconciliationChanges(
       { entityType: lane, name: { ...lane, observationId: 'x' } },
       { name: { ...lane, observationId: 'x' } },
     );
@@ -312,6 +313,31 @@ describe('the unbacked-provenance cohort (#3769)', () => {
       { field: 'fieldProvenance.entityType', before: 'synthetic-retired-repair', after: undefined },
     ]);
     expect(rematerializeChangeAffectsVisibilityGate(changes)).toBe(true);
+  });
+
+  it('reports a relinked entry by the observation it now cites, and counts the two apart (#3788)', () => {
+    const changes = provenanceReconciliationChanges(
+      { departments: lane, entityType: lane, name: { ...lane, observationId: 'kept' } },
+      { departments: { ...lane, observationId: 'synthetic-observation' }, name: { ...lane } },
+    );
+    expect(changes).toEqual([
+      {
+        field: 'fieldProvenance.departments',
+        before: 'synthetic-retired-repair',
+        after: { sourceName: 'synthetic-retired-repair', observationId: 'synthetic-observation' },
+      },
+      { field: 'fieldProvenance.entityType', before: 'synthetic-retired-repair', after: undefined },
+    ]);
+    expect(countProvenanceReconciliation([{ changes }, { changes: [] }])).toEqual({
+      retired: 1,
+      relinked: 1,
+    });
+  });
+
+  it('reports nothing for an unrecorded entry the pass left alone', () => {
+    expect(provenanceReconciliationChanges({ departments: lane }, { departments: lane })).toEqual(
+      [],
+    );
   });
 });
 
