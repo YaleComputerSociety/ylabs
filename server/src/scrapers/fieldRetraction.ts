@@ -522,7 +522,7 @@ export function planFieldRetractions(input: {
     const value = normalizedComparableValue(observation.value);
     if (!value) continue;
     const holders = entitiesByValue.get(value) ?? new Set<string>();
-    holders.add(observation.entityKey);
+    holders.add(entityStates.get(observation.entityKey)?.entityId || observation.entityKey);
     entitiesByValue.set(value, holders);
   }
 
@@ -731,6 +731,7 @@ export async function withholdSoleHolderRetractionsThatStillAnswer(
 }> {
   const retained: PlannedFieldRetraction[] = [];
   const withheld: WithheldFieldRetraction[] = [];
+  const withheldStoredRowFields = new Set<string>();
   let probedValues = 0;
   for (const retraction of retractions) {
     if (
@@ -750,6 +751,7 @@ export async function withholdSoleHolderRetractionsThatStillAnswer(
     }
     if (everyValueIsDead) retained.push(retraction);
     else {
+      withheldStoredRowFields.add(`${retraction.entityId}\u0000${retraction.field}`);
       withheld.push({
         entityKey: retraction.entityKey,
         field: retraction.field,
@@ -758,7 +760,16 @@ export async function withholdSoleHolderRetractionsThatStillAnswer(
       });
     }
   }
-  return { retained, withheld, probedValues };
+  return {
+    retained: retained.map((retraction) =>
+      retraction.clearsStoredValue &&
+      withheldStoredRowFields.has(`${retraction.entityId}\u0000${retraction.field}`)
+        ? { ...retraction, clearsStoredValue: false }
+        : retraction,
+    ),
+    withheld,
+    probedValues,
+  };
 }
 
 /**
@@ -1148,6 +1159,9 @@ export async function reconcileFieldRetractions(options: {
     options.probeValue ?? probeRetractionValueLiveness,
   );
   plan.counts.soleHolderValueWithheld = screened.withheld.length;
+  plan.counts.storedValuesCleared = screened.retained.filter(
+    (retraction) => retraction.clearsStoredValue,
+  ).length;
   plan.counts.soleHolderValueProbedDead = screened.retained.filter(
     (retraction) =>
       classifyRetractionValueOwnership(retraction.maxEntitiesSharingAValue) === 'sole-holder',

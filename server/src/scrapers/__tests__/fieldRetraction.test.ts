@@ -517,6 +517,35 @@ describe('retraction value ownership (#3135, #2460)', () => {
     }
     expect(plan.counts.sharedBoilerplateValue).toBe(3);
   });
+
+  it('counts a survivor and its merged-in key as one holder, so their own link is probed', () => {
+    const lab = 'https://mergedlab.example.org/';
+    const keys = ['survivor-key', 'merged-in-key'];
+    const plan = planFieldRetractions({
+      sourceName: 'ysm-faculty-directory',
+      contract: CONTRACT,
+      completeReads: keys.flatMap((key) => [
+        read(key, 'run-2', '2026-02-01T00:00:00Z'),
+        read(key, 'run-3', '2026-03-01T00:00:00Z'),
+      ]),
+      activeObservations: keys.map((key, index) =>
+        observation({ observationId: `obs-${index}`, entityKey: key, value: lab }),
+      ),
+      entities: keys.map((key) =>
+        entity({
+          entityKey: key,
+          storedValues: { websiteUrl: lab },
+          liveObservationCountByField: { websiteUrl: 2 },
+        }),
+      ),
+      dropGuardMinPopulation: 100,
+    });
+    expect(plan.retractions).toHaveLength(2);
+    for (const retraction of plan.retractions) {
+      expect(retraction.maxEntitiesSharingAValue).toBe(1);
+    }
+    expect(plan.counts.sharedBoilerplateValue).toBe(0);
+  });
 });
 
 describe('withholdSoleHolderRetractionsThatStillAnswer (#3135)', () => {
@@ -575,6 +604,26 @@ describe('withholdSoleHolderRetractionsThatStillAnswer (#3135)', () => {
       mixed,
     );
     expect(result.retained).toEqual([]);
+    expect(result.withheld).toHaveLength(1);
+  });
+
+  it('keeps the stored value when another key of the same row still answers', async () => {
+    const byValue = async (value: string) => ({ positivelyDead: value.endsWith('dead') });
+    const result = await withholdSoleHolderRetractionsThatStillAnswer(
+      [
+        planned({ entityKey: 'merged-in-key', retractedValues: ['https://a.example.org/dead'] }),
+        planned({
+          entityKey: 'survivor-key',
+          observationIds: ['obs-2'],
+          clearsStoredValue: false,
+          retractedValues: ['https://b.example.org/live'],
+        }),
+      ],
+      byValue,
+    );
+    expect(result.retained).toHaveLength(1);
+    expect(result.retained[0].entityKey).toBe('merged-in-key');
+    expect(result.retained[0].clearsStoredValue).toBe(false);
     expect(result.withheld).toHaveLength(1);
   });
 });
