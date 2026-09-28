@@ -76,6 +76,7 @@ Every capture and replay still goes through the orchestrator, so each one leaves
 
 `/analytics` shows every stored benchmark in the "Is each lane getting better?" panel, served by the admin-only `GET /api/analytics/lane-benchmarks` (#3591).
 Each benchmark shows its latest stored replay, and each change compares it with the replay stored before it, never with a live run.
+A stored replay that missed more than its capture left unfrozen is left out of both, as "Hand-judged labels" below describes.
 Known wrong is shown over its labeled population, input coverage as pages served and missed, and each hand-labeled field as precision and recall with their counts.
 Each of those carries its change from the previous replay, so a lane with no hand labels still shows whether it got better or worse.
 
@@ -143,6 +144,11 @@ Of v1's 38 labels, 35 carried unchanged, 2 were re-read and kept, and 1 dropped 
 On v2, #3775 moved the frozen replay from precision 7 of 8 and recall 7 of 11 to 9 of 9 and 9 of 11.
 Three live-model runs on v2 then read precision 1.00 and recall 0.82 in every run.
 The sample over-represents rows that already carry a quote, so the rate describes the lane on these strata rather than the corpus, and at this size one row moves precision by about 8 points.
+
+A replay may miss only the requests its capture could not freeze, which a capture records as `unfrozenRequestCount` (#3816).
+Missing more means the lane asked for something the benchmark never held, most often a changed prompt whose model requests no longer match the frozen answers, so the replay is reported unscored rather than stored, and the dashboard leaves such stored rows out of the trend.
+A benchmark captured before that count existed uses its first replay at its own capture commit as the baseline, and without one any miss is refused, so it must be recaptured to score again.
+Changing a lane's prompt therefore invalidates that lane's benchmarks until they are recaptured.
 
 Two replays of unchanged code must give the same fingerprint.
 If they do not, the lane depends on something the benchmark did not freeze, and its numbers are not comparable until that is found.

@@ -25,6 +25,8 @@ import {
   slugsForPlannedEntities,
 } from './laneBenchmarkRun';
 import {
+  allowedReplayMisses,
+  staleReplayReason,
   scoreGoldLabels,
   scoreLaneReplay,
   summarizeGoldRuns,
@@ -91,6 +93,8 @@ interface StoredBenchmark {
   labels?: BenchmarkLabel[];
   goldLabels?: GoldLabel[];
   plannedObservationCount?: number;
+  unfrozenRequestCount?: number;
+  codeSha?: string;
 }
 
 /**
@@ -239,8 +243,13 @@ async function main(): Promise<void> {
       continue;
     }
     const { score, gold, replay, truncated } = replayed;
+    const priorRuns = (await LaneScorecardSnapshot.find({ benchmarkId: benchmark.benchmarkId })
+      .select('codeSha pagesMissed measuredAt')
+      .lean()) as unknown as Array<{ codeSha?: string; pagesMissed?: number; measuredAt?: Date }>;
     const emptyReason =
-      emptyReplayReason(benchmark, score) ?? unresolvedReplayReason(pages, replay);
+      emptyReplayReason(benchmark, score) ??
+      unresolvedReplayReason(pages, replay) ??
+      staleReplayReason(replay.pagesMissed, allowedReplayMisses(benchmark, priorRuns));
     if (emptyReason) {
       unscored.push({ benchmarkId: benchmark.benchmarkId, reason: emptyReason });
       continue;
