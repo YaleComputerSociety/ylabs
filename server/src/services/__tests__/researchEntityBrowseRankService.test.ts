@@ -128,5 +128,4 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     expect(await evidenceOf(staleSignalOnly._id)).toBe(false);
     expect(await evidenceOf(outreachOnly._id)).toBe(false);
   });
-
 });
