@@ -170,4 +170,35 @@ describe('a stored undergradEvidenceQuote the evidence no longer backs clears on
 
     expect(await storedQuote(row._id)).toBe(SEARCH_NOTE);
   });
+
+  it('clears a lane quote cited to a department program page and does not fall back to the retired cache copy', async () => {
+    const programPage = 'https://synthetic.yale.edu/undergraduate/employment-opportunities';
+    const row = await seedRow(GROUNDED, { entityType: 'FACULTY_RESEARCH_AREA', websiteUrl: '' });
+    await ResearchEntity.updateOne(
+      { _id: row._id },
+      { $set: { 'fieldProvenance.undergradEvidenceQuote.sourceUrl': programPage } },
+    );
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: SLUG,
+      field: 'undergradEvidenceQuote',
+      value: GROUNDED,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: LANE,
+      sourceUrl: programPage,
+      confidence: 0.5,
+      observedAt: new Date('2026-09-20T00:00:00Z'),
+      superseded: false,
+    });
+    await seedObservation(
+      'undergradEvidenceQuote',
+      PARAPHRASE,
+      'research-entity-cache-backfill',
+      '2026-09-01T00:00:00Z',
+    );
+
+    await materializeEntity('researchEntity', { entityKey: SLUG });
+
+    expect(await storedQuote(row._id)).toBe('');
+  });
 });

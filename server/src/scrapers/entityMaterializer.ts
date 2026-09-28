@@ -6270,7 +6270,7 @@ export async function materializeEntity(
   }
 
   const undergradEvidenceQuoteWithdrawnBy = isResearchEntityObservationType(entityType)
-    ? sourcesWithdrawingUndergradEvidenceQuote(obs)
+    ? sourcesWithdrawingUndergradEvidenceQuote(obs, entityDoc)
     : new Set<string>();
   const materializationObs = collapseLatestWins(
     withoutWithdrawnUndergradEvidenceQuotes(
