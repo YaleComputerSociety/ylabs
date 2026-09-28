@@ -288,6 +288,72 @@ const mentionsSyntheticFixture = (text) => {
 // Changing this shape also requires updating docs/person-identifier-convention.md.
 export const SYNTHETIC_NETID_RE = /^zz[a-z]?99\d*$/i;
 
+/**
+ * Reserved words that mark an invented person, recognised as the FINAL segment of a slug
+ * or of an address local part.
+ *
+ * The surname allowlist above cannot scale: it names the two invented people this
+ * script's own tests use, so a driver that invents a third fails the gate. The
+ * `no-mistakes` gate writes run output into a pull request body, and its drivers seed
+ * fixtures precisely to look like real rows, so two consecutive pull requests failed the
+ * scan on entirely synthetic data (#3540). A marker convention scales where an allowlist
+ * of names does not.
+ *
+ * Terminal position is the whole safety argument. `nih-pi-<given>-fixture` is a fixture;
+ * `nih-pi-fixture-<surname>` is a person whose slug happens to contain the word, and
+ * still flags. Same for an address: `<given>.fixture@yale.edu` is a fixture and
+ * `fixture.<surname>@yale.edu` is not.
+ *
+ * Measured against the live corpus before choosing the set: 0 of 9,119 research-entity
+ * slugs end in any of these markers, 0 contain one as a segment at all, and 0 of 11,155
+ * researcher addresses have a local part ending in one. `sample` and `example` are the
+ * only two that are attested surnames anywhere, so if either ever appears in the corpus
+ * the answer is to drop that word from this set rather than to special-case the row.
+ *
+ * Changing this set also requires updating docs/person-identifier-convention.md.
+ */
+export const SYNTHETIC_FIXTURE_MARKERS = Object.freeze([
+  'fixture',
+  'sample',
+  'synthetic',
+  'placeholder',
+  'example',
+]);
+
+const endsOnSyntheticMarker = (segments) => {
+  const last = segments.filter(Boolean).at(-1);
+  return last !== undefined && SYNTHETIC_FIXTURE_MARKERS.includes(last.toLowerCase());
+};
+
+// Requires something before the marker, so a bare `nih-pi-fixture` is judged by the
+// placeholder rule that already owns it rather than by this one.
+const isSyntheticFixtureSlug = (slug) => {
+  const segments = slugSegment(slug).split(/[+-]/).filter(Boolean);
+  return segments.length > 1 && endsOnSyntheticMarker(segments);
+};
+
+// The same rule on the third arm that carries a person's name: the final path segment of a
+// directory profile URL. `.../profile/<given>-fixture/` is invented; `.../profile/fixture-<surname>/`
+// is a person and still flags. Without this arm a driver's seeded profile URLs read as dump
+// shape, which is how one body reported 46 of them (#3540).
+const isSyntheticFixtureProfileUrl = (url) => {
+  const segments = String(url || '')
+    .split('?')[0]
+    .split('#')[0]
+    .split('/')
+    .filter(Boolean);
+  const leaf = segments.at(-1) || '';
+  const parts = leaf.split(/[._-]/).filter(Boolean);
+  return parts.length > 1 && endsOnSyntheticMarker(parts);
+};
+
+const isSyntheticFixtureLocalPart = (localPart) => {
+  const segments = String(localPart || '')
+    .split('.')
+    .filter(Boolean);
+  return segments.length > 1 && endsOnSyntheticMarker(segments);
+};
+
 const isSyntheticFixtureName = (name) => {
   const tokens = String(name || '').split(/\s+/);
   return tokens.length === 2 && SYNTHETIC_FIXTURE_SURNAMES.includes(tokens[1].toLowerCase());
@@ -398,22 +464,33 @@ export function findPersonIdentifierFindings(documents, { strict = false } = {})
   const findings = [];
   const isSynthetic = (text) => !strict && mentionsSyntheticFixture(text);
   const isSyntheticName = (name) => !strict && isSyntheticFixtureName(name);
+  // Gated on `!strict` like every other synthetic allowance: the tests scan strict, so the
+  // same shapes stay provably flagged there.
+  const isSyntheticMarkedSlug = (slug) => !strict && isSyntheticFixtureSlug(slug);
+  const isSyntheticMarkedLocalPart = (part) => !strict && isSyntheticFixtureLocalPart(part);
+  const isSyntheticMarkedProfileUrl = (url) => !strict && isSyntheticFixtureProfileUrl(url);
 
   for (const document of documents) {
     if (isExempt(document.content)) continue;
 
     findings.push(
       ...collect(document, PERSON_SLUG_RE, 'person-bearing-entity-slug', (match) =>
-        isPlaceholderSlug(match[1]) || isRegisteredName(match[0]) || isSynthetic(match[1])
+        isPlaceholderSlug(match[1]) ||
+        isRegisteredName(match[0]) ||
+        isSynthetic(match[1]) ||
+        isSyntheticMarkedSlug(match[1])
           ? null
           : 'a person-bearing slug prefix',
       ),
-      ...profileUrlFindings(document).filter((finding) => !isSynthetic(finding.matched)),
+      ...profileUrlFindings(document).filter(
+        (finding) => !isSynthetic(finding.matched) && !isSyntheticMarkedProfileUrl(finding.matched),
+      ),
       ...collect(document, YALE_EMAIL_RE, 'personal-yale-address', (match) => {
         const localPart = match[1] || '';
         if (isRoleAddress(localPart)) return null;
         if (isPlaceholderAddress(localPart)) return null;
         if (isSynthetic(localPart)) return null;
+        if (isSyntheticMarkedLocalPart(localPart)) return null;
         return 'a personal yale.edu address';
       }),
       ...collect(document, NETID_LABELLED_RE, 'yale-netid', (match) =>

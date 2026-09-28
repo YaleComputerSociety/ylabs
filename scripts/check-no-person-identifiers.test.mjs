@@ -16,6 +16,10 @@ import {
 
 const scanStrict = (documents) => findPersonIdentifierFindings(documents, { strict: true });
 
+// How the CLI scans a `--body-file`: synthetic allowances active. Named so a test reads as
+// the mode it is asserting about rather than as an options object.
+const scanBody = (documents) => findPersonIdentifierFindings(documents);
+
 const body = (content) => [{ label: 'issue body', content }];
 
 const rulesOf = (findings) =>
@@ -207,6 +211,87 @@ test('does not flag a registered source name that embeds a slug prefix', () => {
   }
 });
 
+// A marker convention scales where the invented-surname allowlist does not: the gate's
+// drivers seed fixtures to look like real rows, and two consecutive pull requests failed the
+// scan on entirely synthetic data before this (#3540).
+test('clears a slug or address whose FINAL segment is a reserved synthetic marker', () => {
+  for (const clean of [
+    'The row ysm-faculty-morgan-fixture emits inferredPiUserId and no lab fields.',
+    'The row nih-pi-riley-sample is refused by the guard.',
+    'The row dept-physics-avery-placeholder serves nothing.',
+    'leadUsers: morgan.fixture@yale.edu was read from the seeded profile.',
+    'The driver seeded casey.sample@yale.edu and asserted the refusal.',
+  ]) {
+    assert.deepEqual(rulesOf(scanBody(body(clean))), [], clean);
+  }
+});
+
+// A single profile path without a claim is only a note, so the arm that matters is the DUMP
+// one: five or more distinct paths read as a directory dump and become findings, which is how
+// one body reported 46 of them. Pinned at the threshold in both directions.
+test('clears a run of seeded profile paths, and still reports a run of real ones', () => {
+  const syntheticRun = [
+    'Seeded pages the driver read:',
+    'https://medicine.yale.edu/profile/morgan-fixture/',
+    'https://medicine.yale.edu/profile/alex-fixture/',
+    'https://ysph.yale.edu/profile/casey-sample/',
+    'https://medicine.yale.edu/profile/blair-placeholder/',
+    'https://medicine.yale.edu/profile/gray-synthetic/',
+    'https://medicine.yale.edu/profile/riley-example/',
+  ].join('\n');
+  assert.deepEqual(rulesOf(scanBody(body(syntheticRun))), [], 'seeded run');
+
+  const realRun = [
+    'Rows to check:',
+    'https://medicine.yale.edu/profile/alessandra-whitcombe/',
+    'https://medicine.yale.edu/profile/bartholomew-quillfeather/',
+    'https://ysph.yale.edu/profile/cordelia-ashgrove/',
+    'https://medicine.yale.edu/profile/desmond-fairweather/',
+    'https://medicine.yale.edu/profile/evangeline-thornbury/',
+    'https://medicine.yale.edu/profile/finnegan-ravensworth/',
+  ].join('\n');
+  assert.ok(rulesOf(scanBody(body(realRun))).length > 0, 'real run must still report');
+});
+
+// Terminal position is the whole safety argument, so it is pinned from both directions.
+test('still flags a marker word that is not the final segment', () => {
+  for (const flagged of [
+    ['The row nih-pi-fixture-whitcombe is wrong.', 'person-bearing-entity-slug'],
+    ['The row ysm-faculty-sample-whitcombe departed.', 'person-bearing-entity-slug'],
+    ['fixture.whitcombe@yale.edu departed.', 'personal-yale-address'],
+    ['sample.whitcombe@yale.edu is suppressed.', 'personal-yale-address'],
+    [
+      'See https://medicine.yale.edu/profile/fixture-whitcombe/ which is stale.',
+      'personal-profile-url',
+    ],
+  ]) {
+    assert.deepEqual(rulesOf(scanBody(body(flagged[0]))), [flagged[1]], flagged[0]);
+  }
+});
+
+// The allowance is a body-scan allowance only. Strict mode is what proves the shape is still
+// recognised, so a future change cannot quietly turn the marker into a blanket stoplist.
+test('flags every marker form in strict mode, so the shape stays recognised', () => {
+  for (const marked of [
+    'The row ysm-faculty-morgan-fixture emits inferredPiUserId.',
+    'The row nih-pi-riley-sample is refused.',
+    'leadUsers: morgan.fixture@yale.edu was read.',
+    // Carries a claim, because a profile path cited WITHOUT one is a note rather than a
+    // finding and `rulesOf` keeps only findings.
+    'See https://medicine.yale.edu/profile/morgan-fixture/ which is stale.',
+  ]) {
+    assert.ok(rulesOf(scanStrict(body(marked))).length > 0, marked);
+  }
+});
+
+// Deliberately NOT widened: a netid is opaque, so no marker can be read out of one, and a
+// driver has to use the reserved shape instead. Pinned so a later change does not widen it
+// by analogy with the slug and address arms.
+test('does not widen the netid arm, which has a reserved shape instead', () => {
+  assert.deepEqual(rulesOf(scanBody(body('user observations for netid mf900.'))), ['yale-netid']);
+  assert.deepEqual(rulesOf(scanBody(body('user observations for netid zz99.'))), []);
+});
+
 test('still flags a person slug at the start of or inside a hyphenated token', () => {
   for (const flagged of [
     'The row `nih-pi-quilla-marrowbane` is wrong.',
@@ -239,6 +324,35 @@ test('an internally capitalised surname is still a name', () => {
   ]) {
     assert.ok(rulesOf(scanStrict(body(flagged))).includes('person-claim-pairing'), flagged);
   }
+});
+
+// The end-to-end pin the allowance lacked. The existing test below checks that every
+// COLLIDING name is registered, which is a property of two lists; this scans each real name
+// through the detector and asserts no finding, which is the property a body author actually
+// depends on. Measured when added: 46 seeded sources, 26 retired names and 222 npm scripts,
+// none flagged (#3540).
+test('no registered source name or npm script name flags when discussed in a body', async () => {
+  const read = async (relative) => readFile(new URL(relative, import.meta.url), 'utf8');
+  const seedSources = await read('../server/src/scrapers/seedSources.ts');
+  const declared = [...seedSources.matchAll(/^\s*name: '([a-z0-9-]+)',/gm)].map((m) => m[1]);
+  const dispatch = await read('../server/src/scrapers/sourceDispatch.ts');
+  const retiredBlock = dispatch.slice(dispatch.indexOf('RETIRED_SOURCE_NAMES'));
+  const retired = [
+    ...retiredBlock.slice(0, retiredBlock.indexOf('];')).matchAll(/'([a-z0-9-]+)'/g),
+  ].map((m) => m[1]);
+  const scripts = Object.keys(JSON.parse(await read('../server/package.json')).scripts);
+
+  assert.ok(declared.length > 20 && retired.length > 10 && scripts.length > 100);
+
+  const flagged = [];
+  for (const name of [...declared, ...retired, ...scripts]) {
+    if (rulesOf(scanBody(body(`The ${name} entry is not wrong.`))).length > 0) flagged.push(name);
+  }
+  assert.deepEqual(
+    flagged,
+    [],
+    'a registered name that flags forces every body discussing it to use identifier-exempt, which suppresses the whole document',
+  );
 });
 
 // Pins the allowance to the real registry: a source name added later that collides
