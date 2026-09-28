@@ -10,6 +10,7 @@
  * different people (issue #2234).
  */
 import { normalizeName } from '../scrapers/utils/scraperHelpers';
+import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 import { isExternalScholarlyPlatformName } from './externalScholarlyPlatforms';
 import {
   isMultiTenantAcademicHostRootUrl,
@@ -1323,14 +1324,7 @@ export function classifyHarvestedResearchHomeName(args: {
   return foreign ? 'ANOTHER_PERSONS_LAB' : 'OWN_IDENTITY';
 }
 
-const PERSON_SCOPED_ENTITY_TYPES = new Set([
-  'LAB',
-  'FACULTY_RESEARCH_AREA',
-  'INDIVIDUAL_RESEARCH',
-  'FACULTY_PROJECT',
-]);
-
-const PERSON_SCOPED_KINDS = new Set(['lab', 'individual', 'solo']);
+// The sets moved to `models/storedVocabularies.ts`, which owns the question (#3602).
 
 /**
  * Whether an entity's identity is a person or a person's lab, so an umbrella
@@ -1342,9 +1336,7 @@ export function isPersonScopedResearchEntity(entity: {
   entityType?: unknown;
   kind?: unknown;
 }): boolean {
-  const entityType = textValue(entity.entityType).toUpperCase();
-  if (entityType) return PERSON_SCOPED_ENTITY_TYPES.has(entityType);
-  return PERSON_SCOPED_KINDS.has(textValue(entity.kind).toLowerCase());
+  return isPersonScopedResearchEntityShape(entity);
 }
 
 /**

@@ -60,7 +60,11 @@ export function normalizeWebsiteUrl(url: unknown): string {
     .toLowerCase();
 }
 
-const PERSON_SCOPED_TYPES = /^(?:FACULTY_RESEARCH_AREA|FACULTY_PROJECT|INDIVIDUAL_RESEARCH)$/;
+// Person-scoped AND not a lab, for the same reason the unbacked-name repair narrows it: a
+// collective name on a LAB row is the normal shape, so admitting LAB would read every lab as
+// wrongly named. `models/storedVocabularies.ts` owns person scope itself (#3602).
+const NON_LAB_PERSON_SCOPED_TYPES =
+  /^(?:FACULTY_RESEARCH_AREA|FACULTY_PROJECT|INDIVIDUAL_RESEARCH)$/;
 const COLLECTIVE_NAME = /\b(?:lab|laboratory|center|centre|institute|program|programme)\b/i;
 
 /**
@@ -80,7 +84,7 @@ export function entityIdentityIsInQuestion(row: DeadWebsiteRow): boolean {
   const slugTokens = new Set(text(row.slug).split('-').filter(Boolean));
   const sharesNothing = nameTokens.length > 0 && !nameTokens.some((token) => slugTokens.has(token));
   const collectiveNameOnPersonType =
-    COLLECTIVE_NAME.test(name) && PERSON_SCOPED_TYPES.test(text(row.entityType));
+    COLLECTIVE_NAME.test(name) && NON_LAB_PERSON_SCOPED_TYPES.test(text(row.entityType));
   return sharesNothing || collectiveNameOnPersonType;
 }
 

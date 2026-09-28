@@ -1,4 +1,5 @@
 import { retractionWouldStrandAReadablePage } from '../scrapers/directoryGraftCitations';
+import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 import {
   isDepartmentRosterProvenanceUrl,
   isDirectoryLoaderUrl,
@@ -29,13 +30,7 @@ const stringEntries = (value: unknown): string[] =>
  * row and for the fellowship records `department-undergrad-research` writes, and is
  * a graft only on a person (#2609). So the entity is required, not optional.
  */
-const PERSON_SCOPED_TYPES = new Set([
-  'LAB',
-  'FACULTY_RESEARCH_AREA',
-  'FACULTY_PROJECT',
-  'FACULTY_RESEARCH',
-  'INDIVIDUAL_RESEARCH',
-]);
+// The set moved to `models/storedVocabularies.ts`, which owns the question (#3602).
 
 /**
  * A faculty roster or index page cited on a person-scoped row. `isSharedPeopleRosterUrl`
@@ -47,8 +42,7 @@ const PERSON_SCOPED_TYPES = new Set([
  * that publishes it.
  */
 export function isRosterPageCitedByPerson(url: string, entity: GraftedUrlCandidateEntity): boolean {
-  const entityType = typeof entity.entityType === 'string' ? entity.entityType : '';
-  if (!PERSON_SCOPED_TYPES.has(entityType)) return false;
+  if (!isPersonScopedResearchEntityType(entity.entityType)) return false;
   return isSharedPeopleRosterUrl(url) || isDepartmentRosterProvenanceUrl(url);
 }
 

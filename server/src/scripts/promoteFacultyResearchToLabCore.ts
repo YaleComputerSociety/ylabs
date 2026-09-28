@@ -66,7 +66,7 @@ export type FacultyResearchPromotionHoldReason =
 
 /**
  * Promoting a row out of `FACULTY_RESEARCH_AREA` removes it from
- * `PERSON_SCOPED_GATE_ENTITY_TYPES`, so the shared-citation defence in
+ * `isPersonScopedResearchEntityType`, so the shared-citation defence in
  * studentVisibilityGateService stops examining it. This threshold must stay in
  * step with SHARED_CITATION_PERSON_ROW_THRESHOLD there, or a row whose every
  * citation is a widely-shared page could be promoted past the gate (#2460).

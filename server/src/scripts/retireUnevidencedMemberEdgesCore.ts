@@ -12,6 +12,7 @@
 
 export const UNEVIDENCED_MEMBER_EDGE_RETIREMENT_NOTE =
   'Retired by role-assignments:retire-unevidenced-member-edges (#3161): a non-lead member edge on a person-scoped entity citing no rosterProvenance. No page asserts this membership.';
+import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 
 /**
  * A lead edge is out of scope. The lead-graft lanes own it, it is the only edge
@@ -35,12 +36,7 @@ export const LEAD_ROLE_ASSIGNMENT_ROLES = new Set([
  * decision and deliberately not this repair: including them would turn a 53-edge
  * repair into a 1,019-edge one.
  */
-export const PERSON_SCOPED_ENTITY_TYPES = new Set([
-  'LAB',
-  'FACULTY_RESEARCH_AREA',
-  'FACULTY_PROJECT',
-]);
-
+// The set moved to `models/storedVocabularies.ts`, which owns the question (#3602).
 export interface UnevidencedMemberEdgeInput {
   id: string;
   entityId: string;
@@ -116,7 +112,7 @@ export function planUnevidencedMemberEdgeRetirements(
       skipped.unknownEntity += 1;
       continue;
     }
-    if (!PERSON_SCOPED_ENTITY_TYPES.has(entity.entityType)) {
+    if (!isPersonScopedResearchEntityType(entity.entityType)) {
       skipped.notPersonScoped += 1;
       continue;
     }

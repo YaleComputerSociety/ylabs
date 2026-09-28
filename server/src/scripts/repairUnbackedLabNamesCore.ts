@@ -23,7 +23,13 @@ import { personScopedResearchEntityNameFromPersonName } from '../utils/researchH
  * a re-materialize instead of assuming a lock is needed.
  */
 export const LAB_NAME_SUFFIX_RE = /\s+(?:Lab|Laboratory)$/i;
-const PERSON_SCOPED_ENTITY_TYPES = new Set(['FACULTY_RESEARCH_AREA', 'FACULTY_PROJECT']);
+/**
+ * Person-scoped AND not a lab, which is a narrower question than person scope and the reason
+ * this is not `models/storedVocabularies.ts`'s set. This repair rewrites a row whose NAME
+ * claims a lab while its type does not, so admitting `LAB` would have it rewrite legitimate
+ * lab rows (#3602).
+ */
+const NON_LAB_PERSON_SCOPED_ENTITY_TYPES = new Set(['FACULTY_RESEARCH_AREA', 'FACULTY_PROJECT']);
 const NAME_FIELDS = ['name', 'displayName'] as const;
 
 export type UnbackedLabNameRefusal =
@@ -109,7 +115,7 @@ export function planUnbackedLabNameCorrections(
       refuse('name-does-not-assert-a-lab');
       continue;
     }
-    if (!PERSON_SCOPED_ENTITY_TYPES.has(textValue(row.entityType).toUpperCase())) {
+    if (!NON_LAB_PERSON_SCOPED_ENTITY_TYPES.has(textValue(row.entityType).toUpperCase())) {
       refuse('type-is-not-person-scoped');
       continue;
     }

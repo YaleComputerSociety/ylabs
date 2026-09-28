@@ -1,5 +1,6 @@
 import { isExternalScholarlyPlatformHost } from './externalScholarlyPlatforms';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from './urlSafety';
+import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 
 const URL_MAXLENGTH = 2048;
 
@@ -487,22 +488,14 @@ export interface ResearchEntityHostOwnerIdentity {
 // than imported from `researchHomeNameIdentityAuthority.ts`, the name-identity
 // authority, because importing it back would make the two mutually dependent.
 //
-// Deliberately WIDER than that module's `PERSON_SCOPED_ENTITY_TYPES`, which omits
+// Was deliberately WIDER than the name authority's own copy, which omitted
 // `FACULTY_RESEARCH`: nothing rewrites either retired type since the one-off
 // consolidation was deleted (#3675), so a stored row may still carry one, and omitting
 // either leaves this refusal unreachable on exactly those stored rows. Widening the name-identity
 // set instead would change served `displayName` on legacy rows, which is a different
 // decision from this one and needs its own measurement (Development holds 0 rows of
 // either retired type today, so neither set is load-bearing there).
-const PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES = new Set([
-  'LAB',
-  'FACULTY_RESEARCH_AREA',
-  'FACULTY_RESEARCH',
-  'INDIVIDUAL_RESEARCH',
-  'FACULTY_PROJECT',
-]);
-
-const PERSON_SCOPED_HOST_TENANT_KINDS = new Set(['lab', 'individual', 'solo']);
+// The set moved to `models/storedVocabularies.ts`, which owns the question (#3602).
 
 /**
  * The single definition of "this row is one person's research rather than the
@@ -511,11 +504,8 @@ const PERSON_SCOPED_HOST_TENANT_KINDS = new Set(['lab', 'individual', 'solo']);
  * promotion path disagree about the same stored field, and a row the DTO hides is then
  * re-promoted on the next materialization (#2579).
  */
-export const isPersonScopedHostTenant = (entity?: ResearchEntityHostOwnerIdentity): boolean => {
-  const entityType = textValue(entity?.entityType).toUpperCase();
-  if (entityType) return PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES.has(entityType);
-  return PERSON_SCOPED_HOST_TENANT_KINDS.has(textValue(entity?.kind).toLowerCase());
-};
+export const isPersonScopedHostTenant = (entity?: ResearchEntityHostOwnerIdentity): boolean =>
+  isPersonScopedResearchEntityShape({ entityType: entity?.entityType, kind: entity?.kind });
 
 /**
  * A departmental undergraduate-research page is plausible evidence for an
