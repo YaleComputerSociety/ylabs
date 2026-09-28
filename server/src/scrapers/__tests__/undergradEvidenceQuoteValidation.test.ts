@@ -248,3 +248,20 @@ describe('undergraduate as a teaching modifier (#3775)', () => {
     }
   });
 });
+
+describe('a program name or a faculty member own degree is not hosting evidence (#3775)', () => {
+  it('discounts the undergraduate major as a program and a degree from Yale College as a bio', () => {
+    for (const quote of [
+      'Questions? Reach out to our director of undergraduate studies about the undergraduate major.',
+      'After receiving his undergraduate degree in archaeology from Yale College, he completed a doctorate elsewhere.',
+    ]) {
+      expect(laneQuoteStatesUndergraduates(quote), quote).toBe(false);
+    }
+  });
+
+  it('keeps plural majors, who are people', () => {
+    expect(
+      laneQuoteStatesUndergraduates('Undergraduate majors in biology join the lab each summer.'),
+    ).toBe(true);
+  });
+});

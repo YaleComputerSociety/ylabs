@@ -159,7 +159,7 @@ const BARE_POPULATION_HEADING =
   /^\W*(?:(?:current|former|our)\s+)?(?:undergrad(?:uate)?s?|college\s+students?)(?:\s+(?:research|lab|laboratory|students?|researchers?|members?|interns?|assistants?)){0,3}\W*$/i;
 
 const UNDERGRADUATE_AS_TEACHING_MODIFIER =
-  /(?:\b|(?<=[a-z]))undergrad(?:uate)?s?\s+(?:(?:and|or|&)\s+(?:[a-z-]+\s+)?)?(?:courses?|class(?:es)?|curricul(?:um|a)|education|teaching|advising|admissions?|coursework|seminars?|lectures?(?:\s+courses?)?)\b(?!\s+credit)|\bdirector\s+of\s+undergraduate\s+studies\b/gi;
+  /\b(?:undergrad(?:uate)?\s+)?(?:degree|b\.?[as]\.?|graduated|graduating)\b[^.]{0,60}\bfrom\s+yale\s+college\b|(?:\b|(?<=[a-z]))undergrad(?:uate)?s?\s+(?:(?:and|or|&)\s+(?:[a-z-]+\s+)?)?(?:courses?|class(?:es)?|major(?!s)|degree(?!s)|curricul(?:um|a)|education|teaching|advising|admissions?|coursework|seminars?|lectures?(?:\s+courses?)?)\b(?!\s+credit)|\bdirector\s+of\s+undergraduate\s+studies\b/gi;
 
 /**
  * The microsite lane's own admission rule for a quote that backs "Has hosted undergraduate
