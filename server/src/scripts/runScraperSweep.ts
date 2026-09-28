@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -7,6 +7,11 @@ import mongoose from 'mongoose';
 import { Source } from '../models/source';
 import { buildOrchestrator } from '../scrapers/registry';
 import { MANUAL_ONLY_SWEEP_SOURCES } from '../scrapers/manualOnlySweepSources';
+import {
+  planSweepCodeDriftRefusal,
+  sweepCodeIdentityFrom,
+  type SweepCodeDriftRefusal,
+} from './sweepCodeIdentityCore';
 import {
   resolveMongoDatabaseName,
   resolveScraperEnvironment,
@@ -275,6 +280,13 @@ export interface ScraperSweepSummary {
   startedAt: string;
   finishedAt: string;
   outputDirectory: string;
+  /**
+   * The commit the stages actually ran, which is a property of the checkout rather than of
+   * `beta`. `null` where the checkout could not report one. `codeDrift` is present only when the
+   * checkout moved mid-run, which is the condition that makes stage results unattributable.
+   */
+  codeSha: string | null;
+  codeDrift?: SweepCodeDriftRefusal[];
   sourceCount: number;
   succeeded: number;
   failed: number;
@@ -797,6 +809,11 @@ type ChildRunner = (
   args: string[],
   options: ChildRunnerOptions,
 ) => Promise<ScraperSweepChildResult>;
+
+function defaultHeadShaReader(repoRoot: string): string | null {
+  const result = spawnSync('git', ['-C', repoRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
+  return result.status === 0 ? result.stdout : null;
+}
 
 function spawnChild(
   command: string,
@@ -1707,6 +1724,7 @@ export async function runScraperSweep(
   options: ScraperSweepCliOptions,
   dependencies: {
     childRunner?: ChildRunner;
+    readHeadSha?: (repoRoot: string) => string | null;
     now?: () => Date;
     sweepSources?: ScraperSweepSource[];
   } = {},
@@ -1724,9 +1742,11 @@ export async function runScraperSweep(
   const startedAt = now();
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
   const checkpointPath = checkpointPathForMode(options.mode, os.tmpdir(), repoRoot);
+  const readHeadSha = dependencies.readHeadSha || defaultHeadShaReader;
   const { store, resumed } = SweepCheckpointStore.start({
     mode: options.mode,
     flags: sweepCheckpointFlagSignature(options),
+    codeSha: sweepCodeIdentityFrom(readHeadSha(repoRoot)),
     checkpointPath,
     outputDirectory: defaultScraperSweepOutputDirectory(options.mode, startedAt),
     now: startedAt,
@@ -1741,7 +1761,29 @@ export async function runScraperSweep(
   );
   const logger = new SweepRunLogger(outputDirectory, now);
   const ctx: SweepRuntimeContext = { store, logger, now };
-  const childRunner = dependencies.childRunner || spawnChild;
+  const sweepCodeSha = store.codeSha;
+  console.log(
+    sweepCodeSha
+      ? `Sweep code: ${sweepCodeSha} (the checkout's HEAD, which is what every stage runs)`
+      : 'Sweep code: the checkout did not report a commit, so stage results are not attributable to one',
+  );
+  const spawnStageChild = dependencies.childRunner || spawnChild;
+  // Wrapped at the single injection point so every stage is covered: sources, both post-run
+  // paths, and the between-phase prune all spawn through this one function.
+  const childRunner: ChildRunner = async (command, args, childOptions) => {
+    const stageLabel = `${command} ${args.join(' ')}`.slice(0, 120);
+    const refusal = planSweepCodeDriftRefusal({
+      stage: stageLabel,
+      startedSha: sweepCodeSha,
+      currentSha: sweepCodeIdentityFrom(readHeadSha(repoRoot)),
+    });
+    if (!refusal) return spawnStageChild(command, args, childOptions);
+    // Fails closed and does no work, which is what keeps the run resumable: the stage is recorded
+    // failed, so a resume re-runs it once the checkout is back at the commit the run started on.
+    store.recordCodeDrift(refusal, now());
+    console.error(`[sweep-code] ${refusal.message}`);
+    return { status: 1, error: new Error(refusal.message) };
+  };
   const sweepSources = dependencies.sweepSources || sweepSourcesForMode(options.mode);
   const rows = new Array<ScraperSweepRunRow>(sweepSources.length);
 
@@ -2005,6 +2047,8 @@ export async function runScraperSweep(
     startedAt: startedAt.toISOString(),
     finishedAt: now().toISOString(),
     outputDirectory,
+    codeSha: sweepCodeSha,
+    ...(store.codeDrift.length > 0 ? { codeDrift: store.codeDrift } : {}),
     sourceCount: rows.length,
     succeeded: rows.filter((row) => row.status === 'succeeded').length,
     failed: rows.filter((row) => row.status === 'failed').length,

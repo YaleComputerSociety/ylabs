@@ -82,6 +82,8 @@ describe('scraper sweep checkpoint', () => {
     writeSweepCheckpointAtomic(checkpointPath, {
       mode: 'development-incremental',
       flags: '',
+      codeSha: null,
+      codeDrift: [],
       outputDirectory: path.join(dir, 'incremental-out'),
       ownerPid: process.pid,
       createdAt: now().toISOString(),
@@ -182,6 +184,8 @@ describe('scraper sweep checkpoint', () => {
     writeSweepCheckpointAtomic(checkpointPath, {
       mode: 'development-full',
       flags: '',
+      codeSha: null,
+      codeDrift: [],
       outputDirectory: path.join(dir, 'out'),
       ownerPid: 1,
       createdAt: now().toISOString(),

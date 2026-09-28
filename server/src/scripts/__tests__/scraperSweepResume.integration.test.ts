@@ -497,4 +497,70 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     expect(secondSummary.postRun?.status).toBe('succeeded');
     expect(fs.existsSync(checkpointFor(mode))).toBe(false);
   }, 180_000);
+  // A sweep runs the code in its checkout, and nothing used to pin it. On the Development full
+  // sweep of 2026-09-28 the checkout fast-forwarded six times mid-run and the 24 source stages
+  // split across two different commits, while `summary.json` recorded no commit at all, so the
+  // artifacts could not have revealed either fact. Stage results were therefore unattributable,
+  // and a stage could apply a defect the checkout predated (#3476 follow-up).
+  it('records the commit its stages ran and refuses a stage once the checkout moves', async () => {
+    const mode = 'development-full' as const;
+    fs.rmSync(checkpointFor(mode), { force: true });
+    const options = {
+      mode,
+      confirmations: new Set(['--confirm-development-full-sweep']),
+      pruneBetweenPhases: false,
+      skipPreflight: true,
+    };
+
+    const started = 'a'.repeat(7) + '1'.repeat(33);
+    const moved = 'b'.repeat(7) + '2'.repeat(33);
+    const spawned = makeChildRunner(new Set());
+    let spawns = 0;
+    const summary = await runScraperSweep(options, {
+      childRunner: async (command, args, childOptions) => {
+        spawns++;
+        return spawned.runner(command, args, childOptions);
+      },
+      // Moves the checkout after the first stage has been spawned, which is what a peer's `git
+      // pull` does to a running sweep.
+      readHeadSha: () => (spawns === 0 ? started : moved),
+    });
+    trackRun(mode, summary.outputDirectory);
+
+    expect(summary.codeSha).toBe(started);
+    expect(summary.codeDrift?.length ?? 0).toBeGreaterThan(0);
+    expect(summary.codeDrift?.[0]?.startedSha).toBe(started);
+    expect(summary.codeDrift?.[0]?.currentSha).toBe(moved);
+    // Fails closed: exactly one stage ran, and every later one was refused without doing work.
+    expect(spawns).toBe(1);
+    expect(summary.failed).toBeGreaterThan(0);
+    // Recoverable rather than lost: the checkpoint survives so a resume re-runs the refused
+    // stages once the checkout is back on the commit the run started.
+    expect(fs.existsSync(checkpointFor(mode))).toBe(true);
+
+    const firstRefusals = summary.codeDrift?.length ?? 0;
+    let resumedSpawns = 0;
+    const onMovedCheckout = await runScraperSweep(options, {
+      childRunner: async (command, args, childOptions) => {
+        resumedSpawns++;
+        return spawned.runner(command, args, childOptions);
+      },
+      readHeadSha: () => moved,
+    });
+
+    expect(onMovedCheckout.codeSha).toBe(started);
+    expect(resumedSpawns).toBe(0);
+    expect(onMovedCheckout.codeDrift?.length ?? 0).toBeGreaterThan(firstRefusals);
+    expect(onMovedCheckout.codeDrift?.slice(0, firstRefusals)).toEqual(summary.codeDrift);
+    expect(fs.existsSync(checkpointFor(mode))).toBe(true);
+
+    const onStartedCheckout = await runScraperSweep(options, {
+      childRunner: spawned.runner,
+      readHeadSha: () => started,
+    });
+
+    expect(onStartedCheckout.codeSha).toBe(started);
+    expect(onStartedCheckout.failed).toBe(0);
+    expect(onStartedCheckout.codeDrift).toEqual(onMovedCheckout.codeDrift);
+  }, 180_000);
 });

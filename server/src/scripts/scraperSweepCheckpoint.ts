@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import type { SweepCodeDriftRefusal } from './sweepCodeIdentityCore';
 
 export type SweepStepStatus = 'pending' | 'running' | 'done' | 'failed';
 export type SweepStepKind = 'source' | 'stage' | 'prune';
@@ -19,6 +20,8 @@ export interface SweepCheckpointStep {
 export interface SweepCheckpoint {
   mode: string;
   flags: string;
+  codeSha: string | null;
+  codeDrift: SweepCodeDriftRefusal[];
   outputDirectory: string;
   ownerPid: number;
   createdAt: string;
@@ -66,6 +69,7 @@ export function checkpointPathForMode(
 export function createSweepCheckpoint(input: {
   mode: string;
   flags?: string;
+  codeSha?: string | null;
   outputDirectory: string;
   now: Date;
 }): SweepCheckpoint {
@@ -73,6 +77,8 @@ export function createSweepCheckpoint(input: {
   return {
     mode: input.mode,
     flags: input.flags ?? '',
+    codeSha: input.codeSha ?? null,
+    codeDrift: [],
     outputDirectory: input.outputDirectory,
     ownerPid: process.pid,
     createdAt: iso,
@@ -95,6 +101,8 @@ export function readSweepCheckpoint(checkpointPath: string): SweepCheckpoint | u
     }
     if (typeof parsed.flags !== 'string') parsed.flags = '';
     if (typeof parsed.ownerPid !== 'number') parsed.ownerPid = 0;
+    if (typeof parsed.codeSha !== 'string') parsed.codeSha = null;
+    if (!Array.isArray(parsed.codeDrift)) parsed.codeDrift = [];
     if (!parsed.steps || typeof parsed.steps !== 'object') parsed.steps = {};
     return parsed;
   } catch {
@@ -150,6 +158,7 @@ export class SweepCheckpointStore {
   static start(input: {
     mode: string;
     flags?: string;
+    codeSha?: string | null;
     checkpointPath: string;
     outputDirectory: string;
     now: Date;
@@ -170,6 +179,7 @@ export class SweepCheckpointStore {
     const checkpoint = createSweepCheckpoint({
       mode: input.mode,
       flags,
+      codeSha: input.codeSha,
       outputDirectory: input.outputDirectory,
       now: input.now,
     });
@@ -180,6 +190,19 @@ export class SweepCheckpointStore {
 
   get outputDirectory(): string {
     return this.checkpoint.outputDirectory;
+  }
+
+  get codeSha(): string | null {
+    return this.checkpoint.codeSha;
+  }
+
+  get codeDrift(): SweepCodeDriftRefusal[] {
+    return this.checkpoint.codeDrift;
+  }
+
+  recordCodeDrift(refusal: SweepCodeDriftRefusal, now: Date): void {
+    this.checkpoint.codeDrift.push(refusal);
+    this.persist(now);
   }
 
   isDone(stepId: string): boolean {
