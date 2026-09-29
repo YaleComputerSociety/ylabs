@@ -32,6 +32,11 @@ Superseded, same day: the rule first landed (#3868) as a replacement, where the 
 Applied on Development on 2026-09-29 between 04:29 and 04:45 UTC it changed 79 rows, 54 of which lost at least one stored chip, 138 chips lost against 77 gained, and a re-read of the 9 served rows found 3 worse, each losing a topic its own description supports.
 That matched the #3836 hand-read, where unbacked stored chips were supported 29 of 39 times: no live evidence means a value has no owner, not that it is wrong, and the description derivation is a coarser instrument than whatever wrote the stored chips.
 So a derivation over an unowned list may add what the row's own text supports but may not take anything away.
+That replacement run was then undone as a one-time rollback of the operation itself, not as an operator judgement about any row, so it needed no lock.
+The 79 rows' `researchAreas` were restored at 05:27 UTC from a pre-apply capture kept outside the repository, cross-checked against the apply report's per-row before-values (79 of 79 matched), with each write conditioned on the row still holding that apply's after-value.
+Provenance could not be restored, because the capture recorded values only; the rows kept the replacement run's derived attribution until the next resolve under this rule rewrote it.
+That resolve, over the same predicate, changed 53 of the 79, added 77 chips and removed none, and a hand-read of 15 of the added chips against full descriptions found 14 supported.
+The rollback holds because this rule keeps every stored chip on every later resolve.
 - **Rows with live evidence behave exactly as before.**
 
 Measured read-only on Development on 2026-09-29 between 03:37 and 03:40 UTC with the real materializer in dry run, peers writing: 711 unarchived rows are in scope, 110 of them `student_ready`.
