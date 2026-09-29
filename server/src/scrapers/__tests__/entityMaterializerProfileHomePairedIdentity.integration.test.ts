@@ -92,7 +92,11 @@ describe("the profile lane's home type counts only beside its own name (#3886)",
   };
 
   const stored = async () =>
-    ResearchEntity.findOne({ slug: SLUG }).lean<{ entityType?: string; kind?: string; name?: string }>();
+    ResearchEntity.findOne({ slug: SLUG }).lean<{
+      entityType?: string;
+      kind?: string;
+      name?: string;
+    }>();
 
   it("refuses the lane's type and kind when its name for the row is not live", async () => {
     await seedPersonRowWithHomeType();
