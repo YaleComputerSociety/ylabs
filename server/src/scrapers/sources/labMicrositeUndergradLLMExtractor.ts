@@ -35,6 +35,7 @@ import * as cheerio from 'cheerio';
 import { plainTextContent } from '../utils/htmlText';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Observation } from '../../models/observation';
+import { listResearchEntityMergedInRows } from '../../services/researchEntityCanonicalTombstone';
 import { isBenchmarkModeActive } from '../snapshotBenchmarkMode';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
@@ -444,21 +445,68 @@ export interface LiveEvidenceQuote {
 
 export type LiveEvidenceQuoteLoaderFn = (entityKey: string) => Promise<LiveEvidenceQuote | null>;
 
-export const defaultLiveEvidenceQuoteLoader: LiveEvidenceQuoteLoaderFn = async (entityKey) => {
-  if (isBenchmarkModeActive() || mongoose.connection.readyState !== 1) return null;
-  const row = await Observation.findOne({
-    entityType: 'researchEntity',
-    entityKey,
-    sourceName: SOURCE_KEY,
-    field: UNDERGRAD_EVIDENCE_QUOTE_FIELD,
-    superseded: false,
-  })
-    .sort({ observedAt: -1 })
-    .select('value sourceUrl')
-    .lean<{ value?: unknown; sourceUrl?: unknown }>();
+type LaneQuoteObservationRow = { value?: unknown; sourceUrl?: unknown };
+
+function liveEvidenceQuoteFromRow(row: LaneQuoteObservationRow | null): LiveEvidenceQuote | null {
   const value = typeof row?.value === 'string' ? row.value.trim() : '';
   const sourceUrl = typeof row?.sourceUrl === 'string' ? row.sourceUrl.trim() : '';
   return value && sourceUrl ? { value, sourceUrl } : null;
+}
+
+function latestLaneQuoteObservation(
+  identity: FilterQuery<unknown>,
+): Promise<LaneQuoteObservationRow | null> {
+  return Observation.findOne({
+    entityType: 'researchEntity',
+    sourceName: SOURCE_KEY,
+    field: UNDERGRAD_EVIDENCE_QUOTE_FIELD,
+    superseded: false,
+    ...identity,
+  })
+    .sort({ observedAt: -1 })
+    .select('value sourceUrl')
+    .lean<LaneQuoteObservationRow>();
+}
+
+/**
+ * The lane quote the survivor resolves to, which may sit on a row merged into it (#3831). The
+ * materializer reads a survivor over every archived row whose tombstone chain reaches it and lets
+ * a loser's observation fill a field the survivor holds no evidence for, so a quote whose only
+ * evidence is on a loser still serves. The survivor's own observation is read first because it
+ * displaces a loser's; a withdrawal the read emits is the survivor's own, so it clears the quote.
+ * Otherwise only the loser observation the stored quote's provenance names is read, because the
+ * materializer pins a loser-backed field to that loser, so checking any other quote would judge
+ * one quote and clear a different one.
+ */
+export const defaultLiveEvidenceQuoteLoader: LiveEvidenceQuoteLoaderFn = async (entityKey) => {
+  if (isBenchmarkModeActive() || mongoose.connection.readyState !== 1) return null;
+  const survivor = await ResearchEntity.findOne({ slug: entityKey, archived: { $ne: true } })
+    .select(`_id fieldProvenance.${UNDERGRAD_EVIDENCE_QUOTE_FIELD}`)
+    .lean<{
+      _id: mongoose.Types.ObjectId;
+      fieldProvenance?: Record<string, { observationId?: unknown } | undefined>;
+    }>();
+  const ownIdentity: FilterQuery<unknown> = survivor
+    ? { $or: [{ entityKey }, { entityId: survivor._id }] }
+    : { entityKey };
+  const own = await latestLaneQuoteObservation(ownIdentity);
+  if (own || !survivor) return liveEvidenceQuoteFromRow(own);
+  const backingObservationId = String(
+    survivor.fieldProvenance?.[UNDERGRAD_EVIDENCE_QUOTE_FIELD]?.observationId ?? '',
+  );
+  if (!mongoose.isValidObjectId(backingObservationId)) return null;
+  const mergedIn = await listResearchEntityMergedInRows(survivor._id);
+  if (mergedIn.length === 0) return null;
+  const loserSlugs = mergedIn.map((row) => row.slug).filter((slug): slug is string => !!slug);
+  return liveEvidenceQuoteFromRow(
+    await latestLaneQuoteObservation({
+      _id: new mongoose.Types.ObjectId(backingObservationId),
+      $or: [
+        { entityId: { $in: mergedIn.map((row) => row._id) } },
+        { entityId: null, entityKey: { $in: loserSlugs } },
+      ],
+    }),
+  );
 };
 
 export function pageUrlIdentity(url: string): string {
