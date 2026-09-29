@@ -902,6 +902,7 @@ The same argument rules out the rollback reasons already in use: they are retire
 
 It removes a value, not a field, which is what keeps it from being the lock again.
 `refusedResolverObservations` drops matching observations before `resolveAllFields` runs, so a better rival at the same field still wins and a field whose every candidate is refused resolves to nothing.
+The projection's re-rank walks (the `fullDescription` fallback walk, the description re-rank helpers and the single-PI shell gate) read that same screened set, so a walk cannot adopt a refused value that the #3438 stored-description clear would then blank over an admissible rival (#3884).
 
 It has to reach every path that can write the field.
 The resolver screen alone did not hold: `deriveResearchEntityWebsiteUrl` promotes a cited `sourceUrl` into an empty `websiteUrl` slot and was gated only by `manuallyLockedFields`, which is precisely why clearing a wrong `websiteUrl` never stuck.
