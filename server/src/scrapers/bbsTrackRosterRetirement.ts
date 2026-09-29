@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
+import { ResearchEntity } from '../models/researchEntity';
+import { serializedDocumentId } from '../utils/idSerialization';
 import { retireObservations } from './observationStore';
 import {
   CENTER_ROSTER_MIN_ABSENT_READS,
@@ -66,6 +68,7 @@ export interface BbsTrackRosterRead extends CenterRosterRead {
 export interface BbsTrackClaim {
   observationId: string;
   entityKey: string;
+  storedEntityKey?: string;
   scrapeRunId?: string;
   observedAt: Date;
 }
@@ -79,6 +82,8 @@ export interface BbsTrackRetirementPlan {
   counts: {
     admittedReads: number;
     governedClaims: number;
+    /** Claims whose stored key names no live row, excluded rather than counted absent. */
+    orphanedClaims: number;
     claimsAwaitingSecondRead: number;
     claimsBlockedByAnUnresolvedPi: number;
     retiredClaims: number;
@@ -101,6 +106,7 @@ export function planBbsTrackRosterRetirement(input: {
   const counts = {
     admittedReads: input.reads.length,
     governedClaims: input.claims.length,
+    orphanedClaims: 0,
     claimsAwaitingSecondRead: 0,
     claimsBlockedByAnUnresolvedPi: 0,
     retiredClaims: 0,
@@ -284,32 +290,82 @@ export interface BbsTrackRetirementResult {
 }
 
 export interface BbsTrackRetirementDeps {
-  rematerializeEntityId(entityId: string): Promise<void>;
+  rematerializeResearchEntity(identifier: { entityId?: string; entityKey?: string }): Promise<void>;
 }
 
 /**
- * This lane's own live claims: a `researchAreas` value it asserted on a research entity.
+ * This lane's own live claims, in both identity forms it has ever written them in.
  *
  * Scoped to this source name, so a label another source also asserts is untouched, exactly as the
- * centres implementation leaves an edge another source still claims. A claim is keyed by its
- * `entityId`, the identity a snapshot names each resolved PI's row in.
+ * centres implementation leaves an edge another source still claims.
+ *
+ * A snapshot names each resolved PI's row by id, so a claim has to be canonicalised to an id
+ * before it can be compared. Keying governance on the stored `entityId` alone reached 47% of this
+ * lane's claims and **none** of the population #3852 was filed about: measured on Development,
+ * 492 of 1,037 live claims carry an `entityId` while **545 carry only an `entityKey`**, and those
+ * 545 are the August grafts the issue is about. A claim nobody can name is a claim nobody can
+ * retire, so the slug form is resolved here rather than skipped.
+ *
+ * **Orphans are excluded rather than counted absent.** Of those 545 keys only 130 resolve to a
+ * live row; the other 415 point at rows that no longer exist. A claim whose row is gone is not a
+ * claim two reads have stopped listing, it is an observation left behind by a row that went away,
+ * and treating its row's absence from a listing as evidence would retire it for the wrong reason.
+ * They are reported as `orphanedClaims` so the exclusion is visible rather than silent.
  */
-async function loadBbsTrackClaims(): Promise<BbsTrackClaim[]> {
+async function loadBbsTrackClaims(): Promise<{ claims: BbsTrackClaim[]; orphanedClaims: number }> {
   const rows = (await Observation.find({
     entityType: 'researchEntity',
     sourceName: BBS_TRACK_SOURCE_NAME,
     field: 'researchAreas',
-    entityId: { $exists: true, $ne: null },
     superseded: { $ne: true },
   })
-    .select('_id entityId scrapeRunId observedAt')
+    .select('_id entityId entityKey scrapeRunId observedAt')
     .lean()) as Array<Record<string, unknown>>;
-  return rows.map((row) => ({
-    observationId: String(row._id),
-    entityKey: String(row.entityId),
-    ...(row.scrapeRunId ? { scrapeRunId: String(row.scrapeRunId) } : {}),
-    observedAt: new Date(row.observedAt as Date | string),
-  }));
+
+  const storedIds = [
+    ...new Set(rows.filter((row) => row.entityId).map((row) => String(row.entityId))),
+  ];
+  const storedSlugs = [
+    ...new Set(
+      rows
+        .filter((row) => !row.entityId && typeof row.entityKey === 'string' && row.entityKey)
+        .map((row) => String(row.entityKey)),
+    ),
+  ];
+  const liveRows = (await ResearchEntity.find({
+    $or: [{ _id: { $in: storedIds } }, { slug: { $in: storedSlugs } }],
+    archived: { $ne: true },
+  })
+    .select('_id slug')
+    .lean()) as Array<Record<string, unknown>>;
+  const liveRowIds = new Set(liveRows.map((row) => serializedDocumentId(row._id) || ''));
+  const rowIdBySlug = new Map(
+    liveRows.map((row) => [String(row.slug), serializedDocumentId(row._id) || '']),
+  );
+
+  const claims: BbsTrackClaim[] = [];
+  let orphanedClaims = 0;
+  for (const row of rows) {
+    const storedEntityKey = row.entityId ? undefined : String(row.entityKey ?? '');
+    const canonical =
+      storedEntityKey === undefined
+        ? liveRowIds.has(String(row.entityId))
+          ? String(row.entityId)
+          : ''
+        : (rowIdBySlug.get(storedEntityKey) ?? '');
+    if (!canonical) {
+      orphanedClaims += 1;
+      continue;
+    }
+    claims.push({
+      observationId: String(row._id),
+      entityKey: canonical,
+      ...(storedEntityKey ? { storedEntityKey } : {}),
+      ...(row.scrapeRunId ? { scrapeRunId: String(row.scrapeRunId) } : {}),
+      observedAt: new Date(row.observedAt as Date | string),
+    });
+  }
+  return { claims, orphanedClaims };
 }
 
 /**
@@ -343,14 +399,32 @@ export async function reconcileBbsTrackRetirementsFromRun(
   if (!runRecordedATrackRead) return { outcome: 'no-bbs-track-read', dryRun };
   const { reads, rowsEverHeldByPi } = await loadBbsTrackRosterReads();
   if (reads.length === 0) return { outcome: 'no-admitted-read', dryRun };
-  const claims = await loadBbsTrackClaims();
-  if (claims.length === 0) return { outcome: 'nothing-governed', dryRun };
+  const { claims, orphanedClaims } = await loadBbsTrackClaims();
+  if (claims.length === 0) {
+    // Orphans are reported even here, so "nothing governed" never hides a population the loader
+    // declined to weigh.
+    return {
+      outcome: 'nothing-governed',
+      dryRun,
+      counts: {
+        admittedReads: reads.length,
+        governedClaims: 0,
+        orphanedClaims,
+        claimsAwaitingSecondRead: 0,
+        claimsBlockedByAnUnresolvedPi: 0,
+        retiredClaims: 0,
+      },
+    };
+  }
 
   const plan = planBbsTrackRosterRetirement({
     reads,
     claims,
     claimRowsEverHeldByPi: rowsEverHeldByPi,
   });
+  // Surfaced beside the governed count so an operator can see how much of the population the
+  // mechanism declined to weigh, rather than reading a low retired count as a clean corpus.
+  plan.counts.orphanedClaims = orphanedClaims;
   if (plan.verdict === 'frozen') {
     console.warn(
       `[bbs-track-retirement] frozen (${plan.freezeReason}): ${plan.counts.governedClaims} claims governed across ${plan.counts.admittedReads} admitted reads`,
@@ -367,10 +441,15 @@ export async function reconcileBbsTrackRetirementsFromRun(
     const ids = plan.retiredObservationIds.map((id) => new mongoose.Types.ObjectId(id));
     await retireObservations({ _id: { $in: ids } }, BBS_TRACK_RETIREMENT_REASON);
     const retired = new Set(plan.retiredObservationIds);
-    const affectedEntityIds = new Set(
-      claims.filter((claim) => retired.has(claim.observationId)).map((claim) => claim.entityKey),
+    const retiredClaims = claims.filter((claim) => retired.has(claim.observationId));
+    const affectedEntityIds = new Set(retiredClaims.map((claim) => claim.entityKey));
+    const affectedStoredKeys = new Set(
+      retiredClaims.flatMap((claim) => (claim.storedEntityKey ? [claim.storedEntityKey] : [])),
     );
-    for (const entityId of affectedEntityIds) await deps.rematerializeEntityId(entityId);
+    for (const entityId of affectedEntityIds) await deps.rematerializeResearchEntity({ entityId });
+    for (const entityKey of affectedStoredKeys) {
+      await deps.rematerializeResearchEntity({ entityKey });
+    }
   }
   return { outcome: 'reconciled', dryRun, verdict: plan.verdict, counts: plan.counts };
 }

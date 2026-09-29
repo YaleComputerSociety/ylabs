@@ -73,6 +73,12 @@ Absence is measured per run rather than per track, because a PI listed by two tr
 A run is a read only when every track has an admitted snapshot in it, so a failed, empty or `--only`-filtered track drops the whole run rather than reading its PIs as absent.
 The retirement runs only after a run that recorded a track read, and re-projects each row that lost a claim so the retirement reaches the stored row.
 `scrapers/bbsTrackRosterRetirement.ts` holds the lane-specific part; every guard it applies is the centres module's unchanged, and it writes no field and no lock.
+A claim is canonicalised to a row id before it is weighed, because this lane has written claims in two identity forms and a snapshot names rows by id.
+Keying governance on the stored `entityId` alone reached 47% of the lane's claims and none of the population the retirement was built for: measured on Development, 492 of 1,037 live claims carry an `entityId` while 545 carry only an `entityKey`, and those 545 are the August grafts.
+So a slug-keyed claim is resolved to its row rather than skipped.
+A claim in either identity form whose key names no live, unarchived row is an **orphan** and is excluded rather than counted absent: 415 of those 545 keys point at rows that no longer exist, and a row that went away is not a listing that stopped naming it.
+A retired slug-keyed claim is re-projected through its stored `entityKey` as well as the row id, because `materializeEntity` returns early when the identity it is given reads no observations, so an id-only re-projection never reaches a row whose evidence is all slug-keyed.
+Orphans are reported as `orphanedClaims`, including on the `nothing-governed` path, so a low retired count never hides a population the loader declined to weigh.
 "Has listed PIs before" is read as any stored `researchAreas` observation from this lane's `sourceId` carrying one of the track's topics, not as an observation cited to the track URL: a graft cites the PI's profile page and never the track page, and no two tracks share a topic.
 
 `isResearchSupportStaffTitle` **yields to a stated faculty appointment**, and that is the whole reason it is not folded into `looksLikeNonResearchTitle`.
