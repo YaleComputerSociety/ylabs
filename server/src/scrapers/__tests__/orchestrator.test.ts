@@ -385,6 +385,63 @@ describe('ScraperOrchestrator', () => {
     });
   });
 
+  it('records the frame a crash came from, not only its message (#3891)', async () => {
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register({
+      name: 'fixture-source',
+      displayName: 'Fixture source',
+      async run() {
+        throw new Error('Maximum call stack size exceeded');
+      },
+    });
+
+    await expect(
+      orchestrator.run('fixture-source', {
+        dryRun: false,
+        dbReview: false,
+        useCache: false,
+        release: true,
+      }),
+    ).rejects.toThrow('Maximum call stack size exceeded');
+
+    const persisted = mocks.scrapeRunUpdateOne.mock.calls.at(-1)?.[1] as {
+      $set?: { errors?: Array<{ message?: string; stack?: string }> };
+    };
+    const recorded = persisted.$set?.errors?.at(-1);
+    expect(recorded?.message).toContain('Maximum call stack size exceeded');
+    expect(recorded?.stack).toContain('Maximum call stack size exceeded');
+    // A frame, which is the whole point: the message alone is what made #3891
+    // answerable only by elimination over the lane's source.
+    expect(recorded?.stack).toMatch(/\bat\b/);
+  });
+
+  it('records a thrown non-Error without inventing a stack', async () => {
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register({
+      name: 'fixture-source',
+      displayName: 'Fixture source',
+      async run() {
+        throw 'a bare string';
+      },
+    });
+
+    await expect(
+      orchestrator.run('fixture-source', {
+        dryRun: false,
+        dbReview: false,
+        useCache: false,
+        release: true,
+      }),
+    ).rejects.toBe('a bare string');
+
+    const persisted = mocks.scrapeRunUpdateOne.mock.calls.at(-1)?.[1] as {
+      $set?: { errors?: Array<{ message?: string; stack?: string }> };
+    };
+    const recorded = persisted.$set?.errors?.at(-1);
+    expect(recorded?.message).toContain('a bare string');
+    expect(recorded && 'stack' in recorded).toBe(false);
+  });
+
   it('marks a run partial and records why when the scraper reports incomplete coverage', async () => {
     mocks.appendObservations.mockResolvedValue({ inserted: 1, skipped: 0, superseded: 0 });
     const orchestrator = new ScraperOrchestrator();
@@ -517,7 +574,18 @@ describe('ScraperOrchestrator', () => {
     expect(persistedError?.message).not.toContain('user:pass');
     expect(persistedError?.message).not.toContain('secret-token');
     expect(persistedError?.message).not.toContain('ada@example.edu');
-    expect(persistedError).not.toHaveProperty('stack');
+
+    // The stack is stored too, and every redaction the message gets applies to it.
+    // This asserted the absence of a stack, which came in with the June 2026 bulk
+    // rewrite rather than from a reasoned position, and cost #3891 its only frame.
+    // A sanitized stack is a stronger guarantee than no stack (#3891).
+    expect(persistedError?.stack).toBeTruthy();
+    expect(persistedError?.stack).toContain('https://[credentials-redacted]@example.test');
+    expect(persistedError?.stack).toContain('access_token=[secret-redacted]');
+    expect(persistedError?.stack).toContain('[email redacted]');
+    expect(persistedError?.stack).not.toContain('user:pass');
+    expect(persistedError?.stack).not.toContain('secret-token');
+    expect(persistedError?.stack).not.toContain('ada@example.edu');
   });
 
   it('sanitizes scraper log messages and metadata before console output', async () => {
