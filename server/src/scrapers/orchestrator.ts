@@ -13,6 +13,11 @@ import { onInterrupt } from './interruptCleanup';
 import { appendObservations, getSourceByName } from './observationStore';
 import { currentProcessCodeSha } from './scrapeRunCodeIdentity';
 import { currentScrapeRunOwner, startScrapeRunHeartbeat } from './scrapeRunLiveness';
+import {
+  SCRAPE_RUN_INTERRUPT_WRITE_DEADLINE_MS,
+  ScrapeRunTerminalWriteError,
+  writeScrapeRunTerminalStatus,
+} from './scrapeRunTerminalWrite';
 import { readPriorRunYieldFacts, resolveBarrenStreakFailure } from './sourceYieldGuard';
 import { withHttpCacheFetchMetrics, withHttpValidatorCacheScope } from './utils/httpValidatorCache';
 import { withSweepPageReuseFetchMetrics, withSweepPageReuseScope } from './utils/sweepPageReuse';
@@ -159,22 +164,35 @@ export class ScraperOrchestrator {
       interrupted = true;
       heartbeat.stop();
       const at = new Date();
-      await ScrapeRun.updateOne(
-        { _id: run._id, status: 'running' },
+      await writeScrapeRunTerminalStatus(
+        () =>
+          ScrapeRun.updateOne(
+            { _id: run._id, status: 'running' },
+            {
+              $set: {
+                finishedAt: at,
+                status: 'interrupted',
+                observationCount,
+                entitiesObserved,
+                interruption: {
+                  reason: 'signal',
+                  signal,
+                  detectedAt: at,
+                  detectedBy: 'orchestrator',
+                },
+                errors: [
+                  ...errors,
+                  { message: `Interrupted by ${signal} before the run finished`, at },
+                ],
+              },
+            },
+          ),
         {
-          $set: {
-            finishedAt: at,
-            status: 'interrupted',
-            observationCount,
-            entitiesObserved,
-            interruption: { reason: 'signal', signal, detectedAt: at, detectedBy: 'orchestrator' },
-            errors: [
-              ...errors,
-              { message: `Interrupted by ${signal} before the run finished`, at },
-            ],
-          },
+          status: 'interrupted',
+          sourceName: source.name,
+          deadlineMs: SCRAPE_RUN_INTERRUPT_WRITE_DEADLINE_MS,
         },
-      );
+      ).catch(() => undefined);
     });
 
     try {
@@ -206,21 +224,31 @@ export class ScraperOrchestrator {
         errors.push({ message: barrenStreakFailure.message, at: new Date() });
       }
       if (!interrupted) {
-        await ScrapeRun.updateOne(
-          { _id: run._id },
-          {
-            $set: {
-              finishedAt: new Date(),
-              status: barrenStreakFailure ? 'failure' : errors.length === 0 ? 'success' : 'partial',
-              observationCount,
-              entitiesObserved,
-              fetchMetrics: result.fetchMetrics,
-              metrics: evidenceCoverageImpact
-                ? { ...(result.metrics || {}), evidenceCoverageImpact }
-                : result.metrics,
-              errors,
-            },
-          },
+        const status = barrenStreakFailure
+          ? 'failure'
+          : errors.length === 0
+            ? 'success'
+            : 'partial';
+        const finishedAt = new Date();
+        await writeScrapeRunTerminalStatus(
+          () =>
+            ScrapeRun.updateOne(
+              { _id: run._id },
+              {
+                $set: {
+                  finishedAt,
+                  status,
+                  observationCount,
+                  entitiesObserved,
+                  fetchMetrics: result.fetchMetrics,
+                  metrics: evidenceCoverageImpact
+                    ? { ...(result.metrics || {}), evidenceCoverageImpact }
+                    : result.metrics,
+                  errors,
+                },
+              },
+            ),
+          { status, sourceName: source.name },
         );
       }
       return {
@@ -239,8 +267,12 @@ export class ScraperOrchestrator {
           : {}),
       };
     } catch (err: any) {
-      if (!interrupted)
-        await recordRunFailure(run._id, err, { observationCount, entitiesObserved, errors });
+      if (!interrupted && !(err instanceof ScrapeRunTerminalWriteError))
+        await recordRunFailure(run._id, source.name, err, {
+          observationCount,
+          entitiesObserved,
+          errors,
+        });
       throw err;
     } finally {
       heartbeat.stop();
@@ -249,34 +281,35 @@ export class ScraperOrchestrator {
   }
 }
 
-// A failed failure write must not replace the scrape's own error, and the row it
-// leaves `running` stops heartbeating, so `scrape-runs:reconcile-stale` can close it.
+// A failed failure write must not replace the scrape's own error. A terminal write
+// that exhausted its retries is not re-recorded as a failure either: the scrape itself
+// did not fail, and the row it leaves `running` stops heartbeating, so the sweep's
+// stale-run stage or `scrape-runs:reconcile-stale` closes it.
 async function recordRunFailure(
   runId: unknown,
+  sourceName: string,
   err: unknown,
   progress: { observationCount: number; entitiesObserved: number; errors: any[] },
 ): Promise<void> {
   const errorMessage = sanitizeLogValue(err instanceof Error ? err.message : err);
-  try {
-    await ScrapeRun.updateOne(
-      { _id: runId },
-      {
-        $set: {
-          finishedAt: new Date(),
-          status: 'failure',
-          observationCount: progress.observationCount,
-          entitiesObserved: progress.entitiesObserved,
-          errors: [
-            ...progress.errors,
-            { message: errorMessage || 'Unknown scrape error', at: new Date() },
-          ],
+  const finishedAt = new Date();
+  await writeScrapeRunTerminalStatus(
+    () =>
+      ScrapeRun.updateOne(
+        { _id: runId },
+        {
+          $set: {
+            finishedAt,
+            status: 'failure',
+            observationCount: progress.observationCount,
+            entitiesObserved: progress.entitiesObserved,
+            errors: [
+              ...progress.errors,
+              { message: errorMessage || 'Unknown scrape error', at: new Date() },
+            ],
+          },
         },
-      },
-    );
-  } catch (writeError) {
-    console.error(
-      'Failed to record the ScrapeRun failure; the row stays running until its heartbeat goes stale:',
-      sanitizeLogValue(writeError),
-    );
-  }
+      ),
+    { status: 'failure', sourceName },
+  ).catch(() => undefined);
 }

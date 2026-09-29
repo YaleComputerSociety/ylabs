@@ -37,8 +37,6 @@ const OPERATOR_TOOLS: Record<string, string> = {
   'lane:benchmark-label':
     'attaches hand judgements read off a frozen benchmark page, an operator judgement per row',
   'db:build-indexes': 'builds declared indexes, a reviewed schema operation',
-  'scrape-runs:reconcile-stale':
-    'closes run records whose writer is gone, an infrastructure operation that must never race a live sweep',
   'research-entity:rematerialize': 're-derives rows on demand through the engine itself',
   'observations:catch-up-materialize': 'drains the materialize backlog through the engine itself',
   'beta:readiness': 'promotion tooling, run as part of the release process',

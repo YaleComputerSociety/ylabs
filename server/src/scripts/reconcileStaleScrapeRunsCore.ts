@@ -25,14 +25,21 @@ export type StaleScrapeRunKeepReason =
   | 'heartbeat_fresh'
   | 'source_lock_held'
   | 'owner_process_alive'
-  | 'legacy_too_recent';
+  | 'legacy_too_recent'
+  | 'started_at_or_after_cutoff'
+  | 'legacy_operator_only';
+
+export type StaleScrapeRunReapReason = Extract<
+  ScrapeRunInterruptionReason,
+  'heartbeat_stale' | 'legacy_abandoned'
+>;
 
 export interface StaleScrapeRunReap {
   id: string;
   sourceName: string;
   startedAt: Date;
   heartbeatAt?: Date;
-  reason: Extract<ScrapeRunInterruptionReason, 'heartbeat_stale' | 'legacy_abandoned'>;
+  reason: StaleScrapeRunReapReason;
   lastSignOfLifeAt: Date;
 }
 
@@ -91,6 +98,8 @@ export function planStaleScrapeRunReconciliation(input: {
   localHost: string;
   isLocalProcessAlive: (pid: number) => boolean;
   thresholds?: StaleScrapeRunThresholds;
+  heartbeatStaleOnly?: boolean;
+  startedBefore?: Date;
 }): StaleScrapeRunPlan {
   const thresholds = input.thresholds ?? DEFAULT_STALE_SCRAPE_RUN_THRESHOLDS;
   const plan: StaleScrapeRunPlan = { reap: [], keep: [] };
@@ -102,6 +111,10 @@ export function planStaleScrapeRunReconciliation(input: {
       ...(run.heartbeatAt ? { heartbeatAt: run.heartbeatAt } : {}),
     };
     const keep = (reason: StaleScrapeRunKeepReason) => plan.keep.push({ ...base, reason });
+    if (input.startedBefore && run.startedAt.getTime() >= input.startedBefore.getTime()) {
+      keep('started_at_or_after_cutoff');
+      continue;
+    }
     const liveness = classifyScrapeRunLiveness(
       { status: 'running', startedAt: run.startedAt, heartbeatAt: run.heartbeatAt },
       input.now,
@@ -128,11 +141,15 @@ export function planStaleScrapeRunReconciliation(input: {
       plan.reap.push({ ...base, reason: 'heartbeat_stale', lastSignOfLifeAt: run.heartbeatAt });
       continue;
     }
-    if (input.now.getTime() - run.startedAt.getTime() > thresholds.legacyAbandonedAfterMs) {
-      plan.reap.push({ ...base, reason: 'legacy_abandoned', lastSignOfLifeAt: run.startedAt });
+    if (input.now.getTime() - run.startedAt.getTime() <= thresholds.legacyAbandonedAfterMs) {
+      keep('legacy_too_recent');
       continue;
     }
-    keep('legacy_too_recent');
+    if (input.heartbeatStaleOnly) {
+      keep('legacy_operator_only');
+      continue;
+    }
+    plan.reap.push({ ...base, reason: 'legacy_abandoned', lastSignOfLifeAt: run.startedAt });
   }
   return plan;
 }

@@ -30,6 +30,7 @@ import {
   parseResearcherDedupeResult,
   parseUrlIdentityDedupeResult,
   parseProfileLinkHealthResult,
+  parseStaleScrapeRunReapResult,
   partialProfileLinkHealthDelta,
   parseScraperSweepArgs,
   resolveDevelopmentPostRunOptions,
@@ -671,6 +672,7 @@ describe('runScraperSweep', () => {
     });
     const names = stages.map((stage) => stage.name);
     expect(names).toEqual([
+      'stale-scrape-run-reap',
       'eponymous-fra-merge',
       'source-link-health',
       'profile-link-health',
@@ -722,6 +724,7 @@ describe('runScraperSweep', () => {
     });
     const names = stages.map((stage) => stage.name);
     expect(names).toEqual([
+      'stale-scrape-run-reap',
       'researcher-dedupe',
       'eponymous-fra-merge',
       'source-link-health',
@@ -1161,6 +1164,84 @@ describe('runScraperSweep', () => {
       profileLinksAppended: 5,
     });
     expect(() => parseResearcherDedupeResult({})).toThrow(/missing byReason/);
+  });
+
+  describe('stale-scrape-run-reap stage (#3595)', () => {
+    const SWEEP_STARTED_AT = '2026-09-28T01:00:00.000Z';
+    const reapReport = (overrides: Record<string, unknown> = {}) => ({
+      mode: 'apply',
+      heartbeatStaleOnly: true,
+      startedBefore: SWEEP_STARTED_AT,
+      running: 6,
+      planned: 2,
+      plannedByReason: { heartbeat_stale: 2 },
+      keptByReason: { legacy_operator_only: 3, started_at_or_after_cutoff: 1 },
+      closed: 2,
+      changedSinceRead: 0,
+      ...overrides,
+    });
+
+    it('runs first, scoped to heartbeat-stale runs that started before this sweep', () => {
+      const stages = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+        sinceIso: SWEEP_STARTED_AT,
+      });
+      expect(stages[0]?.name).toBe('stale-scrape-run-reap');
+      expect(stages[0]?.args).toEqual([
+        '--cwd',
+        'server',
+        'scrape-runs:reconcile-stale',
+        '--apply',
+        '--confirm-reconcile-stale-scrape-runs',
+        '--heartbeat-stale-only',
+        '--started-before',
+        SWEEP_STARTED_AT,
+        '--output',
+        '/tmp/development-sweep/development-stale-scrape-run-reap.json',
+      ]);
+    });
+
+    it('is enabled only when the sweep knows when it started', () => {
+      const definition = DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.find(
+        (entry) => entry.name === 'stale-scrape-run-reap',
+      );
+      expect(definition?.isEnabled({})).toBe(false);
+      expect(definition?.isEnabled({ sinceIso: SWEEP_STARTED_AT })).toBe(true);
+      expect(definition?.parseResult).toBe(parseStaleScrapeRunReapResult);
+      expect(
+        resolveDevelopmentPostRunOptions('development-incremental', {}, SWEEP_STARTED_AT)?.sinceIso,
+      ).toBe(SWEEP_STARTED_AT);
+    });
+
+    it('reports its counts in the sweep summary', () => {
+      expect(parseStaleScrapeRunReapResult(reapReport()).staleScrapeRunReapDelta).toEqual({
+        running: 6,
+        planned: 2,
+        closed: 2,
+        changedSinceRead: 0,
+        keptByReason: { legacy_operator_only: 3, started_at_or_after_cutoff: 1 },
+      });
+    });
+
+    it('fails its contract on a missing, dry-run, unscoped or legacy-reaping report', () => {
+      expect(() => parseStaleScrapeRunReapResult(null)).toThrow(/not an apply report/);
+      expect(() => parseStaleScrapeRunReapResult(reapReport({ mode: 'dry-run' }))).toThrow(
+        /not an apply report/,
+      );
+      expect(() =>
+        parseStaleScrapeRunReapResult(reapReport({ heartbeatStaleOnly: false })),
+      ).toThrow(/not scoped/);
+      expect(() => parseStaleScrapeRunReapResult(reapReport({ startedBefore: null }))).toThrow(
+        /not scoped/,
+      );
+      expect(() =>
+        parseStaleScrapeRunReapResult(
+          reapReport({ plannedByReason: { heartbeat_stale: 1, legacy_abandoned: 1 } }),
+        ),
+      ).toThrow(/legacy_abandoned, which only an operator may close/);
+      expect(() => parseStaleScrapeRunReapResult(reapReport({ closed: null }))).toThrow(
+        /missing a numeric closed/,
+      );
+    });
   });
 
   it('makes every merge-applying development stage declare a result contract', () => {

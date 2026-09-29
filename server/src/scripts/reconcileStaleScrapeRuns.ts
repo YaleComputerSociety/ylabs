@@ -31,7 +31,17 @@ export interface ReconcileStaleScrapeRunsArgs {
   sourceName?: string;
   staleAfterMinutes?: number;
   legacyOlderThanHours?: number;
+  heartbeatStaleOnly: boolean;
+  startedBefore?: Date;
   output?: string;
+}
+
+function isoDate(flag: string, value: string | undefined): Date {
+  const parsed = value && !value.startsWith('--') ? new Date(value) : undefined;
+  if (!parsed || !Number.isFinite(parsed.getTime())) {
+    throw new Error(`${flag} requires an ISO timestamp`);
+  }
+  return parsed;
 }
 
 function positiveNumber(flag: string, value: string | undefined): number {
@@ -43,7 +53,11 @@ function positiveNumber(flag: string, value: string | undefined): number {
 }
 
 export function parseReconcileStaleScrapeRunsArgs(argv: string[]): ReconcileStaleScrapeRunsArgs {
-  const options: ReconcileStaleScrapeRunsArgs = { apply: false, confirmed: false };
+  const options: ReconcileStaleScrapeRunsArgs = {
+    apply: false,
+    confirmed: false,
+    heartbeatStaleOnly: false,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const next = () => {
@@ -53,7 +67,11 @@ export function parseReconcileStaleScrapeRunsArgs(argv: string[]): ReconcileStal
     if (arg === '--apply') options.apply = true;
     else if (arg === '--dry-run') options.apply = false;
     else if (arg === CONFIRM_FLAG) options.confirmed = true;
-    else if (arg === '--source') {
+    else if (arg === '--heartbeat-stale-only') options.heartbeatStaleOnly = true;
+    else if (arg === '--started-before') options.startedBefore = isoDate(arg, next());
+    else if (arg.startsWith('--started-before=')) {
+      options.startedBefore = isoDate('--started-before', arg.slice('--started-before='.length));
+    } else if (arg === '--source') {
       const value = next();
       if (!value || value.startsWith('--')) throw new Error('--source requires a source name');
       options.sourceName = value;
@@ -121,6 +139,8 @@ async function main(): Promise<void> {
     localHost: hostname(),
     isLocalProcessAlive,
     thresholds,
+    heartbeatStaleOnly: options.heartbeatStaleOnly,
+    startedBefore: options.startedBefore,
   });
 
   let closed = 0;
@@ -139,6 +159,8 @@ async function main(): Promise<void> {
     mode: options.apply ? 'apply' : 'dry-run',
     measuredAt: now.toISOString(),
     thresholds,
+    heartbeatStaleOnly: options.heartbeatStaleOnly,
+    startedBefore: options.startedBefore?.toISOString() ?? null,
     heldLockSources: [...heldLockSourceNames].sort(),
     ...summarizeStaleScrapeRunPlan(plan),
     closed: options.apply ? closed : null,

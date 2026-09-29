@@ -104,6 +104,79 @@ describe('planStaleScrapeRunReconciliation (#3595)', () => {
   });
 });
 
+describe('the sweep stage scope: heartbeat-stale only, started before the sweep (#3595)', () => {
+  const SWEEP_STARTED_AT = ago(3 * HOUR);
+
+  function sweepPlan(runs: RunningScrapeRunFacts[], extra: { held?: string[]; alive?: number[] }) {
+    return planStaleScrapeRunReconciliation({
+      runs,
+      heldLockSourceNames: new Set(extra.held ?? []),
+      now: NOW,
+      localHost: 'this-host',
+      isLocalProcessAlive: (pid) => (extra.alive ?? []).includes(pid),
+      heartbeatStaleOnly: true,
+      startedBefore: SWEEP_STARTED_AT,
+    });
+  }
+
+  it('closes only the heartbeat-stale rows in a mixed population', () => {
+    const outcome = sweepPlan(
+      [
+        run({ id: 'crashed', heartbeatAt: ago(5 * HOUR), owner: { host: 'this-host', pid: 11 } }),
+        run({
+          id: 'crashed-elsewhere',
+          heartbeatAt: ago(4 * HOUR),
+          owner: { host: 'other-host', pid: 12 },
+        }),
+        run({ id: 'fresh', startedAt: ago(4 * HOUR), heartbeatAt: ago(1 * MINUTE) }),
+        run({ id: 'alive', heartbeatAt: ago(5 * HOUR), owner: { host: 'this-host', pid: 13 } }),
+        run({ id: 'locked', sourceName: 'locked-source', heartbeatAt: ago(5 * HOUR) }),
+        run({ id: 'legacy-old', startedAt: ago(200 * HOUR) }),
+        run({ id: 'legacy-recent', startedAt: ago(10 * HOUR) }),
+      ],
+      { held: ['locked-source'], alive: [13] },
+    );
+
+    expect(outcome.reap.map((entry) => [entry.id, entry.reason])).toEqual([
+      ['crashed', 'heartbeat_stale'],
+      ['crashed-elsewhere', 'heartbeat_stale'],
+    ]);
+    expect(outcome.keep.map((entry) => [entry.id, entry.reason])).toEqual([
+      ['fresh', 'heartbeat_fresh'],
+      ['alive', 'owner_process_alive'],
+      ['locked', 'source_lock_held'],
+      ['legacy-old', 'legacy_operator_only'],
+      ['legacy-recent', 'legacy_too_recent'],
+    ]);
+  });
+
+  it("leaves the sweep's own runs alone, even a dead one with a stale heartbeat", () => {
+    const outcome = sweepPlan(
+      [
+        run({
+          id: 'sweep-live',
+          startedAt: ago(2 * HOUR),
+          heartbeatAt: ago(1 * MINUTE),
+          owner: { host: 'this-host', pid: 21 },
+        }),
+        run({
+          id: 'sweep-crashed',
+          startedAt: SWEEP_STARTED_AT,
+          heartbeatAt: ago(2 * HOUR),
+          owner: { host: 'this-host', pid: 22 },
+        }),
+      ],
+      { alive: [21] },
+    );
+
+    expect(outcome.reap).toEqual([]);
+    expect(outcome.keep.map((entry) => [entry.id, entry.reason])).toEqual([
+      ['sweep-live', 'started_at_or_after_cutoff'],
+      ['sweep-crashed', 'started_at_or_after_cutoff'],
+    ]);
+  });
+});
+
 describe('resolveStaleScrapeRunThresholds (#3595)', () => {
   it('lets an operator raise the bounds', () => {
     expect(
@@ -201,5 +274,23 @@ describe('parseReconcileStaleScrapeRunsArgs (#3595)', () => {
 
   it('rejects an unknown flag', () => {
     expect(() => parseReconcileStaleScrapeRunsArgs(['--force'])).toThrow(/Unknown/);
+  });
+
+  it('parses the sweep stage scope flags', () => {
+    expect(parseReconcileStaleScrapeRunsArgs([])).toMatchObject({ heartbeatStaleOnly: false });
+    expect(
+      parseReconcileStaleScrapeRunsArgs([
+        '--heartbeat-stale-only',
+        '--started-before',
+        '2026-09-28T01:00:00.000Z',
+      ]),
+    ).toMatchObject({
+      heartbeatStaleOnly: true,
+      startedBefore: new Date('2026-09-28T01:00:00.000Z'),
+    });
+    expect(() => parseReconcileStaleScrapeRunsArgs(['--started-before', 'yesterday'])).toThrow(
+      /ISO timestamp/,
+    );
+    expect(() => parseReconcileStaleScrapeRunsArgs(['--started-before'])).toThrow(/ISO timestamp/);
   });
 });

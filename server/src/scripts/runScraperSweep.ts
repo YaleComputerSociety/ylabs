@@ -176,6 +176,7 @@ export interface ScraperSweepRunRow {
 
 export interface DevelopmentPostRunStage {
   name:
+    | 'stale-scrape-run-reap'
     | 'researcher-dedupe'
     | 'eponymous-fra-merge'
     | 'url-identity-dedupe'
@@ -204,6 +205,8 @@ export interface DevelopmentPostRunStage {
   researcherDedupeDelta?: ResearcherDedupeStageDelta;
   urlIdentityDedupeDelta?: UrlIdentityDedupeStageDelta;
   profileLinkHealthDelta?: ProfileLinkHealthStageDelta;
+  deadResearchWebsiteDelta?: DeadResearchWebsiteStageDelta;
+  staleScrapeRunReapDelta?: StaleScrapeRunReapStageDelta;
 }
 
 export interface DevelopmentPostRunStageOptions {
@@ -868,6 +871,53 @@ interface PostRunStageDelta {
   urlIdentityDedupeDelta?: UrlIdentityDedupeStageDelta;
   profileLinkHealthDelta?: ProfileLinkHealthStageDelta;
   deadResearchWebsiteDelta?: DeadResearchWebsiteStageDelta;
+  staleScrapeRunReapDelta?: StaleScrapeRunReapStageDelta;
+}
+
+export interface StaleScrapeRunReapStageDelta {
+  running: number;
+  planned: number;
+  closed: number;
+  changedSinceRead: number;
+  keptByReason: Record<string, number>;
+}
+
+const numericField = (record: Record<string, unknown>, field: string): number => {
+  const value = record[field];
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`stale-scrape-run-reap result is missing a numeric ${field}`);
+  }
+  return value;
+};
+
+export function parseStaleScrapeRunReapResult(artifact: unknown): PostRunStageDelta {
+  const record = artifact as Record<string, unknown> | null;
+  if (!record || typeof record !== 'object' || record.mode !== 'apply') {
+    throw new Error('stale-scrape-run-reap result is not an apply report');
+  }
+  if (record.heartbeatStaleOnly !== true || typeof record.startedBefore !== 'string') {
+    throw new Error(
+      'stale-scrape-run-reap result was not scoped to heartbeat-stale runs that started before the sweep',
+    );
+  }
+  const plannedByReason = (record.plannedByReason ?? {}) as Record<string, unknown>;
+  const foreignReasons = Object.keys(plannedByReason).filter(
+    (reason) => reason !== 'heartbeat_stale',
+  );
+  if (foreignReasons.length > 0) {
+    throw new Error(
+      `stale-scrape-run-reap planned runs for ${foreignReasons.join(', ')}, which only an operator may close`,
+    );
+  }
+  return {
+    staleScrapeRunReapDelta: {
+      running: numericField(record, 'running'),
+      planned: numericField(record, 'planned'),
+      closed: numericField(record, 'closed'),
+      changedSinceRead: numericField(record, 'changedSinceRead'),
+      keptByReason: (record.keptByReason ?? {}) as Record<string, number>,
+    },
+  };
 }
 
 export interface DeadResearchWebsiteStageDelta {
@@ -1051,6 +1101,24 @@ const PROFILE_LINK_HEALTH_STAGE_LIMIT = 10000;
 const PROFILE_LINK_STALE_AFTER_DAYS = SOURCE_LINK_HEALTH_FRESHNESS_DAYS;
 
 export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = [
+  {
+    // First, so a later stage failing cannot skip it. It closes only a run whose heartbeat
+    // went stale with no live owner process and no held source lock, and never one that
+    // started during this sweep. A run that predates heartbeats has no sign of life to
+    // judge, so closing it stays an operator step (#3595).
+    name: 'stale-scrape-run-reap',
+    command: 'scrape-runs:reconcile-stale',
+    artifactName: 'development-stale-scrape-run-reap.json',
+    buildArgs: (options) => [
+      '--apply',
+      '--confirm-reconcile-stale-scrape-runs',
+      '--heartbeat-stale-only',
+      '--started-before',
+      options.sinceIso as string,
+    ],
+    isEnabled: (options) => Boolean(options.sinceIso),
+    parseResult: parseStaleScrapeRunReapResult,
+  },
   {
     name: 'researcher-dedupe',
     command: 'researchers:dedupe-accountless-shells',
