@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { classificationFromObservedFacts } from '../fellowshipClassificationDerivation';
 import {
   candidateToObservations,
   extractProgramUrlsFromDirectory,
@@ -127,7 +128,7 @@ describe('parseHealthSciencesProgramPage', () => {
   });
 });
 
-describe('candidateToObservations classification', () => {
+describe('classification derived from the observed facts', () => {
   it('classifies a matched-mentor summer program as SUMMER_RESEARCH_PROGRAM / DIRECT_FACULTY_MATCHING', () => {
     const candidate = parseHealthSciencesProgramPage(
       surfHtml,
@@ -138,9 +139,12 @@ describe('candidateToObservations classification', () => {
     const observations = candidateToObservations(candidate);
     const byField = (field: string) => observations.find((o) => o.field === field)?.value;
     expect(byField('sourceName')).toBe(YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE);
-    expect(byField('programCategory')).toBe('SUMMER_RESEARCH_PROGRAM');
-    expect(byField('entryMode')).toBe('DIRECT_FACULTY_MATCHING');
-    expect(byField('mentorMatching')).toBe(true);
+    expect(byField('programCategory')).toBeUndefined();
+    expect(classificationFromObservedFacts(observations)).toMatchObject({
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      entryMode: 'DIRECT_FACULTY_MATCHING',
+      mentorMatching: true,
+    });
   });
 });
 

@@ -950,7 +950,7 @@ describe('runScraperSweep', () => {
   it('builds the fellowship post-run pipeline wiring the existing programs scripts in order', () => {
     const stages = buildFellowshipPostRunStages('/tmp/fellowship-sweep');
     expect(stages.map((stage) => stage.name)).toEqual([
-      'classification-backfill',
+      'program-visibility-gate',
       'global-regions-backfill',
       'link-labels-backfill',
       'accepting-applications-invariant',
@@ -961,20 +961,16 @@ describe('runScraperSweep', () => {
     expect(stages.every((stage) => stage.artifactPath?.startsWith('/tmp/fellowship-sweep/'))).toBe(
       true,
     );
-    expect(stages.find((stage) => stage.name === 'classification-backfill')?.args).toEqual([
+    expect(stages.find((stage) => stage.name === 'program-visibility-gate')?.args).toEqual([
       '--cwd',
       'server',
-      'programs:backfill-classification',
+      'student-visibility:gate',
+      '--collection=programs',
       '--apply',
-      '--confirm-program-classification-backfill',
-      '--limit=10000',
-      '--output=/tmp/fellowship-sweep/fellowship-classification-backfill.json',
+      '--confirm-student-visibility-apply',
+      '--max-apply=10000',
+      '--output=/tmp/fellowship-sweep/fellowship-program-visibility-gate.json',
     ]);
-    // The sweep must never opt out of the classification backfill's student-visibility guard
-    // (#2910): an unattended pass that demotes served program rows needs a human, not a flag.
-    expect(stages.flatMap((stage) => stage.args)).not.toContain(
-      '--confirm-student-visibility-loss',
-    );
     expect(stages.find((stage) => stage.name === 'link-labels-backfill')?.args).toEqual([
       '--cwd',
       'server',

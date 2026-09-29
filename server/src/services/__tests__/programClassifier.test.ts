@@ -329,4 +329,114 @@ describe('classifyProgram internship identity (#2925)', () => {
       classifyProgram({ title: 'Fixture Economics Summer Research Internship' }),
     ).toMatchObject({ studentFacingCategory: 'Internship program' });
   });
+
+  describe('frozen Development misreadings (#3904)', () => {
+    it('reads the STARS first-year mentoring program as a way in rather than funding', () => {
+      expect(
+        classifyProgram({
+          title: 'STARS I Academic Year Program',
+          description:
+            'STARS I is a Yale College academic-year mentoring and support program for first-year students interested in STEM, rather than a direct research placement.',
+        }),
+      ).toMatchObject({
+        programKind: 'STRUCTURED_PROGRAM',
+        entryMode: 'APPLY_TO_PROGRAM',
+        requiresMentorBeforeApply: false,
+      });
+    });
+
+    it('reads the STARS academic-year research program as mentor-first rather than travel funding', () => {
+      expect(
+        classifyProgram({
+          title: 'STARS II Program',
+          purpose: ['Research', 'Travel'],
+          description:
+            'The program supports juniors and seniors who need financial support to conduct research during the academic year.',
+        }),
+      ).toMatchObject({
+        programKind: 'STRUCTURED_PROGRAM',
+        entryMode: 'SECURE_MENTOR_THEN_APPLY',
+        requiresMentorBeforeApply: true,
+      });
+    });
+
+    it('reads the Bouchet fellowship as a cohort program', () => {
+      expect(
+        classifyProgram({
+          title: 'Edward A. Bouchet Undergraduate Fellowship',
+          description: 'Fellows work on paid research projects during the academic year.',
+        }),
+      ).toMatchObject({ programKind: 'STRUCTURED_PROGRAM', mentorMatching: true });
+    });
+
+    it('reads senior-essay funding from the prose rather than the title', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture College Mellon Research Grant',
+          description:
+            'To provide funding to off-set the costs associated with a senior research project or senior essay.',
+        }),
+      ).toMatchObject({ programKind: 'SENIOR_THESIS_FUNDING' });
+    });
+
+    it('does not read an exclusion of senior essays as senior research funding', () => {
+      for (const description of [
+        'Supports summer research travel. Funds may not be used for senior essay research.',
+        'Supports summer research travel. The grant does not fund senior thesis work.',
+      ]) {
+        expect(
+          classifyProgram({ title: 'Fixture Summer Research Grant', description }),
+        ).not.toMatchObject({ programKind: 'SENIOR_THESIS_FUNDING' });
+      }
+    });
+
+    it('does not read the permitted-use facet as a senior-only audience', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Memorial Fellowship',
+          purpose: ['Research', 'Senior Research Project or Senior Essay'],
+          description:
+            'Supports summer independent research in the fine arts for first-year, sophomore and junior students.',
+        }),
+      ).toMatchObject({ programKind: 'FELLOWSHIP_FUNDING' });
+    });
+
+    it('does not read a word ending in "ra" as a research assistant program', () => {
+      expect(
+        classifyProgram({
+          title: 'Sierra College Summer Fellowship',
+          description: 'Supports an independent summer research project.',
+        }),
+      ).toMatchObject({ programKind: 'FELLOWSHIP_FUNDING' });
+    });
+
+    it('leaves a page that lists many awards for archive review', () => {
+      expect(
+        classifyProgram({
+          title: 'Undergraduate Grants and Prizes',
+          description:
+            'The council awards a senior essay prize and funds summer research travel each year.',
+        }),
+      ).toMatchObject({ programKind: 'OTHER', studentFacingCategory: 'Archive / review' });
+    });
+
+    it('does not read travel funding with no research dimension as research travel', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Summer Travel Fellowship',
+          description: 'Supports summer travel abroad for public service and language study.',
+        }),
+      ).toMatchObject({ programKind: 'FELLOWSHIP_FUNDING' });
+    });
+
+    it('reads a summer scholars program as a structured summer research program', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Research Institute Summer Scholars Program',
+          description:
+            'A 10-week, full-time internship during which participants train under the direct supervision of a mentor.',
+        }),
+      ).toMatchObject({ programCategory: 'SUMMER_RESEARCH_PROGRAM' });
+    });
+  });
 });

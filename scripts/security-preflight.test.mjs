@@ -4158,7 +4158,6 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/repairArchivedEntityArtifacts.ts',
     '../server/src/scripts/acceptFormalizationReviewExceptions.ts',
     '../server/src/scripts/betaRepairQueue.ts',
-    '../server/src/scripts/backfillProgramClassifications.ts',
     '../server/src/scripts/dedupeResearchEntitiesByPi.ts',
     '../server/src/scripts/launchAcquisitionReport.ts',
     '../server/src/scripts/launchReviewExceptions.ts',
@@ -5149,10 +5148,6 @@ test('program maintenance artifacts use safe JSON paths and safe review inputs',
     new URL('../server/src/scripts/auditProgramResearchRelevance.ts', import.meta.url),
     'utf8',
   );
-  const programClassifications = fs.readFileSync(
-    new URL('../server/src/scripts/backfillProgramClassifications.ts', import.meta.url),
-    'utf8',
-  );
   const programOfficialSources = fs.readFileSync(
     new URL('../server/src/scripts/backfillProgramOfficialSources.ts', import.meta.url),
     'utf8',
@@ -5160,7 +5155,6 @@ test('program maintenance artifacts use safe JSON paths and safe review inputs',
 
   for (const [name, source] of [
     ['program research relevance audit', programResearchRelevance],
-    ['program classification backfill', programClassifications],
     ['program official source backfill', programOfficialSources],
   ]) {
     assert.match(
@@ -5202,14 +5196,6 @@ test('program maintenance artifacts use safe JSON paths and safe review inputs',
   assert.match(programResearchRelevance, /recordId: serializedDocumentId\(program\._id\) \|\| ''/);
   assert.doesNotMatch(programResearchRelevance, /recordId: String\(program\._id\)/);
   assert.doesNotMatch(programResearchRelevance, /String\(program\._id\)/);
-  assert.match(
-    programClassifications,
-    /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/,
-  );
-  assert.match(programClassifications, /serializedId: serializedDocumentId\(row\._id\) \|\| ''/);
-  assert.match(programClassifications, /id: item\.serializedId/);
-  assert.doesNotMatch(programClassifications, /id: String\(row\._id\)/);
-  assert.doesNotMatch(programClassifications, /String\(row\._id\)/);
 });
 
 test('Meilisearch rebuild artifacts use safe JSON output paths', () => {

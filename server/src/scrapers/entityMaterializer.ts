@@ -124,6 +124,7 @@ import {
   planStoredTextNormalization,
   type StoredTextNormalizationPlan,
 } from './storedTextNormalization';
+import { planFellowshipClassification } from './fellowshipClassificationDerivation';
 import {
   isDirectoryGraftCitation,
   planDirectoryGraftCitationRetraction,
@@ -6755,6 +6756,31 @@ export async function projectFromLog(
     lockedFields: manuallyLockedFields,
   });
   Object.assign(set, storedTextNormalization.set);
+
+  if (entityType === 'fellowship') {
+    const classification = planFellowshipClassification({
+      stored: entityDoc as Record<string, unknown> | null,
+      staged: set,
+      unset,
+      lockedFields: manuallyLockedFields,
+      observedValues: Object.fromEntries(
+        Object.entries(resolved).map(([field, resolution]) => [field, resolution.value]),
+      ),
+    });
+    for (const [field, value] of Object.entries(classification.set)) {
+      if (!(field in set) || JSON.stringify(set[field]) !== JSON.stringify(value)) fieldsWritten++;
+      set[field] = value;
+      delete unset[field];
+    }
+    for (const field of classification.withdrawn) {
+      delete set[field];
+      delete confidenceByField[field];
+    }
+    for (const field of classification.unset) {
+      unset[field] = '';
+      fieldsWritten++;
+    }
+  }
 
   const scopedFields =
     input.writeOnlyFields && input.writeOnlyFields.length > 0

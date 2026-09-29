@@ -9,7 +9,6 @@ import crypto from 'crypto';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
-import { classifyProgram } from '../../services/programClassifier';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
@@ -1302,32 +1301,11 @@ function currentSourceObservation(
 }
 
 export function candidateToObservations(candidate: FellowshipCatalogCandidate): ObservationInput[] {
-  const classification = classifyProgram({
-    title: candidate.title,
-    summary: candidate.summary,
-    description: candidate.description,
-    purpose: candidate.purpose,
-    termOfAward: candidate.termOfAward,
-    sourceUrl: candidate.sourceUrl,
-  });
   return [
     observation('sourceKey', candidate.sourceKey, candidate),
     observation('sourceName', YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE, candidate),
     observation('sourceUrl', candidate.sourceUrl, candidate),
     observation('sourceFingerprint', candidate.sourceFingerprint, candidate),
-    observation('programCategory', classification.programCategory, candidate),
-    observation('programKind', classification.programKind, candidate),
-    observation('entryMode', classification.entryMode, candidate),
-    observation('studentFacingCategory', classification.studentFacingCategory, candidate),
-    observation('requiresMentorBeforeApply', classification.requiresMentorBeforeApply, candidate),
-    observation('mentorMatching', classification.mentorMatching, candidate),
-    observation('undergraduateOnly', classification.undergraduateOnly, candidate),
-    observation('yaleCollegeOnly', classification.yaleCollegeOnly, candidate),
-    observation('compensationSummary', classification.compensationSummary, candidate),
-    observation('hoursPerWeek', classification.hoursPerWeek, candidate),
-    observation('programDates', classification.programDates, candidate),
-    observation('bestNextStep', classification.bestNextStep, candidate),
-    observation('prepSteps', classification.prepSteps, candidate),
     observation('title', candidate.title, candidate),
     observation('summary', candidate.summary, candidate),
     observation('description', candidate.description, candidate),

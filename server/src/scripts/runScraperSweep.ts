@@ -315,7 +315,7 @@ export interface ScraperSweepSummary {
 
 export interface FellowshipPostRunStage {
   name:
-    | 'classification-backfill'
+    | 'program-visibility-gate'
     | 'global-regions-backfill'
     | 'official-sources-backfill'
     | 'link-labels-backfill'
@@ -1605,13 +1605,14 @@ function fellowshipApplyLimit(options: FellowshipPostRunStageOptions): number {
 
 export const FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS: FellowshipPostRunStageDefinition[] = [
   {
-    name: 'classification-backfill',
-    command: 'programs:backfill-classification',
-    artifactName: 'fellowship-classification-backfill.json',
+    name: 'program-visibility-gate',
+    command: 'student-visibility:gate',
+    artifactName: 'fellowship-program-visibility-gate.json',
     buildArgs: (options) => [
+      '--collection=programs',
       '--apply',
-      '--confirm-program-classification-backfill',
-      `--limit=${fellowshipApplyLimit(options)}`,
+      '--confirm-student-visibility-apply',
+      `--max-apply=${fellowshipApplyLimit(options)}`,
     ],
     isEnabled: () => true,
     appendsOutputArtifact: true,

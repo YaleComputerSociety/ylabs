@@ -220,7 +220,7 @@ Every merge-applying stage declares one, so `summary.json` carries its counts an
 
 The `fellowship-development-full` mode runs the fellowship engine's own post-run chain (`FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS`, issue #2172), which wires the existing `programs:*` scripts against the freshly scraped catalog in this order:
 
-1. `classification-backfill` (`programs:backfill-classification --apply`)
+1. `program-visibility-gate` (`student-visibility:gate --collection=programs --apply`)
 2. `global-regions-backfill` (`programs:backfill-global-regions --apply`)
 3. `official-sources-backfill` (`programs:backfill-official-sources --apply`, opt-in and off by default)
 4. `link-labels-backfill` (`programs:backfill-link-labels --apply`)
@@ -231,7 +231,7 @@ The `fellowship-development-full` mode runs the fellowship engine's own post-run
 9. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 Each backfill applies with the script's own confirm flag (production writes are blocked by each script's own apply guard, so the Development mode is safe), and the two audits run report-only.
-`classification-backfill` is the one stage that can decline to write: it refuses an apply that would cost a program row its student-visible tier or replace a served `studentFacingCategory`, and the sweep never passes either flag that overrides those refusals, so the stage fails rather than demoting or relabelling a served row unattended (see "`programs:backfill-classification` asserts and never retracts" below).
+`program-visibility-gate` re-gates every program row after the lanes have written, because a fellowship's classification is derived during materialization (see "Program classification is a projection derivation" below) and the tier reads it.
 Every stage that takes an `--output` path is held to a report contract: a stage that exits successfully without a readable, valid JSON report at the path recorded in `summary.json` fails loud, and a stage that writes no report records no `artifactPath` at all.
 `official-sources-backfill` is opt-in via `SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET=1` because `programs:backfill-official-sources` is not a general recomputation: with no `--input` it replays the committed one-shot curated change-set at `server/src/scripts/data/programOfficialSourceBackfill.json`, so running it on every sweep would overwrite each listed record's freshly scraped `sourceUrl` with a frozen hand-researched value.
 The former `catalog-refresh` stage and its `fellowships:refresh` command wrote the fellowship catalog straight into Beta or Production, so both were removed with the Beta sweep modes; the catalog now reaches Beta and Production the same way the research corpus does, through promotion.
@@ -1484,29 +1484,24 @@ Program audience is an honest label, not a suppression trigger. A graduate-only 
 
 `programClassifier.classifyProgram` holds the other half of that rule (issue #1926), because `studentFacingCategory` is stored rather than recomputed at serve time and `Archive / review` is a hard block on both public tiers. A graduate or professional audience alone therefore no longer routes a record to `Archive / review`: when `classifyProgramResearchRelevance` says the record is research-shaped it gets an honest graduate category (`Graduate research assistantship`, `Graduate research travel funding`, `Graduate collections research fellowship`, or `Graduate research funding`) with a matching `entryMode`, `undergraduateOnly: false` so the Graduate label still renders, and a `bestNextStep` that opens with the eligibility check. Only a graduate record with no research dimension, or one whose stated audience is researchers outside Yale, stays `Archive / review`.
 
-`programs:backfill-classification` asserts and never retracts (#2910).
-A recomputed classification only carries the optional fields it has evidence for, so an omission is the classifier having no opinion rather than a retraction; the classifier's only way to say "not undergraduate-only" is to assert `undergraduateOnly: false`, which lands in `$set` like any other value.
-The script used to treat an omission as a clear and `$unset` stored `undergraduateOnly` / `yaleCollegeOnly`, which dropped rows out of the gate's `audienceKnown` branch: measured on Development a corpus-wide apply cost 77 rows their `student_ready` tier and also cleared 318 stored `compensationSummary` and 315 stored `programDates` values.
-The write now sets only what the classifier asserts and reports the fields it left alone as `optionalFieldsRetained`.
+### Program classification is a projection derivation
 
-A corpus-wide apply is also guarded rather than trusted.
-The script projects every scanned row through the real `computeProgramStudentVisibility` before and after its planned write, reports `studentVisibility` (`studentReadyBefore`, `studentReadyAfter`, `publicTierLost`), and refuses to write anything when the run would cost a row its student-visible tier or reduce the `student_ready` count.
-`publicTierLost` is counted per row against `publicStudentVisibilityTiers`, the single tier (`student_ready`) that `publicFellowshipFilter` actually serves, so a `student_ready` row demoted to `limited_but_safe` counts as a loss and no promotion elsewhere in the same run can net it away.
-`--confirm-student-visibility-loss` is the only way past that refusal and the fellowship sweep stage never passes it, so an unattended pass cannot demote a served program row.
-`--only-archive-review` still narrows the scan to stored `Archive / review` rows when the point of the run is to release records the classifier no longer archives.
+A fellowship's classification is derived in the projection on every resolve, never observed (#3904).
+`planFellowshipClassification` in `server/src/scrapers/fellowshipClassificationDerivation.ts` runs `classifyProgram` over the facts the pass is about to leave standing (title, competition type, summary, description, application information, eligibility, additional information, source URL, purpose, and term of award) and stages the result.
+No lane emits a classifier field any more, so a stale classifier observation still in the log is inert for the fields the classifier owns: the derivation overwrites whatever the resolver picked for `programCategory`, `programKind`, `entryMode`, `studentFacingCategory`, `requiresMentorBeforeApply`, `mentorMatching`, `bestNextStep`, and `prepSteps`.
+The derivation skips a field named in `manuallyLockedFields`.
+Run it twice and the second pass plans nothing, which is what makes it a derivation rather than a repair, and a classifier fix reaches every row on its next materialize without a re-scrape.
 
-The refusal is all-or-nothing and inspectable rather than silent.
-A refused run still prints and writes its `--output` report with `mode: 'refused'`, a `refusals` list carrying every refusal message the run produced, and a `demotedRows` list naming the rows that would leave the served tier, so the sweep's stage artifact records why nothing was written.
-Sweep stages are independent, so a refused `classification-backfill` fails only its own stage and marks the sweep's post-run `failed`; the remaining backfills still run and the stage re-runs on the next resume.
-To clear a blocked stage, read `demotedRows` in the stage artifact, fix the rows at the source (re-scrape or repair the evidence the gate is missing) or re-gate them with `student-visibility:gate --collection=programs --record-id=...`, and only run the backfill by hand with `--confirm-student-visibility-loss` once the demotions are the intended outcome.
+It replaced `programs:backfill-classification`, a post-sweep repair that re-ran the classifier over stored rows but refused any apply that would demote a served row or replace a served `studentFacingCategory`.
+Those refusals were right about the classifier and wrong as a mechanism: measured on Development on 2026-09-29 they had frozen 100 of 459 live rows on a label today's classifier no longer produces, including 12 served travel and research awards still labelled `Internship program` after the #2925 classifier fix meant to remove that label.
 
-`studentFacingCategory` has its own refusal, because the tier guard cannot see a relabel (#2925).
-The classifier always has an opinion about the category and always overwrites it, stored categories are richer than anything `classifyProgram` produces today, and a row can keep `student_ready` while a curated label is replaced by a generic derived one, so the tier guard measures the wrong thing for this field and would never fire.
-The script now reports `categoryRewrites` on every run: `rewritten`, `servedRewritten`, and a `servedCohorts` list of `before -> after` changes with counts.
-A row is counted as served when its stored `studentVisibilityTier` is in `publicStudentVisibilityTiers`, which is what `publicFellowshipFilter` actually queries, and a row with no stored label is a fill rather than a rewrite so it is not counted.
-An apply refuses when `servedRewritten` is above zero, `--confirm-category-rewrites` is the only way past it, and the sweep never passes it.
-Measured on Development over the 459 live program rows: 98 rewrites, 70 of them on served rows, and zero tier movement, so the refusal is the only thing standing between an unattended apply and 70 relabelled cards.
-`--only-archive-review` scans 8 rows with no rewrites at all, so the release-from-archive workflow is unaffected.
+Two lessons from that script carry over into the derivation.
+An omission is silence rather than a retraction (#2910): the classifier asserts `undergraduateOnly`, `yaleCollegeOnly`, `compensationSummary`, `hoursPerWeek`, and `programDates` only when it has something to say, so an omitted value keeps whatever the pass would otherwise leave standing.
+Clearing on silence used to cost 77 rows their `student_ready` tier by dropping them out of the gate's `audienceKnown` branch.
+The logistics fields are mostly not classifier output either: on Development 316 rows store a `compensationSummary` while 23 live observations assert one, so clearing them on silence would erase curated award amounts and dates from 75 served cards.
+A classifier change is measured before it lands, not after: project every live row through `planFellowshipClassification` and the real `computeProgramStudentVisibility`, and read the tier moves and the served category rewrites.
+For #3904 that projection moved no served row out of `student_ready` apart from one multi-award hub page, and it surfaced the rule bugs the frozen labels had hidden, which are now pinned as the "frozen Development misreadings" cases in `server/src/services/__tests__/programClassifier.test.ts`: a senior rule that only read titles, an `ra\b` pattern that read any word ending in "ra" as a research-assistant program, a travel rule that counted study and public-service awards as research travel, and STARS and Bouchet records read as generic funding.
+The `purpose` facet is a list of permitted uses, so a statement about who an award is for comes from the record's prose rather than from that facet.
 
 The classifier's internship branch also read the wrong evidence (#2925).
 `purpose` is a multi-select of permitted uses on the source record, so an `Internship/Work Project` entry sits beside `Research` and `Senior Research Project or Senior Essay` on the same award, and the flattened record text made the late `internship` branch claim any funding award that merely permits an internship.

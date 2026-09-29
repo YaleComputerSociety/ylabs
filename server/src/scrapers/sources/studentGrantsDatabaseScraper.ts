@@ -39,7 +39,6 @@ import {
   type RenderedFetcher,
 } from '../renderedFetch';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
-import { classifyProgram } from '../../services/programClassifier';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
 import { slugify } from '../utils/scraperHelpers';
 import { isRecordSpecificApplicationPortalUrl } from '../../utils/researchHomeWebsiteUrl';
@@ -360,14 +359,6 @@ function fundFingerprint(fund: StudentGrantsFund): string {
 }
 
 export function fundToObservations(fund: StudentGrantsFund): ObservationInput[] {
-  const classification = classifyProgram({
-    title: fund.title,
-    summary: undefined,
-    description: fund.description,
-    purpose: fund.purpose,
-    termOfAward: fund.termOfAward,
-    sourceUrl: fund.url,
-  });
   const base = {
     entityType: 'fellowship' as const,
     entityKey: fund.sourceKey,
@@ -385,18 +376,6 @@ export function fundToObservations(fund: StudentGrantsFund): ObservationInput[] 
     observation('sourceName', STUDENT_GRANTS_DATABASE_SOURCE),
     observation('sourceUrl', fund.url),
     observation('sourceFingerprint', fundFingerprint(fund)),
-    observation('programCategory', classification.programCategory),
-    observation('programKind', classification.programKind),
-    observation('entryMode', classification.entryMode),
-    observation('studentFacingCategory', classification.studentFacingCategory),
-    observation('requiresMentorBeforeApply', classification.requiresMentorBeforeApply),
-    observation('mentorMatching', classification.mentorMatching),
-    observation('undergraduateOnly', classification.undergraduateOnly),
-    observation('yaleCollegeOnly', classification.yaleCollegeOnly),
-    observation('compensationSummary', classification.compensationSummary),
-    observation('programDates', classification.programDates),
-    observation('bestNextStep', classification.bestNextStep),
-    observation('prepSteps', classification.prepSteps),
     observation('title', fund.title),
     observation('description', fund.description),
     observation('eligibility', fund.eligibility),
