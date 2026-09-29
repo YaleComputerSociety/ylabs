@@ -2404,3 +2404,72 @@ describe('LabMicrositeUndergradLLMExtractor.run withdrawing a stored evidence qu
     expect(result.metrics?.evidenceQuotesRecited).toBe(0);
   });
 });
+
+describe('LabMicrositeUndergradLLMExtractor.run on a stale center-program citation (#3831)', () => {
+  const FILLER =
+    'The group studies synthetic membranes, protein folding kinetics and the design of new imaging methods for living tissue across many scales of time, from single molecules to whole organs, with collaborators in chemistry and physics.';
+  const BLURB =
+    'The Example Center hosts the Summer Internship for College Undergraduates, a 10-week program designed to inspire the next generation of leaders in research.';
+  const PROFILE = `<html><body><h1>Example Person</h1><p>${FILLER}</p></body></html>`;
+  const CENTER_PROFILE = `<html><body><h1>Example Person</h1><p>${FILLER}</p><a href="/center/education/opportunities/internship">Summer Internship for College Undergraduates</a></body></html>`;
+  const PROGRAM_ROOT = `<html><body><h1>Example Center</h1><p>${FILLER}</p><a href="/center/education/opportunities/internship">Summer Internship for College Undergraduates</a></body></html>`;
+  const INTERNSHIP = `<html><body><h2>Internship</h2><p>${FILLER}</p><p>${BLURB}</p></body></html>`;
+  const noQuoteAnswer: LLMExtraction = {
+    openToUndergrads: 'unclear',
+    currentUndergradCount: 0,
+    evidenceQuote: '',
+    evidenceSource: 'none',
+    joinPageUrl: null,
+  };
+  const staleQuote = {
+    value: BLURB,
+    sourceUrl: 'https://medical.example.edu/center/profile/example-person/',
+  };
+
+  async function runFor(websiteUrl: string, pages: Record<string, string>) {
+    const scraper = newTestScraper({
+      fetchPage: makeFetchPage(pages),
+      callLLM: vi.fn(async () => noQuoteAnswer),
+      labFinder: async () => [
+        { _id: '1', slug: 'example-person', name: 'Example Person', websiteUrl },
+      ],
+      liveEvidenceQuoteLoader: async () => staleQuote,
+      renderedFetcher: null,
+      apiKey: 'sk-test',
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+    return { result, quoteRows: emitted.filter((obs) => obs.field === 'undergradEvidenceQuote') };
+  }
+
+  it('withdraws the blurb for a faculty row whose own profile never carries it', async () => {
+    const { result, quoteRows } = await runFor(
+      'https://medical.example.edu/profile/example-person/',
+      {
+        'https://medical.example.edu/profile/example-person/': PROFILE,
+        'https://medical.example.edu/center/profile/example-person/': CENTER_PROFILE,
+        'https://medical.example.edu/center/education/opportunities/internship': INTERNSHIP,
+      },
+    );
+    expect(quoteRows).toEqual([
+      expect.objectContaining({ value: '', assertsNoValueFor: ['undergradEvidenceQuote'] }),
+    ]);
+    expect(result.metrics?.evidenceQuotesWithdrawn).toBe(1);
+    expect(result.metrics?.evidenceQuotesRecited).toBe(0);
+  });
+
+  it('re-cites the blurb to the program page when that page is inside the row it belongs to', async () => {
+    const { result, quoteRows } = await runFor('https://medical.example.edu/center/', {
+      'https://medical.example.edu/center/': PROGRAM_ROOT,
+      'https://medical.example.edu/center/profile/example-person/': CENTER_PROFILE,
+      'https://medical.example.edu/center/education/opportunities/internship': INTERNSHIP,
+    });
+    expect(quoteRows[0]).toEqual(
+      expect.objectContaining({
+        value: BLURB,
+        sourceUrl: 'https://medical.example.edu/center/education/opportunities/internship',
+      }),
+    );
+    expect(result.metrics?.evidenceQuotesRecited).toBe(1);
+  });
+});
