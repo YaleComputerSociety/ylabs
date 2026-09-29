@@ -32,6 +32,25 @@ export interface ScraperContext {
   options: ScraperOptions;
   emit: (obs: ObservationInput | ObservationInput[]) => Promise<void>;
   log: (msg: string, meta?: Record<string, unknown>) => void;
+  /**
+   * Report what the run has measured so far, merged into the run's stored `metrics`
+   * whether the lane finishes or throws.
+   *
+   * `metrics` on `ScraperResult` rides on the return value, so a throw discards every
+   * measurement the lane had made: one Development run died after 474 observations
+   * with a stack overflow and stored nothing about how far it had got, which is the
+   * case a diagnostic is worth most (#3890). Report through here as soon as a number
+   * is known, and a later crash or early return keeps it.
+   *
+   * A returned `metrics` object wins over what was reported here, key by key, because
+   * the return value is the lane's final word.
+   *
+   * Optional only so the several dozen test fixtures that build a context by hand keep
+   * compiling; the orchestrator always supplies it, which `orchestrator.test.ts` pins.
+   * Call it as `ctx.reportMetrics?.(...)`. A fixture that omits it loses what a lane
+   * reports, so a lane test asserting reported metrics has to supply one.
+   */
+  reportMetrics?: (metrics: ScraperMetrics) => void;
 }
 
 export interface ScraperOptions {

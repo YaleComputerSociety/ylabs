@@ -281,6 +281,110 @@ describe('ScraperOrchestrator', () => {
     expect(persisted.$set?.status).toBe('success');
   });
 
+  describe('a run keeps what it measured (#3890)', () => {
+    const persistedSet = () =>
+      (
+        mocks.scrapeRunUpdateOne.mock.calls.at(-1)?.[1] as {
+          $set?: { status?: string; metrics?: Record<string, unknown> };
+        }
+      ).$set;
+
+    it('always supplies the reporting channel, which is why the lane may call it', async () => {
+      let channel: unknown = 'absent';
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        async run(ctx) {
+          channel = typeof ctx.reportMetrics;
+          return { observationCount: 0, entitiesObserved: 0 };
+        },
+      });
+
+      await orchestrator.run('fixture-source', {
+        dryRun: false,
+        dbReview: false,
+        useCache: false,
+        release: true,
+      });
+
+      expect(channel).toBe('function');
+    });
+
+    it('stores what a lane reported mid-run even when the lane then throws', async () => {
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        async run(ctx) {
+          ctx.reportMetrics?.({ unitYields: { alive: 12 } });
+          throw new Error('Maximum call stack size exceeded');
+        },
+      });
+
+      await expect(
+        orchestrator.run('fixture-source', {
+          dryRun: false,
+          dbReview: false,
+          useCache: false,
+          release: true,
+        }),
+      ).rejects.toThrow('Maximum call stack size exceeded');
+
+      const set = persistedSet();
+      expect(set?.status).toBe('failure');
+      expect(set?.metrics).toEqual({ unitYields: { alive: 12 } });
+    });
+
+    it('lets the returned object win key by key, and keeps a key only reported mid-run', async () => {
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        async run(ctx) {
+          ctx.reportMetrics?.({ unitYields: { alive: 1 }, quotesNotOnPage: 7 });
+          return {
+            observationCount: 0,
+            entitiesObserved: 0,
+            metrics: { unitYields: { alive: 12, dead: 0 } },
+          };
+        },
+      });
+
+      await orchestrator.run('fixture-source', {
+        dryRun: false,
+        dbReview: false,
+        useCache: false,
+        release: true,
+      });
+
+      expect(persistedSet()?.metrics).toEqual({
+        unitYields: { alive: 12, dead: 0 },
+        quotesNotOnPage: 7,
+      });
+    });
+
+    it('stores no metrics at all for a lane that reports none, rather than an empty object', async () => {
+      const orchestrator = new ScraperOrchestrator();
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        async run() {
+          return { observationCount: 0, entitiesObserved: 0 };
+        },
+      });
+
+      await orchestrator.run('fixture-source', {
+        dryRun: false,
+        dbReview: false,
+        useCache: false,
+        release: true,
+      });
+
+      expect(persistedSet()?.metrics).toBeUndefined();
+    });
+  });
+
   it('marks a run partial and records why when the scraper reports incomplete coverage', async () => {
     mocks.appendObservations.mockResolvedValue({ inserted: 1, skipped: 0, superseded: 0 });
     const orchestrator = new ScraperOrchestrator();

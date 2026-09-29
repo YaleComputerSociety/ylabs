@@ -28,6 +28,7 @@ import { withSweepPageReuseFetchMetrics, withSweepPageReuseScope } from './utils
 import type {
   IScraper,
   ScraperContext,
+  ScraperMetrics,
   ScraperOptions,
   ObservationInput,
   ScraperResult,
@@ -109,6 +110,9 @@ export class ScraperOrchestrator {
     const observedEntityKeys = new Set<string>();
     const errors: any[] = [];
     const previewObservations: Array<Record<string, unknown>> = [];
+    // What the lane has reported so far, kept outside the try so a throw does not take
+    // it with it (#3890).
+    const reportedMetrics: ScraperMetrics = {};
     const explainLimit = options.explain
       ? (options.explainLimit ?? DEFAULT_EXPLAIN_LIMIT)
       : Infinity;
@@ -149,6 +153,9 @@ export class ScraperOrchestrator {
           observedEntityKeys.add(key);
         }
         entitiesObserved = observedEntityKeys.size;
+      },
+      reportMetrics: (metrics) => {
+        Object.assign(reportedMetrics, metrics);
       },
       log: (msg, meta) => {
         const prefix = `[${name}]`;
@@ -260,9 +267,9 @@ export class ScraperOrchestrator {
                   observationCount,
                   entitiesObserved,
                   fetchMetrics: result.fetchMetrics,
-                  metrics: evidenceCoverageImpact
-                    ? { ...(result.metrics || {}), evidenceCoverageImpact }
-                    : result.metrics,
+                  // The returned object wins key by key, because it is the lane's
+                  // final word; anything only reported mid-run survives beside it.
+                  metrics: runMetrics(reportedMetrics, result.metrics, evidenceCoverageImpact),
                   errors,
                 },
               },
@@ -272,12 +279,10 @@ export class ScraperOrchestrator {
       }
       return {
         runId: scrapeRunId,
-        result: evidenceCoverageImpact
-          ? {
-              ...result,
-              metrics: { ...(result.metrics || {}), evidenceCoverageImpact },
-            }
-          : result,
+        result: {
+          ...result,
+          metrics: runMetrics(reportedMetrics, result.metrics, evidenceCoverageImpact),
+        },
         ...(options.explain
           ? {
               explainedObservations: previewObservations,
@@ -291,6 +296,7 @@ export class ScraperOrchestrator {
           observationCount,
           entitiesObserved,
           errors,
+          metrics: runMetrics(reportedMetrics),
         });
       throw err;
     } finally {
@@ -298,6 +304,24 @@ export class ScraperOrchestrator {
       detachInterrupt();
     }
   }
+}
+
+/**
+ * The run's stored metrics: what the lane reported mid-run, then what it returned, then
+ * the dry-run coverage report. Returns undefined when there is nothing at all, so a run
+ * with no measurements stores no empty object (#3890).
+ */
+function runMetrics(
+  reported: ScraperMetrics,
+  returned?: ScraperMetrics,
+  evidenceCoverageImpact?: unknown,
+): Record<string, unknown> | undefined {
+  const merged: Record<string, unknown> = {
+    ...reported,
+    ...(returned || {}),
+    ...(evidenceCoverageImpact ? { evidenceCoverageImpact } : {}),
+  };
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 // A failed failure write must not replace the scrape's own error. A terminal write
@@ -308,7 +332,12 @@ async function recordRunFailure(
   runId: unknown,
   sourceName: string,
   err: unknown,
-  progress: { observationCount: number; entitiesObserved: number; errors: any[] },
+  progress: {
+    observationCount: number;
+    entitiesObserved: number;
+    errors: any[];
+    metrics?: Record<string, unknown>;
+  },
 ): Promise<void> {
   const errorMessage = sanitizeLogValue(err instanceof Error ? err.message : err);
   const finishedAt = new Date();
@@ -322,6 +351,7 @@ async function recordRunFailure(
             status: 'failure',
             observationCount: progress.observationCount,
             entitiesObserved: progress.entitiesObserved,
+            ...(progress.metrics ? { metrics: progress.metrics } : {}),
             errors: [
               ...progress.errors,
               { message: errorMessage || 'Unknown scrape error', at: new Date() },
