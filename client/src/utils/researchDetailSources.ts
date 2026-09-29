@@ -776,14 +776,14 @@ export const isMapOrPublicityPageSourceUrl = (url?: string | null): boolean => {
 
 const ORG_UMBRELLA_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE']);
 
-export const resolveOutreachOfficialSource = (
+const eligibleOutreachSources = (
   sources: ResearchDetailSource[],
   claimedActionUrls: Array<string | undefined>,
   leadIdentityUnderReview: boolean,
   entityType?: string,
   rankingContext: PersonProfileRankingContext = {},
   leadPersonNames: readonly string[] = [],
-): ResearchDetailSource | undefined => {
+): ResearchDetailSource[] => {
   /**
    * `actionDedupeKey` rather than `normalizeActionDestination`: the latter compares
    * host plus path, so `/bbs/profile/<slug>` and `/profile/<slug>` on one host read
@@ -803,7 +803,7 @@ export const resolveOutreachOfficialSource = (
         isRosterNestedPersonPageUrl(url)),
   );
 
-  const eligible = sources.filter((source) => {
+  return sources.filter((source) => {
     /**
      * An attribution-only row is in the list because a contribution named it, not because
      * `sourceUrls` records it as a page this research offers. Promoting one here would turn
@@ -847,7 +847,46 @@ export const resolveOutreachOfficialSource = (
     const destination = actionDedupeKey(source.url);
     return Boolean(destination) && !claimedDestinations.has(destination);
   });
+};
 
+/**
+ * A page whose path says it is how to join or get involved, which the detail page
+ * offers as the place to apply. Screened exactly like the official-page slot, but
+ * chosen for its kind rather than its rank, so it never displaces that slot's pick.
+ */
+export const resolveOutreachApplySource = (
+  sources: ResearchDetailSource[],
+  claimedActionUrls: Array<string | undefined>,
+  leadIdentityUnderReview: boolean,
+  entityType?: string,
+  rankingContext: PersonProfileRankingContext = {},
+  leadPersonNames: readonly string[] = [],
+): ResearchDetailSource | undefined =>
+  eligibleOutreachSources(
+    sources,
+    claimedActionUrls,
+    leadIdentityUnderReview,
+    entityType,
+    rankingContext,
+    leadPersonNames,
+  ).find((source) => isOrgEngagementSourceUrl(source.url));
+
+export const resolveOutreachOfficialSource = (
+  sources: ResearchDetailSource[],
+  claimedActionUrls: Array<string | undefined>,
+  leadIdentityUnderReview: boolean,
+  entityType?: string,
+  rankingContext: PersonProfileRankingContext = {},
+  leadPersonNames: readonly string[] = [],
+): ResearchDetailSource | undefined => {
+  const eligible = eligibleOutreachSources(
+    sources,
+    claimedActionUrls,
+    leadIdentityUnderReview,
+    entityType,
+    rankingContext,
+    leadPersonNames,
+  );
   if (eligible.length === 0) return undefined;
 
   if (entityType && ORG_UMBRELLA_ENTITY_TYPES.has(entityType)) {
