@@ -815,7 +815,7 @@ export const resolveOutreachOfficialSource = (
     if (source.isPrivateNetworkOnly) return false;
     if (!safeHttpUrl(source.url)) return false;
     if (isIdentifierOrGrantDbSourceUrl(source.url)) return false;
-    if (isNonContactableDocumentSourceUrl(source.url)) return false;
+    if (isSuppressedResearchWebsiteCtaUrl(source.url)) return false;
     if (leadIdentityUnderReview && isPersonPageSourceUrl(source.url, leadPersonNames)) return false;
     /**
      * The headline action makes the same claim the suppressed `websiteUrl` made: that
