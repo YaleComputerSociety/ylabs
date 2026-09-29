@@ -91,7 +91,7 @@ describe('an operator-reported departure stops the directory serving the row (#3
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     mongoUrl = replSet.getUri();
     await mongoose.connect(mongoUrl);
-  }, 120000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

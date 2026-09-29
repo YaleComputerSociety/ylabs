@@ -87,7 +87,7 @@ describe('superseded pruning under the lossless materializer read scope (#2944)'
       replSet: { count: 1, storageEngine: 'wiredTiger' },
     });
     await mongoose.connect(memoryReplSet.getUri('observation_retention_lossless_test'));
-  }, 120_000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

@@ -137,7 +137,7 @@ describe('website-url identity dedupe lane end to end', () => {
         archived: false,
       },
     ]);
-  }, 180_000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect().catch(() => {});

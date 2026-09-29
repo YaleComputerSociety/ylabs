@@ -1,5 +1,8 @@
 import { defineConfig } from 'vitest/config';
 
+import { vitestMaxWorkers } from './src/test/localWorkerBudget';
+import { HOOK_TIMEOUT_MS } from './src/test/testTimeBudgets';
+
 export default defineConfig({
   test: {
     include: ['src/**/*.{test,spec}.ts'],
@@ -20,6 +23,7 @@ export default defineConfig({
     // Over a hundred suites start a MongoMemory server in `beforeAll` and stop it in
     // `afterAll`. Under full-suite parallel load that teardown outlasts vitest's 10000 ms
     // default hook budget, so the budget is owned here and every suite inherits it (#2903).
-    hookTimeout: 60000,
+    hookTimeout: HOOK_TIMEOUT_MS,
+    maxWorkers: vitestMaxWorkers(),
   },
 });

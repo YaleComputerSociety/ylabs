@@ -79,7 +79,7 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
       })),
     );
     await mongoose.disconnect();
-  }, 180_000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect().catch(() => {});

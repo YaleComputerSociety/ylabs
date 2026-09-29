@@ -16,7 +16,7 @@ describe('result page views over a real store', () => {
   beforeAll(async () => {
     memoryServer = await MongoMemoryServer.create();
     await mongoose.connect(memoryServer.getUri('research_results_view_test'));
-  }, 120_000);
+  });
 
   beforeEach(async () => {
     await AnalyticsEvent.collection.deleteMany({});

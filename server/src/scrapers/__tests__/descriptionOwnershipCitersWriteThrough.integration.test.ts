@@ -47,7 +47,7 @@ describe('description citer snapshot against in-process observation writes (#356
       replSet: { count: 1, storageEngine: 'wiredTiger' },
     });
     await mongoose.connect(memoryReplSet.getUri('description_citers_write_through_test'));
-  }, 120_000);
+  });
 
   beforeEach(async () => {
     await Observation.deleteMany({});

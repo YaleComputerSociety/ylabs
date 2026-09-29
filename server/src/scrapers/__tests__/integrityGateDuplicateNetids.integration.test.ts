@@ -9,7 +9,7 @@ describe('runPostMaterializationIntegrityGate duplicate netid detection', () => 
   beforeAll(async () => {
     server = await MongoMemoryServer.create();
     await mongoose.connect(server.getUri(), { autoIndex: false });
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

@@ -14,7 +14,7 @@ describe('research-area evidence against a real store (#3836)', () => {
   beforeAll(async () => {
     memoryServer = await MongoMemoryServer.create();
     await mongoose.connect(memoryServer.getUri('research_area_evidence_test'));
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

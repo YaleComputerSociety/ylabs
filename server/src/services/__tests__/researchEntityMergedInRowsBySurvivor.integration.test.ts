@@ -14,7 +14,7 @@ describe('merged-in rows for many survivors at once (#3609)', () => {
   beforeAll(async () => {
     memoryServer = await MongoMemoryServer.create();
     await mongoose.connect(memoryServer.getUri('merged_in_rows_by_survivor_test'));
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

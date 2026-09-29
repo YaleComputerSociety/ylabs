@@ -48,7 +48,7 @@ describe("a re-read reaches a survivor's quote whose evidence sits on a merged-i
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

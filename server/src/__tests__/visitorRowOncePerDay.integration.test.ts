@@ -22,7 +22,7 @@ describe('visitor rows over a real store', () => {
     memoryServer = await MongoMemoryServer.create();
     await mongoose.connect(memoryServer.getUri('visitor_row_once_per_day_test'));
     await AnalyticsEvent.syncIndexes();
-  }, 120_000);
+  });
 
   beforeEach(async () => {
     await AnalyticsEvent.collection.deleteMany({});

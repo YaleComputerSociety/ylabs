@@ -104,7 +104,7 @@ describe('retireDocumentedWayInField with MongoDB', () => {
       mongoUrl = memoryReplSet.getUri('retire_documented_way_in_test');
     }
     await mongoose.connect(mongoUrl);
-  }, 120_000);
+  });
 
   beforeEach(async () => {
     await mongoose.connection.dropDatabase();

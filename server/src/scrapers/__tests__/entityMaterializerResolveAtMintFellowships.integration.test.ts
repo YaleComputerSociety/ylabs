@@ -69,7 +69,7 @@ describe('resolve-at-mint for fellowships (C4_RESOLVE_AT_MINT_ENTITIES)', () => 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

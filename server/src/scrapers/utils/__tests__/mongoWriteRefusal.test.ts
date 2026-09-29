@@ -14,7 +14,7 @@ describe('installMongoWriteRefusal', () => {
     mongod = await MongoMemoryServer.create();
     await mongoose.connect(mongod.getUri('Refusal'));
     await Probe.create({ name: 'seed', count: 1 });
-  }, 120_000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

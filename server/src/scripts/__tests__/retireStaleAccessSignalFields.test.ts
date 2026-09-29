@@ -63,7 +63,7 @@ describe('retireStaleAccessSignalFields with MongoDB', () => {
       mongoUrl = memoryReplSet.getUri('retire_access_signal_test');
     }
     await mongoose.connect(mongoUrl);
-  }, 120_000);
+  });
 
   beforeEach(async () => {
     await mongoose.connection.dropDatabase();

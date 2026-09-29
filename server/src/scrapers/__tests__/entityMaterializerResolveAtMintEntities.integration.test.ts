@@ -81,7 +81,7 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
     await ResearchEntity.createIndexes();
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

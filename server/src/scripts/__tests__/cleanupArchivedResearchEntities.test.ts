@@ -112,7 +112,7 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
       mongoUrl = memoryReplSet.getUri('cleanup_archived_test');
     }
     await mongoose.connect(mongoUrl);
-  }, 120_000);
+  });
 
   beforeEach(async () => {
     await mongoose.connection.dropDatabase();

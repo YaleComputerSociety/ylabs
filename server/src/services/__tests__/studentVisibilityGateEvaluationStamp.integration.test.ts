@@ -115,7 +115,7 @@ describe('the gate records every row it decides, not only the ones it changes (#
     // than an equality that a frozen clock would satisfy either way.
     await new Promise((resolve) => setTimeout(resolve, 30));
     secondPass = await applyGatePass();
-  }, 180_000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

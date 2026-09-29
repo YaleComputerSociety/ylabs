@@ -131,7 +131,7 @@ describe('Beta to Production promotion against MongoDB', () => {
     await seedBeta(betaDb);
     await seedProduction(productionDb);
     await applyCopy(betaDb, productionDb, promotionOptions());
-  }, 180_000);
+  });
 
   afterAll(async () => {
     await client?.close();

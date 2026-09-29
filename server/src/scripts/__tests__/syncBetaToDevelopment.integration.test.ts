@@ -214,7 +214,7 @@ describe('Beta to Development mirror against MongoDB', () => {
       const mismatches = after.filter((row) => row.sourceCopyCount !== row.targetCount);
       expect(mismatches).toEqual([]);
     });
-  }, 180_000);
+  });
 
   afterAll(async () => {
     await client?.close();

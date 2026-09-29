@@ -51,7 +51,7 @@ describe('the declared fellowship sourceKey unique index can actually be built (
     // explicitly. Without it a background `autoIndex` build races the explicit
     // one this file is asserting.
     await mongoose.connect(server.getUri(), { autoIndex: false, autoCreate: false });
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

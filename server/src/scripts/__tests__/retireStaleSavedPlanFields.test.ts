@@ -59,7 +59,7 @@ describe('retireStaleSavedPlanFields with MongoDB', () => {
       mongoUrl = memoryReplSet.getUri('retire_saved_plan_test');
     }
     await mongoose.connect(mongoUrl);
-  }, 120_000);
+  });
 
   beforeEach(async () => {
     await mongoose.connection.dropDatabase();

@@ -32,7 +32,7 @@ describe('lossless full-log read excludes rollback-retired observations', () => 
       replSet: { count: 1, storageEngine: 'wiredTiger' },
     });
     await mongoose.connect(memoryReplSet.getUri('lossless_rollback_scope_test'));
-  }, 120_000);
+  });
 
   beforeEach(async () => {
     await Observation.deleteMany({});

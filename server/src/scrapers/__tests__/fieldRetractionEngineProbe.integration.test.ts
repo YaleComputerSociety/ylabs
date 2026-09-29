@@ -149,7 +149,7 @@ describe('the observation engine can retract a field a source stopped asserting 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 120000);
+  });
 
   afterAll(async () => {
     process.env.SCRAPER_FIELD_RETRACTION = originalFlag;
