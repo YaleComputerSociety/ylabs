@@ -27,6 +27,7 @@ import {
   orderedScraperSweepPhases,
   parseDevelopmentPostRunStageResult,
   parseEponymousFraMergeResult,
+  parseGrantShellPortResult,
   parseResearcherDedupeResult,
   parseUrlIdentityDedupeResult,
   parseProfileLinkHealthResult,
@@ -659,6 +660,36 @@ describe('runScraperSweep', () => {
     expect(deleting.map((stage) => stage.name).at(-1)).toBe('archived-cleanup');
   });
 
+  it('ports grant shells before the eponymous FRA merge, so a ported faculty row can still fold into a lab', () => {
+    const stages = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      portGrantShells: true,
+      autoMergeEponymousFra: true,
+      sinceIso: '2026-08-26T00:00:00.000Z',
+    });
+    const names = stages.map((stage) => stage.name);
+    expect(names.indexOf('grant-shell-faculty-port')).toBeLessThan(
+      names.indexOf('eponymous-fra-merge'),
+    );
+    expect(stages.find((stage) => stage.name === 'grant-shell-faculty-port')?.args).toEqual(
+      expect.arrayContaining([
+        'research-entity:port-grant-shells-to-faculty-profiles',
+        '--apply',
+        '--confirm-port-grant-shells-to-faculty-profiles',
+      ]),
+    );
+    expect(
+      buildDevelopmentPostRunStages('/tmp/development-sweep').map((s) => s.name),
+    ).not.toContain('grant-shell-faculty-port');
+  });
+
+  it('holds the grant shell port to an apply-mode report', () => {
+    expect(parseGrantShellPortResult({ mode: 'apply', portDelta: { appliedPorts: 3 } })).toEqual({
+      grantShellPortDelta: { appliedPorts: 3 },
+    });
+    expect(() => parseGrantShellPortResult({ mode: 'dry-run', portDelta: {} })).toThrow();
+    expect(() => parseGrantShellPortResult({ mode: 'apply' })).toThrow();
+  });
+
   it('omits the eponymous FRA merge stage by default (flag off)', () => {
     const stages = buildDevelopmentPostRunStages('/tmp/development-sweep');
     expect(stages.map((stage) => stage.name)).not.toContain('eponymous-fra-merge');
@@ -772,6 +803,7 @@ describe('runScraperSweep', () => {
       expect(options).toMatchObject({
         autoMergeEponymousFra: true,
         dedupeResearchers: true,
+        portGrantShells: true,
         mergeUrlIdentityDuplicates: true,
         deleteMergeResidue: true,
         sinceIso,
@@ -812,6 +844,20 @@ describe('runScraperSweep', () => {
       (stage) => stage.name,
     );
     expect(names).not.toContain('researcher-dedupe');
+    expect(names).toContain('eponymous-fra-merge');
+  });
+
+  it('disables only the grant shell port stage when its env var is explicitly false', () => {
+    const options = resolveDevelopmentPostRunOptions(
+      'development-full',
+      { SCRAPER_SWEEP_PORT_GRANT_SHELLS: 'off' },
+      sinceIso,
+    );
+    expect(options).toMatchObject({ portGrantShells: false, autoMergeEponymousFra: true });
+    const names = buildDevelopmentPostRunStages('/tmp/development-sweep', options).map(
+      (stage) => stage.name,
+    );
+    expect(names).not.toContain('grant-shell-faculty-port');
     expect(names).toContain('eponymous-fra-merge');
   });
 
@@ -1077,6 +1123,7 @@ describe('runScraperSweep', () => {
     );
     const withOptional = buildDevelopmentPostRunStages('/tmp/development-sweep', {
       dedupeResearchers: true,
+      portGrantShells: true,
       autoMergeEponymousFra: true,
       mergeUrlIdentityDuplicates: true,
       pruneDeadObservations: true,

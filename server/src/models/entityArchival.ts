@@ -80,6 +80,9 @@ export const PI_DEDUPE_ARCHIVE_REASON = 'research-entity:dedupe-by-pi';
 export const SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON =
   'Merged into the corroborated survivor of its duplicate-url group: same lead person plus a corroborating name or shell asymmetry (#3326).';
 
+export const GRANT_SHELL_FACULTY_PORT_ARCHIVE_REASON =
+  'research-entity:port-grant-shells-to-faculty-profiles';
+
 /**
  * The archivers that fold a row into a canonical one automatically. The eval harness reads
  * this to tell a merge a script decided from one an operator did, because a label produced
@@ -89,6 +92,7 @@ export const AUTOMATED_MERGE_ARCHIVE_REASONS: readonly string[] = [
   PI_DEDUPE_ARCHIVE_REASON,
   DEPT_ROSTER_SHELL_FOLD_ARCHIVE_REASON,
   SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
+  GRANT_SHELL_FACULTY_PORT_ARCHIVE_REASON,
 ];
 
 /**

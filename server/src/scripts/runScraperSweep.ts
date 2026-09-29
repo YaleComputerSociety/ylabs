@@ -40,6 +40,11 @@ import {
 } from './researchEntityEponymousMergeStage';
 import { SCRAPER_SWEEP_DELETE_MERGE_RESIDUE_ENV } from './cleanupArchivedResearchEntities';
 import {
+  DEFAULT_GRANT_SHELL_PORT_MAX,
+  SCRAPER_SWEEP_PORT_GRANT_SHELLS_ENV,
+  type GrantShellPortDelta,
+} from './portGrantShellsToFacultyProfiles';
+import {
   SCRAPER_SWEEP_DEDUPE_RESEARCHERS_ENV,
   type ResearcherDedupeStageDelta,
 } from './dedupeAccountlessResearcherShells';
@@ -178,6 +183,7 @@ export interface DevelopmentPostRunStage {
   name:
     | 'stale-scrape-run-reap'
     | 'researcher-dedupe'
+    | 'grant-shell-faculty-port'
     | 'eponymous-fra-merge'
     | 'url-identity-dedupe'
     | 'website-url-identity-dedupe'
@@ -202,6 +208,7 @@ export interface DevelopmentPostRunStage {
   exitCode: number;
   error?: string;
   mergeDelta?: EponymousFraLabMergeDelta;
+  grantShellPortDelta?: GrantShellPortDelta;
   researcherDedupeDelta?: ResearcherDedupeStageDelta;
   urlIdentityDedupeDelta?: UrlIdentityDedupeStageDelta;
   profileLinkHealthDelta?: ProfileLinkHealthStageDelta;
@@ -212,6 +219,7 @@ export interface DevelopmentPostRunStage {
 export interface DevelopmentPostRunStageOptions {
   autoMergeEponymousFra?: boolean;
   dedupeResearchers?: boolean;
+  portGrantShells?: boolean;
   mergeUrlIdentityDuplicates?: boolean;
   deleteMergeResidue?: boolean;
   pruneDeadObservations?: boolean;
@@ -242,6 +250,7 @@ export function resolveDevelopmentPostRunOptions(
   return {
     autoMergeEponymousFra: isSweepStageEnabledByDefault(env[SCRAPER_SWEEP_AUTO_MERGE_FRA_ENV]),
     dedupeResearchers: isSweepStageEnabledByDefault(env[SCRAPER_SWEEP_DEDUPE_RESEARCHERS_ENV]),
+    portGrantShells: isSweepStageEnabledByDefault(env[SCRAPER_SWEEP_PORT_GRANT_SHELLS_ENV]),
     mergeUrlIdentityDuplicates: isUrlIdentityDedupeStageEnabled(env),
     deleteMergeResidue: isSweepStageEnabledByDefault(env[SCRAPER_SWEEP_DELETE_MERGE_RESIDUE_ENV]),
     sinceIso,
@@ -867,6 +876,7 @@ function spawnChild(
 
 interface PostRunStageDelta {
   mergeDelta?: EponymousFraLabMergeDelta;
+  grantShellPortDelta?: GrantShellPortDelta;
   researcherDedupeDelta?: ResearcherDedupeStageDelta;
   urlIdentityDedupeDelta?: UrlIdentityDedupeStageDelta;
   profileLinkHealthDelta?: ProfileLinkHealthStageDelta;
@@ -971,6 +981,15 @@ export function parseEponymousFraMergeResult(artifact: unknown): PostRunStageDel
     throw new Error('eponymous-fra-merge result is missing a mergeDelta object');
   }
   return { mergeDelta: mergeDelta as EponymousFraLabMergeDelta };
+}
+
+export function parseGrantShellPortResult(artifact: unknown): PostRunStageDelta {
+  const record = artifact as Record<string, unknown> | null;
+  const portDelta = record?.portDelta;
+  if (!portDelta || typeof portDelta !== 'object' || record?.mode !== 'apply') {
+    throw new Error('grant-shell-faculty-port result is missing an apply-mode portDelta object');
+  }
+  return { grantShellPortDelta: portDelta as GrantShellPortDelta };
 }
 
 export function parseResearcherDedupeResult(artifact: unknown): PostRunStageDelta {
@@ -1126,6 +1145,19 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     buildArgs: () => ['--apply', '--confirm-dedupe-accountless-researcher-shells'],
     isEnabled: (options) => Boolean(options.dedupeResearchers),
     parseResult: parseResearcherDedupeResult,
+  },
+  {
+    name: 'grant-shell-faculty-port',
+    command: 'research-entity:port-grant-shells-to-faculty-profiles',
+    artifactName: 'development-grant-shell-faculty-port.json',
+    buildArgs: () => [
+      '--apply',
+      '--confirm-port-grant-shells-to-faculty-profiles',
+      '--max-ports',
+      String(DEFAULT_GRANT_SHELL_PORT_MAX),
+    ],
+    isEnabled: (options) => Boolean(options.portGrantShells),
+    parseResult: parseGrantShellPortResult,
   },
   {
     name: 'eponymous-fra-merge',

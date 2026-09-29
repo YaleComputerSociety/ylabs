@@ -74,6 +74,11 @@ const REVIEWED_RAW_RESEARCH_ENTITY_WRITERS: Record<
     reason:
       'copies stored documents between collections by name, a migration that preserves each document as stored',
   },
+  'scripts/portGrantShellsToFacultyProfiles.ts': {
+    sites: 3,
+    reason:
+      'copies one stored research-entity document onto the faculty research profile key it is ported to, and restores the prior document verbatim when the merge defers, so every field and provenance entry is one the model already accepted and strict mode cannot silently drop a field the current schema no longer declares',
+  },
   'scripts/promoteAcceptedBetaCopy.ts': {
     sites: 2,
     reason:
