@@ -16,9 +16,9 @@ Any enum or payload change must update both files and their focused contract tes
 | `research_profile_open`      | `research_entity` | `source`                                                          | A canonical research profile loaded successfully.                                               |
 | `research_source_review`     | `research_entity` | `sourceCategory`                                                  | A student opened a profile, website, ORCID, publication, or evidence source.                    |
 | `research_filter_change`     | none              | `operation`, `filter`                                             | A bounded research filter was applied, removed, cleared, opened, or closed.                     |
-| `research_save`              | `research_entity` or `fellowship` | `operation`, `surface`                                            | A saved research-entity home, or a watched program on the account Program Watch surface, was saved or removed successfully. |
+| `research_save`              | `research_entity` or `fellowship` | `operation`, `surface`                                            | A saved research-entity home, or a watched program on `/programs` (surface `search`) or the Dashboard Program Watch (surface `saved_plans`), was saved or removed successfully. |
 | `research_compare`           | `research_entity` | `entityCountBucket`                                               | One entity participated in an explicit saved-home comparison or advising preview.               |
-| `research_plan_update`       | `research_entity` | `field`                                                           | A saved plan field group persisted successfully.                                                |
+| `research_plan_update`       | `research_entity` | `field`                                                           | A saved plan field group persisted a changed value successfully.                                |
 | `research_qualified_action`  | `research_entity` | `actionCategory`                                                  | The student opened a route that the server re-qualified against the current QA-01 projection.   |
 
 A result page is one row, never one row per entity.
@@ -71,6 +71,8 @@ Before #3692 the first burst of parallel requests in a session each wrote one, a
 Logins count `login` rows only.
 Opening a program records one `fellowship_view`, whether from a card or a direct `?program=` link, and a click on its application link records one `ways_in_click` with kind `apply`; before #3766 each wrote a second row (`research_view` and `source_link_click`).
 A research save or removal records the surface it came from, so a removal on the Dashboard reads `saved_plans`.
+Before #3716 a watch made on `/programs` recorded no `research_save`, and the only `fellowship` rows came from the Dashboard toggle, which is almost always a removal, so stored `fellowship` saves before that change undercount watches.
+A note field that is focused and left without a change sends no write and records no `research_plan_update`, and a typed edit records one; before #3716 every blur wrote and recorded one, so the Updated a plan stage overcounts before that change.
 No `research_qualified_action` can be recorded while planning contexts have no source (#377), so when none was recorded in the range the funnel omits the qualified-route stage and the route tiles read as not recorded, the same treatment as the overall next-step rate.
 The per-user Profile Opens column (the `researchViews` field) counts `research_profile_open`, because `research_view` was only ever emitted by the fellowship detail route and nothing emits it after #3766.
 Top Research Entities ranks research and profiles by `research_profile_open` and programs by `fellowship_view`; before #3766 it counted `research_view` and so listed programs only.

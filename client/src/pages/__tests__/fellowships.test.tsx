@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -13,6 +13,8 @@ import UIContext, { defaultUIContext } from '../../contexts/UIContext';
 import type { Fellowship } from '../../types/types';
 import { summarizeProgramJourney } from '../../utils/programJourney';
 import axios from '../../utils/axios';
+import { trackResearchEvent } from '../../utils/researchAnalytics';
+import swal from 'sweetalert';
 
 vi.mock('../../utils/axios', () => ({
   default: {
@@ -20,6 +22,15 @@ vi.mock('../../utils/axios', () => ({
     put: vi.fn(),
     delete: vi.fn(),
   },
+}));
+
+vi.mock('sweetalert', () => ({ default: vi.fn() }));
+
+vi.mock('../../utils/researchAnalytics', async () => ({
+  ...(await vi.importActual<typeof import('../../utils/researchAnalytics')>(
+    '../../utils/researchAnalytics',
+  )),
+  trackResearchEvent: vi.fn(),
 }));
 
 vi.mock('../../components/shared/BrowseGrid', () => ({
@@ -400,7 +411,9 @@ describe('Programs page', () => {
     ]);
 
     await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds');
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds', {
+        withCredentials: true,
+      });
     });
 
     expect(screen.getByRole('heading', { name: 'Programs & Fellowships' })).toBeTruthy();
@@ -442,7 +455,9 @@ describe('Programs page', () => {
     );
 
     await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds');
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds', {
+        withCredentials: true,
+      });
     });
 
     expect(total).toBe(133);
@@ -485,7 +500,9 @@ describe('Programs page', () => {
     renderPage(fellowships);
 
     await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds');
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds', {
+        withCredentials: true,
+      });
     });
 
     const summary = summarizeProgramJourney(fellowships);
@@ -523,7 +540,9 @@ describe('Programs page', () => {
     renderPage(fellowships);
 
     await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds');
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds', {
+        withCredentials: true,
+      });
     });
 
     const applyNowHeader = screen.getByRole('heading', { name: 'Apply Now' });
@@ -791,6 +810,7 @@ describe('Programs page', () => {
       '/dashboard',
     );
     expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedPrograms', {
+      withCredentials: true,
       data: { watchedPrograms: ['open'] },
     });
   });
@@ -854,6 +874,178 @@ describe('Programs page', () => {
     await waitFor(() =>
       expect(mockedAxios.put.mock.calls.map((call) => call[0])).toEqual(['fellowships/f1/addView']),
     );
+  });
+
+  describe('watching programs', () => {
+    const twoPrograms = () => [
+      baseFellowship({ id: 'program-a', title: 'Synthetic Program A' }),
+      baseFellowship({ id: 'program-b', title: 'Synthetic Program B' }),
+    ];
+
+    it('a failed watch does not revert a different program that saved', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      localStorage.setItem('yale-research.firstSave.program.v1', 'true');
+      const serverWatchedIds: string[] = [];
+      mockedAxios.get.mockImplementation((url: string) =>
+        Promise.resolve({
+          data:
+            url === '/users/watchedProgramIds' ? { watchedProgramIds: [...serverWatchedIds] } : {},
+        }),
+      );
+      let rejectA: (reason: unknown) => void = () => {};
+      mockedAxios.put.mockImplementation((_url: string, body: any) => {
+        const [id] = body.data.watchedPrograms;
+        if (id === 'program-a') {
+          return new Promise((_resolve, reject) => {
+            rejectA = reject;
+          });
+        }
+        serverWatchedIds.push(id);
+        return Promise.resolve({ data: {} });
+      });
+      renderPage(twoPrograms());
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Save program program-a' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Save program program-b' }));
+      expect(await screen.findByRole('button', { name: 'Saved program program-b' })).toBeTruthy();
+
+      rejectA(new Error('network'));
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Saved program program-a' })).toBeNull(),
+      );
+      expect(screen.queryByRole('button', { name: 'Saved program program-b' })).toBeTruthy();
+    });
+
+    it('tells the student when a watch could not be saved', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      localStorage.setItem('yale-research.firstSave.program.v1', 'true');
+      mockedAxios.put.mockRejectedValue(new Error('network'));
+      renderPage(twoPrograms());
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Save program program-a' }));
+
+      await waitFor(() =>
+        expect(swal).toHaveBeenCalledWith(
+          expect.objectContaining({ icon: 'warning', text: expect.stringMatching(/program/i) }),
+        ),
+      );
+    });
+
+    it('keeps a watch made before the watched list finished loading', async () => {
+      localStorage.setItem('yale-research.firstSave.program.v1', 'true');
+      let resolveIds: (value: unknown) => void = () => {};
+      mockedAxios.get.mockImplementation((url: string) =>
+        url === '/users/watchedProgramIds'
+          ? new Promise((resolve) => {
+              resolveIds = resolve;
+            })
+          : Promise.resolve({ data: {} }),
+      );
+      mockedAxios.put.mockResolvedValue({ data: {} });
+      renderPage(twoPrograms());
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Save program program-a' }));
+      await waitFor(() => expect(mockedAxios.put).toHaveBeenCalled());
+      await act(async () => resolveIds({ data: { watchedProgramIds: ['program-b'] } }));
+
+      expect(screen.getByRole('button', { name: 'Saved program program-a' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Saved program program-b' })).toBeTruthy();
+    });
+
+    it('says so when the watched list could not be loaded', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockedAxios.get.mockImplementation((url: string) =>
+        url === '/users/watchedProgramIds'
+          ? Promise.reject(new Error('network'))
+          : Promise.resolve({ data: {} }),
+      );
+      renderPage(twoPrograms());
+
+      expect(await screen.findByText(/could not load the programs you are watching/i)).toBeTruthy();
+    });
+
+    it('watching a program from /programs records a research_save', async () => {
+      localStorage.setItem('yale-research.firstSave.program.v1', 'true');
+      mockedAxios.put.mockResolvedValue({ data: {} });
+      renderPage([baseFellowship({ id: 'program-a', title: 'Synthetic Program A' })]);
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Save program program-a' }));
+      await waitFor(() => expect(mockedAxios.put).toHaveBeenCalled());
+
+      await waitFor(() =>
+        expect(trackResearchEvent).toHaveBeenCalledWith(
+          expect.objectContaining({
+            eventType: 'research_save',
+            entityType: 'fellowship',
+            entityId: 'program-a',
+            payload: { operation: 'save', surface: 'search' },
+          }),
+        ),
+      );
+    });
+
+    it('offers an undo after unwatching that restores the note and stage', async () => {
+      mockedAxios.get.mockImplementation((url: string) => {
+        if (url === '/users/watchedProgramIds') {
+          return Promise.resolve({ data: { watchedProgramIds: ['program-a'] } });
+        }
+        if (url === '/users/watchedProgramPlans') {
+          return Promise.resolve({
+            data: {
+              watchedProgramPlans: {
+                'program-a': { privateNotes: 'Synthetic note', stage: 'APPLIED' },
+              },
+            },
+          });
+        }
+        return Promise.resolve({ data: {} });
+      });
+      mockedAxios.delete.mockResolvedValue({ data: {} });
+      mockedAxios.put.mockResolvedValue({ data: {} });
+      renderPage(twoPrograms());
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Saved program program-a' }));
+
+      const undo = await screen.findByRole('button', { name: 'Undo' });
+      expect(mockedAxios.delete).toHaveBeenCalledWith('/users/watchedPrograms', {
+        withCredentials: true,
+        data: { watchedPrograms: ['program-a'] },
+      });
+      expect(screen.getByRole('button', { name: 'Save program program-a' })).toBeTruthy();
+      const region = undo.closest('[role="status"]');
+      expect(region?.textContent).toContain('Synthetic Program A');
+      expect(region?.textContent).toContain('Undo restores your note and stage too');
+
+      await userEvent.click(undo);
+
+      await waitFor(() =>
+        expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedProgramPlans/program-a', {
+          data: { plan: { privateNotes: 'Synthetic note', stage: 'APPLIED' } },
+        }),
+      );
+      expect(screen.getByRole('button', { name: 'Saved program program-a' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    });
+
+    it('does not unwatch when the plan to protect could not be read first', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockedAxios.get.mockImplementation((url: string) => {
+        if (url === '/users/watchedProgramIds') {
+          return Promise.resolve({ data: { watchedProgramIds: ['program-a'] } });
+        }
+        if (url === '/users/watchedProgramPlans') {
+          return Promise.reject(new Error('network'));
+        }
+        return Promise.resolve({ data: {} });
+      });
+      renderPage(twoPrograms());
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Saved program program-a' }));
+
+      await waitFor(() => expect(swal).toHaveBeenCalled());
+      expect(mockedAxios.delete).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Saved program program-a' })).toBeTruthy();
+    });
   });
 
   describe('program modal history', () => {

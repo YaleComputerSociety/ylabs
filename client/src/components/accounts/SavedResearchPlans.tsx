@@ -5,11 +5,14 @@
  * /users/savedResearchEntities and /users/savedResearchEntityPlans) so a saved
  * plan can be opened, annotated, and removed rather than only counted.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from '../../utils/axios';
 import useFavorites from '../../hooks/useFavorites';
 import useLatestRequest from '../../hooks/useLatestRequest';
+import usePlanNoteAutosave from '../../hooks/usePlanNoteAutosave';
+import useUndoableRemoval from '../../hooks/useUndoableRemoval';
+import UndoRemovalBanner from '../shared/UndoRemovalBanner';
 import LoadingSpinner from '../shared/LoadingSpinner';
 import LoadErrorNotice from '../shared/LoadErrorNotice';
 import { safeRouteSegment } from '../../utils/url';
@@ -77,8 +80,6 @@ const UNAVAILABLE_REASON_TEXT: Record<UnavailableSavedResearchEntity['reason'], 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 const MAX_PLAN_NOTES_LENGTH = 2000;
-/** Long enough to notice the message and reach the button, short enough not to linger. */
-const UNDO_WINDOW_MS = 10000;
 const MIN_COMPARE_ENTITIES = 2;
 const MAX_COMPARE_ENTITIES = 4;
 
@@ -106,6 +107,24 @@ const ACCESS_BADGE_CLASS: Record<UndergraduateAccessStatus['tone'], string> = {
   evidence: 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]',
 };
 
+const persistResearchPlanNote = async (entityId: string, note: string) => {
+  try {
+    await axios.put(`/users/savedResearchEntityPlans/${entityId}`, {
+      data: { plan: { privateNotes: note } },
+    });
+  } catch (error) {
+    console.error('Error saving research plan note.');
+    throw error;
+  }
+  void trackResearchEvent({
+    eventType: 'research_plan_update',
+    entityType: 'research_entity',
+    entityId,
+    payload: { field: 'note_presence' },
+    dedupeKey: createResearchAnalyticsInteractionId('plan'),
+  });
+};
+
 const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const {
     favIds: savedSlugs,
@@ -121,11 +140,11 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const [isLoading, setIsLoading] = useState(true);
   const [plansLoadFailed, setPlansLoadFailed] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
   const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
   const [selectedForCompare, setSelectedForCompare] = useState<string[]>([]);
   const [isComparing, setIsComparing] = useState(false);
-  const noteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const { noteSaveStatuses, saveNote, scheduleNoteSave, markNotePersisted } =
+    usePlanNoteAutosave(persistResearchPlanNote);
 
   // The count is how many plans the owner has, not how many of them are servable:
   // reporting only the servable ones is what let the dashboard read "0 research
@@ -164,6 +183,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
       for (const entity of loadedEntities) {
         loadedNotes[entity._id] = plans[entity._id]?.privateNotes || '';
         loadedStages[entity._id] = normalizeResearchPlanStage(plans[entity._id]?.stage);
+        markNotePersisted(entity._id, loadedNotes[entity._id]);
       }
       setEntities(loadedEntities);
       setUnavailable(loadedUnavailable);
@@ -180,52 +200,15 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     } finally {
       if (ticket.isCurrent()) setIsLoading(false);
     }
-  }, [planRequest]);
+  }, [planRequest, markNotePersisted]);
 
   useEffect(() => {
     void loadPlans();
-    const timers = noteTimersRef.current;
-    return () => {
-      Object.values(timers).forEach(clearTimeout);
-    };
   }, [loadPlans]);
 
   const retryLoad = () => {
     void reloadFavorites();
     void loadPlans();
-  };
-
-  const savePlanNote = useCallback(async (entityId: string, note: string) => {
-    setSaveStatuses((statuses) => ({ ...statuses, [entityId]: 'saving' }));
-    try {
-      await axios.put(`/users/savedResearchEntityPlans/${entityId}`, {
-        data: { plan: { privateNotes: note } },
-      });
-      setSaveStatuses((statuses) => ({ ...statuses, [entityId]: 'saved' }));
-      void trackResearchEvent({
-        eventType: 'research_plan_update',
-        entityType: 'research_entity',
-        entityId,
-        payload: { field: 'note_presence' },
-        dedupeKey: createResearchAnalyticsInteractionId('plan'),
-      });
-    } catch {
-      console.error('Error saving research plan note.');
-      setSaveStatuses((statuses) => ({ ...statuses, [entityId]: 'error' }));
-    }
-  }, []);
-
-  const scheduleNoteSave = (entityId: string, note: string) => {
-    clearTimeout(noteTimersRef.current[entityId]);
-    setSaveStatuses((statuses) => ({ ...statuses, [entityId]: 'idle' }));
-    noteTimersRef.current[entityId] = setTimeout(() => {
-      void savePlanNote(entityId, note);
-    }, 700);
-  };
-
-  const flushNoteSave = (entityId: string) => {
-    clearTimeout(noteTimersRef.current[entityId]);
-    void savePlanNote(entityId, notes[entityId] || '');
   };
 
   const changeStage = useCallback(
@@ -269,43 +252,36 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
    * Shneiderman's sixth rule is about the reassurance as much as the recovery, and a
    * dialog taxes every removal to guard against the rare regretted one.
    */
-  const [undoableUnsave, setUndoableUnsave] = useState<{
-    slug: string;
-    entityId: string;
-    name: string;
-    note: string;
-  } | null>(null);
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  useEffect(() => () => clearTimeout(undoTimerRef.current), []);
+  const {
+    undoableItem: undoableUnsave,
+    offerUndo,
+    undoRemoval,
+  } = useUndoableRemoval<{ slug: string; entityId: string; name: string; note: string }>();
 
   const unsavePlan = (slug: string, entityId: string, name: string) => {
     // Read the note before the row leaves the list, because afterwards it is gone
     // from both the server and this component's state.
     const note = notes[entityId] || '';
-    void setFavorite(slug, false, 'saved_plans');
-    clearTimeout(undoTimerRef.current);
-    setUndoableUnsave({ slug, entityId, name, note });
-    undoTimerRef.current = setTimeout(() => setUndoableUnsave(null), UNDO_WINDOW_MS);
+    const removal = setFavorite(slug, false, 'saved_plans');
+    void removal.then((removed) => {
+      if (removed) markNotePersisted(entityId, '');
+    });
+    offerUndo({ slug, entityId, name, note }, removal);
   };
 
-  const undoUnsave = async () => {
-    if (!undoableUnsave) return;
-    const { slug, entityId, note } = undoableUnsave;
-    clearTimeout(undoTimerRef.current);
-    setUndoableUnsave(null);
-
-    const restored = await setFavorite(slug, true, 'saved_plans');
-    // The note write is not gated on the favourite succeeding. Gating it means a
-    // failed re-favourite silently discards the only copy of the note, which is the
-    // loss this undo exists to prevent.
-    if (note) {
-      setNotes((current) => ({ ...current, [entityId]: note }));
-      await savePlanNote(entityId, note);
-    }
-    // Put the affordance back rather than stranding the student with no way to retry.
-    if (!restored) setUndoableUnsave(undoableUnsave);
-  };
+  const undoUnsave = () =>
+    undoRemoval(async ({ slug, entityId, note }) => {
+      const restored = await setFavorite(slug, true, 'saved_plans');
+      // The note write is not gated on the favourite succeeding. Gating it means a
+      // failed re-favourite silently discards the only copy of the note, which is the
+      // loss this undo exists to prevent.
+      if (note) {
+        setNotes((current) => ({ ...current, [entityId]: note }));
+        await saveNote(entityId, note);
+      }
+      // Put the affordance back rather than stranding the student with no way to retry.
+      return restored;
+    });
 
   // Keyed by entity id rather than slug: an unavailable target has no slug the list
   // can trust, and the remove endpoint accepts either.
@@ -412,23 +388,10 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
       {heading}
 
       {undoableUnsave && (
-        <div
-          className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-panel-muted px-4 py-3"
-          role="status"
-          aria-live="polite"
-        >
-          <p className="text-sm text-ink-soft">
-            Removed <span className="font-semibold text-ink">{undoableUnsave.name}</span> from saved
-            research.{undoableUnsave.note ? ' Undo restores your notes too.' : ''}
-          </p>
-          <button
-            type="button"
-            onClick={() => void undoUnsave()}
-            className="yr-focus-ring inline-flex min-h-[44px] flex-shrink-0 items-center rounded-control border border-line-brand bg-brand-soft px-3 py-2 text-xs font-semibold text-brand transition-colors hover:bg-panel"
-          >
-            Undo
-          </button>
-        </div>
+        <UndoRemovalBanner onUndo={() => void undoUnsave()}>
+          Removed <span className="font-semibold text-ink">{undoableUnsave.name}</span> from saved
+          research.{undoableUnsave.note ? ' Undo restores your notes too.' : ''}
+        </UndoRemovalBanner>
       )}
 
       {unavailable.length > 0 && (
@@ -507,7 +470,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
       {visibleEntities.length > 0 ? (
         <ul>
           {orderedEntities.map((entity) => {
-            const status = saveStatuses[entity._id];
+            const status = noteSaveStatuses[entity._id];
             const accessStatus = accessStatuses.get(entity._id) || null;
             const isEditing = editingId === entity._id;
             const note = notes[entity._id] || '';
@@ -618,7 +581,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                           setNotes((current) => ({ ...current, [entity._id]: value }));
                           scheduleNoteSave(entity._id, value);
                         }}
-                        onBlur={() => flushNoteSave(entity._id)}
+                        onBlur={() => void saveNote(entity._id, note)}
                         maxLength={MAX_PLAN_NOTES_LENGTH}
                         placeholder="Add a private note about this research…"
                         rows={2}
