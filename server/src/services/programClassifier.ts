@@ -52,6 +52,30 @@ function textForProgram(input: ProgramClassificationInput): string {
     .join(' ');
 }
 
+// `purpose` is a multi-select of permitted uses, so its "Senior Research Project or Senior
+// Essay" entry sits on awards open to first-years (#3904). A statement about who the award
+// is for has to come from the record's own prose.
+function proseForProgram(input: ProgramClassificationInput): string {
+  return [
+    input.title,
+    input.competitionType,
+    input.summary,
+    input.description,
+    input.applicationInformation,
+    input.eligibility,
+    input.additionalInformation,
+  ]
+    .map(normalizeText)
+    .filter(Boolean)
+    .join(' ');
+}
+
+const SENIOR_RESEARCH_NAME =
+  /senior (?:research|essay)|senior project|mellon senior|residential college|richter/;
+
+const SENIOR_RESEARCH_PROSE =
+  /\b(?:fund(?:s|ing)?|support(?:s|ing)?|costs? associated with|off-?set)\b[^.]{0,80}\bsenior (?:research project|essay|thesis|project)s?\b/;
+
 function identityTextForProgram(input: ProgramClassificationInput): string {
   return [input.title, input.competitionType, input.sourceUrl]
     .map(normalizeText)
@@ -72,6 +96,12 @@ function baseFundingClassification(): ProgramClassification {
     prepSteps: ['Research plan', 'Faculty mentor or sponsor', 'Official application'],
   };
 }
+
+// A page titled only with award nouns ("Fellowships & Grants", "Undergraduate Grants and
+// Prizes") lists many awards rather than being one, so its prose mentions every use any of
+// them funds and would otherwise classify as whichever award it names first.
+const GENERIC_AWARD_HUB_TITLE =
+  /^(?:(?:student|undergraduate|graduate) )?(?:grants?|fellowships?|awards?|prizes?|funding)(?: (?:and|&) (?:grants?|fellowships?|awards?|prizes?|funding))*$/;
 
 export const ARCHIVE_REVIEW_STUDENT_FACING_CATEGORY = 'Archive / review';
 
@@ -269,7 +299,33 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/\bstars\b/.test(identityLower) && /\bsummer research program\b/.test(lower)) {
+  const namesStars = /\bSTARS\b/.test(title) || /\/stars\//.test(identityLower);
+  if (
+    namesStars &&
+    /\bmentoring and support program\b|\brather than a direct research placement\b/.test(lower)
+  ) {
+    return structuredProgram({
+      programKind: 'STRUCTURED_PROGRAM',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'STEM mentoring program',
+      bestNextStep:
+        'Apply to the program for mentoring, advising, and community before you look for a lab.',
+      prepSteps: ['Eligibility check', 'Official application'],
+    });
+  }
+
+  if (namesStars && !/\bsummer research program\b/.test(lower) && /\bresearch\b/.test(lower)) {
+    return structuredProgram({
+      programKind: 'STRUCTURED_PROGRAM',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'Structured research program',
+      requiresMentorBeforeApply: true,
+      bestNextStep: 'Secure a Yale faculty research mentor before applying to the program.',
+      prepSteps: ['Faculty research mentor', 'Research proposal', 'Official application'],
+    });
+  }
+
+  if (namesStars && /\bsummer research program\b/.test(lower)) {
     return structuredProgram({
       programCategory: 'SUMMER_RESEARCH_PROGRAM',
       programKind: 'STRUCTURED_PROGRAM',
@@ -360,7 +416,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/mellon mays/.test(identityLower)) {
+  if (/mellon mays|\bbouchet\b/.test(identityLower)) {
     return structuredProgram({
       programCategory: 'RECURRING_PROGRAM',
       programKind: 'STRUCTURED_PROGRAM',
@@ -368,9 +424,13 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
       studentFacingCategory: 'Cohort research program',
       mentorMatching: true,
       compensationSummary: 'Academic-year and summer research support',
-      bestNextStep: 'Review Mellon Mays eligibility and prepare the cohort-program application.',
+      bestNextStep: 'Review the program eligibility and prepare the cohort-program application.',
       prepSteps: ['Faculty mentor fit', 'Research interests', 'Official application'],
     });
+  }
+
+  if (GENERIC_AWARD_HUB_TITLE.test(titleLower) || /\bfellowships in the news\b/.test(titleLower)) {
+    return archiveReviewClassification();
   }
 
   if (/first[- ]year summer research fellowship/.test(identityLower)) {
@@ -412,9 +472,8 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
   }
 
   if (
-    /senior (?:research|essay)|senior project|mellon senior|residential college|richter/.test(
-      identityLower,
-    )
+    SENIOR_RESEARCH_NAME.test(identityLower) ||
+    SENIOR_RESEARCH_PROSE.test(proseForProgram(input).toLowerCase())
   ) {
     return {
       ...baseFundingClassification(),
@@ -429,7 +488,8 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
 
   const isReuOrSummerResearchProgram =
     /research experiences? for undergraduates|\bnsf reu\b|\breu\b/.test(lower) ||
-    /\bsummer (?:undergraduate )?research (?:program|scholars?(?:hip)?)\b/.test(lower);
+    /\bsummer (?:undergraduate )?research (?:program|scholars?(?:hip)?)\b/.test(lower) ||
+    /\bsummer scholars program\b/.test(lower);
   if (isReuOrSummerResearchProgram) {
     const mentorFirst =
       /(?:identify|secure|arrange|line up|obtain|find)[^.]{0,80}(?:faculty |research )?(?:mentor|adviser|advisor|sponsor)[^.]{0,80}(?:before|prior to|ahead of)\b/.test(
@@ -482,7 +542,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/research assistant|ra program|ra\b/.test(lower)) {
+  if (/research assistant|\bra program|\bra\b/.test(lower)) {
     return structuredProgram({
       programKind: 'RA_PROGRAM',
       entryMode: 'APPLY_TO_PROJECT',
@@ -492,7 +552,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/travel|abroad|field research/.test(lower)) {
+  if (/travel|abroad|field research/.test(lower) && /\bresearch|\bfieldwork\b/.test(lower)) {
     return {
       ...funding,
       programKind: 'TRAVEL_RESEARCH_GRANT',

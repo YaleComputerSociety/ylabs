@@ -21,7 +21,6 @@ import crypto from 'crypto';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
-import { classifyProgram } from '../../services/programClassifier';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
@@ -452,30 +451,11 @@ function currentSourceObservation(
 }
 
 export function candidateToObservations(candidate: ReuProgramCandidate): ObservationInput[] {
-  const classification = classifyProgram({
-    title: candidate.title,
-    competitionType: candidate.competitionType,
-    description: candidate.description,
-    eligibility: candidate.eligibility,
-    purpose: candidate.purpose,
-    termOfAward: candidate.termOfAward,
-    sourceUrl: candidate.sourceUrl,
-  });
   return [
     observation('sourceKey', candidate.sourceKey, candidate),
     observation('sourceName', YALE_REU_PROGRAMS_SOURCE, candidate),
     observation('sourceUrl', candidate.sourceUrl, candidate),
     observation('sourceFingerprint', candidate.sourceFingerprint, candidate),
-    observation('programCategory', classification.programCategory, candidate),
-    observation('programKind', classification.programKind, candidate),
-    observation('entryMode', classification.entryMode, candidate),
-    observation('studentFacingCategory', classification.studentFacingCategory, candidate),
-    observation('requiresMentorBeforeApply', classification.requiresMentorBeforeApply, candidate),
-    observation('mentorMatching', classification.mentorMatching, candidate),
-    observation('undergraduateOnly', classification.undergraduateOnly, candidate),
-    observation('programDates', classification.programDates, candidate),
-    observation('bestNextStep', classification.bestNextStep, candidate),
-    observation('prepSteps', classification.prepSteps, candidate),
     observation('title', candidate.title, candidate),
     observation('competitionType', candidate.competitionType, candidate),
     observation('description', candidate.description, candidate),

@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  CLASSIFIER_DERIVED_FELLOWSHIP_FIELDS,
+  classificationFromObservedFacts,
+} from '../fellowshipClassificationDerivation';
+import {
   candidateToObservations,
   DEFAULT_PAGE_URLS,
   extractIndexSeedChildDetailUrls,
@@ -18,6 +22,12 @@ const sciencePageUrl =
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale';
 const detailPageUrl =
   'https://science.yalecollege.yale.edu/yale-undergraduate-research/fellowship-grants/fixture-research-fellowship';
+
+function classifierFieldsIn(observations: Array<{ field: string }>): string[] {
+  return observations
+    .map((obs) => obs.field)
+    .filter((field) => CLASSIFIER_DERIVED_FELLOWSHIP_FIELDS.includes(field));
+}
 
 describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
   it('suppresses grants and fellowship database navigation links', () => {
@@ -882,13 +892,13 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
       title: 'STARS Summer Research Program',
       deadline: new Date('2026-02-19T23:59:59.999Z'),
     });
-    expect(candidateToObservations(candidates[0])).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ field: 'programKind', value: 'STRUCTURED_PROGRAM' }),
-        expect.objectContaining({ field: 'entryMode', value: 'SECURE_MENTOR_THEN_APPLY' }),
-        expect.objectContaining({ field: 'requiresMentorBeforeApply', value: true }),
-      ]),
-    );
+    const observations = candidateToObservations(candidates[0]);
+    expect(classifierFieldsIn(observations)).toEqual([]);
+    expect(classificationFromObservedFacts(observations)).toMatchObject({
+      programKind: 'STRUCTURED_PROGRAM',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      requiresMentorBeforeApply: true,
+    });
   });
 
   it('classifies Yale-UC Louvain as a real external summer research entry program', () => {
@@ -912,17 +922,13 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
       isAcceptingApplications: true,
     });
 
-    expect(observations).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ field: 'programKind', value: 'CENTER_INTERNSHIP' }),
-        expect.objectContaining({ field: 'entryMode', value: 'APPLY_TO_PROJECT' }),
-        expect.objectContaining({ field: 'requiresMentorBeforeApply', value: false }),
-        expect.objectContaining({
-          field: 'studentFacingCategory',
-          value: 'External summer research program',
-        }),
-      ]),
-    );
+    expect(classifierFieldsIn(observations)).toEqual([]);
+    expect(classificationFromObservedFacts(observations)).toMatchObject({
+      programKind: 'CENTER_INTERNSHIP',
+      entryMode: 'APPLY_TO_PROJECT',
+      requiresMentorBeforeApply: false,
+      studentFacingCategory: 'External summer research program',
+    });
   });
 
   it('canonicalizes moved Yale College financial award URLs', () => {
@@ -2243,7 +2249,7 @@ describe('YaleCollegeFellowshipsOfficeScraper MacMillan council grant pages (#15
     expect(candidate.applicationMaterials).toContain('Faculty mentor support');
   });
 
-  it('classifies a council grant page as a fellowship/RA program home', () => {
+  it('records a council grant hub page as facts and leaves it for archive review', () => {
     const [candidate] = parseFellowshipCatalogPage(
       southAsiaHtml,
       southAsiaUrl,
@@ -2257,7 +2263,11 @@ describe('YaleCollegeFellowshipsOfficeScraper MacMillan council grant pages (#15
     expect(observations.find((obs) => obs.field === 'title')?.value).toBe(
       'Undergraduate Grants and Prizes',
     );
-    expect(observations.find((obs) => obs.field === 'programKind')).toBeDefined();
+    expect(classifierFieldsIn(observations)).toEqual([]);
+    expect(classificationFromObservedFacts(observations)).toMatchObject({
+      programKind: 'OTHER',
+      studentFacingCategory: 'Archive / review',
+    });
   });
 
   it('never mints the aggregate listing root as a self-citing detail candidate', () => {

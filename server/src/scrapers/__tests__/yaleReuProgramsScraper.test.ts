@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { classificationFromObservedFacts } from '../fellowshipClassificationDerivation';
 import {
   candidateToObservations,
   extractYaleSiteUrlsFromNsfDirectory,
@@ -124,7 +125,7 @@ describe('parseReuProgramPage', () => {
   });
 });
 
-describe('candidateToObservations classification', () => {
+describe('classification derived from the observed facts', () => {
   it('classifies an REU that requires securing a mentor first as SECURE_MENTOR_THEN_APPLY', () => {
     const candidate = parseReuProgramPage(
       astronomyReuHtml,
@@ -133,10 +134,12 @@ describe('candidateToObservations classification', () => {
       referenceDate,
     )!;
     const observations = candidateToObservations(candidate);
-    const byField = (field: string) => observations.find((o) => o.field === field)?.value;
-    expect(byField('programCategory')).toBe('SUMMER_RESEARCH_PROGRAM');
-    expect(byField('entryMode')).toBe('SECURE_MENTOR_THEN_APPLY');
-    expect(byField('requiresMentorBeforeApply')).toBe(true);
+    expect(observations.map((o) => o.field)).not.toContain('programCategory');
+    expect(classificationFromObservedFacts(observations)).toMatchObject({
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      requiresMentorBeforeApply: true,
+    });
   });
 
   it('classifies a program that matches admitted students with mentors as DIRECT_FACULTY_MATCHING', () => {
@@ -147,10 +150,12 @@ describe('candidateToObservations classification', () => {
       referenceDate,
     )!;
     const observations = candidateToObservations(candidate);
-    const byField = (field: string) => observations.find((o) => o.field === field)?.value;
-    expect(byField('programCategory')).toBe('SUMMER_RESEARCH_PROGRAM');
-    expect(byField('entryMode')).toBe('DIRECT_FACULTY_MATCHING');
-    expect(byField('mentorMatching')).toBe(true);
+    expect(observations.map((o) => o.field)).not.toContain('entryMode');
+    expect(classificationFromObservedFacts(observations)).toMatchObject({
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      entryMode: 'DIRECT_FACULTY_MATCHING',
+      mentorMatching: true,
+    });
   });
 });
 

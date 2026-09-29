@@ -536,7 +536,11 @@ describe('departmentUndergradResearchScraper', () => {
           field: 'title',
           value: record.name,
         }),
-        expect.objectContaining({ entityKey: record.entityKey, field: 'programKind' }),
+        expect.objectContaining({
+          entityKey: record.entityKey,
+          field: 'undergraduateOnly',
+          value: true,
+        }),
         expect.objectContaining({ entityKey: record.entityKey, field: 'applicationLink' }),
       ]),
     );
@@ -562,11 +566,10 @@ describe('departmentUndergradResearchScraper', () => {
         'title',
         'summary',
         'description',
-        'programCategory',
-        'programKind',
         'applicationLink',
       ]),
     );
+    expect(fields).not.toContain('programKind');
     expect(fields).not.toEqual(
       expect.arrayContaining([
         'postedOpportunityTitle',
@@ -958,7 +961,7 @@ describe('departmentUndergradResearchScraper', () => {
       (observation) => observation.field,
     );
     expect(fields).toEqual(
-      expect.arrayContaining(['sourceKey', 'title', 'description', 'programKind']),
+      expect.arrayContaining(['sourceKey', 'title', 'description', 'researchFocused']),
     );
     expect(fields).not.toEqual(
       expect.arrayContaining([
@@ -1093,7 +1096,7 @@ describe('departmentUndergradResearchScraper', () => {
       (observation) => observation.field,
     );
     expect(fields).toEqual(
-      expect.arrayContaining(['sourceKey', 'title', 'description', 'programKind']),
+      expect.arrayContaining(['sourceKey', 'title', 'description', 'researchFocused']),
     );
     expect(fields).not.toEqual(
       expect.arrayContaining([

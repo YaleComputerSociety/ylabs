@@ -29,7 +29,6 @@ import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { fetchFailureMessage, fetchFailureStatusCode } from '../utils/fetchFailure';
 import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
-import { classifyProgram } from '../../services/programClassifier';
 import { readCourseCreditRouteFromHtml } from '../utils/courseCreditRouteEvidence';
 import {
   ORG_UNIT_COURSE_CREDIT_ROUTE_FIELD,
@@ -716,32 +715,14 @@ function programRecordToFellowshipObservations(
     sourceUrl: record.sourceUrl,
   };
   const summary = record.shortDescription || record.description;
-  const classification = classifyProgram({
-    title: record.name,
-    summary,
-    description: record.description,
-    sourceUrl: record.sourceUrl,
-  });
   const observations: ObservationInput[] = [
     { ...base, field: 'sourceKey', value: record.entityKey },
     { ...base, field: 'sourceName', value: DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE },
     { ...base, field: 'title', value: record.name },
     { ...base, field: 'summary', value: summary },
     { ...base, field: 'description', value: record.description },
-    { ...base, field: 'programCategory', value: classification.programCategory },
-    { ...base, field: 'programKind', value: classification.programKind },
-    { ...base, field: 'entryMode', value: classification.entryMode },
-    { ...base, field: 'studentFacingCategory', value: classification.studentFacingCategory },
-    {
-      ...base,
-      field: 'requiresMentorBeforeApply',
-      value: classification.requiresMentorBeforeApply,
-    },
-    { ...base, field: 'mentorMatching', value: classification.mentorMatching },
-    { ...base, field: 'undergraduateOnly', value: classification.undergraduateOnly ?? true },
+    { ...base, field: 'undergraduateOnly', value: true },
     { ...base, field: 'researchFocused', value: true },
-    { ...base, field: 'bestNextStep', value: classification.bestNextStep },
-    { ...base, field: 'prepSteps', value: classification.prepSteps },
     {
       ...base,
       field: 'applicationLink',

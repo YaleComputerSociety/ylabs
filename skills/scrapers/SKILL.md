@@ -905,6 +905,9 @@ Do not reintroduce a discovery-only lane whose output cannot route a student to 
 | `studentGrantsDatabaseScraper.ts` | Yale Student Grants Database (studentgrants.yale.edu -> CommunityForce): enumerates public student-funding funds via the shared rendered (headless) fetch path (the ASP.NET grid needs JS), cites each fund's own FundDetails page, and fails closed when the rendered results/detail pages come back blocked or empty rather than minting funds from a login shell. |
 | `yaleCollegeFellowshipsOfficeScraper.ts` | Yale College Fellowships Office public catalog. |
 
+A fellowship lane observes facts only and never emits a `classifyProgram` field (`programKind`, `programCategory`, `entryMode`, `studentFacingCategory`, `bestNextStep`, and the rest).
+The projection derives them from the resolved facts on every resolve (`scrapers/fellowshipClassificationDerivation.ts`, #3904), so a classifier fix reaches stored rows on the next materialize, and a test asserts the derived label through `classificationFromObservedFacts` rather than reading it off a lane's observations.
+
 #### Verifying an attached lead against the lab's own site
 
 `lab-site-lead-verification` answers "is this the right researcher for this lab" from the source rather than from the corpus, and its rules are the measured ones (#2714).

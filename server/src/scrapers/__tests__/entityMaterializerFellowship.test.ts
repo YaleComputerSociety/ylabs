@@ -331,4 +331,73 @@ describe('fellowship materialization', () => {
     }
     expect(result.created).toBe(true);
   });
+
+  describe('classification derived from the resolved facts (#3904)', () => {
+    const observedAt = new Date('2026-03-01T00:00:00Z');
+    const fact = (field: string, value: unknown) => ({
+      field,
+      value,
+      sourceName: 'yale-college-fellowships-office',
+      confidence: 0.95,
+      observedAt,
+    });
+    const storedRow = {
+      _id: '64b000000000000000000001',
+      sourceKey: 'yale-college-fellowships-office:fixture-senior-grant',
+      title: 'Fixture College Research Grant',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      programCategory: 'FELLOWSHIP',
+      studentFacingCategory: 'Research travel funding',
+      undergraduateOnly: true,
+    };
+
+    function mockRead(observations: unknown[], stored: Record<string, unknown> = storedRow) {
+      vi.spyOn(Observation, 'find').mockReturnValue({
+        lean: vi.fn().mockResolvedValue(observations),
+      } as any);
+      vi.spyOn(Fellowship, 'findOne').mockReturnValue({
+        lean: vi.fn().mockResolvedValue(stored),
+      } as any);
+    }
+
+    it('plans the label the facts support over a stale classifier observation', async () => {
+      mockRead([
+        fact('title', 'Fixture College Research Grant'),
+        fact(
+          'description',
+          'Provides funding to offset the costs associated with a senior research project or senior essay.',
+        ),
+        fact('programKind', 'TRAVEL_RESEARCH_GRANT'),
+        fact('studentFacingCategory', 'Research travel funding'),
+      ]);
+
+      const result = await materializeEntity(
+        'fellowship',
+        { entityKey: storedRow.sourceKey },
+        { dryRun: true },
+      );
+
+      expect(result.plannedSet).toMatchObject({
+        programKind: 'SENIOR_THESIS_FUNDING',
+        studentFacingCategory: 'Senior research funding',
+      });
+    });
+
+    it('keeps an optional audience field the classifier is silent about', async () => {
+      mockRead([
+        fact('title', 'Fixture Research Fund'),
+        fact('description', 'Supports independent summer research projects.'),
+      ]);
+
+      const result = await materializeEntity(
+        'fellowship',
+        { entityKey: storedRow.sourceKey },
+        { dryRun: true },
+      );
+
+      expect(result.plannedUnset).not.toHaveProperty('undergraduateOnly');
+      expect(result.plannedSet).not.toHaveProperty('undergraduateOnly');
+      expect(result.plannedSet).toMatchObject({ programKind: 'FELLOWSHIP_FUNDING' });
+    });
+  });
 });
