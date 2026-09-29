@@ -1,9 +1,10 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import axios from '../../../utils/axios';
 import ProgramWatch from '../ProgramWatch';
+import { trackResearchEvent } from '../../../utils/researchAnalytics';
 
 vi.mock('../../../utils/axios', () => ({
   default: { get: vi.fn(), put: vi.fn(), delete: vi.fn() },
@@ -203,6 +204,133 @@ describe('ProgramWatch', () => {
         data: { watchedPrograms: ['p1'] },
       }),
     );
+  });
+
+  it('offers an undo after the unwatch that the server answers by clearing the plan', async () => {
+    withWatchedPrograms();
+    mockedAxios.delete.mockResolvedValue({ data: {} });
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Travel Fellowship');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from favorites' })[1]);
+
+    await waitFor(() => expect(mockedAxios.delete).toHaveBeenCalled());
+    expect(
+      screen.queryByRole('combobox', { name: 'Outreach stage for Travel Fellowship' }),
+    ).toBeNull();
+    const undo = await screen.findByRole('button', { name: 'Undo' });
+    const region = undo.closest('[role="status"]');
+    expect(region?.getAttribute('aria-live')).toBe('polite');
+    expect(region?.textContent).toContain('Travel Fellowship');
+    expect(region?.textContent).toContain('Undo restores your stage too');
+  });
+
+  it('re-posts the captured note and stage when the unwatch is undone', async () => {
+    withWatchedPrograms();
+    mockedAxios.delete.mockResolvedValue({ data: {} });
+    mockedAxios.put.mockResolvedValue({ data: {} });
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Summer Research Grant');
+    fireEvent.change(
+      screen.getByRole('combobox', { name: 'Outreach stage for Summer Research Grant' }),
+      { target: { value: 'APPLIED' } },
+    );
+    await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1));
+    mockedAxios.put.mockClear();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from favorites' })[0]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+
+    await waitFor(() =>
+      expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedProgramPlans/p1', {
+        data: { plan: { privateNotes: 'Ask about housing', stage: 'APPLIED' } },
+      }),
+    );
+    expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedPrograms', {
+      withCredentials: true,
+      data: { watchedPrograms: ['p1'] },
+    });
+    const watchCall = mockedAxios.put.mock.calls.findIndex(
+      ([url]) => url === '/users/watchedPrograms',
+    );
+    const planCall = mockedAxios.put.mock.calls.findIndex(
+      ([url]) => url === '/users/watchedProgramPlans/p1',
+    );
+    expect(watchCall).toBeLessThan(planCall);
+    expect(await screen.findByText('Summer Research Grant')).toBeTruthy();
+    expect(screen.getByText('Note: Ask about housing')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
+  });
+
+  it('withdraws the undo offer when the unwatch itself failed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    withWatchedPrograms();
+    mockedAxios.delete.mockRejectedValue(new Error('offline'));
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Summer Research Grant');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from favorites' })[0]);
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
+    expect(await screen.findByText('Summer Research Grant')).toBeTruthy();
+  });
+
+  it('sends no plan write when a note is focused and left unchanged', async () => {
+    withWatchedPrograms();
+    mockedAxios.put.mockResolvedValue({ data: {} });
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Summer Research Grant');
+    fireEvent.click(screen.getByRole('button', { name: 'Add note for Summer Research Grant' }));
+    const note = screen.getByRole('textbox', { name: 'Note for Summer Research Grant' });
+    act(() => note.focus());
+    fireEvent.blur(note);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+    expect(trackResearchEvent).not.toHaveBeenCalled();
+  });
+
+  it('sends one plan write for a typed edit that is saved before the blur', async () => {
+    withWatchedPrograms();
+    mockedAxios.put.mockResolvedValue({ data: {} });
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Travel Fellowship');
+    fireEvent.click(screen.getByRole('button', { name: 'Add note for Travel Fellowship' }));
+    const note = screen.getByRole('textbox', { name: 'Note for Travel Fellowship' });
+    fireEvent.change(note, { target: { value: 'Apply before spring' } });
+    await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    fireEvent.blur(note);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mockedAxios.put).toHaveBeenCalledTimes(1);
+    expect(trackResearchEvent).toHaveBeenCalledTimes(1);
   });
 
   it('shows an empty state with a browse CTA when nothing is watched', async () => {

@@ -1,9 +1,10 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import axios from '../../../utils/axios';
 import SavedResearchPlans from '../SavedResearchPlans';
+import { trackResearchEvent } from '../../../utils/researchAnalytics';
 
 vi.mock('../../../utils/axios', () => ({
   default: { get: vi.fn(), put: vi.fn(), delete: vi.fn() },
@@ -192,6 +193,98 @@ describe('SavedResearchPlans', () => {
         data: { plan: { privateNotes: 'Email the PI in September' } },
       }),
     );
+    expect(await screen.findByText('Saved', { selector: 'p' })).toBeTruthy();
+  });
+
+  it('sends no PUT and no research_plan_update when the note is unchanged', async () => {
+    withSavedPlans();
+    mockedAxios.put.mockResolvedValue({ data: {} });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
+    const textarea = await screen.findByRole('textbox', { name: 'Note for Owner Lab' });
+    act(() => textarea.focus());
+    fireEvent.blur(textarea);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+    expect(trackResearchEvent).not.toHaveBeenCalled();
+  });
+
+  it('sends one PUT and one event for a typed edit followed by a blur', async () => {
+    withSavedPlans();
+    mockedAxios.put.mockResolvedValue({ data: {} });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Other Lab');
+    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    const note = screen.getByRole('textbox', { name: 'Note for Other Lab' });
+    fireEvent.change(note, { target: { value: 'Email the PI in September' } });
+    await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    fireEvent.blur(note);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mockedAxios.put).toHaveBeenCalledTimes(1);
+    expect(trackResearchEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resend a note whose save is still in flight when the field blurs', async () => {
+    withSavedPlans();
+    let resolvePut: (value: unknown) => void = () => {};
+    mockedAxios.put.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePut = resolve;
+        }),
+    );
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Other Lab');
+    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    const note = screen.getByRole('textbox', { name: 'Note for Other Lab' });
+    fireEvent.change(note, { target: { value: 'Email the PI in September' } });
+    await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    fireEvent.blur(note);
+    await act(async () => resolvePut({ data: {} }));
+
+    expect(mockedAxios.put).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a note on blur after its save failed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    withSavedPlans();
+    mockedAxios.put.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ data: {} });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Other Lab');
+    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    const note = screen.getByRole('textbox', { name: 'Note for Other Lab' });
+    fireEvent.change(note, { target: { value: 'Email the PI in September' } });
+    await screen.findByText(/Not saved/, {}, { timeout: 2000 });
+    fireEvent.blur(note);
+
+    await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(2));
     expect(await screen.findByText('Saved', { selector: 'p' })).toBeTruthy();
   });
 

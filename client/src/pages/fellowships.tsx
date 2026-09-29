@@ -2,7 +2,8 @@
  * Programs & Fellowships browse page with search, local quick filters,
  * application-cycle empty states, and grid/list view.
  */
-import { useReducer, useEffect, useContext, useMemo, useState } from 'react';
+import { useReducer, useEffect, useContext, useMemo, useRef, useState } from 'react';
+import swal from 'sweetalert';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import FellowshipModal from '../components/fellowship/FellowshipModal';
 import AdminFellowshipEditModal from '../components/admin/AdminFellowshipEditModal';
@@ -12,6 +13,7 @@ import BrowseGrid from '../components/shared/BrowseGrid';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import LoadErrorNotice from '../components/shared/LoadErrorNotice';
+import UndoRemovalBanner from '../components/shared/UndoRemovalBanner';
 import CombinedFilterDropdown, {
   FilterTabConfig,
 } from '../components/shared/CombinedFilterDropdown';
@@ -28,6 +30,11 @@ import { browsePageReducer, createInitialBrowsePageState } from '../reducers/bro
 import type { FellowshipQuickFilter } from '../reducers/fellowshipSearchReducer';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import useFavorites from '../hooks/useFavorites';
+import useUndoableProgramUnwatch, {
+  undoRestoresSummary,
+  watchedProgramPlanSnapshot,
+} from '../hooks/useUndoableProgramUnwatch';
 import { getFellowshipCycleStatus } from '../utils/fellowshipCycle';
 import { createFellowship } from '../utils/createFellowship';
 import {
@@ -310,6 +317,14 @@ const Fellowships = () => {
   const [showFirstSaveCallout, setShowFirstSaveCallout] = useState(false);
   const {
     favIds: favFellowshipIds,
+    loadError: watchedProgramsLoadFailed,
+    setFavorite,
+    reloadFavorites,
+  } = useFavorites('watchedPrograms', { surface: 'search' });
+  const { unwatchedProgram, unwatchProgram, undoUnwatch, restartUndoWindow } =
+    useUndoableProgramUnwatch({ setFavorite, surface: 'search' });
+  const capturingPlanIdsRef = useRef(new Set<string>());
+  const {
     selectedItem: selectedFellowship,
     isDetailModalOpen: isModalOpen,
     adminEditItem: adminEditFellowship,
@@ -319,21 +334,9 @@ const Fellowships = () => {
     setQueryString('');
   }, [setQueryString]);
 
-  const reloadFavorites = async () => {
-    axios
-      .get('/users/watchedProgramIds')
-      .then((response) => {
-        dispatch({ type: 'SET_FAVORITES', ids: response.data.watchedProgramIds || [] });
-      })
-      .catch(() => {
-        console.error("Error fetching user's watched programs.");
-        dispatch({ type: 'SET_FAVORITES', ids: [] });
-      });
-  };
-
   useEffect(() => {
-    void reloadFavorites();
-  }, []);
+    if (!isModalOpen) restartUndoWindow();
+  }, [isModalOpen, restartUndoWindow]);
 
   const selectedProgramId = selectedFellowship?.id ?? null;
 
@@ -613,35 +616,42 @@ const Fellowships = () => {
     return false;
   };
 
-  const updateFavorite = (fellowshipId: string, favorite: boolean) => {
-    const prevFavIds = favFellowshipIds;
-
-    if (favorite) {
-      dispatch({ type: 'SET_FAVORITES', ids: [fellowshipId, ...prevFavIds] });
-      if (!localStorage.getItem(FIRST_PROGRAM_SAVE_KEY)) {
-        localStorage.setItem(FIRST_PROGRAM_SAVE_KEY, 'true');
-        setShowFirstSaveCallout(true);
-      }
-      axios
-        .put('/users/watchedPrograms', { data: { watchedPrograms: [fellowshipId] } })
-        .catch(() => {
-          dispatch({ type: 'SET_FAVORITES', ids: prevFavIds });
-          console.error('Error watching program.');
-        });
-    } else {
-      dispatch({ type: 'SET_FAVORITES', ids: prevFavIds.filter((id) => id !== fellowshipId) });
-      axios
-        .delete('/users/watchedPrograms', { data: { watchedPrograms: [fellowshipId] } })
-        .catch(() => {
-          dispatch({ type: 'SET_FAVORITES', ids: prevFavIds });
-          console.error('Error unwatching program.');
-        });
+  const watchProgram = (programId: string) => {
+    if (!localStorage.getItem(FIRST_PROGRAM_SAVE_KEY)) {
+      localStorage.setItem(FIRST_PROGRAM_SAVE_KEY, 'true');
+      setShowFirstSaveCallout(true);
     }
+    void setFavorite(programId, true);
+  };
+
+  const stopWatchingProgram = async (program: { id: string; title: string }) => {
+    const capturing = capturingPlanIdsRef.current;
+    if (capturing.has(program.id)) return;
+    capturing.add(program.id);
+    try {
+      const response = await axios.get('/users/watchedProgramPlans', { withCredentials: true });
+      const plan = response.data?.watchedProgramPlans?.[program.id];
+      void unwatchProgram(program, watchedProgramPlanSnapshot(plan));
+    } catch {
+      console.error('Error reading watched program plan before unwatching.');
+      void swal({
+        text: 'Could not stop watching this program. Check your connection and try again.',
+        icon: 'warning',
+      });
+    } finally {
+      capturing.delete(program.id);
+    }
+  };
+
+  const toggleWatch = (program: { id: string; title: string }) => {
+    if (favFellowshipIds.includes(program.id)) void stopWatchingProgram(program);
+    else watchProgram(program.id);
   };
 
   const handleToggleFavorite = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    updateFavorite(id, !favFellowshipIds.includes(id));
+    const program = fellowships.find((fellowship) => fellowship.id === id);
+    toggleWatch({ id, title: program?.title ?? 'this program' });
   };
 
   const handleOpenModal = (item: BrowsableItem) => {
@@ -845,6 +855,25 @@ const Fellowships = () => {
               <FirstSaveCallout kind="program" onDismiss={() => setShowFirstSaveCallout(false)} />
             )}
 
+            {watchedProgramsLoadFailed && (
+              <div
+                role="alert"
+                className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-card border border-amber-200 bg-amber-50 px-4 py-3"
+              >
+                <p className="text-sm text-amber-900">
+                  We could not load the programs you are watching, so the bookmarks below may not
+                  match your Dashboard.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void reloadFavorites()}
+                  className="yr-focus-ring inline-flex min-h-[44px] flex-shrink-0 items-center rounded-control border border-amber-300 bg-panel px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+
             {isLoading && fellowships.length === 0 ? (
               <LoadingSpinner size="lg" />
             ) : loadError ? (
@@ -913,18 +942,23 @@ const Fellowships = () => {
           </div>
         </div>
 
+        {unwatchedProgram && (
+          <div className="fixed inset-x-4 bottom-4 z-[1100] mx-auto max-w-xl">
+            <UndoRemovalBanner floating onUndo={() => void undoUnwatch()}>
+              Stopped watching{' '}
+              <span className="font-semibold text-ink">{unwatchedProgram.title}</span>.
+              {undoRestoresSummary(unwatchedProgram.plan)}
+            </UndoRemovalBanner>
+          </div>
+        )}
+
         {selectedFellowship && (
           <FellowshipModal
             fellowship={selectedFellowship}
             isOpen={isModalOpen}
             onClose={closeProgramModal}
             isFavorite={favFellowshipIds.includes(selectedFellowship.id)}
-            toggleFavorite={() => {
-              updateFavorite(
-                selectedFellowship.id,
-                !favFellowshipIds.includes(selectedFellowship.id),
-              );
-            }}
+            toggleFavorite={() => toggleWatch(selectedFellowship)}
           />
         )}
       </div>

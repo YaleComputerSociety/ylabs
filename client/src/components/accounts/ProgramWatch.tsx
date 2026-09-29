@@ -9,7 +9,7 @@
  * unwatch control. Watching is a personal bookmark; program content stays
  * read-only.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import { BrowsableItem } from '../../types/browsable';
@@ -27,6 +27,12 @@ import LoadingSpinner from '../shared/LoadingSpinner';
 import LoadErrorNotice from '../shared/LoadErrorNotice';
 import useFavorites from '../../hooks/useFavorites';
 import useLatestRequest from '../../hooks/useLatestRequest';
+import usePlanNoteAutosave from '../../hooks/usePlanNoteAutosave';
+import useUndoableProgramUnwatch, {
+  undoRestoresSummary,
+  watchedProgramPlanSnapshot,
+} from '../../hooks/useUndoableProgramUnwatch';
+import UndoRemovalBanner from '../shared/UndoRemovalBanner';
 import axios from '../../utils/axios';
 import ResearchPlanStageControl from './ResearchPlanStageControl';
 import {
@@ -96,25 +102,49 @@ export const watchedProgramDeadlineSummary = (
   };
 };
 
+const persistProgramNote = async (programId: string, note: string) => {
+  try {
+    await axios.put(`/users/watchedProgramPlans/${programId}`, {
+      data: { plan: { privateNotes: note } },
+    });
+  } catch (error) {
+    console.error('Error saving watched program plan.');
+    throw error;
+  }
+  void trackResearchEvent({
+    eventType: 'research_plan_update',
+    entityType: 'fellowship',
+    entityId: programId,
+    payload: { field: 'note_presence' },
+    dedupeKey: createResearchAnalyticsInteractionId('plan'),
+  });
+};
+
 const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const {
     favIds: watchedIds,
     loaded: watchedIdsLoaded,
     loadError: watchedIdsLoadFailed,
-    toggleFavorite,
+    setFavorite,
     reloadFavorites,
-  } = useFavorites('watchedPrograms');
+  } = useFavorites('watchedPrograms', { surface: 'saved_plans' });
   const [programs, setPrograms] = useState<Fellowship[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [stages, setStages] = useState<Record<string, ResearchPlanStage>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [programsLoadFailed, setProgramsLoadFailed] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
   const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
   const [selectedProgram, setSelectedProgram] = useState<Fellowship | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const noteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const { noteSaveStatuses, saveNote, scheduleNoteSave, cancelNoteSave, markNotePersisted } =
+    usePlanNoteAutosave(persistProgramNote);
+  const { unwatchedProgram, unwatchProgram, undoUnwatch, restartUndoWindow } =
+    useUndoableProgramUnwatch({
+      setFavorite,
+      surface: 'saved_plans',
+      onPlanRestored: (programId, plan) => markNotePersisted(programId, plan.privateNotes),
+    });
 
   const programRequest = useLatestRequest();
 
@@ -141,6 +171,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
       for (const program of loadedPrograms) {
         loadedNotes[program.id] = plans[program.id]?.privateNotes || '';
         loadedStages[program.id] = normalizeResearchPlanStage(plans[program.id]?.stage);
+        markNotePersisted(program.id, loadedNotes[program.id]);
       }
       setPrograms(loadedPrograms);
       setNotes(loadedNotes);
@@ -155,14 +186,10 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     } finally {
       if (ticket.isCurrent()) setIsLoading(false);
     }
-  }, [programRequest]);
+  }, [programRequest, markNotePersisted]);
 
   useEffect(() => {
     void loadPrograms();
-    const timers = noteTimersRef.current;
-    return () => {
-      Object.values(timers).forEach(clearTimeout);
-    };
   }, [loadPrograms]);
 
   const retryLoad = () => {
@@ -223,38 +250,20 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     downloadIcsCalendar('program-watch-deadlines.ics', buildProgramDeadlinesIcsCalendar(events));
   };
 
-  const savePlan = useCallback(
-    async (programId: string, plan: { privateNotes?: string; stage?: string }) => {
-      setSaveStatuses((statuses) => ({ ...statuses, [programId]: 'saving' }));
-      try {
-        await axios.put(`/users/watchedProgramPlans/${programId}`, { data: { plan } });
-        setSaveStatuses((statuses) => ({ ...statuses, [programId]: 'saved' }));
-        void trackResearchEvent({
-          eventType: 'research_plan_update',
-          entityType: 'fellowship',
-          entityId: programId,
-          payload: { field: plan.stage === undefined ? 'note_presence' : 'stage' },
-          dedupeKey: createResearchAnalyticsInteractionId('plan'),
-        });
-      } catch {
-        console.error('Error saving watched program plan.');
-        setSaveStatuses((statuses) => ({ ...statuses, [programId]: 'error' }));
-      }
-    },
-    [],
-  );
-
-  const scheduleNoteSave = (programId: string, note: string) => {
-    clearTimeout(noteTimersRef.current[programId]);
-    setSaveStatuses((statuses) => ({ ...statuses, [programId]: 'idle' }));
-    noteTimersRef.current[programId] = setTimeout(() => {
-      void savePlan(programId, { privateNotes: note });
-    }, 700);
+  const stopWatching = (program: Fellowship) => {
+    cancelNoteSave(program.id);
+    const removal = unwatchProgram(
+      program,
+      watchedProgramPlanSnapshot({ privateNotes: notes[program.id], stage: stages[program.id] }),
+    );
+    void removal.then((removed) => {
+      if (removed) markNotePersisted(program.id, '');
+    });
   };
 
-  const flushNoteSave = (programId: string) => {
-    clearTimeout(noteTimersRef.current[programId]);
-    void savePlan(programId, { privateNotes: notes[programId] || '' });
+  const toggleWatch = (program: Fellowship) => {
+    if (watchedIds.includes(program.id)) stopWatching(program);
+    else void setFavorite(program.id, true);
   };
 
   const changeStage = useCallback(
@@ -292,6 +301,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const closeModal = () => {
     setIsModalOpen(false);
     setSelectedProgram(null);
+    restartUndoWindow();
   };
 
   if (isLoading) {
@@ -323,6 +333,13 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
         )}
       </div>
 
+      {unwatchedProgram && (
+        <UndoRemovalBanner onUndo={() => void undoUnwatch()}>
+          Stopped watching <span className="font-semibold text-ink">{unwatchedProgram.title}</span>.
+          {undoRestoresSummary(unwatchedProgram.plan)}
+        </UndoRemovalBanner>
+      )}
+
       {programsLoadFailed || watchedIdsLoadFailed ? (
         <LoadErrorNotice
           title="Could not load your watched programs"
@@ -332,7 +349,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
       ) : visiblePrograms.length > 0 ? (
         <ul>
           {visiblePrograms.map((program) => {
-            const status = saveStatuses[program.id];
+            const status = noteSaveStatuses[program.id];
             const isEditing = editingId === program.id;
             const note = notes[program.id] || '';
             const stage = stages[program.id] || DEFAULT_RESEARCH_PLAN_STAGE;
@@ -345,7 +362,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                       isFavorite={watchedIds.includes(program.id)}
                       onToggleFavorite={(event) => {
                         event.stopPropagation();
-                        toggleFavorite(program.id);
+                        toggleWatch(program);
                       }}
                       onOpenModal={() => openModal(program)}
                     />
@@ -403,7 +420,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                         setNotes((current) => ({ ...current, [program.id]: value }));
                         scheduleNoteSave(program.id, value);
                       }}
-                      onBlur={() => flushNoteSave(program.id)}
+                      onBlur={() => void saveNote(program.id, note)}
                       maxLength={MAX_PROGRAM_NOTE_LENGTH}
                       placeholder="Add a private note about this program…"
                       rows={2}
@@ -453,7 +470,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           isOpen={isModalOpen}
           onClose={closeModal}
           isFavorite={watchedIds.includes(selectedProgram.id)}
-          toggleFavorite={() => toggleFavorite(selectedProgram.id)}
+          toggleFavorite={() => toggleWatch(selectedProgram)}
         />
       )}
     </section>
