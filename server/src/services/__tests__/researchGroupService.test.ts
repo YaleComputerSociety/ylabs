@@ -21,6 +21,11 @@ const mocks = vi.hoisted(() => ({
   listPlanningContextsForResearchEntities: vi.fn(),
   getPublicUndergraduateLogistics: vi.fn(),
   getResearchSearchQueryVector: vi.fn(),
+  hasAdminAuthorityForUser: vi.fn(),
+}));
+
+vi.mock('../adminGrantService', () => ({
+  hasAdminAuthorityForUser: mocks.hasAdminAuthorityForUser,
 }));
 
 vi.mock('../../utils/meiliClient', () => ({
@@ -118,6 +123,8 @@ import {
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
 } from '../researchEntitySearchIndexService';
 import { RESEARCH_SEARCH_MAX_REACHABLE_RECORDS } from '../researchSearchPagination';
+import { searchResearchGroups } from '../../controllers/researchGroupController';
+import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 
 // One fully chainable query double: the service composes find().sort().limit()
 // .select().lean() in different orders per call site, so every helper returns
@@ -5093,5 +5100,112 @@ describe('resolveArchivedResearchEntityCanonicalSlug', () => {
       );
 
     await expect(resolveArchivedResearchEntityCanonicalSlug('nsf-pi-shell')).resolves.toBeNull();
+  });
+});
+
+describe('student search serves only rows whose detail page serves (#3749)', () => {
+  const servableId = '67d8928150621bcef434a2e1';
+  const unservableId = '67d8928150621bcef434a2e2';
+  const meiliHit = (id: string, slug: string) => ({
+    id,
+    slug,
+    name: slug,
+    kind: 'lab',
+    departments: [],
+    researchAreas: [],
+    sourceUrls: [],
+  });
+  const storedRow = (id: string, slug: string, descriptions: Record<string, string>) => ({
+    _id: id,
+    slug,
+    name: slug,
+    kind: 'lab',
+    departments: [],
+    researchAreas: [],
+    sourceUrls: [],
+    studentVisibilityTier: 'student_ready',
+    ...descriptions,
+  });
+  const unservableDescriptions = { shortDescription: 'Lab.', fullDescription: 'Lab.' };
+
+  const serveBrowsePage = () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [meiliHit(servableId, 'servable-row'), meiliHit(unservableId, 'unservable-row')],
+      estimatedTotalHits: 2,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        storedRow(servableId, 'servable-row', validPublicDescriptions),
+        storedRow(unservableId, 'unservable-row', unservableDescriptions),
+      ]),
+    );
+  };
+
+  const searchAsStudent = async () => {
+    mocks.hasAdminAuthorityForUser.mockResolvedValue(false);
+    const response = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+    await searchResearchGroups(
+      { body: { q: '', page: 1 }, user: { userType: 'undergraduate' } } as any,
+      response,
+    );
+    return response.json.mock.calls[0][0];
+  };
+
+  it('drops a student_ready row whose detail page would 404 from the student search route', async () => {
+    serveBrowsePage();
+
+    const result = await searchAsStudent();
+
+    expect(mocks.search.mock.calls[0][1].filter).toContain(
+      'studentVisibilityTier = "student_ready"',
+    );
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['servable-row']);
+  });
+
+  it('drops the same row on the service call the controller makes for a student', async () => {
+    serveBrowsePage();
+
+    const result = await searchResearchGroupsViaMeili(
+      '',
+      { studentVisibilityTier: publicStudentVisibilityTiers },
+      1,
+      24,
+      {},
+      { includeNonPublic: false },
+    );
+
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['servable-row']);
+  });
+
+  it('drops the row on the Mongo fallback a student reaches when Meilisearch fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.search.mockRejectedValue(new Error('meilisearch unavailable'));
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        storedRow(servableId, 'servable-row', validPublicDescriptions),
+        storedRow(unservableId, 'unservable-row', unservableDescriptions),
+      ]),
+    );
+
+    const result = await searchAsStudent();
+
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['servable-row']);
+    expect(result.facetDistribution).toBeDefined();
+    consoleError.mockRestore();
+  });
+
+  it('keeps the unfiltered operator view for an admin who asks for a tier', async () => {
+    serveBrowsePage();
+    mocks.hasAdminAuthorityForUser.mockResolvedValue(true);
+    const response = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await searchResearchGroups(
+      { body: { q: '', page: 1, studentVisibilityTier: ['student_ready'] } } as any,
+      response,
+    );
+
+    expect(
+      response.json.mock.calls[0][0].researchEntities.map((entity: any) => entity.slug),
+    ).toEqual(['servable-row', 'unservable-row']);
   });
 });

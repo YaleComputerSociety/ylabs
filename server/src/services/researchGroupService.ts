@@ -712,21 +712,12 @@ const mongoVisibilityFilter = (
   return includeNonPublic ? {} : { studentVisibilityTier: { $in: publicStudentVisibilityTiers } };
 };
 
-const isPublicVisibilityScope = (
-  filters: ResearchGroupFilterInput,
-  includeNonPublic?: boolean,
-): boolean => !includeNonPublic && !filters.studentVisibilityTier?.length;
-
 const servesPublicResearchDetail = researchEntityServesPublicDetail;
 
 const withServablePublicResearchEntities = <T extends Record<string, any>>(
   entities: T[],
-  filters: ResearchGroupFilterInput,
   includeNonPublic?: boolean,
-): T[] =>
-  isPublicVisibilityScope(filters, includeNonPublic)
-    ? entities.filter(servesPublicResearchDetail)
-    : entities;
+): T[] => (includeNonPublic ? entities : entities.filter(servesPublicResearchDetail));
 
 const applyVisibilityScopeToFilters = (
   filters: ResearchGroupFilterInput,
@@ -1262,7 +1253,6 @@ export async function searchResearchGroupsViaMeili(
       (await ResearchEntity.find(
         mongoFilterFromResearchFilters(safeFilters, safeOptions.includeNonPublic),
       ).lean()) as any[],
-      safeFilters,
       safeOptions.includeNonPublic,
     );
     const candidatesWithQuality = await withQualitySummaries(candidates as any[]);
@@ -1745,7 +1735,6 @@ export async function searchResearchGroupsViaMeili(
           ...mongoVisibilityFilter(safeFilters, safeOptions.includeNonPublic),
         }).lean()) as any[])
       : [],
-    safeFilters,
     safeOptions.includeNonPublic,
   );
   const visibleEntitiesById = new Map(
@@ -1927,7 +1916,6 @@ const searchResearchGroupsViaMongoFallback = async (
   ).lean();
   const visibleCandidates = withServablePublicResearchEntities(
     (candidates as any[]).filter((entity) => researchEntityMatchesQuery(entity, trimmedQuery)),
-    filters,
     options.includeNonPublic,
   );
   // Mirror the Meili path's disjunctive faceting (issue #1080): a facet the
@@ -1945,7 +1933,6 @@ const searchResearchGroupsViaMongoFallback = async (
     ).lean()) as any[];
     const omittedVisible = withServablePublicResearchEntities(
       omittedCandidates.filter((entity) => researchEntityMatchesQuery(entity, trimmedQuery)),
-      omittedFilters,
       options.includeNonPublic,
     );
     return facetCounts(omittedVisible, field);
@@ -2564,7 +2551,6 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
     (relatedEntities as any[]).filter((entity) =>
       publicStudentVisibilityTiers.includes(entity.studentVisibilityTier),
     ),
-    {},
     false,
   );
 
@@ -2729,7 +2715,7 @@ export async function listSimilarResearchEntities(
     .select(PUBLIC_RELATED_ENTITY_PROJECTION)
     .lean()) as any[];
 
-  const summaryCandidates = withServablePublicResearchEntities(candidateEntities, {}, false).filter(
+  const summaryCandidates = withServablePublicResearchEntities(candidateEntities, false).filter(
     (candidate) => !isExcludedKey(researchGroupDocumentId(candidate._id), candidate.slug),
   );
   const candidateLeadNameRead = await optionalPublicLeadMemberNames(summaryCandidates);
