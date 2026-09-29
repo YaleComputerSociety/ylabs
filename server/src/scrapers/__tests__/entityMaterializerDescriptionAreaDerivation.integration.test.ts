@@ -20,6 +20,7 @@ import { Observation } from '../../models/observation';
 import { TaxonomyTerm } from '../../models/taxonomyTerm';
 import { ResearchEntity } from '../../models/researchEntity';
 import { DERIVED_RESEARCH_AREA_SOURCE_NAME, materializeEntity } from '../entityMaterializer';
+import { loadResearchAreaEvidenceBackedRowIds } from '../researchAreaEvidence';
 import { dropDomainIncoherentUnsourcedResearchAreas } from '../../utils/researchAreaDomainCoherence';
 import {
   buildResearchAreaResolverIndex,
@@ -72,7 +73,12 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
       ...overrides,
     });
 
-  const seedField = async (field: string, value: unknown, sourceName = 'nih-reporter') => {
+  const seedField = async (
+    field: string,
+    value: unknown,
+    sourceName = 'nih-reporter',
+    confidence = 0.95,
+  ) => {
     await Observation.create({
       entityType: 'researchEntity',
       entityKey: 'area-derivation-fixture',
@@ -81,7 +87,7 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
       sourceId: new mongoose.Types.ObjectId(),
       sourceName,
       sourceUrl: 'https://reporter.nih.gov/project-details/00000000',
-      confidence: 0.95,
+      confidence,
       observedAt: new Date('2026-01-01T00:00:00Z'),
       superseded: false,
     });
@@ -268,6 +274,106 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
     expect(persisted?.researchAreas).toEqual([]);
     expect(persisted?.fieldProvenance?.researchAreas).toBeUndefined();
   }, 30000);
+
+  describe('an observation whose every area the row rejects is no evidence (#3836)', () => {
+    const AREA_LESS_PROSE = 'The lab welcomes motivated students to apply each term.';
+    const readRow = () =>
+      ResearchEntity.findOne({ slug: 'area-derivation-fixture' }).lean<
+        PersistedEntity & {
+          _id: unknown;
+          updatedAt?: Date;
+          fieldProvenance?: Record<string, { sourceName?: string }>;
+        }
+      >();
+
+    it('keeps the stored chips when the only new observation names the row own department', async () => {
+      await seedEntity({
+        departments: ['Psychology'],
+        researchAreas: ['Memory Research', 'Neuroscience'],
+      });
+      await seedField('researchAreas', ['Psychology'], 'research-area-source-extractor');
+      await seedField('fullDescription', AREA_LESS_PROSE);
+
+      await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+
+      const persisted = await readRow();
+      expect(persisted?.researchAreas).toEqual(['Memory Research', 'Neuroscience']);
+      expect(persisted?.fieldProvenance?.researchAreas).toBeUndefined();
+      expect([...(await loadResearchAreaEvidenceBackedRowIds([persisted!]))]).toEqual([]);
+    });
+
+    it('keeps the stored chips when the only new observation names a division-level label', async () => {
+      await seedEntity({ departments: ['Psychology'], researchAreas: ['Memory Research'] });
+      await seedField('researchAreas', ['Pediatrics'], 'research-area-source-extractor');
+      await seedField('fullDescription', AREA_LESS_PROSE);
+
+      await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+
+      expect((await readRow())?.researchAreas).toEqual(['Memory Research']);
+    });
+
+    it('keeps the real topic of a mixed observation and drops the own department', async () => {
+      await seedEntity({ departments: ['Psychology'], researchAreas: ['Memory Research'] });
+      await seedField(
+        'researchAreas',
+        ['Psychology', 'Neuroscience'],
+        'research-area-source-extractor',
+      );
+      await seedField('fullDescription', AREA_LESS_PROSE);
+
+      await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+
+      const persisted = await readRow();
+      expect(persisted?.researchAreas).toEqual(['Neuroscience']);
+      expect(persisted?.fieldProvenance?.researchAreas?.sourceName).toBe(
+        'research-area-source-extractor',
+      );
+    });
+
+    it('falls through to the next-ranked observation that states an admissible area', async () => {
+      await seedEntity({ departments: ['Psychology'] });
+      await seedField('researchAreas', ['Psychology'], 'department-directory', 0.95);
+      await seedField('researchAreas', ['Neuroscience'], 'research-area-source-extractor', 0.6);
+      await seedField('fullDescription', AREA_LESS_PROSE);
+
+      await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+      const stored = await readRow();
+      expect(stored?.researchAreas).toEqual(['Neuroscience']);
+      expect(stored?.fieldProvenance?.researchAreas?.sourceName).toBe(
+        'research-area-source-extractor',
+      );
+      expect(
+        (stored as { confidenceByField?: Record<string, number> } | null)?.confidenceByField
+          ?.researchAreas,
+      ).toBe(1);
+
+      const replanned = await materializeEntity(
+        'researchEntity',
+        { entityKey: 'area-derivation-fixture' },
+        { dryRun: true },
+      );
+      expect(replanned.plannedSet?.researchAreas).toEqual(stored?.researchAreas);
+      expect(JSON.stringify(replanned.plannedSet?.['fieldProvenance.researchAreas'])).toBe(
+        JSON.stringify(stored?.fieldProvenance?.researchAreas),
+      );
+      expect(replanned.plannedSet?.confidenceByField).toEqual(
+        (stored as { confidenceByField?: unknown } | null)?.confidenceByField,
+      );
+    }, 30000);
+
+    it('still removes a stored department echo rather than protecting it', async () => {
+      await seedEntity({
+        departments: ['Psychology'],
+        researchAreas: ['Psychology', 'Memory Research'],
+      });
+      await seedField('researchAreas', ['Psychology'], 'research-area-source-extractor');
+      await seedField('fullDescription', AREA_LESS_PROSE);
+
+      await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+
+      expect((await readRow())?.researchAreas).toEqual(['Memory Research']);
+    });
+  });
 
   it('never overwrites an existing non-empty researchAreas value', async () => {
     await seedEntity({ researchAreas: ['Immunology'] });

@@ -24,6 +24,7 @@ const approvedRows = [
   { name: 'Cancer Biology' },
   { name: 'Genomics' },
   { name: 'History' },
+  { name: 'Psychology' },
 ];
 
 const canonicalizer: ResearchAreaCanonicalizer = createResearchAreaCanonicalizer(
@@ -397,6 +398,45 @@ describe('ResearchAreaSourceExtractor.run', () => {
     const result = await extractor.run(ctx);
     expect(result.entitiesObserved).toBe(0);
     expect(emitted).toEqual([]);
+  });
+
+  describe('areas the row itself rejects (#3836)', () => {
+    const psychologyEntity: CandidateAreaEntity = { ...entity, departments: ['Psychology'] };
+    const secondUrl = 'https://synthetic-lab.example.edu/research/topics/';
+    const pages: Record<string, string> = {
+      [entity.websiteUrl]: '<h3>Research Areas</h3><ul><li>Psychology</li><li>Pediatrics</li></ul>',
+      [secondUrl]: '<h3>Research Areas</h3><ul><li>Psychology</li><li>Neuroscience</li></ul>',
+    };
+    const extractorFor = (candidate: CandidateAreaEntity) =>
+      new ResearchAreaSourceExtractor({
+        fetchPage: async (url) => ({ url, html: pages[url] ?? '' }),
+        canonicalizerLoader: async () => canonicalizer,
+        entityFinder: async () => [candidate],
+      });
+
+    it('asserts nothing when every area is the row own department or a division label', async () => {
+      const { ctx, emitted } = makeContext();
+      const result = await extractorFor(psychologyEntity).run(ctx);
+      expect(result.entitiesObserved).toBe(0);
+      expect(emitted).toEqual([]);
+    });
+
+    it('reads the next source instead, and keeps only the areas that survive', async () => {
+      const { ctx, emitted } = makeContext();
+      await extractorFor({
+        ...psychologyEntity,
+        sourceUrls: [entity.websiteUrl, secondUrl],
+      }).run(ctx);
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toMatchObject({ sourceUrl: secondUrl, value: ['Neuroscience'] });
+    });
+
+    it('keeps a department name that is not the row own department', async () => {
+      const { ctx, emitted } = makeContext();
+      await extractorFor({ ...psychologyEntity, departments: ['Neuroscience'] }).run(ctx);
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toMatchObject({ value: ['Psychology'] });
+    });
   });
 
   it('skips entities the work planner reports as fresh', async () => {

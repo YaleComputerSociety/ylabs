@@ -77,6 +77,7 @@ import {
 } from '../utils/researchHomeNameIdentityRoster';
 import {
   resolveAllFields,
+  resolveField,
   resolveFieldRanked,
   ResolverObservation,
   ResolvedField,
@@ -871,6 +872,112 @@ function recordDerivedResearchAreaProvenance(set: Record<string, unknown>): void
     sourceUrl: '',
     confidence: DERIVED_RESEARCH_AREA_CONFIDENCE,
   };
+}
+
+function isEmptyArray(value: unknown): boolean {
+  return Array.isArray(value) && value.length === 0;
+}
+
+type ResearchAreaCanonicalizationStep = (
+  set: Record<string, unknown>,
+  departments?: unknown,
+) => Promise<unknown>;
+
+async function admittedResearchAreas(
+  canonicalizeResearchAreas: ResearchAreaCanonicalizationStep,
+  value: unknown,
+  departments: unknown,
+): Promise<unknown> {
+  const trial: Record<string, unknown> = { researchAreas: value };
+  await canonicalizeResearchAreas(trial, departments);
+  return trial.researchAreas;
+}
+
+/**
+ * An observation whose every area this row rejects (its own department, a
+ * division-level label, label leakage) states nothing about the row's topics, so it
+ * is left out of the resolution altogether and the field resolves over the
+ * observations that do state one. Leaving it out, rather than walking past it, keeps
+ * it out of the confidence denominator too: it is no evidence, not weak evidence.
+ */
+async function resolveResearchAreasOverAdmissibleObservations(input: {
+  now: Date;
+  set: Record<string, unknown>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  resolverObs: ResolverObservation[];
+  manuallyLockedFields: string[];
+  manualValues: Record<string, unknown>;
+  materializationObs: MaterializerObservationLike[];
+  canonicalizeResearchAreas: ResearchAreaCanonicalizationStep;
+}): Promise<void> {
+  const { set, entityDoc } = input;
+  const departments = set.departments ?? entityDoc?.departments;
+  const admissible: ResolverObservation[] = [];
+  for (const observation of refusedResolverObservations(
+    input.resolverObs,
+    entityDoc?.fieldValueRefusals,
+  ).kept) {
+    if (observation.field !== 'researchAreas') continue;
+    const admitted = await admittedResearchAreas(
+      input.canonicalizeResearchAreas,
+      observation.value,
+      departments,
+    );
+    if (hasNonEmptyStringArray(admitted)) admissible.push(observation);
+  }
+  const resolved = resolveField('researchAreas', admissible, {
+    now: input.now,
+    manuallyLockedFields: input.manuallyLockedFields,
+    manualValues: input.manualValues,
+  });
+  if (!resolved) return;
+  set.researchAreas = await admittedResearchAreas(
+    input.canonicalizeResearchAreas,
+    resolved.value,
+    departments,
+  );
+  input.confidenceByField.researchAreas = resolved.confidence;
+  const provenance = fieldProvenanceForResolvedObservation(
+    'researchAreas',
+    resolved,
+    input.materializationObs,
+  );
+  if (provenance) set['fieldProvenance.researchAreas'] = provenance;
+  else delete set['fieldProvenance.researchAreas'];
+}
+
+/**
+ * When no observation and no derivation leaves an admissible area, the rejected
+ * observation is no evidence, so it must not displace what the row stores: writing
+ * `[]` here emptied served rows whose only new observation named their own
+ * department (#3836). The stored list still passes the same rejection, so a stored
+ * department echo is removed rather than protected. Returns how many fields this
+ * took back out of the projection.
+ */
+async function keepStoredResearchAreasOverWhollyRejectedObservation(input: {
+  set: Record<string, unknown>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  canonicalizeResearchAreas: ResearchAreaCanonicalizationStep;
+}): Promise<number> {
+  const { set, entityDoc, confidenceByField } = input;
+  delete set['fieldProvenance.researchAreas'];
+  const storedConfidence = objectRecord(entityDoc?.confidenceByField).researchAreas;
+  if (typeof storedConfidence === 'number') confidenceByField.researchAreas = storedConfidence;
+  else delete confidenceByField.researchAreas;
+  const stored = Array.isArray(entityDoc?.researchAreas) ? entityDoc.researchAreas : [];
+  const admitted = await admittedResearchAreas(
+    input.canonicalizeResearchAreas,
+    stored,
+    set.departments ?? entityDoc?.departments,
+  );
+  if (Array.isArray(admitted) && JSON.stringify(admitted) !== JSON.stringify(stored)) {
+    set.researchAreas = admitted;
+    return 0;
+  }
+  delete set.researchAreas;
+  return 1;
 }
 
 /**
@@ -5828,6 +5935,10 @@ export async function projectFromLog(
           ? entityDoc.sourceUrls
           : []),
     ].filter((url): url is string => typeof url === 'string');
+    const canonicalizeResearchAreas =
+      input.applyResearchEntityResearchAreaCanonicalization ??
+      applyResearchEntityResearchAreaCanonicalization;
+    const observedResearchAreas = set.researchAreas;
     await (input.applyDescriptionResearchAreaDerivation ?? applyDescriptionResearchAreaDerivation)(
       set,
       entityDoc,
@@ -5835,10 +5946,22 @@ export async function projectFromLog(
     await (
       input.applyResearchEntityOrgUnitCanonicalization ?? applyResearchEntityOrgUnitCanonicalization
     )(set, entityDoc, orgUnitProfileUrls);
-    await (
-      input.applyResearchEntityResearchAreaCanonicalization ??
-      applyResearchEntityResearchAreaCanonicalization
-    )(set, set.departments ?? entityDoc?.departments);
+    await canonicalizeResearchAreas(set, set.departments ?? entityDoc?.departments);
+    const observedResearchAreasWhollyRejected =
+      hasNonEmptyStringArray(observedResearchAreas) && isEmptyArray(set.researchAreas);
+    if (observedResearchAreasWhollyRejected) {
+      await resolveResearchAreasOverAdmissibleObservations({
+        now: input.now,
+        set,
+        confidenceByField,
+        entityDoc,
+        resolverObs,
+        manuallyLockedFields,
+        manualValues,
+        materializationObs,
+        canonicalizeResearchAreas,
+      });
+    }
     // Derive again if canonicalization emptied the list, because the first attempt
     // above returns early on a non-empty `researchAreas` and rejection runs AFTER it.
     // A row whose winning observation names only its own department and a
@@ -5865,6 +5988,14 @@ export async function projectFromLog(
         )(set, set.departments ?? entityDoc?.departments);
       }
       if (!Array.isArray(set.researchAreas)) set.researchAreas = beforeFallback;
+    }
+    if (observedResearchAreasWhollyRejected && isEmptyArray(set.researchAreas)) {
+      fieldsWritten -= await keepStoredResearchAreasOverWhollyRejectedObservation({
+        set,
+        confidenceByField,
+        entityDoc,
+        canonicalizeResearchAreas,
+      });
     }
     reconcileDerivedResearchAreaProvenance(set, unset, entityDoc);
     // The detail-page official-profile CTA reads only entity.sourceUrls, so a

@@ -17,6 +17,7 @@ import {
   type WorkPlannerSourcePolicy,
 } from '../workPlanner';
 import {
+  admissibleResearchAreas,
   getResearchAreaCanonicalizer,
   type ResearchAreaCanonicalizer,
 } from '../researchAreaCanonicalization';
@@ -43,6 +44,7 @@ export interface CandidateAreaEntity {
   name: string;
   websiteUrl: string;
   sourceUrls: string[];
+  departments?: string[];
   manuallyLockedFields?: string[];
 }
 
@@ -54,6 +56,7 @@ export interface CandidateAreaEntityDoc {
   websiteUrl?: string;
   website?: string;
   sourceUrls?: string[];
+  departments?: string[];
   researchAreas?: unknown;
   manuallyLockedFields?: string[];
 }
@@ -203,6 +206,7 @@ export function candidateAreaEntitiesFromDocs(
       name: textValue(doc.displayName || doc.name || doc.slug || idValue(doc._id)),
       websiteUrl: urls[0],
       sourceUrls: urls,
+      departments: doc.departments || [],
       manuallyLockedFields: doc.manuallyLockedFields || [],
     };
     return candidateKeyMatches(candidate, keys) ? [candidate] : [];
@@ -353,15 +357,19 @@ export interface ResearchAreaExtraction {
  * matches over explicitly labeled items (which recovers approved single-word
  * areas the prose scan intentionally excludes) and the approved-registry phrase
  * scan over page prose. Every returned area is an approved `TaxonomyTerm` name -
- * fail-closed, so an unapproved or invented topic is never produced.
+ * fail-closed, so an unapproved or invented topic is never produced. Areas the row
+ * itself rejects (its own department, a division-level label) are removed with the
+ * materializer's own rule, so a page that names only those asserts nothing (#3836).
  */
 export function deriveCanonicalResearchAreasFromPage(
   canonicalizer: ResearchAreaCanonicalizer,
   html: string,
+  departments: unknown = [],
 ): ResearchAreaExtraction {
+  const admitted = (areas: string[]) => admissibleResearchAreas(canonicalizer, areas, departments);
   const labeledItems = extractLabeledResearchAreaItems(html);
-  const fromLabels = canonicalizer.matchCanonicalResearchAreas(labeledItems);
-  const fromProse = canonicalizer.deriveResearchAreasFromText(proseTextFromPage(html));
+  const fromLabels = admitted(canonicalizer.matchCanonicalResearchAreas(labeledItems));
+  const fromProse = admitted(canonicalizer.deriveResearchAreasFromText(proseTextFromPage(html)));
   const areas: string[] = [];
   const seen = new Set<string>();
   for (const area of [...fromLabels, ...fromProse]) {
@@ -447,6 +455,7 @@ export async function findResearchAreaCandidateEntities(
       websiteUrl: 1,
       website: 1,
       sourceUrls: 1,
+      departments: 1,
       researchAreas: 1,
       manuallyLockedFields: 1,
     },
@@ -570,7 +579,11 @@ export class ResearchAreaSourceExtractor implements IScraper {
             continue;
           }
           if (!page?.html) continue;
-          const extraction = deriveCanonicalResearchAreasFromPage(canonicalizer, page.html);
+          const extraction = deriveCanonicalResearchAreasFromPage(
+            canonicalizer,
+            page.html,
+            entity.departments,
+          );
           observations = researchAreaObservationsFromExtraction(extraction, {
             entityId: serializedDocumentId(entity._id),
             entityKey: entity.slug,
