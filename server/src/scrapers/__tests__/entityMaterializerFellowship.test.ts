@@ -400,15 +400,13 @@ describe('fellowship materialization', () => {
       expect(result.plannedSet).toMatchObject({ programKind: 'FELLOWSHIP_FUNDING' });
     });
 
-    it('clears a detail a stale classifier observation still asserts once the classifier is silent', async () => {
+    it('keeps a stored award amount the classifier is silent about', async () => {
       mockRead(
         [
           fact('title', 'Fixture Research Fund'),
           fact('description', 'Supports independent summer research projects.'),
-          fact('compensationSummary', 'Paid internship'),
-          fact('programDates', 'Summer'),
         ],
-        { ...storedRow, compensationSummary: 'Paid internship' },
+        { ...storedRow, compensationSummary: 'Up to $1,000 when awarded', programDates: 'Summer' },
       );
 
       const result = await materializeEntity(
@@ -417,10 +415,9 @@ describe('fellowship materialization', () => {
         { dryRun: true },
       );
 
-      expect(result.plannedSet).not.toHaveProperty('compensationSummary');
-      expect(result.plannedSet).not.toHaveProperty('programDates');
-      expect(result.plannedUnset).toHaveProperty('compensationSummary');
+      expect(result.plannedUnset).not.toHaveProperty('compensationSummary');
       expect(result.plannedUnset).not.toHaveProperty('programDates');
+      expect(result.plannedSet).not.toHaveProperty('compensationSummary');
       expect(result.plannedSet).toMatchObject({ programKind: 'FELLOWSHIP_FUNDING' });
     });
   });

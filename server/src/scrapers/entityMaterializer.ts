@@ -6762,13 +6762,6 @@ export async function projectFromLog(
       set[field] = value;
       delete unset[field];
     }
-    for (const field of classification.unset) {
-      delete set[field];
-      delete confidenceByField[field];
-      if ((entityDoc as Record<string, unknown> | null)?.[field] == null) continue;
-      unset[field] = '';
-      fieldsWritten++;
-    }
   }
 
   const scopedFields =
