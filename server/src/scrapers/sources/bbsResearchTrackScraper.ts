@@ -527,7 +527,7 @@ export type FetchBbsPageFn = (url: string, useCache: boolean) => Promise<string 
 
 export type BbsEntityFinderFn = () => Promise<BbsCandidateEntity[]>;
 
-export type TrackEverListedPisFn = (trackUrl: string) => Promise<boolean>;
+export type TrackEverListedPisFn = (track: BbsTrack, sourceId: string) => Promise<boolean>;
 
 export interface BbsResearchTrackScraperDeps {
   fetchPage?: FetchBbsPageFn;
@@ -548,13 +548,20 @@ export interface BbsResearchTrackScraperDeps {
  * anybody may simply be empty upstream, while a track that used to list PIs and now lists none is
  * unambiguously a defect. Fails open, returning false, because an unanswerable read must not
  * invent a failure.
+ *
+ * The read keys on a topic this track grafts rather than on the track URL, because a graft cites
+ * the PI's profile page and never the track page, and no two tracks share a topic.
  */
-async function defaultTrackEverListedPis(trackUrl: string): Promise<boolean> {
-  if (mongoose.connection.readyState !== 1) return false;
+async function defaultTrackEverListedPis(
+  track: BbsTrack,
+  sourceId: string,
+): Promise<boolean> {
+  if (mongoose.connection.readyState !== 1 || !mongoose.isValidObjectId(sourceId)) return false;
   const seen = await Observation.exists({
+    sourceId,
     entityType: 'researchEntity',
-    sourceName: SOURCE_KEY,
-    sourceUrl: trackUrl,
+    field: 'researchAreas',
+    value: { $in: track.researchAreas },
   });
   return Boolean(seen);
 }
@@ -654,7 +661,6 @@ export class BbsResearchTrackScraper implements IScraper {
   private readonly fetchPage: FetchBbsPageFn;
   private readonly entityFinder: BbsEntityFinderFn;
   private readonly trackEverListedPis: TrackEverListedPisFn;
-  private readonly emptyTrackFailures: string[] = [];
 
   constructor(deps: BbsResearchTrackScraperDeps = {}) {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
@@ -662,12 +668,15 @@ export class BbsResearchTrackScraper implements IScraper {
     this.trackEverListedPis = deps.trackEverListedPis || defaultTrackEverListedPis;
   }
 
-  private async collectTrackPis(ctx: ScraperContext): Promise<Map<string, BbsTrackPi>> {
+  private async collectTrackPis(
+    ctx: ScraperContext,
+  ): Promise<{ pis: Map<string, BbsTrackPi>; emptyTrackFailures: string[] }> {
     const onlyFilter =
       ctx.options.only && ctx.options.only.length > 0
         ? new Set(ctx.options.only.map((value) => value.trim().toLowerCase()))
         : null;
     const byProfileSlug = new Map<string, BbsTrackPi>();
+    const emptyTrackFailures: string[] = [];
     for (const track of BBS_TRACKS) {
       if (onlyFilter && !onlyFilter.has(track.slug)) continue;
       let html: string | null = null;
@@ -685,11 +694,11 @@ export class BbsResearchTrackScraper implements IScraper {
         ctx.log(
           `[${track.slug}] WARNING: this track listed no faculty; the page shape or the parser changed (#3833)`,
         );
-        if (await this.trackEverListedPis(track.url)) {
+        if (await this.trackEverListedPis(track, ctx.sourceId)) {
           // An error only here, because this track has listed PIs before, so zero is a defect
           // rather than an empty programme. It names the track and reaches the run's errors, which
           // fails this lane's stage; every other source is its own subprocess and still runs.
-          this.emptyTrackFailures.push(
+          emptyTrackFailures.push(
             `${track.slug} listed no faculty but has listed PIs before, so the track page or the parser is broken (#3833)`,
           );
         }
@@ -710,7 +719,7 @@ export class BbsResearchTrackScraper implements IScraper {
         }
       }
     }
-    return byProfileSlug;
+    return { pis: byProfileSlug, emptyTrackFailures };
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -720,7 +729,7 @@ export class BbsResearchTrackScraper implements IScraper {
     }
     const limit = limitOption ?? Infinity;
 
-    const pis = await this.collectTrackPis(ctx);
+    const { pis, emptyTrackFailures } = await this.collectTrackPis(ctx);
     const candidates = await this.entityFinder();
     const index = buildBbsMatchIndex(candidates);
 
@@ -774,9 +783,7 @@ export class BbsResearchTrackScraper implements IScraper {
     return {
       observationCount,
       entitiesObserved: grafted,
-      ...(this.emptyTrackFailures.length > 0
-        ? { partialFailures: [...this.emptyTrackFailures] }
-        : {}),
+      ...(emptyTrackFailures.length > 0 ? { partialFailures: emptyTrackFailures } : {}),
       notes:
         `rows enriched: ${grafted} of ${pis.size} track PIs; not attached: ` +
         `${noExistingRow} have no existing research row (a track listing never mints one, #3561), ` +
