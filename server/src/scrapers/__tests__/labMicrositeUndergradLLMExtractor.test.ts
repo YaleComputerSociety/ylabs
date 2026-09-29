@@ -485,6 +485,12 @@ describe('evidenceQuoteRecitationObservation (#3831)', () => {
     ).toBeNull();
     expect(
       evidenceQuoteRecitationObservation('lab-a', live, [
+        { url: 'https://lab.example.edu/', text: `Shared block. ${live.value}` },
+        { url: 'https://lab.example.edu/profile', text: `Shared block. ${live.value}` },
+      ]),
+    ).toBeNull();
+    expect(
+      evidenceQuoteRecitationObservation('lab-a', live, [
         { url: 'https://lab.example.edu/profile', text: 'Nothing here.' },
       ]),
     ).toBeNull();

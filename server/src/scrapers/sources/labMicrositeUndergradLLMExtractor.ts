@@ -495,9 +495,12 @@ export function evidenceQuoteRecitationObservation(
   live: LiveEvidenceQuote,
   readPages: readonly PromptSourcePage[],
 ): ObservationInput | null {
-  const carrying = pageContainingQuote(live.value, pagesWithinEntityScope(readPages));
+  const scopedPages = pagesWithinEntityScope(readPages);
+  const citedIdentity = pageUrlIdentity(live.sourceUrl);
+  const citedPages = scopedPages.filter((page) => pageUrlIdentity(page.url) === citedIdentity);
+  if (pageContainingQuote(live.value, citedPages)) return null;
+  const carrying = pageContainingQuote(live.value, scopedPages);
   if (!carrying) return null;
-  if (pageUrlIdentity(carrying.url) === pageUrlIdentity(live.sourceUrl)) return null;
   return {
     entityType: 'researchEntity',
     entityKey,

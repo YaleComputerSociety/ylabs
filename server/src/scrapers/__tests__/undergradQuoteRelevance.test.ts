@@ -134,7 +134,18 @@ describe('non-access undergraduate shapes (#3831)', () => {
     'MCDB 4700 students join the lab as undergraduates each spring.',
     'She regularly serves as a senior thesis advisor for undergraduates in the lab.',
     'Enthusiastic undergraduate students keen on gaining research experience are always welcome to our lab.',
+    'Our lab hosts STARS 2024 undergraduate fellows.',
+    'REU 2025 undergraduate students join us each summer.',
+    'ECON 3380: Emerging Markets. Our lab welcomes undergraduate researchers.',
+    'Members of the undergraduate class of 2027 join the lab each spring.',
   ])('still reads %j as hosting undergraduates', (quote) => {
     expect(quoteStatesAnUndergraduateAccessFact(quote)).toBe(true);
+  });
+
+  it.each([
+    'Jane Doe, YC 2027, Undergraduate Researcher',
+    'Jane Doe, Undergraduate Class of 2027',
+  ])('still counts the roster line %j', (snippet) => {
+    expect(rosterSnippetNamesAnUndergraduate(snippet)).toBe(true);
   });
 });
