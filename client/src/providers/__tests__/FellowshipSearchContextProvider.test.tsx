@@ -6,12 +6,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import UserContext from '../../contexts/UserContext';
 import FellowshipSearchContextProvider from '../FellowshipSearchContextProvider';
+import FellowshipModal from '../../components/fellowship/FellowshipModal';
+import { Fellowship } from '../../types/types';
+import { createFellowship } from '../../utils/createFellowship';
 import axios from '../../utils/axios';
 
 vi.mock('../../utils/axios', () => ({
   default: {
     get: vi.fn(),
   },
+}));
+
+vi.mock('../../utils/researchAnalytics', async () => ({
+  ...(await vi.importActual<typeof import('../../utils/researchAnalytics')>(
+    '../../utils/researchAnalytics',
+  )),
+  trackResearchEvent: vi.fn(),
 }));
 
 vi.mock('sweetalert', () => ({
@@ -191,6 +201,86 @@ describe('FellowshipSearchContextProvider program routes', () => {
       nextCycle: 0,
       archive: total - 1,
     });
+  });
+
+  it('narrows to only the chosen value when a program modal eligibility chip is clicked', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/programs/filters') {
+        return Promise.resolve({ data: {} });
+      }
+      return Promise.resolve({ data: { results: [], total: 0 } });
+    });
+    const program: Fellowship = createFellowship({
+      _id: 'program-summer',
+      title: 'Synthetic Summer Program',
+      termOfAward: ['Summer'],
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/programs']}>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: true,
+            user: { userType: 'student', isAdmin: false } as any,
+            checkContext: vi.fn(),
+          }}
+        >
+          <FellowshipSearchContextProvider>
+            <FellowshipSearchContext.Consumer>
+              {(context) => (
+                <div>
+                  <p data-testid="quick-filter">{String(context.quickFilter)}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      context.setSelectedProgramKind(['STRUCTURED_PROGRAM']);
+                      context.setSelectedEntryMode(['APPLY_TO_PROGRAM']);
+                      context.setSelectedProgramCategory(['FELLOWSHIP']);
+                      context.setSelectedStudentFacingCategory(['Structured program']);
+                      context.setSelectedSubjects(['Biology']);
+                      context.setSelectedPurpose(['Research']);
+                      context.setQuickFilter('open');
+                    }}
+                  >
+                    Narrow earlier
+                  </button>
+                </div>
+              )}
+            </FellowshipSearchContext.Consumer>
+            <FellowshipModal
+              fellowship={program}
+              isOpen
+              isFavorite={false}
+              onClose={vi.fn()}
+              toggleFavorite={vi.fn()}
+            />
+          </FellowshipSearchContextProvider>
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mockedAxios.get).toHaveBeenCalledWith('/programs/filters');
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Narrow earlier', hidden: true }));
+    await waitFor(() => {
+      expect(mockedAxios.get).toHaveBeenCalledWith(expect.stringContaining('programKind='));
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Summer' }));
+
+    await waitFor(() => {
+      const searchUrls = mockedAxios.get.mock.calls
+        .map(([url]) => String(url))
+        .filter((url) => url.startsWith('/programs/search'));
+      const latestSearch = new URL(searchUrls[searchUrls.length - 1], 'https://example.test');
+      const appliedFilters = [...latestSearch.searchParams.keys()].filter(
+        (key) => !['query', 'page', 'pageSize'].includes(key),
+      );
+      expect(appliedFilters).toEqual(['termOfAward']);
+      expect(latestSearch.searchParams.get('termOfAward')).toBe('Summer');
+    });
+    expect(screen.getByTestId('quick-filter').textContent).toBe('null');
   });
 
   it('sends admin-only student visibility params when the admin filter is selected', async () => {

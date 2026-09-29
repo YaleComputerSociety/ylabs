@@ -116,6 +116,7 @@ const FellowshipModal = ({
     setSelectedRegions,
     setSelectedCitizenship,
     setQueryString,
+    resetProgramFilters,
   } = useContext(FellowshipSearchContext);
 
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -215,11 +216,7 @@ const FellowshipModal = ({
     value: string,
   ) => {
     setQueryString('');
-    setSelectedYearOfStudy([]);
-    setSelectedTermOfAward([]);
-    setSelectedPurpose([]);
-    setSelectedRegions([]);
-    setSelectedCitizenship([]);
+    resetProgramFilters();
 
     switch (filterType) {
       case 'yearOfStudy':

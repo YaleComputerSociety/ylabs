@@ -15,8 +15,7 @@ export type FellowshipQuickFilter =
   | 'mentorFirst'
   | null;
 
-export interface FellowshipSearchState {
-  queryString: string;
+export interface StudentProgramFilters {
   selectedYearOfStudy: string[];
   selectedProgramCategory: string[];
   selectedProgramKind: string[];
@@ -27,6 +26,25 @@ export interface FellowshipSearchState {
   selectedSubjects: string[];
   selectedRegions: string[];
   selectedCitizenship: string[];
+  quickFilter: FellowshipQuickFilter;
+}
+
+export const createEmptyStudentProgramFilters = (): StudentProgramFilters => ({
+  selectedYearOfStudy: [],
+  selectedProgramCategory: [],
+  selectedProgramKind: [],
+  selectedEntryMode: [],
+  selectedStudentFacingCategory: [],
+  selectedTermOfAward: [],
+  selectedPurpose: [],
+  selectedSubjects: [],
+  selectedRegions: [],
+  selectedCitizenship: [],
+  quickFilter: null,
+});
+
+export interface FellowshipSearchState extends StudentProgramFilters {
+  queryString: string;
   selectedStudentVisibilityTier: StudentVisibilityTier[];
   sortBy: string;
   sortOrder: number;
@@ -39,7 +57,6 @@ export interface FellowshipSearchState {
   journeySummary: ProgramJourneySummary;
   page: number;
   filterOptions: FellowshipFilterOptions;
-  quickFilter: FellowshipQuickFilter;
   filterBarHeight: number;
   queryStringLoaded: boolean;
   filtersLoaded: boolean;
@@ -73,6 +90,7 @@ export type FellowshipSearchAction =
   | { type: 'TOGGLE_SORT_DIRECTION' }
   | { type: 'SET_PAGE'; payload: number | ((prev: number) => number) }
   | { type: 'SET_QUICK_FILTER'; payload: FellowshipQuickFilter }
+  | { type: 'RESET_PROGRAM_FILTERS' }
   | { type: 'SET_FILTER_BAR_HEIGHT'; payload: number }
   | { type: 'SET_FILTER_OPTIONS'; payload: FellowshipFilterOptions }
   | { type: 'SEARCH_REQUEST' }
@@ -98,16 +116,7 @@ export const createInitialFellowshipSearchState = (
   overrides: Partial<FellowshipSearchState> = {},
 ): FellowshipSearchState => ({
   queryString: '',
-  selectedProgramCategory: [],
-  selectedProgramKind: [],
-  selectedEntryMode: [],
-  selectedStudentFacingCategory: [],
-  selectedYearOfStudy: [],
-  selectedTermOfAward: [],
-  selectedPurpose: [],
-  selectedSubjects: [],
-  selectedRegions: [],
-  selectedCitizenship: [],
+  ...createEmptyStudentProgramFilters(),
   selectedStudentVisibilityTier: [],
   sortBy: 'default',
   sortOrder: -1,
@@ -131,7 +140,6 @@ export const createInitialFellowshipSearchState = (
     citizenshipStatus: [],
     subjects: [],
   },
-  quickFilter: null,
   filterBarHeight: 0,
   queryStringLoaded: false,
   filtersLoaded: false,
@@ -219,6 +227,9 @@ export function fellowshipSearchReducer(
 
     case 'SET_QUICK_FILTER':
       return { ...state, quickFilter: action.payload };
+
+    case 'RESET_PROGRAM_FILTERS':
+      return { ...state, ...createEmptyStudentProgramFilters() };
 
     case 'SET_FILTER_BAR_HEIGHT':
       return { ...state, filterBarHeight: action.payload };
