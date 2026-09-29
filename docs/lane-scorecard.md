@@ -35,6 +35,8 @@ Replay reproduces both: no renderer when the capture had none, and otherwise a r
 During capture and replay the renderer freeze is the only record of a render, so the lane's own rendered-page cache stays out of the benchmark and every usable render on replay is served by the frozen renderer.
 A benchmark captured before #3590 has no record of the renderer, so it replays as it did before: the renderer the replay environment builds refuses every call, and a render is served only from the lane's rendered-page cache the capture froze.
 `centers-institutes-index` and `student-grants-database` joined `BENCHMARKABLE_LANES` on this basis.
+`student-grants-database` also reads the live corpus to choose its targets: it adds every FundDetails page the live catalog cites to the funds it reads (#3984).
+A fund first cited after capture is therefore a page the benchmark never froze, so it counts in `pagesMissed` rather than changing the score, and a benchmark scoped with `--only` holds its fund list still.
 
 A replay is compared only once it has resolved something from the frozen input.
 One that served none of its frozen pages, or a rendered lane that served none of its frozen renders, is reported as unscored rather than scored, because it measured a path that never engaged.
