@@ -97,6 +97,7 @@ import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/m
 import {
   listResearchEntityMergedInRows,
   resolveResearchEntityCanonicalByTombstone,
+  type MergedInResearchEntityRow,
 } from '../services/researchEntityCanonicalTombstone';
 import { isLowTrustAreaShellSlug } from '../utils/researchEntityShellSlug';
 import {
@@ -192,6 +193,13 @@ import {
   applyResearchEntityResearchAreaCanonicalization,
   getResearchAreaCanonicalizer,
 } from './researchAreaCanonicalization';
+import {
+  hasLiveResearchAreaEvidence,
+  researchAreaAdmissionForRow,
+  researchAreaEvidenceIdentity,
+  researchAreasAreManuallyLocked,
+  type ResearchAreaEvidenceObservation,
+} from './researchAreaEvidence';
 import {
   resolveBackfillWebsiteUrl,
   type WebsiteUrlBackfillResolution,
@@ -529,6 +537,7 @@ interface MaterializeResult {
   plannedSet?: Record<string, unknown>;
   plannedUnset?: Record<string, ''>;
   identityJoin?: UserIdentityJoin;
+  unbackedResearchAreas?: UnbackedResearchAreaOutcome;
 }
 
 /**
@@ -919,7 +928,7 @@ async function resolveResearchAreasOverAdmissibleObservations(input: {
   manualValues: Record<string, unknown>;
   materializationObs: MaterializerObservationLike[];
   canonicalizeResearchAreas: ResearchAreaCanonicalizationStep;
-}): Promise<void> {
+}): Promise<boolean> {
   const { set, entityDoc } = input;
   const departments = set.departments ?? entityDoc?.departments;
   const admissible: ResolverObservation[] = [];
@@ -940,7 +949,7 @@ async function resolveResearchAreasOverAdmissibleObservations(input: {
     manuallyLockedFields: input.manuallyLockedFields,
     manualValues: input.manualValues,
   });
-  if (!resolved) return;
+  if (!resolved) return false;
   set.researchAreas = await admittedResearchAreas(
     input.canonicalizeResearchAreas,
     resolved.value,
@@ -954,6 +963,7 @@ async function resolveResearchAreasOverAdmissibleObservations(input: {
   );
   if (provenance) set['fieldProvenance.researchAreas'] = provenance;
   else delete set['fieldProvenance.researchAreas'];
+  return true;
 }
 
 /**
@@ -1012,6 +1022,77 @@ function reconcileDerivedResearchAreaProvenance(
   if (objectRecord(stored).sourceName === DERIVED_RESEARCH_AREA_SOURCE_NAME) {
     unset[DERIVED_RESEARCH_AREA_PROVENANCE_PATH] = '';
   }
+}
+
+export async function storedResearchAreasHaveNoLiveEvidence(input: {
+  entityDoc: any;
+  mergedInRows: ReadonlyArray<Pick<MergedInResearchEntityRow, '_id' | 'slug'>>;
+  observations: ReadonlyArray<ResearchAreaEvidenceObservation>;
+  manuallyLockedFields: string[];
+}): Promise<boolean> {
+  const { entityDoc } = input;
+  // An archived row's resolve never reads its merged-in keys, so its evidence is unknown here.
+  if (!entityDoc || entityDoc.archived === true) return false;
+  if (researchAreasAreManuallyLocked({ manuallyLockedFields: input.manuallyLockedFields })) {
+    return false;
+  }
+  return !hasLiveResearchAreaEvidence(
+    researchAreaEvidenceIdentity(entityDoc, input.mergedInRows),
+    input.observations,
+    researchAreaAdmissionForRow(await getResearchAreaCanonicalizer(), entityDoc),
+  );
+}
+
+export type UnbackedResearchAreaOutcome =
+  | 'rederived'
+  | 'already-derived'
+  | 'kept-stored-derived-empty'
+  | 'kept-stored-type-not-derived'
+  | 'nothing-derived';
+
+function sameResearchAreaMembers(left: unknown[], right: unknown[]): boolean {
+  const rightMembers = new Set(right);
+  return left.length === right.length && left.every((area) => rightMembers.has(area));
+}
+
+async function rederiveUnbackedResearchAreas(input: {
+  set: Record<string, unknown>;
+  entityDoc: any;
+  derive: typeof applyDescriptionResearchAreaDerivation;
+  canonicalizeResearchAreas: ResearchAreaCanonicalizationStep;
+}): Promise<UnbackedResearchAreaOutcome> {
+  const { set, entityDoc } = input;
+  const stored: unknown[] = Array.isArray(entityDoc?.researchAreas) ? entityDoc.researchAreas : [];
+  const trial: Record<string, unknown> = { ...set };
+  delete trial.researchAreas;
+  await input.derive(trial, { ...(entityDoc ?? {}), researchAreas: [] });
+  const derived = hasNonEmptyStringArray(trial.researchAreas)
+    ? await admittedResearchAreas(
+        input.canonicalizeResearchAreas,
+        trial.researchAreas,
+        set.departments ?? entityDoc?.departments,
+      )
+    : [];
+  if (!Array.isArray(derived) || derived.length === 0) {
+    if (stored.length === 0) return 'nothing-derived';
+    const entityType = set.entityType ?? entityDoc?.entityType;
+    return typeof entityType === 'string' &&
+      DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES.has(entityType)
+      ? 'kept-stored-derived-empty'
+      : 'kept-stored-type-not-derived';
+  }
+  const storedProvenanceIsDerived =
+    objectRecord(objectRecord(entityDoc?.fieldProvenance).researchAreas).sourceName ===
+    DERIVED_RESEARCH_AREA_SOURCE_NAME;
+  const reproducesStoredList = sameResearchAreaMembers(derived, stored);
+  if (reproducesStoredList && storedProvenanceIsDerived) {
+    delete set.researchAreas;
+    delete set[DERIVED_RESEARCH_AREA_PROVENANCE_PATH];
+    return 'already-derived';
+  }
+  set.researchAreas = reproducesStoredList ? stored : derived;
+  recordDerivedResearchAreaProvenance(set);
+  return 'rederived';
 }
 
 // The five `undergraduateLogistics*` fields join this set rather than leaving it:
@@ -4224,6 +4305,8 @@ function storedFieldHasValue(value: unknown, hasProvenance: boolean): boolean {
 export interface MergedSurvivorEvidence {
   observations: any[];
   mergedInKeys: string[];
+  mergedInRows: Array<Pick<MergedInResearchEntityRow, '_id' | 'slug'>>;
+  evidenceObservations: any[];
   survivorLaneOwnsWebsite: boolean;
   droppedLoserWebsiteValues: unknown[];
   loserRosterAppointments: any[];
@@ -4280,6 +4363,8 @@ export async function mergedSurvivorEvidence(
   const unmerged = {
     observations: loadedObservations,
     mergedInKeys: [],
+    mergedInRows: [],
+    evidenceObservations: loadedObservations,
     survivorLaneOwnsWebsite: false,
     droppedLoserWebsiteValues: [],
     loserRosterAppointments: [],
@@ -4471,6 +4556,8 @@ export async function mergedSurvivorEvidence(
   return {
     observations,
     mergedInKeys: [...loserSlugById.keys(), ...loserSlugs],
+    mergedInRows: mergedInRows.map((row) => ({ _id: row._id, slug: row.slug })),
+    evidenceObservations: [...loadedObservations, ...kept],
     survivorLaneOwnsWebsite: survivorOwnsItsWebsite,
     droppedLoserWebsiteValues: droppedLoserWebsiteValues.filter(
       (value) => !survivorStatedWebsites.has(websiteIdentity(value)),
@@ -5164,6 +5251,7 @@ export interface ProjectFromLogInput {
   writeOnlyFields?: string[];
   provenanceOnly?: boolean;
   readRowUnderOwnIdentity?: boolean;
+  researchAreasHaveNoLiveEvidence?: boolean;
   applyDescriptionResearchAreaDerivation?: typeof applyDescriptionResearchAreaDerivation;
   applyResearchEntityOrgUnitCanonicalization?: typeof applyResearchEntityOrgUnitCanonicalization;
   applyResearchEntityResearchAreaCanonicalization?: typeof applyResearchEntityResearchAreaCanonicalization;
@@ -5183,6 +5271,7 @@ export interface ProjectFromLogResult {
   storedTextNormalization: StoredTextNormalizationPlan;
   retiredProvenanceFields: string[];
   relinkedProvenance: Record<string, Record<string, unknown>>;
+  unbackedResearchAreas?: UnbackedResearchAreaOutcome;
 }
 
 export const RESEARCH_ENTITY_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as const;
@@ -5726,6 +5815,7 @@ export async function projectFromLog(
     : undefined;
   let conflicts = 0;
   let fieldsWritten = 0;
+  let unbackedResearchAreas: UnbackedResearchAreaOutcome | undefined;
   const derivedKind = isResearchEntityObservationType(entityType)
     ? derivedResearchGroupKind(
         manuallyLockedFields.includes('entityType') ? undefined : resolved.entityType?.value,
@@ -6033,8 +6123,10 @@ export async function projectFromLog(
     await canonicalizeResearchAreas(set, set.departments ?? entityDoc?.departments);
     const observedResearchAreasWhollyRejected =
       hasNonEmptyStringArray(observedResearchAreas) && isEmptyArray(set.researchAreas);
+    let researchAreasResolvedFromObservation =
+      hasNonEmptyStringArray(observedResearchAreas) && !observedResearchAreasWhollyRejected;
     if (observedResearchAreasWhollyRejected) {
-      await resolveResearchAreasOverAdmissibleObservations({
+      researchAreasResolvedFromObservation = await resolveResearchAreasOverAdmissibleObservations({
         now: input.now,
         set,
         confidenceByField,
@@ -6094,6 +6186,20 @@ export async function projectFromLog(
         entityDoc,
         canonicalizeResearchAreas,
       });
+    }
+    // The resolver can still hold an observation the shared predicate does not credit
+    // (an `entityKey` match carrying another row's `entityId`), and evidence the
+    // resolver used always outranks a derivation.
+    if (input.researchAreasHaveNoLiveEvidence && !researchAreasResolvedFromObservation) {
+      const plannedResearchAreasBefore = 'researchAreas' in set;
+      unbackedResearchAreas = await rederiveUnbackedResearchAreas({
+        set,
+        entityDoc,
+        derive:
+          input.applyDescriptionResearchAreaDerivation ?? applyDescriptionResearchAreaDerivation,
+        canonicalizeResearchAreas,
+      });
+      fieldsWritten += Number('researchAreas' in set) - Number(plannedResearchAreasBefore);
     }
     reconcileDerivedResearchAreaProvenance(set, unset, entityDoc);
     // The detail-page official-profile CTA reads only entity.sourceUrls, so a
@@ -6549,6 +6655,11 @@ export async function projectFromLog(
     storedTextNormalization,
     retiredProvenanceFields,
     relinkedProvenance,
+    ...(unbackedResearchAreas &&
+    !input.provenanceOnly &&
+    (!scopedFields || scopedFields.includes('researchAreas'))
+      ? { unbackedResearchAreas }
+      : {}),
   };
 }
 
@@ -6960,12 +7071,16 @@ export async function materializeEntity(
   }
 
   let mergedInKeys: string[] = [];
+  let mergedInRows: MergedSurvivorEvidence['mergedInRows'] = [];
+  let researchAreaEvidenceObservations: any[] = obs;
   let droppedLoserWebsiteValues: unknown[] = [];
   let loserRosterReads: ResolverObservation[] = [];
   if (isResearchEntityObservationType(entityType) && entityDoc && entityDoc.archived !== true) {
     const merged = await mergedSurvivorEvidence(entityType, entityDoc, obs, options.chunkPrefetch);
     obs = merged.observations;
     mergedInKeys = merged.mergedInKeys;
+    mergedInRows = merged.mergedInRows;
+    researchAreaEvidenceObservations = merged.evidenceObservations;
     droppedLoserWebsiteValues = merged.droppedLoserWebsiteValues;
     loserRosterReads = merged.loserRosterAppointments.map((o: any) => ({
       field: o.field,
@@ -7190,6 +7305,21 @@ export async function materializeEntity(
         )
       : NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY);
 
+  const readRowUnderOwnIdentity =
+    Boolean(entityDoc) &&
+    (mergedInKeys.length > 0 ||
+      (Boolean(identifier.entityKey) && identifier.entityKey === textValue(entityDoc?.slug)) ||
+      (Boolean(identifier.entityId) && identifier.entityId === entityIdString));
+  const researchAreasHaveNoLiveEvidence =
+    isResearchEntityObservationType(entityType) &&
+    readRowUnderOwnIdentity &&
+    (await storedResearchAreasHaveNoLiveEvidence({
+      entityDoc,
+      mergedInRows,
+      observations: researchAreaEvidenceObservations,
+      manuallyLockedFields,
+    }));
+
   const projection = await projectFromLog(entityType, {
     resolved,
     nameIdentityAuthority,
@@ -7206,11 +7336,8 @@ export async function materializeEntity(
     synthesizeCardDescription: options.synthesizeCardDescription,
     writeOnlyFields: options.writeOnlyFields,
     provenanceOnly: options.onlyReconcileFieldProvenance,
-    readRowUnderOwnIdentity:
-      Boolean(entityDoc) &&
-      (mergedInKeys.length > 0 ||
-        (Boolean(identifier.entityKey) && identifier.entityKey === textValue(entityDoc?.slug)) ||
-        (Boolean(identifier.entityId) && identifier.entityId === entityIdString)),
+    readRowUnderOwnIdentity,
+    researchAreasHaveNoLiveEvidence,
   });
   const { conflicts } = projection;
   const { set, unset, fieldsWritten } = options.onlyReconcileFieldProvenance
@@ -7227,6 +7354,9 @@ export async function materializeEntity(
         fieldsWritten: 0,
       }
     : projection;
+  const unbackedResearchAreasOutcome = projection.unbackedResearchAreas
+    ? { unbackedResearchAreas: projection.unbackedResearchAreas }
+    : {};
 
   if (options.dryRun) {
     return {
@@ -7239,6 +7369,7 @@ export async function materializeEntity(
       resolved,
       plannedSet: set,
       plannedUnset: unset,
+      ...unbackedResearchAreasOutcome,
     };
   }
 
@@ -7252,6 +7383,7 @@ export async function materializeEntity(
       created: false,
       resolved,
       skipped: 'no-scoped-fields',
+      ...unbackedResearchAreasOutcome,
     };
   }
 
@@ -7280,6 +7412,7 @@ export async function materializeEntity(
         created: false,
         resolved,
         skipped: 'no-scoped-fields',
+        ...unbackedResearchAreasOutcome,
       };
     }
     // Skip the write (and, below, the redundant search re-sync) when the
@@ -7456,6 +7589,7 @@ export async function materializeEntity(
     created,
     resolved,
     postMaterializationMetrics,
+    ...unbackedResearchAreasOutcome,
     ...(indexStale ? { indexSyncFailed: true as const } : {}),
     ...(entityScalarUnchanged ? { skipped: 'unchanged' as const } : {}),
   };
@@ -7850,6 +7984,7 @@ export async function materializeFromRun(
   let skipped = 0;
   let errors = 0;
   let indexSyncFailures = 0;
+  const unbackedResearchAreaOutcomes: Partial<Record<UnbackedResearchAreaOutcome, number>> = {};
   const postMaterializationMetrics = emptyPostMaterializationMetrics();
   await materializeObservedEntitiesInChunks(
     distinct.map((row) => ({
@@ -7874,9 +8009,18 @@ export async function materializeFromRun(
       if (res.skipped) skipped++;
       conflicts += res.conflicts;
       if (res.indexSyncFailed) indexSyncFailures++;
+      if (res.unbackedResearchAreas) {
+        unbackedResearchAreaOutcomes[res.unbackedResearchAreas] =
+          (unbackedResearchAreaOutcomes[res.unbackedResearchAreas] ?? 0) + 1;
+      }
       addPostMaterializationMetrics(postMaterializationMetrics, res.postMaterializationMetrics);
     },
   );
+  if (Object.keys(unbackedResearchAreaOutcomes).length > 0) {
+    console.info(
+      `[unbacked-research-areas] rows whose stored researchAreas no live evidence states: ${JSON.stringify(unbackedResearchAreaOutcomes)}`,
+    );
+  }
   if (indexSyncFailures > 0) {
     console.warn(
       `materializeFromRun: ${indexSyncFailures} row(s) failed their last index resync, so search and browse order still serve the previous documents for those rows until a reindex`,

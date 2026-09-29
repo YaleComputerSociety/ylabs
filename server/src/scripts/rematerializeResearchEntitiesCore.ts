@@ -7,6 +7,7 @@ import {
   observationIsKeyedToRow,
 } from '../scrapers/rowKeyedContactEvidence';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import type { UnbackedResearchAreaOutcome } from '../scrapers/entityMaterializer';
 
 export interface RematerializeResearchEntitiesArgs {
   slugs: string[];
@@ -15,6 +16,7 @@ export interface RematerializeResearchEntitiesArgs {
   reclaimStrandedField?: string;
   unbackedProvenance: boolean;
   foreignContact: boolean;
+  unbackedResearchAreas: boolean;
   onlyFields: string[];
   includeArchived: boolean;
   output?: string;
@@ -123,6 +125,7 @@ export function parseRematerializeResearchEntitiesArgs(
     confirmRematerialize: false,
     unbackedProvenance: false,
     foreignContact: false,
+    unbackedResearchAreas: false,
     onlyFields: [],
     includeArchived: false,
   };
@@ -152,6 +155,10 @@ export function parseRematerializeResearchEntitiesArgs(
     }
     if (arg === '--foreign-contact') {
       args.foreignContact = true;
+      continue;
+    }
+    if (arg === '--unbacked-research-areas') {
+      args.unbackedResearchAreas = true;
       continue;
     }
     if (arg.startsWith('--slugs=')) {
@@ -201,11 +208,18 @@ export function parseRematerializeResearchEntitiesArgs(
     !slugsProvided &&
     !args.reclaimStrandedField &&
     !args.unbackedProvenance &&
-    !args.foreignContact
+    !args.foreignContact &&
+    !args.unbackedResearchAreas
   ) {
     throw new Error(
-      '--slugs, --reclaim-stranded, --unbacked-provenance or --foreign-contact is required',
+      '--slugs, --reclaim-stranded, --unbacked-provenance, --foreign-contact or --unbacked-research-areas is required',
     );
+  }
+  if (
+    args.unbackedResearchAreas &&
+    (args.unbackedProvenance || args.foreignContact || args.reclaimStrandedField)
+  ) {
+    throw new Error('--unbacked-research-areas writes research areas only, so it runs on its own');
   }
   if (args.unbackedProvenance && args.reclaimStrandedField) {
     throw new Error('--unbacked-provenance writes provenance only, so it cannot reclaim a field');
@@ -222,6 +236,9 @@ export function parseRematerializeResearchEntitiesArgs(
   // field being reclaimed unless the operator asked for a wider scope.
   if (args.reclaimStrandedField && args.onlyFields.length === 0) {
     args.onlyFields = [args.reclaimStrandedField];
+  }
+  if (args.unbackedResearchAreas && args.onlyFields.length === 0) {
+    args.onlyFields = ['researchAreas'];
   }
   return args;
 }
@@ -490,6 +507,7 @@ export interface RematerializeEntityReport {
   conflicts?: number;
   changes: RematerializeReportedChange[];
   clearedContactFields?: string[];
+  unbackedResearchAreas?: UnbackedResearchAreaOutcome;
   skipped?: string;
   error?: string;
 }
@@ -507,6 +525,7 @@ export function rematerializeEntityReportFromChanges(input: {
   conflicts?: number;
   changes: RematerializeReportedChange[];
   foreignContact: boolean;
+  unbackedResearchAreas?: UnbackedResearchAreaOutcome;
   skipped?: string;
 }): RematerializeEntityReport {
   return {
@@ -525,6 +544,7 @@ export function rematerializeEntityReportFromChanges(input: {
             .map((change) => change.field),
         }
       : {}),
+    ...(input.unbackedResearchAreas ? { unbackedResearchAreas: input.unbackedResearchAreas } : {}),
     skipped: input.skipped,
   };
 }
@@ -532,19 +552,30 @@ export function rematerializeEntityReportFromChanges(input: {
 export function summarizeRematerializeEntities(
   entities: readonly RematerializeEntityReport[],
   options: { foreignContact: boolean },
-): { entitiesChanged: number; fieldsWritten: number; clearedContactFields?: number } {
+): {
+  entitiesChanged: number;
+  fieldsWritten: number;
+  clearedContactFields?: number;
+  unbackedResearchAreas: Partial<Record<UnbackedResearchAreaOutcome, number>>;
+} {
   let entitiesChanged = 0;
   let fieldsWritten = 0;
   let clearedContactFields = 0;
+  const unbackedResearchAreas: Partial<Record<UnbackedResearchAreaOutcome, number>> = {};
   for (const entity of entities) {
     if (entity.changes.length > 0) entitiesChanged += 1;
     fieldsWritten += entity.changes.length;
     clearedContactFields += entity.clearedContactFields?.length ?? 0;
+    if (entity.unbackedResearchAreas) {
+      unbackedResearchAreas[entity.unbackedResearchAreas] =
+        (unbackedResearchAreas[entity.unbackedResearchAreas] ?? 0) + 1;
+    }
   }
   return {
     entitiesChanged,
     fieldsWritten,
     ...(options.foreignContact ? { clearedContactFields } : {}),
+    unbackedResearchAreas,
   };
 }
 
