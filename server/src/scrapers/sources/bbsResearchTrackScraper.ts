@@ -552,10 +552,7 @@ export interface BbsResearchTrackScraperDeps {
  * The read keys on a topic this track grafts rather than on the track URL, because a graft cites
  * the PI's profile page and never the track page, and no two tracks share a topic.
  */
-async function defaultTrackEverListedPis(
-  track: BbsTrack,
-  sourceId: string,
-): Promise<boolean> {
+async function defaultTrackEverListedPis(track: BbsTrack, sourceId: string): Promise<boolean> {
   if (mongoose.connection.readyState !== 1 || !mongoose.isValidObjectId(sourceId)) return false;
   const seen = await Observation.exists({
     sourceId,
