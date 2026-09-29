@@ -135,7 +135,7 @@ export function stripDanglingSourceSiteReferenceSentences(text: string): string 
 const PROTECTED_ABBREVIATION_TAIL =
   /(?:^|\s)(?:Prof|Drs?|Mr|Mrs|Ms|Mx|Sr|Jr|St|Ave|Rd|Blvd|Inc|Ltd|Co|Corp|Dept|Univ|Assoc|Vol|No|pp|Fig|vs|etc|al)\.\s*$/i;
 
-const LATIN_EXAMPLE_ABBREVIATION_TAIL = /(?:^|[\s(\[])(?:[ei]\.|e\.g\.\s*|i\.e\.\s*)$/i;
+const LATIN_EXAMPLE_ABBREVIATION_TAIL = /(?:^|[\s([])(?:[ei]\.|e\.g\.\s*|i\.e\.\s*)$/i;
 
 function isAbbreviationSplit(segment: string): boolean {
   return PROTECTED_ABBREVIATION_TAIL.test(segment) || LATIN_EXAMPLE_ABBREVIATION_TAIL.test(segment);
