@@ -16,10 +16,11 @@ Before finishing, run the **narrowest relevant** verification command. Prefer fo
 | `yarn lint` | ESLint. **A CI gate as of #3070**: an error fails the required check, a warning does not |
 | `yarn lint:fix` | Fix the auto-fixable lint findings in place |
 | `yarn --cwd server test` | Server-side Vitest suite |
+| `yarn --cwd server test:guards` | The registration and inventory guards alone, in seconds. `guardSuiteInventory.test.ts` keeps the list to existing files that start no in-memory MongoDB |
 | `yarn --cwd client test:ci` | Client Vitest once (CI form) |
 | `npx tsc --noEmit -p server/tsconfig.json` | Server typecheck |
 | `yarn build` | Full build (server + client) |
-| `yarn verify:fast` | `format:check` + `lint` + both typechecks. Under a minute; run before every push |
+| `yarn verify:fast` | `format:check` + `lint` + both typechecks + `server test:guards`. Under a minute; run before every push |
 | `yarn verify` | Every CI gate in CI's order. Passing this predicts CI passing |
 
 The full server suite is hermetic as of #2966, so `server/.env` no longer has to be moved aside before running it.
@@ -35,20 +36,21 @@ CI (`.github/workflows/ci.yml`) `test-and-build` runs, in this order:
 3. `yarn lint`
 4. `npx tsc --noEmit -p server/tsconfig.json`
 5. `npx tsc --noEmit -p client/tsconfig.json`
-6. `yarn --cwd server test`
-7. `yarn model-refactor:inventory:test-operator-tools`
-8. `yarn test:data-profiles`
-9. `yarn --cwd client test:ci`
-10. `yarn security:preflight` (= `security:policy` + `security:secrets` + `security:identifiers` + `security:audit:production`)
-11. recursive moderate dependency audits
-12. `yarn build`
+6. `yarn --cwd server test:guards` (registration and inventory guards, seconds long, ahead of the full suite; #3737)
+7. `yarn --cwd server test`
+8. `yarn model-refactor:inventory:test-operator-tools`
+9. `yarn test:data-profiles`
+10. `yarn --cwd client test:ci`
+11. `yarn security:preflight` (= `security:policy` + `security:secrets` + `security:identifiers` + `security:audit:production`)
+12. recursive moderate dependency audits
+13. `yarn build`
 
 `yarn lint` became a gate in #3070, and it gates on **errors only**: `yarn lint` passes no `--max-warnings`, so ESLint's unlimited default applies and the two standing unused-variable warnings do not fail CI.
 Do not add `--max-warnings` without first clearing those warnings, and expect a lint error to fail the required check before any suite runs.
-`yarn verify` runs steps 2-10; keep it in sync with this list if `ci.yml` changes.
-`scripts/security-preflight.test.mjs` pins the lint step's presence and its position ahead of the suites, so a step reordering that contradicts this list fails step 10.
+`yarn verify` runs steps 2-11; keep it in sync with this list if `ci.yml` changes.
+`scripts/security-preflight.test.mjs` pins the lint step's presence and its position ahead of the suites, and the guard step's position between lint and the full suite, so a step reordering that contradicts this list fails step 11.
 
-Steps 10 and 11 gate at moderate. A low advisory below that gate is a judgement call, and the ones already judged are recorded in `docs/dependency-decisions.md` - read it before triaging a low Dependabot or audit PR. First check whether the patched version satisfies every parent's declared range: if it does, pin it in `resolutions` and the advisory is gone, and only if it does not is accepting it a judgement worth recording.
+Steps 11 and 12 gate at moderate. A low advisory below that gate is a judgement call, and the ones already judged are recorded in `docs/dependency-decisions.md` - read it before triaging a low Dependabot or audit PR. First check whether the patched version satisfies every parent's declared range: if it does, pin it in `resolutions` and the advisory is gone, and only if it does not is accepting it a judgement worth recording.
 
 None of the above verifies served output. When a change is meant to improve the copy students see, re-read the served surface with the scoreboard in `docs/served-corpus-scoreboard.md` (`yarn --cwd server research-entity:served-scoreboard`). It is read-only, renders a fixed slug set through the real serve path, and prints the served text rather than a diff count, because a changed description is not necessarily a fixed one.
 

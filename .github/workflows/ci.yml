@@ -75,6 +75,12 @@ jobs:
       - name: Run client typecheck
         run: npx tsc --noEmit -p client/tsconfig.json
 
+      # Registration and inventory guards report in seconds, so they run ahead of
+      # the full server suite, which still runs them again (#3737). Changing this
+      # order also requires updating the step list in skills/finishing-work/SKILL.md.
+      - name: Run server guard tests
+        run: yarn --cwd server test:guards
+
       - name: Run server tests
         run: yarn --cwd server test
 
