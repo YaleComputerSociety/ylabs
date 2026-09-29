@@ -218,6 +218,62 @@ describe('the engine benchmark replays a frozen input rather than the corpus (#3
     expect(replay.rows.flatMap((row) => row.unfrozenReads)).toEqual([]);
   }, 120000);
 
+  /**
+   * A merge chain is transitive: a loser can itself have been merged into. The engine walks the
+   * whole chain, so freezing only the first hop leaves the survivor reading a second-hop loser's
+   * observations from the corpus. That is exactly what happened when the capture used its own
+   * one-hop query instead of the engine's walk, and it left one benchmark row reporting an
+   * unfrozen read (#3849).
+   */
+  it('freezes a two-hop merge chain, so a survivor reports no unfrozen read', async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    const survivor = await db.collection('research_entities').findOne({ slug: SLUG });
+    if (!survivor) throw new Error('fixture row missing');
+    const firstHopId = new mongoose.Types.ObjectId();
+    const secondHopId = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertMany([
+      {
+        _id: firstHopId,
+        slug: 'fixture-engine-loser-hop-one',
+        name: 'Absorbed Group One',
+        kind: 'group',
+        entityType: 'LAB',
+        schemaVersion: 1,
+        archived: true,
+        canonicalGroupId: (survivor as { _id: unknown })._id,
+      },
+      {
+        _id: secondHopId,
+        slug: 'fixture-engine-loser-hop-two',
+        name: 'Absorbed Group Two',
+        kind: 'group',
+        entityType: 'LAB',
+        schemaVersion: 1,
+        archived: true,
+        canonicalGroupId: firstHopId,
+      },
+    ]);
+    await db.collection('observations').insertOne({
+      _id: new mongoose.Types.ObjectId(),
+      entityType: 'researchEntity',
+      entityKey: 'fixture-engine-loser-hop-two',
+      entityId: secondHopId,
+      field: 'methods',
+      value: ['controlled-pH aquaria'],
+      sourceName: SOURCE_NAME,
+      sourceUrl: 'https://biology.example.edu/intertidal/absorbed-two/',
+      confidence: 0.8,
+      superseded: false,
+      observedAt: new Date('2025-06-01T00:00:00.000Z'),
+    });
+
+    await captureEngineBenchmark({ benchmarkId: BENCHMARK_ID, perScopeLimit: 5 });
+    const replay = await replayEngineBenchmark(BENCHMARK_ID);
+
+    expect(replay.rows.flatMap((row) => row.unfrozenReads)).toEqual([]);
+  }, 120000);
+
   it('reports a gate verdict for the replayed row', async () => {
     await captureEngineBenchmark({ benchmarkId: BENCHMARK_ID, perScopeLimit: 5 });
 

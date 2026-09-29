@@ -4096,6 +4096,41 @@ export interface MergedSurvivorEvidence {
 }
 
 /**
+ * The merged-survivor candidate read, answered from the frozen read source when it can answer
+ * every key and id, and from the corpus otherwise.
+ *
+ * Composed per key and per id rather than issued as one `$or` query, because that is the shape
+ * the read source speaks. All-or-nothing on purpose: a partial answer would silently mix frozen
+ * evidence with live evidence, which is worse than reading live and saying so. A frozen source
+ * records each key it cannot answer, which is how the benchmark learns its input is incomplete
+ * instead of reporting a fully frozen input it does not have (#3849).
+ */
+function routedObservationsForKeysAndIds(
+  entityType: ObservedEntityType,
+  keys: readonly string[],
+  ids: readonly unknown[],
+  prefetch?: MaterializationReadSource,
+): any[] | undefined {
+  if (!prefetch) return undefined;
+  const answered: any[] = [];
+  let complete = true;
+  for (const key of keys) {
+    const hit = prefetch.observationsForKey(entityType, key);
+    if (hit.hit) answered.push(...(hit.value as any[]));
+    else complete = false;
+  }
+  for (const id of ids) {
+    const hit = prefetch.observationsForId(entityType, id);
+    if (hit.hit) answered.push(...(hit.value as any[]));
+    else complete = false;
+  }
+  if (!complete) return undefined;
+  const byId = new Map<string, any>();
+  for (const observation of answered) byId.set(String(observation._id), observation);
+  return [...byId.values()];
+}
+
+/**
  * Resolves a live survivor over its own observations plus those of every row whose
  * tombstone chain reaches it (#3560), so a survivor-key and a loser-key materialize
  * read the same evidence set. Evidence is not re-keyed; each observation keeps the
@@ -4126,14 +4161,15 @@ export async function mergedSurvivorEvidence(
   const allowedEntityIds = new Set([String(survivorId), ...loserSlugById.keys()]);
 
   const alreadyIncluded = new Set(loadedObservations.map((observation) => String(observation._id)));
-  const candidates = await Observation.find({
-    entityType,
-    ...materializationReadScopeFilter(),
-    $or: [
-      { entityKey: { $in: [survivorSlug, ...loserSlugs].filter(Boolean) } },
-      { entityId: { $in: mergedInRows.map((row) => row._id) } },
-    ],
-  }).lean();
+  const candidateKeys = [survivorSlug, ...loserSlugs].filter(Boolean);
+  const candidateIds = mergedInRows.map((row) => row._id);
+  const candidates =
+    routedObservationsForKeysAndIds(entityType, candidateKeys, candidateIds, prefetch) ??
+    (await Observation.find({
+      entityType,
+      ...materializationReadScopeFilter(),
+      $or: [{ entityKey: { $in: candidateKeys } }, { entityId: { $in: candidateIds } }],
+    }).lean());
   const added = candidates.filter(
     (observation: any) =>
       !alreadyIncluded.has(String(observation._id)) &&
@@ -4210,11 +4246,23 @@ export async function mergedSurvivorEvidence(
     .filter((id) => mongoose.isValidObjectId(id));
   const backingLoserSlugByObservationId = new Map<string, string>();
   if (provenanceObservationIds.length > 0) {
-    const provenanceObservations = await Observation.find({
-      _id: { $in: provenanceObservationIds },
-    })
-      .select('_id entityId entityKey')
-      .lean();
+    // A provenance id names an observation this survivor or one of its losers wrote, so the
+    // candidate read above has almost always already loaded it. Resolving from that set first
+    // removes a query on the common path and keeps the read inside whatever answered it, frozen
+    // or live; only ids it does not hold are asked for (#3849).
+    const inHandById = new Map<string, any>();
+    for (const observation of [...loadedObservations, ...candidates] as any[]) {
+      inHandById.set(String(observation._id), observation);
+    }
+    const missingIds = provenanceObservationIds.filter((id) => !inHandById.has(id));
+    const provenanceObservations = [
+      ...provenanceObservationIds.map((id) => inHandById.get(id)).filter(Boolean),
+      ...(missingIds.length > 0
+        ? await Observation.find({ _id: { $in: missingIds } })
+            .select('_id entityId entityKey')
+            .lean()
+        : []),
+    ];
     for (const observation of provenanceObservations as any[]) {
       const loser = loserOrigin(observation);
       if (loser) backingLoserSlugByObservationId.set(String(observation._id), loser.slug);

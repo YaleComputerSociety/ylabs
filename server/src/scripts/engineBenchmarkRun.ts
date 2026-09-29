@@ -2,6 +2,7 @@ import { execFileSync } from 'child_process';
 import mongoose from 'mongoose';
 import { EngineBenchmark, EngineBenchmarkRow } from '../models/engineBenchmark';
 import { ResearchEntity } from '../models/researchEntity';
+import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 import { Observation } from '../models/observation';
 import { materializationReadScopeFilter, materializeEntity } from '../scrapers/entityMaterializer';
 import { FrozenMaterializationInput } from '../scrapers/frozenMaterializationInput';
@@ -114,6 +115,15 @@ export async function captureEngineBenchmark(
   });
   const planByRecordId = new Map(plans.map((plan) => [plan.recordId, plan]));
 
+  // The losers merged into each survivor, so their observations can be frozen too. Routing the
+  // merged-survivor candidate read through the read source (#3849) means an unfrozen loser is now
+  // reported as incomplete input rather than silently read from the corpus, so the capture has to
+  // cover them for a merged survivor to replay on a complete input.
+  // The engine's own walk, not a reimplementation of it. A merge chain is transitive: a loser can
+  // itself have been merged into, so `canonicalGroupId` pointing at a survivor finds only the
+  // first hop. Capturing one hop left exactly one benchmark row reading a second-hop loser live.
+  const loserRowsBySurvivorId = await listResearchEntityMergedInRowsBySurvivor(entityIds);
+
   const mergedInSurvivorIds = new Set(
     (
       await ResearchEntity.find({
@@ -162,6 +172,33 @@ export async function captureEngineBenchmark(
       capturedTier: plan?.tier,
       capturedReasons: plan?.reasons ?? [],
     });
+  }
+
+  // One frozen entry per loser, keyed by its own slug and id, with `entityDoc` null because the
+  // replay never projects a loser: it only reads the loser's observations through the survivor.
+  for (const [survivorId, losers] of loserRowsBySurvivorId) {
+    for (const loser of losers) {
+      const loserSlug = String((loser as { slug?: unknown }).slug ?? '');
+      const loserId = String((loser as { _id?: unknown })._id ?? '');
+      const loserObservations = await Observation.find({
+        entityType: ENGINE_BENCHMARK_ENTITY_TYPE,
+        ...materializationReadScopeFilter(),
+        $or: [
+          ...(loserSlug ? [{ entityKey: loserSlug }] : []),
+          { entityId: new mongoose.Types.ObjectId(loserId) },
+        ],
+      }).lean();
+      observationCount += loserObservations.length;
+      rows.push({
+        benchmarkId: options.benchmarkId,
+        entityKey: loserSlug || undefined,
+        entityId: loserId,
+        entityDoc: null,
+        observations: loserObservations,
+        hasMergedInRows: false,
+        mergedIntoSurvivorId: survivorId,
+      });
+    }
   }
 
   const labels = labelsFromCapturedRows(
@@ -262,7 +299,10 @@ export async function replayEngineBenchmark(benchmarkId: string): Promise<Engine
   let cardSynthesisRequested = 0;
 
   const rows: ReplayedRow[] = [];
-  for (const captured of capturedRows) {
+  // A loser row is frozen input for the survivor that absorbed it, not a subject: it has no
+  // stored document to project and the benchmark makes no claim about it (#3849).
+  const replaySubjects = capturedRows.filter((row) => !row.mergedIntoSurvivorId);
+  for (const captured of replaySubjects) {
     const missesBefore = frozen.recordedMisses().length;
     const result = await materializeEntity(
       String((benchmark as any).entityType) as never,
