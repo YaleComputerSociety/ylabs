@@ -42,7 +42,9 @@ const fetchDohJson: DohQuery = async (url) => {
 };
 
 type RecordLookup =
-  { kind: 'answered'; addresses: string[] } | { kind: 'nxdomain' } | { kind: 'failed' };
+  | { kind: 'answered'; addresses: string[] }
+  | { kind: 'nxdomain' }
+  | { kind: 'failed' };
 
 const lookupRecords = async (
   hostname: string,

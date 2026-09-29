@@ -1270,7 +1270,7 @@ A public answer reports `publicAddressHost`, the release evidence, which is neve
 A failed lookup is logged and leaves our resolver's private answer standing, because a failed measurement must never release a link a student cannot open.
 Each host is asked once per process, however many cited pages it serves.
 The SSRF guard is unchanged and still refuses to connect, because our own resolver would route the connection into private space.
-#2556 flagged these hosts on the probing machine's view, and on Development the reclassify pass after #3903 found no host that public DNS confirms private.
+#2556 flagged these hosts on the probing machine's view, so flags stored before #3903 are released by the reclassify pass below rather than by waiting for a re-probe.
 
 `sources:reclassify-private-address-hosts` (`server/src/scripts/reclassifyPrivateAddressCitations.ts`, dry-run-first, `--apply --confirm-private-address-reclassify`) is the stored-data half.
 It resolves each distinct cited host once through the existing SSRF guard's `classifyHostnameResolution`, confirms any private answer with `classifyOffCampusAddressing`, so the verdict comes from the address a student resolves rather than from whether a fetch succeeded, and it re-gates every row it writes.
