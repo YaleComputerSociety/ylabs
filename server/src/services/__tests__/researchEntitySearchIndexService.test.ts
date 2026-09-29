@@ -321,6 +321,49 @@ describe('researchEntitySearchIndexService', () => {
     );
   });
 
+  it.each([
+    'Our director is an economist of trade. Download CV',
+    'Research on Japanese film theory. A short CV is available at my Yale profile.',
+    'Health services research. The CV lists over 100 publications in medical journals.',
+    'Political economy and game theory. CV | Google Scholar',
+  ])(
+    'does not tag a curriculum-vitae link as computer vision without vision context (#3853): %s',
+    (fullDescription) => {
+      const doc = buildResearchEntitySearchIndexDocument({
+        _id: 'entity-cv-link',
+        name: 'Fixture Faculty Research',
+        departments: ['Economics'],
+        fullDescription,
+        archived: false,
+      });
+
+      expect(doc?.studentSearchTerms ?? []).not.toEqual(
+        expect.arrayContaining(['computer vision']),
+      );
+    },
+  );
+
+  it.each([
+    [['Radiology and Biomedical Imaging'], 'Cancer early detection research. Download CV'],
+    [['Ophthalmology and Visual Science'], 'Retinal disease research. Download CV'],
+    [['Internal Medicine'], 'CV imaging of heart failure and CV outcomes.'],
+  ])(
+    'does not let a department or a generic word corroborate a bare CV (#3853): %s',
+    (departments, fullDescription) => {
+      const doc = buildResearchEntitySearchIndexDocument({
+        _id: 'entity-cv-generic-context',
+        name: 'Fixture Faculty Research',
+        departments,
+        fullDescription,
+        archived: false,
+      });
+
+      expect(doc?.studentSearchTerms ?? []).not.toEqual(
+        expect.arrayContaining(['computer vision']),
+      );
+    },
+  );
+
   it('still triggers computer-vision aliases when a lab genuinely abbreviates as CV (#899)', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-real-cv',

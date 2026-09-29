@@ -968,7 +968,6 @@ const candidateHitId = (hit: any): string => String(hit?.id ?? hit?._id);
 export const fuseKeywordAndSemanticRankings = <T>(
   keywordLegHits: T[],
   semanticLegHits: T[],
-  { keywordRowsOnly = false }: { keywordRowsOnly?: boolean } = {},
 ): T[] => {
   const scores = new Map<string, number>();
   const hitsById = new Map<string, T>();
@@ -980,28 +979,36 @@ export const fuseKeywordAndSemanticRankings = <T>(
     });
   addLeg(keywordLegHits);
   addLeg(semanticLegHits.slice(0, SEMANTIC_LEG_SIZE));
-  const keywordIds = new Set(keywordLegHits.map(candidateHitId));
-  return [...scores.entries()]
-    .filter(([id]) => !keywordRowsOnly || keywordIds.has(id))
-    .sort((a, b) => b[1] - a[1])
-    .map(([id]) => hitsById.get(id) as T);
+  return [...scores.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => hitsById.get(id) as T);
 };
 
-const PERSON_NAME_ATTRIBUTES = new Set(['leadProfessorNames', 'professorNames']);
+const PERSON_FIELD_ATTRIBUTES = ['leadProfessorNames', 'professorNames'];
+const PERSON_NAME_ATTRIBUTES = [...PERSON_FIELD_ATTRIBUTES, 'name', 'displayName'];
 
-// A query is a person search only when every one of its words is matched, exactly,
-// inside a person's name on the best keyword hit. The semantic neighbours of a name
+// A query is a person search only when every one of its words is matched inside a
+// person's name on the best keyword hit. The semantic neighbours of a name
 // are other people with similar names: the blind judges preferred production on 7
-// of 15 name queries until those rows were withheld. An entity title is not a
-// person name, because titles carry topic words ("Robotics Lab"), and a typo or
-// prefix match is not one either, so `green chemistry` under a lead named Green or
-// `brain` reaching Braun keeps its meaning-based rows. See #3797.
+// of 15 name queries until those rows were withheld. The entity title counts,
+// because a faculty row is titled after its person and its lead names are often
+// not indexed (#3745): with titles excluded the guard fired on none of 10 held-out
+// name queries and person-name nDCG@10 fell from 0.750 to 0.580. A typo or prefix
+// match does not count, so `green chemistry` under a lead named Green or `brain`
+// reaching Braun keeps its meaning-based rows. A topic word that is a whole title
+// word ("Neuroscience Lab") withholds them only when the row does not also match
+// the query in a topic field, which the evaluation measured as cheap, because such
+// a query already has many keyword rows. See #3797, #3853.
 const normalizeNameMatchText = (value: string): string =>
   value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
-const exactPersonNameMatches = (hit: any): Set<string> => {
-  const matched = new Set<string>();
-  for (const attribute of PERSON_NAME_ATTRIBUTES) {
+interface PersonNameSpans {
+  wholeWords: Set<string>;
+  wordStarts: Set<string>;
+}
+
+const personNameSpans = (hit: any, attributes: string[]): PersonNameSpans => {
+  const spans: PersonNameSpans = { wholeWords: new Set(), wordStarts: new Set() };
+  const isWordCharacter = (value: string) => /[\p{L}\p{N}]/u.test(value);
+  for (const attribute of attributes) {
     const positions = hit?._matchesPosition?.[attribute];
     if (!Array.isArray(positions)) continue;
     const values = hit?.[attribute];
@@ -1010,20 +1017,40 @@ const exactPersonNameMatches = (hit: any): Set<string> => {
       if (typeof value !== 'string') continue;
       const end = position.start + position.length;
       // Read the offsets as characters and as bytes; the wrong reading yields a
-      // fragment that cannot equal a whole query word. Only a span that is a whole
-      // word of the name counts, because a prefix match highlights exactly the
-      // typed word ("stone" inside "Stoneman").
-      const readings = [value, Buffer.from(value)].map((text) => {
+      // fragment that cannot equal a whole query word.
+      for (const text of [value, Buffer.from(value)]) {
         const before = text.slice(Math.max(0, position.start - 1), position.start).toString();
-        const after = text.slice(end, end + 1).toString();
-        const span = text.slice(position.start, end).toString();
-        return /[\p{L}\p{N}]/u.test(before) || /[\p{L}\p{N}]/u.test(after) ? '' : span;
-      });
-      for (const span of readings) if (span) matched.add(normalizeNameMatchText(span));
+        if (isWordCharacter(before)) continue;
+        const span = normalizeNameMatchText(text.slice(position.start, end).toString());
+        if (!span) continue;
+        spans.wordStarts.add(span);
+        if (!isWordCharacter(text.slice(end, end + 1).toString())) spans.wholeWords.add(span);
+      }
     }
   }
-  return matched;
+  return spans;
 };
+
+// Every query word must be matched at the start of a word in a name, and at least
+// one must be a whole word: that admits a short first name ("steve" for Steven)
+// beside an exact surname, and still refuses a lone prefix ("stone" inside
+// Stoneman) or a typo, whose highlighted text is not the typed word. Meili
+// highlights a non-final "steve" as the whole typo-matched "Steven", so a word
+// start counts when the highlighted word begins with the query word.
+// A title match is a person match only when the same row does not also match the
+// query in its topic fields: "Statistics Lab" matches `statistics` in its
+// departments too, while "<Person> Faculty Research" matches a surname only in its
+// title. A query covered by lead or professor names alone skips that check; one
+// that needs the title for any word does not. Measured over 177 non-name queries this cut false fires from 16 to 4,
+// with every name query still firing. See #3853.
+const TOPIC_MATCH_ATTRIBUTES = [
+  'researchAreas',
+  'departments',
+  'studentSearchTerms',
+  'methods',
+  'orgAffiliationLabels',
+  'school',
+];
 
 export const keywordLegTopHitIsNameMatch = (
   keywordLegHits: any[],
@@ -1031,8 +1058,20 @@ export const keywordLegTopHitIsNameMatch = (
 ): boolean => {
   const top = keywordLegHits[0];
   if (!top || queryTokens.length === 0) return false;
-  const matched = exactPersonNameMatches(top);
-  return queryTokens.every((token) => matched.has(normalizeNameMatchText(token)));
+  const tokens = queryTokens.map(normalizeNameMatchText);
+  const matchesNamesIn = (attributes: string[]) => {
+    const spans = personNameSpans(top, attributes);
+    return (
+      tokens.every((token) => [...spans.wordStarts].some((span) => span.startsWith(token))) &&
+      tokens.some((token) => spans.wholeWords.has(token))
+    );
+  };
+  if (matchesNamesIn(PERSON_FIELD_ATTRIBUTES)) return true;
+  if (!matchesNamesIn(PERSON_NAME_ATTRIBUTES)) return false;
+  const matchedAttributes = new Set(
+    Object.keys(top._matchesPosition ?? {}).map((attribute) => attribute.split('.')[0]),
+  );
+  return !TOPIC_MATCH_ATTRIBUTES.some((attribute) => matchedAttributes.has(attribute));
 };
 
 /**
@@ -1669,10 +1708,11 @@ export async function searchResearchGroupsViaMeili(
     fuseRankings && keywordLegTopHitIsNameMatch(genuineKeywordLegHits, normalizedQuery.tokens);
   const { hits: keywordFilteredHits, dropped: droppedCoincidentalHits } = fuseRankings
     ? (() => {
-        const fused = fuseKeywordAndSemanticRankings(genuineKeywordLegHits, semanticLegHits, {
-          keywordRowsOnly: withholdSemanticOnlyRows,
-        });
-        if (withholdSemanticOnlyRows) return { hits: fused, dropped: 0 };
+        // A name search keeps the keyword leg's own order: a surname's semantic
+        // neighbours carry no signal about which same-named row is the person, and
+        // fusing them in pushed the right row of a common surname out of the top 10.
+        if (withholdSemanticOnlyRows) return { hits: genuineKeywordLegHits, dropped: 0 };
+        const fused = fuseKeywordAndSemanticRankings(genuineKeywordLegHits, semanticLegHits);
         const fusedIds = new Set(fused.map(candidateHitId));
         const poolRemainder = dropCoincidentalTypoOnlyHits(
           (hits || []).filter((hit: any) => !fusedIds.has(candidateHitId(hit))),

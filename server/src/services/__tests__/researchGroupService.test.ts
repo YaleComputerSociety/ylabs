@@ -1601,15 +1601,6 @@ describe('searchResearchGroupsViaMeili', () => {
       ]);
     });
 
-    it('keeps only keyword rows, in fused order, when asked to withhold semantic-only rows', () => {
-      const fused = fuseKeywordAndSemanticRankings(
-        [hit('a'), hit('b')],
-        [hit('b'), hit('semantic-only')],
-        { keywordRowsOnly: true },
-      );
-      expect(fused.map((h) => h.id)).toEqual(['b', 'a']);
-    });
-
     it('reads no deeper than the semantic leg size', () => {
       const semantic = Array.from({ length: SEMANTIC_LEG_SIZE + 5 }, (_, i) => hit(`s${i}`));
       expect(fuseKeywordAndSemanticRankings([], semantic)).toHaveLength(SEMANTIC_LEG_SIZE);
@@ -1649,6 +1640,38 @@ describe('searchResearchGroupsViaMeili', () => {
       ).toBe(true);
     });
 
+    it('admits a short first name beside an exact surname, never a lone prefix (#3853)', () => {
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            lead('Adaline Fixture', [
+              [0, 3],
+              [8, 7],
+            ]),
+          ],
+          ['ada', 'fixture'],
+        ),
+      ).toBe(true);
+      expect(keywordLegTopHitIsNameMatch([lead('Adaline Fixture', [[0, 3]])], ['ada'])).toBe(false);
+    });
+
+    it('admits a short first name before the surname, which Meili highlights as the whole typo-matched word (#3853)', () => {
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            lead('Steven Vexmoor', [
+              [0, 6],
+              [7, 7],
+            ]),
+          ],
+          ['steve', 'vexmoor'],
+        ),
+      ).toBe(true);
+      expect(keywordLegTopHitIsNameMatch([lead('Steven Vexmoor', [[0, 6]])], ['steve'])).toBe(
+        false,
+      );
+    });
+
     it('is false when a topic word only happens to match a surname', () => {
       const greenLead = {
         ...lead('Pat Green', [[4, 5]]),
@@ -1660,6 +1683,28 @@ describe('searchResearchGroupsViaMeili', () => {
       expect(keywordLegTopHitIsNameMatch([greenLead], ['green', 'chemistry'])).toBe(false);
     });
 
+    it('applies the topic veto when a lead name covers only some query words and the title the rest (#3853)', () => {
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            {
+              name: 'Green Chemistry Lab',
+              leadProfessorNames: ['Pat Green'],
+              _matchesPosition: {
+                leadProfessorNames: [{ start: 4, length: 5, indices: [0] }],
+                name: [
+                  { start: 0, length: 5 },
+                  { start: 6, length: 9 },
+                ],
+                researchAreas: [{ start: 0, length: 9 }],
+              },
+            },
+          ],
+          ['green', 'chemistry'],
+        ),
+      ).toBe(false);
+    });
+
     it('is false for a typo or prefix match inside a name', () => {
       expect(keywordLegTopHitIsNameMatch([lead('Sam Braun', [[4, 5]])], ['brain'])).toBe(false);
       expect(keywordLegTopHitIsNameMatch([lead('Sam Stoneman', [[4, 5]])], ['stone'])).toBe(false);
@@ -1668,13 +1713,69 @@ describe('searchResearchGroupsViaMeili', () => {
       );
     });
 
-    it('is false for an entity title match, no hits, or no query words', () => {
+    it('counts an exact whole-word match in the entity title, where unindexed leads leave the name (#3853)', () => {
       expect(
         keywordLegTopHitIsNameMatch(
-          [{ name: 'Robotics Lab', _matchesPosition: { name: [{ start: 0, length: 8 }] } }],
-          ['robotics'],
+          [
+            {
+              name: 'Ada Fixture Faculty Research',
+              leadProfessorNames: [],
+              _matchesPosition: {
+                name: [
+                  { start: 0, length: 3 },
+                  { start: 4, length: 7 },
+                ],
+              },
+            },
+          ],
+          ['ada', 'fixture'],
+        ),
+      ).toBe(true);
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            {
+              displayName: 'Fixturely Lab',
+              _matchesPosition: { displayName: [{ start: 0, length: 7 }] },
+            },
+          ],
+          ['fixture'],
         ),
       ).toBe(false);
+    });
+
+    it('reads a title match as a topic when the same row matches the query in its topic fields (#3853)', () => {
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            {
+              name: 'Statistics Lab',
+              _matchesPosition: {
+                name: [{ start: 0, length: 10 }],
+                departments: [{ start: 0, length: 10 }],
+              },
+            },
+          ],
+          ['statistics'],
+        ),
+      ).toBe(false);
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            {
+              leadProfessorNames: ['Pat Fixture'],
+              _matchesPosition: {
+                leadProfessorNames: [{ start: 4, length: 7, indices: [0] }],
+                researchAreas: [{ start: 0, length: 7 }],
+              },
+            },
+          ],
+          ['fixture'],
+        ),
+      ).toBe(true);
+    });
+
+    it('is false with no hits or no query words', () => {
       expect(keywordLegTopHitIsNameMatch([], ['ada'])).toBe(false);
       expect(keywordLegTopHitIsNameMatch([lead('Ada Fixture', [[0, 3]])], [])).toBe(false);
     });
@@ -1948,14 +2049,16 @@ describe('searchResearchGroupsViaMeili', () => {
     const poolParams = mocks.search.mock.calls[0][1];
     const keywordLegParams = mocks.search.mock.calls[2][1];
     expect(poolParams.attributesToRetrieve).toEqual(['id', 'departments', 'researchAreas']);
-    // The keyword leg also reads the two person-name fields, which the name guard
-    // needs to see what text a match covered (#3797).
+    // The keyword leg also reads the name fields, which the name guard needs to
+    // see what text a match covered (#3797, #3853).
     expect(keywordLegParams.attributesToRetrieve).toEqual([
       'id',
       'departments',
       'researchAreas',
       'leadProfessorNames',
       'professorNames',
+      'name',
+      'displayName',
     ]);
     // The keyword leg is identified by carrying no hybrid block, and it still
     // asks for the ranking-score details the typo filter reads.
@@ -2228,6 +2331,35 @@ describe('searchResearchGroupsViaMeili', () => {
           'single-exact-tag',
         ]);
         expect(result.estimatedTotalHits).toBe(1);
+      });
+
+      it('keeps the keyword order for a name search instead of re-ranking same-named rows by meaning (#3853)', async () => {
+        const personRow = {
+          ...exactTagHit,
+          leadProfessorNames: ['Ada Fixture'],
+          _matchesPosition: {
+            leadProfessorNames: [
+              { start: 0, length: 3, indices: [0] },
+              { start: 4, length: 7, indices: [0] },
+            ],
+          },
+        };
+        const sameSurnameRow = { ...topicalLab, leadProfessorNames: ['Bo Fixture'] };
+        mocks.search
+          .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 2, totalHits: 2 })
+          .mockResolvedValueOnce({ hits: [], totalHits: 2 })
+          .mockResolvedValueOnce({ hits: [personRow, sameSurnameRow] })
+          .mockResolvedValueOnce({ hits: [sameSurnameRow, semanticOnlyLab, personRow] });
+        mocks.researchEntityFind.mockReturnValue(
+          queryResult([servable(personRow), servable(sameSurnameRow), servable(semanticOnlyLab)]),
+        );
+
+        const result = await searchResearchGroupsViaMeili('ada fixture', {}, 1, 18);
+
+        expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+          'single-exact-tag',
+          'topical-lab',
+        ]);
       });
 
       it('keeps the keyword-first order when the semantic leg fails, and says so', async () => {
