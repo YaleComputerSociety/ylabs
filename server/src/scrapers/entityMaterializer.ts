@@ -8223,8 +8223,8 @@ export async function materializeFromRun(
   const bbsTrackRetirement = await reconcileBbsTrackRetirementsFromRun(
     scrapeRunId,
     {
-      rematerializeEntityId: async (entityId: string) => {
-        await materializeEntity('researchEntity', { entityId }, options);
+      rematerializeResearchEntity: async (identifier) => {
+        await materializeEntity('researchEntity', identifier, options);
       },
     },
     { dryRun: options.dryRun },

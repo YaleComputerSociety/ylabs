@@ -68,6 +68,7 @@ export interface BbsTrackRosterRead extends CenterRosterRead {
 export interface BbsTrackClaim {
   observationId: string;
   entityKey: string;
+  storedEntityKey?: string;
   scrapeRunId?: string;
   observedAt: Date;
 }
@@ -289,7 +290,7 @@ export interface BbsTrackRetirementResult {
 }
 
 export interface BbsTrackRetirementDeps {
-  rematerializeEntityId(entityId: string): Promise<void>;
+  rematerializeResearchEntity(identifier: { entityId?: string; entityKey?: string }): Promise<void>;
 }
 
 /**
@@ -321,7 +322,10 @@ async function loadBbsTrackClaims(): Promise<{ claims: BbsTrackClaim[]; orphaned
     .select('_id entityId entityKey scrapeRunId observedAt')
     .lean()) as Array<Record<string, unknown>>;
 
-  const slugsToResolve = [
+  const storedIds = [
+    ...new Set(rows.filter((row) => row.entityId).map((row) => String(row.entityId))),
+  ];
+  const storedSlugs = [
     ...new Set(
       rows
         .filter((row) => !row.entityId && typeof row.entityKey === 'string' && row.entityKey)
@@ -329,11 +333,12 @@ async function loadBbsTrackClaims(): Promise<{ claims: BbsTrackClaim[]; orphaned
     ),
   ];
   const liveRows = (await ResearchEntity.find({
-    slug: { $in: slugsToResolve },
+    $or: [{ _id: { $in: storedIds } }, { slug: { $in: storedSlugs } }],
     archived: { $ne: true },
   })
     .select('_id slug')
     .lean()) as Array<Record<string, unknown>>;
+  const liveRowIds = new Set(liveRows.map((row) => serializedDocumentId(row._id) || ''));
   const rowIdBySlug = new Map(
     liveRows.map((row) => [String(row.slug), serializedDocumentId(row._id) || '']),
   );
@@ -341,9 +346,13 @@ async function loadBbsTrackClaims(): Promise<{ claims: BbsTrackClaim[]; orphaned
   const claims: BbsTrackClaim[] = [];
   let orphanedClaims = 0;
   for (const row of rows) {
-    const canonical = row.entityId
-      ? String(row.entityId)
-      : (rowIdBySlug.get(String(row.entityKey ?? '')) ?? '');
+    const storedEntityKey = row.entityId ? undefined : String(row.entityKey ?? '');
+    const canonical =
+      storedEntityKey === undefined
+        ? liveRowIds.has(String(row.entityId))
+          ? String(row.entityId)
+          : ''
+        : (rowIdBySlug.get(storedEntityKey) ?? '');
     if (!canonical) {
       orphanedClaims += 1;
       continue;
@@ -351,6 +360,7 @@ async function loadBbsTrackClaims(): Promise<{ claims: BbsTrackClaim[]; orphaned
     claims.push({
       observationId: String(row._id),
       entityKey: canonical,
+      ...(storedEntityKey ? { storedEntityKey } : {}),
       ...(row.scrapeRunId ? { scrapeRunId: String(row.scrapeRunId) } : {}),
       observedAt: new Date(row.observedAt as Date | string),
     });
@@ -431,10 +441,15 @@ export async function reconcileBbsTrackRetirementsFromRun(
     const ids = plan.retiredObservationIds.map((id) => new mongoose.Types.ObjectId(id));
     await retireObservations({ _id: { $in: ids } }, BBS_TRACK_RETIREMENT_REASON);
     const retired = new Set(plan.retiredObservationIds);
-    const affectedEntityIds = new Set(
-      claims.filter((claim) => retired.has(claim.observationId)).map((claim) => claim.entityKey),
+    const retiredClaims = claims.filter((claim) => retired.has(claim.observationId));
+    const affectedEntityIds = new Set(retiredClaims.map((claim) => claim.entityKey));
+    const affectedStoredKeys = new Set(
+      retiredClaims.flatMap((claim) => (claim.storedEntityKey ? [claim.storedEntityKey] : [])),
     );
-    for (const entityId of affectedEntityIds) await deps.rematerializeEntityId(entityId);
+    for (const entityId of affectedEntityIds) await deps.rematerializeResearchEntity({ entityId });
+    for (const entityKey of affectedStoredKeys) {
+      await deps.rematerializeResearchEntity({ entityKey });
+    }
   }
   return { outcome: 'reconciled', dryRun, verdict: plan.verdict, counts: plan.counts };
 }

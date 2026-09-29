@@ -4,6 +4,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { reconcileBbsTrackRetirementsFromRun } from '../bbsTrackRosterRetirement';
+import { materializeEntity } from '../entityMaterializer';
 import { BBS_TRACKS } from '../sources/bbsResearchTrackScraper';
 
 let memoryReplSet: MongoMemoryReplSet | undefined;
@@ -90,19 +91,30 @@ describe('BBS retirement governs both identity forms', () => {
     await memoryReplSet?.stop();
   });
 
-  const deps = { rematerializeEntityId: async () => {} };
+  const deps = {
+    rematerializeResearchEntity: async (identifier: { entityId?: string; entityKey?: string }) => {
+      await materializeEntity('researchEntity', identifier);
+    },
+  };
 
-  it('governs an entityKey-only claim on a live row and retires it only after two admitted reads', async () => {
+  it('governs an entityKey-only claim on a live row, retires it only after two admitted reads, and removes the label from the stored row', async () => {
     const row = await ResearchEntity.create({
       slug: 'ysm-faculty-synthetic-one',
       name: 'Synthetic One Research',
       researchAreas: ['Immunology'],
     });
-    const other = await ResearchEntity.create({
-      slug: 'ysm-faculty-synthetic-two',
-      name: 'Synthetic Two Research',
-    });
     const claim = await seedClaim({ entityKey: 'ysm-faculty-synthetic-one' });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: 'ysm-faculty-synthetic-one',
+      field: 'researchAreas',
+      sourceId,
+      sourceName: 'ysm-faculty-directory',
+      value: ['Neuroscience'],
+      confidence: 0.9,
+      superseded: false,
+      observedAt: new Date('2026-08-27T00:00:00Z'),
+    });
     // Two claims the reads DO support, so retiring the third stays under the absence ceiling.
     // Without them one absent claim is 100% of the governed population and the pass freezes,
     // which is the ceiling working rather than a defect.
@@ -117,7 +129,6 @@ describe('BBS retirement governs both identity forms', () => {
     await seedClaim({ entityId: supportedA._id as mongoose.Types.ObjectId });
     await seedClaim({ entityId: supportedB._id as mongoose.Types.ObjectId });
     const listedRowIds = [String(supportedA._id), String(supportedB._id)];
-    void other;
 
     const runOne = new mongoose.Types.ObjectId();
     await seedAdmittedRead({
@@ -140,15 +151,25 @@ describe('BBS retirement governs both identity forms', () => {
     expect(afterTwo.counts?.retiredClaims).toBe(1);
     const retired = await Observation.findById(claim._id).lean();
     expect(retired?.superseded).toBe(true);
-    expect(String(row.slug)).toBe('ysm-faculty-synthetic-one');
+    const reprojected = (await ResearchEntity.findById(row._id).lean()) as {
+      researchAreas?: string[];
+    } | null;
+    expect(reprojected?.researchAreas).toEqual(['Neuroscience']);
   }, 120_000);
 
-  it('excludes a claim whose key names no live row rather than counting it absent', async () => {
+  it('excludes a claim in either identity form that names no live row rather than counting it absent', async () => {
     const other = await ResearchEntity.create({
       slug: 'ysm-faculty-synthetic-two',
       name: 'Synthetic Two Research',
     });
     const orphan = await seedClaim({ entityKey: 'ysm-faculty-row-that-no-longer-exists' });
+    const archived = await ResearchEntity.create({
+      slug: 'ysm-faculty-synthetic-archived',
+      name: 'Synthetic Archived Research',
+      archived: true,
+    });
+    const archivedOrphan = await seedClaim({ entityId: archived._id as mongoose.Types.ObjectId });
+    const deletedOrphan = await seedClaim({ entityId: new mongoose.Types.ObjectId() });
 
     const runOne = new mongoose.Types.ObjectId();
     await seedAdmittedRead({
@@ -164,9 +185,11 @@ describe('BBS retirement governs both identity forms', () => {
     });
 
     const result = await reconcileBbsTrackRetirementsFromRun(String(runTwo), deps, {});
-    expect(result.counts?.orphanedClaims).toBe(1);
+    expect(result.counts?.orphanedClaims).toBe(3);
     expect(result.counts?.governedClaims).toBe(0);
-    expect((await Observation.findById(orphan._id).lean())?.superseded).not.toBe(true);
+    for (const claim of [orphan, archivedOrphan, deletedOrphan]) {
+      expect((await Observation.findById(claim._id).lean())?.superseded).not.toBe(true);
+    }
   }, 120_000);
 
   it('governs an entityId-keyed claim on the same footing', async () => {
