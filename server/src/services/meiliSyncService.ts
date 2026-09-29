@@ -1,6 +1,7 @@
 /**
  * Syncs research entities to Meilisearch.
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertMeiliTaskSucceeded, MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS } from '../utils/meiliTask';
@@ -65,24 +66,106 @@ const isArchivedRow = (doc: any): boolean => doc?.archived === true;
 const confirmDocumentTask = (index: any, enqueued: unknown, label: string): Promise<void> =>
   assertMeiliTaskSucceeded(index, enqueued, label, MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS);
 
+interface EnqueuedDocumentWrite {
+  index: any;
+  enqueued: unknown;
+  label: string;
+}
+
+type LatestDocumentWrites = Map<string, EnqueuedDocumentWrite | 'enqueue-failed'>;
+
+const deferredConfirmationScope = new AsyncLocalStorage<LatestDocumentWrites>();
+
+export interface DeferredIndexConfirmation<T> {
+  value: T;
+  failedDocumentIds: Set<string>;
+}
+
+/**
+ * Waiting for each row's task serializes Meilisearch work that it would otherwise batch:
+ * with an embedder, every wait costs one embedding round trip, so a sequential pass of a
+ * few thousand rows spent tens of minutes waiting. Inside this scope `syncEntity` only
+ * enqueues and returns true, and the scope confirms the latest write for every document
+ * once `work` finishes. Its `failedDocumentIds`, not the per-call return, is the outcome.
+ *
+ * Measured against a throwaway Meilisearch with a 300 ms embedder: 300 rows took 113.8 s
+ * confirmed per row and 1.5 s confirmed at the end, so a 4,550-row pass falls from about
+ * 29 minutes to under a minute. Meilisearch auto-batches the enqueued writes, so one bad
+ * document can fail the batch its neighbours share; this reports every document of a
+ * failed enqueue, which over-reports rather than hides a row search may not be serving.
+ */
+export async function withDeferredIndexConfirmation<T>(
+  work: () => Promise<T>,
+): Promise<DeferredIndexConfirmation<T>> {
+  const latestWrites: LatestDocumentWrites = new Map();
+  const value = await deferredConfirmationScope.run(latestWrites, work);
+  const failedDocumentIds = new Set<string>();
+  const outcomeByTaskUid = new Map<unknown, Promise<boolean>>();
+  for (const [documentId, write] of latestWrites) {
+    if (write === 'enqueue-failed') {
+      failedDocumentIds.add(documentId);
+      continue;
+    }
+    const taskUid = (write.enqueued as { taskUid?: unknown } | null | undefined)?.taskUid;
+    let outcome = taskUid === undefined ? undefined : outcomeByTaskUid.get(taskUid);
+    if (!outcome) {
+      outcome = confirmDocumentTask(write.index, write.enqueued, write.label).then(
+        () => true,
+        (error) => {
+          console.error('Deferred Meilisearch write failed:', sanitizeLogValue(error));
+          return false;
+        },
+      );
+      if (taskUid !== undefined) outcomeByTaskUid.set(taskUid, outcome);
+    }
+    if (!(await outcome)) failedDocumentIds.add(documentId);
+  }
+  return { value, failedDocumentIds };
+}
+
+const settleDocumentWrite = async (
+  index: any,
+  documentId: string | undefined,
+  enqueue: () => Promise<unknown>,
+  label: string,
+): Promise<void> => {
+  const latestWrites = deferredConfirmationScope.getStore();
+  if (!latestWrites || !documentId) {
+    await confirmDocumentTask(index, await enqueue(), label);
+    return;
+  }
+  try {
+    latestWrites.set(documentId, { index, enqueued: await enqueue(), label });
+  } catch (error) {
+    latestWrites.set(documentId, 'enqueue-failed');
+    throw error;
+  }
+};
+
 export const syncEntity = async (entityType: string, doc: any): Promise<boolean> => {
   const config = getConfig(entityType);
   if (!config || !doc) return false;
 
   try {
     const index = await getMeiliIndex(config.indexName);
+    const documentId = indexDocumentId(doc);
     if (isArchivedRow(doc)) {
-      const archivedId = indexDocumentId(doc);
-      if (archivedId) {
-        await confirmDocumentTask(index, await index.deleteDocument(archivedId), 'deleteDocument');
+      if (documentId) {
+        await settleDocumentWrite(
+          index,
+          documentId,
+          () => index.deleteDocument(documentId),
+          'deleteDocument',
+        );
       }
       return true;
     }
     const meiliDoc = await config.transform(doc);
     if (!meiliDoc) return false;
-    await confirmDocumentTask(
+    await settleDocumentWrite(
       index,
-      await index.addDocuments([meiliDoc], { primaryKey: config.primaryKey }),
+      documentId,
+      () => index.addDocuments([meiliDoc], { primaryKey: config.primaryKey }),
       'addDocuments',
     );
     return true;
@@ -94,10 +177,11 @@ export const syncEntity = async (entityType: string, doc: any): Promise<boolean>
 
 /**
  * Returns the number of documents whose Meilisearch task succeeded, and 0 when the
- * batch failed, including a batch the index accepted and then rejected (#3720). Callers still get best-effort behaviour by ignoring the value, but
- * one that reports a resync has to read it: inferring success from the input length
- * let a repair script print "20 entities resynced" while the index kept serving the
- * text the corpus no longer held (#2874).
+ * batch failed, including a batch the index accepted and then rejected (#3720).
+ * Callers still get best-effort behaviour by ignoring the value, but one that reports
+ * a resync has to read it: inferring success from the input length let a repair script
+ * print "20 entities resynced" while the index kept serving the text the corpus no
+ * longer held (#2874).
  */
 export const syncEntities = async (entityType: string, docs: any[]): Promise<number> => {
   const config = getConfig(entityType);
