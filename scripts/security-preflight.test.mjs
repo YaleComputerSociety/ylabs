@@ -807,6 +807,17 @@ test('CI gates on ESLint errors, leaves warnings advisory, and lints before the 
   assert.match(packageJson.scripts.verify, /verify:fast/);
 });
 
+test('CI runs the server registration guards ahead of the full server suite', () => {
+  const guardRun = /^\s*run:\s*yarn --cwd server test:guards\s*$/m;
+  const guardAt = ciWorkflow.search(guardRun);
+  const lintAt = ciWorkflow.search(/^\s*run:\s*yarn lint\s*$/m);
+  const firstSuiteAt = ciWorkflow.search(/^\s*run:\s*yarn --cwd server test\s*$/m);
+  assert.ok(guardAt > 0, 'ci.yml must run the server guard tests (ylabs#3737)');
+  assert.ok(lintAt < guardAt, 'the guard step runs after lint');
+  assert.ok(guardAt < firstSuiteAt, 'the guard step must run before the full server suite');
+  assert.match(packageJson.scripts['verify:fast'], /yarn --cwd server test:guards/);
+});
+
 test('GitHub workflows run with read-only repository token permissions', () => {
   for (const [name, workflow] of [
     ['ci', ciWorkflow],
