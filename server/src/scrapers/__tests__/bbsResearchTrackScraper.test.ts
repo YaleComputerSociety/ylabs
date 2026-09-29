@@ -17,6 +17,10 @@ import {
   centerRosterReadAdmissibility,
   CENTER_ROSTER_HEALTH_FIELD,
 } from '../centerRosterRetirement';
+import {
+  BARREN_RUN_STREAK_FAILURE_THRESHOLD,
+  resolveBarrenUnitStreakFailures,
+} from '../sourceYieldGuard';
 import type { ObservationInput, ScraperContext } from '../types';
 
 const IMMUNOLOGY_URL = 'https://medicine.yale.edu/bbs/people/immunology/';
@@ -641,6 +645,86 @@ describe('an empty track listing', () => {
     const result = await scraper.run(ctx);
     expect(logs.some((line) => /WARNING: this track listed no faculty/.test(line))).toBe(false);
     expect(result.partialFailures ?? []).toEqual([]);
+  });
+});
+
+/**
+ * #3876. The lane's own empty-track check fires on the first barren run for a track that has
+ * listed PIs before; the general per-unit barren-streak check in `sourceYieldGuard` needs a
+ * per-track count in `metrics.unitYields` to compare across runs. These pin the reporting
+ * contract at this lane's boundary, because the guard's own tests prove the rule and say nothing
+ * about whether any lane feeds it.
+ */
+describe('per-track counts for the per-unit barren-streak check', () => {
+  const runTracks = async (pages: Record<string, string | null>, only: string[]) => {
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => {
+        if (url in pages) {
+          const page = pages[url];
+          if (page === null) throw new Error('fixture fetch failure');
+          return page;
+        }
+        return bbsProfileHtml({ canonicalSlug: 'alex-rivera' });
+      },
+      entityFinder: async () => [],
+      trackEverListedPis: async () => false,
+    });
+    const { ctx } = makeContext({ only });
+    return scraper.run(ctx);
+  };
+
+  it('reports a count for each track it parsed, including the ones that listed nobody', async () => {
+    const result = await runTracks(
+      {
+        'https://medicine.yale.edu/bbs/people/immunology/': trackListingHtml([
+          { slug: 'alex-rivera', label: 'Rivera, Alex' },
+        ]),
+        'https://medicine.yale.edu/bbs/people/plantmolbio/': '<html><body><ul></ul></body></html>',
+      },
+      ['immunology', 'plantmolbio'],
+    );
+    expect(result.metrics?.unitYields).toEqual({ immunology: 1, plantmolbio: 0 });
+  });
+
+  it('omits a track whose page it never read, so the guard reads it as inconclusive', async () => {
+    const result = await runTracks(
+      {
+        'https://medicine.yale.edu/bbs/people/immunology/': trackListingHtml([
+          { slug: 'alex-rivera', label: 'Rivera, Alex' },
+        ]),
+        'https://medicine.yale.edu/bbs/people/plantmolbio/': null,
+      },
+      ['immunology', 'plantmolbio'],
+    );
+    expect(result.metrics?.unitYields).toEqual({ immunology: 1 });
+  });
+
+  it('feeds the guard: three such runs fail the lane on that track while the lane stays productive', async () => {
+    const barrenForPlantmolbio = await runTracks(
+      {
+        'https://medicine.yale.edu/bbs/people/immunology/': trackListingHtml([
+          { slug: 'alex-rivera', label: 'Rivera, Alex' },
+        ]),
+        'https://medicine.yale.edu/bbs/people/plantmolbio/': '<html><body><ul></ul></body></html>',
+      },
+      ['immunology', 'plantmolbio'],
+    );
+    const asRun = {
+      status: 'success',
+      observationCount: 431,
+      metrics: barrenForPlantmolbio.metrics,
+    };
+    const failures = resolveBarrenUnitStreakFailures({
+      sourceName: 'bbs-research-track',
+      source: { enabled: true, coverage: { tier: 'THIRD_PARTY_ENRICHMENT' } },
+      currentRun: asRun,
+      priorRunsNewestFirst: Array.from(
+        { length: BARREN_RUN_STREAK_FAILURE_THRESHOLD - 1 },
+        () => asRun,
+      ),
+    });
+    expect(failures).toHaveLength(1);
+    expect(failures[0].message).toContain('"plantmolbio"');
   });
 });
 

@@ -18,7 +18,11 @@ import {
   ScrapeRunTerminalWriteError,
   writeScrapeRunTerminalStatus,
 } from './scrapeRunTerminalWrite';
-import { readPriorRunYieldFacts, resolveBarrenStreakFailure } from './sourceYieldGuard';
+import {
+  readPriorRunYieldFacts,
+  resolveBarrenStreakFailure,
+  resolveBarrenUnitStreakFailures,
+} from './sourceYieldGuard';
 import { withHttpCacheFetchMetrics, withHttpValidatorCacheScope } from './utils/httpValidatorCache';
 import { withSweepPageReuseFetchMetrics, withSweepPageReuseScope } from './utils/sweepPageReuse';
 import type {
@@ -210,25 +214,40 @@ export class ScraperOrchestrator {
       for (const failure of result.partialFailures ?? []) {
         errors.push({ message: sanitizeLogValue(failure), at: new Date() });
       }
+      const currentRunYield = { observationCount, metrics: result.metrics, options };
+      const priorRunsNewestFirst = await readPriorRunYieldFacts({
+        sourceId: source._id,
+        currentRunId: run._id,
+      });
       const barrenStreakFailure = resolveBarrenStreakFailure({
         sourceName: source.name,
         source,
-        currentRun: { observationCount, metrics: result.metrics, options },
-        priorRunsNewestFirst: await readPriorRunYieldFacts({
-          sourceId: source._id,
-          currentRunId: run._id,
-        }),
+        currentRun: currentRunYield,
+        priorRunsNewestFirst,
       });
       if (barrenStreakFailure) {
         console.error(`[${name}] ${barrenStreakFailure.message}`);
         errors.push({ message: barrenStreakFailure.message, at: new Date() });
       }
+      // A dead unit inside a healthy lane is as much a failure as a dead lane, and the
+      // source total cannot show it (#3876).
+      const barrenUnitFailures = resolveBarrenUnitStreakFailures({
+        sourceName: source.name,
+        source,
+        currentRun: currentRunYield,
+        priorRunsNewestFirst,
+      });
+      for (const failure of barrenUnitFailures) {
+        console.error(`[${name}] ${failure.message}`);
+        errors.push({ message: failure.message, at: new Date() });
+      }
       if (!interrupted) {
-        const status = barrenStreakFailure
-          ? 'failure'
-          : errors.length === 0
-            ? 'success'
-            : 'partial';
+        const status =
+          barrenStreakFailure || barrenUnitFailures.length > 0
+            ? 'failure'
+            : errors.length === 0
+              ? 'success'
+              : 'partial';
         const finishedAt = new Date();
         await writeScrapeRunTerminalStatus(
           () =>

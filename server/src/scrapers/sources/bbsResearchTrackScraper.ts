@@ -729,6 +729,7 @@ export class BbsResearchTrackScraper implements IScraper {
     pis: Map<string, BbsTrackPi>;
     emptyTrackFailures: string[];
     rosterHealth: ObservationInput[];
+    unitYields: Record<string, number>;
   }> {
     const onlyFilter =
       ctx.options.only && ctx.options.only.length > 0
@@ -737,6 +738,7 @@ export class BbsResearchTrackScraper implements IScraper {
     const byProfileSlug = new Map<string, BbsTrackPi>();
     const emptyTrackFailures: string[] = [];
     const rosterHealth: ObservationInput[] = [];
+    const unitYields: Record<string, number> = {};
     for (const track of BBS_TRACKS) {
       if (onlyFilter && !onlyFilter.has(track.slug)) continue;
       let html: string | null = null;
@@ -769,6 +771,10 @@ export class BbsResearchTrackScraper implements IScraper {
       }
       const faculty = parseBbsTrackFaculty(html, track.url);
       ctx.log(`[${track.slug}] ${faculty.length} faculty listed`);
+      // Recorded only on the branch that actually read and parsed the page: a fetch
+      // failure above leaves the track out, which the guard reads as inconclusive
+      // rather than as a barren run for it (#3876).
+      unitYields[track.slug] = faculty.length;
       rosterHealth.push(
         buildTrackRosterHealthObservation({
           track,
@@ -808,7 +814,7 @@ export class BbsResearchTrackScraper implements IScraper {
         }
       }
     }
-    return { pis: byProfileSlug, emptyTrackFailures, rosterHealth };
+    return { pis: byProfileSlug, emptyTrackFailures, rosterHealth, unitYields };
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -818,7 +824,7 @@ export class BbsResearchTrackScraper implements IScraper {
     }
     const limit = limitOption ?? Infinity;
 
-    const { pis, emptyTrackFailures, rosterHealth } = await this.collectTrackPis(ctx);
+    const { pis, emptyTrackFailures, rosterHealth, unitYields } = await this.collectTrackPis(ctx);
     // Emitted before the graft, so a run that fails later still records what each track listed.
     if (rosterHealth.length > 0) await ctx.emit(rosterHealth);
     const candidates = await this.entityFinder();
@@ -874,6 +880,12 @@ export class BbsResearchTrackScraper implements IScraper {
     return {
       observationCount,
       entitiesObserved: grafted,
+      // Per-track counts for the general per-unit barren-streak check (#3876). The
+      // lane's own empty-track failure above stays: it fires on the first barren run
+      // for a track that has listed PIs before, where the general rule waits for the
+      // streak, so deferring to it would cost two runs of detection on the one unit
+      // class known to have broken (#3833).
+      metrics: { unitYields },
       ...(emptyTrackFailures.length > 0 ? { partialFailures: emptyTrackFailures } : {}),
       notes:
         `rows enriched: ${grafted} of ${pis.size} track PIs; not attached: ` +
