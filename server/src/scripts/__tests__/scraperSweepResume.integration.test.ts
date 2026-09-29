@@ -136,6 +136,9 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
             observations: { total: 2, entitiesObserved: 1 },
             materialization: { created: 1, errors: 0 },
             mergeDelta: {},
+            // The grant-shell port stage refuses a report that is not an apply, so the
+            // stub answers its contract too (#3909).
+            portDelta: {},
             byReason: {},
             urlIdentityDedupeDelta: {
               plannedGroups: 0,

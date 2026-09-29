@@ -312,8 +312,8 @@ async function applyPort(
     await rollback();
     return { applied: false, survivorId };
   }
-  await ResearchEntity.collection.updateMany(
-    { _id: { $in: plan.shellIds.map((id) => new mongoose.Types.ObjectId(id)) }, archived: true },
+  await ResearchEntity.updateMany(
+    { _id: { $in: plan.shellIds }, archived: true },
     { $set: { archivedReason: GRANT_SHELL_FACULTY_PORT_ARCHIVE_REASON } },
   );
   return { applied: true, survivorId };
