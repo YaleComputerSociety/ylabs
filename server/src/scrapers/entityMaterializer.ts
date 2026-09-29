@@ -406,8 +406,9 @@ function restrictMaterializerSetToFields(
       set[`confidenceByField.${field}`] = confidenceByField[field];
     }
   }
+  const provenancePaths = new Set(fields.map((field) => `fieldProvenance.${field}`));
   for (const key of Object.keys(unset)) {
-    if (!fields.includes(key)) delete unset[key];
+    if (!fields.includes(key) && !provenancePaths.has(key)) delete unset[key];
   }
   if (valueFields.length > 0) set.lastObservedAt = new Date();
   return valueFields.length + Object.keys(unset).length;
@@ -1046,23 +1047,39 @@ export async function storedResearchAreasHaveNoLiveEvidence(input: {
 export type UnbackedResearchAreaOutcome =
   | 'rederived'
   | 'already-derived'
+  | 'added-derived'
+  | 'kept-stored-covers-derived'
   | 'kept-stored-derived-empty'
   | 'kept-stored-type-not-derived'
   | 'nothing-derived';
 
-function sameResearchAreaMembers(left: unknown[], right: unknown[]): boolean {
-  const rightMembers = new Set(right);
-  return left.length === right.length && left.every((area) => rightMembers.has(area));
+function researchAreaMemberKey(area: unknown): unknown {
+  return typeof area === 'string' ? area.trim().toLowerCase() : area;
 }
 
+function sameResearchAreaList(left: unknown[], right: unknown[]): boolean {
+  return left.length === right.length && left.every((area, index) => area === right[index]);
+}
+
+/**
+ * The derivation may add to what the pass would otherwise keep, never take from it:
+ * applied as a replacement it dropped 138 stored chips for 77 derived ones on
+ * Development, and the hand-read found unbacked stored chips correct 29 of 39 times
+ * (#3836). The derived entry is recorded only when every resolved chip is one the
+ * derivation produces, because the entry vouches for the whole list and is on the
+ * #3790 allowlist only as a claim recomputed from the row's own description.
+ */
 async function rederiveUnbackedResearchAreas(input: {
   set: Record<string, unknown>;
+  unset: Record<string, ''>;
   entityDoc: any;
   derive: typeof applyDescriptionResearchAreaDerivation;
   canonicalizeResearchAreas: ResearchAreaCanonicalizationStep;
 }): Promise<UnbackedResearchAreaOutcome> {
-  const { set, entityDoc } = input;
+  const { set, unset, entityDoc } = input;
   const stored: unknown[] = Array.isArray(entityDoc?.researchAreas) ? entityDoc.researchAreas : [];
+  const kept: unknown[] =
+    'researchAreas' in set ? (Array.isArray(set.researchAreas) ? set.researchAreas : []) : stored;
   const trial: Record<string, unknown> = { ...set };
   delete trial.researchAreas;
   await input.derive(trial, { ...(entityDoc ?? {}), researchAreas: [] });
@@ -1081,18 +1098,33 @@ async function rederiveUnbackedResearchAreas(input: {
       ? 'kept-stored-derived-empty'
       : 'kept-stored-type-not-derived';
   }
+  const keptKeys = new Set(kept.map(researchAreaMemberKey));
+  const derivedKeys = new Set(derived.map(researchAreaMemberKey));
+  const resolved = [
+    ...kept,
+    ...derived.filter((area) => !keptKeys.has(researchAreaMemberKey(area))),
+  ];
+  const whollyDerived = kept.every((area) => derivedKeys.has(researchAreaMemberKey(area)));
   const storedProvenanceIsDerived =
     objectRecord(objectRecord(entityDoc?.fieldProvenance).researchAreas).sourceName ===
     DERIVED_RESEARCH_AREA_SOURCE_NAME;
-  const reproducesStoredList = sameResearchAreaMembers(derived, stored);
-  if (reproducesStoredList && storedProvenanceIsDerived) {
-    delete set.researchAreas;
-    delete set[DERIVED_RESEARCH_AREA_PROVENANCE_PATH];
-    return 'already-derived';
+  const listUnchanged = sameResearchAreaList(resolved, stored);
+
+  if (whollyDerived) {
+    if (listUnchanged && storedProvenanceIsDerived) {
+      delete set.researchAreas;
+      delete set[DERIVED_RESEARCH_AREA_PROVENANCE_PATH];
+      return 'already-derived';
+    }
+    set.researchAreas = resolved;
+    recordDerivedResearchAreaProvenance(set);
+    return 'rederived';
   }
-  set.researchAreas = reproducesStoredList ? stored : derived;
-  recordDerivedResearchAreaProvenance(set);
-  return 'rederived';
+
+  delete set[DERIVED_RESEARCH_AREA_PROVENANCE_PATH];
+  if (storedProvenanceIsDerived) unset[DERIVED_RESEARCH_AREA_PROVENANCE_PATH] = '';
+  if (!listUnchanged) set.researchAreas = resolved;
+  return resolved.length > kept.length ? 'added-derived' : 'kept-stored-covers-derived';
 }
 
 // The five `undergraduateLogistics*` fields join this set rather than leaving it:
@@ -6194,6 +6226,7 @@ export async function projectFromLog(
       const plannedResearchAreasBefore = 'researchAreas' in set;
       unbackedResearchAreas = await rederiveUnbackedResearchAreas({
         set,
+        unset,
         entityDoc,
         derive:
           input.applyDescriptionResearchAreaDerivation ?? applyDescriptionResearchAreaDerivation,

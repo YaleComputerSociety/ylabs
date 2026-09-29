@@ -393,6 +393,7 @@ async function main() {
     entitiesChanged: summary.entitiesChanged,
     fieldsWritten: summary.fieldsWritten,
     unbackedResearchAreas: summary.unbackedResearchAreas,
+    researchAreaChips: summary.researchAreaChips,
     entitiesSkipped: entities.filter((entity) => entity.skipped).length,
     entitiesFailed: failed.map((entity) => ({ slug: entity.slug, error: entity.error })),
     regate,
