@@ -7386,7 +7386,7 @@ export async function materializeEntity(
         // rank first, so a reweighting or a re-scrape that reordered the groups
         // silently blanked a served description - the same "demoted, never
         // dropped" failure the ranked walk below already exists to prevent.
-        const replacement = resolveFieldRanked(shellGatedField, resolverObs, {
+        const replacement = resolveFieldRanked(shellGatedField, refusalScreen.kept, {
           now: projectionNow,
           manuallyLockedFields,
           manualValues,
@@ -7440,7 +7440,10 @@ export async function materializeEntity(
     manualValues,
     entityDoc,
     materializationObs,
-    resolverObs,
+    // Every re-rank walk in the projection reads these, so they are the refusal-screened
+    // set the resolver itself read: a walk over the unscreened set can adopt a value this
+    // row refuses, which the #3438 clear then blanks over an admissible rival (#3884).
+    resolverObs: refusalScreen.kept,
     fullDescriptionShellGated,
     undergradEvidenceQuoteWithdrawnBy,
     droppedLoserWebsiteValues,

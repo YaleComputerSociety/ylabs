@@ -18,6 +18,7 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 import { materializeEntity } from '../entityMaterializer';
 
 const MU_LAB_SHORT =
@@ -104,6 +105,38 @@ describe('materializeEntity rejects a fullDescription that restates shortDescrip
     }).lean<PersistedEntity>();
     expect(persisted?.fullDescription).toBe(MU_LAB_RICHER_FULL);
     expect(persisted?.shortDescription).toBe(MU_LAB_SHORT);
+  });
+
+  it('falls through past a restatement winner to an admissible body, never to a refused one', async () => {
+    const refusedBody =
+      'The lab studies how coastal salt marshes store carbon across tidal cycles, combining sediment coring, stable-isotope tracing and hydrodynamic models to measure how burial rates respond to sea-level rise, and trains field teams to sample marshes along the Atlantic coast over several decades.';
+    await seedEntity({
+      fieldValueRefusals: {
+        fullDescription: [
+          {
+            valueKey: fieldValueRefusalKey('fullDescription', refusedBody),
+            rule: 'not_this_rows_research',
+            refusedBy: 'research-entity:refuse-field-value',
+            refusedAt: new Date('2026-09-24T00:00:00Z'),
+          },
+        ],
+      },
+    });
+    await seedFull(
+      MU_LAB_RESTATEMENT_FULL,
+      'lab-microsite-description-llm',
+      0.7,
+      '2026-02-01T00:00:00Z',
+    );
+    await seedFull(refusedBody, 'ysm-atoz-index', 0.92, '2026-01-15T00:00:00Z');
+    await seedFull(MU_LAB_RICHER_FULL, 'lab-microsite-undergrad-llm', 0.55, '2026-01-01T00:00:00Z');
+
+    await materializeEntity('researchEntity', { entityKey: 'restatement-fixture' });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'restatement-fixture',
+    }).lean<PersistedEntity>();
+    expect(persisted?.fullDescription).toBe(MU_LAB_RICHER_FULL);
   });
 
   // Keeping the body is what #2721 changed: blanking it left the row with a card,
