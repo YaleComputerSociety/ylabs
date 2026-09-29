@@ -50,6 +50,67 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
 
 const READ_CALL = /\bObservation\.(find|findOne|aggregate|countDocuments|distinct)\s*\(/g;
 
+/**
+ * The same question for entity reads (#3857). `MaterializationReadSource` covers them through
+ * `entityDocForId` / `entityDocForKey` and `hasNoMergedInRows` and nothing else, so every other
+ * `ResearchEntity` read on the projection path is invisible to the leak detector in exactly the
+ * way the observation reads were.
+ *
+ * Almost none of them is routable as things stand, and the reason is one contract mismatch rather
+ * than ten separate ones: `entityDocFor*` answers "the row with this key, ARCHIVED OR NOT", which
+ * is what its only existing consumer wants, because `findEntityDocByIdentifier` resolves a slug
+ * without an archived filter on purpose and then handles the tombstone case itself. Six of these
+ * ten reads ask for `archived: { $ne: true }`. Routing them through the current answers would
+ * hand them an archived row where they expect nothing, and in the candidate lookup that means
+ * adopting an archived shell.
+ *
+ * So the blocker is a missing answer, not a missing call: a live-only entity read on the
+ * interface. Until that exists these stay exempt, and the exemption says why rather than
+ * implying nobody looked.
+ */
+const ENTITY_READ_CALL =
+  /\bResearchEntity\.(find|findOne|findById|exists|countDocuments|distinct|aggregate)\s*\(/g;
+
+const REVIEWED_UNROUTED_ENTITY_READS: ReadonlyArray<{ fn: string; reason: string }> = [
+  {
+    fn: 'materializeRosterMember',
+    reason:
+      'Asks for the LIVE row with this slug. `entityDocForKey` answers archived or not, so routing it would resolve a roster member onto an archived row.',
+  },
+  {
+    fn: 'inheritSchoolFromLeadPi',
+    reason:
+      'Two reads. The first needs the live row, as above. The second is a read-after-write: it re-reads the row to verify what this pass wrote and to decide whether the index is in step, so frozen input would answer about the state before the write.',
+  },
+  {
+    fn: 'assertLeadPiInheritanceObservations',
+    reason: 'Needs the live row with this id, which the current answers cannot promise.',
+  },
+  {
+    fn: 'foldDeptRosterShellIntoCanonicalResearchEntity',
+    reason:
+      'Reads a DIFFERENT row from the subject, the shell being folded in. Routable in principle, but only once the capture freezes shells, which it does not: today it would report a miss on every fold.',
+  },
+  {
+    fn: 'observationsMergedIntoLiveSurvivor',
+    reason: 'Needs the live survivor specifically, since the point is to skip a tombstone.',
+  },
+  {
+    fn: 'liveResearchEntityNamesUserKeyAsLead',
+    reason:
+      'A corpus-wide existence check by VALUE: does any live row name this user key as lead. It names no entity, so an entity-keyed read source has nothing to answer with.',
+  },
+  {
+    fn: 'findEntityCandidatesByKey',
+    reason:
+      'Two reads. One needs the live row with a slug; the other searches by `websiteUrl` across the corpus, which is again a value search rather than an entity lookup.',
+  },
+  {
+    fn: 'reconcileOfficialRosterSnapshotsFromRun',
+    reason: 'Run-level reconciliation over a whole scrape run, not a per-row projection read.',
+  },
+];
+
 /** The nearest preceding function declaration, which is the unit this guard reasons about. */
 const enclosingFunction = (index: number): string => {
   const before = SOURCE.slice(0, index);
@@ -112,4 +173,37 @@ describe('every projection observation read is routed or reviewed (#3849)', () =
    * reviewed without checking anything. The reasons are prose for a reader; the checks above are
    * what the suite can actually verify.
    */
+});
+
+describe('every projection entity read is routed or reviewed (#3857)', () => {
+  const reads = [...SOURCE.matchAll(ENTITY_READ_CALL)].map((match) => ({
+    index: match.index ?? 0,
+    fn: enclosingFunction(match.index ?? 0),
+  }));
+
+  it('finds the reads it is meant to guard', () => {
+    expect(reads.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('has no unrouted entity read outside the reviewed list', () => {
+    const reviewed = new Set(REVIEWED_UNROUTED_ENTITY_READS.map((entry) => entry.fn));
+    const offenders = [
+      ...new Set(
+        reads
+          .filter((read) => !isRoutedRead(read.index) && !reviewed.has(read.fn))
+          .map((read) => read.fn),
+      ),
+    ];
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('lists no exemption that has stopped reading entities', () => {
+    const reading = new Set(reads.map((read) => read.fn));
+    const stale = REVIEWED_UNROUTED_ENTITY_READS.filter((entry) => !reading.has(entry.fn)).map(
+      (entry) => entry.fn,
+    );
+
+    expect(stale).toEqual([]);
+  });
 });
