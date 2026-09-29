@@ -133,11 +133,12 @@ They should not create a research-paper section, display metrics, or replace the
 ## CTA Vocabulary
 
 Reaching out is constant and primary: always offer a way to contact the research entity, never gating outreach.
-Because student-facing PI emails are redacted by design, the primary path is to open the official profile, then an available official page from the entity's own classified sources, and only search the Yale Directory as a last resort when no official link exists, to find contact details and introduce yourself; a prefilled mailto appears only when a non-redacted email is available.
+Because student-facing PI emails are redacted by design, the primary path is a specific place to apply or join from the entity's own classified sources ("See how to get involved", for every entity type), then the official profile or the research website, and only search the Yale Directory as a last resort when no official link exists, to find contact details and introduce yourself; a prefilled mailto appears only when a non-redacted email is available.
+A generic official page from those sources is offered only when there is no place to apply and no lead card already links a profile, because beside such a card it is a third door to the same person.
 The contact prompt is never conditioned on access evidence, route, or computed confidence, and never gates outreach.
 Other CTA options surface alongside it when the supporting evidence exists:
 
-- Reach out (open official profile, open an official page from the entity's sources, search Yale Directory as a last resort, or email when a non-redacted address exists)
+- Reach out (see how to get involved, open official profile, visit the research website, open an official page from the entity's sources when no lead card links a profile, search Yale Directory as a last resort, or email when a non-redacted address exists)
 - Apply
 - View official profile
 - View Google Scholar
