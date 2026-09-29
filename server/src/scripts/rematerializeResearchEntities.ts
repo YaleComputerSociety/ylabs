@@ -13,7 +13,7 @@ import {
   planStudentVisibilityGate,
   runStudentVisibilityGateForPlans,
 } from '../services/studentVisibilityGateService';
-import { syncEntities } from '../services/meiliSyncService';
+import { syncResearchEntitiesWithOutcome } from '../services/researchEntityIndexSyncOutcome';
 import { resolveResearchEntityCanonicalIdentity } from '../services/researchEntityCanonicalTombstone';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -250,14 +250,16 @@ function writeReport(report: Record<string, unknown>, output?: string): void {
   fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
-interface RematerializeRegateSummary {
+export interface RematerializeRegateSummary {
   scopedEntities: number;
+  indexResynced: number;
+  indexSyncFailures: number;
   tierChanged: number;
   tierTransitions: Array<{ recordId: string; label: string; from: string | null; to: string }>;
   counts: Record<string, number>;
 }
 
-async function regateRematerializedEntities(
+export async function regateRematerializedEntities(
   entityIds: string[],
 ): Promise<RematerializeRegateSummary> {
   const plans = await planStudentVisibilityGate({
@@ -274,17 +276,9 @@ async function regateRematerializedEntities(
   const objectIds = entityIds
     .filter((id) => mongoose.isValidObjectId(id))
     .map((id) => new mongoose.Types.ObjectId(id));
-  if (objectIds.length > 0) {
-    const docs = await ResearchEntity.find({ _id: { $in: objectIds } }).lean();
-    try {
-      await syncEntities('researchEntity', docs as unknown[]);
-    } catch (error) {
-      console.error(
-        '[research-entity:rematerialize] Meili resync after re-gate failed:',
-        sanitizeLogValue(error),
-      );
-    }
-  }
+  const docs =
+    objectIds.length > 0 ? await ResearchEntity.find({ _id: { $in: objectIds } }).lean() : [];
+  const indexSync = await syncResearchEntitiesWithOutcome(docs);
 
   const tierTransitions = plans
     .filter((plan) => plan.currentTier !== plan.tier)
@@ -297,6 +291,8 @@ async function regateRematerializedEntities(
 
   return {
     scopedEntities: entityIds.length,
+    indexResynced: indexSync.resynced,
+    indexSyncFailures: indexSync.indexSyncFailures,
     tierChanged: tierTransitions.length,
     tierTransitions,
     counts: gateReport.counts as unknown as Record<string, number>,

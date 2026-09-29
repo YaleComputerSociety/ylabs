@@ -8,7 +8,11 @@ import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment } from '../models/roleAssignment';
 import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
-import { syncEntities } from '../services/meiliSyncService';
+import {
+  NO_INDEX_SYNC,
+  syncResearchEntitiesWithOutcome,
+  type IndexSyncOutcome,
+} from '../services/researchEntityIndexSyncOutcome';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -80,6 +84,8 @@ export interface ForeignLeadGraftResult {
   mode: 'dry-run' | 'apply';
   summary: ForeignLeadGraftSummary;
   changes: ForeignLeadGraftPlanRow[];
+  indexResynced: number;
+  indexSyncFailures: number;
 }
 
 async function planForeignLeadGraftRows(options: {
@@ -126,6 +132,7 @@ export async function runForeignLeadGraftRetirement(options: {
 }): Promise<ForeignLeadGraftResult> {
   const rows = await planForeignLeadGraftRows(options);
 
+  let indexSync: IndexSyncOutcome = NO_INDEX_SYNC;
   if (!options.dryRun && rows.length > 0) {
     const roleAssignmentIds = rows
       .flatMap((row) => row.roleAssignmentIds)
@@ -154,13 +161,16 @@ export async function runForeignLeadGraftRetirement(options: {
           .map((id) => new mongoose.Types.ObjectId(id)),
       },
     }).lean();
-    await syncEntities('researchEntity', updatedDocs);
+    indexSync = await syncResearchEntitiesWithOutcome(updatedDocs);
   }
 
   return {
     mode: options.dryRun ? 'dry-run' : 'apply',
     summary: summarizeForeignLeadGraftRetirement(rows),
     changes: rows,
+
+    indexResynced: indexSync.resynced,
+    indexSyncFailures: indexSync.indexSyncFailures,
   };
 }
 

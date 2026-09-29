@@ -218,6 +218,16 @@ describe('lab-branded name backfill over a brand a dedupe grafted forward (#2446
     expect(retracted.every((doc) => doc.superseded === true)).toBe(true);
   });
 
+  it('reports every row the index refused as a sync failure, not as synced (#3726)', async () => {
+    meiliMocks.syncEntities.mockResolvedValueOnce(0 as never).mockResolvedValueOnce(0 as never);
+
+    const result = await runLabBrandedNameTypeBackfill({ dryRun: false });
+
+    expect(meiliMocks.syncEntities).toHaveBeenCalledTimes(2);
+    expect(result.synced).toBe(0);
+    expect(result.indexSyncFailures).toBe(2);
+  });
+
   it('retracts the brand under both anchors, so the shell-keyed twin cannot keep serving it', async () => {
     await runLabBrandedNameTypeBackfill({ dryRun: false });
 

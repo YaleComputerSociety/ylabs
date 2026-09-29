@@ -11,7 +11,7 @@ import { buildObservationFingerprint } from '../scrapers/observationStore';
 import { fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
 import { extractVisibleText } from './findLabWebsitesCore';
 import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
-import { syncEntities } from '../services/meiliSyncService';
+import { syncResearchEntitiesWithOutcome } from '../services/researchEntityIndexSyncOutcome';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
@@ -113,6 +113,7 @@ export interface FacultyResearchPromotionResult {
   kindRealigned: number;
   updated: number;
   synced: number;
+  indexSyncFailures: number;
   errors: number;
   byHoldReason: Record<string, number>;
   promotedSamples: FacultyResearchPromotionRow[];
@@ -236,6 +237,7 @@ export async function runFacultyResearchPromotion(options: {
     kindRealigned: summary.kindRealigned,
     updated: 0,
     synced: 0,
+    indexSyncFailures: 0,
     errors: 0,
     byHoldReason: summary.byHoldReason,
     promotedSamples: promotions.slice(0, 25),
@@ -291,8 +293,9 @@ export async function runFacultyResearchPromotion(options: {
       );
       result.updated += batch.length;
       const fresh = await ResearchEntity.find({ _id: { $in: batch.map((row) => row.id) } }).lean();
-      await syncEntities('researchEntity', fresh);
-      result.synced += fresh.length;
+      const indexSync = await syncResearchEntitiesWithOutcome(fresh);
+      result.synced += indexSync.resynced;
+      result.indexSyncFailures += indexSync.indexSyncFailures;
     } catch (error) {
       result.errors += batch.length;
       console.error('faculty-research promotion batch failed:', sanitizeLogValue(error));

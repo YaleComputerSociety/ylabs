@@ -22,7 +22,12 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchAreaCanonicalizer } from '../scrapers/researchAreaCanonicalization';
-import { syncEntities } from '../services/meiliSyncService';
+import {
+  addIndexSyncOutcomes,
+  NO_INDEX_SYNC,
+  syncResearchEntitiesWithOutcome,
+  type IndexSyncOutcome,
+} from '../services/researchEntityIndexSyncOutcome';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -132,27 +137,28 @@ export interface ResearchAreaBackfillResult {
   summary: ResearchAreaBackfillSummary;
   sampleChanges: ResearchAreaBackfillPlanRow[];
   syncedToMeili: number;
+  indexSyncFailures: number;
 }
 
 export interface ResearchAreaApplyDeps {
   persistBatch: (rows: ResearchAreaBackfillPlanRow[]) => Promise<void>;
-  syncBatch: (ids: string[]) => Promise<number>;
+  syncBatch: (ids: string[]) => Promise<IndexSyncOutcome>;
 }
 
 export async function applyResearchAreaChanges(
   changedRows: ResearchAreaBackfillPlanRow[],
   batchSize: number,
   deps: ResearchAreaApplyDeps,
-): Promise<{ persisted: number; synced: number }> {
+): Promise<{ persisted: number; synced: number; indexSyncFailures: number }> {
   let persisted = 0;
-  let synced = 0;
+  let indexSync = NO_INDEX_SYNC;
   for (let i = 0; i < changedRows.length; i += batchSize) {
     const batch = changedRows.slice(i, i + batchSize);
     await deps.persistBatch(batch);
     persisted += batch.length;
-    synced += await deps.syncBatch(batch.map((row) => row.id));
+    indexSync = addIndexSyncOutcomes(indexSync, await deps.syncBatch(batch.map((row) => row.id)));
   }
-  return { persisted, synced };
+  return { persisted, synced: indexSync.resynced, indexSyncFailures: indexSync.indexSyncFailures };
 }
 
 function createResearchAreaApplyDeps(): ResearchAreaApplyDeps {
@@ -169,8 +175,7 @@ function createResearchAreaApplyDeps(): ResearchAreaApplyDeps {
     },
     syncBatch: async (ids) => {
       const fresh = await ResearchEntity.find({ _id: { $in: ids } }).lean();
-      await syncEntities('researchEntity', fresh);
-      return fresh.length;
+      return syncResearchEntitiesWithOutcome(fresh);
     },
   };
 }
@@ -236,9 +241,11 @@ export async function runResearchAreaBackfill(
   const changedRows = rows.filter((row) => row.changed);
 
   let syncedToMeili = 0;
+  let indexSyncFailures = 0;
   if (!options.dryRun && changedRows.length > 0) {
     const applied = await applyResearchAreaChanges(changedRows, options.batchSize, deps);
     syncedToMeili = applied.synced;
+    indexSyncFailures = applied.indexSyncFailures;
   }
 
   return {
@@ -246,6 +253,7 @@ export async function runResearchAreaBackfill(
     summary: summarizeResearchAreaBackfill(rows),
     sampleChanges: changedRows.slice(0, 25),
     syncedToMeili,
+    indexSyncFailures,
   };
 }
 
@@ -301,7 +309,7 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(result.summary, null, 2));
     if (apply && result.summary.changed > 0) {
       console.log(
-        `Synced ${result.syncedToMeili} changed entities to the Meilisearch research index.`,
+        `Synced ${result.syncedToMeili} changed entities to the Meilisearch research index; ${result.indexSyncFailures} failed to sync.`,
       );
     }
   } finally {

@@ -7,7 +7,12 @@ import {
 } from '../scripts/researchEntityPiDedupeCore';
 import { isCenterOrInstituteEntity } from '../utils/profileAreaDuplicateRisk';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
-import { syncEntities } from './meiliSyncService';
+import {
+  addIndexSyncOutcomes,
+  NO_INDEX_SYNC,
+  syncResearchEntitiesWithOutcome,
+  type IndexSyncOutcome,
+} from './researchEntityIndexSyncOutcome';
 
 export interface EponymousFraLabMergeScope {
   rows: ResearchEntityPiDedupeRow[];
@@ -107,31 +112,28 @@ const CANONICAL_RESYNC_CHUNK_SIZE = 500;
  */
 export async function forceResyncCanonicalResearchEntities(
   canonicalEntityIds: string[],
-): Promise<number> {
+): Promise<IndexSyncOutcome> {
   const objectIds = canonicalEntityIds
     .filter((id) => mongoose.Types.ObjectId.isValid(id))
     .map((id) => new mongoose.Types.ObjectId(id));
-  if (objectIds.length === 0) return 0;
-  let resynced = 0;
+  let outcome = NO_INDEX_SYNC;
   for (let start = 0; start < objectIds.length; start += CANONICAL_RESYNC_CHUNK_SIZE) {
     const batch = objectIds.slice(start, start + CANONICAL_RESYNC_CHUNK_SIZE);
     const docs = await ResearchEntity.find({ _id: { $in: batch }, archived: { $ne: true } }).lean();
-    if (docs.length > 0) {
-      await syncEntities('researchEntity', docs as any);
-      resynced += docs.length;
-    }
+    outcome = addIndexSyncOutcomes(outcome, await syncResearchEntitiesWithOutcome(docs));
   }
-  return resynced;
+  return outcome;
 }
 
 export interface CanonicalRepairResult {
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
+  canonicalIndexSyncFailures: number;
 }
 
 export interface CanonicalRepairHooks {
   recomputeVisibility?: (canonicalEntityIds: string[]) => Promise<number>;
-  resyncCanonicalEntities?: (canonicalEntityIds: string[]) => Promise<number>;
+  resyncCanonicalEntities?: (canonicalEntityIds: string[]) => Promise<IndexSyncOutcome>;
 }
 
 /**
@@ -147,8 +149,12 @@ export async function recomputeVisibilityAndResyncCanonicals(
   const resyncCanonicalEntities =
     hooks.resyncCanonicalEntities ?? forceResyncCanonicalResearchEntities;
   const visibilityRecomputed = await recomputeVisibility(canonicalEntityIds);
-  const canonicalEntitiesResynced = await resyncCanonicalEntities(canonicalEntityIds);
-  return { visibilityRecomputed, canonicalEntitiesResynced };
+  const resync = await resyncCanonicalEntities(canonicalEntityIds);
+  return {
+    visibilityRecomputed,
+    canonicalEntitiesResynced: resync.resynced,
+    canonicalIndexSyncFailures: resync.indexSyncFailures,
+  };
 }
 
 export interface ApplyMergeGroupsWithResyncOptions<
@@ -200,6 +206,7 @@ export interface RunEponymousFraLabMergeResult<TResult extends AppliedMergeResul
   canonicalEntityIds: string[];
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
+  canonicalIndexSyncFailures: number;
 }
 
 /**
@@ -219,6 +226,7 @@ export async function runEponymousFraLabMerge<TResult extends AppliedMergeResult
       canonicalEntityIds: [],
       visibilityRecomputed: 0,
       canonicalEntitiesResynced: 0,
+      canonicalIndexSyncFailures: 0,
     };
   }
   const result = await applyResearchEntityMergeGroupsWithCanonicalResync(groups, {

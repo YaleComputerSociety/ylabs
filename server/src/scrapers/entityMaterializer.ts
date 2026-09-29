@@ -7993,8 +7993,12 @@ function logCenterRosterRetirement(result: CenterRosterRetirementResult): void {
   const notAdmitted = result.centers.filter((center) => !center.verdict);
   const sum = (key: 'retiredMemberKeys' | 'retiredEdges' | 'retiredLeadEdges') =>
     acted.reduce((total, center) => total + (center.counts?.[key] ?? 0), 0);
+  const indexSyncFailures = acted.reduce(
+    (total, center) => total + (center.applied?.indexSyncFailures ?? 0),
+    0,
+  );
   console.info(
-    `[center-roster-retirement] ${result.dryRun ? 'planned' : 'reconciled'} ${result.centers.length} center read(s): ${acted.length} retiring (${sum('retiredMemberKeys')} member keys, ${sum('retiredEdges')} role edges of which ${sum('retiredLeadEdges')} leads), ${frozen.length} frozen, ${notAdmitted.length} read(s) not admitted`,
+    `[center-roster-retirement] ${result.dryRun ? 'planned' : 'reconciled'} ${result.centers.length} center read(s): ${acted.length} retiring (${sum('retiredMemberKeys')} member keys, ${sum('retiredEdges')} role edges of which ${sum('retiredLeadEdges')} leads), ${frozen.length} frozen, ${notAdmitted.length} read(s) not admitted, ${indexSyncFailures} center index sync failure(s)`,
   );
 }
 

@@ -6,7 +6,11 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { resetOrgUnitCanonicalizerCache } from '../scrapers/orgUnitCanonicalization';
-import { syncEntities } from '../services/meiliSyncService';
+import {
+  NO_INDEX_SYNC,
+  syncResearchEntitiesWithOutcome,
+  type IndexSyncOutcome,
+} from '../services/researchEntityIndexSyncOutcome';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -77,6 +81,8 @@ export interface OrgUnitBackfillResult {
   mode: 'dry-run' | 'apply';
   summary: OrgUnitBackfillSummary;
   sampleChanges: OrgUnitBackfillPlanRow[];
+  indexResynced: number;
+  indexSyncFailures: number;
 }
 
 interface EntityRow {
@@ -128,6 +134,7 @@ export async function runOrgUnitBackfill(options: {
 
   const changedRows = rows.filter((row) => row.changed);
 
+  let indexSync: IndexSyncOutcome = NO_INDEX_SYNC;
   if (!options.dryRun && changedRows.length > 0) {
     for (let i = 0; i < changedRows.length; i += options.batchSize) {
       const batch = changedRows.slice(i, i + options.batchSize);
@@ -143,13 +150,16 @@ export async function runOrgUnitBackfill(options: {
     const updatedDocs = await ResearchEntity.find({
       _id: { $in: changedRows.map((row) => row.id) },
     }).lean();
-    await syncEntities('researchEntity', updatedDocs);
+    indexSync = await syncResearchEntitiesWithOutcome(updatedDocs);
   }
 
   return {
     mode: options.dryRun ? 'dry-run' : 'apply',
     summary: summarizeOrgUnitBackfill(rows),
     sampleChanges: changedRows.slice(0, 25),
+
+    indexResynced: indexSync.resynced,
+    indexSyncFailures: indexSync.indexSyncFailures,
   };
 }
 

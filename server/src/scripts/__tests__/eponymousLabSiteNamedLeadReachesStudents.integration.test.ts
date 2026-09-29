@@ -148,6 +148,16 @@ describe("an eponymous lab's own site supplies the lead it was held for (#1930)"
     expect(await servedLeadNames()).toEqual([LEAD_NAME]);
   }, 60000);
 
+  it('reports the released row the index refused as a sync failure (#3726)', async () => {
+    meiliMocks.syncEntities.mockResolvedValueOnce(0 as never);
+
+    const report = await runLabSiteNamedLeadAttachment({ apply: true, maxApply: 5, readPages });
+
+    expect(report.created).toBe(1);
+    expect(report.indexResynced).toBe(0);
+    expect(report.indexSyncFailures).toBe(1);
+  }, 60000);
+
   it('refuses a row another hard blocker also holds without reading its site', async () => {
     await ResearchEntity.updateOne(
       { _id: entityId },

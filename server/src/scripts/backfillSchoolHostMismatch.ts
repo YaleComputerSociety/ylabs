@@ -10,7 +10,11 @@ import {
 } from './orgUnitSchoolAssertion';
 import { ResearchEntity } from '../models/researchEntity';
 import { resetOrgUnitCanonicalizerCache } from '../scrapers/orgUnitCanonicalization';
-import { syncEntities } from '../services/meiliSyncService';
+import {
+  NO_INDEX_SYNC,
+  syncResearchEntitiesWithOutcome,
+  type IndexSyncOutcome,
+} from '../services/researchEntityIndexSyncOutcome';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -75,6 +79,8 @@ export interface SchoolHostMismatchResult {
   mode: 'dry-run' | 'apply';
   summary: SchoolHostMismatchSummary;
   changes: SchoolHostMismatchPlanRow[];
+  indexResynced: number;
+  indexSyncFailures: number;
 }
 
 export async function runSchoolHostMismatchBackfill(options: {
@@ -104,6 +110,7 @@ export async function runSchoolHostMismatchBackfill(options: {
 
   let schoolAssertionsRecorded = 0;
   const schoolAssertionsSkipped: Record<string, number> = {};
+  let indexSync: IndexSyncOutcome = NO_INDEX_SYNC;
   if (!options.dryRun && rows.length > 0) {
     // Evidence first, then the eager projection. The observation is what makes the value
     // survive a re-projection; the `$set` is what makes the row serve it this pass.
@@ -129,7 +136,7 @@ export async function runSchoolHostMismatchBackfill(options: {
     const updatedDocs = await ResearchEntity.find({
       _id: { $in: rows.map((row) => row.id) },
     }).lean();
-    await syncEntities('researchEntity', updatedDocs);
+    indexSync = await syncResearchEntitiesWithOutcome(updatedDocs);
   }
 
   return {
@@ -138,6 +145,9 @@ export async function runSchoolHostMismatchBackfill(options: {
     mode: options.dryRun ? 'dry-run' : 'apply',
     summary: summarizeSchoolHostMismatch(rows),
     changes: rows,
+
+    indexResynced: indexSync.resynced,
+    indexSyncFailures: indexSync.indexSyncFailures,
   };
 }
 
