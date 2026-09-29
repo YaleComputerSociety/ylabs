@@ -143,11 +143,17 @@ const PROTECTED_ABBREVIATION_TAIL =
  * and deduplication downstream reason over whole sentences rather than
  * abbreviation fragments.
  */
+const LATIN_EXAMPLE_ABBREVIATION_TAIL = /(?:^|[\s(\[])(?:[ei]\.|e\.g\.\s*|i\.e\.\s*)$/i;
+
+function isAbbreviationSplit(segment: string): boolean {
+  return PROTECTED_ABBREVIATION_TAIL.test(segment) || LATIN_EXAMPLE_ABBREVIATION_TAIL.test(segment);
+}
+
 function mergeAbbreviationSplitSentences(segments: string[]): string[] {
   const merged: string[] = [];
   for (const segment of segments) {
     const previousIndex = merged.length - 1;
-    if (previousIndex >= 0 && PROTECTED_ABBREVIATION_TAIL.test(merged[previousIndex])) {
+    if (previousIndex >= 0 && isAbbreviationSplit(merged[previousIndex])) {
       merged[previousIndex] += segment;
     } else {
       merged.push(segment);

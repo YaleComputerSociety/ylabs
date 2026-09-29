@@ -40,6 +40,7 @@ import {
   MAX_CARD_SHORT_DESCRIPTION_WORDS,
   MAX_SHORT_DESCRIPTION_LENGTH,
   MID_SENTENCE_TRUNCATION_MIN_LENGTH,
+  partitionSentencesForFiltering,
   partitionSentencesLossless,
   repairMidSentenceTruncation,
   repairMissingSpaceAfterSentence,
@@ -3290,6 +3291,25 @@ describe('short description whole-sentence cap (#2184)', () => {
       expect(oneLongSentence.length).toBeLessThanOrEqual(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
       expect(clampShortDescriptionToWholeSentences(oneLongSentence)).toBe(oneLongSentence);
     }
+  });
+
+  it('never cuts an over-long short inside a parenthetical e.g. or i.e. (#3866)', () => {
+    const EXAMPLE_PARENTHETICAL =
+      'Clinical research in solid tumors, focusing on early-phase trials and the development of novel therapies (e.g., enzyme inhibitors, immunotherapy) and the tumor DNA dynamics measured in patients during treatment.';
+    const RESTATING_PARENTHETICAL =
+      'The group builds reduced models of cortical circuits (i.e. networks small enough to simulate exhaustively) to test which wiring rules reproduce the population activity recorded in behaving animals over weeks.';
+
+    for (const oneLongSentence of [EXAMPLE_PARENTHETICAL, RESTATING_PARENTHETICAL]) {
+      expect(oneLongSentence.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
+      expect(clampShortDescriptionToWholeSentences(oneLongSentence)).toBe(oneLongSentence);
+    }
+  });
+
+  it('still ends a sentence at a capital letter initial followed by a space (#3866)', () => {
+    expect(partitionSentencesForFiltering('Works on vitamin E. Next sentence here.')).toEqual([
+      'Works on vitamin E. ',
+      'Next sentence here.',
+    ]);
   });
 
   it('drops a trailing sentence that passes the word ceiling rather than the whole card line (#1878)', () => {
