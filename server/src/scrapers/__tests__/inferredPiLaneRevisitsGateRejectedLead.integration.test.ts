@@ -50,7 +50,7 @@ describe('the PI-lead lane revisits a row whose only lead edge the gate rejects 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 120000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

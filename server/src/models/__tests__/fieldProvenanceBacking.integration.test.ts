@@ -78,7 +78,7 @@ describe('the ResearchEntity model refuses an unbacked fieldProvenance write (#3
   beforeAll(async () => {
     server = await MongoMemoryServer.create();
     await mongoose.connect(server.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

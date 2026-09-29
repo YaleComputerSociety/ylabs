@@ -38,7 +38,7 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
       mongoUrl = memoryReplSet.getUri('research_plan_test');
     }
     await mongoose.connect(mongoUrl);
-  }, 120_000);
+  });
 
   beforeEach(async () => {
     await mongoose.connection.dropDatabase();

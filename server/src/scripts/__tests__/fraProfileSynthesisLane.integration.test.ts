@@ -227,7 +227,7 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     resetOrgUnitCanonicalizerCache();

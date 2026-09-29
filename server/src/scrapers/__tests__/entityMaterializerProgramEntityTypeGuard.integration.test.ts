@@ -41,7 +41,7 @@ describe('materializeEntity refuses to mint or resurrect a PROGRAM research enti
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

@@ -4,6 +4,7 @@ import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
+import { mongoMemoryLaunchBudgetForTest } from '../../test/mongoMemoryLaunchBudget';
 import vitestConfig from '../../../vitest.config';
 
 /**
@@ -47,7 +48,7 @@ const hooksCappedBelowBudget = (budgetMs: number, label: string, source: string)
         const milliseconds = literalMilliseconds(timeoutArgument);
         const reported =
           milliseconds === undefined ? 'a timeout this scan cannot read' : milliseconds;
-        if (milliseconds === undefined || milliseconds < budgetMs) {
+        if (milliseconds === undefined || milliseconds <= budgetMs) {
           capped.push(`${label}:${line + 1} ${node.expression.text} ${reported}`);
         }
       }
@@ -64,12 +65,18 @@ describe('server vitest hook budget', () => {
     expect(configuredHookTimeoutMs).toBeGreaterThanOrEqual(MONGO_MEMORY_TEARDOWN_BUDGET_MS);
   });
 
+  it('leaves a hook room to spend the whole in-memory Mongo launch budget and then build indexes', () => {
+    expect(configuredHookTimeoutMs).toBeGreaterThan(
+      mongoMemoryLaunchBudgetForTest.LAUNCH_BUDGET_MS,
+    );
+  });
+
   /**
    * An explicit hook argument overrides the config, so a hook that keeps a smaller one
    * opts its whole suite back into the #2903 failure while the config looks correct.
    * A per-test `it` budget is unaffected and stays free to be smaller.
    */
-  it('lets no hook cap itself below the configured budget', () => {
+  it('lets no hook restate or cap itself below the configured budget', () => {
     const capped = testFiles(SERVER_SRC)
       .map((file) => ({ file, source: fs.readFileSync(file, 'utf8') }))
       .filter(({ source }) => HOOK_CALL_MENTION.test(source))
@@ -108,9 +115,17 @@ describe('the hook budget scan', () => {
     ]);
   });
 
-  it('accepts a hook budget at or above the scanned budget', () => {
+  it('accepts a hook budget above the scanned budget', () => {
     const source = ['beforeAll(async () => {', '  await start();', '}, 120_000);'].join('\n');
 
     expect(hooksCappedBelowBudget(60000, 'fixture.test.ts', source)).toEqual([]);
+  });
+
+  it('reports a hook that restates the scanned budget, since the config already owns it', () => {
+    const source = ['beforeAll(async () => {', '  await start();', '}, 60_000);'].join('\n');
+
+    expect(hooksCappedBelowBudget(60000, 'fixture.test.ts', source)).toEqual([
+      'fixture.test.ts:3 beforeAll 60000',
+    ]);
   });
 });

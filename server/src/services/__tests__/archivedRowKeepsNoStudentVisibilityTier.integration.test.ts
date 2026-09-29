@@ -83,7 +83,7 @@ describe('an archived row stores no student-visibility verdict (#2896)', () => {
   beforeAll(async () => {
     memoryServer = await MongoMemoryServer.create();
     await mongoose.connect(memoryServer.getUri('archived_visibility_verdict_test'));
-  }, 180_000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

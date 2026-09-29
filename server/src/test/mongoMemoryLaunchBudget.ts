@@ -1,5 +1,7 @@
 import { MongoMemoryReplSet, MongoMemoryServer } from 'mongodb-memory-server';
 
+import { MONGO_MEMORY_LAUNCH_BUDGET_MS } from './testTimeBudgets';
+
 /**
  * The launch budget for an in-memory MongoDB, owned centrally because 143 suites
  * start one and none of them set it.
@@ -26,7 +28,7 @@ import { MongoMemoryReplSet, MongoMemoryServer } from 'mongodb-memory-server';
  * option. The alternative is the same argument repeated in 143 files, where the next
  * new suite omits it and the class comes back.
  */
-const LAUNCH_BUDGET_MS = 120000;
+const LAUNCH_BUDGET_MS = MONGO_MEMORY_LAUNCH_BUDGET_MS;
 
 /**
  * A launch that lost a port race, and how many times it is worth trying again.

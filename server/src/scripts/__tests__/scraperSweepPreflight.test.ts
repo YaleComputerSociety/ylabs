@@ -43,7 +43,7 @@ describe('sweep preflight', () => {
     await connection.useDb('Development').collection('observations').insertOne({ field: 'name' });
     await connection.useDb('Beta').collection('research_entities').insertOne({ name: 'x' });
     await connection.close();
-  }, 120_000);
+  });
 
   afterAll(async () => {
     await mongod?.stop();

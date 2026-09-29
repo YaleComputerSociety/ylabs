@@ -38,7 +38,7 @@ describe('the detail route applies the lead-name identity guards it resolved (#3
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

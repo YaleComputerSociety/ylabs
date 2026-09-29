@@ -33,7 +33,7 @@ describe('the engine supersedes a stale official profile link (#2653)', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 120000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

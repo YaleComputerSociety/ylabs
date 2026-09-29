@@ -67,7 +67,7 @@ describe('an unopposed crawled research page may fill but never replace a descri
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const { port } = server.address() as AddressInfo;
     siteOrigin = `http://127.0.0.1:${port}`;
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

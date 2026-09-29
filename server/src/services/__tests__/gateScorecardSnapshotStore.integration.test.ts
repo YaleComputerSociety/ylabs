@@ -40,7 +40,7 @@ describe('gate scorecard snapshots over a real store', () => {
   beforeAll(async () => {
     memoryServer = await MongoMemoryServer.create();
     await mongoose.connect(memoryServer.getUri('development'));
-  }, 120_000);
+  });
 
   beforeEach(async () => {
     await mongoose.connection.db!.collection(GATE_SCORECARD_SNAPSHOT_COLLECTION).deleteMany({});

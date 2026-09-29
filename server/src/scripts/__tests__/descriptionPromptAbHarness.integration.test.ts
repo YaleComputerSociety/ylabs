@@ -281,7 +281,7 @@ describe('descriptionPromptAbHarness A/B run (#2183)', () => {
     await import('../descriptionPromptAbHarness');
     await waitForReport(120_000);
     report = JSON.parse(fs.readFileSync(REPORT_PATH, 'utf8')) as Report;
-  }, 180_000);
+  });
 
   afterAll(async () => {
     fs.rmSync(REPORT_PATH, { force: true });

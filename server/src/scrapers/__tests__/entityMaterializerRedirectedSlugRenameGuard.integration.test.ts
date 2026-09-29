@@ -41,7 +41,7 @@ describe('a redirected shell slug is never planned onto the live canonical', () 
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
     await ResearchEntity.syncIndexes();
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

@@ -25,7 +25,7 @@ describe('retireObservations against a real Observation store', () => {
       replSet: { count: 1, storageEngine: 'wiredTiger' },
     });
     await mongoose.connect(memoryReplSet.getUri('retire_observations_test'));
-  }, 120_000);
+  });
 
   beforeEach(async () => {
     await Observation.deleteMany({});

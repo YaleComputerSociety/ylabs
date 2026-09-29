@@ -35,7 +35,7 @@ describe('usage analytics over a real store', () => {
   beforeAll(async () => {
     memoryServer = await MongoMemoryServer.create();
     await mongoose.connect(memoryServer.getUri('analytics_maintainer_exclusion_test'));
-  }, 120_000);
+  });
 
   beforeEach(async () => {
     invalidateAnalyticsCaches();

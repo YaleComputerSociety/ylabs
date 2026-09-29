@@ -48,7 +48,7 @@ describe('a materialize pass scoped by writeOnlyFields writes only its scope (#3
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     resetOrgUnitCanonicalizerCache();

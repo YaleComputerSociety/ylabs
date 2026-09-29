@@ -54,7 +54,7 @@ describe('materializeEntity card reconsideration and the e.g. clamp (#3866)', ()
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

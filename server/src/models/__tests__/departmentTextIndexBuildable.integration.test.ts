@@ -29,7 +29,7 @@ describe('the declared Department text index can be built against the index that
   beforeAll(async () => {
     server = await MongoMemoryServer.create();
     await mongoose.connect(server.getUri(), { autoIndex: false, autoCreate: false });
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

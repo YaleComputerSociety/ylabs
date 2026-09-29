@@ -34,7 +34,7 @@ describe('recorded searches over a real store', () => {
       mongoUrl = memoryServer.getUri('site_search_analytics_test');
     }
     await mongoose.connect(mongoUrl);
-  }, 120_000);
+  });
 
   beforeEach(async () => {
     await mongoose.connection.db!.collection('analytics_events').deleteMany({});

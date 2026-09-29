@@ -20,7 +20,7 @@ describe('connecting must not be a schema-mutating act (#2233)', () => {
   beforeAll(async () => {
     server = await MongoMemoryServer.create();
     uri = server.getUri();
-  }, 60000);
+  });
 
   afterAll(async () => {
     await server?.stop();
@@ -94,7 +94,7 @@ describe('index drift is reported rather than silently self-healed (#2233)', () 
   beforeAll(async () => {
     server = await MongoMemoryServer.create();
     connection = await mongoose.createConnection(server.getUri(), mongoOptions).asPromise();
-  }, 60000);
+  });
 
   afterAll(async () => {
     await connection.close();

@@ -110,7 +110,7 @@ describe('a duplicate-url group always leaves one student-visible card (#1890)',
       })),
     );
     plans = await planStudentVisibilityGate({ collection: 'research', mode: 'dry-run' });
-  }, 180_000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

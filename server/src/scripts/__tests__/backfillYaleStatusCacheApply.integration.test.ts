@@ -168,7 +168,7 @@ describe('research:backfill-yale-status-cache apply is bidirectional (issue #228
     mongod = await MongoMemoryServer.create();
     mongoUrl = mongod.getUri('Development');
     await mongoose.connect(mongoUrl);
-  }, 120_000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect().catch(() => {});

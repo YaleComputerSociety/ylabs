@@ -108,7 +108,7 @@ describe('profile-lab-url dedupe loader aggregation memory bound', () => {
     await mongoose.connect(mongoUrl);
     await mongoose.connection.db!.collection('research_entities').insertMany(seedDocuments());
     await mongoose.disconnect();
-  }, 120_000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect().catch(() => {});

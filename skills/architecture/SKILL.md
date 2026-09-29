@@ -92,14 +92,20 @@ Cycles are not the problem here and a cycle rule is not worth adding: the whole 
 | `yarn --cwd server model-refactor:identity-plan`                 | Produce the bounded read-only Phase 2 account, person, role, and quarantine plan.            |
 
 
-Server test timeouts are owned by `server/vitest.config.ts`: `testTimeout` 10000 ms and `hookTimeout` 60000 ms.
-The hook budget is deliberately long because over a hundred suites start a `MongoMemoryReplSet` or `MongoMemoryServer` in `beforeAll` and stop it in `afterAll`, and that teardown outlasts vitest's 10000 ms default under full-suite parallel load.
-Do not add a per-hook timeout to a new MongoMemory setup or teardown, because the config already covers it, and `server/src/scripts/__tests__/vitestHookBudget.test.ts` pins the config default.
-An explicit hook argument wins over the config, so never write one below the configured `hookTimeout`: that reintroduces #2903 for the suite that carries it, and the guard parses every hook call in the `server/src` test and spec files and fails on an argument below the config value or on one it cannot resolve to a numeric literal.
-Existing hooks still pass an argument at or above the budget, which is harmless, and a setup genuinely slower than 60000 ms may keep its larger one.
-The guard reads its threshold from the config rather than from a copy, so raising `hookTimeout` also raises the threshold and turns every hook argument that now sits below the new value into a guard failure: raise the budget and delete those arguments in the same change.
+Server test timeouts are owned by `server/vitest.config.ts`: `testTimeout` 30000 ms and `hookTimeout` 180000 ms.
+The hook budget is derived in `server/src/test/testTimeBudgets.ts` as the in-memory MongoDB launch budget (120000 ms, applied to every launch by `server/src/test/mongoMemoryLaunchBudget.ts`) plus 60000 ms for the connect and index build that follow it, so the two cannot drift apart again (#3734).
+Before that, `hookTimeout` was 60000 ms, so vitest cut a `beforeAll` off at half the launch budget and a slow launch failed as `Hook timed out in 60000ms`.
+The hook budget is deliberately long because over a hundred suites start a `MongoMemoryReplSet` or `MongoMemoryServer` in `beforeAll` and stop it in `afterAll`, and both outlast vitest's 10000 ms default under parallel load.
+Do not add a per-hook timeout, because the config already covers it, and `server/src/scripts/__tests__/vitestHookBudget.test.ts` pins both the config value and its relation to the launch budget.
+An explicit hook argument wins over the config, so the guard parses every hook call in the `server/src` test and spec files and fails on an argument at or below the config value, on one it cannot resolve to a numeric literal, and on a config value that does not exceed the launch budget.
+Only a setup genuinely slower than 180000 ms may carry its own larger argument.
+Raising `hookTimeout` also raises the guard's threshold, so raise the budget and delete the hook arguments it overtakes in the same change.
 This applies to hooks only.
-`testTimeout` stays at 10000 ms, so a slow `it` still needs its own argument.
+`testTimeout` stays at 30000 ms, so a slow `it` still needs its own argument.
+
+A local server run uses at most 4 vitest workers (`server/src/test/localWorkerBudget.ts`), because each integration suite starts its own `mongod` and vitest's default of one worker per spare core put about 39 of them on a 14-core laptop when three runs overlapped, which is the normal state with several worktrees or gate runs testing at once.
+Set `YLABS_VITEST_MAX_WORKERS=<n>` to override it, or pass `--maxWorkers` on the command line.
+CI (`CI` set) keeps vitest's default, so CI timing is unchanged.
 
 The server suite is fenced off from the local environment by `server/src/test/hermeticEnvironment.ts`, registered as the only `setupFiles` entry.
 It neutralises `dotenv.config()` and `dotenv/config`, deletes every name `server/.env` and `server/.env.example` declare except the ones the runner and the operating system own (`NODE_ENV`, `CI`, `PATH`, `HOME`, `TMPDIR`, `TZ`), and replaces `utils/meiliClient` with a client that refuses every call.

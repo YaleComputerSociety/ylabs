@@ -18,7 +18,7 @@ describe('retireAffiliatedOrgNameGrafts finishes the repair on the document (#23
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
@@ -344,7 +344,7 @@ describe('retireAffiliatedOrgNameGrafts finishes the website half of the graft (
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
@@ -809,7 +809,7 @@ describe('retireAffiliatedOrgNameGrafts reaches the profile-backfill graft (#291
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

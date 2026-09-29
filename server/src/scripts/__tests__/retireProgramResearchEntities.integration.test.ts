@@ -110,7 +110,7 @@ describe('retireProgramResearchEntities with MongoDB', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri('retire_program_entities_test'));
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

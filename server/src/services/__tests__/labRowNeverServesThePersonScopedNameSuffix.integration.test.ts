@@ -75,7 +75,7 @@ describe('a row typed LAB never serves the person-scoped name suffix (#3252)', (
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

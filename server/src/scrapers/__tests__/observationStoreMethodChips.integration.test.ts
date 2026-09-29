@@ -35,7 +35,7 @@ describe('a sentence-shaped method chip is cleaned at ingest, not only at serve 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
