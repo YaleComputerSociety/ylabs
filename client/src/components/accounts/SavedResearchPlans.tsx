@@ -9,7 +9,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from '../../utils/axios';
 import useFavorites from '../../hooks/useFavorites';
+import useLatestRequest from '../../hooks/useLatestRequest';
 import LoadingSpinner from '../shared/LoadingSpinner';
+import LoadErrorNotice from '../shared/LoadErrorNotice';
 import { safeRouteSegment } from '../../utils/url';
 import {
   deriveUndergraduateAccessStatus,
@@ -105,12 +107,18 @@ const ACCESS_BADGE_CLASS: Record<UndergraduateAccessStatus['tone'], string> = {
 };
 
 const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
-  const { favIds: savedSlugs, setFavorite } = useFavorites('researchPlans');
+  const {
+    favIds: savedSlugs,
+    loadError: savedSlugsLoadFailed,
+    setFavorite,
+    reloadFavorites,
+  } = useFavorites('researchPlans');
   const [entities, setEntities] = useState<SavedResearchEntity[]>([]);
   const [unavailable, setUnavailable] = useState<UnavailableSavedResearchEntity[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [stages, setStages] = useState<Record<string, ResearchPlanStage>>({});
   const [isLoading, setIsLoading] = useState(true);
+  const [plansLoadFailed, setPlansLoadFailed] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
   const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
@@ -125,52 +133,66 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     onCountChange?.(savedSlugs.length + unavailable.length);
   }, [savedSlugs.length, unavailable.length, onCountChange]);
 
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      setIsLoading(true);
-      try {
-        const [entityResponse, planResponse] = await Promise.all([
-          axios.get('/users/savedResearchEntities', { withCredentials: true }),
-          axios.get('/users/savedResearchEntityPlans', { withCredentials: true }),
-        ]);
-        if (!active) return;
-        const loadedEntities: SavedResearchEntity[] =
-          entityResponse.data.savedResearchEntities || [];
-        const loadedUnavailable: UnavailableSavedResearchEntity[] =
-          entityResponse.data.unavailableSavedResearchEntities || [];
-        const plans = (planResponse.data.savedResearchEntityPlans || {}) as Record<
-          string,
-          { privateNotes?: string; stage?: string }
-        >;
-        const loadedNotes: Record<string, string> = {};
-        const loadedStages: Record<string, ResearchPlanStage> = {};
-        for (const entity of loadedEntities) {
-          loadedNotes[entity._id] = plans[entity._id]?.privateNotes || '';
-          loadedStages[entity._id] = normalizeResearchPlanStage(plans[entity._id]?.stage);
-        }
-        setEntities(loadedEntities);
-        setUnavailable(loadedUnavailable);
-        setNotes(loadedNotes);
-        setStages(loadedStages);
-      } catch {
-        if (!active) return;
-        console.error('Error fetching saved research plans.');
-        setEntities([]);
-        setUnavailable([]);
-        setNotes({});
-        setStages({});
-      } finally {
-        if (active) setIsLoading(false);
+  const planRequest = useLatestRequest();
+
+  const loadPlans = useCallback(async () => {
+    const ticket = planRequest.begin();
+    setIsLoading(true);
+    setPlansLoadFailed(false);
+    try {
+      const [entityResponse, planResponse] = await Promise.all([
+        axios.get('/users/savedResearchEntities', {
+          withCredentials: true,
+          signal: ticket.signal,
+        }),
+        axios.get('/users/savedResearchEntityPlans', {
+          withCredentials: true,
+          signal: ticket.signal,
+        }),
+      ]);
+      if (!ticket.isCurrent()) return;
+      const loadedEntities: SavedResearchEntity[] = entityResponse.data.savedResearchEntities || [];
+      const loadedUnavailable: UnavailableSavedResearchEntity[] =
+        entityResponse.data.unavailableSavedResearchEntities || [];
+      const plans = (planResponse.data.savedResearchEntityPlans || {}) as Record<
+        string,
+        { privateNotes?: string; stage?: string }
+      >;
+      const loadedNotes: Record<string, string> = {};
+      const loadedStages: Record<string, ResearchPlanStage> = {};
+      for (const entity of loadedEntities) {
+        loadedNotes[entity._id] = plans[entity._id]?.privateNotes || '';
+        loadedStages[entity._id] = normalizeResearchPlanStage(plans[entity._id]?.stage);
       }
-    };
-    void load();
+      setEntities(loadedEntities);
+      setUnavailable(loadedUnavailable);
+      setNotes(loadedNotes);
+      setStages(loadedStages);
+    } catch {
+      if (!ticket.isCurrent()) return;
+      console.error('Error fetching saved research plans.');
+      setEntities([]);
+      setUnavailable([]);
+      setNotes({});
+      setStages({});
+      setPlansLoadFailed(true);
+    } finally {
+      if (ticket.isCurrent()) setIsLoading(false);
+    }
+  }, [planRequest]);
+
+  useEffect(() => {
+    void loadPlans();
     const timers = noteTimersRef.current;
     return () => {
-      active = false;
       Object.values(timers).forEach(clearTimeout);
     };
-  }, []);
+  }, [loadPlans]);
+
+  const retryLoad = () => {
+    void reloadFavorites();
+    void loadPlans();
+  };
 
   const savePlanNote = useCallback(async (entityId: string, note: string) => {
     setSaveStatuses((statuses) => ({ ...statuses, [entityId]: 'saving' }));
@@ -361,15 +383,32 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     );
   }
 
+  const heading = (
+    <div className="mb-2">
+      <h2 className="yr-display text-2xl font-semibold text-ink">Saved research plans</h2>
+      <p className="mt-1 text-sm text-muted">
+        Open saved research to find its official profile and reach out, keep private notes, or
+        remove it from your plans.
+      </p>
+    </div>
+  );
+
+  if (plansLoadFailed || savedSlugsLoadFailed) {
+    return (
+      <section className="mb-8">
+        {heading}
+        <LoadErrorNotice
+          title="Could not load your saved research"
+          detail="This is a loading problem, not an empty list. Check your connection, then try again."
+          onRetry={retryLoad}
+        />
+      </section>
+    );
+  }
+
   return (
     <section className="mb-8">
-      <div className="mb-2">
-        <h2 className="yr-display text-2xl font-semibold text-ink">Saved research plans</h2>
-        <p className="mt-1 text-sm text-muted">
-          Open saved research to find its official profile and reach out, keep private notes, or
-          remove it from your plans.
-        </p>
-      </div>
+      {heading}
 
       {undoableUnsave && (
         <div

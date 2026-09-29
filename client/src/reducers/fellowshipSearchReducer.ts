@@ -33,6 +33,7 @@ export interface FellowshipSearchState {
   sortDirection: 'asc' | 'desc';
   fellowships: Fellowship[];
   isLoading: boolean;
+  loadError: boolean;
   searchExhausted: boolean;
   total: number;
   journeySummary: ProgramJourneySummary;
@@ -85,6 +86,7 @@ export type FellowshipSearchAction =
       };
     }
   | { type: 'SEARCH_FAILURE' }
+  | { type: 'LOAD_MORE_FAILURE' }
   | { type: 'SET_JOURNEY_SUMMARY'; payload: ProgramJourneySummary }
   | { type: 'MARK_QUERY_STRING_LOADED' }
   | { type: 'MARK_FILTERS_LOADED' }
@@ -112,6 +114,7 @@ export const createInitialFellowshipSearchState = (
   sortDirection: 'desc',
   fellowships: [],
   isLoading: false,
+  loadError: false,
   searchExhausted: false,
   total: 0,
   journeySummary: emptyProgramJourneySummary,
@@ -224,7 +227,7 @@ export function fellowshipSearchReducer(
       return { ...state, filterOptions: action.payload };
 
     case 'SEARCH_REQUEST':
-      return { ...state, isLoading: true };
+      return { ...state, isLoading: true, loadError: false };
 
     case 'SEARCH_SUCCESS': {
       const { fellowships, total, pageSize, append } = action.payload;
@@ -241,6 +244,16 @@ export function fellowshipSearchReducer(
     }
 
     case 'SEARCH_FAILURE':
+      return {
+        ...state,
+        fellowships: [],
+        total: 0,
+        searchExhausted: true,
+        isLoading: false,
+        loadError: true,
+      };
+
+    case 'LOAD_MORE_FAILURE':
       return { ...state, isLoading: false };
 
     case 'SET_JOURNEY_SUMMARY':

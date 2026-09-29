@@ -11,6 +11,7 @@ import UserContext from '../contexts/UserContext';
 import BrowseGrid from '../components/shared/BrowseGrid';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
+import LoadErrorNotice from '../components/shared/LoadErrorNotice';
 import CombinedFilterDropdown, {
   FilterTabConfig,
 } from '../components/shared/CombinedFilterDropdown';
@@ -260,6 +261,7 @@ const Fellowships = () => {
     queryString,
     fellowships,
     isLoading,
+    loadError,
     setQueryString,
     filterOptions,
     selectedProgramCategory,
@@ -753,9 +755,11 @@ const Fellowships = () => {
             </div>
           </div>
 
-          <div className="mt-5">
-            <StatusSummary summary={journeySummary} />
-          </div>
+          {!loadError && (
+            <div className="mt-5">
+              <StatusSummary summary={journeySummary} />
+            </div>
+          )}
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[20rem_minmax(0,1fr)] xl:items-start xl:gap-8">
@@ -797,7 +801,7 @@ const Fellowships = () => {
               quickFilters={fellowshipQuickFilters}
               activeQuickFilter={quickFilter}
               onQuickFilterChange={(value) => setQuickFilter(value as FellowshipQuickFilter)}
-              totalCount={resultCounterCount}
+              totalCount={loadError ? undefined : resultCounterCount}
               isLoading={isLoading}
               chips={fellowshipChips}
               onClearAll={() => {
@@ -851,6 +855,13 @@ const Fellowships = () => {
 
             {isLoading && fellowships.length === 0 ? (
               <LoadingSpinner size="lg" />
+            ) : loadError ? (
+              <LoadErrorNotice
+                headingLevel={2}
+                title="Could not load programs and fellowships"
+                detail="This is a loading problem, not a sign that no programs match. Check your connection, then try again."
+                onRetry={refreshFellowships}
+              />
             ) : noResults ? (
               <div className="yr-card rounded-card px-6 py-10 text-center text-muted">
                 <h2 className="text-lg font-semibold text-ink">No program records found</h2>

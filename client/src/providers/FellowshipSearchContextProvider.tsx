@@ -13,7 +13,7 @@ import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
 import UserContext from '../contexts/UserContext';
 import { Fellowship, StudentVisibilityTier } from '../types/types';
 import { createFellowship } from '../utils/createFellowship';
-import { summarizeProgramJourney, emptyProgramJourneySummary } from '../utils/programJourney';
+import { summarizeProgramJourney } from '../utils/programJourney';
 import {
   fellowshipSearchReducer,
   createInitialFellowshipSearchState,
@@ -62,6 +62,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     sortDirection,
     fellowships,
     isLoading,
+    loadError,
     searchExhausted,
     total,
     journeySummary,
@@ -288,7 +289,6 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     loadRequestIdRef.current = requestId;
 
     dispatch({ type: 'SEARCH_REQUEST' });
-    dispatch({ type: 'SET_JOURNEY_SUMMARY', payload: { ...emptyProgramJourneySummary } });
 
     const accumulate = async () => {
       const collected: Fellowship[] = [];
@@ -362,7 +362,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
               icon: 'warning',
             });
           }
-          dispatch({ type: 'SEARCH_FAILURE' });
+          dispatch({ type: 'LOAD_MORE_FAILURE' });
         });
     },
     [buildSearchUrl, pageSize],
@@ -472,6 +472,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         onToggleSortDirection,
         fellowships,
         isLoading,
+        loadError,
         searchExhausted,
         page,
         setPage,

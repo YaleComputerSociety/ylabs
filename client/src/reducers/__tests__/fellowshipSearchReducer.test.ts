@@ -227,4 +227,36 @@ describe('fellowshipSearchReducer', () => {
     fellowshipSearchReducer(state, { type: 'TOGGLE_SORT_DIRECTION' });
     expect(JSON.stringify(state)).toBe(snapshot);
   });
+
+  it('SEARCH_FAILURE records the error and drops results that belong to the previous search', () => {
+    const loaded = fellowshipSearchReducer(createInitialFellowshipSearchState(), {
+      type: 'SEARCH_SUCCESS',
+      payload: { fellowships: [makeFellowship()], total: 1, pageSize: 100, append: false },
+    });
+    const failed = fellowshipSearchReducer(
+      fellowshipSearchReducer(loaded, { type: 'SEARCH_REQUEST' }),
+      { type: 'SEARCH_FAILURE' },
+    );
+    expect(failed).toMatchObject({ loadError: true, isLoading: false, fellowships: [], total: 0 });
+  });
+
+  it('SEARCH_REQUEST clears a previous load error', () => {
+    const failed = fellowshipSearchReducer(createInitialFellowshipSearchState(), {
+      type: 'SEARCH_FAILURE',
+    });
+    expect(fellowshipSearchReducer(failed, { type: 'SEARCH_REQUEST' }).loadError).toBe(false);
+  });
+
+  it('LOAD_MORE_FAILURE keeps the pages already loaded', () => {
+    const loaded = fellowshipSearchReducer(createInitialFellowshipSearchState(), {
+      type: 'SEARCH_SUCCESS',
+      payload: { fellowships: [makeFellowship()], total: 2, pageSize: 1, append: false },
+    });
+    const failed = fellowshipSearchReducer(
+      fellowshipSearchReducer(loaded, { type: 'SEARCH_REQUEST' }),
+      { type: 'LOAD_MORE_FAILURE' },
+    );
+    expect(failed).toMatchObject({ loadError: false, isLoading: false, total: 2 });
+    expect(failed.fellowships).toHaveLength(1);
+  });
 });

@@ -678,4 +678,56 @@ describe('SavedResearchPlans', () => {
     expect(screen.queryByText(/are you sure/i)).toBeNull();
     expect(await screen.findByRole('button', { name: 'Undo' })).toBeTruthy();
   });
+
+  describe('when a load request fails', () => {
+    const failing = (failedUrl: string) => {
+      withSavedPlans();
+      const succeed = mockedAxios.get.getMockImplementation() as (url: string) => Promise<unknown>;
+      let shouldFail = true;
+      mockedAxios.get.mockImplementation((url: string) =>
+        url === failedUrl && shouldFail ? Promise.reject(new Error('network')) : succeed(url),
+      );
+      return {
+        recover: () => {
+          shouldFail = false;
+        },
+      };
+    };
+
+    it.each([
+      '/users/savedResearchEntities',
+      '/users/savedResearchEntityPlans',
+      '/users/savedResearchEntityIds',
+    ])('reports a load error instead of claiming nothing is saved when %s fails', async (url) => {
+      failing(url);
+
+      render(
+        <MemoryRouter>
+          <SavedResearchPlans />
+        </MemoryRouter>,
+      );
+
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toContain('Could not load your saved research');
+      expect(screen.queryByText('No saved research plans yet')).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Explore Research' })).toBeNull();
+    });
+
+    it('loads the saved list again when the student retries', async () => {
+      const request = failing('/users/savedResearchEntities');
+
+      render(
+        <MemoryRouter>
+          <SavedResearchPlans />
+        </MemoryRouter>,
+      );
+
+      await screen.findByRole('alert');
+      request.recover();
+      fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+      expect(await screen.findByText('Owner Lab')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+  });
 });
