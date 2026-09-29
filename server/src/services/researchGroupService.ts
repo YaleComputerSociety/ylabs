@@ -982,12 +982,8 @@ export const fuseKeywordAndSemanticRankings = <T>(
   return [...scores.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => hitsById.get(id) as T);
 };
 
-const PERSON_NAME_ATTRIBUTES = new Set([
-  'leadProfessorNames',
-  'professorNames',
-  'name',
-  'displayName',
-]);
+const PERSON_FIELD_ATTRIBUTES = ['leadProfessorNames', 'professorNames'];
+const PERSON_NAME_ATTRIBUTES = [...PERSON_FIELD_ATTRIBUTES, 'name', 'displayName'];
 
 // A query is a person search only when every one of its words is matched, exactly,
 // inside a person's name on the best keyword hit. The semantic neighbours of a name
@@ -1008,10 +1004,10 @@ interface PersonNameSpans {
   wordStarts: Set<string>;
 }
 
-const personNameSpans = (hit: any): PersonNameSpans => {
+const personNameSpans = (hit: any, attributes: string[]): PersonNameSpans => {
   const spans: PersonNameSpans = { wholeWords: new Set(), wordStarts: new Set() };
   const isWordCharacter = (value: string) => /[\p{L}\p{N}]/u.test(value);
-  for (const attribute of PERSON_NAME_ATTRIBUTES) {
+  for (const attribute of attributes) {
     const positions = hit?._matchesPosition?.[attribute];
     if (!Array.isArray(positions)) continue;
     const values = hit?.[attribute];
@@ -1041,7 +1037,8 @@ const personNameSpans = (hit: any): PersonNameSpans => {
 // A title match is a person match only when the same row does not also match the
 // query in its topic fields: "Statistics Lab" matches `statistics` in its
 // departments too, while "<Person> Faculty Research" matches a surname only in its
-// title. Measured over 177 non-name queries this cut false fires from 16 to 4,
+// title. A query covered by lead or professor names alone skips that check; one
+// that needs the title for any word does not. Measured over 177 non-name queries this cut false fires from 16 to 4,
 // with every name query still firing. See #3853.
 const TOPIC_MATCH_ATTRIBUTES = [
   'researchAreas',
@@ -1058,22 +1055,20 @@ export const keywordLegTopHitIsNameMatch = (
 ): boolean => {
   const top = keywordLegHits[0];
   if (!top || queryTokens.length === 0) return false;
-  const spans = personNameSpans(top);
   const tokens = queryTokens.map(normalizeNameMatchText);
-  const matchesAName =
-    tokens.every((token) => spans.wordStarts.has(token)) &&
-    tokens.some((token) => spans.wholeWords.has(token));
-  if (!matchesAName) return false;
+  const matchesNamesIn = (attributes: string[]) => {
+    const spans = personNameSpans(top, attributes);
+    return (
+      tokens.every((token) => spans.wordStarts.has(token)) &&
+      tokens.some((token) => spans.wholeWords.has(token))
+    );
+  };
+  if (matchesNamesIn(PERSON_FIELD_ATTRIBUTES)) return true;
+  if (!matchesNamesIn(PERSON_NAME_ATTRIBUTES)) return false;
   const matchedAttributes = new Set(
     Object.keys(top._matchesPosition ?? {}).map((attribute) => attribute.split('.')[0]),
   );
-  const matchedAPersonField = ['leadProfessorNames', 'professorNames'].some((attribute) =>
-    matchedAttributes.has(attribute),
-  );
-  return (
-    matchedAPersonField ||
-    !TOPIC_MATCH_ATTRIBUTES.some((attribute) => matchedAttributes.has(attribute))
-  );
+  return !TOPIC_MATCH_ATTRIBUTES.some((attribute) => matchedAttributes.has(attribute));
 };
 
 /**

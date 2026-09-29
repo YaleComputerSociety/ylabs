@@ -343,6 +343,27 @@ describe('researchEntitySearchIndexService', () => {
     },
   );
 
+  it.each([
+    [['Radiology and Biomedical Imaging'], 'Cancer early detection research. Download CV'],
+    [['Ophthalmology and Visual Science'], 'Retinal disease research. Download CV'],
+    [['Internal Medicine'], 'CV imaging of heart failure and CV outcomes.'],
+  ])(
+    'does not let a department or a generic word corroborate a bare CV (#3853): %s',
+    (departments, fullDescription) => {
+      const doc = buildResearchEntitySearchIndexDocument({
+        _id: 'entity-cv-generic-context',
+        name: 'Fixture Faculty Research',
+        departments,
+        fullDescription,
+        archived: false,
+      });
+
+      expect(doc?.studentSearchTerms ?? []).not.toEqual(
+        expect.arrayContaining(['computer vision']),
+      );
+    },
+  );
+
   it('still triggers computer-vision aliases when a lab genuinely abbreviates as CV (#899)', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-real-cv',

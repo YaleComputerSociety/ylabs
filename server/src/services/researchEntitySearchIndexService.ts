@@ -291,11 +291,14 @@ const CV_CITATION_INITIALS_PATTERN = /\b[A-Z][a-zA-Z'-]{1,30}\s+CV[,.]/g;
 // A bare "cv" in prose is almost always a curriculum vitae link ("Download CV",
 // "a short CV is available", "his CV lists over 100 publications"), phrasings the
 // strip patterns above cannot enumerate. So a bare abbreviation only counts when
-// the same text also carries vision vocabulary: over the Development index, all 9
+// the same field also carries vision vocabulary: over the Development index, all 9
 // rows tagged from a bare "CV" had none, while a lab that abbreviates its field
-// ("Our CV group builds algorithms for object detection") does. See #3853.
+// ("Our CV group builds algorithms for object detection") does. The field must be
+// the one holding the "cv", and lone generic words ("imaging", "visual",
+// "detection") do not count, because a department such as "Radiology and
+// Biomedical Imaging" or cardiovascular prose would otherwise corroborate. See #3853.
 const CV_CORROBORATING_CONTEXT_PATTERN =
-  /\b(?:images?|imaging|visual|vision|video|camera|pixels?|detection|recognition|segmentation|scenes?|point\s+clouds?|convolutional|objects?)\b/i;
+  /\b(?:vision|cameras?|pixels?|segmentation|scenes?|point\s+clouds?|convolutional|(?:object|image|face|pattern)\s+(?:detection|recognition|tracking|segmentation|classification)|image\s+(?:analysis|processing|understanding)|visual\s+recognition|video\s+(?:analysis|understanding))\b/;
 
 const stripCvFalsePositiveContext = (text: string): string => {
   let cleaned = /\bcurriculum\b/i.test(text) ? text.replace(/\bcv\b/gi, ' ') : text;
@@ -338,16 +341,16 @@ export function buildStudentSearchTerms(doc: any): string[] {
   const haystack = normalizedAliasHaystack(textFields);
   if (!haystack) return [];
 
-  const strippedCvHaystack = normalizedAliasHaystack(
-    textFields.map((value) =>
-      typeof value === 'string' ? stripCvFalsePositiveContext(value) : value,
-    ),
+  const cvGuardedHaystack = normalizedAliasHaystack(
+    textFields.map((value) => {
+      const strippedField = normalizedAliasHaystack(
+        (Array.isArray(value) ? value : [value]).map((item) =>
+          typeof item === 'string' ? stripCvFalsePositiveContext(item) : item,
+        ),
+      );
+      return CV_CORROBORATING_CONTEXT_PATTERN.test(strippedField) ? strippedField : '';
+    }),
   );
-  const cvGuardedHaystack = CV_CORROBORATING_CONTEXT_PATTERN.test(
-    strippedCvHaystack.replace(/(^|\s)cv(\s|$)/g, ' '),
-  )
-    ? strippedCvHaystack
-    : '';
 
   const terms: string[] = [];
   const seen = new Set<string>();

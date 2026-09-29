@@ -1666,6 +1666,28 @@ describe('searchResearchGroupsViaMeili', () => {
       expect(keywordLegTopHitIsNameMatch([greenLead], ['green', 'chemistry'])).toBe(false);
     });
 
+    it('applies the topic veto when a lead name covers only some query words and the title the rest (#3853)', () => {
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            {
+              name: 'Green Chemistry Lab',
+              leadProfessorNames: ['Pat Green'],
+              _matchesPosition: {
+                leadProfessorNames: [{ start: 4, length: 5, indices: [0] }],
+                name: [
+                  { start: 0, length: 5 },
+                  { start: 6, length: 9 },
+                ],
+                researchAreas: [{ start: 0, length: 9 }],
+              },
+            },
+          ],
+          ['green', 'chemistry'],
+        ),
+      ).toBe(false);
+    });
+
     it('is false for a typo or prefix match inside a name', () => {
       expect(keywordLegTopHitIsNameMatch([lead('Sam Braun', [[4, 5]])], ['brain'])).toBe(false);
       expect(keywordLegTopHitIsNameMatch([lead('Sam Stoneman', [[4, 5]])], ['stone'])).toBe(false);
