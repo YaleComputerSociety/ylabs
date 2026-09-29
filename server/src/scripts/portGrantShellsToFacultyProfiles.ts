@@ -74,6 +74,8 @@ export interface GrantShellPortDelta {
   redirectsNotResolving: number;
   liveLeadEdgesLeftOnShells: number;
   liveSignalsLeftOnShells: number;
+  survivorsResynced: number;
+  survivorsAwaitingResync: number;
 }
 
 export function parsePortGrantShellArgs(argv: string[]): Options {
@@ -390,6 +392,8 @@ export async function runGrantShellPort(options: Options): Promise<{
     redirectsNotResolving: 0,
     liveLeadEdgesLeftOnShells: 0,
     liveSignalsLeftOnShells: 0,
+    survivorsResynced: 0,
+    survivorsAwaitingResync: 0,
   };
   if (options.dryRun) return { delta, outcome };
 
@@ -433,7 +437,8 @@ export async function runGrantShellPort(options: Options): Promise<{
       _id: { $in: survivorIds },
       archived: { $ne: true },
     }).lean();
-    await syncEntities('researchEntity', survivors);
+    delta.survivorsResynced = await syncEntities('researchEntity', survivors as never[]);
+    delta.survivorsAwaitingResync = survivors.length - delta.survivorsResynced;
   }
 
   const portedShellIds = applied.flatMap(({ plan }) => plan.shellIds);
