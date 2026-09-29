@@ -103,13 +103,24 @@ export function parseOffEntityGraftRun(content: unknown): OffEntityGraftRunResul
   };
 }
 
-export type OffEntityGraftVerdict = ResearchSubjectScope | 'split';
+export interface OffEntityGraftFailedRun {
+  failed: true;
+  error: string;
+}
+
+export type OffEntityGraftRunOutcome = OffEntityGraftRunResult | OffEntityGraftFailedRun;
+
+const isFailedRun = (run: OffEntityGraftRunOutcome): run is OffEntityGraftFailedRun =>
+  'failed' in run && run.failed === true;
+
+export type OffEntityGraftVerdict = ResearchSubjectScope | 'split' | 'judge_failed';
 
 export interface OffEntityGraftJudgement {
   verdict: OffEntityGraftVerdict;
   unanimous: boolean;
   scopes: ResearchSubjectScope[];
   subjects: string[];
+  failedRuns: number;
   /** The deterministic gate's verdict on the first run, for cross-checking. */
   servableWhenUnanimous: boolean | null;
 }
@@ -121,22 +132,52 @@ export interface OffEntityGraftJudgement {
  * accepts and false rejects out of noise.
  */
 export function judgeOffEntityGraftRuns(
-  runs: readonly OffEntityGraftRunResult[],
+  runs: readonly OffEntityGraftRunOutcome[],
 ): OffEntityGraftJudgement {
-  const scopes = runs.map((run) => run.scope);
-  const subjects = runs.map((run) => run.subject);
+  const answered = runs.filter((run): run is OffEntityGraftRunResult => !isFailedRun(run));
+  const failedRuns = runs.length - answered.length;
+  const scopes = answered.map((run) => run.scope);
+  const subjects = answered.map((run) => run.subject);
+  if (failedRuns > 0) {
+    return {
+      verdict: 'judge_failed',
+      unanimous: false,
+      scopes,
+      subjects,
+      failedRuns,
+      servableWhenUnanimous: null,
+    };
+  }
   const distinct = new Set(scopes);
-  const unanimous = runs.length > 0 && distinct.size === 1;
+  const unanimous = answered.length > 0 && distinct.size === 1;
   const verdict: OffEntityGraftVerdict = unanimous ? scopes[0] : 'split';
   return {
     verdict,
     unanimous,
     scopes,
     subjects,
+    failedRuns,
     servableWhenUnanimous: unanimous
-      ? judgeResearchSubject({ subject: runs[0].subject, scope: scopes[0] }).isServable
+      ? judgeResearchSubject({ subject: answered[0].subject, scope: scopes[0] }).isServable
       : null,
   };
+}
+
+export async function runOffEntityGraftJudge(
+  runsPerRecord: number,
+  callJudge: () => Promise<OffEntityGraftRunResult>,
+  onFailure: (error: unknown) => void = () => {},
+): Promise<OffEntityGraftRunOutcome[]> {
+  const runs: OffEntityGraftRunOutcome[] = [];
+  for (let run = 0; run < runsPerRecord; run += 1) {
+    try {
+      runs.push(await callJudge());
+    } catch (error) {
+      onFailure(error);
+      runs.push({ failed: true, error: error instanceof Error ? error.name : 'Error' });
+    }
+  }
+  return runs;
 }
 
 export interface ProportionInterval {
@@ -202,4 +243,30 @@ export function seededSample<T>(items: readonly T[], count: number, seed: number
     [pool[index], pool[swap]] = [pool[swap], pool[index]];
   }
   return pool.slice(0, Math.max(0, Math.min(count, pool.length)));
+}
+
+export function summarizeOffEntityGraftStratum(
+  judgements: readonly OffEntityGraftJudgement[],
+  population: number,
+): Record<string, unknown> {
+  const judged = judgements.filter((judgement) => judgement.verdict !== 'judge_failed');
+  const total = judged.length;
+  const of = (verdict: OffEntityGraftVerdict) =>
+    judged.filter((judgement) => judgement.verdict === verdict).length;
+  const parentOrg = wilsonInterval(of('parent_org'), total);
+  const unclear = wilsonInterval(of('unclear'), total);
+  const split = wilsonInterval(of('split'), total);
+  const graft = wilsonInterval(of('parent_org') + of('unclear'), total);
+  return {
+    sampled: judgements.length,
+    judged: total,
+    judgeFailedRecords: judgements.length - total,
+    failedJudgeCalls: judgements.reduce((sum, judgement) => sum + judgement.failedRuns, 0),
+    population,
+    parent_org: { ...parentOrg, projected: projectedPopulationCount(parentOrg, population) },
+    unclear: { ...unclear, projected: projectedPopulationCount(unclear, population) },
+    parent_org_or_unclear: { ...graft, projected: projectedPopulationCount(graft, population) },
+    split_non_unanimous: split,
+    this_entity: of('this_entity'),
+  };
 }

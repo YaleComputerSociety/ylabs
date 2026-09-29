@@ -234,6 +234,46 @@ export async function coverageSynthesisDecision(
   return { result: { description, usedSnippetIndexes, sourceUrls }, refusal: null };
 }
 
+const LLM_FAILURE_REFUSALS: ReadonlySet<CoverageSynthesisRefusal> = new Set([
+  'llm-call-failed',
+  'llm-malformed-response',
+]);
+
+export const isCoverageSynthesisLlmFailure = (
+  refusal: CoverageSynthesisRefusal | null | undefined,
+): boolean => !!refusal && LLM_FAILURE_REFUSALS.has(refusal);
+
+export const COVERAGE_SYNTHESIS_LLM_FAILED_SKIP = 'synthesis-llm-failed';
+export const COVERAGE_SYNTHESIS_REFUSED_SKIP = 'synthesis-failed-quality-gate';
+
+export const coverageSynthesisSkipReason = (refusal: CoverageSynthesisRefusal): string =>
+  isCoverageSynthesisLlmFailure(refusal)
+    ? COVERAGE_SYNTHESIS_LLM_FAILED_SKIP
+    : COVERAGE_SYNTHESIS_REFUSED_SKIP;
+
+export interface CoverageSynthesisRefusalCounts {
+  llmFailures: number;
+  refusedByContent: number;
+  byRefusal: Partial<Record<CoverageSynthesisRefusal, number>>;
+}
+
+export function countCoverageSynthesisRefusals(
+  refusals: ReadonlyArray<CoverageSynthesisRefusal | null | undefined>,
+): CoverageSynthesisRefusalCounts {
+  const counts: CoverageSynthesisRefusalCounts = {
+    llmFailures: 0,
+    refusedByContent: 0,
+    byRefusal: {},
+  };
+  for (const refusal of refusals) {
+    if (!refusal) continue;
+    counts.byRefusal[refusal] = (counts.byRefusal[refusal] ?? 0) + 1;
+    if (isCoverageSynthesisLlmFailure(refusal)) counts.llmFailures += 1;
+    else counts.refusedByContent += 1;
+  }
+  return counts;
+}
+
 export async function synthesizeCoverageDescription(
   input: SynthesizeCoverageInput,
 ): Promise<CoverageSynthesisResult | null> {

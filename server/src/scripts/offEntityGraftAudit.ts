@@ -42,12 +42,11 @@ import {
   buildOffEntityGraftUserMessage,
   judgeOffEntityGraftRuns,
   parseOffEntityGraftRun,
-  projectedPopulationCount,
+  runOffEntityGraftJudge,
   seededSample,
-  wilsonInterval,
+  summarizeOffEntityGraftStratum,
   type OffEntityGraftJudgement,
   type OffEntityGraftRunResult,
-  type OffEntityGraftVerdict,
 } from './offEntityGraftAuditCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
@@ -173,22 +172,10 @@ function stratumReport(
   rows: Array<{ record: SampledRecord; judgement: OffEntityGraftJudgement }>,
   population: number,
 ): Record<string, unknown> {
-  const total = rows.length;
-  const of = (verdict: OffEntityGraftVerdict) =>
-    rows.filter((row) => row.judgement.verdict === verdict).length;
-  const parentOrg = wilsonInterval(of('parent_org'), total);
-  const unclear = wilsonInterval(of('unclear'), total);
-  const split = wilsonInterval(of('split'), total);
-  const graft = wilsonInterval(of('parent_org') + of('unclear'), total);
-  return {
-    sampled: total,
+  return summarizeOffEntityGraftStratum(
+    rows.map((row) => row.judgement),
     population,
-    parent_org: { ...parentOrg, projected: projectedPopulationCount(parentOrg, population) },
-    unclear: { ...unclear, projected: projectedPopulationCount(unclear, population) },
-    parent_org_or_unclear: { ...graft, projected: projectedPopulationCount(graft, population) },
-    split_non_unanimous: split,
-    this_entity: of('this_entity'),
-  };
+  );
 }
 
 async function main(): Promise<void> {
@@ -248,15 +235,11 @@ async function main(): Promise<void> {
   const usage: Usage = { calls: 0, inputTokens: 0, outputTokens: 0 };
   let completed = 0;
   const judged = await mapWithConcurrency(sample, options.concurrency, async (record) => {
-    const runs: OffEntityGraftRunResult[] = [];
-    for (let run = 0; run < OFF_ENTITY_GRAFT_RUNS_PER_RECORD; run += 1) {
-      try {
-        runs.push(await callJudge(record, apiKey, usage));
-      } catch (error) {
-        console.log(`ERROR ${record.slug}: ${sanitizeLogValue(error)}`);
-        runs.push({ subject: '', scope: 'unclear' });
-      }
-    }
+    const runs = await runOffEntityGraftJudge(
+      OFF_ENTITY_GRAFT_RUNS_PER_RECORD,
+      () => callJudge(record, apiKey, usage),
+      (error) => console.log(`ERROR ${record.slug}: ${sanitizeLogValue(error)}`),
+    );
     completed += 1;
     if (completed % 25 === 0) console.log(`judged ${completed}/${sample.length}`);
     return { record, judgement: judgeOffEntityGraftRuns(runs) };
@@ -294,7 +277,10 @@ async function main(): Promise<void> {
     // evidence: the flag families in this repo have repeatedly measured
     // something other than what they claimed.
     hits: judged
-      .filter((row) => row.judgement.verdict !== 'this_entity')
+      .filter(
+        (row) =>
+          row.judgement.verdict !== 'this_entity' && row.judgement.verdict !== 'judge_failed',
+      )
       .map((row) => ({
         slug: row.record.slug,
         name: row.record.name,
