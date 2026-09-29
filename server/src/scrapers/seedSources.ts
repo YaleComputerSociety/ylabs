@@ -146,6 +146,14 @@ export function writeSeedSourcesOutput(report: unknown, output?: string): void {
 
 const SOURCES: SourceSeed[] = [
   {
+    name: 'synthetic-unregistered-lane-3737',
+    displayName: 'Synthetic unregistered lane',
+    description: 'Deliberately registered without a dispatch owner to prove the CI guard step.',
+    baseUrl: '',
+    defaultWeight: 0.4,
+    cadence: 'event',
+  },
+  {
     // Not a scraper: the materializer's own inference from a row's stored prose,
     // through the canonical vocabulary and its aliases. It is seeded because a
     // provenance `sourceName` that resolves to no Source leaves the attribution
