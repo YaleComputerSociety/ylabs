@@ -47,7 +47,7 @@ import { CalendarIcon, EditIcon } from '../shared/icons';
 
 interface ProgramWatchProps {
   onSummaryChange?: (summary: {
-    count: number;
+    count: number | null;
     nextDeadlineLabel?: string;
     nextDeadlineDate?: string;
     approachingCount?: number;
@@ -99,6 +99,7 @@ export const watchedProgramDeadlineSummary = (
 const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const {
     favIds: watchedIds,
+    loaded: watchedIdsLoaded,
     loadError: watchedIdsLoadFailed,
     toggleFavorite,
     reloadFavorites,
@@ -187,21 +188,20 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     return summarizeWatchedDeadlines(watched);
   }, [visiblePrograms, stages]);
 
+  const watchedCount = !watchedIdsLoaded
+    ? null
+    : isLoading || programsLoadFailed
+      ? watchedIds.length
+      : visiblePrograms.length;
+
   useEffect(() => {
     onSummaryChange?.({
-      count: programsLoadFailed ? watchedIds.length : visiblePrograms.length,
+      count: watchedCount,
       approachingCount: deadlineUrgency.approachingCount,
       notStartedCount: deadlineUrgency.notStartedCount,
       ...nextDeadline,
     });
-  }, [
-    programsLoadFailed,
-    watchedIds.length,
-    visiblePrograms.length,
-    nextDeadline,
-    deadlineUrgency,
-    onSummaryChange,
-  ]);
+  }, [watchedCount, nextDeadline, deadlineUrgency, onSummaryChange]);
 
   const upcomingDeadlineEventsByProgramId = useMemo(() => {
     const events = upcomingProgramDeadlineEvents(visiblePrograms);

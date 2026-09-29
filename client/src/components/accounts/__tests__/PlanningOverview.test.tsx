@@ -129,4 +129,12 @@ describe('PlanningOverview watched-deadline urgency signal', () => {
     expect(screen.queryByText(/close within/)).toBeNull();
     expect(screen.queryByRole('button', { name: /close within/ })).toBeNull();
   });
+
+  it('does not claim nothing is saved while a count is unknown', () => {
+    renderOverview({ savedResearchCount: null, savedFellowshipCount: 0 });
+
+    expect(screen.queryByText('Save research to start planning')).toBeNull();
+    expect(screen.queryByText(/research plans?/)).toBeNull();
+    expect(screen.getByText('0 watched programs')).toBeTruthy();
+  });
 });

@@ -48,21 +48,25 @@ export const useFavorites = (
   const config = ENDPOINTS[kind];
   const [favIds, setFavIds] = useState<string[]>([]);
   const [loadError, setLoadError] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   const reload = useCallback(async () => {
     if (!enabled) {
       setFavIds([]);
       setLoadError(false);
+      setLoaded(true);
       return;
     }
     try {
       const res = await axios.get(config.load, { withCredentials: true });
       setFavIds(res.data[config.responseKey] || []);
       setLoadError(false);
+      setLoaded(true);
     } catch {
       console.error(`Error fetching user's favorite ${kind}.`);
       setFavIds([]);
       setLoadError(true);
+      setLoaded(false);
       if (config.warnOnLoadError) {
         void swal({ text: `Could not load your favorite ${kind}`, icon: 'warning' });
       }
@@ -134,7 +138,7 @@ export const useFavorites = (
     [favIds, setFavorite],
   );
 
-  return { favIds, loadError, setFavorite, toggleFavorite, reloadFavorites: reload };
+  return { favIds, loaded, loadError, setFavorite, toggleFavorite, reloadFavorites: reload };
 };
 
 export default useFavorites;

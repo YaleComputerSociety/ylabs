@@ -713,6 +713,21 @@ describe('SavedResearchPlans', () => {
       expect(screen.queryByRole('link', { name: 'Explore Research' })).toBeNull();
     });
 
+    it('reports an unknown count rather than zero when the saved ids fail', async () => {
+      failing('/users/savedResearchEntityIds');
+      const onCountChange = vi.fn();
+
+      render(
+        <MemoryRouter>
+          <SavedResearchPlans onCountChange={onCountChange} />
+        </MemoryRouter>,
+      );
+
+      await screen.findByRole('alert');
+      expect(onCountChange).toHaveBeenLastCalledWith(null);
+      expect(onCountChange).not.toHaveBeenCalledWith(0);
+    });
+
     it('loads the saved list again when the student retries', async () => {
       const request = failing('/users/savedResearchEntities');
 

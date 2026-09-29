@@ -20,7 +20,7 @@ import useDocumentTitle from '../hooks/useDocumentTitle';
 type DashboardSurface = 'dashboard' | 'programs';
 
 type ProgramSummary = {
-  count: number;
+  count: number | null;
   nextDeadlineLabel?: string;
   nextDeadlineDate?: string;
   approachingCount?: number;
@@ -29,6 +29,9 @@ type ProgramSummary = {
 
 const SURFACES: DashboardSurface[] = ['dashboard', 'programs'];
 
+const withCount = (label: string, count: number | null): string =>
+  count === null ? label : `${label} (${count})`;
+
 const Dashboard = () => {
   useDocumentTitle('Dashboard');
   const [searchParams] = useSearchParams();
@@ -36,8 +39,8 @@ const Dashboard = () => {
   const [surface, setSurface] = useState<DashboardSurface>(
     tabParam && SURFACES.includes(tabParam) ? tabParam : 'dashboard',
   );
-  const [savedResearchCount, setSavedResearchCount] = useState(0);
-  const [programSummary, setProgramSummary] = useState<ProgramSummary>({ count: 0 });
+  const [savedResearchCount, setSavedResearchCount] = useState<number | null>(null);
+  const [programSummary, setProgramSummary] = useState<ProgramSummary>({ count: null });
   const tabRefs = useRef<Record<DashboardSurface, HTMLButtonElement | null>>({
     dashboard: null,
     programs: null,
@@ -110,7 +113,7 @@ const Dashboard = () => {
               onKeyDown={handleTabKeyDown}
               className={tabClass(surface === 'dashboard')}
             >
-              Dashboard ({savedResearchCount})
+              {withCount('Dashboard', savedResearchCount)}
             </button>
             <button
               type="button"
@@ -126,7 +129,7 @@ const Dashboard = () => {
               onKeyDown={handleTabKeyDown}
               className={tabClass(surface === 'programs')}
             >
-              Program Watch ({programSummary.count})
+              {withCount('Program Watch', programSummary.count)}
             </button>
           </div>
         </div>

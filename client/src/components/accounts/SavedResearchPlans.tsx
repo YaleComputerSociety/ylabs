@@ -34,7 +34,7 @@ import {
 } from '../../utils/researchPlanStages';
 
 interface SavedResearchPlansProps {
-  onCountChange?: (count: number) => void;
+  onCountChange?: (count: number | null) => void;
 }
 
 interface SavedResearchEntity {
@@ -109,6 +109,7 @@ const ACCESS_BADGE_CLASS: Record<UndergraduateAccessStatus['tone'], string> = {
 const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const {
     favIds: savedSlugs,
+    loaded: savedSlugsLoaded,
     loadError: savedSlugsLoadFailed,
     setFavorite,
     reloadFavorites,
@@ -130,8 +131,8 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   // reporting only the servable ones is what let the dashboard read "0 research
   // plans" beside a notice about a saved item it was holding back (#2174).
   useEffect(() => {
-    onCountChange?.(savedSlugs.length + unavailable.length);
-  }, [savedSlugs.length, unavailable.length, onCountChange]);
+    onCountChange?.(savedSlugsLoaded ? savedSlugs.length + unavailable.length : null);
+  }, [savedSlugsLoaded, savedSlugs.length, unavailable.length, onCountChange]);
 
   const planRequest = useLatestRequest();
 
