@@ -26,12 +26,12 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
   {
     fn: 'resolveNetidForRosterEmailAlias',
     reason:
-      'A corpus-wide search by VALUE - every user observation whose email local part matches - so it names no entity and the read source, which is keyed by entity, has nothing to answer with. Freezing it would need a frozen corpus index rather than a frozen row.',
+      'On the inferred-PI mint path, reached from `resolveInferredPiKeyIdentity`, so THE BENCHMARK NEVER MAKES THIS READ: it replays `researchEntity` rows only. Measured by instrumenting it and replaying 147 rows, which hit it zero times (#3863). It is also a corpus-wide search by value and so unroutable through an entity-keyed source, but that is the weaker reason; routing or freezing it changes no outcome until the benchmark replays `user` rows.',
   },
   {
     fn: 'liveResearchEntityNamesUserKeyAsLead',
     reason:
-      'The same shape: a corpus-wide search for any row asserting this `inferredPiUserKey`, keyed by value rather than by entity.',
+      'Called from `materializeUserIdentityToResearcher`, the `user` materializer, so the benchmark never makes this read either: zero hits over the same 147 rows. Value-keyed as well, but the reachability is what decides it.',
   },
   {
     fn: 'leadPiInheritanceEvidence',
@@ -90,7 +90,7 @@ const REVIEWED_UNROUTED_ENTITY_READS: ReadonlyArray<{ fn: string; reason: string
   {
     fn: 'liveResearchEntityNamesUserKeyAsLead',
     reason:
-      'A corpus-wide existence check by VALUE: does any live row name this user key as lead. It names no entity, so an entity-keyed read source has nothing to answer with. A capture-time index is viable and tracked on #3863.',
+      'Called from `materializeUserIdentityToResearcher`, the `user` materializer, so THE BENCHMARK NEVER MAKES THIS READ: it replays `researchEntity` rows only, measured at zero hits over 147 rows (#3863). A capture-time index was considered and dropped for that reason, not because it was hard.',
   },
   {
     fn: 'findEntityCandidatesByKey',
