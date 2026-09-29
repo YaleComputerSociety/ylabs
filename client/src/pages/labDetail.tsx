@@ -479,10 +479,10 @@ const DecisionSummary = ({
   const leadCardLinksProfile = actionLinks.leadCardLinksProfile;
   const getInvolvedHasOwnAction =
     profileNeedsOwnButton || showsWebsiteCta || Boolean(officialSource);
-  const needsDirectoryFallback =
-    !leadCardLinksProfile && (Boolean(piMailtoHref) || !hasActionablePath);
+  const directoryFallbackCandidate = Boolean(piMailtoHref) || !hasActionablePath;
+  const needsDirectoryFallback = !leadCardLinksProfile && directoryFallbackCandidate;
   const showGetInvolvedBlock = getInvolvedHasOwnAction || needsDirectoryFallback;
-  const pageListsContacts = showGetInvolvedBlock || leadCardLinksProfile;
+  const pageListsContacts = getInvolvedHasOwnAction || directoryFallbackCandidate;
   return (
     <section className="rounded-card border border-line bg-panel p-4 shadow-yr-raised sm:p-5">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
