@@ -195,7 +195,7 @@ describe('classifyHostForStudents', () => {
       async () => 'private-address',
       async () => ({ Status: 2 }),
     );
-    expect(kind).toBe('resolver-failure');
+    expect(kind).toBe('private-address');
   });
 
   it('asks public DNS only about a locally private host', async () => {

@@ -410,9 +410,9 @@ async function probeResultForBlockedUrl(
     return { errorCode };
   }
   const offCampus = await classifyOffCampusAddressing(new URL(url.trim()).hostname);
-  if (offCampus === 'private-address') return { errorCode, privateAddressHost: true };
-  if (offCampus === 'public') return { errorCode, publicAddressHost: true };
-  return { errorCode };
+  return offCampus === 'public'
+    ? { errorCode, publicAddressHost: true }
+    : { errorCode, privateAddressHost: true };
 }
 
 export async function probeSourceLink(

@@ -48,19 +48,23 @@ describe('classifyOffCampusAddressing', () => {
     await expect(classifyOffCampusAddressing('v6.example.edu', query)).resolves.toBe('public');
   });
 
-  it('asks the second provider when the first fails, and claims nothing when both do', async () => {
-    const recovering = vi.fn(async (url: string): Promise<DohResponse> => {
-      if (url.startsWith('https://dns.google/')) throw new Error('timeout');
-      return { Status: 0, Answer: [{ type: A, data: '128.36.0.109' }] };
-    });
-    await expect(classifyOffCampusAddressing('web.example.edu', recovering)).resolves.toBe(
-      'public',
-    );
-
+  it('keeps the private answer when public DNS cannot be asked', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const failing = async (): Promise<DohResponse> => ({ Status: 2 });
     await expect(classifyOffCampusAddressing('web.example.edu', failing)).resolves.toBe(
-      'resolver-failure',
+      'private-address',
     );
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it('asks public DNS once per host however many pages cite it', async () => {
+    const query = vi.fn(
+      answering({ A: { Status: 0, Answer: [{ type: A, data: '128.36.0.109' }] } }),
+    );
+    await expect(classifyOffCampusAddressing('cached.example.edu', query)).resolves.toBe('public');
+    await expect(classifyOffCampusAddressing('Cached.example.edu', query)).resolves.toBe('public');
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   it('classifies an address literal without asking anyone', async () => {

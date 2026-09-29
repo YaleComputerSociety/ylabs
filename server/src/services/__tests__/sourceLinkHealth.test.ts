@@ -166,13 +166,6 @@ describe('probeSourceLink', () => {
     expect(requestMock).not.toHaveBeenCalled();
   });
 
-  it('claims nothing about addressing when public DNS cannot be asked', async () => {
-    blockedWith('private-address');
-    classifyOffCampusAddressingMock.mockResolvedValueOnce('resolver-failure');
-    const probe = await probeSourceLink('https://split.example.edu/profile');
-    expect(probe).toEqual({ errorCode: 'ERR_SSRF_BLOCKED' });
-  });
-
   it('never asks public DNS about a refusal that is not a private address', async () => {
     blockedWith('resolver-failure');
     await probeSourceLink('https://slow-dns.example.edu/profile');

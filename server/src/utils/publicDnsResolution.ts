@@ -1,5 +1,6 @@
 import net from 'net';
 import { isPrivateAddress } from './ssrfGuard';
+import { sanitizeLogValue } from './logSanitizer';
 
 /**
  * What a private-address refusal from our own resolver means for a student off
@@ -13,7 +14,7 @@ import { isPrivateAddress } from './ssrfGuard';
  * DNS would answer in the public resolver's place and hand back the same private
  * view this exists to see past.
  */
-export type OffCampusAddressing = 'public' | 'private-address' | 'resolver-failure';
+export type OffCampusAddressing = 'public' | 'private-address';
 
 export interface DohResponse {
   Status?: unknown;
@@ -22,7 +23,7 @@ export interface DohResponse {
 
 export type DohQuery = (url: string) => Promise<DohResponse>;
 
-const DOH_ENDPOINTS = ['https://dns.google/resolve', 'https://cloudflare-dns.com/dns-query'];
+const DOH_ENDPOINT = 'https://dns.google/resolve';
 const DOH_TIMEOUT_MS = 5_000;
 const DNS_RCODE_NOERROR = 0;
 const DNS_RCODE_NXDOMAIN = 3;
@@ -41,18 +42,15 @@ const fetchDohJson: DohQuery = async (url) => {
 };
 
 type RecordLookup =
-  | { kind: 'answered'; addresses: string[] }
-  | { kind: 'nxdomain' }
-  | { kind: 'failed' };
+  { kind: 'answered'; addresses: string[] } | { kind: 'nxdomain' } | { kind: 'failed' };
 
 const lookupRecords = async (
-  endpoint: string,
   hostname: string,
   record: (typeof ADDRESS_RECORD_TYPES)[number],
   query: DohQuery,
 ): Promise<RecordLookup> => {
   try {
-    const url = `${endpoint}?name=${encodeURIComponent(hostname)}&type=${record.name}`;
+    const url = `${DOH_ENDPOINT}?name=${encodeURIComponent(hostname)}&type=${record.name}`;
     const body = await query(url);
     if (body.Status === DNS_RCODE_NXDOMAIN) return { kind: 'nxdomain' };
     if (body.Status !== DNS_RCODE_NOERROR) return { kind: 'failed' };
@@ -67,14 +65,13 @@ const lookupRecords = async (
   }
 };
 
-const askEndpoint = async (
-  endpoint: string,
+const askPublicDns = async (
   hostname: string,
   query: DohQuery,
-): Promise<OffCampusAddressing> => {
+): Promise<OffCampusAddressing | 'resolver-failure'> => {
   const addresses: string[] = [];
   for (const record of ADDRESS_RECORD_TYPES) {
-    const lookup = await lookupRecords(endpoint, hostname, record, query);
+    const lookup = await lookupRecords(hostname, record, query);
     if (lookup.kind === 'failed') return 'resolver-failure';
     if (lookup.kind === 'nxdomain') return 'private-address';
     addresses.push(...lookup.addresses);
@@ -84,19 +81,44 @@ const askEndpoint = async (
   return addresses.every((address) => !isPrivateAddress(address)) ? 'public' : 'private-address';
 };
 
+const confirmPrivateRefusal = async (
+  hostname: string,
+  query: DohQuery,
+): Promise<OffCampusAddressing> => {
+  const verdict = await askPublicDns(hostname, query);
+  if (verdict !== 'resolver-failure') return verdict;
+  console.warn(
+    `Public DNS could not be asked about ${sanitizeLogValue(hostname)}; keeping our resolver's private-address answer`,
+  );
+  return 'private-address';
+};
+
+const verdictsByQuery = new WeakMap<DohQuery, Map<string, Promise<OffCampusAddressing>>>();
+
 /**
  * A name public DNS does not know is as unreachable off campus as one it maps to
- * private space, so both confirm the flag. A lookup that fails confirms nothing.
+ * private space, so both confirm the flag. A lookup that fails leaves our own
+ * resolver's private answer standing, because a failed measurement must never
+ * release a link a student cannot open (#2556). One verdict per host per process,
+ * so a host cited by many pages is asked about once.
  */
-export const classifyOffCampusAddressing = async (
+export const classifyOffCampusAddressing = (
   hostname: string,
   query: DohQuery = fetchDohJson,
 ): Promise<OffCampusAddressing> => {
-  const clean = hostname.replace(/^\[|\]$/g, '');
-  if (net.isIP(clean)) return isPrivateAddress(clean) ? 'private-address' : 'public';
-  for (const endpoint of DOH_ENDPOINTS) {
-    const verdict = await askEndpoint(endpoint, clean, query);
-    if (verdict !== 'resolver-failure') return verdict;
+  const clean = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (net.isIP(clean)) {
+    return Promise.resolve(isPrivateAddress(clean) ? 'private-address' : 'public');
   }
-  return 'resolver-failure';
+  let verdicts = verdictsByQuery.get(query);
+  if (!verdicts) {
+    verdicts = new Map();
+    verdictsByQuery.set(query, verdicts);
+  }
+  let verdict = verdicts.get(clean);
+  if (!verdict) {
+    verdict = confirmPrivateRefusal(clean, query);
+    verdicts.set(clean, verdict);
+  }
+  return verdict;
 };
