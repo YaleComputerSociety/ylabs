@@ -79,7 +79,7 @@ describe('BBS retirement governs both identity forms', () => {
       replSet: { count: 1, storageEngine: 'wiredTiger' },
     });
     await mongoose.connect(memoryReplSet.getUri('bbs_retirement_identity_test'));
-  }, 120_000);
+  });
 
   afterEach(async () => {
     await Observation.deleteMany({});
@@ -155,7 +155,7 @@ describe('BBS retirement governs both identity forms', () => {
       researchAreas?: string[];
     } | null;
     expect(reprojected?.researchAreas).toEqual(['Neuroscience']);
-  }, 120_000);
+  });
 
   it('excludes a claim in either identity form that names no live row rather than counting it absent', async () => {
     const other = await ResearchEntity.create({
@@ -190,7 +190,7 @@ describe('BBS retirement governs both identity forms', () => {
     for (const claim of [orphan, archivedOrphan, deletedOrphan]) {
       expect((await Observation.findById(claim._id).lean())?.superseded).not.toBe(true);
     }
-  }, 120_000);
+  });
 
   it('governs an entityId-keyed claim on the same footing', async () => {
     const row = await ResearchEntity.create({
@@ -225,5 +225,5 @@ describe('BBS retirement governs both identity forms', () => {
     expect(result.counts?.governedClaims).toBe(3);
     expect(result.counts?.retiredClaims).toBe(1);
     expect((await Observation.findById(claim._id).lean())?.superseded).toBe(true);
-  }, 120_000);
+  });
 });
