@@ -928,6 +928,40 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
   });
 
+  it('keeps the research website as the way in when the lead also has an email (#3908)', async () => {
+    const LAB_WEBSITE_URL = 'https://medicine.yale.edu/lab/fixture-steele/';
+    const LEAD_OFFICIAL_PROFILE_URL = 'https://medicine.yale.edu/profile/fixture-steele/';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: LAB_WEBSITE_URL,
+        sourceUrls: [LAB_WEBSITE_URL],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.steele',
+            fname: 'Fixture',
+            lname: 'Steele',
+            displayName: 'Fixture Steele',
+            email: 'fixture.steele@example.test',
+            profileUrls: { official: LEAD_OFFICIAL_PROFILE_URL },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: 'Visit research website' }).getAttribute('href')).toBe(
+      LAB_WEBSITE_URL,
+    );
+    expect(screen.queryByText(/no separate website/)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Email Fixture Steele' })).toBeTruthy();
+  });
+
   it('points an under-review entity to its lab website instead of a Yale Directory dead end', async () => {
     renderLabDetail({
       ...basePayload,
