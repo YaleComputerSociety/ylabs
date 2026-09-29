@@ -8,8 +8,13 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
 import {
-  synthesizeCoverageDescription,
+  coverageSynthesisDecision,
+  coverageSynthesisSkipReason,
+  countCoverageSynthesisRefusals,
   defaultCoverageSynthesisLLM,
+  type CoverageSynthesisRefusal,
+  type CoverageSynthesisResult,
+  type SynthesizeCoverageInput,
 } from '../scrapers/coverageSynthesis';
 import { materializeEntity, materializationReadScopeFilter } from '../scrapers/entityMaterializer';
 import { planStudentVisibilityGate } from '../services/studentVisibilityGateService';
@@ -30,7 +35,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-interface GrantCorpusEntityReport {
+export interface GrantCorpusEntityReport {
   slug: string;
   grants: number;
   snippets: number;
@@ -42,7 +47,29 @@ interface GrantCorpusEntityReport {
   description?: string;
   sourceUrls?: string[];
   skipped?: string;
+  synthesisRefusal?: CoverageSynthesisRefusal;
 }
+
+export async function synthesizeIntoGrantCorpusReport(
+  report: GrantCorpusEntityReport,
+  input: SynthesizeCoverageInput,
+): Promise<CoverageSynthesisResult | null> {
+  const decision = await coverageSynthesisDecision(input);
+  if (!decision.result) {
+    report.synthesisRefusal = decision.refusal ?? undefined;
+    report.skipped = decision.refusal
+      ? coverageSynthesisSkipReason(decision.refusal)
+      : 'synthesis-produced-no-result';
+    return null;
+  }
+  report.synthesized = true;
+  report.description = decision.result.description;
+  report.sourceUrls = decision.result.sourceUrls;
+  return decision.result;
+}
+
+export const summarizeGrantCorpusSynthesisRefusals = (reports: GrantCorpusEntityReport[]) =>
+  countCoverageSynthesisRefusals(reports.map((report) => report.synthesisRefusal));
 
 async function main() {
   const args = parseGrantCorpusSynthesisArgs(process.argv.slice(2));
@@ -136,7 +163,7 @@ async function main() {
       continue;
     }
 
-    const result = await synthesizeCoverageDescription({
+    const result = await synthesizeIntoGrantCorpusReport(report, {
       snippets,
       entityName: typeof entity.name === 'string' ? entity.name : '',
       entityType: entity.entityType,
@@ -144,13 +171,9 @@ async function main() {
       callLLM,
     });
     if (!result) {
-      report.skipped = 'synthesis-failed-quality-gate';
       reports.push(report);
       continue;
     }
-    report.synthesized = true;
-    report.description = result.description;
-    report.sourceUrls = result.sourceUrls;
 
     if (args.apply && source) {
       await appendObservations(
@@ -238,6 +261,7 @@ async function main() {
     limit: args.limit,
     scanned: reports.length,
     synthesized: reports.filter((r) => r.synthesized).length,
+    synthesisRefusals: summarizeGrantCorpusSynthesisRefusals(reports),
     written,
     gainedSchool,
     wouldPromoteToStudentReady,

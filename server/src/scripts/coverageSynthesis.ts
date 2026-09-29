@@ -10,9 +10,13 @@ import { appendObservations, getSourceByName } from '../scrapers/observationStor
 import {
   COVERAGE_CONFIDENCE,
   defaultCoverageSynthesisLLM,
+  coverageSynthesisDecision,
+  countCoverageSynthesisRefusals,
   gatherCoverageSnippets,
-  synthesizeCoverageDescription,
   type CoverageObservationLike,
+  type CoverageSynthesisRefusal,
+  type CoverageSynthesisResult,
+  type SynthesizeCoverageInput,
 } from '../scrapers/coverageSynthesis';
 import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -28,14 +32,33 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SOURCE_NAME = 'coverage-synthesis-llm';
 
-interface CoverageEntityReport {
+export interface CoverageEntityReport {
   slug: string;
   snippets: number;
   synthesized: boolean;
   written: boolean;
   description?: string;
   sourceUrls?: string[];
+  synthesisRefusal?: CoverageSynthesisRefusal;
 }
+
+export async function synthesizeIntoCoverageReport(
+  report: CoverageEntityReport,
+  input: SynthesizeCoverageInput,
+): Promise<CoverageSynthesisResult | null> {
+  const decision = await coverageSynthesisDecision(input);
+  if (!decision.result) {
+    report.synthesisRefusal = decision.refusal ?? undefined;
+    return null;
+  }
+  report.synthesized = true;
+  report.description = decision.result.description;
+  report.sourceUrls = decision.result.sourceUrls;
+  return decision.result;
+}
+
+export const summarizeCoverageSynthesisRefusals = (reports: CoverageEntityReport[]) =>
+  countCoverageSynthesisRefusals(reports.map((report) => report.synthesisRefusal));
 
 async function main() {
   const args = parseCoverageSynthesisArgs(process.argv.slice(2));
@@ -98,7 +121,7 @@ async function main() {
       written: false,
     };
     if (snippets.length > 0) {
-      const result = await synthesizeCoverageDescription({
+      const result = await synthesizeIntoCoverageReport(report, {
         snippets,
         entityName: typeof entity.name === 'string' ? entity.name : '',
         entityType: entity.entityType,
@@ -106,9 +129,6 @@ async function main() {
         callLLM,
       });
       if (result) {
-        report.synthesized = true;
-        report.description = result.description;
-        report.sourceUrls = result.sourceUrls;
         if (args.apply && source) {
           await appendObservations(
             [
@@ -144,6 +164,7 @@ async function main() {
     limit: args.limit,
     scanned: reports.length,
     synthesized: reports.filter((r) => r.synthesized).length,
+    synthesisRefusals: summarizeCoverageSynthesisRefusals(reports),
     written,
     entities: reports,
   };

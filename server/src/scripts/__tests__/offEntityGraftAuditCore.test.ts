@@ -6,7 +6,9 @@ import {
   judgeOffEntityGraftRuns,
   parseOffEntityGraftRun,
   projectedPopulationCount,
+  runOffEntityGraftJudge,
   seededSample,
+  summarizeOffEntityGraftStratum,
   wilsonInterval,
 } from '../offEntityGraftAuditCore';
 
@@ -59,6 +61,62 @@ describe('offEntityGraftAuditCore', () => {
     ]);
     expect(divided.verdict).toBe('split');
     expect(divided.servableWhenUnanimous).toBeNull();
+  });
+
+  it('records a failed judge call as a failure, never as an unclear verdict (#3729)', async () => {
+    const failures: unknown[] = [];
+    const runs = await runOffEntityGraftJudge(
+      3,
+      async () => {
+        throw new Error('synthetic outage');
+      },
+      (error) => failures.push(error),
+    );
+    const judgement = judgeOffEntityGraftRuns(runs);
+
+    expect(failures).toHaveLength(3);
+    expect(judgement.verdict).toBe('judge_failed');
+    expect(judgement.unanimous).toBe(false);
+    expect(judgement.failedRuns).toBe(3);
+    expect(judgement.scopes).toEqual([]);
+  });
+
+  it('refuses a verdict from a record whose runs only partly answered', () => {
+    const judgement = judgeOffEntityGraftRuns([
+      { subject: 'the department', scope: 'parent_org' },
+      { failed: true, error: 'Error' },
+      { subject: 'the department', scope: 'parent_org' },
+    ]);
+
+    expect(judgement.verdict).toBe('judge_failed');
+    expect(judgement.failedRuns).toBe(1);
+  });
+
+  it('keeps an outage out of the graft rate and reports it beside the strata', async () => {
+    const outage = judgeOffEntityGraftRuns(
+      await runOffEntityGraftJudge(3, async () => {
+        throw new Error('synthetic outage');
+      }),
+    );
+    const allFailed = summarizeOffEntityGraftStratum([outage, outage], 100);
+
+    expect(allFailed).toMatchObject({
+      sampled: 2,
+      judged: 0,
+      judgeFailedRecords: 2,
+      failedJudgeCalls: 6,
+    });
+    expect(allFailed.parent_org_or_unclear).toMatchObject({ count: 0, total: 0 });
+    expect(allFailed.unclear).toMatchObject({ count: 0 });
+
+    const answered = judgeOffEntityGraftRuns([
+      { subject: 'cilia', scope: 'this_entity' },
+      { subject: 'cilia', scope: 'this_entity' },
+      { subject: 'cilia', scope: 'this_entity' },
+    ]);
+    const mixed = summarizeOffEntityGraftStratum([answered, outage], 100);
+    expect(mixed).toMatchObject({ judged: 1, judgeFailedRecords: 1, this_entity: 1 });
+    expect(mixed.parent_org_or_unclear).toMatchObject({ count: 0, total: 1 });
   });
 
   it('pins medium reasoning effort, the setting the minimal default invalidated', () => {
