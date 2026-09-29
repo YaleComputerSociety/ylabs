@@ -175,7 +175,7 @@ import {
   isFacetedOrSectionIndexUrl,
   isInstitutionalAdvancementUrl,
   isMapOrDirectionsUrl,
-  isRecordSpecificApplicationPortalUrl,
+  recordSpecificApplicationPortalIdentity,
   researchHomeWebsiteUrlWriteRefusal,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
@@ -2558,9 +2558,7 @@ export async function materializeInferredPiMembership(
 }
 
 type RosterEmailAliasResolution =
-  | { status: 'resolved'; netid: string }
-  | { status: 'absent' }
-  | { status: 'ambiguous' };
+  { status: 'resolved'; netid: string } | { status: 'absent' } | { status: 'ambiguous' };
 
 /**
  * A department roster publishes the friendly email alias (`first.last`) rather than the
@@ -4139,6 +4137,22 @@ export function uniqueKeyValueForIdentifier(
   return entityKey;
 }
 
+// A record-specific application page (a CommunityForce FundDetails URL) is unique to one
+// fund, and distinct funds share titles ("Summer Research Fellowship" at several colleges),
+// so a same-title row that already cites a different fund's page is a different fund. On
+// Development, matching on title alone would have folded 19 pairs of distinct funds into
+// one row each, and the two funds would overwrite each other every run (#3984).
+function citesADifferentRecordSpecificApplication(candidate: any, obs: any[]): boolean {
+  const observed = obs.find((o) => o.field === 'applicationLink' && typeof o.value === 'string');
+  const observedFund = recordSpecificApplicationPortalIdentity(
+    String(observed?.value || '').trim(),
+  );
+  const candidateFund = recordSpecificApplicationPortalIdentity(
+    String(candidate?.applicationLink || '').trim(),
+  );
+  return Boolean(observedFund && candidateFund && observedFund !== candidateFund);
+}
+
 /**
  * Re-scrape dedupe: a fellowship whose title drifted slightly mints a new
  * sourceKey (title slug) and would otherwise create a duplicate record (#609).
@@ -4149,22 +4163,6 @@ export function uniqueKeyValueForIdentifier(
  * than clone), so two distinct non-empty producers never merge. Prefers a live
  * record, then the most recently updated one.
  */
-// A record-specific application page (a CommunityForce FundDetails URL) is unique to one
-// fund, and distinct funds share titles ("Summer Research Fellowship" at several colleges),
-// so a same-title row that already cites a different fund's page is a different fund. On
-// Development, matching on title alone would have folded 19 pairs of distinct funds into
-// one row each, and the two funds would overwrite each other every run (#3984).
-function citesADifferentRecordSpecificApplication(candidate: any, obs: any[]): boolean {
-  const observed = obs.find((o) => o.field === 'applicationLink' && typeof o.value === 'string');
-  const observedLink = String(observed?.value || '').trim();
-  const candidateLink = String(candidate?.applicationLink || '').trim();
-  return (
-    isRecordSpecificApplicationPortalUrl(observedLink) &&
-    isRecordSpecificApplicationPortalUrl(candidateLink) &&
-    observedLink !== candidateLink
-  );
-}
-
 async function findFellowshipByNormalizedTitle(
   Model: mongoose.Model<any>,
   obs: any[],
@@ -4248,14 +4246,22 @@ async function findFellowshipByRecordSpecificApplicationLink(
     (o) => o.field === 'applicationLink' && typeof o.value === 'string',
   );
   const applicationLink = String(applicationLinkObs?.value || '').trim();
-  if (!applicationLink || !isRecordSpecificApplicationPortalUrl(applicationLink)) return null;
+  const fund = recordSpecificApplicationPortalIdentity(applicationLink);
+  if (!fund) return null;
 
-  const candidates = await Model.find({
-    applicationLink,
-    archived: { $ne: true },
-  })
-    .limit(2)
-    .lean();
+  const query = new URL(applicationLink).search.replace(/^\?/, '');
+  const candidates = (
+    await Model.find({
+      applicationLink: new RegExp(`^https?://[^/?#]+[^?#]*\\?${escapeRegex(query)}$`, 'i'),
+      archived: { $ne: true },
+    })
+      .limit(2)
+      .lean()
+  ).filter(
+    (candidate: any) =>
+      recordSpecificApplicationPortalIdentity(String(candidate.applicationLink || '').trim()) ===
+      fund,
+  );
   return candidates.length === 1 ? candidates[0] : null;
 }
 

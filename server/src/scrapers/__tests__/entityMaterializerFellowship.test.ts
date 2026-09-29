@@ -278,10 +278,10 @@ describe('fellowship materialization', () => {
       { dryRun: true },
     );
 
-    expect(find).toHaveBeenLastCalledWith({
-      applicationLink: fundDetailUrl,
-      archived: { $ne: true },
-    });
+    const lookup = (find.mock.lastCall as any[] | undefined)?.[0];
+    expect(lookup.archived).toEqual({ $ne: true });
+    expect(lookup.applicationLink.test(fundDetailUrl)).toBe(true);
+    expect(lookup.applicationLink.test(fundDetailUrl.replace('https://', 'http://'))).toBe(true);
     expect(result.created).toBe(false);
     expect(result.entityId).toBe('existing-richter-public-page-id');
   });
@@ -328,6 +328,47 @@ describe('fellowship materialization', () => {
 
     expect(result.entityId).not.toBe('same-title-other-fund-id');
     expect(result.created).toBe(true);
+  });
+
+  it('adopts a same-title row that cites the same fund page in another URL form (#3984)', async () => {
+    const fundUrl = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FUNDC';
+    vi.spyOn(Observation, 'find').mockReturnValue({
+      lean: vi.fn().mockResolvedValue(
+        [
+          ['title', 'Fixture Summer Research Fellowship'],
+          ['sourceName', 'student-grants-database'],
+          ['applicationLink', fundUrl],
+        ].map(([field, value]) => ({
+          field,
+          value,
+          sourceName: 'student-grants-database',
+          confidence: 0.9,
+          observedAt: new Date('2026-03-01T00:00:00Z'),
+        })),
+      ),
+    } as any);
+    vi.spyOn(Fellowship, 'findOne').mockReturnValue({
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const importedSameFund = {
+      _id: 'imported-same-fund-id',
+      title: 'Fixture Summer Research Fellowship',
+      applicationLink: 'http://Yale.CommunityForce.com/Funds/FundDetails.aspx?FUNDC',
+      archived: false,
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    };
+    vi.spyOn(Fellowship, 'find').mockReturnValueOnce({
+      lean: vi.fn().mockResolvedValue([importedSameFund]),
+    } as any);
+
+    const result = await materializeEntity(
+      'fellowship',
+      { entityKey: 'student-grants-database:funds-funddetails-aspx-fundc' },
+      { dryRun: true },
+    );
+
+    expect(result.created).toBe(false);
+    expect(result.entityId).toBe('imported-same-fund-id');
   });
 
   it('does not cross-source merge on a bare application-portal root shared by many funds (#1630)', async () => {
