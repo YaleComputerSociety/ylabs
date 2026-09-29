@@ -48,6 +48,7 @@ import {
   prefersOrgEngagementOutreach,
   ResearchDetailSource,
   resolveDecisionProfileUrl,
+  resolveOutreachApplySource,
   resolveOutreachOfficialSource,
   sourceLedgerKey,
 } from '../utils/researchDetailSources';
@@ -406,6 +407,7 @@ const DecisionSummary = ({
   profileUrl,
   websiteUrl,
   officialSource,
+  applySource,
   preferOrgEngagementOutreach = false,
   principalInvestigator,
   leadProfilesLinkedInline = false,
@@ -414,6 +416,7 @@ const DecisionSummary = ({
   profileUrl?: string;
   websiteUrl?: string;
   officialSource?: ResearchDetailSource;
+  applySource?: ResearchDetailSource;
   preferOrgEngagementOutreach?: boolean;
   principalInvestigator?: LabMember;
   leadProfilesLinkedInline?: boolean;
@@ -477,8 +480,20 @@ const DecisionSummary = ({
    * to offer, the block would only point back at that card, so it is omitted.
    */
   const leadCardLinksProfile = actionLinks.leadCardLinksProfile;
+  const offersOrgEngagementPage = preferOrgEngagementOutreach && Boolean(officialSource);
+  const applyPageUrl = offersOrgEngagementPage ? undefined : applySource?.url;
+  /**
+   * A generic official page beside a lead card that already links the profile is a
+   * third door to the same person. The block keeps a place to apply and the research
+   * website, so the generic page is offered only when no card links a profile.
+   */
+  const offersOfficialPage = Boolean(officialSource) && !applyPageUrl && !leadCardLinksProfile;
   const getInvolvedHasOwnAction =
-    profileNeedsOwnButton || showsWebsiteCta || Boolean(officialSource);
+    offersOrgEngagementPage ||
+    Boolean(applyPageUrl) ||
+    profileNeedsOwnButton ||
+    showsWebsiteCta ||
+    offersOfficialPage;
   const directoryFallbackCandidate = Boolean(piMailtoHref) || !hasActionablePath;
   const needsDirectoryFallback = !leadCardLinksProfile && directoryFallbackCandidate;
   const showGetInvolvedBlock = getInvolvedHasOwnAction || needsDirectoryFallback;
@@ -587,7 +602,7 @@ const DecisionSummary = ({
               <p className="text-xs font-semibold uppercase tracking-wider text-muted">
                 How to get involved
               </p>
-              {preferOrgEngagementOutreach && officialSource ? (
+              {offersOrgEngagementPage && officialSource ? (
                 <>
                   <p className="mt-1 text-sm leading-relaxed text-ink">
                     This organization coordinates involvement centrally. Open its get-involved page
@@ -614,6 +629,36 @@ const DecisionSummary = ({
                     ) : null}
                   </div>
                 </>
+              ) : applyPageUrl ? (
+                <div className="mt-3 flex flex-col gap-2">
+                  <a
+                    href={applyPageUrl}
+                    target="_blank"
+                    rel={EXTERNAL_LINK_REL}
+                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                  >
+                    See how to get involved
+                  </a>
+                  {profileNeedsOwnButton ? (
+                    <a
+                      href={profileUrl}
+                      target="_blank"
+                      rel={EXTERNAL_LINK_REL}
+                      className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
+                    >
+                      Open official profile
+                    </a>
+                  ) : showsWebsiteCta ? (
+                    <a
+                      href={websiteUrl}
+                      target="_blank"
+                      rel={EXTERNAL_LINK_REL}
+                      className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
+                    >
+                      {researchWebsiteCtaLabel(group)}
+                    </a>
+                  ) : null}
+                </div>
               ) : profileNeedsOwnButton ? (
                 <div className="mt-3 flex flex-col gap-2">
                   <a
@@ -636,7 +681,7 @@ const DecisionSummary = ({
                     {researchWebsiteCtaLabel(group)}
                   </a>
                 </div>
-              ) : officialSource ? (
+              ) : offersOfficialPage && officialSource ? (
                 <div className="mt-3 flex flex-col gap-2">
                   <a
                     href={officialSource.url}
@@ -965,6 +1010,14 @@ const LabDetail = () => {
     { schools: [group.school, ...(Array.isArray(group.schools) ? group.schools : [])] },
     leadPersonNames,
   );
+  const outreachApplySource = resolveOutreachApplySource(
+    sources,
+    [decisionProfileUrl, officialWebsiteUrl],
+    leadIdentityUnderReview,
+    group.entityType,
+    { schools: [group.school, ...(Array.isArray(group.schools) ? group.schools : [])] },
+    leadPersonNames,
+  );
   const singleLeadIsGenuinePrincipalInvestigator = singlePrincipalInvestigator
     ? leadRoleFamily(singlePrincipalInvestigator) === 'pi'
     : false;
@@ -1096,6 +1149,7 @@ const LabDetail = () => {
             profileUrl={decisionProfileUrl}
             websiteUrl={officialWebsiteUrl}
             officialSource={outreachOfficialSource}
+            applySource={outreachApplySource}
             preferOrgEngagementOutreach={preferOrgEngagementOutreach}
             principalInvestigator={singlePrincipalInvestigator}
             leadProfilesLinkedInline={leadProfilesLinkedInline}

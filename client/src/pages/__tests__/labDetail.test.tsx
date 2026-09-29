@@ -40,6 +40,7 @@ const DEFAULT_ENTITY_NAME = 'Sample Research Profile';
 const OFFICIAL_PROFILE_URL = 'https://profile.example.test/profile/sample-faculty';
 const RESEARCH_WEBSITE_URL = 'https://research-home.example.test/sample-lab/';
 const JOIN_PAGE_URL = 'https://join-lab.example.test/join-us';
+const LEAD_CARD_PROFILE_URL = 'https://medicine.yale.edu/profile/fixture-lead';
 const FACULTY_ROSTER_URL = 'https://example.yale.edu/people/faculty';
 const FACULTY_PROFILE_URL = 'https://profile.example.test/profile/example-person';
 const FACULTY_AFFILIATED_PROFILE_URL =
@@ -704,7 +705,7 @@ describe('LabDetail page', () => {
     ).toBeTruthy();
   });
 
-  it('prefers an available official source over the generic Yale Directory when no website, profile, or email exists', async () => {
+  it('offers a join page as the place to apply rather than the generic Yale Directory when no website, profile, or email exists', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
@@ -728,9 +729,10 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByRole('link', { name: 'Open the official page' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'See how to get involved' }).getAttribute('href')).toBe(
       JOIN_PAGE_URL,
     );
+    expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
     expect(screen.queryByText(/does not have a direct link/)).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
@@ -875,7 +877,7 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
   });
 
-  it('still surfaces a non-profile official page as the CTA when the lead identity is under review', async () => {
+  it('still offers a join page as the place to apply when the lead identity is under review', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
@@ -900,9 +902,10 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByRole('link', { name: 'Open the official page' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'See how to get involved' }).getAttribute('href')).toBe(
       JOIN_PAGE_URL,
     );
+    expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
   });
 
@@ -1214,6 +1217,73 @@ describe('LabDetail page', () => {
     expect(screen.queryByText('How to get involved')).toBeNull();
     expect(screen.queryByText(/linked in the card above/)).toBeNull();
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+  });
+
+  it('drops a generic official page beside a lead card that already links the profile', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl: '',
+        sourceUrls: [LEAD_CARD_PROFILE_URL, DEPARTMENT_HOME_URL],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            profileUrls: { official: LEAD_CARD_PROFILE_URL },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(
+      screen
+        .getAllByRole('link')
+        .some((link) => link.getAttribute('href') === LEAD_CARD_PROFILE_URL),
+    ).toBe(true);
+    expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
+    expect(screen.queryByText('How to get involved')).toBeNull();
+  });
+
+  it('keeps a join page as the place to apply beside a lead card that links the profile', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [RESEARCH_WEBSITE_URL, LEAD_CARD_PROFILE_URL, JOIN_PAGE_URL],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            profileUrls: { official: LEAD_CARD_PROFILE_URL },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: 'See how to get involved' }).getAttribute('href')).toBe(
+      JOIN_PAGE_URL,
+    );
+    expect(screen.getByRole('link', { name: 'Visit research website' }).getAttribute('href')).toBe(
+      RESEARCH_WEBSITE_URL,
+    );
+    expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
   });
 
   it('offers a working mailto email link without recording outreach', async () => {

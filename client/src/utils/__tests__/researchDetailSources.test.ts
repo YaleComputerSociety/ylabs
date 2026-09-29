@@ -17,6 +17,7 @@ import {
   officialProfileMirrorKey,
   prefersOrgEngagementOutreach,
   resolveDecisionProfileUrl,
+  resolveOutreachApplySource,
   resolveOutreachOfficialSource,
   ResearchDetailSource,
 } from '../researchDetailSources';
@@ -1054,6 +1055,43 @@ describe('resolveOutreachOfficialSource', () => {
     );
 
     expect(source?.url).toBe('https://institute.example.yale.edu/people/director');
+  });
+
+  it('picks a get-involved page as the apply source without displacing the official-page pick', () => {
+    const sources = [
+      makeSource('https://lab.example.yale.edu/people/pi'),
+      makeSource('https://lab.example.yale.edu/get-involved'),
+    ];
+
+    expect(resolveOutreachApplySource(sources, [], false, 'LAB')?.url).toBe(
+      'https://lab.example.yale.edu/get-involved',
+    );
+    expect(resolveOutreachOfficialSource(sources, [], false, 'LAB')?.url).toBe(
+      'https://lab.example.yale.edu/people/pi',
+    );
+  });
+
+  it('finds no apply source when no page is a get-involved page', () => {
+    expect(
+      resolveOutreachApplySource(
+        [makeSource('https://lab.example.yale.edu/research')],
+        [],
+        false,
+        'LAB',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('does not offer a contact or opportunities listing as the apply source', () => {
+    const sources = [
+      makeSource('https://dept.example.yale.edu/about/contact-us'),
+      makeSource('https://dept.example.yale.edu/research/opportunities'),
+      makeSource('https://dept.example.yale.edu/connect'),
+      makeSource('https://dept.example.yale.edu/membership'),
+    ];
+
+    expect(resolveOutreachApplySource(sources, [], false, 'LAB')).toBeUndefined();
+    expect(resolveOutreachApplySource(sources, [], false, 'CENTER')).toBeUndefined();
   });
 
   it('does not reorder sources for a non-umbrella entity type', () => {
