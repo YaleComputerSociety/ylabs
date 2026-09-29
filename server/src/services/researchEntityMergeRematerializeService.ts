@@ -55,7 +55,7 @@ export async function rematerializeMergeCanonicalFillOnly(
   const result = await materializeEntity(
     'researchEntity',
     { entityId },
-    { writeOnlyFields: filledFields },
+    { writeOnlyFields: filledFields, keepPostProjectionEvidence: true },
   );
   if (result.skipped) {
     return { attempted: true, skipped: result.skipped, fieldsWritten: 0, conflicts: 0 };
