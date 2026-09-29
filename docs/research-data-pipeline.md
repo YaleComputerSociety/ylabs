@@ -555,6 +555,10 @@ Read the served output afterwards with `yarn --cwd server research-entity:served
 - `retireObservations` (#1966) is a primitive that bulk-supersedes the observations matching a filter (for example an entity's active rows) and stamps a `rollback` marker with an audit reason, without deleting evidence.
 
 Microsite LLM extractors are gated on a versioned content hash (#2025).
+Each extractor computes a SHA-256 hash over the exact fetched page bytes plus the extraction contract that would consume them (the extractor's prompt content hash and model id, and for the description extractor also the card model and card-synthesis prompt content hash), compares it against the last stored `sourceContentHash` bookkeeping observation for that `(source, entity)`, and skips the paid LLM call entirely when both the bytes and the contract are unchanged.
+Prompt text lives in editable `.md` files under `server/src/scrapers/prompts/`, and each `*_PROMPT_HASH` is the sha256 of its file content (#2099), so editing a prompt `.md` changes the contract hash and re-extracts exactly the affected entities on the next run with no manual version bump, while unchanged pages still skip.
+The `--force-llm` flag is the only bypass; the gate is read directly by the extractor so it also holds under `--exhaustive` and `--ignore-work-planner`.
+
 The description extractor is the exception to the bytes rule, and the reason generalises.
 Hashing raw bytes cannot skip a page whose markup churns, and on this corpus that is the common case: fetching each host's page twice seconds apart, `medicine.yale.edu`, `ysph.yale.edu` and `sites.google.com` return different bytes every time, while `campuspress.yale.edu`, `research.yale.edu`, `engineering.yale.edu` and `environment.yale.edu` are byte-identical.
 2,507 of the 4,123 rows that lane has read fetch from one of the churning hosts, so a bytes hash could never let them skip however many runs happened (#3840).
@@ -564,9 +568,6 @@ Order independence is precautionary and unmeasured; sub-page discovery varying w
 A page unreachable on one run still drops out of the set and changes the digest, so a transient fetch failure costs one re-extraction, which is preferred over letting a row skip while silently missing evidence it usually reads.
 Changing that input invalidated every stored hash for the lane once, so the first run after it re-extracted the lane.
 
-Each extractor computes a SHA-256 hash over the exact fetched page bytes plus the extraction contract that would consume them (the extractor's prompt content hash and model id, and for the description extractor also the card model and card-synthesis prompt content hash), compares it against the last stored `sourceContentHash` bookkeeping observation for that `(source, entity)`, and skips the paid LLM call entirely when both the bytes and the contract are unchanged.
-Prompt text lives in editable `.md` files under `server/src/scrapers/prompts/`, and each `*_PROMPT_HASH` is the sha256 of its file content (#2099), so editing a prompt `.md` changes the contract hash and re-extracts exactly the affected entities on the next run with no manual version bump, while unchanged pages still skip.
-The `--force-llm` flag is the only bypass; the gate is read directly by the extractor so it also holds under `--exhaustive` and `--ignore-work-planner`.
 One deliberate exception: the description extractor writes no `sourceContentHash` for a run in which it kept a stored description instead of an unopposed crawled one (the rule lives in [`skills/scrapers/SKILL.md`](../skills/scrapers/SKILL.md)), because that decision reads the stored description, which is not a hash input, and recording the hash would freeze it so a later cleared description was never reconsidered.
 Such an entity therefore re-extracts on every run until its pages or its stored description change (#2180).
 
@@ -582,7 +583,7 @@ The comparison reads this lane's own last `fullDescription` observation rather t
 
 #### What the gate does not version, and why that is correct (#3332)
 
-The hash covers the bytes and the EXTRACTION contract, so a prompt edit or a model bump re-extracts the affected entities on the next run.
+The hash covers the page input (bytes, or the description extractor's read digest) and the EXTRACTION contract, so a prompt edit or a model bump re-extracts the affected entities on the next run.
 It carries no resolver version, and it should not.
 `materializeFromRun` enumerates only entities carrying an observation in that run, so a row is re-resolved only when some lane emits for it; the gate suppresses the emission on an unchanged page, and a row whose pages settle keeps whatever its fields resolved to on the last run that touched it.
 That means a resolver improvement is undelivered by default, and the freeze is real.
