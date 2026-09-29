@@ -30,6 +30,16 @@ export interface EngineFieldScore {
   cleared: number;
   labeledEntityResolved: number;
   knownWrong: number;
+  /**
+   * How many VALUES the field resolved to across every row, not how many rows resolved it.
+   *
+   * `resolved` counts rows, so a row whose `researchAreas` goes from five chips to two leaves it
+   * unchanged and nothing in the snapshot says values left. That is exactly how a regression that
+   * stripped 138 chips from 79 rows could have been reported as a change in which one row gained
+   * three topics (#3871). A snapshot stores no row identifier, so the direction has to live in a
+   * count, and this is the count it lives in.
+   */
+  values: number;
   changedFromPrevious?: number;
 }
 
@@ -105,6 +115,13 @@ export function engineOutputFingerprint(rows: readonly ReplayedRow[]): string {
   return crypto.createHash('sha256').update(lines.join('\n')).digest('hex');
 }
 
+/**
+ * A list field contributes one count per entry and a scalar contributes one, so a field that loses
+ * two of five chips moves this by two while `resolved` does not move at all.
+ */
+const countedValues = (value: unknown): number =>
+  Array.isArray(value) ? value.length : value === undefined || value === null ? 0 : 1;
+
 const labelsBySlug = (
   labels: readonly EngineBenchmarkLabel[],
 ): Map<string, EngineBenchmarkLabel[]> => {
@@ -151,9 +168,11 @@ export function scoreEngineReplay(
         cleared: 0,
         labeledEntityResolved: 0,
         knownWrong: 0,
+        values: 0,
       };
       byField.set(field, score);
       score.resolved += 1;
+      score.values += countedValues(value);
       resolved += 1;
       const fieldLabels = applicable.filter((label) => label.field === field);
       if (fieldLabels.length === 0) continue;
@@ -175,6 +194,7 @@ export function scoreEngineReplay(
         cleared: 0,
         labeledEntityResolved: 0,
         knownWrong: 0,
+        values: 0,
       };
       byField.set(field, score);
       score.cleared += 1;
@@ -204,6 +224,13 @@ export interface EngineFieldDelta {
   resolvedDelta: number;
   clearedDelta: number;
   knownWrongDelta: number;
+  /**
+   * The direction of the change. A negative `valuesDelta` with `resolvedDelta` at zero is the
+   * signature this issue exists for: the same rows still resolve the field and values have left it
+   * (#3871). Reported rather than failed, because a value legitimately leaves when a refusal or a
+   * retraction takes it; what this stops is a reader inferring a direction the snapshot never gave.
+   */
+  valuesDelta: number;
 }
 
 export interface EngineSnapshotDelta {
@@ -252,6 +279,7 @@ export function diffEngineSnapshots(
         resolvedDelta: (after?.resolved ?? 0) - (before?.resolved ?? 0),
         clearedDelta: (after?.cleared ?? 0) - (before?.cleared ?? 0),
         knownWrongDelta: (after?.knownWrong ?? 0) - (before?.knownWrong ?? 0),
+        valuesDelta: (after?.values ?? 0) - (before?.values ?? 0),
       };
     }),
     gateTiers: tiers.map((tier) => ({
@@ -260,6 +288,20 @@ export function diffEngineSnapshots(
     })),
   };
 }
+
+/**
+ * How many of `from`'s values are absent from `to`. A list is compared as a set of entries, so a
+ * reordering loses nothing; a scalar that changed counts as one lost and one gained, which is the
+ * honest reading of a replaced value.
+ */
+const valuesMissingFrom = (from: unknown, to: unknown): number => {
+  if (Array.isArray(from)) {
+    const present = new Set((Array.isArray(to) ? to : []).map((entry) => JSON.stringify(entry)));
+    return from.filter((entry) => !present.has(JSON.stringify(entry))).length;
+  }
+  if (from === undefined || from === null) return 0;
+  return JSON.stringify(from) === JSON.stringify(to) ? 0 : 1;
+};
 
 const rowFieldValues = (row: ReplayedRow): Map<string, string> => {
   const values = new Map<string, string>();
@@ -277,7 +319,20 @@ const rowFieldValues = (row: ReplayedRow): Map<string, string> => {
 export interface EngineReplayDiff {
   rowsChangedFromPrevious: number;
   gateTierChangedFromPrevious: number;
-  byField: Array<{ field: string; changedFromPrevious: number }>;
+  /**
+   * Both replays are in memory here, so unlike the stored snapshot this can name the direction per
+   * row rather than inferring it from a count: `rowsLosingAValue` is the number that would have
+   * made #3868's regression unmistakable.
+   */
+  rowsLosingAValue: number;
+  valuesLost: number;
+  valuesGained: number;
+  byField: Array<{
+    field: string;
+    changedFromPrevious: number;
+    valuesLost: number;
+    valuesGained: number;
+  }>;
 }
 
 /**
@@ -301,17 +356,36 @@ export function diffEngineReplays(
   let rowsChanged = 0;
   let gateChanged = 0;
 
+  const lostByField = new Map<string, number>();
+  const gainedByField = new Map<string, number>();
+  let rowsLosingAValue = 0;
+  let valuesLost = 0;
+  let valuesGained = 0;
+
   for (const row of current) {
     const before = previousByKey.get(row.entityKey);
     if (!before) continue;
     const beforeValues = rowFieldValues(before);
     const afterValues = rowFieldValues(row);
     let rowChanged = false;
+    let rowLost = false;
     for (const field of new Set([...beforeValues.keys(), ...afterValues.keys()])) {
       if (beforeValues.get(field) === afterValues.get(field)) continue;
       rowChanged = true;
       changedByField.set(field, (changedByField.get(field) ?? 0) + 1);
+      const lost = valuesMissingFrom(before.plannedSet[field], row.plannedSet[field]);
+      const gained = valuesMissingFrom(row.plannedSet[field], before.plannedSet[field]);
+      if (lost > 0) {
+        rowLost = true;
+        valuesLost += lost;
+        lostByField.set(field, (lostByField.get(field) ?? 0) + lost);
+      }
+      if (gained > 0) {
+        valuesGained += gained;
+        gainedByField.set(field, (gainedByField.get(field) ?? 0) + gained);
+      }
     }
+    if (rowLost) rowsLosingAValue += 1;
     if (before.tier !== row.tier || before.computedTier !== row.computedTier) {
       gateChanged += 1;
       rowChanged = true;
@@ -322,8 +396,16 @@ export function diffEngineReplays(
   return {
     rowsChangedFromPrevious: rowsChanged,
     gateTierChangedFromPrevious: gateChanged,
+    rowsLosingAValue,
+    valuesLost,
+    valuesGained,
     byField: [...changedByField.entries()]
-      .map(([field, changedFromPrevious]) => ({ field, changedFromPrevious }))
+      .map(([field, changedFromPrevious]) => ({
+        field,
+        changedFromPrevious,
+        valuesLost: lostByField.get(field) ?? 0,
+        valuesGained: gainedByField.get(field) ?? 0,
+      }))
       .sort((a, b) => a.field.localeCompare(b.field)),
   };
 }

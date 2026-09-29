@@ -216,6 +216,11 @@ async function main(): Promise<void> {
     ...(fingerprints.length > 1
       ? { replayDisagreement: diffEngineReplays(replays[0], replays[1]) }
       : {}),
+    // Said out loud in the report as well as stored, because the failure this closes was a reader
+    // seeing a moved fingerprint and a reassuring per-field count (#3871).
+    valuesLostSincePreviousSnapshot: delta.byField
+      .filter((field) => field.valuesDelta < 0)
+      .map((field) => ({ field: field.field, valuesDelta: field.valuesDelta })),
     snapshot,
   };
   console.log(JSON.stringify(report, null, 2));
