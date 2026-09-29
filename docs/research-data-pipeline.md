@@ -555,6 +555,8 @@ A run that produced a `fullDescription` but no `shortDescription` withholds the 
 That retry used to be unbounded, so a row whose card never succeeds paid for a page read and a model call on every sweep forever: measured on Development, of 4,228 rows the description extractor had touched, 679 had a `fullDescription` and no `shortDescription`, and 362 of those carried no stored hash at all (#3840).
 The bound is the description itself rather than an attempt count, because an identical value is diff-skipped and writes nothing, so the observation log cannot count attempts and a row retried ten times looks like one.
 The hash is therefore recorded once a run re-derives the same `fullDescription` this lane already stored and still produces no card, since content that yields the same prose cannot yield a card that prose already failed to produce.
+The two are compared in stored form, after the same ingest sanitization the stored value went through, so whitespace or redaction differences cannot keep a repeated description looking new.
+That reasoning holds only for a card the model declined, so a run whose card call threw (a rate limit, a timeout, an unparseable response) keeps the retry open whatever the stored description says.
 A changed or first-seen description keeps the retry open, which is the case the withholding was written for.
 The comparison reads this lane's own last `fullDescription` observation rather than the materialized field, which can hold another lane's winning prose, and an unanswerable lookup leaves the retry open so it never closes a decision on a row's behalf.
 

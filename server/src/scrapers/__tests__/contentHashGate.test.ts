@@ -1,10 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import mongoose from 'mongoose';
+import { Observation } from '../../models/observation';
 import {
   computeContentHash,
   computeVersionedContentHash,
   contentHashObservation,
   contentUnchanged,
   descriptionHashObservations,
+  loadStoredLaneDescription,
   SOURCE_CONTENT_HASH_FIELD,
 } from '../contentHashGate';
 
@@ -158,17 +161,28 @@ describe('descriptionHashObservations', () => {
     );
   });
 
+  // Fail open: a lookup that cannot answer must not close a decision on the row's behalf, which
+  // is the same contract `loadStoredContentHash` keeps.
   it('keeps the retry open on a first-seen description', () => {
     const emitted = [observation('fullDescription', PROSE)];
     expect(descriptionHashObservations(emitted, hash, undefined)).toEqual([]);
     expect(descriptionHashObservations(emitted, hash, '   ')).toEqual([]);
   });
 
-  // Fail open: a lookup that cannot answer must not close a decision on the row's behalf, which
-  // is the same contract `loadStoredContentHash` keeps.
   it('compares on trimmed text, so whitespace alone does not reopen a closed retry', () => {
     const emitted = [observation('fullDescription', `  ${PROSE}  `)];
     expect(descriptionHashObservations(emitted, hash, PROSE)).toEqual(hash);
+  });
+
+  it('compares against the stored form, so paragraph breaks do not keep the retry open', () => {
+    const emitted = [
+      observation(
+        'fullDescription',
+        'The lab studies protein folding kinetics.\n\nIt also studies living cells.',
+      ),
+    ];
+    const stored = 'The lab studies protein folding kinetics. It also studies living cells.';
+    expect(descriptionHashObservations(emitted, hash, stored)).toEqual(hash);
   });
 
   it('still records the hash when a card was produced, whatever the stored description says', () => {
@@ -185,5 +199,27 @@ describe('descriptionHashObservations', () => {
       observation('shortDescription', 'Studies protein folding kinetics.'),
     ];
     expect(descriptionHashObservations(emitted, [])).toEqual([]);
+  });
+});
+
+describe('loadStoredLaneDescription', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('answers undefined instead of throwing when the lookup fails, so paid output is still emitted', async () => {
+    vi.spyOn(mongoose.connection, 'readyState', 'get').mockReturnValue(1);
+    vi.spyOn(Observation, 'findOne').mockReturnValue({
+      sort: () => ({
+        select: () => ({ lean: () => Promise.reject(new Error('connection reset')) }),
+      }),
+    } as unknown as ReturnType<typeof Observation.findOne>);
+
+    await expect(
+      loadStoredLaneDescription('lab-microsite-description-llm', {
+        entityType: 'researchEntity',
+        entityId: 'entity-1',
+      }),
+    ).resolves.toBeUndefined();
   });
 });

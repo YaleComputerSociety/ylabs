@@ -12,6 +12,7 @@ import { createHash } from 'crypto';
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import type { ObservedEntityType } from '../models/observation';
+import { sanitizeObservationField } from './observationFieldSanitizer';
 import { isBenchmarkModeActive } from './snapshotBenchmarkMode';
 import type { ObservationInput } from './types';
 
@@ -90,9 +91,13 @@ export async function loadStoredLaneDescription(
   };
   if (entity.entityId) filter.entityId = entity.entityId;
   else filter.entityKey = entity.entityKey;
-  const row = await Observation.findOne(filter).sort({ observedAt: -1 }).select('value').lean();
-  const value = (row as { value?: unknown } | null)?.value;
-  return typeof value === 'string' ? value : undefined;
+  try {
+    const row = await Observation.findOne(filter).sort({ observedAt: -1 }).select('value').lean();
+    const value = (row as { value?: unknown } | null)?.value;
+    return typeof value === 'string' ? value : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function contentHashObservation(
@@ -173,8 +178,16 @@ function descriptionRepeatsStoredValue(
   if (!stored) return false;
   return emitted.some(
     (observation) =>
-      observation.field === 'fullDescription' &&
-      typeof observation.value === 'string' &&
-      observation.value.trim() === stored,
+      observation.field === 'fullDescription' && storedFormOf(observation) === stored,
   );
+}
+
+function storedFormOf(observation: ObservationInput): string | undefined {
+  const sanitized = sanitizeObservationField(
+    observation.entityType,
+    observation.field,
+    observation.value,
+  );
+  if (sanitized.rejected || typeof sanitized.value !== 'string') return undefined;
+  return sanitized.value.trim();
 }

@@ -1452,34 +1452,48 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
     this.cardModel = deps.cardModel || CARD_SYNTHESIS_MODEL;
   }
 
-  private async withSynthesizedCard(observations: ObservationInput[]): Promise<ObservationInput[]> {
+  private async withSynthesizedCard(
+    observations: ObservationInput[],
+  ): Promise<{ observations: ObservationInput[]; cardCallFailed: boolean }> {
+    const unchanged = { observations, cardCallFailed: false };
     const hasCard = observations.some(
       (observation) => observation.field === 'shortDescription' && textValue(observation.value),
     );
-    if (hasCard) return observations;
+    if (hasCard) return unchanged;
     const fullObservation = observations.find(
       (observation) => observation.field === 'fullDescription',
     );
     const fullDescription = textValue(fullObservation?.value);
-    if (!fullObservation || !fullDescription || !this.apiKey) return observations;
+    if (!fullObservation || !fullDescription || !this.apiKey) return unchanged;
     const apiKey = this.apiKey;
+    let cardCallFailed = false;
     const card = await synthesizeGroundedCardDescription({
       fullDescription,
-      callLLM: (llmInput) => this.callCardLLM({ ...llmInput, apiKey, model: this.cardModel }),
-    });
-    if (!card) return observations;
-    return [
-      ...observations,
-      {
-        entityType: fullObservation.entityType,
-        entityId: fullObservation.entityId,
-        entityKey: fullObservation.entityKey,
-        sourceUrl: fullObservation.sourceUrl,
-        confidenceOverride: fullObservation.confidenceOverride,
-        field: 'shortDescription',
-        value: card,
+      callLLM: async (llmInput) => {
+        try {
+          return await this.callCardLLM({ ...llmInput, apiKey, model: this.cardModel });
+        } catch (error) {
+          cardCallFailed = true;
+          throw error;
+        }
       },
-    ];
+    });
+    if (!card) return { observations, cardCallFailed };
+    return {
+      cardCallFailed,
+      observations: [
+        ...observations,
+        {
+          entityType: fullObservation.entityType,
+          entityId: fullObservation.entityId,
+          entityKey: fullObservation.entityKey,
+          sourceUrl: fullObservation.sourceUrl,
+          confidenceOverride: fullObservation.confidenceOverride,
+          field: 'shortDescription',
+          value: card,
+        },
+      ],
+    };
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -1889,13 +1903,16 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           return;
         }
 
-        const withCard = await this.withSynthesizedCard(observations);
+        const { observations: withCard, cardCallFailed } =
+          await this.withSynthesizedCard(observations);
         // This lane's OWN last description, not `lab.fullDescription`: the materialized field can
         // hold another lane's winning prose, and the bound asks whether re-reading produced the
         // same prose THIS lane already failed to synthesize a card from. Read before emitting, so
         // the comparison is against what was stored before this run rather than what it is about
         // to write (#3840).
-        const storedLaneDescription = await loadStoredLaneDescription(this.name, entityRef);
+        const storedLaneDescription = cardCallFailed
+          ? undefined
+          : await loadStoredLaneDescription(this.name, entityRef);
         await ctx.emit([
           ...withCard,
           ...descriptionHashObservations(withCard, hashObservations, storedLaneDescription),
