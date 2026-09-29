@@ -250,6 +250,26 @@ Four properties of the rule are load-bearing.
 
 The history read is bounded to the most recent `BARREN_RUN_HISTORY_SCAN_LIMIT` (12) runs of the source, so running out of history settles the question conservatively as "no failure".
 
+#### The same rule, per unit inside a lane
+
+A source-level check cannot see one unit inside a lane going to zero, because the lane's other units keep yielding and the source total never drops.
+One BBS track listed zero faculty for three consecutive runs while every run reported `success` with no warnings and no errors, and the per-source check had nothing to fire on (#3833, #3876).
+
+A unit is the smallest thing a lane fetches and parses on its own: one track page, one department roster, one centre index.
+A lane reports what each of its units yielded in `metrics.unitYields`, keyed by unit, and `resolveBarrenUnitStreakFailures` applies the same streak rule to each key, with the same threshold and the same `productive` / `barren` / `inconclusive` classification, so there is one rule and one place to change it rather than a hand-written floor per lane.
+A unit failure fails the run exactly as a source failure does.
+
+Three rules make the per-unit arm safe to add to a lane.
+
+- **Report a unit only on a run that attempted it.** An omitted unit reads as `inconclusive`; a zero reads as `barren`.
+Reporting zero for a unit the run never fetched is the one way to make this guard lie, which is why the BBS lane records a count on the branch that parsed the page and not on either branch that failed to read it.
+- **Count the same thing every run.** The comparison is within one unit across runs and never between units, so rows parsed and observations emitted are both fine as long as the lane does not switch.
+- **It cannot fire on history it does not have.** A lane that has only just started reporting unit counts has no prior per-unit facts, every prior run reads `inconclusive` for its units, and the guard stays silent until the streak accumulates.
+That is a real delay, not a defect: only 159 of the 470 Development runs in the fourteen days to 2026-09-29 persist any `metrics` at all, and the BBS lane persisted none before this.
+
+A lane may still keep a stricter check of its own.
+The BBS lane's per-track floor fires on the first barren run for a track that has listed PIs before, where the general rule waits for the streak, so deferring to the general rule alone would cost two runs of detection on the one unit class known to have broken.
+
 ### A run record always ends terminal, and `running` is read through a heartbeat
 
 Before #3595 an interrupted run never closed its `scrape_runs` record, so 48 Development rows read `running` for up to four months and a question as simple as "is a sweep running?" invented activity.

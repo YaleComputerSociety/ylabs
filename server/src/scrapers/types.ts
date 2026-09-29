@@ -130,6 +130,16 @@ export interface ScraperFetchMetrics<TFetchMode extends string = ScraperFetchMod
 export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
   fetchAttempts?: ScraperFetchAttemptMetrics<TFetchMode>[];
   workPlanner?: WorkPlannerMetrics;
+  /**
+   * What each unit inside this lane yielded, keyed by unit: one track page, one
+   * department roster, one centre index. `sourceYieldGuard` compares each key across
+   * runs, so a unit going to zero fails the run even while the lane's other units
+   * keep the source total healthy (#3876).
+   *
+   * Report a unit only on a run that attempted it. An omitted unit reads as
+   * inconclusive; a zero reads as barren.
+   */
+  unitYields?: Record<string, number>;
   quotesNotOnPage?: number;
   evidenceQuotesWithdrawn?: number;
   evidenceQuotesRecited?: number;
