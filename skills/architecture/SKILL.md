@@ -115,6 +115,12 @@ A suite that spawns a real CLI builds the child environment with `hermeticChildE
 A module mock stops at the process boundary and a spawned script re-runs `dotenv.config()` for itself, so the child is fenced by its environment alone: unroutable backend values it cannot re-resolve, because `dotenv` only fills a name that is absent, plus the `YLABS_SKIP_LOCAL_DOTENV=true` the scripts honour.
 Never read a connection string or a feature flag from `process.env` in a test, and never re-load an env file inside one.
 
+Each server test run writes its temp files into its own directory, `ylabs-vitest-<pid>-<random>` under the system temp directory (#3735).
+`server/src/test/vitestGlobalSetup.ts` creates it, points `TMPDIR` at it before any worker starts, and removes it recursively at teardown, so a `mkdtemp(os.tmpdir(), ...)` a suite never removes, and the `mongo-mem-*` directory `mongodb-memory-server` deliberately keeps after a failed launch, both go with the run.
+The same setup first reaps what a killed run left behind: a `ylabs-vitest-*` root whose owning process is gone, and a `mongo-mem-*` directory older than an hour that no live `mongod` references (`server/src/test/runTempRoot.ts`).
+A suite therefore needs no cleanup of its own for temp residue, although removing what it creates is still the better habit.
+The root-level `node --test` suites under `scripts/` have no such runner hook, so each one removes its own temp directories in an `after` hook.
+
 Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test undergraduate session.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for another dev account.
 `?userType=admin` mints a local bootstrap `AdminGrant`, so admin authority comes from a grant rather than `userType`.

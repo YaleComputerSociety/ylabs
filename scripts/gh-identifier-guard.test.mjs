@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { classifyCommand, isGuardedRepo, planGuard } from './gh-identifier-guard-core.mjs';
@@ -172,8 +172,22 @@ test('passes through commands that publish nothing', () => {
   }
 });
 
+const createdTempDirectories = [];
+
+const makeTempDirectory = (prefix) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  createdTempDirectories.push(directory);
+  return directory;
+};
+
+after(() => {
+  for (const directory of createdTempDirectories) {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 const makeFakeGh = () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-guard-test-'));
+  const dir = makeTempDirectory('gh-guard-test-');
   const log = path.join(dir, 'calls.log');
   const gh = path.join(dir, 'gh');
   fs.writeFileSync(gh, `#!/bin/sh\nprintf '%s\\n' "$*" >> "${log}"\ncat >> "${log}"\n`);
@@ -190,6 +204,7 @@ const runGuard = (guardPath, args, { input = '', binDir }) =>
       ...process.env,
       PATH: `${binDir}${path.delimiter}/usr/bin${path.delimiter}/bin`,
       GH_REPO: '',
+      TMPDIR: makeTempDirectory('gh-guard-drafts-'),
     },
   });
 
@@ -249,7 +264,7 @@ test('forwards a clean body and its stdin to the real gh unchanged', () => {
 
 test('fails closed when the scanner is missing, instead of posting unchecked', () => {
   const { dir, log } = makeFakeGh();
-  const isolated = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-guard-no-scanner-'));
+  const isolated = makeTempDirectory('gh-guard-no-scanner-');
   for (const file of ['gh-identifier-guard.mjs', 'gh-identifier-guard-core.mjs']) {
     fs.copyFileSync(path.join(scriptsDir, file), path.join(isolated, file));
   }
@@ -288,7 +303,7 @@ test('the installer refuses to overwrite a gh that is not a guard shim', () => {
 });
 
 test('the installer writes the shim into an empty directory and is idempotent', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-guard-install-'));
+  const dir = makeTempDirectory('gh-guard-install-');
 
   assert.equal(runInstaller(dir).status, 0);
   const again = runInstaller(dir);
