@@ -67,6 +67,12 @@ const engineBenchmarkRowSchema = new mongoose.Schema(
     hasMergedInRows: { type: Boolean, required: true, default: false },
     soleLeadPersonId: { type: String, required: false },
     leadPersonName: { type: String, required: false },
+    /**
+     * Set on a row captured only so a survivor can read its observations: the archived loser it
+     * was merged into this survivor from. Such a row is frozen input, never a replay subject, so
+     * the replay skips it (#3849).
+     */
+    mergedIntoSurvivorId: { type: String, required: false },
     gateInput: { type: mongoose.Schema.Types.Mixed, required: false, default: null },
     capturedTier: { type: String, required: false },
     capturedReasons: { type: [String], default: [] },
