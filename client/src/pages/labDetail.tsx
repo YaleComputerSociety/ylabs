@@ -935,13 +935,6 @@ const LabDetail = () => {
   const hasRelatedResearchEntities = dedupedRelatedResearchEntities.length > 0;
   const hasAffiliatedResearchEntities = dedupedAffiliatedResearchEntities.length > 0;
   const hasSimilarResearchEntities = dedupedSimilarResearchEntities.length > 0;
-  const loadedEntitySlug = (group.slug || '').toLowerCase();
-  const requestedSlug = (slug || '').toLowerCase();
-  const isEntityTransition =
-    loading &&
-    loadedEntitySlug !== '' &&
-    requestedSlug !== '' &&
-    loadedEntitySlug !== requestedSlug;
   const sources = buildResearchDetailSources({
     group,
     accessSignals,
@@ -1090,19 +1083,7 @@ const LabDetail = () => {
       className="mx-auto w-full max-w-screen-2xl px-4 py-6 sm:py-8 lg:px-8"
       onClickCapture={handleDetailLinkOpen}
     >
-      {isEntityTransition && (
-        <div
-          className="fixed inset-x-0 top-0 z-50 h-0.5 animate-pulse bg-brand"
-          role="progressbar"
-          aria-label="Loading research profile"
-        />
-      )}
-      <div
-        className={`grid grid-cols-1 gap-6 transition-opacity duration-200 lg:gap-8 ${
-          isEntityTransition ? 'pointer-events-none opacity-60' : ''
-        }`}
-        aria-busy={isEntityTransition}
-      >
+      <div className="grid grid-cols-1 gap-6 lg:gap-8">
         <div className="lg:mx-auto lg:w-full lg:max-w-5xl space-y-6 sm:space-y-8">
           {showResearchPlanSavedCallout && (
             <FirstSaveCallout
