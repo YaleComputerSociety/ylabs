@@ -115,3 +115,37 @@ describe('rosterSnippetNamesAnUndergraduate (#3789)', () => {
     expect(rosterSnippetNamesAnUndergraduate(snippet)).toBe(false);
   });
 });
+
+describe('non-access undergraduate shapes (#3831)', () => {
+  it.each([
+    'Courses Undergraduate: Writing About Literature I, Jane Austen (Freshman seminar, Junior seminar)',
+    'Here at Yale, I teach classical Chinese and a Freshman Seminar on Chinese gardens.',
+    'Undergraduate faculty',
+    'ECON 3380 / GLBL 4102: Emerging Markets. Undergraduate.',
+    'A donor, a graduate of Yale College, founded the program to support students.',
+    'At the undergraduate level he teaches a basic music appreciation course.',
+    'He has also taught for many years in the undergraduate Directed Studies humanities program.',
+    'The suites create training opportunities, from undergraduate class projects to research.',
+  ])('does not read %j as hosting undergraduates', (quote) => {
+    expect(quoteStatesAnUndergraduateAccessFact(quote)).toBe(false);
+  });
+
+  it.each([
+    'MCDB 4700 students join the lab as undergraduates each spring.',
+    'She regularly serves as a senior thesis advisor for undergraduates in the lab.',
+    'Enthusiastic undergraduate students keen on gaining research experience are always welcome to our lab.',
+    'Our lab hosts STARS 2024 undergraduate fellows.',
+    'REU 2025 undergraduate students join us each summer.',
+    'ECON 3380: Emerging Markets. Our lab welcomes undergraduate researchers.',
+    'Members of the undergraduate class of 2027 join the lab each spring.',
+  ])('still reads %j as hosting undergraduates', (quote) => {
+    expect(quoteStatesAnUndergraduateAccessFact(quote)).toBe(true);
+  });
+
+  it.each(['Jane Doe, YC 2027, Undergraduate Researcher', 'Jane Doe, Undergraduate Class of 2027'])(
+    'still counts the roster line %j',
+    (snippet) => {
+      expect(rosterSnippetNamesAnUndergraduate(snippet)).toBe(true);
+    },
+  );
+});

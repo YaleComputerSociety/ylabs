@@ -132,6 +132,7 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
   workPlanner?: WorkPlannerMetrics;
   quotesNotOnPage?: number;
   evidenceQuotesWithdrawn?: number;
+  evidenceQuotesRecited?: number;
   fellowshipCatalog?: {
     discovered: number;
     emitted: number;
