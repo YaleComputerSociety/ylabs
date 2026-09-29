@@ -598,6 +598,36 @@ function materializerValuesDeepEqual(a: unknown, b: unknown): boolean {
   }
 }
 
+/**
+ * Whether a write to this planned path can land at all. The schemas are `strict`,
+ * so mongoose drops an undeclared path from an update, and several observation
+ * fields are projected by name while being consumed by a sibling derivation
+ * rather than stored on the row: `inferredPiUserId` and `inferredPiUserKey` feed
+ * `materializeInferredPiMembership`, the undergrad quote fields feed the
+ * access-signal upserts. `docs/research-data-pipeline.md` records the class, which
+ * `research-entity:projection-drift-census` reports as `unstorable`.
+ *
+ * Storability is read from the live schema rather than a hand-kept list, so a
+ * field the schema starts declaring becomes storable here without an edit, and a
+ * dotted path is storable when an ancestor is declared: `fieldProvenance` is a
+ * `Map`, so `fieldProvenance.researchAreas` stores even though no schema path
+ * spells it.
+ */
+export function materializerProjectionPathIsStorable(
+  schemaPaths: Iterable<string>,
+  plannedPath: string,
+): boolean {
+  const declared = [...schemaPaths];
+  if (declared.length === 0) return true;
+  const segments = plannedPath.split('.');
+  for (let depth = segments.length; depth > 0; depth -= 1) {
+    const ancestor = segments.slice(0, depth).join('.');
+    const nested = `${ancestor}.`;
+    if (declared.some((path) => path === ancestor || path.startsWith(nested))) return true;
+  }
+  return false;
+}
+
 // A re-projection over an unchanged observation log recomputes the same field
 // values every run; the only guaranteed-different field is the managed
 // `lastObservedAt` timestamp. Treat the projection as a no-op when every scoped
@@ -605,13 +635,31 @@ function materializerValuesDeepEqual(a: unknown, b: unknown): boolean {
 // every `unset` target is already absent, so the write and its redundant search
 // re-sync can be skipped. Any path we cannot confidently resolve is treated as a
 // change (we never skip a real write).
+//
+// A path the schema cannot store is skipped for the same reason managed metadata
+// is: the comparison exists to decide whether a write would change the row, and
+// mongoose drops that path from the update, so it can never close and would hold
+// the row open forever. #3869 measured 112 of 300 sampled live rows whose only
+// difference was such a path, each taking a row write, an `updatedAt` bump and a
+// search-index re-sync on every pass that could change nothing. `schemaPaths`
+// empty means storability is unknown rather than false, so the comparison then
+// covers every path: reading it the other way would skip real writes.
+//
+// `unset` is deliberately compared whichever way storability reads. A stored value
+// under an undeclared path exists (2,886 rows hold `description`, which no schema
+// path declares), so skipping the comparison there could skip a write that removes
+// something a row holds. Whether mongoose also strips an undeclared `$unset` is
+// unmeasured; until it is, the comparison stays on the side that writes.
 export function isMaterializerProjectionNoOp(
   entityDoc: Record<string, unknown>,
   set: Record<string, unknown>,
   unset: Record<string, unknown>,
+  schemaPaths: Iterable<string>,
 ): boolean {
+  const declared = [...schemaPaths];
   for (const [path, value] of Object.entries(set)) {
     if (MATERIALIZER_MANAGED_FIELDS.has(path)) continue;
+    if (!materializerProjectionPathIsStorable(declared, path)) continue;
     if (!materializerValuesDeepEqual(materializerValueAtPath(entityDoc, path), value)) return false;
   }
   for (const path of Object.keys(unset)) {
@@ -7460,7 +7508,12 @@ export async function materializeEntity(
 
   const entityScalarUnchanged =
     Boolean(entityDoc) &&
-    isMaterializerProjectionNoOp(entityDoc as Record<string, unknown>, set, unset);
+    isMaterializerProjectionNoOp(
+      entityDoc as Record<string, unknown>,
+      set,
+      unset,
+      Object.keys(Model.schema?.paths ?? {}),
+    );
 
   let created = false;
   if (entityDoc) {

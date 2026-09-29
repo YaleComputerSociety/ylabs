@@ -1,4 +1,7 @@
-import { MATERIALIZER_MANAGED_FIELDS } from '../scrapers/entityMaterializer';
+import {
+  MATERIALIZER_MANAGED_FIELDS,
+  materializerProjectionPathIsStorable,
+} from '../scrapers/entityMaterializer';
 import { researchEntityFieldIsStranded } from './rematerializeResearchEntitiesCore';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
@@ -58,17 +61,17 @@ export function isProjectionBookkeepingKey(field: string): boolean {
  * Storability is read from the live mongoose schema rather than a hand-kept list,
  * because a list would drift from the schema and reintroduce the very phantom
  * divergence this census exists to separate out.
+ *
+ * The engine answers the same question when it decides whether a projection is a
+ * no-op (#3869), so this defers to the engine's reader rather than restating it:
+ * two readers of the same schema would let the census report a divergence the
+ * engine had stopped counting, or the reverse.
  */
 export function researchEntityFieldIsStorable(
   schemaPaths: Iterable<string>,
   field: string,
 ): boolean {
-  const prefix = `${field}.`;
-  for (const schemaPath of schemaPaths) {
-    if (schemaPath === field) return true;
-    if (schemaPath.startsWith(prefix)) return true;
-  }
-  return false;
+  return materializerProjectionPathIsStorable(schemaPaths, field);
 }
 
 /**
