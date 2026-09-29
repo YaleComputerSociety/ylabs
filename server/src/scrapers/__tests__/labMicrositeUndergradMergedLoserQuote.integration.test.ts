@@ -40,6 +40,7 @@ const SECOND_HOP_SLUG = 'synthetic-second-hop-lab';
 const CENTER_PAGE = 'https://synthetic.yale.edu/center/profile/synthetic-member/';
 const STALE_QUOTE = 'The center offers a summer internship for college undergraduates.';
 const OWN_QUOTE = 'Undergraduates join the lab every fall.';
+const NEWER_LOSER_QUOTE = 'Undergraduates may apply for a research assistant role.';
 
 describe("a re-read reaches a survivor's quote whose evidence sits on a merged-in row (#3831)", () => {
   let replSet: MongoMemoryReplSet;
@@ -147,8 +148,13 @@ describe("a re-read reaches a survivor's quote whose evidence sits on a merged-i
       ?.undergradEvidenceQuote ?? '';
 
   it('loads a quote keyed to a row merged in two hops away', async () => {
-    await seedTwoHopMerge();
-    await seedQuoteObservation({ entityKey: SECOND_HOP_SLUG }, STALE_QUOTE, '2026-08-28T00:00:00Z');
+    const { survivor } = await seedTwoHopMerge();
+    const loserQuote = await seedQuoteObservation(
+      { entityKey: SECOND_HOP_SLUG },
+      STALE_QUOTE,
+      '2026-08-28T00:00:00Z',
+    );
+    await backStoredQuoteWith(survivor._id, loserQuote._id);
 
     expect(await defaultLiveEvidenceQuoteLoader(SURVIVOR_SLUG)).toEqual({
       value: STALE_QUOTE,
@@ -157,14 +163,51 @@ describe("a re-read reaches a survivor's quote whose evidence sits on a merged-i
   });
 
   it('loads a merged-in quote recorded under the entityId identity form', async () => {
-    const { secondHop } = await seedTwoHopMerge();
-    await seedQuoteObservation(
+    const { survivor, secondHop } = await seedTwoHopMerge();
+    const loserQuote = await seedQuoteObservation(
       { entityKey: 'synthetic-unrelated-key', entityId: secondHop._id },
       STALE_QUOTE,
       '2026-08-28T00:00:00Z',
     );
+    await backStoredQuoteWith(survivor._id, loserQuote._id);
 
     expect((await defaultLiveEvidenceQuoteLoader(SURVIVOR_SLUG))?.value).toBe(STALE_QUOTE);
+  });
+
+  it('loads the merged-in quote the stored provenance names, not the newest one', async () => {
+    const { survivor } = await seedTwoHopMerge();
+    const backingQuote = await seedQuoteObservation(
+      { entityKey: SECOND_HOP_SLUG },
+      STALE_QUOTE,
+      '2026-08-28T00:00:00Z',
+    );
+    await seedQuoteObservation(
+      { entityKey: FIRST_HOP_SLUG },
+      NEWER_LOSER_QUOTE,
+      '2026-09-20T00:00:00Z',
+    );
+    await backStoredQuoteWith(survivor._id, backingQuote._id);
+
+    expect((await defaultLiveEvidenceQuoteLoader(SURVIVOR_SLUG))?.value).toBe(STALE_QUOTE);
+  });
+
+  it('loads no merged-in quote when the stored quote names no provenance', async () => {
+    await seedTwoHopMerge();
+    await seedQuoteObservation({ entityKey: SECOND_HOP_SLUG }, STALE_QUOTE, '2026-08-28T00:00:00Z');
+
+    expect(await defaultLiveEvidenceQuoteLoader(SURVIVOR_SLUG)).toBeNull();
+  });
+
+  it('loads no quote whose provenance names an observation on a row outside the merge', async () => {
+    const { survivor } = await seedTwoHopMerge();
+    const foreignQuote = await seedQuoteObservation(
+      { entityKey: SECOND_HOP_SLUG, entityId: new mongoose.Types.ObjectId() },
+      STALE_QUOTE,
+      '2026-08-28T00:00:00Z',
+    );
+    await backStoredQuoteWith(survivor._id, foreignQuote._id);
+
+    expect(await defaultLiveEvidenceQuoteLoader(SURVIVOR_SLUG)).toBeNull();
   });
 
   it("prefers the survivor's own quote over a newer merged-in one", async () => {
