@@ -77,7 +77,9 @@ Client route guards:
 
 `PrivateRoute` and `AdminRoute` share one signed-out contract: they redirect to `/login` with `state.from` set to the requested path, query, and hash, and they `replace` the guarded entry so Back does not loop through `/login`.
 `AdminRoute` also replaces the entry when it sends a signed-in non-admin home.
-`SignInButton` normalizes `state.from` to a same-origin path before building the CAS `redirect` parameter, and the server's `safeRedirectTarget` in `passport.ts` validates it again, so the return path can never become an open redirect.
+`normalizeReturnPath` in `client/src/utils/returnPath.ts` reduces `state.from` to a same-origin path or an empty string.
+`SignInButton` applies it before building the CAS `redirect` parameter, and the server's `safeRedirectTarget` in `passport.ts` validates it again, so the return path can never become an open redirect.
+`/login` applies it too, and once a session check succeeds (for example after Retry connection) it sends the user to that path, falling back to the role default only when the path is empty.
 
 ## Validation middleware
 

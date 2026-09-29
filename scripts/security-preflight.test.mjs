@@ -2715,10 +2715,15 @@ test('client logout navigation uses the safe API URL builder', () => {
     assert.match(source, /window\.location\.href = buildApiUrl\('\/logout'\)/);
     assert.doesNotMatch(source, /axios\.defaults\.baseURL \+ '\/logout'/);
   }
-  assert.match(signInButton, /const MAX_CAS_RETURN_PATH_LENGTH = 2048/);
-  assert.match(signInButton, /trimmed\.length > MAX_CAS_RETURN_PATH_LENGTH/);
-  assert.match(signInButton, /const url = new URL\(trimmed, window\.location\.origin\)/);
-  assert.match(signInButton, /url\.origin !== window\.location\.origin/);
+  const returnPathUtil = fs.readFileSync(
+    new URL('../client/src/utils/returnPath.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(signInButton, /import \{ normalizeReturnPath \} from '\.\.\/utils\/returnPath'/);
+  assert.match(returnPathUtil, /const MAX_RETURN_PATH_LENGTH = 2048/);
+  assert.match(returnPathUtil, /trimmed\.length > MAX_RETURN_PATH_LENGTH/);
+  assert.match(returnPathUtil, /const url = new URL\(trimmed, window\.location\.origin\)/);
+  assert.match(returnPathUtil, /url\.origin !== window\.location\.origin/);
   assert.match(signInButton, /buildApiUrl\(`\/cas\$\{redirectParam\}`\)/);
 });
 
@@ -4295,16 +4300,31 @@ test('client CAS return state is path-only before redirect query construction', 
     'utf8',
   );
 
-  assert.match(signInButtonSource, /const MAX_CAS_RETURN_PATH_LENGTH = 2048/);
-  assert.match(
-    signInButtonSource,
-    /const normalizeReturnPath = \(value\?: string \| null\): string => \{/,
+  const returnPathSource = fs.readFileSync(
+    new URL('../client/src/utils/returnPath.ts', import.meta.url),
+    'utf8',
   );
-  assert.match(signInButtonSource, /if \(url\.origin !== window\.location\.origin\) return ''/);
+  const loginSource = fs.readFileSync(
+    new URL('../client/src/pages/login.tsx', import.meta.url),
+    'utf8',
+  );
+
+  for (const source of [signInButtonSource, loginSource]) {
+    assert.match(source, /import \{ normalizeReturnPath \} from '\.\.\/utils\/returnPath'/);
+  }
+  assert.match(loginSource, /const returnPath = normalizeReturnPath\(locationState\?\.from\)/);
+  assert.match(returnPathSource, /const MAX_RETURN_PATH_LENGTH = 2048/);
   assert.match(
-    signInButtonSource,
+    returnPathSource,
+    /export const normalizeReturnPath = \(value: unknown\): string => \{/,
+  );
+  assert.match(returnPathSource, /if \(typeof value !== 'string'\) return ''/);
+  assert.match(returnPathSource, /if \(url\.origin !== window\.location\.origin\) return ''/);
+  assert.match(
+    returnPathSource,
     /const path = `\$\{url\.pathname\}\$\{url\.search\}\$\{url\.hash\}`/,
   );
+  assert.match(returnPathSource, /path\.startsWith\('\/\/'\)/);
   assert.match(
     signInButtonSource,
     /setRedirectParam\(returnPath \? `\?redirect=\$\{encodeURIComponent\(returnPath\)\}` : ''\)/,

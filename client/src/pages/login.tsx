@@ -9,13 +9,14 @@ import UserContext from '../contexts/UserContext';
 import { Navigate, useLocation } from 'react-router-dom';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import Wordmark from '../components/Wordmark';
+import { normalizeReturnPath } from '../utils/returnPath';
 
 const Login = () => {
   const { isLoading, isAuthenticated, user, authError, checkContext } = useContext(UserContext);
   useDocumentTitle('Sign in');
   const location = useLocation();
-  const locationState = location.state as { from?: string } | null;
-  const returnPath = locationState?.from || '';
+  const locationState = location.state as { from?: unknown } | null;
+  const returnPath = normalizeReturnPath(locationState?.from);
   const destination = (() => {
     if (returnPath.startsWith('/research') || returnPath.startsWith('/listings')) {
       return {
@@ -49,6 +50,9 @@ const Login = () => {
   })();
 
   const getRedirectPath = () => {
+    if (returnPath) {
+      return returnPath;
+    }
     if (user?.userType === 'professor') {
       return '/dashboard';
     }
