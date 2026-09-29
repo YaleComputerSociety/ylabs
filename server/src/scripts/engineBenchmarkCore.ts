@@ -18,11 +18,40 @@ export interface ReplayedRow {
   entityKey: string;
   plannedSet: Record<string, unknown>;
   plannedUnset: Record<string, unknown>;
+  /**
+   * What the row held before this projection, so the OUTCOME can be read rather than the plan.
+   *
+   * Without it the direction of a change cannot be told. #3873 did not change which values a
+   * derivation plans, it changed whether the field is planned at all: the fixed code plans nothing
+   * and the row keeps its 8 stored chips, while the reverted code plans 5 that REPLACE them.
+   * Comparing plans says 5 against 0, a gain of five. Comparing outcomes says 5 against 8, a loss
+   * of three. The first reading is the one #3872 gave, and it was the wrong sign (#3871).
+   */
+  storedValues: Record<string, unknown>;
   tier: string;
   computedTier: string;
   reasons: string[];
   unfrozenReads: string[];
 }
+
+/**
+ * What the row ends up holding for a field: the planned value where one is planned, nothing where
+ * the field is planned away, and the stored value where the projection plans neither. "Plans
+ * nothing" means "keeps what it has", which is why the stored value belongs in this answer.
+ */
+export function effectiveFieldValue(row: ReplayedRow, field: string): unknown {
+  if (Object.prototype.hasOwnProperty.call(row.plannedSet, field)) return row.plannedSet[field];
+  if (Object.prototype.hasOwnProperty.call(row.plannedUnset, field)) return undefined;
+  return row.storedValues[field];
+}
+
+const effectiveFields = (row: ReplayedRow): string[] => [
+  ...new Set([
+    ...Object.keys(row.plannedSet),
+    ...Object.keys(row.plannedUnset),
+    ...Object.keys(row.storedValues),
+  ]),
+];
 
 export interface EngineFieldScore {
   field: string;
@@ -160,6 +189,22 @@ export function scoreEngineReplay(
     tierRows.set(row.tier, (tierRows.get(row.tier) ?? 0) + 1);
     const applicable = bySlug.get(row.entityKey) ?? [];
 
+    // Counted on the OUTCOME, so a field the projection leaves alone still contributes the values
+    // the row keeps. A count over planned values alone reads a replacement as an addition (#3871).
+    for (const field of effectiveFields(row)) {
+      if (ENGINE_FINGERPRINT_MASKED_FIELDS.has(field)) continue;
+      const score = byField.get(field) ?? {
+        field,
+        resolved: 0,
+        cleared: 0,
+        labeledEntityResolved: 0,
+        knownWrong: 0,
+        values: 0,
+      };
+      byField.set(field, score);
+      score.values += countedValues(effectiveFieldValue(row, field));
+    }
+
     for (const [field, value] of Object.entries(row.plannedSet)) {
       if (ENGINE_FINGERPRINT_MASKED_FIELDS.has(field)) continue;
       const score = byField.get(field) ?? {
@@ -172,7 +217,6 @@ export function scoreEngineReplay(
       };
       byField.set(field, score);
       score.resolved += 1;
-      score.values += countedValues(value);
       resolved += 1;
       const fieldLabels = applicable.filter((label) => label.field === field);
       if (fieldLabels.length === 0) continue;
@@ -303,15 +347,17 @@ const valuesMissingFrom = (from: unknown, to: unknown): number => {
   return JSON.stringify(from) === JSON.stringify(to) ? 0 : 1;
 };
 
+/**
+ * What each field ends up as, so "changed" means the row ends up different rather than that the
+ * projection planned differently. A field the fix leaves alone and the regression replaces has the
+ * same plan-versus-no-plan difference either way; only the outcome says which way it went (#3871).
+ */
 const rowFieldValues = (row: ReplayedRow): Map<string, string> => {
   const values = new Map<string, string>();
-  for (const [field, value] of Object.entries(row.plannedSet)) {
+  for (const field of effectiveFields(row)) {
     if (ENGINE_FINGERPRINT_MASKED_FIELDS.has(field)) continue;
-    values.set(field, JSON.stringify(stableValue(value)));
-  }
-  for (const field of Object.keys(row.plannedUnset)) {
-    if (ENGINE_FINGERPRINT_MASKED_FIELDS.has(field)) continue;
-    values.set(field, '\u0000cleared');
+    const value = effectiveFieldValue(row, field);
+    values.set(field, value === undefined ? '\u0000cleared' : JSON.stringify(stableValue(value)));
   }
   return values;
 };
@@ -373,8 +419,14 @@ export function diffEngineReplays(
       if (beforeValues.get(field) === afterValues.get(field)) continue;
       rowChanged = true;
       changedByField.set(field, (changedByField.get(field) ?? 0) + 1);
-      const lost = valuesMissingFrom(before.plannedSet[field], row.plannedSet[field]);
-      const gained = valuesMissingFrom(row.plannedSet[field], before.plannedSet[field]);
+      const lost = valuesMissingFrom(
+        effectiveFieldValue(before, field),
+        effectiveFieldValue(row, field),
+      );
+      const gained = valuesMissingFrom(
+        effectiveFieldValue(row, field),
+        effectiveFieldValue(before, field),
+      );
       if (lost > 0) {
         rowLost = true;
         valuesLost += lost;

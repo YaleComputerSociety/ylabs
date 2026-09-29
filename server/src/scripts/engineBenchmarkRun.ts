@@ -8,6 +8,7 @@ import { materializationReadScopeFilter, materializeEntity } from '../scrapers/e
 import { FrozenMaterializationInput } from '../scrapers/frozenMaterializationInput';
 import { loadResearchEntityNameIdentityAuthority } from '../scrapers/entityMaterializer';
 import { invalidatedScrapeRunIds } from '../scrapers/invalidatedScrapeRuns';
+import { loadResearchAreaEvidenceBackedRowIds } from '../scrapers/researchAreaEvidence';
 import {
   planStudentVisibilityGate,
   type ResearchEntityGateRowInput,
@@ -21,6 +22,13 @@ import { labelsFromCapturedRows, type ReplayedRow } from './engineBenchmarkCore'
 
 export const ENGINE_BENCHMARK_ENTITY_TYPE = 'researchEntity';
 export const ENGINE_BENCHMARK_STAGE = 'resolve-and-gate';
+
+/**
+ * Wider than the other arms on purpose. About 11% of this population moved under the regression
+ * this arm exists to witness, so a sample of 20 expects two movers and can easily contain none.
+ * Sixty expects about seven.
+ */
+export const UNBACKED_TOPIC_ARM_ROWS = 60;
 
 export function currentCodeSha(): string | undefined {
   try {
@@ -41,6 +49,14 @@ export interface EngineBenchmarkScopeArm {
   /** A filter over `research_entities`, or a resolver for an arm that needs a join. */
   filter?: Record<string, unknown>;
   resolveFilter?: () => Promise<Record<string, unknown>>;
+  /**
+   * Rows to take from this arm, when the default per-scope limit is too few to contain a defect.
+   *
+   * The unbacked-topics arm needs this: only about 11% of its population changed under the
+   * regression #3871 was opened for, so 20 rows would be expected to contain two movers and
+   * contained none. A wider sample is what makes the arm able to witness the defect at all.
+   */
+  limit?: number;
 }
 
 /**
@@ -88,15 +104,25 @@ export const ENGINE_BENCHMARK_SCOPE_PREDICATES: ReadonlyArray<EngineBenchmarkSco
      */
     scope: 'unbacked-topics',
     resolveFilter: async () => ({ _id: { $in: await rowsWithUnbackedStoredTopics() } }),
+    limit: UNBACKED_TOPIC_ARM_ROWS,
   },
 ];
 
 const UNBACKED_TOPIC_FIELD = 'researchAreas';
 
 /**
- * Exported so the predicate can be tested directly. Asserting it through a capture proved nothing:
- * the `served` arm already selects a `student_ready` row, so a row this arm was meant to find was
- * captured either way and the assertion passed for the wrong reason.
+ * Rows whose stored topics no live observation states, answered by the SHARED helper rather than
+ * by a predicate of this file's own.
+ *
+ * The first version of this restated the query, and was wrong in the permissive direction: it
+ * counted any live observation carrying a matching `entityId` or `entityKey` as evidence, so it
+ * found 126 unbacked rows where the shared helper finds 711. `loadResearchAreaEvidenceBackedRowIds`
+ * does two things the restatement did not: it walks the merged-in rows so a survivor's losers'
+ * keys count toward its identity, and it applies a per-row ADMISSION test, so an observation whose
+ * areas are all rejected for this row is not evidence for it.
+ *
+ * That is the fourth time in this work that restating a query instead of calling the function gave
+ * a wrong number, so this arm calls the function (#3871).
  */
 export async function rowsWithUnbackedStoredTopics(): Promise<mongoose.Types.ObjectId[]> {
   const candidates = (await ResearchEntity.find({
@@ -104,36 +130,12 @@ export async function rowsWithUnbackedStoredTopics(): Promise<mongoose.Types.Obj
     studentVisibilityTier: 'student_ready',
     [`${UNBACKED_TOPIC_FIELD}.0`]: { $exists: true },
   })
-    .select(`_id slug ${UNBACKED_TOPIC_FIELD}`)
+    .select('_id slug departments manuallyLockedFields')
     .sort({ _id: 1 })
-    .lean()) as Array<{ _id: mongoose.Types.ObjectId; slug?: unknown }>;
+    .lean()) as Array<{ _id: mongoose.Types.ObjectId }>;
   if (candidates.length === 0) return [];
-
-  const backedIds = new Set<string>();
-  const backedKeys = new Set<string>();
-  const cursor = Observation.find(
-    { field: UNBACKED_TOPIC_FIELD, ...materializationReadScopeFilter() },
-    { entityId: 1, entityKey: 1 },
-  )
-    .lean()
-    .cursor();
-  for await (const observation of cursor as unknown as AsyncIterable<{
-    entityId?: unknown;
-    entityKey?: unknown;
-  }>) {
-    if (observation.entityId) backedIds.add(String(observation.entityId));
-    if (typeof observation.entityKey === 'string' && observation.entityKey) {
-      backedKeys.add(observation.entityKey);
-    }
-  }
-
-  return candidates
-    .filter(
-      (row) =>
-        !backedIds.has(String(row._id)) &&
-        !backedKeys.has(String((row as { slug?: unknown }).slug)),
-    )
-    .map((row) => row._id);
+  const backed = await loadResearchAreaEvidenceBackedRowIds(candidates);
+  return candidates.filter((row) => !backed.has(String(row._id))).map((row) => row._id);
 }
 
 export interface CaptureEngineBenchmarkOptions {
@@ -168,7 +170,9 @@ export async function captureEngineBenchmark(
     const { scope } = arm;
     const filter =
       arm.filter ?? (await (arm.resolveFilter as () => Promise<Record<string, unknown>>)());
-    const docs = await ResearchEntity.find(filter).sort({ _id: 1 }).limit(options.perScopeLimit);
+    const docs = await ResearchEntity.find(filter)
+      .sort({ _id: 1 })
+      .limit(arm.limit ?? options.perScopeLimit);
     let added = 0;
     for (const doc of docs) {
       const slug = slugText((doc as any).slug);
@@ -413,6 +417,8 @@ export async function replayEngineBenchmark(benchmarkId: string): Promise<Engine
       entityKey: String(captured.entityKey),
       plannedSet,
       plannedUnset,
+      // The frozen stored document, so the direction of a change is read on the outcome (#3871).
+      storedValues: ((captured.entityDoc ?? {}) as Record<string, unknown>) ?? {},
       tier: verdict.tier,
       computedTier: verdict.computedTier,
       reasons: verdict.reasons,
