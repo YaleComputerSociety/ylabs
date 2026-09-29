@@ -227,4 +227,55 @@ describe('ProgramWatch', () => {
       '/programs',
     );
   });
+
+  describe('when a load request fails', () => {
+    const failing = (failedUrl: string) => {
+      withWatchedPrograms();
+      const succeed = mockedAxios.get.getMockImplementation() as (url: string) => Promise<unknown>;
+      let shouldFail = true;
+      mockedAxios.get.mockImplementation((url: string) =>
+        url === failedUrl && shouldFail ? Promise.reject(new Error('network')) : succeed(url),
+      );
+      return {
+        recover: () => {
+          shouldFail = false;
+        },
+      };
+    };
+
+    it.each(['/users/watchedPrograms', '/users/watchedProgramPlans', '/users/watchedProgramIds'])(
+      'reports a load error instead of claiming nothing is watched when %s fails',
+      async (url) => {
+        failing(url);
+
+        render(
+          <MemoryRouter>
+            <ProgramWatch />
+          </MemoryRouter>,
+        );
+
+        const alert = await screen.findByRole('alert');
+        expect(alert.textContent).toContain('Could not load your watched programs');
+        expect(screen.queryByText('No watched programs yet')).toBeNull();
+        expect(screen.queryByRole('link', { name: 'Programs & Fellowships' })).toBeNull();
+      },
+    );
+
+    it('loads the watched list again when the student retries', async () => {
+      const request = failing('/users/watchedProgramPlans');
+
+      render(
+        <MemoryRouter>
+          <ProgramWatch />
+        </MemoryRouter>,
+      );
+
+      await screen.findByRole('alert');
+      request.recover();
+      fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+      expect(await screen.findByText('Summer Research Grant')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+  });
 });

@@ -97,6 +97,32 @@ describe('account dashboard accessibility', () => {
     await expectNoAxeViolations(container);
   });
 
+  it('has no serious or critical axe violations when saved plans fail to load', async () => {
+    mockedAxios.get.mockRejectedValue(new Error('network'));
+
+    const { container } = render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('alert');
+    await expectNoAxeViolations(container);
+  });
+
+  it('has no serious or critical axe violations when watched programs fail to load', async () => {
+    mockedAxios.get.mockRejectedValue(new Error('network'));
+
+    const { container } = render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('alert');
+    await expectNoAxeViolations(container);
+  });
+
   it('has no serious or critical axe violations for the comparison dialog', async () => {
     const entityA = {
       _id: 'a',

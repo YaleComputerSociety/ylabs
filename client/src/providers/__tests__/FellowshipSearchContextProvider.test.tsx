@@ -44,6 +44,11 @@ const renderProvider = (userType: 'student' | 'admin' = 'student') =>
                   {context.fellowships.map((fellowship) => fellowship.title).join('|')}
                 </p>
                 <p data-testid="search-exhausted">{String(context.searchExhausted)}</p>
+                <p data-testid="load-error">{String(context.loadError)}</p>
+                <p data-testid="is-loading">{String(context.isLoading)}</p>
+                <button type="button" onClick={context.refreshFellowships}>
+                  Retry
+                </button>
                 <button
                   type="button"
                   onClick={() => context.setSelectedProgramKind(['STRUCTURED_PROGRAM'])}
@@ -210,6 +215,76 @@ describe('FellowshipSearchContextProvider program routes', () => {
       expect(mockedAxios.get).toHaveBeenCalledWith(
         expect.stringContaining('includeOperatorReview=true'),
       );
+    });
+  });
+
+  describe('when a search request fails', () => {
+    const fundingRow = {
+      _id: 'synthetic-funding',
+      title: 'Synthetic Funding',
+      programKind: 'FELLOWSHIP_FUNDING',
+      isAcceptingApplications: false,
+    };
+    const structuredRow = {
+      _id: 'synthetic-structured',
+      title: 'Synthetic Structured',
+      programKind: 'STRUCTURED_PROGRAM',
+      isAcceptingApplications: false,
+    };
+
+    const serveSearches = (control: { fail: boolean }) => {
+      mockedAxios.get.mockImplementation((url: string) => {
+        if (url === '/programs/filters') {
+          return Promise.resolve({ data: {} });
+        }
+        if (control.fail) {
+          return Promise.reject(new Error('network'));
+        }
+        const rows = url.includes('programKind=STRUCTURED_PROGRAM')
+          ? [structuredRow]
+          : [fundingRow, structuredRow];
+        return Promise.resolve({ data: { results: rows, total: rows.length } });
+      });
+    };
+
+    it('does not keep serving the previous unfiltered list with zeroed tiles', async () => {
+      const control = { fail: false };
+      serveSearches(control);
+
+      renderProvider();
+      await waitFor(() => expect(screen.getByTestId('fellowship-count').textContent).toBe('2'));
+      const summaryBefore = screen.getByTestId('journey-summary').textContent;
+      const searchesBefore = mockedAxios.get.mock.calls.length;
+
+      control.fail = true;
+      await userEvent.click(screen.getByRole('button', { name: 'Structured only' }));
+
+      await waitFor(() =>
+        expect(mockedAxios.get.mock.calls.length).toBeGreaterThan(searchesBefore),
+      );
+      await waitFor(() => expect(screen.getByTestId('is-loading').textContent).toBe('false'));
+      expect({
+        staleUnfilteredRowShown: (
+          screen.getByTestId('fellowship-titles').textContent || ''
+        ).includes('Synthetic Funding'),
+        summaryChanged: screen.getByTestId('journey-summary').textContent !== summaryBefore,
+        loadError: screen.getByTestId('load-error').textContent,
+      }).toEqual({ staleUnfilteredRowShown: false, summaryChanged: false, loadError: 'true' });
+    });
+
+    it('reports a failed first load as an error and clears it on a successful retry', async () => {
+      const control = { fail: true };
+      serveSearches(control);
+
+      renderProvider();
+      await waitFor(() => expect(screen.getByTestId('load-error').textContent).toBe('true'));
+      expect(screen.getByTestId('fellowship-count').textContent).toBe('0');
+
+      control.fail = false;
+      await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+      await waitFor(() => expect(screen.getByTestId('fellowship-count').textContent).toBe('2'));
+      expect(screen.getByTestId('load-error').textContent).toBe('false');
     });
   });
 });

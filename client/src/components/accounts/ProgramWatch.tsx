@@ -24,7 +24,9 @@ import {
 import BrowseListItem from '../shared/BrowseListItem';
 import FellowshipModal from '../fellowship/FellowshipModal';
 import LoadingSpinner from '../shared/LoadingSpinner';
+import LoadErrorNotice from '../shared/LoadErrorNotice';
 import useFavorites from '../../hooks/useFavorites';
+import useLatestRequest from '../../hooks/useLatestRequest';
 import axios from '../../utils/axios';
 import ResearchPlanStageControl from './ResearchPlanStageControl';
 import {
@@ -95,11 +97,17 @@ export const watchedProgramDeadlineSummary = (
 };
 
 const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
-  const { favIds: watchedIds, toggleFavorite } = useFavorites('watchedPrograms');
+  const {
+    favIds: watchedIds,
+    loadError: watchedIdsLoadFailed,
+    toggleFavorite,
+    reloadFavorites,
+  } = useFavorites('watchedPrograms');
   const [programs, setPrograms] = useState<Fellowship[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [stages, setStages] = useState<Record<string, ResearchPlanStage>>({});
   const [isLoading, setIsLoading] = useState(true);
+  const [programsLoadFailed, setProgramsLoadFailed] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
   const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
@@ -107,50 +115,59 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const noteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      setIsLoading(true);
-      try {
-        const [programResponse, planResponse] = await Promise.all([
-          axios.get('/users/watchedPrograms', { withCredentials: true }),
-          axios.get('/users/watchedProgramPlans', { withCredentials: true }),
-        ]);
-        if (!active) return;
-        const rawPrograms = programResponse.data.watchedPrograms || [];
-        const loadedPrograms: Fellowship[] = rawPrograms.map((program: any) =>
-          createFellowship(program),
-        );
-        const plans = (planResponse.data.watchedProgramPlans || {}) as Record<
-          string,
-          { privateNotes?: string; stage?: string }
-        >;
-        const loadedNotes: Record<string, string> = {};
-        const loadedStages: Record<string, ResearchPlanStage> = {};
-        for (const program of loadedPrograms) {
-          loadedNotes[program.id] = plans[program.id]?.privateNotes || '';
-          loadedStages[program.id] = normalizeResearchPlanStage(plans[program.id]?.stage);
-        }
-        setPrograms(loadedPrograms);
-        setNotes(loadedNotes);
-        setStages(loadedStages);
-      } catch {
-        if (!active) return;
-        console.error('Error fetching watched programs.');
-        setPrograms([]);
-        setNotes({});
-        setStages({});
-      } finally {
-        if (active) setIsLoading(false);
+  const programRequest = useLatestRequest();
+
+  const loadPrograms = useCallback(async () => {
+    const ticket = programRequest.begin();
+    setIsLoading(true);
+    setProgramsLoadFailed(false);
+    try {
+      const [programResponse, planResponse] = await Promise.all([
+        axios.get('/users/watchedPrograms', { withCredentials: true, signal: ticket.signal }),
+        axios.get('/users/watchedProgramPlans', { withCredentials: true, signal: ticket.signal }),
+      ]);
+      if (!ticket.isCurrent()) return;
+      const rawPrograms = programResponse.data.watchedPrograms || [];
+      const loadedPrograms: Fellowship[] = rawPrograms.map((program: any) =>
+        createFellowship(program),
+      );
+      const plans = (planResponse.data.watchedProgramPlans || {}) as Record<
+        string,
+        { privateNotes?: string; stage?: string }
+      >;
+      const loadedNotes: Record<string, string> = {};
+      const loadedStages: Record<string, ResearchPlanStage> = {};
+      for (const program of loadedPrograms) {
+        loadedNotes[program.id] = plans[program.id]?.privateNotes || '';
+        loadedStages[program.id] = normalizeResearchPlanStage(plans[program.id]?.stage);
       }
-    };
-    void load();
+      setPrograms(loadedPrograms);
+      setNotes(loadedNotes);
+      setStages(loadedStages);
+    } catch {
+      if (!ticket.isCurrent()) return;
+      console.error('Error fetching watched programs.');
+      setPrograms([]);
+      setNotes({});
+      setStages({});
+      setProgramsLoadFailed(true);
+    } finally {
+      if (ticket.isCurrent()) setIsLoading(false);
+    }
+  }, [programRequest]);
+
+  useEffect(() => {
+    void loadPrograms();
     const timers = noteTimersRef.current;
     return () => {
-      active = false;
       Object.values(timers).forEach(clearTimeout);
     };
-  }, []);
+  }, [loadPrograms]);
+
+  const retryLoad = () => {
+    void reloadFavorites();
+    void loadPrograms();
+  };
 
   const visiblePrograms = useMemo(
     () => sortByUpcomingDeadline(programs.filter((program) => watchedIds.includes(program.id))),
@@ -172,12 +189,19 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
 
   useEffect(() => {
     onSummaryChange?.({
-      count: visiblePrograms.length,
+      count: programsLoadFailed ? watchedIds.length : visiblePrograms.length,
       approachingCount: deadlineUrgency.approachingCount,
       notStartedCount: deadlineUrgency.notStartedCount,
       ...nextDeadline,
     });
-  }, [visiblePrograms.length, nextDeadline, deadlineUrgency, onSummaryChange]);
+  }, [
+    programsLoadFailed,
+    watchedIds.length,
+    visiblePrograms.length,
+    nextDeadline,
+    deadlineUrgency,
+    onSummaryChange,
+  ]);
 
   const upcomingDeadlineEventsByProgramId = useMemo(() => {
     const events = upcomingProgramDeadlineEvents(visiblePrograms);
@@ -299,7 +323,13 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
         )}
       </div>
 
-      {visiblePrograms.length > 0 ? (
+      {programsLoadFailed || watchedIdsLoadFailed ? (
+        <LoadErrorNotice
+          title="Could not load your watched programs"
+          detail="This is a loading problem, not an empty list. Check your connection, then try again."
+          onRetry={retryLoad}
+        />
+      ) : visiblePrograms.length > 0 ? (
         <ul>
           {visiblePrograms.map((program) => {
             const status = saveStatuses[program.id];

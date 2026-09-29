@@ -42,6 +42,7 @@ export interface FellowshipSearchContextType {
 
   fellowships: Fellowship[];
   isLoading: boolean;
+  loadError: boolean;
   searchExhausted: boolean;
 
   page: number;
@@ -96,6 +97,7 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   onToggleSortDirection: () => {},
   fellowships: [],
   isLoading: false,
+  loadError: false,
   searchExhausted: false,
   page: 1,
   setPage: () => {},
