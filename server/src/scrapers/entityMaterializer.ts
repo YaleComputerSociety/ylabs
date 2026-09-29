@@ -2675,6 +2675,17 @@ export const LEAD_PI_SCHOOL_INHERITANCE_SOURCE = 'lead-pi-school-inheritance';
 
 const LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE = 0.6;
 
+const LEAD_PI_INHERITED_FIELDS = ['school', 'departments'];
+
+function writeScopeAdmits(
+  writeOnlyFields: readonly string[] | undefined,
+  fields: readonly string[],
+): boolean {
+  if (!writeOnlyFields || writeOnlyFields.length === 0) return true;
+  const scope = withDerivedMaterializerFields(writeOnlyFields);
+  return fields.some((field) => scope.includes(field));
+}
+
 async function resolveSingleLeadResearcherId(
   researchEntityId: string,
 ): Promise<string | undefined> {
@@ -2724,7 +2735,8 @@ export type LeadPiSchoolInheritanceSkip =
   | 'multi-pi-kind'
   | 'no-single-lead'
   | 'no-department'
-  | 'no-school-derivable';
+  | 'no-school-derivable'
+  | 'out-of-scope';
 
 export interface LeadPiSchoolInheritanceResult {
   inherited: boolean;
@@ -2813,8 +2825,12 @@ export async function inheritSchoolFromLeadPi(
     manuallyLockedFields?: string[];
     dryRun?: boolean;
     chunkPrefetch?: MaterializationReadSource;
+    writeOnlyFields?: readonly string[];
   } = {},
 ): Promise<LeadPiSchoolInheritanceResult> {
+  if (!writeScopeAdmits(options.writeOnlyFields, LEAD_PI_INHERITED_FIELDS)) {
+    return { inherited: false, skipped: 'out-of-scope' };
+  }
   const routedInheritanceRow = options.chunkPrefetch?.entityDocForId(
     'researchEntity',
     researchEntityId,
@@ -7561,22 +7577,32 @@ export async function materializeEntity(
 
   let postMaterializationMetrics: ReportPostMaterializationMetrics | undefined;
   if (isResearchEntityObservationType(entityType) && entityIdString) {
+    // A field-scoped pass writes only its scope, and the rematerialize report compares
+    // fields, so an edge, signal or inherited value written here would be invisible (#3874).
+    const scopedPass = Boolean(options.writeOnlyFields && options.writeOnlyFields.length > 0);
     if (!options.dryRun) {
-      await materializeInferredPiMembership(entityIdString, materializationObs);
-      await materializeInferredDirectorMembership(entityIdString, materializationObs);
+      if (!scopedPass) {
+        await materializeInferredPiMembership(entityIdString, materializationObs);
+        await materializeInferredDirectorMembership(entityIdString, materializationObs);
+      }
       const inheritance = await inheritSchoolFromLeadPi(entityIdString, {
         manuallyLockedFields,
         chunkPrefetch: options.chunkPrefetch,
+        writeOnlyFields: options.writeOnlyFields,
       });
       if (inheritance.inherited) indexStale = !!inheritance.indexSyncFailed;
     }
-    const accessResult = await materializeAccessForResearchGroup(
-      {
-        researchEntityId: entityIdString,
-        entityKey: identifier.entityKey,
-      },
-      mergedInKeys.length > 0 || foreignContactWithheld ? (obs as AccessObservation[]) : undefined,
-    );
+    const accessResult = scopedPass
+      ? { accessSignals: 0, staleEvidenceSkipped: 0, errors: 0 }
+      : await materializeAccessForResearchGroup(
+          {
+            researchEntityId: entityIdString,
+            entityKey: identifier.entityKey,
+          },
+          mergedInKeys.length > 0 || foreignContactWithheld
+            ? (obs as AccessObservation[])
+            : undefined,
+        );
     postMaterializationMetrics = {
       entryPathways: 0,
       accessSignals: accessResult.accessSignals,
@@ -7605,6 +7631,7 @@ export async function materializeEntity(
 
   if (
     !options.dryRun &&
+    !(options.writeOnlyFields && options.writeOnlyFields.length > 0) &&
     isResearchEntityObservationType(entityType) &&
     entityIdString &&
     isDeptRosterKey(identifier.entityKey)
