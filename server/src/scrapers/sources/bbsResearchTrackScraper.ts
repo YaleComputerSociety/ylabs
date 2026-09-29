@@ -43,6 +43,7 @@ import {
 import { getCached, setCached } from '../snapshotCache';
 import { facultyNameMatchKey, normalizeYsmProfileUrl } from './ysmMeshKeywordScraper';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import type { BbsTrackHealthSnapshot } from '../bbsTrackRosterRetirement';
 
 const SOURCE_KEY = 'bbs-research-track';
 
@@ -565,33 +566,60 @@ export interface BbsResearchTrackScraperDeps {
  * having read the whole roster. A fetch that failed says so instead, which makes the read
  * incomplete and therefore inadmissible.
  */
+export interface BbsTrackRead {
+  track: BbsTrack;
+  faculty: readonly BbsFacultyRef[];
+  fetched: boolean;
+}
+
 function buildTrackRosterHealthObservation(input: {
   track: BbsTrack;
   faculty: readonly BbsFacultyRef[];
   fetched: boolean;
+  /**
+   * The row each listed PI resolved to THIS run, which is the identity space the claim lives in.
+   *
+   * A claim is a `researchAreas` value on a research entity, so a signal that governs it has to
+   * name research entities. Naming only the PI cannot: the claim records the PI's canonical YSM
+   * profile URL while a listing names the BBS one, and measured on Development only 409 of 1,036
+   * live claims carry a recoverable BBS slug, so a slug-keyed join would govern 39% of them and
+   * report success (#3852).
+   *
+   * A listed PI missing from this map did not resolve to a row this run, for any reason: a profile
+   * fetch that failed, an ambiguous match, a refusal, or no existing row. That is unknown rather
+   * than absent, and `bbsTrackReadBlocksRetirementOf` is what keeps it from retiring anybody.
+   */
+  claimEntityKeyByProfileSlug: ReadonlyMap<string, string>;
   cacheAllowed: boolean;
   readAt: Date;
 }): ObservationInput {
-  const members: CenterRosterReadMember[] = input.faculty.map((ref) => ({
-    memberKey: ref.profileSlug,
-    role: BBS_TRACK_PI_ROLE,
-  }));
+  const members: CenterRosterReadMember[] = input.faculty.map((ref) => {
+    const claimEntityKey = input.claimEntityKeyByProfileSlug.get(ref.profileSlug);
+    return {
+      memberKey: ref.profileSlug,
+      role: BBS_TRACK_PI_ROLE,
+      ...(claimEntityKey ? { claimEntityKey } : {}),
+    };
+  });
   const stopReason: CenterRosterStopReason = input.fetched ? 'not-paginated' : 'fetch-failed';
   return {
     entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
     entityKey: input.track.slug,
     field: CENTER_ROSTER_HEALTH_FIELD,
     sourceUrl: input.track.url,
-    value: buildCenterRosterHealthSnapshot({
-      centerKey: input.track.slug,
-      entityKey: input.track.slug,
-      members,
-      pagesRead: input.fetched ? 1 : 0,
-      readMode: 'html',
-      stopReason,
-      cacheAllowed: input.cacheAllowed,
-      readAt: input.readAt,
-    }),
+    value: {
+      ...buildCenterRosterHealthSnapshot({
+        centerKey: input.track.slug,
+        entityKey: input.track.slug,
+        members,
+        pagesRead: input.fetched ? 1 : 0,
+        readMode: 'html',
+        stopReason,
+        cacheAllowed: input.cacheAllowed,
+        readAt: input.readAt,
+      }),
+      claimEntityKeysRecorded: true,
+    } satisfies BbsTrackHealthSnapshot,
   };
 }
 
@@ -728,7 +756,7 @@ export class BbsResearchTrackScraper implements IScraper {
   private async collectTrackPis(ctx: ScraperContext): Promise<{
     pis: Map<string, BbsTrackPi>;
     emptyTrackFailures: string[];
-    rosterHealth: ObservationInput[];
+    trackReads: BbsTrackRead[];
     unitYields: Record<string, number>;
   }> {
     const onlyFilter =
@@ -737,7 +765,7 @@ export class BbsResearchTrackScraper implements IScraper {
         : null;
     const byProfileSlug = new Map<string, BbsTrackPi>();
     const emptyTrackFailures: string[] = [];
-    const rosterHealth: ObservationInput[] = [];
+    const trackReads: BbsTrackRead[] = [];
     const unitYields: Record<string, number> = {};
     for (const track of BBS_TRACKS) {
       if (onlyFilter && !onlyFilter.has(track.slug)) continue;
@@ -746,27 +774,11 @@ export class BbsResearchTrackScraper implements IScraper {
         html = await this.fetchPage(track.url, ctx.options.useCache);
       } catch (error) {
         ctx.log(`[${track.slug}] track page fetch failed: ${sanitizeLogValue(error)}`);
-        rosterHealth.push(
-          buildTrackRosterHealthObservation({
-            track,
-            faculty: [],
-            fetched: false,
-            cacheAllowed: ctx.options.useCache,
-            readAt: new Date(),
-          }),
-        );
+        trackReads.push({ track, faculty: [], fetched: false });
         continue;
       }
       if (!html) {
-        rosterHealth.push(
-          buildTrackRosterHealthObservation({
-            track,
-            faculty: [],
-            fetched: false,
-            cacheAllowed: ctx.options.useCache,
-            readAt: new Date(),
-          }),
-        );
+        trackReads.push({ track, faculty: [], fetched: false });
         continue;
       }
       const faculty = parseBbsTrackFaculty(html, track.url);
@@ -775,15 +787,7 @@ export class BbsResearchTrackScraper implements IScraper {
       // failure above leaves the track out, which the guard reads as inconclusive
       // rather than as a barren run for it (#3876).
       unitYields[track.slug] = faculty.length;
-      rosterHealth.push(
-        buildTrackRosterHealthObservation({
-          track,
-          faculty,
-          fetched: true,
-          cacheAllowed: ctx.options.useCache,
-          readAt: new Date(),
-        }),
-      );
+      trackReads.push({ track, faculty, fetched: true });
       if (faculty.length === 0) {
         // A warning whatever the history, so an empty track is never silent again.
         ctx.log(
@@ -814,7 +818,7 @@ export class BbsResearchTrackScraper implements IScraper {
         }
       }
     }
-    return { pis: byProfileSlug, emptyTrackFailures, rosterHealth, unitYields };
+    return { pis: byProfileSlug, emptyTrackFailures, trackReads, unitYields };
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -824,12 +828,13 @@ export class BbsResearchTrackScraper implements IScraper {
     }
     const limit = limitOption ?? Infinity;
 
-    const { pis, emptyTrackFailures, rosterHealth, unitYields } = await this.collectTrackPis(ctx);
-    // Emitted before the graft, so a run that fails later still records what each track listed.
-    if (rosterHealth.length > 0) await ctx.emit(rosterHealth);
+    const { pis, emptyTrackFailures, trackReads, unitYields } = await this.collectTrackPis(ctx);
     const candidates = await this.entityFinder();
     const index = buildBbsMatchIndex(candidates);
 
+    // Filled as the graft resolves each PI, so the snapshots below can name the row each listed PI
+    // claims on. A listed PI absent from this map did not resolve to a row this run.
+    const claimEntityKeyByProfileSlug = new Map<string, string>();
     let observationCount = 0;
     let grafted = 0;
     let noExistingRow = 0;
@@ -866,6 +871,7 @@ export class BbsResearchTrackScraper implements IScraper {
         continue;
       }
 
+      claimEntityKeyByProfileSlug.set(pi.profileSlug, resolution.entityId);
       const observations = bbsGraftObservations(
         resolution.entityId,
         pi.researchAreas,
@@ -875,6 +881,24 @@ export class BbsResearchTrackScraper implements IScraper {
       await ctx.emit(observations);
       observationCount += observations.length;
       grafted += 1;
+    }
+
+    // Emitted after the graft, because a snapshot has to name the row each listed PI claims on and
+    // that is only known once the PI has been resolved (#3852).
+    const readAt = new Date();
+    const rosterHealth = trackReads.map((read) =>
+      buildTrackRosterHealthObservation({
+        track: read.track,
+        faculty: read.faculty,
+        fetched: read.fetched,
+        claimEntityKeyByProfileSlug,
+        cacheAllowed: ctx.options.useCache,
+        readAt,
+      }),
+    );
+    if (rosterHealth.length > 0) {
+      await ctx.emit(rosterHealth);
+      observationCount += rosterHealth.length;
     }
 
     return {

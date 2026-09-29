@@ -63,6 +63,16 @@ The stored entity type and field still read `centerRosterHealth` because renamin
 A snapshot is admissible only for a complete, off-the-wire read that listed at least one PI, so a zero-PI parse, a failed fetch and a cache-permitted run each record the read while retiring nobody.
 A track listing is a single page, so its honest stop reason is `not-paginated`, which counts as having read the whole roster; a failed fetch says `fetch-failed` and is therefore incomplete.
 Its claim key is the PI, because the role a track asserts is the same for every entry.
+Each listed PI also carries the row it resolved to on that read, because a claim is a `researchAreas` value on a research entity and a signal that governs it has to name entities.
+Naming only the PI cannot: the claim records the PI's canonical YSM profile URL while a listing names the BBS one, and measured on Development only 409 of 1,036 live claims carried a recoverable BBS slug, so a slug-keyed join would have governed 39% of them and reported success (#3852).
+A listed PI with no row on a read did not resolve this run, for any reason, and that read is then not evidence against any claim that PI has ever been seen to hold.
+Requiring every listed PI to resolve was considered and rejected as inert: a complete 518-PI read measured 431 matched against 64 unmatched, 17 ambiguous and 6 refused, and a PI with no existing row is expected because this lane never mints, so no read would ever qualify.
+A listed PI who has never resolved on any recorded read could hold any row no other PI has been seen to hold, so it blocks every such row, which keeps a claim grafted before rows were recorded from retiring while its PI is still listed.
+Only a snapshot marked `claimEntityKeysRecorded` is read, because one written before the lane recorded rows names no row for anybody and would read as every claim absent.
+Absence is measured per run rather than per track, because a PI listed by two tracks holds one observation whose value spans both, so retiring per track would remove labels a track that still lists the PI is holding up.
+A run is a read only when every track has an admitted snapshot in it, so a failed, empty or `--only`-filtered track drops the whole run rather than reading its PIs as absent.
+The retirement runs only after a run that recorded a track read, and re-projects each row that lost a claim so the retirement reaches the stored row.
+`scrapers/bbsTrackRosterRetirement.ts` holds the lane-specific part; every guard it applies is the centres module's unchanged, and it writes no field and no lock.
 "Has listed PIs before" is read as any stored `researchAreas` observation from this lane's `sourceId` carrying one of the track's topics, not as an observation cited to the track URL: a graft cites the PI's profile page and never the track page, and no two tracks share a topic.
 
 `isResearchSupportStaffTitle` **yields to a stated faculty appointment**, and that is the whole reason it is not folded into `looksLikeNonResearchTitle`.

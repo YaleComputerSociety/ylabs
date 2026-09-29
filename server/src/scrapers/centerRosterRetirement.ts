@@ -96,6 +96,13 @@ export interface CenterRosterReadMember {
    */
   membershipKey?: string;
   relationshipKey?: string;
+  /**
+   * The row this listed member's claim sits on, for a lane whose claim is a field on another
+   * record rather than a membership of the listing itself. Absent means the lane could not say
+   * which row this member's claim belongs to on this read, which is unknown rather than absent
+   * and must never retire anything (#3852).
+   */
+  claimEntityKey?: string;
 }
 
 export type CenterRosterReadStatus = 'ok' | 'empty' | 'partial-read';
@@ -177,6 +184,7 @@ export function snapshotMembers(snapshot: CenterRosterHealthSnapshot): CenterRos
       role: text(entry.role),
       membershipKey: text(entry.membershipKey),
       relationshipKey: text(entry.relationshipKey),
+      claimEntityKey: text(entry.claimEntityKey),
     }))
     .filter((entry) => entry.memberKey && entry.role);
 }

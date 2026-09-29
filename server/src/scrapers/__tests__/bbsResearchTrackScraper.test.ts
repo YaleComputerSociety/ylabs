@@ -21,6 +21,7 @@ import {
   BARREN_RUN_STREAK_FAILURE_THRESHOLD,
   resolveBarrenUnitStreakFailures,
 } from '../sourceYieldGuard';
+import { aggregateBbsTrackReads } from '../bbsTrackRosterRetirement';
 import type { ObservationInput, ScraperContext } from '../types';
 
 const IMMUNOLOGY_URL = 'https://medicine.yale.edu/bbs/people/immunology/';
@@ -804,5 +805,81 @@ describe('per-track roster-health snapshot', () => {
       members?: Array<{ memberKey: string }>;
     };
     expect((value.members ?? []).map((m) => m.memberKey)).toEqual(['alex-rivera', 'morgan-lee']);
+  });
+  it('names the row each resolved PI claims on, and no row for one that did not resolve', async () => {
+    const labUrl = 'https://medicine.yale.edu/lab/quokka/';
+    const pages: Record<string, string> = {
+      [IMMUNOLOGY_URL]: trackListingHtml([
+        { slug: 'alex-rivera', label: 'Rivera, Alex' },
+        { slug: 'morgan-lee', label: 'Lee, Morgan' },
+        { slug: 'sam-carter', label: 'Carter, Sam' },
+        { slug: 'jo-park', label: 'Park, Jo' },
+      ]),
+      'https://medicine.yale.edu/bbs/profile/alex-rivera/': bbsProfileHtml({
+        canonicalSlug: 'alex-rivera',
+      }),
+      'https://medicine.yale.edu/bbs/profile/morgan-lee/': bbsProfileHtml({
+        canonicalSlug: 'morgan-lee',
+      }),
+      'https://medicine.yale.edu/bbs/profile/sam-carter/': bbsProfileHtml({
+        canonicalSlug: 'sam-carter',
+      }),
+      'https://medicine.yale.edu/bbs/profile/jo-park/': bbsProfileHtml({
+        canonicalSlug: 'jo-park',
+        labUrls: [labUrl],
+      }),
+    };
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => pages[url] ?? '',
+      entityFinder: async () => [
+        candidate({
+          _id: '111111111111111111111111',
+          slug: 'rivera-lab',
+          matchUrls: ['https://medicine.yale.edu/profile/alex-rivera/'],
+          nameKey: 'alex-rivera',
+        }),
+        candidate({ _id: 'aaaaaaaaaaaaaaaaaaaaaaa1', slug: 'sam-a', nameKey: 'sam-carter' }),
+        candidate({ _id: 'aaaaaaaaaaaaaaaaaaaaaaa2', slug: 'sam-b', nameKey: 'sam-carter' }),
+        candidate({
+          _id: '222222222222222222222222',
+          slug: 'ysm-faculty-kaya-lindgren',
+          name: 'Kaya Lindgren Faculty Research',
+          matchUrls: [labUrl],
+          nameKey: 'kaya-lindgren',
+        }),
+      ],
+      trackEverListedPis: async () => false,
+    });
+    const { ctx, emitted } = makeContext({ only: ['immunology'] });
+    const result = await scraper.run(ctx);
+    expect(result.notes).toMatch(/1 have no existing research row/);
+    expect(result.notes).toMatch(/1 ambiguous row/);
+    expect(result.notes).toMatch(/1 cite a lab URL only on a row naming someone else/);
+
+    const snapshot = snapshotFor(emitted, 'immunology');
+    const value = snapshot?.value as {
+      claimEntityKeysRecorded?: unknown;
+      members?: Array<{ memberKey: string; claimEntityKey?: string }>;
+    };
+    expect(value.claimEntityKeysRecorded).toBe(true);
+    expect(
+      Object.fromEntries((value.members ?? []).map((m) => [m.memberKey, m.claimEntityKey])),
+    ).toEqual({
+      'alex-rivera': '111111111111111111111111',
+      'jo-park': undefined,
+      'morgan-lee': undefined,
+      'sam-carter': undefined,
+    });
+
+    const { reads } = aggregateBbsTrackReads(
+      [{ ...snapshot, scrapeRunId: 'test-run', observedAt: '2026-09-10T00:00:00Z' }],
+      ['immunology'],
+    );
+    expect([...reads[0].claimEntityKeys]).toEqual(['111111111111111111111111']);
+    expect([...reads[0].unresolvedMemberKeys].sort()).toEqual([
+      'jo-park',
+      'morgan-lee',
+      'sam-carter',
+    ]);
   });
 });
