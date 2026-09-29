@@ -13,6 +13,11 @@ import {
   servedResearchEntityTitle,
 } from '../utils/servedResearchEntityTitle';
 import { getMeiliIndex } from '../utils/meiliClient';
+import {
+  assertMeiliTaskSucceeded,
+  MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+  MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+} from '../utils/meiliTask';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { warmControlledVocabularyHeadings } from '../utils/controlledVocabularyHeadings';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
@@ -711,40 +716,6 @@ export async function isResearchEntitySearchEmbedderConfigured(
   return (await readResearchEntitySearchEmbedderState(index)) === 'configured';
 }
 
-const MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS = 180_000;
-
-interface MeiliTaskWaiter {
-  waitForTask: (
-    taskUid: number,
-    options?: { timeout?: number },
-  ) => Promise<{
-    status: string;
-    error?: unknown;
-  }>;
-}
-
-interface MeiliTaskAwareIndex {
-  tasks?: MeiliTaskWaiter;
-}
-
-async function assertMeiliSettingsTaskSucceeded(
-  index: MeiliTaskAwareIndex,
-  enqueued: unknown,
-  label: string,
-): Promise<void> {
-  const taskUid = (enqueued as { taskUid?: number })?.taskUid;
-  if (typeof index.tasks?.waitForTask !== 'function' || typeof taskUid !== 'number') return;
-
-  const task = await index.tasks.waitForTask(taskUid, {
-    timeout: MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
-  });
-  if (task.status !== 'succeeded') {
-    throw new Error(
-      `Meilisearch ${label} task ${taskUid} did not succeed (status: ${task.status}): ${JSON.stringify(task.error)}`,
-    );
-  }
-}
-
 export async function rebuildResearchEntitySearchIndex(
   options: ResearchEntitySearchIndexRebuildOptions = {},
 ): Promise<ResearchEntitySearchIndexRebuildResult> {
@@ -762,17 +733,32 @@ export async function rebuildResearchEntitySearchIndex(
   const fetchMemberNames = options.fetchMemberNames || fetchResearchEntitySearchMemberNames;
 
   const settingsTask = await index.updateSettings(getResearchEntitySearchIndexSettings());
-  await assertMeiliSettingsTaskSucceeded(index, settingsTask, 'updateSettings');
+  await assertMeiliTaskSucceeded(
+    index,
+    settingsTask,
+    'updateSettings',
+    MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+  );
   const openAiApiKey = process.env.OPENAI_API_KEY;
   if (openAiApiKey && typeof (index as any).updateEmbedders === 'function') {
     const embedderTask = await (index as any).updateEmbedders(
       buildResearchEntitySearchEmbedderConfig(openAiApiKey),
     );
-    await assertMeiliSettingsTaskSucceeded(index, embedderTask, 'updateEmbedders');
+    await assertMeiliTaskSucceeded(
+      index,
+      embedderTask,
+      'updateEmbedders',
+      MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+    );
     invalidateResearchEntitySearchEmbedderCache();
   }
   if (clearExisting) {
-    await index.deleteAllDocuments();
+    await assertMeiliTaskSucceeded(
+      index,
+      await index.deleteAllDocuments(),
+      'deleteAllDocuments',
+      MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+    );
   }
 
   let page = 1;
@@ -790,11 +776,17 @@ export async function rebuildResearchEntitySearchIndex(
       docs,
       fetchMemberNames,
     );
-    indexedDocumentCount += indexDocs.length;
     if (indexDocs.length > 0) {
-      await index.addDocuments(indexDocs, {
+      const addTask = await index.addDocuments(indexDocs, {
         primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
       });
+      await assertMeiliTaskSucceeded(
+        index,
+        addTask,
+        'addDocuments',
+        MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+      );
+      indexedDocumentCount += indexDocs.length;
     }
 
     if (docs.length < pageSize) break;

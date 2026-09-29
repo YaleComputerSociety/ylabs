@@ -87,3 +87,36 @@ export function computeIndexDocIdsToPrune(
   }
   return pruned;
 }
+
+export interface PrunedDocumentReadBack {
+  stillPresent: number;
+  unconfirmed: number;
+}
+
+export function isMeiliDocumentNotFoundError(error: unknown): boolean {
+  const failure = error as { cause?: { code?: unknown }; response?: { status?: unknown } };
+  const code = failure?.cause?.code;
+  if (code !== undefined) return code === 'document_not_found';
+  return failure?.response?.status === 404;
+}
+
+/**
+ * Only a `document_not_found` answer proves a document is gone. Any other read error, an
+ * unreachable index or a timeout, leaves the document's state unknown, and counting it as
+ * removed let an unreachable index read as a clean prune (#3720).
+ */
+export async function readBackPrunedDocuments(
+  docIds: Iterable<string>,
+  getDocument: (id: string) => Promise<unknown>,
+): Promise<PrunedDocumentReadBack> {
+  const readBack: PrunedDocumentReadBack = { stillPresent: 0, unconfirmed: 0 };
+  for (const id of docIds) {
+    try {
+      await getDocument(id);
+      readBack.stillPresent += 1;
+    } catch (error) {
+      if (!isMeiliDocumentNotFoundError(error)) readBack.unconfirmed += 1;
+    }
+  }
+  return readBack;
+}

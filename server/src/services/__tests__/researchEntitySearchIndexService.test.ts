@@ -21,6 +21,10 @@ import {
   rebuildResearchEntitySearchIndex,
 } from '../researchEntitySearchIndexService';
 
+const succeedingTaskClient = {
+  waitForTask: async () => ({ status: 'succeeded' }),
+};
+
 describe('researchEntitySearchIndexService', () => {
   it('drops a person-scoped displayName that names an umbrella organization (#2351)', () => {
     const doc = buildResearchEntitySearchIndexDocument({
@@ -648,13 +652,17 @@ describe('researchEntitySearchIndexService', () => {
     const fakeIndex = {
       updateSettings: async (settings: unknown) => {
         calls.push({ kind: 'settings', payload: settings });
+        return { taskUid: 1 };
       },
       deleteAllDocuments: async () => {
         calls.push({ kind: 'clear' });
+        return { taskUid: 2 };
       },
       addDocuments: async (documents: unknown, options: unknown) => {
         calls.push({ kind: 'documents', payload: { documents, options } });
+        return { taskUid: 3 };
       },
+      tasks: succeedingTaskClient,
     };
     const fetchPage = async (page: number) =>
       page === 1
@@ -717,12 +725,14 @@ describe('researchEntitySearchIndexService', () => {
   it('applies the embedder during rebuild only when OPENAI_API_KEY is present', async () => {
     const embedderCalls: any[] = [];
     const fakeIndex = {
-      updateSettings: async () => {},
+      updateSettings: async () => ({ taskUid: 1 }),
       updateEmbedders: async (embedders: unknown) => {
         embedderCalls.push(embedders);
+        return { taskUid: 2 };
       },
-      deleteAllDocuments: async () => {},
-      addDocuments: async () => {},
+      deleteAllDocuments: async () => ({ taskUid: 3 }),
+      addDocuments: async () => ({ taskUid: 4 }),
+      tasks: succeedingTaskClient,
     };
     const fetchPage = async (page: number) =>
       page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [];
@@ -799,7 +809,7 @@ describe('researchEntitySearchIndexService', () => {
     ).rejects.toThrow(/updateSettings task 1 did not succeed.*index_not_found/s);
   });
 
-  it('does not wait on a task when the index client has no task-status support', async () => {
+  it('refuses to report a rebuild when the index client cannot confirm its tasks', async () => {
     const fakeIndex = {
       updateSettings: async () => ({ taskUid: 1 }),
       updateEmbedders: async () => ({ taskUid: 2 }),
@@ -815,7 +825,7 @@ describe('researchEntitySearchIndexService', () => {
         fetchPage: async () => [],
         fetchMemberNames: async () => new Map(),
       }),
-    ).resolves.toMatchObject({ fetchedDocumentCount: 0 });
+    ).rejects.toThrow(/updateSettings task 1 cannot be confirmed/);
 
     if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
     else delete process.env.OPENAI_API_KEY;
@@ -827,10 +837,13 @@ describe('researchEntitySearchIndexService', () => {
     const fakeIndex = {
       updateSettings: async (settings: unknown) => {
         calls.push({ kind: 'settings', payload: settings });
+        return { taskUid: 1 };
       },
       addDocuments: async (documents: unknown, options: unknown) => {
         calls.push({ kind: 'documents', payload: { documents, options } });
+        return { taskUid: 2 };
       },
+      tasks: succeedingTaskClient,
     };
 
     await rebuildResearchEntitySearchIndex({
@@ -874,6 +887,93 @@ describe('researchEntitySearchIndexService', () => {
       ],
       options: { primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY },
     });
+  });
+
+  it('fails the rebuild when a document batch is accepted but its task fails (#3720)', async () => {
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      deleteAllDocuments: async () => ({ taskUid: 2 }),
+      addDocuments: async () => ({ taskUid: 3 }),
+      tasks: {
+        waitForTask: async (taskUid: number) =>
+          taskUid === 3
+            ? { status: 'failed', error: { code: 'invalid_document_fields' } }
+            : { status: 'succeeded' },
+      },
+    };
+
+    const outcome = await rebuildResearchEntitySearchIndex({
+      warmVocabulary: async () => new Set<string>(),
+      pageSize: 5,
+      clearExisting: true,
+      getIndex: async () => fakeIndex as any,
+      fetchPage: async (page: number) =>
+        page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
+      fetchMemberNames: async () => new Map(),
+    }).then(
+      (result) => ({ threw: false, indexed: result.indexedDocumentCount, message: '' }),
+      (error: Error) => ({ threw: true, indexed: 0, message: error.message }),
+    );
+
+    expect(outcome.threw).toBe(true);
+    expect(outcome.message).toMatch(
+      /addDocuments task 3 did not succeed.*invalid_document_fields/s,
+    );
+  });
+
+  it('fails the rebuild when clearing the index is accepted but its task fails (#3720)', async () => {
+    let addDocumentsCalls = 0;
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      deleteAllDocuments: async () => ({ taskUid: 2 }),
+      addDocuments: async () => {
+        addDocumentsCalls += 1;
+        return { taskUid: 3 };
+      },
+      tasks: {
+        waitForTask: async (taskUid: number) =>
+          taskUid === 2 ? { status: 'failed' } : { status: 'succeeded' },
+      },
+    };
+
+    await expect(
+      rebuildResearchEntitySearchIndex({
+        warmVocabulary: async () => new Set<string>(),
+        pageSize: 5,
+        clearExisting: true,
+        getIndex: async () => fakeIndex as any,
+        fetchPage: async (page: number) =>
+          page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
+        fetchMemberNames: async () => new Map(),
+      }),
+    ).rejects.toThrow(/deleteAllDocuments task 2 did not succeed/);
+    expect(addDocumentsCalls).toBe(0);
+  });
+
+  it('bounds each document task wait with a finite timeout', async () => {
+    const timeouts: Array<number | undefined> = [];
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      addDocuments: async () => ({ taskUid: 3 }),
+      tasks: {
+        waitForTask: async (_taskUid: number, options?: { timeout?: number }) => {
+          timeouts.push(options?.timeout);
+          return { status: 'succeeded' };
+        },
+      },
+    };
+
+    await rebuildResearchEntitySearchIndex({
+      warmVocabulary: async () => new Set<string>(),
+      pageSize: 5,
+      getIndex: async () => fakeIndex as any,
+      fetchPage: async (page: number) =>
+        page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
+      fetchMemberNames: async () => new Map(),
+    });
+
+    expect(timeouts).toHaveLength(2);
+    for (const timeout of timeouts) expect(Number.isFinite(timeout)).toBe(true);
   });
 
   it('rejects unsafe rebuild page sizes before configuring the index', async () => {
@@ -1088,11 +1188,13 @@ describe('rebuildResearchEntitySearchIndex archived exclusion', () => {
   const collectIndexedIds = async () => {
     const indexedIds: string[] = [];
     const fakeIndex = {
-      updateSettings: async () => {},
-      deleteAllDocuments: async () => {},
+      updateSettings: async () => ({ taskUid: 1 }),
+      deleteAllDocuments: async () => ({ taskUid: 2 }),
       addDocuments: async (documents: Array<{ id: string }>) => {
         for (const document of documents) indexedIds.push(document.id);
+        return { taskUid: 3 };
       },
+      tasks: succeedingTaskClient,
     };
     await rebuildResearchEntitySearchIndex({
       warmVocabulary: async () => new Set<string>(),

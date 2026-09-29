@@ -3,6 +3,7 @@
  */
 import { getMeiliIndex } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertMeiliTaskSucceeded, MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS } from '../utils/meiliTask';
 import { buildResearchEntitySearchIndexDocumentsWithMemberNames } from './researchEntitySearchIndexService';
 
 export type SyncableEntityType = 'researchEntity';
@@ -61,6 +62,9 @@ export const isSyncableEntityType = (entityType: string): entityType is Syncable
  */
 const isArchivedRow = (doc: any): boolean => doc?.archived === true;
 
+const confirmDocumentTask = (index: any, enqueued: unknown, label: string): Promise<void> =>
+  assertMeiliTaskSucceeded(index, enqueued, label, MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS);
+
 export const syncEntity = async (entityType: string, doc: any): Promise<boolean> => {
   const config = getConfig(entityType);
   if (!config || !doc) return false;
@@ -69,12 +73,18 @@ export const syncEntity = async (entityType: string, doc: any): Promise<boolean>
     const index = await getMeiliIndex(config.indexName);
     if (isArchivedRow(doc)) {
       const archivedId = indexDocumentId(doc);
-      if (archivedId) await index.deleteDocument(archivedId);
+      if (archivedId) {
+        await confirmDocumentTask(index, await index.deleteDocument(archivedId), 'deleteDocument');
+      }
       return true;
     }
     const meiliDoc = await config.transform(doc);
     if (!meiliDoc) return false;
-    await index.addDocuments([meiliDoc], { primaryKey: config.primaryKey });
+    await confirmDocumentTask(
+      index,
+      await index.addDocuments([meiliDoc], { primaryKey: config.primaryKey }),
+      'addDocuments',
+    );
     return true;
   } catch (error) {
     console.error(`Failed to sync ${entityType} to Meilisearch:`, sanitizeLogValue(error));
@@ -83,8 +93,8 @@ export const syncEntity = async (entityType: string, doc: any): Promise<boolean>
 };
 
 /**
- * Returns the number of documents actually submitted to the index, and 0 when the
- * batch failed. Callers still get best-effort behaviour by ignoring the value, but
+ * Returns the number of documents whose Meilisearch task succeeded, and 0 when the
+ * batch failed, including a batch the index accepted and then rejected (#3720). Callers still get best-effort behaviour by ignoring the value, but
  * one that reports a resync has to read it: inferring success from the input length
  * let a repair script print "20 entities resynced" while the index kept serving the
  * text the corpus no longer held (#2874).
@@ -98,7 +108,13 @@ export const syncEntities = async (entityType: string, docs: any[]): Promise<num
     // Archived rows are removed rather than transformed, so a batch mixing live and
     // archived rows leaves the index holding only the live ones.
     const archivedIds = docs.filter(isArchivedRow).map(indexDocumentId).filter(Boolean);
-    if (archivedIds.length > 0) await index.deleteDocuments(archivedIds as string[]);
+    if (archivedIds.length > 0) {
+      await confirmDocumentTask(
+        index,
+        await index.deleteDocuments(archivedIds as string[]),
+        'deleteDocuments',
+      );
+    }
     const liveDocs = docs.filter((doc) => !isArchivedRow(doc));
     if (liveDocs.length === 0) return 0;
     const meiliDocs = config.transformMany
@@ -107,7 +123,11 @@ export const syncEntities = async (entityType: string, docs: any[]): Promise<num
           (meiliDoc): meiliDoc is Record<string, any> => meiliDoc !== null,
         );
     if (meiliDocs.length === 0) return 0;
-    await index.addDocuments(meiliDocs, { primaryKey: config.primaryKey });
+    await confirmDocumentTask(
+      index,
+      await index.addDocuments(meiliDocs, { primaryKey: config.primaryKey }),
+      'addDocuments',
+    );
     return meiliDocs.length;
   } catch (error) {
     console.error(`Failed to sync ${entityType} batch to Meilisearch:`, sanitizeLogValue(error));
@@ -156,14 +176,16 @@ export const readIndexedFieldByDocumentId = async (
   return byDocumentId;
 };
 
-export const deleteFromIndex = async (entityType: string, id: string): Promise<void> => {
+export const deleteFromIndex = async (entityType: string, id: string): Promise<boolean> => {
   const config = getConfig(entityType);
-  if (!config || !id) return;
+  if (!config || !id) return false;
 
   try {
     const index = await getMeiliIndex(config.indexName);
-    await index.deleteDocument(id);
+    await confirmDocumentTask(index, await index.deleteDocument(id), 'deleteDocument');
+    return true;
   } catch (error) {
     console.error(`Failed to delete ${entityType} from Meilisearch:`, sanitizeLogValue(error));
+    return false;
   }
 };

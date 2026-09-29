@@ -32,6 +32,7 @@ It lazy-loads and caches the connection.
 Use `getMeiliIndex(name)` and `resolveIndexName(name)`.
 Every request is bounded by `MEILISEARCH_REQUEST_TIMEOUT_MS` (5 seconds), so a hung Meilisearch fails a search fast enough for the Mongo fallback to answer instead of holding the request for the runtime's default fetch timeout of several minutes.
 The bound is per HTTP request, so settings and document tasks are unaffected: those requests only enqueue, and `waitForTask` polls with its own overall timeout.
+An enqueue is not an outcome: every index write that reports a result confirms its task through `assertMeiliTaskSucceeded` in `server/src/utils/meiliTask.ts`, with a bounded wait, and a failed or timed-out task counts as a failure, so `syncEntity`, `syncEntities`, `deleteFromIndex`, and the rebuild's `indexedDocumentCount` report what the index applied (#3720).
 The server refuses to start in a deployed runtime (`requiresDeployedRuntimeSecurity()`) unless both `MEILISEARCH_HOST` and `MEILISEARCH_INDEX_PREFIX` are set, because the local defaults would silently point Beta or Production at `localhost` or at the unprefixed Development index.
 The check runs in `app.ts` at startup rather than inside the client, so local scripts, which usually run with no `NODE_ENV`, keep the local defaults.
 The embedder check behind hybrid search (`readResearchEntitySearchEmbedderState`) caches `configured` and `absent` for five minutes but never caches a failed check: a thrown `getEmbedders()` is logged, reported as `unknown`, and makes that search keyword-only with `degraded: true`.
@@ -107,7 +108,7 @@ Strong `CURRENT_UNDERGRADS` and `PAST_UNDERGRADS` signals outweigh the `REACH_OU
 
 `entityMaterializer` recomputes ranking live after access signals are derived.
 Browse sorts on the indexed score, not the stored one, so a Mongo write whose resync failed still serves the old order.
-`syncEntity` therefore returns whether it submitted the document, and `recomputeBrowseRankForEntities`, the browse-rank backfills, and `materializeFromRun` (`indexSyncFailures`, persisted as `ScrapeRun.materializationIndexSyncFailures`) report those rows apart from `updated` (#3638).
+`syncEntity` therefore returns whether the index applied the document (its task succeeded, #3720), and `recomputeBrowseRankForEntities`, the browse-rank backfills, and `materializeFromRun` (`indexSyncFailures`, persisted as `ScrapeRun.materializationIndexSyncFailures`) report those rows apart from `updated` (#3638).
 Admin "weakest profiles first" with `browseQuality: 'low-first'` is a separate Mongo-side path.
 
 ## `/research` client search state

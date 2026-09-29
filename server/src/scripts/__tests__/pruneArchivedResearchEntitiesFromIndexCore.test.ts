@@ -4,6 +4,7 @@ import {
   computeIndexDocIdsToPrune,
   parsePruneArchivedIndexArgs,
   PRUNE_ARCHIVED_INDEX_DEFAULT_PAGE_SIZE,
+  readBackPrunedDocuments,
 } from '../pruneArchivedResearchEntitiesFromIndexCore';
 
 describe('parsePruneArchivedIndexArgs', () => {
@@ -97,5 +98,38 @@ describe('computeIndexDocIdsToPrune', () => {
 
   it('coerces mixed id types to strings before comparing', () => {
     expect(computeIndexDocIdsToPrune([1 as unknown as string], ['2'])).toEqual(['2']);
+  });
+});
+
+describe('readBackPrunedDocuments (#3720)', () => {
+  const notFound = Object.assign(new Error('Document `x` not found.'), {
+    cause: { code: 'document_not_found' },
+    response: { status: 404 },
+  });
+
+  it('counts a document as removed only when the index answers document_not_found', async () => {
+    const readBack = await readBackPrunedDocuments(['gone', 'present'], async (id) => {
+      if (id === 'gone') throw notFound;
+      return { id };
+    });
+    expect(readBack).toEqual({ stillPresent: 1, unconfirmed: 0 });
+  });
+
+  it('reports an unreachable index as unconfirmed rather than as a clean prune', async () => {
+    const readBack = await readBackPrunedDocuments(['a', 'b'], async () => {
+      throw new Error('fetch failed');
+    });
+    expect(readBack).toEqual({ stillPresent: 0, unconfirmed: 2 });
+  });
+
+  it('does not read a missing index as a removed document', async () => {
+    const indexNotFound = Object.assign(new Error('Index not found.'), {
+      cause: { code: 'index_not_found' },
+      response: { status: 404 },
+    });
+    const readBack = await readBackPrunedDocuments(['a'], async () => {
+      throw indexNotFound;
+    });
+    expect(readBack).toEqual({ stillPresent: 0, unconfirmed: 1 });
   });
 });
