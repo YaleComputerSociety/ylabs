@@ -250,6 +250,22 @@ Four properties of the rule are load-bearing.
 
 The history read is bounded to the most recent `BARREN_RUN_HISTORY_SCAN_LIMIT` (12) runs of the source, so running out of history settles the question conservatively as "no failure".
 
+#### A run keeps what it measured
+
+`metrics` on a lane's return value is lost when the lane throws, and a throw is when a measurement is worth most: one Development run died after 474 observations with `Maximum call stack size exceeded` and stored nothing about how far it had got (#3890, #3891).
+
+A lane reports through `ctx.reportMetrics(...)` as soon as a number is known.
+The orchestrator holds the accumulator outside its `try`, so a crash cannot take it, and persists it on the success path and the failure path alike.
+A returned `metrics` object wins key by key, because the return value is the lane's final word, and a key only reported mid-run survives beside it.
+A run that measured nothing stores no `metrics` at all rather than an empty object.
+
+`reportMetrics` is optional on `ScraperContext` only because several dozen test fixtures build a context by hand; the orchestrator always supplies it and `orchestrator.test.ts` pins that, so call it as `ctx.reportMetrics?.(...)`.
+
+What this does not change: **the barren-streak guard does not need metrics and is not silent without them.**
+`classifyRunYield` reads `observationCount` to decide `productive`, and consults `metrics.workPlanner` only to upgrade a barren run to `inconclusive`, so a run with no metrics reads `barren`.
+Missing metrics can cause a false failure, never a missed one.
+Measured on Development over the 470 runs in the fourteen days to 2026-09-29: 277 belong to 22 lanes whose code returns no metrics at all, and every lane that does report stored them on every completed run but five.
+
 #### The same rule, per unit inside a lane
 
 A source-level check cannot see one unit inside a lane going to zero, because the lane's other units keep yielding and the source total never drops.
