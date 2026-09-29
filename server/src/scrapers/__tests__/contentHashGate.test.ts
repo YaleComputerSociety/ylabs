@@ -140,6 +140,45 @@ describe('descriptionHashObservations', () => {
     expect(descriptionHashObservations([], hash)).toEqual(hash);
   });
 
+  // The open retry was unbounded, so a row whose card never succeeds paid for a page read and a
+  // model call on every sweep forever: 362 rows on Development carried no stored hash at all
+  // (#3840). The bound is the description rather than a counter, because an identical value is
+  // diff-skipped and writes nothing, so the observation log cannot count attempts.
+  const PROSE = 'The lab studies protein folding kinetics in living cells.';
+
+  it('closes the retry when the run re-derived the same description and still produced no card', () => {
+    const emitted = [observation('fullDescription', PROSE)];
+    expect(descriptionHashObservations(emitted, hash, PROSE)).toEqual(hash);
+  });
+
+  it('keeps the retry open when the description changed, which is the case a card retry can fix', () => {
+    const emitted = [observation('fullDescription', PROSE)];
+    expect(descriptionHashObservations(emitted, hash, 'Something the lab used to say.')).toEqual(
+      [],
+    );
+  });
+
+  it('keeps the retry open on a first-seen description', () => {
+    const emitted = [observation('fullDescription', PROSE)];
+    expect(descriptionHashObservations(emitted, hash, undefined)).toEqual([]);
+    expect(descriptionHashObservations(emitted, hash, '   ')).toEqual([]);
+  });
+
+  // Fail open: a lookup that cannot answer must not close a decision on the row's behalf, which
+  // is the same contract `loadStoredContentHash` keeps.
+  it('compares on trimmed text, so whitespace alone does not reopen a closed retry', () => {
+    const emitted = [observation('fullDescription', `  ${PROSE}  `)];
+    expect(descriptionHashObservations(emitted, hash, PROSE)).toEqual(hash);
+  });
+
+  it('still records the hash when a card was produced, whatever the stored description says', () => {
+    const emitted = [
+      observation('fullDescription', PROSE),
+      observation('shortDescription', 'Studies protein folding kinetics.'),
+    ];
+    expect(descriptionHashObservations(emitted, hash, 'Something else entirely.')).toEqual(hash);
+  });
+
   it('passes an already-withheld hash through unchanged', () => {
     const emitted = [
       observation('fullDescription', 'The lab studies protein folding kinetics in living cells.'),

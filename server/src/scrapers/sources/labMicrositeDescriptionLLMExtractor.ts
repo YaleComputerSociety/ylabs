@@ -85,6 +85,7 @@ import {
   contentHashObservation,
   contentUnchanged,
   descriptionHashObservations,
+  loadStoredLaneDescription,
   loadStoredContentHash,
 } from '../contentHashGate';
 
@@ -1889,7 +1890,16 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         }
 
         const withCard = await this.withSynthesizedCard(observations);
-        await ctx.emit([...withCard, ...descriptionHashObservations(withCard, hashObservations)]);
+        // This lane's OWN last description, not `lab.fullDescription`: the materialized field can
+        // hold another lane's winning prose, and the bound asks whether re-reading produced the
+        // same prose THIS lane already failed to synthesize a card from. Read before emitting, so
+        // the comparison is against what was stored before this run rather than what it is about
+        // to write (#3840).
+        const storedLaneDescription = await loadStoredLaneDescription(this.name, entityRef);
+        await ctx.emit([
+          ...withCard,
+          ...descriptionHashObservations(withCard, hashObservations, storedLaneDescription),
+        ]);
         observationCount += withCard.length;
         entitiesObserved += 1;
       } catch (error) {
