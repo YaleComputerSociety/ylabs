@@ -472,19 +472,17 @@ const DecisionSummary = ({
   const showsWebsiteCta = actionLinks.showsWebsiteCta;
   const leadCardProfileUrl = actionLinks.leadCardProfileUrl;
   /**
-   * The fallback branch below tells a student y/labs has no direct link and sends
-   * them to the directory. That is false whenever the card above already links this
-   * person's profile, and emptying the website slot (#2854) makes this the branch
-   * those rows land on, so the copy has to know which of the two situations it is in.
+   * The directory fallback tells a student y/labs has no direct link, which is false
+   * whenever the card above already links this person's profile. With no other action
+   * to offer, the block would only point back at that card, so it is omitted.
    */
   const leadCardLinksProfile = actionLinks.leadCardLinksProfile;
-  const showGetInvolvedBlock =
-    (preferOrgEngagementOutreach && Boolean(officialSource)) ||
-    Boolean(piMailtoHref) ||
-    profileNeedsOwnButton ||
-    showsWebsiteCta ||
-    Boolean(officialSource) ||
-    !hasActionablePath;
+  const getInvolvedHasOwnAction =
+    profileNeedsOwnButton || showsWebsiteCta || Boolean(officialSource);
+  const needsDirectoryFallback =
+    !leadCardLinksProfile && (Boolean(piMailtoHref) || !hasActionablePath);
+  const showGetInvolvedBlock = getInvolvedHasOwnAction || needsDirectoryFallback;
+  const pageListsContacts = showGetInvolvedBlock || leadCardLinksProfile;
   return (
     <section className="rounded-card border border-line bg-panel p-4 shadow-yr-raised sm:p-5">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
@@ -509,7 +507,7 @@ const DecisionSummary = ({
               <p className="mt-2 max-w-[68ch] text-base leading-relaxed text-ink-soft">
                 This section normally explains what the research covers, in its own words. Yale
                 Research has not found a description it can publish for this one
-                {showGetInvolvedBlock
+                {pageListsContacts
                   ? ', so use the sources and contacts listed here to check the work directly before deciding fit.'
                   : '. Check the linked sources further down this page before deciding fit.'}
               </p>
@@ -651,42 +649,26 @@ const DecisionSummary = ({
                 </div>
               ) : (
                 <div className="mt-3 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3">
-                  {leadCardLinksProfile ? (
-                    <>
-                      <p className="text-sm leading-relaxed text-ink">
-                        {piName
-                          ? `${piName}'s official profile is linked in the card above.`
-                          : 'The official profile is linked in the card above.'}
-                      </p>
-                      <p className="mt-1 text-sm leading-relaxed text-muted">
-                        y/labs has no separate website for this research, so open that profile for
-                        contact details, then email to introduce yourself.
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-sm leading-relaxed text-ink">
-                        {piName
-                          ? `y/labs does not have a direct link for ${piName}${
-                              piAffiliation ? ` (${piAffiliation})` : ''
-                            } yet.`
-                          : 'y/labs does not have a direct link for this research yet.'}
-                      </p>
-                      <p className="mt-1 text-sm leading-relaxed text-muted">
-                        {piName
-                          ? 'Look them up in the Yale Directory to find their contact details, then email to introduce yourself.'
-                          : 'Search the Yale Directory and official Yale department pages to find a contact, then email to introduce yourself.'}
-                      </p>
-                      <a
-                        href={directorySearchUrl}
-                        target="_blank"
-                        rel={EXTERNAL_LINK_REL}
-                        className="yr-pressable mt-3 inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
-                      >
-                        Search the Yale Directory
-                      </a>
-                    </>
-                  )}
+                  <p className="text-sm leading-relaxed text-ink">
+                    {piName
+                      ? `y/labs does not have a direct link for ${piName}${
+                          piAffiliation ? ` (${piAffiliation})` : ''
+                        } yet.`
+                      : 'y/labs does not have a direct link for this research yet.'}
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-muted">
+                    {piName
+                      ? 'Look them up in the Yale Directory to find their contact details, then email to introduce yourself.'
+                      : 'Search the Yale Directory and official Yale department pages to find a contact, then email to introduce yourself.'}
+                  </p>
+                  <a
+                    href={directorySearchUrl}
+                    target="_blank"
+                    rel={EXTERNAL_LINK_REL}
+                    className="yr-pressable mt-3 inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                  >
+                    Search the Yale Directory
+                  </a>
                 </div>
               )}
             </div>

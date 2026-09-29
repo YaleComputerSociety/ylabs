@@ -1183,6 +1183,39 @@ describe('LabDetail page', () => {
     expect(emailLink.getAttribute('href')).toBe('mailto:jordan.researcher@example.test');
   });
 
+  it('omits the get-involved block when it would only point back at the lead card', async () => {
+    const LEAD_PROFILE_URL = 'https://medicine.yale.edu/profile/fixture-lead/';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl: '',
+        sourceUrls: [],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            email: 'jordan.researcher@example.test',
+            profileUrls: { official: LEAD_PROFILE_URL },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: 'Email Jordan Researcher' })).toBeTruthy();
+    expect(screen.queryByText('How to get involved')).toBeNull();
+    expect(screen.queryByText(/linked in the card above/)).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+  });
+
   it('offers a working mailto email link without recording outreach', async () => {
     renderLabDetail({
       ...basePayload,
