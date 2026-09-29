@@ -572,15 +572,55 @@ export async function applyResearchEntityResearchAreaCanonicalization(
   if (!Object.prototype.hasOwnProperty.call(set, 'researchAreas')) return result;
   if (!Array.isArray(set.researchAreas)) return result;
 
-  const canonicalizer = await getResearchAreaCanonicalizer();
-  const canonical = canonicalizer.canonicalizeResearchAreas(set.researchAreas);
-  const departmentKeys = departmentMatchKeys(departments);
-  const isDepartmentDuplicate = (value: string) => departmentKeys.has(researchAreaMatchKey(value));
-  const isRejected = (value: string) =>
-    isDepartmentDuplicate(value) || isDivisionLevelResearchAreaLabel(value);
-  set.researchAreas = canonical.values.filter((value) => !isRejected(value));
-  result.unmatchedResearchAreas = canonical.unmatched.filter((value) => !isRejected(value));
-  result.droppedResearchAreas = [...canonical.dropped, ...canonical.values.filter(isRejected)];
+  const partition = partitionResearchAreas(
+    await getResearchAreaCanonicalizer(),
+    set.researchAreas,
+    departments,
+  );
+  set.researchAreas = partition.admitted;
+  result.unmatchedResearchAreas = partition.unmatched;
+  result.droppedResearchAreas = partition.dropped;
 
   return result;
+}
+
+export interface ResearchAreaPartition {
+  admitted: string[];
+  unmatched: string[];
+  dropped: string[];
+}
+
+/**
+ * The one admission rule for a research-area list against a row: label leakage,
+ * a bare division-level label, and a value equal to one of THIS row's own
+ * `departments` are dropped, and everything else is kept in canonical form. A
+ * department name that is not this row's department is kept, because on another
+ * row it is a real topic (Neuroscience on a psychiatry lab).
+ *
+ * Shared by the materializer, the evidence predicate, and the extractor lane, so a
+ * list whose every value this drops is no evidence anywhere: changing it here
+ * changes all three together.
+ */
+export function partitionResearchAreas(
+  canonicalizer: ResearchAreaCanonicalizer,
+  raw: unknown,
+  departments?: unknown,
+): ResearchAreaPartition {
+  const canonical = canonicalizer.canonicalizeResearchAreas(raw);
+  const departmentKeys = departmentMatchKeys(departments);
+  const isRejected = (value: string) =>
+    departmentKeys.has(researchAreaMatchKey(value)) || isDivisionLevelResearchAreaLabel(value);
+  return {
+    admitted: canonical.values.filter((value) => !isRejected(value)),
+    unmatched: canonical.unmatched.filter((value) => !isRejected(value)),
+    dropped: [...canonical.dropped, ...canonical.values.filter(isRejected)],
+  };
+}
+
+export function admissibleResearchAreas(
+  canonicalizer: ResearchAreaCanonicalizer,
+  raw: unknown,
+  departments?: unknown,
+): string[] {
+  return partitionResearchAreas(canonicalizer, raw, departments).admitted;
 }

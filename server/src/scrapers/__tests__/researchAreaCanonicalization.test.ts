@@ -6,6 +6,7 @@ import {
   createResearchAreaCanonicalizer,
   isDivisionLevelResearchAreaLabel,
   isResearchAreaLabelLeakage,
+  partitionResearchAreas,
   researchAreaMatchKey,
   resetResearchAreaCanonicalizerCache,
   setResearchAreaCanonicalizerForTesting,
@@ -672,6 +673,32 @@ describe('applyResearchEntityResearchAreaCanonicalization', () => {
     const result = await applyResearchEntityResearchAreaCanonicalization(set, ['Pathology']);
     expect(set.researchAreas).toEqual(['Artificial Intelligence']);
     expect(result.droppedResearchAreas).toEqual(['Genetics']);
+  });
+});
+
+describe('partitionResearchAreas department-duplicate scope (#3836)', () => {
+  it('drops the row own department and keeps another department name as a topic', () => {
+    const partition = partitionResearchAreas(
+      canonicalizer,
+      ['Economics', 'Neuroscience'],
+      ['Economics'],
+    );
+    expect(partition.admitted).toEqual(['Neuroscience']);
+    expect(partition.dropped).toEqual(['Economics']);
+  });
+
+  it('keeps a department name as a topic on a row with no departments', () => {
+    expect(partitionResearchAreas(canonicalizer, ['Economics', 'Neuroscience']).admitted).toEqual([
+      'Economics',
+      'Neuroscience',
+    ]);
+  });
+
+  it('drops the row own department in its canonical form, not only verbatim', () => {
+    expect(
+      partitionResearchAreas(canonicalizer, ['economics.', 'Gender Studies'], ['Economics'])
+        .admitted,
+    ).toEqual(['Gender Studies']);
   });
 });
 

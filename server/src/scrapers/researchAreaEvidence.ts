@@ -5,6 +5,11 @@ import {
   type MergedInResearchEntityRow,
 } from '../services/researchEntityCanonicalTombstone';
 import { serializedDocumentId } from '../utils/idSerialization';
+import {
+  admissibleResearchAreas,
+  getResearchAreaCanonicalizer,
+  type ResearchAreaCanonicalizer,
+} from './researchAreaCanonicalization';
 
 const RESEARCH_AREAS_FIELD = 'researchAreas';
 const RESEARCH_ENTITY_TYPE: ObservedEntityType = 'researchEntity';
@@ -13,8 +18,11 @@ const LOADER_CHUNK_SIZE = 500;
 export interface ResearchAreaEvidenceRow {
   _id?: unknown;
   slug?: unknown;
+  departments?: unknown;
   manuallyLockedFields?: unknown;
 }
+
+export type ResearchAreaAdmission = (areas: unknown) => boolean;
 
 export interface ResearchAreaEvidenceIdentity {
   entityIds: ReadonlySet<string>;
@@ -52,13 +60,26 @@ export function researchAreasAreManuallyLocked(row: ResearchAreaEvidenceRow): bo
   );
 }
 
-export function isLiveResearchAreaStatement(observation: ResearchAreaEvidenceObservation): boolean {
+export function researchAreaAdmissionForRow(
+  canonicalizer: ResearchAreaCanonicalizer,
+  row: Pick<ResearchAreaEvidenceRow, 'departments'>,
+): ResearchAreaAdmission {
+  return (areas) => admissibleResearchAreas(canonicalizer, areas, row.departments).length > 0;
+}
+
+// A statement whose every area the row rejects is no evidence, because the materializer
+// will not let it displace the stored list either (#3836).
+export function isLiveResearchAreaStatement(
+  observation: ResearchAreaEvidenceObservation,
+  admits: ResearchAreaAdmission,
+): boolean {
   if (observation.field !== RESEARCH_AREAS_FIELD) return false;
   if (observation.superseded === true) return false;
   if (observation.rollback?.rolledBackAt) return false;
   return (
     Array.isArray(observation.value) &&
-    observation.value.some((area) => typeof area === 'string' && area.trim().length > 0)
+    observation.value.some((area) => typeof area === 'string' && area.trim().length > 0) &&
+    admits(observation.value)
   );
 }
 
@@ -77,10 +98,11 @@ export function observationBelongsToIdentity(
 export function hasLiveResearchAreaEvidence(
   identity: ResearchAreaEvidenceIdentity,
   observations: ReadonlyArray<ResearchAreaEvidenceObservation>,
+  admits: ResearchAreaAdmission,
 ): boolean {
   return observations.some(
     (observation) =>
-      isLiveResearchAreaStatement(observation) &&
+      isLiveResearchAreaStatement(observation, admits) &&
       observationBelongsToIdentity(observation, identity),
   );
 }
@@ -108,6 +130,7 @@ export async function loadResearchAreaEvidenceBackedRowIds(
   rows: ReadonlyArray<ResearchAreaEvidenceRow>,
 ): Promise<Set<string>> {
   const backed = new Set<string>();
+  const canonicalizer = await getResearchAreaCanonicalizer();
   const keyedRows = rows.filter((row) => serializedDocumentId(row._id));
   for (let start = 0; start < keyedRows.length; start += LOADER_CHUNK_SIZE) {
     const chunk = keyedRows.slice(start, start + LOADER_CHUNK_SIZE);
@@ -119,13 +142,14 @@ export async function loadResearchAreaEvidenceBackedRowIds(
       return {
         rowId,
         identity: researchAreaEvidenceIdentity(row, mergedInBySurvivor.get(rowId) ?? []),
+        admits: researchAreaAdmissionForRow(canonicalizer, row),
       };
     });
     const observations = await loadLiveResearchAreaObservations(
       identities.map(({ identity }) => identity),
     );
-    for (const { rowId, identity } of identities) {
-      if (hasLiveResearchAreaEvidence(identity, observations)) backed.add(rowId);
+    for (const { rowId, identity, admits } of identities) {
+      if (hasLiveResearchAreaEvidence(identity, observations, admits)) backed.add(rowId);
     }
   }
   return backed;

@@ -85,6 +85,25 @@ describe('research-area evidence against a real store (#3836)', () => {
     });
   });
 
+  describe('an observation the row wholly rejects', () => {
+    it('backs no row whose only observation names its own department', async () => {
+      const echoed = await row('example-department-echo', {
+        departments: ['Psychology'],
+        researchAreas: ['Neuroscience'],
+      });
+      const mixed = await row('example-department-mixed', {
+        departments: ['Psychology'],
+        researchAreas: ['Neuroscience'],
+      });
+      await areaObservation({ entityId: echoed._id, value: ['Psychology'] });
+      await areaObservation({ entityId: mixed._id, value: ['Psychology', 'Neuroscience'] });
+
+      const backed = await loadResearchAreaEvidenceBackedRowIds([echoed, mixed]);
+
+      expect([...backed]).toEqual([String(mixed._id)]);
+    });
+  });
+
   describe('findResearchAreaCandidateEntities', () => {
     const seedMixedRows = async () => {
       await row('example-empty', { researchAreas: [] });

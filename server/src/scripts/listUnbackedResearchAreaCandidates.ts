@@ -64,7 +64,8 @@ export function unbackedResearchAreaCandidateReport(
     predicate: [
       'unarchived student_ready rows',
       'whose researchAreas is non-empty and not manually locked,',
-      'backed by no live researchAreas observation on the row or any merged-in key,',
+      'backed by no live researchAreas observation on the row or any merged-in key',
+      'that states an area the row admits (not only its own department or a division label),',
       'with at least one usable source url',
     ].join(' '),
     storedNonEmptyRows: docs.length,
@@ -92,6 +93,7 @@ async function main(): Promise<void> {
       websiteUrl: 1,
       website: 1,
       sourceUrls: 1,
+      departments: 1,
       researchAreas: 1,
       manuallyLockedFields: 1,
     },
