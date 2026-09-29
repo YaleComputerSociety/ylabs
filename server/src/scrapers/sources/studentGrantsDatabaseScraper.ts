@@ -7,9 +7,10 @@
  * *applying* requires a login. Each fund has its own /Funds/FundDetails.aspx page carrying
  * the application window, eligibility, award amount, and search facets.
  *
- * Only the fund search grid is driven by JavaScript postbacks, so it alone goes through
- * the rendered (headless) fetch path. A FundDetails page is server-rendered and is read
- * with the shared static fetch. Funds are enumerated from the grid when it renders and
+ * The fund search grid is driven by JavaScript postbacks, so it goes through the Scrapling
+ * `stealthy` rendered fetch, which is an owner decision to keep. Fund pages use the same
+ * renderer whenever one is configured and fall back to the shared static fetch otherwise,
+ * because a FundDetails page is server-rendered. Funds are enumerated from the grid when it renders and
  * always from the FundDetails pages the live catalog already cites, so the lane still
  * reads every cited fund on a machine with no renderer (#3984).
  *
@@ -423,6 +424,27 @@ export function createStaticStudentGrantsHtmlFetcher(
   };
 }
 
+/**
+ * Fund pages go through the stealthy renderer whenever one is configured
+ * (`SCRAPLING_RENDERER_ENABLED=true`), which is the lane's intended fetch, and fall back to
+ * the static fetch when the renderer is disabled or returns no usable page. A FundDetails
+ * page is server-rendered, so the fallback reads the same fields.
+ */
+function configuredRenderedDetailFetcher(): StudentGrantsHtmlFetcher | null {
+  const renderer = createScraplingRenderedFetcher();
+  return renderer ? createRenderedStudentGrantsHtmlFetcher(renderer) : null;
+}
+
+export function createStudentGrantsDetailFetcher(
+  renderedFetcher: StudentGrantsHtmlFetcher | null = configuredRenderedDetailFetcher(),
+  staticFetcher: StudentGrantsHtmlFetcher = createStaticStudentGrantsHtmlFetcher(),
+): StudentGrantsHtmlFetcher {
+  return async (url, useCache, sourceName) => {
+    const rendered = renderedFetcher ? await renderedFetcher(url, useCache, sourceName) : '';
+    return rendered || staticFetcher(url, useCache, sourceName);
+  };
+}
+
 export interface StudentGrantsDatabaseScraperOptions {
   searchUrl?: string;
   searchFetcher?: StudentGrantsHtmlFetcher;
@@ -461,7 +483,7 @@ export class StudentGrantsDatabaseScraper implements IScraper {
   constructor(options: StudentGrantsDatabaseScraperOptions = {}) {
     this.searchUrl = options.searchUrl ?? DEFAULT_STUDENT_GRANTS_SEARCH_URL;
     this.searchFetcher = options.searchFetcher ?? createRenderedStudentGrantsHtmlFetcher();
-    this.detailFetcher = options.detailFetcher ?? createStaticStudentGrantsHtmlFetcher();
+    this.detailFetcher = options.detailFetcher ?? createStudentGrantsDetailFetcher();
     this.loadSeedUrls = options.loadSeedUrls ?? loadCitedFundDetailUrls;
   }
 

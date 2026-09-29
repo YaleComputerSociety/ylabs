@@ -4,6 +4,7 @@ import {
   STUDENT_GRANTS_DATABASE_SOURCE,
   StudentGrantsDatabaseScraper,
   createRenderedStudentGrantsHtmlFetcher,
+  createStudentGrantsDetailFetcher,
   fundToObservations,
   isRecordSpecificFundDetailUrl,
   parseFundDetailPage,
@@ -253,6 +254,40 @@ describe('createRenderedStudentGrantsHtmlFetcher', () => {
 
     await expect(fetchHtml(FUND_B_URL, false, STUDENT_GRANTS_DATABASE_SOURCE)).resolves.toBe('');
     expect(renderedFetcher).toHaveBeenCalledWith(expect.objectContaining({ mode: 'stealthy' }));
+  });
+});
+
+describe('createStudentGrantsDetailFetcher', () => {
+  it('reads a fund page through the stealthy renderer when one is configured', async () => {
+    const rendered = vi.fn(async () => FUND_A_DETAIL_HTML);
+    const staticFetch = vi.fn(async () => '');
+    const fetchDetail = createStudentGrantsDetailFetcher(rendered, staticFetch);
+
+    await expect(fetchDetail(FUND_A_URL, false, STUDENT_GRANTS_DATABASE_SOURCE)).resolves.toBe(
+      FUND_A_DETAIL_HTML,
+    );
+    expect(staticFetch).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the static fetch when the renderer returns no usable page', async () => {
+    const staticFetch = vi.fn(async () => FUND_A_DETAIL_HTML);
+    const fetchDetail = createStudentGrantsDetailFetcher(
+      vi.fn(async () => ''),
+      staticFetch,
+    );
+
+    await expect(fetchDetail(FUND_A_URL, false, STUDENT_GRANTS_DATABASE_SOURCE)).resolves.toBe(
+      FUND_A_DETAIL_HTML,
+    );
+  });
+
+  it('uses the static fetch alone when no renderer is configured', async () => {
+    const staticFetch = vi.fn(async () => FUND_A_DETAIL_HTML);
+    const fetchDetail = createStudentGrantsDetailFetcher(null, staticFetch);
+
+    await expect(fetchDetail(FUND_A_URL, false, STUDENT_GRANTS_DATABASE_SOURCE)).resolves.toBe(
+      FUND_A_DETAIL_HTML,
+    );
   });
 });
 
