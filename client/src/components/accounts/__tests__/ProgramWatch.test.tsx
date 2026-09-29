@@ -261,6 +261,21 @@ describe('ProgramWatch', () => {
       },
     );
 
+    it('reports an unknown count rather than zero when the watched ids fail', async () => {
+      failing('/users/watchedProgramIds');
+      const onSummaryChange = vi.fn();
+
+      render(
+        <MemoryRouter>
+          <ProgramWatch onSummaryChange={onSummaryChange} />
+        </MemoryRouter>,
+      );
+
+      await screen.findByRole('alert');
+      expect(onSummaryChange).toHaveBeenLastCalledWith(expect.objectContaining({ count: null }));
+      expect(onSummaryChange).not.toHaveBeenCalledWith(expect.objectContaining({ count: 0 }));
+    });
+
     it('loads the watched list again when the student retries', async () => {
       const request = failing('/users/watchedProgramPlans');
 
