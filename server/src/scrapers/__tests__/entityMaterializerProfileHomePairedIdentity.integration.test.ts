@@ -28,6 +28,7 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { materializeEntity } from '../entityMaterializer';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 
 const SLUG = 'dept-synthetic-member';
 const PERSON_ROW_NAME = 'Synthetic Member Faculty Research';
@@ -113,4 +114,33 @@ describe("the profile lane's home type counts only beside its own name (#3886)",
     expect((await stored())?.entityType).toBe('CENTER');
   });
 
+  it("refuses the lane's type and kind when its name for the row is refused", async () => {
+    await seedPersonRowWithHomeType();
+    await seed('name', HOME_NAME, LANE, 0.96);
+    await ResearchEntity.updateOne(
+      { slug: SLUG },
+      {
+        $set: {
+          fieldValueRefusals: {
+            name: [
+              {
+                valueKey: fieldValueRefusalKey('name', HOME_NAME),
+                rule: 'not_this_rows_research',
+                refusedBy: 'research-entity:refuse-field-value',
+                refusedAt: new Date('2026-09-24T00:00:00Z'),
+                note: 'synthetic',
+              },
+            ],
+          },
+        },
+      },
+    );
+
+    await materializeEntity('researchEntity', { entityKey: SLUG });
+
+    const row = await stored();
+    expect(row?.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(row?.kind).not.toBe('center');
+    expect(row?.name).toBe(PERSON_ROW_NAME);
+  });
 });

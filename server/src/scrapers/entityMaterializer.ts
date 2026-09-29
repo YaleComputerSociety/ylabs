@@ -796,12 +796,13 @@ const PROFILE_HOME_PAIRED_IDENTITY_FIELDS = new Set(['entityType', 'kind']);
  */
 export function withoutUnpairedProfileHomeIdentity<
   T extends { sourceName?: unknown; field?: unknown; value?: unknown },
->(observations: T[]): T[] {
+>(observations: T[], fieldValueRefusals: unknown): T[] {
   const laneNamesTheRow = observations.some(
     (observation) =>
       observation.sourceName === OFFICIAL_PROFILE_PI_BACKFILL_SOURCE &&
       observation.field === 'name' &&
-      textValue(observation.value).length > 0,
+      textValue(observation.value).length > 0 &&
+      !valueIsRefused(fieldValueRefusals, 'name', observation.value),
   );
   if (laneNamesTheRow) return observations;
   return observations.filter(
@@ -7290,6 +7291,7 @@ export async function materializeEntity(
     withoutWithdrawnUndergradEvidenceQuotes(
       withoutUnpairedProfileHomeIdentity(
         obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o)),
+        entityDoc?.fieldValueRefusals,
       ),
       undergradEvidenceQuoteWithdrawnBy,
     ),
