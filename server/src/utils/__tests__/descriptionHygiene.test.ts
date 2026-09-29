@@ -2040,6 +2040,12 @@ describe('isCitationAuthorListDumpText citation-list fail-closed (#1481)', () =>
     expect(sanitizeResearchEntityDescription(APA_ENTRY)).toBe('');
   });
 
+  it('refuses an HTML-wrapped APA-order bibliography entry with a trailing journal sentence', () => {
+    const HTML_APA_ENTRY =
+      '<p> Okafor, J. A., Lindqvist, M.-L., Brennan, W.G., Castell, S. N., 2019. Thermal plumes in stratified basins. Journal of Fluid Studies 12, 1-20.</p>';
+    expect(sanitizeResearchEntityDescription(HTML_APA_ENTRY)).toBe('');
+  });
+
   it('keeps research prose that lists APA-order publications after it', () => {
     const PROSE_THEN_PUBLICATIONS =
       'The group studies how sleep health responds to psychosocial stress in underserved communities, using actigraphy and interviews. Recent work: Okafor, J. A., Lindqvist, M.-L., Brennan, W.G., Castell, S. N., 2021. Sleep and stress.';

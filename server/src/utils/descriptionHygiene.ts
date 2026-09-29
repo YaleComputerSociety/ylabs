@@ -760,12 +760,15 @@ const citationSurnameCommaInitialsListPattern =
  * start of the text, so it refuses a value that IS a bibliography entry but not
  * research prose that lists its publications after it: on Development the
  * unanchored form also matched a served 798-character research description.
+ * Every tag is stripped before that anchor is tested, because an earlier
+ * cleaner can drop a closing tag and leave a bare leading `<p>` that
+ * `stripHtmlTagMarkupForDetection` does not reach.
  */
 export function isCitationAuthorListDumpText(text: unknown): boolean {
   const stripped = stripHtmlTagMarkupForDetection(text);
   return (
     citationAuthorInitialsListPattern.test(stripped) ||
-    citationSurnameCommaInitialsListPattern.test(stripped)
+    citationSurnameCommaInitialsListPattern.test(String(text || '').replace(anyHtmlTagPattern, ' '))
   );
 }
 
