@@ -4,6 +4,7 @@ import {
   STUDENT_GRANTS_DATABASE_SOURCE,
   StudentGrantsDatabaseScraper,
   createRenderedStudentGrantsHtmlFetcher,
+  createStudentGrantsDetailFetcher,
   fundToObservations,
   isRecordSpecificFundDetailUrl,
   parseFundDetailPage,
@@ -37,24 +38,56 @@ const SEARCH_RESULTS_HTML = `
   </body></html>
 `;
 
-const FUND_A_DETAIL_HTML = `
+const P = 'ctl00_PreContent_FundDetails1_';
+
+function facetPanel(id: number, label: string, values: string[]): string {
+  const items = values.map((value) => `<li> ${value}</ li>`).join('');
+  return `<div id="${P}${id}"><DIV id="${P}divHeader_${id}"><img src="../Images/plus.gif" /> <b>${label}</b></DIV></div>
+    <div id="${P}pnlBody_${id}"><DIV id="${P}divBody_${id}"><ul id='ul${id}'>${items}<ul></DIV></div>`;
+}
+
+function fundDetailHtml(
+  options: {
+    opens?: string;
+    deadline?: string;
+    closedOn?: string;
+    award?: string;
+  } = {},
+): string {
+  const {
+    opens = '1/15/2099',
+    deadline = '2/12/2099 12:00 PM',
+    closedOn = '',
+    award = '',
+  } = options;
+  return `
   <html><body>
     <nav><a href="/Login.aspx">Login</a></nav>
-    <div id="ctl00_PreContent">
-      <h1 class="Grant_hd">Richter Summer Research Fellowship</h1>
-      <p>The Richter Fellowship funds independent summer research projects proposed
-         by Yale College undergraduates working under a faculty mentor.</p>
-      <p>Sponsoring Organization: Yale College Dean's Office</p>
-      <p>Award Amount: $4,000</p>
-      <p>Deadline: February 12, 2099</p>
-      <p>Year of Study: Sophomore, Junior</p>
-      <p>Term of Award: Summer</p>
-      <p>Purpose: Research, Travel</p>
-      <p>Citizenship: All students</p>
-      <p>Eligibility: Enrolled Yale College undergraduates in good standing.</p>
+    <div class="fdi-date-info">
+      <div id="${P}spnBeginApplication" class="fdi-start-date-title"> Begin Accepting Applications Date: </div>
+      <div class="fdi-start-date"> ${opens} </div>
+      <div id="${P}spnDeadlineApplication" class="fdi-start-date-title"> <strong>Deadline Date (EST Time Zone):</strong> </div>
+      <div class="fdi-start-date"> ${deadline} </div>
     </div>
-  </body></html>
-`;
+    <span id="${P}lblFundName">Fixture Summer Research Fellowship</span>
+    <span id="${P}lblAwardAmount">${award}</span>
+    <span id="${P}lblFundClosedOn">${closedOn}</span>
+    <span id="${P}lblReasonClosed"></span>
+    <span id="${P}lblBriefDescription"><h1 class='Grant_Criteria_hd'>Brief Description:</h1>The fellowship funds independent summer research projects proposed by Yale College undergraduates working under a faculty mentor.</span>
+    <span id="${P}lblApplicationInformation"></span>
+    <span id="${P}lblSpecialEligibilityRequirements"><h1 class='Grant_Criteria_hd'>Special Eligibility Requirements:</h1>Enrolled Yale College undergraduates in good standing.</span>
+    <span id="${P}lblRestrictionstoUseofAward"></span>
+    <span id="${P}lblFundContactInformation"><h1 class='Grant_Criteria_hd'>Contact Information:</h1>For questions, contact <a href=mailto:fixture.contact@example.org>fixture.contact@example.org</a></span>
+    <span id="${P}lblEligibilityRequirements"><h1 class='Grant_Criteria_hd'>Search Filters:</h1></span>
+    ${facetPanel(1, 'Current Year of Study', ['Sophomore', 'Junior'])}
+    ${facetPanel(2, 'Term of Award', ['Summer'])}
+    ${facetPanel(3, 'Grant or Fellowship Purpose', ['Research', 'Travel'])}
+    ${facetPanel(4, 'Global Region or Country', ['Europe', '-- France (Western Europe)', 'Asia', '-- Japan (East Asia)'])}
+    ${facetPanel(5, 'Citizenship Status', ['U.S. citizens are eligible'])}
+  </body></html>`;
+}
+
+const FUND_A_DETAIL_HTML = fundDetailHtml({ award: 'Award Amount: $4,000' });
 
 const AUTH_SHELL_HTML = `
   <html><body>
@@ -119,42 +152,70 @@ describe('parseFundSearchResults', () => {
 });
 
 describe('parseFundDetailPage', () => {
-  const referenceDate = new Date('2099-01-01T00:00:00Z');
+  const referenceDate = new Date('2099-02-01T00:00:00Z');
 
-  it('extracts identity, description, eligibility, award, sponsor, deadline, and facets', () => {
+  it('reads each field from its own element on a server-rendered fund page', () => {
     const fund = parseFundDetailPage(
       FUND_A_DETAIL_HTML,
-      { title: 'Richter Summer Research Fellowship', url: FUND_A_URL },
+      { title: '', url: FUND_A_URL },
       referenceDate,
     );
-    expect(fund).not.toBeNull();
-    expect(fund?.title).toBe('Richter Summer Research Fellowship');
-    expect(fund?.url).toBe(FUND_A_URL);
-    expect(fund?.sourceKey).toBe(sourceKeyForFund(FUND_A_URL));
-    expect(fund?.awardAmount).toContain('$4,000');
-    expect(fund?.sponsoringOrganization).toContain("Yale College Dean's Office");
-    expect(fund?.eligibility).toContain('Yale College undergraduates');
-    expect(fund?.deadline?.getUTCFullYear()).toBe(2099);
-    expect(fund?.yearOfStudy).toEqual(expect.arrayContaining(['Sophomore', 'Junior']));
-    expect(fund?.termOfAward).toContain('Summer');
-    expect(fund?.purpose).toEqual(expect.arrayContaining(['Research', 'Travel']));
-    expect(fund?.isAcceptingApplications).toBe(true);
-    expect(fund?.description).toBeTruthy();
+    expect(fund).toMatchObject({
+      title: 'Fixture Summer Research Fellowship',
+      url: FUND_A_URL,
+      sourceKey: sourceKeyForFund(FUND_A_URL),
+      awardAmount: '$4,000',
+      yearOfStudy: ['Sophomore', 'Junior'],
+      termOfAward: ['Summer'],
+      purpose: ['Research', 'Travel'],
+      citizenshipStatus: ['U.S. citizens are eligible'],
+      isAcceptingApplications: true,
+    });
+    expect(fund?.description).toMatch(/^The fellowship funds independent summer research/);
+    expect(fund?.eligibility).toBe('Enrolled Yale College undergraduates in good standing.');
+    expect(fund?.applicationInformation).toBeUndefined();
   });
 
-  it('fails closed on an auth/search-filter shell', () => {
+  it('takes the deadline and the opening date from their own labels', () => {
+    const fund = parseFundDetailPage(
+      FUND_A_DETAIL_HTML,
+      { title: '', url: FUND_A_URL },
+      referenceDate,
+    );
+    expect(fund?.deadline?.toISOString()).toBe('2099-02-12T23:59:59.999Z');
+    expect(fund?.applicationOpenDate?.toISOString()).toBe('2099-01-15T00:00:00.000Z');
+  });
+
+  it('keeps regions and drops the countries listed under them', () => {
+    const fund = parseFundDetailPage(
+      FUND_A_DETAIL_HTML,
+      { title: '', url: FUND_A_URL },
+      referenceDate,
+    );
+    expect(fund?.globalRegions).toEqual(['Europe', 'Asia']);
+  });
+
+  it('never reads the contact block', () => {
+    const fund = parseFundDetailPage(
+      FUND_A_DETAIL_HTML,
+      { title: '', url: FUND_A_URL },
+      referenceDate,
+    );
+    expect(JSON.stringify(fund)).not.toContain('example.org');
+  });
+
+  it('fails closed on a page with no fund name', () => {
     expect(
-      parseFundDetailPage(AUTH_SHELL_HTML, { title: '', url: FUND_A_URL }, referenceDate),
+      parseFundDetailPage(AUTH_SHELL_HTML, { title: 'Anything', url: FUND_A_URL }, referenceDate),
     ).toBeNull();
   });
 
-  it('marks a fund with a past deadline as not accepting applications', () => {
-    const fund = parseFundDetailPage(
-      FUND_A_DETAIL_HTML,
-      { title: 'Richter Summer Research Fellowship', url: FUND_A_URL },
-      new Date('2100-06-01T00:00:00Z'),
-    );
-    expect(fund?.isAcceptingApplications).toBe(false);
+  it('is not accepting before the window opens, after the deadline, or once closed', () => {
+    const page = (options: Parameters<typeof fundDetailHtml>[0]) =>
+      parseFundDetailPage(fundDetailHtml(options), { title: '', url: FUND_A_URL }, referenceDate);
+    expect(page({ opens: '3/01/2099' })?.isAcceptingApplications).toBe(false);
+    expect(page({ deadline: '1/20/2099' })?.isAcceptingApplications).toBe(false);
+    expect(page({ closedOn: 'Closed on 1/25/2099' })?.isAcceptingApplications).toBe(false);
   });
 });
 
@@ -162,8 +223,8 @@ describe('fundToObservations', () => {
   it('emits fellowship observations citing the fund detail URL as source and application link', () => {
     const fund = parseFundDetailPage(
       FUND_A_DETAIL_HTML,
-      { title: 'Richter Summer Research Fellowship', url: FUND_A_URL },
-      new Date('2099-01-01T00:00:00Z'),
+      { title: '', url: FUND_A_URL },
+      new Date('2099-02-01T00:00:00Z'),
     )!;
     const observations = fundToObservations(fund);
     const byField = new Map(observations.map((obs) => [obs.field, obs.value]));
@@ -173,9 +234,10 @@ describe('fundToObservations', () => {
     expect(observations.every((obs) => obs.entityKey === fund.sourceKey)).toBe(true);
     expect(byField.get('sourceName')).toBe(STUDENT_GRANTS_DATABASE_SOURCE);
     expect(byField.get('applicationLink')).toBe(FUND_A_URL);
-    expect(byField.get('awardAmount')).toContain('$4,000');
-    expect(byField.get('eligibility')).toContain('Yale College undergraduates');
+    expect(byField.get('awardAmount')).toBe('$4,000');
+    expect(byField.get('applicationOpenDate')).toEqual(new Date('2099-01-15T00:00:00.000Z'));
     expect(byField.get('archived')).toBe(false);
+    expect([...byField.keys()]).not.toContain('contactEmail');
   });
 });
 
@@ -195,35 +257,106 @@ describe('createRenderedStudentGrantsHtmlFetcher', () => {
   });
 });
 
-describe('StudentGrantsDatabaseScraper.run', () => {
-  it('fails closed and emits nothing when the rendered fetcher is unavailable', async () => {
-    const fetcher = vi.fn(async () => '');
-    const scraper = new StudentGrantsDatabaseScraper(DEFAULT_STUDENT_GRANTS_SEARCH_URL, fetcher);
-    const { ctx, emitted } = makeContext();
+describe('createStudentGrantsDetailFetcher', () => {
+  it('reads a fund page through the stealthy renderer when one is configured', async () => {
+    const rendered = vi.fn(async () => FUND_A_DETAIL_HTML);
+    const staticFetch = vi.fn(async () => '');
+    const fetchDetail = createStudentGrantsDetailFetcher(rendered, staticFetch);
 
-    const result = await scraper.run(ctx);
-
-    expect(result.observationCount).toBe(0);
-    expect(result.entitiesObserved).toBe(0);
-    expect(emitted).toHaveLength(0);
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    await expect(fetchDetail(FUND_A_URL, false, STUDENT_GRANTS_DATABASE_SOURCE)).resolves.toBe(
+      FUND_A_DETAIL_HTML,
+    );
+    expect(staticFetch).not.toHaveBeenCalled();
   });
 
-  it('enumerates the catalog and emits one fund per resolvable detail page', async () => {
-    const fetcher = vi.fn(async (url: string) => {
-      if (url === DEFAULT_STUDENT_GRANTS_SEARCH_URL) return SEARCH_RESULTS_HTML;
-      if (url === FUND_A_URL) return FUND_A_DETAIL_HTML;
-      if (url === FUND_B_URL) return AUTH_SHELL_HTML;
-      return '';
+  it('falls back to the static fetch when the renderer returns no usable page', async () => {
+    const staticFetch = vi.fn(async () => FUND_A_DETAIL_HTML);
+    const fetchDetail = createStudentGrantsDetailFetcher(
+      vi.fn(async () => ''),
+      staticFetch,
+    );
+
+    await expect(fetchDetail(FUND_A_URL, false, STUDENT_GRANTS_DATABASE_SOURCE)).resolves.toBe(
+      FUND_A_DETAIL_HTML,
+    );
+  });
+
+  it('uses the static fetch alone when no renderer is configured', async () => {
+    const staticFetch = vi.fn(async () => FUND_A_DETAIL_HTML);
+    const fetchDetail = createStudentGrantsDetailFetcher(null, staticFetch);
+
+    await expect(fetchDetail(FUND_A_URL, false, STUDENT_GRANTS_DATABASE_SOURCE)).resolves.toBe(
+      FUND_A_DETAIL_HTML,
+    );
+  });
+});
+
+describe('StudentGrantsDatabaseScraper.run', () => {
+  it('reads the fund pages the catalog cites when the search grid does not render', async () => {
+    const searchFetcher = vi.fn(async () => '');
+    const detailFetcher = vi.fn(async (url: string) =>
+      url === FUND_A_URL ? FUND_A_DETAIL_HTML : '',
+    );
+    const scraper = new StudentGrantsDatabaseScraper({
+      searchFetcher,
+      detailFetcher,
+      loadSeedUrls: async () => [FUND_A_URL],
     });
-    const scraper = new StudentGrantsDatabaseScraper(DEFAULT_STUDENT_GRANTS_SEARCH_URL, fetcher);
     const { ctx, emitted } = makeContext();
 
     const result = await scraper.run(ctx);
 
     expect(result.entitiesObserved).toBe(1);
-    expect(result.observationCount).toBe(emitted.length);
-    const titleObs = emitted.find((obs) => obs.field === 'title');
-    expect(titleObs?.value).toBe('Richter Summer Research Fellowship');
+    expect(emitted.find((obs) => obs.field === 'title')?.value).toBe(
+      'Fixture Summer Research Fellowship',
+    );
+    expect(detailFetcher).toHaveBeenCalledWith(FUND_A_URL, false, STUDENT_GRANTS_DATABASE_SOURCE);
+  });
+
+  it('emits nothing when neither the grid nor any cited fund page yields a fund', async () => {
+    const scraper = new StudentGrantsDatabaseScraper({
+      searchFetcher: vi.fn(async () => ''),
+      detailFetcher: vi.fn(async () => AUTH_SHELL_HTML),
+      loadSeedUrls: async () => [FUND_B_URL],
+    });
+    const { ctx, emitted } = makeContext();
+
+    const result = await scraper.run(ctx);
+
+    expect(result.observationCount).toBe(0);
+    expect(emitted).toHaveLength(0);
+  });
+
+  it('reads each fund once whether the grid or a citation found it', async () => {
+    const detailFetcher = vi.fn(async (url: string) =>
+      url === FUND_A_URL ? FUND_A_DETAIL_HTML : AUTH_SHELL_HTML,
+    );
+    const scraper = new StudentGrantsDatabaseScraper({
+      searchFetcher: vi.fn(async () => SEARCH_RESULTS_HTML),
+      detailFetcher,
+      loadSeedUrls: async () => [FUND_A_URL],
+    });
+    const { ctx } = makeContext();
+
+    const result = await scraper.run(ctx);
+
+    expect(result.entitiesObserved).toBe(1);
+    expect(detailFetcher.mock.calls.map(([url]) => url).sort()).toEqual(
+      [FUND_A_URL, FUND_B_URL].sort(),
+    );
+  });
+
+  it('reads only the funds an entity-scoped run names', async () => {
+    const detailFetcher = vi.fn(async (_url: string) => FUND_A_DETAIL_HTML);
+    const scraper = new StudentGrantsDatabaseScraper({
+      searchFetcher: vi.fn(async () => ''),
+      detailFetcher,
+      loadSeedUrls: async () => [FUND_A_URL, FUND_B_URL],
+    });
+    const { ctx } = makeContext({ only: [sourceKeyForFund(FUND_B_URL)] });
+
+    await scraper.run(ctx);
+
+    expect(detailFetcher.mock.calls.map(([url]) => url)).toEqual([FUND_B_URL]);
   });
 });

@@ -57,7 +57,8 @@ Re-opening one needs a new fact about the source, not a fresh look at the same p
 
 - **`yale.communityforce.com`**.
   `isProgramApplicationPortalUrl` classifies CommunityForce URLs as `applicationLink` evidence carried on the fellowship they belong to.
-  The portal itself is gated and exposes no crawlable catalog.
+  The application flow itself is gated and is never fetched.
+  The public, server-rendered `/Funds/FundDetails.aspx` pages are the exception: the `student-grants-database` lane reads them, as recorded in its row in `skills/scrapers/SKILL.md`.
 
 ## Covered indirectly, standalone roster deferred
 

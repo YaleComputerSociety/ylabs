@@ -1160,6 +1160,15 @@ export function isRecordSpecificApplicationPortalUrl(value: unknown): boolean {
   return hasPath && hasQuery;
 }
 
+export function recordSpecificApplicationPortalIdentity(value: unknown): string {
+  const url = parseHttpUrl(value);
+  if (!url || !isRecordSpecificApplicationPortalUrl(url.toString())) return '';
+  const params = Array.from(url.searchParams.entries())
+    .map(([key, paramValue]) => `${key.toLowerCase()}=${paramValue}`)
+    .sort();
+  return `${url.pathname.toLowerCase()}?${params.join('&')}`;
+}
+
 const PROGRAM_DETAIL_PATH_KEYWORD_PATTERN =
   /(?:fellowships?|grants?|scholars?|scholarships?|awards?|prizes?|internships?|assistantships?|research-internship-program|tobin-ra)/i;
 
