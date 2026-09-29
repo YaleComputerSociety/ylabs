@@ -2553,9 +2553,7 @@ export async function materializeInferredPiMembership(
 }
 
 type RosterEmailAliasResolution =
-  | { status: 'resolved'; netid: string }
-  | { status: 'absent' }
-  | { status: 'ambiguous' };
+  { status: 'resolved'; netid: string } | { status: 'absent' } | { status: 'ambiguous' };
 
 /**
  * A department roster publishes the friendly email alias (`first.last`) rather than the
@@ -6757,11 +6755,19 @@ export async function projectFromLog(
       stored: entityDoc as Record<string, unknown> | null,
       staged: set,
       unset,
+      lockedFields: manuallyLockedFields,
     });
     for (const [field, value] of Object.entries(classification.set)) {
       if (!(field in set) || JSON.stringify(set[field]) !== JSON.stringify(value)) fieldsWritten++;
       set[field] = value;
       delete unset[field];
+    }
+    for (const field of classification.unset) {
+      delete set[field];
+      delete confidenceByField[field];
+      if ((entityDoc as Record<string, unknown> | null)?.[field] == null) continue;
+      unset[field] = '';
+      fieldsWritten++;
     }
   }
 

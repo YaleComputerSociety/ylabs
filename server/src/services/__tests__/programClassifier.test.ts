@@ -379,6 +379,17 @@ describe('classifyProgram internship identity (#2925)', () => {
       ).toMatchObject({ programKind: 'SENIOR_THESIS_FUNDING' });
     });
 
+    it('does not read an exclusion of senior essays as senior research funding', () => {
+      for (const description of [
+        'Supports summer research travel. Funds may not be used for senior essay research.',
+        'Supports summer research travel. The grant does not fund senior thesis work.',
+      ]) {
+        expect(
+          classifyProgram({ title: 'Fixture Summer Research Grant', description }),
+        ).not.toMatchObject({ programKind: 'SENIOR_THESIS_FUNDING' });
+      }
+    });
+
     it('does not read the permitted-use facet as a senior-only audience', () => {
       expect(
         classifyProgram({

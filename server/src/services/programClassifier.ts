@@ -74,7 +74,17 @@ const SENIOR_RESEARCH_NAME =
   /senior (?:research|essay)|senior project|mellon senior|residential college|richter/;
 
 const SENIOR_RESEARCH_PROSE =
-  /\b(?:fund(?:s|ing)?|support(?:s|ing)?|costs? associated with|off-?set)\b[^.]{0,80}\bsenior (?:research project|essay|thesis|project)s?\b/;
+  /([^.]{0,60})\b(?:fund(?:s|ing)?|support(?:s|ing)?|costs? associated with|off-?set)\b([^.]{0,80})\bsenior (?:research project|essay|thesis|project)s?\b/g;
+
+const SENIOR_RESEARCH_EXCLUSION =
+  /\b(?:not|cannot|can't|never|ineligible|exclud(?:e|es|ed|ing)|except)\b/;
+
+function proseFundsSeniorResearch(prose: string): boolean {
+  return [...prose.matchAll(SENIOR_RESEARCH_PROSE)].some(
+    ([, lead, between]) =>
+      !SENIOR_RESEARCH_EXCLUSION.test(lead) && !SENIOR_RESEARCH_EXCLUSION.test(between),
+  );
+}
 
 function identityTextForProgram(input: ProgramClassificationInput): string {
   return [input.title, input.competitionType, input.sourceUrl]
@@ -473,7 +483,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
 
   if (
     SENIOR_RESEARCH_NAME.test(identityLower) ||
-    SENIOR_RESEARCH_PROSE.test(proseForProgram(input).toLowerCase())
+    proseFundsSeniorResearch(proseForProgram(input).toLowerCase())
   ) {
     return {
       ...baseFundingClassification(),
