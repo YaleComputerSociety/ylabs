@@ -3,7 +3,11 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { engineOutputFingerprint, scoreEngineReplay } from '../engineBenchmarkCore';
-import { captureEngineBenchmark, replayEngineBenchmark } from '../engineBenchmarkRun';
+import {
+  captureEngineBenchmark,
+  replayEngineBenchmark,
+  rowsWithUnbackedStoredTopics,
+} from '../engineBenchmarkRun';
 
 /**
  * The claim #3589 rests on: a replay measures the code, not the corpus.
@@ -272,6 +276,68 @@ describe('the engine benchmark replays a frozen input rather than the corpus (#3
     const replay = await replayEngineBenchmark(BENCHMARK_ID);
 
     expect(replay.rows.flatMap((row) => row.unfrozenReads)).toEqual([]);
+  }, 120000);
+
+  /**
+   * The arm that #3871 added, and the reason it exists: replaying #3868 against a benchmark
+   * without it reported one row GAINING three topics while the regression stripped 138 chips from
+   * 79 rows, because no arm selected the population a re-derivation acts on.
+   *
+   * Uses both identity forms deliberately. A `researchAreas` observation is keyed by `entityKey`
+   * far more often than by `entityId` in this corpus, so an id-only join would call a
+   * well-evidenced row unbacked, which is the mistake that made three earlier measurements wrong.
+   */
+  it('captures a row whose stored topics no live observation states', async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    const unbackedId = new mongoose.Types.ObjectId();
+    const backedId = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertMany([
+      {
+        _id: unbackedId,
+        slug: 'fixture-unbacked-topics',
+        name: 'Unbacked Topics Row',
+        kind: 'group',
+        entityType: 'LAB',
+        schemaVersion: 1,
+        archived: false,
+        studentVisibilityTier: 'student_ready',
+        researchAreas: ['Immunology', 'Genetics'],
+      },
+      {
+        _id: backedId,
+        slug: 'fixture-backed-topics',
+        name: 'Backed Topics Row',
+        kind: 'group',
+        entityType: 'LAB',
+        schemaVersion: 1,
+        archived: false,
+        studentVisibilityTier: 'student_ready',
+        researchAreas: ['Biophysics'],
+      },
+    ]);
+    // Backed by entityKey only, which is the common shape and the one an id-only join misses.
+    await db.collection('observations').insertOne({
+      _id: new mongoose.Types.ObjectId(),
+      entityType: 'researchEntity',
+      entityKey: 'fixture-backed-topics',
+      field: 'researchAreas',
+      value: ['Biophysics'],
+      sourceName: SOURCE_NAME,
+      sourceUrl: 'https://biology.example.edu/backed/',
+      confidence: 0.8,
+      superseded: false,
+      observedAt: new Date('2026-02-01T00:00:00.000Z'),
+    });
+
+    const unbacked = (await rowsWithUnbackedStoredTopics()).map(String);
+
+    expect(unbacked).toContain(String(unbackedId));
+    expect(unbacked).not.toContain(String(backedId));
+
+    // And the arm is wired into the capture, which is a separate claim from the predicate working.
+    const capture = await captureEngineBenchmark({ benchmarkId: BENCHMARK_ID, perScopeLimit: 20 });
+    expect(capture.byScope.map((entry) => entry.scope)).toContain('unbacked-topics');
   }, 120000);
 
   it('reports a gate verdict for the replayed row', async () => {

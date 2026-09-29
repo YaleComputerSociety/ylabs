@@ -36,10 +36,22 @@ export function currentCodeSha(): string | undefined {
  * than a slug list so the capture describes what it froze without naming a person
  * (docs/person-identifier-convention.md).
  */
-export const ENGINE_BENCHMARK_SCOPE_PREDICATES: ReadonlyArray<{
+export interface EngineBenchmarkScopeArm {
   scope: string;
-  filter: Record<string, unknown>;
-}> = [
+  /** A filter over `research_entities`, or a resolver for an arm that needs a join. */
+  filter?: Record<string, unknown>;
+  resolveFilter?: () => Promise<Record<string, unknown>>;
+}
+
+/**
+ * An arm per population a known defect class acts on, which is the rule this list is kept to.
+ *
+ * Learned the hard way: replaying #3868 against this benchmark moved the fingerprint attributably
+ * and reported one row GAINING three topics, while the regression it caused stripped 138 chips from
+ * 79 rows. None of the first five arms selects the population that derivation acts on, so the
+ * benchmark contained almost none of the rows where it removed rather than added (#3871).
+ */
+export const ENGINE_BENCHMARK_SCOPE_PREDICATES: ReadonlyArray<EngineBenchmarkScopeArm> = [
   {
     scope: 'merged-survivor',
     filter: { archived: { $ne: true }, canonicalGroupId: { $ne: null } },
@@ -64,7 +76,65 @@ export const ENGINE_BENCHMARK_SCOPE_PREDICATES: ReadonlyArray<{
     scope: 'served',
     filter: { archived: { $ne: true }, studentVisibilityTier: 'student_ready' },
   },
+  {
+    /**
+     * Stored topics no live observation states: the population a re-derivation strips, and the one
+     * whose absence let #3868 through. Not expressible as an entity filter, because "no live
+     * observation states this" is a join, so this arm resolves its own id set.
+     *
+     * Both identity forms are read. A `researchAreas` observation is keyed by `entityKey` far more
+     * often than by `entityId` in this corpus, so an id-only join would have called almost every
+     * row unbacked and filled the arm with rows that are perfectly well evidenced.
+     */
+    scope: 'unbacked-topics',
+    resolveFilter: async () => ({ _id: { $in: await rowsWithUnbackedStoredTopics() } }),
+  },
 ];
+
+const UNBACKED_TOPIC_FIELD = 'researchAreas';
+
+/**
+ * Exported so the predicate can be tested directly. Asserting it through a capture proved nothing:
+ * the `served` arm already selects a `student_ready` row, so a row this arm was meant to find was
+ * captured either way and the assertion passed for the wrong reason.
+ */
+export async function rowsWithUnbackedStoredTopics(): Promise<mongoose.Types.ObjectId[]> {
+  const candidates = (await ResearchEntity.find({
+    archived: { $ne: true },
+    studentVisibilityTier: 'student_ready',
+    [`${UNBACKED_TOPIC_FIELD}.0`]: { $exists: true },
+  })
+    .select(`_id slug ${UNBACKED_TOPIC_FIELD}`)
+    .sort({ _id: 1 })
+    .lean()) as Array<{ _id: mongoose.Types.ObjectId; slug?: unknown }>;
+  if (candidates.length === 0) return [];
+
+  const backedIds = new Set<string>();
+  const backedKeys = new Set<string>();
+  const cursor = Observation.find(
+    { field: UNBACKED_TOPIC_FIELD, ...materializationReadScopeFilter() },
+    { entityId: 1, entityKey: 1 },
+  )
+    .lean()
+    .cursor();
+  for await (const observation of cursor as unknown as AsyncIterable<{
+    entityId?: unknown;
+    entityKey?: unknown;
+  }>) {
+    if (observation.entityId) backedIds.add(String(observation.entityId));
+    if (typeof observation.entityKey === 'string' && observation.entityKey) {
+      backedKeys.add(observation.entityKey);
+    }
+  }
+
+  return candidates
+    .filter(
+      (row) =>
+        !backedIds.has(String(row._id)) &&
+        !backedKeys.has(String((row as { slug?: unknown }).slug)),
+    )
+    .map((row) => row._id);
+}
 
 export interface CaptureEngineBenchmarkOptions {
   benchmarkId: string;
@@ -94,7 +164,10 @@ export async function captureEngineBenchmark(
 ): Promise<CapturedEngineBenchmark> {
   const selected = new Map<string, { doc: any; scope: string }>();
   const byScope: Array<{ scope: string; rows: number }> = [];
-  for (const { scope, filter } of ENGINE_BENCHMARK_SCOPE_PREDICATES) {
+  for (const arm of ENGINE_BENCHMARK_SCOPE_PREDICATES) {
+    const { scope } = arm;
+    const filter =
+      arm.filter ?? (await (arm.resolveFilter as () => Promise<Record<string, unknown>>)());
     const docs = await ResearchEntity.find(filter).sort({ _id: 1 }).limit(options.perScopeLimit);
     let added = 0;
     for (const doc of docs) {
