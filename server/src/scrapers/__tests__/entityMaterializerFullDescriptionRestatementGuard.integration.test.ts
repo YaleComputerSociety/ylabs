@@ -122,7 +122,12 @@ describe('materializeEntity rejects a fullDescription that restates shortDescrip
         ],
       },
     });
-    await seedFull(MU_LAB_RESTATEMENT_FULL, 'lab-microsite-description-llm', 0.7, '2026-02-01T00:00:00Z');
+    await seedFull(
+      MU_LAB_RESTATEMENT_FULL,
+      'lab-microsite-description-llm',
+      0.7,
+      '2026-02-01T00:00:00Z',
+    );
     await seedFull(refusedBody, 'ysm-atoz-index', 0.92, '2026-01-15T00:00:00Z');
     await seedFull(MU_LAB_RICHER_FULL, 'lab-microsite-undergrad-llm', 0.55, '2026-01-01T00:00:00Z');
 
@@ -312,5 +317,4 @@ describe('materializeEntity is idempotent across repeated runs on unchanged obse
     expect(secondRun?.shortDescription).toBe(firstRun?.shortDescription);
     expect(secondRun?.fullDescription).toBe(IDEMPOTENCE_CONCISE_FULL_DESCRIPTION);
   });
-
 });
