@@ -276,9 +276,12 @@ Two guards shape the fused list.
 When the all-words keyword leg of a multi-word query is empty, it is re-run with `matchingStrategy: 'last'`, so a phrase no row carries in full (`immigration policy`, or a `queryOnly` alias word such as `kids` inside a phrase) still has keyword evidence to anchor the fusion.
 It was measured as part of the design: without it, concept queries scored 0.74 rather than 0.80 and question-style queries 0.65 rather than 0.72 nDCG@10 on the development set.
 A keyword leg still empty after that runs no semantic leg, so a query that matches nothing keeps the thresholded path and its #823 noise protection.
-When every query word is matched exactly, as a whole word, inside a person-name field (`leadProfessorNames` or `professorNames`) on the best keyword hit, semantic-only rows are withheld (`keywordLegTopHitIsNameMatch`), because the semantic neighbours of a name are other people with similar names.
-An entity title does not count, because titles carry topic words (`Robotics Lab`), and neither does a topic word that only matches a surname, a typo match, or a prefix match, so `green chemistry` under a lead named Green keeps its meaning-based rows.
-The keyword leg therefore also retrieves the two name fields, which the check reads through `_matchesPosition`.
+When the best keyword hit matches every query word at the start of a word in a name, with at least one whole-word match, semantic-only rows are withheld and the keyword leg's own order is served (`keywordLegTopHitIsNameMatch`), because the semantic neighbours of a name are other people with similar names and carry no signal about which same-named row is the person.
+The names read are `leadProfessorNames`, `professorNames`, and the entity title (`name`, `displayName`), because many faculty rows are titled after their person while their lead names are not indexed (#3745): with titles excluded, the guard fired on none of 10 held-out name queries and person-name nDCG@10 fell from 0.750 to 0.580 (#3853).
+A title match counts only when the same row does not also match the query in a topic field (`researchAreas`, `departments`, `studentSearchTerms`, `methods`, `orgAffiliationLabels`, `school`), so `Statistics Lab` stays a topic answer to `statistics`; a match in a lead or professor name always counts.
+A lone prefix (`stone` inside Stoneman) and a typo never count, because the highlighted text is not the typed word, while a short first name beside an exact surname does.
+Measured over 177 non-name queries, the topic veto cut false fires from 16 to 4 with every name query still firing; the remaining false fires are generic words that are whole words of a program title (`data`, `undergraduate`).
+The keyword leg therefore also retrieves those four fields, which the check reads through `_matchesPosition`.
 A withheld result reports only the rows it serves as its total, because the companion count still includes the withheld rows.
 A failed semantic leg falls back to the keyword-first order and marks the search degraded; `floorWeakSemanticOnlyHits` and `promoteExactAliasFieldMatches` now run only on that fallback path.
 A whole-query shorthand that keeps its typed alias (`ai`) still searches topic fields keyword-only and is unchanged.
@@ -291,6 +294,8 @@ The weakest remaining classes are ambiguous single words (`machine`, `trade`, `q
 
 A free-text-guarded shorthand is a one-way synonym: `cv` expands to `computer vision`, and no topic expands to `cv`, because `computer vision -> cv` matched the "CV" link on unrelated profiles.
 That is an index settings change, so it reaches search only after the settings are pushed and the index rebuilt.
+The synonym was not the whole defect: index-time `studentSearchTerms` tagged rows with the computer-vision cluster from a bare "CV" in prose ("Download CV", "his CV lists over 100 publications"), 9 of the 12 such rows on Development.
+A bare `cv` now triggers only when the same text also carries vision vocabulary (`CV_CORROBORATING_CONTEXT_PATTERN`), which none of those 9 did and a lab abbreviating its field ("Our CV group builds algorithms for object detection") does; the phrases `computer vision` and `computational vision` trigger on their own (#3853).
 
 ### A student's working-style words are not the corpus's (#2715)
 
