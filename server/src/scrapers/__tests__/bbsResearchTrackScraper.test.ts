@@ -13,7 +13,10 @@ import {
   type BbsCandidateEntity,
   type BbsProfileLinks,
 } from '../sources/bbsResearchTrackScraper';
-import { centerRosterReadAdmissibility, CENTER_ROSTER_HEALTH_FIELD } from '../centerRosterRetirement';
+import {
+  centerRosterReadAdmissibility,
+  CENTER_ROSTER_HEALTH_FIELD,
+} from '../centerRosterRetirement';
 import type { ObservationInput, ScraperContext } from '../types';
 
 const IMMUNOLOGY_URL = 'https://medicine.yale.edu/bbs/people/immunology/';
