@@ -46,6 +46,42 @@ export function computeVersionedContentHash(
     .digest('hex');
 }
 
+/**
+ * The hash input for an extraction that reads several pages: one digest per page over the text
+ * the extractor actually consumes, combined order-independently.
+ *
+ * Hashing raw bytes cannot skip a page whose markup churns, and on this corpus that is the
+ * common case rather than the exception. Measured on Development by fetching each host's page
+ * twice, seconds apart, and comparing bytes: `medicine.yale.edu`, `ysph.yale.edu` and
+ * `sites.google.com` return different bytes every time, while `campuspress.yale.edu`,
+ * `research.yale.edu`, `engineering.yale.edu` and `environment.yale.edu` are byte-identical.
+ * **2,507 of the 4,123 rows this lane has read fetch from one of the churning hosts**, so a
+ * bytes hash can never let them skip, however many runs happen (#3840).
+ *
+ * Extracted text is the right input for a second reason: it is what the model sees, so the hash
+ * then answers "would this run ask the model the same question" rather than "did the server send
+ * the same bytes".
+ *
+ * Order independence is PRECAUTIONARY and UNMEASURED. A concatenation in fetch order also
+ * changes when sub-page discovery varies, which is plausible but which I did not observe: the two
+ * rows traced across runs fetched the same two URLs in the same order both times. Sorting the
+ * per-page digests removes that class at no cost rather than in response to evidence.
+ *
+ * A known limit, deliberately left: a page that is unreachable on one run drops out of the set
+ * and changes the digest, so a transient fetch failure still costs one re-extraction. Excluding
+ * unreachable pages would instead let a row skip while silently missing evidence it usually
+ * reads, which is the worse failure, so the digest keeps them in.
+ */
+export function computePageSetTextDigest<Page extends { url: string; html: string }>(
+  pages: readonly Page[],
+  extractText: (page: Page) => string,
+): string {
+  const perPage = pages
+    .map((page) => `${page.url} ${computeContentHash(extractText(page))}`)
+    .sort();
+  return computeContentHash(perPage.join('\n'));
+}
+
 export async function loadStoredContentHash(
   sourceName: string,
   entity: ContentHashEntityRef,

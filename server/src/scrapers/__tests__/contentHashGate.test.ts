@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { Observation } from '../../models/observation';
 import {
   computeContentHash,
+  computePageSetTextDigest,
   computeVersionedContentHash,
   contentHashObservation,
   contentUnchanged,
@@ -94,6 +95,93 @@ describe('contentHashObservation', () => {
       value: hash,
       sourceUrl: 'https://example.edu/lab',
     });
+  });
+});
+
+describe('computePageSetTextDigest', () => {
+  // The whole point: markup that churns while the readable text does not. 2,507 of the 4,123
+  // rows this lane reads fetch from a host that returns different bytes on every fetch, so a
+  // bytes hash could never let them skip (#3840).
+  const stripMarkupText = (html: string) =>
+    html
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const stripMarkup = ({ html }: { html: string }) => stripMarkupText(html);
+
+  it('is unchanged when markup churns but the extracted text does not', () => {
+    const a = [{ url: 'https://lab.example.edu/', html: '<p data-nonce="a1">We study cilia.</p>' }];
+    const b = [
+      { url: 'https://lab.example.edu/', html: '<p data-nonce="zz9">We study cilia.</p>' },
+    ];
+    expect(computePageSetTextDigest(a, stripMarkup)).toBe(computePageSetTextDigest(b, stripMarkup));
+  });
+
+  it('changes when the extracted text changes', () => {
+    const a = [{ url: 'https://lab.example.edu/', html: '<p>We study cilia.</p>' }];
+    const b = [{ url: 'https://lab.example.edu/', html: '<p>We study membranes.</p>' }];
+    expect(computePageSetTextDigest(a, stripMarkup)).not.toBe(
+      computePageSetTextDigest(b, stripMarkup),
+    );
+  });
+
+  // Precautionary and unmeasured, per the docblock: sub-page order varying was not observed.
+  it('is unchanged when the same pages arrive in a different order', () => {
+    const home = { url: 'https://lab.example.edu/', html: '<p>We study cilia.</p>' };
+    const research = { url: 'https://lab.example.edu/research', html: '<p>Projects.</p>' };
+    expect(computePageSetTextDigest([home, research], stripMarkup)).toBe(
+      computePageSetTextDigest([research, home], stripMarkup),
+    );
+  });
+
+  it('changes when a page joins or leaves the set, so a missing page is never silently skipped', () => {
+    const home = { url: 'https://lab.example.edu/', html: '<p>We study cilia.</p>' };
+    const research = { url: 'https://lab.example.edu/research', html: '<p>Projects.</p>' };
+    expect(computePageSetTextDigest([home], stripMarkup)).not.toBe(
+      computePageSetTextDigest([home, research], stripMarkup),
+    );
+  });
+
+  // The regression the old raw-HTML input existed to prevent (#2022): the deterministic
+  // embedded-JSON path reads script-tag prose that a visible-text extractor strips, so a digest
+  // over visible text alone would let an official-prose-only change skip forever. The lane's
+  // extractor therefore covers both, and this pins that a caller which omits the embedded prose
+  // is measurably weaker.
+  it('is unchanged by embedded prose when the extractor ignores it, which is why the lane includes it', () => {
+    const withoutEmbedded = [
+      {
+        url: 'https://lab.example.edu/',
+        html: '<p>We study cilia.</p><script>{"d":"old"}</script>',
+      },
+    ];
+    const withEmbedded = [
+      {
+        url: 'https://lab.example.edu/',
+        html: '<p>We study cilia.</p><script>{"d":"new"}</script>',
+      },
+    ];
+    // A visible-text-only extractor drops script blocks entirely, as `htmlToText` does, so it
+    // cannot see the change.
+    const visibleTextOnly = ({ html }: { html: string }) =>
+      stripMarkupText(html.replace(/<script[\s\S]*?<\/script>/g, ' '));
+    expect(computePageSetTextDigest(withoutEmbedded, visibleTextOnly)).toBe(
+      computePageSetTextDigest(withEmbedded, visibleTextOnly),
+    );
+    // An extractor that also reads the embedded payload does.
+    const withEmbeddedProse = ({ html }: { html: string }) =>
+      `${stripMarkupText(html)} ${html.match(/<script>(.*?)<\/script>/)?.[1] ?? ''}`;
+    expect(computePageSetTextDigest(withoutEmbedded, withEmbeddedProse)).not.toBe(
+      computePageSetTextDigest(withEmbedded, withEmbeddedProse),
+    );
+  });
+
+  // The URL is part of each page's digest, so the same text served at two paths is two inputs.
+  it('distinguishes identical text served at different urls', () => {
+    const a = [{ url: 'https://lab.example.edu/a', html: '<p>Same words.</p>' }];
+    const b = [{ url: 'https://lab.example.edu/b', html: '<p>Same words.</p>' }];
+    expect(computePageSetTextDigest(a, stripMarkup)).not.toBe(
+      computePageSetTextDigest(b, stripMarkup),
+    );
   });
 });
 

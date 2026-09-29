@@ -81,6 +81,7 @@ import {
   loadResearchEntityLeadPersonNames,
 } from '../../utils/researchHomeNameIdentityRoster';
 import {
+  computePageSetTextDigest,
   computeVersionedContentHash,
   contentHashObservation,
   contentUnchanged,
@@ -1664,21 +1665,36 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           return;
         }
 
-        // Raw HTML covers both extraction paths below: the visible-text LLM path
-        // and the deterministic embedded-JSON official-prose path (which reads
-        // script-tag payloads htmlToText strips). Hashing raw HTML ensures an
-        // embedded-prose-only change still re-runs extraction. A single-page
-        // entity keeps its pre-crawl hash input so adding this crawl does not
-        // force LLM re-spend on homes that gained no research page (#2022).
+        // The hash input is what the extraction paths READ, not the bytes they arrive in.
+        //
+        // Raw HTML used to stand in for both paths below, the visible-text LLM path and the
+        // deterministic embedded-JSON official-prose path that reads script-tag payloads
+        // `htmlToText` strips (#2022). That covered both, but it also meant a page whose markup
+        // churns could never skip: measured by fetching each host twice seconds apart,
+        // `medicine.yale.edu`, `ysph.yale.edu` and `sites.google.com` return different bytes every
+        // time, and 2,507 of the 4,123 rows this lane has read fetch from one of them (#3840).
+        //
+        // So the digest covers both paths explicitly instead: the visible text AND the official
+        // prose `extractDescriptionPageProse` derives, which reads the embedded payload, JSON-LD,
+        // meta descriptions and paragraphs past the prompt cutoff that `htmlToText` never sees.
+        // Dropping it would be a correctness regression rather than a saving, because an
+        // official-prose-only change would stop re-running extraction.
         const entityRef = {
           entityType: 'researchEntity' as const,
           entityId: serializedDocumentId(lab._id) || undefined,
           entityKey: lab.slug,
         };
         const contentHash = computeVersionedContentHash(
-          pages.length === 1
-            ? page.html
-            : pages.map((fetched) => `${fetched.url}\n${fetched.html}`).join('\n'),
+          // One-time cost: every stored hash for this lane is invalidated, so the next run
+          // re-extracts the lane once.
+          computePageSetTextDigest(pages, (fetched) => {
+            const prose = extractDescriptionPageProse(fetched, kind);
+            return [
+              htmlToText(fetched.html),
+              prose?.fullDescription ?? '',
+              prose?.shortDescription ?? '',
+            ].join('\n');
+          }),
           DESCRIPTION_EXTRACTION_PROMPT_HASH,
           this.model,
           this.cardModel,
