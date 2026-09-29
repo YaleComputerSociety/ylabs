@@ -35,6 +35,7 @@ The bound is per HTTP request, so settings and document tasks are unaffected: th
 The server refuses to start in a deployed runtime (`requiresDeployedRuntimeSecurity()`) unless both `MEILISEARCH_HOST` and `MEILISEARCH_INDEX_PREFIX` are set, because the local defaults would silently point Beta or Production at `localhost` or at the unprefixed Development index.
 The check runs in `app.ts` at startup rather than inside the client, so local scripts, which usually run with no `NODE_ENV`, keep the local defaults.
 The embedder check behind hybrid search (`readResearchEntitySearchEmbedderState`) caches `configured` and `absent` for five minutes but never caches a failed check: a thrown `getEmbedders()` is logged, reported as `unknown`, and makes that search keyword-only with `degraded: true`.
+The companion queries a search sends after its primary one (the exhaustive hybrid count and facet query, each disjunctive facet query, and the keyword-leg query) each keep their fallback on failure and also mark the response `degraded: true`, so a search that lost part of its answer to a timeout is shown as limited and kept out of the zero-result analytics (#3751).
 
 Relevant config:
 
