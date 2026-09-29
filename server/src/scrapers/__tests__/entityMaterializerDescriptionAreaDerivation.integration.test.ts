@@ -219,12 +219,11 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
     ).toEqual(persisted?.researchAreas);
   }, 30000);
 
-  it('re-plans the same provenance entry it stored, so a re-derived row never churns', async () => {
-    // The fallback path is where derivation genuinely re-runs on every pass: the
-    // observed list is non-empty when the first attempt looks, rejection empties it,
-    // and the fallback derives again. The entry it re-plans must be byte-identical to
-    // the one already stored, key order included, because the diff-skip compares with
-    // JSON.stringify - otherwise every run rewrites the row and re-syncs Meilisearch.
+  it('re-plans no change to the chips and provenance it derived, so the row never churns', async () => {
+    // The observed list is non-empty when the first attempt looks, rejection empties
+    // it, and the fallback derives. On the next pass the stored derived chips outrank
+    // the still-rejected observation, so nothing is re-planned over them and the
+    // diff-skip leaves the row alone instead of rewriting it and re-syncing Meilisearch.
     await seedEntity({ departments: ['Immunology'] });
     await seedField('researchAreas', ['Immunology']);
     await seedField(
@@ -246,9 +245,8 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
       { entityKey: 'area-derivation-fixture' },
       { dryRun: true },
     );
-    expect(JSON.stringify(replanned.plannedSet?.['fieldProvenance.researchAreas'])).toBe(
-      JSON.stringify(stored?.fieldProvenance?.researchAreas),
-    );
+    expect(replanned.plannedSet).not.toHaveProperty('researchAreas');
+    expect(replanned.plannedSet).not.toHaveProperty(['fieldProvenance.researchAreas']);
 
     await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
     const after = await ResearchEntity.findOne({ slug: 'area-derivation-fixture' }).lean<{
@@ -300,6 +298,26 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
       expect(persisted?.researchAreas).toEqual(['Memory Research', 'Neuroscience']);
       expect(persisted?.fieldProvenance?.researchAreas).toBeUndefined();
       expect([...(await loadResearchAreaEvidenceBackedRowIds([persisted!]))]).toEqual([]);
+    });
+
+    it('keeps the stored chips over description derivation the rejected observation would open', async () => {
+      await seedEntity({
+        departments: ['Psychology'],
+        researchAreas: ['Memory Research'],
+        confidenceByField: { researchAreas: 0.7 },
+      });
+      await seedField('researchAreas', ['Psychology'], 'research-area-source-extractor');
+      await seedField('fullDescription', 'The lab studies neuroscience.');
+
+      await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+
+      const persisted = await readRow();
+      expect(persisted?.researchAreas).toEqual(['Memory Research']);
+      expect(persisted?.fieldProvenance?.researchAreas).toBeUndefined();
+      expect(
+        (persisted as { confidenceByField?: Record<string, number> } | null)?.confidenceByField
+          ?.researchAreas,
+      ).toBe(0.7);
     });
 
     it('keeps the stored chips when the only new observation names a division-level label', async () => {

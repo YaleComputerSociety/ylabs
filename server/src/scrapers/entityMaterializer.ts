@@ -5975,7 +5975,21 @@ export async function projectFromLog(
     // rejected label suppress the fallback, and deriving without canonicalizing the
     // result would write an uncanonical chip. So this runs after rejection and
     // canonicalizes what it derives.
-    if (Array.isArray(set.researchAreas) && set.researchAreas.length === 0) {
+    const storedResearchAreasOutrankRejectedObservation =
+      observedResearchAreasWhollyRejected &&
+      isEmptyArray(set.researchAreas) &&
+      hasNonEmptyStringArray(
+        await admittedResearchAreas(
+          canonicalizeResearchAreas,
+          Array.isArray(entityDoc?.researchAreas) ? entityDoc.researchAreas : [],
+          set.departments ?? entityDoc?.departments,
+        ),
+      );
+    if (
+      !storedResearchAreasOutrankRejectedObservation &&
+      Array.isArray(set.researchAreas) &&
+      set.researchAreas.length === 0
+    ) {
       const beforeFallback = set.researchAreas;
       delete set.researchAreas;
       await (
