@@ -8,7 +8,7 @@
 import { ScrapeRun } from '../models/scrapeRun';
 import { buildEvidenceCoverageImpactReportForObservations } from '../services/researchEntityEvidenceCoverage';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { sanitizeLogValue } from '../utils/logSanitizer';
+import { sanitizeErrorForLog, sanitizeLogValue } from '../utils/logSanitizer';
 import { onInterrupt } from './interruptCleanup';
 import { appendObservations, getSourceByName } from './observationStore';
 import { currentProcessCodeSha } from './scrapeRunCodeIdentity';
@@ -339,7 +339,15 @@ async function recordRunFailure(
     metrics?: Record<string, unknown>;
   },
 ): Promise<void> {
-  const errorMessage = sanitizeLogValue(err instanceof Error ? err.message : err);
+  // `sanitizeErrorForLog` rather than the message alone: `errors.stack` has been a
+  // schema path all along and nothing has written it since June, so the one run that
+  // died with `Maximum call stack size exceeded` recorded no frame to read and the
+  // investigation had to proceed by elimination over the lane's source (#3891).
+  const sanitized =
+    err instanceof Error
+      ? sanitizeErrorForLog(err)
+      : { message: sanitizeLogValue(err), stack: undefined };
+  const errorMessage = sanitized.message;
   const finishedAt = new Date();
   await writeScrapeRunTerminalStatus(
     () =>
@@ -354,7 +362,11 @@ async function recordRunFailure(
             ...(progress.metrics ? { metrics: progress.metrics } : {}),
             errors: [
               ...progress.errors,
-              { message: errorMessage || 'Unknown scrape error', at: new Date() },
+              {
+                message: errorMessage || 'Unknown scrape error',
+                ...(sanitized.stack ? { stack: sanitized.stack } : {}),
+                at: new Date(),
+              },
             ],
           },
         },

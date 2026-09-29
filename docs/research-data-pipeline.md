@@ -250,6 +250,14 @@ Four properties of the rule are load-bearing.
 
 The history read is bounded to the most recent `BARREN_RUN_HISTORY_SCAN_LIMIT` (12) runs of the source, so running out of history settles the question conservatively as "no failure".
 
+#### A failed run records the frame it failed on
+
+`errors[].stack` has been a path on the `ScrapeRun` schema since the beginning and nothing wrote it between June 2026 and #3891: four runs from May and early June carry one, none since, because the June 2026 foundation rewrite replaced the error write with the message alone and pinned that absence in a test.
+
+It is written now, through `sanitizeErrorForLog`, so every redaction the message gets applies to the stack: credentials in a URL, bearer and access tokens, OpenAI keys, secret headers and fields, emails and phone-shaped digits. A thrown non-`Error` stores no stack rather than an invented one. The test that pinned the absence now pins the sanitization instead, which is a stronger guarantee than storing nothing.
+
+The cost of not having it is recorded in #3891: one run died with `Maximum call stack size exceeded` and, with no frame to read, the cause had to be narrowed by elimination over the lane's source.
+
 #### A run keeps what it measured
 
 `metrics` on a lane's return value is lost when the lane throws, and a throw is when a measurement is worth most: one Development run died after 474 observations with `Maximum call stack size exceeded` and stored nothing about how far it had got (#3890, #3891).
