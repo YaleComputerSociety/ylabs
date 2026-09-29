@@ -229,6 +229,21 @@ describe('a materialize pass scoped by writeOnlyFields writes only its scope (#3
       expect(materializeAccessForResearchGroup).not.toHaveBeenCalled();
     });
 
+    it('keeps the lead edge and access signals on a scoped pass that asks for them', async () => {
+      const entityId = await seedRenamableShell();
+      await seedInferredPi();
+
+      await materializeEntity(
+        'researchEntity',
+        { entityKey: ENTITY_KEY },
+        { writeOnlyFields: ['name'], keepPostProjectionEvidence: true },
+      );
+
+      expect((await persisted(entityId)).name).toBe(RENAMED);
+      expect(await RoleAssignment.countDocuments({ 'target.id': entityId, role: 'PI' })).toBe(1);
+      expect(materializeAccessForResearchGroup).toHaveBeenCalledTimes(1);
+    });
+
     it('mints the lead edge and derives access signals through an unscoped pass', async () => {
       const entityId = await seedRenamableShell();
       await seedInferredPi();

@@ -295,6 +295,13 @@ interface MaterializeOptions {
   syncMeilisearch?: boolean;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
   writeOnlyFields?: string[];
+  /**
+   * Keep the field-less post-projection steps (inferred lead edges, access-signal
+   * upserts, the department-roster fold) on a `writeOnlyFields` pass. The merge
+   * fill-only pass needs them to carry the merged-in evidence; the rematerialize
+   * report compares fields and would not see them, so it leaves this off (#3874).
+   */
+  keepPostProjectionEvidence?: boolean;
   onlyReconcileFieldProvenance?: boolean;
   /**
    * Ignore the named locks, each only if it is revisitable on this row, so the
@@ -2677,11 +2684,17 @@ const LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE = 0.6;
 
 const LEAD_PI_INHERITED_FIELDS = ['school', 'departments'];
 
+function isWriteScoped(
+  writeOnlyFields: readonly string[] | undefined,
+): writeOnlyFields is readonly string[] {
+  return Boolean(writeOnlyFields && writeOnlyFields.length > 0);
+}
+
 function writeScopeAdmits(
   writeOnlyFields: readonly string[] | undefined,
   fields: readonly string[],
 ): boolean {
-  if (!writeOnlyFields || writeOnlyFields.length === 0) return true;
+  if (!isWriteScoped(writeOnlyFields)) return true;
   const scope = withDerivedMaterializerFields(writeOnlyFields);
   return fields.some((field) => scope.includes(field));
 }
@@ -7575,13 +7588,14 @@ export async function materializeEntity(
     };
   }
 
+  // A field-scoped pass writes only its scope, and the rematerialize report compares
+  // fields, so an edge, signal or fold written here would be invisible (#3874).
+  const skipPostProjectionEvidence =
+    isWriteScoped(options.writeOnlyFields) && !options.keepPostProjectionEvidence;
   let postMaterializationMetrics: ReportPostMaterializationMetrics | undefined;
   if (isResearchEntityObservationType(entityType) && entityIdString) {
-    // A field-scoped pass writes only its scope, and the rematerialize report compares
-    // fields, so an edge, signal or inherited value written here would be invisible (#3874).
-    const scopedPass = Boolean(options.writeOnlyFields && options.writeOnlyFields.length > 0);
     if (!options.dryRun) {
-      if (!scopedPass) {
+      if (!skipPostProjectionEvidence) {
         await materializeInferredPiMembership(entityIdString, materializationObs);
         await materializeInferredDirectorMembership(entityIdString, materializationObs);
       }
@@ -7592,7 +7606,7 @@ export async function materializeEntity(
       });
       if (inheritance.inherited) indexStale = !!inheritance.indexSyncFailed;
     }
-    const accessResult = scopedPass
+    const accessResult = skipPostProjectionEvidence
       ? { accessSignals: 0, staleEvidenceSkipped: 0, errors: 0 }
       : await materializeAccessForResearchGroup(
           {
@@ -7631,7 +7645,7 @@ export async function materializeEntity(
 
   if (
     !options.dryRun &&
-    !(options.writeOnlyFields && options.writeOnlyFields.length > 0) &&
+    !skipPostProjectionEvidence &&
     isResearchEntityObservationType(entityType) &&
     entityIdString &&
     isDeptRosterKey(identifier.entityKey)
