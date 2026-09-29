@@ -286,6 +286,50 @@ describe('fellowship materialization', () => {
     expect(result.entityId).toBe('existing-richter-public-page-id');
   });
 
+  it('does not fold a fund into a same-title row that cites a different fund page (#3984)', async () => {
+    const fundUrl = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FUNDB';
+    const otherFundUrl = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FUNDA';
+    vi.spyOn(Observation, 'find').mockReturnValue({
+      lean: vi.fn().mockResolvedValue(
+        [
+          ['title', 'Fixture Summer Research Fellowship'],
+          ['sourceName', 'student-grants-database'],
+          ['applicationLink', fundUrl],
+        ].map(([field, value]) => ({
+          field,
+          value,
+          sourceName: 'student-grants-database',
+          confidence: 0.9,
+          observedAt: new Date('2026-03-01T00:00:00Z'),
+        })),
+      ),
+    } as any);
+    vi.spyOn(Fellowship, 'findOne').mockReturnValue({
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const sameTitleOtherFund = {
+      _id: 'same-title-other-fund-id',
+      title: 'Fixture Summer Research Fellowship',
+      applicationLink: otherFundUrl,
+      archived: false,
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    };
+    vi.spyOn(Fellowship, 'find')
+      .mockReturnValueOnce({ lean: vi.fn().mockResolvedValue([sameTitleOtherFund]) } as any)
+      .mockReturnValueOnce({
+        limit: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue([]) }),
+      } as any);
+
+    const result = await materializeEntity(
+      'fellowship',
+      { entityKey: 'student-grants-database:funds-funddetails-aspx-fundb' },
+      { dryRun: true },
+    );
+
+    expect(result.entityId).not.toBe('same-title-other-fund-id');
+    expect(result.created).toBe(true);
+  });
+
   it('does not cross-source merge on a bare application-portal root shared by many funds (#1630)', async () => {
     vi.spyOn(Observation, 'find').mockReturnValue({
       lean: vi.fn().mockResolvedValue([

@@ -1,35 +1,27 @@
 /**
  * StudentGrantsDatabaseScraper
  *
- * Enumerates the Yale Student Grants Database - Yale's single most comprehensive
- * officially-curated catalog of student funding opportunities. The public entry
- * point studentgrants.yale.edu 301-redirects to the CommunityForce app at
- * yale.communityforce.com, whose fund search is public and browseable; only
- * *applying* requires a login. Each fund has its own /Funds/FundDetails.aspx
- * detail page that carries the deadline, eligibility facets, award amount, and
- * sponsoring organization.
+ * Reads the Yale Student Grants Database - Yale's most comprehensive officially-curated
+ * catalog of student funding. The public entry point studentgrants.yale.edu redirects to
+ * the CommunityForce app at yale.communityforce.com, whose fund pages are public; only
+ * *applying* requires a login. Each fund has its own /Funds/FundDetails.aspx page carrying
+ * the application window, eligibility, award amount, and search facets.
  *
- * The catalog is an ASP.NET / CommunityForce app driven by JavaScript postbacks,
- * so the fund grid is only reachable through the shared rendered (headless) fetch
- * path - a plain HTTP GET returns the search-form shell with no fund rows. This
- * producer therefore fetches through `createScraplingRenderedFetcher`. When no
- * rendered fetcher is configured, or the rendered results/detail pages come back
- * blocked or empty (an auth wall, a bot challenge, or an offline catalog), it
- * fails closed and emits nothing rather than minting funds from a login shell.
+ * Only the fund search grid is driven by JavaScript postbacks, so it alone goes through
+ * the rendered (headless) fetch path. A FundDetails page is server-rendered and is read
+ * with the shared static fetch. Funds are enumerated from the grid when it renders and
+ * always from the FundDetails pages the live catalog already cites, so the lane still
+ * reads every cited fund on a machine with no renderer (#3984).
  *
- * It walks the rendered search results only to enumerate funds, then fetches and
- * cites each fund's own FundDetails page - never the search/index root - per the
- * self-referential / index-page source guards (#516/#549). A fund is emitted only
- * when it resolves to a record-specific FundDetails URL (`/Funds/FundDetails.aspx`
- * with a query string), so a bare portal root can never be cited. Contact data is
- * fail-closed: no scraped emails or phone numbers are ingested; the sponsoring
- * organization is recorded as the contact office and the read-time contact
- * derivation owns the outreach route, consistent with skills/scrapers/SKILL.md.
+ * It cites each fund's own FundDetails page - never the search/index root - per the
+ * self-referential / index-page source guards (#516/#549), and a page with no fund name
+ * fails closed rather than minting a login shell. Contact data is fail-closed: the
+ * contact block names a person and is never read.
  *
- * Funds already discovered via the public fellowship pages (which carry the same
- * FundDetails URL as their applicationLink) merge into the existing record rather
- * than duplicating, via the materializer's record-specific application-link
- * dedupe (see findFellowshipByRecordSpecificApplicationLink in entityMaterializer).
+ * A fund already cited by a public fellowship page (as its applicationLink) merges into
+ * that record rather than duplicating, via the materializer's record-specific
+ * application-link dedupe (findFellowshipByRecordSpecificApplicationLink), which is also
+ * how a fund gives an unowned catalog row a source and a resolve path.
  */
 import crypto from 'crypto';
 import * as cheerio from 'cheerio';
@@ -38,11 +30,13 @@ import {
   fetchUsableRenderedPage,
   type RenderedFetcher,
 } from '../renderedFetch';
+import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import { fetchPageWithPolicy } from '../utils/httpFetch';
+import { Fellowship } from '../../models/fellowship';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
 import { slugify } from '../utils/scraperHelpers';
 import { isRecordSpecificApplicationPortalUrl } from '../../utils/researchHomeWebsiteUrl';
-import { parseDeadlineToUtcEndOfDay } from './yaleCollegeFellowshipsOfficeScraper';
 
 export const STUDENT_GRANTS_DATABASE_SOURCE = 'student-grants-database';
 
@@ -63,10 +57,12 @@ export interface StudentGrantsFund {
   title: string;
   url: string;
   description?: string;
+  applicationInformation?: string;
   eligibility?: string;
+  restrictionsToUseOfAward?: string;
   awardAmount?: string;
-  sponsoringOrganization?: string;
   deadline?: Date;
+  applicationOpenDate?: Date;
   yearOfStudy: string[];
   termOfAward: string[];
   purpose: string[];
@@ -168,168 +164,135 @@ export function parseFundSearchResults(html: string, pageUrl: string): StudentGr
   return Array.from(byKey.values());
 }
 
-const FACET_LABELS: Array<{ field: keyof StudentGrantsFund; labels: string[] }> = [
-  { field: 'yearOfStudy', labels: ['year of study', 'class year', 'student level', 'year level'] },
-  { field: 'termOfAward', labels: ['term of award', 'term', 'award period', 'period of award'] },
-  { field: 'purpose', labels: ['purpose', 'purpose of award', 'category', 'award type'] },
-  { field: 'globalRegions', labels: ['region', 'country', 'geographic region', 'location'] },
-  {
-    field: 'citizenshipStatus',
-    labels: ['citizenship', 'citizenship status', 'residency', 'citizenship requirement'],
-  },
+const FUND_DETAIL_ID_PREFIX = '#ctl00_PreContent_FundDetails1_';
+
+const FACET_FIELDS: Array<{ field: FundFacetField; label: RegExp }> = [
+  { field: 'yearOfStudy', label: /year of study/i },
+  { field: 'termOfAward', label: /term of award/i },
+  { field: 'purpose', label: /purpose/i },
+  { field: 'globalRegions', label: /region|country/i },
+  { field: 'citizenshipStatus', label: /citizenship/i },
 ];
 
-/**
- * A FundDetails page renders each field as its own labeled block. Collecting the
- * text of each block element keeps a "Label: value" field from bleeding into the
- * next when the whole body is flattened to a single line, which is what makes
- * label extraction robust on both the real structured page and normalized text.
- */
-function fieldLines($: cheerio.CheerioAPI, root: cheerio.Cheerio<any>): string[] {
-  const lines: string[] = [];
-  root.find('p, li, td, th, dt, dd, tr, h2, h3, h4').each((_i, el) => {
-    const line = cleanText($(el).text());
-    if (line) lines.push(line);
-  });
-  return lines;
+type FundFacetField =
+  | 'yearOfStudy'
+  | 'termOfAward'
+  | 'purpose'
+  | 'globalRegions'
+  | 'citizenshipStatus';
+
+function fundDetailElement($: cheerio.CheerioAPI, id: string): cheerio.Cheerio<any> {
+  return $(`${FUND_DETAIL_ID_PREFIX}${id}`).first();
 }
 
-const LABEL_LINE_RE = /^[A-Za-z][A-Za-z '&/-]{1,40}\s*[:-]\s/;
-
-function extractDescription($: cheerio.CheerioAPI, root: cheerio.Cheerio<any>): string | undefined {
-  const paragraphs: string[] = [];
-  root.find('p').each((_i, el) => {
-    const text = cleanText($(el).text());
-    if (text.length >= 40 && !LABEL_LINE_RE.test(text)) paragraphs.push(text);
-  });
-  const prose = paragraphs.join(' ').trim();
-  const safe = sanitizeStoredCatalogDescription(prose, 2000);
-  return safe || undefined;
+function sectionText($: cheerio.CheerioAPI, id: string): string | undefined {
+  const section = fundDetailElement($, id).clone();
+  section.find('h1, script, style').remove();
+  const text = cleanText(section.text());
+  return text || undefined;
 }
 
-function labelValueFromLines(lines: string[], labels: string[]): string | undefined {
-  for (const label of labels) {
-    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pattern = new RegExp(`^${escaped}\\s*[:\\-]\\s*(.+)$`, 'i');
-    for (const line of lines) {
-      const value = cleanText(line.match(pattern)?.[1]);
-      if (value && value.length >= 2) return value.slice(0, 240);
+function sectionProse($: cheerio.CheerioAPI, id: string, maxLength: number): string | undefined {
+  const text = sectionText($, id);
+  return text ? sanitizeStoredCatalogDescription(text, maxLength) || undefined : undefined;
+}
+
+// The Global Region facet lists each country as its own "-- Country (Subregion)" item
+// under its region, and the stored catalog filters by region only, so country items
+// are dropped rather than stored as regions.
+function isCountryUnderRegion(field: FundFacetField, value: string): boolean {
+  return field === 'globalRegions' && value.startsWith('--');
+}
+
+function parseFacets($: cheerio.CheerioAPI): Record<FundFacetField, string[]> {
+  const facets: Record<FundFacetField, string[]> = {
+    yearOfStudy: [],
+    termOfAward: [],
+    purpose: [],
+    globalRegions: [],
+    citizenshipStatus: [],
+  };
+  $(`[id^="${FUND_DETAIL_ID_PREFIX.slice(1)}divHeader_"]`).each((_i, header) => {
+    const panelId = String($(header).attr('id') || '').split('divHeader_')[1];
+    const facet = FACET_FIELDS.find(({ label }) => label.test(cleanText($(header).text())));
+    if (!panelId || !facet) return;
+    const values = fundDetailElement($, `divBody_${panelId}`)
+      .find('li')
+      .toArray()
+      .map((item) => cleanText($(item).text()))
+      .filter((value) => !isCountryUnderRegion(facet.field, value))
+      .filter((value) => value.length >= 2 && value.length <= 80);
+    facets[facet.field] = Array.from(new Set([...facets[facet.field], ...values]));
+  });
+  return facets;
+}
+
+function parseCatalogDate(text: string): Date | undefined {
+  const match = cleanText(text).match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
+  if (!match) return undefined;
+  const [, month, day, year] = match.map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+  return date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? date : undefined;
+}
+
+function parseApplicationWindow($: cheerio.CheerioAPI): { opensAt?: Date; deadline?: Date } {
+  const window: { opensAt?: Date; deadline?: Date } = {};
+  $('.fdi-start-date-title').each((_i, titleEl) => {
+    const label = cleanText($(titleEl).text()).toLowerCase();
+    const date = parseCatalogDate($(titleEl).nextAll('.fdi-start-date').first().text());
+    if (!date) return;
+    if (/deadline/.test(label)) window.deadline = date;
+    else if (/begin accepting/.test(label)) {
+      window.opensAt = new Date(
+        Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+      );
     }
-  }
-  return undefined;
+  });
+  return window;
 }
 
-function splitFacetValues(value: string | undefined): string[] {
-  if (!value) return [];
-  return Array.from(
-    new Set(
-      value
-        .split(/[;,/]|(?:\s+and\s+)/i)
-        .map((token) => cleanText(token))
-        .filter((token) => token.length >= 2 && token.length <= 80),
-    ),
-  );
-}
-
-function extractAwardAmount(lines: string[], bodyText: string): string | undefined {
-  const labeled = labelValueFromLines(lines, [
-    'award amount',
-    'amount',
-    'award',
-    'stipend',
-    'funding amount',
-  ]);
-  if (labeled && /\$|\d/.test(labeled)) return labeled.slice(0, 120);
-  const dollar = bodyText.match(/\$\s?\d[\d,]*(?:\.\d{2})?(?:\s?[-–]\s?\$?\d[\d,]*(?:\.\d{2})?)?/);
-  return dollar ? cleanText(dollar[0]).slice(0, 120) : undefined;
-}
-
-function hasActiveApplicationLanguage(text: string): boolean {
-  return /\baccepting applications\b|\bapplications?\s+(?:are\s+)?(?:now\s+)?open\b|\brolling\b|\bno\s+(?:fixed|set)\s+deadline\b/i.test(
-    text,
-  );
-}
-
-function detailContentRoot($: cheerio.CheerioAPI): cheerio.Cheerio<any> {
-  const scoped = $('#ctl00_PreContent, .FundDetails, main, [role="main"], article').first();
-  const root = scoped.length > 0 ? scoped : $('body');
-  const clone = root.clone();
-  clone
-    .find('script, style, noscript, nav, header, footer, aside, [role="navigation"], .breadcrumb')
-    .remove();
-  return clone;
+function awardAmountText($: cheerio.CheerioAPI): string | undefined {
+  const text = sectionText($, 'lblAwardAmount')?.replace(/^award amount\s*:?\s*/i, '');
+  return text && /\$|\d/.test(text) ? text.slice(0, 120) : undefined;
 }
 
 /**
- * A FundDetails page reached without an authenticated session degrades to the
- * search-filter / login shell rather than showing the fund. Recognizing that
- * shell lets the producer fail closed on the whole catalog instead of minting a
- * login page as a fund.
+ * A FundDetails page is server-rendered ASP.NET: each field is its own element with a
+ * stable `ctl00_PreContent_FundDetails1_*` id, and the search facets are collapsible
+ * panels pairing a `divHeader_<n>` label with a `divBody_<n>` list. A page with no fund
+ * name is a login or error shell rather than a fund, so it fails closed. The contact
+ * block names a person, so it is never read (contact data fails closed).
  */
-function isFundDetailAuthShell($: cheerio.CheerioAPI, title: string): boolean {
-  const heading = cleanText($('h1').first().text()).toLowerCase();
-  if (/search filters?:|please (?:log ?in|sign ?in)|session (?:expired|timed out)/i.test(heading)) {
-    return true;
-  }
-  return !title;
-}
-
 export function parseFundDetailPage(
   html: string,
   fund: StudentGrantsFundLink,
   referenceDate: Date = new Date(),
 ): StudentGrantsFund | null {
   const $ = cheerio.load(html);
-  const heading =
-    cleanText($('h1.Grant_hd, h1.FundTitle, .FundDetails h1').first().text()) ||
-    cleanText($('h1').first().text());
-  const title = heading || cleanText(fund.title);
-  if (isFundDetailAuthShell($, heading || fund.title)) return null;
+  const title = sectionText($, 'lblFundName');
   if (!title) return null;
 
-  const root = detailContentRoot($);
-  const bodyText = cleanText(root.text());
-  const lines = fieldLines($, root);
-  const description = extractDescription($, root);
-  const eligibility = labelValueFromLines(lines, [
-    'eligibility',
-    'who can apply',
-    'who is eligible',
-  ]);
-  const sponsoringOrganization = labelValueFromLines(lines, [
-    'sponsoring organization',
-    'sponsor',
-    'department',
-    'administered by',
-    'offered by',
-  ]);
-  const deadline = parseDeadlineToUtcEndOfDay(bodyText, referenceDate);
-  const awardAmount = extractAwardAmount(lines, bodyText);
-
-  const facets: Record<string, string[]> = {};
-  for (const { field, labels } of FACET_LABELS) {
-    facets[field as string] = splitFacetValues(labelValueFromLines(lines, labels));
-  }
+  const { opensAt, deadline } = parseApplicationWindow($);
+  const closed = Boolean(sectionText($, 'lblFundClosedOn') || sectionText($, 'lblReasonClosed'));
+  const now = referenceDate.getTime();
+  const facets = parseFacets($);
 
   return {
     sourceKey: sourceKeyForFund(fund.url),
     title,
     url: normalizeFundDetailUrl(fund.url),
-    description,
-    eligibility: eligibility ? cleanText(eligibility).slice(0, 500) : undefined,
-    awardAmount,
-    sponsoringOrganization: sponsoringOrganization
-      ? cleanText(sponsoringOrganization).slice(0, 160)
-      : undefined,
+    description: sectionProse($, 'lblBriefDescription', 2000),
+    applicationInformation: sectionProse($, 'lblApplicationInformation', 2000),
+    eligibility: sectionProse($, 'lblSpecialEligibilityRequirements', 500),
+    restrictionsToUseOfAward: sectionProse($, 'lblRestrictionstoUseofAward', 500),
+    awardAmount: awardAmountText($),
     deadline,
-    yearOfStudy: facets.yearOfStudy,
-    termOfAward: facets.termOfAward,
-    purpose: facets.purpose,
-    globalRegions: facets.globalRegions,
-    citizenshipStatus: facets.citizenshipStatus,
+    applicationOpenDate: opensAt,
+    ...facets,
     isAcceptingApplications:
-      (deadline ? deadline.getTime() > referenceDate.getTime() : false) ||
-      hasActiveApplicationLanguage(bodyText),
+      !closed &&
+      Boolean(deadline && deadline.getTime() > now) &&
+      (!opensAt || opensAt.getTime() <= now),
   };
 }
 
@@ -345,9 +308,11 @@ function fundFingerprint(fund: StudentGrantsFund): string {
     url: fund.url,
     description: fund.description || '',
     eligibility: fund.eligibility || '',
+    applicationInformation: fund.applicationInformation || '',
+    restrictionsToUseOfAward: fund.restrictionsToUseOfAward || '',
     awardAmount: fund.awardAmount || '',
-    sponsoringOrganization: fund.sponsoringOrganization || '',
     deadline: fund.deadline?.toISOString() || '',
+    applicationOpenDate: fund.applicationOpenDate?.toISOString() || '',
     yearOfStudy: fund.yearOfStudy,
     termOfAward: fund.termOfAward,
     purpose: fund.purpose,
@@ -378,12 +343,14 @@ export function fundToObservations(fund: StudentGrantsFund): ObservationInput[] 
     observation('sourceFingerprint', fundFingerprint(fund)),
     observation('title', fund.title),
     observation('description', fund.description),
+    observation('applicationInformation', fund.applicationInformation),
     observation('eligibility', fund.eligibility),
+    observation('restrictionsToUseOfAward', fund.restrictionsToUseOfAward),
     observation('awardAmount', fund.awardAmount),
     observation('applicationLink', fund.url),
     observation('links', [{ label: 'Application', url: fund.url }]),
     observation('deadline', fund.deadline),
-    observation('contactOffice', fund.sponsoringOrganization),
+    observation('applicationOpenDate', fund.applicationOpenDate),
     observation('yearOfStudy', fund.yearOfStudy),
     observation('termOfAward', fund.termOfAward),
     observation('purpose', fund.purpose),
@@ -410,14 +377,93 @@ export function createRenderedStudentGrantsHtmlFetcher(
   };
 }
 
+const CITED_FUND_DETAIL_URL = /^https?:\/\/yale\.communityforce\.com\/Funds\/FundDetails\.aspx\?/i;
+
+/**
+ * The FundDetails pages the live catalog already cites, as crawl seeds. A fund reached
+ * this way is still read from its own page, so the seed decides only what to fetch.
+ * Without it the lane depends on the rendered search grid alone, which no machine
+ * without a renderer can read, and the rows the 2026-02 catalog import minted with no
+ * source stay unreachable (#3984).
+ */
+export async function loadCitedFundDetailUrls(): Promise<string[]> {
+  const rows = (await Fellowship.find(
+    {
+      archived: { $ne: true },
+      $or: [{ applicationLink: CITED_FUND_DETAIL_URL }, { 'links.url': CITED_FUND_DETAIL_URL }],
+    },
+    { applicationLink: 1, links: 1 },
+  ).lean()) as Array<{ applicationLink?: unknown; links?: Array<{ url?: unknown }> }>;
+  const urls = rows.flatMap((row) => [
+    row.applicationLink,
+    ...(Array.isArray(row.links) ? row.links.map((link) => link?.url) : []),
+  ]);
+  return urls.filter(
+    (url): url is string => typeof url === 'string' && isRecordSpecificFundDetailUrl(url),
+  );
+}
+
+export function createStaticStudentGrantsHtmlFetcher(
+  fetchPage: (url: string) => Promise<string> = async (url) =>
+    (await fetchPageWithPolicy(url, { timeoutMs: FETCH_TIMEOUT_MS })).html,
+): StudentGrantsHtmlFetcher {
+  return async (url, useCache, sourceName) => {
+    const cacheKey = `page:${url}`;
+    if (useCache) {
+      const cached = await getCached<string>(sourceName, cacheKey);
+      if (cached) return cached;
+    }
+    try {
+      const html = await fetchPage(url);
+      if (useCache && html) await setCached(sourceName, cacheKey, html);
+      return html;
+    } catch {
+      return '';
+    }
+  };
+}
+
+export interface StudentGrantsDatabaseScraperOptions {
+  searchUrl?: string;
+  searchFetcher?: StudentGrantsHtmlFetcher;
+  detailFetcher?: StudentGrantsHtmlFetcher;
+  loadSeedUrls?: () => Promise<string[]>;
+}
+
+function mergeFundLinks(
+  gridLinks: StudentGrantsFundLink[],
+  seedUrls: string[],
+): StudentGrantsFundLink[] {
+  const byKey = new Map<string, StudentGrantsFundLink>();
+  for (const link of gridLinks) byKey.set(fundIdentityKey(link.url), link);
+  for (const url of seedUrls) {
+    const normalized = normalizeFundDetailUrl(url);
+    const key = fundIdentityKey(normalized);
+    if (!byKey.has(key)) byKey.set(key, { title: '', url: normalized });
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.url.localeCompare(b.url));
+}
+
+function isInScope(link: StudentGrantsFundLink, only: string[] | undefined): boolean {
+  if (!only || only.length === 0) return true;
+  return only.includes(sourceKeyForFund(link.url)) || only.includes(link.url);
+}
+
 export class StudentGrantsDatabaseScraper implements IScraper {
   readonly name = STUDENT_GRANTS_DATABASE_SOURCE;
   readonly displayName = 'Yale Student Grants Database (CommunityForce)';
 
-  constructor(
-    private readonly searchUrl: string = DEFAULT_STUDENT_GRANTS_SEARCH_URL,
-    private readonly htmlFetcher: StudentGrantsHtmlFetcher = createRenderedStudentGrantsHtmlFetcher(),
-  ) {}
+  private readonly searchUrl: string;
+  private readonly searchFetcher: StudentGrantsHtmlFetcher;
+  private readonly detailFetcher: StudentGrantsHtmlFetcher;
+  private readonly loadSeedUrls: () => Promise<string[]>;
+
+  constructor(options: StudentGrantsDatabaseScraperOptions = {}) {
+    this.searchUrl = options.searchUrl ?? DEFAULT_STUDENT_GRANTS_SEARCH_URL;
+    this.searchFetcher = options.searchFetcher ?? createRenderedStudentGrantsHtmlFetcher();
+    this.detailFetcher = options.detailFetcher ?? createStaticStudentGrantsHtmlFetcher();
+    this.loadSeedUrls = options.loadSeedUrls ?? loadCitedFundDetailUrls;
+  }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const limitOption = ctx.options.limit;
@@ -428,18 +474,20 @@ export class StudentGrantsDatabaseScraper implements IScraper {
     const referenceDate = new Date();
 
     ctx.log(`[student-grants] fetching rendered fund search ${this.searchUrl}`);
-    const searchHtml = await this.htmlFetcher(this.searchUrl, ctx.options.useCache, this.name);
+    const searchHtml = await this.searchFetcher(this.searchUrl, ctx.options.useCache, this.name);
+    const gridLinks = searchHtml ? parseFundSearchResults(searchHtml, this.searchUrl) : [];
     if (!searchHtml) {
-      ctx.log(
-        '[student-grants] skipped - rendered search unavailable (headless fetcher disabled or blocked)',
-      );
-      return { observationCount: 0, entitiesObserved: 0, notes: 'rendered-search-unavailable' };
+      ctx.log('[student-grants] rendered search unavailable; enumerating cited fund pages only');
     }
-
-    const fundLinks = parseFundSearchResults(searchHtml, this.searchUrl);
-    ctx.log(`[student-grants] discovered ${fundLinks.length} funds in the catalog`);
+    const seedUrls = await this.loadSeedUrls();
+    const fundLinks = mergeFundLinks(gridLinks, seedUrls).filter((link) =>
+      isInScope(link, ctx.options.only),
+    );
+    ctx.log(
+      `[student-grants] ${fundLinks.length} funds to read (${gridLinks.length} from the search grid, ${seedUrls.length} cited fund pages)`,
+    );
     if (fundLinks.length === 0) {
-      return { observationCount: 0, entitiesObserved: 0, notes: 'no-funds-in-rendered-search' };
+      return { observationCount: 0, entitiesObserved: 0, notes: 'no-funds-to-read' };
     }
 
     let totalObservations = 0;
@@ -449,16 +497,11 @@ export class StudentGrantsDatabaseScraper implements IScraper {
 
     for (const link of fundLinks) {
       if (totalEntities >= limit) break;
-      const detailHtml = await this.htmlFetcher(link.url, ctx.options.useCache, this.name);
-      if (!detailHtml) {
-        unavailable += 1;
-        ctx.log(`[student-grants] skipped fund - rendered detail unavailable`, { url: link.url });
-        continue;
-      }
-      const fund = parseFundDetailPage(detailHtml, link, referenceDate);
+      const detailHtml = await this.detailFetcher(link.url, ctx.options.useCache, this.name);
+      const fund = detailHtml ? parseFundDetailPage(detailHtml, link, referenceDate) : null;
       if (!fund) {
         unavailable += 1;
-        ctx.log(`[student-grants] skipped fund - detail failed closed (auth shell or no title)`, {
+        ctx.log('[student-grants] skipped fund - detail unavailable or not a fund page', {
           url: link.url,
         });
         continue;
@@ -477,7 +520,7 @@ export class StudentGrantsDatabaseScraper implements IScraper {
     return {
       observationCount: totalObservations,
       entitiesObserved: totalEntities,
-      notes: `funds=${totalEntities}, discovered=${fundLinks.length}, withDeadline=${withDeadline}, skipped=${unavailable}`,
+      notes: `funds=${totalEntities}, grid=${gridLinks.length}, cited=${seedUrls.length}, withDeadline=${withDeadline}, skipped=${unavailable}`,
     };
   }
 }

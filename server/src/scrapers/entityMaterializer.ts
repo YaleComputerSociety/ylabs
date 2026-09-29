@@ -4149,6 +4149,22 @@ export function uniqueKeyValueForIdentifier(
  * than clone), so two distinct non-empty producers never merge. Prefers a live
  * record, then the most recently updated one.
  */
+// A record-specific application page (a CommunityForce FundDetails URL) is unique to one
+// fund, and distinct funds share titles ("Summer Research Fellowship" at several colleges),
+// so a same-title row that already cites a different fund's page is a different fund. On
+// Development, matching on title alone would have folded 19 pairs of distinct funds into
+// one row each, and the two funds would overwrite each other every run (#3984).
+function citesADifferentRecordSpecificApplication(candidate: any, obs: any[]): boolean {
+  const observed = obs.find((o) => o.field === 'applicationLink' && typeof o.value === 'string');
+  const observedLink = String(observed?.value || '').trim();
+  const candidateLink = String(candidate?.applicationLink || '').trim();
+  return (
+    isRecordSpecificApplicationPortalUrl(observedLink) &&
+    isRecordSpecificApplicationPortalUrl(candidateLink) &&
+    observedLink !== candidateLink
+  );
+}
+
 async function findFellowshipByNormalizedTitle(
   Model: mongoose.Model<any>,
   obs: any[],
@@ -4163,7 +4179,9 @@ async function findFellowshipByNormalizedTitle(
     $or: [{ sourceName }, { sourceName: { $in: ['', null] } }, { sourceName: { $exists: false } }],
   }).lean();
   const matches = candidates.filter(
-    (candidate: any) => normalizedProgramTitleKey(String(candidate.title || '')) === titleKey,
+    (candidate: any) =>
+      normalizedProgramTitleKey(String(candidate.title || '')) === titleKey &&
+      !citesADifferentRecordSpecificApplication(candidate, obs),
   );
   if (matches.length === 0) return null;
 
