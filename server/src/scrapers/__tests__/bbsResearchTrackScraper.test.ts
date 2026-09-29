@@ -13,7 +13,7 @@ import {
   type BbsCandidateEntity,
   type BbsProfileLinks,
 } from '../sources/bbsResearchTrackScraper';
-import { centerRosterReadAdmissibility, ROSTER_HEALTH_FIELD } from '../centerRosterRetirement';
+import { centerRosterReadAdmissibility, CENTER_ROSTER_HEALTH_FIELD } from '../centerRosterRetirement';
 import type { ObservationInput, ScraperContext } from '../types';
 
 const IMMUNOLOGY_URL = 'https://medicine.yale.edu/bbs/people/immunology/';
@@ -357,7 +357,7 @@ describe('BbsResearchTrackScraper.run', () => {
     // Counted by field rather than in total, because the lane also emits one roster-health
     // snapshot per track it read (#3852). The claim under test is the graft.
     expect(emitted.filter((o) => o.entityType === 'researchEntity')).toHaveLength(1);
-    expect(emitted.filter((o) => o.field === ROSTER_HEALTH_FIELD)).toHaveLength(1);
+    expect(emitted.filter((o) => o.field === CENTER_ROSTER_HEALTH_FIELD)).toHaveLength(1);
     expect(emitted.some((o) => o.entityType === 'user')).toBe(false);
     expect(emitted.some((o) => o.field === 'slug')).toBe(false);
     expect(emitted.some((o) => o.entityId?.startsWith('aaaaaaaaaaaaaaaaaaaaaaa'))).toBe(false);
@@ -394,7 +394,7 @@ describe('BbsResearchTrackScraper.run', () => {
     const result = await scraper.run(ctx);
 
     expect(emitted.filter((o) => o.entityType === 'researchEntity')).toHaveLength(0);
-    expect(emitted.filter((o) => o.field === ROSTER_HEALTH_FIELD)).toHaveLength(1);
+    expect(emitted.filter((o) => o.field === CENTER_ROSTER_HEALTH_FIELD)).toHaveLength(1);
     expect(result.notes).toMatch(/0 have no existing research row/);
     expect(result.notes).toMatch(/1 cite a lab URL only on a row naming someone else/);
   });
@@ -649,7 +649,7 @@ describe('an empty track listing', () => {
  */
 describe('per-track roster-health snapshot', () => {
   const snapshotFor = (emitted: ObservationInput[], trackSlug: string) =>
-    emitted.find((o) => o.field === ROSTER_HEALTH_FIELD && o.entityKey === trackSlug);
+    emitted.find((o) => o.field === CENTER_ROSTER_HEALTH_FIELD && o.entityKey === trackSlug);
 
   const runTrack = async (options: {
     html: string | null;

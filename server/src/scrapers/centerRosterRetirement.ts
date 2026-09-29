@@ -60,16 +60,6 @@ import { officialProfileIdentityKey } from './utils/rosterMembershipKey';
 export const CENTERS_INSTITUTES_SOURCE_NAME = 'centers-institutes-index';
 export const CENTER_ROSTER_HEALTH_ENTITY_TYPE = 'centerRosterHealth' as const;
 export const CENTER_ROSTER_HEALTH_FIELD = 'centerRosterHealth';
-
-/**
- * Neutral names for the same stored tokens, because the mechanism is not centre-specific: any
- * listing-driven lane can emit a roster-health snapshot and have absence governed by the same
- * rule. The stored strings keep saying `centerRosterHealth` because renaming a stored entity type
- * and field is a migration, and two lanes' snapshots never collide since every read is scoped by
- * `sourceName` (#3852).
- */
-export const ROSTER_HEALTH_ENTITY_TYPE = CENTER_ROSTER_HEALTH_ENTITY_TYPE;
-export const ROSTER_HEALTH_FIELD = CENTER_ROSTER_HEALTH_FIELD;
 export const CENTER_ROSTER_MIN_ABSENT_READS = 2;
 export const CENTER_ROSTER_MAX_ABSENT_FRACTION = 0.5;
 export const CENTER_ROSTER_DISCOVERY_RETENTION_MIN_FRACTION = 0.75;
@@ -613,24 +603,10 @@ const observationEntityKey = (row: { entityKey?: unknown }): string =>
   typeof row.entityKey === 'string' ? row.entityKey.trim() : '';
 
 export async function loadCenterRosterReads(entityKey: string): Promise<CenterRosterRead[]> {
-  return loadRosterReadsForSource(CENTERS_INSTITUTES_SOURCE_NAME, entityKey);
-}
-
-/**
- * The admitted reads one lane recorded for one listing, newest last.
- *
- * Scoped by `sourceName` on purpose: that is what lets a second lane reuse this mechanism without
- * its snapshots being read as the first lane's, and it is why the stored entity type can stay as
- * it is (#3852).
- */
-export async function loadRosterReadsForSource(
-  sourceName: string,
-  entityKey: string,
-): Promise<CenterRosterRead[]> {
   const rows = (await Observation.find({
-    entityType: ROSTER_HEALTH_ENTITY_TYPE,
-    field: ROSTER_HEALTH_FIELD,
-    sourceName,
+    entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+    field: CENTER_ROSTER_HEALTH_FIELD,
+    sourceName: CENTERS_INSTITUTES_SOURCE_NAME,
     entityKey,
     scrapeRunId: { $exists: true, $ne: null },
     'rollback.rolledBackAt': { $exists: false },

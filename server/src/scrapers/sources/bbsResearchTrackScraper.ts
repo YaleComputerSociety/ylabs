@@ -35,8 +35,8 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import {
   buildCenterRosterHealthSnapshot,
-  ROSTER_HEALTH_ENTITY_TYPE,
-  ROSTER_HEALTH_FIELD,
+  CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+  CENTER_ROSTER_HEALTH_FIELD,
   type CenterRosterReadMember,
   type CenterRosterStopReason,
 } from '../centerRosterRetirement';
@@ -551,23 +551,6 @@ export interface BbsResearchTrackScraperDeps {
 }
 
 /**
- * Whether this lane has ever recorded a PI from this track page.
- *
- * A track that lists nobody is either a page that changed shape or a parser that broke on it, and
- * both are defects. Neither was visible: the lane logged `0 faculty listed` and carried on, so
- * `plantmolbio` parsed to zero for three consecutive runs while every run reported success
- * (#3833). The per-source barren-streak check cannot see it either, because the lane's other
- * tracks keep yielding and the source's own total never drops to zero.
- *
- * The distinction between a warning and a stage failure is this read: a track that never listed
- * anybody may simply be empty upstream, while a track that used to list PIs and now lists none is
- * unambiguously a defect. Fails open, returning false, because an unanswerable read must not
- * invent a failure.
- *
- * The read keys on a topic this track grafts rather than on the track URL, because a graft cites
- * the PI's profile page and never the track page, and no two tracks share a topic.
- */
-/**
  * A per-track read snapshot on the #3781 contract, so absence can later be governed by the same
  * rule rather than a second one.
  *
@@ -595,9 +578,9 @@ function buildTrackRosterHealthObservation(input: {
   }));
   const stopReason: CenterRosterStopReason = input.fetched ? 'not-paginated' : 'fetch-failed';
   return {
-    entityType: ROSTER_HEALTH_ENTITY_TYPE,
+    entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
     entityKey: input.track.slug,
-    field: ROSTER_HEALTH_FIELD,
+    field: CENTER_ROSTER_HEALTH_FIELD,
     sourceUrl: input.track.url,
     value: buildCenterRosterHealthSnapshot({
       centerKey: input.track.slug,
@@ -612,6 +595,23 @@ function buildTrackRosterHealthObservation(input: {
   };
 }
 
+/**
+ * Whether this lane has ever recorded a PI from this track page.
+ *
+ * A track that lists nobody is either a page that changed shape or a parser that broke on it, and
+ * both are defects. Neither was visible: the lane logged `0 faculty listed` and carried on, so
+ * `plantmolbio` parsed to zero for three consecutive runs while every run reported success
+ * (#3833). The per-source barren-streak check cannot see it either, because the lane's other
+ * tracks keep yielding and the source's own total never drops to zero.
+ *
+ * The distinction between a warning and a stage failure is this read: a track that never listed
+ * anybody may simply be empty upstream, while a track that used to list PIs and now lists none is
+ * unambiguously a defect. Fails open, returning false, because an unanswerable read must not
+ * invent a failure.
+ *
+ * The read keys on a topic this track grafts rather than on the track URL, because a graft cites
+ * the PI's profile page and never the track page, and no two tracks share a topic.
+ */
 async function defaultTrackEverListedPis(track: BbsTrack, sourceId: string): Promise<boolean> {
   if (mongoose.connection.readyState !== 1 || !mongoose.isValidObjectId(sourceId)) return false;
   const seen = await Observation.exists({
