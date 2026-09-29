@@ -11,6 +11,7 @@ export default defineConfig({
     // search index, so a run reads the same environment CI reads and can never
     // touch a live backend (#2966). See src/test/hermeticEnvironment.ts.
     setupFiles: ['src/test/hermeticEnvironment.ts'],
+    globalSetup: ['src/test/vitestGlobalSetup.ts'],
     globals: false,
     // 110 suites already pass a per-test timeout of their own, which is the shape of a
     // budget that is too tight rather than of 110 unusually slow tests. An integration
