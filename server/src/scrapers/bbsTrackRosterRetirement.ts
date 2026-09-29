@@ -214,7 +214,7 @@ export function aggregateBbsTrackReads(
     const runId = String(row.scrapeRunId ?? '');
     const trackKey = String(row.entityKey ?? '');
     if (!runId || !trackKey) continue;
-    const observedAt = new Date(String(row.observedAt));
+    const observedAt = new Date(row.observedAt as Date | string);
     const entry = byRun.get(runId) ?? {
       observedAt,
       admittedTrackKeys: new Set<string>(),
@@ -308,7 +308,7 @@ async function loadBbsTrackClaims(): Promise<BbsTrackClaim[]> {
     observationId: String(row._id),
     entityKey: String(row.entityId),
     ...(row.scrapeRunId ? { scrapeRunId: String(row.scrapeRunId) } : {}),
-    observedAt: new Date(String(row.observedAt)),
+    observedAt: new Date(row.observedAt as Date | string),
   }));
 }
 

@@ -217,6 +217,22 @@ describe('aggregateBbsTrackReads', () => {
     expect([...reads[0].claimEntityKeys].sort()).toEqual(['row-a', 'row-b']);
   });
 
+  it('keeps the millisecond of a stored read time', () => {
+    const observedAt = new Date('2026-09-10T00:00:00.750Z');
+    const { reads } = aggregateBbsTrackReads(
+      [
+        {
+          entityKey: 'track-one',
+          scrapeRunId: 'r1',
+          observedAt,
+          value: snapshot({ members: [{ memberKey: 'pi-a', claimEntityKey: 'row-a' }] }),
+        },
+      ],
+      ['track-one'],
+    );
+    expect(reads[0].observedAt.getTime()).toBe(observedAt.getTime());
+  });
+
   // A failed, empty or filtered-out track says nothing about its PIs, so the other tracks cannot
   // stand in for the run: every PI only that track lists would read as absent.
   it('admits no read for a run in which any track was not admitted or not read', () => {
