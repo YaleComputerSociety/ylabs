@@ -13,6 +13,7 @@ import {
   type BbsCandidateEntity,
   type BbsProfileLinks,
 } from '../sources/bbsResearchTrackScraper';
+import { centerRosterReadAdmissibility, ROSTER_HEALTH_FIELD } from '../centerRosterRetirement';
 import type { ObservationInput, ScraperContext } from '../types';
 
 const IMMUNOLOGY_URL = 'https://medicine.yale.edu/bbs/people/immunology/';
@@ -353,7 +354,10 @@ describe('BbsResearchTrackScraper.run', () => {
     );
     expect(graft?.value).toEqual(['Immunology']);
 
-    expect(emitted).toHaveLength(1);
+    // Counted by field rather than in total, because the lane also emits one roster-health
+    // snapshot per track it read (#3852). The claim under test is the graft.
+    expect(emitted.filter((o) => o.entityType === 'researchEntity')).toHaveLength(1);
+    expect(emitted.filter((o) => o.field === ROSTER_HEALTH_FIELD)).toHaveLength(1);
     expect(emitted.some((o) => o.entityType === 'user')).toBe(false);
     expect(emitted.some((o) => o.field === 'slug')).toBe(false);
     expect(emitted.some((o) => o.entityId?.startsWith('aaaaaaaaaaaaaaaaaaaaaaa'))).toBe(false);
@@ -389,7 +393,8 @@ describe('BbsResearchTrackScraper.run', () => {
     const { ctx, emitted } = makeContext({ only: ['immunology'] });
     const result = await scraper.run(ctx);
 
-    expect(emitted).toHaveLength(0);
+    expect(emitted.filter((o) => o.entityType === 'researchEntity')).toHaveLength(0);
+    expect(emitted.filter((o) => o.field === ROSTER_HEALTH_FIELD)).toHaveLength(1);
     expect(result.notes).toMatch(/0 have no existing research row/);
     expect(result.notes).toMatch(/1 cite a lab URL only on a row naming someone else/);
   });
@@ -633,5 +638,84 @@ describe('an empty track listing', () => {
     const result = await scraper.run(ctx);
     expect(logs.some((line) => /WARNING: this track listed no faculty/.test(line))).toBe(false);
     expect(result.partialFailures ?? []).toEqual([]);
+  });
+});
+
+/**
+ * #3852 step one. The retirement mechanism from #3781 is driven by a health snapshot, and this
+ * lane emitted none, so an omission could never be told from a page nobody read. These pin the
+ * admissibility contract at this lane's boundary: only a complete, off-the-wire read that listed
+ * at least one PI may ever retire anybody.
+ */
+describe('per-track roster-health snapshot', () => {
+  const snapshotFor = (emitted: ObservationInput[], trackSlug: string) =>
+    emitted.find((o) => o.field === ROSTER_HEALTH_FIELD && o.entityKey === trackSlug);
+
+  const runTrack = async (options: {
+    html: string | null;
+    useCache?: boolean;
+  }): Promise<ObservationInput[]> => {
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) =>
+        url.endsWith('/people/immunology/')
+          ? options.html
+          : bbsProfileHtml({ canonicalSlug: 'alex-rivera' }),
+      entityFinder: async () => [],
+      trackEverListedPis: async () => false,
+    });
+    const { ctx, emitted } = makeContext({
+      only: ['immunology'],
+      ...(options.useCache === undefined ? {} : { useCache: options.useCache }),
+    });
+    await scraper.run(ctx);
+    return emitted;
+  };
+
+  it('is admissible for a complete off-the-wire read that listed a PI', async () => {
+    const emitted = await runTrack({
+      html: trackListingHtml([{ slug: 'alex-rivera', label: 'Rivera, Alex' }]),
+    });
+    const snapshot = snapshotFor(emitted, 'immunology');
+    expect(snapshot).toBeDefined();
+    expect(centerRosterReadAdmissibility(snapshot?.value as never)).toBe('read-listed-members');
+  });
+
+  // The plantmolbio protection: a zero-PI parse must retire nobody.
+  it('is inadmissible when the read listed nobody, so an empty track retires no one', async () => {
+    const emitted = await runTrack({ html: '<html><body><ul></ul></body></html>' });
+    const snapshot = snapshotFor(emitted, 'immunology');
+    expect(snapshot).toBeDefined();
+    expect(centerRosterReadAdmissibility(snapshot?.value as never)).toBe('read-listed-nobody');
+  });
+
+  it('is inadmissible when the page could not be read at all', async () => {
+    const emitted = await runTrack({ html: null });
+    const snapshot = snapshotFor(emitted, 'immunology');
+    expect(snapshot).toBeDefined();
+    expect(centerRosterReadAdmissibility(snapshot?.value as never)).toBe('not-read');
+  });
+
+  // Two runs inside the snapshot cache's lifetime replay one fetch, so a cache-permitted read
+  // must never satisfy the two-read rule on its own.
+  it('is inadmissible when the run permitted the cache', async () => {
+    const emitted = await runTrack({
+      html: trackListingHtml([{ slug: 'alex-rivera', label: 'Rivera, Alex' }]),
+      useCache: true,
+    });
+    const snapshot = snapshotFor(emitted, 'immunology');
+    expect(centerRosterReadAdmissibility(snapshot?.value as never)).toBe('cache-permitted');
+  });
+
+  it('names every PI it listed, which is what a later absence is measured against', async () => {
+    const emitted = await runTrack({
+      html: trackListingHtml([
+        { slug: 'alex-rivera', label: 'Rivera, Alex' },
+        { slug: 'morgan-lee', label: 'Lee, Morgan' },
+      ]),
+    });
+    const value = snapshotFor(emitted, 'immunology')?.value as {
+      members?: Array<{ memberKey: string }>;
+    };
+    expect((value.members ?? []).map((m) => m.memberKey)).toEqual(['alex-rivera', 'morgan-lee']);
   });
 });

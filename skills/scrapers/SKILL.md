@@ -55,6 +55,11 @@ The selector matches a roster list item or a table row rather than every `/bbs/p
 A list-only selector made `plantmolbio` parse to zero faculty for three consecutive runs while every run reported success (#3833).
 An empty track now warns every time, and a track that has listed PIs before also returns a `partialFailures` entry naming it, which the orchestrator turns into a run error and the CLI turns into a non-zero exit for that source's own subprocess, so the lane's stage fails while the rest of the sweep still runs.
 The per-source barren-streak check cannot see this, because the lane's other tracks keep yielding and the source's own total never reaches zero.
+Each track it reads now also emits a roster-health snapshot naming every PI that read listed, on the same contract `centers-institutes-index` uses, so absence can be governed by #3781's existing rule rather than a second one (#3852).
+The stored entity type and field still read `centerRosterHealth` because renaming them is a migration; neutral aliases exist and every read is scoped by `sourceName`, so two lanes' snapshots never collide.
+A snapshot is admissible only for a complete, off-the-wire read that listed at least one PI, so a zero-PI parse, a failed fetch and a cache-permitted run each record the read while retiring nobody.
+A track listing is a single page, so its honest stop reason is `not-paginated`, which counts as having read the whole roster; a failed fetch says `fetch-failed` and is therefore incomplete.
+Its claim key is the PI, because the role a track asserts is the same for every entry.
 "Has listed PIs before" is read as any stored `researchAreas` observation from this lane's `sourceId` carrying one of the track's topics, not as an observation cited to the track URL: a graft cites the PI's profile page and never the track page, and no two tracks share a topic.
 
 `isResearchSupportStaffTitle` **yields to a stated faculty appointment**, and that is the whole reason it is not folded into `looksLikeNonResearchTitle`.
