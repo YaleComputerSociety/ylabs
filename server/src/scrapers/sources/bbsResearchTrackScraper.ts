@@ -39,7 +39,23 @@ const SOURCE_KEY = 'bbs-research-track';
 const BBS_HOST = 'medicine.yale.edu';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
-const SCHOOL_NAME = 'Yale School of Medicine';
+/**
+ * The school name as the CORPUS stores it, which is not how the school brands itself.
+ *
+ * This read `'Yale School of Medicine'` and matched zero rows: every live row stores
+ * `'School of Medicine'`, so both school arms of the candidate query below were dead and the
+ * candidate set was exactly its slug-prefix arm. Measured on Development: `'Yale School of
+ * Medicine'` 0 rows, `'School of Medicine'` 2,244, and the only school value containing
+ * "Medicine" is the latter (#3834).
+ *
+ * That is why the lane could not re-reach rows it had grafted onto: a row whose slug is not
+ * `ysm-` or `bbs-` prefixed had no other way into the candidate set, so a re-run reported it as
+ * having no existing research row and left its previous observation live forever.
+ *
+ * Cross-checked against `schoolForDirectoryProfileHost`, which maps this school's hosts to the
+ * same stored name, so the two agree rather than each carrying its own spelling.
+ */
+const SCHOOL_NAME = 'School of Medicine';
 const RESEARCH_AREA_CONFIDENCE = 0.7;
 const MAX_CANDIDATE_SCAN = 4000;
 
@@ -525,6 +541,9 @@ interface BbsCandidateDoc {
   websiteUrl?: string;
   website?: string;
   sourceUrls?: unknown;
+  /** Selected only so the dead-arm check below can see whether the school arm matched. */
+  school?: string;
+  schools?: string[];
 }
 
 function candidateFromDoc(doc: BbsCandidateDoc): BbsCandidateEntity {
@@ -563,11 +582,22 @@ async function defaultEntityFinder(): Promise<BbsCandidateEntity[]> {
       websiteUrl: 1,
       website: 1,
       sourceUrls: 1,
+      school: 1,
+      schools: 1,
     },
   )
     .sort({ _id: 1 })
     .limit(MAX_CANDIDATE_SCAN)
     .lean()) as BbsCandidateDoc[];
+  // A predicate arm that matches nothing is how this lane lost reach silently for weeks, so it
+  // is reported rather than left to be inferred from a shortfall in grafts (#3834).
+  if (
+    !docs.some((doc) => doc.school === SCHOOL_NAME || (doc.schools || []).includes(SCHOOL_NAME))
+  ) {
+    console.warn(
+      `[bbs-research-track] no candidate row carries school ${JSON.stringify(SCHOOL_NAME)}, so only the slug-prefix arm is finding rows; the corpus may have renamed the school (#3834)`,
+    );
+  }
   return docs.map(candidateFromDoc);
 }
 
