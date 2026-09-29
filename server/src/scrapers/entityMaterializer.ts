@@ -2158,12 +2158,18 @@ async function materializeRosterMember(
     };
   }
 
-  const entity: any = await ResearchEntity.findOne({
-    slug: researchGroupKey,
-    archived: { $ne: true },
-  })
-    .select('_id')
-    .lean();
+  const routedRosterHome = options.chunkPrefetch?.liveEntityDocForKey(
+    'researchEntity',
+    researchGroupKey,
+  );
+  const entity: any = routedRosterHome?.hit
+    ? routedRosterHome.value
+    : await ResearchEntity.findOne({
+        slug: researchGroupKey,
+        archived: { $ne: true },
+      })
+        .select('_id')
+        .lean();
   if (!entity?._id) {
     return {
       entityType: 'researchGroupMember',
@@ -2681,11 +2687,23 @@ async function leadDepartmentWithParentSchool(
 
 export async function inheritSchoolFromLeadPi(
   researchEntityId: string,
-  options: { manuallyLockedFields?: string[]; dryRun?: boolean } = {},
+  options: {
+    manuallyLockedFields?: string[];
+    dryRun?: boolean;
+    chunkPrefetch?: MaterializationReadSource;
+  } = {},
 ): Promise<LeadPiSchoolInheritanceResult> {
-  const entity = (await ResearchEntity.findById(researchEntityId)
-    .select('school departments schools kind entityType')
-    .lean()) as {
+  const routedInheritanceRow = options.chunkPrefetch?.entityDocForId(
+    'researchEntity',
+    researchEntityId,
+  );
+  const entity = (
+    routedInheritanceRow?.hit
+      ? routedInheritanceRow.value
+      : await ResearchEntity.findById(researchEntityId)
+          .select('school departments schools kind entityType')
+          .lean()
+  ) as {
     school?: unknown;
     departments?: unknown;
     schools?: unknown;
@@ -4455,6 +4473,7 @@ export async function mergedSurvivorEvidence(
 async function observationsMergedIntoLiveSurvivor(
   entityType: ObservedEntityType,
   identifier: { entityId?: string; entityKey?: string },
+  prefetch?: MaterializationReadSource,
 ): Promise<any[]> {
   const entityId = toMaterializerObjectId(identifier.entityId);
   const lookup = entityId
@@ -4463,9 +4482,17 @@ async function observationsMergedIntoLiveSurvivor(
       ? { slug: identifier.entityKey }
       : null;
   if (!lookup) return [];
-  const survivor = (await ResearchEntity.findOne({ ...lookup, archived: { $ne: true } })
-    .select('_id slug fieldValueRefusals manuallyLockedFields')
-    .lean()) as Parameters<typeof mergedSurvivorEvidence>[1] | null;
+  const routedSurvivor =
+    typeof (lookup as { slug?: unknown }).slug === 'string'
+      ? prefetch?.liveEntityDocForKey(entityType, String((lookup as { slug: string }).slug))
+      : prefetch?.liveEntityDocForId(entityType, (lookup as { _id?: unknown })._id);
+  const survivor = (
+    routedSurvivor?.hit
+      ? routedSurvivor.value
+      : await ResearchEntity.findOne({ ...lookup, archived: { $ne: true } })
+          .select('_id slug fieldValueRefusals manuallyLockedFields')
+          .lean()
+  ) as Parameters<typeof mergedSurvivorEvidence>[1] | null;
   if (!survivor) return [];
   return (await mergedSurvivorEvidence(entityType, survivor, [])).observations;
 }
@@ -6569,6 +6596,7 @@ function buildEntityResolverSelf(obs: Array<{ field: string; value?: unknown }>)
 async function findEntityCandidatesByKey(
   resolverType: 'researchEntity' | 'fellowship',
   key: CanonicalKey,
+  prefetch?: MaterializationReadSource,
 ): Promise<CandidateEntity[]> {
   if (resolverType === 'fellowship') {
     if (key.ns !== 'source-key') return [];
@@ -6579,9 +6607,14 @@ async function findEntityCandidatesByKey(
     return doc ? [{ id: String(doc._id), name: doc.title }] : [];
   }
   if (key.ns === 'slug') {
-    const doc = (await ResearchEntity.findOne({ slug: key.value, archived: { $ne: true } })
-      .select('_id name studentVisibilityTier')
-      .lean()) as { _id: unknown; name?: string; studentVisibilityTier?: string } | null;
+    const routedCandidate = prefetch?.liveEntityDocForKey('researchEntity', key.value);
+    const doc = (
+      routedCandidate?.hit
+        ? routedCandidate.value
+        : await ResearchEntity.findOne({ slug: key.value, archived: { $ne: true } })
+            .select('_id name studentVisibilityTier')
+            .lean()
+    ) as { _id: unknown; name?: string; studentVisibilityTier?: string } | null;
     return doc ? [{ id: String(doc._id), name: doc.name, tier: doc.studentVisibilityTier }] : [];
   }
   // The key is normalized and the stored URL is not, so the lookup enumerates the
@@ -6615,6 +6648,7 @@ async function findEntityCandidatesByKey(
 async function resolveCanonicalForEntityMint(
   entityType: ObservedEntityType,
   obs: Array<{ field: string; value?: unknown }>,
+  prefetch?: MaterializationReadSource,
 ): Promise<CanonicalResolution> {
   const resolverType = resolverTypeForEntity(entityType);
   const keys = deriveCanonicalKeys(
@@ -6631,7 +6665,7 @@ async function resolveCanonicalForEntityMint(
   return resolveCanonical(
     { type: resolverType, keys, self: buildEntityResolverSelf(obs) },
     {
-      findCandidatesByKey: (_type, key) => findEntityCandidatesByKey(resolverType, key),
+      findCandidatesByKey: (_type, key) => findEntityCandidatesByKey(resolverType, key, prefetch),
     },
   );
 }
@@ -6699,7 +6733,7 @@ export async function materializeEntity(
 
   let obs = withheldFiltered;
   if (obs.length === 0 && isResearchEntityObservationType(entityType)) {
-    obs = await observationsMergedIntoLiveSurvivor(entityType, identifier);
+    obs = await observationsMergedIntoLiveSurvivor(entityType, identifier, options.chunkPrefetch);
   }
   if (obs.length === 0) {
     return {
@@ -6869,7 +6903,7 @@ export async function materializeEntity(
     (isResearchEntityObservationType(entityType) || entityType === 'fellowship') &&
     !entityDoc
   ) {
-    const resolution = await resolveCanonicalForEntityMint(entityType, obs);
+    const resolution = await resolveCanonicalForEntityMint(entityType, obs, options.chunkPrefetch);
     if (resolution.status === 'blocked') {
       return {
         entityType,
@@ -7355,7 +7389,10 @@ export async function materializeEntity(
     if (!options.dryRun) {
       await materializeInferredPiMembership(entityIdString, materializationObs);
       await materializeInferredDirectorMembership(entityIdString, materializationObs);
-      const inheritance = await inheritSchoolFromLeadPi(entityIdString, { manuallyLockedFields });
+      const inheritance = await inheritSchoolFromLeadPi(entityIdString, {
+        manuallyLockedFields,
+        chunkPrefetch: options.chunkPrefetch,
+      });
       if (inheritance.inherited) indexStale = !!inheritance.indexSyncFailed;
     }
     const accessResult = await materializeAccessForResearchGroup(

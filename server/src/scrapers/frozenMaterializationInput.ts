@@ -29,6 +29,9 @@ const cloneDocument = <T>(document: T): T =>
     ? document
     : (BSON.deserialize(BSON.serialize(document as Record<string, unknown>)) as T);
 
+const isArchivedDocument = (document: unknown): boolean =>
+  Boolean(document && (document as { archived?: unknown }).archived === true);
+
 const identifierText = (value: unknown): string => (value == null ? '' : String(value));
 
 /**
@@ -98,6 +101,19 @@ export class FrozenMaterializationInput implements MaterializationReadSource {
     const row = this.byId.get(id);
     if (!row) return this.miss('entityDocForId', entityId);
     return hit(cloneDocument(row.entityDoc));
+  }
+
+  /** The live row, so a caller asking for one is never handed a tombstone (#3863). */
+  liveEntityDocForKey(entityType: string, keyValue: string): PrefetchLookup<unknown | null> {
+    const found = this.entityDocForKey(entityType, keyValue);
+    if (!found.hit) return MISS;
+    return hit(isArchivedDocument(found.value) ? null : found.value);
+  }
+
+  liveEntityDocForId(entityType: string, entityId: unknown): PrefetchLookup<unknown | null> {
+    const found = this.entityDocForId(entityType, entityId);
+    if (!found.hit) return MISS;
+    return hit(isArchivedDocument(found.value) ? null : found.value);
   }
 
   entityDocForKey(entityType: string, keyValue: string): PrefetchLookup<unknown | null> {

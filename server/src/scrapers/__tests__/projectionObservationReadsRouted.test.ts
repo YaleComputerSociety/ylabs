@@ -73,37 +73,29 @@ const ENTITY_READ_CALL =
 
 const REVIEWED_UNROUTED_ENTITY_READS: ReadonlyArray<{ fn: string; reason: string }> = [
   {
-    fn: 'materializeRosterMember',
-    reason:
-      'Asks for the LIVE row with this slug. `entityDocForKey` answers archived or not, so routing it would resolve a roster member onto an archived row.',
-  },
-  {
     fn: 'inheritSchoolFromLeadPi',
     reason:
-      'Two reads. The first needs the live row, as above. The second is a read-after-write: it re-reads the row to verify what this pass wrote and to decide whether the index is in step, so frozen input would answer about the state before the write.',
+      'Its live-row read is routed through `entityDocForId`. The read still listed here is a read-after-write: it re-reads the row to verify what this pass wrote and whether the index is in step, so frozen input would answer about the state before the write.',
   },
   {
     fn: 'assertLeadPiInheritanceObservations',
-    reason: 'Needs the live row with this id, which the current answers cannot promise.',
+    reason:
+      'Reads the row back after appending observations in the same pass, to turn an id into the slug it just asserted under. Same read-after-write reason.',
   },
   {
     fn: 'foldDeptRosterShellIntoCanonicalResearchEntity',
     reason:
-      'Reads a DIFFERENT row from the subject, the shell being folded in. Routable in principle, but only once the capture freezes shells, which it does not: today it would report a miss on every fold.',
-  },
-  {
-    fn: 'observationsMergedIntoLiveSurvivor',
-    reason: 'Needs the live survivor specifically, since the point is to skip a tombstone.',
+      'Reads a DIFFERENT row from the subject, the shell being folded in. Routable in principle, but only once the capture freezes shells, which it does not: today it would report a miss on every fold and make every fold unattributable.',
   },
   {
     fn: 'liveResearchEntityNamesUserKeyAsLead',
     reason:
-      'A corpus-wide existence check by VALUE: does any live row name this user key as lead. It names no entity, so an entity-keyed read source has nothing to answer with.',
+      'A corpus-wide existence check by VALUE: does any live row name this user key as lead. It names no entity, so an entity-keyed read source has nothing to answer with. A capture-time index is viable and tracked on #3863.',
   },
   {
     fn: 'findEntityCandidatesByKey',
     reason:
-      'Two reads. One needs the live row with a slug; the other searches by `websiteUrl` across the corpus, which is again a value search rather than an entity lookup.',
+      'Its slug read is routed through `liveEntityDocForKey`. The read still listed here searches by `websiteUrl` across the corpus, whose PURPOSE is to find rows the benchmark does not contain, so its answer set is not derivable from the frozen input. Permanent exemption.',
   },
   {
     fn: 'reconcileOfficialRosterSnapshotsFromRun',
@@ -126,7 +118,7 @@ const enclosingFunction = (index: number): string => {
  * caller already holds, which is how the provenance lookup avoids a query on the common path.
  */
 const ROUTING_MARKERS =
-  /prefetch\??\.observationsFor(Key|Id)|routedObservationsForKeysAndIds|prefetched\?\.hit|chunkPrefetch|inHandById|missingIds/;
+  /\.(observationsFor|entityDocFor|liveEntityDocFor)(Key|Id)|routedObservationsForKeysAndIds|prefetched\?\.hit|chunkPrefetch|inHandById|missingIds|routed[A-Z]/;
 
 const isRoutedRead = (index: number): boolean =>
   ROUTING_MARKERS.test(SOURCE.slice(Math.max(0, index - 1200), index));
