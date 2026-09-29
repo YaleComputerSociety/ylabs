@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ContextType } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { ContextType, useState } from 'react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import UserContext from '../../contexts/UserContext';
@@ -30,6 +30,43 @@ const renderLogin = (from?: string, context: Partial<UserContextValue> = {}) => 
   );
 
   return { checkContext };
+};
+
+const CurrentLocation = () => {
+  const location = useLocation();
+  return (
+    <p data-testid="current-location">{`${location.pathname}${location.search}${location.hash}`}</p>
+  );
+};
+
+const RetryHarness = ({ from, userType = 'student' }: { from: unknown; userType?: string }) => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  return (
+    <UserContext.Provider
+      value={{
+        isLoading: false,
+        isAuthenticated,
+        user: isAuthenticated ? ({ userType } as UserContextValue['user']) : undefined,
+        authError: isAuthenticated ? undefined : 'Unable to reach y/labs right now.',
+        checkContext: () => setIsAuthenticated(true),
+      }}
+    >
+      <MemoryRouter initialEntries={[{ pathname: '/login', state: { from } }]}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="*" element={<CurrentLocation />} />
+        </Routes>
+      </MemoryRouter>
+    </UserContext.Provider>
+  );
+};
+
+const retryIntoApp = async (from: unknown, userType?: string) => {
+  const user = userEvent.setup();
+  render(<RetryHarness from={from} userType={userType} />);
+  await user.click(screen.getByRole('button', { name: /retry connection/i }));
+  return (await screen.findByTestId('current-location')).textContent;
 };
 
 afterEach(() => {
@@ -98,5 +135,35 @@ describe('Login', () => {
     await user.click(screen.getByRole('button', { name: /retry connection/i }));
 
     expect(checkContext).toHaveBeenCalledTimes(1);
+  });
+
+  it('lands on the saved destination after a login retry succeeds', async () => {
+    expect(await retryIntoApp('/dashboard?tab=programs#watch')).toBe(
+      '/dashboard?tab=programs#watch',
+    );
+  });
+
+  it('prefers the saved destination over the professor dashboard default', async () => {
+    expect(await retryIntoApp('/research/example-entity', 'professor')).toBe(
+      '/research/example-entity',
+    );
+  });
+
+  it.each([
+    'https://evil.example.test/phish',
+    '//evil.example.test/phish',
+    '/\\evil.example.test',
+    '/%2fevil.example.test',
+    'javascript:alert(1)',
+  ])('falls back to home for the unsafe saved destination %s', async (from) => {
+    expect(await retryIntoApp(from)).toBe('/');
+  });
+
+  it('falls back to home when the saved destination is not a string', async () => {
+    expect(await retryIntoApp({ pathname: '/dashboard' })).toBe('/');
+  });
+
+  it('keeps the professor dashboard default when no destination was saved', async () => {
+    expect(await retryIntoApp(undefined, 'professor')).toBe('/dashboard');
   });
 });
