@@ -398,6 +398,13 @@ Read the split, not the digits: a random `$sample` is a different 400 rows each 
 Fifteen field names carry the `unstorable` class, led by `inferredPiUserKey`, `contactInstructionsQuote` and `inferredPiUserId`; each is a live observation field consumed by a sibling materializer or access-signal derivation rather than stored on the entity row, so its projection is expected to be dropped and is not a defect to repair.
 Re-measure with the census rather than quoting these figures back: two of the classes are the thing a repair is meant to change, and a change to the materializer's read scope moves the `unstorable` occurrence counts without any row changing.
 
+`unstorable` was a write amplifier as well as a reporting inflation, and #3869 closed that half.
+The projection's no-op short-circuit compared every planned path against the stored row, so a path that can never land held the comparison open forever, and the same flag gates the row write, the `updatedAt` bump and the Meilisearch re-sync.
+Measured over a random 300 live rows on Development, 3 rows converged and 113 converge once storability is read, so 110 rows, 37 percent, were taking a write and a re-index on every pass that could change nothing.
+No stored value changes: 7 of the 8 paths that held those rows open are stored on zero rows of the corpus, and `studentDecisionExplanation`, stored on 1,742 rows as legacy residue, still differed from its own projection on 5 rows whose `updatedAt` is later than the observation, which is that path's own evidence that the write does not land.
+Storability is read from the live schema in one place, `materializerProjectionPathIsStorable`, which the census calls rather than restating, so the engine and the census cannot disagree about what counts.
+An `unset` is compared whichever way storability reads, because a row can hold a value under an undeclared path and skipping that comparison could skip a write that removes something.
+
 `scaledToCorpus` appears only on a `--sample` run, because a random `$sample` is the only population the scaling is valid for and extrapolating a caller-chosen `--slugs` list to 4,744 live rows reports that the whole corpus diverges because the one slug asked about does.
 Its denominator is every row drawn rather than every row classified, so a skipped row does not inflate the estimate.
 A requested slug that names no document reports `skipped: entity-not-found`, and a requested archived row loads and reports `skipped: archived-entity`, so a slug can never be dropped from the report without a row saying so.
