@@ -12,8 +12,10 @@
  * So an enrich-only source owns only a row no other lane owns. On another lane's row it
  * writes no identity field and fills only fields the row lacks, except the application
  * window, where the fund page is Yale's own application system and so the authority.
- * Independently of ownership, an application portal page never replaces an official
- * source page as `sourceUrl`.
+ * It asserts no `sourceUrl`, and the observations it logged before that are ignored, so
+ * a stale fund page cannot outrank the owning lane's official page. Independently of
+ * ownership, an application portal page never replaces an official source page as
+ * `sourceUrl`.
  */
 import { isProgramApplicationPortalUrl } from '../utils/researchHomeWebsiteUrl';
 
@@ -44,27 +46,39 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-export function isEnrichingAnotherLanesRow(
+export function isEnrichOnlyFellowshipSourceUrl(observation: {
+  field?: string;
+  sourceName?: string;
+}): boolean {
+  return (
+    observation.field === 'sourceUrl' &&
+    ENRICH_ONLY_FELLOWSHIP_SOURCES.has(text(observation.sourceName))
+  );
+}
+
+function isEnrichOnlyWriteOnAnotherLanesRow(
   stored: Record<string, unknown> | null | undefined,
-  observedSourceName: unknown,
+  contributingSources: readonly string[] | undefined,
 ): boolean {
   const owner = text(stored?.sourceName);
-  const observer = text(observedSourceName);
-  return Boolean(
-    owner && observer && owner !== observer && ENRICH_ONLY_FELLOWSHIP_SOURCES.has(observer),
+  if (!owner || ENRICH_ONLY_FELLOWSHIP_SOURCES.has(owner)) return false;
+  const sources = contributingSources ?? [];
+  return (
+    sources.length > 0 && sources.every((source) => ENRICH_ONLY_FELLOWSHIP_SOURCES.has(source))
   );
 }
 
 /**
- * The staged fields a pass may not write, given the row it reads and the source it
- * resolved. Returned rather than applied so the projection keeps one place that edits
+ * The staged fields a pass may not write, given the row it reads and the sources each
+ * resolved field's winning value came from. Decided per field, because every field
+ * resolves separately and the owning lane can win one while the enrich-only source wins
+ * another. Returned rather than applied so the projection keeps one place that edits
  * its `$set`.
  */
 export function fellowshipFieldsWithheldBySourcePrecedence(input: {
   stored: Record<string, unknown> | null | undefined;
   staged: Record<string, unknown>;
-  resolvedFields: readonly string[];
-  observedSourceName: unknown;
+  resolved: Readonly<Record<string, { contributingSources?: readonly string[] } | undefined>>;
 }): string[] {
   const withheld = new Set<string>();
   const stagedSourceUrl = text(input.staged.sourceUrl);
@@ -77,13 +91,14 @@ export function fellowshipFieldsWithheldBySourcePrecedence(input: {
   ) {
     withheld.add('sourceUrl');
   }
-  if (isEnrichingAnotherLanesRow(input.stored, input.observedSourceName)) {
-    for (const field of input.resolvedFields) {
-      if (!(field in input.staged)) continue;
-      if (FELLOWSHIP_IDENTITY_FIELDS.has(field)) withheld.add(field);
-      else if (!APPLICATION_WINDOW_FIELDS.has(field) && hasValue(input.stored?.[field])) {
-        withheld.add(field);
-      }
+  for (const [field, resolvedField] of Object.entries(input.resolved)) {
+    if (!(field in input.staged)) continue;
+    if (!isEnrichOnlyWriteOnAnotherLanesRow(input.stored, resolvedField?.contributingSources)) {
+      continue;
+    }
+    if (FELLOWSHIP_IDENTITY_FIELDS.has(field)) withheld.add(field);
+    else if (!APPLICATION_WINDOW_FIELDS.has(field) && hasValue(input.stored?.[field])) {
+      withheld.add(field);
     }
   }
   return Array.from(withheld);

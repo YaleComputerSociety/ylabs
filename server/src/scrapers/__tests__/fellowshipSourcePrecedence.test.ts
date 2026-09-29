@@ -16,13 +16,15 @@ function withheld(
   stored: Record<string, unknown>,
   staged: Record<string, unknown>,
   observer: string,
+  winnerByField: Record<string, string> = {},
 ) {
-  return fellowshipFieldsWithheldBySourcePrecedence({
-    stored,
-    staged,
-    resolvedFields: Object.keys(staged),
-    observedSourceName: observer,
-  }).sort();
+  const resolved = Object.fromEntries(
+    Object.keys(staged).map((field) => [
+      field,
+      { contributingSources: [winnerByField[field] ?? observer] },
+    ]),
+  );
+  return fellowshipFieldsWithheldBySourcePrecedence({ stored, staged, resolved }).sort();
 }
 
 describe('fellowshipFieldsWithheldBySourcePrecedence', () => {
@@ -42,6 +44,32 @@ describe('fellowshipFieldsWithheldBySourcePrecedence', () => {
         'student-grants-database',
       ),
     ).toEqual(['description', 'sourceFingerprint', 'sourceKey', 'sourceName']);
+  });
+
+  it('decides per field from the source each value came from, not from the row-level sourceName winner', () => {
+    expect(
+      withheld(
+        ownedRow,
+        {
+          sourceName: 'yale-college-fellowships-office',
+          description: 'Description from the fund page.',
+          title: 'Title from the official page',
+        },
+        'yale-college-fellowships-office',
+        { description: 'student-grants-database' },
+      ),
+    ).toEqual(['description']);
+    expect(
+      withheld(
+        ownedRow,
+        {
+          sourceName: 'student-grants-database',
+          description: 'Refreshed description from the official page.',
+        },
+        'student-grants-database',
+        { description: 'yale-college-fellowships-office' },
+      ),
+    ).toEqual(['sourceName']);
   });
 
   it('lets the owning lane reclaim a row an enrich-only source took over', () => {

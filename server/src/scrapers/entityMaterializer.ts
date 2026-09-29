@@ -128,6 +128,7 @@ import { planFellowshipClassification } from './fellowshipClassificationDerivati
 import {
   ENRICH_ONLY_FELLOWSHIP_SOURCES,
   fellowshipFieldsWithheldBySourcePrecedence,
+  isEnrichOnlyFellowshipSourceUrl,
 } from './fellowshipSourcePrecedence';
 import {
   isDirectoryGraftCitation,
@@ -1296,6 +1297,9 @@ export function shouldIgnoreObservationForEntityMaterialization(
   observation: MaterializerObservationLike,
 ): boolean {
   if (observation.field && MATERIALIZER_MANAGED_FIELDS.has(observation.field)) {
+    return true;
+  }
+  if (entityType === 'fellowship' && isEnrichOnlyFellowshipSourceUrl(observation)) {
     return true;
   }
   if (entityType === 'user' && observation.field === OFFICIAL_PROFILE_PUBLICATIONS_FIELD) {
@@ -4164,10 +4168,14 @@ function citesADifferentRecordSpecificApplication(candidate: any, obs: any[]): b
  * sourceKey (title slug) and would otherwise create a duplicate record (#609).
  * When the exact sourceKey misses, resolve to an existing record whose
  * normalized title matches, category-agnostic. Candidates are limited to
- * records owned by the same source scraper or to legacy records with no
+ * records owned by the same source scraper, to legacy records with no
  * sourceName (the pre-scrape imports the catalog scraper should adopt rather
- * than clone), so two distinct non-empty producers never merge. Prefers a live
- * record, then the most recently updated one.
+ * than clone), and to records an enrich-only source owns, so two distinct
+ * owning producers never merge. The enrich-only exception is how the owning
+ * lane reclaims a row an enrich-only source took over (#3984); it also lets any
+ * lane adopt a row the enrich-only source legitimately owns, which is intended,
+ * because such a source owns a row only while no other lane does. Prefers a
+ * live record, then the most recently updated one.
  */
 async function findFellowshipByNormalizedTitle(
   Model: mongoose.Model<any>,
@@ -6795,8 +6803,7 @@ export async function projectFromLog(
     for (const field of fellowshipFieldsWithheldBySourcePrecedence({
       stored: entityDoc as Record<string, unknown> | null,
       staged: set,
-      resolvedFields: Object.keys(resolved),
-      observedSourceName: resolved.sourceName?.value,
+      resolved,
     })) {
       delete set[field];
       delete set[`fieldProvenance.${field}`];
