@@ -1,5 +1,9 @@
+import { slugify } from '../scrapers/utils/scraperHelpers';
+
+const FACULTY_RESEARCH_AREA_SLUG_PREFIX = 'faculty-research-area-';
+
 export function isAreaShellSlug(slug: string | undefined): boolean {
-  return (slug || '').toLowerCase().startsWith('faculty-research-area-');
+  return (slug || '').toLowerCase().startsWith(FACULTY_RESEARCH_AREA_SLUG_PREFIX);
 }
 
 export function isFundingShellSlug(slug: string | undefined): boolean {
@@ -14,4 +18,9 @@ export function isFundingShellSlug(slug: string | undefined): boolean {
 
 export function isLowTrustAreaShellSlug(slug: string | undefined): boolean {
   return isAreaShellSlug(slug) || isFundingShellSlug(slug);
+}
+
+export function facultyResearchAreaSlugForPersonName(personName: string): string {
+  const personSlug = slugify(personName);
+  return personSlug ? `${FACULTY_RESEARCH_AREA_SLUG_PREFIX}${personSlug}`.slice(0, 100) : '';
 }

@@ -63,6 +63,7 @@ import type {
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import { mapResearchGroupKindToEntityType } from '../../models/researchAccessTypes';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { facultyResearchAreaSlugForPersonName } from '../../utils/researchEntityShellSlug';
 import {
   researchHomeWebsiteUrlWriteRefusal,
   type ResearchHomeWebsiteUrlRefusal,
@@ -1696,7 +1697,7 @@ export function memberObservationsForEntityKey(
 }
 
 function facultyResearchAreaKey(memberName: string): string {
-  return `faculty-research-area-${slugify(memberName)}`.slice(0, 100);
+  return facultyResearchAreaSlugForPersonName(memberName) || 'faculty-research-area-';
 }
 
 /**

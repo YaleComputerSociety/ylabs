@@ -2439,14 +2439,22 @@ export async function applyResearchEntityDedupeMergeGroup(
     'target.kind': 'RESEARCH_ENTITY',
     'target.id': { $in: duplicateIds },
   })
-    .select('_id personId role')
+    .select('_id personId role state archived')
     .lean();
+  // Scoped to the canonical's LIVE edges: a HISTORICAL or archived edge for the same
+  // person and role is a past appointment, not a rival, so retiring the duplicate's
+  // live edge against it leaves the survivor with no current membership at all and the
+  // gate reads `missing_lead` on a row whose lead is known. `role_assignments` carries
+  // no unique index on (personId, target, role), so the repointed live edge coexists
+  // with the historical one, which is what a past plus a current appointment is.
   const canonicalMemberKeys = new Set(
     (
       await RoleAssignment.find({
         'target.kind': 'RESEARCH_ENTITY',
         'target.id': canonicalId,
         personId: { $in: duplicateMembers.map((member) => member.personId).filter(Boolean) },
+        state: { $ne: 'HISTORICAL' },
+        archived: { $ne: true },
       })
         .select('personId role')
         .lean()
