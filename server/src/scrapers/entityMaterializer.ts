@@ -221,6 +221,7 @@ import {
   type ResearchEntityRosterEntry,
 } from '../services/researchEntityMembershipAccessor';
 import { officialProfileIdentityKey, rosterMembershipKey } from './utils/rosterMembershipKey';
+import { reconcileBbsTrackRetirements } from './bbsTrackRosterRetirement';
 import {
   CENTERS_INSTITUTES_SOURCE_NAME,
   reconcileCenterRosterRetirementsFromRun,
@@ -8167,6 +8168,17 @@ export async function materializeFromRun(
   );
   if (centerRosterRetirement.outcome !== 'no-center-roster-read') {
     logCenterRosterRetirement(centerRosterRetirement);
+  }
+  // Runs beside the centres retirement because it is the same contract over another lane's claims.
+  // Lane-wide rather than per run's snapshots, because a claim is absent only when NO track still
+  // lists the row, and a run's own reads are already among the admitted ones (#3852).
+  const bbsTrackRetirement = await reconcileBbsTrackRetirements({ dryRun: options.dryRun });
+  if (bbsTrackRetirement.outcome !== 'no-admitted-read') {
+    console.log(
+      `[bbs-track-retirement] ${bbsTrackRetirement.outcome}${
+        bbsTrackRetirement.verdict ? ` (${bbsTrackRetirement.verdict})` : ''
+      }: ${JSON.stringify(bbsTrackRetirement.counts ?? {})}`,
+    );
   }
   const departureResult = await reconcileFacultyRosterDeparturesFromRun(scrapeRunId, options);
   // An operator who switched the lane on needs to see why it did nothing;
