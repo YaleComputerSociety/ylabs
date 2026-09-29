@@ -170,9 +170,11 @@ export class SweepCheckpointStore {
     const codeMoved = Boolean(
       existing?.codeSha && input.codeSha && existing.codeSha !== input.codeSha,
     );
-    if (existing && existing.mode === input.mode && existing.flags === flags && !codeMoved) {
+    if (existing && existing.mode === input.mode && existing.flags === flags) {
       assertCheckpointNotOwnedByLiveSweep(existing, input.checkpointPath);
-      return { store: new SweepCheckpointStore(input.checkpointPath, existing), resumed: true };
+      if (!codeMoved) {
+        return { store: new SweepCheckpointStore(input.checkpointPath, existing), resumed: true };
+      }
     }
     if (existing && existing.mode === input.mode && existing.flags !== flags) {
       console.warn(

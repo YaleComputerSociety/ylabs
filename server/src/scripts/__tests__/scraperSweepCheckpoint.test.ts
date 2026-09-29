@@ -85,7 +85,7 @@ describe('scraper sweep checkpoint', () => {
       codeSha: null,
       codeDrift: [],
       outputDirectory: path.join(dir, 'incremental-out'),
-      ownerPid: process.pid,
+      ownerPid: 1,
       createdAt: now().toISOString(),
       updatedAt: now().toISOString(),
       steps: {
@@ -252,6 +252,38 @@ describe('scraper sweep checkpoint', () => {
         restart: true,
       }).resumed,
     ).toBe(false);
+  });
+
+  it('refuses to start a new sweep over a live sweep recorded at another commit', () => {
+    const checkpointPath = path.join(dir, 'checkpoint.json');
+    writeSweepCheckpointAtomic(checkpointPath, {
+      mode: 'development-full',
+      flags: '',
+      codeSha: 'a'.repeat(40),
+      codeDrift: [],
+      outputDirectory: path.join(dir, 'out'),
+      ownerPid: 1,
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      steps: {
+        [sourceStepId('yale-directory')]: {
+          id: sourceStepId('yale-directory'),
+          kind: 'source',
+          status: 'running',
+        },
+      },
+    });
+    expect(() =>
+      SweepCheckpointStore.start({
+        mode: 'development-full',
+        codeSha: 'b'.repeat(40),
+        checkpointPath,
+        outputDirectory: path.join(dir, 'fresh'),
+        now: now(),
+        restart: false,
+      }),
+    ).toThrow(/still running/);
+    expect(readSweepCheckpoint(checkpointPath)?.codeSha).toBe('a'.repeat(40));
   });
 
   it('clears only the aggregate stage steps so the post-run chain re-runs', () => {
