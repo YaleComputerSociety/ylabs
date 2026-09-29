@@ -1,4 +1,5 @@
-import type { HostnameResolution } from '../utils/ssrfGuard';
+import { classifyHostnameResolution, type HostnameResolution } from '../utils/ssrfGuard';
+import { classifyOffCampusAddressing, type DohQuery } from '../utils/publicDnsResolution';
 import { sourceLinkHealthKey } from '../services/sourceLinkHealth';
 import {
   collectSourceLinkHealthCandidates,
@@ -7,6 +8,21 @@ import {
 } from './backfillSourceLinkHealthCore';
 
 export type HostResolutionKind = HostnameResolution['kind'];
+
+/**
+ * Our resolver's private answer is confirmed against public DNS, or a re-run
+ * re-flags every split-horizon host instead of releasing it (#3903).
+ */
+export async function classifyHostForStudents(
+  host: string,
+  classifyLocally: (host: string) => Promise<HostResolutionKind> = async (name) =>
+    (await classifyHostnameResolution(name)).kind,
+  dohQuery?: DohQuery,
+): Promise<HostResolutionKind> {
+  const local = await classifyLocally(host);
+  if (local !== 'private-address') return local;
+  return classifyOffCampusAddressing(host, dohQuery);
+}
 
 export interface PrivateAddressRoutingEntity extends SourceLinkHealthCandidateEntity {
   slug?: unknown;

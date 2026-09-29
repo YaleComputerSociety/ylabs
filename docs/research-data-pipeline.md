@@ -1269,10 +1269,19 @@ Mislabelling it `UNAVAILABLE` instead would have been worse, because that axis i
 Three consequences follow.
 `isPubliclyUnreachableSourceUrl` is the predicate a way-in projection asks, and it is true when either axis disqualifies the citation; `officialNonGrantSourceUrl` uses it and falls through to a publicly reachable citation instead.
 The citation itself is never deleted, because it is real provenance: the detail page keeps listing it with an on-campus-network-only qualifier, while `isUnreachableResearchWebsiteCtaUrl` stops it being offered as the research-website CTA or as the outreach official source.
-Routing never expires and is only ever unlearned from positive evidence: a probe that came back with an HTTP status proves the host was publicly routable at that moment and drops the flag, while a timeout or transport error learns nothing about addressing and keeps it.
+Routing never expires and is only ever unlearned from positive evidence: a probe that came back with an HTTP status proves the host was publicly routable at that moment and drops the flag, public DNS mapping the host to public space drops it too, and a timeout or transport error learns nothing about addressing and keeps it.
+
+The resolved address has to be the one a student gets, not the one the probing machine gets.
+Yale answers its legacy departmental hosts with split-horizon DNS: the resolver on the Development scrape host returned RFC1918 space for `www.cs.yale.edu`, `ursula.chem.yale.edu`, `www.astro.yale.edu` and others, while public resolvers return routable `128.36.0.0/16` addresses and the pages load off campus (#3903).
+So the flag is recorded only after `classifyOffCampusAddressing` (`server/src/utils/publicDnsResolution.ts`) confirms the host against public DNS over HTTPS, which a network intercepting port 53 cannot answer in the public resolver's place.
+A public answer reports `publicAddressHost`, the release evidence, which is never stored; a private answer or NXDOMAIN confirms the flag.
+A failed lookup is logged and leaves our resolver's private answer standing, because a failed measurement must never release a link a student cannot open.
+Each host is asked once per process, however many cited pages it serves.
+The SSRF guard is unchanged and still refuses to connect, because our own resolver would route the connection into private space.
+#2556 flagged these hosts on the probing machine's view, so flags stored before #3903 are released by the reclassify pass below rather than by waiting for a re-probe.
 
 `sources:reclassify-private-address-hosts` (`server/src/scripts/reclassifyPrivateAddressCitations.ts`, dry-run-first, `--apply --confirm-private-address-reclassify`) is the stored-data half.
-It resolves each distinct cited host once through the existing SSRF guard's `classifyHostnameResolution`, so the verdict comes from the resolved IP rather than from whether a fetch succeeded, and it re-gates every row it writes.
+It resolves each distinct cited host once through the existing SSRF guard's `classifyHostnameResolution`, confirms any private answer with `classifyOffCampusAddressing`, so the verdict comes from the address a student resolves rather than from whether a fetch succeeded, and it re-gates every row it writes.
 Decide this question from the resolved address, never from reachability measured on the machine running the pass: a developer machine egressing from a Yale range answers `200` for these hosts in well under a second, and that reading says nothing about a student at home.
 Every arm is keyed on the live verdict rather than on a plan, so a re-run settles `unchanged`, and only a `public` verdict releases a flag - `unresolvable` and `resolver-failure` settle nothing in either direction.
 

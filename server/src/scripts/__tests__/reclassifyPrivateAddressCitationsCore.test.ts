@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   citedHostnames,
+  classifyHostForStudents,
   planPrivateAddressRouting,
   type HostResolutionKind,
 } from '../reclassifyPrivateAddressCitationsCore';
@@ -173,5 +174,37 @@ describe('planPrivateAddressRouting', () => {
     expect(plan?.addedEntries).toEqual([]);
     expect(plan?.sourceLinkHealth).toHaveLength(1);
     expect(entryFor(plan, PRIVATE_URL)?.privateAddressHost).toBe(true);
+  });
+});
+
+describe('classifyHostForStudents', () => {
+  const publicAnswer = async () => ({ Status: 0, Answer: [{ type: 1, data: '128.36.0.109' }] });
+
+  it('releases a host our resolver calls private when public DNS routes it (#3903)', async () => {
+    const kind = await classifyHostForStudents(
+      'split.example.edu',
+      async () => 'private-address',
+      publicAnswer,
+    );
+    expect(kind).toBe('public');
+  });
+
+  it('keeps the flag when public DNS cannot be asked', async () => {
+    const kind = await classifyHostForStudents(
+      'split.example.edu',
+      async () => 'private-address',
+      async () => ({ Status: 2 }),
+    );
+    expect(kind).toBe('private-address');
+  });
+
+  it('asks public DNS only about a locally private host', async () => {
+    const query = vi.fn(publicAnswer);
+    for (const local of ['public', 'unresolvable', 'resolver-failure'] as const) {
+      await expect(
+        classifyHostForStudents('h.example.edu', async () => local, query),
+      ).resolves.toBe(local);
+    }
+    expect(query).not.toHaveBeenCalled();
   });
 });

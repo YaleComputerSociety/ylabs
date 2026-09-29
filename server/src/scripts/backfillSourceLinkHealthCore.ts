@@ -149,17 +149,20 @@ export interface StoredSourceLinkHealthEntry {
  * Whether the stored entry should say this host resolves only into private space.
  *
  * A probe that came back with an HTTP status proves the host was publicly
- * routable at that moment, so the flag is dropped. A probe that learned nothing
+ * routable at that moment, so the flag is dropped, and so does public DNS mapping
+ * the host to public space, which is the only release a split-horizon host can
+ * ever earn because our own resolver refuses it before any request (#3903). A probe that learned nothing
  * about addressing - a timeout, a transport error - keeps whatever was stored,
  * because a failed measurement must not release a link a student cannot open.
  * That asymmetry is the whole point: routing is a fact we only ever unlearn from
  * positive evidence (#2556).
  */
 function privateAddressHostForEntry(
-  fresh: { httpStatusCode?: number; privateAddressHost?: boolean },
+  fresh: { httpStatusCode?: number; privateAddressHost?: boolean; publicAddressHost?: boolean },
   stored: StoredSourceLinkHealthEntry | undefined,
 ): boolean | undefined {
   if (fresh.privateAddressHost) return true;
+  if (fresh.publicAddressHost) return undefined;
   if (typeof fresh.httpStatusCode === 'number') return undefined;
   return stored?.privateAddressHost ? true : undefined;
 }
@@ -218,6 +221,7 @@ export function resolveSourceLinkHealthEntry(
     healthStatus: SourceLinkHealthStatus;
     httpStatusCode?: number;
     privateAddressHost?: boolean;
+    publicAddressHost?: boolean;
   },
   stored: StoredSourceLinkHealthEntry | undefined,
   now: Date,
