@@ -155,4 +155,39 @@ describe('AdminCorrectionReports', () => {
     expect(await screen.findByText('Synthetic Entity')).toBeTruthy();
     expect(screen.queryByText('Could not load correction reports.')).toBeNull();
   });
+
+  describe('review dialog focus', () => {
+    const openFromKeyboard = async () => {
+      mockedAxios.get.mockResolvedValue(listOf(report('r1', 'Synthetic Entity', 'unreviewed')));
+      render(<AdminCorrectionReports />);
+      const trigger = await screen.findByRole('button', { name: /Synthetic Entity/ });
+      trigger.focus();
+      fireEvent.click(trigger);
+      return { trigger, dialog: await screen.findByRole('dialog') };
+    };
+
+    it('moves focus into the dialog when it opens', async () => {
+      const { dialog } = await openFromKeyboard();
+
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    });
+
+    it('closes on Escape and returns focus to the report that opened it', async () => {
+      const { trigger } = await openFromKeyboard();
+
+      fireEvent.keyDown(document.activeElement || document.body, { key: 'Escape' });
+
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(document.activeElement).toBe(trigger);
+    });
+
+    it('wraps Tab from the last control to the first', async () => {
+      const { dialog } = await openFromKeyboard();
+
+      within(dialog).getByRole('button', { name: 'Accept' }).focus();
+      fireEvent.keyDown(dialog, { key: 'Tab' });
+
+      expect(document.activeElement).toBe(within(dialog).getByRole('link', { name: 'Open page' }));
+    });
+  });
 });
