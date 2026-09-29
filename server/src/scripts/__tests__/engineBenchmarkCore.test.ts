@@ -101,6 +101,7 @@ describe('scoreEngineReplay', () => {
         cleared: 0,
         labeledEntityResolved: 1,
         knownWrong: 1,
+        values: 1,
       },
     ]);
   });
@@ -183,6 +184,7 @@ describe('diffEngineSnapshots', () => {
             cleared: 0,
             labeledEntityResolved: 0,
             knownWrong: 0,
+            values: 3,
           },
         ],
         gateTiers: [{ tier: 'student_ready', rows: 4 }],
@@ -190,7 +192,13 @@ describe('diffEngineSnapshots', () => {
     );
 
     expect(delta.byField).toEqual([
-      { field: 'fullDescription', resolvedDelta: -3, clearedDelta: 0, knownWrongDelta: 0 },
+      {
+        field: 'fullDescription',
+        resolvedDelta: -3,
+        clearedDelta: 0,
+        knownWrongDelta: 0,
+        valuesDelta: -3,
+      },
     ]);
     expect(delta.gateTiers).toEqual([{ tier: 'student_ready', rowsDelta: -3 }]);
   });
@@ -205,6 +213,7 @@ describe('diffEngineSnapshots', () => {
             cleared: 0,
             labeledEntityResolved: 0,
             knownWrong: 0,
+            values: 2,
           },
         ],
         gateTiers: [],
@@ -213,7 +222,13 @@ describe('diffEngineSnapshots', () => {
     );
 
     expect(delta.byField).toEqual([
-      { field: 'fullDescription', resolvedDelta: 2, clearedDelta: 0, knownWrongDelta: 0 },
+      {
+        field: 'fullDescription',
+        resolvedDelta: 2,
+        clearedDelta: 0,
+        knownWrongDelta: 0,
+        valuesDelta: 2,
+      },
     ]);
   });
 });
@@ -226,7 +241,9 @@ describe('diffEngineReplays', () => {
     );
 
     expect(diff.rowsChangedFromPrevious).toBe(1);
-    expect(diff.byField).toEqual([{ field: 'fullDescription', changedFromPrevious: 1 }]);
+    expect(diff.byField).toEqual([
+      { field: 'fullDescription', changedFromPrevious: 1, valuesLost: 1, valuesGained: 1 },
+    ]);
   });
 
   it('counts a row the other replay did not cover as unchanged', () => {
@@ -329,5 +346,85 @@ describe('fingerprintChangeIsAttributable', () => {
         invalidatedRunSetChanged: true,
       }),
     ).toBe(false);
+  });
+});
+
+describe('the direction of a change (#3871)', () => {
+  /**
+   * The case the benchmark waved through. #3868's derivation stripped 138 chips from 79 rows, and
+   * because `resolved` counts ROWS rather than values, a row going from five chips to two moved
+   * nothing in the snapshot: the field was still resolved. The snapshot read as a change in which
+   * one row gained three topics.
+   */
+  it('counts values, not just rows, so a shortened list moves a number', () => {
+    const before = scoreEngineReplay(
+      [row({ plannedSet: { researchAreas: ['Immunology', 'Genetics', 'Biophysics'] } })],
+      [],
+    );
+    const after = scoreEngineReplay([row({ plannedSet: { researchAreas: ['Immunology'] } })], []);
+
+    expect(before.byField[0].resolved).toBe(after.byField[0].resolved);
+    expect(before.byField[0].values).toBe(3);
+    expect(after.byField[0].values).toBe(1);
+    expect(diffEngineSnapshots(after, before).byField[0]).toEqual({
+      field: 'researchAreas',
+      resolvedDelta: 0,
+      clearedDelta: 0,
+      knownWrongDelta: 0,
+      valuesDelta: -2,
+    });
+  });
+
+  it('names the rows losing a value, which is the number that makes a regression unmistakable', () => {
+    const diff = diffEngineReplays(
+      [
+        row({ entityKey: 'a', plannedSet: { researchAreas: ['Immunology'] } }),
+        row({ entityKey: 'b', plannedSet: { researchAreas: ['Genetics', 'Biophysics'] } }),
+      ],
+      [
+        row({ entityKey: 'a', plannedSet: { researchAreas: ['Immunology', 'Genetics'] } }),
+        row({ entityKey: 'b', plannedSet: { researchAreas: ['Genetics', 'Biophysics'] } }),
+      ],
+    );
+
+    expect(diff.rowsLosingAValue).toBe(1);
+    expect(diff.valuesLost).toBe(1);
+    expect(diff.valuesGained).toBe(0);
+  });
+
+  it('reports a pure gain as no loss, so an addition is never read as a removal', () => {
+    const diff = diffEngineReplays(
+      [row({ plannedSet: { researchAreas: ['Immunology', 'Genetics'] } })],
+      [row({ plannedSet: { researchAreas: ['Immunology'] } })],
+    );
+
+    expect(diff.rowsLosingAValue).toBe(0);
+    expect(diff.valuesGained).toBe(1);
+    expect(diff.valuesLost).toBe(0);
+  });
+
+  /** A reordering is not a change of values, so it must not read as one lost and one gained. */
+  it('treats a reordered list as no loss and no gain', () => {
+    const diff = diffEngineReplays(
+      [row({ plannedSet: { researchAreas: ['Genetics', 'Immunology'] } })],
+      [row({ plannedSet: { researchAreas: ['Immunology', 'Genetics'] } })],
+    );
+
+    expect(diff.valuesLost).toBe(0);
+    expect(diff.valuesGained).toBe(0);
+  });
+
+  /**
+   * Reported, never failed: a value legitimately leaves when a refusal or a retraction takes it.
+   * What this stops is a reader inferring a direction the snapshot never gave.
+   */
+  it('reports a replaced scalar as one lost and one gained', () => {
+    const diff = diffEngineReplays(
+      [row({ plannedSet: { fullDescription: 'After.' } })],
+      [row({ plannedSet: { fullDescription: 'Before.' } })],
+    );
+
+    expect(diff.valuesLost).toBe(1);
+    expect(diff.valuesGained).toBe(1);
   });
 });

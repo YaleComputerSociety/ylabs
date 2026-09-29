@@ -23,6 +23,8 @@ const fieldScoreSchema = new mongoose.Schema(
     cleared: { type: Number, required: true },
     labeledEntityResolved: { type: Number, required: true },
     knownWrong: { type: Number, required: true },
+    /** Values across all rows, not rows: a shortened list moves this and not `resolved` (#3871). */
+    values: { type: Number, required: false, default: 0 },
   },
   { _id: false },
 );
@@ -33,6 +35,8 @@ const fieldDeltaSchema = new mongoose.Schema(
     resolvedDelta: { type: Number, required: true },
     clearedDelta: { type: Number, required: true },
     knownWrongDelta: { type: Number, required: true },
+    /** Negative with `resolvedDelta` at zero means the same rows resolved fewer values (#3871). */
+    valuesDelta: { type: Number, required: false, default: 0 },
   },
   { _id: false },
 );
