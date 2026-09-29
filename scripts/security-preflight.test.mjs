@@ -5017,20 +5017,30 @@ test('scraper run failure records and reports sanitize persisted errors', () => 
     'utf8',
   );
 
+  // Matched by what is imported from the module rather than by the whole import
+  // statement, so adding a sibling import cannot fail this for a reason that has
+  // nothing to do with sanitization (#3891).
   assert.match(
     orchestratorSource,
-    /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/,
+    /import \{[^}]*\bsanitizeLogValue\b[^}]*\} from '\.\.\/utils\/logSanitizer'/,
   );
   assert.match(
     orchestratorSource,
-    /const errorMessage = sanitizeLogValue\(err instanceof Error \? err\.message : err\)/,
+    /import \{[^}]*\bsanitizeErrorForLog\b[^}]*\} from '\.\.\/utils\/logSanitizer'/,
   );
-  assert.match(
-    orchestratorSource,
-    /\{ message: errorMessage \|\| 'Unknown scrape error', at: new Date\(\) \}/,
-  );
+  // A thrown Error goes through the sanitizer that redacts BOTH its message and its
+  // stack; a thrown non-Error is sanitized as a value and carries no stack.
+  assert.match(orchestratorSource, /\? sanitizeErrorForLog\(err\)/);
+  assert.match(orchestratorSource, /: \{ message: sanitizeLogValue\(err\), stack: undefined \}/);
+  assert.match(orchestratorSource, /const errorMessage = sanitized\.message/);
+  assert.match(orchestratorSource, /message: errorMessage \|\| 'Unknown scrape error'/);
+  assert.match(orchestratorSource, /\.\.\.\(sanitized\.stack \? \{ stack: sanitized\.stack \} : \{\}\)/);
   assert.doesNotMatch(orchestratorSource, /message: err\?\.message/);
   assert.doesNotMatch(orchestratorSource, /stack: err\?\.stack/);
+  // The persisted stack is the sanitized one. Storing the raw stack would leak every
+  // credential, token and address the sanitizer exists to remove.
+  assert.doesNotMatch(orchestratorSource, /stack: err\.stack/);
+  assert.doesNotMatch(orchestratorSource, /stack: \(err as Error\)\.stack/);
 
   assert.match(reportSource, /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/);
   assert.match(reportSource, /const reportErrorMessage = \(message: unknown\): string =>/);
