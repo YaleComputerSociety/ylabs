@@ -179,6 +179,16 @@ describe('resolveSourceLinkHealthEntry routing axis', () => {
     expect(resolved.entry.privateAddressHost).toBe(true);
   });
 
+  it('drops the flag when public DNS maps the host to public space (#3903)', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      URL_A,
+      { healthStatus: 'UNKNOWN', publicAddressHost: true },
+      { url: URL_A, healthStatus: 'UNKNOWN', privateAddressHost: true, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.entry).toEqual({ url: URL_A, healthStatus: 'UNKNOWN', checkedAt: NOW });
+  });
+
   it('keeps a preserved decisive verdict and the fresh routing fact together', () => {
     const resolved = resolveSourceLinkHealthEntry(
       URL_A,

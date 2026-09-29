@@ -3,6 +3,7 @@ import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from '../utils/
 import { DEFAULT_RETRYABLE_STATUSES } from '../scrapers/utils/httpFetch';
 import { type HostSlotLimiter, withHostSlot } from '../scrapers/utils/hostConcurrencyLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { classifyOffCampusAddressing } from '../utils/publicDnsResolution';
 import {
   isDepartmentRosterProvenanceUrl,
   isSharedPeopleRosterUrl,
@@ -25,6 +26,12 @@ export interface SourceLinkHealth {
    * student cannot open read as a verified way in (#2556).
    */
   privateAddressHost?: boolean;
+  /**
+   * Public DNS maps the host to public address space even though our own resolver
+   * refused it, so students can reach it. Positive evidence that releases a stored
+   * `privateAddressHost`; it is never itself stored (#3903).
+   */
+  publicAddressHost?: boolean;
 }
 
 export interface SourceLinkProbeResult {
@@ -35,6 +42,7 @@ export interface SourceLinkProbeResult {
   /** `Retry-After` the host asked for, when it sent one. Never a verdict input. */
   retryAfterMs?: number;
   privateAddressHost?: boolean;
+  publicAddressHost?: boolean;
 }
 
 /**
@@ -226,7 +234,9 @@ function classifyProbeOutcome(probe: SourceLinkProbeResult): SourceLinkHealth {
 
 export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLinkHealth {
   const outcome = classifyProbeOutcome(probe);
-  return probe.privateAddressHost ? { ...outcome, privateAddressHost: true } : outcome;
+  if (probe.privateAddressHost) return { ...outcome, privateAddressHost: true };
+  if (probe.publicAddressHost) return { ...outcome, publicAddressHost: true };
+  return outcome;
 }
 
 export function isLikelyUnavailableSourceLink(health: SourceLinkHealth | undefined): boolean {
@@ -384,15 +394,25 @@ const delay = (milliseconds: number): Promise<void> =>
  * host only Yale's network can route to counted as a way in for a student off
  * campus (#2556). It is reported alongside the code rather than instead of it, so
  * the security answer is unchanged.
+ *
+ * Our resolver's private answer is only a fact about where the probe runs, so it
+ * is confirmed against public DNS before it becomes a fact about the URL (#3903).
  */
-function probeResultForBlockedUrl(error: unknown): SourceLinkProbeResult {
+async function probeResultForBlockedUrl(
+  error: unknown,
+  url: string,
+): Promise<SourceLinkProbeResult> {
   const errorCode =
     error instanceof SsrfBlockedError && error.reason === 'unresolvable'
       ? 'ENOTFOUND'
       : 'ERR_SSRF_BLOCKED';
-  const privateAddressHost =
-    error instanceof SsrfBlockedError && error.reason === 'private-address';
-  return { errorCode, ...(privateAddressHost ? { privateAddressHost: true } : {}) };
+  if (!(error instanceof SsrfBlockedError && error.reason === 'private-address')) {
+    return { errorCode };
+  }
+  const offCampus = await classifyOffCampusAddressing(new URL(url.trim()).hostname);
+  if (offCampus === 'private-address') return { errorCode, privateAddressHost: true };
+  if (offCampus === 'public') return { errorCode, publicAddressHost: true };
+  return { errorCode };
 }
 
 export async function probeSourceLink(
@@ -403,7 +423,7 @@ export async function probeSourceLink(
   try {
     safeUrl = await assertPublicHttpUrl(url);
   } catch (error) {
-    return probeResultForBlockedUrl(error);
+    return probeResultForBlockedUrl(error, url);
   }
 
   const requestedUrl = safeUrl.toString();

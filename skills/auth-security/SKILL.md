@@ -125,6 +125,7 @@ Inconclusive is not the same as uninformative, though.
 A `private-address` refusal is a durable fact about addressing, so `probeSourceLink` reports it as `privateAddressHost` alongside the inconclusive error code, and `sourceLinkHealth` stores it as a second axis beside `healthStatus`.
 Discarding it made a host only Yale's network can route to indistinguishable from a throttled request, and because `UNKNOWN` fails open the visibility gate credited it as a way in for a student off campus (#2556).
 Judge that question from the resolved IP and never from whether a fetch succeeded: a machine egressing from a Yale range fetches these hosts successfully, which is evidence about the machine rather than about the audience.
+The resolved IP is equally a fact about the machine: Yale serves split-horizon DNS, so `probeSourceLink` records `privateAddressHost` only after public DNS over HTTPS confirms it (`server/src/utils/publicDnsResolution.ts`, #3903), and never widens what the guard will connect to.
 `docs/research-data-pipeline.md` owns what each axis licenses.
 
 ## Rate limits

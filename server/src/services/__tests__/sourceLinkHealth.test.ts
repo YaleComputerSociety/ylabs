@@ -6,6 +6,14 @@ vi.mock('axios', () => ({
   default: { request: (...args: unknown[]) => requestMock(...args) },
 }));
 
+const { classifyOffCampusAddressingMock } = vi.hoisted(() => ({
+  classifyOffCampusAddressingMock: vi.fn(async (_hostname: string) => 'private-address'),
+}));
+
+vi.mock('../../utils/publicDnsResolution', () => ({
+  classifyOffCampusAddressing: (hostname: string) => classifyOffCampusAddressingMock(hostname),
+}));
+
 const { MockSsrfBlockedError, assertPublicHttpUrlMock } = vi.hoisted(() => {
   class HoistedSsrfBlockedError extends Error {
     readonly reason: string;
@@ -112,6 +120,8 @@ describe('probeSourceLink', () => {
     requestMock.mockReset();
     assertPublicHttpUrlMock.mockReset();
     assertPublicHttpUrlMock.mockImplementation(async (url: string) => new URL(url));
+    classifyOffCampusAddressingMock.mockReset();
+    classifyOffCampusAddressingMock.mockResolvedValue('private-address');
   });
 
   const blockedWith = (reason: string) => {
@@ -135,11 +145,38 @@ describe('probeSourceLink', () => {
   it('keeps a private-address refusal inconclusive while recording the routing fact', async () => {
     blockedWith('private-address');
     const probe = await probeSourceLink('https://internal.example.edu/profile');
+    expect(classifyOffCampusAddressingMock).toHaveBeenCalledWith('internal.example.edu');
     expect(probe).toEqual({ errorCode: 'ERR_SSRF_BLOCKED', privateAddressHost: true });
     expect(classifySourceLinkHealth(probe)).toEqual({
       healthStatus: 'UNKNOWN',
       privateAddressHost: true,
     });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('reports a split-horizon host as publicly addressed rather than private-only (#3903)', async () => {
+    blockedWith('private-address');
+    classifyOffCampusAddressingMock.mockResolvedValueOnce('public');
+    const probe = await probeSourceLink('https://split.example.edu/profile');
+    expect(probe).toEqual({ errorCode: 'ERR_SSRF_BLOCKED', publicAddressHost: true });
+    expect(classifySourceLinkHealth(probe)).toEqual({
+      healthStatus: 'UNKNOWN',
+      publicAddressHost: true,
+    });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('claims nothing about addressing when public DNS cannot be asked', async () => {
+    blockedWith('private-address');
+    classifyOffCampusAddressingMock.mockResolvedValueOnce('resolver-failure');
+    const probe = await probeSourceLink('https://split.example.edu/profile');
+    expect(probe).toEqual({ errorCode: 'ERR_SSRF_BLOCKED' });
+  });
+
+  it('never asks public DNS about a refusal that is not a private address', async () => {
+    blockedWith('resolver-failure');
+    await probeSourceLink('https://slow-dns.example.edu/profile');
+    expect(classifyOffCampusAddressingMock).not.toHaveBeenCalled();
   });
 
   it('keeps a resolver failure inconclusive, so a DNS blip never retires a live citation', async () => {

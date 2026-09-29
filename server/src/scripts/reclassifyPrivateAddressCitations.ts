@@ -5,7 +5,6 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { classifyHostnameResolution } from '../utils/ssrfGuard';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   applyStudentVisibilityGatePlans,
@@ -14,6 +13,7 @@ import {
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   citedHostnames,
+  classifyHostForStudents,
   planPrivateAddressRouting,
   type HostResolutionKind,
   type PrivateAddressRoutingPlan,
@@ -64,8 +64,7 @@ function parsePositiveInteger(value: string | undefined): number {
 
 export async function resolveHostKinds(
   hosts: readonly string[],
-  classify: (host: string) => Promise<HostResolutionKind> = async (host) =>
-    (await classifyHostnameResolution(host)).kind,
+  classify: (host: string) => Promise<HostResolutionKind> = (host) => classifyHostForStudents(host),
   concurrency = HOST_RESOLUTION_CONCURRENCY,
 ): Promise<Map<string, HostResolutionKind>> {
   const resolutions = new Map<string, HostResolutionKind>();
