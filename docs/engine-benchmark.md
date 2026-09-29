@@ -60,6 +60,24 @@ Before reading a fingerprint change as a regression, check that it is attributab
 Either one means the input moved too, so the change is a frozen-input leak rather than a regression.
 `fingerprintChangeIsAttributable` is the predicate, and a measurement that called an input change a regression would earn being ignored.
 
+## What "frozen" means here, and what it does not
+
+**The bar is that every live read is either reviewed or counted. It is not that no read goes to the corpus.**
+
+That distinction is the whole design, so it is worth stating before someone reads `rowsWithIncompleteInput` as a score to drive to zero.
+
+A read the leak detector cannot see is the thing this benchmark cannot tolerate, because the claim it exists to support is that a fingerprint change means the code changed, and that claim rests entirely on the counter being able to see every read.
+So a read is acceptable in exactly two states: routed through `MaterializationReadSource`, where a miss is counted, or listed as a reviewed exemption with the reason it cannot be routed.
+`projectionObservationReadsRouted.test.ts` enforces that, for observation reads and entity reads alike, and fails when a read appears in neither state.
+
+Some reads can never be frozen, and that is a property of the question rather than a gap to close.
+The dedupe candidate lookup searches by `websiteUrl` across the corpus precisely to find rows the benchmark does not contain, so its answer set is not derivable from the frozen input; freezing it would mean freezing a URL-to-row map over the whole corpus, which is the corpus rather than an index of it.
+It is a permanent reviewed exemption.
+
+**So `rowsWithIncompleteInput` reaching zero is not the definition of done, and chasing literal zero is actively harmful**: it pushes toward freezing corpus-sized maps, and a benchmark that is not cheap enough to run every sweep stops being run at all.
+Two smaller value searches, the lead-naming existence check and the email-alias resolution, are worth freezing as capture-time indexes because the capture can enumerate the keys a replay will ask about from the frozen observations, so those indexes are sized by the benchmark rather than by the corpus.
+That is the test for whether a live read can become a frozen one: can the capture enumerate the questions.
+
 `byFieldDelta` and `gateTierDelta` are counts, not rows, because a snapshot stores no row identifier: an entity key is a slug, and a slug beside a defect judgement is the pairing the person-identifier convention exists to prevent.
 An operator who needs to know which rows moved runs `--replays=2` and reads `replayDisagreement`, which names the fields and never leaves the process.
 
