@@ -300,7 +300,7 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
       expect([...(await loadResearchAreaEvidenceBackedRowIds([persisted!]))]).toEqual([]);
     });
 
-    it('keeps the stored chips over description derivation the rejected observation would open', async () => {
+    it('re-derives over stored chips no evidence states, because the rejected observation is no evidence either', async () => {
       await seedEntity({
         departments: ['Psychology'],
         researchAreas: ['Memory Research'],
@@ -309,15 +309,16 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
       await seedField('researchAreas', ['Psychology'], 'research-area-source-extractor');
       await seedField('fullDescription', 'The lab studies neuroscience.');
 
-      await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+      const result = await materializeEntity('researchEntity', {
+        entityKey: 'area-derivation-fixture',
+      });
 
       const persisted = await readRow();
-      expect(persisted?.researchAreas).toEqual(['Memory Research']);
-      expect(persisted?.fieldProvenance?.researchAreas).toBeUndefined();
-      expect(
-        (persisted as { confidenceByField?: Record<string, number> } | null)?.confidenceByField
-          ?.researchAreas,
-      ).toBe(0.7);
+      expect(result.unbackedResearchAreas).toBe('rederived');
+      expect(persisted?.researchAreas).toEqual(['Neuroscience']);
+      expect(persisted?.fieldProvenance?.researchAreas?.sourceName).toBe(
+        DERIVED_RESEARCH_AREA_SOURCE_NAME,
+      );
     });
 
     it('keeps the stored chips when the only new observation names a division-level label', async () => {
@@ -393,20 +394,204 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
     });
   });
 
-  it('never overwrites an existing non-empty researchAreas value', async () => {
-    await seedEntity({ researchAreas: ['Immunology'] });
-    await seedField(
-      'fullDescription',
-      'The lab focuses on the intersection of neuroscience and immunology.',
-    );
+  describe('a stored list no live evidence states is re-derived on every resolve (#3836)', () => {
+    const TOPIC_PROSE = 'The lab focuses on the intersection of neuroscience and immunology.';
+    const AREA_LESS_PROSE = 'The lab welcomes motivated students to apply each term.';
+    const readRow = () =>
+      ResearchEntity.findOne({ slug: 'area-derivation-fixture' }).lean<
+        PersistedEntity & {
+          updatedAt?: Date;
+          fieldProvenance?: Record<string, { sourceName?: string }>;
+        }
+      >();
 
-    await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+    it('replaces an unbacked unlocked list with the derived one and records derived provenance', async () => {
+      await seedEntity({ researchAreas: ['Petroleum Geology'] });
+      await seedField('fullDescription', TOPIC_PROSE);
 
-    const persisted = await ResearchEntity.findOne({
-      slug: 'area-derivation-fixture',
-    }).lean<PersistedEntity>();
+      const result = await materializeEntity('researchEntity', {
+        entityKey: 'area-derivation-fixture',
+      });
 
-    expect(persisted?.researchAreas).toEqual(['Immunology']);
+      const persisted = await readRow();
+      expect(result.unbackedResearchAreas).toBe('rederived');
+      expect(new Set(persisted?.researchAreas)).toEqual(new Set(['Neuroscience', 'Immunology']));
+      expect(persisted?.fieldProvenance?.researchAreas?.sourceName).toBe(
+        DERIVED_RESEARCH_AREA_SOURCE_NAME,
+      );
+    });
+
+    it('only attributes an unbacked list the derivation reproduces, keeping its stored order', async () => {
+      await seedEntity({ researchAreas: ['Immunology', 'Neuroscience'] });
+      await seedField('fullDescription', TOPIC_PROSE);
+
+      const planned = await materializeEntity(
+        'researchEntity',
+        { entityKey: 'area-derivation-fixture' },
+        { dryRun: true },
+      );
+
+      expect(planned.unbackedResearchAreas).toBe('rederived');
+      expect(planned.plannedSet?.researchAreas).toEqual(['Immunology', 'Neuroscience']);
+      expect(
+        (planned.plannedSet?.['fieldProvenance.researchAreas'] as { sourceName?: string })
+          ?.sourceName,
+      ).toBe(DERIVED_RESEARCH_AREA_SOURCE_NAME);
+    });
+
+    it('writes the attribution through a pass scoped to research areas', async () => {
+      await seedEntity({ researchAreas: ['Immunology', 'Neuroscience'] });
+      await seedField('fullDescription', TOPIC_PROSE);
+
+      await materializeEntity(
+        'researchEntity',
+        { entityKey: 'area-derivation-fixture' },
+        { writeOnlyFields: ['researchAreas'] },
+      );
+
+      const persisted = await readRow();
+      expect(persisted?.researchAreas).toEqual(['Immunology', 'Neuroscience']);
+      expect(persisted?.fieldProvenance?.researchAreas?.sourceName).toBe(
+        DERIVED_RESEARCH_AREA_SOURCE_NAME,
+      );
+    });
+
+    it('leaves a locked list alone', async () => {
+      await seedEntity({
+        researchAreas: ['Petroleum Geology'],
+        manuallyLockedFields: ['researchAreas'],
+      });
+      await seedField('fullDescription', TOPIC_PROSE);
+
+      const result = await materializeEntity('researchEntity', {
+        entityKey: 'area-derivation-fixture',
+      });
+
+      expect(result.unbackedResearchAreas).toBeUndefined();
+      expect((await readRow())?.researchAreas).toEqual(['Petroleum Geology']);
+    });
+
+    it('never overwrites a list a live observation states', async () => {
+      await seedEntity({ researchAreas: ['Immunology'] });
+      await seedField('researchAreas', ['Immunology'], 'research-area-source-extractor');
+      await seedField('fullDescription', TOPIC_PROSE);
+
+      const result = await materializeEntity('researchEntity', {
+        entityKey: 'area-derivation-fixture',
+      });
+
+      const persisted = await readRow();
+      expect(result.unbackedResearchAreas).toBeUndefined();
+      expect(persisted?.researchAreas).toEqual(['Immunology']);
+      expect(persisted?.fieldProvenance?.researchAreas?.sourceName).toBe(
+        'research-area-source-extractor',
+      );
+    });
+
+    it('never overwrites a list a merged-in row states', async () => {
+      const survivor = await seedEntity({ researchAreas: ['Immunology'] });
+      await ResearchEntity.create({
+        slug: 'area-derivation-merged-in',
+        name: 'Area Derivation Merged In',
+        kind: 'lab',
+        entityType: 'LAB',
+        archived: true,
+        canonicalGroupId: survivor._id,
+      });
+      await Observation.create({
+        entityType: 'researchEntity',
+        entityKey: 'area-derivation-merged-in',
+        field: 'researchAreas',
+        value: ['Immunology'],
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'research-area-source-extractor',
+        sourceUrl: 'https://example.edu/research/merged-in',
+        confidence: 0.6,
+        observedAt: new Date('2026-01-01T00:00:00Z'),
+        superseded: false,
+      });
+      await seedField('fullDescription', TOPIC_PROSE);
+
+      const result = await materializeEntity('researchEntity', {
+        entityKey: 'area-derivation-fixture',
+      });
+
+      expect(result.unbackedResearchAreas).toBeUndefined();
+      expect((await readRow())?.researchAreas).toEqual(['Immunology']);
+    }, 30000);
+
+    it('never overwrites a list the resolver read off an observation the predicate does not credit', async () => {
+      await seedEntity({ researchAreas: ['Immunology'] });
+      await Observation.create({
+        entityType: 'researchEntity',
+        entityKey: 'area-derivation-fixture',
+        entityId: new mongoose.Types.ObjectId(),
+        field: 'researchAreas',
+        value: ['Immunology'],
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'research-area-source-extractor',
+        sourceUrl: 'https://example.edu/research/re-minted',
+        confidence: 0.6,
+        observedAt: new Date('2026-01-01T00:00:00Z'),
+        superseded: false,
+      });
+      await seedField('fullDescription', TOPIC_PROSE);
+
+      const result = await materializeEntity('researchEntity', {
+        entityKey: 'area-derivation-fixture',
+      });
+
+      expect(result.unbackedResearchAreas).toBeUndefined();
+      expect((await readRow())?.researchAreas).toEqual(['Immunology']);
+    });
+
+    it('keeps a stored list the derivation cannot replace, and reports it', async () => {
+      await seedEntity({ researchAreas: ['Petroleum Geology'] });
+      await seedField('fullDescription', AREA_LESS_PROSE);
+
+      const result = await materializeEntity('researchEntity', {
+        entityKey: 'area-derivation-fixture',
+      });
+
+      expect(result.unbackedResearchAreas).toBe('kept-stored-derived-empty');
+      expect((await readRow())?.researchAreas).toEqual(['Petroleum Geology']);
+    });
+
+    it('keeps the stored list of a type the derivation does not cover, and reports it', async () => {
+      await seedEntity({
+        entityType: 'CENTER',
+        kind: 'center',
+        researchAreas: ['Petroleum Geology'],
+      });
+      await seedField('fullDescription', TOPIC_PROSE);
+
+      const result = await materializeEntity('researchEntity', {
+        entityKey: 'area-derivation-fixture',
+      });
+
+      expect(result.unbackedResearchAreas).toBe('kept-stored-type-not-derived');
+      expect((await readRow())?.researchAreas).toEqual(['Petroleum Geology']);
+    });
+
+    it('plans nothing on the second resolve', async () => {
+      await seedEntity({ researchAreas: ['Petroleum Geology'] });
+      await seedField('fullDescription', TOPIC_PROSE);
+
+      await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+      const stored = await readRow();
+
+      const replanned = await materializeEntity(
+        'researchEntity',
+        { entityKey: 'area-derivation-fixture' },
+        { dryRun: true },
+      );
+      expect(replanned.unbackedResearchAreas).toBe('already-derived');
+      expect(replanned.plannedSet).not.toHaveProperty('researchAreas');
+      expect(replanned.plannedSet).not.toHaveProperty(['fieldProvenance.researchAreas']);
+
+      await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+      expect((await readRow())?.updatedAt?.getTime()).toBe(stored?.updatedAt?.getTime());
+    }, 30000);
   });
 
   it('leaves an empty-area LAB whose description names no canonical topic area-less', async () => {

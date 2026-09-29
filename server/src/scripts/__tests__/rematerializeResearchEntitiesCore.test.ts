@@ -49,7 +49,7 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
 
   it('requires --slugs when no reclaim mode is given', () => {
     expect(() => parseRematerializeResearchEntitiesArgs(['--apply'])).toThrow(
-      '--slugs, --reclaim-stranded, --unbacked-provenance or --foreign-contact is required',
+      '--slugs, --reclaim-stranded, --unbacked-provenance, --foreign-contact or --unbacked-research-areas is required',
     );
   });
 
@@ -256,6 +256,7 @@ describe('assertRematerializeApplyAllowed', () => {
     includeArchived: false,
     unbackedProvenance: false,
     foreignContact: false,
+    unbackedResearchAreas: false,
   };
 
   it('is a no-op for dry-run', () => {
@@ -621,6 +622,7 @@ describe('the change set covers every field the run may write (#3822)', () => {
       entitiesChanged: 1,
       fieldsWritten: 1,
       clearedContactFields: 1,
+      unbackedResearchAreas: {},
     });
     expect(selectRematerializeRegateEntityIds([report])).toEqual(['aaaaaaaaaaaaaaaaaaaaaaaa']);
   });
@@ -682,6 +684,52 @@ describe('the change set covers every field the run may write (#3822)', () => {
       entitiesChanged: 0,
       fieldsWritten: 0,
       clearedContactFields: 0,
+      unbackedResearchAreas: {},
     });
+  });
+});
+
+describe('summarizeRematerializeEntities unbacked research areas (#3836)', () => {
+  it('counts each unbacked row by outcome, including a kept list that changed nothing', () => {
+    const report = (
+      slug: string,
+      unbackedResearchAreas?: 'rederived' | 'kept-stored-derived-empty',
+    ) =>
+      rematerializeEntityReportFromChanges({
+        slug,
+        changes:
+          unbackedResearchAreas === 'rederived'
+            ? [{ field: 'researchAreas', before: ['Petroleum Geology'], after: ['Neuroscience'] }]
+            : [],
+        foreignContact: false,
+        unbackedResearchAreas,
+      });
+
+    const summary = summarizeRematerializeEntities(
+      [
+        report('example-a', 'rederived'),
+        report('example-b', 'kept-stored-derived-empty'),
+        report('example-c', 'kept-stored-derived-empty'),
+        report('example-d'),
+      ],
+      { foreignContact: false },
+    );
+
+    expect(summary.unbackedResearchAreas).toEqual({
+      rederived: 1,
+      'kept-stored-derived-empty': 2,
+    });
+    expect(summary.entitiesChanged).toBe(1);
+  });
+});
+
+describe('--unbacked-research-areas (#3836)', () => {
+  it('selects its own cohort, scoped to research areas, and runs on its own', () => {
+    const args = parseRematerializeResearchEntitiesArgs(['--unbacked-research-areas']);
+    expect(args.unbackedResearchAreas).toBe(true);
+    expect(args.onlyFields).toEqual(['researchAreas']);
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs(['--unbacked-research-areas', '--foreign-contact']),
+    ).toThrow('runs on its own');
   });
 });

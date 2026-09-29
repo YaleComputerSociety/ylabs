@@ -38,6 +38,7 @@ import {
   type RematerializeEntityReport,
 } from './rematerializeResearchEntitiesCore';
 import { RESEARCH_ENTITY_CONTACT_FIELDS } from '../scrapers/rowKeyedContactEvidence';
+import { loadResearchAreaEvidenceBackedRowIds } from '../scrapers/researchAreaEvidence';
 
 dotenv.config();
 
@@ -149,6 +150,7 @@ async function processSlug(
     conflicts: result.conflicts,
     changes,
     foreignContact,
+    unbackedResearchAreas: result.unbackedResearchAreas,
     skipped: result.skipped,
   });
 }
@@ -225,6 +227,20 @@ async function discoverUnbackedProvenanceSlugs(includeArchived: boolean): Promis
     .select('slug fieldProvenance')
     .lean<Array<{ slug?: string; fieldProvenance?: unknown }>>();
   return slugsCarryingUnbackedProvenance(rows);
+}
+
+async function discoverUnbackedResearchAreaSlugs(): Promise<string[]> {
+  const rows = await ResearchEntity.find({
+    archived: { $ne: true },
+    manuallyLockedFields: { $ne: 'researchAreas' },
+  })
+    .select('_id slug departments manuallyLockedFields')
+    .lean<Array<{ _id: unknown; slug?: string; departments?: unknown }>>();
+  const backed = await loadResearchAreaEvidenceBackedRowIds(rows);
+  return rows
+    .filter((row) => row.slug && !backed.has(String(row._id)))
+    .map((row) => row.slug as string)
+    .sort();
 }
 
 function writeReport(report: Record<string, unknown>, output?: string): void {
@@ -316,6 +332,12 @@ async function main() {
     slugs = Array.from(new Set([...slugs, ...discoveredForeignContactSlugs]));
   }
 
+  let discoveredUnbackedResearchAreaSlugs: string[] | undefined;
+  if (args.unbackedResearchAreas) {
+    discoveredUnbackedResearchAreaSlugs = await discoverUnbackedResearchAreaSlugs();
+    slugs = Array.from(new Set([...slugs, ...discoveredUnbackedResearchAreaSlugs]));
+  }
+
   const entities = await collectRematerializeEntityReports(slugs, (slug) =>
     processSlug(
       slug,
@@ -357,6 +379,8 @@ async function main() {
     foreignContact: args.foreignContact,
     discoveredForeignContactCount: discoveredForeignContactSlugs?.length,
     clearedContactFields: summary.clearedContactFields,
+    unbackedResearchAreasMode: args.unbackedResearchAreas,
+    discoveredUnbackedResearchAreasCount: discoveredUnbackedResearchAreaSlugs?.length,
     retiredProvenanceEntries: provenanceReconciliation?.retired,
     relinkedProvenanceEntries: provenanceReconciliation?.relinked,
     onlyFields: args.onlyFields,
@@ -368,6 +392,7 @@ async function main() {
       .map((entity) => entity.slug),
     entitiesChanged: summary.entitiesChanged,
     fieldsWritten: summary.fieldsWritten,
+    unbackedResearchAreas: summary.unbackedResearchAreas,
     entitiesSkipped: entities.filter((entity) => entity.skipped).length,
     entitiesFailed: failed.map((entity) => ({ slug: entity.slug, error: entity.error })),
     regate,

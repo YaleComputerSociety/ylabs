@@ -5,6 +5,31 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-29: A Stored Topic List No Evidence States Is Re-Derived On Every Resolve (#3836)
+
+#3836 traced every served chip that no live observation backs to one mechanism: `researchAreas` is not clear-on-empty, and the description fallback returned early on any non-empty stored list, so a list whose evidence was retired, rolled back, or never existed had no owner and no pass could replace it.
+
+Decided, as derivation rather than repair:
+
+- **Scope is the shared predicate.** A row is in scope when `researchAreas` is not in `manuallyLockedFields` and no live `researchAreas` observation on the row or on any merged-in key states an area the row admits, decided by `scrapers/researchAreaEvidence.ts` (#3842) with the #3856 admission rule, so an observation whose every value the row rejects is no evidence.
+The materializer evaluates it over the observations the pass already read, including merged-in candidates the #3560 carry rule keeps out of resolution, so a list only a merged-in row states stays out of scope.
+A pass entered through another key, and an archived row, are never judged, because neither has read all of the row's own evidence.
+An observation the resolver used this pass still outranks a derivation even when the predicate does not credit it (an `entityKey` match carrying another row's `entityId`).
+- **The action is the existing derivation.** On every resolve the row's topics are re-derived from its own name and description with `applyDescriptionResearchAreaDerivation` and its `LAB`/`FACULTY_RESEARCH_AREA` gate, admitted through `partitionResearchAreas`, and attributed to `description-derived-research-area`, the one non-observation authority on the #3790 allowlist.
+No lock is written.
+A derived set with the same members as the stored list keeps the stored order and records only the attribution.
+- **The guard: a derivation never empties a stored list.** When the derivation yields no admissible chip, or the row's type is not derived, the stored list stays as it is and the row is counted, per row as `unbackedResearchAreas` on the materialize result and summed in the `research-entity:rematerialize` report and the `[unbacked-research-areas]` line of a run's materialization log.
+- **It converges.** A second resolve re-derives the same answer, finds the stored list and entry already derived, and plans nothing.
+- **Rows with live evidence behave exactly as before.**
+
+Measured read-only on Development on 2026-09-29 between 03:37 and 03:40 UTC with the real materializer in dry run, peers writing: 711 unarchived rows are in scope, 110 of them `student_ready`.
+Of the 110 served: 9 change to a different admissible set (4 different, 4 a subset, 1 a superset), 17 keep their list and gain the derived attribution, 10 are already derived, 19 keep their list because the derivation yields nothing, 1 keeps its list because its type is not derived, 53 store no topics and derive none (the 12 rows #3856 recorded among them), and 1 keeps an observation the resolver reads.
+Of the 601 unserved: 70 change their list, 107 gain the attribution, 14 are already derived, 66 are kept by the guard, 339 store and derive nothing, 4 have no live observation of any field so no resolve reaches them, and 1 is skipped for invalidated-run evidence.
+2,873 archived rows match the predicate and are not reached.
+
+The rule reaches the stored corpus only when a row is next resolved, so the delivery is `yarn --cwd server research-entity:rematerialize --unbacked-research-areas`, which selects this scope by the same predicate and is scoped to `researchAreas`; dry run first, then `--apply --confirm-rematerialize` on Development.
+What stays is recorded rather than patched: the rows the guard keeps hold a list no lane states, and they are fixed only by a lane that reads a page with real topics for them.
+
 ## 2026-09-28: A Merged-In Loser's Evidence Is Carried, Owned By Field Class, And Retired On Its Own Key (#3609)
 
 #3609 asked for the opposite of what the log supports, so this entry diverges from its title on purpose.
