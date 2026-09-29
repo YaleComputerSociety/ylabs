@@ -288,6 +288,7 @@ const Fellowships = () => {
     sortDirection,
     quickFilter,
     setQuickFilter,
+    resetProgramFilters,
     refreshFellowships,
     setPage,
     searchExhausted,
@@ -801,17 +802,8 @@ const Fellowships = () => {
               isLoading={isLoading}
               chips={fellowshipChips}
               onClearAll={() => {
-                setSelectedProgramCategory([]);
-                setSelectedProgramKind([]);
-                setSelectedEntryMode([]);
-                setSelectedStudentFacingCategory([]);
-                setSelectedYearOfStudy([]);
-                setSelectedTermOfAward([]);
-                setSelectedPurpose([]);
-                setSelectedRegions([]);
-                setSelectedCitizenship([]);
+                resetProgramFilters();
                 setSelectedStudentVisibilityTier([]);
-                setQuickFilter(null);
               }}
               onHeightChange={setFilterBarHeight}
             />

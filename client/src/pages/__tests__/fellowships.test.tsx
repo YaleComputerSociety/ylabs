@@ -240,6 +240,7 @@ const renderPage = (
     refreshFellowships: vi.fn(),
     quickFilter: null,
     setQuickFilter: vi.fn(),
+    resetProgramFilters: vi.fn(),
     filterBarHeight: 0,
     setFilterBarHeight: vi.fn(),
     ...overrides,
@@ -346,6 +347,7 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
                 refreshFellowships: vi.fn(),
                 quickFilter,
                 setQuickFilter,
+                resetProgramFilters: () => setQuickFilter(null),
                 filterBarHeight: 0,
                 setFilterBarHeight: vi.fn(),
               }}
@@ -568,6 +570,21 @@ describe('Programs page', () => {
       'false',
     );
     expect(screen.getByRole('status')).toHaveTextContent('1 result');
+  });
+
+  it('clears the subject filter along with every other program filter from Clear all', async () => {
+    const resetProgramFilters = vi.fn();
+    const setSelectedStudentVisibilityTier = vi.fn();
+    renderPage([baseFellowship({ id: 'open', title: 'Open Fellowship' })], {
+      selectedSubjects: ['Biology'],
+      resetProgramFilters,
+      setSelectedStudentVisibilityTier,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+
+    expect(resetProgramFilters).toHaveBeenCalledTimes(1);
+    expect(setSelectedStudentVisibilityTier).toHaveBeenCalledWith([]);
   });
 
   it('contains mobile filter focus and restores the trigger on Escape', async () => {

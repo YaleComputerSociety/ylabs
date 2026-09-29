@@ -218,6 +218,30 @@ describe('fellowshipSearchReducer', () => {
     expect(next.queryString).toBe('keep me');
   });
 
+  it('RESET_PROGRAM_FILTERS clears every student-facing filter and the quick filter', () => {
+    const adminOnlyFilterKeys = ['selectedStudentVisibilityTier'];
+    const studentFilterKeys = Object.keys(createInitialFellowshipSearchState()).filter(
+      (key) => key.startsWith('selected') && !adminOnlyFilterKeys.includes(key),
+    );
+    const populatedFilters = Object.fromEntries(studentFilterKeys.map((key) => [key, ['set']]));
+    const state = createInitialFellowshipSearchState({
+      ...populatedFilters,
+      quickFilter: 'open',
+      selectedStudentVisibilityTier: ['operator_review'],
+      queryString: 'kept',
+    });
+
+    const next = fellowshipSearchReducer(state, { type: 'RESET_PROGRAM_FILTERS' });
+
+    expect(studentFilterKeys.length).toBeGreaterThanOrEqual(10);
+    for (const key of studentFilterKeys) {
+      expect({ key, value: next[key as keyof FellowshipSearchState] }).toEqual({ key, value: [] });
+    }
+    expect(next.quickFilter).toBeNull();
+    expect(next.selectedStudentVisibilityTier).toEqual(['operator_review']);
+    expect(next.queryString).toBe('kept');
+  });
+
   it('does not mutate previous state', () => {
     const state = createInitialFellowshipSearchState({
       selectedRegions: ['Asia'],

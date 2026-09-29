@@ -148,6 +148,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     dispatch({ type: 'SET_QUICK_FILTER', payload: value });
   }, []);
 
+  const resetProgramFilters = useCallback(() => {
+    dispatch({ type: 'RESET_PROGRAM_FILTERS' });
+  }, []);
+
   const setFilterBarHeight = useCallback((value: number) => {
     dispatch({ type: 'SET_FILTER_BAR_HEIGHT', payload: value });
   }, []);
@@ -483,6 +487,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         refreshFellowships,
         quickFilter,
         setQuickFilter,
+        resetProgramFilters,
         filterBarHeight,
         setFilterBarHeight,
       }}

@@ -58,6 +58,7 @@ export interface FellowshipSearchContextType {
 
   quickFilter: string | null;
   setQuickFilter: (filter: FellowshipQuickFilter) => void;
+  resetProgramFilters: () => void;
 
   filterBarHeight: number;
   setFilterBarHeight: (height: number) => void;
@@ -118,6 +119,7 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   refreshFellowships: () => {},
   quickFilter: null,
   setQuickFilter: () => {},
+  resetProgramFilters: () => {},
   filterBarHeight: 0,
   setFilterBarHeight: () => {},
 };
