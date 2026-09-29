@@ -89,8 +89,13 @@ export function centerRosterStopReadWholeRoster(stopReason: CenterRosterStopReas
 export interface CenterRosterReadMember {
   memberKey: string;
   role: string;
-  membershipKey: string;
-  relationshipKey: string;
+  /**
+   * Centre concepts, so optional: a lane whose listing carries no membership or relationship
+   * identity omits them rather than inventing one. Admissibility and absence only ever read
+   * `memberKey` and `role`.
+   */
+  membershipKey?: string;
+  relationshipKey?: string;
 }
 
 export type CenterRosterReadStatus = 'ok' | 'empty' | 'partial-read';
@@ -228,10 +233,14 @@ export function centerRosterReadFromSnapshot(
     memberProfileClaims: new Set(
       members
         .filter((member) => member.membershipKey)
-        .map((member) => memberClaimKey(member.memberKey, identityPart(member.membershipKey))),
+        .map((member) =>
+          memberClaimKey(member.memberKey, identityPart(member.membershipKey ?? '')),
+        ),
     ),
-    membershipKeys: new Set(members.map((member) => member.membershipKey).filter(Boolean)),
-    relationshipKeys: new Set(members.map((member) => member.relationshipKey).filter(Boolean)),
+    membershipKeys: new Set(members.map((member) => member.membershipKey ?? '').filter(Boolean)),
+    relationshipKeys: new Set(
+      members.map((member) => member.relationshipKey ?? '').filter(Boolean),
+    ),
     members,
   };
 }

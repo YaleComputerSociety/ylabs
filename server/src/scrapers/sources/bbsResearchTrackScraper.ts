@@ -33,11 +33,26 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import {
+  buildCenterRosterHealthSnapshot,
+  CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+  CENTER_ROSTER_HEALTH_FIELD,
+  type CenterRosterReadMember,
+  type CenterRosterStopReason,
+} from '../centerRosterRetirement';
 import { getCached, setCached } from '../snapshotCache';
 import { facultyNameMatchKey, normalizeYsmProfileUrl } from './ysmMeshKeywordScraper';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const SOURCE_KEY = 'bbs-research-track';
+
+/**
+ * The role a track listing claims about a PI, which is the same for every entry: it says the PI
+ * belongs to this graduate track and nothing else. The retirement mechanism keys a claim by
+ * member and role, so a single constant degrades that key to the PI, which is exactly the claim
+ * this lane makes and later retires (#3852).
+ */
+const BBS_TRACK_PI_ROLE = 'track-pi';
 const BBS_HOST = 'medicine.yale.edu';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -536,6 +551,51 @@ export interface BbsResearchTrackScraperDeps {
 }
 
 /**
+ * A per-track read snapshot on the #3781 contract, so absence can later be governed by the same
+ * rule rather than a second one.
+ *
+ * Admissible only for a complete, off-the-wire read that listed at least one PI. A zero-PI parse,
+ * a failed fetch and a cache-permitted read each produce a snapshot
+ * `centerRosterReadAdmissibility` refuses, so none of them can retire anybody, and the emptiness
+ * is recorded rather than lost. That is the protection the `plantmolbio` case needed: it listed
+ * zero for three consecutive runs, and under a naive omission rule its whole membership would
+ * have been retired three times over (#3852).
+ *
+ * `not-paginated` is the honest stop reason because a track listing is one page, and it counts as
+ * having read the whole roster. A fetch that failed says so instead, which makes the read
+ * incomplete and therefore inadmissible.
+ */
+function buildTrackRosterHealthObservation(input: {
+  track: BbsTrack;
+  faculty: readonly BbsFacultyRef[];
+  fetched: boolean;
+  cacheAllowed: boolean;
+  readAt: Date;
+}): ObservationInput {
+  const members: CenterRosterReadMember[] = input.faculty.map((ref) => ({
+    memberKey: ref.profileSlug,
+    role: BBS_TRACK_PI_ROLE,
+  }));
+  const stopReason: CenterRosterStopReason = input.fetched ? 'not-paginated' : 'fetch-failed';
+  return {
+    entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+    entityKey: input.track.slug,
+    field: CENTER_ROSTER_HEALTH_FIELD,
+    sourceUrl: input.track.url,
+    value: buildCenterRosterHealthSnapshot({
+      centerKey: input.track.slug,
+      entityKey: input.track.slug,
+      members,
+      pagesRead: input.fetched ? 1 : 0,
+      readMode: 'html',
+      stopReason,
+      cacheAllowed: input.cacheAllowed,
+      readAt: input.readAt,
+    }),
+  };
+}
+
+/**
  * Whether this lane has ever recorded a PI from this track page.
  *
  * A track that lists nobody is either a page that changed shape or a parser that broke on it, and
@@ -665,15 +725,18 @@ export class BbsResearchTrackScraper implements IScraper {
     this.trackEverListedPis = deps.trackEverListedPis || defaultTrackEverListedPis;
   }
 
-  private async collectTrackPis(
-    ctx: ScraperContext,
-  ): Promise<{ pis: Map<string, BbsTrackPi>; emptyTrackFailures: string[] }> {
+  private async collectTrackPis(ctx: ScraperContext): Promise<{
+    pis: Map<string, BbsTrackPi>;
+    emptyTrackFailures: string[];
+    rosterHealth: ObservationInput[];
+  }> {
     const onlyFilter =
       ctx.options.only && ctx.options.only.length > 0
         ? new Set(ctx.options.only.map((value) => value.trim().toLowerCase()))
         : null;
     const byProfileSlug = new Map<string, BbsTrackPi>();
     const emptyTrackFailures: string[] = [];
+    const rosterHealth: ObservationInput[] = [];
     for (const track of BBS_TRACKS) {
       if (onlyFilter && !onlyFilter.has(track.slug)) continue;
       let html: string | null = null;
@@ -681,11 +744,40 @@ export class BbsResearchTrackScraper implements IScraper {
         html = await this.fetchPage(track.url, ctx.options.useCache);
       } catch (error) {
         ctx.log(`[${track.slug}] track page fetch failed: ${sanitizeLogValue(error)}`);
+        rosterHealth.push(
+          buildTrackRosterHealthObservation({
+            track,
+            faculty: [],
+            fetched: false,
+            cacheAllowed: ctx.options.useCache,
+            readAt: new Date(),
+          }),
+        );
         continue;
       }
-      if (!html) continue;
+      if (!html) {
+        rosterHealth.push(
+          buildTrackRosterHealthObservation({
+            track,
+            faculty: [],
+            fetched: false,
+            cacheAllowed: ctx.options.useCache,
+            readAt: new Date(),
+          }),
+        );
+        continue;
+      }
       const faculty = parseBbsTrackFaculty(html, track.url);
       ctx.log(`[${track.slug}] ${faculty.length} faculty listed`);
+      rosterHealth.push(
+        buildTrackRosterHealthObservation({
+          track,
+          faculty,
+          fetched: true,
+          cacheAllowed: ctx.options.useCache,
+          readAt: new Date(),
+        }),
+      );
       if (faculty.length === 0) {
         // A warning whatever the history, so an empty track is never silent again.
         ctx.log(
@@ -716,7 +808,7 @@ export class BbsResearchTrackScraper implements IScraper {
         }
       }
     }
-    return { pis: byProfileSlug, emptyTrackFailures };
+    return { pis: byProfileSlug, emptyTrackFailures, rosterHealth };
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -726,7 +818,9 @@ export class BbsResearchTrackScraper implements IScraper {
     }
     const limit = limitOption ?? Infinity;
 
-    const { pis, emptyTrackFailures } = await this.collectTrackPis(ctx);
+    const { pis, emptyTrackFailures, rosterHealth } = await this.collectTrackPis(ctx);
+    // Emitted before the graft, so a run that fails later still records what each track listed.
+    if (rosterHealth.length > 0) await ctx.emit(rosterHealth);
     const candidates = await this.entityFinder();
     const index = buildBbsMatchIndex(candidates);
 
