@@ -30,11 +30,11 @@ export const CLASSIFIER_OWNED_FELLOWSHIP_FIELDS = [
 
 /**
  * Fields the classifier asserts only when it has something to say. An omission is silence
- * rather than a retraction, so an omitted field keeps the value the pass would otherwise
- * leave standing. Clearing `undergraduateOnly` on silence dropped rows out of the visibility
- * gate's `audienceKnown` branch (#2910), and the logistics fields are mostly not classifier
- * output: on Development 316 rows store a `compensationSummary` and 23 live observations
- * assert one, so clearing on silence would erase curated award amounts from 75 served cards.
+ * rather than a retraction, so an omitted field keeps the value the row carries: clearing
+ * `undergraduateOnly` on silence dropped rows out of the visibility gate's `audienceKnown`
+ * branch (#2910), and on Development 37 served rows carry a `compensationSummary` and 44 a
+ * `programDates` the classifier is silent about, almost all of them curated values no
+ * observation backs.
  */
 export const CLASSIFIER_OPTIONAL_FELLOWSHIP_FIELDS = [
   'undergraduateOnly',
@@ -43,6 +43,19 @@ export const CLASSIFIER_OPTIONAL_FELLOWSHIP_FIELDS = [
   'hoursPerWeek',
   'programDates',
 ] as const;
+
+/**
+ * Optional fields no lane observes any more, so a live observation of one is a classifier
+ * conclusion a lane stored before #3904 and is not evidence. When the classifier is silent
+ * it is set aside, and a stored value it alone put there is cleared. `undergraduateOnly` is
+ * absent because the department undergraduate research lane still observes it as a fact.
+ */
+const RETIRED_CLASSIFIER_OBSERVATION_FIELDS: ReadonlySet<string> = new Set([
+  'yaleCollegeOnly',
+  'compensationSummary',
+  'hoursPerWeek',
+  'programDates',
+]);
 
 export const CLASSIFIER_DERIVED_FELLOWSHIP_FIELDS: readonly string[] = [
   ...CLASSIFIER_OWNED_FELLOWSHIP_FIELDS,
@@ -104,6 +117,8 @@ function sameValue(left: unknown, right: unknown): boolean {
 
 export interface FellowshipClassificationPlan {
   set: Partial<ProgramClassification>;
+  withdrawn: string[];
+  unset: string[];
   classification: ProgramClassification;
 }
 
@@ -112,22 +127,31 @@ export function planFellowshipClassification(input: {
   staged?: Record<string, unknown>;
   unset?: Record<string, unknown>;
   lockedFields?: readonly string[];
+  observedValues?: Record<string, unknown>;
 }): FellowshipClassificationPlan {
   const staged = input.staged ?? {};
   const unset = input.unset ?? {};
   const lockedFields = input.lockedFields ?? [];
+  const observedValues = input.observedValues ?? {};
   const classification = classifyProgram(
     fellowshipClassificationInput(input.stored, staged, unset),
   );
   const set: Record<string, unknown> = {};
+  const withdrawn: string[] = [];
+  const cleared: string[] = [];
   for (const field of CLASSIFIER_DERIVED_FELLOWSHIP_FIELDS) {
     if (lockedFields.includes(field)) continue;
     const derived = (classification as unknown as Record<string, unknown>)[field];
-    if (derived === undefined) continue;
+    if (derived === undefined) {
+      if (!RETIRED_CLASSIFIER_OBSERVATION_FIELDS.has(field) || !(field in observedValues)) continue;
+      withdrawn.push(field);
+      if (sameValue(input.stored?.[field], observedValues[field])) cleared.push(field);
+      continue;
+    }
     if (!(field in staged) && sameValue(input.stored?.[field], derived)) continue;
     set[field] = derived;
   }
-  return { set: set as Partial<ProgramClassification>, classification };
+  return { set: set as Partial<ProgramClassification>, withdrawn, unset: cleared, classification };
 }
 
 export function classificationFromObservedFacts(

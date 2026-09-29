@@ -42,7 +42,9 @@ const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 
 export type DepartmentUndergradResearchParser =
-  'physics-project-list' | 'general-guidance' | 'structured-opportunity';
+  | 'physics-project-list'
+  | 'general-guidance'
+  | 'structured-opportunity';
 
 export interface DepartmentUndergradResearchPageConfig {
   key: string;
