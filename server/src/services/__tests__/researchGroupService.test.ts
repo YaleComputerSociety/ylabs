@@ -5209,3 +5209,108 @@ describe('student search serves only rows whose detail page serves (#3749)', () 
     ).toEqual(['servable-row', 'unservable-row']);
   });
 });
+
+describe('a failed companion Meilisearch query marks the search degraded (#3751)', () => {
+  const entityId = '67d8928150621bcef434a2f1';
+  type Companion = 'exhaustive' | 'disjunctive' | 'keyword';
+
+  const companionOf = (params: Record<string, any>): Companion | 'primary' => {
+    if (!params.hybrid) return 'keyword';
+    if (params.facets?.length === 1) return 'disjunctive';
+    if (params.attributesToRetrieve?.length === 1) return 'exhaustive';
+    return 'primary';
+  };
+
+  const searchWith = async (failing?: Companion) => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.search.mockImplementation(async (_query: string, params: Record<string, any>) => {
+      const companion = companionOf(params);
+      if (companion === failing) throw new Error('timeout');
+      if (companion === 'primary') {
+        return {
+          hits: [
+            {
+              id: entityId,
+              slug: 'sociology-row',
+              name: 'Sociology Row',
+              kind: 'lab',
+              _rankingScoreDetails: { vectorSort: { similarity: 0.6 } },
+            },
+          ],
+          estimatedTotalHits: 1,
+          facetDistribution: { schools: { 'Yale College': 1 } },
+        };
+      }
+      if (companion === 'exhaustive') {
+        return { totalHits: 1, facetDistribution: { schools: { 'Yale College': 1 } } };
+      }
+      if (companion === 'disjunctive') {
+        return { facetDistribution: { schools: { 'Yale College': 1, 'Law School': 4 } } };
+      }
+      return { hits: [] };
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'sociology-row',
+          name: 'Sociology Row',
+          kind: 'lab',
+          departments: [],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+    const result = await searchResearchGroupsViaMeili(
+      'sociology',
+      { school: ['Yale College'] },
+      1,
+      24,
+      {},
+      { includeFacets: true },
+    );
+    consoleError.mockRestore();
+    return result;
+  };
+
+  const companionsCalled = () =>
+    mocks.search.mock.calls.map(([, params]) => companionOf(params)).sort();
+
+  it('stays undegraded when every companion query succeeds', async () => {
+    const result = await searchWith();
+
+    expect(companionsCalled()).toEqual(['disjunctive', 'exhaustive', 'keyword', 'primary']);
+    expect(result.degraded).toBe(false);
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['sociology-row']);
+  });
+
+  it.each<Companion>(['exhaustive', 'disjunctive', 'keyword'])(
+    'marks the search degraded and still serves the row when the %s query fails',
+    async (failing) => {
+      const result = await searchWith(failing);
+
+      expect(companionsCalled()).toEqual(['disjunctive', 'exhaustive', 'keyword', 'primary']);
+      expect(result.degraded).toBe(true);
+      expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['sociology-row']);
+    },
+  );
+
+  it('marks a browse degraded when its disjunctive facet query fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.search
+      .mockResolvedValueOnce({
+        hits: [],
+        estimatedTotalHits: 6,
+        facetDistribution: { schools: { 'Law School': 6 }, departments: {} },
+      })
+      .mockRejectedValueOnce(new Error('timeout'));
+
+    const result = await searchResearchGroupsViaMeili('', { school: ['Law School'] }, 1, 24);
+
+    expect(result.facetDistribution?.school).toEqual({ 'Law School': 6 });
+    expect(result.degraded).toBe(true);
+    consoleError.mockRestore();
+  });
+});

@@ -1513,6 +1513,7 @@ export async function searchResearchGroupsViaMeili(
       }
     } catch (error) {
       console.error('Optional exhaustive hybrid total-hits count failed:', sanitizeLogValue(error));
+      degraded = true;
     }
   }
 
@@ -1587,6 +1588,7 @@ export async function searchResearchGroupsViaMeili(
             `Disjunctive facet computation for ${meiliField} failed; keeping conjunctive counts:`,
             sanitizeLogValue(error),
           );
+          degraded = true;
         }
       }),
     );
@@ -1647,6 +1649,7 @@ export async function searchResearchGroupsViaMeili(
       return Array.isArray(keywordLegResult?.hits) ? keywordLegResult.hits : [];
     } catch (error) {
       console.error('Optional keyword-leg candidate query failed:', sanitizeLogValue(error));
+      degraded = true;
       return [];
     }
   };
