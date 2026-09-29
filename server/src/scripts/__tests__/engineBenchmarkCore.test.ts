@@ -14,6 +14,7 @@ const row = (overrides: Partial<ReplayedRow> = {}): ReplayedRow => ({
   entityKey: 'fixture-row-one',
   plannedSet: { fullDescription: 'Studies calcium regulation in intertidal invertebrates.' },
   plannedUnset: {},
+  storedValues: {},
   tier: 'student_ready',
   computedTier: 'student_ready',
   reasons: [],
@@ -426,5 +427,76 @@ describe('the direction of a change (#3871)', () => {
 
     expect(diff.valuesLost).toBe(1);
     expect(diff.valuesGained).toBe(1);
+  });
+});
+
+describe('the direction is read on the OUTCOME, not on the plan (#3871)', () => {
+  /**
+   * The case that made #3872 report the wrong sign, reproduced from the real one.
+   *
+   * #3873 did not change which values a derivation plans, it changed whether the field is planned
+   * at all. The fixed code plans nothing and the row keeps its eight stored chips; the regression
+   * plans five that REPLACE them. Comparing plans reads 5 against 0 and calls it a gain of five.
+   * Comparing outcomes reads 5 against 8 and calls it a loss of three, which is what happens to
+   * the row. Measured on Development: 10 rows, 26 chips, reported by #3872 as 24 gained and 0 lost.
+   */
+  const EIGHT_STORED = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const FIVE_PLANNED = ['a', 'b', 'c', 'd', 'e'];
+
+  const keepsStored = row({
+    plannedSet: {},
+    storedValues: { researchAreas: EIGHT_STORED },
+  });
+  const replacesStored = row({
+    plannedSet: { researchAreas: FIVE_PLANNED },
+    storedValues: { researchAreas: EIGHT_STORED },
+  });
+
+  it('reports a replacement that shortens the list as a LOSS', () => {
+    const diff = diffEngineReplays([replacesStored], [keepsStored]);
+
+    expect(diff.rowsLosingAValue).toBe(1);
+    expect(diff.valuesLost).toBe(3);
+    expect(diff.valuesGained).toBe(0);
+  });
+
+  it('reports the fix, which plans nothing and keeps the row whole, as no loss', () => {
+    const diff = diffEngineReplays([keepsStored], [replacesStored]);
+
+    expect(diff.rowsLosingAValue).toBe(0);
+    expect(diff.valuesLost).toBe(0);
+    expect(diff.valuesGained).toBe(3);
+  });
+
+  it('counts the values a row keeps, so planning nothing is not counted as holding nothing', () => {
+    expect(scoreEngineReplay([keepsStored], []).byField).toEqual([
+      {
+        field: 'researchAreas',
+        resolved: 0,
+        cleared: 0,
+        labeledEntityResolved: 0,
+        knownWrong: 0,
+        values: 8,
+      },
+    ]);
+  });
+
+  it('moves the stored snapshot delta negative when a replacement shortens the list', () => {
+    const delta = diffEngineSnapshots(
+      scoreEngineReplay([replacesStored], []),
+      scoreEngineReplay([keepsStored], []),
+    );
+
+    expect(delta.byField.find((field) => field.field === 'researchAreas')?.valuesDelta).toBe(-3);
+  });
+
+  it('reads a planned-away field as holding nothing, whatever it stored', () => {
+    const cleared = row({
+      plannedSet: {},
+      plannedUnset: { researchAreas: '' },
+      storedValues: { researchAreas: EIGHT_STORED },
+    });
+
+    expect(diffEngineReplays([cleared], [keepsStored]).valuesLost).toBe(8);
   });
 });
