@@ -557,6 +557,20 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
       expect((await readRow())?.researchAreas).toEqual(['Petroleum Geology']);
     });
 
+    it('reports a kept list from a write pass scoped to research areas', async () => {
+      await seedEntity({ researchAreas: ['Petroleum Geology'] });
+      await seedField('fullDescription', AREA_LESS_PROSE);
+
+      const result = await materializeEntity(
+        'researchEntity',
+        { entityKey: 'area-derivation-fixture' },
+        { writeOnlyFields: ['researchAreas'] },
+      );
+
+      expect(result.unbackedResearchAreas).toBe('kept-stored-derived-empty');
+      expect((await readRow())?.researchAreas).toEqual(['Petroleum Geology']);
+    });
+
     it('keeps the stored list of a type the derivation does not cover, and reports it', async () => {
       await seedEntity({
         entityType: 'CENTER',

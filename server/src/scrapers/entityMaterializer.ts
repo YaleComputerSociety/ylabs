@@ -7383,6 +7383,7 @@ export async function materializeEntity(
       created: false,
       resolved,
       skipped: 'no-scoped-fields',
+      ...unbackedResearchAreasOutcome,
     };
   }
 
@@ -7411,6 +7412,7 @@ export async function materializeEntity(
         created: false,
         resolved,
         skipped: 'no-scoped-fields',
+        ...unbackedResearchAreasOutcome,
       };
     }
     // Skip the write (and, below, the redundant search re-sync) when the
