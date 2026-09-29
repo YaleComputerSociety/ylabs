@@ -126,6 +126,10 @@ import {
 } from './storedTextNormalization';
 import { planFellowshipClassification } from './fellowshipClassificationDerivation';
 import {
+  ENRICH_ONLY_FELLOWSHIP_SOURCES,
+  fellowshipFieldsWithheldBySourcePrecedence,
+} from './fellowshipSourcePrecedence';
+import {
   isDirectoryGraftCitation,
   planDirectoryGraftCitationRetraction,
 } from './directoryGraftCitations';
@@ -4176,7 +4180,11 @@ async function findFellowshipByNormalizedTitle(
   if (!titleKey || !sourceName) return null;
 
   const candidates = await Model.find({
-    $or: [{ sourceName }, { sourceName: { $in: ['', null] } }, { sourceName: { $exists: false } }],
+    $or: [
+      { sourceName },
+      { sourceName: { $in: ['', null, ...ENRICH_ONLY_FELLOWSHIP_SOURCES] } },
+      { sourceName: { $exists: false } },
+    ],
   }).lean();
   const matches = candidates.filter(
     (candidate: any) =>
@@ -6784,6 +6792,21 @@ export async function projectFromLog(
   Object.assign(set, storedTextNormalization.set);
 
   if (entityType === 'fellowship') {
+    for (const field of fellowshipFieldsWithheldBySourcePrecedence({
+      stored: entityDoc as Record<string, unknown> | null,
+      staged: set,
+      resolvedFields: Object.keys(resolved),
+      observedSourceName: resolved.sourceName?.value,
+    })) {
+      delete set[field];
+      delete set[`fieldProvenance.${field}`];
+      if (field in confidenceByField && entityDoc?.confidenceByField?.[field] !== undefined) {
+        confidenceByField[field] = entityDoc.confidenceByField[field];
+      } else {
+        delete confidenceByField[field];
+      }
+      fieldsWritten = Math.max(0, fieldsWritten - 1);
+    }
     const classification = planFellowshipClassification({
       stored: entityDoc as Record<string, unknown> | null,
       staged: set,
