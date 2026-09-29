@@ -142,10 +142,10 @@ describe('non-access undergraduate shapes (#3831)', () => {
     expect(quoteStatesAnUndergraduateAccessFact(quote)).toBe(true);
   });
 
-  it.each([
-    'Jane Doe, YC 2027, Undergraduate Researcher',
-    'Jane Doe, Undergraduate Class of 2027',
-  ])('still counts the roster line %j', (snippet) => {
-    expect(rosterSnippetNamesAnUndergraduate(snippet)).toBe(true);
-  });
+  it.each(['Jane Doe, YC 2027, Undergraduate Researcher', 'Jane Doe, Undergraduate Class of 2027'])(
+    'still counts the roster line %j',
+    (snippet) => {
+      expect(rosterSnippetNamesAnUndergraduate(snippet)).toBe(true);
+    },
+  );
 });

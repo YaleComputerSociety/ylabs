@@ -2369,4 +2369,38 @@ describe('LabMicrositeUndergradLLMExtractor.run withdrawing a stored evidence qu
     );
     expect(quoteRows.map((obs) => obs.value)).toEqual(['', 'Undergraduates join us every fall.']);
   });
+
+  it('re-cites a kept quote to the fetched page that carries it when its cited page does not (#3831)', async () => {
+    const { quoteRows, result } = await runWith(
+      {
+        value: 'Undergraduates join us every fall.',
+        sourceUrl: 'https://example-lab.example.edu/about/join/',
+      },
+      {
+        'https://example-lab.example.edu/': HOME,
+        'https://example-lab.example.edu/about/join/': JOIN,
+      },
+    );
+    expect(quoteRows).toEqual([
+      expect.objectContaining({
+        value: 'Undergraduates join us every fall.',
+        sourceUrl: 'https://example-lab.example.edu/',
+      }),
+    ]);
+    expect(quoteRows[0].assertsNoValueFor).toBeUndefined();
+    expect(result.metrics?.evidenceQuotesRecited).toBe(1);
+    expect(result.metrics?.evidenceQuotesWithdrawn).toBe(0);
+  });
+
+  it('restates nothing when the cited page is read and carries the quote (#3831)', async () => {
+    const { quoteRows, result } = await runWith(
+      {
+        value: 'Undergraduates join us every fall.',
+        sourceUrl: 'https://example-lab.example.edu/',
+      },
+      { 'https://example-lab.example.edu/': HOME },
+    );
+    expect(quoteRows).toEqual([]);
+    expect(result.metrics?.evidenceQuotesRecited).toBe(0);
+  });
 });
