@@ -167,13 +167,20 @@ export class SweepCheckpointStore {
     const flags = input.flags ?? '';
     if (input.restart) removeSweepCheckpoint(input.checkpointPath);
     const existing = input.restart ? undefined : readSweepCheckpoint(input.checkpointPath);
-    if (existing && existing.mode === input.mode && existing.flags === flags) {
+    const codeMoved = Boolean(
+      existing?.codeSha && input.codeSha && existing.codeSha !== input.codeSha,
+    );
+    if (existing && existing.mode === input.mode && existing.flags === flags && !codeMoved) {
       assertCheckpointNotOwnedByLiveSweep(existing, input.checkpointPath);
       return { store: new SweepCheckpointStore(input.checkpointPath, existing), resumed: true };
     }
     if (existing && existing.mode === input.mode && existing.flags !== flags) {
       console.warn(
         `[checkpoint] not resuming ${input.mode}: checkpoint was recorded for flags "${existing.flags || '(none)'}" but this invocation uses "${flags || '(none)'}"`,
+      );
+    } else if (existing && existing.mode === input.mode && codeMoved) {
+      console.warn(
+        `[checkpoint] not resuming ${input.mode}: checkpoint was recorded at ${existing.codeSha} but the checkout is at ${input.codeSha}, so this is a new sweep; to resume the earlier one, reset the checkout to ${existing.codeSha} and run again`,
       );
     }
     const checkpoint = createSweepCheckpoint({
