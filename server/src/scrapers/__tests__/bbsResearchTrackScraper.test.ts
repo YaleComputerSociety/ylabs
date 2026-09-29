@@ -29,6 +29,26 @@ function trackListingHtml(rows: Array<{ slug: string; label: string }>, extraLin
   return `<html><body><ul class="link-items-list">${items}</ul>${extraLinks}</body></html>`;
 }
 
+/**
+ * The other shape the CMS serves: a plain two-column table, with no `link-items-list` wrapper,
+ * no `hyperlink` class, and the name as "First Last" rather than "Last, First". Read off the live
+ * `plantmolbio` page, which parsed to zero faculty for three runs under the list-only selector
+ * (#3833).
+ */
+function trackTableListingHtml(rows: Array<{ slug: string; label: string }>): string {
+  const body = rows
+    .map(
+      (row) =>
+        `<tr><td><a href="https://medicine.yale.edu/bbs/profile/${row.slug}/">${row.label}</a></td>` +
+        `<td>Professor</td></tr>`,
+    )
+    .join('');
+  return (
+    `<html><body><nav><a href="/bbs/profile/navigation_only/">Nav link</a></nav>` +
+    `<table><tr><th>Name</th><th>Title</th></tr>${body}</table></body></html>`
+  );
+}
+
 function bbsProfileHtml(options: { canonicalSlug: string; labUrls?: string[] }): string {
   const labLinks = (options.labUrls || []).map((url) => `<a href="${url}">Lab</a>`).join('');
   return (
@@ -145,6 +165,29 @@ describe('parseBbsTrackFaculty', () => {
         profileUrl: 'https://medicine.yale.edu/bbs/profile/morgan-lee/',
       },
     ]);
+  });
+
+  it('extracts faculty from a table listing, which is the other shape the CMS serves (#3833)', () => {
+    const faculty = parseBbsTrackFaculty(
+      trackTableListingHtml([
+        { slug: 'gary_brudvig', label: 'Gary Brudvig' },
+        { slug: 'vivian_irish', label: 'Vivian Irish' },
+      ]),
+      'https://medicine.yale.edu/bbs/people/plantmolbio/',
+    );
+    expect(faculty.map((entry) => entry.profileSlug)).toEqual(['gary_brudvig', 'vivian_irish']);
+    // "First Last" needs no second name rule, since the comma form falls through unchanged.
+    expect(faculty[0].name).toBe('Gary Brudvig');
+  });
+
+  // The selector matches roster containers rather than every profile link on the page, because a
+  // track page also links profiles from navigation and related-content blocks.
+  it('ignores a profile link that is in neither a roster list item nor a table row', () => {
+    const faculty = parseBbsTrackFaculty(
+      trackTableListingHtml([{ slug: 'gary_brudvig', label: 'Gary Brudvig' }]),
+      'https://medicine.yale.edu/bbs/people/plantmolbio/',
+    );
+    expect(faculty.map((entry) => entry.profileSlug)).toEqual(['gary_brudvig']);
   });
 
   it('derives the profile slug from a BBS profile URL', () => {
@@ -537,5 +580,58 @@ describe('resolveBbsResearchHome netid conflict on the profile arm (#3342)', () 
       status: 'matched',
       entityId: '999999999999999999999999',
     });
+  });
+});
+
+/**
+ * #3833's loudness contract, agreed with the manager: every empty track warns, and a track that
+ * has listed PIs before also fails this lane's stage, naming the track. The failure travels as a
+ * `partialFailures` entry, which the orchestrator turns into a run error and the CLI turns into a
+ * non-zero exit for this source's own subprocess, so the rest of the sweep still runs.
+ */
+describe('an empty track listing', () => {
+  const emptyPages = {
+    'https://medicine.yale.edu/bbs/people/immunology/': '<html><body><ul></ul></body></html>',
+  } as Record<string, string>;
+
+  it('warns but does not fail the stage when the track has never listed anybody', async () => {
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => emptyPages[url] ?? '',
+      entityFinder: async () => [],
+      trackEverListedPis: async () => false,
+    });
+    const { ctx, logs } = makeContext({ only: ['immunology'] });
+    const result = await scraper.run(ctx);
+    expect(logs.some((line) => /WARNING: this track listed no faculty/.test(line))).toBe(true);
+    expect(result.partialFailures ?? []).toEqual([]);
+  });
+
+  it('fails the stage and names the track when it has listed PIs before', async () => {
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => emptyPages[url] ?? '',
+      entityFinder: async () => [],
+      trackEverListedPis: async () => true,
+    });
+    const { ctx, logs } = makeContext({ only: ['immunology'] });
+    const result = await scraper.run(ctx);
+    expect(logs.some((line) => /WARNING: this track listed no faculty/.test(line))).toBe(true);
+    expect(result.partialFailures).toHaveLength(1);
+    expect(result.partialFailures?.[0]).toContain('immunology');
+    expect(result.partialFailures?.[0]).toMatch(/listed no faculty but has listed PIs before/);
+  });
+
+  it('reports nothing when the track lists faculty', async () => {
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) =>
+        url.endsWith('/people/immunology/')
+          ? trackListingHtml([{ slug: 'alex-rivera', label: 'Rivera, Alex' }])
+          : bbsProfileHtml({ canonicalSlug: 'alex-rivera' }),
+      entityFinder: async () => [],
+      trackEverListedPis: async () => true,
+    });
+    const { ctx, logs } = makeContext({ only: ['immunology'] });
+    const result = await scraper.run(ctx);
+    expect(logs.some((line) => /WARNING: this track listed no faculty/.test(line))).toBe(false);
+    expect(result.partialFailures ?? []).toEqual([]);
   });
 });

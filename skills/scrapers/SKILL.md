@@ -50,6 +50,11 @@ Three call sites, two of which do not use the helper and say why:
 - the retirement pass restates them in `staffMintedEntityReasonFor`, because it has to name *which* screen refused in order to report by reason.
 
 `bbs-research-track` no longer mints at all (#3561): a PI with no existing row, or several, is counted by reason and skipped, so it needs none of the three screens.
+Its track listings come in two shapes and the parser must match both: most render the roster as `link-items-list__item` anchors with the name as "Last, First", while at least one renders a plain two-column table with no `link-items-list` wrapper, no `hyperlink` class, and the name as "First Last".
+The selector matches a roster list item or a table row rather than every `/bbs/profile/` link on the page, because a track page also links profiles from navigation and related-content blocks.
+A list-only selector made `plantmolbio` parse to zero faculty for three consecutive runs while every run reported success (#3833).
+An empty track now warns every time, and a track that has listed PIs before also returns a `partialFailures` entry naming it, which the orchestrator turns into a run error and the CLI turns into a non-zero exit for that source's own subprocess, so the lane's stage fails while the rest of the sweep still runs.
+The per-source barren-streak check cannot see this, because the lane's other tracks keep yielding and the source's own total never reaches zero.
 
 `isResearchSupportStaffTitle` **yields to a stated faculty appointment**, and that is the whole reason it is not folded into `looksLikeNonResearchTitle`.
 Measured against all 5,573 distinct stored titles in the corpus, every title the vocabulary puts at risk is a conjoined appointment - a Special Collections Librarian who is also a Lecturer in American Religious History - and putting `librarian` in the short-circuiting list would refuse exactly those people.

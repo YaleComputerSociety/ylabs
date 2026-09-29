@@ -27,6 +27,8 @@
  */
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import mongoose from 'mongoose';
+import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -212,16 +214,33 @@ function nameFromLastCommaFirst(raw: string): string {
 }
 
 /**
- * Parse a BBS track listing page into the faculty it lists. The roster renders
- * as `link-items-list__item` anchors linking each PI's `/bbs/profile/<slug>`
- * page (name is "Last, First"); the same data is duplicated in an escaped JSON
- * blob, so dedupe by profile slug.
+ * Parse a BBS track listing page into the faculty it lists, in either shape the CMS serves.
+ *
+ * Most tracks render the roster as `link-items-list__item` anchors linking each PI's
+ * `/bbs/profile/<slug>` page, with the name as "Last, First". At least one track serves the same
+ * roster as a plain two-column table instead, with no `link-items-list` wrapper and no
+ * `hyperlink` class anywhere on the page, and the name as "First Last". The old selector required
+ * all three of those, so that track parsed to zero faculty for three consecutive runs while the
+ * run reported success (#3833).
+ *
+ * Both shapes are matched rather than the union of every `/bbs/profile/` link on the page,
+ * because a track page also links profiles from navigation and related-content blocks and those
+ * are not roster members. A link inside a roster list item or a table row is; anything else is
+ * not. `nameFromLastCommaFirst` already passes an uncommaed "First Last" through unchanged, so
+ * the name needs no second rule.
+ *
+ * The same data is duplicated in an escaped JSON blob, so dedupe by profile slug.
  */
+const BBS_ROSTER_LINK_SELECTORS = [
+  'li.link-items-list__item a[href*="/bbs/profile/"]',
+  'table tr td a[href*="/bbs/profile/"]',
+].join(', ');
+
 export function parseBbsTrackFaculty(html: string, pageUrl: string): BbsFacultyRef[] {
   if (!html) return [];
   const $ = cheerio.load(html);
   const bySlug = new Map<string, BbsFacultyRef>();
-  $('li.link-items-list__item a.hyperlink[href*="/bbs/profile/"]').each((_i, el) => {
+  $(BBS_ROSTER_LINK_SELECTORS).each((_i, el) => {
     const link = $(el);
     const href = link.attr('href') || '';
     const profileSlug = bbsProfileSlugFromUrl(href);
@@ -508,9 +527,36 @@ export type FetchBbsPageFn = (url: string, useCache: boolean) => Promise<string 
 
 export type BbsEntityFinderFn = () => Promise<BbsCandidateEntity[]>;
 
+export type TrackEverListedPisFn = (trackUrl: string) => Promise<boolean>;
+
 export interface BbsResearchTrackScraperDeps {
   fetchPage?: FetchBbsPageFn;
   entityFinder?: BbsEntityFinderFn;
+  trackEverListedPis?: TrackEverListedPisFn;
+}
+
+/**
+ * Whether this lane has ever recorded a PI from this track page.
+ *
+ * A track that lists nobody is either a page that changed shape or a parser that broke on it, and
+ * both are defects. Neither was visible: the lane logged `0 faculty listed` and carried on, so
+ * `plantmolbio` parsed to zero for three consecutive runs while every run reported success
+ * (#3833). The per-source barren-streak check cannot see it either, because the lane's other
+ * tracks keep yielding and the source's own total never drops to zero.
+ *
+ * The distinction between a warning and a stage failure is this read: a track that never listed
+ * anybody may simply be empty upstream, while a track that used to list PIs and now lists none is
+ * unambiguously a defect. Fails open, returning false, because an unanswerable read must not
+ * invent a failure.
+ */
+async function defaultTrackEverListedPis(trackUrl: string): Promise<boolean> {
+  if (mongoose.connection.readyState !== 1) return false;
+  const seen = await Observation.exists({
+    entityType: 'researchEntity',
+    sourceName: SOURCE_KEY,
+    sourceUrl: trackUrl,
+  });
+  return Boolean(seen);
 }
 
 async function defaultFetchPage(url: string, useCache: boolean): Promise<string | null> {
@@ -607,10 +653,13 @@ export class BbsResearchTrackScraper implements IScraper {
 
   private readonly fetchPage: FetchBbsPageFn;
   private readonly entityFinder: BbsEntityFinderFn;
+  private readonly trackEverListedPis: TrackEverListedPisFn;
+  private readonly emptyTrackFailures: string[] = [];
 
   constructor(deps: BbsResearchTrackScraperDeps = {}) {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
     this.entityFinder = deps.entityFinder || defaultEntityFinder;
+    this.trackEverListedPis = deps.trackEverListedPis || defaultTrackEverListedPis;
   }
 
   private async collectTrackPis(ctx: ScraperContext): Promise<Map<string, BbsTrackPi>> {
@@ -631,6 +680,20 @@ export class BbsResearchTrackScraper implements IScraper {
       if (!html) continue;
       const faculty = parseBbsTrackFaculty(html, track.url);
       ctx.log(`[${track.slug}] ${faculty.length} faculty listed`);
+      if (faculty.length === 0) {
+        // A warning whatever the history, so an empty track is never silent again.
+        ctx.log(
+          `[${track.slug}] WARNING: this track listed no faculty; the page shape or the parser changed (#3833)`,
+        );
+        if (await this.trackEverListedPis(track.url)) {
+          // An error only here, because this track has listed PIs before, so zero is a defect
+          // rather than an empty programme. It names the track and reaches the run's errors, which
+          // fails this lane's stage; every other source is its own subprocess and still runs.
+          this.emptyTrackFailures.push(
+            `${track.slug} listed no faculty but has listed PIs before, so the track page or the parser is broken (#3833)`,
+          );
+        }
+      }
       for (const ref of faculty) {
         const existing = byProfileSlug.get(ref.profileSlug);
         if (existing) {
@@ -711,6 +774,9 @@ export class BbsResearchTrackScraper implements IScraper {
     return {
       observationCount,
       entitiesObserved: grafted,
+      ...(this.emptyTrackFailures.length > 0
+        ? { partialFailures: [...this.emptyTrackFailures] }
+        : {}),
       notes:
         `rows enriched: ${grafted} of ${pis.size} track PIs; not attached: ` +
         `${noExistingRow} have no existing research row (a track listing never mints one, #3561), ` +
