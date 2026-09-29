@@ -2524,7 +2524,9 @@ export async function materializeInferredPiMembership(
 }
 
 type RosterEmailAliasResolution =
-  { status: 'resolved'; netid: string } | { status: 'absent' } | { status: 'ambiguous' };
+  | { status: 'resolved'; netid: string }
+  | { status: 'absent' }
+  | { status: 'ambiguous' };
 
 /**
  * A department roster publishes the friendly email alias (`first.last`) rather than the
