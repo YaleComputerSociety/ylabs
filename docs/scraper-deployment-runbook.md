@@ -534,6 +534,7 @@ The coupling is the `winnerFullUseful` guard in `server/src/scrapers/entityMater
 A winner that restates the stored short is rejected, and the ranked walk can terminate having written nothing.
 Since #2721 the materializer answers that pair by keeping the body and reopening the card for re-derivation instead of clearing `fullDescription`, so a stale short no longer costs a row its prose.
 What it costs is the distinct body the walk refused: the row keeps a redundant pair until the stale short is unset, and card reconsideration writes a replacement only when one clears the card bar and beats the bare research-areas echo.
+Nor does it trade a card that clears the bar for one that restates the body (#3866): a single-sentence body derives itself as its card, and served beside its own body that card reads as empty, so the replacement cost 9 Development rows their `student_ready` tier while each still had a live card observation.
 
 The walk itself may not answer a pair rejection with a career biography, and until #2901 it did.
 Both reasons a winner is rejected here are relationships to the CARD rather than judgements of the body, and a biography satisfies both by construction: a resume never restates a research card and is never thinner than one.

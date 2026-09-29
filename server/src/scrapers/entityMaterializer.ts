@@ -495,6 +495,15 @@ export async function resolveMaterializedShortDescription(
   const groundedIsBareResearchAreasEcho =
     !!researchAreasCardSummary && grounded.toLowerCase() === researchAreasCardSummary.toLowerCase();
   if (currentClearsCardBar && groundedIsBareResearchAreasEcho) return null;
+  // Reconsidering is triggered by a body that restates the current card, so a replacement
+  // that restates the body too is no upgrade: a single-sentence body derives itself as its
+  // card, and served beside its own body that card reads as empty and refuses the row (#3866).
+  if (
+    currentClearsCardBar &&
+    isFullDescriptionRestatementOfShortDescription(textValue(input.fullDescription), grounded)
+  ) {
+    return null;
+  }
   return grounded;
 }
 

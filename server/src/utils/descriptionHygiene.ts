@@ -135,19 +135,25 @@ export function stripDanglingSourceSiteReferenceSentences(text: string): string 
 const PROTECTED_ABBREVIATION_TAIL =
   /(?:^|\s)(?:Prof|Drs?|Mr|Mrs|Ms|Mx|Sr|Jr|St|Ave|Rd|Blvd|Inc|Ltd|Co|Corp|Dept|Univ|Assoc|Vol|No|pp|Fig|vs|etc|al)\.\s*$/i;
 
+const LATIN_EXAMPLE_ABBREVIATION_TAIL = /(?:^|[\s([])(?:[ei]\.|e\.g\.\s*|i\.e\.\s*)$/i;
+
+function isAbbreviationSplit(segment: string): boolean {
+  return PROTECTED_ABBREVIATION_TAIL.test(segment) || LATIN_EXAMPLE_ABBREVIATION_TAIL.test(segment);
+}
+
 /**
  * Re-join sentence segments that the terminal-punctuation tiling split inside a
- * common abbreviation (a title like "Prof."/"Dr.", or "Inc."/"etc."). Operating
- * on the lossless partition means the merge cannot drop or reorder any
- * character; it only removes an internal split point, so segment-level filtering
- * and deduplication downstream reason over whole sentences rather than
- * abbreviation fragments.
+ * common abbreviation (a title like "Prof."/"Dr.", "Inc."/"etc.", or a
+ * parenthetical "e.g."/"i.e."). Operating on the lossless partition means the
+ * merge cannot drop or reorder any character; it only removes an internal split
+ * point, so segment-level filtering and deduplication downstream reason over
+ * whole sentences rather than abbreviation fragments.
  */
 function mergeAbbreviationSplitSentences(segments: string[]): string[] {
   const merged: string[] = [];
   for (const segment of segments) {
     const previousIndex = merged.length - 1;
-    if (previousIndex >= 0 && PROTECTED_ABBREVIATION_TAIL.test(merged[previousIndex])) {
+    if (previousIndex >= 0 && isAbbreviationSplit(merged[previousIndex])) {
       merged[previousIndex] += segment;
     } else {
       merged.push(segment);
