@@ -113,7 +113,7 @@ describe('fellowship materialization', () => {
     expect(find).toHaveBeenCalledWith({
       $or: [
         { sourceName: 'yale-college-fellowships-office' },
-        { sourceName: { $in: ['', null] } },
+        { sourceName: { $in: ['', null, 'student-grants-database'] } },
         { sourceName: { $exists: false } },
       ],
     });

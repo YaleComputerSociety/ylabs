@@ -504,6 +504,31 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toBe(true);
   });
 
+  it('ignores a sourceUrl the enrich-only fellowship source logged, and nothing else it asserts', () => {
+    const fundPage = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FUNDA';
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('fellowship', {
+        field: 'sourceUrl',
+        sourceName: 'student-grants-database',
+        value: fundPage,
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('fellowship', {
+        field: 'deadline',
+        sourceName: 'student-grants-database',
+        value: '2027-02-01',
+      }),
+    ).toBe(false);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('fellowship', {
+        field: 'sourceUrl',
+        sourceName: 'yale-college-fellowships-office',
+        value: 'https://funding.yale.edu/fixture-fellowship',
+      }),
+    ).toBe(false);
+  });
+
   it('ignores official-profile bio observations that are address or page chrome', () => {
     expect(
       shouldIgnoreObservationForEntityMaterialization('user', {

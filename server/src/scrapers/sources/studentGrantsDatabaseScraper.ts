@@ -340,7 +340,6 @@ export function fundToObservations(fund: StudentGrantsFund): ObservationInput[] 
   return [
     observation('sourceKey', fund.sourceKey),
     observation('sourceName', STUDENT_GRANTS_DATABASE_SOURCE),
-    observation('sourceUrl', fund.url),
     observation('sourceFingerprint', fundFingerprint(fund)),
     observation('title', fund.title),
     observation('description', fund.description),
