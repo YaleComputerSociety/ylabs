@@ -985,8 +985,8 @@ export const fuseKeywordAndSemanticRankings = <T>(
 const PERSON_FIELD_ATTRIBUTES = ['leadProfessorNames', 'professorNames'];
 const PERSON_NAME_ATTRIBUTES = [...PERSON_FIELD_ATTRIBUTES, 'name', 'displayName'];
 
-// A query is a person search only when every one of its words is matched, exactly,
-// inside a person's name on the best keyword hit. The semantic neighbours of a name
+// A query is a person search only when every one of its words is matched inside a
+// person's name on the best keyword hit. The semantic neighbours of a name
 // are other people with similar names: the blind judges preferred production on 7
 // of 15 name queries until those rows were withheld. The entity title counts,
 // because a faculty row is titled after its person and its lead names are often
@@ -994,8 +994,9 @@ const PERSON_NAME_ATTRIBUTES = [...PERSON_FIELD_ATTRIBUTES, 'name', 'displayName
 // name queries and person-name nDCG@10 fell from 0.750 to 0.580. A typo or prefix
 // match does not count, so `green chemistry` under a lead named Green or `brain`
 // reaching Braun keeps its meaning-based rows. A topic word that is a whole title
-// word ("Neuroscience Lab") does withhold them, which the evaluation measured as
-// cheap, because such a query already has many keyword rows. See #3797, #3853.
+// word ("Neuroscience Lab") withholds them only when the row does not also match
+// the query in a topic field, which the evaluation measured as cheap, because such
+// a query already has many keyword rows. See #3797, #3853.
 const normalizeNameMatchText = (value: string): string =>
   value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
