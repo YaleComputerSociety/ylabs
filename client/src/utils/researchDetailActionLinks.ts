@@ -35,7 +35,6 @@ import type { ResearchGroup } from '../types/researchGroup';
 export interface ResearchDetailActionLinkContext {
   websiteUrl?: string;
   profileUrl?: string;
-  piEmail?: string;
   hasLeadCard: boolean;
   profileNeedsOwnButton: boolean;
   preferOrgEngagementOutreach: boolean;
@@ -64,7 +63,6 @@ export function resolveResearchDetailActionLinks(
   const {
     websiteUrl,
     profileUrl,
-    piEmail,
     hasLeadCard,
     profileNeedsOwnButton,
     preferOrgEngagementOutreach,
@@ -77,7 +75,6 @@ export function resolveResearchDetailActionLinks(
   const showsWebsiteCta = (() => {
     if (!websiteUrl) return false;
     if (preferOrgEngagementOutreach && officialSource) return false;
-    if (piEmail) return false;
     if (profileNeedsOwnButton) return false;
     return !repeatsLeadCardProfileLink;
   })();
@@ -188,7 +185,6 @@ export function resolveResearchDetailActionLinkContext({
   return {
     websiteUrl: officialWebsiteUrl,
     profileUrl: decisionProfileUrl,
-    piEmail: singlePrincipalInvestigator?.user?.email?.trim(),
     hasLeadCard: Boolean(singlePrincipalInvestigator),
     profileNeedsOwnButton:
       Boolean(decisionProfileUrl) && !singlePrincipalInvestigator && !leadProfilesLinkedInline,

@@ -464,7 +464,6 @@ const DecisionSummary = ({
   const actionLinks = resolveResearchDetailActionLinks({
     websiteUrl,
     profileUrl,
-    piEmail: piMailtoHref,
     hasLeadCard: Boolean(principalInvestigator),
     profileNeedsOwnButton,
     preferOrgEngagementOutreach,

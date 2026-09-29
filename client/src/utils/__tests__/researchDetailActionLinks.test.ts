@@ -55,15 +55,7 @@ describe('resolveResearchDetailActionLinks (#3288)', () => {
     expect(links.offersBothLinks).toBe(false);
   });
 
-  it('suppresses the website slot for an email or an own-button profile', () => {
-    expect(
-      resolveResearchDetailActionLinks({
-        ...base,
-        profileUrl: PROFILE,
-        websiteUrl: WEBSITE,
-        piEmail: 'mailto:x@example.test',
-      }).showsWebsiteCta,
-    ).toBe(false);
+  it('suppresses the website slot for an own-button profile', () => {
     expect(
       resolveResearchDetailActionLinks({
         ...base,
