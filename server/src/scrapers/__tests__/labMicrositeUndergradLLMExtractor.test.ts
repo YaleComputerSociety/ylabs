@@ -23,6 +23,7 @@ import {
   extractionToObservations,
   pageContainingQuote,
   pagesWithinEntityScope,
+  evidenceQuoteRecitationObservation,
   evidenceQuoteIsWithdrawnByRead,
   quoteFieldsNotOnPage,
   deriveCurrentUndergradCount,
@@ -453,6 +454,40 @@ describe('namesNonYaleInstitution visiting scope (#3775)', () => {
     expect(
       namesNonYaleInstitution('Alex Example, undergraduate (visiting, Swarthmore College)'),
     ).toBe(true);
+  });
+});
+
+describe('evidenceQuoteRecitationObservation (#3831)', () => {
+  const live = {
+    value: 'The internship program hosts college undergraduates each summer.',
+    sourceUrl: 'https://lab.example.edu/profile',
+  };
+
+  it('re-cites a kept quote to the fetched page that carries it', () => {
+    const recited = evidenceQuoteRecitationObservation('lab-a', live, [
+      { url: 'https://lab.example.edu/', text: 'The lab home page.' },
+      { url: 'https://lab.example.edu/program', text: `Intro. ${live.value} More.` },
+      { url: 'https://lab.example.edu/profile', text: 'A profile with no such sentence.' },
+    ]);
+    expect(recited).toMatchObject({
+      entityKey: 'lab-a',
+      field: 'undergradEvidenceQuote',
+      value: live.value,
+      sourceUrl: 'https://lab.example.edu/program',
+    });
+  });
+
+  it('restates nothing when the cited page already carries the quote, or no page does', () => {
+    expect(
+      evidenceQuoteRecitationObservation('lab-a', live, [
+        { url: 'https://lab.example.edu/profile', text: live.value },
+      ]),
+    ).toBeNull();
+    expect(
+      evidenceQuoteRecitationObservation('lab-a', live, [
+        { url: 'https://lab.example.edu/profile', text: 'Nothing here.' },
+      ]),
+    ).toBeNull();
   });
 });
 

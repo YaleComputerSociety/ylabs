@@ -9,13 +9,18 @@ import {
 } from '../utils/researchHomeWebsiteUrl';
 
 const NON_ACCESS_UNDERGRADUATE_SPANS: readonly RegExp[] = [
-  /\b(?:co-?)?(?:teach(?:es|ing)?|taught|instructs?|lectur(?:es|ing))(?:\s+(?!(?:and|or|but)\b)[\w-]+){0,4}?\s+undergrad(?:uate)?s?\b(?:(?:\s+(?!undergrad)[\w-]+){0,5}?\s+(?:courses?|classes|seminars?|surveys?|lectures?|curriculum|students?|levels?)\b)?/gi,
+  /\b(?:co-?)?(?:teach(?:es|ing)?|taught|instructs?|lectur(?:es|ing))(?:\s+(?!(?:and|or|but)\b)[\w-]+){0,6}?\s+undergrad(?:uate)?s?\b(?:(?:\s+(?!undergrad)[\w-]+){0,5}?\s+(?:courses?|classes|seminars?|surveys?|lectures?|curriculum|students?|levels?)\b)?/gi,
   /\b(?:courses?(?:\s+and\s+seminars?)?|course\s+type)\s*:?\s*undergrad(?:uate)?\b/gi,
-  /\bundergrad(?:uate)?\s+(?:(?:and|or|&)\s+(?:[a-z-]+\s+)?)?(?:courses?|teaching|classes|seminars?|curriculum|lectures?)\b(?!\s+credit)/gi,
+  /\bundergrad(?:uate)?\s+(?:(?:and|or|&)\s+(?:[a-z-]+\s+)?)?(?:courses?|teaching|class(?:es)?|seminars?|curriculum|lectures?)\b(?!\s+credit)/gi,
   /\b(?:(?:associate|assistant|deputy|co-)\s*)?(?:director|dean|registrar|chair)\s+of\s+(?:[\w&,]+\s+){0,6}?undergrad(?:uate)?\s+(?:studies|education|research|affairs|admissions|programs?|curriculum)\b/gi,
   /\bundergrad(?:uate)?\s+(?:major|programs?|degree(?!s)|curriculum|concentrations?|certificates?|admissions?)\b/gi,
   /(?<!\b(?:his|her|their|my|during)\s+)\bundergrad(?:uate)?\s+(?:studies|education)\b/gi,
   /(?<!\bduring\s+)\b(?:his|her|their|my)\s+undergrad(?:uate)?\s+(?:degree|education|training|studies)\b/gi,
+  /\b(?:freshm(?:an|en)|first[- ]years?|sophomores?|juniors?|seniors?)\s+(?:seminars?|courses?|colloqui(?:um|a)|lectures?|tutorials?)\b/gi,
+  /\bundergrad(?:uate)?\s+faculty\b/gi,
+  /\b[A-Z][A-Z&]{1,5}\s?\d{3,4}[A-Z]?\b.{0,120}?\b[Uu]ndergrad(?:uate)?\b/g,
+  /\b(?:a\s+)?graduate\s+of\s+yale\s+college\b|\bgraduated\s+from\s+yale\s+college\b/gi,
+  /\bat\s+the\s+under\s?graduate\s+level,?\s+(?:he|she|they|i|we)\s+(?:teach(?:es)?|taught|lectures?)\b/gi,
 ];
 
 const withoutNonAccessSpans = (text: string | undefined | null): string => {

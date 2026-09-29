@@ -483,6 +483,31 @@ export function evidenceQuoteIsWithdrawnByRead(
   return pageContainingQuote(live.value, pagesWithinEntityScope(readPages)) === null;
 }
 
+/**
+ * A stored quote that a read keeps, but on a page other than the one it cites (#3831).
+ * Observations written before #3679 cite the page the lane was handed, usually the entity's own
+ * profile, so the page check reads that profile rather than the program page the words are on.
+ * The lane restates its own evidence from the page that carries it: the same value, cited to that
+ * page, as a latest-wins observation. No field is written directly.
+ */
+export function evidenceQuoteRecitationObservation(
+  entityKey: string,
+  live: LiveEvidenceQuote,
+  readPages: readonly PromptSourcePage[],
+): ObservationInput | null {
+  const carrying = pageContainingQuote(live.value, pagesWithinEntityScope(readPages));
+  if (!carrying) return null;
+  if (pageUrlIdentity(carrying.url) === pageUrlIdentity(live.sourceUrl)) return null;
+  return {
+    entityType: 'researchEntity',
+    entityKey,
+    sourceUrl: carrying.url,
+    field: UNDERGRAD_EVIDENCE_QUOTE_FIELD,
+    value: live.value,
+    confidenceOverride: 0.5,
+  };
+}
+
 export function evidenceQuoteWithdrawalObservation(
   entityKey: string,
   live: LiveEvidenceQuote,
@@ -1234,6 +1259,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     let contentUnchangedSkipped = 0;
     let quotesNotOnPage = 0;
     let evidenceQuotesWithdrawn = 0;
+    let evidenceQuotesRecited = 0;
     const fetchAttempts: ScraperFetchMetric[] = [];
     const workPlannerPolicy = ctx.options.ignoreWorkPlanner
       ? undefined
@@ -1347,6 +1373,17 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
             );
             evidenceQuotesWithdrawn += 1;
             totalObs += 1;
+          } else {
+            const recitation = evidenceQuoteRecitationObservation(
+              lab.slug,
+              liveEvidenceQuote,
+              readPages,
+            );
+            if (recitation) {
+              await abortLaneOnFailure(() => ctx.emit([recitation]));
+              evidenceQuotesRecited += 1;
+              totalObs += 1;
+            }
           }
         }
 
@@ -1470,11 +1507,12 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: succeeded,
-      notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed, ${processingFailed} processing-failed, ${contentUnchangedSkipped} content-unchanged skipped, ${quotesNotOnPage} quotes not on page, ${evidenceQuotesWithdrawn} stored evidence quotes withdrawn, ${workPlannerMetrics.skippedFresh + workPlannerMetrics.skippedManualLock} workplanner-skipped)`,
+      notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed, ${processingFailed} processing-failed, ${contentUnchangedSkipped} content-unchanged skipped, ${quotesNotOnPage} quotes not on page, ${evidenceQuotesWithdrawn} stored evidence quotes withdrawn, ${evidenceQuotesRecited} re-cited, ${workPlannerMetrics.skippedFresh + workPlannerMetrics.skippedManualLock} workplanner-skipped)`,
       metrics: {
         workPlanner: workPlannerMetrics,
         quotesNotOnPage,
         evidenceQuotesWithdrawn,
+        evidenceQuotesRecited,
       },
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
