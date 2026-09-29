@@ -51,6 +51,7 @@ import {
   syncEntities,
   deleteFromIndex,
   isSyncableEntityType,
+  withDeferredIndexConfirmation,
 } from '../meiliSyncService';
 
 beforeEach(() => {
@@ -377,5 +378,97 @@ describe('an accepted write counts only once its task succeeds (#3720)', () => {
   it('reports an index that cannot confirm the task as not synced', async () => {
     mocks.addDocuments.mockResolvedValueOnce(undefined);
     await expect(syncEntity('researchEntity', { _id: 'a', name: 't' })).resolves.toBe(false);
+  });
+});
+
+describe('withDeferredIndexConfirmation confirms every write once the pass ends', () => {
+  const failedTask = { status: 'failed', error: { code: 'invalid_document_fields' } };
+
+  it('enqueues without waiting and reports a document whose task later failed', async () => {
+    let taskUid = 10;
+    mocks.addDocuments.mockImplementation(async () => ({ taskUid: taskUid++ }));
+    mocks.waitForTask.mockImplementation(async (uid: number) =>
+      uid === 11 ? failedTask : { status: 'succeeded' },
+    );
+
+    const { value, failedDocumentIds } = await withDeferredIndexConfirmation(async () => {
+      const first = await syncEntity('researchEntity', { _id: 'a', name: 'A' });
+      const second = await syncEntity('researchEntity', { _id: 'b', name: 'B' });
+      expect(mocks.waitForTask).not.toHaveBeenCalled();
+      return [first, second];
+    });
+
+    expect(value).toEqual([true, true]);
+    expect([...failedDocumentIds]).toEqual(['b']);
+    expect(mocks.waitForTask).toHaveBeenCalledTimes(2);
+  });
+
+  it('judges a document by its latest write, so a later success supersedes a failure', async () => {
+    let taskUid = 20;
+    mocks.addDocuments.mockImplementation(async () => ({ taskUid: taskUid++ }));
+    mocks.waitForTask.mockImplementation(async (uid: number) =>
+      uid === 20 ? failedTask : { status: 'succeeded' },
+    );
+
+    const { failedDocumentIds } = await withDeferredIndexConfirmation(async () => {
+      await syncEntity('researchEntity', { _id: 'a', name: 'A' });
+      await syncEntity('researchEntity', { _id: 'a', name: 'A again' });
+    });
+
+    expect(failedDocumentIds.size).toBe(0);
+    expect(mocks.waitForTask).toHaveBeenCalledTimes(1);
+    expect(mocks.waitForTask).toHaveBeenCalledWith(21, expect.anything());
+  });
+
+  it('reports a document whose latest enqueue threw, even after an earlier success', async () => {
+    mocks.addDocuments
+      .mockResolvedValueOnce({ taskUid: 30 })
+      .mockRejectedValueOnce(new Error('meili down'));
+
+    const { value, failedDocumentIds } = await withDeferredIndexConfirmation(async () => [
+      await syncEntity('researchEntity', { _id: 'a', name: 'A' }),
+      await syncEntity('researchEntity', { _id: 'a', name: 'A again' }),
+    ]);
+
+    expect(value).toEqual([true, false]);
+    expect([...failedDocumentIds]).toEqual(['a']);
+  });
+
+  it('treats a confirmation that times out as a failure', async () => {
+    mocks.waitForTask.mockRejectedValue(new Error('timeout of 60000ms has exceeded'));
+
+    const { failedDocumentIds } = await withDeferredIndexConfirmation(async () => {
+      await syncEntity('researchEntity', { _id: 'a', name: 'A' });
+    });
+
+    expect([...failedDocumentIds]).toEqual(['a']);
+  });
+
+  it('confirms an archived-row delete the same way', async () => {
+    mocks.waitForTask.mockResolvedValue(failedTask);
+
+    const { failedDocumentIds } = await withDeferredIndexConfirmation(async () => {
+      await syncEntity('researchEntity', { _id: 'gone', slug: 'x', archived: true });
+    });
+
+    expect([...failedDocumentIds]).toEqual(['gone']);
+  });
+
+  it('waits once per task when several documents share it', async () => {
+    mocks.addDocuments.mockResolvedValue({ taskUid: 40 });
+
+    await withDeferredIndexConfirmation(async () => {
+      await syncEntity('researchEntity', { _id: 'a', name: 'A' });
+      await syncEntity('researchEntity', { _id: 'b', name: 'B' });
+    });
+
+    expect(mocks.waitForTask).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirms immediately again once the scope has ended', async () => {
+    await withDeferredIndexConfirmation(async () => undefined);
+    mocks.waitForTask.mockResolvedValueOnce(failedTask);
+
+    await expect(syncEntity('researchEntity', { _id: 'a', name: 'A' })).resolves.toBe(false);
   });
 });

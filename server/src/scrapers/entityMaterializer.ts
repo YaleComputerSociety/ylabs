@@ -93,7 +93,12 @@ import {
   collapseLatestWins,
   getSourceByName,
 } from './observationStore';
-import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/meiliSyncService';
+import {
+  syncEntity,
+  isSyncableEntityType,
+  deleteFromIndex,
+  withDeferredIndexConfirmation,
+} from '../services/meiliSyncService';
 import {
   listResearchEntityMergedInRows,
   resolveResearchEntityCanonicalByTombstone,
@@ -8148,39 +8153,47 @@ export async function materializeFromRun(
   let conflicts = 0;
   let skipped = 0;
   let errors = 0;
-  let indexSyncFailures = 0;
+  const staleIndexEntityIds = new Set<string>();
+  let staleIndexRowsWithoutId = 0;
   const unbackedResearchAreaOutcomes: Partial<Record<UnbackedResearchAreaOutcome, number>> = {};
   const postMaterializationMetrics = emptyPostMaterializationMetrics();
-  await materializeObservedEntitiesInChunks(
-    distinct.map((row) => ({
-      entityType: row._id.entityType,
-      entityId: row._id.entityId ? String(row._id.entityId) : undefined,
-      entityKey: row._id.entityKey || undefined,
-    })),
-    options,
-    (row, outcome) => {
-      if ('error' in outcome) {
-        errors++;
-        console.error(
-          `materializeFromRun: ${row.entityType} ${row.entityKey || row.entityId} failed:`,
-          sanitizeLogValue(outcome.error),
-        );
-        return;
-      }
-      const res = outcome.result;
-      materialized++;
-      if (res.created) created++;
-      else if (!res.skipped) updated++;
-      if (res.skipped) skipped++;
-      conflicts += res.conflicts;
-      if (res.indexSyncFailed) indexSyncFailures++;
-      if (res.unbackedResearchAreas) {
-        unbackedResearchAreaOutcomes[res.unbackedResearchAreas] =
-          (unbackedResearchAreaOutcomes[res.unbackedResearchAreas] ?? 0) + 1;
-      }
-      addPostMaterializationMetrics(postMaterializationMetrics, res.postMaterializationMetrics);
-    },
+  const { failedDocumentIds } = await withDeferredIndexConfirmation(() =>
+    materializeObservedEntitiesInChunks(
+      distinct.map((row) => ({
+        entityType: row._id.entityType,
+        entityId: row._id.entityId ? String(row._id.entityId) : undefined,
+        entityKey: row._id.entityKey || undefined,
+      })),
+      options,
+      (row, outcome) => {
+        if ('error' in outcome) {
+          errors++;
+          console.error(
+            `materializeFromRun: ${row.entityType} ${row.entityKey || row.entityId} failed:`,
+            sanitizeLogValue(outcome.error),
+          );
+          return;
+        }
+        const res = outcome.result;
+        materialized++;
+        if (res.created) created++;
+        else if (!res.skipped) updated++;
+        if (res.skipped) skipped++;
+        conflicts += res.conflicts;
+        if (res.indexSyncFailed) {
+          if (res.entityId) staleIndexEntityIds.add(String(res.entityId));
+          else staleIndexRowsWithoutId += 1;
+        }
+        if (res.unbackedResearchAreas) {
+          unbackedResearchAreaOutcomes[res.unbackedResearchAreas] =
+            (unbackedResearchAreaOutcomes[res.unbackedResearchAreas] ?? 0) + 1;
+        }
+        addPostMaterializationMetrics(postMaterializationMetrics, res.postMaterializationMetrics);
+      },
+    ),
   );
+  for (const documentId of failedDocumentIds) staleIndexEntityIds.add(documentId);
+  const indexSyncFailures = staleIndexEntityIds.size + staleIndexRowsWithoutId;
   if (Object.keys(unbackedResearchAreaOutcomes).length > 0) {
     console.info(
       `[unbacked-research-areas] rows whose stored researchAreas no live evidence states: ${JSON.stringify(unbackedResearchAreaOutcomes)}`,
