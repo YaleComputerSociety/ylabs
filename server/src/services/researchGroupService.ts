@@ -1033,7 +1033,9 @@ const personNameSpans = (hit: any, attributes: string[]): PersonNameSpans => {
 // Every query word must be matched at the start of a word in a name, and at least
 // one must be a whole word: that admits a short first name ("steve" for Steven)
 // beside an exact surname, and still refuses a lone prefix ("stone" inside
-// Stoneman) or a typo, whose highlighted text is not the typed word.
+// Stoneman) or a typo, whose highlighted text is not the typed word. Meili
+// highlights a non-final "steve" as the whole typo-matched "Steven", so a word
+// start counts when the highlighted word begins with the query word.
 // A title match is a person match only when the same row does not also match the
 // query in its topic fields: "Statistics Lab" matches `statistics` in its
 // departments too, while "<Person> Faculty Research" matches a surname only in its
@@ -1059,7 +1061,7 @@ export const keywordLegTopHitIsNameMatch = (
   const matchesNamesIn = (attributes: string[]) => {
     const spans = personNameSpans(top, attributes);
     return (
-      tokens.every((token) => spans.wordStarts.has(token)) &&
+      tokens.every((token) => [...spans.wordStarts].some((span) => span.startsWith(token))) &&
       tokens.some((token) => spans.wholeWords.has(token))
     );
   };

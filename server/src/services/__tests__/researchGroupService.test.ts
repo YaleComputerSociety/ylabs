@@ -1655,6 +1655,23 @@ describe('searchResearchGroupsViaMeili', () => {
       expect(keywordLegTopHitIsNameMatch([lead('Adaline Fixture', [[0, 3]])], ['ada'])).toBe(false);
     });
 
+    it('admits a short first name before the surname, which Meili highlights as the whole typo-matched word (#3853)', () => {
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            lead('Steven Vexmoor', [
+              [0, 6],
+              [7, 7],
+            ]),
+          ],
+          ['steve', 'vexmoor'],
+        ),
+      ).toBe(true);
+      expect(keywordLegTopHitIsNameMatch([lead('Steven Vexmoor', [[0, 6]])], ['steve'])).toBe(
+        false,
+      );
+    });
+
     it('is false when a topic word only happens to match a surname', () => {
       const greenLead = {
         ...lead('Pat Green', [[4, 5]]),
