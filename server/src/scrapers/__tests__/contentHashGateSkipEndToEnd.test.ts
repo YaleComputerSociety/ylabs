@@ -19,6 +19,8 @@ import {
   type WorkPlanLoaderFn,
 } from '../sources/labMicrositeUndergradLLMExtractor';
 import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
+import { extractLabHomepageDescription } from '../sources/ysmAtoZScraper';
+import { htmlToText } from '../sources/labMicrositeDescriptionLLMExtractor';
 import type { ObservationInput, ScraperContext } from '../types';
 
 function makeContext(overrides: Partial<ScraperContext['options']> = {}): {
@@ -64,6 +66,20 @@ const alwaysFetchWorkPlan: WorkPlanLoaderFn = async (lab, policy) => ({
   shouldFetch: true,
 });
 
+/**
+ * The lane's own hash input, mirrored: a per-page digest over BOTH extraction paths' inputs, the
+ * visible text and the embedded official prose, combined order-independently (#3840). Mirrored
+ * rather than imported so a change to the lane's input shows up here as a failure instead of
+ * being followed silently.
+ */
+const laneHashInput = (pages: { url: string; html: string }[]): string =>
+  contentHashGate.computePageSetTextDigest(pages, (html) => {
+    const embedded = extractLabHomepageDescription(html, { kind: 'organization' });
+    return [htmlToText(html), embedded?.description ?? '', embedded?.shortDescription ?? ''].join(
+      '\n',
+    );
+  });
+
 describe('durable content-change gate skips LLM re-spend end-to-end', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -73,7 +89,7 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
     const pageHtml =
       '<main><h1>Ashford Lab</h1><p>The Ashford Lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.</p></main>';
     const expectedHash = contentHashGate.computeVersionedContentHash(
-      pageHtml,
+      laneHashInput([{ url: 'https://medicine.yale.edu/lab/ashford/', html: pageHtml }]),
       DESCRIPTION_EXTRACTION_PROMPT_HASH,
       DEFAULT_MODEL,
       CARD_SYNTHESIS_MODEL,
@@ -174,7 +190,9 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
 
   it('description extractor: changed page → LLM runs and a new sourceContentHash observation is emitted', async () => {
     const staleHash = contentHashGate.computeVersionedContentHash(
-      'previous-run-html',
+      laneHashInput([
+        { url: 'https://medicine.yale.edu/lab/ashford/', html: '<main><p>Older prose.</p></main>' },
+      ]),
       DESCRIPTION_EXTRACTION_PROMPT_HASH,
       DEFAULT_MODEL,
     );
@@ -183,7 +201,7 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
     const pageHtml =
       '<main><h1>Ashford Lab</h1><p>The Ashford Lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.</p></main>';
     const freshHash = contentHashGate.computeVersionedContentHash(
-      pageHtml,
+      laneHashInput([{ url: 'https://medicine.yale.edu/lab/ashford/', html: pageHtml }]),
       DESCRIPTION_EXTRACTION_PROMPT_HASH,
       DEFAULT_MODEL,
       CARD_SYNTHESIS_MODEL,
@@ -231,7 +249,9 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
 
   it('description extractor: full description without a synthesized card leaves the hash unwritten so the row stays eligible (#2436)', async () => {
     const staleHash = contentHashGate.computeVersionedContentHash(
-      'previous-run-html',
+      laneHashInput([
+        { url: 'https://medicine.yale.edu/lab/ashford/', html: '<main><p>Older prose.</p></main>' },
+      ]),
       DESCRIPTION_EXTRACTION_PROMPT_HASH,
       DEFAULT_MODEL,
     );
@@ -343,7 +363,7 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
     const pageHtml =
       '<main><h1>Ashford Lab</h1><p>The Ashford Lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.</p></main>';
     const priorCardModelHash = contentHashGate.computeVersionedContentHash(
-      pageHtml,
+      laneHashInput([{ url: 'https://medicine.yale.edu/lab/ashford/', html: pageHtml }]),
       DESCRIPTION_EXTRACTION_PROMPT_HASH,
       DEFAULT_MODEL,
       CARD_SYNTHESIS_MODEL,
@@ -389,7 +409,7 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
     const hashObs = emitted.find((obs) => obs.field === 'sourceContentHash');
     expect(hashObs?.value).toBe(
       contentHashGate.computeVersionedContentHash(
-        pageHtml,
+        laneHashInput([{ url: 'https://medicine.yale.edu/lab/ashford/', html: pageHtml }]),
         DESCRIPTION_EXTRACTION_PROMPT_HASH,
         DEFAULT_MODEL,
         'gpt-5-mini-next',
