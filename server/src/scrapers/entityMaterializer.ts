@@ -784,6 +784,33 @@ function isOfficialProfileBioChromeObservation(observation: MaterializerObservat
   return /^copy link$/i.test(value);
 }
 
+const PROFILE_HOME_PAIRED_IDENTITY_FIELDS = new Set(['entityType', 'kind']);
+
+/**
+ * `official-profile-pi-backfill` asserts a linked research home's name, kind and type as one
+ * claim (`entityResearchHomeToObservations`), so its kind and type say something only beside its
+ * name. The #2913 retirement rolled back the name half of those grafts and left the type half
+ * live, so person rows kept serving as the linked CENTER or INITIATIVE (#3886). The lane cannot
+ * withdraw the type itself: a refusal is not an absence, and an enum field is not declarable for
+ * retraction (`fieldRetraction.ts`). So the pairing is read here, on every resolve, instead.
+ */
+export function withoutUnpairedProfileHomeIdentity<
+  T extends { sourceName?: unknown; field?: unknown; value?: unknown },
+>(observations: T[]): T[] {
+  const laneNamesTheRow = observations.some(
+    (observation) =>
+      observation.sourceName === OFFICIAL_PROFILE_PI_BACKFILL_SOURCE &&
+      observation.field === 'name' &&
+      textValue(observation.value).length > 0,
+  );
+  if (laneNamesTheRow) return observations;
+  return observations.filter(
+    (observation) =>
+      observation.sourceName !== OFFICIAL_PROFILE_PI_BACKFILL_SOURCE ||
+      !PROFILE_HOME_PAIRED_IDENTITY_FIELDS.has(String(observation.field)),
+  );
+}
+
 function isResearchEntityObservationType(entityType: ObservedEntityType): boolean {
   return entityType === 'researchEntity';
 }
@@ -7261,7 +7288,9 @@ export async function materializeEntity(
     : new Set<string>();
   const materializationObs = collapseLatestWins(
     withoutWithdrawnUndergradEvidenceQuotes(
-      obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o)),
+      withoutUnpairedProfileHomeIdentity(
+        obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o)),
+      ),
       undergradEvidenceQuoteWithdrawnBy,
     ),
     entityType,
