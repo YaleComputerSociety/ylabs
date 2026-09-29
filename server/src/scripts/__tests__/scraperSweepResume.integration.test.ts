@@ -550,22 +550,6 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     // stages once the checkout is back on the commit the run started.
     expect(fs.existsSync(checkpointFor(mode))).toBe(true);
 
-    const firstRefusals = summary.codeDrift?.length ?? 0;
-    let resumedSpawns = 0;
-    const onMovedCheckout = await runScraperSweep(options, {
-      childRunner: async (command, args, childOptions) => {
-        resumedSpawns++;
-        return spawned.runner(command, args, childOptions);
-      },
-      readHeadSha: () => moved,
-    });
-
-    expect(onMovedCheckout.codeSha).toBe(started);
-    expect(resumedSpawns).toBe(0);
-    expect(onMovedCheckout.codeDrift?.length ?? 0).toBeGreaterThan(firstRefusals);
-    expect(onMovedCheckout.codeDrift?.slice(0, firstRefusals)).toEqual(summary.codeDrift);
-    expect(fs.existsSync(checkpointFor(mode))).toBe(true);
-
     const onStartedCheckout = await runScraperSweep(options, {
       childRunner: spawned.runner,
       readHeadSha: () => started,
@@ -573,6 +557,48 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
 
     expect(onStartedCheckout.codeSha).toBe(started);
     expect(onStartedCheckout.failed).toBe(0);
-    expect(onStartedCheckout.codeDrift).toEqual(onMovedCheckout.codeDrift);
+    expect(onStartedCheckout.codeDrift).toEqual(summary.codeDrift);
+    expect(fs.existsSync(checkpointFor(mode))).toBe(false);
+  }, 180_000);
+
+  it('starts a new sweep instead of resuming a checkpoint recorded at another commit (#3989)', async () => {
+    const mode = 'development-full' as const;
+    fs.rmSync(checkpointFor(mode), { force: true });
+    const options = {
+      mode,
+      confirmations: new Set(['--confirm-development-full-sweep']),
+      pruneBetweenPhases: false,
+      skipPreflight: true,
+    };
+
+    const started = 'c'.repeat(7) + '3'.repeat(33);
+    const moved = 'd'.repeat(7) + '4'.repeat(33);
+    const spawned = makeChildRunner(new Set());
+    let spawns = 0;
+    const interrupted = await runScraperSweep(options, {
+      childRunner: async (command, args, childOptions) => {
+        spawns++;
+        return spawned.runner(command, args, childOptions);
+      },
+      readHeadSha: () => (spawns === 0 ? started : moved),
+    });
+    trackRun(mode, interrupted.outputDirectory);
+    expect(interrupted.codeSha).toBe(started);
+    expect(fs.existsSync(checkpointFor(mode))).toBe(true);
+
+    let newSweepSpawns = 0;
+    const onMovedCheckout = await runScraperSweep(options, {
+      childRunner: async (command, args, childOptions) => {
+        newSweepSpawns++;
+        return spawned.runner(command, args, childOptions);
+      },
+      readHeadSha: () => moved,
+    });
+    trackRun(mode, onMovedCheckout.outputDirectory);
+
+    expect(onMovedCheckout.codeSha).toBe(moved);
+    expect(newSweepSpawns).toBeGreaterThan(spawns);
+    expect(onMovedCheckout.codeDrift ?? []).toEqual([]);
+    expect(onMovedCheckout.failed).toBe(0);
   }, 180_000);
 });
