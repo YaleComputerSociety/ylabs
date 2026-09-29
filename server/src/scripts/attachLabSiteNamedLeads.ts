@@ -26,7 +26,11 @@ import {
   applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
-import { syncEntities } from '../services/meiliSyncService';
+import {
+  NO_INDEX_SYNC,
+  syncResearchEntitiesWithOutcome,
+  type IndexSyncOutcome,
+} from '../services/researchEntityIndexSyncOutcome';
 import { MAX_PEOPLE_SUBPAGES, peopleSubpageUrls } from '../scrapers/utils/labSiteLeadVerification';
 import { HostRateLimiter, fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -226,6 +230,7 @@ export async function runLabSiteNamedLeadAttachment(options: {
 
   let created = 0;
   let promoted = 0;
+  let indexSync: IndexSyncOutcome = NO_INDEX_SYNC;
   if (options.apply && planned.length > 0) {
     for (const row of planned) {
       await RoleAssignment.create({
@@ -253,8 +258,7 @@ export async function runLabSiteNamedLeadAttachment(options: {
     });
     // A released row that is not reindexed reaches its own detail page and no browse
     // or search result, which is the inert half of a data fix (#2467).
-    await syncEntities(
-      'researchEntity',
+    indexSync = await syncResearchEntitiesWithOutcome(
       await ResearchEntity.find({ _id: { $in: affectedIds } }).lean(),
     );
   }
@@ -272,6 +276,8 @@ export async function runLabSiteNamedLeadAttachment(options: {
     refusedByReason: summarizeLabSiteNamedLeadRefusals(refusals),
     created,
     studentReadyAfterRegate: promoted,
+    indexResynced: indexSync.resynced,
+    indexSyncFailures: indexSync.indexSyncFailures,
     plans: planned.map((row) => ({
       slug: row.slug,
       eponym: row.eponym,

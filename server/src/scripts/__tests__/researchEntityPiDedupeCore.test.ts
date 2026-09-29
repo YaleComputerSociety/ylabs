@@ -1617,6 +1617,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       quarantinedConflatedPersonProfileGroups: 2,
       visibilityRecomputed: 0,
       canonicalEntitiesResynced: 0,
+      canonicalIndexSyncFailures: 0,
       maxApply: 10,
     });
 
@@ -1637,6 +1638,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       quarantinedConflatedPersonProfileGroups: 0,
       visibilityRecomputed: 0,
       canonicalEntitiesResynced: 0,
+      canonicalIndexSyncFailures: 0,
       maxApply: 10,
     });
 
@@ -1660,6 +1662,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       quarantinedConflatedPersonProfileGroups: 3,
       visibilityRecomputed: 2,
       canonicalEntitiesResynced: 2,
+      canonicalIndexSyncFailures: 1,
       maxApply: 500,
     });
 
@@ -1677,6 +1680,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       quarantinedConflatedPersonProfileGroups: 3,
       visibilityRecomputed: 2,
       canonicalEntitiesResynced: 2,
+      canonicalIndexSyncFailures: 1,
       maxApply: 500,
     });
   });

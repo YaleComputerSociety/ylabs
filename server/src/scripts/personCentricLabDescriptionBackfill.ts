@@ -26,7 +26,7 @@ import {
   descriptionExtractionToObservations,
 } from '../scrapers/sources/labMicrositeDescriptionLLMExtractor';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
-import { syncEntities } from '../services/meiliSyncService';
+import { syncResearchEntitiesWithOutcome } from '../services/researchEntityIndexSyncOutcome';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   selectPersonCentricLabDescriptionTargets,
@@ -125,6 +125,7 @@ export interface PersonCentricLabDescriptionResult {
   entitiesChanged: number;
   visibilityTierChanges: number;
   meiliSynced: number;
+  indexSyncFailures: number;
   samples: Array<{
     slug?: string;
     action: PersonCentricLabDescriptionAction;
@@ -175,6 +176,7 @@ export async function runPersonCentricLabDescriptionBackfill(options: {
     entitiesChanged: 0,
     visibilityTierChanges: 0,
     meiliSynced: 0,
+    indexSyncFailures: 0,
     samples: [],
   };
 
@@ -260,8 +262,9 @@ export async function runPersonCentricLabDescriptionBackfill(options: {
 
     if (syncMeili) {
       const freshDocs = await ResearchEntity.find({ _id: { $in: touchedIds } }).lean();
-      await syncEntities('researchEntity', freshDocs);
-      result.meiliSynced = freshDocs.length;
+      const sync = await syncResearchEntitiesWithOutcome(freshDocs);
+      result.meiliSynced = sync.resynced;
+      result.indexSyncFailures = sync.indexSyncFailures;
     }
   }
 

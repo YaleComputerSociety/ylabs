@@ -1,6 +1,16 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const meiliMocks = vi.hoisted(() => ({
+  syncEntities: vi.fn(async (_entityType: string, docs: unknown[]) => docs.length),
+}));
+
+vi.mock('../../services/meiliSyncService', async (importActual) => ({
+  ...(await importActual<typeof import('../../services/meiliSyncService')>()),
+  syncEntities: meiliMocks.syncEntities,
+}));
+
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
@@ -26,6 +36,8 @@ describe('retireAffiliatedOrgNameGrafts finishes the repair on the document (#23
   });
 
   beforeEach(async () => {
+    meiliMocks.syncEntities.mockReset();
+    meiliMocks.syncEntities.mockImplementation(async (_entityType, docs) => docs.length);
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
     for (const name of ['observations', 'research_entities', 'role_assignments', 'researchers']) {
@@ -87,6 +99,17 @@ describe('retireAffiliatedOrgNameGrafts finishes the repair on the document (#23
     expect(entity?.displayName).toBeUndefined();
     expect((entity?.fieldProvenance || {}).displayName).toBeUndefined();
     expect(entity?.name).toBe(OWN_NAME);
+  });
+
+  it('reports the corrected row the index refused as a sync failure (#3726)', async () => {
+    await seedEntity({ displayName: AFFILIATION_GRAFT });
+    await seedGraftObservation();
+    meiliMocks.syncEntities.mockResolvedValue(0);
+
+    const applied = await applyRows(await loadOrgNameGrafts());
+
+    expect(applied.documentFieldsCorrected).toBe(1);
+    expect(applied.indexSync).toEqual({ resynced: 0, indexSyncFailures: 1 });
   });
 
   it('still sees a graft a previous run retired but left on the document', async () => {

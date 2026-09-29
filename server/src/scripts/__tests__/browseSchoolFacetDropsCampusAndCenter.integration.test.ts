@@ -197,6 +197,16 @@ describe('the browse school dropdown stops offering a campus or a center (#2277)
     expect(await servedBySchoolFilter(CAMPUS)).toEqual([]);
   });
 
+  it('reports the rewritten rows the index refused as sync failures (#3726)', async () => {
+    meiliMocks.syncEntities.mockResolvedValueOnce(0 as never);
+
+    const result = await runOrgUnitBackfill({ dryRun: false, batchSize: 200 });
+
+    expect(result.indexResynced).toBe(0);
+    expect(result.indexSyncFailures).toBe(result.summary.changed);
+    expect(result.indexSyncFailures).toBeGreaterThan(0);
+  });
+
   it('keeps the cleared campus and center labels searchable as affiliation text', async () => {
     await runOrgUnitBackfill({ dryRun: false, batchSize: 200 });
 

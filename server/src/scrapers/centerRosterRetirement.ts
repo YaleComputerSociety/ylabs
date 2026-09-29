@@ -46,7 +46,7 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { RoleAssignment } from '../models/roleAssignment';
-import { syncEntities } from '../services/meiliSyncService';
+import { syncResearchEntitiesWithOutcome } from '../services/researchEntityIndexSyncOutcome';
 import {
   applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
@@ -741,6 +741,7 @@ export interface AppliedCenterRosterRetirement {
   archivedRelationships: number;
   rematerializedMemberKeys: number;
   regated: boolean;
+  indexSyncFailures: number;
 }
 
 export async function applyCenterRosterRetirementPlan(
@@ -753,6 +754,7 @@ export async function applyCenterRosterRetirementPlan(
     archivedRelationships: 0,
     rematerializedMemberKeys: 0,
     regated: false,
+    indexSyncFailures: 0,
   };
   if (plan.verdict !== 'retire') return applied;
 
@@ -855,7 +857,8 @@ export async function applyCenterRosterRetirementPlan(
       _id: new mongoose.Types.ObjectId(inputs.centerEntityId),
       archived: { $ne: true },
     }).lean();
-    if (center) await syncEntities('researchEntity', [center] as any);
+    const indexSync = await syncResearchEntitiesWithOutcome(center ? [center] : []);
+    applied.indexSyncFailures = indexSync.indexSyncFailures;
   }
   return applied;
 }

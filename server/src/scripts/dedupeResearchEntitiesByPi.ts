@@ -45,7 +45,8 @@ import {
 } from './repairArchivedEntityArtifactsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { isSweepStageEnabledByDefault } from './sweepStageFlags';
-import { deleteFromIndex, syncEntities } from '../services/meiliSyncService';
+import { deleteFromIndex } from '../services/meiliSyncService';
+import { syncResearchEntitiesWithOutcome } from '../services/researchEntityIndexSyncOutcome';
 import { recomputeVisibilityAndResyncCanonicals } from '../services/researchEntityEponymousMergeService';
 import {
   repairMergeSurvivorVisibility,
@@ -471,6 +472,7 @@ export interface UrlIdentityDedupeStageDelta {
   quarantinedConflatedPersonProfileGroups: number;
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
+  canonicalIndexSyncFailures: number;
   maxApply: number;
 }
 
@@ -512,6 +514,7 @@ export function buildUrlIdentityDedupeStageDelta(input: {
   quarantinedConflatedPersonProfileGroups: number;
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
+  canonicalIndexSyncFailures: number;
   maxApply: number;
 }): UrlIdentityDedupeStageDelta {
   const deferrals = countResearchEntityDedupeApplyDeferrals(input.applied);
@@ -531,6 +534,7 @@ export function buildUrlIdentityDedupeStageDelta(input: {
     quarantinedConflatedPersonProfileGroups: input.quarantinedConflatedPersonProfileGroups,
     visibilityRecomputed: input.visibilityRecomputed,
     canonicalEntitiesResynced: input.canonicalEntitiesResynced,
+    canonicalIndexSyncFailures: input.canonicalIndexSyncFailures,
     maxApply: input.maxApply,
   };
 }
@@ -2571,8 +2575,8 @@ async function resyncMergeSurvivorSearchDocument(
 ): Promise<boolean> {
   const survivor = await ResearchEntity.findById(survivorId).lean();
   if (!survivor || (survivor as { archived?: boolean }).archived === true) return false;
-  await syncEntities('researchEntity', [survivor]);
-  return true;
+  const outcome = await syncResearchEntitiesWithOutcome([survivor]);
+  return outcome.indexSyncFailures === 0;
 }
 
 async function retireDuplicateCurrentMembers(
@@ -2820,6 +2824,7 @@ async function main() {
   // or stale member/lead names after a dedupe.
   let visibilityRecomputed = 0;
   let canonicalEntitiesResynced = 0;
+  let canonicalIndexSyncFailures = 0;
   if (apply) {
     const canonicalIds = Array.from(
       new Set(
@@ -2831,6 +2836,7 @@ async function main() {
     const repair = await recomputeVisibilityAndResyncCanonicals(canonicalIds);
     visibilityRecomputed = repair.visibilityRecomputed;
     canonicalEntitiesResynced = repair.canonicalEntitiesResynced;
+    canonicalIndexSyncFailures = repair.canonicalIndexSyncFailures;
   }
 
   writeResearchEntityPiDedupeDecisionTemplate(
@@ -2883,6 +2889,7 @@ async function main() {
     retiredDuplicateCurrentMembers,
     visibilityRecomputed,
     canonicalEntitiesResynced,
+    canonicalIndexSyncFailures,
     ...(unattendedUrlIdentityLane
       ? {
           urlIdentityDedupeDelta: buildUrlIdentityDedupeStageDelta({
@@ -2901,6 +2908,7 @@ async function main() {
             quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
             visibilityRecomputed,
             canonicalEntitiesResynced,
+            canonicalIndexSyncFailures,
             maxApply,
           }),
         }

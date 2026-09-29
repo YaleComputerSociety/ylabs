@@ -3,7 +3,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const deleteFromIndexMock = vi.fn(async (_entityType: string, _id: string) => {});
-const syncEntitiesMock = vi.fn(async (_entityType: string, _docs: unknown[]) => {});
+const syncEntitiesMock = vi.fn(async (_entityType: string, docs: unknown[]) => docs.length);
 
 vi.mock('../../services/meiliSyncService', () => ({
   deleteFromIndex: (entityType: string, id: string) => deleteFromIndexMock(entityType, id),
@@ -120,6 +120,36 @@ describe('applyResearchEntityDedupeMergeGroup Meili ghost-doc cleanup', () => {
     expect((docs as Array<{ _id: mongoose.Types.ObjectId }>)[0]._id.toHexString()).toBe(
       canonicalId.toHexString(),
     );
+  });
+
+  it('reports the survivor as not resynced when the index refuses it (#3726)', async () => {
+    const db = mongoose.connection.db!;
+    const canonicalId = new mongoose.Types.ObjectId();
+    const duplicateId = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertMany([
+      {
+        _id: canonicalId,
+        slug: 'synthetic-survivor-lab',
+        archived: false,
+        studentVisibilityTier: 'student_ready',
+      },
+      { _id: duplicateId, slug: 'synthetic-duplicate-shell', archived: false },
+    ]);
+    syncEntitiesMock.mockResolvedValueOnce(0);
+
+    const result = await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: canonicalId.toHexString(),
+        duplicateEntityIds: [duplicateId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [],
+      } as any,
+      { deleteDuplicates: false, relinkReferences: false },
+    );
+
+    expect(syncEntitiesMock).toHaveBeenCalledTimes(1);
+    expect(result.survivorIndexResynced).toBe(false);
   });
 
   it('does not re-sync an archived survivor', async () => {

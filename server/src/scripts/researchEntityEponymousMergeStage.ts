@@ -58,6 +58,7 @@ export interface EponymousFraLabMergeDelta {
   mergedPairs: EponymousFraLabMergePair[];
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
+  canonicalIndexSyncFailures: number;
 }
 
 function scopeEntitiesById(rows: ResearchEntityPiDedupeRow[]): Map<string, ScopeEntity> {
@@ -181,6 +182,7 @@ export async function runEponymousFraLabMergeStage(
   let appliedMergeCount = 0;
   let visibilityRecomputed = 0;
   let canonicalEntitiesResynced = 0;
+  let canonicalIndexSyncFailures = 0;
   if (options.apply && cappedGroups.length > 0) {
     const applyMergeGroup =
       options.applyMergeGroup ??
@@ -196,6 +198,7 @@ export async function runEponymousFraLabMergeStage(
     appliedMergeCount = cappedGroups.length;
     visibilityRecomputed = result.visibilityRecomputed;
     canonicalEntitiesResynced = result.canonicalEntitiesResynced;
+    canonicalIndexSyncFailures = result.canonicalIndexSyncFailures;
   }
 
   return {
@@ -208,6 +211,7 @@ export async function runEponymousFraLabMergeStage(
     mergedPairs: buildEponymousFraLabMergePairs(cappedGroups, rows),
     visibilityRecomputed,
     canonicalEntitiesResynced,
+    canonicalIndexSyncFailures,
   };
 }
 

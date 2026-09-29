@@ -110,6 +110,8 @@ Strong `CURRENT_UNDERGRADS` and `PAST_UNDERGRADS` signals outweigh the `REACH_OU
 `entityMaterializer` recomputes ranking live after access signals are derived.
 Browse sorts on the indexed score, not the stored one, so a Mongo write whose resync failed still serves the old order.
 `syncEntity` therefore returns whether the index applied the document (its task succeeded, #3720), and `recomputeBrowseRankForEntities`, the browse-rank backfills, and `materializeFromRun` (`indexSyncFailures`, persisted as `ScrapeRun.materializationIndexSyncFailures`) report those rows apart from `updated` (#3638).
+A script that resyncs a batch goes through `syncResearchEntitiesWithOutcome` (`services/researchEntityIndexSyncOutcome.ts`), which returns `{ resynced, indexSyncFailures }` from what the index applied, and reports both next to its updated count (#3726).
+`services/__tests__/indexSyncResultIsRead.test.ts` fails on any call to `syncEntity`, `syncEntities`, or that helper whose value is discarded, so a new caller cannot silently report a resync the index never received.
 Admin "weakest profiles first" with `browseQuality: 'low-first'` is a separate Mongo-side path.
 
 ## `/research` client search state

@@ -402,7 +402,8 @@ describe(
       );
       expect(await isArchived()).toBe(false);
 
-      await applyCenterRosterRetirementPlan(
+      meiliMocks.syncEntities.mockResolvedValueOnce(0 as never);
+      const applied = await applyCenterRosterRetirementPlan(
         plan,
         inputs([
           targetClaim(`${CENTER_SLUG}:old-spelling`, 'old-spelling-target'),
@@ -412,6 +413,8 @@ describe(
         new Date(),
       );
       expect(await isArchived()).toBe(true);
+      expect(applied.regated).toBe(true);
+      expect(applied.indexSyncFailures).toBe(1);
     });
 
     it('retires nothing when the later reads fail with a 404, a fetch error, or an under-read', async () => {

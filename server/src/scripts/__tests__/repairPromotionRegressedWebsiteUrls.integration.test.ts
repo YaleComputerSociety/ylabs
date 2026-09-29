@@ -219,6 +219,18 @@ describe('repair-promotion-regressed-website-urls against a real collection (#25
     ]);
   });
 
+  it('reports the restored rows the index refused as sync failures (#3726)', async () => {
+    meiliMocks.syncEntities.mockResolvedValueOnce(0 as never);
+
+    const { indexSync } = await runRepairPromotionRegressedWebsiteUrls({
+      apply: true,
+      confirm: true,
+      probe: defaultProbe,
+    });
+
+    expect(indexSync).toEqual({ resynced: 0, indexSyncFailures: 2 });
+  });
+
   it('writes a row whose stored value carries stray whitespace instead of silently matching nothing', async () => {
     await researchEntities().updateOne(
       { slug: 'watts-dwatts' },
