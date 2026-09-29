@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import useModalDialog from '../../hooks/useModalDialog';
 import axios from '../../utils/axios';
 import { safeRouteSegment } from '../../utils/url';
 import useLatestRequest from '../../hooks/useLatestRequest';
@@ -86,6 +87,12 @@ export default function AdminCorrectionReports() {
     setSelected(null);
     setReviewError('');
   };
+  const {
+    overlayRef,
+    dialogRef,
+    initialFocusRef: reviewTitleRef,
+    handleDialogKeyDown,
+  } = useModalDialog<HTMLHeadingElement>(selected !== null, closeReview);
 
   const review = async (nextStatus: Exclude<ReportStatus, 'unreviewed'>) => {
     if (!selected || isSaving) return;
@@ -163,16 +170,23 @@ export default function AdminCorrectionReports() {
       </ul>
       {selected && (
         <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="report-review-title"
+          ref={overlayRef}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') closeReview();
-          }}
         >
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-md bg-white p-6">
-            <h2 id="report-review-title" className="text-lg font-semibold">
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-review-title"
+            onKeyDown={handleDialogKeyDown}
+            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-md bg-white p-6"
+          >
+            <h2
+              ref={reviewTitleRef}
+              id="report-review-title"
+              tabIndex={-1}
+              className="text-lg font-semibold focus:outline-none"
+            >
               {selected.entitySnapshot.name || selected.entitySlug}
             </h2>
             <p className="mt-2 text-sm text-ink-soft">

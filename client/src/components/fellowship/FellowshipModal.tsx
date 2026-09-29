@@ -1,7 +1,7 @@
 /**
  * Detail modal for viewing full fellowship information.
  */
-import React, { useContext, useEffect, useRef } from 'react';
+import React, { useContext } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
@@ -19,6 +19,7 @@ import {
   labelizeResearchDetailValue,
 } from '../../utils/researchDetailSources';
 import { trackResearchEvent } from '../../utils/researchAnalytics';
+import useModalDialog from '../../hooks/useModalDialog';
 import FavoriteButton from '../shared/FavoriteButton';
 import LongText from '../shared/LongText';
 import { CloseIcon, ExternalLinkIcon, GlobeIcon, MailIcon } from '../shared/icons';
@@ -119,87 +120,12 @@ const FellowshipModal = ({
     resetProgramFilters,
   } = useContext(FellowshipSearchContext);
 
-  const overlayRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const titleRef = useRef<HTMLHeadingElement>(null);
-  const returnFocusRef = useRef<HTMLElement | null>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-
-  useEffect(() => {
-    if (!isOpen) return undefined;
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onCloseRef.current();
-      }
-    };
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return undefined;
-
-    returnFocusRef.current = document.activeElement as HTMLElement | null;
-    const inerted: Array<{ element: HTMLElement; inert: boolean; ariaHidden: string | null }> = [];
-    let branch: HTMLElement | null = overlayRef.current;
-
-    while (branch?.parentElement) {
-      Array.from(branch.parentElement.children).forEach((sibling) => {
-        if (sibling === branch || !(sibling instanceof HTMLElement)) return;
-        inerted.push({
-          element: sibling,
-          inert: sibling.inert,
-          ariaHidden: sibling.getAttribute('aria-hidden'),
-        });
-        sibling.inert = true;
-        sibling.setAttribute('aria-hidden', 'true');
-      });
-      branch = branch.parentElement;
-      if (branch === document.body) break;
-    }
-
-    titleRef.current?.focus();
-
-    return () => {
-      inerted.forEach(({ element, inert, ariaHidden }) => {
-        element.inert = inert;
-        if (ariaHidden === null) element.removeAttribute('aria-hidden');
-        else element.setAttribute('aria-hidden', ariaHidden);
-      });
-      returnFocusRef.current?.focus();
-    };
-  }, [isOpen]);
-
-  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'Tab' || !dialogRef.current) return;
-
-    const focusable = Array.from(
-      dialogRef.current.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    ).filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
-    if (focusable.length === 0) {
-      event.preventDefault();
-      titleRef.current?.focus();
-      return;
-    }
-
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (
-      event.shiftKey &&
-      (document.activeElement === first || document.activeElement === titleRef.current)
-    ) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
+  const {
+    overlayRef,
+    dialogRef,
+    initialFocusRef: titleRef,
+    handleDialogKeyDown,
+  } = useModalDialog<HTMLHeadingElement>(isOpen, onClose);
 
   if (!isOpen || !fellowship) return null;
   const cycleStatus = getFellowshipCycleStatus(fellowship);
