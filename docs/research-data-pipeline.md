@@ -558,8 +558,8 @@ Microsite LLM extractors are gated on a versioned content hash (#2025).
 The description extractor is the exception to the bytes rule, and the reason generalises.
 Hashing raw bytes cannot skip a page whose markup churns, and on this corpus that is the common case: fetching each host's page twice seconds apart, `medicine.yale.edu`, `ysph.yale.edu` and `sites.google.com` return different bytes every time, while `campuspress.yale.edu`, `research.yale.edu`, `engineering.yale.edu` and `environment.yale.edu` are byte-identical.
 2,507 of the 4,123 rows that lane has read fetch from one of the churning hosts, so a bytes hash could never let them skip however many runs happened (#3840).
-It therefore hashes a per-page digest over what its extraction paths READ, combined order-independently: the visible text and the embedded official prose.
-Both are required rather than only the visible text, because the deterministic embedded-JSON path reads script-tag payloads a text extractor strips, so a digest over visible text alone would let an official-prose-only change stop re-running extraction (#2022).
+It therefore hashes a per-page digest over what its extraction paths READ, combined order-independently: the visible text and the deterministic official prose `extractDescriptionPageProse` derives.
+Both are required rather than only the visible text, because the deterministic path reads script-tag payloads, JSON-LD, meta descriptions and paragraphs past the prompt cutoff that a text extractor never sees, so a digest over visible text alone would let an official-prose-only change stop re-running extraction (#2022).
 Order independence is precautionary and unmeasured; sub-page discovery varying was plausible but not observed.
 A page unreachable on one run still drops out of the set and changes the digest, so a transient fetch failure costs one re-extraction, which is preferred over letting a row skip while silently missing evidence it usually reads.
 Changing that input invalidated every stored hash for the lane once, so the first run after it re-extracted the lane.

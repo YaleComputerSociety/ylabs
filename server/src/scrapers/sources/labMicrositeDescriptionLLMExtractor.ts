@@ -1674,9 +1674,11 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         // `medicine.yale.edu`, `ysph.yale.edu` and `sites.google.com` return different bytes every
         // time, and 2,507 of the 4,123 rows this lane has read fetch from one of them (#3840).
         //
-        // So the digest covers both paths explicitly instead: the visible text AND the embedded
-        // prose. Dropping the embedded prose would be a correctness regression rather than a
-        // saving, because an official-prose-only change would stop re-running extraction.
+        // So the digest covers both paths explicitly instead: the visible text AND the official
+        // prose `extractDescriptionPageProse` derives, which reads the embedded payload, JSON-LD,
+        // meta descriptions and paragraphs past the prompt cutoff that `htmlToText` never sees.
+        // Dropping it would be a correctness regression rather than a saving, because an
+        // official-prose-only change would stop re-running extraction.
         const entityRef = {
           entityType: 'researchEntity' as const,
           entityId: serializedDocumentId(lab._id) || undefined,
@@ -1685,12 +1687,12 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         const contentHash = computeVersionedContentHash(
           // One-time cost: every stored hash for this lane is invalidated, so the next run
           // re-extracts the lane once.
-          computePageSetTextDigest(pages, (html) => {
-            const embedded = extractLabHomepageDescription(html, { kind });
+          computePageSetTextDigest(pages, (fetched) => {
+            const prose = extractDescriptionPageProse(fetched, kind);
             return [
-              htmlToText(html),
-              textValue(embedded?.description),
-              textValue(embedded?.shortDescription),
+              htmlToText(fetched.html),
+              prose?.fullDescription ?? '',
+              prose?.shortDescription ?? '',
             ].join('\n');
           }),
           DESCRIPTION_EXTRACTION_PROMPT_HASH,

@@ -102,11 +102,12 @@ describe('computePageSetTextDigest', () => {
   // The whole point: markup that churns while the readable text does not. 2,507 of the 4,123
   // rows this lane reads fetch from a host that returns different bytes on every fetch, so a
   // bytes hash could never let them skip (#3840).
-  const stripMarkup = (html: string) =>
+  const stripMarkupText = (html: string) =>
     html
       .replace(/<[^>]*>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+  const stripMarkup = ({ html }: { html: string }) => stripMarkupText(html);
 
   it('is unchanged when markup churns but the extracted text does not', () => {
     const a = [{ url: 'https://lab.example.edu/', html: '<p data-nonce="a1">We study cilia.</p>' }];
@@ -161,14 +162,14 @@ describe('computePageSetTextDigest', () => {
     ];
     // A visible-text-only extractor drops script blocks entirely, as `htmlToText` does, so it
     // cannot see the change.
-    const visibleTextOnly = (html: string) =>
-      stripMarkup(html.replace(/<script[\s\S]*?<\/script>/g, ' '));
+    const visibleTextOnly = ({ html }: { html: string }) =>
+      stripMarkupText(html.replace(/<script[\s\S]*?<\/script>/g, ' '));
     expect(computePageSetTextDigest(withoutEmbedded, visibleTextOnly)).toBe(
       computePageSetTextDigest(withEmbedded, visibleTextOnly),
     );
     // An extractor that also reads the embedded payload does.
-    const withEmbeddedProse = (html: string) =>
-      `${stripMarkup(html)} ${html.match(/<script>(.*?)<\/script>/)?.[1] ?? ''}`;
+    const withEmbeddedProse = ({ html }: { html: string }) =>
+      `${stripMarkupText(html)} ${html.match(/<script>(.*?)<\/script>/)?.[1] ?? ''}`;
     expect(computePageSetTextDigest(withoutEmbedded, withEmbeddedProse)).not.toBe(
       computePageSetTextDigest(withEmbedded, withEmbeddedProse),
     );

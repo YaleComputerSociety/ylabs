@@ -72,12 +72,12 @@ export function computeVersionedContentHash(
  * unreachable pages would instead let a row skip while silently missing evidence it usually
  * reads, which is the worse failure, so the digest keeps them in.
  */
-export function computePageSetTextDigest(
-  pages: readonly { url: string; html: string }[],
-  extractText: (html: string) => string,
+export function computePageSetTextDigest<Page extends { url: string; html: string }>(
+  pages: readonly Page[],
+  extractText: (page: Page) => string,
 ): string {
   const perPage = pages
-    .map((page) => `${page.url} ${computeContentHash(extractText(page.html))}`)
+    .map((page) => `${page.url} ${computeContentHash(extractText(page))}`)
     .sort();
   return computeContentHash(perPage.join('\n'));
 }
