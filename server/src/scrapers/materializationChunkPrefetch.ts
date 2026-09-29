@@ -26,6 +26,10 @@ const hit = <T>(value: T): PrefetchLookup<T> => ({ hit: true, value });
 
 const OBJECT_ID_RE = /^[a-f\d]{24}$/i;
 
+/** `archived` is the corpus's own tombstone marker, and only `true` counts as archived. */
+const archivedDocument = (document: unknown): boolean =>
+  Boolean(document && (document as { archived?: unknown }).archived === true);
+
 export function prefetchObjectIdString(value: unknown): string | undefined {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -76,6 +80,18 @@ export interface MaterializationReadSource {
   observationsForId(entityType: string, entityId: unknown): PrefetchLookup<unknown[]>;
   entityDocForId(entityType: string, entityId: unknown): PrefetchLookup<unknown | null>;
   entityDocForKey(entityType: string, keyValue: string): PrefetchLookup<unknown | null>;
+  /**
+   * The LIVE row with this key, or `null` when none is live.
+   *
+   * Distinct from `entityDocForKey`, which answers "the row with this key, archived or not",
+   * because both questions have real callers and they are not interchangeable: six reads in the
+   * materializer ask for `archived: { $ne: true }`, and answering them with a tombstone would
+   * make the dedupe candidate lookup adopt an archived shell (#3863). A hit carrying `null` means
+   * "no live row", which is an answer; a miss means the source cannot say.
+   */
+  liveEntityDocForKey(entityType: string, keyValue: string): PrefetchLookup<unknown | null>;
+  /** The live row with this id, on the same terms as `liveEntityDocForKey`. */
+  liveEntityDocForId(entityType: string, entityId: unknown): PrefetchLookup<unknown | null>;
   hasNoMergedInRows(survivorId: unknown): boolean;
   soleLeadPersonId(entityId: unknown): PrefetchLookup<string>;
 }
@@ -143,6 +159,23 @@ export class MaterializationChunkPrefetch implements MaterializationReadSource {
     const doc = this.entityDocsById.get(id) ?? null;
     if (!doc && this.createdInChunk) return MISS;
     return hit(cloneDocument(doc));
+  }
+
+  /**
+   * Answered from the same loaded document as `entityDocForKey`, filtered here rather than in the
+   * query, because one load has to serve both questions: a caller that wants the tombstone and a
+   * caller that wants only a live row.
+   */
+  liveEntityDocForKey(entityType: string, keyValue: string): PrefetchLookup<unknown | null> {
+    const found = this.entityDocForKey(entityType, keyValue);
+    if (!found.hit) return MISS;
+    return hit(archivedDocument(found.value) ? null : found.value);
+  }
+
+  liveEntityDocForId(entityType: string, entityId: unknown): PrefetchLookup<unknown | null> {
+    const found = this.entityDocForId(entityType, entityId);
+    if (!found.hit) return MISS;
+    return hit(archivedDocument(found.value) ? null : found.value);
   }
 
   entityDocForKey(entityType: string, keyValue: string): PrefetchLookup<unknown | null> {
