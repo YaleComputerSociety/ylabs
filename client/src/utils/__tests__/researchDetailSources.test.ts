@@ -826,6 +826,17 @@ describe('resolveOutreachOfficialSource', () => {
     expect(source?.url).toBe('https://medicine.yale.edu/profile/fixture-scholar');
   });
 
+  it('refuses every page the website slot already refuses, such as a file share', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://drive.google.com/open?id=fixture-paper&usp=drive_copy')],
+      ['https://earth.yale.edu/profile/fixture-scholar'],
+      false,
+      'FACULTY_RESEARCH_AREA',
+    );
+
+    expect(source).toBeUndefined();
+  });
+
   it('never promotes an ORCID-only home as the primary outreach CTA', () => {
     const source = resolveOutreachOfficialSource(
       [makeSource('https://orcid.org/0000-0000-0000-0000')],
