@@ -10,6 +10,7 @@ import { Fellowship } from '../models/fellowship';
 import { Signal } from '../models/signal';
 import { RESEARCH_ENTITY_SEARCH_INDEX_NAME } from '../services/researchEntitySearchIndexService';
 import { getMeiliIndex } from '../utils/meiliClient';
+import { assertMeiliTaskSucceeded, MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS } from '../utils/meiliTask';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -191,7 +192,12 @@ async function deleteProgramSearchDocuments(
   if (ids.length === 0) return { requested: 0, deleted: false };
   try {
     const index = await getIndex(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
-    await index.deleteDocuments(ids);
+    await assertMeiliTaskSucceeded(
+      index,
+      await index.deleteDocuments(ids),
+      'deleteDocuments',
+      MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+    );
     return { requested: ids.length, deleted: true };
   } catch (error) {
     return { requested: ids.length, deleted: false, error: String(sanitizeLogValue(error)) };

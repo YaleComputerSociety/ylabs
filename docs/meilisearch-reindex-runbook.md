@@ -177,6 +177,7 @@ Materialization cannot do useful work in Beta or Production, because `materializ
 So if a procedure ever tells you to "re-materialize, then reindex" against Beta or Production, **the re-materialize half is a silent no-op** and the reindex is the only step that does anything.
 The practical consequence for an operator: after such a sequence, an index whose content looks unchanged is the **expected** result, not a failed reindex.
 Judge the reindex by the document count it reports and by the verification queries above, never by whether entity copy changed.
+That count includes a batch only after its Meilisearch task succeeded, and a failed or timed-out task fails the rebuild instead of being counted, so the reported count is what the index accepted rather than what was sent (#3720).
 
 To actually change what the index contains, the corpus has to change first — materialize on Development, promote, then reindex.
 

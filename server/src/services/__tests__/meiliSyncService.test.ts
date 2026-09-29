@@ -5,10 +5,12 @@ const mocks = vi.hoisted(() => {
   const addDocuments = vi.fn();
   const deleteDocument = vi.fn();
   const deleteDocuments = vi.fn();
+  const waitForTask = vi.fn();
   return {
     addDocuments,
     deleteDocument,
     deleteDocuments,
+    waitForTask,
     roleAssignmentFind: vi.fn(),
     personFind: vi.fn(),
     accountFind: vi.fn(),
@@ -17,6 +19,7 @@ const mocks = vi.hoisted(() => {
       addDocuments,
       deleteDocument,
       deleteDocuments,
+      tasks: { waitForTask },
     })),
   };
 });
@@ -53,6 +56,12 @@ import {
 beforeEach(() => {
   mocks.addDocuments.mockReset();
   mocks.deleteDocument.mockReset();
+  mocks.deleteDocuments.mockReset();
+  mocks.waitForTask.mockReset();
+  mocks.addDocuments.mockResolvedValue({ taskUid: 1 });
+  mocks.deleteDocument.mockResolvedValue({ taskUid: 2 });
+  mocks.deleteDocuments.mockResolvedValue({ taskUid: 3 });
+  mocks.waitForTask.mockResolvedValue({ status: 'succeeded' });
   mocks.roleAssignmentFind.mockReset();
   mocks.personFind.mockReset();
   mocks.accountFind.mockReset();
@@ -248,9 +257,13 @@ describe('deleteFromIndex', () => {
     expect(mocks.deleteDocument).not.toHaveBeenCalled();
   });
 
-  it('swallows Meilisearch errors', async () => {
+  it('swallows Meilisearch errors and reports the delete as not done', async () => {
     mocks.deleteDocument.mockRejectedValueOnce(new Error('boom'));
-    await expect(deleteFromIndex('researchEntity', 'id-1')).resolves.toBeUndefined();
+    await expect(deleteFromIndex('researchEntity', 'id-1')).resolves.toBe(false);
+  });
+
+  it('reports a delete whose task succeeded as done', async () => {
+    await expect(deleteFromIndex('researchEntity', 'id-1')).resolves.toBe(true);
   });
 });
 
@@ -300,5 +313,69 @@ describe('an archived row leaves the index (#3449)', () => {
     expect(mocks.deleteDocuments).toHaveBeenCalledWith([String(a), String(b)]);
     expect(mocks.addDocuments).not.toHaveBeenCalled();
     expect(written).toBe(0);
+  });
+});
+
+describe('an accepted write counts only once its task succeeds (#3720)', () => {
+  const failedTask = {
+    status: 'failed',
+    error: { code: 'invalid_document_fields', message: 'rejected' },
+  };
+
+  it('reports a single document as not synced when its task later fails', async () => {
+    mocks.waitForTask.mockResolvedValueOnce(failedTask);
+    await expect(syncEntity('researchEntity', { _id: 'a', name: 't' })).resolves.toBe(false);
+    expect(mocks.waitForTask).toHaveBeenCalledWith(1, expect.anything());
+  });
+
+  it('reports a batch as zero synced when its task later fails', async () => {
+    mocks.waitForTask.mockResolvedValueOnce(failedTask);
+    await expect(
+      syncEntities('researchEntity', [
+        { _id: 'a', name: 'A' },
+        { _id: 'b', name: 'B' },
+      ]),
+    ).resolves.toBe(0);
+  });
+
+  it('reports a batch as zero synced when deleting its archived rows fails', async () => {
+    mocks.waitForTask.mockImplementation(async (taskUid: number) =>
+      taskUid === 3 ? failedTask : { status: 'succeeded' },
+    );
+    await expect(
+      syncEntities('researchEntity', [
+        { _id: 'a', name: 'A' },
+        { _id: 'b', name: 'B', archived: true },
+      ]),
+    ).resolves.toBe(0);
+  });
+
+  it('reports an archived row as not synced when its delete task fails', async () => {
+    mocks.waitForTask.mockResolvedValueOnce(failedTask);
+    await expect(
+      syncEntity('researchEntity', { _id: 'a', slug: 'x', archived: true }),
+    ).resolves.toBe(false);
+  });
+
+  it('reports a delete as not done when its task fails', async () => {
+    mocks.waitForTask.mockResolvedValueOnce(failedTask);
+    await expect(deleteFromIndex('researchEntity', 'id-1')).resolves.toBe(false);
+  });
+
+  it('treats a wait that times out as a failure, not a success', async () => {
+    mocks.waitForTask.mockRejectedValueOnce(new Error('timeout of 60000ms has exceeded'));
+    await expect(syncEntity('researchEntity', { _id: 'a', name: 't' })).resolves.toBe(false);
+  });
+
+  it('bounds every wait with a finite timeout', async () => {
+    await syncEntity('researchEntity', { _id: 'a', name: 't' });
+    const [, options] = mocks.waitForTask.mock.calls[0];
+    expect(Number.isFinite(options?.timeout)).toBe(true);
+    expect(options.timeout).toBeGreaterThan(0);
+  });
+
+  it('reports an index that cannot confirm the task as not synced', async () => {
+    mocks.addDocuments.mockResolvedValueOnce(undefined);
+    await expect(syncEntity('researchEntity', { _id: 'a', name: 't' })).resolves.toBe(false);
   });
 });
