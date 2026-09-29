@@ -851,10 +851,11 @@ For rows no sweep re-materializes, `yarn --cwd server research-entity:rematerial
 
 A contact field stands on a row only while a live observation keyed to that row states it (#3609): a merged-in loser's contact, or one read under another key that resolved onto the row, is dropped before resolving and a stored one is cleared on the row's next own-key pass.
 `yarn --cwd server research-entity:rematerialize --foreign-contact` selects the rows that still store such a field, scopes the materializer to the three contact fields, reports `clearedContactFields` by field name, and re-gates the rows it cleared; it is dry-run by default and `--apply --confirm-rematerialize` is Development-only.
-A stored `researchAreas` list that no live evidence states is re-derived from the row's own description on every resolve (#3836).
+A stored `researchAreas` list that no live evidence states is extended from the row's own description on every resolve, and never replaced (#3836).
 Scope is the shared predicate in `scrapers/researchAreaEvidence.ts`: `researchAreas` is unlocked and no live observation on the row or any merged-in key states an area the row admits.
-The derived list is admitted through `partitionResearchAreas` and attributed to `description-derived-research-area`, a derivation is never allowed to empty a non-empty stored list, and a second pass plans nothing; the materialize result reports each in-scope row as `unbackedResearchAreas`.
-`yarn --cwd server research-entity:rematerialize --unbacked-research-areas` selects that scope, runs scoped to `researchAreas`, and sums the outcomes in its report; it is dry-run by default and `--apply --confirm-rematerialize` is Development-only.
+The derived chips are admitted through `partitionResearchAreas` and appended after the stored ones they do not duplicate, so a derivation never removes a stored chip; `description-derived-research-area` is recorded only when every resolved chip is derived, and a stale derived entry on a list that keeps stored-only chips is unset.
+A derivation is never allowed to empty a non-empty stored list, and a second pass plans nothing; the materialize result reports each in-scope row as `unbackedResearchAreas`.
+`yarn --cwd server research-entity:rematerialize --unbacked-research-areas` selects that scope, runs scoped to `researchAreas`, and sums the outcomes in its report together with `researchAreaChips` `{ added, removed }`, where `removed` must be 0; it is dry-run by default and `--apply --confirm-rematerialize` is Development-only.
 `docs/decisions.md` records the rule and its Development measurement.
 
 Every rematerialize report measures one change list per row over every field the run may write: the tracked fields, the `--only-fields` scope, and the three contact fields (#3822).

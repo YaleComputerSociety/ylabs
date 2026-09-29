@@ -549,6 +549,28 @@ export function rematerializeEntityReportFromChanges(input: {
   };
 }
 
+function researchAreaChipList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((area): area is string => typeof area === 'string')
+    : [];
+}
+
+export function countResearchAreaChipChanges(changes: readonly RematerializeReportedChange[]): {
+  added: number;
+  removed: number;
+} {
+  let added = 0;
+  let removed = 0;
+  for (const change of changes) {
+    if (change.field !== 'researchAreas' || isWithheldChange(change)) continue;
+    const before = researchAreaChipList(change.before);
+    const after = researchAreaChipList(change.after);
+    added += after.filter((area) => !before.includes(area)).length;
+    removed += before.filter((area) => !after.includes(area)).length;
+  }
+  return { added, removed };
+}
+
 export function summarizeRematerializeEntities(
   entities: readonly RematerializeEntityReport[],
   options: { foreignContact: boolean },
@@ -557,12 +579,17 @@ export function summarizeRematerializeEntities(
   fieldsWritten: number;
   clearedContactFields?: number;
   unbackedResearchAreas: Partial<Record<UnbackedResearchAreaOutcome, number>>;
+  researchAreaChips: { added: number; removed: number };
 } {
   let entitiesChanged = 0;
   let fieldsWritten = 0;
   let clearedContactFields = 0;
   const unbackedResearchAreas: Partial<Record<UnbackedResearchAreaOutcome, number>> = {};
+  const researchAreaChips = { added: 0, removed: 0 };
   for (const entity of entities) {
+    const chips = countResearchAreaChipChanges(entity.changes);
+    researchAreaChips.added += chips.added;
+    researchAreaChips.removed += chips.removed;
     if (entity.changes.length > 0) entitiesChanged += 1;
     fieldsWritten += entity.changes.length;
     clearedContactFields += entity.clearedContactFields?.length ?? 0;
@@ -576,6 +603,7 @@ export function summarizeRematerializeEntities(
     fieldsWritten,
     ...(options.foreignContact ? { clearedContactFields } : {}),
     unbackedResearchAreas,
+    researchAreaChips,
   };
 }
 

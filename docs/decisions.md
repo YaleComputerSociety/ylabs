@@ -5,7 +5,7 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
-## 2026-09-29: A Stored Topic List No Evidence States Is Re-Derived On Every Resolve (#3836)
+## 2026-09-29: A Stored Topic List No Evidence States Is Extended By Derivation, Never Replaced (#3836)
 
 #3836 traced every served chip that no live observation backs to one mechanism: `researchAreas` is not clear-on-empty, and the description fallback returned early on any non-empty stored list, so a list whose evidence was retired, rolled back, or never existed had no owner and no pass could replace it.
 
@@ -15,11 +15,23 @@ Decided, as derivation rather than repair:
 The materializer evaluates it over the observations the pass already read, including merged-in candidates the #3560 carry rule keeps out of resolution, so a list only a merged-in row states stays out of scope.
 A pass entered through another key, and an archived row, are never judged, because neither has read all of the row's own evidence.
 An observation the resolver used this pass still outranks a derivation even when the predicate does not credit it (an `entityKey` match carrying another row's `entityId`).
-- **The action is the existing derivation.** On every resolve the row's topics are re-derived from its own name and description with `applyDescriptionResearchAreaDerivation` and its `LAB`/`FACULTY_RESEARCH_AREA` gate, admitted through `partitionResearchAreas`, and attributed to `description-derived-research-area`, the one non-observation authority on the #3790 allowlist.
+- **The action is the existing derivation, and it only adds.** On every resolve the row's topics are derived from its own name and description with `applyDescriptionResearchAreaDerivation` and its `LAB`/`FACULTY_RESEARCH_AREA` gate and admitted through `partitionResearchAreas`.
+The resolved list is the stored list followed by every derived chip it does not already hold (compared case-insensitively), so a derivation never removes a stored chip, and it fills an empty stored list outright.
 No lock is written.
-A derived set with the same members as the stored list keeps the stored order and records only the attribution.
-- **The guard: a derivation never empties a stored list.** When the derivation yields no admissible chip, or the row's type is not derived, the stored list stays as it is and the row is counted, per row as `unbackedResearchAreas` on the materialize result and summed in the `research-entity:rematerialize` report and the `[unbacked-research-areas]` line of a run's materialization log.
-- **It converges.** A second resolve re-derives the same answer, finds the stored list and entry already derived, and plans nothing.
+- **The derived attribution vouches for the whole list or is absent.** `description-derived-research-area` is recorded only when every resolved chip is one the derivation produces, which covers an empty stored list, a stored list the derivation reproduces, and one it extends.
+A list that keeps a stored chip the derivation does not produce carries no derived entry, and a derived entry already stored on such a list is unset, including by a pass scoped to `researchAreas`.
+The entry is whole-field: it exempts every chip from `dropDomainIncoherentUnsourcedResearchAreas` and is on the #3790 allowlist only because it is recomputed from the row's own description on every resolve, which a stored-only chip is not.
+Recording which chips were derived would need a per-chip provenance shape that every reader of the entry would have to learn, so the list is attributed only when the claim is true of all of it.
+A lane entry already on the field (history of a retired observation) is left as it is; retiring it is #3790's never-backed rule, not this one.
+- **The guard stays: a derivation never empties a stored list.** When the derivation yields no admissible chip, or the row's type is not derived, the stored list stays as it is and the row is counted, per row as `unbackedResearchAreas` on the materialize result and summed in the `research-entity:rematerialize` report and the `[unbacked-research-areas]` line of a run's materialization log.
+The outcomes are `rederived` (the list or its attribution is written and is wholly derived), `already-derived`, `added-derived` (derived chips appended to a list that keeps stored-only chips), `kept-stored-covers-derived` (the stored list already holds every derived chip), `kept-stored-derived-empty`, `kept-stored-type-not-derived`, and `nothing-derived`.
+The rematerialize report also sums `researchAreaChips` `{ added, removed }` over every `researchAreas` change, and under this rule `removed` is 0 by construction.
+- **It converges.** A second resolve derives the same answer, finds nothing to add and the attribution already right, and plans nothing.
+
+Superseded, same day: the rule first landed (#3868) as a replacement, where the derived list overwrote the stored one.
+Applied on Development on 2026-09-29 between 04:29 and 04:45 UTC it changed 79 rows, 54 of which lost at least one stored chip, 138 chips lost against 77 gained, and a re-read of the 9 served rows found 3 worse, each losing a topic its own description supports.
+That matched the #3836 hand-read, where unbacked stored chips were supported 29 of 39 times: no live evidence means a value has no owner, not that it is wrong, and the description derivation is a coarser instrument than whatever wrote the stored chips.
+So a derivation over an unowned list may add what the row's own text supports but may not take anything away.
 - **Rows with live evidence behave exactly as before.**
 
 Measured read-only on Development on 2026-09-29 between 03:37 and 03:40 UTC with the real materializer in dry run, peers writing: 711 unarchived rows are in scope, 110 of them `student_ready`.

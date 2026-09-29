@@ -623,6 +623,7 @@ describe('the change set covers every field the run may write (#3822)', () => {
       fieldsWritten: 1,
       clearedContactFields: 1,
       unbackedResearchAreas: {},
+      researchAreaChips: { added: 0, removed: 0 },
     });
     expect(selectRematerializeRegateEntityIds([report])).toEqual(['aaaaaaaaaaaaaaaaaaaaaaaa']);
   });
@@ -685,6 +686,7 @@ describe('the change set covers every field the run may write (#3822)', () => {
       fieldsWritten: 0,
       clearedContactFields: 0,
       unbackedResearchAreas: {},
+      researchAreaChips: { added: 0, removed: 0 },
     });
   });
 });
@@ -720,6 +722,34 @@ describe('summarizeRematerializeEntities unbacked research areas (#3836)', () =>
       'kept-stored-derived-empty': 2,
     });
     expect(summary.entitiesChanged).toBe(1);
+  });
+});
+
+describe('summarizeRematerializeEntities research-area chips (#3836)', () => {
+  it('counts every stored chip a run removes and every chip it adds', () => {
+    const report = (slug: string, before: unknown, after: unknown) =>
+      rematerializeEntityReportFromChanges({
+        slug,
+        changes: [{ field: 'researchAreas', before, after }],
+        foreignContact: false,
+      });
+
+    const summary = summarizeRematerializeEntities(
+      [
+        report('example-a', ['Toxicology'], ['Toxicology', 'Data Mining', 'Water Quality']),
+        report('example-b', ['Epidemiology', 'Genetics'], ['Infectious Disease']),
+        report('example-c', undefined, ['Neuroscience']),
+        report('example-d', ['Immunology'], undefined),
+        rematerializeEntityReportFromChanges({
+          slug: 'example-e',
+          changes: [{ field: 'name', before: 'Example Lab', after: 'Example Research Lab' }],
+          foreignContact: false,
+        }),
+      ],
+      { foreignContact: false },
+    );
+
+    expect(summary.researchAreaChips).toEqual({ added: 4, removed: 3 });
   });
 });
 
