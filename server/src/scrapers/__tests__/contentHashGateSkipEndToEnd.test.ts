@@ -280,6 +280,65 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
     expect(emitted.some((obs) => obs.field === 'sourceContentHash')).toBe(false);
   });
 
+  describe('bounded card retry on an unchanged description (#3840)', () => {
+    const researchProse =
+      'Our lab is broadly interested in the biology of aging and the ways that metabolism shapes lifespan across species. Over the past decade we have built a range of experimental systems, from yeast to zebrafish, and we continue to expand these tools while training the next generation of scientists.';
+
+    function cardlessScraper(callCardLLM: CardSynthesisLLMFn) {
+      vi.spyOn(contentHashGate, 'loadStoredContentHash').mockResolvedValue(undefined);
+      return new LabMicrositeDescriptionLLMExtractor({
+        identityCorpusLoader: async () => ({
+          knownPersonSurnames: NO_SURNAME_ROSTER,
+          leadPersonNameByEntityId: new Map<string, string>(),
+        }),
+        apiKey: 'test-key',
+        labFinder: async () => [
+          {
+            _id: 'entity-ashford',
+            slug: 'ashford-lab',
+            name: 'Ashford Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/ashford/',
+          },
+        ],
+        fetchPage: vi.fn().mockResolvedValue({
+          url: 'https://medicine.yale.edu/lab/ashford/',
+          html: `<main><h1>Ashford Lab</h1><p>${researchProse}</p></main>`,
+        }),
+        callLLM: vi.fn().mockResolvedValue({
+          fullDescription: researchProse,
+          shortDescription: '',
+          topics: [],
+          methods: [],
+        } satisfies DescriptionExtraction),
+        callCardLLM,
+      });
+    }
+
+    it('records the hash once the lane re-derives its stored description and the card is refused', async () => {
+      vi.spyOn(contentHashGate, 'loadStoredLaneDescription').mockResolvedValue(researchProse);
+      const callCardLLM = vi.fn<CardSynthesisLLMFn>().mockResolvedValue('');
+      const { ctx, emitted } = makeContext();
+      await cardlessScraper(callCardLLM).run(ctx);
+
+      expect(callCardLLM).toHaveBeenCalledTimes(1);
+      expect(emitted.some((obs) => obs.field === 'shortDescription')).toBe(false);
+      expect(emitted.some((obs) => obs.field === 'sourceContentHash')).toBe(true);
+    });
+
+    it('keeps the retry open when the card call threw, even on a repeated description', async () => {
+      vi.spyOn(contentHashGate, 'loadStoredLaneDescription').mockResolvedValue(researchProse);
+      const callCardLLM = vi
+        .fn<CardSynthesisLLMFn>()
+        .mockRejectedValue(new Error('429 rate limited'));
+      const { ctx, emitted } = makeContext();
+      await cardlessScraper(callCardLLM).run(ctx);
+
+      expect(callCardLLM).toHaveBeenCalledTimes(1);
+      expect(emitted.some((obs) => obs.field === 'fullDescription')).toBe(true);
+      expect(emitted.some((obs) => obs.field === 'sourceContentHash')).toBe(false);
+    });
+  });
+
   it('description extractor: card model change re-extracts the same unchanged page', async () => {
     const pageHtml =
       '<main><h1>Ashford Lab</h1><p>The Ashford Lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.</p></main>';

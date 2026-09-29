@@ -12,6 +12,7 @@ import { createHash } from 'crypto';
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import type { ObservedEntityType } from '../models/observation';
+import { sanitizeObservationField } from './observationFieldSanitizer';
 import { isBenchmarkModeActive } from './snapshotBenchmarkMode';
 import type { ObservationInput } from './types';
 
@@ -69,6 +70,36 @@ export async function loadStoredContentHash(
   return typeof value === 'string' ? value : undefined;
 }
 
+/**
+ * The `fullDescription` this lane currently has stored for the row, for the withheld-hash
+ * decision below. Same fail-open contract as `loadStoredContentHash`: a lookup that cannot
+ * answer must never block extraction, and must never make the guard record a hash it would
+ * otherwise withhold, so an unanswerable read leaves the retry open.
+ */
+export async function loadStoredLaneDescription(
+  sourceName: string,
+  entity: ContentHashEntityRef,
+): Promise<string | undefined> {
+  if (!entity.entityId && !entity.entityKey) return undefined;
+  if (isBenchmarkModeActive()) return undefined;
+  if (mongoose.connection.readyState !== 1) return undefined;
+  const filter: Record<string, unknown> = {
+    entityType: entity.entityType,
+    sourceName,
+    field: 'fullDescription',
+    superseded: false,
+  };
+  if (entity.entityId) filter.entityId = entity.entityId;
+  else filter.entityKey = entity.entityKey;
+  try {
+    const row = await Observation.findOne(filter).sort({ observedAt: -1 }).select('value').lean();
+    const value = (row as { value?: unknown } | null)?.value;
+    return typeof value === 'string' ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function contentHashObservation(
   entity: ContentHashEntityRef,
   sourceUrl: string,
@@ -113,11 +144,50 @@ export function observationsCarryField(observations: ObservationInput[], field: 
  * A run that produced no description at all still records the hash: re-reading
  * unchanged content cannot yield a description it did not yield this time, so
  * withholding there would re-spend the LLM every sweep with nothing to recover.
+ *
+ * That open retry was unbounded, and a row whose card synthesis never succeeds paid for it
+ * on every sweep forever. Measured on Development: of 4,228 rows this lane had touched, 679
+ * had a `fullDescription` and no `shortDescription`, and 362 of those carried no stored hash
+ * at all, so nothing could ever stop re-reading them (#3840).
+ *
+ * The bound is the description itself rather than an attempt counter, because the observation
+ * log cannot count attempts: an identical value is diff-skipped and writes nothing, so a row
+ * retried ten times looks like one attempt. `storedDescription` closes the retry once the run
+ * re-derived the SAME description and still produced no card, since re-reading content that
+ * yields the same prose cannot yield a card that prose already failed to produce. A changed or
+ * first-seen description keeps the retry open, which is the case #2180 and #2436 were about.
+ *
+ * `storedDescription` absent leaves the retry open, so a lookup that could not answer never
+ * closes a decision on this row's behalf.
  */
 export function descriptionHashObservations(
   emitted: ObservationInput[],
   hashObservations: ObservationInput[],
+  storedDescription?: string,
 ): ObservationInput[] {
   if (!observationsCarryField(emitted, 'fullDescription')) return hashObservations;
-  return observationsCarryField(emitted, 'shortDescription') ? hashObservations : [];
+  if (observationsCarryField(emitted, 'shortDescription')) return hashObservations;
+  return descriptionRepeatsStoredValue(emitted, storedDescription) ? hashObservations : [];
+}
+
+function descriptionRepeatsStoredValue(
+  emitted: ObservationInput[],
+  storedDescription?: string,
+): boolean {
+  const stored = typeof storedDescription === 'string' ? storedDescription.trim() : '';
+  if (!stored) return false;
+  return emitted.some(
+    (observation) =>
+      observation.field === 'fullDescription' && storedFormOf(observation) === stored,
+  );
+}
+
+function storedFormOf(observation: ObservationInput): string | undefined {
+  const sanitized = sanitizeObservationField(
+    observation.entityType,
+    observation.field,
+    observation.value,
+  );
+  if (sanitized.rejected || typeof sanitized.value !== 'string') return undefined;
+  return sanitized.value.trim();
 }

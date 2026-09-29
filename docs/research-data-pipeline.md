@@ -561,6 +561,16 @@ The `--force-llm` flag is the only bypass; the gate is read directly by the extr
 One deliberate exception: the description extractor writes no `sourceContentHash` for a run in which it kept a stored description instead of an unopposed crawled one (the rule lives in [`skills/scrapers/SKILL.md`](../skills/scrapers/SKILL.md)), because that decision reads the stored description, which is not a hash input, and recording the hash would freeze it so a later cleared description was never reconsidered.
 Such an entity therefore re-extracts on every run until its pages or its stored description change (#2180).
 
+A second withholding exists for the same reason and is now bounded.
+A run that produced a `fullDescription` but no `shortDescription` withholds the hash, because the card synthesis that failed is a separate retryable call and recording the hash would freeze the student-visibility gate's `missing_card_description` blocker in place (#2180, #2436).
+That retry used to be unbounded, so a row whose card never succeeds paid for a page read and a model call on every sweep forever: measured on Development, of 4,228 rows the description extractor had touched, 679 had a `fullDescription` and no `shortDescription`, and 362 of those carried no stored hash at all (#3840).
+The bound is the description itself rather than an attempt count, because an identical value is diff-skipped and writes nothing, so the observation log cannot count attempts and a row retried ten times looks like one.
+The hash is therefore recorded once a run re-derives the same `fullDescription` this lane already stored and still produces no card, since content that yields the same prose cannot yield a card that prose already failed to produce.
+The two are compared in stored form, after the same ingest sanitization the stored value went through, so whitespace or redaction differences cannot keep a repeated description looking new.
+That reasoning holds only for a card the model declined, so a run whose card call threw (a rate limit, a timeout, an unparseable response) keeps the retry open whatever the stored description says.
+A changed or first-seen description keeps the retry open, which is the case the withholding was written for.
+The comparison reads this lane's own last `fullDescription` observation rather than the materialized field, which can hold another lane's winning prose, and an unanswerable lookup leaves the retry open so it never closes a decision on a row's behalf.
+
 #### What the gate does not version, and why that is correct (#3332)
 
 The hash covers the bytes and the EXTRACTION contract, so a prompt edit or a model bump re-extracts the affected entities on the next run.
