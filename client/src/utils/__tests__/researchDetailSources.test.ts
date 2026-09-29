@@ -1082,6 +1082,18 @@ describe('resolveOutreachOfficialSource', () => {
     ).toBeUndefined();
   });
 
+  it('does not offer a contact or opportunities listing as the apply source', () => {
+    const sources = [
+      makeSource('https://dept.example.yale.edu/about/contact-us'),
+      makeSource('https://dept.example.yale.edu/research/opportunities'),
+      makeSource('https://dept.example.yale.edu/connect'),
+      makeSource('https://dept.example.yale.edu/membership'),
+    ];
+
+    expect(resolveOutreachApplySource(sources, [], false, 'LAB')).toBeUndefined();
+    expect(resolveOutreachApplySource(sources, [], false, 'CENTER')).toBeUndefined();
+  });
+
   it('does not reorder sources for a non-umbrella entity type', () => {
     const source = resolveOutreachOfficialSource(
       [

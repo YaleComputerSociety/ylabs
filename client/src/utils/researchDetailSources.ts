@@ -490,18 +490,27 @@ const isMoreCanonicalSourceUrl = (candidate: string, current: string): boolean =
 const ORG_ENGAGEMENT_PATH =
   /(^|[-/])(get[-_]?involved|join(?:[-_]us)?|involvement|participate|membership|become[-_]a[-_]member|connect|contact(?:[-_]us)?|volunteer|opportunities)([-/]|$)/i;
 
-export const isOrgEngagementSourceUrl = (url?: string | null): boolean => {
+const APPLY_OR_JOIN_PATH =
+  /(^|[-/])(get[-_]?involved|join(?:[-_]us)?|participate|volunteer|become[-_]a[-_]member)([-/]|$)/i;
+
+const sourcePathMatches = (url: string | null | undefined, pattern: RegExp): boolean => {
   const normalized = normalizeSourceUrl(url);
   if (!normalized) return false;
   if (isProfileLikeSourceUrl(normalized)) return false;
 
   try {
     const path = new URL(normalized).pathname.toLowerCase().replace(/\/+$/, '');
-    return ORG_ENGAGEMENT_PATH.test(path);
+    return pattern.test(path);
   } catch {
     return false;
   }
 };
+
+export const isOrgEngagementSourceUrl = (url?: string | null): boolean =>
+  sourcePathMatches(url, ORG_ENGAGEMENT_PATH);
+
+const isApplyOrJoinSourceUrl = (url?: string | null): boolean =>
+  sourcePathMatches(url, APPLY_OR_JOIN_PATH);
 
 // Mirrors `PERSON_SCOPED_RESEARCH_ENTITY_TYPES` in
 // server/src/models/storedVocabularies.ts, including the retired types a stored
@@ -869,7 +878,7 @@ export const resolveOutreachApplySource = (
     entityType,
     rankingContext,
     leadPersonNames,
-  ).find((source) => isOrgEngagementSourceUrl(source.url));
+  ).find((source) => isApplyOrJoinSourceUrl(source.url));
 
 export const resolveOutreachOfficialSource = (
   sources: ResearchDetailSource[],
