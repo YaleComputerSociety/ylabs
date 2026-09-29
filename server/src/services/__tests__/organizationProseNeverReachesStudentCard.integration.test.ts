@@ -47,7 +47,7 @@ describe("another organization's prose never reaches a person's card (#2915)", (
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const storedRow = (input: {

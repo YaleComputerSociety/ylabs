@@ -42,7 +42,7 @@ describe('the detail route applies the lead-name identity guards it resolved (#3
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

@@ -55,7 +55,7 @@ describe('a netid twin cannot bypass a detached role edge (#3152)', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   /**

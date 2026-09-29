@@ -286,7 +286,7 @@ describe('descriptionPromptAbHarness A/B run (#2183)', () => {
   afterAll(async () => {
     fs.rmSync(REPORT_PATH, { force: true });
     axios.defaults.adapter = undefined;
-    await mongod.stop();
+    await mongod?.stop();
   });
 
   it('reaches its named anchors even when they are archived or below student_ready', () => {

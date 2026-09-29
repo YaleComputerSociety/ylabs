@@ -152,7 +152,7 @@ describe('lab-branded name backfill over a brand a dedupe grafted forward (#2446
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

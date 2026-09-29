@@ -183,7 +183,7 @@ describe('a durable refusal survives re-observation where superseded does not (#
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

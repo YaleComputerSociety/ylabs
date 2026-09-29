@@ -189,7 +189,7 @@ describe('a center-director-llm rephrasing supersedes its predecessor instead of
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -342,7 +342,7 @@ describe('a named director with no profile URL resolves by name when the name is
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

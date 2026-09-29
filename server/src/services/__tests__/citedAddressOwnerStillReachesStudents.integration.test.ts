@@ -52,7 +52,7 @@ describe('a stale citation does not suppress the row that publishes the address 
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedPi = async (entityId: mongoose.Types.ObjectId, lastName: string) => {

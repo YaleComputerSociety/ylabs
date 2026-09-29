@@ -18,7 +18,7 @@ describe('installMongoWriteRefusal', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await mongod.stop();
+    await mongod?.stop();
   });
 
   it('refuses every write path while reads keep working, and restores cleanly', async () => {

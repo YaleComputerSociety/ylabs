@@ -45,7 +45,7 @@ describe("a merged survivor's own lab-identity lane owns its website (#3585)", (
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

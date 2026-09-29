@@ -30,7 +30,7 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await server.stop();
+    await server?.stop();
   });
 
   beforeEach(async () => {
@@ -215,7 +215,7 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await server.stop();
+    await server?.stop();
   });
 
   beforeEach(async () => {

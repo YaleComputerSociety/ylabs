@@ -65,7 +65,7 @@ describe('materializeEntity empty-observation guard (#2467)', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

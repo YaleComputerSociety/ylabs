@@ -41,7 +41,7 @@ describe('department roster appointments combine (#3621)', () => {
   afterAll(async () => {
     resetOrgUnitCanonicalizerCache();
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

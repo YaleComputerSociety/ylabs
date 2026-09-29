@@ -50,7 +50,7 @@ describe('an entry naming a real observation it never recorded is relinked on re
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

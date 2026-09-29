@@ -74,7 +74,7 @@ describe('a boundary the source separated never reaches the student detail surfa
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

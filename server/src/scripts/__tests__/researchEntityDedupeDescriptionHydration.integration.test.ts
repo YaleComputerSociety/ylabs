@@ -57,7 +57,7 @@ describe('dedupe merge description hydration (#2208)', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => vi.clearAllMocks());

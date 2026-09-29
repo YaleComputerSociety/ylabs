@@ -54,7 +54,7 @@ describe('an address-authority row is still a duplicate in a group formed by a u
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedPi = async (entityId: mongoose.Types.ObjectId, lastName: string) => {

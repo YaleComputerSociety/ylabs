@@ -85,7 +85,7 @@ describe('field retraction on a merged-in loser key clears the survivor it backs
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

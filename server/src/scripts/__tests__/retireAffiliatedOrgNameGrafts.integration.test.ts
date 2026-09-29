@@ -22,7 +22,7 @@ describe('retireAffiliatedOrgNameGrafts finishes the repair on the document (#23
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -348,7 +348,7 @@ describe('retireAffiliatedOrgNameGrafts finishes the website half of the graft (
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -813,7 +813,7 @@ describe('retireAffiliatedOrgNameGrafts reaches the profile-backfill graft (#291
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

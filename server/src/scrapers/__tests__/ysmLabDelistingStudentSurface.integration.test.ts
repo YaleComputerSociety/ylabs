@@ -89,7 +89,7 @@ describe('a YSM lab YSM deleted and delisted stops being served to students (#25
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedServedLab = async (input: { slug: string; lastName: string; url: string }) => {

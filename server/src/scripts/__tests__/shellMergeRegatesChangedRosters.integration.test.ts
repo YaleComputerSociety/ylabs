@@ -55,7 +55,7 @@ describe('folding a person shell re-gates the rosters it changed (#2952)', () =>
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

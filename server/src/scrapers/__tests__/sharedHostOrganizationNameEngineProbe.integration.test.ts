@@ -71,7 +71,7 @@ describe('a shared academic host organization name never survives on one of its 
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

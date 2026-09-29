@@ -22,7 +22,7 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

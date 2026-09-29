@@ -43,7 +43,7 @@ describe('a department winner that names no department (#3610)', () => {
   afterAll(async () => {
     resetOrgUnitCanonicalizerCache();
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

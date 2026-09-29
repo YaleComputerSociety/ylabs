@@ -79,7 +79,7 @@ describe('a row typed LAB never serves the person-scoped name suffix (#3252)', (
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

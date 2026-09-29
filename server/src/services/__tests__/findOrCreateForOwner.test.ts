@@ -16,7 +16,7 @@ describe('findOrCreateForOwner canonical PI assignment', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

@@ -40,7 +40,7 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
     resetResearchAreaCanonicalizerCache();
   });
 

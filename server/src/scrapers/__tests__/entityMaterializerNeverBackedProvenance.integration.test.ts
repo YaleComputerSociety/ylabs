@@ -45,7 +45,7 @@ describe('a fieldProvenance entry naming a lane that never observed the field re
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

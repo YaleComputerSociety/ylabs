@@ -40,7 +40,7 @@ describe('materializeEntity skips write and re-sync on an unchanged re-projectio
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

@@ -31,7 +31,7 @@ describe('applyStagedCollectionSwap atomicity (#2347)', () => {
 
   afterAll(async () => {
     await client.close();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

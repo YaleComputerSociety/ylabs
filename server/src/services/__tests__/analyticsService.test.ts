@@ -444,7 +444,7 @@ describe('getAnalytics research coverage and range scoping', () => {
       expect(buggySum).toBeGreaterThan(distinctNetids);
     } finally {
       await client.close();
-      await server.stop();
+      await server?.stop();
     }
   });
 
@@ -688,7 +688,7 @@ describe('getAnalytics research coverage and range scoping', () => {
       ]);
     } finally {
       await client.close();
-      await server.stop();
+      await server?.stop();
     }
   });
 
@@ -750,7 +750,7 @@ describe('getAnalytics research coverage and range scoping', () => {
       expect(result.byUserType).toEqual([{ userType: 'undergraduate', count: 1 }]);
     } finally {
       await client.close();
-      await server.stop();
+      await server?.stop();
     }
   });
 
@@ -1021,7 +1021,7 @@ describe('getUserAnalytics', () => {
       expect(accountless.email).toBeUndefined();
     } finally {
       await client.close();
-      await server.stop();
+      await server?.stop();
     }
   });
 });
@@ -2006,7 +2006,7 @@ describe('search query report grain', () => {
       expect(regionsRow).toMatchObject({ totalSearches: 2, uniqueSearchers: 2 });
     } finally {
       await client.close();
-      await server.stop();
+      await server?.stop();
     }
   });
 });

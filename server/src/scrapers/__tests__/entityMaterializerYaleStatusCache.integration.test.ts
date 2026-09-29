@@ -37,7 +37,7 @@ describe('materializeEntity derives activeAtYaleCache/yaleStatusCache from inges
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

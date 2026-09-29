@@ -46,7 +46,7 @@ describe('a stored undergradEvidenceQuote the evidence no longer backs clears on
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

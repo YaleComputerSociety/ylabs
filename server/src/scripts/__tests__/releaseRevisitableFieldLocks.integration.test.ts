@@ -80,7 +80,7 @@ describe('research-entity:release-field-locks (#2612)', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

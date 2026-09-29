@@ -50,7 +50,7 @@ describe('a contact reaches a row only from evidence keyed to that row (#3609)',
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

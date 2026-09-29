@@ -80,7 +80,7 @@ describe('a browse card serves the same repaired copy as its own detail page (#2
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedEntity = async (input: SeedInput) => {

@@ -54,7 +54,7 @@ describe('the PI-lead lane revisits a row whose only lead edge the gate rejects 
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

@@ -40,7 +40,7 @@ describe('materializeEntity reports rows whose last index resync did not land', 
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

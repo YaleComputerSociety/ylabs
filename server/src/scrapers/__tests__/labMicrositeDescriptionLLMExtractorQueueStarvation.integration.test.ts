@@ -35,7 +35,7 @@ describe('LabMicrositeDescriptionLLMExtractor default queue ordering (#1843, #18
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

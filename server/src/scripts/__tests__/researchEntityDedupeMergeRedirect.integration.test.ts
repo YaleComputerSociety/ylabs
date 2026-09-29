@@ -37,7 +37,7 @@ describe('dedupe merge persists a durable canonical tombstone', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

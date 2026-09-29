@@ -107,7 +107,7 @@ describe('lossless decide-late: full retained log materializes the useful descri
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

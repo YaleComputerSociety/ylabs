@@ -124,7 +124,7 @@ describe('the engine benchmark replays a frozen input rather than the corpus (#3
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

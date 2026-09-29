@@ -85,7 +85,7 @@ describe('the card lane fails closed when its observation is refused (#3158)', (
   afterAll(async () => {
     delete process.env.OPENAI_API_KEY;
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

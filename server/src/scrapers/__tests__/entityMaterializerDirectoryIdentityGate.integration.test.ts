@@ -36,7 +36,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

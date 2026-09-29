@@ -34,7 +34,7 @@ describe('a sourced research-area chip reaches the detail route (#2898)', () => 
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedEntity = async (input: { slug: string; lastName: string; sourced: boolean }) => {

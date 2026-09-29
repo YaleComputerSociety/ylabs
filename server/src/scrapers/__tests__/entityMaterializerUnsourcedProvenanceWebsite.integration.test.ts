@@ -43,7 +43,7 @@ describe('a websiteUrl written without evidence clears on materialize (#3586)', 
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

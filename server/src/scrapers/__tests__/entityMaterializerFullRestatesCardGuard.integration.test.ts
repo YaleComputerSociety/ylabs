@@ -65,7 +65,7 @@ describe('materializeEntity keeps the body when the body restates the card (#272
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

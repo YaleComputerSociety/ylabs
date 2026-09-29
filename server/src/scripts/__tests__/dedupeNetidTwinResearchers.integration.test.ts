@@ -34,7 +34,7 @@ describe('a netid twin is folded even though no name links it (#3166)', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await server.stop();
+    await server?.stop();
   });
 
   beforeEach(async () => {

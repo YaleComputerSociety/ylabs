@@ -92,7 +92,7 @@ describe('invalidated scrape runs are fenced out of the write path (#2469)', () 
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

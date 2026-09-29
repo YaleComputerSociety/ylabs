@@ -34,7 +34,7 @@ describe('a glued appointment-title block never reaches the served detail body (
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
