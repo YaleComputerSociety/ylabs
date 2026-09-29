@@ -2033,6 +2033,19 @@ describe('isCitationAuthorListDumpText citation-list fail-closed (#1481)', () =>
     ).toBe('');
   });
 
+  it('detects a bibliography entry whose authors are in APA surname-comma-initials order', () => {
+    const APA_ENTRY =
+      'Okafor, J. A., Lindqvist, M.-L., Brennan, W.G., Castell, S. N. and Ferro, J., 2003. Laboratory studies of thermally driven flows with partial mixing and multiple flow states.';
+    expect(isCitationAuthorListDumpText(APA_ENTRY)).toBe(true);
+    expect(sanitizeResearchEntityDescription(APA_ENTRY)).toBe('');
+  });
+
+  it('keeps research prose that lists APA-order publications after it', () => {
+    const PROSE_THEN_PUBLICATIONS =
+      'The group studies how sleep health responds to psychosocial stress in underserved communities, using actigraphy and interviews. Recent work: Okafor, J. A., Lindqvist, M.-L., Brennan, W.G., Castell, S. N., 2021. Sleep and stress.';
+    expect(isCitationAuthorListDumpText(PROSE_THEN_PUBLICATIONS)).toBe(false);
+  });
+
   it('detects an author list whose run is broken by interposed element tags (#2416)', () => {
     expect(
       isCitationAuthorListDumpText(

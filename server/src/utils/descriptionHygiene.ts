@@ -734,6 +734,8 @@ export function repairMissingSpaceAfterSentence(text: string): string {
 }
 
 const citationAuthorInitialsListPattern = /(?:\p{Lu}[\p{L}'’-]+\s+\p{Lu}{1,3},\s*){3,}/u;
+const citationSurnameCommaInitialsListPattern =
+  /^\s*(?:\p{Lu}[\p{L}'’-]+,\s+\p{Lu}\.(?:[\s-]*\p{Lu}\.)*\s*,\s*){3,}/u;
 
 /**
  * A raw citation author-initials list ("Choma MA, Suter MJ, Vakoc BJ, Bouma
@@ -751,9 +753,20 @@ const citationAuthorInitialsListPattern = /(?:\p{Lu}[\p{L}'’-]+\s+\p{Lu}{1,3},
  * Development each change on its own newly matched nothing, and together they
  * newly matched one value, a pure bibliography entry that reported zero quality
  * flags (#2416).
+ *
+ * The same signature in APA order, "Surname, J. A., Surname, M.-L., ...", is a
+ * second arm: a description lane served one such bibliography entry as a body
+ * because only the "Surname INITIALS," order was known (#3885). It is anchored to the
+ * start of the text, so it refuses a value that IS a bibliography entry but not
+ * research prose that lists its publications after it: on Development the
+ * unanchored form also matched a served 798-character research description.
  */
 export function isCitationAuthorListDumpText(text: unknown): boolean {
-  return citationAuthorInitialsListPattern.test(stripHtmlTagMarkupForDetection(text));
+  const stripped = stripHtmlTagMarkupForDetection(text);
+  return (
+    citationAuthorInitialsListPattern.test(stripped) ||
+    citationSurnameCommaInitialsListPattern.test(stripped)
+  );
 }
 
 const CV_MONTH =
