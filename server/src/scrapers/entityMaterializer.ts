@@ -645,11 +645,14 @@ export function materializerProjectionPathIsStorable(
 // empty means storability is unknown rather than false, so the comparison then
 // covers every path: reading it the other way would skip real writes.
 //
-// `unset` is deliberately compared whichever way storability reads. A stored value
-// under an undeclared path exists (2,886 rows hold `description`, which no schema
-// path declares), so skipping the comparison there could skip a write that removes
-// something a row holds. Whether mongoose also strips an undeclared `$unset` is
-// unmeasured; until it is, the comparison stays on the side that writes.
+// `unset` is deliberately compared whichever way storability reads. Mongoose does
+// strip an undeclared `$unset` as well, measured by raw-seeding a value under one
+// and watching a pass that plans its removal leave it in place while clearing a
+// declared field in the same update, so in principle an unstorable `unset` path
+// could hold a row open the same way. It reaches nothing: `inferredPiUserId` is the
+// only undeclared entry in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS` and no row of
+// the corpus stores it. So the comparison stays on the side that writes, which is
+// the side that cannot skip a removal a row does need.
 export function isMaterializerProjectionNoOp(
   entityDoc: Record<string, unknown>,
   set: Record<string, unknown>,

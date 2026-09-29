@@ -403,7 +403,9 @@ The projection's no-op short-circuit compared every planned path against the sto
 Measured over a random 300 live rows on Development, 3 rows converged and 113 converge once storability is read, so 110 rows, 37 percent, were taking a write and a re-index on every pass that could change nothing.
 No stored value changes: 7 of the 8 paths that held those rows open are stored on zero rows of the corpus, and `studentDecisionExplanation`, stored on 1,742 rows as legacy residue, still differed from its own projection on 5 rows whose `updatedAt` is later than the observation, which is that path's own evidence that the write does not land.
 Storability is read from the live schema in one place, `materializerProjectionPathIsStorable`, which the census calls rather than restating, so the engine and the census cannot disagree about what counts.
-An `unset` is compared whichever way storability reads, because a row can hold a value under an undeclared path and skipping that comparison could skip a write that removes something.
+An `unset` is compared whichever way storability reads.
+Mongoose strips an undeclared `$unset` as well as an undeclared `$set`, measured by raw-seeding a value under one and watching a pass that plans its removal leave it in place while clearing a declared field in the same update, so an unstorable `unset` path could hold a row open in the same way.
+It reaches nothing today, because `inferredPiUserId` is the only undeclared entry in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS` and no row stores it, so the comparison stays on the side that cannot skip a removal a row does need.
 
 `scaledToCorpus` appears only on a `--sample` run, because a random `$sample` is the only population the scaling is valid for and extrapolating a caller-chosen `--slugs` list to 4,744 live rows reports that the whole corpus diverges because the one slug asked about does.
 Its denominator is every row drawn rather than every row classified, so a skipped row does not inflate the estimate.
