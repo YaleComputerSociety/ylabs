@@ -45,7 +45,7 @@ describe('a placeholder entity name never reaches a student (#2367)', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedPi = async (entityId: mongoose.Types.ObjectId, lastName: string) => {

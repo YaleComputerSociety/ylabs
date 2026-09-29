@@ -48,7 +48,7 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

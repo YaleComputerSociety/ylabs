@@ -53,7 +53,7 @@ describe('served program source-link health on the student path (integration)', 
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(async () => {

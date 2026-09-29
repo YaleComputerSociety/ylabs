@@ -39,7 +39,7 @@ describe('a merged shell tombstone routes re-scraped evidence to the survivor', 
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

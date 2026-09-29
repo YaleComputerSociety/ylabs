@@ -44,7 +44,7 @@ describe('merge survivor re-gate (issue #2210)', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => vi.clearAllMocks());

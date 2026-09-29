@@ -114,7 +114,7 @@ describe('retireProgramResearchEntities with MongoDB', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   let deleteDocuments: ReturnType<typeof vi.fn>;

@@ -55,7 +55,7 @@ describe('the declared fellowship sourceKey unique index can actually be built (
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await server.stop();
+    await server?.stop();
   });
 
   beforeEach(async () => {

@@ -276,7 +276,7 @@ describe('visibility:recoverability audits the withheld corpus end to end (issue
 
   afterAll(async () => {
     await mongoose.disconnect().catch(() => {});
-    await mongod.stop();
+    await mongod?.stop();
   });
 
   it('scans only the withheld, non-archived corpus', () => {

@@ -85,7 +85,7 @@ describe('a detached role edge survives the next materialize pass (#3143)', () =
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedLead = async (input: { displayName: string; netid: string; confidence: number }) => {

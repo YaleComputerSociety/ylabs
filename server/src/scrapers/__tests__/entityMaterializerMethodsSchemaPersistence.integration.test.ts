@@ -32,7 +32,7 @@ describe('materializeEntity persists methods through the schema, not just into t
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

@@ -41,7 +41,7 @@ describe('materializeEntity rejects a fullDescription that restates shortDescrip
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {
@@ -154,7 +154,7 @@ describe('materializeEntity blanks a program fullDescription that is byte-identi
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {
@@ -220,7 +220,7 @@ describe('materializeEntity is idempotent across repeated runs on unchanged obse
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

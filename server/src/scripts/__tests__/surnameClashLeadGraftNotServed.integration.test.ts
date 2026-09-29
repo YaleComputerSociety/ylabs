@@ -42,7 +42,7 @@ describe('a same-surname stranger stops being served as a co-equal PI (#2768)', 
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedLead = async (input: {

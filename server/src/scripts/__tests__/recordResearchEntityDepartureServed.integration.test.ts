@@ -95,7 +95,7 @@ describe('an operator-reported departure stops the directory serving the row (#3
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedServedLab = async (overrides: Record<string, unknown> = {}) => {

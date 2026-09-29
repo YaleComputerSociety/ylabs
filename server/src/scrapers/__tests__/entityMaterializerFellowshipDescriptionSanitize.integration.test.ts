@@ -40,7 +40,7 @@ describe('materializeEntity sanitizes fellowship/program descriptions at the wri
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

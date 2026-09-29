@@ -54,7 +54,7 @@ describe('a useful-but-worse prose refresh cannot displace a clean incumbent end
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

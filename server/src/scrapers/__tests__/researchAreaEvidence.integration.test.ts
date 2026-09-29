@@ -18,7 +18,7 @@ describe('research-area evidence against a real store (#3836)', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await memoryServer.stop();
+    await memoryServer?.stop();
   });
 
   beforeEach(async () => {

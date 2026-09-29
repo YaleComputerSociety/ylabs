@@ -47,7 +47,7 @@ describe('materializeEntity refuses a name that identifies nothing or names some
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

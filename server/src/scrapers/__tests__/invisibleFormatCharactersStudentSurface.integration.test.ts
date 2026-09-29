@@ -78,7 +78,7 @@ describe('scraped invisible format characters never reach the student detail sur
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

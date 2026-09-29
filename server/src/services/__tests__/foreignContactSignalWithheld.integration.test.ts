@@ -121,7 +121,7 @@ describe('a contact signal whose evidence names another row is not served (#3609
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

@@ -89,7 +89,7 @@ describe('a same-surname stranger page never reaches a served row citations (#29
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

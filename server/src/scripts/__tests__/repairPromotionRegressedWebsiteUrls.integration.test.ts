@@ -83,7 +83,7 @@ describe('repair-promotion-regressed-website-urls against a real collection (#25
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

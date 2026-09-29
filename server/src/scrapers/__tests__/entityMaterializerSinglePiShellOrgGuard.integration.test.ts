@@ -44,7 +44,7 @@ describe('materializeEntity guards named multi-PI orgs from a single-PI/grant sh
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

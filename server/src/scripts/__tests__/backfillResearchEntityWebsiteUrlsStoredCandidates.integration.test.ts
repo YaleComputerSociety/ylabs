@@ -26,7 +26,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await mongoose.disconnect();
-  await replSet.stop();
+  await replSet?.stop();
 });
 
 describe('research-entity website-url backfill on shared multi-tenant hosts (#2359)', () => {

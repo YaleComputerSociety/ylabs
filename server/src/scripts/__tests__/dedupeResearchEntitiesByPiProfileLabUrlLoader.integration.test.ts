@@ -112,7 +112,7 @@ describe('profile-lab-url dedupe loader aggregation memory bound', () => {
 
   afterAll(async () => {
     await mongoose.disconnect().catch(() => {});
-    await mongod.stop();
+    await mongod?.stop();
   });
 
   it('overflows an unbounded server-side blocking sort over the unwound URL corpus', async () => {

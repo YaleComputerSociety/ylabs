@@ -128,7 +128,7 @@ describe('the browse school dropdown stops offering a campus or a center (#2277)
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

@@ -37,7 +37,7 @@ describe('materializeEntity surfaces the lead official profile as a sourceUrl (#
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

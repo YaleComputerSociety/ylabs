@@ -69,7 +69,7 @@ describe('a shared academic host organization name never reaches a student (#236
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedLead = async (entityId: mongoose.Types.ObjectId, lastName: string) => {

@@ -85,7 +85,7 @@ describe('Admin audit log, grant timeline, and user pagination (integration)', (
   afterAll(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

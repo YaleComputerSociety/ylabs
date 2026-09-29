@@ -41,7 +41,7 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

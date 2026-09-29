@@ -39,7 +39,7 @@ describe('materializeEntity does not resurrect a merged FRA shell', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

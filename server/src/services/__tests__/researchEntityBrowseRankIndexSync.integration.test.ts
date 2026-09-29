@@ -24,7 +24,7 @@ describe('recomputeBrowseRankForEntities reports index-sync failures apart from 
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

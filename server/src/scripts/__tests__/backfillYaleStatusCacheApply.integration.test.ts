@@ -172,7 +172,7 @@ describe('research:backfill-yale-status-cache apply is bidirectional (issue #228
 
   afterAll(async () => {
     await mongoose.disconnect().catch(() => {});
-    await mongod.stop();
+    await mongod?.stop();
   });
 
   beforeEach(async () => {

@@ -23,7 +23,7 @@ describe('connecting must not be a schema-mutating act (#2233)', () => {
   }, 60000);
 
   afterAll(async () => {
-    await server.stop();
+    await server?.stop();
   });
 
   /** What a booting process does: open the connection, register the model, nothing else. */
@@ -98,7 +98,7 @@ describe('index drift is reported rather than silently self-healed (#2233)', () 
 
   afterAll(async () => {
     await connection.close();
-    await server.stop();
+    await server?.stop();
   });
 
   it('names a declared index the way the driver does, including a text index', () => {

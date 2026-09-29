@@ -46,7 +46,7 @@ describe('sweep preflight', () => {
   }, 120_000);
 
   afterAll(async () => {
-    await mongod.stop();
+    await mongod?.stop();
   });
 
   afterEach(() => {

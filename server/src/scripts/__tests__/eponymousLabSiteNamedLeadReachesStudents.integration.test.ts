@@ -63,7 +63,7 @@ describe("an eponymous lab's own site supplies the lead it was held for (#1930)"
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MongoMemoryReplSet, MongoMemoryServer } from 'mongodb-memory-server';
 import { mongoMemoryLaunchBudgetForTest } from '../mongoMemoryLaunchBudget';
 
@@ -61,5 +61,60 @@ describe('the in-memory MongoDB launch budget is owned centrally (#2903 sibling)
   it('is installed on both factories by the shared setup file', () => {
     expect(MongoMemoryServer.create.name).not.toBe('create');
     expect(MongoMemoryReplSet.create.name).not.toBe('create');
+  });
+});
+
+const { PORT_RACE_ATTEMPTS, isPortRace, retryingPortRace } = mongoMemoryLaunchBudgetForTest;
+
+/**
+ * Reproduces #3845 without a port or a process: the library surfaces a lost port race as an
+ * error whose message reads `Port "57911" already in use`, so the retry is driven by that
+ * message and can be exercised by throwing it.
+ */
+const portRace = () => new Error('Port "57911" already in use');
+
+describe('isPortRace', () => {
+  it('recognises the message the library actually emits', () => {
+    expect(isPortRace(portRace())).toBe(true);
+    expect(isPortRace('Port "1" already in use')).toBe(true);
+    expect(isPortRace('port 27017 already in use')).toBe(true);
+  });
+
+  // A retry must not swallow the failure this harness was built to report: #2903's launch budget
+  // exists because a slow machine exceeds it, and that has to stay visible.
+  it('does not recognise any other launch failure', () => {
+    expect(isPortRace(new Error('Instance failed to start within 120000ms'))).toBe(false);
+    expect(isPortRace(new Error('spawn ENOENT'))).toBe(false);
+    expect(isPortRace(undefined)).toBe(false);
+  });
+});
+
+describe('retryingPortRace', () => {
+  it('retries a lost port race and returns the launch that wins', async () => {
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(portRace())
+      .mockRejectedValueOnce(portRace())
+      .mockResolvedValue('started');
+    await expect(retryingPortRace(create)).resolves.toBe('started');
+    expect(create).toHaveBeenCalledTimes(3);
+  });
+
+  it('gives up after a bounded number of attempts, so a port that is never free still fails', async () => {
+    const create = vi.fn().mockRejectedValue(portRace());
+    await expect(retryingPortRace(create)).rejects.toThrow('already in use');
+    expect(create).toHaveBeenCalledTimes(PORT_RACE_ATTEMPTS);
+  });
+
+  it('rethrows any other failure on the first attempt rather than retrying it', async () => {
+    const create = vi.fn().mockRejectedValue(new Error('Instance failed to start within 120000ms'));
+    await expect(retryingPortRace(create)).rejects.toThrow('failed to start');
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call the launch twice when the first attempt succeeds', async () => {
+    const create = vi.fn().mockResolvedValue('started');
+    await expect(retryingPortRace(create)).resolves.toBe('started');
+    expect(create).toHaveBeenCalledTimes(1);
   });
 });

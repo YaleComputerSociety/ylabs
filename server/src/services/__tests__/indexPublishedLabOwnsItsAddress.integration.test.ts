@@ -54,7 +54,7 @@ describe('a lab whose address Yale’s research-home index publishes owns that a
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedPi = async (entityId: mongoose.Types.ObjectId, lastName: string) => {

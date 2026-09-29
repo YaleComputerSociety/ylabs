@@ -36,7 +36,7 @@ describe('repair-invisible-format-characters against real collections (#2874)', 
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

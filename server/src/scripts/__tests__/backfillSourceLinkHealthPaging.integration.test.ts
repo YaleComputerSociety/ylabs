@@ -27,7 +27,7 @@ describe('source-link-health paging (#2539)', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

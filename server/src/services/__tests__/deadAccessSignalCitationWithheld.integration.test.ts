@@ -78,7 +78,7 @@ describe('a dead access-signal citation is withheld and the signal stays (#3267)
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

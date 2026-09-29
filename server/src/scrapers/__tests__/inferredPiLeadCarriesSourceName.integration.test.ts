@@ -41,7 +41,7 @@ describe('an inferred-PI lead edge carries the sourceName its retirement guard r
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

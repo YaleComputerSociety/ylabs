@@ -47,7 +47,7 @@ describe('runResearchAreaBackfill Meili sync wiring (issue #1002)', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
     setResearchAreaCanonicalizerForTesting(null);
   });
 

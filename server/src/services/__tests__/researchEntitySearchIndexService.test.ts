@@ -978,7 +978,7 @@ describe('fetchResearchEntitySearchMemberNames canonical roster projection', () 
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -1035,7 +1035,7 @@ describe('rebuildResearchEntitySearchIndex archived exclusion', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

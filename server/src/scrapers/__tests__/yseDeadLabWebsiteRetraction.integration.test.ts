@@ -172,7 +172,7 @@ describe('a YSE lab withdrawn on a dead link stops serving its websiteUrl (#3452
   afterAll(async () => {
     process.env.SCRAPER_FIELD_RETRACTION = originalFlag;
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

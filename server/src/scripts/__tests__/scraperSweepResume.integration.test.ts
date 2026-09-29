@@ -83,7 +83,7 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
 
   afterAll(async () => {
     await mongoose.disconnect().catch(() => {});
-    await mongod.stop();
+    await mongod?.stop();
     for (const key of SWEEP_ENV_KEYS) {
       const value = previousEnv.get(key);
       if (value === undefined) delete process.env[key];

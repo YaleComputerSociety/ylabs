@@ -46,7 +46,7 @@ describe('a non-research staff lead never carries a served research home (#1897)
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedLeadPerson = async (input: {

@@ -33,7 +33,7 @@ describe('materializer writes cannot disagree with the schema enums', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

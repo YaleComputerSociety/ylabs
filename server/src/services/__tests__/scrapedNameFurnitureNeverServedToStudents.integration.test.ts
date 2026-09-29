@@ -42,7 +42,7 @@ describe('scraped furniture in a stored person name never reaches a student', ()
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedServedEntity = async (input: SeedInput) => {

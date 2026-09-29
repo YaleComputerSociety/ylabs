@@ -50,7 +50,7 @@ describe('runResearchDescriptionBackfill record-id scoping (#1913)', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

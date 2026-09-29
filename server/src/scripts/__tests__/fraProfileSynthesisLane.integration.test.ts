@@ -232,7 +232,7 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
   afterAll(async () => {
     resetOrgUnitCanonicalizerCache();
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

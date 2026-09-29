@@ -222,7 +222,7 @@ describe('grant-corpus research synthesis + PI-to-school inheritance lane (#2158
   afterAll(async () => {
     resetOrgUnitCanonicalizerCache();
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

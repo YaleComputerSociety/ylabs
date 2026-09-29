@@ -33,7 +33,7 @@ describe('the declared Department text index can be built against the index that
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await server.stop();
+    await server?.stop();
   });
 
   beforeEach(async () => {

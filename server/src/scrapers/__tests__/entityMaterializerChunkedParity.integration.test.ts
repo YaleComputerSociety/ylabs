@@ -172,7 +172,7 @@ describe('chunked materialization reads per chunk and projects what row-by-row d
   afterAll(async () => {
     mongoose.set('debug', false);
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

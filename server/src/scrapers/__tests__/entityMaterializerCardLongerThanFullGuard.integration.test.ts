@@ -47,7 +47,7 @@ describe('materializeEntity prefers a fullDescription that is not thinner than t
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {
