@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from '../../utils/axios';
+import useLatestRequest from '../../hooks/useLatestRequest';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/url';
 
 type Tier = 'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
@@ -1142,22 +1143,27 @@ const AdminOperatorBoard = () => {
   const [board, setBoard] = useState<OperatorBoard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const boardRequest = useLatestRequest();
 
   const fetchBoard = useCallback(async () => {
+    const request = boardRequest.begin();
     setLoading(true);
     setError('');
     try {
       const response = await axios.get<OperatorBoard>('/admin/operator-board', {
         withCredentials: true,
+        signal: request.signal,
       });
+      if (!request.isCurrent()) return;
       setBoard(response.data);
     } catch {
+      if (!request.isCurrent()) return;
       console.error('Error fetching operator board.');
       setError('Failed to load operator board');
     } finally {
-      setLoading(false);
+      if (request.isCurrent()) setLoading(false);
     }
-  }, []);
+  }, [boardRequest]);
 
   useEffect(() => {
     void fetchBoard();
@@ -1184,24 +1190,33 @@ const AdminOperatorBoard = () => {
   );
   const sourceLanes = useMemo(() => (board ? sourceReviewLanes(board) : []), [board]);
 
-  if (loading) {
+  if (!board) {
+    if (loading) {
+      return (
+        <div className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-6">
+          Loading board…
+        </div>
+      );
+    }
     return (
-      <div className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-6">
-        Loading board…
-      </div>
-    );
-  }
-
-  if (error || !board) {
-    return (
-      <div className="rounded-md border border-red-200 bg-red-50 p-6 text-sm text-red-700">
-        {error || 'Failed to load operator board.'}
+      <div
+        role="alert"
+        className="flex flex-wrap items-center gap-3 rounded-md border border-red-200 bg-red-50 p-6 text-sm text-red-700"
+      >
+        <p>{error || 'Failed to load operator board.'}</p>
+        <button
+          type="button"
+          onClick={() => void fetchBoard()}
+          className="min-h-10 rounded-card border border-red-200 bg-white px-4 py-2 font-semibold text-red-700 hover:bg-red-100 yr-focus-ring"
+        >
+          Try again
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" aria-busy={loading}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="yr-display text-2xl font-semibold text-ink">
@@ -1212,11 +1227,23 @@ const AdminOperatorBoard = () => {
         <button
           type="button"
           onClick={() => void fetchBoard()}
-          className="min-h-10 rounded-card border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-ink-soft hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+          disabled={loading}
+          aria-busy={loading}
+          className="min-h-10 rounded-card border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-ink-soft hover:bg-[var(--yr-panel-muted)] disabled:cursor-wait disabled:opacity-60 yr-focus-ring"
         >
-          Refresh
+          {loading ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
+
+      {error && (
+        <p
+          role="alert"
+          className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+          Failed to refresh operator board. Showing the board from {formatDate(board.generatedAt)}.
+          Use Refresh to try again.
+        </p>
+      )}
 
       {board.artifactFreshness && <ArtifactFreshnessStrip items={board.artifactFreshness} />}
 

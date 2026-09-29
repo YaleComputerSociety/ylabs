@@ -13,6 +13,7 @@ import {
   createInitialAdminFellowshipFormState,
 } from '../../reducers/adminFellowshipFormReducer';
 import { getFellowshipApplicationStatus } from '../../utils/fellowshipStatus';
+import useLatestRequest from '../../hooks/useLatestRequest';
 
 interface FellowshipLink {
   label: string;
@@ -84,8 +85,10 @@ const AdminFellowshipsTable = () => {
   } = state;
   const archivedFilter = filters.archived;
   const auditedFilter = filters.audited;
+  const fellowshipsRequest = useLatestRequest();
 
   const fetchFellowships = useCallback(async () => {
+    const request = fellowshipsRequest.begin();
     dispatch({ type: 'FETCH_START' });
     try {
       const params: any = {
@@ -98,7 +101,12 @@ const AdminFellowshipsTable = () => {
       if (archivedFilter) params.archived = archivedFilter;
       if (auditedFilter) params.audited = auditedFilter;
 
-      const response = await axios.get('/admin/fellowships', { params, withCredentials: true });
+      const response = await axios.get('/admin/fellowships', {
+        params,
+        withCredentials: true,
+        signal: request.signal,
+      });
+      if (!request.isCurrent()) return;
       dispatch({
         type: 'FETCH_SUCCESS',
         items: response.data.fellowships,
@@ -106,11 +114,21 @@ const AdminFellowshipsTable = () => {
         totalPages: response.data.totalPages,
       });
     } catch {
+      if (!request.isCurrent()) return;
       console.error('Error fetching admin fellowships.');
       void swal({ text: 'Failed to fetch fellowships', icon: 'error' });
       dispatch({ type: 'FETCH_FAILURE' });
     }
-  }, [search, sortBy, sortOrder, page, pageSize, archivedFilter, auditedFilter]);
+  }, [
+    fellowshipsRequest,
+    search,
+    sortBy,
+    sortOrder,
+    page,
+    pageSize,
+    archivedFilter,
+    auditedFilter,
+  ]);
 
   useEffect(() => {
     const debounce = setTimeout(

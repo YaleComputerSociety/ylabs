@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import AdminOperatorBoard from '../AdminOperatorBoard';
@@ -844,5 +844,46 @@ describe('AdminOperatorBoard', () => {
       screen.getByText('Saved data-quality artifact is stale; rerun the gate before promotion.'),
     ).toBeTruthy();
     expect(screen.getByText('Artifact age: 216 hours')).toBeTruthy();
+  });
+  it('keeps the board and offers a retry when a refresh fails', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: {
+        generatedAt: '2026-05-29T22:30:00.000Z',
+        trustTiers: { research: [], programs: [] },
+        reasonCounts: { research: [], programs: [] },
+        queues: [],
+        gates: {
+          dataQuality: {
+            status: 'manual',
+            command: 'yarn --cwd server beta:data-quality --include-samples',
+            note: 'Saved data-quality artifact is stale; rerun the gate before promotion.',
+          },
+          scraperIntegrity: {
+            status: 'unknown',
+            command: 'yarn --cwd server scraper:integrity-gate --include-samples',
+            latestRuns: [],
+          },
+        },
+        sourceFreshness: { windowDays: 30, riskCounts: { ok: 0, warn: 0, error: 0 }, rows: [] },
+      },
+    });
+    render(<AdminOperatorBoard />);
+
+    const refresh = await screen.findByRole('button', { name: 'Refresh' });
+    mockedAxios.get.mockRejectedValueOnce(new Error('network'));
+    fireEvent.click(refresh);
+
+    expect(await screen.findByText(/Failed to refresh operator board/)).toBeTruthy();
+    expect(screen.getByText('Data Quality Operator Board')).toBeTruthy();
+    expect(screen.getByText('Data quality status: manual')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeTruthy();
+  });
+
+  it('offers a retry when the first load fails', async () => {
+    mockedAxios.get.mockRejectedValueOnce(new Error('network'));
+    render(<AdminOperatorBoard />);
+
+    expect(await screen.findByText('Failed to load operator board')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy();
   });
 });
