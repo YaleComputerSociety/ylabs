@@ -221,7 +221,7 @@ import {
   type ResearchEntityRosterEntry,
 } from '../services/researchEntityMembershipAccessor';
 import { officialProfileIdentityKey, rosterMembershipKey } from './utils/rosterMembershipKey';
-import { reconcileBbsTrackRetirements } from './bbsTrackRosterRetirement';
+import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
 import {
   CENTERS_INSTITUTES_SOURCE_NAME,
   reconcileCenterRosterRetirementsFromRun,
@@ -2524,9 +2524,7 @@ export async function materializeInferredPiMembership(
 }
 
 type RosterEmailAliasResolution =
-  | { status: 'resolved'; netid: string }
-  | { status: 'absent' }
-  | { status: 'ambiguous' };
+  { status: 'resolved'; netid: string } | { status: 'absent' } | { status: 'ambiguous' };
 
 /**
  * A department roster publishes the friendly email alias (`first.last`) rather than the
@@ -8172,8 +8170,16 @@ export async function materializeFromRun(
   // Runs beside the centres retirement because it is the same contract over another lane's claims.
   // Lane-wide rather than per run's snapshots, because a claim is absent only when NO track still
   // lists the row, and a run's own reads are already among the admitted ones (#3852).
-  const bbsTrackRetirement = await reconcileBbsTrackRetirements({ dryRun: options.dryRun });
-  if (bbsTrackRetirement.outcome !== 'no-admitted-read') {
+  const bbsTrackRetirement = await reconcileBbsTrackRetirementsFromRun(
+    scrapeRunId,
+    {
+      rematerializeEntityId: async (entityId: string) => {
+        await materializeEntity('researchEntity', { entityId }, options);
+      },
+    },
+    { dryRun: options.dryRun },
+  );
+  if (bbsTrackRetirement.outcome !== 'no-bbs-track-read') {
     console.log(
       `[bbs-track-retirement] ${bbsTrackRetirement.outcome}${
         bbsTrackRetirement.verdict ? ` (${bbsTrackRetirement.verdict})` : ''

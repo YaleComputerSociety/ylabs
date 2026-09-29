@@ -46,8 +46,11 @@ describe('bbsTrackReadBlocksRetirementOf', () => {
     ).toBe(true);
   });
 
-  it('does not block a row no unresolved PI has ever claimed', () => {
-    const history = new Map([['pi-one', new Set(['row-one'])]]);
+  it('does not block a row another PI has been seen to hold', () => {
+    const history = new Map([
+      ['pi-one', new Set(['row-one'])],
+      ['pi-two', new Set(['row-two'])],
+    ]);
     expect(
       bbsTrackReadBlocksRetirementOf(
         'row-two',
@@ -55,6 +58,20 @@ describe('bbsTrackReadBlocksRetirementOf', () => {
         history,
       ),
     ).toBe(false);
+  });
+
+  // A claim whose PI has never resolved on a recorded read could belong to any PI who is listed
+  // but unresolved, so its absence is unknown.
+  it('blocks a row no PI has been seen to hold while a never-resolved PI is listed', () => {
+    const history = new Map([['pi-one', new Set(['row-one'])]]);
+    const unresolvedRead = read({
+      runId: 'r1',
+      at: '2026-09-10T00:00:00Z',
+      listed: ['row-one'],
+      unresolved: ['pi-never-resolved'],
+    });
+    expect(bbsTrackReadBlocksRetirementOf('row-legacy', unresolvedRead, history)).toBe(true);
+    expect(bbsTrackReadBlocksRetirementOf('row-one', unresolvedRead, history)).toBe(false);
   });
 });
 
@@ -162,7 +179,9 @@ describe('aggregateBbsTrackReads', () => {
     cacheAllowed?: boolean;
     pagesRead?: number;
     complete?: boolean;
+    legacy?: boolean;
   }) => ({
+    ...(options.legacy ? {} : { claimEntityKeysRecorded: true }),
     status: options.members.length > 0 ? 'ok' : 'empty',
     complete: options.complete ?? true,
     members: options.members.map((m) => ({ role: 'track-pi', ...m })),
@@ -177,83 +196,176 @@ describe('aggregateBbsTrackReads', () => {
   // One read per run, unioned across tracks: a PI listed by two tracks holds one observation whose
   // value spans both, so absence has to mean no track lists the row.
   it("unions a run's track snapshots into one read", () => {
-    const { reads } = aggregateBbsTrackReads([
-      {
-        scrapeRunId: 'r1',
-        observedAt: '2026-09-10T00:00:00Z',
-        value: snapshot({ members: [{ memberKey: 'pi-a', claimEntityKey: 'row-a' }] }),
-      },
-      {
-        scrapeRunId: 'r1',
-        observedAt: '2026-09-10T00:05:00Z',
-        value: snapshot({ members: [{ memberKey: 'pi-b', claimEntityKey: 'row-b' }] }),
-      },
-    ]);
+    const { reads } = aggregateBbsTrackReads(
+      [
+        {
+          entityKey: 'track-one',
+          scrapeRunId: 'r1',
+          observedAt: '2026-09-10T00:00:00Z',
+          value: snapshot({ members: [{ memberKey: 'pi-a', claimEntityKey: 'row-a' }] }),
+        },
+        {
+          entityKey: 'track-two',
+          scrapeRunId: 'r1',
+          observedAt: '2026-09-10T00:05:00Z',
+          value: snapshot({ members: [{ memberKey: 'pi-b', claimEntityKey: 'row-b' }] }),
+        },
+      ],
+      ['track-one', 'track-two'],
+    );
     expect(reads).toHaveLength(1);
     expect([...reads[0].claimEntityKeys].sort()).toEqual(['row-a', 'row-b']);
   });
 
-  it('excludes a snapshot the admissibility contract refuses', () => {
-    const { reads } = aggregateBbsTrackReads([
-      { scrapeRunId: 'r1', observedAt: '2026-09-10T00:00:00Z', value: snapshot({ members: [] }) },
-      {
-        scrapeRunId: 'r2',
-        observedAt: '2026-09-11T00:00:00Z',
-        value: snapshot({
-          members: [{ memberKey: 'pi-a', claimEntityKey: 'row-a' }],
-          cacheAllowed: true,
-        }),
-      },
-      {
-        scrapeRunId: 'r3',
-        observedAt: '2026-09-12T00:00:00Z',
-        value: snapshot({
-          members: [{ memberKey: 'pi-a', claimEntityKey: 'row-a' }],
-          pagesRead: 0,
-        }),
-      },
-    ]);
+  // A failed, empty or filtered-out track says nothing about its PIs, so the other tracks cannot
+  // stand in for the run: every PI only that track lists would read as absent.
+  it('admits no read for a run in which any track was not admitted or not read', () => {
+    const admittedTrackOne = (runId: string) => ({
+      entityKey: 'track-one',
+      scrapeRunId: runId,
+      observedAt: '2026-09-10T00:00:00Z',
+      value: snapshot({ members: [{ memberKey: 'pi-a', claimEntityKey: 'row-a' }] }),
+    });
+    const { reads } = aggregateBbsTrackReads(
+      [
+        admittedTrackOne('r-empty-track'),
+        {
+          entityKey: 'track-two',
+          scrapeRunId: 'r-empty-track',
+          observedAt: '2026-09-10T00:00:00Z',
+          value: snapshot({ members: [] }),
+        },
+        admittedTrackOne('r-unread-track'),
+        {
+          entityKey: 'track-two',
+          scrapeRunId: 'r-unread-track',
+          observedAt: '2026-09-10T00:00:00Z',
+          value: snapshot({ members: [{ memberKey: 'pi-b' }], pagesRead: 0 }),
+        },
+        admittedTrackOne('r-only-track-one'),
+      ],
+      ['track-one', 'track-two'],
+    );
     expect(reads).toEqual([]);
   });
 
-  it('records a listed PI that resolved to no row as unresolved, once it has ever held a row', () => {
-    const { reads, rowsEverHeldByPi } = aggregateBbsTrackReads([
-      {
-        scrapeRunId: 'r1',
-        observedAt: '2026-09-10T00:00:00Z',
-        value: snapshot({ members: [{ memberKey: 'pi-a', claimEntityKey: 'row-a' }] }),
-      },
-      {
-        scrapeRunId: 'r2',
-        observedAt: '2026-09-11T00:00:00Z',
-        value: snapshot({
-          members: [
-            { memberKey: 'pi-a' },
-            { memberKey: 'pi-z' },
-            { memberKey: 'pi-b', claimEntityKey: 'row-b' },
-          ],
-        }),
-      },
-    ]);
+  // A snapshot written before the lane recorded rows names no row for anybody, which would read
+  // as every claim absent.
+  it('ignores a snapshot that does not record the rows its PIs resolved to', () => {
+    const { reads, rowsEverHeldByPi } = aggregateBbsTrackReads(
+      [
+        {
+          entityKey: 'track-one',
+          scrapeRunId: 'r-legacy',
+          observedAt: '2026-09-10T00:00:00Z',
+          value: snapshot({ members: [{ memberKey: 'pi-a' }], legacy: true }),
+        },
+      ],
+      ['track-one'],
+    );
+    expect(reads).toEqual([]);
+    expect(rowsEverHeldByPi.size).toBe(0);
+  });
+
+  it('excludes a snapshot the admissibility contract refuses', () => {
+    const { reads } = aggregateBbsTrackReads(
+      [
+        {
+          entityKey: 'track-one',
+          scrapeRunId: 'r1',
+          observedAt: '2026-09-10T00:00:00Z',
+          value: snapshot({ members: [] }),
+        },
+        {
+          entityKey: 'track-one',
+          scrapeRunId: 'r2',
+          observedAt: '2026-09-11T00:00:00Z',
+          value: snapshot({
+            members: [{ memberKey: 'pi-a', claimEntityKey: 'row-a' }],
+            cacheAllowed: true,
+          }),
+        },
+        {
+          entityKey: 'track-one',
+          scrapeRunId: 'r3',
+          observedAt: '2026-09-12T00:00:00Z',
+          value: snapshot({
+            members: [{ memberKey: 'pi-a', claimEntityKey: 'row-a' }],
+            pagesRead: 0,
+          }),
+        },
+      ],
+      ['track-one'],
+    );
+    expect(reads).toEqual([]);
+  });
+
+  it('learns the rows a PI holds from a read it does not admit', () => {
+    const { reads, rowsEverHeldByPi } = aggregateBbsTrackReads(
+      [
+        {
+          entityKey: 'track-one',
+          scrapeRunId: 'r-cached',
+          observedAt: '2026-09-10T00:00:00Z',
+          value: snapshot({
+            members: [{ memberKey: 'pi-a', claimEntityKey: 'row-a' }],
+            cacheAllowed: true,
+          }),
+        },
+      ],
+      ['track-one'],
+    );
+    expect(reads).toEqual([]);
+    expect(rowsEverHeldByPi.get('pi-a')).toEqual(new Set(['row-a']));
+  });
+
+  it('records every listed PI that resolved to no row as unresolved', () => {
+    const { reads, rowsEverHeldByPi } = aggregateBbsTrackReads(
+      [
+        {
+          entityKey: 'track-one',
+          scrapeRunId: 'r1',
+          observedAt: '2026-09-10T00:00:00Z',
+          value: snapshot({ members: [{ memberKey: 'pi-a', claimEntityKey: 'row-a' }] }),
+        },
+        {
+          entityKey: 'track-one',
+          scrapeRunId: 'r2',
+          observedAt: '2026-09-11T00:00:00Z',
+          value: snapshot({
+            members: [
+              { memberKey: 'pi-a' },
+              { memberKey: 'pi-z' },
+              { memberKey: 'pi-b', claimEntityKey: 'row-b' },
+            ],
+          }),
+        },
+      ],
+      ['track-one'],
+    );
     expect(rowsEverHeldByPi.get('pi-a')).toEqual(new Set(['row-a']));
     const second = reads.find((r) => r.scrapeRunId === 'r2');
-    // pi-a blocks because it has held a row; pi-z never has, so it is pruned and blocks nothing.
-    expect([...(second?.unresolvedMemberKeys ?? [])]).toEqual(['pi-a']);
+    expect([...(second?.unresolvedMemberKeys ?? [])].sort()).toEqual(['pi-a', 'pi-z']);
   });
 
   it('orders reads oldest first, so the two-read rule reads a sequence', () => {
-    const { reads } = aggregateBbsTrackReads([
-      {
-        scrapeRunId: 'r2',
-        observedAt: '2026-09-11T00:00:00Z',
-        value: snapshot({ members: [{ memberKey: 'pi-a', claimEntityKey: 'row-a' }] }),
-      },
-      {
-        scrapeRunId: 'r1',
-        observedAt: '2026-09-10T00:00:00Z',
-        value: snapshot({ members: [{ memberKey: 'pi-a', claimEntityKey: 'row-a' }] }),
-      },
-    ]);
+    const { reads } = aggregateBbsTrackReads(
+      [
+        {
+          entityKey: 'track-one',
+          scrapeRunId: 'r2',
+          observedAt: '2026-09-11T00:00:00Z',
+          value: snapshot({ members: [{ memberKey: 'pi-a', claimEntityKey: 'row-a' }] }),
+        },
+        {
+          entityKey: 'track-one',
+          scrapeRunId: 'r1',
+          observedAt: '2026-09-10T00:00:00Z',
+          value: snapshot({ members: [{ memberKey: 'pi-a', claimEntityKey: 'row-a' }] }),
+        },
+      ],
+      ['track-one'],
+    );
     expect(reads.map((r) => r.scrapeRunId)).toEqual(['r1', 'r2']);
   });
 });

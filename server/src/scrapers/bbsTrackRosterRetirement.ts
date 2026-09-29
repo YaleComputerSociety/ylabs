@@ -14,8 +14,18 @@ import {
   type CenterRosterHealthSnapshot,
   type CenterRosterRead,
 } from './centerRosterRetirement';
+import { BBS_TRACKS } from './sources/bbsResearchTrackScraper';
 
 const BBS_TRACK_SOURCE_NAME = 'bbs-research-track';
+
+/**
+ * A track snapshot that names the row each listed PI resolved to. A snapshot written before the
+ * lane recorded rows lists every PI without one, which would read as every claim being absent, so
+ * only a snapshot carrying this marker is evidence of anything (#3852).
+ */
+export type BbsTrackHealthSnapshot = CenterRosterHealthSnapshot & {
+  claimEntityKeysRecorded?: unknown;
+};
 
 /**
  * Whether a BBS track read is evidence that a claim on one row is absent.
@@ -23,7 +33,8 @@ const BBS_TRACK_SOURCE_NAME = 'bbs-research-track';
  * A read names the rows its listed PIs resolved to. A listed PI who did not resolve to a row this
  * run contributes no row, for any reason: a profile fetch that failed, an ambiguous match, a
  * refusal, or no existing row. That is unknown rather than absent, so such a read must not count
- * against any claim that PI has ever been seen to hold.
+ * against any claim that PI has ever been seen to hold. A PI never seen to hold any row could hold
+ * any row no other PI has been seen to hold, so it blocks every such row as well.
  *
  * The alternative considered and rejected was to admit a read for absence only when every listed
  * PI resolved. That is simpler to state and inert in practice: on a complete 518-PI read the lane
@@ -37,8 +48,10 @@ export function bbsTrackReadBlocksRetirementOf(
   read: BbsTrackRosterRead,
   claimRowsEverHeldByPi: ReadonlyMap<string, ReadonlySet<string>>,
 ): boolean {
+  const rowSeenHeldByAPi = [...claimRowsEverHeldByPi.values()].some((rows) => rows.has(entityKey));
   for (const profileSlug of read.unresolvedMemberKeys) {
-    if (claimRowsEverHeldByPi.get(profileSlug)?.has(entityKey)) return true;
+    const rowsHeld = claimRowsEverHeldByPi.get(profileSlug);
+    if (rowsHeld ? rowsHeld.has(entityKey) : !rowSeenHeldByAPi) return true;
   }
   return false;
 }
@@ -142,6 +155,13 @@ export function planBbsTrackRosterRetirement(input: {
 export const BBS_TRACK_RETIREMENT_REASON =
   'bbs-research-track no longer lists this PI, confirmed by two admitted reads (#3852)';
 
+export interface BbsTrackSnapshotRow {
+  entityKey?: unknown;
+  value?: unknown;
+  scrapeRunId?: unknown;
+  observedAt?: unknown;
+}
+
 /**
  * The admitted reads for this lane, one per scrape run, unioned across its tracks.
  *
@@ -151,20 +171,19 @@ export const BBS_TRACK_RETIREMENT_REASON =
  * the PI is holding up. The question the claim actually poses is "does any track still list this
  * row", so a run's read is the union of its admitted track snapshots (#3852).
  *
- * A snapshot is admitted only when `centerRosterReadAdmissibility` returns `read-listed-members`,
- * so an empty parse, a failed fetch and a cache-permitted run are excluded here rather than
- * filtered later. A run with no admitted track snapshot contributes no read at all.
+ * A run is a read only when it carries an admitted snapshot for EVERY track. A track whose fetch
+ * failed, whose parse came back empty, or which `--only` left out says nothing about its PIs, so
+ * letting the other tracks stand in for the run would read every PI only that track lists as
+ * absent. A snapshot is admitted only when `centerRosterReadAdmissibility` returns
+ * `read-listed-members` and it records the rows its PIs resolved to.
+ *
+ * Which rows a PI has been seen to hold is read from every snapshot that records rows, admitted or
+ * not, because a resolution is evidence of holding whether or not the read was complete.
  */
-export interface BbsTrackSnapshotRow {
-  value?: unknown;
-  scrapeRunId?: unknown;
-  observedAt?: unknown;
-}
-
-/**
- * The aggregation, pure so it can be pinned: admitted snapshots grouped into one read per run.
- */
-export function aggregateBbsTrackReads(rows: readonly BbsTrackSnapshotRow[]): {
+export function aggregateBbsTrackReads(
+  rows: readonly BbsTrackSnapshotRow[],
+  requiredTrackKeys: readonly string[],
+): {
   reads: BbsTrackRosterRead[];
   rowsEverHeldByPi: Map<string, Set<string>>;
 } {
@@ -172,6 +191,7 @@ export function aggregateBbsTrackReads(rows: readonly BbsTrackSnapshotRow[]): {
     string,
     {
       observedAt: Date;
+      admittedTrackKeys: Set<string>;
       claimEntityKeys: Set<string>;
       unresolvedMemberKeys: Set<string>;
       discoveredCount: number;
@@ -180,42 +200,50 @@ export function aggregateBbsTrackReads(rows: readonly BbsTrackSnapshotRow[]): {
   const rowsEverHeldByPi = new Map<string, Set<string>>();
 
   for (const row of rows) {
-    const snapshot = (row.value ?? {}) as CenterRosterHealthSnapshot;
+    const snapshot = (row.value ?? {}) as BbsTrackHealthSnapshot;
+    if (snapshot.claimEntityKeysRecorded !== true) continue;
+    const members = snapshotMembers(snapshot);
+    for (const member of members) {
+      if (!member.claimEntityKey) continue;
+      const held = rowsEverHeldByPi.get(member.memberKey) ?? new Set<string>();
+      held.add(member.claimEntityKey);
+      rowsEverHeldByPi.set(member.memberKey, held);
+    }
+
     if (centerRosterReadAdmissibility(snapshot) !== 'read-listed-members') continue;
     const runId = String(row.scrapeRunId ?? '');
-    if (!runId) continue;
+    const trackKey = String(row.entityKey ?? '');
+    if (!runId || !trackKey) continue;
     const observedAt = new Date(String(row.observedAt));
     const entry = byRun.get(runId) ?? {
       observedAt,
+      admittedTrackKeys: new Set<string>(),
       claimEntityKeys: new Set<string>(),
       unresolvedMemberKeys: new Set<string>(),
       discoveredCount: 0,
     };
-    for (const member of snapshotMembers(snapshot)) {
+    entry.admittedTrackKeys.add(trackKey);
+    for (const member of members) {
       entry.discoveredCount += 1;
-      if (member.claimEntityKey) {
-        entry.claimEntityKeys.add(member.claimEntityKey);
-        const held = rowsEverHeldByPi.get(member.memberKey) ?? new Set<string>();
-        held.add(member.claimEntityKey);
-        rowsEverHeldByPi.set(member.memberKey, held);
-      } else {
-        entry.unresolvedMemberKeys.add(member.memberKey);
-      }
+      if (member.claimEntityKey) entry.claimEntityKeys.add(member.claimEntityKey);
+      else entry.unresolvedMemberKeys.add(member.memberKey);
     }
     if (observedAt.getTime() > entry.observedAt.getTime()) entry.observedAt = observedAt;
     byRun.set(runId, entry);
   }
 
-  // An unresolved PI only blocks a row it has actually been seen to hold, so a PI unresolved on
-  // every read blocks nothing and cannot freeze the mechanism by itself.
-  for (const entry of byRun.values()) {
-    for (const memberKey of [...entry.unresolvedMemberKeys]) {
-      if (!rowsEverHeldByPi.has(memberKey)) entry.unresolvedMemberKeys.delete(memberKey);
-    }
-  }
-
   const reads = [...byRun.entries()]
-    .map(([scrapeRunId, entry]) => ({ scrapeRunId, ...entry }) as unknown as BbsTrackRosterRead)
+    .filter(([, entry]) => requiredTrackKeys.every((key) => entry.admittedTrackKeys.has(key)))
+    .map(
+      ([scrapeRunId, entry]) =>
+        ({
+          scrapeRunId,
+          observedAt: entry.observedAt,
+          claimEntityKeys: entry.claimEntityKeys,
+          unresolvedMemberKeys: entry.unresolvedMemberKeys,
+          discoveredCount: entry.discoveredCount,
+        }) as unknown as BbsTrackRosterRead,
+    )
     .sort((left, right) => left.observedAt.getTime() - right.observedAt.getTime());
   return { reads, rowsEverHeldByPi };
 }
@@ -231,14 +259,19 @@ export async function loadBbsTrackRosterReads(): Promise<{
     scrapeRunId: { $exists: true, $ne: null },
     'rollback.rolledBackAt': { $exists: false },
   })
-    .select('value scrapeRunId observedAt')
+    .select('entityKey value scrapeRunId observedAt')
     .lean()) as BbsTrackSnapshotRow[];
-  return aggregateBbsTrackReads(rows);
+  return aggregateBbsTrackReads(
+    rows,
+    BBS_TRACKS.map((track) => track.slug),
+  );
 }
 
 export type BbsTrackRetirementOutcome =
   | 'reconciled'
   | 'frozen'
+  | 'invalid-run-id'
+  | 'no-bbs-track-read'
   | 'no-admitted-read'
   | 'nothing-governed';
 
@@ -250,41 +283,64 @@ export interface BbsTrackRetirementResult {
   counts?: BbsTrackRetirementPlan['counts'];
 }
 
+export interface BbsTrackRetirementDeps {
+  rematerializeEntityId(entityId: string): Promise<void>;
+}
+
 /**
  * This lane's own live claims: a `researchAreas` value it asserted on a research entity.
  *
  * Scoped to this source name, so a label another source also asserts is untouched, exactly as the
- * centres implementation leaves an edge another source still claims.
+ * centres implementation leaves an edge another source still claims. A claim is keyed by its
+ * `entityId`, the identity a snapshot names each resolved PI's row in.
  */
 async function loadBbsTrackClaims(): Promise<BbsTrackClaim[]> {
   const rows = (await Observation.find({
     entityType: 'researchEntity',
     sourceName: BBS_TRACK_SOURCE_NAME,
     field: 'researchAreas',
+    entityId: { $exists: true, $ne: null },
     superseded: { $ne: true },
   })
-    .select('_id entityKey entityId scrapeRunId observedAt')
+    .select('_id entityId scrapeRunId observedAt')
     .lean()) as Array<Record<string, unknown>>;
-  return rows
-    .map((row) => ({
-      observationId: String(row._id),
-      entityKey: String(row.entityId ?? row.entityKey ?? ''),
-      ...(row.scrapeRunId ? { scrapeRunId: String(row.scrapeRunId) } : {}),
-      observedAt: new Date(String(row.observedAt)),
-    }))
-    .filter((claim) => claim.entityKey);
+  return rows.map((row) => ({
+    observationId: String(row._id),
+    entityKey: String(row.entityId),
+    ...(row.scrapeRunId ? { scrapeRunId: String(row.scrapeRunId) } : {}),
+    observedAt: new Date(String(row.observedAt)),
+  }));
 }
 
 /**
  * Retire the claims two admitted reads have omitted, or report why nothing was retired.
  *
+ * Triggered only by a run that recorded a track read, as the centres retirement is. The reads it
+ * weighs are lane-wide, because a claim is absent only when no track still lists the row.
+ *
  * Writes no field and no lock: the observations go through the `superseded` plus `rollback` shape
- * both read scopes honour, which is the same path the centres retirement uses.
+ * both read scopes honour, which is the same path the centres retirement uses, and each row that
+ * lost a claim is then re-projected so the retirement reaches the stored row.
  */
-export async function reconcileBbsTrackRetirements(
+export async function reconcileBbsTrackRetirementsFromRun(
+  scrapeRunId: string,
+  deps: BbsTrackRetirementDeps,
   options: { dryRun?: boolean } = {},
 ): Promise<BbsTrackRetirementResult> {
   const dryRun = options.dryRun === true;
+  let runObjectId: mongoose.Types.ObjectId;
+  try {
+    runObjectId = new mongoose.Types.ObjectId(scrapeRunId);
+  } catch {
+    return { outcome: 'invalid-run-id', dryRun };
+  }
+  const runRecordedATrackRead = await Observation.exists({
+    scrapeRunId: runObjectId,
+    entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+    field: CENTER_ROSTER_HEALTH_FIELD,
+    sourceName: BBS_TRACK_SOURCE_NAME,
+  });
+  if (!runRecordedATrackRead) return { outcome: 'no-bbs-track-read', dryRun };
   const { reads, rowsEverHeldByPi } = await loadBbsTrackRosterReads();
   if (reads.length === 0) return { outcome: 'no-admitted-read', dryRun };
   const claims = await loadBbsTrackClaims();
@@ -310,10 +366,11 @@ export async function reconcileBbsTrackRetirements(
   if (!dryRun && plan.retiredObservationIds.length > 0) {
     const ids = plan.retiredObservationIds.map((id) => new mongoose.Types.ObjectId(id));
     await retireObservations({ _id: { $in: ids } }, BBS_TRACK_RETIREMENT_REASON);
-    await Observation.updateMany(
-      { _id: { $in: ids }, superseded: true, 'rollback.rolledBackAt': { $exists: false } },
-      { $set: { rollback: { rolledBackAt: new Date(), reason: BBS_TRACK_RETIREMENT_REASON } } },
+    const retired = new Set(plan.retiredObservationIds);
+    const affectedEntityIds = new Set(
+      claims.filter((claim) => retired.has(claim.observationId)).map((claim) => claim.entityKey),
     );
+    for (const entityId of affectedEntityIds) await deps.rematerializeEntityId(entityId);
   }
   return { outcome: 'reconciled', dryRun, verdict: plan.verdict, counts: plan.counts };
 }

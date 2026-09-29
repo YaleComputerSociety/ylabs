@@ -43,6 +43,7 @@ import {
 import { getCached, setCached } from '../snapshotCache';
 import { facultyNameMatchKey, normalizeYsmProfileUrl } from './ysmMeshKeywordScraper';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import type { BbsTrackHealthSnapshot } from '../bbsTrackRosterRetirement';
 
 const SOURCE_KEY = 'bbs-research-track';
 
@@ -606,16 +607,19 @@ function buildTrackRosterHealthObservation(input: {
     entityKey: input.track.slug,
     field: CENTER_ROSTER_HEALTH_FIELD,
     sourceUrl: input.track.url,
-    value: buildCenterRosterHealthSnapshot({
-      centerKey: input.track.slug,
-      entityKey: input.track.slug,
-      members,
-      pagesRead: input.fetched ? 1 : 0,
-      readMode: 'html',
-      stopReason,
-      cacheAllowed: input.cacheAllowed,
-      readAt: input.readAt,
-    }),
+    value: {
+      ...buildCenterRosterHealthSnapshot({
+        centerKey: input.track.slug,
+        entityKey: input.track.slug,
+        members,
+        pagesRead: input.fetched ? 1 : 0,
+        readMode: 'html',
+        stopReason,
+        cacheAllowed: input.cacheAllowed,
+        readAt: input.readAt,
+      }),
+      claimEntityKeysRecorded: true,
+    } satisfies BbsTrackHealthSnapshot,
   };
 }
 
