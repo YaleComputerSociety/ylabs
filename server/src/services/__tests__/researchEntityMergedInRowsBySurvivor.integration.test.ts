@@ -18,7 +18,7 @@ describe('merged-in rows for many survivors at once (#3609)', () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await memoryServer.stop();
+    await memoryServer?.stop();
   });
 
   beforeEach(async () => {

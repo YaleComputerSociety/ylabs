@@ -118,19 +118,3 @@ describe('retryingPortRace', () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 });
-
-/**
- * The masking half of #3845: a file whose `beforeAll` never assigned its handle used to report a
- * second, consequential `Cannot read properties of undefined (reading 'stop')` from `afterAll`,
- * which turned one setup failure into two and buried the real cause. Every suite's teardown now
- * optional-chains the handle.
- */
-describe('teardown of a launch that never happened', () => {
-  it('is a no-op rather than a second reported failure', async () => {
-    let replSet: { stop: () => Promise<void> } | undefined;
-    // `undefined?.stop()` short-circuits to undefined rather than returning a promise, so the
-    // awaited teardown neither throws nor needs a guard clause in every suite.
-    expect(replSet?.stop()).toBeUndefined();
-    await expect(Promise.resolve(replSet?.stop())).resolves.toBeUndefined();
-  });
-});
