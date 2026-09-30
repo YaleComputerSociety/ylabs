@@ -67,8 +67,7 @@ const BrowseListItem = React.memo(
 
     return (
       <div
-        className={`group bg-panel rounded-card border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-line'} hover:border-line-strong hover:shadow-yr-raised [transition-property:border-color,box-shadow] duration-200 cursor-pointer`}
-        onClick={item.type === 'fellowship' ? undefined : handleClick}
+        className={`group relative bg-panel rounded-card border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-line'} hover:border-line-strong hover:shadow-yr-raised active:shadow-none [transition-property:border-color,box-shadow] duration-200`}
       >
         <div className="p-4 grid grid-cols-12 gap-4 items-start">
           <div className={`col-span-12 ${isCompact ? 'md:col-span-10' : 'md:col-span-4'}`}>
@@ -80,10 +79,10 @@ const BrowseListItem = React.memo(
                 <button
                   type="button"
                   onClick={handleClick}
-                  className="yr-focus-ring block max-w-full truncate text-left hover:text-brand focus-visible:rounded-control"
+                  className="yr-focus-ring -my-3 flex min-h-11 max-w-full items-center text-left after:absolute after:inset-0 after:content-[''] hover:text-brand focus-visible:rounded-control [&:not(:disabled):active]:transform-none [&:not(:disabled):active]:filter-none"
                   aria-label={`View details for ${item.data.title}`}
                 >
-                  {item.data.title}
+                  <span className="truncate">{item.data.title}</span>
                 </button>
               </h3>
               <p className={`text-xs ${subtitleColor} truncate`}>{subtitle}</p>
@@ -128,7 +127,7 @@ const BrowseListItem = React.memo(
                 <StatusBadge isOpen={open} />
               )}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="relative z-[1] flex items-center gap-1">
               {isAdmin && onAdminEdit && (
                 <button
                   onClick={(e) => {

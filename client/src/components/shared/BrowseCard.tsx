@@ -81,8 +81,7 @@ const BrowseCard = React.memo(
 
     return (
       <div
-        className={`yr-card-interactive group relative rounded-card ${isAudited ? 'border-green-400 ring-1 ring-green-200' : ''} cursor-pointer overflow-hidden h-full flex flex-col`}
-        onClick={item.type === 'fellowship' ? undefined : handleClick}
+        className={`yr-card-interactive group relative rounded-card ${isAudited ? 'border-green-400 ring-1 ring-green-200' : ''} overflow-hidden h-full flex flex-col`}
       >
         {showUrgentBanner && daysUntil !== null && (
           <UrgentBadge daysUntil={daysUntil} variant="banner" />
@@ -131,7 +130,7 @@ const BrowseCard = React.memo(
               <button
                 type="button"
                 onClick={handleClick}
-                className="yr-focus-ring line-clamp-2 text-left hover:text-brand focus-visible:rounded-control"
+                className="yr-focus-ring relative z-[1] -my-3 line-clamp-2 min-h-11 py-3 text-left hover:text-brand focus-visible:rounded-control"
                 aria-label={`View details for ${item.data.title}`}
               >
                 {item.data.title}
@@ -175,7 +174,7 @@ const BrowseCard = React.memo(
               <button
                 type="button"
                 onClick={handleClick}
-                className="yr-focus-ring inline-flex flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
+                className="yr-focus-ring -my-3 inline-flex min-h-11 flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors after:absolute after:inset-0 after:content-[''] hover:text-brand-navy [&:not(:disabled):active]:transform-none [&:not(:disabled):active]:filter-none"
               >
                 View details
                 <ArrowRightIcon />
