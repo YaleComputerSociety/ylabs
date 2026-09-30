@@ -90,7 +90,6 @@ interface JourneyEvalArgs {
   facetValues: number;
   pages: number;
   cases?: string[];
-  surfaces?: string[];
   judgements?: string;
   undergradJudgements?: string;
   undergradSampleOut?: string;
@@ -115,12 +114,6 @@ function parseArgs(argv: string[]): JourneyEvalArgs {
     else if (token.startsWith('--case='))
       args.cases = token
         .slice('--case='.length)
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean);
-    else if (token.startsWith('--surface='))
-      args.surfaces = token
-        .slice('--surface='.length)
         .split(',')
         .map((value) => value.trim())
         .filter(Boolean);
@@ -282,11 +275,8 @@ async function main(): Promise<void> {
       surface: journeyCase.surface as string,
       run: () => journeyCase.run(programContext),
     })),
-  ]
-    .filter((journeyCase) => !args.cases || args.cases.includes(journeyCase.id))
-    .filter((journeyCase) => !args.surfaces || args.surfaces.includes(journeyCase.surface));
-  if (selected.length === 0)
-    throw new Error('No journey case matched the requested --case and --surface lists');
+  ].filter((journeyCase) => !args.cases || args.cases.includes(journeyCase.id));
+  if (selected.length === 0) throw new Error('No journey case matched the requested --case list');
 
   const invariants: InvariantResult[] = [];
   const rates: RateResult[] = [];

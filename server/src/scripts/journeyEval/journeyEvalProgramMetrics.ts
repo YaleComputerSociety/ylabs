@@ -176,7 +176,7 @@ export interface ServedRowGateTally {
   outsideServedTier: number;
   archived: number;
   gateRefuses: number;
-  gateRefusalReasons: Record<string, number>;
+  refusedRowReasons: Record<string, number>;
 }
 
 export function tallyServedRowGate(
@@ -190,7 +190,7 @@ export function tallyServedRowGate(
     outsideServedTier: 0,
     archived: 0,
     gateRefuses: 0,
-    gateRefusalReasons: {},
+    refusedRowReasons: {},
   };
   for (const observation of observations) {
     if (!observation.storedRowFound) {
@@ -207,7 +207,7 @@ export function tallyServedRowGate(
     if (!observation.gateTierIsServed) {
       tally.gateRefuses += 1;
       for (const reason of observation.gateReasons)
-        tally.gateRefusalReasons[reason] = (tally.gateRefusalReasons[reason] ?? 0) + 1;
+        tally.refusedRowReasons[reason] = (tally.refusedRowReasons[reason] ?? 0) + 1;
     }
   }
   return tally;
@@ -259,7 +259,7 @@ export function checkServedRowsPassTheGate(
     comparable: tally.comparable,
     skippedStaleIndex: tally.skippedStaleIndex,
     gateRefuses: tally.gateRefuses,
-    gateRefusalReasons: tally.gateRefusalReasons,
+    refusedRowReasons: tally.refusedRowReasons,
   };
   if (tally.comparable === 0)
     return buildInconclusiveInvariant(id, title, emptyPopulationReason, detail);

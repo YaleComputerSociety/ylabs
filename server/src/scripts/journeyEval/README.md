@@ -15,7 +15,6 @@ Flags:
 - `--pages=<N>` sets how many pages the pagination case walks.
 - `--facet-values=<N>` sets how many of the highest-count department facet values the agreement case checks.
 - `--case=<id>[,<id>]` runs a subset, which is how you re-run one case while fixing the lane behind it.
-- `--surface=<id>[,<id>]` runs only the cases of the named surfaces, `research`, `programs`, or `fellowships`, and combines with `--case`.
 - `--output=<path>` writes the JSON report under `$TMPDIR` or `./tmp`, enforced by `resolveSafeJsonReportOutputPath`.
 
 Read the report from the `--output` file rather than stdout.
@@ -183,7 +182,7 @@ A served website no evidence states at all is counted as `unbacked` and never as
 The Programs & Fellowships browse (`/programs`, which `/fellowships` redirects to) reads one route, `GET /api/programs/search`, so both surfaces drive `searchProgramsController` with a request carrying no user, the same shape a student's request has after authentication.
 Calling the controller rather than `searchPrograms` keeps the controller's parameter coercion, its default deadline sort, and the `publicProgramForReader` projection in the measured path, so the harness restates none of the route.
 `server/src/routes/fellowships.ts` serves only a view counter and has no browse of its own.
-The `fellowships` surface is therefore the same route scoped to `programCategory=FELLOWSHIP`, the category a student picks to see fellowships, and every one of its cases also asserts that the scope holds.
+The `fellowships` surface is therefore the same route scoped to `programCategory=FELLOWSHIP`, the category a student picks to see fellowships, and every one of its cases also asserts that every row it was served, on every page and under every query, filter, and sort it requested, carries that category.
 
 Each surface runs the same seven cases, with ids prefixed by the surface:
 

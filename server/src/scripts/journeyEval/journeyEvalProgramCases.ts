@@ -131,6 +131,22 @@ const surfaceRequest = (
   request: ProgramBrowseRequest,
 ): ProgramBrowseRequest => ({ ...request, filters: { ...surface.filters, ...request.filters } });
 
+const surfaceScopeInvariants = (
+  surface: ProgramSurface,
+  rows: ReadonlyArray<Record<string, unknown>>,
+): InvariantResult[] => {
+  if (Object.keys(surface.filters).length === 0) return [];
+  const outsideScope = rows.filter((row) => !rowMatchesFilters(row, surface.filters)).length;
+  return [
+    buildInvariant(
+      `${surface.id}-surface-scope-is-honored`,
+      `Every row the ${surface.label} browse serves belongs to that surface`,
+      outsideScope === 0,
+      { rowsChecked: rows.length, outsideScope },
+    ),
+  ];
+};
+
 interface ProgramWalk {
   pages: string[][];
   rows: Array<Record<string, unknown>>;
@@ -231,19 +247,7 @@ const coldBrowseCardContract = (surface: ProgramSurface): ProgramJourneyCase => 
         { rowsChecked: rows.length, unidentified: rows.filter((row) => !rowKey(row)).length },
       ),
     );
-    if (Object.keys(surface.filters).length > 0) {
-      invariants.push(
-        buildInvariant(
-          `${surface.id}-surface-scope-is-honored`,
-          `Every row the ${surface.label} browse serves belongs to that surface`,
-          rows.every((row) => rowMatchesFilters(row, surface.filters)),
-          {
-            rowsChecked: rows.length,
-            outsideScope: rows.filter((row) => !rowMatchesFilters(row, surface.filters)).length,
-          },
-        ),
-      );
-    }
+    invariants.push(...surfaceScopeInvariants(surface, rows));
 
     return {
       invariants,
@@ -317,6 +321,7 @@ const fullWalkServesEveryRowOnce = (surface: ProgramSurface): ProgramJourneyCase
           id: `${surface.id}-browse-total-is-constant-across-pages`,
           title: 'A cold browse reports the same total on every page the client loads',
         },
+        ...surfaceScopeInvariants(surface, walk.rows),
       ],
       rates: [],
       notes: {
@@ -338,13 +343,16 @@ const textQueryTotalIsStable = (surface: ProgramSurface): ProgramJourneyCase => 
     const corpusBefore = await context.readCorpusFingerprint();
     const totals: (number | null)[] = [];
     const pages: string[][] = [];
+    const rows: Array<Record<string, unknown>> = [];
     for (let page = 1; page <= pagesToWalk; page += 1) {
       const result = await context.browseAsStudent(
         surfaceRequest(surface, { query: TEXT_QUERY_TOTAL_PROBE, page, pageSize }),
       );
+      const pageRows = servedRows(result);
       totals.push(typeof result.total === 'number' ? result.total : null);
-      pages.push(servedRows(result).map(rowKey).filter(Boolean));
-      if (servedRows(result).length < pageSize) break;
+      pages.push(pageRows.map(rowKey).filter(Boolean));
+      rows.push(...pageRows);
+      if (pageRows.length < pageSize) break;
     }
     const corpusAfter = await context.readCorpusFingerprint();
     const repeats = withSurfaceId(
@@ -362,6 +370,7 @@ const textQueryTotalIsStable = (surface: ProgramSurface): ProgramJourneyCase => 
           checkConstantReportedTotal(TEXT_QUERY_TOTAL_PROBE, totals, corpusBefore, corpusAfter),
         ),
         { ...repeats, id: `${repeats.id}-for-a-text-query` },
+        ...surfaceScopeInvariants(surface, rows),
       ],
       rates: [],
     };
@@ -377,6 +386,7 @@ const filterOptionsAgreeWithFilteredBrowse = (surface: ProgramSurface): ProgramJ
     const corpusBefore = await context.readCorpusFingerprint();
     const options = await context.readFilterOptions();
     const observations: FilterOptionObservation[] = [];
+    const filteredRows: Array<Record<string, unknown>> = [];
     const fields = CORPUS_DERIVED_FILTER_FIELDS.filter((field) => !(field in surface.filters));
     for (const field of fields) {
       for (const value of options[field] ?? []) {
@@ -384,6 +394,7 @@ const filterOptionsAgreeWithFilteredBrowse = (surface: ProgramSurface): ProgramJ
           surfaceRequest(surface, { filters: { [field]: [value] }, page: 1, pageSize }),
         );
         const rows = servedRows(result);
+        filteredRows.push(...rows);
         observations.push({
           field,
           value,
@@ -409,7 +420,10 @@ const filterOptionsAgreeWithFilteredBrowse = (surface: ProgramSurface): ProgramJ
         .sort((left, right) => right.filteredTotal - left.filteredTotal)
         .slice(0, context.facetValuesChecked),
     );
-    const invariants: InvariantResult[] = [checkFilteredRowsCarryValue(surface.id, topByField)];
+    const invariants: InvariantResult[] = [
+      checkFilteredRowsCarryValue(surface.id, topByField),
+      ...surfaceScopeInvariants(surface, filteredRows),
+    ];
     if (surface.offersEveryFilterOption)
       invariants.push(
         checkOfferedOptionsServeARow(surface.id, observations, corpusBefore, corpusAfter),
@@ -485,6 +499,7 @@ const sortedBrowseKeepsOrder = (surface: ProgramSurface): ProgramJourneyCase => 
             corpusAfter,
           ),
         ),
+        ...surfaceScopeInvariants(surface, [...defaultRows, ...titleRows]),
       ],
       rates: [
         buildRate(
@@ -537,6 +552,7 @@ const servedRowsPassTheGate = (surface: ProgramSurface): ProgramJourneyCase => (
       invariants: [
         checkServedRowsAreInServedTier(surface.id, tally, corpusBefore, corpusAfter),
         checkServedRowsPassTheGate(surface.id, tally, corpusBefore, corpusAfter),
+        ...surfaceScopeInvariants(surface, walk.rows),
       ],
       rates: [],
       notes: { servedRows: tally.servedRows, skippedStaleIndex: tally.skippedStaleIndex },
@@ -579,7 +595,10 @@ const servedFieldDifferenceAttribution = (surface: ProgramSurface): ProgramJourn
     ).length;
 
     return {
-      invariants: [checkProgramFieldAttribution(surface.id, tally, corpusBefore, corpusAfter)],
+      invariants: [
+        checkProgramFieldAttribution(surface.id, tally, corpusBefore, corpusAfter),
+        ...surfaceScopeInvariants(surface, walk.rows),
+      ],
       rates: [
         buildRate(
           `${surface.id}-stored-deadlines-projected-to-next-cycle`,

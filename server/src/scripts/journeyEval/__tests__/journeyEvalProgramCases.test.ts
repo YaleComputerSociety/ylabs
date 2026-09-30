@@ -97,6 +97,31 @@ describe('fellowship surface', () => {
     expect(scope?.detail.rowsChecked).toBe(5);
   });
 
+  it('fails every walk-based case when a later page serves a row outside the category', async () => {
+    const rows = syntheticRows(300);
+    const fellowships = rows.filter((row) => row.programCategory === 'FELLOWSHIP');
+    const outsideCategory = rows.find((row) => row.programCategory !== 'FELLOWSHIP')!;
+    const context = fakeContext(rows, (request) =>
+      request.page === 2 ? [outsideCategory, ...fellowships.slice(101, 150)] : undefined,
+    );
+
+    const walkingCases = fellowshipJourneyCases.filter(
+      (journeyCase) =>
+        journeyCase.id !== 'fellowships-cold-browse-card-contract' &&
+        journeyCase.id !== 'fellowships-filter-options-agree-with-filtered-browse',
+    );
+    for (const journeyCase of walkingCases) {
+      const outcome = await journeyCase.run(context);
+      const scope = outcome.invariants.find(
+        (invariant) => invariant.id === 'fellowships-surface-scope-is-honored',
+      );
+      expect({ id: journeyCase.id, status: scope?.status }).toEqual({
+        id: journeyCase.id,
+        status: 'fail',
+      });
+    }
+  });
+
   it('prefixes every case with its surface so ids never collide with the programs surface', () => {
     expect(
       fellowshipJourneyCases.every((journeyCase) => journeyCase.id.startsWith('fellowships-')),

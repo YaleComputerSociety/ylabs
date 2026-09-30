@@ -194,7 +194,7 @@ describe('served row gate checks', () => {
     ).toBe('fail');
     const gate = checkServedRowsPassTheGate('programs', tally, steadyCorpus, steadyCorpus);
     expect(gate.status).toBe('fail');
-    expect(gate.detail.gateRefusalReasons).toEqual({ missing_application_route: 1 });
+    expect(gate.detail.refusedRowReasons).toEqual({ missing_application_route: 1 });
   });
 
   it('skips a row written after the walk began and is inconclusive when none remain', () => {
