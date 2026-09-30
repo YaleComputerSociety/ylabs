@@ -34,6 +34,12 @@ So the panel was reporting topic coverage on 77 rows where a student sees no top
 `servedRowFacts` now counts `publicResearchAreaArray(servedResearchEntityCopy(...))`, which is the DTO's own chip projection, and the two agree on every served row rather than on all but one.
 The withholding itself is untouched: the guard is doing what #1407 built it for.
 
+**#3379 moved the topic metrics on the server, and #4004 moved the panel with them.**
+Until #4004 the client still rendered "Has topics", "No website and no topics" and the header's topic average from the live aggregation, untagged, so the panel reported stored state under a "now" label and its trend compared that stored value against a served measurement.
+On Development on 2026-09-30 the panel read 17 dead ends where the newest measurement served 25.
+The panel now decides a row's source from the endpoint's `snapshotOnlyMetrics` list rather than from a second hard-coded list, so a metric the server moves to the measured side moves on screen with it.
+The live aggregation no longer computes the three topic metrics at all, so no reader can pick the stored count up by mistake, and the header's topic average reads the latest measurement.
+
 **The count was one of two defects, and #3401 is the other.**
 The guard judges only a chip with no `fieldProvenance.researchAreas`, and `applyDescriptionResearchAreaDerivation` set `researchAreas` without ever writing that entry, so every chip derived from a row's own description was exposed to it.
 A derived chip is lexically unlike the prose that produced it by construction, because derivation goes through the canonical vocabulary and its aliases: a capital-markets phrase yields a corporate-finance chip, a pro-thrombotic phrase yields a thrombosis chip.

@@ -79,9 +79,9 @@ const CorpusQualityPanel = ({ corpusQuality, isLoading, error }: CorpusQualityPa
     );
   }
 
-  const { live, latest, history, refreshCommand } = corpusQuality;
+  const { live, latest, history, refreshCommand, snapshotOnlyMetrics } = corpusQuality;
   const previous = history.length > 1 ? history[history.length - 2] : null;
-  const rows = corpusQualityMetricRows(live, latest, previous);
+  const rows = corpusQualityMetricRows(live, latest, previous, snapshotOnlyMetrics);
   const snapshotRowCount = rows.filter((row) => !row.live).length;
 
   return (
@@ -94,7 +94,7 @@ const CorpusQualityPanel = ({ corpusQuality, isLoading, error }: CorpusQualityPa
           <p className="text-sm text-muted">
             Counted over the {formatNumber(live.coverage.studentReady)} rows served right now, every
             metric keeping its denominator so a growing corpus cannot read as improving quality.
-            Topics average {formatMean(live.richness.topicTotal)}.
+            {latest ? ` Topics served average ${formatMean(latest.richness.topicTotal)}.` : ''}
           </p>
           <p className="mt-1 text-xs text-muted">
             {snapshotRowCount === 0 ? (
