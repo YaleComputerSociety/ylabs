@@ -31,10 +31,14 @@ export const normalizedVocabularyHeading = (value: string): string =>
   value.replace(/\s+/g, ' ').trim().toLowerCase();
 
 let cached: { headings: ReadonlySet<string>; loadedAt: number } | undefined;
+let inFlightLoad: Promise<ReadonlySet<string>> | undefined;
+let cacheGeneration = 0;
 
 /** Drops the cached vocabulary so the next load re-reads the observation log. */
 export function resetControlledVocabularyHeadingsCache(): void {
   cached = undefined;
+  inFlightLoad = undefined;
+  cacheGeneration += 1;
 }
 
 /**
@@ -63,6 +67,25 @@ export async function warmControlledVocabularyHeadings(
   now: number = Date.now(),
 ): Promise<ReadonlySet<string>> {
   if (cached && now - cached.loadedAt < HEADING_CACHE_TTL_MS) return cached.headings;
+  return loadControlledVocabularyHeadings(now);
+}
+
+function loadControlledVocabularyHeadings(now: number): Promise<ReadonlySet<string>> {
+  if (inFlightLoad) return inFlightLoad;
+  const generation = cacheGeneration;
+  const load = readControlledVocabularyHeadings()
+    .then((headings) => {
+      if (generation === cacheGeneration) cached = { headings, loadedAt: now };
+      return headings;
+    })
+    .finally(() => {
+      if (inFlightLoad === load) inFlightLoad = undefined;
+    });
+  inFlightLoad = load;
+  return load;
+}
+
+async function readControlledVocabularyHeadings(): Promise<ReadonlySet<string>> {
   const rows = await Observation.find({
     sourceName: { $in: [...CONTROLLED_VOCABULARY_RESEARCH_AREA_SOURCES] },
     field: 'researchAreas',
@@ -78,7 +101,6 @@ export async function warmControlledVocabularyHeadings(
       if (normalized) headings.add(normalized);
     }
   }
-  cached = { headings, loadedAt: now };
   return headings;
 }
 
@@ -95,6 +117,11 @@ let servedWarmFailureReported = false;
  *
  * A failure degrades to today's behaviour, which is a split heading, and says so once: a
  * vocabulary read that fails silently on every request is the inert-fix shape again.
+ *
+ * Only a process that has never loaded the vocabulary waits for the read. Once a set is loaded,
+ * an expired one keeps serving while a single shared refresh runs in the background, because
+ * the read scans the observation log for over a second and a stale set only splits a heading
+ * published since the last load (#3953).
  */
 export async function warmServedResearchAreaVocabulary(): Promise<void> {
   // A serve path with no connection cannot serve, so there is nothing to warm and the read
@@ -102,16 +129,24 @@ export async function warmServedResearchAreaVocabulary(): Promise<void> {
   // mongoose's ten-second buffering timeout: one such test failed outright and the suite
   // around it took seventeen minutes. Mongoose reports 1 for connected.
   if (mongoose.connection.readyState !== 1) return;
+  if (controlledVocabularyHeadingsAreWarm()) {
+    void warmControlledVocabularyHeadings().catch(reportServedWarmFailure);
+    return;
+  }
   try {
     await warmControlledVocabularyHeadings();
   } catch (error) {
-    if (servedWarmFailureReported) return;
-    servedWarmFailureReported = true;
-    console.error(
-      '[research-area] controlled vocabulary warm failed on a serve path, so a multi-part heading will be split (#3817):',
-      error instanceof Error ? error.message : error,
-    );
+    reportServedWarmFailure(error);
   }
+}
+
+function reportServedWarmFailure(error: unknown): void {
+  if (servedWarmFailureReported) return;
+  servedWarmFailureReported = true;
+  console.error(
+    '[research-area] controlled vocabulary warm failed on a serve path, so a multi-part heading will be split (#3817):',
+    error instanceof Error ? error.message : error,
+  );
 }
 
 export function resetServedWarmFailureReport(): void {

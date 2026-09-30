@@ -8,6 +8,7 @@ import {
   resetServedWarmFailureReport,
   warmServedResearchAreaVocabulary,
   controlledVocabularyHeadingsAreWarm,
+  controlledVocabularyHeadings,
 } from '../../utils/controlledVocabularyHeadings';
 import { Observation } from '../../models/observation';
 import mongoose from 'mongoose';
@@ -114,6 +115,77 @@ describe('warmServedResearchAreaVocabulary', () => {
    * guard every unit test of the two entry points waited out mongoose's ten-second buffering
    * timeout: one failed outright and the file around it took seventeen minutes.
    */
+  it('serves the expired set without waiting while one refresh runs', async () => {
+    withConnection();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(0);
+    const pendingReads: Array<(rows: unknown[]) => void> = [];
+    const find = vi.spyOn(Observation, 'find').mockReturnValue({
+      select: () => ({
+        lean: () => new Promise((resolve) => pendingReads.push(resolve)),
+      }),
+    } as never);
+
+    const cold = warmServedResearchAreaVocabulary();
+    pendingReads[0]([{ value: ['Lymphoma, T-Cell, Cutaneous'] }]);
+    await cold;
+    now.mockReturnValue(60 * 60 * 1000 + 1);
+
+    await warmServedResearchAreaVocabulary();
+    await warmServedResearchAreaVocabulary();
+
+    expect(find).toHaveBeenCalledTimes(2);
+    expect([...controlledVocabularyHeadings()]).toEqual(['lymphoma, t-cell, cutaneous']);
+
+    pendingReads[1]([{ value: ['Education, Medical, Graduate'] }]);
+    await vi.waitFor(() =>
+      expect([...controlledVocabularyHeadings()]).toEqual(['education, medical, graduate']),
+    );
+  });
+
+  it('waits for the read when nothing has loaded yet', async () => {
+    withConnection();
+    let release: (rows: unknown[]) => void = () => {};
+    vi.spyOn(Observation, 'find').mockReturnValue({
+      select: () => ({ lean: () => new Promise((resolve) => (release = resolve)) }),
+    } as never);
+
+    let settled = false;
+    const cold = warmServedResearchAreaVocabulary().then(() => (settled = true));
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+    release([{ value: ['Lymphoma, T-Cell, Cutaneous'] }]);
+    await cold;
+    expect(controlledVocabularyHeadingsAreWarm()).toBe(true);
+  });
+
+  it('reports a failed background refresh once and keeps the loaded set', async () => {
+    withConnection();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(0);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const find = vi.spyOn(Observation, 'find');
+    find.mockReturnValueOnce({
+      select: () => ({ lean: async () => [{ value: ['Lymphoma, T-Cell, Cutaneous'] }] }),
+    } as never);
+    await warmServedResearchAreaVocabulary();
+    find.mockReturnValue({
+      select: () => ({
+        lean: async () => {
+          throw new Error('no database');
+        },
+      }),
+    } as never);
+    now.mockReturnValue(60 * 60 * 1000 + 1);
+
+    await warmServedResearchAreaVocabulary();
+    await vi.waitFor(() => expect(error).toHaveBeenCalledTimes(1));
+    await warmServedResearchAreaVocabulary();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(error).toHaveBeenCalledTimes(1);
+    expect([...controlledVocabularyHeadings()]).toEqual(['lymphoma, t-cell, cutaneous']);
+  });
+
   it('reads nothing when mongoose is not connected', async () => {
     withoutConnection();
     const find = vi.spyOn(Observation, 'find');
