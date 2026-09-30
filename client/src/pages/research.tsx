@@ -35,6 +35,7 @@ import {
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { isKnownResearchEntityType } from '../utils/researchEntityCopy';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
+import { scrollBehavior } from '../utils/scrollBehavior';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import type { PathwaySearchFilters } from '../types/pathway';
 import {
@@ -362,11 +363,11 @@ const withDepartmentSearchTarget = (
 const scrollResearchViewportToTop = () => {
   const scrollContainer = document.querySelector<HTMLElement>('[data-scroll-container]');
   if (scrollContainer) {
-    scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollContainer.scrollTo({ top: 0, behavior: scrollBehavior() });
     return;
   }
 
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.scrollTo({ top: 0, behavior: scrollBehavior() });
 };
 
 const Research = () => {

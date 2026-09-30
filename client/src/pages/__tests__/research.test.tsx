@@ -750,6 +750,54 @@ describe('Research page', () => {
     expect(screen.getByTestId('location').textContent).toBe('/research');
   });
 
+  it('jumps to the top without animating when the student prefers reduced motion', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      (queryString: string) =>
+        ({
+          matches: queryString === '(prefers-reduced-motion: reduce)',
+          media: queryString,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        }) as unknown as MediaQueryList,
+    );
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity]);
+    });
+
+    try {
+      render(
+        <MemoryRouter initialEntries={['/research']}>
+          <ConfigContext.Provider
+            value={{
+              ...defaultConfigContext,
+              isLoading: false,
+              isLoaded: true,
+              departments,
+              departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+            }}
+          >
+            <HomeButton />
+            <Research />
+          </ConfigContext.Provider>
+        </MemoryRouter>,
+      );
+
+      await screen.findByRole('heading', { name: 'AI Safety Lab' });
+      vi.mocked(window.scrollTo).mockClear();
+
+      fireEvent.click(screen.getByRole('link', { name: /y\/labs/i }));
+
+      await waitFor(() => {
+        expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'auto' });
+      });
+      expect(window.scrollTo).not.toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   // 50 served CORE_FACILITY cards and 99 served center/institute/initiative cards sat
   // in the same browse result set as 3,199 lab and faculty-research cards with no
   // axis that separated them, because the panel read only school and departments
