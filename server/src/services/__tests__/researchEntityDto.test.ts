@@ -1650,6 +1650,41 @@ describe('researchEntityDto', () => {
     expect(unavailable).toMatchObject({ healthStatus: 'UNAVAILABLE', httpStatusCode: 404 });
   });
 
+  it('keeps detail-only award and link-health lists off a browse card but on the detail payload (#3951)', () => {
+    const row = {
+      _id: 'entity-card-trim',
+      slug: 'card-trim-lab',
+      name: 'Card Trim Lab',
+      kind: 'lab',
+      websiteUrl: 'https://example.yale.edu/lab/card-trim',
+      sourceUrls: [
+        'https://example.yale.edu/lab/card-trim',
+        'https://example.yale.edu/lab/card-trim/gone',
+      ],
+      sourceLinkHealth: [
+        {
+          url: 'https://example.yale.edu/lab/card-trim/gone',
+          healthStatus: 'UNAVAILABLE',
+          httpStatusCode: 404,
+        },
+      ],
+      recentGrants: [{ id: 'award-card', agency: 'NSF', endDate: new Date('2999-01-01T00:00:00Z') }],
+      recentGrantCount: 4,
+      fundingAgencies: ['NSF'],
+    };
+
+    const [card] = addResearchEntitySearchAliases({ hits: [row] }).researchEntities;
+    const detail = addResearchEntityDetailAlias({ group: row, members: [] }).researchEntity;
+
+    expect(card).not.toHaveProperty('recentGrants');
+    expect(card).not.toHaveProperty('sourceLinkHealth');
+    expect(card.recentGrantCount).toBe(4);
+    expect(card.fundingAgencies).toEqual(['NSF']);
+    expect(card.sourceUrls).toEqual(detail.sourceUrls);
+    expect(detail.recentGrants).toHaveLength(1);
+    expect(detail.sourceLinkHealth).toHaveLength(1);
+  });
+
   it('exposes only safe public lead identity fields', () => {
     const dto = toPublicResearchEntityDto({
       slug: 'lead-review-lab',

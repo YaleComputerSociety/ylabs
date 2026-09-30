@@ -1207,12 +1207,7 @@ const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
   { filterKey: 'entityType', meiliField: 'entityType' },
 ];
 
-const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = [
-  'schools',
-  'departments',
-  'researchAreas',
-  'entityType',
-];
+const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = ['schools', 'departments', 'entityType'];
 
 /**
  * Meilisearch query for ResearchEntity: keyword-only when no query, hybrid
@@ -2066,13 +2061,17 @@ const searchResearchGroupsViaMongoFallback = async (
     ] = await Promise.all([
       disjunctiveMongoFacetCounts('school', 'schools'),
       disjunctiveMongoFacetCounts('departments', 'departments'),
-      disjunctiveMongoFacetCounts('researchAreas', 'researchAreas'),
+      filters.researchAreas?.length
+        ? disjunctiveMongoFacetCounts('researchAreas', 'researchAreas')
+        : undefined,
       disjunctiveMongoFacetCounts('entityType', 'entityType'),
     ]);
     return {
       school: schoolFacetCounts,
       departments: departmentFacetCounts,
-      researchAreas: sanitizeResearchAreaFacetDistribution(researchAreaFacetCounts) ?? {},
+      ...(researchAreaFacetCounts
+        ? { researchAreas: sanitizeResearchAreaFacetDistribution(researchAreaFacetCounts) ?? {} }
+        : {}),
       entityType: entityTypeFacetCounts,
     };
   })();
