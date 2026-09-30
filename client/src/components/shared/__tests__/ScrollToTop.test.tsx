@@ -52,7 +52,80 @@ describe('ScrollToTop', () => {
     expect(scrollContainer!.scrollTop).toBe(420);
   });
 
-  it('moves focus into the main region on first load and on every route change', () => {
+  it('leaves focus alone on first load so the first Tab reaches the skip link', () => {
+    render(
+      <StrictMode>
+        <MemoryRouter initialEntries={['/research']}>
+          <ScrollToTop />
+          <a href="#main-content">Skip to main content</a>
+          <div data-scroll-container>
+            <main id="main-content" tabIndex={-1}>
+              <Routes>
+                <Route path="/research" element={<ResearchLink />} />
+              </Routes>
+            </main>
+          </div>
+        </MemoryRouter>
+      </StrictMode>,
+    );
+
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('moves focus into the main region when a scroll key is pressed with nothing focused', () => {
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ScrollToTop />
+        <nav>
+          <NavbarLink />
+        </nav>
+        <div data-scroll-container>
+          <main id="main-content" tabIndex={-1}>
+            <Routes>
+              <Route path="/research" element={<ResearchLink />} />
+            </Routes>
+          </main>
+        </div>
+      </MemoryRouter>,
+    );
+
+    const main = document.getElementById('main-content');
+    expect(document.activeElement).toBe(document.body);
+
+    fireEvent.keyDown(document.body, { key: 'Tab' });
+    expect(document.activeElement).toBe(document.body);
+
+    fireEvent.keyDown(document.body, { key: 'PageDown' });
+    expect(document.activeElement).toBe(main);
+
+    const navbarLink = screen.getByRole('button', { name: 'About' });
+    navbarLink.focus();
+    fireEvent.keyDown(navbarLink, { key: ' ' });
+    expect(document.activeElement).toBe(navbarLink);
+  });
+
+  it('leaves scroll keys to the browser once a click has set the scroll origin', () => {
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ScrollToTop />
+        <div data-scroll-container>
+          <main id="main-content" tabIndex={-1}>
+            <div data-testid="inner-panel" style={{ overflowY: 'auto' }}>
+              <p>Panel text</p>
+            </div>
+          </main>
+        </div>
+      </MemoryRouter>,
+    );
+
+    fireEvent.pointerDown(screen.getByText('Panel text'));
+    expect(document.activeElement).toBe(document.body);
+
+    fireEvent.keyDown(document.body, { key: 'PageDown' });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('moves focus into the main region on every route change', () => {
     render(
       <MemoryRouter initialEntries={['/research']}>
         <ScrollToTop />
@@ -72,7 +145,6 @@ describe('ScrollToTop', () => {
     );
 
     const main = document.getElementById('main-content');
-    expect(document.activeElement).toBe(main);
 
     const navbarLink = screen.getByRole('button', { name: 'About' });
     navbarLink.focus();
