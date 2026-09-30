@@ -23,10 +23,7 @@ A working-style phrase (`wet lab`, `dry lab`, `wet bench`) resolves through `RES
 
 ## MongoDB indexes
 
-A declared `schema.index(...)` does not build itself, because `db/connections.ts` sets `autoIndex: false`.
-Build it with `yarn --cwd server db:build-indexes` (dry-run, reports what is missing) then `--apply`, which is additive and never drops.
-Read `skills/contributing/SKILL.md` for the narrowing, widening, and removal rules.
-Run the build against Development only: Beta and Production receive indexes through promotion, which copies them from the source collection.
+A declared `schema.index(...)` does not build itself; `skills/contributing/SKILL.md` ("Modifying a schema") owns how and where to build, narrow, widen, or remove one.
 
 `observations` and `researchers` carry indexes whose trailing keys exist for a specific reader rather than as padding, so trimming a key silently restores a scan that nothing else reports (#3934).
 
