@@ -487,19 +487,11 @@ When adding a new reducer:
 
 ### CI
 
-Pull requests into `main` or `beta` trigger [.github/workflows/ci.yml](.github/workflows/ci.yml), which runs:
+Pull requests into `main` or `beta`, and pushes to `beta`, trigger [.github/workflows/ci.yml](.github/workflows/ci.yml).
+The step order of its `test-and-build` job is recorded in [skills/finishing-work/SKILL.md](skills/finishing-work/SKILL.md), and the `beta` push run is described in [docs/release-process.md](docs/release-process.md#the-post-merge-signal-on-beta).
 
-1. Immutable Yarn installs for the root, server, and client lockfiles
-2. `npx tsc --noEmit -p server/tsconfig.json`
-3. `yarn --cwd server test`
-4. `yarn --cwd client test:ci`
-5. `yarn security:preflight`, including production dependency audits at moderate severity
-6. Root, server, and client all-environment dependency audits at moderate severity
-7. `yarn build` (server + client)
-
-The workflow also accepts `workflow_dispatch` so it can be run manually from the Actions tab. Branch protection (configured in GitHub repo settings → Branches) requires this check to pass before merging.
-
-Client `tsc --noEmit` is still not part of CI; the client has known pre-existing type errors that need a cleanup pass before strict type-checking can be enforced.
+The workflow also accepts `workflow_dispatch` so it can be run manually from the Actions tab.
+Which contexts must pass before merging is set by the repository rulesets, not classic branch protection; see the Merging section of [AGENTS.md](AGENTS.md).
 
 ---
 
