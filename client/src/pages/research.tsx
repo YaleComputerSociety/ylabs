@@ -1626,6 +1626,68 @@ const Research = () => {
     returnToCleanResearchHomeRef.current();
   }, [location.key, location.state]);
 
+  const weakestProfilesToggle = (
+    <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-card px-3 py-2 text-sm font-medium text-ink-soft">
+      <input
+        type="checkbox"
+        checked={showWeakestProfilesFirst}
+        onChange={(event) => setWeakestProfilesFirst(event.target.checked)}
+        className="yr-focus-ring h-4 w-4 rounded-control border-[var(--yr-line-strong)] accent-brand"
+      />
+      <span>Show weakest profiles first</span>
+    </label>
+  );
+  const qualityFilterChips = showWeakestProfilesFirst && (
+    <div
+      className="yr-muted-surface flex flex-wrap gap-2 rounded-card p-2"
+      aria-label="Quality filters"
+    >
+      {QUALITY_FILTER_OPTIONS.map((option) => {
+        const isActive = qualityFilters.includes(option.value);
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => toggleQualityFilter(option.value)}
+            className={`yr-focus-ring min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors ${
+              isActive
+                ? 'border-brand bg-panel text-brand'
+                : 'border-[var(--yr-border-warm)] bg-transparent text-ink-soft hover:bg-[var(--yr-panel)]'
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+  const trustTierFilterChips = (
+    <div
+      className="flex flex-wrap gap-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
+      aria-label="Trust tier filters"
+    >
+      {TRUST_TIER_FILTER_OPTIONS.map((option) => {
+        const isActive = trustTierFilters.includes(option.value);
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => toggleTrustTierFilter(option.value)}
+            className={`yr-focus-ring min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors ${
+              isActive
+                ? 'border-brand bg-brand text-white'
+                : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-ink-soft hover:bg-[var(--yr-panel-muted)]'
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">
       <div className="mx-auto w-full max-w-screen-2xl px-5 py-5 sm:py-8 lg:px-8">
@@ -1728,6 +1790,22 @@ const Research = () => {
                 <ResearchFilterDisclosure variant="sidebar" {...browseFilterProps} />
               </div>
             )}
+            {!hasSubmittedSearch && isWideFilterLayout && isAdmin && (
+              <section
+                aria-labelledby="research-operator-controls-heading"
+                className="mt-6 grid gap-3 border-t border-[var(--yr-line)] pt-6"
+              >
+                <h2
+                  id="research-operator-controls-heading"
+                  className="text-base font-semibold text-ink"
+                >
+                  Operator controls
+                </h2>
+                {weakestProfilesToggle}
+                {qualityFilterChips}
+                {trustTierFilterChips}
+              </section>
+            )}
           </header>
 
           <div className="min-w-0">
@@ -1747,17 +1825,7 @@ const Research = () => {
                       onSortByChange={(field) => applyResearchSort(field)}
                       onToggleSortDirection={toggleResearchSortDirection}
                     />
-                    {isAdmin && (
-                      <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-card px-3 py-2 text-sm font-medium text-ink-soft">
-                        <input
-                          type="checkbox"
-                          checked={showWeakestProfilesFirst}
-                          onChange={(event) => setWeakestProfilesFirst(event.target.checked)}
-                          className="yr-focus-ring h-4 w-4 rounded-control border-[var(--yr-line-strong)] accent-brand"
-                        />
-                        <span>Show weakest profiles first</span>
-                      </label>
-                    )}
+                    {isAdmin && !isWideFilterLayout && weakestProfilesToggle}
                   </div>
                 </div>
                 {!isWideFilterLayout && (
@@ -1785,54 +1853,10 @@ const Research = () => {
                     />
                   </div>
                 )}
-                {isAdmin && showWeakestProfilesFirst && (
-                  <div
-                    className="yr-muted-surface mb-4 flex flex-wrap gap-2 rounded-card p-2"
-                    aria-label="Quality filters"
-                  >
-                    {QUALITY_FILTER_OPTIONS.map((option) => {
-                      const isActive = qualityFilters.includes(option.value);
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          aria-pressed={isActive}
-                          onClick={() => toggleQualityFilter(option.value)}
-                          className={`yr-focus-ring min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors ${
-                            isActive
-                              ? 'border-brand bg-panel text-brand'
-                              : 'border-[var(--yr-border-warm)] bg-transparent text-ink-soft hover:bg-[var(--yr-panel)]'
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                {isAdmin && (
-                  <div
-                    className="mb-4 flex flex-wrap gap-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
-                    aria-label="Trust tier filters"
-                  >
-                    {TRUST_TIER_FILTER_OPTIONS.map((option) => {
-                      const isActive = trustTierFilters.includes(option.value);
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          aria-pressed={isActive}
-                          onClick={() => toggleTrustTierFilter(option.value)}
-                          className={`yr-focus-ring min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors ${
-                            isActive
-                              ? 'border-brand bg-brand text-white'
-                              : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-ink-soft hover:bg-[var(--yr-panel-muted)]'
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
+                {isAdmin && !isWideFilterLayout && (
+                  <div className="mb-4 grid gap-4">
+                    {qualityFilterChips}
+                    {trustTierFilterChips}
                   </div>
                 )}
                 {defaultSearchLoading && defaultClusters.length === 0 ? (

@@ -484,6 +484,95 @@ await step('shift-tabbing back through results never parks focus under the stick
   }
 });
 
+const LAYOUT_SHIFT_BUDGET = 0.1;
+const LATE_SESSION_CHECK_MS = 500;
+const syntheticLayoutEntity = (index) => ({
+  _id: `e2e-layout-${index}`,
+  slug: `e2e-layout-fixture-${index}`,
+  name: `Layout Fixture ${index}`,
+  displayName: `Layout Fixture ${index}`,
+  kind: 'lab',
+  fullDescription: 'Synthetic research entity for the layout stability smoke.',
+  departments: ['Computer Science'],
+  researchAreas: ['Testing'],
+  sourceUrls: [],
+});
+const syntheticAdminSession = {
+  auth: true,
+  user: { netId: 'e2eop1', userType: 'undergraduate', userConfirmed: true, isAdmin: true },
+};
+
+const measureBrowseLayoutShift = async (viewport) => {
+  const shiftContext = await browser.newContext({ viewport, deviceScaleFactor: 1 });
+  try {
+    await shiftContext.route('**/api/check', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, LATE_SESSION_CHECK_MS));
+      await route.fulfill({ json: syntheticAdminSession });
+    });
+    await shiftContext.route('**/api/research/search', (route) =>
+      route.fulfill({
+        json: {
+          researchEntities: Array.from({ length: 12 }, (_, index) => syntheticLayoutEntity(index)),
+          estimatedTotalHits: 12,
+          page: 1,
+          pageSize: 24,
+          facetDistribution: {},
+        },
+      }),
+    );
+    await shiftContext.route('**/api/users/**', (route) =>
+      route.fulfill({ json: { watchedPrograms: [], watchedProgramPlans: {} } }),
+    );
+    await shiftContext.route('**/api/analytics/**', (route) => route.fulfill({ status: 204 }));
+    const shiftPage = await shiftContext.newPage();
+    await shiftPage.addInitScript(() => {
+      window.__layoutShifts = [];
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (entry.hadRecentInput) continue;
+          window.__layoutShifts.push({
+            value: entry.value,
+            sources: entry.sources.map((source) => {
+              const node = source.node;
+              const label = node?.getAttribute?.('aria-label') || node?.tagName?.toLowerCase();
+              return `${label ?? 'node'} moved ${Math.round(source.currentRect.y - source.previousRect.y)}px`;
+            }),
+          });
+        }
+      }).observe({ type: 'layout-shift', buffered: true });
+    });
+    await shiftPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+    await shiftPage
+      .getByRole('link', { name: 'Layout Fixture 0' })
+      .first()
+      .waitFor({ timeout: 20000 });
+    await shiftPage.getByLabel('Show weakest profiles first').waitFor({ timeout: 20000 });
+    await shiftPage.waitForTimeout(1000);
+    const shifts = await shiftPage.evaluate(() => window.__layoutShifts);
+    const total = shifts.reduce((sum, shift) => sum + shift.value, 0);
+    return { total, largest: shifts.reduce((max, shift) => (!max || shift.value > max.value ? shift : max), null) };
+  } finally {
+    await shiftContext.close();
+  }
+};
+
+await step('an admin session answering late does not shift the browse page', async () => {
+  for (const viewport of [
+    { width: 1280, height: 900 },
+    { width: 375, height: 900 },
+  ]) {
+    const { total, largest } = await measureBrowseLayoutShift(viewport);
+    record('browse layout shift with a late admin session', {
+      width: viewport.width,
+      cumulativeLayoutShift: Number(total.toFixed(4)),
+    });
+    assert(
+      total < LAYOUT_SHIFT_BUDGET,
+      `Browse at ${viewport.width}px shifted by ${total.toFixed(3)} (budget ${LAYOUT_SHIFT_BUDGET}) when a late session check reported an admin grant; largest shift ${largest?.value.toFixed(3)}: ${largest?.sources.join(', ')}.`,
+    );
+  }
+});
+
 const summary = {
   generatedAt: new Date().toISOString(),
   baseUrl,
