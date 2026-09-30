@@ -60,6 +60,32 @@ describe('warmControlledVocabularyHeadings', () => {
 
     expect(find).toHaveBeenCalledTimes(2);
   });
+
+  it('shares one read between callers that arrive while it is running', async () => {
+    const find = stubObservations([['Education, Medical, Graduate']]);
+
+    const [first, second] = await Promise.all([
+      warmControlledVocabularyHeadings(0),
+      warmControlledVocabularyHeadings(0),
+    ]);
+
+    expect(find).toHaveBeenCalledTimes(1);
+    expect(second).toBe(first);
+  });
+
+  it('keeps no result from a read that a reset overtook', async () => {
+    let release: (rows: unknown[]) => void = () => {};
+    vi.spyOn(Observation, 'find').mockReturnValue({
+      select: () => ({ lean: () => new Promise((resolve) => (release = resolve)) }),
+    } as never);
+
+    const overtaken = warmControlledVocabularyHeadings(0);
+    resetControlledVocabularyHeadingsCache();
+    release([{ value: ['Education, Medical, Graduate'] }]);
+    await overtaken;
+
+    expect(controlledVocabularyHeadingsAreWarm()).toBe(false);
+  });
 });
 
 describe('splitDelimitedResearchArea against a loaded vocabulary', () => {
