@@ -1688,7 +1688,7 @@ const Research = () => {
               >
                 Search y/labs
               </label>
-              <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex flex-col gap-2 sm:flex-row xl:flex-col">
                 <input
                   id="research-search"
                   ref={searchInputRef}
@@ -1707,7 +1707,7 @@ const Research = () => {
                 />
                 <button
                   type="submit"
-                  className="yr-focus-ring min-h-12 rounded-control bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-line disabled:text-ink-soft sm:min-h-14 xl:min-h-12 xl:px-4"
+                  className="yr-focus-ring min-h-12 rounded-control bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-line disabled:text-ink-soft sm:min-h-14 xl:min-h-12"
                   disabled={searchDisabled}
                 >
                   {searchLoading ? 'Searching…' : 'Search'}

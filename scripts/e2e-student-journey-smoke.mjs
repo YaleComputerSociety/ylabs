@@ -240,6 +240,31 @@ await step('signed-in student reaches the research browse home', async () => {
 });
 await screenshot('01-browse-home');
 
+await step('the wide-screen research sidebar fits every filter without its own scrollbar', async () => {
+  const laptopPage = await context.newPage();
+  try {
+    await laptopPage.setViewportSize({ width: 1280, height: 800 });
+    await laptopPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+    await settleResearchPage(laptopPage);
+    const sidebar = laptopPage.locator('header', {
+      has: laptopPage.getByRole('heading', { level: 1, name: 'Find a Yale lab that fits you.' }),
+    });
+    for (const axis of ['type', 'school', 'department']) {
+      await sidebar.getByLabel(`Filter by ${axis}`).waitFor({ timeout: 20000 });
+    }
+    const { scrollHeight, clientHeight } = await sidebar.evaluate((element) => ({
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+    }));
+    assert(
+      scrollHeight <= clientHeight,
+      `The sticky research sidebar overflows at 1280x800: ${scrollHeight}px of content in ${clientHeight}px.`,
+    );
+  } finally {
+    await laptopPage.close();
+  }
+});
+
 await step('search returns a result and the header settles out of loading', async () => {
   await submitSearch(SMOKE_SEARCH_TOKEN);
   const searchButton = page.getByRole('button', { name: 'Search', exact: true });
