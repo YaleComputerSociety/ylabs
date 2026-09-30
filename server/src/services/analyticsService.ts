@@ -219,6 +219,7 @@ export interface SearchQualityQueryAnalytics {
   zeroResultSearches: number;
   uniqueSearchers: number;
   avgResultCount: number;
+  searchesThatReachedTheCorpus: number;
 }
 
 export interface SearchQualityAnalytics {
@@ -288,6 +289,7 @@ export interface HighSearchLowResultsAction {
   zeroResultRate: number;
   avgResultCount: number;
   uniqueSearchers: number;
+  searchesThatReachedTheCorpus: number;
 }
 
 export interface ActionNeededAnalytics {
@@ -960,6 +962,16 @@ const SEARCH_ATTRIBUTION_EVENT_TYPES = [
   AnalyticsEventType.RESEARCH_SAVE,
 ];
 
+const researchSaveRemovalMatch = {
+  eventType: AnalyticsEventType.RESEARCH_SAVE,
+  'metadata.operation': 'remove',
+};
+
+const researchSaveOfSomethingOtherThanResearchMatch = {
+  eventType: AnalyticsEventType.RESEARCH_SAVE,
+  $or: [{ 'metadata.operation': 'remove' }, { entityType: { $ne: 'research_entity' } }],
+};
+
 const ANALYTICS_CACHE_TTL_MS = 30 * 1000;
 
 interface RangeCacheEntry<T> {
@@ -1014,7 +1026,13 @@ const zeroResultAfterProjection = {
   $and: [{ $lte: ['$resultCount', 0] }, { $ne: ['$degraded', true] }],
 };
 
-const zeroResultQueryGroupStages = [
+const reachedTheCorpusAfterProjection = { $ne: ['$degraded', true] };
+
+const resultCountThatReachedTheCorpus = {
+  $cond: [reachedTheCorpusAfterProjection, '$resultCount', null],
+};
+
+const queryGroupStages = [
   {
     $group: {
       _id: {
@@ -1026,7 +1044,10 @@ const zeroResultQueryGroupStages = [
         $sum: { $cond: [zeroResultAfterProjection, 1, 0] },
       },
       uniqueSearchers: { $addToSet: '$netid' },
-      avgResultCount: { $avg: '$resultCount' },
+      avgResultCount: { $avg: resultCountThatReachedTheCorpus },
+      searchesThatReachedTheCorpus: {
+        $sum: { $cond: [reachedTheCorpusAfterProjection, 1, 0] },
+      },
     },
   },
   {
@@ -1037,9 +1058,14 @@ const zeroResultQueryGroupStages = [
       totalSearches: 1,
       zeroResultSearches: 1,
       uniqueSearchers: { $size: '$uniqueSearchers' },
-      avgResultCount: { $round: ['$avgResultCount', 2] },
+      avgResultCount: { $round: [{ $ifNull: ['$avgResultCount', 0] }, 2] },
+      searchesThatReachedTheCorpus: 1,
     },
   },
+];
+
+const zeroResultQueryGroupStages = [
+  ...queryGroupStages,
   { $match: { zeroResultSearches: { $gt: 0 } } },
 ];
 
@@ -1050,6 +1076,7 @@ const computeSearchQualityAnalytics = async (
     {
       $match: {
         eventType: { $in: SEARCH_ATTRIBUTION_EVENT_TYPES },
+        $nor: [researchSaveRemovalMatch],
         ...(await buildUsageMatch(range)),
       },
     },
@@ -1170,13 +1197,29 @@ const computeSearchQualityAnalytics = async (
               uniqueSearchers: { $addToSet: '$netid' },
               engagedSearches: {
                 $sum: {
-                  $cond: [{ $and: [{ $gt: ['$resultCount', 0] }, '$hasAttributedAction'] }, 1, 0],
+                  $cond: [
+                    {
+                      $and: [
+                        reachedTheCorpusAfterProjection,
+                        { $gt: ['$resultCount', 0] },
+                        '$hasAttributedAction',
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
                 },
               },
               returnedButIgnoredSearches: {
                 $sum: {
                   $cond: [
-                    { $and: [{ $gt: ['$resultCount', 0] }, { $not: ['$hasAttributedAction'] }] },
+                    {
+                      $and: [
+                        reachedTheCorpusAfterProjection,
+                        { $gt: ['$resultCount', 0] },
+                        { $not: ['$hasAttributedAction'] },
+                      ],
+                    },
                     1,
                     0,
                   ],
@@ -1197,31 +1240,7 @@ const computeSearchQualityAnalytics = async (
           },
         ],
         byQueryAndEntityType: [
-          {
-            $group: {
-              _id: {
-                query: '$normalizedQuery',
-                entityType: '$searchEntityType',
-              },
-              totalSearches: { $sum: 1 },
-              zeroResultSearches: {
-                $sum: { $cond: [zeroResultAfterProjection, 1, 0] },
-              },
-              uniqueSearchers: { $addToSet: '$netid' },
-              avgResultCount: { $avg: '$resultCount' },
-            },
-          },
-          {
-            $project: {
-              _id: 0,
-              query: '$_id.query',
-              entityType: '$_id.entityType',
-              totalSearches: 1,
-              zeroResultSearches: 1,
-              uniqueSearchers: { $size: '$uniqueSearchers' },
-              avgResultCount: { $round: ['$avgResultCount', 2] },
-            },
-          },
+          ...queryGroupStages,
           { $sort: { totalSearches: -1, zeroResultSearches: -1, query: 1 } },
           { $limit: 100 },
         ],
@@ -1232,11 +1251,11 @@ const computeSearchQualityAnalytics = async (
         ],
         highSearchLowResults: [
           ...zeroResultQueryGroupStages,
-          { $match: { totalSearches: { $gte: 2 } } },
+          { $match: { searchesThatReachedTheCorpus: { $gte: 2 } } },
           {
             $addFields: {
               zeroResultRate: {
-                $round: [{ $divide: ['$zeroResultSearches', '$totalSearches'] }, 4],
+                $round: [{ $divide: ['$zeroResultSearches', '$searchesThatReachedTheCorpus'] }, 4],
               },
             },
           },
@@ -1279,8 +1298,8 @@ const computeSearchQualityAnalytics = async (
     engagedSearches: overall.engagedSearches,
     returnedButIgnoredSearches: overall.returnedButIgnoredSearches,
     engagementRate:
-      overall.totalSearches > 0
-        ? Number((overall.engagedSearches / overall.totalSearches).toFixed(4))
+      searchesThatReachedTheCorpus > 0
+        ? Number((overall.engagedSearches / searchesThatReachedTheCorpus).toFixed(4))
         : 0,
     attributionWindowMinutes: 30,
   };
@@ -1391,7 +1410,8 @@ export const getSearchQueryAnalytics = async (
         zeroResultSearches: {
           $sum: { $cond: [zeroResultAfterProjection, 1, 0] },
         },
-        resultCountTotal: { $sum: '$resultCount' },
+        resultCountTotal: { $sum: resultCountThatReachedTheCorpus },
+        searchesThatReachedTheCorpus: { $sum: { $cond: [reachedTheCorpusAfterProjection, 1, 0] } },
         lastSearchedAt: { $max: '$timestamp' },
       },
     },
@@ -1410,6 +1430,7 @@ export const getSearchQueryAnalytics = async (
         searchCount: 1,
         zeroResultSearches: 1,
         resultCountTotal: 1,
+        searchesThatReachedTheCorpus: 1,
         lastSearchedAt: 1,
       },
     },
@@ -1429,6 +1450,7 @@ export const getSearchQueryAnalytics = async (
         totalSearches: { $sum: '$searchCount' },
         zeroResultSearches: { $sum: '$zeroResultSearches' },
         resultCountTotal: { $sum: '$resultCountTotal' },
+        searchesThatReachedTheCorpus: { $sum: '$searchesThatReachedTheCorpus' },
         uniqueSearchers: { $sum: 1 },
         lastSearchedAt: { $max: '$lastSearchedAt' },
         searchers: {
@@ -1454,8 +1476,10 @@ export const getSearchQueryAnalytics = async (
         zeroResultSearches: 1,
         avgResultCount: {
           $cond: [
-            { $gt: ['$totalSearches', 0] },
-            { $round: [{ $divide: ['$resultCountTotal', '$totalSearches'] }, 2] },
+            { $gt: ['$searchesThatReachedTheCorpus', 0] },
+            {
+              $round: [{ $divide: ['$resultCountTotal', '$searchesThatReachedTheCorpus'] }, 2],
+            },
             0,
           ],
         },
@@ -1506,6 +1530,7 @@ export const getFunnelAnalytics = async (
     {
       $facet: {
         uniqueActorsByEventType: [
+          { $match: { $nor: [researchSaveOfSomethingOtherThanResearchMatch] } },
           { $group: { _id: { eventType: '$eventType', netid: '$netid' } } },
           { $group: { _id: '$_id.eventType', count: { $sum: 1 } } },
           { $project: { _id: 0, eventType: '$_id', count: 1 } },

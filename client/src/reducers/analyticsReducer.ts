@@ -285,6 +285,8 @@ export interface AnalyticsActionNeededItem {
   type?: string;
   priority?: 'high' | 'medium' | 'low' | string;
   title: string;
+  query?: string;
+  entityType?: string;
   owner?: string;
   department?: string;
   count?: number;

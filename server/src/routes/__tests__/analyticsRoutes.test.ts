@@ -423,6 +423,74 @@ describe('analytics routes', () => {
     expect(res.body.searchesWithResults).toBe(5);
   });
 
+  it('averages results per search over the searches that reached the corpus', async () => {
+    mocks.getSearchQualityAnalytics.mockResolvedValue({
+      totalSearches: 6,
+      degradedSearches: 4,
+      zeroResultSearches: 0,
+      zeroResultRate: 0,
+      uniqueSearchers: 2,
+      byQueryAndEntityType: [
+        {
+          query: 'first topic',
+          entityType: 'research_entity',
+          totalSearches: 5,
+          searchesThatReachedTheCorpus: 1,
+          zeroResultSearches: 0,
+          uniqueSearchers: 1,
+          avgResultCount: 10,
+        },
+        {
+          query: 'second topic',
+          entityType: 'research_entity',
+          totalSearches: 1,
+          searchesThatReachedTheCorpus: 1,
+          zeroResultSearches: 0,
+          uniqueSearchers: 1,
+          avgResultCount: 20,
+        },
+      ],
+      topZeroResultQueries: [],
+      topQueries: [],
+      engagedSearches: 0,
+      returnedButIgnoredSearches: 0,
+    });
+
+    const res = await invokeRouteHandler('/search-quality');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.avgResultsPerSearch).toBe(15);
+  });
+
+  it('keeps a degraded search in a listed query count, because it is still demand', async () => {
+    const query = {
+      query: 'first topic',
+      entityType: 'research_entity',
+      totalSearches: 5,
+      searchesThatReachedTheCorpus: 2,
+      zeroResultSearches: 2,
+      uniqueSearchers: 3,
+      avgResultCount: 0,
+    };
+    mocks.getSearchQualityAnalytics.mockResolvedValue({
+      totalSearches: 5,
+      degradedSearches: 3,
+      zeroResultSearches: 2,
+      zeroResultRate: 1,
+      uniqueSearchers: 3,
+      byQueryAndEntityType: [query],
+      topZeroResultQueries: [query],
+      topQueries: [query],
+      engagedSearches: 0,
+      returnedButIgnoredSearches: 0,
+    });
+
+    const res = await invokeRouteHandler('/search-quality');
+
+    expect(res.body.topQueries[0].count).toBe(5);
+    expect(res.body.zeroResultQueries[0].count).toBe(5);
+  });
+
   it('does not leak internal messages from user analytics route failures', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.getUserAnalytics.mockRejectedValue(
@@ -492,8 +560,8 @@ describe('analytics routes', () => {
     expect(body.stages.map((stage: any) => stage.label)).toEqual([
       'Searched research',
       'Opened a profile',
-      'Saved a research home',
-      'Compared saved homes',
+      'Saved research',
+      'Compared saved research',
       'Updated a plan',
       'Used a qualified route',
     ]);

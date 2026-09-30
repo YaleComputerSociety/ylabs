@@ -65,11 +65,14 @@ Splitting by surface keeps one corpus per row: the same word searched on both su
 
 The admin search-success metric is action-aware.
 A search is engaged when the same signed-in user records a `fellowship_view`, `research_view`, `pathway_save`, `research_profile_open`, or `research_save` within 30 minutes and before that user's next search.
+A `research_save` whose `operation` is `remove` is not engagement, because removing a saved row is the student disengaging rather than acting on the search (#4005).
 The next-search boundary avoids attributing an action to multiple earlier queries in the same browsing session.
 
 The dashboard reports engaged searches separately from searches that returned results but received no attributed view or save.
 Zero-result rate remains available as a coverage diagnostic.
 A research search answered by a fallback path records `metadata.degraded: true`, and the zero-result counts, the zero-result rate, and the zero-result query lists exclude those rows, because an outage is not a coverage gap.
 The dashboard reports them separately as degraded searches, and the rate's denominator is the searches that reached the full search (#3641).
+The same holds for search success (#4007): engaged searches, returned-but-ignored searches, the engagement rate and the client's Search success tile all count only searches that reached the full search, and every result-count average, per query and per search, leaves out the fallback path's counts.
+Without that, an outage alone lowers Search success, because a degraded search that returned nothing cannot be engaged, and the low-result list can surface a query whose only low counts came from the fallback.
 The client `research_search` event reports the same case as the `degraded` outcome rather than `zero_results`, and the research page replaces its coverage-gap recovery with a limited-search notice.
 Attribution is computed from existing bounded analytics events and does not copy query text or direct contact information onto action events.

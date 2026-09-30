@@ -298,7 +298,12 @@ describe('search-quality attribution single-pass equivalence', () => {
     expect(current.uniqueSearchers).toBe(legacyOverall.uniqueSearchers);
     expect(current.engagedSearches).toBe(legacyOverall.engagedSearches);
     expect(current.returnedButIgnoredSearches).toBe(legacyOverall.returnedButIgnoredSearches);
-    expect(current.byQueryAndEntityType).toEqual(legacy.byQueryAndEntityType);
+    expect(
+      current.byQueryAndEntityType.map(({ searchesThatReachedTheCorpus, ...row }) => {
+        expect(searchesThatReachedTheCorpus).toBe(row.totalSearches);
+        return row;
+      }),
+    ).toEqual(legacy.byQueryAndEntityType);
   });
 
   it('credits a research search with the profile open that followed it inside the window', async () => {
