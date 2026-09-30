@@ -1,12 +1,11 @@
 import { spawn } from 'child_process';
 import http from 'http';
 import type { AddressInfo } from 'net';
-import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { hermeticChildEnvironment } from '../../../test/hermeticEnvironment';
 import { HostConcurrencyLimiter, type HostSlotRelease } from '../hostConcurrencyLimiter';
-import { HostSlotBroker } from '../hostSlotBroker';
+import { brokerSocketPath, HostSlotBroker } from '../hostSlotBroker';
 import { SWEEP_PAGE_REUSE_HOSTS } from '../sweepPageReuse';
 import { SweepPageStore } from '../sweepPageStore';
 
@@ -70,8 +69,7 @@ afterEach(async () => {
 });
 
 async function startBroker(limiter: HostConcurrencyLimiter, withPages: boolean) {
-  const socketPath = path.join(
-    os.tmpdir(),
+  const socketPath = brokerSocketPath(
     `ylabs-page-reuse-mp-${process.pid}-${Math.random().toString(36).slice(2, 8)}.sock`,
   );
   const broker = await HostSlotBroker.listen(

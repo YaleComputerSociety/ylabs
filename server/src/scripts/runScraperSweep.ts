@@ -23,7 +23,11 @@ import {
   DEFAULT_PER_HOST_CONCURRENCY,
   HostConcurrencyLimiter,
 } from '../scrapers/utils/hostConcurrencyLimiter';
-import { HostSlotBroker, SCRAPER_HOST_SLOT_BROKER_ENV } from '../scrapers/utils/hostSlotBroker';
+import {
+  brokerSocketPath,
+  HostSlotBroker,
+  SCRAPER_HOST_SLOT_BROKER_ENV,
+} from '../scrapers/utils/hostSlotBroker';
 import {
   SCRAPER_SWEEP_PAGE_REUSE_ENV,
   SWEEP_PAGE_REUSE_HOSTS,
@@ -545,7 +549,7 @@ export function resolveSweepHostSlotBudget(
 }
 
 export function sweepHostSlotBrokerPath(tmpdir: string = os.tmpdir(), pid = process.pid): string {
-  return path.join(tmpdir, `ylabs-host-slots-${pid}.sock`);
+  return brokerSocketPath(`ylabs-host-slots-${pid}.sock`, tmpdir);
 }
 
 export async function startSweepHostSlotBroker(

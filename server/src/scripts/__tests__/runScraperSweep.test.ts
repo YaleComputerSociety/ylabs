@@ -4,6 +4,7 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 import { parseArgs, parseScraperOptions } from '../../scrapers/cliHelpers';
 import { buildOrchestrator } from '../../scrapers/registry';
+import { brokerSocketPath } from '../../scrapers/utils/hostSlotBroker';
 import { ACTIVE_SOURCE_NAMES } from '../../scrapers/seedSources';
 import {
   sourcesThatProducedNothing,
@@ -255,7 +256,7 @@ describe('runScraperSweep', () => {
 
   it('holds the page store in the broker only when the sweep enables reuse', async () => {
     const socketPath = (label: string) =>
-      path.join(os.tmpdir(), `ylabs-sweep-reuse-${label}-${process.pid}.sock`);
+      brokerSocketPath(`ylabs-sweep-reuse-${label}-${process.pid}.sock`);
     const withPages = await startSweepHostSlotBroker(
       { SCRAPER_SWEEP_PAGE_REUSE_MAX_MB: '16' },
       socketPath('on'),

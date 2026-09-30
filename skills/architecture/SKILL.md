@@ -120,6 +120,8 @@ Each server test run writes its temp files into its own directory, `ylabs-vitest
 The same setup first reaps what a killed run left behind: a `ylabs-vitest-*` root whose owning process is gone, and a `mongo-mem-*` directory older than an hour that no live `mongod` references (`server/src/test/runTempRoot.ts`).
 A suite therefore needs no cleanup of its own for temp residue, although removing what it creates is still the better habit.
 The root-level `node --test` suites under `scripts/` have no such runner hook, so each one removes its own temp directories in an `after` hook.
+That root makes `os.tmpdir()` about 75 bytes deep on macOS, which leaves too little room for a Unix socket name under the 104-byte `sun_path` limit, and libuv truncates a longer path silently rather than failing (#4117).
+So build any socket path with `brokerSocketPath` from `server/src/scrapers/utils/hostSlotBroker.ts`, which falls back to `/tmp` when the requested directory is too deep, and never with `path.join(os.tmpdir(), ...)`.
 
 Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test undergraduate session.
 It answers `404` unless the caller is loopback, as does the `LOCAL_AUTH_BYPASS` user; see `skills/auth-security/SKILL.md`.
