@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import type { ObservedEntityType } from '../models/observation';
+import { classificationFromObservedFacts } from '../scrapers/fellowshipClassificationDerivation';
 import { isRefusedObservationField } from '../scrapers/observationFieldSanitizer';
 import {
   observationAssertsRefusedValue,
@@ -246,6 +247,181 @@ export function goldValueMatches(emitted: string, acceptable: readonly string[])
   });
 }
 
+export type GoldComparison = 'text' | 'url' | 'set' | 'deadline' | 'exact';
+
+const GOLD_SCORED_ENTITY_TYPES: ReadonlySet<string> = new Set(['researchEntity', 'fellowship']);
+
+const FELLOWSHIP_GOLD_COMPARISONS: ReadonlyMap<string, GoldComparison> = new Map([
+  ['applicationLink', 'url'],
+  ['deadline', 'deadline'],
+  ['yearOfStudy', 'set'],
+  ['termOfAward', 'set'],
+  ['purpose', 'set'],
+  ['requiresMentorBeforeApply', 'exact'],
+  ['entryMode', 'exact'],
+]);
+
+/**
+ * No lane emits these: the materializer derives them from a fellowship's observed facts
+ * with the program classifier, so a gold label on one is scored on that derivation.
+ */
+const CLASSIFIER_DERIVED_GOLD_FIELDS: ReadonlySet<string> = new Set([
+  'requiresMentorBeforeApply',
+  'entryMode',
+]);
+
+export function goldComparisonFor(entityType: string, field: string): GoldComparison {
+  if (entityType !== 'fellowship') return 'text';
+  return FELLOWSHIP_GOLD_COMPARISONS.get(field) ?? 'text';
+}
+
+export interface GoldEmission {
+  entityType: string;
+  entityKey: string;
+  field: string;
+  value: unknown;
+}
+
+export function normalizedGoldUrl(value: string): string {
+  const trimmed = value.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return trimmed;
+  }
+  const protocol = parsed.protocol === 'http:' ? 'https:' : parsed.protocol;
+  const pathname = parsed.pathname.replace(/\/+$/, '');
+  return `${protocol}//${parsed.host.toLowerCase()}${pathname}${parsed.search}`;
+}
+
+function goldSetKey(values: readonly unknown[]): string | undefined {
+  if (!values.every((item) => typeof item === 'string')) return undefined;
+  const items = (values as string[]).map(normalizedGoldText);
+  return JSON.stringify([...new Set(items)].sort());
+}
+
+function parsedJsonArray(value: string): unknown[] | undefined {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function emittedGoldSetKey(value: unknown): string | undefined {
+  if (Array.isArray(value)) return goldSetKey(value);
+  if (typeof value !== 'string') return undefined;
+  return goldSetKey(parsedJsonArray(value) ?? [value]);
+}
+
+function acceptableGoldSetKey(candidate: string): string | undefined {
+  const values = parsedJsonArray(candidate);
+  return values ? goldSetKey(values) : undefined;
+}
+
+const NEW_YORK_MINUTE_FORMAT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/New_York',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+export function newYorkMinute(value: unknown): string | undefined {
+  const date =
+    value instanceof Date
+      ? value
+      : typeof value === 'string' || typeof value === 'number'
+        ? new Date(value)
+        : undefined;
+  if (!date || !Number.isFinite(date.getTime())) return undefined;
+  const parts = Object.fromEntries(
+    NEW_YORK_MINUTE_FORMAT.formatToParts(date).map((part) => [part.type, part.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+const DATE_ONLY_LABEL = /^\d{4}-\d{2}-\d{2}$/;
+const NEW_YORK_MINUTE_LABEL = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+function deadlineMatches(value: unknown, candidate: string): boolean {
+  const emitted = newYorkMinute(value);
+  const judged = candidate.trim();
+  if (!emitted) return false;
+  if (DATE_ONLY_LABEL.test(judged)) return emitted.slice(0, 10) === judged;
+  if (NEW_YORK_MINUTE_LABEL.test(judged)) return emitted === judged;
+  return false;
+}
+
+const exactGoldText = (value: unknown): string | undefined =>
+  typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number'
+    ? String(value).trim()
+    : undefined;
+
+function isEmittedGoldValue(emission: GoldEmission): boolean {
+  const { entityType, field, value } = emission;
+  if (goldComparisonFor(entityType, field) === 'text') return Boolean(goldValueKey(field, value));
+  if (value === undefined || value === null || value === '') return false;
+  return !(Array.isArray(value) && value.length === 0);
+}
+
+/**
+ * Text fields keep containment, because a judged sentence and a lane's trimmed clause of it
+ * are the same claim. Structured fellowship fields compare by their own kind, since a date,
+ * a URL or a set contained in another is a different value, not a shorter quote of it.
+ */
+export function goldEmissionMatches(
+  emission: Omit<GoldEmission, 'entityKey'>,
+  acceptable: readonly string[],
+): boolean {
+  const { entityType, field, value } = emission;
+  switch (goldComparisonFor(entityType, field)) {
+    case 'url':
+      return (
+        typeof value === 'string' &&
+        acceptable.some((candidate) => normalizedGoldUrl(candidate) === normalizedGoldUrl(value))
+      );
+    case 'set': {
+      const emitted = emittedGoldSetKey(value);
+      return (
+        emitted !== undefined &&
+        acceptable.some((candidate) => acceptableGoldSetKey(candidate) === emitted)
+      );
+    }
+    case 'deadline':
+      return acceptable.some((candidate) => deadlineMatches(value, candidate));
+    case 'exact': {
+      const emitted = exactGoldText(value);
+      return emitted !== undefined && acceptable.some((candidate) => candidate.trim() === emitted);
+    }
+    default:
+      return goldValueMatches(goldValueKey(field, value), acceptable);
+  }
+}
+
+export function derivedFellowshipClassifierEmissions(
+  factsByEntityKey: ReadonlyMap<string, ReadonlyArray<{ field: string; value?: unknown }>>,
+): GoldEmission[] {
+  const emissions: GoldEmission[] = [];
+  for (const [entityKey, facts] of factsByEntityKey) {
+    if (facts.length === 0) continue;
+    const classification = classificationFromObservedFacts(facts) as unknown as Record<
+      string,
+      unknown
+    >;
+    for (const field of CLASSIFIER_DERIVED_GOLD_FIELDS) {
+      const value = classification[field];
+      if (value !== undefined)
+        emissions.push({ entityType: 'fellowship', entityKey, field, value });
+    }
+  }
+  return emissions;
+}
+
 /**
  * Precision and recall against hand-judged labels, per field (#3588). Each label is one
  * `(entityKey, field)` judged against the frozen benchmark page: `absent` means the lane
@@ -258,19 +434,30 @@ export function scoreGoldLabels(
   goldLabels: readonly GoldLabel[],
   slugByEntityId: ReadonlyMap<string, string> = new Map(),
 ): GoldFieldScore[] {
-  const emittedByPair = new Map<string, string[]>();
+  const emittedByPair = new Map<string, GoldEmission[]>();
+  const record = (emission: GoldEmission) => {
+    if (!isEmittedGoldValue(emission)) return;
+    const key = `${emission.entityKey}\u0000${emission.field}`;
+    emittedByPair.set(key, [...(emittedByPair.get(key) ?? []), emission]);
+  };
+  const fellowshipFacts = new Map<string, Array<{ field: string; value?: unknown }>>();
   for (const observation of observations) {
     const field = text(observation.field);
-    if (!field || text(observation.entityType) !== 'researchEntity') continue;
-    if (isRefusedObservationField('researchEntity', field)) continue;
-    const slug =
+    const entityType = text(observation.entityType);
+    if (!field || !GOLD_SCORED_ENTITY_TYPES.has(entityType)) continue;
+    if (isRefusedObservationField(entityType as ObservedEntityType, field)) continue;
+    const entityKey =
       text(observation.entityKey) || slugByEntityId.get(idText(observation.entityId)) || '';
-    const key = `${slug}\u0000${field}`;
-    emittedByPair.set(key, [
-      ...(emittedByPair.get(key) ?? []),
-      goldValueKey(field, observation.value),
-    ]);
+    if (entityType === 'fellowship') {
+      fellowshipFacts.set(entityKey, [
+        ...(fellowshipFacts.get(entityKey) ?? []),
+        { field, value: observation.value },
+      ]);
+      if (CLASSIFIER_DERIVED_GOLD_FIELDS.has(field)) continue;
+    }
+    record({ entityType, entityKey, field, value: observation.value });
   }
+  for (const emission of derivedFellowshipClassifierEmissions(fellowshipFacts)) record(emission);
 
   const byField = new Map<string, GoldFieldScore>();
   for (const label of goldLabels) {
@@ -286,15 +473,13 @@ export function scoreGoldLabels(
     };
     byField.set(label.field, score);
     score.labeled += 1;
-    const emitted = (emittedByPair.get(`${label.entityKey}\u0000${label.field}`) ?? []).filter(
-      Boolean,
-    );
+    const emitted = emittedByPair.get(`${label.entityKey}\u0000${label.field}`) ?? [];
     if (label.expected === 'absent') {
       if (emitted.length > 0) score.falsePositive += 1;
       else score.trueNegative += 1;
       continue;
     }
-    if (emitted.some((value) => goldValueMatches(value, label.acceptable ?? []))) {
+    if (emitted.some((emission) => goldEmissionMatches(emission, label.acceptable ?? []))) {
       score.truePositive += 1;
       continue;
     }
