@@ -147,48 +147,47 @@ describe('Fellowships grouping', () => {
     cleanup();
   });
 
-  it('places open, opening-soon, and closed fellowships in distinct sections', () => {
+  it('groups by program role and orders a section by what a student can act on now', () => {
     renderFellowships({
       fellowships: [
-        makeFellowship({ id: 'open', title: 'Open Fellowship' }),
+        makeFellowship({
+          id: 'closed',
+          title: 'Closed Fellowship',
+          programKind: 'FELLOWSHIP_FUNDING',
+          deadline: pastDate(7),
+        }),
         makeFellowship({
           id: 'future',
           title: 'Future Fellowship',
+          programKind: 'FELLOWSHIP_FUNDING',
           isAcceptingApplications: false,
           applicationOpenDate: futureDate(14),
           deadline: futureDate(90),
         }),
+        makeFellowship({ id: 'open', title: 'Open Fellowship', programKind: 'FELLOWSHIP_FUNDING' }),
         makeFellowship({
-          id: 'closed',
-          title: 'Closed Fellowship',
-          deadline: pastDate(7),
+          id: 'route-in',
+          title: 'Mentor Matching Program',
+          programKind: 'MENTOR_MATCHING',
         }),
       ],
     });
 
-    const openHeader = screen.getByRole('heading', { name: 'Apply Now' });
-    const openingSoonHeader = screen.getByRole('heading', { name: 'Opening Soon' });
-    const closedHeader = screen.getByRole('heading', { name: 'Archive / Review' });
-    const openItem = screen.getByText('Open Fellowship');
-    const futureItem = screen.getByText('Future Fellowship');
-    const closedItem = screen.getByText('Closed Fellowship');
-
-    expect(openHeader.compareDocumentPosition(openItem)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(openItem.compareDocumentPosition(openingSoonHeader)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(openingSoonHeader.compareDocumentPosition(futureItem)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(futureItem.compareDocumentPosition(closedHeader)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(closedHeader.compareDocumentPosition(closedItem)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    const startsResearch = screen.getByRole('region', { name: 'Get Started in Research' });
+    const funding = screen.getByRole('region', { name: "Funding for Research You've Arranged" });
+    expect(within(startsResearch).getByText('Mentor Matching Program')).toBeInTheDocument();
+    const order = within(funding)
+      .getAllByRole('article')
+      .map((card) => within(card).getByText(/Fellowship$/).textContent);
+    expect(order).toEqual(['Open Fellowship', 'Future Fellowship', 'Closed Fellowship']);
+    expect(startsResearch.compareDocumentPosition(funding)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('keeps opening-soon fellowships out of the open quick filter', () => {
     renderFellowships({
       quickFilter: 'open',
       fellowships: [
-        makeFellowship({ id: 'open', title: 'Open Fellowship' }),
+        makeFellowship({ id: 'open', title: 'Open Fellowship', programKind: 'FELLOWSHIP_FUNDING' }),
         makeFellowship({
           id: 'future',
           title: 'Future Fellowship',
@@ -207,9 +206,7 @@ describe('Fellowships grouping', () => {
     expect(
       within(screen.getByTestId('browse-grid')).getByText('Open Fellowship'),
     ).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Opening Soon' })).not.toBeInTheDocument();
     expect(screen.queryByText('Future Fellowship')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Archive / Review' })).not.toBeInTheDocument();
     expect(screen.queryByText('Closed Fellowship')).not.toBeInTheDocument();
   });
 });

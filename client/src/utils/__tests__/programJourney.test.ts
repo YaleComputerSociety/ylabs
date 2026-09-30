@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   PROGRAM_JOURNEY_CATEGORIES,
   getProgramJourneyStatus,
+  programActionOrder,
   summarizeProgramJourney,
   programCategoryLabel,
 } from '../programJourney';
 import type { Fellowship } from '../../types/types';
+import { createFellowship } from '../createFellowship';
 
 const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   id: 'f1',
@@ -114,38 +116,72 @@ describe('summarizeProgramJourney', () => {
   ];
 
   it('partitions the set so the buckets sum to the total record count', () => {
-    const summary = summarizeProgramJourney(fellowships, now);
+    const summary = summarizeProgramJourney(fellowships);
     const summed = PROGRAM_JOURNEY_CATEGORIES.reduce((sum, key) => sum + summary[key], 0);
     expect(summed).toBe(fellowships.length);
   });
 
   it('matches per-record getProgramJourneyStatus so tiles and sections cannot diverge', () => {
-    const summary = summarizeProgramJourney(fellowships, now);
+    const summary = summarizeProgramJourney(fellowships);
     const recomputed = PROGRAM_JOURNEY_CATEGORIES.reduce(
       (acc, key) => ({ ...acc, [key]: 0 }),
       {} as Record<(typeof PROGRAM_JOURNEY_CATEGORIES)[number], number>,
     );
     for (const fellowship of fellowships) {
-      recomputed[getProgramJourneyStatus(fellowship, now).category] += 1;
+      recomputed[getProgramJourneyStatus(fellowship).category] += 1;
     }
     expect(summary).toEqual(recomputed);
   });
 
-  it('counts the whole set rather than a single loaded page', () => {
-    const summary = summarizeProgramJourney(fellowships, now);
-    expect(summary.applyNow).toBe(1);
-    expect(summary.structured).toBe(1);
-    expect(summary.fundingAfterMentor).toBe(2);
-    expect(summary.archive).toBe(1);
-    expect(summary.openingSoon).toBe(1);
+  it('groups by what a student needs first, whatever the deadline', () => {
+    const summary = summarizeProgramJourney(fellowships);
+    expect(summary.startsResearch).toBe(2);
+    expect(summary.fundsResearch).toBe(2);
+    expect(summary.archive).toBe(2);
+    expect(summary.recognizesResearch).toBe(0);
   });
 
-  it('folds a server-projected next-cycle deadline into the opening-soon bucket', () => {
-    const status = getProgramJourneyStatus(
-      fellowships.find((f) => f.id === 'projected-next-cycle')!,
-      now,
+  it('orders a section so programs a student can act on now come first', () => {
+    const byId = (id: string) => fellowships.find((f) => f.id === id)!;
+    expect(programActionOrder(byId('apply-now'), now)).toBeLessThan(
+      programActionOrder(byId('projected-next-cycle'), now),
     );
-    expect(status.category).toBe('openingSoon');
+    expect(programActionOrder(byId('projected-next-cycle'), now)).toBeLessThan(
+      programActionOrder(byId('funding-a'), now),
+    );
+  });
+});
+
+describe('getProgramJourneyStatus by program role (#3904)', () => {
+  it('prefers the served programRole over the kind', () => {
+    expect(
+      getProgramJourneyStatus(
+        baseFellowship({ programKind: 'FELLOWSHIP_FUNDING', programRole: 'RECOGNIZES_RESEARCH' }),
+      ).category,
+    ).toBe('recognizesResearch');
+  });
+
+  it('falls back to the kind for a record served before its role was written', () => {
+    expect(
+      getProgramJourneyStatus(
+        baseFellowship({ programKind: 'DEPARTMENT_RESEARCH_GUIDE', studentFacingCategory: '' }),
+      ).category,
+    ).toBe('startsResearch');
+    expect(
+      getProgramJourneyStatus(baseFellowship({ programKind: 'RESEARCH_AWARD' })).category,
+    ).toBe('recognizesResearch');
+    expect(getProgramJourneyStatus(baseFellowship()).category).toBe('fundsResearch');
+  });
+
+  it('keeps an archive-review record out of every live section', () => {
+    expect(
+      getProgramJourneyStatus(
+        baseFellowship({
+          programRole: 'STARTS_RESEARCH',
+          studentFacingCategory: 'Archive / review',
+        }),
+      ).category,
+    ).toBe('archive');
   });
 });
 
@@ -162,26 +198,25 @@ describe('programCategoryLabel', () => {
   });
 });
 
-describe('getProgramJourneyStatus for department guides and research awards (#3904)', () => {
-  it('groups a department research guide with the structured ways in', () => {
-    expect(
-      getProgramJourneyStatus(
-        baseFellowship({
-          programKind: 'DEPARTMENT_RESEARCH_GUIDE',
-          entryMode: 'CONTACT_FACULTY',
-          requiresMentorBeforeApply: false,
-        }),
-        now,
-      ).category,
-    ).toBe('structured');
+describe('served programRole through createFellowship', () => {
+  it('groups a served record by its programRole rather than its programKind', () => {
+    const served = createFellowship({
+      _id: 'served-award',
+      programKind: 'FELLOWSHIP_FUNDING',
+      programRole: 'RECOGNIZES_RESEARCH',
+      title: 'Synthetic Award',
+    });
+
+    expect(getProgramJourneyStatus(served).category).toBe('recognizesResearch');
   });
 
-  it('keeps a research award out of the archive group', () => {
-    expect(
-      getProgramJourneyStatus(
-        baseFellowship({ programKind: 'RESEARCH_AWARD', requiresMentorBeforeApply: false }),
-        now,
-      ).category,
-    ).toBe('fundingAfterMentor');
+  it('falls back to the programKind mapping when the served record has no programRole', () => {
+    const served = createFellowship({
+      _id: 'served-funding',
+      programKind: 'FELLOWSHIP_FUNDING',
+      title: 'Synthetic Funding',
+    });
+
+    expect(getProgramJourneyStatus(served).category).toBe('fundsResearch');
   });
 });

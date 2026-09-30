@@ -1,12 +1,10 @@
 import { Fellowship } from '../types/types';
-import { getFellowshipCycleStatus } from './fellowshipCycle';
+import { getFellowshipCycleStatus, type FellowshipCycleCategory } from './fellowshipCycle';
 
 export type ProgramJourneyCategory =
-  | 'applyNow'
-  | 'openingSoon'
-  | 'structured'
-  | 'fundingAfterMentor'
-  | 'nextCycle'
+  | 'startsResearch'
+  | 'fundsResearch'
+  | 'recognizesResearch'
   | 'archive';
 
 export interface ProgramJourneyStatus {
@@ -16,26 +14,24 @@ export interface ProgramJourneyStatus {
 }
 
 export const PROGRAM_JOURNEY_CATEGORIES: ProgramJourneyCategory[] = [
-  'applyNow',
-  'openingSoon',
-  'structured',
-  'fundingAfterMentor',
-  'nextCycle',
+  'startsResearch',
+  'fundsResearch',
+  'recognizesResearch',
   'archive',
 ];
 
 export type ProgramJourneySummary = Record<ProgramJourneyCategory, number>;
 
 export const emptyProgramJourneySummary: ProgramJourneySummary = {
-  applyNow: 0,
-  openingSoon: 0,
-  structured: 0,
-  fundingAfterMentor: 0,
-  nextCycle: 0,
+  startsResearch: 0,
+  fundsResearch: 0,
+  recognizesResearch: 0,
   archive: 0,
 };
 
-const STRUCTURED_KINDS = new Set([
+// Mirrors `programRoleForKind` in server/src/services/programClassifier.ts, for a record
+// served before its derived `programRole` was written. Changing one requires the other.
+const STARTS_RESEARCH_KINDS = new Set([
   'STRUCTURED_PROGRAM',
   'CENTER_INTERNSHIP',
   'RA_PROGRAM',
@@ -43,82 +39,73 @@ const STRUCTURED_KINDS = new Set([
   'DEPARTMENT_RESEARCH_GUIDE',
 ]);
 
-const FUNDING_KINDS = new Set([
+const FUNDS_RESEARCH_KINDS = new Set([
   'FELLOWSHIP_FUNDING',
   'TRAVEL_RESEARCH_GRANT',
   'SENIOR_THESIS_FUNDING',
-  'RESEARCH_AWARD',
 ]);
 
-export function getProgramJourneyStatus(
-  fellowship: Fellowship,
-  now: Date = new Date(),
-): ProgramJourneyStatus {
-  const cycle = getFellowshipCycleStatus(fellowship, now);
+export function programRoleOf(fellowship: Fellowship): string {
+  if (fellowship.programRole) return fellowship.programRole;
+  if (STARTS_RESEARCH_KINDS.has(fellowship.programKind)) return 'STARTS_RESEARCH';
+  if (FUNDS_RESEARCH_KINDS.has(fellowship.programKind)) return 'FUNDS_RESEARCH';
+  if (fellowship.programKind === 'RESEARCH_AWARD') return 'RECOGNIZES_RESEARCH';
+  return 'UNCLASSIFIED';
+}
 
-  if (cycle.category === 'open' || cycle.category === 'closingSoon') {
-    return {
-      category: 'applyNow',
-      label: 'Apply now',
-      description: 'Current application windows and deadlines.',
-    };
-  }
-
-  if (cycle.category === 'openingSoon' || cycle.category === 'projectedNextCycle') {
-    return {
-      category: 'openingSoon',
-      label: 'Opening Soon',
-      description: 'Upcoming application windows, including projected next-cycle dates.',
-    };
-  }
-
-  if (fellowship.studentFacingCategory === 'Archive / review') {
+export function getProgramJourneyStatus(fellowship: Fellowship): ProgramJourneyStatus {
+  const role = programRoleOf(fellowship);
+  if (fellowship.studentFacingCategory === 'Archive / review' || role === 'UNCLASSIFIED') {
     return {
       category: 'archive',
       label: 'Archive / Review',
-      description: 'Records that need eligibility review.',
+      description: 'Retained records that should not be treated as active opportunities.',
     };
   }
-
-  if (STRUCTURED_KINDS.has(fellowship.programKind)) {
+  if (role === 'STARTS_RESEARCH') {
     return {
-      category: 'structured',
-      label: 'Structured Research Programs',
-      description: 'Programs, internships, RA routes, or mentor-matching experiences.',
+      category: 'startsResearch',
+      label: 'Get Started in Research',
+      description: 'Programs, internships, RA roles, mentor matching, and department guides.',
     };
   }
-
-  if (FUNDING_KINDS.has(fellowship.programKind) || fellowship.requiresMentorBeforeApply) {
+  if (role === 'RECOGNIZES_RESEARCH') {
     return {
-      category: 'fundingAfterMentor',
-      label: 'Funding After You Have a Mentor',
-      description:
-        'Funding records that usually require a research plan, adviser, or lab fit first.',
+      category: 'recognizesResearch',
+      label: "Awards for Research You've Done",
+      description: 'Competitive awards for students who already have a research record.',
     };
   }
-
-  if (cycle.category === 'nextCycle') {
-    return {
-      category: 'nextCycle',
-      label: 'Plan Next Cycle',
-      description: 'Official past cycles that look recurring.',
-    };
-  }
-
   return {
-    category: 'archive',
-    label: 'Archive / Review',
-    description: 'Retained records that should not be treated as active opportunities.',
+    category: 'fundsResearch',
+    label: "Funding for Research You've Arranged",
+    description: 'Grants and fellowships that usually need a mentor, a project, or a plan first.',
   };
 }
 
-export function summarizeProgramJourney(
-  fellowships: Fellowship[],
-  now: Date = new Date(),
-): ProgramJourneySummary {
+const CYCLE_ORDER: Record<FellowshipCycleCategory, number> = {
+  closingSoon: 0,
+  open: 1,
+  openingSoon: 2,
+  projectedNextCycle: 3,
+  nextCycle: 4,
+  closed: 5,
+};
+
+// Within a section, programs a student can act on now come first, then the ones that open
+// soon, then recurring past cycles, each by deadline.
+export function cycleActionOrder(category: FellowshipCycleCategory): number {
+  return CYCLE_ORDER[category];
+}
+
+export function programActionOrder(fellowship: Fellowship, now: Date = new Date()): number {
+  return cycleActionOrder(getFellowshipCycleStatus(fellowship, now).category);
+}
+
+export function summarizeProgramJourney(fellowships: Fellowship[]): ProgramJourneySummary {
   const summary: ProgramJourneySummary = { ...emptyProgramJourneySummary };
   for (const fellowship of fellowships) {
-    summary[getProgramJourneyStatus(fellowship, now).category] += 1;
+    summary[getProgramJourneyStatus(fellowship).category] += 1;
   }
   return summary;
 }

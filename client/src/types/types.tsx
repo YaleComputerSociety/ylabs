@@ -17,6 +17,7 @@ export type Fellowship = {
   id: string;
   programCategory: string;
   programKind: string;
+  programRole?: string;
   entryMode: string;
   studentFacingCategory: string;
   requiresMentorBeforeApply: boolean;

@@ -35,9 +35,10 @@ import useUndoableProgramUnwatch, {
   undoRestoresSummary,
   watchedProgramPlanSnapshot,
 } from '../hooks/useUndoableProgramUnwatch';
-import { getFellowshipCycleStatus } from '../utils/fellowshipCycle';
+import { getFellowshipCycleStatus, type FellowshipCycleCategory } from '../utils/fellowshipCycle';
 import { createFellowship } from '../utils/createFellowship';
 import {
+  cycleActionOrder,
   getProgramJourneyStatus,
   programKindLabel,
   entryModeLabel,
@@ -46,20 +47,30 @@ import {
   type ProgramJourneySummary,
 } from '../utils/programJourney';
 
+const NEXT_CYCLE_FILTER_CATEGORIES: FellowshipCycleCategory[] = [
+  'nextCycle',
+  'projectedNextCycle',
+  'openingSoon',
+];
+
 const FIRST_PROGRAM_SAVE_KEY = 'yale-research.firstSave.program.v1';
 
 const SectionHeader = ({
+  headingId,
   title,
   count,
   description,
 }: {
+  headingId?: string;
   title: string;
   count: number;
   description?: string;
 }) => (
   <div className="mb-4 mt-10 border-t border-[var(--yr-line)] pt-5 first:mt-0 first:border-t-0 first:pt-0">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="yr-display text-2xl font-semibold text-ink">{title}</h2>
+      <h2 id={headingId} className="yr-display text-2xl font-semibold text-ink">
+        {title}
+      </h2>
       <span className="yr-pill yr-pill-blue yr-pill-compact px-2.5 py-1">{count}</span>
     </div>
     {description && <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">{description}</p>}
@@ -116,24 +127,41 @@ const QuickFilterEmptyState = ({
   );
 };
 
-const StatusSummary = ({ summary }: { summary: ProgramJourneySummary }) => (
-  <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-[var(--yr-line)] bg-[var(--yr-line)] sm:grid-cols-3 lg:grid-cols-6">
-    {journeySections.map((section) => (
-      <div key={section.key} className={`bg-[var(--yr-panel)] px-4 py-3 ${section.tileClassName}`}>
-        <dt className="yr-kicker text-[0.68rem]">{section.tileLabel}</dt>
-        <dd className="mt-2 flex min-h-[3rem] flex-col justify-end gap-1">
-          <span className="yr-num text-2xl font-semibold text-ink">{summary[section.key]}</span>
-          <span className="text-xs font-medium leading-tight text-muted">{section.tileDetail}</span>
-        </dd>
-      </div>
-    ))}
-  </dl>
-);
+const STATUS_SUMMARY_COLUMNS: Record<number, string> = {
+  3: 'lg:grid-cols-3',
+  4: 'lg:grid-cols-4',
+};
+
+const StatusSummary = ({ summary }: { summary: ProgramJourneySummary }) => {
+  const tiles = journeySections.filter(
+    (section) => section.key !== 'archive' || summary.archive > 0,
+  );
+  return (
+    <dl
+      className={`grid grid-cols-2 gap-px overflow-hidden rounded-card border border-[var(--yr-line)] bg-[var(--yr-line)] ${STATUS_SUMMARY_COLUMNS[tiles.length] ?? 'lg:grid-cols-4'}`}
+    >
+      {tiles.map((section) => (
+        <div
+          key={section.key}
+          className={`bg-[var(--yr-panel)] px-4 py-3 ${section.tileClassName} ${tiles.length % 2 === 1 && section === tiles[tiles.length - 1] ? 'col-span-2 lg:col-span-1' : ''}`}
+        >
+          <dt className="yr-kicker text-[0.68rem]">{section.tileLabel}</dt>
+          <dd className="mt-2 flex min-h-[3rem] flex-col justify-end gap-1">
+            <span className="yr-num text-2xl font-semibold text-ink">{summary[section.key]}</span>
+            <span className="text-xs font-medium leading-tight text-muted">
+              {section.tileDetail}
+            </span>
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+};
 
 const fellowshipQuickFilters: QuickFilterDef[] = [
   { label: 'Open Only', value: 'open' },
   { label: 'Closing Soon', value: 'closingSoon' },
-  { label: 'Structured', value: 'structured' },
+  { label: 'Get Started', value: 'structured' },
   { label: 'Mentor First', value: 'mentorFirst' },
   { label: 'Next Cycle', value: 'nextCycle' },
 ];
@@ -154,46 +182,30 @@ const journeySections: Array<{
   tileClassName: string;
 }> = [
   {
-    key: 'applyNow',
-    title: 'Apply Now',
-    description: 'Current program, internship, project, and fellowship application windows.',
-    tileLabel: 'Apply now',
-    tileDetail: 'Open application windows',
+    key: 'startsResearch',
+    title: 'Get Started in Research',
+    description:
+      'Programs, internships, RA roles, mentor matching, and department guides that help you find a lab or a mentor. Most need no mentor before you start.',
+    tileLabel: 'Get started',
+    tileDetail: 'No mentor needed yet',
     tileClassName: 'yr-pill-green',
   },
   {
-    key: 'openingSoon',
-    title: 'Opening Soon',
-    description: 'Programs and fellowships with announced future application opening dates.',
-    tileLabel: 'Opening soon',
-    tileDetail: 'Announced future openings',
+    key: 'fundsResearch',
+    title: "Funding for Research You've Arranged",
+    description:
+      'Grants and fellowships that usually need a mentor, a project, or a research plan before you apply.',
+    tileLabel: 'Funding',
+    tileDetail: 'Need a mentor or plan first',
     tileClassName: 'yr-pill-blue',
   },
   {
-    key: 'structured',
-    title: 'Structured Research Programs',
+    key: 'recognizesResearch',
+    title: "Awards for Research You've Done",
     description:
-      'Programs, internships, RA routes, and mentor-matching experiences that organize research participation.',
-    tileLabel: 'Structured programs',
-    tileDetail: 'Programs, internships, RA routes',
-    tileClassName: '',
-  },
-  {
-    key: 'fundingAfterMentor',
-    title: 'Funding After You Have a Mentor',
-    description:
-      'Funding records that usually require a research placement, adviser, proposal, or lab fit first.',
-    tileLabel: 'Funding after mentor',
-    tileDetail: 'Need a mentor or plan first',
-    tileClassName: '',
-  },
-  {
-    key: 'nextCycle',
-    title: 'Plan Next Cycle',
-    description:
-      'Official past cycles that look recurring. Track these while preparing eligibility and mentor fit.',
-    tileLabel: 'Plan next cycle',
-    tileDetail: 'Recurring past cycles to track',
+      'Competitive awards and scholarships for students who already have a research record.',
+    tileLabel: 'Awards',
+    tileDetail: 'For research already done',
     tileClassName: '',
   },
   {
@@ -509,7 +521,7 @@ const Fellowships = () => {
     };
   });
 
-  const { closingSoon, open, journeyGroups } = useMemo(() => {
+  const { closingSoon, open, nextCycleFilterCount, journeyGroups, cycleOf } = useMemo(() => {
     const now = new Date();
     const cycleGroups = {
       closingSoon: [] as Fellowship[],
@@ -520,17 +532,17 @@ const Fellowships = () => {
       closed: [] as Fellowship[],
     };
     const groups: Record<ProgramJourneyCategory, Fellowship[]> = {
-      applyNow: [],
-      openingSoon: [],
-      structured: [],
-      fundingAfterMentor: [],
-      nextCycle: [],
+      startsResearch: [],
+      fundsResearch: [],
+      recognizesResearch: [],
       archive: [],
     };
+    const cycleOf = new Map<Fellowship, FellowshipCycleCategory>();
     for (const f of fellowships) {
       const cycleCat = getFellowshipCycleStatus(f, now).category;
+      cycleOf.set(f, cycleCat);
       cycleGroups[cycleCat].push(f);
-      groups[getProgramJourneyStatus(f, now).category].push(f);
+      groups[getProgramJourneyStatus(f).category].push(f);
     }
     cycleGroups.closingSoon.sort((a, b) => {
       const da = a.deadline ? new Date(a.deadline).getTime() : Infinity;
@@ -566,13 +578,19 @@ const Fellowships = () => {
     } else {
       for (const key of Object.keys(groups) as ProgramJourneyCategory[]) {
         groups[key].sort((a, b) => {
+          const byAction = cycleActionOrder(cycleOf.get(a)!) - cycleActionOrder(cycleOf.get(b)!);
+          if (byAction !== 0) return byAction;
           const da = dateValue(a.deadline) ?? Number.MAX_SAFE_INTEGER;
           const db = dateValue(b.deadline) ?? Number.MAX_SAFE_INTEGER;
           return da - db;
         });
       }
     }
-    return { ...cycleGroups, journeyGroups: groups };
+    const nextCycleFilterCount = NEXT_CYCLE_FILTER_CATEGORIES.reduce(
+      (count, category) => count + cycleGroups[category].length,
+      0,
+    );
+    return { ...cycleGroups, nextCycleFilterCount, journeyGroups: groups, cycleOf };
   }, [fellowships, sortBy, sortDirection]);
 
   const toBrowsable = (fs: Fellowship[]): BrowsableItem[] =>
@@ -583,19 +601,13 @@ const Fellowships = () => {
     for (const key of Object.keys(journeyGroups) as ProgramJourneyCategory[]) {
       let rows = journeyGroups[key];
       if (quickFilter === 'open') {
-        rows = rows.filter((f) =>
-          ['open', 'closingSoon'].includes(getFellowshipCycleStatus(f).category),
-        );
+        rows = rows.filter((f) => ['open', 'closingSoon'].includes(cycleOf.get(f)!));
       }
       if (quickFilter === 'closingSoon') {
-        rows = rows.filter((f) => getFellowshipCycleStatus(f).category === 'closingSoon');
+        rows = rows.filter((f) => cycleOf.get(f) === 'closingSoon');
       }
-      if (quickFilter === 'structured') {
-        rows = rows.filter((f) =>
-          ['STRUCTURED_PROGRAM', 'CENTER_INTERNSHIP', 'RA_PROGRAM', 'MENTOR_MATCHING'].includes(
-            f.programKind,
-          ),
-        );
+      if (quickFilter === 'nextCycle') {
+        rows = rows.filter((f) => NEXT_CYCLE_FILTER_CATEGORIES.includes(cycleOf.get(f)!));
       }
       if (quickFilter === 'mentorFirst') {
         rows = rows.filter((f) => f.requiresMentorBeforeApply);
@@ -603,17 +615,12 @@ const Fellowships = () => {
       byKey[key] = toBrowsable(rows);
     }
     return byKey;
-  }, [journeyGroups, quickFilter]);
+  }, [journeyGroups, cycleOf, quickFilter]);
 
   const showSection = (section: ProgramJourneyCategory) => {
-    if (quickFilter === null) return true;
-    if (quickFilter === 'open') return section === 'applyNow';
-    if (quickFilter === 'closingSoon') return section === 'applyNow';
-    if (quickFilter === 'nextCycle') return section === 'nextCycle';
-    if (quickFilter === 'structured') return section === 'structured';
-    if (quickFilter === 'mentorFirst')
-      return section === 'fundingAfterMentor' || section === 'applyNow';
-    return false;
+    if (quickFilter === 'structured') return section === 'startsResearch';
+    if (quickFilter === 'mentorFirst') return section === 'fundsResearch';
+    return true;
   };
 
   const watchProgram = (programId: string) => {
@@ -742,10 +749,9 @@ const Fellowships = () => {
                 Programs & Fellowships
               </h1>
               <p className="mt-3 text-base leading-7 text-muted">
-                Track structured applications, recurring research programs, center internships, and
-                fellowship cycles alongside your research search. Some records fund a project after
-                you find a research placement; others directly organize mentor matching or summer
-                work.
+                Yale research programs, fellowships, and awards, grouped by what you need first.
+                Some are a way into research with no mentor needed yet; others fund a project once
+                you have a mentor or a plan.
               </p>
             </div>
             <div className="flex flex-col gap-2 border-l border-[var(--yr-line)] pl-0 sm:flex-row lg:flex-col lg:pl-5">
@@ -888,7 +894,7 @@ const Fellowships = () => {
             ) : showQuickFilterEmptyState ? (
               <QuickFilterEmptyState
                 quickFilter={quickFilter}
-                nextCycleCount={journeyGroups.nextCycle.length}
+                nextCycleCount={nextCycleFilterCount}
                 onViewNextCycle={() => setQuickFilter('nextCycle')}
                 onClearFilter={() => setQuickFilter(null)}
               />
@@ -909,8 +915,9 @@ const Fellowships = () => {
                 )}
                 {journeySections.map((section) =>
                   showSection(section.key) && journeyItems[section.key].length > 0 ? (
-                    <div key={section.key}>
+                    <section key={section.key} aria-labelledby={`program-section-${section.key}`}>
                       <SectionHeader
+                        headingId={`program-section-${section.key}`}
                         title={section.title}
                         count={sectionCount(section.key)}
                         description={section.description}
@@ -926,7 +933,7 @@ const Fellowships = () => {
                         onLoadMore={handleLoadMore}
                         disableVirtualization
                       />
-                    </div>
+                    </section>
                   ) : null,
                 )}
 
