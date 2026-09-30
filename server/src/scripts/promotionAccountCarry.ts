@@ -38,10 +38,7 @@ function loginFields(account: Document): Document {
   return fields;
 }
 
-function isProductionLoginAccount(
-  account: Document,
-  planOwnerIds: ReadonlySet<string>,
-): boolean {
+function isProductionLoginAccount(account: Document, planOwnerIds: ReadonlySet<string>): boolean {
   return account.lastLoginAt != null || planOwnerIds.has(idKey(account._id));
 }
 
