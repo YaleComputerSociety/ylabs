@@ -172,7 +172,10 @@ beforeEach(() => {
   mocks.getResearchSearchQueryVector.mockReset();
   // Default to "no vector available" so every existing case keeps asserting the
   // params Meilisearch sees when it embeds the query itself.
-  mocks.getResearchSearchQueryVector.mockResolvedValue(null);
+  mocks.getResearchSearchQueryVector.mockResolvedValue({
+    vector: null,
+    semanticLegAffordable: true,
+  });
   mocks.listingDistinct.mockReset();
   mocks.listingFind.mockReset();
   mocks.researchEntityFindOne.mockReset();
@@ -1410,7 +1413,10 @@ describe('searchResearchGroupsViaMeili', () => {
 
   it('embeds the query once and hands the vector to every hybrid query in the request (#3149)', async () => {
     const queryVector = [0.1, 0.2, 0.3];
-    mocks.getResearchSearchQueryVector.mockResolvedValue(queryVector);
+    mocks.getResearchSearchQueryVector.mockResolvedValue({
+      vector: queryVector,
+      semanticLegAffordable: true,
+    });
     mocks.search
       .mockResolvedValueOnce({
         hits: [],
@@ -1424,7 +1430,10 @@ describe('searchResearchGroupsViaMeili', () => {
     await searchResearchGroupsViaMeili('constitutional law', { school: ['Law School'] }, 1, 24);
 
     expect(mocks.getResearchSearchQueryVector).toHaveBeenCalledTimes(1);
-    expect(mocks.getResearchSearchQueryVector).toHaveBeenCalledWith('constitutional law');
+    expect(mocks.getResearchSearchQueryVector).toHaveBeenCalledWith(
+      'constitutional law',
+      undefined,
+    );
     const hybridCalls = mocks.search.mock.calls.filter(([, params]) => params.hybrid);
     expect(hybridCalls).toHaveLength(3);
     hybridCalls.forEach(([, params]) => expect(params.vector).toEqual(queryVector));
@@ -1434,7 +1443,10 @@ describe('searchResearchGroupsViaMeili', () => {
   });
 
   it('omits the vector when no embedding is available so Meilisearch embeds the query itself (#3149)', async () => {
-    mocks.getResearchSearchQueryVector.mockResolvedValue(null);
+    mocks.getResearchSearchQueryVector.mockResolvedValue({
+      vector: null,
+      semanticLegAffordable: true,
+    });
     mocks.search
       .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 })
       .mockResolvedValueOnce({ totalHits: 0 })
@@ -1447,7 +1459,10 @@ describe('searchResearchGroupsViaMeili', () => {
   });
 
   it('drops the vector with the embedder when the hybrid retry degrades to keyword search (#3149)', async () => {
-    mocks.getResearchSearchQueryVector.mockResolvedValue([0.1, 0.2, 0.3]);
+    mocks.getResearchSearchQueryVector.mockResolvedValue({
+      vector: [0.1, 0.2, 0.3],
+      semanticLegAffordable: true,
+    });
     mocks.search
       .mockRejectedValueOnce(
         Object.assign(new Error('Embedder `default` does not exist'), {

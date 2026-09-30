@@ -21,6 +21,7 @@ import {
 } from '../models/studentVisibility';
 import { hasAdminAuthorityForUser } from '../services/adminGrantService';
 import { maxReachableResearchSearchPage } from '../services/researchSearchPagination';
+import { getPeerIpKey } from '../middleware/rateLimiters';
 
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 24;
@@ -226,6 +227,12 @@ export const searchResearchGroups = async (request: Request, response: Response)
     // needs no facets also skips the facet queries instead of only shrinking
     // the payload.
     includeFacets,
+    // The same bucket every other per-IP limiter meters: the validated forwarded
+    // address rather than the proxy, masked to its subnet for an IPv6 caller so a
+    // routed prefix cannot mint a fresh budget per request. Always supplied, so an
+    // address that does not resolve shares one bucket instead of escaping the
+    // per-client ceiling.
+    embeddingSpendKey: getPeerIpKey(request),
   });
   if (includeFacets) return response.json(result);
   // Omitted rather than emptied: an empty object is indistinguishable from "this

@@ -385,6 +385,11 @@ export interface ResearchGroupSearchOptions {
   // them costs an exhaustive count plus one disjunctive query per active filter.
   // A caller that already holds them can opt out. Defaults to true.
   includeFacets?: boolean;
+  // Client bucket for the query-embedding spend budget, supplied by the route as
+  // the same `getPeerIpKey` value every other per-IP limiter meters. An in-process
+  // caller leaves it unset, which exempts it so a measurement never silently loses
+  // its semantic leg to a budget written for public traffic.
+  embeddingSpendKey?: string;
 }
 
 export interface ResearchGroupSearchResult {
@@ -707,6 +712,10 @@ const sanitizeResearchGroupSearchOptions = (
       options.qualityFilters as string[] | undefined,
     ).filter(isResearchGroupQualityFilter),
     includeFacets: options.includeFacets !== false,
+    embeddingSpendKey:
+      typeof options.embeddingSpendKey === 'string'
+        ? options.embeddingSpendKey.trim().slice(0, 64) || undefined
+        : undefined,
   };
 };
 
@@ -1359,6 +1368,7 @@ export async function searchResearchGroupsViaMeili(
 
   const index = await getMeiliIndex('researchentities');
   let embedderStateUnknown = false;
+  let semanticLegUnaffordable = false;
   if (!isBrowseAllQuery) {
     if (normalizedQuery.aliasExpansionKeepsShorthand) {
       searchParams.attributesToSearchOn = TOPIC_ALIAS_QUERY_ATTRIBUTES;
@@ -1376,8 +1386,22 @@ export async function searchResearchGroupsViaMeili(
         // Meilisearch embeds the query afresh for each one. Supplying the vector
         // makes it skip its embedder, so the request pays at most one OpenAI round
         // trip instead of one per query. See #3149.
-        const queryVector = await getResearchSearchQueryVector(meiliQueryText);
-        if (queryVector) searchParams.vector = queryVector;
+        const queryVectorOutcome = await getResearchSearchQueryVector(
+          meiliQueryText,
+          safeOptions.embeddingSpendKey,
+        );
+        if (queryVectorOutcome.vector) {
+          searchParams.vector = queryVectorOutcome.vector;
+        } else if (!queryVectorOutcome.semanticLegAffordable) {
+          // Leaving `hybrid` in place would hand the embedding back to
+          // Meilisearch's own embedder on the same account, so the whole semantic
+          // leg comes off and the keyword leg answers, exactly as it does when the
+          // embedder turns out to be unavailable below.
+          delete searchParams.hybrid;
+          delete searchParams.rankingScoreThreshold;
+          delete searchParams.showRankingScoreDetails;
+          semanticLegUnaffordable = true;
+        }
       }
     }
   }
@@ -1434,7 +1458,7 @@ export async function searchResearchGroupsViaMeili(
     // Each attempt uses an immutable params object; degrading clones rather than
     // mutating, so already-issued calls keep the params they were sent.
     let params: Record<string, any> = searchParams;
-    let degraded = embedderStateUnknown;
+    let degraded = embedderStateUnknown || semanticLegUnaffordable;
     while (true) {
       try {
         return {
