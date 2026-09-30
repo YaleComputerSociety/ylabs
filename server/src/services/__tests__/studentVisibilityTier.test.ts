@@ -2968,3 +2968,57 @@ describe('source_backed_description withheld on lost description grounding (#287
     );
   });
 });
+
+describe('a program whose apply link is its own information page (#3904)', () => {
+  const guide = {
+    title: 'Fixture Undergraduate Research',
+    studentFacingCategory: 'Department research guide',
+    programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+    entryMode: 'CONTACT_FACULTY',
+    summary:
+      'The department explains how undergraduates find faculty research projects and what the senior essay requires.',
+    sourceUrl: 'https://fixture.yale.edu/undergraduate-program/senior-project',
+    applicationLink: 'https://fixture.yale.edu/undergraduate-program/senior-project/',
+    undergraduateOnly: true,
+  };
+
+  it('is not served as something to apply to when it has no application cycle', () => {
+    const result = computeProgramStudentVisibility(guide);
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.reasons).toContain('application_link_is_info_page');
+    expect(result.reasons).toContain('missing_application_route');
+  });
+
+  it('still counts its own page as the application route when it has a deadline', () => {
+    const result = computeProgramStudentVisibility({
+      ...guide,
+      deadline: new Date('2099-02-01T00:00:00Z'),
+    });
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('application_link_is_info_page');
+  });
+
+  it('is not served when the apply link differs from its page only by scheme or www prefix', () => {
+    const result = computeProgramStudentVisibility({
+      ...guide,
+      applicationLink: 'http://www.fixture.yale.edu/undergraduate-program/senior-project#apply',
+    });
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.reasons).toContain('application_link_is_info_page');
+  });
+
+  it('still counts its own page as the application route when it is accepting applications', () => {
+    const result = computeProgramStudentVisibility({ ...guide, isAcceptingApplications: true });
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('application_link_is_info_page');
+  });
+
+  it('still counts a separate application page with no deadline', () => {
+    const result = computeProgramStudentVisibility({
+      ...guide,
+      applicationLink: 'https://fixture.yale.edu/apply/research-internship',
+    });
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toContain('application_route');
+  });
+});

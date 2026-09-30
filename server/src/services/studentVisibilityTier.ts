@@ -1069,6 +1069,33 @@ export function computeResearchEntityStudentVisibility({
   return enforceStudentReadyDescriptionInvariant(result, entity);
 }
 
+const comparableUrl = (value: unknown): string =>
+  textValue(value)
+    .replace(/^https?:\/\/(www\.)?/i, '')
+    .replace(/[#?].*$/, '')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+
+/**
+ * `/programs` is the board a student applies from, so an "apply" link that is the program's own
+ * information page, on a record with no deadline, no opening date and no accepting-applications
+ * evidence, is not an application: it is a department's guidance page served as if it were one.
+ * On Development 18 of 146 served programs were this shape, among them a department's
+ * senior-essay registration rules (#3904). A link to
+ * the program's own page still counts when the record has an application cycle, because many
+ * real programs take applications on the page that describes them.
+ */
+function isInfoPageWithoutApplicationCycle(
+  program: ProgramStudentVisibilityInput,
+  routeUrls: unknown[],
+): boolean {
+  if (program.deadline || program.applicationOpenDate || program.isAcceptingApplications === true)
+    return false;
+  const source = comparableUrl(program.sourceUrl);
+  const routes = routeUrls.map(comparableUrl).filter(Boolean);
+  return Boolean(source) && routes.length > 0 && routes.every((route) => route === source);
+}
+
 export function computeProgramStudentVisibility(
   program: ProgramStudentVisibilityInput,
 ): StudentVisibilityResult {
@@ -1082,7 +1109,8 @@ export function computeProgramStudentVisibility(
   ];
   const sourceUrls = [sourceUrl, ...routeUrls];
   const hasOfficialSource = hasHttpUrl(sourceUrl);
-  const hasApplicationRoute = hasAnyHttpUrl(routeUrls);
+  const applicationRouteIsInfoPage = isInfoPageWithoutApplicationCycle(program, routeUrls);
+  const hasApplicationRoute = hasAnyHttpUrl(routeUrls) && !applicationRouteIsInfoPage;
   const sourceIsApplicationPortal =
     /^https:\/\/yale\.communityforce\.com\/Funds\/FundDetails\.aspx\?/i.test(sourceUrl);
   const isArchiveReview = category === 'Archive / review';
@@ -1103,6 +1131,7 @@ export function computeProgramStudentVisibility(
   if (sourceIsApplicationPortal) reasons.push('application_source_only');
   if (hasApplicationRoute) reasons.push('application_route');
   else reasons.push('missing_application_route');
+  if (applicationRouteIsInfoPage) reasons.push('application_link_is_info_page');
   if (isArchiveReview) reasons.push('archive_review');
   if (catalogOrAdmin) reasons.push('not_undergraduate_relevant');
   if (undergraduateRelevant) reasons.push('undergraduate_relevant');
