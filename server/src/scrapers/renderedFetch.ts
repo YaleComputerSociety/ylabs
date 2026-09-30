@@ -517,7 +517,10 @@ function createLiveScraplingRenderedFetcher(
           blocked?: boolean;
           blockedReason?: string;
         };
-        if (!forwardProxy.forwardedHosts().includes(stripIpv6Brackets(seedUrl.hostname))) {
+        if (
+          parsed.html &&
+          !forwardProxy.forwardedHosts().includes(stripIpv6Brackets(seedUrl.hostname))
+        ) {
           return {
             url: seedUrl.toString(),
             html: '',

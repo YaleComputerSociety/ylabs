@@ -205,8 +205,10 @@ export const classifyHostnameResolution = async (
 export const isPublicHostname = async (hostname: string): Promise<boolean> =>
   (await classifyHostnameResolution(hostname)).kind === 'public';
 
+const BLOCKED_ADDRESS_MESSAGE = 'Blocked private or non-public address';
+
 const blockedAddressError = (): NodeJS.ErrnoException => {
-  const err = new Error('Blocked private or non-public address') as NodeJS.ErrnoException;
+  const err = new Error(BLOCKED_ADDRESS_MESSAGE) as NodeJS.ErrnoException;
   err.code = 'EHOSTUNREACH';
   return err;
 };
@@ -254,6 +256,12 @@ export class SsrfBlockedError extends Error {
     Object.setPrototypeOf(this, SsrfBlockedError.prototype);
   }
 }
+
+export const isSsrfGuardRefusal = (error: unknown): boolean => {
+  if (error instanceof SsrfBlockedError) return true;
+  const candidate = error as { code?: unknown; message?: unknown } | null;
+  return candidate?.code === 'EHOSTUNREACH' && candidate?.message === BLOCKED_ADDRESS_MESSAGE;
+};
 
 const isAllowedPublicHttpPort = (url: URL): boolean =>
   !url.port ||

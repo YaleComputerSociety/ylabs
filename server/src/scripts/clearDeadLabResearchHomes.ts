@@ -22,7 +22,7 @@ import {
   type LabHomeProbeStatus,
 } from './clearDeadLabResearchHomesCore';
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
-import { SsrfBlockedError } from '../utils/ssrfGuard';
+import { isSsrfGuardRefusal } from '../utils/ssrfGuard';
 
 dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -64,7 +64,7 @@ export async function httpStatus(url: string): Promise<LabHomeProbeStatus> {
     const response = await fetchPublicHttpUrl(url, { headers: { 'user-agent': UA } });
     return response.status;
   } catch (error) {
-    return error instanceof SsrfBlockedError ? SSRF_REFUSED_PROBE : undefined;
+    return isSsrfGuardRefusal(error) ? SSRF_REFUSED_PROBE : undefined;
   }
 }
 

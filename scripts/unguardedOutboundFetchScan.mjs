@@ -3,10 +3,20 @@ import path from 'node:path';
 
 export const OUTBOUND_FETCH_SCAN_ROOTS = ['server/src'];
 
-export const REVIEWED_CONSTANT_HOST_FETCHES = new Map([
+export const REVIEWED_OUTBOUND_FETCHES = new Map([
   [
     'server/src/utils/publicDnsResolution.ts',
-    'asks the fixed DNS-over-HTTPS endpoint; only the query string varies',
+    {
+      calls: 1,
+      reason: 'asks the fixed DNS-over-HTTPS endpoint; only the query string varies',
+    },
+  ],
+  [
+    'server/src/scrapers/utils/ssrfGuardedForwardProxy.ts',
+    {
+      calls: 1,
+      reason: 'connects to the IP address the proxy already vetted with ssrfSafeLookup',
+    },
   ],
 ]);
 
@@ -93,7 +103,9 @@ const isConstantUrlExpression = (argument) =>
   /^[A-Z][A-Z0-9_]*$/.test(argument);
 
 const shadowsGlobalFetch = (masked) =>
-  /[(,]\s*fetch\s*[:?,)=]/.test(masked) || /\b(?:const|let|var)\s+fetch\b/.test(masked);
+  /[(,]\s*fetch\s*\??\s*:/.test(masked) || /\b(?:const|let|var|function)\s+fetch\b/.test(masked);
+
+const callsSsrfSafeAgents = (masked) => /(?<![\w.$])ssrfSafeAgents\s*\(/.test(masked);
 
 const CALL_PATTERNS = [
   { kind: 'global fetch', pattern: /(?<![\w.$])fetch\s*\(/g, guarded: () => false },
@@ -101,12 +113,15 @@ const CALL_PATTERNS = [
     kind: 'axios',
     pattern:
       /(?<![\w.$])axios\s*(?:\.\s*(?:get|head|post|put|patch|delete|request|options)\s*)?\(/g,
-    guarded: (callText) => /\bhttpsAgent\b/.test(callText) && /\bhttpAgent\b/.test(callText),
+    guarded: (callText, masked) =>
+      callsSsrfSafeAgents(masked) &&
+      /\bhttpsAgent\b/.test(callText) &&
+      /\bhttpAgent\b/.test(callText),
   },
   {
     kind: 'node http',
     pattern: /(?<![\w.$])https?\s*\.\s*(?:get|request)\s*\(/g,
-    guarded: (callText) => /\bagent\s*:/.test(callText),
+    guarded: (callText, masked) => callsSsrfSafeAgents(masked) && /\bagent\s*:/.test(callText),
   },
 ];
 
@@ -120,7 +135,7 @@ export function findUnguardedOutboundFetches(source) {
       const { start, end } = argumentListAt(masked, openParen);
       const argument = source.slice(start, firstArgumentEnd(masked, start, end)).trim();
       if (isConstantUrlExpression(argument)) continue;
-      if (guarded(source.slice(start, end))) continue;
+      if (guarded(source.slice(start, end), masked)) continue;
       findings.push({
         kind,
         line: source.slice(0, match.index).split('\n').length,
@@ -129,4 +144,13 @@ export function findUnguardedOutboundFetches(source) {
     }
   }
   return findings.sort((a, b) => a.line - b.line);
+}
+
+export function unreviewedOutboundFetches(
+  relativePath,
+  findings,
+  exemptions = REVIEWED_OUTBOUND_FETCHES,
+) {
+  const exemption = exemptions.get(relativePath);
+  return exemption && findings.length === exemption.calls ? [] : findings;
 }

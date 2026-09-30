@@ -267,6 +267,28 @@ describe('createScraplingRenderedFetcher guarded browser egress', () => {
     expect(proxy.close).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the bridge failure label when the browser failed before any request', async () => {
+    execFileSuccess({ html: '', blocked: false, blockedReason: 'scrapling-import-failed' });
+    const proxy = forwardProxyStub([]);
+    const fetcher = createScraplingRenderedFetcher({
+      enabled: true,
+      pythonCommand: 'python3',
+      bridgePath: 'scraplingBridge.py',
+      seedRedirectCheck: noSeedRedirect,
+      startForwardProxy: proxy.start,
+    });
+
+    const result = await fetcher?.({ url: 'https://8.8.8.8/source' });
+
+    expect(result).toMatchObject({
+      html: '',
+      blocked: false,
+      blockedReason: 'scrapling-import-failed',
+    });
+    expect(renderedPageFailureReason(result ?? null)).toBe('scrapling-import-failed');
+    expect(proxy.close).toHaveBeenCalledTimes(1);
+  });
+
   it('does not launch the browser when the guarded proxy cannot start', async () => {
     mocks.execFile.mockClear();
     const fetcher = createScraplingRenderedFetcher({

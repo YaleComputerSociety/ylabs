@@ -15,7 +15,8 @@ import nodeTest, { after } from 'node:test';
 import {
   findUnguardedOutboundFetches,
   listOutboundFetchScanFiles,
-  REVIEWED_CONSTANT_HOST_FETCHES,
+  REVIEWED_OUTBOUND_FETCHES,
+  unreviewedOutboundFetches,
 } from './unguardedOutboundFetchScan.mjs';
 
 import {
@@ -3387,11 +3388,6 @@ test('rendered scraper fetch blocks cross-origin redirect content', () => {
   assert.match(source, /finalUrl = await assertPublicHttpUrl\(renderedUrl\)/);
   assert.match(source, /if \(finalUrl\.origin !== seedUrl\.origin\)/);
   assert.match(source, /blockedReason: 'redirected-cross-origin'/);
-  assert.match(source, /forwardProxy = await startForwardProxy\(\)/);
-  assert.match(source, /'--proxy-server',\s*forwardProxy\.url,/);
-  assert.match(source, /blockedReason: 'rendered-ssrf-proxy-unavailable'/);
-  assert.match(source, /blockedReason: 'rendered-outside-ssrf-proxy'/);
-  assert.match(source, /await forwardProxy\.close\(\)/);
   assert.match(source, /MAX_RENDERED_FETCH_TIMEOUT_MS = 30_000/);
   assert.match(source, /function boundedRenderedFetchTimeout/);
   assert.match(
@@ -3415,11 +3411,8 @@ test('server code never sends a non-constant URL outside the shared SSRF guard',
     const relative = path.relative(repoRoot, file).split(path.sep).join('/');
     const findings = findUnguardedOutboundFetches(fs.readFileSync(file, 'utf8'));
     if (findings.length === 0) continue;
-    if (REVIEWED_CONSTANT_HOST_FETCHES.has(relative)) {
-      exemptionsStillNeeded.add(relative);
-      continue;
-    }
-    for (const finding of findings) {
+    if (REVIEWED_OUTBOUND_FETCHES.has(relative)) exemptionsStillNeeded.add(relative);
+    for (const finding of unreviewedOutboundFetches(relative, findings)) {
       unreviewed.push(`${relative}:${finding.line} ${finding.kind}(${finding.argument})`);
     }
   }
@@ -3430,9 +3423,9 @@ test('server code never sends a non-constant URL outside the shared SSRF guard',
     'route these through fetchPublicHttpUrl (server/src/scrapers/utils/httpFetch.ts), or assertPublicHttpUrl plus ssrfSafeAgents, so neither the first host nor any redirect hop can be private',
   );
   assert.deepEqual(
-    [...REVIEWED_CONSTANT_HOST_FETCHES.keys()].filter((file) => !exemptionsStillNeeded.has(file)),
+    [...REVIEWED_OUTBOUND_FETCHES.keys()].filter((file) => !exemptionsStillNeeded.has(file)),
     [],
-    'a reviewed constant-host exemption no longer matches any call; remove it',
+    'a reviewed exemption no longer matches any call; remove it',
   );
 });
 
@@ -3473,6 +3466,63 @@ test('the unguarded-fetch scan passes constant hosts, guarded agents, comments a
 
   assert.deepEqual(findUnguardedOutboundFetches(guardedFixture), []);
   assert.deepEqual(findUnguardedOutboundFetches(shadowedFixture), []);
+});
+
+test('the unguarded-fetch scan exempts only the reviewed number of calls in an exempt file', () => {
+  const [exemptFile, { calls }] = [...REVIEWED_OUTBOUND_FETCHES][0];
+  const reviewedCall = { kind: 'global fetch', line: 3, argument: 'url' };
+  const addedCall = { kind: 'global fetch', line: 9, argument: 'row.websiteUrl' };
+  const reviewed = Array.from({ length: calls }, () => reviewedCall);
+
+  assert.deepEqual(unreviewedOutboundFetches(exemptFile, reviewed), []);
+  assert.deepEqual(unreviewedOutboundFetches(exemptFile, [...reviewed, addedCall]), [
+    ...reviewed,
+    addedCall,
+  ]);
+  assert.deepEqual(unreviewedOutboundFetches('server/src/other.ts', [reviewedCall]), [
+    reviewedCall,
+  ]);
+});
+
+test('the unguarded-fetch scan still checks global fetch in a file that passes fetch as an argument', () => {
+  const passesGlobalFetchFixture = [
+    'export async function probe(url: string) {',
+    '  const client = createClient(url, fetch);',
+    '  return fetch(url);',
+    '}',
+  ].join('\n');
+  const declaresFetchFixture = [
+    'export async function probe(url: string, fetch?: typeof globalThis.fetch) {',
+    '  return fetch?.(url);',
+    '}',
+    'function fetch(url: string) {',
+    '  return url;',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(
+    findUnguardedOutboundFetches(passesGlobalFetchFixture).map(
+      ({ kind, line }) => `${kind}@${line}`,
+    ),
+    ['global fetch@3'],
+  );
+  assert.deepEqual(findUnguardedOutboundFetches(declaresFetchFixture), []);
+});
+
+test('the unguarded-fetch scan counts agents as guarded only when they come from ssrfSafeAgents', () => {
+  const plainAgentsFixture = [
+    "import http from 'node:http';",
+    "import https from 'node:https';",
+    'const httpAgent = new http.Agent();',
+    'const httpsAgent = new https.Agent();',
+    'await axios.get(url, { httpAgent, httpsAgent });',
+    'http.request(url, { agent: httpAgent });',
+  ].join('\n');
+
+  assert.deepEqual(
+    findUnguardedOutboundFetches(plainAgentsFixture).map(({ kind, line }) => `${kind}@${line}`),
+    ['axios@5', 'node http@6'],
+  );
 });
 
 test('official-profile PI backfill fetches through the shared SSRF guard before cache lookup', () => {

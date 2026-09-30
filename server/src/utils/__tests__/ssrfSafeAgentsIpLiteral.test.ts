@@ -3,7 +3,7 @@ import https from 'node:https';
 import type { AddressInfo } from 'node:net';
 import axios from 'axios';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ssrfSafeAgents } from '../ssrfGuard';
+import { isSsrfGuardRefusal, SsrfBlockedError, ssrfSafeAgents } from '../ssrfGuard';
 
 describe('ssrfSafeAgents on IP-literal hosts', () => {
   let server: http.Server;
@@ -72,5 +72,30 @@ describe('ssrfSafeAgents on IP-literal hosts', () => {
     const result = await requestThrough(plainAgent, '127.0.0.1');
     expect(result.status).toBe(200);
     expect(hits).toEqual(['/internal']);
+  });
+
+  it('recognises the connect-time refusal as a guard refusal', async () => {
+    const agents = ssrfSafeAgents();
+    const refusal = await axios
+      .get(`http://127.0.0.1:${port}/internal`, {
+        httpAgent: agents.httpAgent,
+        httpsAgent: agents.httpsAgent,
+        maxRedirects: 0,
+      })
+      .catch((error: unknown) => error);
+
+    expect(isSsrfGuardRefusal(refusal)).toBe(true);
+    expect(hits).toEqual([]);
+  });
+
+  it('recognises a preflight refusal and rejects ordinary network failures', () => {
+    const unreachable = Object.assign(new Error('connect EHOSTUNREACH 203.0.113.9:80'), {
+      code: 'EHOSTUNREACH',
+    });
+
+    expect(isSsrfGuardRefusal(new SsrfBlockedError('blocked', 'private-address'))).toBe(true);
+    expect(isSsrfGuardRefusal(unreachable)).toBe(false);
+    expect(isSsrfGuardRefusal(new Error('socket hang up'))).toBe(false);
+    expect(isSsrfGuardRefusal(undefined)).toBe(false);
   });
 });
