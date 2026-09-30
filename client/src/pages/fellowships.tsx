@@ -161,7 +161,7 @@ const StatusSummary = ({ summary }: { summary: ProgramJourneySummary }) => {
 const fellowshipQuickFilters: QuickFilterDef[] = [
   { label: 'Open Only', value: 'open' },
   { label: 'Closing Soon', value: 'closingSoon' },
-  { label: 'Ways In', value: 'structured' },
+  { label: 'Get Started', value: 'structured' },
   { label: 'Mentor First', value: 'mentorFirst' },
   { label: 'Next Cycle', value: 'nextCycle' },
 ];
@@ -182,11 +182,11 @@ const journeySections: Array<{
   tileClassName: string;
 }> = [
   {
-    key: 'routeIn',
-    title: 'Ways Into Research',
+    key: 'startsResearch',
+    title: 'Get Started in Research',
     description:
       'Programs, internships, RA roles, mentor matching, and department guides that help you find a lab or a mentor. Most need no mentor before you start.',
-    tileLabel: 'Ways in',
+    tileLabel: 'Get started',
     tileDetail: 'No mentor needed yet',
     tileClassName: 'yr-pill-green',
   },
@@ -532,7 +532,7 @@ const Fellowships = () => {
       closed: [] as Fellowship[],
     };
     const groups: Record<ProgramJourneyCategory, Fellowship[]> = {
-      routeIn: [],
+      startsResearch: [],
       fundsResearch: [],
       recognizesResearch: [],
       archive: [],
@@ -618,7 +618,7 @@ const Fellowships = () => {
   }, [journeyGroups, cycleOf, quickFilter]);
 
   const showSection = (section: ProgramJourneyCategory) => {
-    if (quickFilter === 'structured') return section === 'routeIn';
+    if (quickFilter === 'structured') return section === 'startsResearch';
     if (quickFilter === 'mentorFirst') return section === 'fundsResearch';
     return true;
   };

@@ -173,14 +173,14 @@ describe('Fellowships grouping', () => {
       ],
     });
 
-    const routeIn = screen.getByRole('region', { name: 'Ways Into Research' });
+    const startsResearch = screen.getByRole('region', { name: 'Get Started in Research' });
     const funding = screen.getByRole('region', { name: "Funding for Research You've Arranged" });
-    expect(within(routeIn).getByText('Mentor Matching Program')).toBeInTheDocument();
+    expect(within(startsResearch).getByText('Mentor Matching Program')).toBeInTheDocument();
     const order = within(funding)
       .getAllByRole('article')
       .map((card) => within(card).getByText(/Fellowship$/).textContent);
     expect(order).toEqual(['Open Fellowship', 'Future Fellowship', 'Closed Fellowship']);
-    expect(routeIn.compareDocumentPosition(funding)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(startsResearch.compareDocumentPosition(funding)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('keeps opening-soon fellowships out of the open quick filter', () => {

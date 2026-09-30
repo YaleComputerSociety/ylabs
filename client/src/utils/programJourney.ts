@@ -1,7 +1,11 @@
 import { Fellowship } from '../types/types';
 import { getFellowshipCycleStatus, type FellowshipCycleCategory } from './fellowshipCycle';
 
-export type ProgramJourneyCategory = 'routeIn' | 'fundsResearch' | 'recognizesResearch' | 'archive';
+export type ProgramJourneyCategory =
+  | 'startsResearch'
+  | 'fundsResearch'
+  | 'recognizesResearch'
+  | 'archive';
 
 export interface ProgramJourneyStatus {
   category: ProgramJourneyCategory;
@@ -10,7 +14,7 @@ export interface ProgramJourneyStatus {
 }
 
 export const PROGRAM_JOURNEY_CATEGORIES: ProgramJourneyCategory[] = [
-  'routeIn',
+  'startsResearch',
   'fundsResearch',
   'recognizesResearch',
   'archive',
@@ -19,7 +23,7 @@ export const PROGRAM_JOURNEY_CATEGORIES: ProgramJourneyCategory[] = [
 export type ProgramJourneySummary = Record<ProgramJourneyCategory, number>;
 
 export const emptyProgramJourneySummary: ProgramJourneySummary = {
-  routeIn: 0,
+  startsResearch: 0,
   fundsResearch: 0,
   recognizesResearch: 0,
   archive: 0,
@@ -27,7 +31,7 @@ export const emptyProgramJourneySummary: ProgramJourneySummary = {
 
 // Mirrors `programRoleForKind` in server/src/services/programClassifier.ts, for a record
 // served before its derived `programRole` was written. Changing one requires the other.
-const ROUTE_IN_KINDS = new Set([
+const STARTS_RESEARCH_KINDS = new Set([
   'STRUCTURED_PROGRAM',
   'CENTER_INTERNSHIP',
   'RA_PROGRAM',
@@ -44,7 +48,7 @@ const FUNDS_RESEARCH_KINDS = new Set([
 
 export function programRoleOf(fellowship: Fellowship): string {
   if (fellowship.programRole) return fellowship.programRole;
-  if (ROUTE_IN_KINDS.has(fellowship.programKind)) return 'ROUTE_IN';
+  if (STARTS_RESEARCH_KINDS.has(fellowship.programKind)) return 'STARTS_RESEARCH';
   if (FUNDS_RESEARCH_KINDS.has(fellowship.programKind)) return 'FUNDS_RESEARCH';
   if (fellowship.programKind === 'RESEARCH_AWARD') return 'RECOGNIZES_RESEARCH';
   return 'UNCLASSIFIED';
@@ -59,10 +63,10 @@ export function getProgramJourneyStatus(fellowship: Fellowship): ProgramJourneyS
       description: 'Retained records that should not be treated as active opportunities.',
     };
   }
-  if (role === 'ROUTE_IN') {
+  if (role === 'STARTS_RESEARCH') {
     return {
-      category: 'routeIn',
-      label: 'Ways Into Research',
+      category: 'startsResearch',
+      label: 'Get Started in Research',
       description: 'Programs, internships, RA roles, mentor matching, and department guides.',
     };
   }

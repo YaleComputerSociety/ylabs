@@ -139,7 +139,7 @@ describe('FellowshipSearchContextProvider program routes', () => {
 
     await waitFor(() => {
       expect(JSON.parse(screen.getByTestId('journey-summary').textContent || '{}')).toEqual({
-        routeIn: 0,
+        startsResearch: 0,
         fundsResearch: 0,
         recognizesResearch: 0,
         archive: total,
@@ -192,7 +192,7 @@ describe('FellowshipSearchContextProvider program routes', () => {
     expect(screen.getByTestId('fellowship-titles').textContent).toContain('Open Late Program');
     expect(screen.getByTestId('search-exhausted').textContent).toBe('true');
     expect(JSON.parse(screen.getByTestId('journey-summary').textContent || '{}')).toEqual({
-      routeIn: 0,
+      startsResearch: 0,
       fundsResearch: 0,
       recognizesResearch: 0,
       archive: total,

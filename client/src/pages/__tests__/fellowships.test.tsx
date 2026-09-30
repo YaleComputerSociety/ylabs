@@ -418,7 +418,7 @@ describe('Programs page', () => {
 
     expect(screen.getByRole('heading', { name: 'Programs & Fellowships' })).toBeTruthy();
     expect(screen.getByText(/grouped by what you need first/i)).toBeTruthy();
-    expect(screen.getByText('Ways in')).toBeTruthy();
+    expect(screen.getByText('Get started')).toBeTruthy();
     expect(screen.getByText('Funding')).toBeTruthy();
     expect(screen.getByText('Awards')).toBeTruthy();
     expect(screen.getByText('Archive / review')).toBeTruthy();
@@ -429,7 +429,7 @@ describe('Programs page', () => {
 
   it('shows full-set journey partition counts in the stat tiles rather than the loaded page count', async () => {
     const journeySummary = {
-      routeIn: 20,
+      startsResearch: 20,
       fundsResearch: 70,
       recognizesResearch: 7,
       archive: 36,
@@ -501,7 +501,7 @@ describe('Programs page', () => {
     expect(Object.values(summary).reduce((sum, value) => sum + value, 0)).toBe(fellowships.length);
 
     for (const [title, key] of [
-      ['Ways Into Research', 'routeIn'],
+      ['Get Started in Research', 'startsResearch'],
       ["Funding for Research You've Arranged", 'fundsResearch'],
     ] as const) {
       if (summary[key] === 0) continue;

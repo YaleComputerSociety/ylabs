@@ -135,7 +135,7 @@ describe('summarizeProgramJourney', () => {
 
   it('groups by what a student needs first, whatever the deadline', () => {
     const summary = summarizeProgramJourney(fellowships);
-    expect(summary.routeIn).toBe(2);
+    expect(summary.startsResearch).toBe(2);
     expect(summary.fundsResearch).toBe(2);
     expect(summary.archive).toBe(2);
     expect(summary.recognizesResearch).toBe(0);
@@ -166,7 +166,7 @@ describe('getProgramJourneyStatus by program role (#3904)', () => {
       getProgramJourneyStatus(
         baseFellowship({ programKind: 'DEPARTMENT_RESEARCH_GUIDE', studentFacingCategory: '' }),
       ).category,
-    ).toBe('routeIn');
+    ).toBe('startsResearch');
     expect(
       getProgramJourneyStatus(baseFellowship({ programKind: 'RESEARCH_AWARD' })).category,
     ).toBe('recognizesResearch');
@@ -176,7 +176,10 @@ describe('getProgramJourneyStatus by program role (#3904)', () => {
   it('keeps an archive-review record out of every live section', () => {
     expect(
       getProgramJourneyStatus(
-        baseFellowship({ programRole: 'ROUTE_IN', studentFacingCategory: 'Archive / review' }),
+        baseFellowship({
+          programRole: 'STARTS_RESEARCH',
+          studentFacingCategory: 'Archive / review',
+        }),
       ).category,
     ).toBe('archive');
   });
