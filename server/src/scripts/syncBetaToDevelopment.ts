@@ -35,7 +35,10 @@ dotenv.config({ path: path.join(SERVER_ROOT, '.env') });
 
 type SyncMode = 'dry-run' | 'apply';
 type SyncCollectionCategory =
-  'research-discovery' | 'identity-spine' | 'source-audit' | 'base-support';
+  | 'research-discovery'
+  | 'identity-spine'
+  | 'source-audit'
+  | 'base-support';
 
 export interface SyncCollection {
   name: string;
