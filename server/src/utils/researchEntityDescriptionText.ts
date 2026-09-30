@@ -1431,6 +1431,7 @@ const firstPersonLeadRevoiceRules = (
     POSSESSIVE_HEAD_NOUN_AGREEMENT_PATTERN,
     (_match: string, lead: string, phrase: string, offset: number, full: string) => {
       const words = phrase.trim().split(/\s+/);
+      if (forms?.namesTheRow && ENTITY_SELF_NOUN_WORD.test(words[0])) return _match;
       const headNoun = words[words.length - 1];
       const atSentenceStart = isAtSentenceStart(offset + lead.length, full);
       const subject = possessiveLead(
@@ -1502,6 +1503,7 @@ interface LeadSubjectForms {
   later: string;
   lowerFirst: string;
   lowerLater: string;
+  namesTheRow: boolean;
 }
 
 const LEAD_DEFINITE_ARTICLE_PREFIX = /^the\s+/i;
@@ -1519,13 +1521,20 @@ function leadSubjectForms(entity?: FacultyResearchTextEntity | null): LeadSubjec
       later: `The ${bare}`,
       lowerFirst: `the ${bare}`,
       lowerLater: `the ${bare}`,
+      namesTheRow: true,
     };
   }
   if (!isFacultyResearchTextEntity(entity)) return undefined;
 
   const words = baseName.split(/\s+/).filter(Boolean);
   const surname = words[words.length - 1] || baseName;
-  return { first: baseName, later: surname, lowerFirst: baseName, lowerLater: surname };
+  return {
+    first: baseName,
+    later: surname,
+    lowerFirst: baseName,
+    lowerLater: surname,
+    namesTheRow: false,
+  };
 }
 
 /**
@@ -1589,6 +1598,8 @@ function pluralAwareDemonstrative(noun: string, capitalized: boolean): string {
  */
 const ENTITY_SELF_NOUN =
   '(?:lab|laboratory|labs|group|team|center|centre|program|programme|institute|facility|core)';
+
+const ENTITY_SELF_NOUN_WORD = new RegExp(`^${ENTITY_SELF_NOUN}$`, 'i');
 
 /**
  * Nouns the row HAS, so the possessive is kept: `our methods` becomes "the Foxman Lab's
