@@ -57,7 +57,7 @@ const publicProgramLinks = (
 const publicProgramText = (value: unknown): unknown =>
   typeof value === 'string' ? redactDirectContactInfo(value) : value;
 
-const publicProgramDescription = (value: unknown): unknown =>
+export const publicProgramDescription = (value: unknown): unknown =>
   typeof value === 'string'
     ? stripRedactionPlaceholders(sanitizeCatalogDescription(redactDirectContactInfo(value)))
     : value;

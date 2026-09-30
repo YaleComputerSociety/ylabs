@@ -7,6 +7,9 @@ import { initializeConnections } from '../../db/connections';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from '../scriptWriteGuards';
 import { journeyCases, type BrowseRequest, type JourneyEvalContext } from './journeyEvalCases';
+import { programJourneyCases } from './journeyEvalProgramCases';
+import { fellowshipJourneyCases } from './journeyEvalFellowshipCases';
+import { buildProgramJourneyContext } from './programJourneyContext';
 import {
   parseTopicQueryJudgements,
   parseUndergradEvidenceJudgements,
@@ -39,6 +42,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 const RESEARCH_ENTITY_COLLECTION = 'research_entities';
 const SERVED_TIER = 'student_ready';
+const RESEARCH_SURFACE = 'research';
 const DEFAULT_JUDGEMENTS_PATH = path.resolve(__dirname, 'topicQueryJudgements.json');
 
 function loadTopicQueryJudgements(explicitPath?: string): TopicQueryJudgement[] | null {
@@ -86,6 +90,7 @@ interface JourneyEvalArgs {
   facetValues: number;
   pages: number;
   cases?: string[];
+  surfaces?: string[];
   judgements?: string;
   undergradJudgements?: string;
   undergradSampleOut?: string;
@@ -110,6 +115,12 @@ function parseArgs(argv: string[]): JourneyEvalArgs {
     else if (token.startsWith('--case='))
       args.cases = token
         .slice('--case='.length)
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+    else if (token.startsWith('--surface='))
+      args.surfaces = token
+        .slice('--surface='.length)
         .split(',')
         .map((value) => value.trim())
         .filter(Boolean);
@@ -252,11 +263,30 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   await initializeConnections();
   const context = await buildContext(args);
+  const programContext = await buildProgramJourneyContext({
+    window: args.window,
+    pagesChecked: args.pages,
+    facetValuesChecked: args.facetValues,
+  });
 
-  const selected = args.cases
-    ? journeyCases.filter((journeyCase) => args.cases?.includes(journeyCase.id))
-    : journeyCases;
-  if (selected.length === 0) throw new Error('No journey case matched the requested --case list');
+  const selected = [
+    ...journeyCases.map((journeyCase) => ({
+      id: journeyCase.id,
+      title: journeyCase.title,
+      surface: RESEARCH_SURFACE,
+      run: () => journeyCase.run(context),
+    })),
+    ...[...programJourneyCases, ...fellowshipJourneyCases].map((journeyCase) => ({
+      id: journeyCase.id,
+      title: journeyCase.title,
+      surface: journeyCase.surface as string,
+      run: () => journeyCase.run(programContext),
+    })),
+  ]
+    .filter((journeyCase) => !args.cases || args.cases.includes(journeyCase.id))
+    .filter((journeyCase) => !args.surfaces || args.surfaces.includes(journeyCase.surface));
+  if (selected.length === 0)
+    throw new Error('No journey case matched the requested --case and --surface lists');
 
   const invariants: InvariantResult[] = [];
   const rates: RateResult[] = [];
@@ -264,12 +294,13 @@ async function main(): Promise<void> {
 
   for (const journeyCase of selected) {
     const startedAt = Date.now();
-    const outcome = await journeyCase.run(context);
+    const outcome = await journeyCase.run();
     invariants.push(...outcome.invariants);
     rates.push(...outcome.rates);
     caseReports.push({
       id: journeyCase.id,
       title: journeyCase.title,
+      surface: journeyCase.surface,
       elapsedMs: Date.now() - startedAt,
       invariants: outcome.invariants,
       rates: outcome.rates,

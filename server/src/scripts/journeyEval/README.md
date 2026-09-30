@@ -15,6 +15,7 @@ Flags:
 - `--pages=<N>` sets how many pages the pagination case walks.
 - `--facet-values=<N>` sets how many of the highest-count department facet values the agreement case checks.
 - `--case=<id>[,<id>]` runs a subset, which is how you re-run one case while fixing the lane behind it.
+- `--surface=<id>[,<id>]` runs only the cases of the named surfaces, `research`, `programs`, or `fellowships`, and combines with `--case`.
 - `--output=<path>` writes the JSON report under `$TMPDIR` or `./tmp`, enforced by `resolveSafeJsonReportOutputPath`.
 
 Read the report from the `--output` file rather than stdout.
@@ -69,7 +70,7 @@ Measured on Development on 2026-09-30 at `--window=100`, 2 of 100 cards served f
 
 ## What this harness does not cover
 
-The cases call `searchResearchGroupsViaMeili` directly rather than the HTTP route, so real Meilisearch, real Mongo, the ranking, the filters, the visibility gate, and the index-time guards are all exercised, but everything the Express layer adds is not: the oversized-request rejection, parameter coercion, the `includeFacets` policy, JSON serialization, auth, and rate limits.
+The research cases call `searchResearchGroupsViaMeili` directly rather than the HTTP route, so real Meilisearch, real Mongo, the ranking, the filters, the visibility gate, and the index-time guards are all exercised, but everything the Express layer adds is not: the oversized-request rejection, parameter coercion, the `includeFacets` policy, JSON serialization, auth, and rate limits.
 `scripts/e2e-student-journey-smoke.mjs` covers the HTTP and browser path instead, against a synthetic corpus, so the two are complementary and neither is end to end on its own.
 
 One consequence is worth knowing, because it decides how the pagination case is written.
@@ -177,10 +178,34 @@ A missing judgements file, or a draw in which no row carries a verdict on its cu
 It asserts attribution rather than absence: the served website must not be a value only a loser states under an owned slot.
 A served website no evidence states at all is counted as `unbacked` and never asserted, because that is its own defect class (#3586) with its own causes, and folding it in would fail the case for a reason this fix does not own.
 
+## Programs and Fellowships surfaces
+
+The Programs & Fellowships browse (`/programs`, which `/fellowships` redirects to) reads one route, `GET /api/programs/search`, so both surfaces drive `searchProgramsController` with a request carrying no user, the same shape a student's request has after authentication.
+Calling the controller rather than `searchPrograms` keeps the controller's parameter coercion, its default deadline sort, and the `publicProgramForReader` projection in the measured path, so the harness restates none of the route.
+`server/src/routes/fellowships.ts` serves only a view counter and has no browse of its own.
+The `fellowships` surface is therefore the same route scoped to `programCategory=FELLOWSHIP`, the category a student picks to see fellowships, and every one of its cases also asserts that the scope holds.
+
+Each surface runs the same seven cases, with ids prefixed by the surface:
+
+- `<surface>-cold-browse-card-contract` asserts that a cold browse fills the page, reports page arithmetic its total implies, and serves an id on every card, and reports the share of cards serving a deadline, a projected deadline, an open application, an apply link, eligibility, and a card summary.
+- `<surface>-full-walk-serves-every-row-once` loads every page at the client's page size of 100 and stops where the client stops, then asserts no row repeats, the distinct rows equal the reported total, and the total is the same on every page.
+  The client loads the whole result set before it sorts and groups locally, so a missing or repeated row is a card the student never sees or sees twice.
+- `<surface>-text-query-total-is-stable` walks `--pages` pages of a text query and asserts the same total and no repeats.
+- `<surface>-filter-options-agree-with-filtered-browse` reads the options `getProgramFilterOptions` offers, which is what `GET /api/programs/filters` returns, and asserts that every row a filtered browse serves carries the chosen value, checking the `--facet-values` highest-total options of each field.
+  On `programs` it also asserts that every offered option returns a row, because the options and the search share one visibility filter.
+  On `fellowships` that is only a rate, because the options are computed over every program and an option can be legitimately empty inside one category.
+- `<surface>-sorted-browse-keeps-order` asserts that the default browse is ordered by deadline, undated rows first, for every row not projected to its next cycle, and that `sortBy=title` is ordered by the served title.
+- `<surface>-served-rows-pass-the-visibility-gate` reads the stored row behind every served card and asserts that it is `student_ready` and not archived, and that `computeProgramStudentVisibility` on the stored row still admits it.
+- `<surface>-served-field-difference-attribution` compares four fields a student decides on between the stored and the served row, and asserts every difference is attributable to a named serve-time guard, called rather than restated: a deadline to `projectNextCycleDeadline`, an application closed by `deadlineIsPast`, a withheld apply link to `publicHttpUrl` or `isUnhelpfulProgramUrl`, and withheld eligibility to `publicProgramDescription`.
+  The guard counts and the share of stored values withheld are reported, never gated.
+
+The programs corpus is small enough that three cases walk all of it, so their rates are over the whole served surface rather than the top of a ranking, and `--window` changes only the cold-browse rates.
+A stored row whose `updatedAt` is later than the walk's start describes a different version than the one served, so it is counted as `skippedStaleIndex` and left out, and the corpus fingerprint over the program collection makes a failure inconclusive when the collection moved during the case, on the same one-directional reasoning as the research cases.
+
 ## Adding a case
 
-Add one object to `journeyCases` in `journeyEvalCases.ts`.
-Keep the scoring in `journeyEvalMetrics.ts`, which is pure and has no IO so it stays unit-tested without a database.
+Add one object to `journeyCases` in `journeyEvalCases.ts`, or for the program surfaces to `programSurfaceCases` in `journeyEvalProgramCases.ts`.
+Keep the scoring in `journeyEvalMetrics.ts` or `journeyEvalProgramMetrics.ts`, which are pure and have no IO so they stay unit-tested without a database.
 
 A closed browse defect belongs here as a case.
 An exploratory query that has not yet found anything stays a throwaway under `/tmp`.
