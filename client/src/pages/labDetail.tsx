@@ -1177,7 +1177,9 @@ const LabDetail = () => {
           {sources.length > 0 && (
             <section>
               <SectionHeading>Sources</SectionHeading>
-              <SourcesSection sources={sources} primaryProfileUrl={
+              <SourcesSection
+                sources={sources}
+                primaryProfileUrl={
                   decisionSummaryActionLinks.profileOpenedAbove ? decisionProfileUrl : undefined
                 }
               />
