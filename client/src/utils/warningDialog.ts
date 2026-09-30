@@ -6,8 +6,10 @@
  * (#3947). A surface already behind a lazy route may import it directly.
  */
 export const showWarningDialog = async (text: string): Promise<void> => {
-  const { default: swal } = await import('sweetalert');
+  const swal = await import('sweetalert').then((module) => module.default).catch(() => null);
+  if (!swal) {
+    window.alert(text);
+    return;
+  }
   await swal({ text, icon: 'warning' });
 };
-
-export default showWarningDialog;

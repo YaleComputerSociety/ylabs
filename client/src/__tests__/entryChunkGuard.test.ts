@@ -1,95 +1,79 @@
-import { existsSync, readFileSync, statSync } from 'fs';
-import { dirname, join, relative, resolve } from 'path';
+// @vitest-environment node
+import { execFileSync } from 'child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join, relative, resolve, sep } from 'path';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-const SRC = join(__dirname, '..');
-const ENTRY = join(SRC, 'index.tsx');
+const CLIENT_ROOT = join(__dirname, '..', '..');
+const VITE_BIN = join(CLIENT_ROOT, 'node_modules', '.bin', 'vite');
+
+type ManifestEntry = { file: string; isEntry?: boolean };
+type SourceMap = { sources: string[] };
 
 /**
- * A type-only import erases at build time, so it is not an edge in this graph.
- *
- * Rollup puts a module in the entry chunk when it is reachable from the entry by
- * static import alone, so the entry's first-load cost is a property of this
- * graph rather than of the bundler's settings. A `import()` is a chunk boundary
- * and therefore ends the walk. Measured on the build this guard was written for:
- * the eager first load of `/research` was 951 kB raw, 293 kB gzip, and became
- * 583 kB raw, 185 kB gzip (#3947).
+ * The entry chunk is read from a real production build rather than from the
+ * source, because what reaches the first load is decided by the bundler.
+ * Measured on the build this guard was written for: the eager first load of
+ * `/research` was 951 kB raw, 293 kB gzip, and became 583 kB raw, 185 kB gzip
+ * (#3947).
  */
-const STATIC_IMPORT = /(?:^|[\s;}])(?:import|export)(?!\s+type\s)[\s\S]*?from\s*['"]([^'"]+)['"]/g;
-const BARE_IMPORT = /(?:^|[\s;}])import\s*['"]([^'"]+)['"]/g;
-
-const EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];
-
-const resolveLocal = (fromFile: string, specifier: string): string | null => {
-  const base = resolve(dirname(fromFile), specifier);
-  const candidates = [
-    base,
-    ...EXTENSIONS.map((extension) => `${base}${extension}`),
-    ...EXTENSIONS.map((extension) => join(base, `index${extension}`)),
-  ];
-  return (
-    candidates.find((candidate) => existsSync(candidate) && statSync(candidate).isFile()) ?? null
+const buildEntryModules = (outDir: string): string[] => {
+  execFileSync(
+    VITE_BIN,
+    [
+      'build',
+      '--outDir',
+      outDir,
+      '--emptyOutDir',
+      '--manifest',
+      '--sourcemap',
+      '--minify',
+      'false',
+      '--logLevel',
+      'silent',
+    ],
+    { cwd: CLIENT_ROOT, stdio: 'pipe' },
   );
+  const manifest = JSON.parse(
+    readFileSync(join(outDir, '.vite', 'manifest.json'), 'utf8'),
+  ) as Record<string, ManifestEntry>;
+  const entry = Object.values(manifest).find((chunk) => chunk.isEntry);
+  if (!entry) throw new Error('the build emitted no entry chunk');
+  const entryFile = join(outDir, entry.file);
+  const sourceMap = JSON.parse(readFileSync(`${entryFile}.map`, 'utf8')) as SourceMap;
+  return sourceMap.sources.map((source) => resolve(join(entryFile, '..'), source));
 };
 
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+let outDir = '';
+let entryModules: string[] = [];
 
-const entryGraph = (): { files: Set<string>; packages: Set<string> } => {
-  const files = new Set<string>();
-  const packages = new Set<string>();
-  const queue = [ENTRY];
+beforeAll(() => {
+  outDir = mkdtempSync(join(tmpdir(), 'ylabs-entry-chunk-'));
+  entryModules = buildEntryModules(outDir);
+}, 120000);
 
-  while (queue.length > 0) {
-    const file = queue.pop() as string;
-    if (files.has(file)) continue;
-    files.add(file);
-    const source = stripComments(readFileSync(file, 'utf8'));
-    for (const pattern of [STATIC_IMPORT, BARE_IMPORT]) {
-      pattern.lastIndex = 0;
-      let match = pattern.exec(source);
-      while (match) {
-        const specifier = match[1];
-        if (specifier.startsWith('.')) {
-          const resolved = resolveLocal(file, specifier);
-          if (resolved) queue.push(resolved);
-        } else if (!specifier.endsWith('.css')) {
-          packages.add(specifier);
-        }
-        match = pattern.exec(source);
-      }
-    }
-  }
-
-  return { files, packages };
-};
-
-const graph = entryGraph();
-const entryModules = new Set(Array.from(graph.files).map((file) => relative(SRC, file)));
+afterAll(() => {
+  rmSync(outDir, { recursive: true, force: true });
+});
 
 describe('entry chunk guard', () => {
-  it('keeps libraries that the default first load never executes out of the entry graph', () => {
-    const deferred = Array.from(graph.packages).filter((name) =>
-      /^(@sentry\/|react-virtuoso$|sweetalert$)/.test(name),
+  it('keeps libraries that the default first load never executes out of the entry chunk', () => {
+    const deferred = entryModules.filter((path) =>
+      /[\\/]node_modules[\\/](@sentry[\\/]|react-virtuoso[\\/]|sweetalert[\\/])/.test(path),
     );
 
     expect(deferred).toEqual([]);
   });
 
-  it('keeps every route page except the research landing out of the entry graph', () => {
-    const eagerPages = Array.from(entryModules)
-      .filter((name) => /^pages\//.test(name))
+  it('keeps every route page except the research landing out of the entry chunk', () => {
+    const pagesDir = join(CLIENT_ROOT, 'src', 'pages');
+    const eagerPages = entryModules
+      .filter((path) => path.startsWith(pagesDir))
+      .map((path) => relative(pagesDir, path).split(sep).join('/'))
       .sort();
 
-    expect(eagerPages).toEqual([
-      'pages/notFound.tsx',
-      'pages/research.tsx',
-      'pages/rootRedirect.tsx',
-    ]);
-  });
-
-  it('keeps the research landing eager so the main journey costs no extra round trip', () => {
-    expect(entryModules.has('pages/research.tsx')).toBe(true);
+    expect(eagerPages).toEqual(['notFound.tsx', 'research.tsx', 'rootRedirect.tsx']);
   });
 });

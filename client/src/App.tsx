@@ -30,8 +30,9 @@ const LoginError = lazy(() => import('./pages/loginError'));
 const Analytics = lazy(() => import('./pages/analytics'));
 
 const RouteLoadingFallback = () => (
-  <div className="flex min-h-[50vh] items-center justify-center">
+  <div role="status" aria-live="polite" className="flex min-h-[50vh] items-center justify-center">
     <LoadingSpinner size="lg" inline />
+    <span className="sr-only">Loading page</span>
   </div>
 );
 
@@ -69,8 +70,8 @@ const App = () => {
               <div className="flex-grow overflow-y-auto flex flex-col" data-scroll-container>
                 <HttpStatusNotifier />
                 <main id="main-content" tabIndex={-1} className="flex-grow focus:outline-none">
-                  <RouteFade>
-                    <Suspense fallback={<RouteLoadingFallback />}>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <RouteFade>
                       <Routes>
                         <Route path="/" element={<PublicRoute Component={RootRedirect} />} />
                         <Route
@@ -108,8 +109,8 @@ const App = () => {
                         />
                         <Route path="*" element={<NotFound />} />
                       </Routes>
-                    </Suspense>
-                  </RouteFade>
+                    </RouteFade>
+                  </Suspense>
                 </main>
                 <Footer />
               </div>

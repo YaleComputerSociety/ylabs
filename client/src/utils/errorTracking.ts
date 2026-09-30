@@ -28,7 +28,7 @@ export const buildErrorTrackingOptions = (
 // The SDK is about 30 KB gzip and does nothing without a DSN, so it is fetched
 // only once one is configured (#3947). A capture raised before the fetch settles
 // waits on it rather than being dropped.
-let loadingSentry: Promise<typeof SentryModule> | null = null;
+let loadingSentry: Promise<typeof SentryModule | null> | null = null;
 
 export const initializeErrorTracking = (config = getErrorTrackingConfig()) => {
   if (!config.dsn) {
@@ -36,10 +36,16 @@ export const initializeErrorTracking = (config = getErrorTrackingConfig()) => {
   }
 
   const dsn = config.dsn;
-  loadingSentry = import('@sentry/react').then((sentry) => {
-    sentry.init(buildErrorTrackingOptions({ ...config, dsn }));
-    return sentry;
-  });
+  const loading = import('@sentry/react')
+    .then((sentry) => {
+      sentry.init(buildErrorTrackingOptions({ ...config, dsn }));
+      return sentry;
+    })
+    .catch(() => {
+      if (loadingSentry === loading) loadingSentry = null;
+      return null;
+    });
+  loadingSentry = loading;
 
   return true;
 };
@@ -47,6 +53,7 @@ export const initializeErrorTracking = (config = getErrorTrackingConfig()) => {
 export const captureClientError = async (error: unknown, componentStack?: string) => {
   if (!loadingSentry) return;
   const sentry = await loadingSentry;
+  if (!sentry) return;
   sentry.captureException(error, {
     contexts: componentStack
       ? {
@@ -56,8 +63,4 @@ export const captureClientError = async (error: unknown, componentStack?: string
         }
       : undefined,
   });
-};
-
-export const __resetErrorTrackingForTests = () => {
-  loadingSentry = null;
 };

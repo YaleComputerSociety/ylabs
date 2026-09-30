@@ -143,10 +143,10 @@ describe('App routing', () => {
   it('keeps the research landing eager so it renders on the first paint', () => {
     window.history.pushState({}, '', '/research');
 
-    const { container, getByTestId } = render(<App />);
+    const { getByTestId, queryByText } = render(<App />);
 
     expect(getByTestId('research-page').textContent).toBe('Yale Research');
-    expect(container.querySelector('.yr-fade-in > .flex.min-h-\\[50vh\\]')).toBeNull();
+    expect(queryByText('Loading page')).toBeNull();
   });
 
   it('resolves the lazily-loaded admin analytics route behind AdminRoute at /analytics', async () => {

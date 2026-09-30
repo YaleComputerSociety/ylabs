@@ -155,7 +155,9 @@ describe('useFavorites', () => {
     expect(saved).toBe(false);
     expect(result.current.favIds).toEqual([]);
     expect(mockedAxios.get).toHaveBeenCalledTimes(2);
-    expect(mockedSwal).toHaveBeenCalledWith(expect.objectContaining({ icon: 'warning' }));
+    await waitFor(() =>
+      expect(mockedSwal).toHaveBeenCalledWith(expect.objectContaining({ icon: 'warning' })),
+    );
 
     await flushResearchAnalytics();
 
