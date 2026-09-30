@@ -1253,7 +1253,7 @@ describe('LabDetail page', () => {
     expect(screen.queryByText('How to get involved')).toBeNull();
   });
 
-  it('offers only the join page, not the research website too, beside a lead card that links the profile', async () => {
+  it('offers only the research homepage, not the join page too, beside a lead card that links the profile', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
@@ -1277,9 +1277,7 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByRole('link', { name: 'See how to get involved' }).getAttribute('href')).toBe(
-      JOIN_PAGE_URL,
-    );
+    expect(screen.queryByRole('link', { name: 'See how to get involved' })).toBeNull();
     const getInvolvedBlock = screen.getByText('How to get involved').parentElement as HTMLElement;
     expect(within(getInvolvedBlock).getAllByRole('link')).toHaveLength(1);
     expect(

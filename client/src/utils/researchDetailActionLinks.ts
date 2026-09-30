@@ -48,6 +48,8 @@ export interface ResearchDetailActionLinks {
   websiteCtaUrl?: string;
   showsWebsiteCta: boolean;
   showsProfileButton: boolean;
+  offersOrgEngagementPage: boolean;
+  offersApplyPage: boolean;
   leadCardLinksProfile: boolean;
   profileOpenedAbove: boolean;
   /** Both slots resolved to a link, which is the population the duplicate audit walks. */
@@ -72,11 +74,18 @@ export function resolveResearchDetailActionLinks(
   const repeatsLeadCardProfileLink =
     hasLeadCard && isSameActionDestination(websiteUrl, leadCardProfileUrl);
   const offersOrgEngagementPage = preferOrgEngagementOutreach && Boolean(officialSource);
-  const getInvolvedSlotTaken = offersOrgEngagementPage || hasApplyPage;
-  const websiteSlotOpen = Boolean(websiteUrl) && !getInvolvedSlotTaken;
-  const showsProfileButton = profileNeedsOwnButton && !getInvolvedSlotTaken;
-
+  const websiteSlotOpen = Boolean(websiteUrl) && !offersOrgEngagementPage;
   const showsWebsiteCta = websiteSlotOpen && !profileNeedsOwnButton && !repeatsLeadCardProfileLink;
+  /**
+   * The research's own homepage is a better way in than a page deep inside it, so it
+   * takes the block's one action and an apply or get-involved page is the fallback for
+   * a row with no homepage to offer. An organization that coordinates involvement
+   * centrally keeps its own branch above both, because there the get-involved page is
+   * the way in rather than a page beneath a homepage.
+   */
+  const offersApplyPage = hasApplyPage && !offersOrgEngagementPage && !showsWebsiteCta;
+  const getInvolvedSlotTaken = offersOrgEngagementPage || offersApplyPage;
+  const showsProfileButton = profileNeedsOwnButton && !getInvolvedSlotTaken;
 
   const leadCardLinksProfile = hasLeadCard && Boolean(leadCardProfileUrl);
   return {
@@ -84,6 +93,8 @@ export function resolveResearchDetailActionLinks(
     websiteCtaUrl: showsWebsiteCta ? websiteUrl : undefined,
     showsWebsiteCta,
     showsProfileButton,
+    offersOrgEngagementPage,
+    offersApplyPage,
     leadCardLinksProfile,
     profileOpenedAbove: !profileNeedsOwnButton || showsProfileButton,
     // Read before the CTA suppression, so the audit can separate "both slots would
