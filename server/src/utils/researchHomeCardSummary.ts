@@ -187,7 +187,17 @@ const selectResearchDescriptionSummary = (
  * (client/src/utils/researchDiscoveryAdapters.ts). Kept in exact sync so the
  * card text a list/related response resolves here is byte-identical to what
  * the client would have derived itself from the raw description fields;
- * changing either side requires updating the other.
+ * changing either side requires updating the other. The shared case table in
+ * `contracts/researchDescriptionHygiene.cases.json` pins that agreement from
+ * both suites (#2433).
+ *
+ * A list payload no longer reaches the description arms below. The card a student
+ * reads is `servedResearchEntityCardDescription`, the one resolver the detail card
+ * and the visibility gate also read, and the DTO passes this only the row's
+ * departments, source links and school, so the sole branch it reaches is the named
+ * "Limited public description" state for a row that resolves no card at all. Passing
+ * a description here again would restore the unguarded short-to-full fallback that
+ * put the whole body in the card slot on 143 of the 3,429 rows browse served (#3747).
  */
 export const resolveResearchHomeCardSummary = (
   input: ResearchHomeCardSummaryInput = {},

@@ -19,7 +19,10 @@ import {
 } from '../utils/descriptionHygiene';
 import { resolveServedShortDescription } from '../utils/groundedCardSynthesis';
 import { stripBodyChrome } from '../utils/researchBodyChromeStrip';
-import { servedResearchEntityCopy } from './servedResearchEntityCard';
+import {
+  servedResearchEntityCardWithoutLastResort,
+  servedResearchEntityCopy,
+} from './servedResearchEntityCard';
 
 // Every field `buildResearchEntityPublicDescriptionRepresentation` (and so
 // `researchEntityServesPublicDetail`) reads. A caller that loads entities with a
@@ -230,14 +233,15 @@ function derivePublicDescriptionRepresentation({
   // already passed, so reading it here would be circular: the card invariant could
   // never refuse an empty card while a body existed, and #2597's refusal and #1872's
   // organizational exemption both key on card absence.
+  //
+  // That exclusion is the ONLY difference between the judged card and the served one,
+  // because this reads the served card resolver itself rather than a subset of it.
+  // Resolving the judged card from `resolveServedShortDescription` here still skipped
+  // three steps the resolver applies - the rendering-preference bar, the gate-accepted
+  // derived substitute and the ungrounded-card surrender - so the gate went on judging
+  // a line no surface renders on the rows those steps move (#3747).
   const servedCopy = servedResearchEntityCopy(sanitizedEntity, resolvedLeadMemberNames);
-  const servedCard = resolveServedShortDescription({
-    shortDescription: servedCopy.shortDescription,
-    fullDescription: servedCopy.fullDescription,
-    researchAreas: servedCopy.researchAreas,
-    entityType: resolvedEntityType,
-    kind: servedCopy.kind,
-  });
+  const servedCard = servedResearchEntityCardWithoutLastResort(servedCopy, resolvedEntityType);
   const programLike = isProgramLikeResearchEntity(sanitizedEntity);
   const cardIsOptional = programLike || isOrganizationalResearchEntity(sanitizedEntity);
   const quality = assessResearchEntityDescriptionQuality({

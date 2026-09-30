@@ -1276,7 +1276,9 @@ describe('researchEntityDto', () => {
    * The browse card and the detail card must be the same string for the same row.
    * They diverged on 97 of 3,214 live `student_ready` rows because only the detail
    * path supplied the roster-derived lead names, so the mismatched-person-name strip
-   * was a structural no-op on browse (#2240).
+   * was a structural no-op on browse (#2240). The card compared here is now the one
+   * served card rather than a browse-only summary of the stored short and body, so the
+   * comparison is against the served card field rather than the body (#3747).
    */
   it('runs the lead-name-aware guard on a browse card so it matches the detail card (#2240)', () => {
     const entity = {
@@ -1286,8 +1288,10 @@ describe('researchEntityDto', () => {
       kind: 'individual',
       entityType: 'FACULTY_RESEARCH_AREA',
       researchAreas: ['Coral Reef Ecology'],
-      fullDescription:
+      shortDescription:
         "Marguerite Delacroix's research examines coral reef resilience under thermal stress.",
+      fullDescription:
+        "Marguerite Delacroix's research examines coral reef resilience under thermal stress. The group tracks bleaching recovery across reef sites and trains students in the survey methods.",
     };
     const leadMemberNames = ['Hollis Quintrell'];
 
@@ -1307,7 +1311,10 @@ describe('researchEntityDto', () => {
     expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(
       'This research examines coral reef resilience under thermal stress.',
     );
-    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(detail.fullDescription);
+    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(detail.cardDescription);
+    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(
+      withLeadNames.researchEntities[0].shortDescription,
+    );
   });
 
   it('leaves a browse card intact when the possessive names the row own lead (#2240)', () => {
@@ -1318,8 +1325,10 @@ describe('researchEntityDto', () => {
       kind: 'individual',
       entityType: 'FACULTY_RESEARCH_AREA',
       researchAreas: ['Coral Reef Ecology'],
-      fullDescription:
+      shortDescription:
         "Professor Quintrell's research examines coral reef resilience under thermal stress.",
+      fullDescription:
+        "Professor Quintrell's research examines coral reef resilience under thermal stress. The group tracks bleaching recovery across reef sites and trains students in the survey methods.",
     };
 
     const withLeadNames = addResearchEntitySearchAliases(
@@ -1327,7 +1336,7 @@ describe('researchEntityDto', () => {
       { leadMemberNamesByEntityId: new Map([[entity._id, ['Hollis Quintrell']]]) },
     );
 
-    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(entity.fullDescription);
+    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(entity.shortDescription);
   });
 
   it('serves no description copy when the page lead names could not be read', () => {
