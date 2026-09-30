@@ -20,7 +20,7 @@ Three rows cannot be an aggregation: each needs the roster resolved and `buildRe
 Read that 13 seconds as a pre-#4093 upper bound rather than a current figure.
 #4093 memoized the field-quality scoring a row was repeating once per card candidate, which cut this same representation over a 24-row browse page from 123 ms to 68 ms, so the pass over the corpus is now materially cheaper and has not been re-timed end to end.
 The choice does not turn on the exact number: it is seconds against milliseconds either way, and halving seconds leaves them seconds.
-Those three carry a `measured` tag and the header says how many rows are in that state, so nobody reads an as-of number as a now number.
+Every snapshot-sourced row carries a `measured` tag, the header topic average carries its measurement date, and the header says how many rows are in that state, so nobody reads an as-of number as a now number.
 
 **The other five were measured to be identical, not assumed.**
 Over 3,120 served Development rows on 2026-09-14 the aggregation and the representation returned the same counts: research website 1,276, topics 3,026, topic total 15,136, dead ends 69, generic title 1,471.
