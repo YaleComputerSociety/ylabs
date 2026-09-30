@@ -2060,6 +2060,16 @@ describe('a source is credited only for a field the row serves (#3922)', () => {
     expect(labels).toContain('Research summary');
   });
 
+  it('drops the research-summary credit when a refused stored card line leaves only topics', () => {
+    const labels = creditedLabels({
+      fullDescription: '',
+      shortDescription: 'Studies sediment transport in estuaries and...',
+      researchAreas: ['Sediment transport', 'Estuaries'],
+    });
+    expect(labels).toContain('Topics');
+    expect(labels).not.toContain('Research summary');
+  });
+
   it('drops a source entirely when none of its credits is served', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-credit-empty',
