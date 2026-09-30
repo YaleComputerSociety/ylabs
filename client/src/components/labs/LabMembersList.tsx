@@ -118,6 +118,8 @@ const LabMemberCard = ({
             alt={fullName}
             referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
             onError={() => setImageFailed(true)}
+            loading="lazy"
+            decoding="async"
             className={`${singleColumn ? 'h-11 w-11' : 'h-14 w-14'} rounded-full object-cover`}
           />
         ) : (

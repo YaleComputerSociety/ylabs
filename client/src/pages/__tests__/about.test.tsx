@@ -1,3 +1,6 @@
+import { statSync } from 'fs';
+import { join } from 'path';
+
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -37,5 +40,23 @@ describe('About', () => {
 
     expect(screen.getByRole('heading', { level: 2, name: 'Help improve y/labs' })).toBeTruthy();
     expect(screen.queryByRole('heading', { level: 1, name: /first release/i })).toBeNull();
+  });
+
+  it('loads only card-sized team headshots and defers them until they scroll into view', () => {
+    const maxHeadshotBytes = 450_000;
+    const publicDir = join(__dirname, '../../../public');
+    const { container } = render(<About />);
+
+    const headshots = Array.from(container.querySelectorAll('img')).filter((image) =>
+      (image.getAttribute('src') ?? '').startsWith('/assets/developers/'),
+    );
+
+    expect(headshots.length).toBeGreaterThan(0);
+    for (const image of headshots) {
+      const src = image.getAttribute('src') ?? '';
+      expect(statSync(join(publicDir, decodeURI(src))).size).toBeLessThanOrEqual(maxHeadshotBytes);
+      expect(image.getAttribute('loading')).toBe('lazy');
+      expect(image.getAttribute('decoding')).toBe('async');
+    }
   });
 });

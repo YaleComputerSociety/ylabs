@@ -188,6 +188,14 @@ describe('LabMembersList', () => {
     expect(image?.getAttribute('src')).toBe('https://yalies.io/images/fixture.jpg');
   });
 
+  it('defers member avatars so a long roster does not fetch offscreen images up front', () => {
+    const { container } = renderMembers([member('https://yalies.io/images/fixture.jpg')]);
+
+    const image = container.querySelector('img[alt="Fixture Advisor"]');
+    expect(image?.getAttribute('loading')).toBe('lazy');
+    expect(image?.getAttribute('decoding')).toBe('async');
+  });
+
   it('does not render unsafe or credentialed member profile image URLs', () => {
     const unsafeCases = [
       'data:image/svg+xml,<svg onload=alert(1)>',
