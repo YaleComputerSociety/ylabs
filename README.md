@@ -36,7 +36,7 @@ Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` for a
 ## Product Surfaces
 
 - `/research`: y/labs, the primary discovery surface for labs, centers, institutes, faculty projects, archives, collections projects, RA programs, and other Yale research. Cards emphasize profiles, source-backed evidence, and planning context when it exists.
-- `/programs`: Programs & Fellowships, the structured application and planning surface grouped by what a student needs first: programs that get a student started in research (structured programs, center internships, RA roles, mentor matching, department research guides), funding for research already arranged, awards for research already done, and archive review last, with open and closing-soon deadlines ordered first inside each section.
+- `/programs`: Programs & Fellowships, an application board grouped by application status rather than research role: due in the next 30 days, accepting applications, opening soon, the next cycle, no dates posted, and archive review last, soonest action first inside each section. Each card states the award and whether a mentor comes first, and quick filters narrow to open, closing-soon, first-year, no-mentor-needed, or next-cycle programs.
 - `/dashboard`: the private, read-only saved-planning workspace split into two surfaces: a Dashboard of saved research with notes and next steps, and a Program Watch of watched programs with deadlines, accepting status, and eligibility.
 - `/research/:slug`: research-home detail pages with source-backed evidence signals, a constant prompt to reach out and get involved, source-verified current team context when available, sources, and saved research-plan actions.
 
