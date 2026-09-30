@@ -188,7 +188,7 @@ These appear in older code and docs and must not be introduced in new copy, labe
 | --- | --- |
 | research home, `researchHome` | "research", or the entity's own kind noun (lab, center, faculty research profile) |
 | research area (as prose) | topics (the stored field keeps the name `researchAreas`) |
-| Ways In, access-plausibility tier, "Best Next Step" framing | retired by the 2026-08-25 "Simple Directory First" decision |
+| Ways In (as `/research` directory pathway framing), access-plausibility tier, "Best Next Step" framing | retired by the 2026-08-25 "Simple Directory First" decision; the `/programs` board may still name its first section "Ways Into Research" |
 | `ResearchGroup`, `lab` as a model name, `researchGroupId` | `ResearchEntity`, `researchEntityId` |
 | `ResearchGroupMember` | `RoleAssignment` |
 | `AccessSignal`, `UndergraduateLogisticsClaim` | `Signal` with a type |
