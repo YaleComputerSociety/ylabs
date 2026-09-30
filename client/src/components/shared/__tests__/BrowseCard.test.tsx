@@ -148,9 +148,7 @@ describe('Program card deadline urgency', () => {
   });
 
   it('counts down to a confirmed deadline inside the urgency window', () => {
-    renderAdmin(
-      <BrowseCard item={soonItem({})} isFavorite={false} onOpenModal={vi.fn()} />,
-    );
+    renderAdmin(<BrowseCard item={soonItem({})} isFavorite={false} onOpenModal={vi.fn()} />);
 
     expect(screen.getByText(/days left/)).toBeTruthy();
   });
