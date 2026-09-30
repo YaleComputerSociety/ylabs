@@ -38,7 +38,7 @@ export interface ProgramClassification {
 
 type KindClassification = Omit<ProgramClassification, 'programRole'>;
 
-const ROUTE_IN_KINDS: ReadonlySet<ProgramKind> = new Set([
+const STARTS_RESEARCH_KINDS: ReadonlySet<ProgramKind> = new Set([
   'STRUCTURED_PROGRAM',
   'CENTER_INTERNSHIP',
   'RA_PROGRAM',
@@ -53,7 +53,7 @@ const FUNDS_RESEARCH_KINDS: ReadonlySet<ProgramKind> = new Set([
 ]);
 
 export function programRoleForKind(kind: ProgramKind): ProgramRole {
-  if (ROUTE_IN_KINDS.has(kind)) return 'ROUTE_IN';
+  if (STARTS_RESEARCH_KINDS.has(kind)) return 'STARTS_RESEARCH';
   if (FUNDS_RESEARCH_KINDS.has(kind)) return 'FUNDS_RESEARCH';
   if (kind === 'RESEARCH_AWARD') return 'RECOGNIZES_RESEARCH';
   return 'UNCLASSIFIED';
@@ -106,6 +106,9 @@ const DEPARTMENT_RESEARCH_GUIDE_TITLE =
 
 const NON_UNDERGRADUATE_AUDIENCE_TITLE =
   /\b(?:graduate|professional|postdoc(?:toral)?|doctoral|phd)\b/;
+
+const AWARD_INSTRUMENT_TITLE =
+  /\b(?:awards?|grants?|funds?|funding|scholarships?|prizes?|stipends?)\b/;
 
 const RESEARCH_AWARD_TITLE = /\b(?:scholarships?|prizes?)\b/;
 
@@ -621,7 +624,12 @@ function classifyProgramKind(input: ProgramClassificationInput): KindClassificat
     });
   }
 
-  if (/mentor match|matched with|faculty mentor|cohort|training program/.test(lower)) {
+  // An award that requires or funds work with a faculty mentor is still an award: the
+  // generic mentor wording otherwise filed research and travel awards as mentored programs.
+  if (
+    /mentor match|matched with|faculty mentor|cohort|training program/.test(lower) &&
+    !AWARD_INSTRUMENT_TITLE.test(titleLower)
+  ) {
     return structuredProgram({
       programKind: 'MENTOR_MATCHING',
       entryMode: 'DIRECT_FACULTY_MATCHING',

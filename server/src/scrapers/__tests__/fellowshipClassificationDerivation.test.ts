@@ -12,7 +12,7 @@ describe('planFellowshipClassification program role (#3904)', () => {
   it('derives the role from the locked kind the row keeps', () => {
     const plan = planFellowshipClassification({ stored, lockedFields: ['programKind'] });
     expect(plan.set.programKind).toBeUndefined();
-    expect(plan.set.programRole).toBe('ROUTE_IN');
+    expect(plan.set.programRole).toBe('STARTS_RESEARCH');
   });
 
   it('derives the role from the classifier kind when the kind is not locked', () => {

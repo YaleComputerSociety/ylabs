@@ -450,7 +450,7 @@ describe('classifyProgram internship identity (#2925)', () => {
         }),
       ).toMatchObject({
         programKind: 'DEPARTMENT_RESEARCH_GUIDE',
-        programRole: 'ROUTE_IN',
+        programRole: 'STARTS_RESEARCH',
         entryMode: 'CONTACT_FACULTY',
       });
     });
@@ -493,5 +493,15 @@ describe('classifyProgram internship identity (#2925)', () => {
       ).toBe('FUNDS_RESEARCH');
       expect(classifyProgram({ title: 'Fellowships & Grants' }).programRole).toBe('UNCLASSIFIED');
     });
+  });
+
+  it('does not file an award that mentions a faculty mentor as a mentored program', () => {
+    const result = classifyProgram({
+      title: 'Fixture Center Short-term Research and Travel Award',
+      description:
+        'Awards of $500 to $2000 support research travel; applicants need a faculty mentor letter.',
+    });
+    expect(result.programKind).not.toBe('MENTOR_MATCHING');
+    expect(result.programRole).toBe('FUNDS_RESEARCH');
   });
 });

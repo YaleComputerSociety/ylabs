@@ -75,7 +75,7 @@ export type ProgramEntryMode = (typeof programEntryModes)[number];
 // groups by (#3904): a way into research, funding for research already arranged, or
 // recognition for research already done.
 export const programRoles = [
-  'ROUTE_IN',
+  'STARTS_RESEARCH',
   'FUNDS_RESEARCH',
   'RECOGNIZES_RESEARCH',
   'UNCLASSIFIED',

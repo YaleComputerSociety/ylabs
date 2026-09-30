@@ -477,12 +477,12 @@ describe('publicProgramForReader program role', () => {
       _id: '6a6f84d074dd496b1d43b18e',
       title: 'Undergraduate Research Opportunities',
       programKind: 'DEPARTMENT_RESEARCH_GUIDE',
-      programRole: 'ROUTE_IN',
+      programRole: 'STARTS_RESEARCH',
       sourceUrl: specificPage,
       links: [],
     });
 
     expect(payload.programKind).toBe('DEPARTMENT_RESEARCH_GUIDE');
-    expect(payload.programRole).toBe('ROUTE_IN');
+    expect(payload.programRole).toBe('STARTS_RESEARCH');
   });
 });
