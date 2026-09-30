@@ -29,7 +29,6 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import axios from 'axios';
 import mongoose from 'mongoose';
 
 dotenv.config();
@@ -45,7 +44,7 @@ import {
   applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
-import { assertPublicHttpUrl } from '../utils/ssrfGuard';
+import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { planFieldValueRefusal } from '../utils/researchEntityFieldValueRefusals';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
@@ -81,16 +80,11 @@ const firstMatch = (html: string, pattern: RegExp): string => {
 
 async function readPage(url: string): Promise<PageRead> {
   try {
-    const safeUrl = await assertPublicHttpUrl(url);
-    const response = await axios.get(safeUrl.toString(), {
-      timeout: READ_TIMEOUT_MS,
+    const response = await fetchPublicHttpUrl(url, {
+      timeoutMs: READ_TIMEOUT_MS,
       headers: { 'User-Agent': BROWSER_USER_AGENT, Accept: 'text/html' },
-      maxRedirects: 5,
-      validateStatus: () => true,
-      responseType: 'text',
-      transformResponse: [(data) => data],
-    } as Parameters<typeof axios.get>[1] & { validateStatus: () => boolean });
-    const html = typeof response.data === 'string' ? response.data : '';
+    });
+    const html = response.body;
     return {
       status: String(response.status),
       bytes: html.length,

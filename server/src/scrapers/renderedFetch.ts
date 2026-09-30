@@ -4,7 +4,12 @@ import https from 'node:https';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from './../utils/ssrfGuard';
+import {
+  assertPublicHttpUrl,
+  SsrfBlockedError,
+  ssrfSafeAgents,
+  stripIpv6Brackets,
+} from './../utils/ssrfGuard';
 import {
   benchmarkCacheRead,
   benchmarkCacheWrite,
@@ -15,6 +20,10 @@ import {
 } from './snapshotBenchmarkMode';
 import { getCached, setCached } from './snapshotCache';
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
+import {
+  startSsrfGuardedForwardProxy,
+  type SsrfGuardedForwardProxy,
+} from './utils/ssrfGuardedForwardProxy';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import type {
   ScraperFetchAttemptMetrics,
@@ -153,7 +162,13 @@ export interface ScraplingRenderedFetcherOptions {
   mode?: 'dynamic' | 'stealthy';
   timeoutMs?: number;
   seedRedirectCheck?: (url: URL, timeoutMs: number) => Promise<boolean>;
+  startForwardProxy?: () => Promise<RenderedFetchForwardProxy>;
 }
+
+export type RenderedFetchForwardProxy = Pick<
+  SsrfGuardedForwardProxy,
+  'url' | 'forwardedHosts' | 'close'
+>;
 
 const isHttpRedirectStatus = (statusCode: number | undefined): boolean =>
   typeof statusCode === 'number' && statusCode >= 300 && statusCode < 400;
@@ -428,6 +443,7 @@ function createLiveScraplingRenderedFetcher(
     DEFAULT_TIMEOUT_MS,
   );
   const seedRedirectCheck = options.seedRedirectCheck || defaultRenderedSeedRedirectCheck;
+  const startForwardProxy = options.startForwardProxy || startSsrfGuardedForwardProxy;
 
   return async (request) => {
     if (isBenchmarkReplayActive()) refuseBenchmarkReplayNetwork();
@@ -461,6 +477,19 @@ function createLiveScraplingRenderedFetcher(
         };
       }
 
+      let forwardProxy: RenderedFetchForwardProxy;
+      try {
+        forwardProxy = await startForwardProxy();
+      } catch {
+        return {
+          url: seedUrl.toString(),
+          html: '',
+          blocked: true,
+          blockedReason: 'rendered-ssrf-proxy-unavailable',
+          fetchMode: 'scrapling',
+        };
+      }
+
       const args = [
         bridgePath,
         '--url',
@@ -469,6 +498,8 @@ function createLiveScraplingRenderedFetcher(
         normalizeRenderedFetchMode(request.mode || defaultMode),
         '--timeout-ms',
         String(timeoutMs),
+        '--proxy-server',
+        forwardProxy.url,
       ];
       const waitSelector = normalizeRenderedFetchSelector(request.waitSelector);
       if (waitSelector) args.push('--wait-selector', waitSelector);
@@ -486,6 +517,16 @@ function createLiveScraplingRenderedFetcher(
           blocked?: boolean;
           blockedReason?: string;
         };
+        if (!forwardProxy.forwardedHosts().includes(stripIpv6Brackets(seedUrl.hostname))) {
+          return {
+            url: seedUrl.toString(),
+            html: '',
+            statusCode: parsed.statusCode,
+            blocked: true,
+            blockedReason: 'rendered-outside-ssrf-proxy',
+            fetchMode: 'scrapling',
+          };
+        }
         const renderedUrl = parsed.url || safeRequestUrl;
         let finalUrl: URL;
         try {
@@ -529,6 +570,8 @@ function createLiveScraplingRenderedFetcher(
           blockedReason: sanitizeLogValue(err),
           fetchMode: 'scrapling',
         };
+      } finally {
+        await forwardProxy.close();
       }
     } finally {
       releaseHostSlot();

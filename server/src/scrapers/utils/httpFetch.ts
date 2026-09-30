@@ -217,3 +217,72 @@ async function fetchPageLive(
   }
   throw lastError ?? new Error('fetchPageWithPolicy exhausted retries');
 }
+
+export interface PublicHttpHopResponse {
+  status: number;
+  body: string;
+  location?: string;
+}
+
+export type PublicHttpHopRequest = (
+  url: string,
+  config: { timeoutMs: number; headers: Record<string, string> },
+) => Promise<PublicHttpHopResponse>;
+
+export interface PublicHttpResponse extends PublicHttpHopResponse {
+  finalUrl: string;
+}
+
+export interface FetchPublicHttpUrlOptions {
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+  maxRedirects?: number;
+  assertUrl?: (url: string) => Promise<URL>;
+  request?: PublicHttpHopRequest;
+}
+
+const isRedirectStatus = (status: number): boolean => status >= 300 && status < 400;
+
+const defaultPublicHttpHopRequest: PublicHttpHopRequest = async (url, config) => {
+  const agents = ssrfSafeAgents();
+  const res = await axios.get(url, {
+    timeout: config.timeoutMs,
+    headers: config.headers,
+    maxRedirects: 0,
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
+    responseType: 'text',
+    transformResponse: [(data) => data],
+    validateStatus: () => true,
+    transitional: { clarifyTimeoutError: true } as never,
+  });
+  const location = res.headers?.location;
+  return {
+    status: res.status,
+    body: typeof res.data === 'string' ? res.data : String(res.data ?? ''),
+    ...(typeof location === 'string' && location ? { location } : {}),
+  };
+};
+
+export async function fetchPublicHttpUrl(
+  url: string,
+  options: FetchPublicHttpUrlOptions = {},
+): Promise<PublicHttpResponse> {
+  const assertUrl = options.assertUrl ?? assertPublicHttpUrl;
+  const request = options.request ?? defaultPublicHttpHopRequest;
+  const maxRedirects = options.maxRedirects ?? 5;
+  const config = {
+    timeoutMs: options.timeoutMs ?? 25_000,
+    headers: options.headers ?? { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+  };
+
+  let current = url;
+  for (let redirects = 0; ; redirects += 1) {
+    const safeUrl = (await assertUrl(current)).toString();
+    const response = await request(safeUrl, config);
+    if (!isRedirectStatus(response.status) || !response.location || redirects >= maxRedirects) {
+      return { ...response, finalUrl: safeUrl };
+    }
+    current = new URL(response.location, safeUrl).toString();
+  }
+}

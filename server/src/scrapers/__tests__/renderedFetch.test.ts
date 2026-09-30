@@ -35,6 +35,20 @@ const execFileSuccess = (payload: unknown) => {
 
 const noSeedRedirect = async () => false;
 
+const forwardProxyStub = (forwardedHosts: string[]) => {
+  const close = vi.fn(async () => {});
+  return {
+    close,
+    start: vi.fn(async () => ({
+      url: 'http://127.0.0.1:18080',
+      forwardedHosts: () => forwardedHosts,
+      close,
+    })),
+  };
+};
+
+const seedForwardingProxy = forwardProxyStub(['8.8.8.8']).start;
+
 describe('createScraplingRenderedFetcher', () => {
   it('refuses to render during a benchmark replay and counts the block', async () => {
     const seedRedirectCheck = vi.fn(async () => false);
@@ -92,6 +106,7 @@ describe('createScraplingRenderedFetcher', () => {
       pythonCommand: 'python3',
       bridgePath: 'scraplingBridge.py',
       seedRedirectCheck: noSeedRedirect,
+      startForwardProxy: seedForwardingProxy,
     });
 
     const result = await fetcher?.({ url: 'https://8.8.8.8/source' });
@@ -117,6 +132,7 @@ describe('createScraplingRenderedFetcher', () => {
       pythonCommand: 'python3',
       bridgePath: 'scraplingBridge.py',
       seedRedirectCheck: noSeedRedirect,
+      startForwardProxy: seedForwardingProxy,
     });
 
     const result = await fetcher?.({ url: 'https://8.8.8.8/source' });
@@ -142,6 +158,7 @@ describe('createScraplingRenderedFetcher', () => {
       pythonCommand: 'python3',
       bridgePath: 'scraplingBridge.py',
       seedRedirectCheck: noSeedRedirect,
+      startForwardProxy: seedForwardingProxy,
     });
 
     const result = await fetcher?.({ url: 'https://8.8.8.8/source' });
@@ -166,6 +183,7 @@ describe('createScraplingRenderedFetcher', () => {
       bridgePath: 'scraplingBridge.py',
       timeoutMs: 250_000,
       seedRedirectCheck: noSeedRedirect,
+      startForwardProxy: seedForwardingProxy,
     });
 
     await fetcher?.({ url: 'https://8.8.8.8/source', timeoutMs: 900_000 });
@@ -190,6 +208,7 @@ describe('createScraplingRenderedFetcher', () => {
       bridgePath: 'scraplingBridge.py',
       timeoutMs: 10,
       seedRedirectCheck: noSeedRedirect,
+      startForwardProxy: seedForwardingProxy,
     });
 
     await fetcher?.({ url: 'https://8.8.8.8/source', timeoutMs: 1 });
@@ -200,6 +219,92 @@ describe('createScraplingRenderedFetcher', () => {
       expect.objectContaining({ timeout: 6_000 }),
       expect.any(Function),
     );
+  });
+});
+
+describe('createScraplingRenderedFetcher guarded browser egress', () => {
+  it('hands the browser the guarded proxy and closes it after the render', async () => {
+    execFileSuccess({ url: 'https://8.8.8.8/source', statusCode: 200, html: '<html>ok</html>' });
+    const proxy = forwardProxyStub(['8.8.8.8']);
+    const fetcher = createScraplingRenderedFetcher({
+      enabled: true,
+      pythonCommand: 'python3',
+      bridgePath: 'scraplingBridge.py',
+      seedRedirectCheck: noSeedRedirect,
+      startForwardProxy: proxy.start,
+    });
+
+    const result = await fetcher?.({ url: 'https://8.8.8.8/source' });
+
+    expect(result).toMatchObject({ html: '<html>ok</html>', fetchMode: 'scrapling' });
+    expect(mocks.execFile).toHaveBeenLastCalledWith(
+      'python3',
+      expect.arrayContaining(['--proxy-server', 'http://127.0.0.1:18080']),
+      expect.anything(),
+      expect.any(Function),
+    );
+    expect(proxy.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards a render whose seed request never passed through the guarded proxy', async () => {
+    execFileSuccess({ url: 'https://8.8.8.8/source', statusCode: 200, html: '<html>ok</html>' });
+    const proxy = forwardProxyStub([]);
+    const fetcher = createScraplingRenderedFetcher({
+      enabled: true,
+      pythonCommand: 'python3',
+      bridgePath: 'scraplingBridge.py',
+      seedRedirectCheck: noSeedRedirect,
+      startForwardProxy: proxy.start,
+    });
+
+    const result = await fetcher?.({ url: 'https://8.8.8.8/source' });
+
+    expect(result).toMatchObject({
+      html: '',
+      blocked: true,
+      blockedReason: 'rendered-outside-ssrf-proxy',
+    });
+    expect(proxy.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not launch the browser when the guarded proxy cannot start', async () => {
+    mocks.execFile.mockClear();
+    const fetcher = createScraplingRenderedFetcher({
+      enabled: true,
+      pythonCommand: 'python3',
+      bridgePath: 'scraplingBridge.py',
+      seedRedirectCheck: noSeedRedirect,
+      startForwardProxy: async () => {
+        throw new Error('listen failed');
+      },
+    });
+
+    const result = await fetcher?.({ url: 'https://8.8.8.8/source' });
+
+    expect(mocks.execFile).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      html: '',
+      blocked: true,
+      blockedReason: 'rendered-ssrf-proxy-unavailable',
+    });
+  });
+
+  it('closes the guarded proxy when the bridge fails', async () => {
+    mocks.execFile.mockImplementationOnce((_command, _args, _options, callback) => {
+      callback(new Error('bridge crashed'), { stdout: '', stderr: '' });
+    });
+    const proxy = forwardProxyStub(['8.8.8.8']);
+    const fetcher = createScraplingRenderedFetcher({
+      enabled: true,
+      pythonCommand: 'python3',
+      bridgePath: 'scraplingBridge.py',
+      seedRedirectCheck: noSeedRedirect,
+      startForwardProxy: proxy.start,
+    });
+
+    await fetcher?.({ url: 'https://8.8.8.8/source' });
+
+    expect(proxy.close).toHaveBeenCalledTimes(1);
   });
 });
 
