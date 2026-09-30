@@ -16,6 +16,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { securityHeaders } from './middleware/securityHeaders';
+import { createClientStaticAssets } from './middleware/clientStaticAssets';
 import { sanitizeMongo } from './middleware/sanitizeMongo';
 import { csrfOriginGuard } from './middleware/csrfOriginGuard';
 import { createCorsOriginHandler } from './middleware/corsOrigin';
@@ -157,37 +158,16 @@ function setPrivateApiCacheHeaders(
   next();
 }
 
-function blockSourceMapAssetRequests(
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction,
-) {
-  if (req.path.endsWith('.map')) {
-    res.setHeader('Cache-Control', 'no-store, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Surrogate-Control', 'no-store');
-    res.setHeader('Expires', '0');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    return res.status(404).type('text/plain').send('Not found');
-  }
-
-  return next();
-}
-
-function setOAuthCallbackAssetCacheHeaders(
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction,
-) {
-  if (req.path === '/oauth-callback.html' || req.path === '/oauth-callback.js') {
-    res.setHeader('Cache-Control', 'no-store, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Surrogate-Control', 'no-store');
-    res.setHeader('Expires', '0');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-  }
-
-  return next();
+// cookie-session writes a new session whenever it has an own enumerable key,
+// so an enumerable shim would issue an empty session cookie to every
+// anonymous visitor and make the CDN bypass its cache.
+function defineNonEnumerableSessionMethod(session: object, name: 'regenerate' | 'save') {
+  Object.defineProperty(session, name, {
+    value: (cb: (err?: unknown) => void) => cb(),
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  });
 }
 
 function shouldServeSpaFallback(req: express.Request): boolean {
@@ -215,6 +195,7 @@ const app = express()
   .disable('x-powered-by')
   .use(securityHeaders)
   .use(cors(corsOptions))
+  .use(createClientStaticAssets(clientDistPath))
   .use('/api', setPrivateApiCacheHeaders)
   .use(
     '/api',
@@ -258,10 +239,10 @@ const app = express()
       | null;
     if (session) {
       if (typeof session.regenerate !== 'function') {
-        session.regenerate = (cb: (err?: unknown) => void) => cb();
+        defineNonEnumerableSessionMethod(session, 'regenerate');
       }
       if (typeof session.save !== 'function') {
-        session.save = (cb: (err?: unknown) => void) => cb();
+        defineNonEnumerableSessionMethod(session, 'save');
       }
     }
     next();
@@ -282,16 +263,6 @@ const app = express()
   .use('/api', routes);
 
 app.use('/api', notFoundHandler);
-
-app.use(blockSourceMapAssetRequests);
-app.use(setOAuthCallbackAssetCacheHeaders);
-app.use(
-  express.static(path.join(__dirname, '../../client/dist'), {
-    dotfiles: 'ignore',
-    fallthrough: true,
-    index: false,
-  }),
-);
 
 app.get('*', (req, res) => {
   if (!shouldServeSpaFallback(req)) {
