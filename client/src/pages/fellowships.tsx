@@ -788,12 +788,6 @@ const Fellowships = () => {
                   type="search"
                   value={queryString}
                   onChange={(e) => setQueryString(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === 'Escape') {
-                      e.preventDefault();
-                      e.currentTarget.blur();
-                    }
-                  }}
                   placeholder="Try a topic, program, deadline, or funding source"
                   className="min-h-[44px] w-full rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-base text-ink-soft focus:border-transparent yr-focus-ring"
                 />

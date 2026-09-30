@@ -1097,7 +1097,7 @@ describe('Research page', () => {
 
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
 
-    const sortTrigger = screen.getByRole('button', { name: /Sort research/ });
+    const sortTrigger = screen.getByRole('combobox', { name: /Sort research/ });
     fireEvent.click(sortTrigger);
     fireEvent.click(screen.getByRole('option', { name: 'Name' }));
 

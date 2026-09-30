@@ -224,6 +224,9 @@ A Tailwind ring sits at offset 0, so its outer edge is adjacent to the page, whe
 - Cards and panels: `panel` surface, `line` border, `shadow-yr` elevation, rounded corners.
 - Chips and badges: soft tints (`brand-soft`, `gold-soft`, `success-soft`) with the matching strong text color.
 - All interactive controls have a minimum 44px touch target and a visible focus ring.
+- A sort control is `SortMenu` from `src/components/shared/SortMenu.tsx`, a select-only combobox: Enter, Space, and the arrow keys open it on the current option, `aria-activedescendant` names the highlighted option, and Escape closes it with focus kept on the trigger.
+The research and program sort menus were two hand-rolled copies of one listbox, and both drifted off the keyboard contract, so do not write a third.
+- Never call `blur()` to dismiss a control, because it sends keyboard focus to the document body; `focusDropGuard` enforces this.
 - A card whose whole surface is clickable does not also get a filled primary button.
 The browse card carried three affordances for one destination: a clickable wrapper, a linked title, and a filled navy CTA, so a single viewport showed six filled primary buttons for six cards.
 A filled fill means "this is the one action on this surface"; six of them means none of them.

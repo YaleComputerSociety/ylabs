@@ -574,7 +574,9 @@ describe('Programs page', () => {
     expect(searchInput.className).toContain('min-h-[44px]');
     await userEvent.type(searchInput, 'summer');
     expect(screen.getByRole('button', { name: /filters/i }).className).toContain('min-h-[44px]');
-    expect(screen.getByRole('button', { name: /sort/i }).className).toContain('min-h-[44px]');
+    expect(screen.getByRole('combobox', { name: /sort programs/i }).className).toContain(
+      'min-h-[44px]',
+    );
     expect(screen.getByRole('button', { name: 'Open Only' }).className).toContain('min-h-[44px]');
 
     await userEvent.click(screen.getByRole('button', { name: /filters/i }));
@@ -694,9 +696,9 @@ describe('Programs page', () => {
       }),
     ]);
 
-    await userEvent.click(screen.getByRole('button', { name: /sort/i }));
+    await userEvent.click(screen.getByRole('combobox', { name: /sort programs/i }));
     await userEvent.click(screen.getByText('Name'));
-    await userEvent.click(screen.getByRole('button', { name: /sort descending/i }));
+    await userEvent.click(screen.getByRole('button', { name: /sorted descending/i }));
 
     const openSection = screen.getByRole('region', { name: 'No apply now records' });
     expect(
