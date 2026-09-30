@@ -59,6 +59,7 @@ import { accessSignalTypes, mapResearchGroupKindToEntityType } from '../models/r
 import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,
+  publicResearchEntityId,
   publicSourceLinkHealthArray,
   toPublicResearchEntitySummaryDto,
   type PublicResearchEntityDto,
@@ -2560,6 +2561,30 @@ const SIMILAR_RESEARCH_ENTITY_CANDIDATE_POOL = 40;
 // neighbors so the section stays absent unless a genuinely similar home exists.
 const SIMILAR_RESEARCH_ENTITY_SIMILARITY_THRESHOLD = 0.35;
 
+const firstServableDistinctCandidates = <T extends Record<string, any>>(
+  orderedCandidateIds: readonly string[],
+  candidateEntities: readonly T[],
+  isExcluded: (candidate: T) => boolean,
+  limit: number,
+): T[] => {
+  const candidatesByInternalId = new Map(
+    candidateEntities.map((candidate) => [researchGroupDocumentId(candidate._id), candidate]),
+  );
+  const seenCanonicalKeys = new Set<string>();
+  const selected: T[] = [];
+  for (const candidateId of orderedCandidateIds) {
+    if (selected.length >= limit) break;
+    const candidate = candidatesByInternalId.get(candidateId);
+    if (!candidate || isExcluded(candidate)) continue;
+    const canonicalKey = publicResearchEntityId(candidate);
+    if (!canonicalKey || seenCanonicalKeys.has(canonicalKey)) continue;
+    if (!servesPublicResearchDetail(candidate)) continue;
+    seenCanonicalKeys.add(canonicalKey);
+    selected.push(candidate);
+  }
+  return selected;
+};
+
 export interface PublicRelationshipCollectionMeta {
   returned: number;
   truncated: boolean;
@@ -2780,6 +2805,7 @@ export async function listSimilarResearchEntities(
       embedder: RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
       limit: SIMILAR_RESEARCH_ENTITY_CANDIDATE_POOL,
       filter: visibilityFilter,
+      attributesToRetrieve: ['id', 'slug'],
       showRankingScore: true,
     });
     hits = Array.isArray(result?.hits) ? result.hits : [];
@@ -2832,27 +2858,20 @@ export async function listSimilarResearchEntities(
     .select(PUBLIC_RELATED_ENTITY_PROJECTION)
     .lean()) as any[];
 
-  const summaryCandidates = withServablePublicResearchEntities(candidateEntities, false).filter(
-    (candidate) => !isExcludedKey(researchGroupDocumentId(candidate._id), candidate.slug),
-  );
-  const candidateLeadNameRead = await optionalPublicLeadMemberNames(summaryCandidates);
-  const summariesByInternalId = new Map(
-    summaryCandidates.map((candidate) => {
-      const { entity, leadMemberNames } = leadGuardedServingInput(candidate, candidateLeadNameRead);
-      return [
-        researchGroupDocumentId(candidate._id),
-        toPublicResearchEntitySummaryDto(
-          sanitizeResearchEntityPublicDescriptionFields(entity, leadMemberNames),
-          leadMemberNames,
-        ),
-      ];
-    }),
-  );
-
-  return dedupePublicResearchEntitiesInOrder(orderedCandidateIds, summariesByInternalId).slice(
-    0,
+  const railEntities = firstServableDistinctCandidates(
+    orderedCandidateIds,
+    candidateEntities,
+    (candidate) => isExcludedKey(researchGroupDocumentId(candidate._id), candidate.slug),
     limit,
   );
+  const railLeadNameRead = await optionalPublicLeadMemberNames(railEntities);
+  return railEntities.map((candidate) => {
+    const { entity, leadMemberNames } = leadGuardedServingInput(candidate, railLeadNameRead);
+    return toPublicResearchEntitySummaryDto(
+      sanitizeResearchEntityPublicDescriptionFields(entity, leadMemberNames),
+      leadMemberNames,
+    );
+  });
 }
 
 function normalizedMemberName(member: { user?: any }): string {
