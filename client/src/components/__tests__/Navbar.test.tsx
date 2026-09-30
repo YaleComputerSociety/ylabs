@@ -159,4 +159,18 @@ describe('Navbar', () => {
     expect(screen.getByRole('button', { name: 'Close menu' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Research' })).toBeTruthy();
   });
+
+  it.each([
+    ['signed-in', () => renderNavbar()],
+    ['signed-out', () => renderGuestNavbar()],
+  ])('names the mobile navigation drawer dialog for %s visitors', (_state, renderView) => {
+    mockIsMobile = true;
+    renderView();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+
+    const drawer = screen.getByRole('dialog', { name: 'Main menu' });
+    expect(drawer.id).toBe('primary-mobile-menu');
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  });
 });

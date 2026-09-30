@@ -213,175 +213,164 @@ export default function Navbar() {
             <Box sx={{ flexShrink: 0 }}>{isAuthenticated ? <HomeButton /> : <YURAButton />}</Box>
 
             {isAuthenticated && (
-              <>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    gap: { xs: '8px', lg: '14px' },
-                    alignItems: 'center',
-                    ml: 'auto',
-                    flexShrink: 0,
-                  }}
-                >
-                  {!isMobile && (
-                    <>
-                      <Box
-                        component="nav"
-                        aria-label="Primary navigation"
-                        sx={{ display: 'flex', gap: 0, alignItems: 'center', flexShrink: 0 }}
-                      >
-                        {primaryNavLinks.map((link) => {
-                          const active = isPrimaryNavLinkActive(location.pathname, link);
-                          return (
-                            <Button
-                              key={link.key}
-                              component={Link}
-                              to={link.to}
-                              disableRipple
-                              className={`!normal-case !text-sm !min-w-0 !min-h-[44px] !px-3 !py-0 !inline-flex !items-center !rounded-none !border-b-2 hover:!bg-transparent ${active ? '!font-semibold !text-[var(--yr-blue)] !border-[var(--yr-blue)] hover:!text-[var(--yr-blue)]' : '!font-normal !text-[var(--yr-muted)] !border-transparent hover:!text-[var(--yr-blue)]'}`}
-                              sx={{
-                                borderRadius: '6px 6px 0 0',
-                                transition:
-                                  'background-color var(--yr-motion-base) ease, color var(--yr-motion-base) ease, border-color var(--yr-motion-base) ease',
-                                '&:hover': {
-                                  backgroundColor: 'var(--yr-blue-soft) !important',
-                                },
-                                ...navFocusRingSx,
-                              }}
-                            >
-                              {link.label}
-                            </Button>
-                          );
-                        })}
-                      </Box>
-                      {isAdmin && <AnalyticsButton />}
-                      <UserButton />
-                    </>
-                  )}
-                  {isMobile && (
-                    <IconButton
-                      size="large"
-                      edge="end"
-                      color="inherit"
-                      aria-label="Open menu"
-                      aria-expanded={drawerOpen}
-                      aria-controls="primary-mobile-menu"
-                      onClick={toggleDrawer(true)}
-                      sx={{
-                        borderRadius: '4px',
-                        height: 44,
-                        width: 44,
-                        padding: '8px',
-                        '&:hover': { backgroundColor: 'transparent' },
-                        ...navFocusRingSx,
-                      }}
+              <Box
+                sx={{
+                  display: 'flex',
+                  gap: { xs: '8px', lg: '14px' },
+                  alignItems: 'center',
+                  ml: 'auto',
+                  flexShrink: 0,
+                }}
+              >
+                {!isMobile && (
+                  <>
+                    <Box
+                      component="nav"
+                      aria-label="Primary navigation"
+                      sx={{ display: 'flex', gap: 0, alignItems: 'center', flexShrink: 0 }}
                     >
-                      <HamburgerIcon />
-                    </IconButton>
-                  )}
-                </Box>
-                <Drawer
-                  anchor="right"
-                  open={drawerOpen}
-                  onClose={toggleDrawer(false)}
-                  slotProps={{ paper: { id: 'primary-mobile-menu' } }}
-                >
-                  {mobileMenu()}
-                </Drawer>
-              </>
+                      {primaryNavLinks.map((link) => {
+                        const active = isPrimaryNavLinkActive(location.pathname, link);
+                        return (
+                          <Button
+                            key={link.key}
+                            component={Link}
+                            to={link.to}
+                            disableRipple
+                            className={`!normal-case !text-sm !min-w-0 !min-h-[44px] !px-3 !py-0 !inline-flex !items-center !rounded-none !border-b-2 hover:!bg-transparent ${active ? '!font-semibold !text-[var(--yr-blue)] !border-[var(--yr-blue)] hover:!text-[var(--yr-blue)]' : '!font-normal !text-[var(--yr-muted)] !border-transparent hover:!text-[var(--yr-blue)]'}`}
+                            sx={{
+                              borderRadius: '6px 6px 0 0',
+                              transition:
+                                'background-color var(--yr-motion-base) ease, color var(--yr-motion-base) ease, border-color var(--yr-motion-base) ease',
+                              '&:hover': {
+                                backgroundColor: 'var(--yr-blue-soft) !important',
+                              },
+                              ...navFocusRingSx,
+                            }}
+                          >
+                            {link.label}
+                          </Button>
+                        );
+                      })}
+                    </Box>
+                    {isAdmin && <AnalyticsButton />}
+                    <UserButton />
+                  </>
+                )}
+                {isMobile && (
+                  <IconButton
+                    size="large"
+                    edge="end"
+                    color="inherit"
+                    aria-label="Open menu"
+                    aria-expanded={drawerOpen}
+                    aria-controls="primary-mobile-menu"
+                    onClick={toggleDrawer(true)}
+                    sx={{
+                      borderRadius: '4px',
+                      height: 44,
+                      width: 44,
+                      padding: '8px',
+                      '&:hover': { backgroundColor: 'transparent' },
+                      ...navFocusRingSx,
+                    }}
+                  >
+                    <HamburgerIcon />
+                  </IconButton>
+                )}
+              </Box>
             )}
 
             {!isAuthenticated && (
-              <>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    gap: { xs: '8px', lg: '14px' },
-                    alignItems: 'center',
-                    ml: 'auto',
-                    flexShrink: 0,
-                  }}
-                >
-                  {!isMobile && (
-                    <>
-                      <Box
-                        component="nav"
-                        aria-label="Primary navigation"
-                        sx={{ display: 'flex', gap: 0, alignItems: 'center', flexShrink: 0 }}
-                      >
-                        {guestNavLinks.map((link) => {
-                          const active = link.active(location.pathname);
-                          return (
-                            <Button
-                              key={link.to}
-                              component={Link}
-                              to={link.to}
-                              disableRipple
-                              className={`!normal-case !text-sm !min-w-0 !min-h-[44px] !px-3 !py-0 !inline-flex !items-center !rounded-none !border-b-2 hover:!bg-transparent ${active ? '!font-semibold !text-[var(--yr-blue)] !border-[var(--yr-blue)] hover:!text-[var(--yr-blue)]' : '!font-normal !text-[var(--yr-muted)] !border-transparent hover:!text-[var(--yr-blue)]'}`}
-                              sx={{
-                                borderRadius: '6px 6px 0 0',
-                                transition:
-                                  'background-color var(--yr-motion-base) ease, color var(--yr-motion-base) ease, border-color var(--yr-motion-base) ease',
-                                '&:hover': {
-                                  backgroundColor: 'var(--yr-blue-soft) !important',
-                                },
-                                ...navFocusRingSx,
-                              }}
-                            >
-                              {link.label}
-                            </Button>
-                          );
-                        })}
-                      </Box>
-                      <Button
-                        component={Link}
-                        to="/login"
-                        state={{ from: `${location.pathname}${location.search}` }}
-                        disableRipple
-                        className="!normal-case !text-sm !min-h-[44px] !px-4 !font-semibold !text-white"
-                        sx={{
-                          backgroundColor: 'var(--yr-blue)',
-                          borderRadius: '6px',
-                          '&:hover': { backgroundColor: 'var(--yr-blue)' },
-                          ...navFocusRingSx,
-                        }}
-                      >
-                        Sign in
-                      </Button>
-                    </>
-                  )}
-                  {isMobile && (
-                    <IconButton
-                      size="large"
-                      edge="end"
-                      color="inherit"
-                      aria-label="Open menu"
-                      aria-expanded={drawerOpen}
-                      aria-controls="primary-mobile-menu"
-                      onClick={toggleDrawer(true)}
+              <Box
+                sx={{
+                  display: 'flex',
+                  gap: { xs: '8px', lg: '14px' },
+                  alignItems: 'center',
+                  ml: 'auto',
+                  flexShrink: 0,
+                }}
+              >
+                {!isMobile && (
+                  <>
+                    <Box
+                      component="nav"
+                      aria-label="Primary navigation"
+                      sx={{ display: 'flex', gap: 0, alignItems: 'center', flexShrink: 0 }}
+                    >
+                      {guestNavLinks.map((link) => {
+                        const active = link.active(location.pathname);
+                        return (
+                          <Button
+                            key={link.to}
+                            component={Link}
+                            to={link.to}
+                            disableRipple
+                            className={`!normal-case !text-sm !min-w-0 !min-h-[44px] !px-3 !py-0 !inline-flex !items-center !rounded-none !border-b-2 hover:!bg-transparent ${active ? '!font-semibold !text-[var(--yr-blue)] !border-[var(--yr-blue)] hover:!text-[var(--yr-blue)]' : '!font-normal !text-[var(--yr-muted)] !border-transparent hover:!text-[var(--yr-blue)]'}`}
+                            sx={{
+                              borderRadius: '6px 6px 0 0',
+                              transition:
+                                'background-color var(--yr-motion-base) ease, color var(--yr-motion-base) ease, border-color var(--yr-motion-base) ease',
+                              '&:hover': {
+                                backgroundColor: 'var(--yr-blue-soft) !important',
+                              },
+                              ...navFocusRingSx,
+                            }}
+                          >
+                            {link.label}
+                          </Button>
+                        );
+                      })}
+                    </Box>
+                    <Button
+                      component={Link}
+                      to="/login"
+                      state={{ from: `${location.pathname}${location.search}` }}
+                      disableRipple
+                      className="!normal-case !text-sm !min-h-[44px] !px-4 !font-semibold !text-white"
                       sx={{
-                        borderRadius: '4px',
-                        height: 44,
-                        width: 44,
-                        padding: '8px',
-                        '&:hover': { backgroundColor: 'transparent' },
+                        backgroundColor: 'var(--yr-blue)',
+                        borderRadius: '6px',
+                        '&:hover': { backgroundColor: 'var(--yr-blue)' },
                         ...navFocusRingSx,
                       }}
                     >
-                      <HamburgerIcon />
-                    </IconButton>
-                  )}
-                </Box>
-                <Drawer
-                  anchor="right"
-                  open={drawerOpen}
-                  onClose={toggleDrawer(false)}
-                  slotProps={{ paper: { id: 'primary-mobile-menu' } }}
-                >
-                  {mobileMenu()}
-                </Drawer>
-              </>
+                      Sign in
+                    </Button>
+                  </>
+                )}
+                {isMobile && (
+                  <IconButton
+                    size="large"
+                    edge="end"
+                    color="inherit"
+                    aria-label="Open menu"
+                    aria-expanded={drawerOpen}
+                    aria-controls="primary-mobile-menu"
+                    onClick={toggleDrawer(true)}
+                    sx={{
+                      borderRadius: '4px',
+                      height: 44,
+                      width: 44,
+                      padding: '8px',
+                      '&:hover': { backgroundColor: 'transparent' },
+                      ...navFocusRingSx,
+                    }}
+                  >
+                    <HamburgerIcon />
+                  </IconButton>
+                )}
+              </Box>
             )}
+
+            <Drawer
+              anchor="right"
+              open={drawerOpen}
+              onClose={toggleDrawer(false)}
+              slotProps={{ paper: { id: 'primary-mobile-menu', 'aria-label': 'Main menu' } }}
+            >
+              {mobileMenu()}
+            </Drawer>
           </Toolbar>
         </AppBar>
       </Box>
