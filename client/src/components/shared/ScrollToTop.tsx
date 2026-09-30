@@ -6,6 +6,13 @@ import { useLocation, useNavigationType } from 'react-router-dom';
 
 const scrollPositions = new Map<string, number>();
 
+const nothingHoldsFocus = () =>
+  document.activeElement === null || document.activeElement === document.body;
+
+const focusMainContent = () => {
+  document.getElementById('main-content')?.focus({ preventScroll: true });
+};
+
 const ScrollToTop = () => {
   const { pathname } = useLocation();
   const navigationType = useNavigationType();
@@ -30,6 +37,9 @@ const ScrollToTop = () => {
     };
 
     restoreScrollPosition();
+    if (navigationType !== 'POP' || nothingHoldsFocus()) {
+      focusMainContent();
+    }
     const animationFrame = window.requestAnimationFrame(restoreScrollPosition);
 
     if (scrollContainer) {

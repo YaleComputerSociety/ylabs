@@ -52,6 +52,9 @@ Take the tells, not the taste.
 
 - Every interactive element has a visible `focus-visible` state and a minimum 44px touch target.
 - Full keyboard access: nothing is reachable only by mouse or hover.
+- Pages scroll inside `[data-scroll-container]`, not the document, so PageDown and Space only work while focus is inside it.
+`ScrollToTop` moves focus to `#main-content` (with `preventScroll`) on every push or replace navigation, and on first load or back navigation when nothing holds focus.
+A page that wants initial focus somewhere else sets it in its own mount effect, which runs after that and wins.
 - Disabled controls explain why they are disabled, near the control, rather than looking broken.
 - Reflect meaningful state in the URL where it aids sharing and back-button behavior.
 - Buttons that trigger async work show pending state and cannot be double-submitted.
