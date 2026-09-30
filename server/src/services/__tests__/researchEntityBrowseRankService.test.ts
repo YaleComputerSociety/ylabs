@@ -87,6 +87,17 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     expect(await scoreOf(archivedOnlyCenter._id)).toBe(await scoreOf(lab._id));
   });
 
+  it('does not read a relationship from a center to itself as hosting affiliated research', async () => {
+    const lab = await createEntity('lab-self', 'LAB');
+    const selfLinkedCenter = await createEntity('center-self-linked', 'CENTER');
+
+    await hostAffiliatedLab(selfLinkedCenter._id, selfLinkedCenter._id);
+
+    await recomputeBrowseRankForEntities([lab._id, selfLinkedCenter._id], { sync: false });
+
+    expect(await scoreOf(selfLinkedCenter._id)).toBe(await scoreOf(lab._id));
+  });
+
   it('does not demote a leaf initiative that hosts nothing', async () => {
     const lab = await createEntity('lab-c', 'LAB');
     const initiative = await createEntity('initiative-leaf', 'INITIATIVE');

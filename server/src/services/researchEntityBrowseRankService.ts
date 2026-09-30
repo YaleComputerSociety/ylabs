@@ -16,6 +16,7 @@ import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAcc
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 import { syncEntity } from './meiliSyncService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { relatesTwoDistinctResearchEntities } from '../utils/researchEntityRelationshipEndpoints';
 
 const browseRankDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 
@@ -36,10 +37,10 @@ const entitiesHostingAffiliations = async (entityIds: any[]): Promise<Set<string
     sourceResearchEntityId: { $in: entityIds },
     archived: { $ne: true },
   })
-    .select('sourceResearchEntityId')
+    .select('sourceResearchEntityId targetResearchEntityId')
     .lean();
   const hosting = new Set<string>();
-  for (const relationship of sourceIds as any[]) {
+  for (const relationship of (sourceIds as any[]).filter(relatesTwoDistinctResearchEntities)) {
     const key = browseRankDocumentId(relationship.sourceResearchEntityId);
     if (key) hosting.add(key);
   }

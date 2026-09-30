@@ -4662,6 +4662,100 @@ describe('listResearchEntityRelationshipPayload', () => {
     expect(JSON.stringify(result)).not.toContain('hidden@example.edu');
   });
 
+  it('never lists a research row among its own related or affiliated research', async () => {
+    const currentEntityId = '67d8928150621bcef434a1e5';
+    const affiliatedCenterId = '67d8928150621bcef434a1e6';
+    const relatedLabId = '67d8928150621bcef434a1e7';
+    const selfEdge = {
+      _id: 'rel-self',
+      sourceResearchEntityId: currentEntityId,
+      targetResearchEntityId: currentEntityId,
+      relationshipType: 'AFFILIATED_LAB',
+      label: 'Affiliated lab',
+      evidenceStrength: 'MODERATE',
+    };
+
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(
+        queryResult([
+          selfEdge,
+          {
+            _id: 'rel-related',
+            sourceResearchEntityId: currentEntityId,
+            targetResearchEntityId: relatedLabId,
+            relationshipType: 'AFFILIATED_LAB',
+            label: 'Affiliated lab',
+            evidenceStrength: 'MODERATE',
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        queryResult([
+          selfEdge,
+          {
+            _id: 'rel-affiliated',
+            sourceResearchEntityId: affiliatedCenterId,
+            targetResearchEntityId: currentEntityId,
+            relationshipType: 'AFFILIATED_LAB',
+            label: 'Affiliated lab',
+            evidenceStrength: 'MODERATE',
+          },
+        ]),
+      );
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: currentEntityId,
+          slug: 'center-synthetic-self-linked',
+          name: 'Synthetic Self Linked Center',
+          kind: 'center',
+          entityType: 'CENTER',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+        {
+          _id: affiliatedCenterId,
+          slug: 'center-synthetic-umbrella',
+          name: 'Synthetic Umbrella Center',
+          kind: 'center',
+          entityType: 'CENTER',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+        {
+          _id: relatedLabId,
+          slug: 'synthetic-member-lab',
+          name: 'Synthetic Member Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId);
+
+    const servedSlugs = [
+      ...result.relatedResearchEntities.map((entity) => entity.slug),
+      ...result.affiliatedResearchEntities.map((entity) => entity.slug),
+      ...result.entityRelationships.map((edge) => edge.relatedResearchEntitySlug),
+      ...result.affiliatedRelationships.map((edge) => edge.relatedResearchEntitySlug),
+    ];
+    expect(servedSlugs).not.toContain('center-synthetic-self-linked');
+    expect(result.relatedResearchEntities.map((entity) => entity.slug)).toEqual([
+      'synthetic-member-lab',
+    ]);
+    expect(result.affiliatedResearchEntities.map((entity) => entity.slug)).toEqual([
+      'center-synthetic-umbrella',
+    ]);
+    expect(result.relatedResearchEntitiesMeta).toEqual({ returned: 1, truncated: false });
+    expect(result.affiliatedResearchEntitiesMeta).toEqual({ returned: 1, truncated: false });
+  });
+
   it('projects an allowlisted card shape and bounds a 99-related hub payload', async () => {
     const currentEntityId = '67d8928150621bcef434a1d5';
     const select = vi.fn();

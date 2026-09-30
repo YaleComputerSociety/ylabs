@@ -39,6 +39,7 @@ import {
   shortDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
+import { relationshipEndpointsAreSameEntity } from '../utils/researchEntityRelationshipEndpoints';
 import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
 import {
   descriptionEntityKindForResearchEntity,
@@ -3709,6 +3710,9 @@ async function materializeResearchEntityRelationship(
   const { canonicalFacultyResearchAreaTarget, target, resolvedTarget } =
     await resolveRelationshipTarget(researchEntityModel, targetEntityKey);
   if (!resolvedTarget?._id) return skip('target-not-resolved');
+  if (relationshipEndpointsAreSameEntity(source._id, resolvedTarget._id)) {
+    return skip('self-relationship');
+  }
 
   if (options.dryRun) {
     return {

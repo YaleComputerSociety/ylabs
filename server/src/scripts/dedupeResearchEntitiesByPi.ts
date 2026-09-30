@@ -1983,7 +1983,32 @@ async function relinkScalarReferences(args: {
     }
   }
 
+  const selfRelationshipsArchived = await archiveSurvivorSelfRelationships({
+    canonicalId: args.canonicalId,
+    now: args.now,
+  });
+  if (selfRelationshipsArchived > 0) {
+    counts['research_entity_relationships.selfRelationship.archived'] = selfRelationshipsArchived;
+  }
+
   return counts;
+}
+
+async function archiveSurvivorSelfRelationships(args: {
+  canonicalId: mongoose.Types.ObjectId;
+  now: Date;
+}): Promise<number> {
+  const db = mongoose.connection.db;
+  if (!db || !(await collectionExists('research_entity_relationships'))) return 0;
+  const result = await db.collection('research_entity_relationships').updateMany(
+    {
+      sourceResearchEntityId: args.canonicalId,
+      targetResearchEntityId: args.canonicalId,
+      archived: { $ne: true },
+    },
+    { $set: { archived: true, updatedAt: args.now } },
+  );
+  return result.modifiedCount || 0;
 }
 
 async function relinkArrayReferences(args: {
