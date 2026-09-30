@@ -32,6 +32,8 @@ interface SmokeEntitySeed {
   departments: string[];
   school: string;
   browseRankScore: number;
+  kind?: 'lab' | 'center';
+  entityType?: 'LAB' | 'CENTER';
 }
 
 export const E2E_SMOKE_ENTITIES: SmokeEntitySeed[] = [
@@ -113,6 +115,21 @@ export const E2E_SMOKE_ENTITIES: SmokeEntitySeed[] = [
     school: 'School of Invented Sciences',
     browseRankScore: 50,
   },
+  {
+    slug: `${E2E_SMOKE_SLUG_PREFIX}tidepool-observatory-center`,
+    name: 'Tidepool Observatory Center',
+    shortDescription:
+      'Coordinates shared field stations for long-term monitoring of rocky intertidal habitats.',
+    fullDescription:
+      'The Tidepool Observatory Center runs shared field stations that monitor rocky intertidal habitats over many seasons. Students help maintain sensor arrays, curate the long-term dataset, and join cross-lab survey expeditions.',
+    researchAreas: ['intertidal ecology', 'environmental monitoring', 'long-term datasets'],
+    methods: ['sensor arrays', 'field surveys'],
+    departments: ['Department of Invented Earth Science'],
+    school: 'School of Invented Sciences',
+    browseRankScore: 40,
+    kind: 'center',
+    entityType: 'CENTER',
+  },
 ];
 
 function toEntityDocument(seed: SmokeEntitySeed): Record<string, unknown> {
@@ -121,8 +138,8 @@ function toEntityDocument(seed: SmokeEntitySeed): Record<string, unknown> {
     slug: seed.slug,
     name: seed.name,
     displayName: seed.name,
-    kind: 'lab',
-    entityType: 'LAB',
+    kind: seed.kind ?? 'lab',
+    entityType: seed.entityType ?? 'LAB',
     shortDescription: seed.shortDescription,
     fullDescription: seed.fullDescription,
     researchAreas: seed.researchAreas,
