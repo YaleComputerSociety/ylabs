@@ -30,6 +30,8 @@ const DeveloperCard = ({ developer }: DeveloperCardProps) => {
         className="aspect-square object-cover w-full rounded-lg mb-2"
         width={500}
         height={500}
+        loading="lazy"
+        decoding="async"
       />
       <h3 className="text-xl font-semibold">{developer.name}</h3>
       <p className="text-ink-soft">{developer.position}</p>
