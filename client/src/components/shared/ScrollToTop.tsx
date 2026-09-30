@@ -37,8 +37,13 @@ const ScrollToTop = () => {
   const previousPathname = useRef<string | null>(null);
 
   useEffect(() => {
+    const stopBridgingUnfocusedScroll = () => {
+      document.removeEventListener('keydown', focusMainContentBeforeUnfocusedScroll);
+      document.removeEventListener('pointerdown', stopBridgingUnfocusedScroll, true);
+    };
     document.addEventListener('keydown', focusMainContentBeforeUnfocusedScroll);
-    return () => document.removeEventListener('keydown', focusMainContentBeforeUnfocusedScroll);
+    document.addEventListener('pointerdown', stopBridgingUnfocusedScroll, true);
+    return stopBridgingUnfocusedScroll;
   }, []);
 
   useLayoutEffect(() => {

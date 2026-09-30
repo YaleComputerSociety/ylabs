@@ -104,6 +104,27 @@ describe('ScrollToTop', () => {
     expect(document.activeElement).toBe(navbarLink);
   });
 
+  it('leaves scroll keys to the browser once a click has set the scroll origin', () => {
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ScrollToTop />
+        <div data-scroll-container>
+          <main id="main-content" tabIndex={-1}>
+            <div data-testid="inner-panel" style={{ overflowY: 'auto' }}>
+              <p>Panel text</p>
+            </div>
+          </main>
+        </div>
+      </MemoryRouter>,
+    );
+
+    fireEvent.pointerDown(screen.getByText('Panel text'));
+    expect(document.activeElement).toBe(document.body);
+
+    fireEvent.keyDown(document.body, { key: 'PageDown' });
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it('moves focus into the main region on every route change', () => {
     render(
       <MemoryRouter initialEntries={['/research']}>

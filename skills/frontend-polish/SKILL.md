@@ -57,6 +57,7 @@ Take the tells, not the taste.
 A page that wants focus somewhere else after a route change sets it in its own mount effect, which runs after that and wins.
 - Never move focus on the initial document load, so the first Tab reaches the skip link and a screen reader starts where the browser puts it.
 Instead, `ScrollToTop` moves focus to `#main-content` at the moment a page-scroll key (PageDown, PageUp, Space, the vertical arrows, Home, End) is pressed while nothing holds focus, so the browser's own scroll for that key lands in `[data-scroll-container]`.
+It stops at the first pointer press, because a click gives the browser its own scroll origin and the keys then belong to whichever inner panel was clicked.
 - Disabled controls explain why they are disabled, near the control, rather than looking broken.
 - Reflect meaningful state in the URL where it aids sharing and back-button behavior.
 - Buttons that trigger async work show pending state and cannot be double-submitted.
