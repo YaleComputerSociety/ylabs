@@ -2204,17 +2204,8 @@ describe('searchResearchGroupsViaMeili', () => {
     const poolParams = mocks.search.mock.calls[0][1];
     const keywordLegParams = mocks.search.mock.calls[2][1];
     expect(poolParams.attributesToRetrieve).toEqual(['id', 'departments', 'researchAreas']);
-    // The keyword leg also reads the name fields, which the name guard needs to
-    // see what text a match covered (#3797, #3853).
-    expect(keywordLegParams.attributesToRetrieve).toEqual([
-      'id',
-      'departments',
-      'researchAreas',
-      'leadProfessorNames',
-      'professorNames',
-      'name',
-      'displayName',
-    ]);
+    expect(keywordLegParams.attributesToRetrieve).toEqual(['id', 'departments', 'researchAreas']);
+    expect(keywordLegParams).not.toHaveProperty('showMatchesPosition');
     // The keyword leg is identified by carrying no hybrid block, and it still
     // asks for the ranking-score details the typo filter reads.
     expect(keywordLegParams).not.toHaveProperty('hybrid');
@@ -5694,6 +5685,228 @@ describe('a failed companion Meilisearch query marks the search degraded (#3751)
     const result = await searchResearchGroupsViaMeili('', { school: ['Law School'] }, 1, 24);
 
     expect(result.facetDistribution?.school).toEqual({ 'Law School': 6 });
+    expect(result.degraded).toBe(true);
+    consoleError.mockRestore();
+  });
+});
+
+describe('the independent Meilisearch legs of a text search run concurrently (#3949)', () => {
+  type Leg =
+    | 'pool'
+    | 'count'
+    | 'keyword'
+    | 'semantic'
+    | 'matchPositions'
+    | 'deepPool'
+    | 'deepKeyword';
+
+  const legOf = (params: Record<string, any>): Leg => {
+    if (params.showMatchesPosition) return 'matchPositions';
+    if (params.hybrid?.semanticRatio === 1) return 'semantic';
+    if (params.hybrid) {
+      if (params.hitsPerPage === RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS) return 'count';
+      if (params.hitsPerPage === RESEARCH_SEARCH_MAX_REACHABLE_RECORDS) return 'deepPool';
+      return 'pool';
+    }
+    return params.hitsPerPage === RESEARCH_SEARCH_MAX_REACHABLE_RECORDS ? 'deepKeyword' : 'keyword';
+  };
+
+  const candidateId = (index: number) => (index + 1).toString(16).padStart(24, 'a');
+  const keywordHit = (index: number) => ({
+    id: candidateId(index),
+    departments: [],
+    researchAreas: [],
+    _rankingScoreDetails: { words: { matchingWords: 1, maxMatchingWords: 1 } },
+  });
+
+  it('starts every leg as soon as the legs it depends on have returned', async () => {
+    const pending: Array<{ leg: Leg; resolve: (value: unknown) => void }> = [];
+    mocks.search.mockImplementation((_query: string, params: Record<string, any>) => {
+      const leg = legOf(params);
+      if (leg === 'pool') {
+        return Promise.resolve({
+          hits: Array.from({ length: HYBRID_CANDIDATE_POOL_SIZE }, (_, index) => ({
+            id: candidateId(index),
+            _rankingScoreDetails: { vectorSort: { similarity: 0.6 } },
+          })),
+          estimatedTotalHits: HYBRID_CANDIDATE_POOL_SIZE,
+        });
+      }
+      return new Promise((resolve) => pending.push({ leg, resolve }));
+    });
+    mocks.researchEntityFind.mockReturnValue(queryResult([]));
+    const legsStarted = () => pending.map(({ leg }) => leg).sort();
+    const resolveLeg = (leg: Leg, value: unknown) => {
+      const call = pending.find((entry) => entry.leg === leg);
+      call?.resolve(value);
+    };
+
+    const search = searchResearchGroupsViaMeili('neuroscience', {}, 1, 24);
+
+    await vi.waitFor(() => expect(legsStarted()).toEqual(['count', 'deepPool', 'keyword']));
+
+    resolveLeg('keyword', { hits: [keywordHit(0), keywordHit(1)] });
+
+    await vi.waitFor(() =>
+      expect(legsStarted()).toEqual([
+        'count',
+        'deepKeyword',
+        'deepPool',
+        'keyword',
+        'matchPositions',
+        'semantic',
+      ]),
+    );
+
+    resolveLeg('count', { totalHits: HYBRID_CANDIDATE_POOL_SIZE });
+    resolveLeg('deepPool', { hits: [] });
+    resolveLeg('deepKeyword', { hits: [] });
+    resolveLeg('semantic', { hits: [] });
+    resolveLeg('matchPositions', { hits: [] });
+    const result = await search;
+
+    expect(result.degraded).toBe(false);
+  });
+
+  it('reads the name check from the first surviving keyword row re-read with its match positions', async () => {
+    const typoOnlyHit = {
+      ...keywordHit(0),
+      _rankingScoreDetails: {
+        words: { matchingWords: 1, maxMatchingWords: 2 },
+        typo: { typoCount: 1, maxTypoCount: 2 },
+        exactness: { matchType: 'noExactMatch' },
+      },
+    };
+    const personRow = keywordHit(1);
+    const topicRow = keywordHit(2);
+    const semanticOnlyRow = {
+      id: candidateId(3),
+      _rankingScoreDetails: { vectorSort: { similarity: 0.6 } },
+    };
+    mocks.search.mockImplementation(async (_query: string, params: Record<string, any>) => {
+      const leg = legOf(params);
+      if (leg === 'pool') return { hits: [semanticOnlyRow], estimatedTotalHits: 1 };
+      if (leg === 'count') return { totalHits: 1 };
+      if (leg === 'keyword') return { hits: [typoOnlyHit, personRow, topicRow] };
+      if (leg === 'semantic') return { hits: [semanticOnlyRow, topicRow] };
+      if (leg === 'matchPositions') {
+        return {
+          hits: [
+            {
+              ...personRow,
+              leadProfessorNames: ['Ada Fixture'],
+              _matchesPosition: {
+                leadProfessorNames: [
+                  { start: 0, length: 3, indices: [0] },
+                  { start: 4, length: 7, indices: [0] },
+                ],
+              },
+            },
+          ],
+        };
+      }
+      return { hits: [] };
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult(
+        [personRow, topicRow, semanticOnlyRow].map((hit, index) => ({
+          _id: hit.id,
+          slug: `row-${index}`,
+          name: `Row ${index}`,
+          kind: 'lab',
+          departments: [],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        })),
+      ),
+    );
+
+    const result = await searchResearchGroupsViaMeili('ada fixture', {}, 1, 18);
+
+    const keywordLegParams = mocks.search.mock.calls
+      .map(([, params]) => params)
+      .find((params) => legOf(params) === 'keyword');
+    expect(keywordLegParams).not.toHaveProperty('showMatchesPosition');
+    const matchPositionParams = mocks.search.mock.calls
+      .map(([, params]) => params)
+      .filter((params) => legOf(params) === 'matchPositions');
+    expect(matchPositionParams).toHaveLength(1);
+    expect(matchPositionParams[0]).toMatchObject({ page: 2, hitsPerPage: 1 });
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['row-0', 'row-1']);
+    expect(result.degraded).toBe(false);
+  });
+
+  it('does not withhold meaning-based rows when the re-read returns a different row', async () => {
+    const personRow = keywordHit(0);
+    const semanticOnlyRow = {
+      id: candidateId(1),
+      _rankingScoreDetails: { vectorSort: { similarity: 0.6 } },
+    };
+    mocks.search.mockImplementation(async (_query: string, params: Record<string, any>) => {
+      const leg = legOf(params);
+      if (leg === 'pool') return { hits: [semanticOnlyRow], estimatedTotalHits: 1 };
+      if (leg === 'count') return { totalHits: 1 };
+      if (leg === 'keyword') return { hits: [personRow] };
+      if (leg === 'semantic') return { hits: [semanticOnlyRow] };
+      if (leg === 'matchPositions') {
+        return {
+          hits: [
+            {
+              ...keywordHit(5),
+              leadProfessorNames: ['Ada Fixture'],
+              _matchesPosition: {
+                leadProfessorNames: [
+                  { start: 0, length: 3, indices: [0] },
+                  { start: 4, length: 7, indices: [0] },
+                ],
+              },
+            },
+          ],
+        };
+      }
+      return { hits: [] };
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult(
+        [personRow, semanticOnlyRow].map((hit, index) => ({
+          _id: hit.id,
+          slug: `row-${index}`,
+          name: `Row ${index}`,
+          kind: 'lab',
+          departments: [],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        })),
+      ),
+    );
+
+    const result = await searchResearchGroupsViaMeili('ada fixture', {}, 1, 18);
+
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['row-0', 'row-1']);
+  });
+
+  it('marks a fused search degraded when the match-position re-read fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const topicRow = keywordHit(0);
+    const semanticOnlyRow = {
+      id: candidateId(1),
+      _rankingScoreDetails: { vectorSort: { similarity: 0.6 } },
+    };
+    mocks.search.mockImplementation(async (_query: string, params: Record<string, any>) => {
+      const leg = legOf(params);
+      if (leg === 'pool') return { hits: [semanticOnlyRow], estimatedTotalHits: 1 };
+      if (leg === 'count') return { totalHits: 1 };
+      if (leg === 'keyword') return { hits: [topicRow] };
+      if (leg === 'semantic') return { hits: [semanticOnlyRow] };
+      if (leg === 'matchPositions') throw new Error('timeout');
+      return { hits: [] };
+    });
+    mocks.researchEntityFind.mockReturnValue(queryResult([]));
+
+    const result = await searchResearchGroupsViaMeili('neuroscience', {}, 1, 18);
+
     expect(result.degraded).toBe(true);
     consoleError.mockRestore();
   });
