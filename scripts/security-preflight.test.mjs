@@ -960,6 +960,71 @@ test('release-hold decides from the live pull request state it reads at run time
   assert.notEqual(unreadable.code, 0, 'an unreadable live state must fail closed');
 });
 
+// The behaviour tests above run the scripts, so they cannot see the workflow
+// wiring them up. These pin the wiring: what the job probes, and where its
+// decision comes from. Both defects were in the workflow, not in a script.
+test('the keep-alive job probes the served API and keeps its exit status', () => {
+  assert.match(
+    keepAliveWorkflow,
+    /BETA_HEALTH_URL:\s*https:\/\/ylabs-gr4v\.onrender\.com\/api\/config\s*$/m,
+    'keep-alive must probe /api/config: the service root answers 2xx while the API answers 500, which is exactly the green history ylabs#3910 reports',
+  );
+  for (const [name, source] of [
+    ['keep-alive.yml', keepAliveWorkflow],
+    ['keep-alive-probe.sh', fs.readFileSync(new URL('./keep-alive-probe.sh', import.meta.url), 'utf8')],
+  ]) {
+    assert.doesNotMatch(
+      source,
+      /curl[^\n]*\|\|\s*(echo|true)/,
+      `${name} must not discard the probe exit status: \`|| echo\` turned three days of HTTP 500 on beta into an unbroken green history (ylabs#3910)`,
+    );
+  }
+});
+
+test('the release-hold job reads live state rather than the replayed event payload', () => {
+  // github.event is a frozen copy of the payload that started the run, so a
+  // re-run of an earlier attempt re-reads the labels and draft flag as they were
+  // then and would clear a hold that is still in effect (ylabs#3911).
+  assert.doesNotMatch(
+    releaseHoldWorkflow,
+    /github\.event\.pull_request\.labels/,
+    'release-hold must not read labels from the event payload',
+  );
+  assert.doesNotMatch(
+    releaseHoldWorkflow,
+    /github\.event\.pull_request\.draft/,
+    'release-hold must not read draft state from the event payload',
+  );
+  assert.match(
+    releaseHoldWorkflow,
+    /pull-requests:\s*read/,
+    'reading the live pull request state needs the pull-requests: read scope',
+  );
+  assert.match(
+    fs.readFileSync(new URL('./release-hold-check.sh', import.meta.url), 'utf8'),
+    /gh pr view[^\n]*--json isDraft,labels/,
+    'the check must read the live label and draft state at run time',
+  );
+  for (const trigger of [
+    'labeled',
+    'unlabeled',
+    'ready_for_review',
+    'converted_to_draft',
+    'synchronize',
+  ]) {
+    assert.match(
+      releaseHoldWorkflow,
+      new RegExp(`\\b${trigger}\\b`),
+      `release-hold must keep the ${trigger} trigger so a state change still produces a new run`,
+    );
+  }
+  assert.match(
+    releaseHoldWorkflow,
+    /name:\s*release-hold/,
+    'the job name is the required context name on the main ruleset and must not change',
+  );
+});
+
 // The live-prod smoke now runs only on a promotion, so post-promotion-verify is
 // the sole workflow carrying these assertions. Deleting the standing schedule
 // left `security:smoke:production` reachable from this workflow and from an
