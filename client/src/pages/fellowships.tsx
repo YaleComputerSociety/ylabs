@@ -795,7 +795,7 @@ const Fellowships = () => {
                   value={queryString}
                   onChange={(e) => setQueryString(e.target.value)}
                   placeholder="Try a topic, program, deadline, or funding source"
-                  className="min-h-[44px] w-full rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-base text-ink-soft focus:border-transparent yr-focus-ring"
+                  className="min-h-[44px] w-full rounded-card border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-3 text-base text-ink-soft focus:border-transparent yr-focus-ring"
                 />
               </div>
               <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto xl:flex-col xl:items-stretch">

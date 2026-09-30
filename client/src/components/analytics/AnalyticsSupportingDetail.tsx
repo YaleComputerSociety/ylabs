@@ -821,7 +821,7 @@ const AnalyticsSupportingDetail = ({
                 value={userSearch}
                 onChange={(event) => setUserSearch(event.target.value)}
                 placeholder="e.g. abc123"
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-control)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               />
             </label>
 
@@ -832,7 +832,7 @@ const AnalyticsSupportingDetail = ({
               <select
                 value={userTypeFilter}
                 onChange={(event) => setUserTypeFilter(event.target.value)}
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-control)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               >
                 <option value="all">All Types</option>
                 <option value="undergraduate">Undergrads</option>
@@ -850,7 +850,7 @@ const AnalyticsSupportingDetail = ({
               <select
                 value={userActivitySort}
                 onChange={(event) => setUserActivitySort(event.target.value as UserActivitySort)}
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-control)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               >
                 <option value="lastActive">Last Active</option>
                 <option value="totalEvents">Total Events</option>
@@ -867,7 +867,7 @@ const AnalyticsSupportingDetail = ({
               <select
                 value={userActivityLimit}
                 onChange={(event) => setUserActivityLimit(Number(event.target.value))}
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-control)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               >
                 <option value={10}>10 users</option>
                 <option value={25}>25 users</option>

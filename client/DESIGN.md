@@ -74,6 +74,7 @@ Use the Tailwind alias in `className`, or the raw variable in MUI `sx` and inlin
 | Muted text | `--yr-muted` | `muted` | `#5f6570` |
 | Hairline border | `--yr-line` | `line` | `#e2e8f0` |
 | Strong border | `--yr-line-strong` | `line-strong` | `#cbd5e1` |
+| Form-control edge | `--yr-line-control` | `line-control` | `#7c8594` |
 | Warm border | `--yr-border-warm` | `line-warm` | `#e7dfd2` |
 | Success | `--yr-green` | `success` | `#23705b` |
 | Success tint | `--yr-green-soft` | `success-soft` | `#e5f4ee` |
@@ -95,6 +96,12 @@ This project has no Tailwind forms plugin, so `text-brand` on an `input[type=che
 Use `accent-brand`.
 - Gold is a sparing accent for secondary emphasis, never a second primary.
 - A brand-tinted border uses `line-brand` (`--yr-blue-border`), the same tint `.yr-pill-blue` draws.
+- The edge of an `input`, `select`, `textarea`, or checkbox proxy uses `line-control`, never a hairline.
+A control's fill equals the surface it sits on, so its border is the only thing that identifies it, and WCAG 1.4.11 asks for 3:1 there.
+`line-strong` measures 1.48:1 on `panel` and 1.34:1 on `panel-muted`, which left an unchecked filter option invisible; `line-control` measures 3.72:1 and 3.37:1, and 3.33:1 on `parchment`, the lowest of the four surfaces.
+Its focus state keeps `focus:border-brand`, which sits 3.28:1 from `line-control`, so the state change is still perceptible.
+A checkbox proxy for a visually hidden input takes `.yr-check-proxy`, which carries the size, radius, and edge, and adds only its checked fill at the call site.
+`src/__tests__/controlEdgeContrastGuard.test.ts` computes the token's contrast against every control surface from `index.css` and fails on a control drawn with a hairline token or an uncoloured `border`.
 
 ### Categorical, state, and chart-series colors
 

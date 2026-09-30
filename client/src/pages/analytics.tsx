@@ -700,7 +700,7 @@ const Analytics = () => {
                 <select
                   value={analyticsRange}
                   onChange={(event) => setAnalyticsRange(event.target.value as AnalyticsRange)}
-                  className="min-h-[44px] w-full rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
+                  className="min-h-[44px] w-full rounded-card border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
                 >
                   {analyticsRanges.map((range) => (
                     <option key={range.value} value={range.value}>
@@ -854,7 +854,7 @@ const Analytics = () => {
                 Grant admin NetID
               </span>
               <input
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-control)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
                 value={adminGrantNetid}
                 onChange={(event) => setAdminGrantNetid(event.target.value)}
                 placeholder="fixture-admin"
@@ -865,7 +865,7 @@ const Analytics = () => {
                 Admin grant note
               </span>
               <input
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-control)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
                 value={adminGrantNote}
                 onChange={(event) => setAdminGrantNote(event.target.value)}
                 placeholder="Required reason for this grant"
@@ -1075,7 +1075,7 @@ const Analytics = () => {
                   Confirm target NetID
                   <input
                     autoComplete="off"
-                    className="mt-1 min-h-[44px] w-full rounded-md border px-3 py-2"
+                    className="mt-1 min-h-[44px] w-full rounded-control border border-[var(--yr-line-control)] px-3 py-2"
                     value={adminGrantConfirmation}
                     onChange={(event) => setAdminGrantConfirmation(event.target.value)}
                   />
@@ -1135,7 +1135,7 @@ const Analytics = () => {
                 value={auditActorInput}
                 onChange={(event) => changeAuditActor(event.target.value)}
                 placeholder="e.g. abc1234"
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-control)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               />
             </label>
             <label className="block">
@@ -1145,7 +1145,7 @@ const Analytics = () => {
               <select
                 value={auditQuery.action}
                 onChange={(event) => refineAuditQuery({ action: event.target.value })}
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-control)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               >
                 <option value="all">All actions</option>
                 {Object.entries(AUDIT_ACTION_LABELS).map(([action, label]) => (
@@ -1162,7 +1162,7 @@ const Analytics = () => {
               <select
                 value={auditQuery.targetType}
                 onChange={(event) => refineAuditQuery({ targetType: event.target.value })}
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-control)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               >
                 <option value="all">All targets</option>
                 <option value="adminGrant">Admin grant</option>

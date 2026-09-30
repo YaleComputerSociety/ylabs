@@ -158,7 +158,7 @@ export default function EntityCorrectionReportPanel({
                 id="report-category"
                 value={category}
                 onChange={(event) => setCategory(event.target.value as ReportCategory)}
-                className="mt-1 min-h-11 w-full rounded-control border border-line-strong px-3"
+                className="mt-1 min-h-11 w-full rounded-control border border-line-control px-3"
               >
                 {CATEGORY_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -175,7 +175,7 @@ export default function EntityCorrectionReportPanel({
                 rows={5}
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
-                className="mt-1 w-full rounded-card border border-line-strong p-3"
+                className="mt-1 w-full rounded-card border border-line-control p-3"
               />
               <p className="mt-2 text-xs text-muted">
                 Your netid is included so our team can follow up. Reports are reviewed by a person
