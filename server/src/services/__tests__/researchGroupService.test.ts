@@ -22,7 +22,19 @@ const mocks = vi.hoisted(() => ({
   getPublicUndergraduateLogistics: vi.fn(),
   getResearchSearchQueryVector: vi.fn(),
   hasAdminAuthorityForUser: vi.fn(),
+  researchEntityServesPublicDetail: vi.fn(),
 }));
+
+vi.mock('../researchEntityPublicDescription', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../researchEntityPublicDescription')>();
+  mocks.researchEntityServesPublicDetail.mockImplementation(
+    actual.researchEntityServesPublicDetail,
+  );
+  return {
+    ...actual,
+    researchEntityServesPublicDetail: mocks.researchEntityServesPublicDetail,
+  };
+});
 
 vi.mock('../adminGrantService', () => ({
   hasAdminAuthorityForUser: mocks.hasAdminAuthorityForUser,
@@ -4932,6 +4944,148 @@ describe('listSimilarResearchEntities', () => {
     const result = await listSimilarResearchEntities(viewedEntity);
 
     expect(result.map((entity) => entity.slug)).toEqual(['closest', 'middle', 'furthest']);
+  });
+
+  describe('evaluates only as many candidates as the rail shows (#3948)', () => {
+    const candidateIds = (count: number) =>
+      Array.from(
+        { length: count },
+        (_, index) => `67d8928150621bcef434c${String(index).padStart(3, '0')}`,
+      );
+    const gateFailingCopy = {
+      shortDescription: '',
+      fullDescription: '',
+      profileSynthesisDescription: '',
+      researchAreas: [],
+    };
+    const leadReadEntityIds = (): string[] =>
+      mocks.roleAssignmentFind.mock.calls.flatMap(([filter]) =>
+        (filter?.['target.id']?.$in ?? []).map(String),
+      );
+
+    beforeEach(() => {
+      mocks.researchEntityServesPublicDetail.mockClear();
+    });
+
+    it('asks the index for ids and slugs only', async () => {
+      mocks.searchSimilarDocuments.mockResolvedValue({ hits: [] });
+
+      await listSimilarResearchEntities(viewedEntity);
+
+      const [request] = mocks.searchSimilarDocuments.mock.calls.at(-1) as [Record<string, any>];
+      expect(request.attributesToRetrieve).toEqual(['id', 'slug']);
+      expect(request.showRankingScore).toBe(true);
+    });
+
+    it('stops gating and reading leads once six candidates serve', async () => {
+      const ids = candidateIds(20);
+      mocks.searchSimilarDocuments.mockResolvedValue({
+        hits: ids.map((id, index) => similarHit(id, `pool-${index}`, 0.9)),
+      });
+      hydrateFromMongo(ids.map((id, index) => mongoEntity(id, `pool-${index}`, `Pool ${index}`)));
+
+      const result = await listSimilarResearchEntities(viewedEntity);
+
+      expect(result.map((entity) => entity.slug)).toEqual(
+        ids.slice(0, 6).map((_, index) => `pool-${index}`),
+      );
+      expect(mocks.researchEntityServesPublicDetail).toHaveBeenCalledTimes(6);
+      expect(leadReadEntityIds().sort()).toEqual(ids.slice(0, 6).sort());
+    });
+
+    it('fills the rail from later candidates, in similarity order, when early ones fail the gate', async () => {
+      const ids = candidateIds(12);
+      const failing = new Set([0, 1, 4]);
+      mocks.searchSimilarDocuments.mockResolvedValue({
+        hits: ids.map((id, index) => similarHit(id, `pool-${index}`, 0.9 - index * 0.01)),
+      });
+      hydrateFromMongo(
+        [...ids].reverse().map((id) => {
+          const index = ids.indexOf(id);
+          return mongoEntity(
+            id,
+            `pool-${index}`,
+            `Pool ${index}`,
+            failing.has(index) ? gateFailingCopy : {},
+          );
+        }),
+      );
+
+      const result = await listSimilarResearchEntities(viewedEntity);
+
+      expect(result.map((entity) => entity.slug)).toEqual([
+        'pool-2',
+        'pool-3',
+        'pool-5',
+        'pool-6',
+        'pool-7',
+        'pool-8',
+      ]);
+      expect(mocks.researchEntityServesPublicDetail).toHaveBeenCalledTimes(9);
+      expect(leadReadEntityIds().sort()).toEqual(
+        [2, 3, 5, 6, 7, 8].map((index) => ids[index]).sort(),
+      );
+    });
+
+    it('serves every passing candidate when fewer than six pass', async () => {
+      const ids = candidateIds(8);
+      const failing = new Set([0, 2, 3, 5, 7]);
+      mocks.searchSimilarDocuments.mockResolvedValue({
+        hits: ids.map((id, index) => similarHit(id, `pool-${index}`, 0.9)),
+      });
+      hydrateFromMongo(
+        ids.map((id, index) =>
+          mongoEntity(
+            id,
+            `pool-${index}`,
+            `Pool ${index}`,
+            failing.has(index) ? gateFailingCopy : {},
+          ),
+        ),
+      );
+
+      const result = await listSimilarResearchEntities(viewedEntity);
+
+      expect(result.map((entity) => entity.slug)).toEqual(['pool-1', 'pool-4', 'pool-6']);
+      expect(mocks.researchEntityServesPublicDetail).toHaveBeenCalledTimes(8);
+    });
+
+    it('keeps the first servable copy of a repeated slug without gating the repeat', async () => {
+      const ids = candidateIds(4);
+      mocks.searchSimilarDocuments.mockResolvedValue({
+        hits: ids.map((id, index) => similarHit(id, `pool-${index}`, 0.9)),
+      });
+      hydrateFromMongo([
+        mongoEntity(ids[0], 'shared-slug', 'First Copy Lab'),
+        mongoEntity(ids[1], 'shared-slug', 'Second Copy Lab'),
+        mongoEntity(ids[2], 'pool-2', 'Pool 2'),
+        mongoEntity(ids[3], 'pool-3', 'Pool 3'),
+      ]);
+
+      const result = await listSimilarResearchEntities(viewedEntity);
+
+      expect(result.map((entity) => [entity.slug, entity.name])).toEqual([
+        ['shared-slug', 'First Copy Lab'],
+        ['pool-2', 'Pool 2'],
+        ['pool-3', 'Pool 3'],
+      ]);
+      expect(mocks.researchEntityServesPublicDetail).toHaveBeenCalledTimes(3);
+    });
+
+    it('lets a later copy of a slug fill in when the first copy fails the gate', async () => {
+      const ids = candidateIds(2);
+      mocks.searchSimilarDocuments.mockResolvedValue({
+        hits: ids.map((id, index) => similarHit(id, `pool-${index}`, 0.9)),
+      });
+      hydrateFromMongo([
+        mongoEntity(ids[0], 'shared-slug', 'First Copy Lab', gateFailingCopy),
+        mongoEntity(ids[1], 'shared-slug', 'Second Copy Lab'),
+      ]);
+
+      const result = await listSimilarResearchEntities(viewedEntity);
+
+      expect(result.map((entity) => entity.name)).toEqual(['Second Copy Lab']);
+    });
   });
 
   it('returns an empty list when no hit survives the similarity threshold', async () => {
