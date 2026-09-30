@@ -152,6 +152,7 @@ export const publicProgramForReader = (program: any) => {
     title: publicProgramText(program.title),
     competitionType: publicProgramText(program.competitionType),
     summary: publicProgramDescription(program.summary),
+    cardSummary: publicProgramDescription(program.cardSummary),
     description: publicProgramDescription(program.description),
     applicationInformation: publicProgramDescription(program.applicationInformation),
     eligibility: publicProgramDescription(program.eligibility),
