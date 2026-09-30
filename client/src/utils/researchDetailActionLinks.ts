@@ -8,6 +8,7 @@ import {
   resolveDecisionProfileUrl,
   resolveOutreachApplySource,
   resolveOutreachOfficialSource,
+  servedResearchWebsiteUrl,
   sourceLedgerKey,
 } from './researchDetailSources';
 import { safeHttpUrl } from './url';
@@ -135,7 +136,7 @@ export function resolveResearchDetailActionLinkContext({
     group.websiteUrl &&
     !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
     !isUnreachableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth as never)
-      ? group.websiteUrl
+      ? servedResearchWebsiteUrl(group.websiteUrl, group.sourceLinkHealth as never)
       : undefined;
   const primaryWebsiteHealthKey = sourceLedgerKey(primaryWebsiteUrl);
   const primaryWebsiteHealth = primaryWebsiteHealthKey

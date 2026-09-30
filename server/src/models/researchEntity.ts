@@ -93,6 +93,15 @@ const sourceLinkHealthSchema = new mongoose.Schema(
       type: Boolean,
       required: false,
     },
+    /**
+     * The server answered but its certificate failed verification, so a browser
+     * stops a student at a security warning. Independent of `healthStatus`, which
+     * stays `UNKNOWN`: a certificate is not evidence the page is gone (#2751, #4080).
+     */
+    tlsVerificationFailed: {
+      type: Boolean,
+      required: false,
+    },
     checkedAt: {
       type: Date,
       required: false,

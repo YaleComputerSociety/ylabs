@@ -39,6 +39,7 @@ import { normalizeResearchEntityDetailPayload } from '../types/researchEntity';
 import {
   buildResearchDetailSources,
   firstCitedResearchDetailSource,
+  findSourceLinkHealthEntry,
   isLikelyUnavailableSourceLink,
   isSameActionDestination,
   isSuppressedResearchWebsiteCtaUrl,
@@ -48,8 +49,8 @@ import {
   ResearchDetailSource,
   resolveDecisionProfileUrl,
   resolveOutreachApplySource,
+  servedResearchWebsiteUrl,
   resolveOutreachOfficialSource,
-  sourceLedgerKey,
 } from '../utils/researchDetailSources';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeMailtoHref, safeRouteSegment } from '../utils/url';
 import { officialProfileUrlFromMemberUser } from '../utils/principalInvestigatorLinks';
@@ -931,14 +932,9 @@ const LabDetail = () => {
     group.websiteUrl &&
     !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
     !isUnreachableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth)
-      ? group.websiteUrl
+      ? servedResearchWebsiteUrl(group.websiteUrl, group.sourceLinkHealth)
       : undefined;
-  const primaryWebsiteHealthKey = sourceLedgerKey(primaryWebsiteUrl);
-  const primaryWebsiteHealth = primaryWebsiteHealthKey
-    ? group.sourceLinkHealth?.find(
-        (entry) => sourceLedgerKey(entry.url) === primaryWebsiteHealthKey,
-      )
-    : undefined;
+  const primaryWebsiteHealth = findSourceLinkHealthEntry(group.sourceLinkHealth, primaryWebsiteUrl);
   const isPrimaryWebsiteLikelyUnavailable = isLikelyUnavailableSourceLink(primaryWebsiteHealth);
   const fallbackSourceUrl = primaryWebsiteUrl || firstCitedResearchDetailSource(sources)?.url;
   const leadIdentityUnderReview = group.leadIdentityStatus === 'under_review';

@@ -65,6 +65,7 @@ export interface PublicResearchEntitySourceLinkHealth {
   healthStatus: string;
   httpStatusCode?: number;
   privateAddressHost?: boolean;
+  tlsVerificationFailed?: boolean;
 }
 
 export interface PublicResearchEntityDto extends Record<string, unknown> {
@@ -273,6 +274,8 @@ export function publicSourceLinkHealthArray(
     if (!url || typeof healthStatus !== 'string') return [];
     const httpStatusCode = (entry as { httpStatusCode?: unknown })?.httpStatusCode;
     const privateAddressHost = (entry as { privateAddressHost?: unknown })?.privateAddressHost;
+    const tlsVerificationFailed = (entry as { tlsVerificationFailed?: unknown })
+      ?.tlsVerificationFailed;
     return [
       {
         url,
@@ -281,6 +284,7 @@ export function publicSourceLinkHealthArray(
           ? { httpStatusCode }
           : {}),
         ...(privateAddressHost === true ? { privateAddressHost: true } : {}),
+        ...(tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
       },
     ];
   });

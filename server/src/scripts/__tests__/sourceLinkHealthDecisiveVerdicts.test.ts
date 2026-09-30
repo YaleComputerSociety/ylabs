@@ -207,3 +207,37 @@ describe('resolveSourceLinkHealthEntry routing axis', () => {
     });
   });
 });
+
+describe('resolveSourceLinkHealthEntry under a certificate failure (#4080)', () => {
+  const HTTPS = 'https://a.yale.edu/~x/';
+
+  it('replaces a stored HEALTHY for the same https url, because it contradicts it', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      HTTPS,
+      { healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+      { url: HTTPS, healthStatus: 'HEALTHY', httpStatusCode: 200, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.preservedDecisiveVerdict).toBe(false);
+    expect(resolved.entry).toEqual({
+      url: HTTPS,
+      healthStatus: 'UNKNOWN',
+      tlsVerificationFailed: true,
+      checkedAt: NOW,
+    });
+  });
+
+  it('keeps a stored UNAVAILABLE and records the certificate failure beside it', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      HTTPS,
+      { healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+      { url: HTTPS, healthStatus: 'UNAVAILABLE', httpStatusCode: 404, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.preservedDecisiveVerdict).toBe(true);
+    expect(resolved.entry).toMatchObject({
+      healthStatus: 'UNAVAILABLE',
+      tlsVerificationFailed: true,
+    });
+  });
+});

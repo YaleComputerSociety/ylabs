@@ -12,6 +12,7 @@ import { ensureHttpPrefix } from '../../utils/url';
 import {
   isSuppressedResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
+  servedResearchWebsiteUrl,
 } from '../../utils/researchDetailSources';
 import {
   entityKindLabel,
@@ -47,7 +48,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
     group.websiteUrl &&
     !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
     !isUnreachableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth)
-      ? ensureHttpPrefix(group.websiteUrl)
+      ? ensureHttpPrefix(servedResearchWebsiteUrl(group.websiteUrl, group.sourceLinkHealth) || '')
       : '';
   const websiteDedupeKey = normalizeActionUrl(websiteHref);
   const hideWebsiteHref =

@@ -25,6 +25,7 @@ import {
   collectSourceLinkHealthCandidates,
   planSourceLinkReprobe,
   resolveSourceLinkHealthEntry,
+  tlsFallbackCandidates,
   storedSourceLinkHealthByUrl,
   type StoredSourceLinkHealthEntry,
   needsRecheckSince,
@@ -419,6 +420,7 @@ export async function runSourceLinkHealthBackfill(options: {
       candidates: string[];
       toProbe: string[];
       carried: Map<string, StoredSourceLinkHealthEntry>;
+      tlsFallbacks: string[];
     }> = [];
     const planNow = new Date();
     for (const entity of page) {
@@ -457,7 +459,7 @@ export async function runSourceLinkHealthBackfill(options: {
                 options.reprobeHealthyAfterDays,
                 planNow,
               );
-        plans.push({ entity, candidates, toProbe, carried });
+        plans.push({ entity, candidates, toProbe, carried, tlsFallbacks: [] });
       } catch (error) {
         result.errors += 1;
         console.error(
@@ -481,9 +483,27 @@ export async function runSourceLinkHealthBackfill(options: {
       },
     );
 
+    for (const plan of plans) {
+      plan.tlsFallbacks = tlsFallbackCandidates(plan.candidates, healthCache);
+    }
+    await probeUncachedUrlsByHost(
+      [...new Set(plans.flatMap((plan) => plan.tlsFallbacks))],
+      healthCache,
+      {
+        checkLink,
+        hostConcurrency,
+        paceDelayMs,
+        sleep,
+        result,
+        resolverBreaker,
+        hostThrottleFor: options.hostThrottleFor ?? measuredHostBudget,
+      },
+    );
+
     // Phase 3, no network: every verdict is cached, so assembling and writing a
     // row cannot pace anything.
-    for (const { entity, candidates, carried } of plans) {
+    for (const { entity, candidates: planned, carried, tlsFallbacks } of plans) {
+      const candidates = [...planned, ...tlsFallbacks];
       try {
         const now = new Date();
         const storedByUrl = storedSourceLinkHealthByUrl(entity.sourceLinkHealth);

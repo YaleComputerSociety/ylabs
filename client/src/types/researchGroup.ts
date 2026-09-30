@@ -92,6 +92,7 @@ export interface ResearchEntitySourceLinkHealth {
   healthStatus?: string;
   httpStatusCode?: number;
   privateAddressHost?: boolean;
+  tlsVerificationFailed?: boolean;
 }
 
 export interface ResearchGroup {

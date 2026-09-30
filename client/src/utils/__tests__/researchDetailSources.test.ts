@@ -11,6 +11,7 @@ import {
   isLikelyUnavailableSourceLink,
   isOrgEngagementSourceUrl,
   isRosterNestedPersonPageUrl,
+  findSourceLinkHealthEntry,
   isDepartmentDegreeProgramPageUrl,
   isSuppressedResearchWebsiteCtaUrl,
   isUnavailableResearchWebsiteCtaUrl,
@@ -20,6 +21,7 @@ import {
   resolveDecisionProfileUrl,
   resolveOutreachApplySource,
   resolveOutreachOfficialSource,
+  servedResearchWebsiteUrl,
   ResearchDetailSource,
 } from '../researchDetailSources';
 
@@ -2010,5 +2012,49 @@ describe('a contribution naming a mirror of a cited page (#3341)', () => {
       'https://medicine.yale.edu/lab/fixture-lab',
     ]);
     expect(sources[1].isAttributionOnly).toBe(true);
+  });
+});
+
+describe('servedResearchWebsiteUrl (#4080)', () => {
+  const HTTPS = 'https://dept.example.yale.edu/~fixture/';
+  const HTTP = 'http://dept.example.yale.edu/~fixture/';
+
+  it('offers the working plain-HTTP spelling when the https certificate fails', () => {
+    expect(
+      servedResearchWebsiteUrl(HTTPS, [
+        { url: HTTPS, healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+        { url: HTTP, healthStatus: 'HEALTHY', httpStatusCode: 200 },
+      ]),
+    ).toBe(HTTP);
+  });
+
+  it('keeps the https url when the plain-HTTP spelling is not verified reachable', () => {
+    expect(
+      servedResearchWebsiteUrl(HTTPS, [
+        { url: HTTPS, healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+        { url: HTTP, healthStatus: 'UNKNOWN' },
+      ]),
+    ).toBe(HTTPS);
+    expect(
+      servedResearchWebsiteUrl(HTTPS, [
+        { url: HTTPS, healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+      ]),
+    ).toBe(HTTPS);
+  });
+
+  it('keeps the https url when its certificate verified', () => {
+    expect(
+      servedResearchWebsiteUrl(HTTPS, [
+        { url: HTTPS, healthStatus: 'HEALTHY' },
+        { url: HTTP, healthStatus: 'HEALTHY' },
+      ]),
+    ).toBe(HTTPS);
+  });
+
+  it('never downgrades on the strength of a plain-HTTP verdict alone', () => {
+    expect(servedResearchWebsiteUrl(HTTPS, [{ url: HTTP, healthStatus: 'HEALTHY' }])).toBe(HTTPS);
+    expect(
+      findSourceLinkHealthEntry([{ url: HTTP, healthStatus: 'HEALTHY' }], HTTPS),
+    ).toBeUndefined();
   });
 });

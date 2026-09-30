@@ -85,16 +85,56 @@ const isHttpUrl = (value: unknown): value is string => {
   }
 };
 
+/**
+ * Unlike `sourceLinkHealthKey`, this keeps the scheme: each spelling is probed and
+ * stored on its own, because on a host whose certificate fails `http:` answers while
+ * `https:` stops a browser at a warning, and one merged probe let the `http:` result
+ * speak for the `https:` link a student is sent to (#4080).
+ */
 export const sourceLinkCandidateKey = (url: string): string | null => {
   try {
     const parsed = new URL(url.trim());
     const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
     const path = parsed.pathname.replace(/\/+$/, '') || '/';
-    return `${host}${path}${parsed.search}`;
+    return `${parsed.protocol}//${host}${path}${parsed.search}`;
   } catch {
     return null;
   }
 };
+
+/** The plain-HTTP spelling of an `https:` URL, or null for any other URL. */
+export const httpSpellingOf = (url: string): string | null => {
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.protocol !== 'https:') return null;
+    parsed.protocol = 'http:';
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * The plain-HTTP spellings to probe because their `https:` twin failed certificate
+ * verification and neither spelling of the twin is already a candidate. Serve time can
+ * only offer a student the working spelling if that spelling carries its own verdict.
+ */
+export function tlsFallbackCandidates(
+  candidates: readonly string[],
+  freshHealth: ReadonlyMap<string, { tlsVerificationFailed?: boolean }>,
+): string[] {
+  const present = new Set(candidates.map((url) => sourceLinkCandidateKey(url)));
+  const fallbacks: string[] = [];
+  for (const url of candidates) {
+    if (freshHealth.get(url)?.tlsVerificationFailed !== true) continue;
+    const plain = httpSpellingOf(url);
+    const key = plain ? sourceLinkCandidateKey(plain) : null;
+    if (!plain || !key || present.has(key)) continue;
+    present.add(key);
+    fallbacks.push(plain);
+  }
+  return fallbacks;
+}
 
 /**
  * Every `sourceUrl` recorded in `fieldProvenance`. These are citations as far as
@@ -141,6 +181,7 @@ export interface StoredSourceLinkHealthEntry {
   healthStatus: SourceLinkHealthStatus;
   httpStatusCode?: number;
   privateAddressHost?: boolean;
+  tlsVerificationFailed?: boolean;
   checkedAt?: Date;
   lastAttemptedAt?: Date;
 }
@@ -222,12 +263,16 @@ export function resolveSourceLinkHealthEntry(
     httpStatusCode?: number;
     privateAddressHost?: boolean;
     publicAddressHost?: boolean;
+    tlsVerificationFailed?: boolean;
   },
   stored: StoredSourceLinkHealthEntry | undefined,
   now: Date,
 ): ResolvedSourceLinkHealthEntry {
   const privateAddressHost = privateAddressHostForEntry(fresh, stored);
-  const routing = privateAddressHost ? { privateAddressHost: true as const } : {};
+  const routing = {
+    ...(privateAddressHost ? { privateAddressHost: true as const } : {}),
+    ...(fresh.tlsVerificationFailed ? { tlsVerificationFailed: true as const } : {}),
+  };
   const freshEntry: StoredSourceLinkHealthEntry = {
     url,
     healthStatus: fresh.healthStatus,
@@ -239,6 +284,11 @@ export function resolveSourceLinkHealthEntry(
   if (fresh.healthStatus !== 'UNKNOWN')
     return { entry: freshEntry, preservedDecisiveVerdict: false };
   if (!isDecisiveStoredVerdict(stored))
+    return { entry: freshEntry, preservedDecisiveVerdict: false };
+  // A certificate that fails verification contradicts a stored HEALTHY for this very
+  // URL, so that verdict is not preserved: it was written by a probe that never
+  // negotiated this spelling's TLS (#4080). A stored UNAVAILABLE still stands.
+  if (fresh.tlsVerificationFailed && stored?.healthStatus === 'HEALTHY')
     return { entry: freshEntry, preservedDecisiveVerdict: false };
 
   const kept = stored as StoredSourceLinkHealthEntry;
@@ -325,6 +375,7 @@ export function carryForwardSourceLinkHealthEntry(
     healthStatus: stored.healthStatus,
     ...(typeof stored.httpStatusCode === 'number' ? { httpStatusCode: stored.httpStatusCode } : {}),
     ...(stored.privateAddressHost === true ? { privateAddressHost: true } : {}),
+    ...(stored.tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
     ...(stored.checkedAt ? { checkedAt: stored.checkedAt } : {}),
     ...(stored.lastAttemptedAt ? { lastAttemptedAt: stored.lastAttemptedAt } : {}),
   };
