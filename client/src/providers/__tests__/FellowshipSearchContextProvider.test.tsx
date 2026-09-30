@@ -139,11 +139,9 @@ describe('FellowshipSearchContextProvider program routes', () => {
 
     await waitFor(() => {
       expect(JSON.parse(screen.getByTestId('journey-summary').textContent || '{}')).toEqual({
-        applyNow: 0,
-        openingSoon: 0,
-        structured: 0,
-        fundingAfterMentor: 0,
-        nextCycle: 0,
+        routeIn: 0,
+        fundsResearch: 0,
+        recognizesResearch: 0,
         archive: total,
       });
     });
@@ -194,12 +192,10 @@ describe('FellowshipSearchContextProvider program routes', () => {
     expect(screen.getByTestId('fellowship-titles').textContent).toContain('Open Late Program');
     expect(screen.getByTestId('search-exhausted').textContent).toBe('true');
     expect(JSON.parse(screen.getByTestId('journey-summary').textContent || '{}')).toEqual({
-      applyNow: 1,
-      openingSoon: 0,
-      structured: 0,
-      fundingAfterMentor: 0,
-      nextCycle: 0,
-      archive: total - 1,
+      routeIn: 0,
+      fundsResearch: 0,
+      recognizesResearch: 0,
+      archive: total,
     });
   });
 

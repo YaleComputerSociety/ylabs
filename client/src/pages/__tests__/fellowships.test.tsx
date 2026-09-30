@@ -417,14 +417,10 @@ describe('Programs page', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'Programs & Fellowships' })).toBeTruthy();
-    expect(
-      screen.getByText(/track structured applications, recurring research programs/i),
-    ).toBeTruthy();
-    expect(screen.getByText('Apply now')).toBeTruthy();
-    expect(screen.getByText('Opening soon')).toBeTruthy();
-    expect(screen.getByText('Structured programs')).toBeTruthy();
-    expect(screen.getByText('Funding after mentor')).toBeTruthy();
-    expect(screen.getByText('Plan next cycle')).toBeTruthy();
+    expect(screen.getByText(/grouped by what you need first/i)).toBeTruthy();
+    expect(screen.getByText('Ways in')).toBeTruthy();
+    expect(screen.getByText('Funding')).toBeTruthy();
+    expect(screen.getByText('Awards')).toBeTruthy();
     expect(screen.getByText('Archive / review')).toBeTruthy();
     expect(screen.queryByText('Likely next cycle')).toBeNull();
     expect(screen.getByText('Open Fellowship')).toBeTruthy();
@@ -433,12 +429,10 @@ describe('Programs page', () => {
 
   it('shows full-set journey partition counts in the stat tiles rather than the loaded page count', async () => {
     const journeySummary = {
-      applyNow: 20,
-      openingSoon: 7,
-      structured: 40,
-      fundingAfterMentor: 30,
-      nextCycle: 3,
-      archive: 33,
+      routeIn: 20,
+      fundsResearch: 70,
+      recognizesResearch: 7,
+      archive: 36,
     };
     const total = Object.values(journeySummary).reduce((sum, value) => sum + value, 0);
 
@@ -463,10 +457,8 @@ describe('Programs page', () => {
     expect(total).toBe(133);
     expect(screen.getByText('20')).toBeTruthy();
     expect(screen.getByText('7')).toBeTruthy();
-    expect(screen.getByText('40')).toBeTruthy();
-    expect(screen.getByText('3')).toBeTruthy();
-    expect(screen.getByText('33')).toBeTruthy();
-    expect(screen.getAllByText('30').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('36')).toBeTruthy();
+    expect(screen.getAllByText('70').length).toBeGreaterThanOrEqual(2);
   });
 
   it('keeps each stat tile equal to its matching journey section header', async () => {
@@ -509,9 +501,8 @@ describe('Programs page', () => {
     expect(Object.values(summary).reduce((sum, value) => sum + value, 0)).toBe(fellowships.length);
 
     for (const [title, key] of [
-      ['Apply Now', 'applyNow'],
-      ['Structured Research Programs', 'structured'],
-      ['Funding After You Have a Mentor', 'fundingAfterMentor'],
+      ['Ways Into Research', 'routeIn'],
+      ["Funding for Research You've Arranged", 'fundsResearch'],
     ] as const) {
       if (summary[key] === 0) continue;
       const header = screen.getByRole('heading', { name: title }).parentElement;
@@ -519,7 +510,7 @@ describe('Programs page', () => {
     }
   });
 
-  it('renders the Apply Now section on first paint when an open program is present among closed records', async () => {
+  it('puts an open program first in its section on first paint when it sits among closed records', async () => {
     const fellowships = [
       ...Array.from({ length: 40 }, (_, index) =>
         baseFellowship({
@@ -545,9 +536,11 @@ describe('Programs page', () => {
       });
     });
 
-    const applyNowHeader = screen.getByRole('heading', { name: 'Apply Now' });
-    expect(applyNowHeader.parentElement?.textContent).toContain('1');
-    expect(screen.getByText('Open Late Program')).toBeTruthy();
+    const fundingSection = screen.getByRole('region', {
+      name: "Funding for Research You've Arranged",
+    });
+    const [firstCard] = within(fundingSection).getAllByRole('article');
+    expect(within(firstCard).getByText('Open Late Program')).toBeTruthy();
   });
 
   it('renders program controls on the page and wires filter selection to program context', async () => {
@@ -694,7 +687,7 @@ describe('Programs page', () => {
     }
   });
 
-  it('sorts visible program cards inside their cycle section from local sort controls', async () => {
+  it('sorts visible program cards inside their section from local sort controls', async () => {
     renderStatefulPage([
       baseFellowship({
         id: 'zeta',
@@ -714,7 +707,9 @@ describe('Programs page', () => {
     await userEvent.click(screen.getByText('Name'));
     await userEvent.click(screen.getByRole('button', { name: /sorted descending/i }));
 
-    const openSection = screen.getByRole('region', { name: 'No apply now records' });
+    const openSection = screen.getByRole('region', {
+      name: "Funding for Research You've Arranged",
+    });
     expect(
       within(openSection)
         .getAllByRole('article')
