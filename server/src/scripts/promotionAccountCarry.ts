@@ -1,4 +1,4 @@
-import type { Db, Document, ObjectId } from 'mongodb';
+import type { Collection, Db, Document, ObjectId } from 'mongodb';
 
 /**
  * Production accounts a promotion must carry across its `accounts` swap.
@@ -13,7 +13,7 @@ import type { Db, Document, ObjectId } from 'mongodb';
  * where Beta holds the same netid under another `_id`, the Beta row is re-keyed
  * to the Production `_id` and every reference to the Beta `_id` is rewritten.
  */
-export const CARRIED_ACCOUNT_LOGIN_FIELDS = ['lastLoginAt', 'profile'] as const;
+const CARRIED_ACCOUNT_LOGIN_FIELDS = ['lastLoginAt', 'profile'] as const;
 
 export const ACCOUNT_ID_REFERENCE_FIELDS: ReadonlyArray<{ collection: string; field: string }> = [
   { collection: 'researchers', field: 'accountId' },
@@ -38,7 +38,7 @@ function loginFields(account: Document): Document {
   return fields;
 }
 
-export function isProductionLoginAccount(
+function isProductionLoginAccount(
   account: Document,
   planOwnerIds: ReadonlySet<string>,
 ): boolean {
@@ -75,16 +75,21 @@ export function planAccountCarry(args: {
   return plan;
 }
 
-export async function loadAccountCarryPlan(
-  targetDb: Db,
-  productionAccountsCollection: string,
-): Promise<AccountCarryPlan> {
+export async function loadAccountCarryPlan(args: {
+  productionDb: Db;
+  productionAccountsCollection: string;
+  promotedAccounts: Collection;
+  accountFilter: Document;
+}): Promise<AccountCarryPlan> {
   const planOwnerIds = new Set(
-    (await targetDb.collection('research_plans').distinct('accountId')).map(idKey),
+    (await args.productionDb.collection('research_plans').distinct('accountId')).map(idKey),
   );
   return planAccountCarry({
-    productionAccounts: await targetDb.collection(productionAccountsCollection).find({}).toArray(),
-    promotedAccounts: await targetDb.collection('accounts').find({}).toArray(),
+    productionAccounts: await args.productionDb
+      .collection(args.productionAccountsCollection)
+      .find(args.accountFilter)
+      .toArray(),
+    promotedAccounts: await args.promotedAccounts.find(args.accountFilter).toArray(),
     planOwnerIds,
   });
 }

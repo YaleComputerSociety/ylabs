@@ -8,6 +8,7 @@ const productionTwinAccountId = new ObjectId('68f1000000000000000000a2');
 const studentAccountId = new ObjectId('68f1000000000000000000a3');
 const planOnlyAccountId = new ObjectId('68f1000000000000000000a4');
 const staleAccountId = new ObjectId('68f1000000000000000000a5');
+const syntheticAccountId = new ObjectId('68f1000000000000000000a6');
 const researcherId = new ObjectId('68f1000000000000000000b1');
 const lastLoginAt = new Date('2026-09-20T12:00:00Z');
 
@@ -80,6 +81,15 @@ async function seedProduction(productionDb: Db): Promise<void> {
       status: 'ACTIVE',
       archived: false,
     },
+    {
+      _id: syntheticAccountId,
+      schemaVersion: 1,
+      netid: 'fixture-synthetic',
+      email: 'fixture-synthetic@example.invalid',
+      status: 'ACTIVE',
+      archived: false,
+      lastLoginAt,
+    },
   ]);
   await productionDb.collection('research_plans').insertMany([
     { accountId: studentAccountId, target: { kind: 'RESEARCH_ENTITY', id: new ObjectId() } },
@@ -150,6 +160,12 @@ describe('Beta to Production promotion carries Production login accounts', () =>
 
   it('drops a Production account with no login evidence', async () => {
     expect(await productionDb.collection('accounts').findOne({ _id: staleAccountId })).toBeNull();
+  });
+
+  it('withholds a synthetic-shaped Production account even when it has logged in', async () => {
+    expect(
+      await productionDb.collection('accounts').findOne({ _id: syntheticAccountId }),
+    ).toBeNull();
   });
 
   it('re-keys a same-netid Beta account to the Production _id and follows its researcher', async () => {

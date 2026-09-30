@@ -8,9 +8,9 @@ import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
+  ACCOUNT_ID_REFERENCE_FIELDS,
   applyAccountCarry,
   loadAccountCarryPlan,
-  planAccountCarry,
   type AccountCarryPlan,
 } from './promotionAccountCarry';
 import {
@@ -122,12 +122,6 @@ export interface PromotionSummary {
   applyBlockers: string[];
   blockedSyntheticUserReferences: SyntheticUserReference[];
 }
-
-const ACCOUNT_REFERENCE_FIELDS: Array<{ collection: string; field: string }> = [
-  { collection: 'researchers', field: 'accountId' },
-  { collection: 'research_entities', field: 'studentVisibilityReviewedByAccountId' },
-  { collection: 'fellowships', field: 'studentVisibilityReviewedByAccountId' },
-];
 
 const COLLECTION_CATEGORY_ORDER: PromotionCollectionCategory[] = [
   'research-discovery',
@@ -486,7 +480,7 @@ async function syntheticUserReferences(betaDb: Db): Promise<SyntheticUserReferen
   if (excludedIds.length === 0) return [];
 
   const rows = await Promise.all(
-    ACCOUNT_REFERENCE_FIELDS.map(async ({ collection, field }) => {
+    ACCOUNT_ID_REFERENCE_FIELDS.map(async ({ collection, field }) => {
       const exists = await betaDb
         .listCollections({ name: collection }, { nameOnly: true })
         .hasNext();
@@ -640,13 +634,11 @@ export function summarizeAccountCarry(carry: AccountCarryPlan) {
 }
 
 export async function previewAccountCarry(betaDb: Db, productionDb: Db): Promise<AccountCarryPlan> {
-  const planOwnerIds = new Set(
-    (await productionDb.collection('research_plans').distinct('accountId')).map(String),
-  );
-  return planAccountCarry({
-    productionAccounts: await productionDb.collection('accounts').find({}).toArray(),
-    promotedAccounts: await betaDb.collection('accounts').find(SYNTHETIC_USER_FILTER).toArray(),
-    planOwnerIds,
+  return loadAccountCarryPlan({
+    productionDb,
+    productionAccountsCollection: 'accounts',
+    promotedAccounts: betaDb.collection('accounts'),
+    accountFilter: SYNTHETIC_USER_FILTER,
   });
 }
 
@@ -671,7 +663,12 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
     afterCutover: async (backups) => {
       const productionAccounts = backups.get('accounts');
       if (!productionAccounts) return;
-      const carry = await loadAccountCarryPlan(productionDb, productionAccounts);
+      const carry = await loadAccountCarryPlan({
+        productionDb,
+        productionAccountsCollection: productionAccounts,
+        promotedAccounts: productionDb.collection('accounts'),
+        accountFilter: SYNTHETIC_USER_FILTER,
+      });
       await applyAccountCarry(productionDb, carry);
       carriedAccountInserts = carry.inserts.length;
     },
