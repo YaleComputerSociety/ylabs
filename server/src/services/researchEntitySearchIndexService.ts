@@ -11,6 +11,7 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import {
   isFacultyResearchEntity,
   researchEntitySortTitle,
+  researchEntitySortTitleQualifier,
   servedResearchEntityTitle,
 } from '../utils/servedResearchEntityTitle';
 import { getMeiliIndex } from '../utils/meiliClient';
@@ -87,6 +88,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'lastObservedAt',
     'name',
     'sortTitle',
+    'sortTitleQualifier',
     'createdAt',
     'updatedAt',
   ],
@@ -600,6 +602,7 @@ export function buildResearchEntitySearchIndexDocument(
     }
   }
   out.sortTitle = researchEntitySortTitle(out);
+  out.sortTitleQualifier = researchEntitySortTitleQualifier(out);
 
   // Ordering constraint: topic aliases have to come off the sanitized document,
   // never the raw one. `studentSearchTerms` is a `searchableAttributes` entry, so

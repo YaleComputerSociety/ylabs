@@ -91,7 +91,10 @@ import { sanitizePersonName } from '../utils/personNameHygiene';
 import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabelHygiene';
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
 import { orcidProfileUrl, servableOrcid } from '../utils/orcid';
-import { researchEntitySortTitle } from '../utils/servedResearchEntityTitle';
+import {
+  researchEntitySortTitle,
+  researchEntitySortTitleQualifier,
+} from '../utils/servedResearchEntityTitle';
 import { listPlanningContextsForResearchEntities } from './planningContextService';
 import {
   listDepartmentCourseCreditRoutes,
@@ -811,9 +814,15 @@ const isMissingMeiliEmbedderError = (error: unknown): boolean => {
 };
 
 const SORT_TITLE_ATTRIBUTE = 'sortTitle';
+const SORT_TITLE_QUALIFIER_ATTRIBUTE = 'sortTitleQualifier';
 
-const meiliSortAttribute = (sortBy: NonNullable<ResearchGroupSearchSort['sortBy']>): string =>
-  sortBy === 'name' ? SORT_TITLE_ATTRIBUTE : sortBy;
+const meiliSortEntries = (
+  sortBy: NonNullable<ResearchGroupSearchSort['sortBy']>,
+  order: 'asc' | 'desc',
+): string[] =>
+  sortBy === 'name'
+    ? [`${SORT_TITLE_ATTRIBUTE}:${order}`, `${SORT_TITLE_QUALIFIER_ATTRIBUTE}:${order}`]
+    : [`${sortBy}:${order}`];
 
 /**
  * An index whose settings predate a sortable attribute rejects the whole query, so
@@ -822,7 +831,11 @@ const meiliSortAttribute = (sortBy: NonNullable<ResearchGroupSearchSort['sortBy'
  */
 const withoutNotYetIndexedSortAttributes = (sortEntries: string[]): string[] =>
   sortEntries
-    .filter((entry) => !entry.startsWith('browseRankScore'))
+    .filter(
+      (entry) =>
+        !entry.startsWith('browseRankScore') &&
+        !entry.startsWith(`${SORT_TITLE_QUALIFIER_ATTRIBUTE}:`),
+    )
     .map((entry) =>
       entry.startsWith(`${SORT_TITLE_ATTRIBUTE}:`)
         ? `name:${entry.slice(SORT_TITLE_ATTRIBUTE.length + 1)}`
@@ -1314,7 +1327,7 @@ export async function searchResearchGroupsViaMeili(
   const sortConfig: string[] = [];
   if (sort.sortBy) {
     const order = sort.sortOrder === 'asc' ? 'asc' : 'desc';
-    sortConfig.push(`${meiliSortAttribute(sort.sortBy)}:${order}`);
+    sortConfig.push(...meiliSortEntries(sort.sortBy, order));
   } else if (isBrowseAllQuery) {
     // Default browse: surface the "best" research homes first — those with the
     // strongest completeness + undergrad-access signal — then fall back to
@@ -1878,6 +1891,9 @@ const facetCounts = (entities: any[], field: string): Record<string, number> => 
   return counts;
 };
 
+const compareSortKeys = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
+
 const sortResearchEntitiesForMongoFallback = (
   entities: any[],
   query: string,
@@ -1886,11 +1902,19 @@ const sortResearchEntitiesForMongoFallback = (
   const sorted = [...entities];
   if (sort.sortBy) {
     const direction = sort.sortOrder === 'asc' ? 1 : -1;
-    const sortValue = (entity: any): any =>
-      sort.sortBy === 'name' ? researchEntitySortTitle(entity) : entity[sort.sortBy as string];
     sorted.sort((a, b) => {
-      const aValue = sortValue(a);
-      const bValue = sortValue(b);
+      if (sort.sortBy === 'name') {
+        return (
+          direction *
+          (compareSortKeys(researchEntitySortTitle(a), researchEntitySortTitle(b)) ||
+            compareSortKeys(
+              researchEntitySortTitleQualifier(a),
+              researchEntitySortTitleQualifier(b),
+            ))
+        );
+      }
+      const aValue = a[sort.sortBy as string];
+      const bValue = b[sort.sortBy as string];
       if (aValue instanceof Date || bValue instanceof Date) {
         return direction * (new Date(aValue || 0).getTime() - new Date(bValue || 0).getTime());
       }
