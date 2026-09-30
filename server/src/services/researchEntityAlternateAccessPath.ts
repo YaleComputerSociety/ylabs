@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { relatesTwoDistinctResearchEntities } from '../utils/researchEntityRelationshipEndpoints';
 
 function toObjectId(value: unknown): mongoose.Types.ObjectId | null {
   const id = serializedDocumentId(value);
@@ -19,15 +20,17 @@ export async function countResearchEntityAlternateAccessPaths(
   if (objectIds.length === 0) return counts;
   const inScopeIds = new Set(objectIds.map((id) => id.toString()));
 
-  const relationships = (await ResearchEntityRelationship.find({
-    archived: { $ne: true },
-    $or: [
-      { sourceResearchEntityId: { $in: objectIds } },
-      { targetResearchEntityId: { $in: objectIds } },
-    ],
-  })
-    .select('sourceResearchEntityId targetResearchEntityId')
-    .lean()) as any[];
+  const relationships = (
+    (await ResearchEntityRelationship.find({
+      archived: { $ne: true },
+      $or: [
+        { sourceResearchEntityId: { $in: objectIds } },
+        { targetResearchEntityId: { $in: objectIds } },
+      ],
+    })
+      .select('sourceResearchEntityId targetResearchEntityId')
+      .lean()) as any[]
+  ).filter(relatesTwoDistinctResearchEntities);
 
   const counterpartIds = new Set<string>();
   for (const relationship of relationships) {

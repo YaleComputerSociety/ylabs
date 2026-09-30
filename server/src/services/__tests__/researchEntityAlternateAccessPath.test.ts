@@ -58,6 +58,22 @@ describe('countResearchEntityAlternateAccessPaths', () => {
     expect(counts.get(C) || 0).toBe(0);
   });
 
+  it('does not credit a relationship from a row to itself as an access path', async () => {
+    mocks.relationshipFind.mockReturnValue(
+      chain([
+        { sourceResearchEntityId: A, targetResearchEntityId: A },
+        { sourceResearchEntityId: B, targetResearchEntityId: B },
+        { sourceResearchEntityId: B, targetResearchEntityId: X },
+      ]),
+    );
+    mocks.entityFind.mockReturnValue(chain([{ _id: A }, { _id: B }, { _id: X }]));
+
+    const counts = await countResearchEntityAlternateAccessPaths([A, B]);
+
+    expect(counts.get(A) || 0).toBe(0);
+    expect(counts.get(B)).toBe(1);
+  });
+
   it('does not credit a relationship whose only counterpart is archived', async () => {
     mocks.relationshipFind.mockReturnValue(
       chain([{ sourceResearchEntityId: C, targetResearchEntityId: Z }]),

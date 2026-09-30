@@ -125,6 +125,9 @@ Signals stay independent and neutral when unknown; materializer logic must not c
 ### `ResearchEntityRelationship` (`research_entity_relationships`)
 
 Source-backed affiliations between research entities (the "Affiliated with" surface), keyed by `sourceResearchEntityId` (the center, institute, or umbrella entity) and `targetResearchEntityId` (the member lab, faculty research area, or project).
+An edge whose two ends are the same row means nothing, because a row is not affiliated with itself (#4043).
+`relatesTwoDistinctResearchEntities` in `server/src/utils/researchEntityRelationshipEndpoints.ts` is the one predicate for it, and every reader applies it: the detail page's related and affiliated lists, the visibility gate's alternate-access-path count, and the browse rank's hosting test.
+The writers refuse to produce one too: the relationship materializer skips a member key that resolves to the source row as `self-relationship`, and the dedupe relink archives an edge the relink has turned into a survivor-to-itself edge.
 
 ### `Observation` (`observations`)
 

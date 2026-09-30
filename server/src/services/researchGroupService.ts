@@ -82,6 +82,7 @@ import {
 } from '../utils/researchEntityDeceasedLead';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { relatesTwoDistinctResearchEntities } from '../utils/researchEntityRelationshipEndpoints';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { sanitizePersonTitle } from '../utils/titleHygiene';
 import {
@@ -2760,7 +2761,7 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
     };
   }
 
-  const [relatedRelationshipsAll, affiliatedRelationshipsAll] = (await Promise.all([
+  const [relatedRelationshipsQueried, affiliatedRelationshipsQueried] = (await Promise.all([
     ResearchEntityRelationship.find({
       archived: { $ne: true },
       sourceResearchEntityId: safeEntityId,
@@ -2776,6 +2777,12 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
       .limit(MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT)
       .lean(),
   ])) as [any[], any[]];
+  const relatedRelationshipsAll = relatedRelationshipsQueried.filter(
+    relatesTwoDistinctResearchEntities,
+  );
+  const affiliatedRelationshipsAll = affiliatedRelationshipsQueried.filter(
+    relatesTwoDistinctResearchEntities,
+  );
   const relatedRelationships = relatedRelationshipsAll.slice(
     0,
     MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION,

@@ -47,7 +47,13 @@ describe('dedupe merge persists a durable canonical tombstone', () => {
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['research_entities', 'role_assignments', 'researchers', 'observations']) {
+    for (const name of [
+      'research_entities',
+      'role_assignments',
+      'researchers',
+      'observations',
+      'research_entity_relationships',
+    ]) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -124,6 +130,55 @@ describe('dedupe merge persists a durable canonical tombstone', () => {
     expect(
       await ResearchEntity.countDocuments({ _id: shellId, canonicalGroupId: { $ne: null } }),
     ).toBe(1);
+  });
+
+  it('archives an edge the relink would turn into a relationship from the survivor to itself', async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    const labId = new mongoose.Types.ObjectId();
+    const shellId = new mongoose.Types.ObjectId();
+    const otherId = new mongoose.Types.ObjectId();
+    await seedLabAndShell(labId, shellId);
+    await db.collection('research_entity_relationships').insertMany([
+      {
+        sourceResearchEntityId: labId,
+        targetResearchEntityId: shellId,
+        relationshipType: 'AFFILIATED_LAB',
+        archived: false,
+      },
+      {
+        sourceResearchEntityId: otherId,
+        targetResearchEntityId: shellId,
+        relationshipType: 'AFFILIATED_LAB',
+        archived: false,
+      },
+    ]);
+
+    await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: labId.toHexString(),
+        duplicateEntityIds: [shellId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [],
+      },
+      {
+        deleteDuplicates: false,
+        relinkReferences: true,
+        redirectReason: 'eponymous_fra_lab_merge',
+      },
+    );
+
+    const liveEdges = await db
+      .collection('research_entity_relationships')
+      .find({ archived: { $ne: true } })
+      .toArray();
+    expect(
+      liveEdges.map((edge) => [
+        String(edge.sourceResearchEntityId),
+        String(edge.targetResearchEntityId),
+      ]),
+    ).toEqual([[otherId.toHexString(), labId.toHexString()]]);
   });
 
   it('stamps the same tombstone through the eponymous merge stage (CLI-equivalent path)', async () => {
