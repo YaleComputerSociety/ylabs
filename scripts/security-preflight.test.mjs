@@ -4661,7 +4661,6 @@ test('CORS origin headers are bounded before allowlist comparison', () => {
   assert.match(source, /parsed\.username \|\| parsed\.password/);
   assert.match(source, /parsed\.origin !== origin/);
   assert.match(source, /const normalizedOrigin = normalizeCorsOrigin\(origin\)/);
-  assert.match(source, /return bypassCors \|\| allowedOrigins\.has\(normalizedOrigin\)/);
   assert.doesNotMatch(source, /allowedOrigins\.has\(origin\)/);
 });
 

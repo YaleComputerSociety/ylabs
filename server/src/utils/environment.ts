@@ -44,3 +44,14 @@ export const requiresDeployedRuntimeSecurity = (env: NodeJS.ProcessEnv = process
 
 export const requiresSecureSessionCookie = (env: NodeJS.ProcessEnv = process.env): boolean =>
   requiresDeployedRuntimeSecurity(env);
+
+export const DEPLOYED_LISTEN_HOST = '0.0.0.0';
+export const LOCAL_LISTEN_HOST = '127.0.0.1';
+
+/**
+ * A deployed runtime must accept connections on every interface, because the
+ * hosting platform reaches the process from outside its network namespace.
+ * A local run needs no interface beyond loopback.
+ */
+export const serverListenHost = (env: NodeJS.ProcessEnv = process.env): string =>
+  requiresDeployedRuntimeSecurity(env) ? DEPLOYED_LISTEN_HOST : LOCAL_LISTEN_HOST;

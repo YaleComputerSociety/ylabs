@@ -122,6 +122,7 @@ A suite therefore needs no cleanup of its own for temp residue, although removin
 The root-level `node --test` suites under `scripts/` have no such runner hook, so each one removes its own temp directories in an `after` hook.
 
 Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test undergraduate session.
+It answers `404` unless the caller is loopback, as does the `LOCAL_AUTH_BYPASS` user; see `skills/auth-security/SKILL.md`.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for another dev account.
 `?userType=admin` mints a local bootstrap `AdminGrant`, so admin authority comes from a grant rather than `userType`.
 

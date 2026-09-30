@@ -9,6 +9,7 @@ import {
   isTest,
   nodeEnvValue,
   requiresSecureSessionCookie,
+  serverListenHost,
 } from '../environment';
 
 describe('environment utilities', () => {
@@ -68,5 +69,18 @@ describe('environment utilities', () => {
       }),
     ).toBe(false);
     expect(requiresSecureSessionCookie({ NODE_ENV: 'test' })).toBe(false);
+  });
+
+  it('listens on every interface in a deployed runtime and on loopback locally', () => {
+    expect(serverListenHost({ NODE_ENV: 'production' })).toBe('0.0.0.0');
+    expect(
+      serverListenHost({ NODE_ENV: 'development', SERVER_BASE_URL: 'https://yalelabs.io' }),
+    ).toBe('0.0.0.0');
+    expect(serverListenHost({})).toBe('0.0.0.0');
+    expect(
+      serverListenHost({ NODE_ENV: 'development', SERVER_BASE_URL: 'http://localhost:4000' }),
+    ).toBe('127.0.0.1');
+    expect(serverListenHost({ NODE_ENV: 'test' })).toBe('127.0.0.1');
+    expect(serverListenHost({ NODE_ENV: 'ci' })).toBe('127.0.0.1');
   });
 });

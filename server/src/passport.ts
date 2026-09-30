@@ -16,6 +16,7 @@ import {
   requiresDeployedRuntimeSecurity,
 } from './utils/environment';
 import { isPrivateOrLocalHostname } from './utils/urlSafety';
+import { isLoopbackRequest } from './utils/loopbackAccess';
 import { ensureBootstrapAdminGrant, hasActiveAdminGrant } from './services/adminGrantService';
 import { sanitizeLogValue } from './utils/logSanitizer';
 import { triggerReconnect, isTopologyLostError, withMongoReconnect } from './db/connections';
@@ -155,6 +156,25 @@ function isTruthyEnvFlag(value: string | undefined): boolean {
 
 function isLocalAuthBypassAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
   return isLocalDevelopmentRuntime(env) && isTruthyEnvFlag(env.LOCAL_AUTH_BYPASS);
+}
+
+/**
+ * A development-only affordance is scoped to the machine running the server, so
+ * the runtime label alone never licenses one: the request must also have
+ * arrived over loopback.
+ */
+function isDevLoginRequestAllowed(
+  req: Pick<express.Request, 'headers' | 'socket'>,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return isDevLoginAllowed(env) && isLoopbackRequest(req);
+}
+
+function isLocalAuthBypassRequestAllowed(
+  req: Pick<express.Request, 'headers' | 'socket'>,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return isLocalAuthBypassAllowed(env) && isLoopbackRequest(req);
 }
 
 function isTrustedLogoutRequest(req: express.Request): boolean {
@@ -694,7 +714,7 @@ export const visitorDedupeKey = (visitedAt: Date): string =>
 const router = express.Router();
 
 router.use(async (req, res, next) => {
-  if (!req.user && isLocalAuthBypassAllowed() && !shouldSkipLocalAuthBypass(req.path)) {
+  if (!req.user && isLocalAuthBypassRequestAllowed(req) && !shouldSkipLocalAuthBypass(req.path)) {
     try {
       req.user = (await ensureLocalAuthBypassUser(process.env, req.headers)) as Express.User;
     } catch (error) {
@@ -799,8 +819,8 @@ router.get('/logout', (req, res, next) => {
 if (isDevLoginAllowed()) {
   router.get('/dev-login', async (req, res, next) => {
     setPrivateAuthResponseHeaders(res);
-    if (!isDevLoginAllowed()) {
-      return res.status(403).json({ error: 'Dev login is disabled for this environment' });
+    if (!isDevLoginRequestAllowed(req)) {
+      return res.status(404).json({ error: 'Not found' });
     }
 
     try {
@@ -837,7 +857,9 @@ export {
   ensureDevLoginUser,
   ensureLocalAuthBypassUser,
   isDevLoginAllowed,
+  isDevLoginRequestAllowed,
   isLocalAuthBypassAllowed,
+  isLocalAuthBypassRequestAllowed,
   isLocalDevelopmentRuntime,
   localAuthBypassUser,
   localDevOriginFromRequest,
