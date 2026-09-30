@@ -104,7 +104,8 @@ function proseForProgram(input: ProgramClassificationInput): string {
 const DEPARTMENT_RESEARCH_GUIDE_TITLE =
   /^[A-Z][\w&,' -]*\s(?:undergraduate research(?: opportunities)?|research opportunities)$/i;
 
-const NON_UNDERGRADUATE_AUDIENCE_TITLE = /\b(?:graduate|professional|postdoc(?:toral)?|doctoral|phd)\b/;
+const NON_UNDERGRADUATE_AUDIENCE_TITLE =
+  /\b(?:graduate|professional|postdoc(?:toral)?|doctoral|phd)\b/;
 
 const RESEARCH_AWARD_TITLE = /\b(?:scholarships?|prizes?)\b/;
 
