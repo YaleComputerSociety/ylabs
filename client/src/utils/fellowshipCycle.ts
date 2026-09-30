@@ -61,7 +61,7 @@ export function getFellowshipCycleStatus(
   const deadlinePassed = deadline ? deadline.getTime() < now.getTime() : false;
   const isOpen = applicationStatus.isApplicationWindowOpen;
   const sourceBacked = hasSourceUrl(fellowship);
-  const likelyRecurring = !isOpen && isLikelyRecurringFellowship(fellowship);
+  const likelyRecurring = !isOpen && deadlinePassed && isLikelyRecurringFellowship(fellowship);
 
   if (applicationStatus.kind === 'notOpenYet') {
     return {
@@ -144,9 +144,7 @@ export function getFellowshipDeadlineSubtitle(
     const projected = new Date(fellowship.deadline);
     return `Est. next cycle ~${projected.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (unconfirmed)`;
   }
-  if (!fellowship.deadline) {
-    return status.category === 'nextCycle' ? 'Track for next cycle' : 'No deadline';
-  }
+  if (!fellowship.deadline) return 'No deadline';
   const deadline = new Date(fellowship.deadline);
   if (status.category === 'nextCycle') return 'Past cycle; track for reopening';
   if (deadline.getTime() < now.getTime()) return 'Deadline passed';
