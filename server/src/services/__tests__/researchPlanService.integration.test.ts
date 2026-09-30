@@ -12,6 +12,14 @@ vi.mock('../researchEntityPublicDescription', async (importOriginal) => {
     researchEntityServesPublicDetail: gate.researchEntityServesPublicDetail,
   };
 });
+
+const cardBuild = vi.hoisted(() => ({ leadGuardedServingInput: vi.fn() }));
+
+vi.mock('../researchGroupService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../researchGroupService')>();
+  cardBuild.leadGuardedServingInput.mockImplementation(actual.leadGuardedServingInput);
+  return { ...actual, leadGuardedServingInput: cardBuild.leadGuardedServingInput };
+});
 import {
   addSavedResearchEntities,
   addWatchedPrograms,
@@ -456,6 +464,59 @@ describe('researchPlanService saved plans', () => {
 
       await getSavedResearchEntityList(NETID);
       expect(rosterRead).toHaveBeenCalled();
+    });
+
+    it('answers the plan read without a roster read or a card build (#4077)', async () => {
+      await saveMixedTargets();
+      const rosterRead = vi.spyOn(RoleAssignment, 'find');
+      cardBuild.leadGuardedServingInput.mockClear();
+
+      const plans = await getSavedResearchEntityPlans(NETID);
+
+      expect(Object.keys(plans)).toHaveLength(2);
+      expect(rosterRead).not.toHaveBeenCalled();
+      expect(cardBuild.leadGuardedServingInput).not.toHaveBeenCalled();
+
+      await getSavedResearchEntityList(NETID);
+      expect(rosterRead).toHaveBeenCalled();
+      expect(cardBuild.leadGuardedServingInput).toHaveBeenCalledTimes(2);
+    });
+
+    it('keys the plan map by the served card id, in the served list order (#4077)', async () => {
+      await saveMixedTargets();
+
+      const list = await getSavedResearchEntityList(NETID);
+      const plans = await getSavedResearchEntityPlans(NETID);
+
+      expect(Object.keys(plans)).toEqual(list.savedResearchEntities.map((entity) => entity._id));
+      for (const entity of list.savedResearchEntities) {
+        expect(plans[entity._id]).toBeDefined();
+      }
+    });
+
+    it('keys the plan map by entity id and never by a saved target it cannot serve (#4077)', async () => {
+      await saveMixedTargets();
+      await updateSavedResearchEntityPlan(NETID, ENTITY_ID.toHexString(), {
+        stage: 'CONTACTED',
+        privateNotes: 'synthetic planning note',
+        checklist: plannedChecklist,
+        deadlines: [plannedDeadline],
+      });
+
+      const plans = await getSavedResearchEntityPlans(NETID);
+
+      for (const key of Object.keys(plans)) expect(key).toMatch(/^[a-f0-9]{24}$/);
+      expect(Object.keys(plans)).toContain(ENTITY_ID.toHexString());
+      expect(Object.keys(plans)).not.toContain('64a0000000000000000001a2');
+      expect(Object.keys(plans)).not.toContain('64a0000000000000000001a5');
+      expect(plans[ENTITY_ID.toHexString()]).toEqual(
+        expect.objectContaining({
+          stage: 'CONTACTED',
+          privateNotes: 'synthetic planning note',
+          checklist: plannedChecklist,
+          deadlines: [plannedDeadline],
+        }),
+      );
     });
   });
 
