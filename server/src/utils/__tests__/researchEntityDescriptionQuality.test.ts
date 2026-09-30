@@ -1843,6 +1843,33 @@ describe('deriveProgramCardShortDescription (#1425)', () => {
   });
 });
 
+describe('program card line for deadline announcements and empty summaries (#3904)', () => {
+  const body =
+    'The fixture program provides summer term support for undergraduate students who do laboratory research with Yale faculty. Students work full time for ten weeks.';
+
+  it('replaces a line that only announces a deadline with the first sentence of the body', () => {
+    expect(
+      programLikeCardShortDescription({
+        shortDescription:
+          'Fixture Summer Research Program Deadline: Friday, February 6, 2026 at 11:00pm ET.',
+        fullDescription: body,
+      }),
+    ).toBe(
+      'The fixture program provides summer term support for undergraduate students who do laboratory research with Yale faculty.',
+    );
+  });
+
+  it('derives a card line from the body when the stored summary is empty', () => {
+    expect(programLikeCardShortDescription({ shortDescription: '', fullDescription: body })).toBe(
+      'The fixture program provides summer term support for undergraduate students who do laboratory research with Yale faculty.',
+    );
+  });
+
+  it('stays empty when neither a summary nor a usable body sentence exists', () => {
+    expect(programLikeCardShortDescription({ shortDescription: '', fullDescription: '' })).toBe('');
+  });
+});
+
 describe('programLikeCardShortDescription (#2215)', () => {
   const ONE_SENTENCE_OFFER =
     'A Richter Summer Fellowship is awarded for independent study and research, not for mere travel, work or enrollment in a school.';
@@ -1893,10 +1920,10 @@ describe('programLikeCardShortDescription (#2215)', () => {
     ).toBe(ONE_SENTENCE_OFFER);
   });
 
-  it('returns an empty card line for a blank or non-string stored line', () => {
+  it('returns an empty card line for a blank or non-string stored line with no usable body', () => {
     expect(
       programLikeCardShortDescription({ shortDescription: '   ', fullDescription: 'body' }),
-    ).toBe('   ');
+    ).toBe('');
     expect(
       programLikeCardShortDescription({ shortDescription: undefined, fullDescription: 'body' }),
     ).toBe('');

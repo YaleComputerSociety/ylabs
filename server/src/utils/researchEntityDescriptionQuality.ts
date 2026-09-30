@@ -1932,6 +1932,12 @@ const normalizeProgramCardCandidateSentence = (value: string): string =>
  * sentence is well-formed but tells a student nothing about what the award
  * offers, so it does not qualify as a card short either (issue #1596).
  */
+// A catalog row whose only line is "<Program> Deadline: Friday, February 6, 2026 at 11:00pm
+// ET." announces a date rather than describing the program, and the card already shows the
+// deadline beside it (#3904).
+const PROGRAM_CARD_DEADLINE_ANNOUNCEMENT =
+  /\bdeadline\s*:\s*(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day,?\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b/i;
+
 export function programCardShortDescriptionQuality(
   value: unknown,
   fullDescription: unknown,
@@ -1970,6 +1976,7 @@ export function programCardShortDescriptionQuality(
   if (text && isNonOfferProgramCardClause(text)) flags.push('non-offer-clause');
   if (text && isProgramCardAdministrativeAnnouncementChrome(text))
     flags.push('administrative-chrome');
+  if (text && PROGRAM_CARD_DEADLINE_ANNOUNCEMENT.test(text)) flags.push('administrative-chrome');
   if (text && isGrantSignificanceBoilerplateShort(text))
     flags.push('grant-significance-boilerplate');
   if (!full) flags.push('full-not-useful');
@@ -2025,7 +2032,7 @@ export function programLikeCardShortDescription(input: {
   fullDescription: unknown;
 }): string {
   const stored = typeof input.shortDescription === 'string' ? input.shortDescription : '';
-  if (!textValue(stored)) return stored;
+  if (!textValue(stored)) return deriveProgramCardShortDescription(input.fullDescription);
   if (programCardShortDescriptionQuality(stored, input.fullDescription).isUseful) return stored;
   return deriveProgramCardShortDescription(input.fullDescription) || stored;
 }
