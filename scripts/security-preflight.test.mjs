@@ -5,6 +5,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import yaml from 'js-yaml';
 import {
   ORCID_PATTERN,
   orcidIsUnsafeForFixtures,
@@ -828,79 +829,151 @@ const everyWorkflowFile = () => {
   const files = fs
     .readdirSync(directory)
     .filter((file) => /\.ya?ml$/.test(file))
-    .map((file) => [file, fs.readFileSync(new URL(file, directory), 'utf8')]);
+    .map((file) => [file, yaml.load(fs.readFileSync(new URL(file, directory), 'utf8'))]);
   assert.ok(files.length > 0, 'the workflow directory must hold at least one workflow');
   return files;
 };
 
-// Every `permissions:` key in a workflow, top-level or job-level, with the scope
-// lines nested beneath it. A job-level block overrides the top-level one for that
-// job, so a compliant top-level block proves nothing about the jobs below it.
-const permissionBlocks = (workflow) => {
-  const lines = workflow.split('\n');
-  const blocks = [];
-  lines.forEach((line, index) => {
-    const key = /^(\s*)permissions:\s*(.*?)\s*(#.*)?$/.exec(line);
-    if (!key) return;
-    const [, indent, inlineValue] = key;
-    const scopes = [];
-    for (const nested of lines.slice(index + 1)) {
-      if (nested.trim() === '' || nested.trim().startsWith('#')) continue;
-      if (nested.search(/\S/) <= indent.length) break;
-      scopes.push(nested.trim().replace(/\s+#.*$/, ''));
-    }
-    blocks.push({ indent: indent.length, inlineValue, scopes });
-  });
-  return blocks;
+const workflowJobs = (workflow) => Object.entries(workflow?.jobs ?? {});
+
+// An allowlist of values rather than a denylist of scope names: a denylist
+// has to be extended for every write-capable scope GitHub adds, and the old
+// one already missed statuses, issues, packages and write-all (ylabs#3912).
+const WRITE_FREE_SCOPE_LEVELS = new Set(['read', 'none']);
+
+const permissionViolations = (where, permissions) => {
+  if (permissions === undefined || permissions === 'read-all') return [];
+  if (permissions === null || typeof permissions !== 'object' || Array.isArray(permissions)) {
+    return [`${where} grants \`permissions: ${JSON.stringify(permissions)}\``];
+  }
+  return Object.entries(permissions)
+    .filter(([, level]) => !WRITE_FREE_SCOPE_LEVELS.has(level))
+    .map(([scope, level]) => `${where} requests \`${scope}: ${JSON.stringify(level)}\``);
 };
+
+const tokenPermissionViolations = (workflow) => [
+  ...(workflow?.permissions?.contents === 'read'
+    ? []
+    : [
+        'the top level must pin GITHUB_TOKEN to `contents: read`, or the token takes the repository default scopes',
+      ]),
+  ...permissionViolations('the top level', workflow?.permissions),
+  ...workflowJobs(workflow).flatMap(([job, definition]) =>
+    permissionViolations(`job ${job}`, definition?.permissions),
+  ),
+];
+
+const checkoutSteps = (workflow) =>
+  workflowJobs(workflow).flatMap(([job, definition]) =>
+    (definition?.steps ?? [])
+      .filter((step) => typeof step?.uses === 'string' && step.uses.startsWith('actions/checkout@'))
+      .map((step) => ({ job, persistsCredentials: step.with?.['persist-credentials'] !== false })),
+  );
 
 test('GitHub workflows run with read-only repository token permissions', () => {
   for (const [file, workflow] of everyWorkflowFile()) {
-    const blocks = permissionBlocks(workflow);
-    const topLevel = blocks.find((block) => block.indent === 0);
-    assert.ok(
-      topLevel,
-      `${file} must declare a top-level permissions block, or GITHUB_TOKEN takes the repository default scopes`,
+    assert.deepEqual(
+      tokenPermissionViolations(workflow),
+      [],
+      `${file} must run with read-only token scopes, and a read scope beyond contents is admitted explicitly rather than by widening a pattern`,
     );
-    assert.ok(
-      topLevel.scopes.includes('contents: read'),
-      `${file} workflow must pin GITHUB_TOKEN to read-only repository contents`,
+  }
+});
+
+test('the token-permission guard rejects a write-capable scope anywhere in a workflow', () => {
+  const workflowWith = (topLevel, jobLevel) =>
+    yaml.load(
+      [
+        'on: push',
+        'permissions:',
+        '  contents: read',
+        ...topLevel,
+        'jobs:',
+        '  build:',
+        '    runs-on: ubuntu-latest',
+        ...jobLevel,
+        '    steps:',
+        '      - run: |',
+        '          permissions: write-all',
+      ].join('\n'),
     );
 
-    // An allowlist of values rather than a denylist of scope names: a denylist
-    // has to be extended for every write-capable scope GitHub adds, and the old
-    // one already missed statuses, issues, packages and write-all (ylabs#3912).
-    for (const block of blocks) {
-      assert.ok(
-        block.inlineValue === '' || block.inlineValue === 'read-all' || block.inlineValue === '{}',
-        `${file} must not grant \`permissions: ${block.inlineValue}\``,
-      );
-      for (const scope of block.scopes) {
-        assert.match(
-          scope,
-          /^[a-z-]+:\s*(read|none)$/,
-          `${file} requests \`${scope}\`: workflows here run with read-only token scopes, and a read scope beyond contents is admitted explicitly rather than by widening a pattern`,
-        );
-      }
-    }
+  assert.deepEqual(tokenPermissionViolations(workflowWith([], [])), []);
+  assert.deepEqual(tokenPermissionViolations(workflowWith([], ['    permissions: read-all'])), []);
+  assert.deepEqual(tokenPermissionViolations(workflowWith([], ['    permissions: {}'])), []);
+  for (const [description, topLevel, jobLevel] of [
+    ['a job-level contents write', [], ['    permissions:', '      contents: write']],
+    ['a job-level write-all', [], ['    permissions: write-all']],
+    ['a top-level statuses write', ['  statuses: write'], []],
+    [
+      'a job-level flow mapping with a write',
+      [],
+      ['    permissions: { contents: read, issues: write }'],
+    ],
+  ]) {
+    assert.equal(
+      tokenPermissionViolations(workflowWith(topLevel, jobLevel)).length,
+      1,
+      `${description} must be rejected`,
+    );
   }
+  assert.notDeepEqual(
+    tokenPermissionViolations(yaml.load('on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n')),
+    [],
+    'a workflow without a top-level permissions block must be rejected',
+  );
 });
 
 test('GitHub checkout steps do not persist repository credentials', () => {
   let checkouts = 0;
   for (const [file, workflow] of everyWorkflowFile()) {
-    const steps = workflow.split(/\n(?=\s*- )/);
-    for (const step of steps) {
-      if (!/uses:\s*actions\/checkout@/.test(step)) continue;
+    for (const { job, persistsCredentials } of checkoutSteps(workflow)) {
       checkouts += 1;
-      assert.match(
-        step,
-        /^\s*with:\s*\n(?:\s+[^\n]*\n)*?\s+persist-credentials:\s*false\s*$/m,
-        `${file} checkout must set persist-credentials: false, or GITHUB_TOKEN stays in local git config for every later step`,
+      assert.equal(
+        persistsCredentials,
+        false,
+        `${file} job ${job} checkout must set persist-credentials: false, or GITHUB_TOKEN stays in local git config for every later step`,
       );
     }
   }
   assert.ok(checkouts > 0, 'at least one workflow must still check out the repository');
+});
+
+test('the checkout guard rejects a checkout that leaves credentials in git config', () => {
+  const persistence = (step) =>
+    checkoutSteps(
+      yaml.load(
+        ['jobs:', '  build:', '    runs-on: ubuntu-latest', '    steps:', ...step].join('\n'),
+      ),
+    ).map(({ persistsCredentials }) => persistsCredentials);
+
+  assert.deepEqual(
+    persistence([
+      '      - uses: actions/checkout@v4',
+      '        with:',
+      '          persist-credentials: false',
+    ]),
+    [false],
+  );
+  assert.deepEqual(persistence(['      - uses: actions/checkout@v4']), [true]);
+  assert.deepEqual(persistence(["      - uses: 'actions/checkout@v4'"]), [true]);
+  assert.deepEqual(
+    persistence([
+      '      - uses: actions/checkout@v4',
+      '        with: { ref: main }',
+      '        env:',
+      '          persist-credentials: false',
+    ]),
+    [true],
+  );
+  assert.deepEqual(
+    persistence([
+      '      - uses: actions/checkout@v4',
+      '        with:',
+      "          persist-credentials: 'false'",
+    ]),
+    [true],
+  );
 });
 
 const runScript = (script, env) =>
@@ -1009,7 +1082,10 @@ test('the keep-alive job probes the served API and keeps its exit status', () =>
   );
   for (const [name, source] of [
     ['keep-alive.yml', keepAliveWorkflow],
-    ['keep-alive-probe.sh', fs.readFileSync(new URL('./keep-alive-probe.sh', import.meta.url), 'utf8')],
+    [
+      'keep-alive-probe.sh',
+      fs.readFileSync(new URL('./keep-alive-probe.sh', import.meta.url), 'utf8'),
+    ],
   ]) {
     assert.doesNotMatch(
       source,
