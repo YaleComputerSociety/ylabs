@@ -5,13 +5,13 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import yaml from 'js-yaml';
 import {
   ORCID_PATTERN,
   orcidIsUnsafeForFixtures,
   SYNTHETIC_ORCID_EXAMPLE,
 } from './orcidFixtureShape.mjs';
 import nodeTest, { after } from 'node:test';
+import yaml from 'js-yaml';
 
 import {
   DEFAULT_AUDIT_TIMEOUT_MS,
