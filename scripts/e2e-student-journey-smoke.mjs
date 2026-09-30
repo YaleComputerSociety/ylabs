@@ -449,6 +449,38 @@ await step('the keyboard scrolls a page on first load without a click', async ()
   assert(scrollTop > 0, `PageDown on /about left the page scroller at ${scrollTop}.`);
 });
 
+await step('an absolutely positioned element deep in a page never scrolls the window', async () => {
+  await page.goto(`${baseUrl}/about`, { waitUntil: 'domcontentloaded' });
+  await settleResearchPage();
+  await page.getByRole('heading', { level: 1 }).first().waitFor({ timeout: 20000 });
+  const { documentHeight, viewportHeight } = await page.evaluate(() => {
+    const spacer = document.createElement('div');
+    spacer.style.height = `${window.innerHeight * 3}px`;
+    const card = document.createElement('div');
+    card.className = 'overflow-hidden';
+    const text = document.createElement('p');
+    text.textContent = 'smoke probe';
+    const label = document.createElement('span');
+    label.className = 'sr-only';
+    label.textContent = 'smoke probe label';
+    text.append(label);
+    card.append(text);
+    const probe = document.createElement('div');
+    probe.append(spacer, card);
+    document.querySelector('main')?.append(probe);
+    const measured = {
+      documentHeight: document.documentElement.scrollHeight,
+      viewportHeight: window.innerHeight,
+    };
+    probe.remove();
+    return measured;
+  });
+  assert(
+    documentHeight <= viewportHeight,
+    `An sr-only element at the bottom of a page stretched the document to ${documentHeight}px in a ${viewportHeight}px window, so the window scrolls the app shell out of view.`,
+  );
+});
+
 await step('shift-tabbing back through results never parks focus under the sticky filter bar', async () => {
   const narrowPage = await context.newPage();
   try {
