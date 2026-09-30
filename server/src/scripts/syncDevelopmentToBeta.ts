@@ -6,9 +6,12 @@ import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { summarizeAccountCarry } from './accountSwapCarry';
 import {
   applySync,
   buildPlan,
+  previewSyncAccountCarry,
+  syncCountMismatches,
   collectionsForOptions,
   parseMongoTarget,
   researchPersonAccountIds,
@@ -110,6 +113,9 @@ async function main(): Promise<void> {
       includesObservations: options.includeObservations,
       collections: before,
       preservedBetaOperationalCollections: true,
+      accountCarry: summarizeAccountCarry(
+        await previewSyncAccountCarry(sourceDb, targetDb, collections),
+      ),
       userCopyPolicy:
         'Preserve accounts reachable from a Researcher; pseudonymize every other account and remove account activity fields.',
       observationPolicy: options.includeObservations
@@ -121,9 +127,9 @@ async function main(): Promise<void> {
       writeOutput(report, options.output);
       return;
     }
-    await applySync(sourceDb, targetDb, collections, [], async () => {
+    await applySync(sourceDb, targetDb, collections, [], async (carry) => {
       after = await buildPlan(sourceDb, targetDb, collections);
-      const mismatches = after.filter((row) => row.sourceCopyCount !== row.targetCount);
+      const mismatches = syncCountMismatches(after, carry);
       if (mismatches.length) {
         throw new Error(
           `Post-sync count verification failed: ${mismatches.map((row) => row.name).join(', ')}`,
