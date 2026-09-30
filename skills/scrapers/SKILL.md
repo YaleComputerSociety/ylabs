@@ -220,6 +220,7 @@ Mongo refuses an in-memory sort over 32 MB, and a sort that no index serves (an 
 Chunk per-entity `$in` lookups, give each entity its own evidence rather than one limit shared across entities, and sort an unlimited selection in process instead of in the database.
 `allowDiskUse` hides the crash but keeps a shared limit, which silently starves the entities that sort last.
 The rule covers read-only audits too: #3574 lost the sweep's `data-quality` stage because `auditStudentReadyPublicDescriptions` sorted about 32 MB of unprojected `student_ready` documents by `name`, so it now streams them unsorted through a cursor in bounded chunks and orders its samples in process.
+The visibility gate's corpus read was the same shape before #3748: a projected `{ name: 1 }` sort that already moved 24.5 MB of the limit on Development, with the unprojected sort failing outright, so it now reads in `_id` order, which the primary index serves with no blocking sort, and orders its plans by label in process.
 
 ## Exhaustive runs: one page must not end the lane
 
