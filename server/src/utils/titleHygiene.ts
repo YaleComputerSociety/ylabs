@@ -64,6 +64,42 @@ function concatenatedWordRunCount(value: string): number {
   return (value.match(/[a-z][A-Z]/g) || []).length;
 }
 
+const SITE_MENU_ITEM_WORDS = new Set([
+  'home',
+  'about',
+  'research',
+  'academics',
+  'people',
+  'media',
+  'events',
+  'news',
+  'outreach',
+  'opportunities',
+  'contact',
+  'publications',
+  'resources',
+  'gallery',
+  'collections',
+]);
+
+const ROLE_WORD_PATTERN =
+  /\b(?:professor|lecturer|lector|instructor|scientist|scholar|researcher|director|fellow|chair|dean|provost|president|head|lead|assistant|associate|adjunct|affiliate|visiting|emeritus|emerita|postdoc|postdoctoral|student|candidate|manager|coordinator|administrator|officer|specialist|technician|technologist|analyst|engineer|counselor|librarian|curator|editor|advisor|adviser|nurse|physician|clinician|worker)\b/i;
+
+const MIN_SITE_MENU_ITEMS = 6;
+const MIN_SITE_MENU_ITEM_WORDS = 2;
+const MENU_ITEM_TOKEN_PATTERN = /^(?:[A-Z][A-Za-z'’-]*|&)$/;
+
+function isSpaceSeparatedSiteMenu(text: string): boolean {
+  const tokens = text.split(' ');
+  if (tokens.length < MIN_SITE_MENU_ITEMS) return false;
+  if (!tokens.every((token) => MENU_ITEM_TOKEN_PATTERN.test(token))) return false;
+  if (ROLE_WORD_PATTERN.test(text)) return false;
+  const menuItemWords = new Set(
+    tokens.map((token) => token.toLowerCase()).filter((word) => SITE_MENU_ITEM_WORDS.has(word)),
+  );
+  return menuItemWords.size >= MIN_SITE_MENU_ITEM_WORDS;
+}
+
 /**
  * True when a candidate title looks like navigation, menu, or breadcrumb chrome
  * rather than a real job title.
@@ -74,6 +110,8 @@ function concatenatedWordRunCount(value: string): number {
  *    boundaries never occur in a genuine job title.
  *  - breadcrumb trails with two or more chained separators (> » › • ·).
  *  - two or more distinct navigation/menu phrases.
+ *  - a site menu read with spaces between its items (#4046): six or more
+ *    capitalized single words, no role word, two or more of them menu items.
  */
 export function isNavMenuChromeTitle(value: string | null | undefined): boolean {
   const text = normalizeTitleWhitespace(value);
@@ -81,6 +119,7 @@ export function isNavMenuChromeTitle(value: string | null | undefined): boolean 
   if (concatenatedWordRunCount(text) >= 3) return true;
   if ((text.match(breadcrumbSeparatorPattern) || []).length >= 2) return true;
   if ((text.match(navMenuPhrasePattern) || []).length >= 2) return true;
+  if (isSpaceSeparatedSiteMenu(text)) return true;
   return false;
 }
 

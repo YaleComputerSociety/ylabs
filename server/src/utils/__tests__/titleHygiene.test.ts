@@ -31,6 +31,35 @@ describe('isNavMenuChromeTitle', () => {
     expect(isNavMenuChromeTitle('About Us Our Team Upcoming Events Contact Us')).toBe(true);
   });
 
+  it('rejects a department site menu read with spaces between single-word items (#4046)', () => {
+    expect(
+      isNavMenuChromeTitle(
+        'Home About Research Academics People Media Events Outreach Opportunities Belonging For Prospectives',
+      ),
+    ).toBe(true);
+    expect(
+      isNavMenuChromeTitle(
+        'Graduate Program Undergraduate Major Research & Collections Media Gallery Prize People',
+      ),
+    ).toBe(true);
+    expect(
+      sanitizePersonTitle('Home About Research Academics People Media Events Outreach'),
+    ).toBeUndefined();
+  });
+
+  it('keeps a multi-word capitalized title that names a role or carries no menu items (#4046)', () => {
+    for (const title of [
+      'Senior Administrative Assistant Child Study Center',
+      'Social Worker Child Study Center',
+      'Research Associate Internal Medicine General Medicine',
+      'Yale-Foundation Medicine Retrospective Oncology Research Award',
+      'Director Of Research Media And Outreach Programs',
+      'Home About Research',
+    ]) {
+      expect(isNavMenuChromeTitle(title)).toBe(false);
+    }
+  });
+
   it('keeps a real single job title', () => {
     expect(isNavMenuChromeTitle('Professor of Chemistry')).toBe(false);
   });
