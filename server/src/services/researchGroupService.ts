@@ -385,9 +385,10 @@ export interface ResearchGroupSearchOptions {
   // them costs an exhaustive count plus one disjunctive query per active filter.
   // A caller that already holds them can opt out. Defaults to true.
   includeFacets?: boolean;
-  // Client address for the query-embedding spend budget, supplied by the route
-  // from the same validated forwarded-address apparatus the rate limiters use.
-  // An in-process caller leaves it unset and is metered by the window ceiling.
+  // Client bucket for the query-embedding spend budget, supplied by the route as
+  // the same `getPeerIpKey` value every other per-IP limiter meters. An in-process
+  // caller leaves it unset, which exempts it so a measurement never silently loses
+  // its semantic leg to a budget written for public traffic.
   embeddingSpendKey?: string;
 }
 

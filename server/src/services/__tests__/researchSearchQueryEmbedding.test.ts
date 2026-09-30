@@ -102,18 +102,24 @@ describe('getResearchSearchQueryVector', () => {
     expect(researchSearchQueryEmbeddingCacheSize()).toBe(2);
   });
 
-  it('serves a casing or spacing variant of a cached query from the cache', async () => {
-    mocks.post.mockResolvedValue(embeddingResponse([0.7]));
+  // Two texts that differ only in case or spacing are two different `q` values, and
+  // rank equivalence with Meilisearch's own embedder is only claimed for the exact
+  // text sent as `q`, so neither may be served the other's vector.
+  it('embeds a casing or spacing variant separately from the text it varies', async () => {
+    mocks.post.mockImplementation(async (_url: string, body: { input: string }) =>
+      embeddingResponse([body.input.length]),
+    );
 
     const typed = await getResearchSearchQueryVector('Protein  Folding');
     const variant = await getResearchSearchQueryVector('protein folding');
 
-    expect(typed.vector).toEqual([0.7]);
-    expect(variant.vector).toEqual([0.7]);
-    expect(mocks.post).toHaveBeenCalledTimes(1);
-    // The text sent upstream is the text the search sends as `q`, because rank
-    // equivalence with Meilisearch's own embedder is only claimed for that text.
-    expect(mocks.post.mock.calls[0][1].input).toBe('Protein  Folding');
+    expect(typed.vector).toEqual([16]);
+    expect(variant.vector).toEqual([15]);
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    expect(mocks.post.mock.calls.map((call: any[]) => call[1].input)).toEqual([
+      'Protein  Folding',
+      'protein folding',
+    ]);
   });
 
   it('serves the semantic leg without an upstream call when no key is configured', async () => {
@@ -258,21 +264,50 @@ describe('the query embedding budget seen through getResearchSearchQueryVector',
     }
   });
 
-  it('meters an in-process caller with no client key against the window ceiling only', async () => {
+  // A relevance or journey harness is an in-process caller, and a run that silently
+  // lost its semantic leg would report a lower score as if the corpus or a lane had
+  // changed. The ceilings meter public traffic, so they do not reach it.
+  it('exempts an in-process caller with no client key from both ceilings', async () => {
+    process.env.RESEARCH_SEARCH_EMBEDDING_MAX_PER_MINUTE = '60';
     process.env.RESEARCH_SEARCH_EMBEDDING_MAX_PER_CLIENT_PER_MINUTE = '10';
     mocks.post.mockImplementation(async (_url: string, body: { input: string }) =>
       embeddingResponse([body.input.length]),
     );
     try {
-      for (let index = 0; index < 20; index += 1) {
+      for (let index = 0; index < 80; index += 1) {
         const outcome = await getResearchSearchQueryVector(`unkeyed-${index}`);
         expect(outcome.semanticLegAffordable).toBe(true);
+        expect(outcome.vector).not.toBeNull();
       }
 
       expect(researchSearchQueryEmbeddingBudgetSnapshot().trackedClients).toBe(0);
-      expect(researchSearchQueryEmbeddingBudgetSnapshot().spentInWindow).toBe(20);
+      expect(researchSearchQueryEmbeddingBudgetSnapshot().spentInWindow).toBe(0);
     } finally {
+      delete process.env.RESEARCH_SEARCH_EMBEDDING_MAX_PER_MINUTE;
       delete process.env.RESEARCH_SEARCH_EMBEDDING_MAX_PER_CLIENT_PER_MINUTE;
+    }
+  });
+
+  it('still bounds a keyed caller once an in-process run has issued many calls', async () => {
+    process.env.RESEARCH_SEARCH_EMBEDDING_MAX_PER_MINUTE = '60';
+    mocks.post.mockImplementation(async (_url: string, body: { input: string }) =>
+      embeddingResponse([body.input.length]),
+    );
+    try {
+      for (let index = 0; index < 80; index += 1) {
+        await getResearchSearchQueryVector(`harness-${index}`);
+      }
+      for (let index = 0; index < 60; index += 1) {
+        await getResearchSearchQueryVector(`keyed-${index}`, `ip:203.0.113.${index}`);
+      }
+      mocks.post.mockClear();
+
+      const refused = await getResearchSearchQueryVector('keyed-over', 'ip:198.51.100.4');
+
+      expect(refused).toEqual({ vector: null, semanticLegAffordable: false });
+      expect(mocks.post).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.RESEARCH_SEARCH_EMBEDDING_MAX_PER_MINUTE;
     }
   });
 });
@@ -336,6 +371,57 @@ describe('the breaker seen through getResearchSearchQueryVector', () => {
       mocks.post.mockClear();
 
       expect(await getResearchSearchQueryVector('repeat-5', '203.0.113.7')).toEqual({
+        vector: null,
+        semanticLegAffordable: false,
+      });
+      expect(mocks.post).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+      consoleWarn.mockRestore();
+    }
+  });
+
+  // A gateway answering 200 with an unparseable body charges for every call and
+  // returns no vector, so counting those as successes would keep the breaker reset
+  // and let the path pay the whole window ceiling indefinitely for nothing.
+  it('counts a 200 that carries no usable vector as a failure and opens the breaker', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mocks.post.mockResolvedValue({ data: { data: [{ embedding: [] }] } });
+      for (let index = 0; index < 5; index += 1) {
+        expect(await getResearchSearchQueryVector(`empty-${index}`, 'ip:203.0.113.7')).toEqual({
+          vector: null,
+          semanticLegAffordable: true,
+        });
+      }
+      expect(mocks.post).toHaveBeenCalledTimes(5);
+      mocks.post.mockClear();
+
+      expect(await getResearchSearchQueryVector('empty-5', 'ip:203.0.113.7')).toEqual({
+        vector: null,
+        semanticLegAffordable: false,
+      });
+      expect(mocks.post).not.toHaveBeenCalled();
+    } finally {
+      consoleWarn.mockRestore();
+    }
+  });
+
+  it('does not let one unusable 200 erase a run of ordinary failures', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mocks.post.mockRejectedValue(new Error('gateway timeout'));
+      for (let index = 0; index < 4; index += 1) {
+        await getResearchSearchQueryVector(`mixed-${index}`, 'ip:203.0.113.7');
+      }
+
+      mocks.post.mockReset();
+      mocks.post.mockResolvedValue({ data: { data: [{ embedding: [] }] } });
+      await getResearchSearchQueryVector('mixed-empty', 'ip:203.0.113.7');
+      mocks.post.mockClear();
+
+      expect(await getResearchSearchQueryVector('mixed-after', 'ip:203.0.113.7')).toEqual({
         vector: null,
         semanticLegAffordable: false,
       });

@@ -323,26 +323,51 @@ describe('researchGroupController', () => {
     });
   });
 
-  it('meters query-embedding spend against the shared client address, port stripped', async () => {
+  const embeddingSpendKeyFor = async (ip: unknown): Promise<unknown> => {
     mocks.searchResearchGroupsViaMeili.mockResolvedValue({
       researchEntities: [],
       estimatedTotalHits: 0,
       page: 1,
       pageSize: 24,
     });
+    mocks.searchResearchGroupsViaMeili.mockClear();
     const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
 
     await searchResearchGroups(
-      {
-        body: { q: 'machine learning', page: 1, pageSize: 24, filters: {} },
-        ip: '203.0.113.7:54321',
-      } as any,
+      { body: { q: 'machine learning', page: 1, pageSize: 24, filters: {} }, ip } as any,
       res,
     );
 
-    expect(mocks.searchResearchGroupsViaMeili.mock.calls[0][5]).toMatchObject({
-      embeddingSpendKey: '203.0.113.7',
-    });
+    return mocks.searchResearchGroupsViaMeili.mock.calls[0][5]?.embeddingSpendKey;
+  };
+
+  it('meters query-embedding spend against the shared client bucket, port stripped', async () => {
+    expect(await embeddingSpendKeyFor('203.0.113.7:54321')).toBe(
+      await embeddingSpendKeyFor('203.0.113.7'),
+    );
+    expect(await embeddingSpendKeyFor('203.0.113.7')).not.toBe(
+      await embeddingSpendKeyFor('198.51.100.4'),
+    );
+  });
+
+  // A caller on a routed IPv6 prefix can source each request from a different
+  // address in it, so a per-address key would let one client mint a fresh budget per
+  // request and spend the whole window ceiling alone. Every other per-IP bucket here
+  // masks to the subnet for exactly that reason, and this one must agree.
+  it('holds one bucket for an IPv6 caller that moves within its own subnet', async () => {
+    expect(await embeddingSpendKeyFor('2001:db8::1')).toBe(
+      await embeddingSpendKeyFor('2001:db8::dead:beef'),
+    );
+    expect(await embeddingSpendKeyFor('2001:db8::1')).not.toBe(
+      await embeddingSpendKeyFor('2001:dba::1'),
+    );
+  });
+
+  // An address that does not resolve must share a bucket rather than escape the
+  // per-client ceiling, so the key is always supplied.
+  it('still supplies a spend key when the client address does not resolve', async () => {
+    expect(await embeddingSpendKeyFor(undefined)).toEqual(expect.any(String));
+    expect(await embeddingSpendKeyFor(undefined)).toBe(await embeddingSpendKeyFor(''));
   });
 
   it('does not expose nonpublic research results to legacy admin sessions without active authority', async () => {
@@ -382,6 +407,7 @@ describe('researchGroupController', () => {
         lowQualityFirst: false,
         qualityFilters: [],
         includeFacets: true,
+        embeddingSpendKey: expect.any(String),
       },
     );
   });
@@ -421,6 +447,7 @@ describe('researchGroupController', () => {
         lowQualityFirst: false,
         qualityFilters: [],
         includeFacets: true,
+        embeddingSpendKey: expect.any(String),
       },
     );
   });
@@ -460,6 +487,7 @@ describe('researchGroupController', () => {
         lowQualityFirst: true,
         qualityFilters: ['missing-lead'],
         includeFacets: true,
+        embeddingSpendKey: expect.any(String),
       },
     );
   });

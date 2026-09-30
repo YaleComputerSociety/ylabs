@@ -34,14 +34,6 @@ export const clearResearchSearchQueryEmbeddingCache = (): void => {
   inFlightQueryVectors.clear();
 };
 
-// The dominant caller already hands over a lowercased, whitespace-collapsed query,
-// but the non-Latin path forwards the raw text, so casing and spacing variants of
-// one query each bought their own paid call. The cache key is normalized while the
-// text sent upstream is not, because rank equivalence with Meilisearch's own
-// embedder holds only for the exact text sent as `q`.
-const queryEmbeddingCacheKey = (queryText: string): string =>
-  queryText.trim().replace(/\s+/g, ' ').toLowerCase();
-
 const rememberQueryVector = (key: string, vector: number[]): void => {
   if (cachedQueryVectors.has(key)) cachedQueryVectors.delete(key);
   cachedQueryVectors.set(key, vector);
@@ -97,14 +89,18 @@ const affordable = (vector: number[] | null): ResearchSearchQueryVectorOutcome =
  * caller omits `vector`, Meilisearch embeds the query itself, and behaviour is
  * unchanged apart from the latency this exists to remove.
  *
- * `clientKey` is the client address the route derives, used only to meter spend.
+ * `clientKey` is the client bucket the route derives, used only to meter spend.
+ *
+ * The cache is keyed on the exact text sent upstream, because that is also the text
+ * the search sends Meilisearch as `q` and rank equivalence with Meilisearch's own
+ * embedder holds only for that text.
  */
 export const getResearchSearchQueryVector = async (
   queryText: string,
   clientKey?: string,
 ): Promise<ResearchSearchQueryVectorOutcome> => {
-  const key = queryEmbeddingCacheKey(queryText);
-  if (!key) return affordable(null);
+  const key = queryText;
+  if (key.trim() === '') return affordable(null);
 
   const cached = cachedQueryVectors.get(key);
   if (cached) {
@@ -125,7 +121,11 @@ export const getResearchSearchQueryVector = async (
   const pending = (async () => {
     try {
       const vector = await requestQueryVector(queryText, apiKey);
-      if (vector) rememberQueryVector(key, vector);
+      if (!vector) {
+        recordResearchSearchQueryEmbeddingFailure('error');
+        return null;
+      }
+      rememberQueryVector(key, vector);
       recordResearchSearchQueryEmbeddingSuccess();
       return vector;
     } catch (error) {

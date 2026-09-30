@@ -9,10 +9,15 @@
  *
  * The window ceiling is the real bound and the per-client ceiling is a secondary
  * guard. That ordering is deliberate: Yale NATs a large student body behind few
- * egress addresses, so a tight per-address number would take the semantic leg away
- * from a whole cohort for the traffic of one member of it. The per-address number is
+ * egress addresses, so a tight per-client number would take the semantic leg away
+ * from a whole cohort for the traffic of one member of it. The per-client number is
  * therefore set well above what a cohort of genuine searchers produces, and the
  * absolute bound on spend comes from the window ceiling instead.
+ *
+ * The client key is whatever `getPeerIpKey` produces for the request, so an IPv6
+ * caller is metered by subnet exactly as it is by every other per-IP limiter here. A
+ * per-address key would let one caller on a routed prefix mint a fresh bucket per
+ * request and spend the whole window ceiling alone.
  */
 const WINDOW_MS = 60_000;
 
@@ -104,8 +109,12 @@ const normalizedClientKey = (clientKey?: string): string | undefined => {
  * The claim is taken before the call rather than after it succeeds, because a call
  * that fails has still spent the upstream capacity this exists to ration.
  *
- * A caller with no client key is an in-process one rather than a network source, so
- * it is metered by the window ceiling alone.
+ * The ceilings meter network callers, and the route always supplies a client key, so
+ * a caller with no key is an operator-run in-process harness. Those are exempt: a
+ * relevance or journey measurement that silently lost its semantic leg reads as a
+ * corpus or lane change, which is a worse failure than the spend it would save. The
+ * breaker still applies to them, because that tracks upstream health rather than
+ * spend.
  */
 export const reserveResearchSearchQueryEmbedding = (
   clientKey?: string,
@@ -114,16 +123,15 @@ export const reserveResearchSearchQueryEmbedding = (
   rollWindowIfElapsed(now);
   if (now < cooldownUntil) return 'cooling-down';
 
+  const key = normalizedClientKey(clientKey);
+  if (key === undefined) return 'allowed';
+
   const { maxPerWindow, maxPerClientPerWindow } = researchSearchQueryEmbeddingBudgetLimits();
   if (spentInWindow >= maxPerWindow) return 'window-ceiling';
-
-  const key = normalizedClientKey(clientKey);
-  if (key !== undefined && (spentByClient.get(key) ?? 0) >= maxPerClientPerWindow) {
-    return 'client-ceiling';
-  }
+  if ((spentByClient.get(key) ?? 0) >= maxPerClientPerWindow) return 'client-ceiling';
 
   spentInWindow += 1;
-  if (key !== undefined) spentByClient.set(key, (spentByClient.get(key) ?? 0) + 1);
+  spentByClient.set(key, (spentByClient.get(key) ?? 0) + 1);
   return 'allowed';
 };
 
@@ -149,9 +157,6 @@ export const recordResearchSearchQueryEmbeddingFailure = (
     openCooldown(now, `${CONSECUTIVE_FAILURES_BEFORE_COOLDOWN} consecutive failures`);
   }
 };
-
-export const isResearchSearchQueryEmbeddingCoolingDown = (now: number = Date.now()): boolean =>
-  now < cooldownUntil;
 
 export const researchSearchQueryEmbeddingBudgetSnapshot = (now: number = Date.now()) => ({
   spentInWindow,

@@ -231,7 +231,8 @@ A route is billed as a write only if it lists the `writeLimit` middleware in its
 One paid dependency is metered separately, because a request budget does not bound it.
 Each distinct search query text is one paid embedding call, and `server/src/services/researchSearchQueryEmbeddingBudget.ts` bounds those calls per one-minute window, globally and per client address, with a breaker for an upstream rejection.
 It is not a rate limiter and never answers `429`: over budget the search drops its semantic leg, the keyword leg answers, and the response is marked `degraded`.
-The client address is `rateLimitClientIp(req)`, so it is the same validated forwarded address the limiters above meter, and a new derivation must not be written for it.
+The client key is `getPeerIpKey(req)`, so it is the same bucket the limiters above meter, IPv6 masked to its subnet, and a new derivation must not be written for it.
+The route supplies it unconditionally, so a request whose address does not resolve shares one bucket rather than reading as an in-process caller, which is the only case the ceilings exempt.
 `skills/search-data/SKILL.md` owns the ceilings, the defaults, and why the window ceiling rather than the per-address one is the real bound.
 
 `globalLimiter` is sized high because un-batched view and impression telemetry rides this budget; lower it once analytics beacons are batched client-side.

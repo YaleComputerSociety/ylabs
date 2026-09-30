@@ -95,16 +95,20 @@ describe('reserving a call', () => {
     expect(researchSearchQueryEmbeddingBudgetSnapshot(START + 60_000).spentInWindow).toBe(1);
   });
 
-  it('tracks no client bucket for an in-process caller', () => {
+  it('exempts an in-process caller from both ceilings and charges it nothing', () => {
+    process.env.RESEARCH_SEARCH_EMBEDDING_MAX_PER_MINUTE = '60';
     process.env.RESEARCH_SEARCH_EMBEDDING_MAX_PER_CLIENT_PER_MINUTE = '10';
-    for (let index = 0; index < 20; index += 1) {
+    for (let index = 0; index < 80; index += 1) {
       expect(reserveResearchSearchQueryEmbedding(undefined, START)).toBe('allowed');
     }
 
-    expect(researchSearchQueryEmbeddingBudgetSnapshot(START).trackedClients).toBe(0);
+    expect(researchSearchQueryEmbeddingBudgetSnapshot(START)).toMatchObject({
+      trackedClients: 0,
+      spentInWindow: 0,
+    });
   });
 
-  it('treats a blank client address as an in-process caller rather than as one bucket', () => {
+  it('treats a blank client key as an in-process caller rather than as one bucket', () => {
     expect(reserveResearchSearchQueryEmbedding('', START)).toBe('allowed');
 
     expect(researchSearchQueryEmbeddingBudgetSnapshot(START).trackedClients).toBe(0);
