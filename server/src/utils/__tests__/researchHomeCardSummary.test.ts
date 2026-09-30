@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { resolveResearchHomeCardSummary } from '../researchHomeCardSummary';
+import {
+  resolveResearchHomeCardSummary,
+  type ResearchHomeCardSummaryInput,
+} from '../researchHomeCardSummary';
 
 describe('resolveResearchHomeCardSummary', () => {
   it('prefers a grounded shortDescription when the fullDescription is useful', () => {
@@ -30,17 +33,19 @@ describe('resolveResearchHomeCardSummary', () => {
     });
   });
 
-  it('falls back to profileSynthesisDescription when the fullDescription is not useful', () => {
+  it('never derives a card from the unmodelled stored profile-synthesis text (#3937)', () => {
     const summary = resolveResearchHomeCardSummary({
       shortDescription: 'Professor of Chemistry',
       fullDescription: 'Director of Department Cores',
+      departments: ['Chemistry'],
       profileSynthesisDescription: 'Works on catalysis and green chemistry synthesis routes.',
-    });
+    } as ResearchHomeCardSummaryInput);
 
+    expect(summary.text).not.toContain('catalysis');
     expect(summary).toEqual({
-      text: 'Works on catalysis and green chemistry synthesis routes.',
-      state: 'complete',
-      label: 'Profile context',
+      text: 'Limited public description. Use the Chemistry context while this profile is reviewed.',
+      state: 'sparse',
+      label: 'Summary limited',
     });
   });
 

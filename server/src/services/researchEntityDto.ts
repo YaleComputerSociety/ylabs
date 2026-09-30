@@ -118,10 +118,7 @@ function publicResearchEntityName(value: unknown): string {
   return collapseDuplicateResearchHomeSuffix(publicTextString(value));
 }
 
-const RESEARCH_ENTITY_DESCRIPTION_FIELDS = new Set([
-  'fullDescription',
-  'profileSynthesisDescription',
-]);
+const RESEARCH_ENTITY_DESCRIPTION_FIELDS = new Set(['fullDescription']);
 
 /**
  * The displayName a person-scoped record may serve, or nothing when the stored
@@ -376,8 +373,6 @@ export function toPublicResearchEntitySummaryDto(
 const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'shortDescription',
   'fullDescription',
-  'profileSynthesisDescription',
-  'descriptionSource',
   'website',
   'websiteUrl',
   'location',
@@ -411,11 +406,7 @@ export interface PublicResearchEntityDtoOptions {
   leadMemberNames?: readonly string[];
 }
 
-const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set([
-  'fullDescription',
-  'profileSynthesisDescription',
-  'recentGrants',
-]);
+const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set(['fullDescription', 'recentGrants']);
 
 function publicTextValue(value: unknown): unknown {
   if (typeof value === 'string') {
@@ -553,7 +544,6 @@ export function toPublicResearchEntityDto(
     dto.cardDescription = resolveResearchHomeCardSummary({
       shortDescription: served.shortDescription,
       fullDescription: served.fullDescription,
-      profileSynthesisDescription: served.profileSynthesisDescription,
       departments: group.departments,
       sourceUrls: group.sourceUrls,
       school: group.school,

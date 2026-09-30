@@ -4449,7 +4449,7 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.members[0].user).not.toHaveProperty('userId');
   });
 
-  it('corrects non-PI leading possessive names in public descriptions', async () => {
+  it('serves no stored profile-synthesis field even when the sanitizer would have corrected it (#3937)', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     const entityObjectId = new mongoose.Types.ObjectId(entityId);
     const personId = new mongoose.Types.ObjectId();
@@ -4503,13 +4503,12 @@ describe('getResearchGroupDetail', () => {
 
     const detail = await getResearchGroupDetail('glahn-lab-dcg32');
 
-    expect(detail?.researchEntity.profileSynthesisDescription).toContain(
-      'This lab studies how humans process complex sound patterns.',
-    );
-    expect(detail?.researchEntity.profileSynthesisDescription).not.toContain("David Lang's");
+    expect(detail?.researchEntity).not.toHaveProperty('profileSynthesisDescription');
+    expect(detail?.researchEntity).not.toHaveProperty('descriptionSource');
+    expect(JSON.stringify(detail)).not.toContain('complex sound patterns');
   });
 
-  it('removes non-research PI profile synthesis content that does not match lead PI names', async () => {
+  it('serves no stored profile-synthesis field when its prose carries no research signal (#3937)', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.researchEntityFindOne.mockReturnValue(
       leanResult({
@@ -4530,7 +4529,9 @@ describe('getResearchGroupDetail', () => {
 
     const detail = await getResearchGroupDetail('glahn-lab-dcg32');
 
-    expect(detail?.researchEntity.profileSynthesisDescription).toBe('');
+    expect(detail?.researchEntity).not.toHaveProperty('profileSynthesisDescription');
+    expect(detail?.researchEntity).not.toHaveProperty('descriptionSource');
+    expect(JSON.stringify(detail)).not.toContain('renowned concert halls');
   });
 });
 

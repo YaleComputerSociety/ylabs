@@ -198,13 +198,13 @@
       "expectText": "The laboratory investigates hippocampal replay during slow-wave sleep."
     },
     {
-      "name": "uses profile synthesis context when no usable description exists",
+      "name": "never cards the unmodelled profile-synthesis text, which no lane asserts",
       "input": {
         "shortDescription": "Research home connected to .",
         "profileSynthesisDescription": "Works on computational models of visual attention."
       },
-      "expectState": "complete",
-      "expectText": "Works on computational models of visual attention."
+      "expectState": "sparse",
+      "expectText": "Limited public description. This profile needs source review before fit can be assessed."
     },
     {
       "name": "sparse with department context and source links when nothing is usable",

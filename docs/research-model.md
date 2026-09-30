@@ -375,6 +375,12 @@ Public cards or detail sections may link to that guarded official URL, but must 
 
 Public research detail payloads no longer carry `activeListings`, and browse payloads no longer carry `hasActiveListing`.
 
+`profileSynthesisDescription` and `descriptionSource` are stored-only and are served on no payload (#3937).
+Neither is declared on the `ResearchEntity` schema and no lane writes either one, so the stored values are frozen, carry no provenance, and cannot be refreshed or retracted by evidence.
+Serving text nothing asserts is the unbacked case the evidence contract in `AGENTS.md` refuses, so the DTO, the browse card summary and the client detail page all read the source-backed `fullDescription`/`shortDescription` instead, and a row whose only prose was the synthesis serves no research summary rather than an unbacked one.
+The stored fields stay in the corpus because two live guards read them as evidence about the row rather than as copy to publish: `guardNonResearchProfileSynthesisText` uses `descriptionSource` to blank a source-unbacked body that carries no research signal, and the research-scope, Yale-status, deceased-lead and quality readers treat the stored synthesis text as narrative evidence.
+Unsetting either field is therefore a separate change that has to retire those readers first, not a cleanup that follows this one.
+
 ## Saved Research Entities
 
 Student workflow depth starts with saved research profiles.

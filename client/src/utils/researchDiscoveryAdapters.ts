@@ -41,7 +41,6 @@ export type ResearchHomeContextState = 'complete' | 'sparse';
 export interface ResearchHomeContextInput {
   shortDescription?: string | null;
   fullDescription?: string | null;
-  profileSynthesisDescription?: string | null;
   cardDescription?: ResearchHomeContextSummary | null;
   researchAreas?: Array<string | undefined | null>;
   departments?: Array<string | undefined | null>;
@@ -293,14 +292,9 @@ const selectResearchDescriptionSummary = (
     return buildCompleteContextSummary(input.fullDescription);
   }
 
-  const summaries = [
-    isWeakShortDescription(input.shortDescription)
-      ? undefined
-      : buildCompleteContextSummary(input.shortDescription),
-    buildCompleteContextSummary(input.profileSynthesisDescription, 'Profile context'),
-  ].filter((summary): summary is ResearchHomeContextSummary => Boolean(summary));
-
-  return summaries[0];
+  return isWeakShortDescription(input.shortDescription)
+    ? undefined
+    : buildCompleteContextSummary(input.shortDescription);
 };
 
 export const buildResearchHomeContextSummary = (
@@ -551,7 +545,6 @@ const buildProfileDiscoveryClusters = (
     const contextSummary = buildResearchHomeContextSummary({
       shortDescription: entity.shortDescription,
       fullDescription: entity.fullDescription,
-      profileSynthesisDescription: entity.profileSynthesisDescription,
       cardDescription: entity.cardDescription,
       researchAreas: entity.researchAreas,
       departments: entity.departments,

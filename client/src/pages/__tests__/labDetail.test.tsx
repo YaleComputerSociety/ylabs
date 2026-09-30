@@ -2606,7 +2606,7 @@ describe('LabDetail page', () => {
     expect(screen.queryByText('Ways to approach this lab')).toBeNull();
   });
 
-  it('renders PI-profile synthesis with faculty-research wording instead of lab-description wording', async () => {
+  it('renders no research summary from stored profile-synthesis prose, which no lane asserts (#3937)', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
@@ -2624,7 +2624,7 @@ describe('LabDetail page', () => {
           'It appears to center on High-Dimensional Statistics and Probability Theory.',
         descriptionSource: 'PI_PROFILE_SYNTHESIS',
       },
-    } as LabDetailPayload);
+    } as unknown as LabDetailPayload);
 
     const { container } = await waitFor(() => {
       expect(screen.getByText('Example Synthesis Lab')).toBeTruthy();
@@ -2632,28 +2632,17 @@ describe('LabDetail page', () => {
     });
 
     const text = container.textContent || '';
-    expect(text).toContain('What this faculty research covers');
-    expect(text).toContain(
+    expect(text).toContain('No published research summary yet');
+    expect(text).not.toContain(
       'It appears to center on High-Dimensional Statistics and Probability Theory.',
     );
-    expect(text).toContain(
+    expect(text).not.toContain(
       'y/labs has not found a separate research website or posted undergraduate opening',
     );
-    expect(text).not.toContain('What this lab studies');
-    expect(text).not.toContain('Research connected to High-Dimensional Statistics');
-
-    const summary = screen.getByText(
-      'It appears to center on High-Dimensional Statistics and Probability Theory.',
-    );
-    const disclaimer = screen.getByText(
-      /y\/labs has not found a separate research website or posted undergraduate opening/,
-    );
-    expect(summary.tagName).toBe('P');
-    expect(disclaimer.tagName).toBe('P');
-    expect(summary).not.toBe(disclaimer);
+    expect(text).not.toContain('What this faculty research covers');
   });
 
-  it('uses lab wording when a PI-profile synthesis belongs to a real lab website', async () => {
+  it('prefers the source-backed body over stored profile-synthesis prose on the same row (#3937)', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
@@ -2663,12 +2652,13 @@ describe('LabDetail page', () => {
         entityType: 'LAB',
         websiteUrl: MATERIALS_LAB_WEBSITE_URL,
         shortDescription: '',
-        fullDescription: '',
+        fullDescription:
+          'This lab studies perovskite thin films, defect chemistry, and photovoltaic device stability.',
         profileSynthesisDescription:
           'This faculty research profile is synthesized from PI profile topics and recent scholarly work.',
         descriptionSource: 'PI_PROFILE_SYNTHESIS',
       },
-    } as LabDetailPayload);
+    } as unknown as LabDetailPayload);
 
     const { container } = await waitFor(() => {
       expect(screen.getByText('Example Materials Lab')).toBeTruthy();
@@ -2677,6 +2667,8 @@ describe('LabDetail page', () => {
 
     const text = container.textContent || '';
     expect(text).toContain('What this lab studies');
+    expect(text).toContain('This lab studies perovskite thin films');
+    expect(text).not.toContain('synthesized from PI profile topics');
     expect(text).not.toContain('What this faculty research covers');
   });
 
@@ -2694,7 +2686,6 @@ describe('LabDetail page', () => {
         websiteUrl: FACULTY_HOME_URL,
         fullDescription:
           'Example Faculty studies distributed algorithms, population protocols, and consensus mechanisms.',
-        descriptionSource: 'ENTITY_SOURCE',
       },
     } as unknown as LabDetailPayload);
 

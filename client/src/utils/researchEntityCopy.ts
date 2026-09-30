@@ -29,7 +29,6 @@ export type ResearchEntityCopyInput = {
   name?: string | null;
   kind?: string | null;
   entityType?: string | null;
-  descriptionSource?: string | null;
 };
 
 const effectiveEntityKind = (entity?: ResearchEntityCopyInput | null): string =>

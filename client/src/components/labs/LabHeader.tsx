@@ -15,7 +15,6 @@ import {
 } from '../../utils/researchDetailSources';
 import {
   entityKindLabel,
-  isFacultyResearchEntity as isFacultyResearchEntityCopy,
   researchEntityTitle,
   researchWebsiteCtaLabel,
 } from '../../utils/researchEntityCopy';
@@ -63,11 +62,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
   });
   const showProfileResearchAreas =
     visibleProfileResearchAreas.length > 0 && group.researchAreaSource !== 'PI_PROFILE_FALLBACK';
-  const isFacultyResearchEntity = isFacultyResearchEntityCopy(group);
-  const kindLabel =
-    group.descriptionSource === 'PI_PROFILE_SYNTHESIS' && isFacultyResearchEntity
-      ? 'Faculty Research'
-      : entityKindLabel(group);
+  const kindLabel = entityKindLabel(group);
   const websiteLinkLabel = researchWebsiteCtaLabel(group);
 
   return (

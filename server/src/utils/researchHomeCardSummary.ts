@@ -123,7 +123,6 @@ export interface ResearchHomeCardSummary {
 export interface ResearchHomeCardSummaryInput {
   shortDescription?: string | null;
   fullDescription?: string | null;
-  profileSynthesisDescription?: string | null;
   departments?: Array<string | undefined | null>;
   sourceUrls?: Array<string | undefined | null>;
   school?: string | null;
@@ -178,14 +177,9 @@ const selectResearchDescriptionSummary = (
     return buildCompleteContextSummary(input.fullDescription);
   }
 
-  const summaries = [
-    isWeakShortDescription(input.shortDescription)
-      ? undefined
-      : buildCompleteContextSummary(input.shortDescription),
-    buildCompleteContextSummary(input.profileSynthesisDescription, 'Profile context'),
-  ].filter((summary): summary is ResearchHomeCardSummary => Boolean(summary));
-
-  return summaries[0];
+  return isWeakShortDescription(input.shortDescription)
+    ? undefined
+    : buildCompleteContextSummary(input.shortDescription);
 };
 
 /**
