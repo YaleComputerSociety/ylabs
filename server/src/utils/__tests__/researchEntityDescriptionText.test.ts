@@ -1805,6 +1805,13 @@ describe('revoiceFirstPersonResearchLead', () => {
     );
   });
 
+  it('keeps the possessive for a plural self noun on a lab row (#4044)', () => {
+    const lab = { name: 'Quill Lab', entityType: 'LAB', kind: 'lab' };
+    expect(
+      revoiceFirstPersonResearchLead('Our labs are located in the science building.', lab),
+    ).toBe("The Quill Lab's labs are located in the science building.");
+  });
+
   it('keeps a self noun possessed by the person a faculty research profile names (#4044)', () => {
     const faculty = {
       name: 'Robin Quill Research',
