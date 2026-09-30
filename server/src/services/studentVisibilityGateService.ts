@@ -227,7 +227,6 @@ export const ACTION_EVIDENCE_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'missing_action_evidence',
   'missing_alternate_access_path',
   'missing_application_route',
-  'application_link_is_info_page',
   'missing_source_route',
 ]);
 export const SUPPRESSION_REPAIR_REASONS: ReadonlySet<string> = new Set([

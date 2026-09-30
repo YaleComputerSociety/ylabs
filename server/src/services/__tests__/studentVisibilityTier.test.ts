@@ -2998,6 +2998,21 @@ describe('a program whose apply link is its own information page (#3904)', () =>
     expect(result.reasons).not.toContain('application_link_is_info_page');
   });
 
+  it('is not served when the apply link differs from its page only by scheme or www prefix', () => {
+    const result = computeProgramStudentVisibility({
+      ...guide,
+      applicationLink: 'http://www.fixture.yale.edu/undergraduate-program/senior-project#apply',
+    });
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.reasons).toContain('application_link_is_info_page');
+  });
+
+  it('still counts its own page as the application route when it is accepting applications', () => {
+    const result = computeProgramStudentVisibility({ ...guide, isAcceptingApplications: true });
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('application_link_is_info_page');
+  });
+
   it('still counts a separate application page with no deadline', () => {
     const result = computeProgramStudentVisibility({
       ...guide,
