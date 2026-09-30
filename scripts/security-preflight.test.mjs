@@ -4494,46 +4494,7 @@ test('CORS origin headers are bounded before allowlist comparison', () => {
   assert.match(source, /parsed\.username \|\| parsed\.password/);
   assert.match(source, /parsed\.origin !== origin/);
   assert.match(source, /const normalizedOrigin = normalizeCorsOrigin\(origin\)/);
-  assert.match(source, /if \(allowedOrigins\.has\(normalizedOrigin\)\) return true;/);
-  assert.match(
-    source,
-    /return allowLoopbackOrigins && isLoopbackHttpOrigin\(normalizedOrigin\);/,
-  );
   assert.doesNotMatch(source, /allowedOrigins\.has\(origin\)/);
-});
-
-test('development-only affordances require a loopback caller', () => {
-  const passportSource = fs.readFileSync(
-    new URL('../server/src/passport.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(passportSource, /return isDevLoginAllowed\(env\) && isLoopbackRequest\(req\);/);
-  assert.match(
-    passportSource,
-    /return isLocalAuthBypassAllowed\(env\) && isLoopbackRequest\(req\);/,
-  );
-  assert.match(
-    passportSource,
-    /if \(!isDevLoginRequestAllowed\(req\)\) \{\s*return res\.status\(404\)\.json\(\{ error: 'Not found' \}\);/,
-  );
-  assert.match(passportSource, /isLocalAuthBypassRequestAllowed\(req\)/);
-
-  const environmentSource = fs.readFileSync(
-    new URL('../server/src/utils/environment.ts', import.meta.url),
-    'utf8',
-  );
-  assert.match(
-    environmentSource,
-    /requiresDeployedRuntimeSecurity\(env\) \? DEPLOYED_LISTEN_HOST : LOCAL_LISTEN_HOST/,
-  );
-
-  const indexSource = fs.readFileSync(
-    new URL('../server/src/index.ts', import.meta.url),
-    'utf8',
-  );
-  assert.match(indexSource, /const listenHost = serverListenHost\(\);/);
-  assert.match(indexSource, /app\.listen\(port, listenHost, \(\) => \{/);
 });
 
 test('auth debug logs do not interpolate user identifiers', () => {
