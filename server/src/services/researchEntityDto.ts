@@ -583,7 +583,7 @@ function derivePublicResearchEntityDto(
     dto.sourceFieldContributions = publicSourceFieldContributionsArray(
       group.sourceFieldContributions,
       group.sourceLinkHealth,
-      dto,
+      { ...dto, shortDescription: served.shortDescription },
     );
   }
 

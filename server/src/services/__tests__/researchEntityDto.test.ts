@@ -2043,6 +2043,23 @@ describe('a source is credited only for a field the row serves (#3922)', () => {
     expect(labels).toContain('Lead identity');
   });
 
+  it('drops the research-summary credit when the only card is built from topics', () => {
+    const labels = creditedLabels({
+      fullDescription: '',
+      shortDescription: '',
+      researchAreas: ['Sediment transport', 'Estuaries'],
+    });
+    expect(labels).toContain('Topics');
+    expect(labels).not.toContain('Research summary');
+  });
+
+  it('keeps the research-summary credit for a stored card line with no body', () => {
+    const labels = creditedLabels({
+      shortDescription: 'Studies how sediment moves through estuaries and along coastlines.',
+    });
+    expect(labels).toContain('Research summary');
+  });
+
   it('drops a source entirely when none of its credits is served', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-credit-empty',
