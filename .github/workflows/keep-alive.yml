@@ -16,22 +16,12 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
       - name: Ping the beta API
         env:
           BETA_HEALTH_URL: https://ylabs-gr4v.onrender.com/api/config
-        run: |
-          set -uo pipefail
-          attempts=3
-          status=000
-          for attempt in $(seq 1 "$attempts"); do
-            status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$BETA_HEALTH_URL")
-            echo "attempt ${attempt}/${attempts}: HTTP ${status}"
-            case "$status" in
-              2*) echo "beta answered HTTP ${status}"; exit 0 ;;
-            esac
-            if [ "$attempt" -lt "$attempts" ]; then
-              sleep 20
-            fi
-          done
-          echo "::error::${BETA_HEALTH_URL} did not answer 2xx after ${attempts} attempts (last HTTP ${status})"
-          exit 1
+        run: scripts/keep-alive-probe.sh

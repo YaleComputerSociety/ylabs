@@ -89,7 +89,8 @@ Draft state is the default hold.
 Open promotion pull requests as drafts, verify on staging, then mark ready.
 Use the `hold` label when a promotion must be blocked for a reason other than draft state, so the reason is visible in the pull request list.
 
-The check reads both conditions from the pull request itself at run time, with `gh pr view --json isDraft,labels`, rather than from the webhook payload that started the run.
+The check, `scripts/release-hold-check.sh`, reads both conditions from the pull request itself at run time, with `gh pr view --json isDraft,labels`, rather than from the webhook payload that started the run.
+The label match ignores case, so `Hold` holds as well as `hold`, and a failure to read the live state fails the check.
 That is what makes "while" true.
 A re-run of a workflow run replays the original event, so a payload-driven check would re-read the labels and draft state as they were at that earlier event and could report clear on a promotion that is still held (#3911).
 Re-running the check is therefore safe: it always evaluates the current state.
@@ -97,7 +98,8 @@ Re-running the check is therefore safe: it always evaluates the current state.
 ## Keeping beta warm
 
 The `Keep Alive` workflow pings `GET /api/config` on the beta service.
-It is a warm-up that doubles as the only scheduled signal about beta, so it fails when the endpoint does not answer 2xx after three attempts twenty seconds apart, and it prints the final HTTP status so a red run names what it saw (#3910).
+It is a warm-up that doubles as the only scheduled signal about beta, so `scripts/keep-alive-probe.sh` fails when the endpoint does not answer 2xx after three attempts twenty seconds apart, and it prints the final HTTP status so a red run names what it saw (#3910).
+A timeout or refused connection counts as a failed attempt and is reported as HTTP `000`, so a cold start that outlasts one attempt still gets the remaining retries.
 A 500 is a running service returning an error, not a cold start, and it is reported as a failure.
 
 Its cadence is best-effort and much lower than the cron line suggests.

@@ -19,28 +19,14 @@ jobs:
     name: release-hold
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
       - name: Block while a release hold is in effect
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           TARGET_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          state=$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json isDraft,labels)
-          is_draft=$(printf '%s' "$state" | jq -r '.isDraft')
-          has_hold=$(printf '%s' "$state" | jq -r '[.labels[].name] | index("hold") != null')
-          echo "live state for #${PR_NUMBER}: isDraft=${is_draft} holdLabel=${has_hold}"
-
-          held=0
-          if [ "$has_hold" = "true" ]; then
-            echo "::error::The 'hold' label is set on this promotion. Beta verification is not signed off."
-            held=1
-          fi
-          if [ "$is_draft" = "true" ]; then
-            echo "::error::This promotion is still a draft. Mark it ready for review once beta verification passes."
-            held=1
-          fi
-          if [ "$held" -eq 1 ]; then
-            exit 1
-          fi
-          echo "No release hold in effect."
+        run: scripts/release-hold-check.sh
