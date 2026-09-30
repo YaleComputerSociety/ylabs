@@ -32,6 +32,14 @@ export interface SourceLinkHealth {
    * `privateAddressHost`; it is never itself stored (#3903).
    */
   publicAddressHost?: boolean;
+  /**
+   * The server answered but its certificate failed verification, so a browser
+   * stops a student at a security warning. A THIRD axis, independent of
+   * `healthStatus` for the reason #2751 gives: a failing certificate says how the
+   * host presents itself on port 443, never whether the page exists, so the status
+   * stays `UNKNOWN` and the link is never retired on this alone.
+   */
+  tlsVerificationFailed?: boolean;
 }
 
 export interface SourceLinkProbeResult {
@@ -62,6 +70,20 @@ export interface SourceLinkProbeResult {
  * the same confirm-before-recording rule #2725 established for DNS.
  */
 const DEAD_LINK_ERROR_CODES = new Set(['ENOTFOUND', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
+
+/** Node's codes for a certificate the client refused to trust. */
+const TLS_VERIFICATION_ERROR_CODES = new Set([
+  'CERT_HAS_EXPIRED',
+  'CERT_NOT_YET_VALID',
+  'CERT_REVOKED',
+  'CERT_UNTRUSTED',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_GET_ISSUER_CERT',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+]);
 
 /**
  * Only a status that asserts the resource is gone retires a link. Every other
@@ -233,7 +255,11 @@ function classifyProbeOutcome(probe: SourceLinkProbeResult): SourceLinkHealth {
 }
 
 export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLinkHealth {
-  const outcome = classifyProbeOutcome(probe);
+  const classified = classifyProbeOutcome(probe);
+  const outcome =
+    probe.errorCode && TLS_VERIFICATION_ERROR_CODES.has(probe.errorCode)
+      ? { ...classified, tlsVerificationFailed: true }
+      : classified;
   if (probe.privateAddressHost) return { ...outcome, privateAddressHost: true };
   if (probe.publicAddressHost) return { ...outcome, publicAddressHost: true };
   return outcome;
@@ -253,11 +279,13 @@ export interface DatedSourceLinkHealth extends SourceLinkHealth {
 }
 
 /**
- * The key a stored verdict is looked up by. Scheme, `www.`, host case, and a
- * trailing slash are cosmetic; path and query are not. Mirrors
- * `sourceLinkCandidateKey` in the backfill lane so a verdict written under one
- * spelling is found under the other, which is the whole reason a shared key
- * exists rather than a per-caller comparison.
+ * The key that groups a stored verdict with the resource it describes. `www.`, host
+ * case, and a trailing slash are cosmetic; path and query are not. Scheme is left out
+ * of the key and ranked by `findSourceLinkHealth` instead, because it is cosmetic
+ * only while both schemes behave alike (#4080). Mirrors `sourceLinkCandidateKey`
+ * in the backfill lane minus its scheme, so a verdict written under one cosmetic
+ * spelling is found under the other, which is the whole reason a shared key exists
+ * rather than a per-caller comparison.
  */
 export function sourceLinkHealthKey(url: unknown): string | null {
   if (typeof url !== 'string' || !url.trim()) return null;
@@ -271,21 +299,47 @@ export function sourceLinkHealthKey(url: unknown): string | null {
   }
 }
 
-/** The stored verdict for one URL, or undefined when the URL was never probed. */
+const VOUCHES_FOR_REACHABILITY = new Set<string>(['HEALTHY', 'REDIRECTED']);
+
+export function sourceLinkScheme(url: unknown): string | null {
+  if (typeof url !== 'string' || !url.trim()) return null;
+  try {
+    return new URL(url.trim()).protocol;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The stored verdict for one URL, or undefined when the URL was never probed.
+ *
+ * A verdict of the same scheme wins. Otherwise the other spelling's verdict stands
+ * in, except that a plain-HTTP verdict saying the link works never speaks for an
+ * `https:` URL: HTTP answering says nothing about whether the certificate on port 443
+ * verifies, which is exactly how an `https:` website on a host with an expired
+ * certificate read as HEALTHY (#4080). A plain-HTTP 404 still says the page is gone.
+ */
 export function findSourceLinkHealth(
   storedHealth: unknown,
   url: unknown,
 ): DatedSourceLinkHealth | undefined {
   const key = sourceLinkHealthKey(url);
   if (!key || !Array.isArray(storedHealth)) return undefined;
-  const match = storedHealth.find(
+  const sameResource = storedHealth.filter(
     (entry) => sourceLinkHealthKey((entry as { url?: unknown })?.url) === key,
-  ) as Record<string, unknown> | undefined;
+  ) as Record<string, unknown>[];
+  const scheme = sourceLinkScheme(url);
+  const match =
+    sameResource.find((entry) => sourceLinkScheme(entry.url) === scheme) ??
+    sameResource.find(
+      (entry) => scheme !== 'https:' || !VOUCHES_FOR_REACHABILITY.has(String(entry.healthStatus)),
+    );
   if (!match || typeof match.healthStatus !== 'string') return undefined;
   return {
     healthStatus: match.healthStatus as SourceLinkHealthStatus,
     ...(typeof match.httpStatusCode === 'number' ? { httpStatusCode: match.httpStatusCode } : {}),
     ...(match.privateAddressHost === true ? { privateAddressHost: true } : {}),
+    ...(match.tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
     ...(match.checkedAt
       ? { checkedAt: match.checkedAt as DatedSourceLinkHealth['checkedAt'] }
       : {}),

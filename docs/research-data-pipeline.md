@@ -1268,7 +1268,7 @@ That predicate is deliberately not the negation of `isLikelyUnavailableSourceLin
 The sweep re-probes by URL rather than by row, with `--reprobe-healthy-after-days=7` (`SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS`, #3568).
 A URL is probed when it has no stored verdict, including a URL new to the row since its last probe, and whenever its verdict is anything but `HEALTHY`, so `UNAVAILABLE`, `UNKNOWN` and `REDIRECTED` are re-probed on every sweep.
 A `HEALTHY` verdict is carried forward unprobed, with its original `checkedAt`, until it is more than 7 days old.
-The stored verdict is found by `sourceLinkCandidateKey`, the same normalization `findSourceLinkHealth` uses, so the sweep and the readers agree on which verdict belongs to which citation.
+The stored verdict is found by `sourceLinkCandidateKey`, which normalizes like `findSourceLinkHealth` but keeps the scheme, so each spelling carries only its own verdict and the readers rank the spellings as described below.
 The window is 7 days rather than the 30-day horizon because the gate and `dead-research-website-clear` act on these verdicts, and a site can die within a month: a dead site is noticed at most 7 days late.
 Keeping it well inside the 30-day horizon also means a regularly swept `HEALTHY` verdict never lapses into unverified.
 No reader of a dead verdict loses anything, because a dead verdict is never carried and so is at most one sweep old; `retireDeadCitationResearchEntities`, the only reader that ages a dead verdict, still applies the 30-day horizon.
@@ -1288,6 +1288,14 @@ Three consequences follow.
 `isPubliclyUnreachableSourceUrl` is the predicate a way-in projection asks, and it is true when either axis disqualifies the citation; `officialNonGrantSourceUrl` uses it and falls through to a publicly reachable citation instead.
 The citation itself is never deleted, because it is real provenance: the detail page keeps listing it with an on-campus-network-only qualifier, while `isUnreachableResearchWebsiteCtaUrl` stops it being offered as the research-website CTA or as the outreach official source.
 Routing never expires and is only ever unlearned from positive evidence: a probe that came back with an HTTP status proves the host was publicly routable at that moment and drops the flag, public DNS mapping the host to public space drops it too, and a timeout or transport error learns nothing about addressing and keeps it.
+
+A stored entry carries a third independent axis, `tlsVerificationFailed`, and each URL scheme carries its own verdict (#4080).
+The flag records that the server answered but its certificate failed verification, so a browser stops a student at a security warning; `healthStatus` stays `UNKNOWN`, because a certificate says how the host presents itself on port 443 and never whether the page exists (#2751).
+The scheme is kept in the backfill's candidate key, so `http:` and `https:` spellings of one page are probed and stored separately, since on a host with an expired certificate plain HTTP answers `200` while HTTPS fails.
+Merging them let the `http:` result stand for the `https:` link a student is sent to, and the carry-forward then wrote that `HEALTHY` back under the `https:` spelling.
+Lookups rank a same-scheme verdict first; the other spelling's verdict stands in otherwise, except that a plain-HTTP verdict saying the link works never speaks for an `https:` URL, while a plain-HTTP `404` still says the page is gone.
+A fresh certificate failure replaces a stored `HEALTHY` for the same `https:` URL rather than being preserved under it, because it contradicts that verdict; a stored `UNAVAILABLE` still stands.
+When an `https:` probe fails verification and no plain-HTTP spelling is already a candidate, the pass probes that spelling too, and serve time (`servedResearchWebsiteUrl`) offers it only when it is verified `HEALTHY`; otherwise the stored URL is linked unchanged.
 
 The resolved address has to be the one a student gets, not the one the probing machine gets.
 Yale answers its legacy departmental hosts with split-horizon DNS: the resolver on the Development scrape host returned RFC1918 space for `www.cs.yale.edu`, `ursula.chem.yale.edu`, `www.astro.yale.edu` and others, while public resolvers return routable `128.36.0.0/16` addresses and the pages load off campus (#3903).

@@ -6,6 +6,7 @@ import {
   needsRecheckSince,
   needsSourceLinkHealthRefresh,
   planSourceLinkReprobe,
+  tlsFallbackCandidates,
   SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS,
 } from '../backfillSourceLinkHealthCore';
 
@@ -38,16 +39,28 @@ describe('collectSourceLinkHealthCandidates', () => {
     expect(candidates).toEqual(['https://safe.example.edu/source']);
   });
 
-  it('collapses scheme, www, and trailing-slash duplicates onto one probe', () => {
+  it('collapses www and trailing-slash duplicates onto one probe', () => {
     const candidates = collectSourceLinkHealthCandidates(
       {
         websiteUrl: 'https://lab.example.yale.edu/research',
-        sourceUrls: ['http://www.lab.example.yale.edu/research/'],
+        sourceUrls: ['https://www.lab.example.yale.edu/research/'],
       },
       ['https://www.lab.example.yale.edu/research'],
     );
 
     expect(candidates).toEqual(['https://lab.example.yale.edu/research']);
+  });
+
+  it('probes each scheme on its own, because one can fail TLS while the other answers', () => {
+    const candidates = collectSourceLinkHealthCandidates({
+      websiteUrl: 'https://lab.example.yale.edu/research',
+      sourceUrls: ['http://www.lab.example.yale.edu/research/'],
+    });
+
+    expect(candidates).toEqual([
+      'https://lab.example.yale.edu/research',
+      'http://www.lab.example.yale.edu/research/',
+    ]);
   });
 
   it('keeps distinct query identifiers apart', () => {
@@ -305,15 +318,26 @@ describe('planSourceLinkReprobe', () => {
     expect([...result.carried.keys()]).toEqual([fresh]);
   });
 
-  it('finds a stored verdict under a cosmetically different spelling, as the gate does', () => {
+  it('finds a stored verdict under a cosmetically different spelling of the same scheme', () => {
     const result = plan('https://www.example-lab.yale.edu/research/', [
+      {
+        url: 'https://example-lab.yale.edu/research',
+        healthStatus: 'HEALTHY',
+        checkedAt: daysAgo(1),
+      },
+    ]);
+    expect(result.toProbe).toEqual([]);
+  });
+
+  it('never carries a plain-HTTP verdict onto the https spelling of the same page', () => {
+    const result = plan('https://example-lab.yale.edu/research', [
       {
         url: 'http://example-lab.yale.edu/research',
         healthStatus: 'HEALTHY',
         checkedAt: daysAgo(1),
       },
     ]);
-    expect(result.toProbe).toEqual([]);
+    expect(result.toProbe).toEqual(['https://example-lab.yale.edu/research']);
   });
 });
 
@@ -336,5 +360,26 @@ describe('carryForwardSourceLinkHealthEntry', () => {
       checkedAt,
       lastAttemptedAt,
     });
+  });
+});
+
+describe('tlsFallbackCandidates', () => {
+  it('adds the plain-HTTP spelling of an https url whose certificate failed', () => {
+    const health = new Map([['https://a.yale.edu/~x/', { tlsVerificationFailed: true }]]);
+    expect(tlsFallbackCandidates(['https://a.yale.edu/~x/'], health)).toEqual([
+      'http://a.yale.edu/~x/',
+    ]);
+  });
+
+  it('adds nothing when the plain-HTTP spelling is already a candidate', () => {
+    const health = new Map([['https://a.yale.edu/~x/', { tlsVerificationFailed: true }]]);
+    expect(
+      tlsFallbackCandidates(['https://a.yale.edu/~x/', 'http://www.a.yale.edu/~x'], health),
+    ).toEqual([]);
+  });
+
+  it('adds nothing for an https url whose certificate verified', () => {
+    const health = new Map([['https://a.yale.edu/~x/', {}]]);
+    expect(tlsFallbackCandidates(['https://a.yale.edu/~x/'], health)).toEqual([]);
   });
 });

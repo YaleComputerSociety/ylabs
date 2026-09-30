@@ -257,14 +257,26 @@ describe('probeSourceLink', () => {
     expect(probeStatusBackoffMs(9, undefined, noJitter)).toBe(8_000);
   });
 
-  it('keeps a certificate name mismatch inconclusive', async () => {
-    const error = new Error('altname') as NodeJS.ErrnoException;
-    error.code = 'ERR_TLS_CERT_ALTNAME_INVALID';
-    requestMock.mockRejectedValueOnce(error);
-    const probe = await probeSourceLink('https://vanity.example.edu/');
-    expect(probe).toMatchObject({ errorCode: 'ERR_TLS_CERT_ALTNAME_INVALID' });
-    expect(classifySourceLinkHealth(probe)).toEqual({ healthStatus: 'UNKNOWN' });
-    expect(requestMock).toHaveBeenCalledTimes(1);
+  it.each(['ERR_TLS_CERT_ALTNAME_INVALID', 'CERT_HAS_EXPIRED', 'DEPTH_ZERO_SELF_SIGNED_CERT'])(
+    'keeps a %s failure inconclusive but records that the certificate failed',
+    async (code) => {
+      const error = new Error(code) as NodeJS.ErrnoException;
+      error.code = code;
+      requestMock.mockRejectedValueOnce(error);
+      const probe = await probeSourceLink('https://vanity.example.edu/');
+      expect(probe).toMatchObject({ errorCode: code });
+      expect(classifySourceLinkHealth(probe)).toEqual({
+        healthStatus: 'UNKNOWN',
+        tlsVerificationFailed: true,
+      });
+      expect(requestMock).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('flags no certificate failure on a transport error that is not about TLS', () => {
+    expect(classifySourceLinkHealth({ errorCode: 'ETIMEDOUT' })).toEqual({
+      healthStatus: 'UNKNOWN',
+    });
   });
 
   it.each(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH'])(
@@ -704,6 +716,48 @@ describe('findSourceLinkHealth', () => {
     expect(
       findSourceLinkHealth([{ url: 'https://a.yale.edu/lab' }], 'https://a.yale.edu/lab'),
     ).toBeUndefined();
+  });
+
+  it('never lets a plain-HTTP verdict speak for the https spelling', () => {
+    expect(
+      findSourceLinkHealth(
+        [{ url: 'http://a.yale.edu/~x/', healthStatus: 'HEALTHY', httpStatusCode: 200 }],
+        'https://a.yale.edu/~x/',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('prefers the same-scheme verdict when both spellings were probed', () => {
+    const storedHealth = [
+      { url: 'http://a.yale.edu/~x/', healthStatus: 'HEALTHY', httpStatusCode: 200 },
+      { url: 'https://a.yale.edu/~x/', healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+    ];
+    expect(findSourceLinkHealth(storedHealth, 'https://a.yale.edu/~x/')).toEqual({
+      healthStatus: 'UNKNOWN',
+      tlsVerificationFailed: true,
+    });
+    expect(findSourceLinkHealth(storedHealth, 'http://a.yale.edu/~x/')).toEqual({
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+    });
+  });
+
+  it('still lets a plain-HTTP 404 say the https spelling is gone', () => {
+    expect(
+      findSourceLinkHealth(
+        [{ url: 'http://a.yale.edu/lab', healthStatus: 'UNAVAILABLE', httpStatusCode: 404 }],
+        'https://a.yale.edu/lab',
+      ),
+    ).toEqual({ healthStatus: 'UNAVAILABLE', httpStatusCode: 404 });
+  });
+
+  it('still lets an https verdict speak for the plain-HTTP spelling', () => {
+    expect(
+      findSourceLinkHealth(
+        [{ url: 'https://a.yale.edu/lab', healthStatus: 'HEALTHY' }],
+        'http://a.yale.edu/lab',
+      ),
+    ).toEqual({ healthStatus: 'HEALTHY' });
   });
 });
 

@@ -51,6 +51,7 @@ export interface DetailSourceLinkHealth {
   healthStatus?: string;
   httpStatusCode?: number;
   privateAddressHost?: boolean;
+  tlsVerificationFailed?: boolean;
 }
 
 export interface DetailSourceFieldContribution {
@@ -1091,26 +1092,75 @@ export const isSuppressedResearchWebsiteCtaUrl = (url?: string | null): boolean 
   isNonContactableDocumentSourceUrl(url) ||
   isFileShareSourceUrl(url);
 
+const VOUCHES_FOR_REACHABILITY = new Set<string>(['HEALTHY', 'REDIRECTED']);
+
+const urlScheme = (url?: string | null): string | null => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return null;
+  try {
+    return new URL(normalized).protocol;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * The stored verdict for one URL. Mirrors `findSourceLinkHealth` on the server: a
+ * same-scheme verdict wins, and otherwise the other spelling's verdict stands in,
+ * except that a plain-HTTP verdict saying the link works never speaks for an `https:`
+ * URL, because HTTP answering says nothing about whether the certificate verifies
+ * (#4080). Changing the rule here requires changing the server copy.
+ */
+export const findSourceLinkHealthEntry = (
+  sourceLinkHealth: DetailSourceLinkHealth[] = [],
+  url?: string | null,
+): DetailSourceLinkHealth | undefined => {
+  const key = sourceLedgerKey(url);
+  if (!key) return undefined;
+  const sameResource = sourceLinkHealth.filter((entry) => sourceLedgerKey(entry.url) === key);
+  const scheme = urlScheme(url);
+  return (
+    sameResource.find((entry) => urlScheme(entry.url) === scheme) ??
+    sameResource.find(
+      (entry) => scheme !== 'https:' || !VOUCHES_FOR_REACHABILITY.has(String(entry.healthStatus)),
+    )
+  );
+};
+
+/**
+ * The spelling of a research website a student should be sent to. When the `https:`
+ * spelling fails certificate verification and its plain-HTTP spelling is verified
+ * reachable, the working spelling is offered, so a click lands on the page instead of
+ * a browser security warning. Otherwise the stored URL is returned unchanged.
+ */
+export const servedResearchWebsiteUrl = (
+  url: string | null | undefined,
+  sourceLinkHealth: DetailSourceLinkHealth[] = [],
+): string | undefined => {
+  if (!url) return undefined;
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized || urlScheme(normalized) !== 'https:') return url;
+  if (findSourceLinkHealthEntry(sourceLinkHealth, normalized)?.tlsVerificationFailed !== true)
+    return url;
+  const plain = new URL(normalized);
+  plain.protocol = 'http:';
+  const plainUrl = plain.toString();
+  const plainHealth = sourceLinkHealth.find(
+    (entry) =>
+      urlScheme(entry.url) === 'http:' && sourceLedgerKey(entry.url) === sourceLedgerKey(plainUrl),
+  );
+  return plainHealth?.healthStatus === 'HEALTHY' && plainHealth.url ? plainHealth.url : url;
+};
+
 export const isUnavailableResearchWebsiteCtaUrl = (
   url: string | null | undefined,
   sourceLinkHealth: DetailSourceLinkHealth[] = [],
-): boolean => {
-  const key = sourceLedgerKey(url);
-  if (!key) return false;
-  const health = sourceLinkHealth.find((entry) => sourceLedgerKey(entry.url) === key);
-  return isLikelyUnavailableSourceLink(health);
-};
+): boolean => isLikelyUnavailableSourceLink(findSourceLinkHealthEntry(sourceLinkHealth, url));
 
 export const isPrivateNetworkOnlyResearchWebsiteCtaUrl = (
   url: string | null | undefined,
   sourceLinkHealth: DetailSourceLinkHealth[] = [],
-): boolean => {
-  const key = sourceLedgerKey(url);
-  if (!key) return false;
-  return isPrivateNetworkOnlySourceLink(
-    sourceLinkHealth.find((entry) => sourceLedgerKey(entry.url) === key),
-  );
-};
+): boolean => isPrivateNetworkOnlySourceLink(findSourceLinkHealthEntry(sourceLinkHealth, url));
 
 /**
  * Whether the research-website CTA must not offer this URL as an ordinary link,
@@ -1234,18 +1284,6 @@ export const buildResearchDetailSources = ({
     if (existing) labels.forEach((label) => existing.includes(label) || existing.push(label));
     else contributionsByDedupeKey.set(key, [...labels]);
   });
-  const healthByLedgerKey = new Map<string, DetailSourceLinkHealth>();
-
-  sourceLinkHealth.forEach((entry) => {
-    const key = sourceLedgerKey(entry.url);
-    if (!key) return;
-    healthByLedgerKey.set(key, {
-      healthStatus: entry.healthStatus,
-      httpStatusCode: entry.httpStatusCode,
-      privateAddressHost: entry.privateAddressHost,
-    });
-  });
-
   const contextsFor = (normalizedUrl: string, context: string): string[] => {
     if (context !== GENERIC_PROFILE_SOURCE_CONTEXT) return [context];
     const contributed = contributionsByDedupeKey.get(sourceDedupeKey(normalizedUrl) || '');
@@ -1331,7 +1369,7 @@ export const buildResearchDetailSources = ({
 
   const withHealth = Array.from(sources.values())
     .map((source) => {
-      const health = healthByLedgerKey.get(sourceLedgerKey(source.url) || '');
+      const health = findSourceLinkHealthEntry(sourceLinkHealth, source.url);
       return {
         ...source,
         ...(health?.healthStatus ? { healthStatus: health.healthStatus } : {}),
