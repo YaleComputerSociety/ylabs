@@ -40,7 +40,7 @@ export function servedFieldContributionLabel(field: unknown): string | undefined
  * serves a name.
  */
 const SERVED_CONTRIBUTION_LABEL_VALUE_FIELDS: Record<string, readonly string[]> = {
-  'Research summary': ['fullDescription', 'shortDescription', 'cardDescription'],
+  'Research summary': ['fullDescription', 'shortDescription'],
   Topics: ['researchAreas'],
   Methods: ['methods'],
   'Research website': ['websiteUrl', 'website'],
@@ -50,11 +50,7 @@ const SERVED_CONTRIBUTION_LABEL_VALUE_FIELDS: Record<string, readonly string[]> 
 
 function servedValueIsPresent(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(servedValueIsPresent);
-  if (typeof value === 'string') return value.trim().length > 0;
-  if (value && typeof value === 'object') {
-    return servedValueIsPresent((value as { text?: unknown }).text);
-  }
-  return false;
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 export function contributionLabelIsServed(
