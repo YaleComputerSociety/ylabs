@@ -547,7 +547,8 @@ const setPrivateAuthResponseHeaders = (res: express.Response): void => {
 /**
  * A login callback completes a login only for the browser that started it: the
  * start leg mints a single-use value into the signed cookie session and the
- * callback has to return it.
+ * callback has to return it. The session keeps the few most recent pending
+ * values, so a login started in one tab survives a later start in another.
  *
  * The value rides inside the request URL rather than beside it because
  * passport-cas derives the CAS `service` parameter from `req.originalUrl` and
@@ -555,8 +556,9 @@ const setPrivateAuthResponseHeaders = (res: express.Response): void => {
  * service URLs differ, so both legs must spell the same URL.
  */
 const CAS_LOGIN_STATE_PARAM = 'state';
-const CAS_LOGIN_STATE_KEY = 'casLoginState';
+const CAS_LOGIN_STATE_KEY = 'casLoginStates';
 const CAS_LOGIN_STATE_BYTES = 16;
+const MAX_PENDING_CAS_LOGIN_STATES = 5;
 const CAS_LOGIN_STATE_RE = /^[0-9a-f]{32}$/;
 
 function casLoginStateUrl(originalUrl: string, state: string): string {
@@ -571,8 +573,15 @@ function returnedCasLoginState(req: express.Request): string | null {
   return CAS_LOGIN_STATE_RE.test(value) ? value : null;
 }
 
-function matchesStoredCasLoginState(stored: unknown, returned: string): boolean {
-  if (typeof stored !== 'string' || !CAS_LOGIN_STATE_RE.test(stored)) return false;
+function pendingCasLoginStates(session: NonNullable<express.Request['session']>): string[] {
+  const stored: unknown = session[CAS_LOGIN_STATE_KEY];
+  if (!Array.isArray(stored)) return [];
+  return stored.filter(
+    (value): value is string => typeof value === 'string' && CAS_LOGIN_STATE_RE.test(value),
+  );
+}
+
+function casLoginStatesEqual(stored: string, returned: string): boolean {
   const storedBytes = Buffer.from(stored, 'utf8');
   const returnedBytes = Buffer.from(returned, 'utf8');
   return storedBytes.length === returnedBytes.length && timingSafeEqual(storedBytes, returnedBytes);
@@ -580,7 +589,11 @@ function matchesStoredCasLoginState(stored: unknown, returned: string): boolean 
 
 function beginCasLogin(req: express.Request): void {
   const state = randomBytes(CAS_LOGIN_STATE_BYTES).toString('hex');
-  if (req.session) req.session[CAS_LOGIN_STATE_KEY] = state;
+  if (req.session) {
+    req.session[CAS_LOGIN_STATE_KEY] = [...pendingCasLoginStates(req.session), state].slice(
+      -MAX_PENDING_CAS_LOGIN_STATES,
+    );
+  }
   req.originalUrl = casLoginStateUrl(req.originalUrl, state);
 }
 
@@ -588,8 +601,15 @@ function acceptsCasLoginCallback(req: express.Request): boolean {
   const session = req.session;
   const returned = returnedCasLoginState(req);
   if (!session || !returned) return false;
-  if (!matchesStoredCasLoginState(session[CAS_LOGIN_STATE_KEY], returned)) return false;
-  delete session[CAS_LOGIN_STATE_KEY];
+  const pending = pendingCasLoginStates(session);
+  const matched = pending.findIndex((stored) => casLoginStatesEqual(stored, returned));
+  if (matched === -1) return false;
+  const remaining = pending.filter((_, index) => index !== matched);
+  if (remaining.length > 0) {
+    session[CAS_LOGIN_STATE_KEY] = remaining;
+  } else {
+    delete session[CAS_LOGIN_STATE_KEY];
+  }
   return true;
 }
 

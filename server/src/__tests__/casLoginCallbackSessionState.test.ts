@@ -60,9 +60,10 @@ const startFakeCas = async (): Promise<FakeCas> => {
 
     if (requested.pathname === '/cas/login') {
       loginServiceUrls.push(service);
-      serviceUrlByTicket.set(CAS_TICKET, service);
+      const ticket = `${CAS_TICKET}-${loginServiceUrls.length}`;
+      serviceUrlByTicket.set(ticket, service);
       const separator = service.includes('?') ? '&' : '?';
-      res.writeHead(302, { location: `${service}${separator}ticket=${CAS_TICKET}` });
+      res.writeHead(302, { location: `${service}${separator}ticket=${ticket}` });
       res.end();
       return;
     }
@@ -172,8 +173,8 @@ const get = async (url: string, cookie = ''): Promise<Hop> => {
 
 type StartedLogin = { cookie: string; callbackUrl: string };
 
-const startLogin = async (baseUrl: string, query = ''): Promise<StartedLogin> => {
-  const started = await get(`${baseUrl}/api/cas${query}`);
+const startLogin = async (baseUrl: string, query = '', cookie = ''): Promise<StartedLogin> => {
+  const started = await get(`${baseUrl}/api/cas${query}`, cookie);
   expect(started.status).toBe(302);
   const atCas = await get(started.location);
   expect(atCas.status).toBe(302);
@@ -208,7 +209,7 @@ describe('CAS login callback binding', () => {
       const { cookie, callbackUrl } = await startLogin(baseUrl, '?redirect=%2Fsaved');
 
       expect(fakeCas.loginServiceUrls.at(-1)).toMatch(/[?&]state=[0-9a-f]{32}(&|$)/);
-      expect(sessionPayloadOf(cookie).casLoginState).toMatch(/^[0-9a-f]{32}$/);
+      expect(sessionPayloadOf(cookie).casLoginStates).toEqual([expect.stringMatching(/^[0-9a-f]{32}$/)]);
 
       const completed = await get(callbackUrl, cookie);
       expect(completed.status).toBe(302);
@@ -300,12 +301,49 @@ describe('CAS login callback binding', () => {
       const completed = await get(callbackUrl, cookie);
 
       expect(completed.status).toBe(302);
-      expect(sessionPayloadOf(completed.cookie).casLoginState).toBeUndefined();
+      expect(sessionPayloadOf(completed.cookie).casLoginStates).toBeUndefined();
 
       const validationsBefore = fakeCas.validateServiceUrls.length;
       const repeated = await get(callbackUrl, completed.cookie);
 
       expectRefusedCallback(repeated, validationsBefore);
+    });
+  });
+
+  it('completes each of two logins started in the same browser, in either order', async () => {
+    prepareApp();
+
+    await withRunningApp(async (baseUrl) => {
+      const first = await startLogin(baseUrl, '?redirect=%2Ffirst');
+      const second = await startLogin(baseUrl, '?redirect=%2Fsecond', first.cookie);
+
+      const completedFirst = await get(first.callbackUrl, second.cookie);
+      expect(completedFirst.status).toBe(302);
+      expect(completedFirst.location).toBe('/first');
+
+      const completedSecond = await get(second.callbackUrl, completedFirst.cookie);
+      expect(completedSecond.status).toBe(302);
+      expect(completedSecond.location).toBe('/second');
+      expect(sessionPayloadOf(completedSecond.cookie).casLoginStates).toBeUndefined();
+    });
+  });
+
+  it('keeps only the most recent pending logins and rejects the oldest once it is dropped', async () => {
+    prepareApp();
+
+    await withRunningApp(async (baseUrl) => {
+      const oldest = await startLogin(baseUrl);
+      let cookie = oldest.cookie;
+      for (let started = 0; started < 5; started += 1) {
+        cookie = (await startLogin(baseUrl, '', cookie)).cookie;
+      }
+
+      expect(sessionPayloadOf(cookie).casLoginStates).toHaveLength(5);
+
+      const validationsBefore = fakeCas.validateServiceUrls.length;
+      const refused = await get(oldest.callbackUrl, cookie);
+
+      expectRefusedCallback(refused, validationsBefore);
     });
   });
 });
