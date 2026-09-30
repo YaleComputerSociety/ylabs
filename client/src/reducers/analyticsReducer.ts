@@ -83,6 +83,7 @@ export interface AnalyticsData {
     };
   };
   timestamp: string;
+  timeZone?: string;
 }
 
 export interface AnalyticsUserActivityRow {

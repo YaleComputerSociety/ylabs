@@ -747,6 +747,26 @@ describe('Analytics page', () => {
     expect(screen.queryByRole('heading', { name: 'Today by Type' })).toBeNull();
   });
 
+  it('names the zone the server anchors the today and semester ranges to', async () => {
+    mockDashboardEndpoints();
+    const serveOtherEndpoints = mockedAxios.get.getMockImplementation() as (
+      url: string,
+    ) => Promise<unknown>;
+    mockedAxios.get.mockImplementation((url: string) =>
+      url === '/analytics'
+        ? Promise.resolve({ data: { ...analyticsData, timeZone: 'America/New_York' } })
+        : serveOtherEndpoints(url),
+    );
+
+    render(<Analytics />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Today and Semester start at midnight America\/New_York time\./),
+      ).toBeTruthy();
+    });
+  });
+
   it('marks corpus and account sections as current snapshots regardless of range', async () => {
     mockDashboardEndpoints();
 

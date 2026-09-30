@@ -17,6 +17,7 @@ import {
 } from './searchEpisode';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { startOfAnalyticsDay, type AnalyticsDateRange } from '../utils/analyticsRange';
 
 export interface LogEventParams {
   eventType: AnalyticsEventType;
@@ -207,10 +208,7 @@ export interface AnalyticsUserDrilldownResult {
   limit: number;
 }
 
-export interface AnalyticsDateRange {
-  start?: Date;
-  end?: Date;
-}
+export type { AnalyticsDateRange };
 
 export interface SearchQualityQueryAnalytics {
   query: string;
@@ -1619,7 +1617,7 @@ export const getActionNeededAnalytics = async (
 
 const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = startOfAnalyticsDay(now);
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
