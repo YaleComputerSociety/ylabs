@@ -77,7 +77,7 @@ A note field that is focused and left without a change sends no write and record
 No `research_qualified_action` can be recorded while planning contexts have no source (#377), so when none was recorded in the range the funnel omits the qualified-route stage and the route tiles read as not recorded, the same treatment as the overall next-step rate.
 The per-user Profile Opens column (the `researchViews` field) counts `research_profile_open`, because `research_view` was only ever emitted by the fellowship detail route and nothing emits it after #3766.
 Top Research Entities ranks research and profiles by `research_profile_open` and programs by `fellowship_view`; before #3766 it counted `research_view` and so listed programs only.
-Action needed and the top zero-result queries rank every query group with a zero-result search, not only the 100 most searched; action needed also requires at least 2 searches.
+Action needed and the top zero-result queries rank every query group with a zero-result search, not only the 100 most searched; action needed also requires at least 2 searches that reached the full search, and its zero-result rate divides by those searches, so a degraded search neither qualifies a group nor dilutes its rate (#4007).
 Every action card is therefore a zero-result query group, so the Items to review tile counts distinct query groups, keyed by surface and query, across the action cards and the zero-result and low-result lists, and a query that appears in more than one of them counts once (#4006).
 Before #4006 the tile summed the three list lengths, and on Development on 2026-09-30 it read 18 for 15 distinct queries.
 
