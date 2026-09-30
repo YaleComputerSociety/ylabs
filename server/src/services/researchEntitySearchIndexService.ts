@@ -114,6 +114,23 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
   },
 };
 
+export const RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS: readonly string[] = Array.from(
+  new Set([
+    RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
+    'slug',
+    ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.searchableAttributes,
+    ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.filterableAttributes,
+    ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.sortableAttributes,
+  ]),
+);
+
+const projectToIndexedFields = (doc: Record<string, any>): Record<string, any> =>
+  Object.fromEntries(
+    RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS.filter((field) => doc[field] !== undefined).map(
+      (field) => [field, doc[field]],
+    ),
+  );
+
 export interface ResearchEntitySearchIndexRebuildOptions {
   pageSize?: number;
   clearExisting?: boolean;
@@ -194,20 +211,6 @@ const SEARCH_INDEX_DIRECT_CONTACT_FIELDS = [
 ] as const;
 
 const SEARCH_INDEX_PERSON_NAME_FIELDS = ['leadProfessorNames', 'professorNames'] as const;
-
-const RETIRED_ACCESS_INDEX_FIELDS = [
-  'openness',
-  'acceptingUndergrads',
-  'acceptanceConfidence',
-  'opennessSignals',
-  'opennessStatusCache',
-  'opennessExplanationCache',
-  'opennessComputedAt',
-  'opennessLastSignalAt',
-  'undergraduateCurrentAvailability',
-  'undergraduateCompensationModel',
-  'undergraduateEligibleStudentLevels',
-] as const;
 
 const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
   'pi',
@@ -575,12 +578,6 @@ export function buildResearchEntitySearchIndexDocument(
     out.leadProfessorNames = memberNames.leadProfessorNames;
     out.professorNames = memberNames.professorNames;
   }
-  delete out._id;
-  delete out.__v;
-  delete out.embedding;
-  for (const field of RETIRED_ACCESS_INDEX_FIELDS) {
-    delete out[field];
-  }
   sanitizeResearchEntityIndexDocument(out);
 
   /**
@@ -613,7 +610,7 @@ export function buildResearchEntitySearchIndexDocument(
   if (studentSearchTerms.length > 0) {
     out.studentSearchTerms = studentSearchTerms;
   }
-  return out;
+  return projectToIndexedFields(out);
 }
 
 export function buildResearchEntitySearchIndexDocuments(

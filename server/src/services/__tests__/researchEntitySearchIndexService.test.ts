@@ -14,12 +14,14 @@ import {
   isResearchEntitySearchEmbedderConfigured,
   readResearchEntitySearchEmbedderState,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL,
+  RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS,
   RESEARCH_ENTITY_SEARCH_INDEX_NAME,
   RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
   RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET,
   rebuildResearchEntitySearchIndex,
 } from '../researchEntitySearchIndexService';
+import { RESEARCH_SEARCH_RELEVANCE_TEXT_FIELDS } from '../../scripts/researchSearchRelevanceCore';
 
 const succeedingTaskClient = {
   waitForTask: async () => ({ status: 'succeeded' }),
@@ -587,7 +589,8 @@ describe('researchEntitySearchIndexService', () => {
     expect(serialized).not.toContain('someone@example.edu');
     expect(serialized).not.toContain('555-010-0040');
     expect(serialized).not.toContain('555-010-0041');
-    expect(doc?.profileSynthesisDescription).toContain('Studies synaptic plasticity.');
+    expect(doc).not.toHaveProperty('profileSynthesisDescription');
+    expect(doc).not.toHaveProperty('description');
   });
 
   it('strips endowed-chair honorific titles from searchable description text so a chair-name term does not surface unrelated faculty (#1286)', () => {
@@ -1403,5 +1406,117 @@ describe('first-person revoice parity with the detail path (#3418)', () => {
       shortDescription: already,
     } as any);
     expect(doc?.shortDescription).toBe(already);
+  });
+});
+
+describe('index document field allowlist (#3944)', () => {
+  const bookkeepingRow = () => ({
+    _id: new mongoose.Types.ObjectId('64b7f0c2a1b2c3d4e5f60718'),
+    __v: 3,
+    slug: 'allowlist-fixture-lab',
+    name: 'Allowlist Fixture Lab',
+    kind: 'lab',
+    entityType: 'LAB',
+    archived: false,
+    school: 'School of Public Health',
+    departments: ['Epidemiology'],
+    researchAreas: ['Genetics', 'China'],
+    shortDescription: 'Studies how inherited variation shapes disease risk.',
+    studentVisibilityTier: 'student_ready',
+    browseRankScore: 12,
+    fieldProvenance: {
+      researchAreas: {
+        sourceName: 'ysm-mesh-keyword',
+        sourceUrl: 'https://ysph.yale.edu/profile/allowlist-fixture/',
+      },
+    },
+    recentGrants: [{ id: 'award-allowlist', agency: 'NIH', title: 'Synthetic award' }],
+    sourceLinkHealth: [{ url: 'https://example.yale.edu/allowlist', healthStatus: 'OK' }],
+    confidenceByField: { researchAreas: 0.9 },
+    manuallyLockedFields: ['name'],
+    fieldLockProvenance: { name: { lockedBy: 'operator' } },
+    studentVisibilityReasons: ['synthetic reason'],
+    accessAcceptanceLevel: 'high',
+    departmentIds: ['dept-1'],
+    researchAreaIds: ['area-1'],
+    openness: 'open',
+    profileSynthesisDescription: 'A synthetic synthesis paragraph.',
+    embedding: [0.1, 0.2],
+  });
+
+  it('indexes only allowlisted fields, dropping provenance, operator bookkeeping and retired fields', () => {
+    const doc = buildResearchEntitySearchIndexDocument(bookkeepingRow());
+
+    expect(doc).not.toBeNull();
+    for (const key of Object.keys(doc as Record<string, unknown>)) {
+      expect(RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS).toContain(key);
+    }
+    for (const dropped of [
+      '_id',
+      '__v',
+      'fieldProvenance',
+      'recentGrants',
+      'sourceLinkHealth',
+      'confidenceByField',
+      'manuallyLockedFields',
+      'fieldLockProvenance',
+      'studentVisibilityReasons',
+      'accessAcceptanceLevel',
+      'departmentIds',
+      'researchAreaIds',
+      'openness',
+      'profileSynthesisDescription',
+      'embedding',
+    ]) {
+      expect(doc).not.toHaveProperty(dropped);
+    }
+    expect(doc).toMatchObject({
+      id: '64b7f0c2a1b2c3d4e5f60718',
+      slug: 'allowlist-fixture-lab',
+      studentVisibilityTier: 'student_ready',
+      browseRankScore: 12,
+      departments: ['Epidemiology'],
+    });
+  });
+
+  it('still consults provenance while building, though provenance is not indexed', () => {
+    const doc = buildResearchEntitySearchIndexDocument(bookkeepingRow());
+
+    expect(doc?.researchAreas).toEqual(['Genetics']);
+    expect(doc).not.toHaveProperty('fieldProvenance');
+  });
+
+  it('allowlists every attribute the index settings search, filter or sort on', () => {
+    const settings = getResearchEntitySearchIndexSettings();
+    for (const attribute of [
+      RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
+      ...settings.searchableAttributes,
+      ...settings.filterableAttributes,
+      ...settings.sortableAttributes,
+    ]) {
+      expect(RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS).toContain(attribute);
+    }
+  });
+
+  it('allowlists every field the embedder template renders and every field an index reader retrieves', () => {
+    const template =
+      buildResearchEntitySearchEmbedderConfig('synthetic-key').default.documentTemplate;
+    const templateFields = Array.from(template.matchAll(/doc\.([A-Za-z_]+)/g), (match) => match[1]);
+
+    expect(templateFields.length).toBeGreaterThan(0);
+    for (const field of [
+      ...templateFields,
+      ...RESEARCH_SEARCH_RELEVANCE_TEXT_FIELDS,
+      'slug',
+      'departments',
+      'researchAreas',
+      'leadProfessorNames',
+      'professorNames',
+      'studentVisibilityTier',
+      'sortTitle',
+      'sortTitleQualifier',
+    ]) {
+      expect(RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS).toContain(field);
+    }
   });
 });
