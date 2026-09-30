@@ -1,3 +1,5 @@
+import { CloseIcon } from '../shared/icons';
+
 interface ActiveFilterChipProps {
   axis: string;
   value: string;
@@ -14,9 +16,7 @@ const ActiveFilterChip = ({ axis, value, onRemove }: ActiveFilterChipProps) => (
     <span className="min-w-0 truncate">
       {axis}: {value}
     </span>
-    <span aria-hidden="true" className="shrink-0">
-      ×
-    </span>
+    <CloseIcon size={12} className="shrink-0" />
   </button>
 );
 

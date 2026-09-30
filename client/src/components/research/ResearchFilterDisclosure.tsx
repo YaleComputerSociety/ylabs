@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ChevronDownIcon, FiltersIcon } from '../shared/icons';
+import { ChevronDownIcon, CloseIcon, FiltersIcon } from '../shared/icons';
 
 import ActiveFilterChip from './ActiveFilterChip';
 import {
@@ -422,9 +422,9 @@ const ResearchFilterDisclosure = ({
                   type="button"
                   aria-label="Close filters"
                   onClick={() => closeFilters()}
-                  className="yr-focus-ring inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-card text-2xl text-muted hover:bg-[var(--yr-panel-muted)]"
+                  className="yr-focus-ring inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-card text-muted hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft"
                 >
-                  <span aria-hidden="true">×</span>
+                  <CloseIcon size={20} />
                 </button>
               </div>
 

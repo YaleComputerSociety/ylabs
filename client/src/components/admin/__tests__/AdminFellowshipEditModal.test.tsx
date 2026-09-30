@@ -23,4 +23,13 @@ describe('AdminFellowshipEditModal', () => {
 
     expect(screen.queryByRole('button', { name: 'Remove Senior from Year of Study' })).toBeNull();
   });
+
+  it('names the close button after the editor it closes', () => {
+    const onClose = vi.fn();
+    render(<AdminFellowshipEditModal fellowship={fellowship} onClose={onClose} onSave={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close fellowship editor' }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });
