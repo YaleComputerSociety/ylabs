@@ -171,7 +171,7 @@ const fellowshipQuickFilters: QuickFilterDef[] = [
   { label: 'Open Only', value: 'open' },
   { label: 'Closing Soon', value: 'closingSoon' },
   { label: 'Open to First-Years', value: 'firstYear' },
-  { label: 'No Mentor Needed', value: 'noMentorFirst' },
+  { label: 'No Mentor Requirement', value: 'noMentorFirst' },
   { label: 'Next Cycle', value: 'nextCycle' },
 ];
 
