@@ -241,7 +241,7 @@ A text-height action reaches 44px with `min-h-11` and a matching negative vertic
 A literal `→` inherits the font's weight and metrics, so the same affordance rendered at a different size and stroke depending on which card you were looking at.
 `components/shared/ArrowRightIcon.tsx` is the only place the arrow path exists, and `src/__tests__/sharedGlyphGuard.test.ts` keeps it that way.
 - A close or remove affordance is `CloseIcon`, never a typed `×`, and its button's accessible name says what it closes or removes.
-The same guard fails on a typed close glyph standing alone as JSX text.
+`src/__tests__/closeAffordance.test.tsx` renders each close and remove button and fails if one carries a typed close glyph instead of the icon.
 - Every icon comes from `components/shared/icons.tsx`, and nothing draws an SVG inline.
 The set shares one coordinate system (`0 0 24 24`), one stroke weight, and one sizing mechanism (a `size` prop), because none of those is enforceable at a call site.
 Before it, 40 inline SVG elements across 20 files drew 25 glyphs at five stroke widths and three viewBoxes, and three affordances had two drawings each: the close X as both a pair of `<line>` elements and a `<path>`, the check as a stroked path, a 20x20 solid path and a `<polyline>` at stroke widths 2 and 3, and the chevron as two different solid paths.
