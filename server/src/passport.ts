@@ -20,7 +20,7 @@ import { isLoopbackRequest } from './utils/loopbackAccess';
 import { ensureBootstrapAdminGrant, hasActiveAdminGrant } from './services/adminGrantService';
 import { sanitizeLogValue } from './utils/logSanitizer';
 import { triggerReconnect, isTopologyLostError, withMongoReconnect } from './db/connections';
-import { authLimiter } from './middleware/rateLimiters';
+import { authLimiter, markCasValidationAccepted } from './middleware/rateLimiters';
 
 /**
  * Verbose auth tracing. These logs (per-request deserialization, the
@@ -678,6 +678,8 @@ const casLogin = function (
         console.log('CAS auth but no user');
         return res.status(401).json({ error: 'CAS auth but no user' });
       }
+
+      markCasValidationAccepted(req);
 
       req.logIn(user, async function (err) {
         if (err) {

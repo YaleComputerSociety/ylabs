@@ -586,7 +586,12 @@ describe('app security runtime classification', () => {
     }
   });
 
-  it('applies a per-IP auth limiter to the CAS login callback', async () => {
+  // Driven through the mounted app rather than the limiter alone, because the
+  // property is about the route: everyone behind one campus address shares this
+  // per-IP bucket, and starting login must not draw on it. The metering of a
+  // rejected validation is measured on the limiter itself in
+  // `middleware/__tests__/authLimiterScope.test.ts`, which needs no CAS at all.
+  it('does not spend the shared per-IP login budget on starting a login', async () => {
     vi.doUnmock('cookie-session');
     process.env = {
       ...ORIGINAL_ENV,
@@ -597,6 +602,7 @@ describe('app security runtime classification', () => {
       TRUSTED_PROXY_CIDRS: '127.0.0.1/32',
     };
 
+    const { AUTH_VALIDATION_FAILURE_MAX } = await import('../middleware/rateLimiters');
     const { default: app } = await import('../app');
     const server = http.createServer(app);
 
@@ -606,19 +612,26 @@ describe('app security runtime classification', () => {
 
     try {
       const address = server.address() as AddressInfo;
-      let lastStatus = 0;
+      const statuses = new Set<number>();
+      const metered: string[] = [];
 
-      for (let attempt = 0; attempt < 21; attempt += 1) {
+      for (let attempt = 0; attempt < AUTH_VALIDATION_FAILURE_MAX + 5; attempt += 1) {
         const response = await fetch(`http://127.0.0.1:${address.port}/api/cas`, {
           method: 'GET',
           headers: { 'x-forwarded-proto': 'https' },
           redirect: 'manual',
         });
-        lastStatus = response.status;
+        statuses.add(response.status);
+        const remaining = response.headers.get('ratelimit-remaining');
+        if (remaining !== null) metered.push(remaining);
         await response.text();
       }
 
-      expect(lastStatus).toBe(429);
+      expect([...statuses]).toEqual([302]);
+      // Every request is a redirect to CAS and none of them was counted, which is
+      // the stronger of the two claims: a counted start still redirects until the
+      // budget runs out.
+      expect(metered).toEqual([]);
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
