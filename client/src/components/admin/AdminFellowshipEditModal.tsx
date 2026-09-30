@@ -14,6 +14,7 @@ import {
   createInitialAdminFellowshipEditState,
 } from '../../reducers/adminFellowshipEditReducer';
 import { getFellowshipApplicationStatus } from '../../utils/fellowshipStatus';
+import { CloseIcon } from '../shared/icons';
 
 const TagInput = ({
   label,
@@ -56,9 +57,10 @@ const TagInput = ({
             <button
               type="button"
               onClick={() => onChange(values.filter((x) => x !== v))}
+              aria-label={`Remove ${v} from ${label}`}
               className="ml-1 text-muted hover:text-brand yr-focus-ring"
             >
-              &times;
+              <CloseIcon size={10} />
             </button>
           </span>
         ))}

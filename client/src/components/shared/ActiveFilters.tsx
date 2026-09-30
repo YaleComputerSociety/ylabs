@@ -121,9 +121,10 @@ const ActiveFilters = ({
                 <button
                   type="button"
                   onClick={chip.onRemove}
+                  aria-label={`Remove ${chip.label} filter`}
                   className="yr-focus-ring ml-1.5 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control text-muted hover:text-ink-soft"
                 >
-                  x
+                  <CloseIcon size={10} />
                 </button>
               </span>
             ))}
