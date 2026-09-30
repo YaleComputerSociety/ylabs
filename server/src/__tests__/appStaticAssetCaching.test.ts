@@ -56,7 +56,10 @@ describe('client static asset serving', () => {
     writeFileSync(path.join(clientDistPath, 'assets', UNHASHED_IMAGE), 'not-a-real-image');
     writeFileSync(path.join(clientDistPath, 'assets', `${HASHED_ENTRY_CHUNK}.map`), '{}');
     writeFileSync(path.join(clientDistPath, 'index.html'), '<!doctype html><title>t</title>');
-    writeFileSync(path.join(clientDistPath, 'oauth-callback.html'), '<!doctype html><title>t</title>');
+    writeFileSync(
+      path.join(clientDistPath, 'oauth-callback.html'),
+      '<!doctype html><title>t</title>',
+    );
   });
 
   afterAll(() => {
