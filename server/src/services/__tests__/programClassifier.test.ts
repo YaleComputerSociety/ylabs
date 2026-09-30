@@ -439,4 +439,69 @@ describe('classifyProgram internship identity (#2925)', () => {
       ).toMatchObject({ programCategory: 'SUMMER_RESEARCH_PROGRAM' });
     });
   });
+
+  describe('program role (#3904)', () => {
+    it('reads a department undergraduate research page as a way in, not funding', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Studies Undergraduate Research Opportunities',
+          description:
+            'Students interested in research should contact the faculty member directly.',
+        }),
+      ).toMatchObject({
+        programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+        programRole: 'STARTS_RESEARCH',
+        entryMode: 'CONTACT_FACULTY',
+      });
+    });
+
+    it('does not read a named summer program as a department guide', () => {
+      expect(
+        classifyProgram({ title: 'Fixture Summer Research Opportunities' }).programKind,
+      ).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
+    });
+
+    it('does not read a graduate audience research page as an undergraduate guide', () => {
+      const classification = classifyProgram({ title: 'Graduate Research Opportunities' });
+      expect(classification.programKind).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
+      expect(classification.undergraduateOnly).not.toBe(true);
+    });
+
+    it('asserts an undergraduate audience only when the guide title names one', () => {
+      const classification = classifyProgram({ title: 'Fixture Sciences Research Opportunities' });
+      expect(classification.programKind).toBe('DEPARTMENT_RESEARCH_GUIDE');
+      expect(classification.undergraduateOnly).toBeUndefined();
+    });
+
+    it('reads a scholarship for students pursuing research careers as recognition', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture National Scholarship',
+          purpose: ['Study'],
+          description:
+            'For sophomores and juniors intending to pursue research careers in STEM fields.',
+        }),
+      ).toMatchObject({ programKind: 'RESEARCH_AWARD', programRole: 'RECOGNIZES_RESEARCH' });
+    });
+
+    it('gives funding kinds the funding role and archive review no role', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Research Grant',
+          description: 'Supports independent summer research projects.',
+        }).programRole,
+      ).toBe('FUNDS_RESEARCH');
+      expect(classifyProgram({ title: 'Fellowships & Grants' }).programRole).toBe('UNCLASSIFIED');
+    });
+  });
+
+  it('does not file an award that mentions a faculty mentor as a mentored program', () => {
+    const result = classifyProgram({
+      title: 'Fixture Center Short-term Research and Travel Award',
+      description:
+        'Awards of $500 to $2000 support research travel; applicants need a faculty mentor letter.',
+    });
+    expect(result.programKind).not.toBe('MENTOR_MATCHING');
+    expect(result.programRole).toBe('FUNDS_RESEARCH');
+  });
 });

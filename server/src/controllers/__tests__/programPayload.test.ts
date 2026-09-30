@@ -470,3 +470,19 @@ describe('publicProgramForReader sourceLinkHealth (#1022)', () => {
     expect(payload.sourceLinkHealth).toBeUndefined();
   });
 });
+
+describe('publicProgramForReader program role', () => {
+  it('serves the stored program role next to the program kind', () => {
+    const payload = publicProgramForReader({
+      _id: '6a6f84d074dd496b1d43b18e',
+      title: 'Undergraduate Research Opportunities',
+      programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+      programRole: 'STARTS_RESEARCH',
+      sourceUrl: specificPage,
+      links: [],
+    });
+
+    expect(payload.programKind).toBe('DEPARTMENT_RESEARCH_GUIDE');
+    expect(payload.programRole).toBe('STARTS_RESEARCH');
+  });
+});

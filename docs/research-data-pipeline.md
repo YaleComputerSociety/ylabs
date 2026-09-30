@@ -1494,8 +1494,9 @@ A record without the facet keeps the text rule, and so does a STARS program (a `
 
 A fellowship's classification is derived in the projection on every resolve, never observed (#3904).
 `planFellowshipClassification` in `server/src/scrapers/fellowshipClassificationDerivation.ts` runs `classifyProgram` over the facts the pass is about to leave standing (title, competition type, summary, description, application information, eligibility, additional information, source URL, purpose, and term of award) and stages the result.
-No lane emits a classifier field any more, so a stale classifier observation still in the log is inert for the fields the classifier owns: the derivation overwrites whatever the resolver picked for `programCategory`, `programKind`, `entryMode`, `studentFacingCategory`, `requiresMentorBeforeApply`, `mentorMatching`, `bestNextStep`, and `prepSteps`.
+No lane emits a classifier field any more, so a stale classifier observation still in the log is inert for the fields the classifier owns: the derivation overwrites whatever the resolver picked for `programCategory`, `programKind`, `programRole`, `entryMode`, `studentFacingCategory`, `requiresMentorBeforeApply`, `mentorMatching`, `bestNextStep`, and `prepSteps`.
 The derivation skips a field named in `manuallyLockedFields`.
+`programRole` is always recomputed from the `programKind` the row keeps, so a locked kind still yields a matching role.
 Run it twice and the second pass plans nothing, which is what makes it a derivation rather than a repair, and a classifier fix reaches every row on its next materialize without a re-scrape.
 
 It replaced `programs:backfill-classification`, a post-sweep repair that re-ran the classifier over stored rows but refused any apply that would demote a served row or replace a served `studentFacingCategory`.

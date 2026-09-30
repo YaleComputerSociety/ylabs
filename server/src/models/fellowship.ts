@@ -52,6 +52,8 @@ export const programKinds = [
   'FELLOWSHIP_FUNDING',
   'TRAVEL_RESEARCH_GRANT',
   'SENIOR_THESIS_FUNDING',
+  'DEPARTMENT_RESEARCH_GUIDE',
+  'RESEARCH_AWARD',
   'OTHER',
 ] as const;
 
@@ -63,10 +65,23 @@ export const programEntryModes = [
   'SECURE_MENTOR_THEN_APPLY',
   'DIRECT_FACULTY_MATCHING',
   'TRACK_NEXT_CYCLE',
+  'CONTACT_FACULTY',
   'UNKNOWN',
 ] as const;
 
 export type ProgramEntryMode = (typeof programEntryModes)[number];
+
+// What a student needs before the program is useful to them, which is the axis /programs
+// groups by (#3904): a way into research, funding for research already arranged, or
+// recognition for research already done.
+export const programRoles = [
+  'STARTS_RESEARCH',
+  'FUNDS_RESEARCH',
+  'RECOGNIZES_RESEARCH',
+  'UNCLASSIFIED',
+] as const;
+
+export type ProgramRole = (typeof programRoles)[number];
 
 const fellowshipSchema = new mongoose.Schema(
   {
@@ -84,6 +99,11 @@ const fellowshipSchema = new mongoose.Schema(
       type: String,
       enum: programEntryModes,
       default: 'UNKNOWN',
+    },
+    programRole: {
+      type: String,
+      enum: programRoles,
+      required: false,
     },
     studentFacingCategory: {
       type: String,

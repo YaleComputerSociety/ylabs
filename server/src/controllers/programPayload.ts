@@ -135,6 +135,7 @@ export const publicProgramForReader = (program: any) => {
     id,
     programCategory: program.programCategory,
     programKind: program.programKind,
+    programRole: program.programRole,
     entryMode: program.entryMode,
     studentFacingCategory: program.studentFacingCategory,
     requiresMentorBeforeApply: program.requiresMentorBeforeApply,

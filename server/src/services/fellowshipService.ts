@@ -14,6 +14,7 @@ import {
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
 import * as itemOps from './itemOperations';
+import { programRoleForKind } from './programClassifier';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { programLikeCardShortDescription } from '../utils/researchEntityDescriptionQuality';
@@ -149,6 +150,7 @@ const PUBLIC_FELLOWSHIP_FIELDS = [
   'id',
   'programCategory',
   'programKind',
+  'programRole',
   'entryMode',
   'studentFacingCategory',
   'requiresMentorBeforeApply',
@@ -192,6 +194,7 @@ const PUBLIC_FELLOWSHIP_PRIMITIVE_FIELDS = new Set([
   'id',
   'programCategory',
   'programKind',
+  'programRole',
   'entryMode',
   'studentFacingCategory',
   'requiresMentorBeforeApply',
@@ -658,6 +661,7 @@ const filterFellowshipUpdate = (data: any): Record<string, any> => {
   if ('programCategory' in update && !PROGRAM_CATEGORIES.has(update.programCategory))
     delete update.programCategory;
   if ('programKind' in update && !PROGRAM_KINDS.has(update.programKind)) delete update.programKind;
+  if ('programKind' in update) update.programRole = programRoleForKind(update.programKind);
   if ('entryMode' in update && !PROGRAM_ENTRY_MODES.has(update.entryMode)) delete update.entryMode;
 
   if ('studentVisibilityReviewedByAccountId' in update) {
