@@ -63,6 +63,10 @@ export const resolveAccountIdByNetid = async (netid: unknown): Promise<mongoose.
     error.status = 400;
     throw error;
   }
+  const existing = (await Account.findOne({ netid: normalizedNetid }).select('_id').lean()) as {
+    _id?: unknown;
+  } | null;
+  if (existing?._id) return new mongoose.Types.ObjectId(String(existing._id));
   const account = await Account.findOneAndUpdate(
     { netid: normalizedNetid },
     {

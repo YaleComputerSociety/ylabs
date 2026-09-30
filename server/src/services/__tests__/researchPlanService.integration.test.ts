@@ -1,6 +1,17 @@
 import mongoose from 'mongoose';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
+
+const gate = vi.hoisted(() => ({ researchEntityServesPublicDetail: vi.fn() }));
+
+vi.mock('../researchEntityPublicDescription', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../researchEntityPublicDescription')>();
+  gate.researchEntityServesPublicDetail.mockImplementation(actual.researchEntityServesPublicDetail);
+  return {
+    ...actual,
+    researchEntityServesPublicDetail: gate.researchEntityServesPublicDetail,
+  };
+});
 import {
   addSavedResearchEntities,
   addWatchedPrograms,
@@ -15,6 +26,7 @@ import {
 } from '../researchPlanService';
 import { toPublicResearchEntityDto } from '../researchEntityDto';
 import { researchPlanSchema } from '../../models/researchPlan';
+import { RoleAssignment } from '../../models/roleAssignment';
 
 const NETID = 'teststud1';
 const ENTITY_ID = new mongoose.Types.ObjectId('64a0000000000000000000ab');
@@ -315,6 +327,135 @@ describe('researchPlanService saved plans', () => {
 
       expect(list.savedResearchEntities).toHaveLength(1);
       expect(list.unavailableSavedResearchEntities).toEqual([]);
+    });
+  });
+
+  describe('a saved-list read does the work it needs once and writes nothing (#3954)', () => {
+    const publicCopy = {
+      shortDescription:
+        'Studies molecular dynamics, protein folding, and cellular signaling in biological systems.',
+      fullDescription:
+        'This research studies molecular dynamics, protein folding, and cellular signaling across complex biological systems.',
+    };
+    const extraEntity = (hex: string, slug: string, overrides: Record<string, unknown> = {}) => ({
+      _id: new mongoose.Types.ObjectId(hex),
+      slug,
+      name: `${slug} name`,
+      kind: 'group',
+      departments: ['Computer Science'],
+      studentVisibilityTier: 'student_ready',
+      ...publicCopy,
+      sourceUrls: [`https://example.yale.edu/labs/${slug}`],
+      archived: false,
+      ...overrides,
+    });
+    const accounts = () => mongoose.connection.db!.collection('accounts');
+
+    const saveMixedTargets = async () => {
+      const entities = mongoose.connection.db!.collection('research_entities');
+      const targets = [
+        extraEntity('64a0000000000000000001a1', 'second-servable'),
+        extraEntity('64a0000000000000000001a2', 'archived-target'),
+        extraEntity('64a0000000000000000001a3', 'held-target'),
+        extraEntity('64a0000000000000000001a4', 'hollow-target'),
+        extraEntity('64a0000000000000000001a5', 'removed-target'),
+      ];
+      await entities.insertMany(targets);
+      await addSavedResearchEntities(NETID, [
+        ENTITY_ID.toHexString(),
+        ...targets.map((target) => target._id.toHexString()),
+      ]);
+      await entities.updateOne({ slug: 'archived-target' }, { $set: { archived: true } });
+      await entities.updateOne(
+        { slug: 'held-target' },
+        { $set: { studentVisibilityTier: 'operator_review' } },
+      );
+      await entities.updateOne(
+        { slug: 'hollow-target' },
+        { $set: { shortDescription: '', fullDescription: '', sourceUrls: [] } },
+      );
+      await entities.deleteOne({ slug: 'removed-target' });
+    };
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('leaves the account untouched on every saved-list read', async () => {
+      await addSavedResearchEntities(NETID, [ENTITY_ID.toHexString()]);
+      const before = await accounts().findOne({ netid: NETID });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      await getSavedResearchEntityList(NETID);
+      await getSavedResearchEntitySlugs(NETID);
+      await getSavedResearchEntityPlans(NETID);
+
+      const after = await accounts().findOne({ netid: NETID });
+      expect(after?.updatedAt?.getTime()).toBe(before?.updatedAt?.getTime());
+      expect(await accounts().countDocuments({ netid: NETID })).toBe(1);
+    });
+
+    it('still creates a missing account when the student saves', async () => {
+      expect(await accounts().countDocuments({ netid: NETID })).toBe(0);
+
+      await addSavedResearchEntities(NETID, [ENTITY_ID.toHexString()]);
+
+      expect(await accounts().countDocuments({ netid: NETID })).toBe(1);
+      expect(await getSavedResearchEntitySlugs(NETID)).toEqual(['test-lab']);
+    });
+
+    it('serves an empty list to an account that does not exist yet', async () => {
+      expect(await getSavedResearchEntityList(NETID)).toEqual({
+        savedResearchEntities: [],
+        unavailableSavedResearchEntities: [],
+      });
+      expect(await getSavedResearchEntitySlugs(NETID)).toEqual([]);
+      expect(await getSavedResearchEntityPlans(NETID)).toEqual({});
+    });
+
+    it('runs the detail gate once per saved row that reaches it', async () => {
+      await saveMixedTargets();
+      gate.researchEntityServesPublicDetail.mockClear();
+
+      await getSavedResearchEntityList(NETID);
+
+      expect(gate.researchEntityServesPublicDetail).toHaveBeenCalledTimes(3);
+    });
+
+    it('serves the same rows and reasons from the list, the slug read and the plan read', async () => {
+      await saveMixedTargets();
+
+      const list = await getSavedResearchEntityList(NETID);
+      const slugs = await getSavedResearchEntitySlugs(NETID);
+      const plans = await getSavedResearchEntityPlans(NETID);
+
+      expect([...list.savedResearchEntities.map((entity) => entity.slug)].sort()).toEqual([
+        'second-servable',
+        'test-lab',
+      ]);
+      expect(slugs).toEqual(list.savedResearchEntities.map((entity) => entity.slug));
+      expect(Object.keys(plans).sort()).toEqual(
+        list.savedResearchEntities.map((entity) => entity._id).sort(),
+      );
+      expect(
+        [...list.unavailableSavedResearchEntities].sort((a, b) => a._id.localeCompare(b._id)),
+      ).toEqual([
+        { _id: '64a0000000000000000001a2', reason: 'UNAVAILABLE' },
+        { _id: '64a0000000000000000001a3', reason: 'UNAVAILABLE' },
+        { _id: '64a0000000000000000001a4', reason: 'UNAVAILABLE' },
+        { _id: '64a0000000000000000001a5', reason: 'REMOVED' },
+      ]);
+    });
+
+    it('answers the slug read without a roster read', async () => {
+      await saveMixedTargets();
+      const rosterRead = vi.spyOn(RoleAssignment, 'find');
+
+      await getSavedResearchEntitySlugs(NETID);
+      expect(rosterRead).not.toHaveBeenCalled();
+
+      await getSavedResearchEntityList(NETID);
+      expect(rosterRead).toHaveBeenCalled();
     });
   });
 
