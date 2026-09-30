@@ -2632,7 +2632,7 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.estimatedTotalHits).toBe(74);
   });
 
-  it('grows the candidate pool to cover a page window deeper than the fixed pool (#1064)', async () => {
+  it('requests the same head candidate pool on a deep page as on page 1 (#3943)', async () => {
     mocks.search
       .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 1686, totalHits: 400 })
       .mockResolvedValueOnce({ hits: [], totalHits: 400 });
@@ -2641,7 +2641,103 @@ describe('searchResearchGroupsViaMeili', () => {
 
     expect(mocks.search.mock.calls[0][1]).toMatchObject({
       page: 1,
-      hitsPerPage: 12 * 18,
+      hitsPerPage: HYBRID_CANDIDATE_POOL_SIZE,
+    });
+  });
+
+  describe('a text query total that does not depend on the requested page (#3943)', () => {
+    const fixtureId = (index: number) =>
+      `67d8928150621bcef434${index.toString(16).padStart(4, '0')}`;
+    const semanticHit = (index: number) => ({
+      id: fixtureId(index),
+      _rankingScoreDetails: { vectorSort: { similarity: 0.6 } },
+    });
+    const keywordHit = (index: number) => ({
+      id: fixtureId(index),
+      _rankingScoreDetails: {
+        words: { matchingWords: 1, maxMatchingWords: 1 },
+        typo: { typoCount: 0, maxTypoCount: 1 },
+        exactness: { matchType: 'exactMatch' },
+      },
+    });
+    const range = (from: number, to: number) =>
+      Array.from({ length: to - from }, (_, offset) => from + offset);
+    const thresholdedPool = range(0, 320).map(semanticHit);
+    const keywordLeg = range(100, 360).map(keywordHit);
+    const semanticLeg = range(0, 100).map(semanticHit);
+
+    const routeFixtureSearch = () =>
+      mocks.search.mockImplementation(async (_query: string, params: Record<string, any>) => {
+        if (params.hybrid?.semanticRatio === 1) {
+          return { hits: semanticLeg.slice(0, params.hitsPerPage) };
+        }
+        if (params.hybrid && params.attributesToRetrieve?.length === 1) {
+          return { hits: [], totalHits: 150 };
+        }
+        const source = params.hybrid ? thresholdedPool : keywordLeg;
+        return {
+          hits: source.slice(0, params.hitsPerPage),
+          estimatedTotalHits: 4000,
+          totalHits: source.length,
+        };
+      });
+
+    const servableFixtureRows = () =>
+      mocks.researchEntityFind.mockImplementation((filter: any) =>
+        queryResult(
+          ((filter?._id?.$in as string[]) || []).map((id) => ({
+            _id: id,
+            slug: `fixture-${id.slice(-4)}`,
+            name: `Fixture Row ${id.slice(-4)}`,
+            kind: 'lab',
+            departments: [],
+            researchAreas: [],
+            sourceUrls: [],
+            ...validPublicDescriptions,
+          })),
+        ),
+      );
+
+    it('reports the same total on every page and serves exactly that many rows', async () => {
+      routeFixtureSearch();
+      servableFixtureRows();
+
+      const totals: number[] = [];
+      const servedSlugs: string[] = [];
+      for (let page = 1; page <= 20; page += 1) {
+        const result = await searchResearchGroupsViaMeili('neuroscience', {}, page, 24);
+        totals.push(result.estimatedTotalHits as number);
+        servedSlugs.push(...result.researchEntities.map((entity: any) => entity.slug));
+        if (result.researchEntities.length < 24) break;
+      }
+
+      expect(new Set(totals)).toEqual(new Set([360]));
+      expect(servedSlugs).toHaveLength(360);
+      expect(new Set(servedSlugs).size).toBe(360);
+    });
+
+    it('keeps the first page in the order the fixed head window gives it', async () => {
+      routeFixtureSearch();
+      servableFixtureRows();
+
+      const pageOne = await searchResearchGroupsViaMeili('neuroscience', {}, 1, 24);
+      mocks.search.mockReset();
+      mocks.search.mockImplementation(async (_query: string, params: Record<string, any>) => {
+        if (params.hitsPerPage > HYBRID_CANDIDATE_POOL_SIZE)
+          throw new Error('deep pool unavailable');
+        if (params.hybrid?.semanticRatio === 1) return { hits: semanticLeg };
+        if (params.hybrid && params.attributesToRetrieve?.length === 1) {
+          return { hits: [], totalHits: 150 };
+        }
+        const source = params.hybrid ? thresholdedPool : keywordLeg;
+        return { hits: source.slice(0, params.hitsPerPage), totalHits: source.length };
+      });
+      const headOnly = await searchResearchGroupsViaMeili('neuroscience', {}, 1, 24);
+
+      expect(pageOne.researchEntities.map((entity: any) => entity.slug)).toEqual(
+        headOnly.researchEntities.map((entity: any) => entity.slug),
+      );
+      expect(headOnly.degraded).toBe(true);
     });
   });
 

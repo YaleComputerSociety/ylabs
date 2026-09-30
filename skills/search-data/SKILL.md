@@ -284,6 +284,13 @@ A perturbation that damages an alias key loses the whole expansion, because `res
 And `rankingRules` places `exactness` above `typo`, so a term the corpus contains verbatim partitions its clean query's matches from its misspelling's corrected ones: that is the whole of the `topic-neuroscience` regression in the numbers above, where both pages stay on topic at precision 1.0 but share almost no row.
 
 A reported total is floored at the locally reachable pool length: the companion count only counts what cleared the blended cutoff, so on its own it would end the client's pagination walk before the keyword-leg rows.
+The pool is decided once per query, never by the requested page (#3943).
+It used to be `max(200, offset + pageSize)` rows, so each page past the first 200 rows admitted more and the reported total rose while a student scrolled the same query: `cancers` read 242 on page 1 and 577 on its last page at page size 24.
+Now the head keeps the fixed `HYBRID_CANDIDATE_POOL_SIZE` window for the pool and the keyword leg, so page 1 orders exactly as before, and when either head leg fills that window a deep pool and keyword leg to `RESEARCH_SEARCH_MAX_REACHABLE_RECORDS` supply every further row, appended after the head in their own order.
+Only the head window's keyword rows are fused with the semantic leg; the deeper keyword rows follow the fused list, then the remaining pool rows.
+Measured on Development, `people`, `cancers`, and `faculty development` each reported one total on every page, equal to the rows served, with no repeats; `research-search:relevance` precision and reciprocal rank were unchanged on all 19 cases and average overlap changed on 1 of 108 perturbations.
+In one run each, the median page latency for `cancers` at page size 24 moved from 718ms to 908ms, the cost of the two deep queries every page repeats.
+`yarn --cwd server journey:eval --case=text-query-total-is-stable` pages a text query and fails when its total changes, reporting inconclusive when the corpus moved during the walk.
 
 ### The two legs are merged by rank, not by score (#3797)
 
