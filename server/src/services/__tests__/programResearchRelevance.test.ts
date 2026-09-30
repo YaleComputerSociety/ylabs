@@ -88,4 +88,127 @@ describe('classifyProgramResearchRelevance', () => {
     });
     expect(result.researchRelated).toBe(false);
   });
+
+  describe('the purpose facet decides for a record that carries one (#3904)', () => {
+    const related = (input: Parameters<typeof classifyProgramResearchRelevance>[0]) =>
+      classifyProgramResearchRelevance(input).researchRelated;
+
+    it('excludes a study, service or internship award whose facet names no research', () => {
+      expect(
+        related({
+          title: 'Fixture Fellowship for Nonprofit Internships',
+          programKind: 'TRAVEL_RESEARCH_GRANT',
+          studentFacingCategory: 'Research travel funding',
+          purpose: ['Service'],
+          description: 'Awards support domestic non-profit internships over the summer.',
+        }),
+      ).toBe(false);
+    });
+
+    it('never counts the derived category label as research evidence', () => {
+      expect(
+        related({
+          title: 'Fixture Summer Grant',
+          studentFacingCategory: 'Research travel funding',
+          purpose: ['Study'],
+          description: 'Limited summer funding for language and area study.',
+        }),
+      ).toBe(false);
+    });
+
+    it('keeps a travel award whose own prose says it funds research trips', () => {
+      expect(
+        related({
+          title: 'Fixture Council Travel Award',
+          purpose: ['Travel'],
+          description:
+            'Helps defray travel costs for short-term research trips relating to Europe.',
+        }),
+      ).toBe(true);
+    });
+
+    it('keeps an award whose own title names research', () => {
+      expect(
+        related({ title: 'Fixture Pre-Dissertation Research Fellowship', purpose: ['Travel'] }),
+      ).toBe(true);
+    });
+
+    it('keeps a national award for students pursuing research careers', () => {
+      expect(
+        related({
+          title: 'Fixture National Scholarship',
+          purpose: ['Study'],
+          description:
+            'For sophomores and juniors intending to pursue research careers in STEM fields.',
+        }),
+      ).toBe(true);
+    });
+
+    it('does not read funding for non-research projects as funding research', () => {
+      expect(
+        related({
+          title: 'Fixture Service Award',
+          purpose: ['Service'],
+          description: 'Provides funding for non-research projects in local communities.',
+        }),
+      ).toBe(false);
+    });
+
+    it('does not read research named beside another purpose as funding research', () => {
+      expect(
+        related({
+          title: 'Fixture Language Grant',
+          purpose: ['Study'],
+          description: 'Grants support language immersion or research abroad.',
+        }),
+      ).toBe(false);
+      expect(
+        related({
+          title: 'Fixture Summer Award',
+          purpose: ['Travel'],
+          description: 'Supports students interested in research opportunities overseas.',
+        }),
+      ).toBe(false);
+    });
+
+    it('still keeps an award whose prose says it supports research directly', () => {
+      expect(
+        related({
+          title: 'Fixture Council Grant',
+          purpose: ['Travel'],
+          description: 'Grants support undergraduate research in the region.',
+        }),
+      ).toBe(true);
+    });
+
+    it('leaves a STARS program carrying a derived non-research facet to the existing rule', () => {
+      expect(
+        related({
+          title: 'STARS I Academic Year Program',
+          programKind: 'STRUCTURED_PROGRAM',
+          purpose: ['Study'],
+          description:
+            'A first-year mentoring and support program in STEM, rather than a direct research placement.',
+        }),
+      ).toBe(true);
+      expect(
+        related({
+          title: 'Fixture Academic Year Program',
+          sourceUrl: 'https://example.edu/stars/fixture-program',
+          purpose: ['Study'],
+          description: 'A mentoring program, rather than a direct research placement.',
+        }),
+      ).toBe(true);
+    });
+
+    it('leaves a record with no facet to the existing text rule', () => {
+      expect(
+        related({
+          title: 'Fixture Fund',
+          purpose: [],
+          description: 'Supports independent research projects.',
+        }),
+      ).toBe(true);
+    });
+  });
 });

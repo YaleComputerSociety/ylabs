@@ -14,6 +14,7 @@ export interface ProgramResearchRelevanceInput {
   studentFacingCategory?: string;
   programKind?: string;
   purpose?: string[];
+  sourceUrl?: string;
   summary?: string;
   description?: string;
   eligibility?: string;
@@ -40,6 +41,26 @@ const RESEARCH_PROGRAM_KINDS = new Set([
 
 const RESEARCH_TEXT =
   /\b(research|thesis|theses|dissertation|senior essay|scholarly|scientific|fieldwork|field research|laborator|faculty[- ]mentored|independent study)\b/i;
+
+// Kinds that are research by construction rather than by a keyword the classifier matched.
+// TRAVEL_RESEARCH_GRANT is absent on purpose: it is derived from text that mentions travel,
+// so counting it here let study, language and internship travel awards through (#3904).
+const INHERENTLY_RESEARCH_PROGRAM_KINDS = new Set([
+  'SENIOR_THESIS_FUNDING',
+  'RA_PROGRAM',
+  'MENTOR_MATCHING',
+  'SUMMER_RESEARCH_PROGRAM',
+]);
+
+const FUNDS_RESEARCH_PROSE =
+  /\b(?:(?<!non-)research (?:trips?|projects?|travel|expenses|costs|stays?)|(?:conduct|conducting|support|supports|fund|funds)\s+(?:(?!(?:or|and|interested|in)\b)\w+\s+){0,3}research(?!\s+opportunit)|whose research)\b/i;
+
+// STARS classification is held for a product decision, so the facet gate must not move it.
+const isStarsProgram = (title: string, sourceUrl: string): boolean =>
+  /\bSTARS\b/.test(title) || /\/stars\//i.test(sourceUrl);
+
+const RESEARCH_CAREER_AWARD =
+  /\b(?:pursue|pursuing|intend(?:s|ing)? to pursue)\s+research careers?\b/i;
 
 // Strong non-research markers in the title that override an incidental "Research" purpose tag.
 const NON_RESEARCH_TITLE =
@@ -80,6 +101,30 @@ export function classifyProgramResearchRelevance(
   // "Research" purpose tag is attached — unless the program kind is a dedicated research kind.
   if (titleSaysNonResearch && !kindResearch) {
     return { researchRelated: false, reasons };
+  }
+
+  // The purpose facet is the source catalog's own statement of what an award funds, so a
+  // record that carries one is research-related only when the facet says so, its own title
+  // names research, or its kind is research by construction. Incidental prose ("research
+  // opportunities", "language immersion or research") otherwise admitted study, language,
+  // internship and postgraduate awards to a research surface (#3904).
+  if (purposes.length > 0 && !purposeResearch && !isStarsProgram(title, text(input.sourceUrl))) {
+    const titleResearch = RESEARCH_TEXT.test(title);
+    const inherentKind = INHERENTLY_RESEARCH_PROGRAM_KINDS.has(programKind);
+    const sourceProse = [
+      title,
+      text(input.summary),
+      text(input.description),
+      text(input.eligibility),
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const researchCareer = RESEARCH_CAREER_AWARD.test(sourceProse);
+    const fundsResearch = FUNDS_RESEARCH_PROSE.test(sourceProse);
+    if (!titleResearch && !inherentKind && !researchCareer && !fundsResearch) {
+      reasons.push('purpose_not_research');
+      return { researchRelated: false, reasons };
+    }
   }
 
   const researchRelated = purposeResearch || kindResearch || textResearch;
