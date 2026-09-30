@@ -12,8 +12,7 @@ import { collapseDuplicateResearchHomeSuffix } from './researchEntityNameNormali
 import { normalizeResearchAreaList } from './researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from './researchAreaLabelHygiene';
 import { filterProseResearchAreaChips } from './profileResearchTerms';
-import { dropDomainIncoherentUnsourcedResearchAreas } from './researchAreaDomainCoherence';
-import { withoutMeshSourcedGeographicResearchAreas } from '../scrapers/utils/meshGeographicDescriptors';
+import { withholdUnservableResearchAreas } from './servedResearchAreaGuards';
 import { isCareerFactSentence, splitDescriptionSentences } from './careerBiographyDescription';
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 import {
@@ -2933,10 +2932,12 @@ export function sanitizeServedResearchAreaChips(values: unknown): string[] {
  *     research-area chip hygiene (split/relabel/fail-close/prose-drop), so a
  *     serve path that never touched the DTO's per-field helpers still emits the
  *     same names and chips as every other surface;
- *  6. the unsourced research-area domain-coherence guard (#1407 second
- *     mechanism): a `researchAreas` chip with no `fieldProvenance.researchAreas`
- *     backing and zero vocabulary overlap with the entity's own sourced text is
- *     dropped, since there is no provenance trail to reconcile it against.
+ *  6. the served topic guards (`withholdUnservableResearchAreas`): a MeSH
+ *     geographic descriptor read from a MeSH-indexed profile is withheld (#3693),
+ *     then the unsourced research-area domain-coherence guard (#1407 second
+ *     mechanism) drops a `researchAreas` chip with no `fieldProvenance.researchAreas`
+ *     backing and zero vocabulary overlap with the entity's own sourced text, since
+ *     there is no provenance trail to reconcile it against.
  *  7. the name identity guard: a `displayName` that is filler rather than an
  *     identity ("n/a", "unknown"), or that names an umbrella organization the
  *     record merely belongs to or another person's lab, is withheld so every
@@ -3088,11 +3089,8 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
     const leadGuardWithheld = (entity as Record<symbol, LeadGuardWithheldProse | undefined>)[
       LEAD_GUARD_WITHHELD_PROSE
     ];
-    const coherent = dropDomainIncoherentUnsourcedResearchAreas(
-      withoutMeshSourcedGeographicResearchAreas(
-        next.researchAreas as string[],
-        next.fieldProvenance,
-      ),
+    const coherent = withholdUnservableResearchAreas(
+      next.researchAreas as string[],
       next.fieldProvenance,
       {
         name: next.name,

@@ -1,4 +1,4 @@
-import { dropDomainIncoherentUnsourcedResearchAreas } from '../../utils/researchAreaDomainCoherence';
+import { withholdUnservableResearchAreas } from '../../utils/servedResearchAreaGuards';
 import { normalizeResearchAreaList } from '../../utils/researchAreaHygiene';
 import { maxReachableResearchSearchPage } from '../../services/researchSearchPagination';
 import { researchEntitySortTitle } from '../../utils/servedResearchEntityTitle';
@@ -201,7 +201,7 @@ const coldBrowseCardContract: JourneyCase = {
 
 const topicDropAttribution: JourneyCase = {
   id: 'topic-drop-attribution',
-  title: 'Every topic a browse card withholds is attributable to the coherence guard',
+  title: 'Every topic a browse card withholds is attributable to the served topic guards',
   run: async (context) => {
     const corpusBefore = await context.readCorpusFingerprint();
     const result = await context.browse({ page: 1, pageSize: context.window });
@@ -216,7 +216,7 @@ const topicDropAttribution: JourneyCase = {
         ? (storedRow.researchAreas as string[])
         : [];
       const guardExpected = normalizeResearchAreaList(
-        dropDomainIncoherentUnsourcedResearchAreas(storedAreas, storedRow.fieldProvenance, {
+        withholdUnservableResearchAreas(storedAreas, storedRow.fieldProvenance, {
           name: storedRow.name as string,
           displayName: storedRow.displayName as string,
           departments: storedRow.departments as string[],
@@ -241,7 +241,7 @@ const topicDropAttribution: JourneyCase = {
         checkTopicDropAttribution(tally, corpusBefore, corpusAfter),
         buildInvariant(
           'serving-no-topic-is-attributable',
-          'A card serving no topic while storing some is fully accounted for by the guard',
+          'A card serving no topic while storing some is fully accounted for by the served topic guards',
           tally.servedNoneUnexplained === 0,
           {
             servedNoneWhileStoringSome: tally.servedNoneWhileStoringSome,
@@ -252,7 +252,7 @@ const topicDropAttribution: JourneyCase = {
       rates: [
         buildRate(
           'topic-drops-attributed-to-the-guard',
-          'Topic drops the coherence guard accounts for',
+          'Topic drops the served topic guards account for',
           tally.attributedToGuard,
           tally.dropped,
         ),

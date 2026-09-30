@@ -33,7 +33,7 @@ These are properties of the serving code, so a failure is always a defect and an
 An invariant carries a third status, **inconclusive**, for the case where the run cannot decide.
 Development is written while the harness reads it, and two checks are confounded by that.
 Paging walks pages 1..N as separate requests, so a write between two of them re-ranks the index and a row legitimately crosses a page boundary and is served twice.
-Attribution recomputes the coherence guard from the row's current stored state and compares it to the indexed value, so a write between the two reads makes an accounted-for drop look unaccounted-for.
+Attribution recomputes the served topic guards from the row's current stored state and compares it to the indexed value, so a write between the two reads makes an accounted-for drop look unaccounted-for.
 
 Both cases take a corpus fingerprint, the row count plus the latest `updatedAt`, before and after their reads, and report inconclusive when the corpus moved.
 The confound is one-directional in both, which is what makes the rule tighter than "moved, so give up": corpus mutation can manufacture a repeat but cannot hide one, so zero repeats is a genuine pass even on a moving corpus, and the same holds for zero unexplained drops.
@@ -42,7 +42,7 @@ The text-query total case follows the same rule: a write between two pages can c
 
 Verified by running four times against a live Development: before this rule the same three checks returned 24, 21 and 16 drops with 1, 1 and 0 unexplained and 3, 3 and 2 page repeats, failing twice for reasons no code change caused.
 
-A **rate** is a number that moves when the corpus moves: the share of browse cards serving a topic, the share of topic drops the coherence guard accounts for.
+A **rate** is a number that moves when the corpus moves: the share of browse cards serving a topic, the share of topic drops the served topic guards account for.
 A rate must never gate, because a peer writing Development changes it between two runs and the resulting failure belongs to nobody.
 Track rates over time and compare them against the Corpus Quality panel.
 
@@ -59,6 +59,11 @@ So an assertion that served topics equal stored topics would fail 14 times on it
 The assertion that carries signal is that every drop is attributable to a named guard: it reads zero today, stays quiet while the guard is right, and fires only on a drop nothing accounts for.
 Apply the same shape to any new case.
 Assert that the difference between stored and served is explained, not that it is absent.
+
+The case computes its expectation by calling `withholdUnservableResearchAreas` in `server/src/utils/servedResearchAreaGuards.ts`, the same function the served DTO and the search index document call, rather than restating the guard chain.
+That chain is now two guards: `withoutMeshSourcedGeographicResearchAreas` withholds a MeSH geographic descriptor read from a MeSH-indexed profile, then the coherence guard runs.
+A restated chain goes stale the moment a guard is added: after #3693 added the MeSH geographic withhold to both serve paths, the case reported that guard's drops as unexplained.
+Add a new served topic guard to that function, never to one call site.
 
 ## What this harness does not cover
 

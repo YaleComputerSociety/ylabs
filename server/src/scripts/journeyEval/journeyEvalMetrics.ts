@@ -192,7 +192,7 @@ export function checkTopicDropAttribution(
   corpusAfter: CorpusFingerprint,
 ): InvariantResult {
   const id = 'every-topic-drop-is-attributable';
-  const title = 'No browse card withholds a topic the coherence guard does not account for';
+  const title = 'No browse card withholds a topic the served topic guards do not account for';
 
   if (tally.comparable === 0) {
     return buildInconclusiveInvariant(
