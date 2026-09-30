@@ -158,16 +158,22 @@ The limiters live in `server/src/middleware/rateLimiters.ts`.
 Request-scoped limiters (`globalLimiter`, `writeLimit`) are keyed by authenticated user's normalized `netId`, then by a server-generated high-entropy identifier in the signed cookie session, with IP fallback when no valid signed session is available.
 The anonymous identifier is initialized only for `/api` requests.
 This prevents shared proxy buckets, because the netid and session arms do not consult the network address at all.
-`authLimiter` is keyed per IP so login cannot be brute-forced from one host regardless of session.
+`authLimiter` is keyed per IP and meters rejected CAS ticket validation only, so repeated failures from one address stay bounded regardless of session.
+The ticketless first leg of login is skipped, because it only redirects the caller to CAS, and a validation that succeeds is refunded, so a completed login spends nothing from a bucket that a whole NATed cohort shares.
+A CAS ticket is minted and validated by CAS rather than supplied by the caller, so repeated failure is the only thing on this path the budget can usefully bound.
 Every per-IP key is the client address the validated `trust proxy` predicate resolves, not the raw TCP peer: keying on the peer put the whole user base in one bucket behind a load balancer (#2318), and a forwarded address is accepted only when the connecting peer is inside `TRUSTED_PROXY_CIDRS`, so an ordinary client still cannot shift buckets by spoofing the header.
 All limiters are skipped in CI, development, and test.
 Responses with a `5x` status do not count against a caller's budget (`skipFailedRequests` with `requestWasSuccessful` = status under 500), so a transient backend outage (e.g. a MongoDB reconnect returning 503) cannot lock a user out for the rest of the window; `4xx` still counts.
-That exemption covers `globalLimiter`, `writeLimit`, and `authLimiter`, the three that set `skipFailedRequests: true`.
+`globalLimiter` and `writeLimit` reach that exemption with `skipFailedRequests: true` and the shared predicate.
+`authLimiter` reaches the same place from the other side: it sets `skipSuccessfulRequests: true` with its own predicate, which calls every status outside the `4xx` range successful, so a `5x` is refunded exactly as before and a rejected validation is the only response it charges.
+Both flags together would refund every finished response and count nothing, so the two are alternatives rather than a pair.
 `firstContactLimiter` is deliberately excluded and counts every response, a `5x` included (#2990).
 It meters the session mint, and `ensureAnonymousRateLimitId` performs that mint before the limiter runs, so a request that ends `500` has already spent the resource; refunding it would turn an outage into a window for minting unlimited sessions, which is the bypass the limiter exists to close.
 The cost is accepted rather than unnoticed: a `5x` storm spends a NATed cohort's first-contact budget, and their recovery is the one the exhaustion message already names, retrying with the cookie issued regardless of the failure.
 Because express-rate-limit consults `requestWasSuccessful` only when a skip flag is set, declaring the predicate without the flag advertises an exemption that does not exist, so `scripts/security-preflight.test.mjs` pins that no limiter does.
 `server/src/middleware/__tests__/firstContactMetering.test.ts` drives the exported limiter over a `500` and a `404` and asserts the counter keeps climbing, so the guarantee rests on measured counting rather than on how the options block is written.
+`server/src/middleware/__tests__/authLimiterScope.test.ts` does the same for `authLimiter`, driving the exported limiter over a ticketless start, an accepted validation, a rejected one and a `503`, and pinning that the two request-scoped limiters still charge a successful response.
+It needs no CAS, because the stand-in route reproduces the statuses `casLogin` returns; `server/src/__tests__/appSecurityRuntime.test.ts` covers the route wiring by driving the mounted app's login start.
 
 ### What the request-scoped limiters do and do not control
 
@@ -191,6 +197,7 @@ They carry the opposite exposure by construction: because they are IP-keyed, cal
 `firstContactLimiter` is the one that answers the cookie-discarding caller, by metering the scarce thing (a new session) rather than the abundant one (a request); see the design note in `rateLimiters.ts`.
 A cold visit to a public page sends `/api/check`, `/api/config`, and the first `/api/research/search` in parallel, before any response has set the cookie, so each new visitor spends three first-contact units where waiting for the check spent two (#3952).
 Size `FIRST_CONTACT_RATE_LIMIT_MAX` for that: the default 300 admits about 100 cold visits per egress address per window.
+`authLimiter` narrows the same exposure by metering only what is worth metering, a rejected ticket validation, so the shared bucket is no longer spent by ordinary logging in.
 
 Write limiting is opt-in per route, not inferred from the HTTP method.
 A route is billed as a write only if it lists the `writeLimit` middleware in its definition, so reads and telemetry (search, exports, `addView`, the `/analytics/research/batch` beacon) can never exhaust the mutation budget, and a new route defaults to read-safe.
@@ -199,7 +206,7 @@ A route is billed as a write only if it lists the `writeLimit` middleware in its
 |---------|-------|-------|
 | `globalLimiter` | All `/api` except `/api/cas`. Safety net across reads, telemetry, and writes. | 1000 per 15 minutes. |
 | `writeLimit` | Opt-in per route on genuine mutations (favorites/saves, profile edits, claims, research outreach, admin writes). | 50 per 15 minutes. |
-| `authLimiter` | `/api/cas` login callback, keyed per IP. | 20 per 15 minutes. |
+| `authLimiter` | Rejected CAS ticket validation on `/api/cas`, keyed per IP. A ticketless login start is skipped and a successful validation is refunded. | 60 rejected validations per 15 minutes. |
 | `firstContactLimiter` | Cookie-less `/api` requests only, keyed per IP. The abuse control for callers who discard cookies. | `FIRST_CONTACT_RATE_LIMIT_MAX` per 15 minutes, default 300, floored at 50. |
 
 `globalLimiter` is sized high because un-batched view and impression telemetry rides this budget; lower it once analytics beacons are batched client-side.

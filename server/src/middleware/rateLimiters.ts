@@ -284,19 +284,52 @@ export const writeLimit = rateLimit({
   skip: () => bypassRuntimeSecurity,
 });
 
-// Per-IP brute-force ceiling on the CAS callback. Keyed by the client address
-// the validated `trust proxy` predicate resolves, which accepts a forwarded
-// address only from a peer inside TRUSTED_PROXY_CIDRS, so a client cannot shift
-// buckets by spoofing forwarding headers (#2318).
+// A request to the CAS route with no `ticket` is the START of login: the strategy
+// only redirects the caller to CAS. A ticket-bearing request is the one that
+// spends a CAS validation. Mirrors the strategy's own `if (!ticket)` test
+// (`passport-cas`), so this limiter's idea of a validation attempt cannot drift
+// from what the strategy actually attempts.
+const attemptsCasTicketValidation = (req: Request): boolean => {
+  const ticket = (req.query as Record<string, unknown> | undefined)?.ticket;
+  return typeof ticket === 'string' ? ticket.length > 0 : ticket !== undefined && ticket !== null;
+};
+
+// `skipSuccessfulRequests` refunds every response this predicate calls
+// successful, so the sense is inverted relative to the shared
+// `requestWasSuccessful` above: a 5xx has to read as successful here to keep the
+// same outage exemption the other limiters get from `skipFailedRequests`, leaving
+// a rejected validation as the only charge.
+const casValidationWasNotRejected = (_req: Request, res: Response): boolean =>
+  res.statusCode < 400 || res.statusCode >= 500;
+
+// Per-IP ceiling on repeated FAILED CAS ticket validation. Keyed by the client
+// address the validated `trust proxy` predicate resolves, which accepts a
+// forwarded address only from a peer inside TRUSTED_PROXY_CIDRS, so a client
+// cannot shift buckets by spoofing forwarding headers (#2318).
+//
+// Scope: the budget covers validation failures only. The ticketless redirect that
+// starts login is skipped, and a validation that succeeds is refunded, so a
+// completed login costs nothing. Counting both legs billed every login twice
+// against a bucket a whole NATed cohort shares, and a CAS ticket is minted and
+// validated by CAS rather than supplied by the caller, so repeated failure is the
+// only thing here worth bounding.
+//
+// Budget: what remains on this key is accidental repetition - a refreshed or
+// stale callback - plus the outbound CAS validation each one costs. 60 per 15
+// minutes is one failure every 15 seconds from a single address, which a NATed
+// cohort's ordinary mistakes stay well below while repeated failure is still
+// bounded.
+export const AUTH_VALIDATION_FAILURE_MAX = 60;
+
 export const authLimiter = rateLimit({
   windowMs: WINDOW_MS,
-  max: 20,
+  max: AUTH_VALIDATION_FAILURE_MAX,
   keyGenerator: getPeerIpKey,
   standardHeaders: true,
   legacyHeaders: false,
-  skipFailedRequests: true,
-  requestWasSuccessful,
-  message: { error: 'Too many login attempts, please try again later.' },
-  handler: createRateLimitHandler('Too many login attempts, please try again later.'),
-  skip: () => bypassRuntimeSecurity,
+  skipSuccessfulRequests: true,
+  requestWasSuccessful: casValidationWasNotRejected,
+  message: { error: 'Too many failed login attempts, please try again later.' },
+  handler: createRateLimitHandler('Too many failed login attempts, please try again later.'),
+  skip: (req) => bypassRuntimeSecurity || !attemptsCasTicketValidation(req),
 });
