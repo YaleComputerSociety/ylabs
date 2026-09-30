@@ -823,46 +823,84 @@ test('CI runs the server registration guards ahead of the full server suite', ()
   assert.match(packageJson.scripts['verify:fast'], /yarn --cwd server test:guards/);
 });
 
+const everyWorkflowFile = () => {
+  const directory = new URL('../.github/workflows/', import.meta.url);
+  const files = fs
+    .readdirSync(directory)
+    .filter((file) => /\.ya?ml$/.test(file))
+    .map((file) => [file, fs.readFileSync(new URL(file, directory), 'utf8')]);
+  assert.ok(files.length > 0, 'the workflow directory must hold at least one workflow');
+  return files;
+};
+
+// Every `permissions:` key in a workflow, top-level or job-level, with the scope
+// lines nested beneath it. A job-level block overrides the top-level one for that
+// job, so a compliant top-level block proves nothing about the jobs below it.
+const permissionBlocks = (workflow) => {
+  const lines = workflow.split('\n');
+  const blocks = [];
+  lines.forEach((line, index) => {
+    const key = /^(\s*)permissions:\s*(.*?)\s*(#.*)?$/.exec(line);
+    if (!key) return;
+    const [, indent, inlineValue] = key;
+    const scopes = [];
+    for (const nested of lines.slice(index + 1)) {
+      if (nested.trim() === '' || nested.trim().startsWith('#')) continue;
+      if (nested.search(/\S/) <= indent.length) break;
+      scopes.push(nested.trim().replace(/\s+#.*$/, ''));
+    }
+    blocks.push({ indent: indent.length, inlineValue, scopes });
+  });
+  return blocks;
+};
+
 test('GitHub workflows run with read-only repository token permissions', () => {
-  for (const [name, workflow] of [
-    ['ci', ciWorkflow],
-    ['keep-alive', keepAliveWorkflow],
-    ['release-hold', releaseHoldWorkflow],
-    ['post-promotion-verify', postPromotionVerifyWorkflow],
-  ]) {
-    assert.match(
-      workflow,
-      /permissions:\s*\n\s*contents:\s*read/,
-      `${name} workflow must pin GITHUB_TOKEN to read-only repository contents`,
+  for (const [file, workflow] of everyWorkflowFile()) {
+    const blocks = permissionBlocks(workflow);
+    const topLevel = blocks.find((block) => block.indent === 0);
+    assert.ok(
+      topLevel,
+      `${file} must declare a top-level permissions block, or GITHUB_TOKEN takes the repository default scopes`,
     );
-    assert.doesNotMatch(
-      workflow,
-      /contents:\s*write|pull-requests:\s*write|actions:\s*write|checks:\s*write|deployments:\s*write|id-token:\s*write/,
-      `${name} workflow should not request write-capable token permissions`,
+    assert.ok(
+      topLevel.scopes.includes('contents: read'),
+      `${file} workflow must pin GITHUB_TOKEN to read-only repository contents`,
     );
+
+    // An allowlist of values rather than a denylist of scope names: a denylist
+    // has to be extended for every write-capable scope GitHub adds, and the old
+    // one already missed statuses, issues, packages and write-all (ylabs#3912).
+    for (const block of blocks) {
+      assert.ok(
+        block.inlineValue === '' || block.inlineValue === 'read-all' || block.inlineValue === '{}',
+        `${file} must not grant \`permissions: ${block.inlineValue}\``,
+      );
+      for (const scope of block.scopes) {
+        assert.match(
+          scope,
+          /^[a-z-]+:\s*(read|none)$/,
+          `${file} requests \`${scope}\`: workflows here run with read-only token scopes, and a read scope beyond contents is admitted explicitly rather than by widening a pattern`,
+        );
+      }
+    }
   }
 });
 
 test('GitHub checkout steps do not persist repository credentials', () => {
-  for (const [name, workflow] of [
-    ['ci', ciWorkflow],
-    ['keep-alive', keepAliveWorkflow],
-    ['release-hold', releaseHoldWorkflow],
-    ['post-promotion-verify', postPromotionVerifyWorkflow],
-  ]) {
-    const checkoutStep =
-      /uses:\s*actions\/checkout@[^\n]+[\s\S]{0,160}?persist-credentials:\s*false/;
-    assert.match(
-      workflow,
-      checkoutStep,
-      `${name} workflow must disable checkout credential persistence`,
-    );
-    assert.doesNotMatch(
-      workflow,
-      /uses:\s*actions\/checkout@[^\n]+(?![\s\S]{0,160}?persist-credentials:\s*false)/,
-      `${name} checkout must not leave GITHUB_TOKEN in local git config`,
-    );
+  let checkouts = 0;
+  for (const [file, workflow] of everyWorkflowFile()) {
+    const steps = workflow.split(/\n(?=\s*- )/);
+    for (const step of steps) {
+      if (!/uses:\s*actions\/checkout@/.test(step)) continue;
+      checkouts += 1;
+      assert.match(
+        step,
+        /^\s*with:\s*\n(?:\s+[^\n]*\n)*?\s+persist-credentials:\s*false\s*$/m,
+        `${file} checkout must set persist-credentials: false, or GITHUB_TOKEN stays in local git config for every later step`,
+      );
+    }
   }
+  assert.ok(checkouts > 0, 'at least one workflow must still check out the repository');
 });
 
 const runScript = (script, env) =>
