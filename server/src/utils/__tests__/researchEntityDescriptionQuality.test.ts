@@ -17,6 +17,21 @@ import {
 import { sanitizeResearchEntityDescription } from '../descriptionHygiene';
 
 describe('fullDescriptionQuality', () => {
+  const repeatedWindowText = (windowWords: number): string => {
+    const repeated = Array.from({ length: windowWords }, (_, index) => `term${index}`).join(' ');
+    return `Opening sentence about estuary modelling ${repeated} bridging words that separate the two passages here ${repeated} closing remarks on sediment.`;
+  };
+
+  it('flags a repeated fourteen-word passage as a duplicated fragment', () => {
+    expect(fullDescriptionQuality(repeatedWindowText(14)).flags).toContain('duplicated-fragment');
+  });
+
+  it('does not flag a repeated nine-word passage, which is shorter than the window', () => {
+    expect(fullDescriptionQuality(repeatedWindowText(9)).flags).not.toContain(
+      'duplicated-fragment',
+    );
+  });
+
   it('keeps official lab overview copy that starts with a welcome sentence', () => {
     const quality = fullDescriptionQuality(
       'Welcome to the Developmental Electrophysiology Laboratory (DEL), a core research resource in the Yale Child Study Center and the Yale School of Medicine. The DEL is equipped to study brain electrical responses and peripheral psychophysiological indices of cognition, emotion, and arousal.',
