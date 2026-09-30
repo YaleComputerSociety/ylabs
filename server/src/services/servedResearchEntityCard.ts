@@ -11,9 +11,22 @@
  * hygiene shortens the body a derived card came from - and all three are steps of
  * `sanitizeServedResearchEntityCopyFields` the gate did not run.
  *
- * So both the DTO and `buildResearchEntityPublicDescriptionRepresentation` call
- * `servedResearchEntityCardDescription` here. Adding a card guard to either surface
- * now moves the gate verdict with it.
+ * So every card surface resolves its line here. The detail card, the browse card
+ * (`cardDescription` on a list payload) and the gate's judged card all read this
+ * module, which means adding a card guard here moves the gate verdict and all three
+ * surfaces together.
+ *
+ * The gate reads `servedResearchEntityCardWithoutLastResort` and the DTO reads
+ * `servedResearchEntityCardDescription`, and the only difference between the two is
+ * the last-resort whole-body card the gate deliberately excludes, because that resort
+ * only ever runs on a row the card invariant has already passed. Before #3747 the
+ * gate resolved its own card from `resolveServedShortDescription`, which skipped the
+ * rendering-preference bar, the gate-accepted derived substitute and the
+ * ungrounded-card surrender, and the browse card came from
+ * `resolveResearchHomeCardSummary`, which served the whole body in the card slot when
+ * the stored short was empty - the unguarded fallback #1832 had already removed from
+ * the detail card. So the gate cleared a row on one line while browse showed a second
+ * and the related, similar and compare cards showed a third.
  */
 import {
   asResearchEntityType,
@@ -287,6 +300,43 @@ export function servedShortDescriptionFallback(
   return servedShortDescriptionString(served.fullDescription);
 }
 
+function servedResearchEntityType(
+  served: Record<string, any>,
+  entityType?: ResearchEntityType,
+): ResearchEntityType | undefined {
+  return entityType === undefined
+    ? asResearchEntityType(served.entityType || mapResearchGroupKindToEntityType(served.kind))
+    : entityType;
+}
+
+/**
+ * The card line a student reads, minus the last-resort whole-body card - the one
+ * step of the served resolution the visibility gate deliberately does not judge.
+ *
+ * The gate reads this rather than the full resolution below because the resort only
+ * ever runs on a row the card invariant has already passed, so reading it there
+ * would be circular: the invariant could never refuse an empty card while a body
+ * existed, and #2597's refusal and #1872's organizational exemption both key on card
+ * absence. Every other step is shared, so the judged card and the served card can
+ * now differ on that documented step alone (#3747).
+ */
+export function servedResearchEntityCardWithoutLastResort(
+  served: Record<string, any>,
+  entityType?: ResearchEntityType,
+): string {
+  const resolvedEntityType = servedResearchEntityType(served, entityType);
+  return (
+    groundedShortDescriptionString(served.shortDescription || '', served, resolvedEntityType) ||
+    resolveServedShortDescriptionOutcome({
+      shortDescription: '',
+      fullDescription: served.fullDescription,
+      researchAreas: served.researchAreas,
+      entityType: resolvedEntityType,
+      kind: served.kind,
+    }).card
+  );
+}
+
 /**
  * The card line a student reads on this row, resolved from copy the canonical
  * serve sanitizer has already cleaned.
@@ -300,10 +350,7 @@ export function servedResearchEntityCardDescription(
   served: Record<string, any>,
   entityType?: ResearchEntityType,
 ): string {
-  const resolvedEntityType =
-    entityType === undefined
-      ? asResearchEntityType(served.entityType || mapResearchGroupKindToEntityType(served.kind))
-      : entityType;
+  const resolvedEntityType = servedResearchEntityType(served, entityType);
   return (
     groundedShortDescriptionString(served.shortDescription || '', served, resolvedEntityType) ||
     servedShortDescriptionFallback(served, resolvedEntityType)

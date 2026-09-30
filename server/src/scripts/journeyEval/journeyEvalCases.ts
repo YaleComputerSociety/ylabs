@@ -108,6 +108,27 @@ const listLength = (value: unknown): number => (Array.isArray(value) ? value.len
 
 const hasText = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
 
+const inlineText = (value: unknown): string =>
+  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+
+/**
+ * Whether a browse card carries a line other than the row's own served card.
+ *
+ * One resolver owns the card a student reads, so a list payload may serve that line or
+ * the named limited-description state and nothing else. Browse used to resolve its own
+ * summary from the stored short and body, which put the whole body in the card slot
+ * whenever the sanitized short was empty, so a row could be cleared by the visibility
+ * gate on one line while browse showed a second (#3747). This is an invariant rather
+ * than a rate: it is a property of the serving code and does not move when the corpus
+ * does.
+ */
+const browseCardIsNotTheServedCard = (row: Record<string, unknown>): boolean => {
+  const card = row.cardDescription as { text?: unknown; state?: unknown } | undefined | null;
+  if (!card || typeof card !== 'object') return true;
+  if (card.state === 'sparse') return false;
+  return inlineText(card.text) !== inlineText(row.shortDescription);
+};
+
 const epochMillis = (value: unknown): number | null => {
   if (typeof value === 'number') return value;
   if (typeof value === 'string' || value instanceof Date) {
@@ -143,6 +164,15 @@ const coldBrowseCardContract: JourneyCase = {
           'A cold browse fills the requested page when the corpus is larger than it',
           rows.length === context.window || (result.estimatedTotalHits ?? 0) < context.window,
           { requested: context.window, served: rows.length, total: result.estimatedTotalHits },
+        ),
+        buildInvariant(
+          'browse-card-is-the-served-card',
+          "Every browse card serves the row's own served card or the named limited state",
+          rows.filter(browseCardIsNotTheServedCard).length === 0,
+          {
+            rowsChecked: rows.length,
+            divergentCards: rows.filter(browseCardIsNotTheServedCard).length,
+          },
         ),
       ],
       rates: [

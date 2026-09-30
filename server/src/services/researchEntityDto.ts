@@ -548,14 +548,23 @@ function derivePublicResearchEntityDto(
 
   if (entityHasHostedUndergraduates(group)) dto.hasUndergradHostingEvidence = true;
 
+  // The browse card is the same line `shortDescription` above carries, because both
+  // are `servedResearchEntityCardDescription`. Resolving it from the stored short and
+  // body instead served the whole body in the card slot whenever the sanitized short
+  // was empty, which is the unguarded short-to-full fallback #1832 removed from the
+  // detail card, so browse showed a line the gate never judged and the compare and
+  // related cards showed a third (#3747). `resolveResearchHomeCardSummary` keeps only
+  // the named "Limited public description" state, for a row that resolves no card at
+  // all.
   if (options.forList) {
-    dto.cardDescription = resolveResearchHomeCardSummary({
-      shortDescription: served.shortDescription,
-      fullDescription: served.fullDescription,
-      departments: group.departments,
-      sourceUrls: group.sourceUrls,
-      school: group.school,
-    });
+    const listCard = String(dto.shortDescription || '');
+    dto.cardDescription = listCard
+      ? { text: listCard, state: 'complete', label: 'Research description' }
+      : resolveResearchHomeCardSummary({
+          departments: group.departments,
+          sourceUrls: group.sourceUrls,
+          school: group.school,
+        });
   }
 
   if (group.methods !== undefined) {

@@ -309,6 +309,12 @@ describe('planCardBackfillRow career-biography cards (#3098)', () => {
     'Questions about measurement and questions about mechanism have driven the group for fifteen years, and the instrumentation built to answer the first has repeatedly reshaped what could be asked of the second, so the two threads are now inseparable in the work the group does.';
   const SYNTHESIZED_CARD =
     'Studies questions about measurement and mechanism, building instrumentation that reshapes what can be asked of the biology.';
+  // Grounded in DERIVABLE_RESEARCH_BODY, which the card above is not. The gate judges
+  // the served card, and the serve path surrenders a card whose distinctive tokens are
+  // absent from the row's own body, so a card synthesized for a different body is
+  // correctly refused rather than proposed (#3747).
+  const SYNTHESIZED_CARD_FOR_THE_DERIVABLE_BODY =
+    'Studies how microglia clear protein aggregates in the ageing brain, using imaging and sequencing to find the clearance pathways that fail earliest.';
   // A synthesized biography that is GROUNDED in the body, so it clears
   // shortDescriptionQuality and survives the serve sanitizers as a complete card.
   // That is the only shape the output refusal is load-bearing for: an ungrounded or
@@ -327,7 +333,7 @@ describe('planCardBackfillRow career-biography cards (#3098)', () => {
   });
 
   it('no longer calls a served career-biography card short-ok', async () => {
-    const synthesize = vi.fn(async () => SYNTHESIZED_CARD);
+    const synthesize = vi.fn(async () => SYNTHESIZED_CARD_FOR_THE_DERIVABLE_BODY);
 
     const row = await planCardBackfillRow(biographyRow(DERIVABLE_RESEARCH_BODY), synthesize);
 
@@ -337,7 +343,7 @@ describe('planCardBackfillRow career-biography cards (#3098)', () => {
 
   it('refuses the body derivation on a row that already has a card', async () => {
     const derived = deriveShortDescriptionFromFullDescription(DERIVABLE_RESEARCH_BODY);
-    const synthesize = vi.fn(async () => SYNTHESIZED_CARD);
+    const synthesize = vi.fn(async () => SYNTHESIZED_CARD_FOR_THE_DERIVABLE_BODY);
 
     const row = await planCardBackfillRow(biographyRow(DERIVABLE_RESEARCH_BODY), synthesize);
 
