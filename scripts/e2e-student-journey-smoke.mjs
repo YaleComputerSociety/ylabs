@@ -19,7 +19,9 @@ const SMOKE_ZERO_RESULT_COPY =
 
 const isInsidePath = (root, target) => {
   const relative = path.relative(root, target);
-  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+  return (
+    relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative))
+  );
 };
 
 const safeSmokeBaseUrl = (raw, name) => {
@@ -61,7 +63,10 @@ const safeSmokeOutputDir = (raw) => {
   return resolved;
 };
 
-const baseUrl = safeSmokeBaseUrl(process.env.E2E_BASE_URL || 'http://localhost:4000', 'E2E_BASE_URL');
+const baseUrl = safeSmokeBaseUrl(
+  process.env.E2E_BASE_URL || 'http://localhost:4000',
+  'E2E_BASE_URL',
+);
 const outDir = safeSmokeOutputDir(process.env.OUT_DIR);
 
 await fs.mkdir(outDir, { recursive: true });
@@ -121,6 +126,63 @@ const assertTextIncludes = async (expected, targetPage = page) => {
   assert(text.includes(expected), `Expected page text to include "${expected}".`);
 };
 
+const FOCUS_RING_OFFSET = 2;
+const FOCUS_RING_WIDTH = 2;
+
+const focusRingStrips = (box) => {
+  const reach = FOCUS_RING_OFFSET + FOCUS_RING_WIDTH;
+  return {
+    top: { x: box.x, y: box.y - reach, width: box.width, height: FOCUS_RING_WIDTH },
+    right: {
+      x: box.x + box.width + FOCUS_RING_OFFSET,
+      y: box.y,
+      width: FOCUS_RING_WIDTH,
+      height: box.height,
+    },
+    bottom: {
+      x: box.x,
+      y: box.y + box.height + FOCUS_RING_OFFSET,
+      width: box.width,
+      height: FOCUS_RING_WIDTH,
+    },
+    left: { x: box.x - reach, y: box.y, width: FOCUS_RING_WIDTH, height: box.height },
+  };
+};
+
+const captureStrips = async (strips) => {
+  const captured = {};
+  for (const [side, clip] of Object.entries(strips)) {
+    captured[side] = await page.screenshot({ clip });
+  }
+  return captured;
+};
+
+// Computed style reports the outline even when an ancestor clips it or a later
+// sibling paints over it, so only the pixels on each side of the box can tell.
+const assertFocusRingPaintsEverySide = async (control, label) => {
+  assert(
+    await control.evaluate((element) => element.matches(':focus-visible')),
+    `${label} did not take keyboard focus.`,
+  );
+  const box = await control.boundingBox();
+  assert(box, `${label} has no layout box.`);
+  const strips = focusRingStrips(box);
+  const focused = await captureStrips(strips);
+  await control.evaluate((element) => element.blur());
+  const blurred = await captureStrips(strips);
+  const unpainted = Object.keys(strips).filter((side) => focused[side].equals(blurred[side]));
+  assert(
+    unpainted.length === 0,
+    `${label} focus ring paints nothing on its ${unpainted.join(', ')} side(s).`,
+  );
+};
+
+const focusByKeyboard = async (control) => {
+  await control.focus();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+};
+
 const settleResearchPage = async (targetPage = page) => {
   await targetPage.waitForLoadState('domcontentloaded');
   await targetPage.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => undefined);
@@ -130,11 +192,9 @@ const submitSearch = async (query) => {
   await page.getByLabel('Search y/labs').fill(query);
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page
-    .waitForFunction(
-      () => !document.body.innerText.includes('Searching y/labs for'),
-      undefined,
-      { timeout: 20000 },
-    )
+    .waitForFunction(() => !document.body.innerText.includes('Searching y/labs for'), undefined, {
+      timeout: 20000,
+    })
     .catch(() => undefined);
   await settleResearchPage();
 };
@@ -188,7 +248,10 @@ await step('search returns a result and the header settles out of loading', asyn
     (await page.getByRole('button', { name: 'Searching...', exact: true }).count()) === 0,
     'Search button is stuck in the "Searching..." loading state.',
   );
-  assert(!(await searchButton.isDisabled()), 'Search button remained disabled after results loaded.');
+  assert(
+    !(await searchButton.isDisabled()),
+    'Search button remained disabled after results loaded.',
+  );
   const status = await page
     .locator('section[aria-label="Search results"]')
     .getByRole('status')
@@ -198,10 +261,7 @@ await step('search returns a result and the header settles out of loading', asyn
     /results? for '.+'/i.test(status.replace(/\s+/g, ' ')),
     `Search summary never settled out of the loading state (got "${status}").`,
   );
-  await page
-    .getByRole('link', { name: SMOKE_ENTITY_NAME })
-    .first()
-    .waitFor({ timeout: 20000 });
+  await page.getByRole('link', { name: SMOKE_ENTITY_NAME }).first().waitFor({ timeout: 20000 });
 });
 await screenshot('02-search-results');
 
@@ -212,7 +272,9 @@ await step('opening a result renders the detail identity and description', async
     new URL(page.url()).pathname === `/research/${SMOKE_ENTITY_SLUG}`,
     `Expected detail URL /research/${SMOKE_ENTITY_SLUG}, got ${page.url()}.`,
   );
-  await page.getByRole('heading', { level: 1, name: SMOKE_ENTITY_NAME }).waitFor({ timeout: 20000 });
+  await page
+    .getByRole('heading', { level: 1, name: SMOKE_ENTITY_NAME })
+    .waitFor({ timeout: 20000 });
   await page.getByRole('heading', { name: 'Research summary' }).waitFor({ timeout: 20000 });
   await assertTextIncludes('marsupials');
 });
@@ -269,6 +331,32 @@ await step('the saved entity appears on the dashboard', async () => {
   }
 });
 await screenshot('05-account-saved');
+
+await step('each dashboard surface tab paints a full keyboard focus ring', async () => {
+  const tabs = page.getByRole('tablist', { name: 'Dashboard surfaces' });
+  const plansTab = tabs.getByRole('tab', { name: /^Dashboard/ });
+  const programsTab = tabs.getByRole('tab', { name: /^Program Watch/ });
+  await plansTab.scrollIntoViewIfNeeded();
+  await plansTab.focus();
+  await page.keyboard.press('ArrowRight');
+  await assertFocusRingPaintsEverySide(programsTab, 'The Program Watch tab');
+  await programsTab.focus();
+  await page.keyboard.press('ArrowLeft');
+  await assertFocusRingPaintsEverySide(plansTab, 'The Dashboard tab');
+});
+
+await step('each program view-mode segment paints a full keyboard focus ring', async () => {
+  await page.goto(`${baseUrl}/programs`, { waitUntil: 'domcontentloaded' });
+  await settleResearchPage();
+  const listView = page.getByRole('button', { name: 'List view', exact: true });
+  await listView.click();
+  for (const name of ['Card view', 'List view', 'Compact view']) {
+    const segment = page.getByRole('button', { name, exact: true });
+    await segment.scrollIntoViewIfNeeded();
+    await focusByKeyboard(segment);
+    await assertFocusRingPaintsEverySide(segment, `The ${name} segment`);
+  }
+});
 
 await step('a zero-result search renders an honest empty state, not an error', async () => {
   await page.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
