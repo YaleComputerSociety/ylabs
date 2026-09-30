@@ -285,6 +285,22 @@ await step('a zero-result search renders an honest empty state, not an error', a
 });
 await screenshot('06-zero-results');
 
+await step('the first Tab on first load reaches the skip link', async () => {
+  await page.goto(`${baseUrl}/about`, { waitUntil: 'domcontentloaded' });
+  await settleResearchPage();
+  await page.getByRole('heading', { level: 1 }).first().waitFor({ timeout: 20000 });
+  await page.keyboard.press('Tab');
+  const firstTabStop = await page.evaluate(() => {
+    const focused = document.activeElement;
+    if (!focused || focused === document.body) return 'nothing';
+    return `${focused.tagName.toLowerCase()} "${(focused.textContent ?? '').trim().slice(0, 40)}"`;
+  });
+  assert(
+    firstTabStop === 'a "Skip to main content"',
+    `The first Tab on /about landed on ${firstTabStop} instead of the skip link.`,
+  );
+});
+
 await step('the keyboard scrolls a page on first load without a click', async () => {
   await page.goto(`${baseUrl}/about`, { waitUntil: 'domcontentloaded' });
   await settleResearchPage();
