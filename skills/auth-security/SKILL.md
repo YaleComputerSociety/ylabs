@@ -214,8 +214,12 @@ That is a self-inflicted availability failure dressed as a security control.
 The genuine abuse controls are the two `getPeerIpKey` limiters, `firstContactLimiter` and `authLimiter`, which cannot be reset by dropping cookies.
 They carry the opposite exposure by construction: because they are IP-keyed, callers behind one Yale egress address do share a bucket.
 `firstContactLimiter` is the one that answers the cookie-discarding caller, by metering the scarce thing (a new session) rather than the abundant one (a request); see the design note in `rateLimiters.ts`.
-A cold visit to a public page sends `/api/check`, `/api/config`, and the first `/api/research/search` in parallel, before any response has set the cookie, so each new visitor spends three first-contact units where waiting for the check spent two (#3952).
-Size `FIRST_CONTACT_RATE_LIMIT_MAX` for that: the default 300 admits about 100 cold visits per egress address per window.
+A new visitor's cost is the number of `/api` requests the client sends before the first response sets the cookie, so the cold-visit request order is part of this budget.
+A cold visit to a public page sends `/api/check` and the first `/api/research/search` in parallel (#3952), and `ConfigContextProvider` requests `/api/config` only once the session check has answered, so it carries the cookie that answer issued (#4118).
+Each new visitor therefore spends two first-contact units, and the default 300 admits about 150 cold visits per egress address per window.
+Do not add another request that fires before the session check answers without counting it here: #4083 briefly made the cost three, about 100 cold visits, by sending `/api/config` alongside the other two.
+Do not recover the unit on the server by exempting a route from the limiter instead, because a cookie-discarding caller would then reach that route unmetered.
+`client/src/__tests__/coldVisitFirstContactCost.test.tsx` mounts the real session and config providers with the browse page and pins the requests sent before the check answers.
 `authLimiter` narrows the same exposure by metering only what is worth metering, a rejected ticket validation, so the shared bucket is no longer spent by ordinary logging in.
 
 Write limiting is opt-in per route, not inferred from the HTTP method.
