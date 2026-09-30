@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   personNameForFacultySlug,
+  planGrantOnlyArchival,
   planGrantShellPort,
   portableGrantShellFields,
   summarizeGrantShellPort,
@@ -219,5 +220,37 @@ describe('grant shell port onto a faculty research profile', () => {
       { id: 'R01-1', title: 'a' },
       { id: 'R21-2', title: 'b' },
     ]);
+  });
+});
+
+describe('grant-only rows are archived, not ported (#3992)', () => {
+  it('refuses to port a grant row whose every citation is a grant record', () => {
+    const outcome = planGrantShellPort(input({ shells: [shell({ grantOnly: true })] }));
+    expect(outcome.plans).toEqual([]);
+    expect(outcome.refused).toEqual([{ shellId: 'shell-1', reason: 'grantOnlyEvidence' }]);
+  });
+
+  it('archives a grant-only faculty row and leaves one an operator locked or overrode', () => {
+    const plan = planGrantOnlyArchival([
+      { id: 'plain', entityType: 'FACULTY_RESEARCH_AREA', grantOnly: true },
+      {
+        id: 'locked',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        grantOnly: true,
+        manuallyLockedFields: ['fullDescription'],
+      },
+      {
+        id: 'overridden',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        grantOnly: true,
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      { id: 'corroborated', entityType: 'FACULTY_RESEARCH_AREA', grantOnly: false },
+      { id: 'lab', entityType: 'LAB', grantOnly: true },
+    ]);
+    expect(plan).toEqual({
+      archiveIds: ['plain'],
+      keptForOperatorIntentIds: ['locked', 'overridden'],
+    });
   });
 });

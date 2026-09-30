@@ -9,10 +9,19 @@ import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import { Signal } from '../models/signal';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
-import { GRANT_SHELL_FACULTY_PORT_ARCHIVE_REASON } from '../models/entityArchival';
+import {
+  GRANT_ONLY_ROW_ARCHIVE_REASON,
+  GRANT_SHELL_FACULTY_PORT_ARCHIVE_REASON,
+  archivedEntityUpdate,
+} from '../models/entityArchival';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import { GRANT_SHELL_ENTITY_TYPE } from '../scrapers/utils/grantShellIdentity';
-import { syncEntities } from '../services/meiliSyncService';
+import { deleteFromIndex, syncEntities } from '../services/meiliSyncService';
+import { Observation } from '../models/observation';
+import {
+  isGrantOrOrcidSourceUrl,
+  isUncorroboratedGrantOnlyEntity,
+} from '../services/studentVisibilityTier';
 import {
   getResearchGroupDetail,
   resolveArchivedResearchEntityCanonicalSlug,
@@ -27,6 +36,7 @@ import { applyResearchEntityDedupeMergeGroup } from './dedupeResearchEntitiesByP
 import {
   GRANT_SHELL_PORT_SLUG_RE,
   isGrantShellSlug,
+  planGrantOnlyArchival,
   planGrantShellPort,
   portableGrantShellFields,
   summarizeGrantShellPort,
@@ -76,6 +86,115 @@ export interface GrantShellPortDelta {
   liveSignalsLeftOnShells: number;
   survivorsResynced: number;
   survivorsAwaitingResync: number;
+  grantOnlyPlannedArchives: number;
+  grantOnlyKeptForOperatorIntent: number;
+  grantOnlyArchived: number;
+  grantOnlyServedBefore: number;
+  grantOnlyStillArchivedAfterTwoPasses: number;
+  grantOnlyIndexDeleteFailures: number;
+}
+
+type GrantOnlyArchivalDelta = Pick<
+  GrantShellPortDelta,
+  | 'grantOnlyPlannedArchives'
+  | 'grantOnlyKeptForOperatorIntent'
+  | 'grantOnlyArchived'
+  | 'grantOnlyServedBefore'
+  | 'grantOnlyStillArchivedAfterTwoPasses'
+  | 'grantOnlyIndexDeleteFailures'
+>;
+
+/**
+ * The gate's grant-only test reads the row's cited URLs, but a lane can read an official
+ * profile page without citing it: on Development 10 of 44 rows that cited only grant
+ * records had observations fetched from a Yale profile page. So a row is grant-only here
+ * only when every observation on it, and on every row tombstoned into it, was fetched from
+ * a grant or ORCID record too.
+ */
+async function hasNonGrantObservationEvidence(doc: Record<string, any>): Promise<boolean> {
+  const tombstoned = (await ResearchEntity.find({ canonicalGroupId: doc._id })
+    .select('_id slug')
+    .lean()) as unknown as Array<Record<string, any>>;
+  const keys = [doc.slug, ...tombstoned.map((row) => row.slug)].map(idText).filter(Boolean);
+  const ids = [doc._id, ...tombstoned.map((row) => row._id)];
+  const sourceUrls = (await Observation.distinct('sourceUrl', {
+    entityType: 'researchEntity',
+    superseded: { $ne: true },
+    $or: [{ entityKey: { $in: keys } }, { entityId: { $in: ids } }],
+  })) as unknown[];
+  return sourceUrls.some((url) => {
+    const value = idText(url);
+    return /^https?:\/\//i.test(value) && !isGrantOrOrcidSourceUrl(value);
+  });
+}
+
+async function grantOnlyRowIds(docs: Array<Record<string, any>>): Promise<Set<string>> {
+  const ids = new Set<string>();
+  for (const doc of docs) {
+    if (isUncorroboratedGrantOnlyEntity(doc) && !(await hasNonGrantObservationEvidence(doc))) {
+      ids.add(idText(doc._id));
+    }
+  }
+  return ids;
+}
+
+async function archiveGrantOnlyRows(dryRun: boolean): Promise<GrantOnlyArchivalDelta> {
+  const survivorIds = await ResearchEntity.distinct('canonicalGroupId', {
+    archived: true,
+    archivedReason: GRANT_SHELL_FACULTY_PORT_ARCHIVE_REASON,
+  });
+  const candidates = (await ResearchEntity.find({
+    archived: { $ne: true },
+    $or: [{ slug: GRANT_SHELL_PORT_SLUG_RE }, { _id: { $in: survivorIds.filter(Boolean) } }],
+  })
+    .select(
+      '_id slug entityType websiteUrl website sourceUrls manuallyLockedFields studentVisibilityOverrideTier studentVisibilityTier',
+    )
+    .lean()) as unknown as Array<Record<string, any>>;
+  const grantOnlyIds = await grantOnlyRowIds(candidates);
+  const plan = planGrantOnlyArchival(
+    candidates.map((doc) => ({
+      id: idText(doc._id),
+      entityType: idText(doc.entityType),
+      grantOnly: grantOnlyIds.has(idText(doc._id)),
+      manuallyLockedFields: doc.manuallyLockedFields,
+      studentVisibilityOverrideTier: doc.studentVisibilityOverrideTier,
+    })),
+  );
+  const archiveIds = new Set(plan.archiveIds);
+  const toArchive = candidates.filter((doc) => archiveIds.has(idText(doc._id)));
+  const delta: GrantOnlyArchivalDelta = {
+    grantOnlyPlannedArchives: toArchive.length,
+    grantOnlyKeptForOperatorIntent: plan.keptForOperatorIntentIds.length,
+    grantOnlyArchived: 0,
+    grantOnlyServedBefore: toArchive.filter(
+      (doc) => idText(doc.studentVisibilityTier) === 'student_ready',
+    ).length,
+    grantOnlyStillArchivedAfterTwoPasses: 0,
+    grantOnlyIndexDeleteFailures: 0,
+  };
+  if (dryRun || toArchive.length === 0) return delta;
+
+  for (const doc of toArchive) {
+    const result = await ResearchEntity.updateOne(
+      { _id: doc._id, archived: { $ne: true } },
+      archivedEntityUpdate(GRANT_ONLY_ROW_ARCHIVE_REASON),
+    );
+    delta.grantOnlyArchived += result.modifiedCount ?? 0;
+    const removedFromIndex = await deleteFromIndex('researchEntity', idText(doc._id));
+    if (!removedFromIndex) delta.grantOnlyIndexDeleteFailures += 1;
+  }
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (const doc of toArchive) {
+      await materializeEntity('researchEntity', { entityKey: idText(doc.slug) }, {});
+    }
+  }
+  delta.grantOnlyStillArchivedAfterTwoPasses = await ResearchEntity.countDocuments({
+    _id: { $in: toArchive.map((doc) => doc._id) },
+    archived: true,
+    archivedReason: GRANT_ONLY_ROW_ARCHIVE_REASON,
+  });
+  return delta;
 }
 
 export function parsePortGrantShellArgs(argv: string[]): Options {
@@ -367,12 +486,21 @@ export async function runGrantShellPort(options: Options): Promise<{
   delta: GrantShellPortDelta;
   outcome: GrantShellPortOutcome;
 }> {
+  const grantOnlyDelta = await archiveGrantOnlyRows(options.dryRun);
   const shellDocs = (await ResearchEntity.find({
     slug: GRANT_SHELL_PORT_SLUG_RE,
     archived: { $ne: true },
   }).lean()) as unknown as Array<Record<string, any>>;
   const shellDocById = new Map(shellDocs.map((doc) => [idText(doc._id), doc]));
-  const outcome = planGrantShellPort(await loadPortInput(shellDocs));
+  const grantOnlyShellIds = await grantOnlyRowIds(shellDocs);
+  const portInput = await loadPortInput(shellDocs);
+  const outcome = planGrantShellPort({
+    ...portInput,
+    shells: portInput.shells.map((shell) => ({
+      ...shell,
+      grantOnly: grantOnlyShellIds.has(shell.id),
+    })),
+  });
   const summary = summarizeGrantShellPort(outcome);
   const plansToApply = outcome.plans.slice(0, options.maxPorts);
 
@@ -394,6 +522,7 @@ export async function runGrantShellPort(options: Options): Promise<{
     liveSignalsLeftOnShells: 0,
     survivorsResynced: 0,
     survivorsAwaitingResync: 0,
+    ...grantOnlyDelta,
   };
   if (options.dryRun) return { delta, outcome };
 

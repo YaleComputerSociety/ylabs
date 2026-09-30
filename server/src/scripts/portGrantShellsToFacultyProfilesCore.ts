@@ -28,6 +28,7 @@ export interface GrantShellPortRow {
   entityType: string;
   studentVisibilityTier?: string;
   archived?: boolean;
+  grantOnly?: boolean;
 }
 
 export interface GrantShellPortInput {
@@ -48,6 +49,7 @@ export type GrantShellPortPlan = GrantShellPortSurvivor & { shellIds: string[] }
 
 export type GrantShellPortRefusalReason =
   | 'labTyped'
+  | 'grantOnlyEvidence'
   | 'severalLeads'
   | 'noPersonName'
   | 'severalFacultyRowsForPerson'
@@ -94,6 +96,7 @@ function personSlugSourceForUnledShell(shellSlug: string): string {
 function targetForShell(shell: GrantShellPortRow, input: GrantShellPortInput): ShellTarget {
   if (shell.entityType !== GRANT_SHELL_ENTITY_TYPE)
     return { status: 'refused', reason: 'labTyped' };
+  if (shell.grantOnly) return { status: 'refused', reason: 'grantOnlyEvidence' };
   const leadPersonIds = [...new Set(input.leadPersonIdsByEntityId.get(shell.id) ?? [])];
   if (leadPersonIds.length > 1) return { status: 'refused', reason: 'severalLeads' };
   const [leadPersonId] = leadPersonIds;
@@ -235,4 +238,47 @@ export function unionStringField(rows: Array<Record<string, unknown>>, field: st
     }
   }
   return [...values];
+}
+
+export interface GrantOnlyArchivalCandidate {
+  id: string;
+  entityType: string;
+  grantOnly: boolean;
+  manuallyLockedFields?: unknown;
+  studentVisibilityOverrideTier?: unknown;
+}
+
+export interface GrantOnlyArchivalPlan {
+  archiveIds: string[];
+  keptForOperatorIntentIds: string[];
+}
+
+function carriesOperatorIntent(row: GrantOnlyArchivalCandidate): boolean {
+  const locked = Array.isArray(row.manuallyLockedFields) && row.manuallyLockedFields.length > 0;
+  const override =
+    typeof row.studentVisibilityOverrideTier === 'string' &&
+    row.studentVisibilityOverrideTier.trim().length > 0;
+  return locked || override;
+}
+
+/**
+ * A faculty-typed grant row, or a survivor the port wrote for one, that cites nothing
+ * but grant records exists only because a grant lane minted it, so it is archived
+ * rather than kept as a faculty research profile. A lock or a visibility override is
+ * an operator's judgement about that row, so such a row is left for the operator.
+ */
+export function planGrantOnlyArchival(
+  candidates: GrantOnlyArchivalCandidate[],
+): GrantOnlyArchivalPlan {
+  const grantOnlyFacultyRows = candidates.filter(
+    (row) => row.grantOnly && row.entityType === GRANT_SHELL_ENTITY_TYPE,
+  );
+  return {
+    archiveIds: grantOnlyFacultyRows
+      .filter((row) => !carriesOperatorIntent(row))
+      .map((row) => row.id),
+    keptForOperatorIntentIds: grantOnlyFacultyRows
+      .filter(carriesOperatorIntent)
+      .map((row) => row.id),
+  };
 }
