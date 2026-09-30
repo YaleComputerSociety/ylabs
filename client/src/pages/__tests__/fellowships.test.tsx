@@ -595,6 +595,20 @@ describe('Programs page', () => {
     expect(screen.getByRole('status')).toHaveTextContent('1 result');
   });
 
+  it('keeps keyboard focus on the program search after Enter and Escape', async () => {
+    renderPage([baseFellowship({ id: 'open', title: 'Open Fellowship' })]);
+
+    const searchInput = screen.getByLabelText('Search programs and fellowships');
+    await userEvent.click(searchInput);
+    expect(searchInput).toHaveFocus();
+
+    await userEvent.keyboard('{Enter}');
+    expect(searchInput).toHaveFocus();
+
+    await userEvent.keyboard('{Escape}');
+    expect(searchInput).toHaveFocus();
+  });
+
   it('clears the subject filter along with every other program filter from Clear all', async () => {
     const resetProgramFilters = vi.fn();
     const setSelectedStudentVisibilityTier = vi.fn();
