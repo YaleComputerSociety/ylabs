@@ -8,6 +8,7 @@ const base = {
   profileNeedsOwnButton: false,
   preferOrgEngagementOutreach: false,
   officialSource: null as { url: string } | null,
+  hasApplyPage: false,
 };
 
 describe('resolveResearchDetailActionLinks (#3288)', () => {
@@ -41,7 +42,7 @@ describe('resolveResearchDetailActionLinks (#3288)', () => {
     expect(links.websiteCtaUrl).toBeUndefined();
   });
 
-  it('withholds the lead card profile link under org-engagement outreach', () => {
+  it('keeps the lead card profile link but not the website under org-engagement outreach', () => {
     const links = resolveResearchDetailActionLinks({
       ...base,
       preferOrgEngagementOutreach: true,
@@ -49,10 +50,33 @@ describe('resolveResearchDetailActionLinks (#3288)', () => {
       websiteUrl: WEBSITE,
       officialSource: { url: 'https://example.yale.edu/get-involved' },
     });
-    expect(links.leadCardProfileUrl).toBeUndefined();
-    expect(links.leadCardLinksProfile).toBe(false);
+    expect(links.leadCardProfileUrl).toBe(PROFILE);
+    expect(links.leadCardLinksProfile).toBe(true);
     expect(links.showsWebsiteCta).toBe(false);
     expect(links.offersBothLinks).toBe(false);
+  });
+
+  it('gives the only action to a place to apply over the website and an own-button profile', () => {
+    const beside = resolveResearchDetailActionLinks({
+      ...base,
+      hasApplyPage: true,
+      profileUrl: PROFILE,
+      websiteUrl: WEBSITE,
+    });
+    expect(beside.showsWebsiteCta).toBe(false);
+    expect(beside.offersBothLinks).toBe(false);
+    expect(beside.profileOpenedAbove).toBe(true);
+
+    const withoutLeadCard = resolveResearchDetailActionLinks({
+      ...base,
+      hasLeadCard: false,
+      hasApplyPage: true,
+      profileUrl: PROFILE,
+      websiteUrl: WEBSITE,
+      profileNeedsOwnButton: true,
+    });
+    expect(withoutLeadCard.showsProfileButton).toBe(false);
+    expect(withoutLeadCard.profileOpenedAbove).toBe(false);
   });
 
   it('suppresses the website slot for an own-button profile', () => {

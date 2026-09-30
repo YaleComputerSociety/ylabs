@@ -1,6 +1,5 @@
 import { dedupeLeadMembers, memberPersonName } from '../utils/leadMemberDedupe';
 import {
-  decisionSummaryShowsWebsiteCta,
   resolveResearchDetailActionLinkContext,
   resolveResearchDetailActionLinks,
 } from '../utils/researchDetailActionLinks';
@@ -471,6 +470,7 @@ const DecisionSummary = ({
     profileNeedsOwnButton,
     preferOrgEngagementOutreach,
     officialSource,
+    hasApplyPage: Boolean(applySource),
   });
   const showsWebsiteCta = actionLinks.showsWebsiteCta;
   const leadCardProfileUrl = actionLinks.leadCardProfileUrl;
@@ -484,8 +484,9 @@ const DecisionSummary = ({
   const applyPageUrl = offersOrgEngagementPage ? undefined : applySource?.url;
   /**
    * A generic official page beside a lead card that already links the profile is a
-   * third door to the same person. The block keeps a place to apply and the research
-   * website, so the generic page is offered only when no card links a profile.
+   * third door to the same person. The block offers one action, a place to apply or
+   * else the research website, so the generic page is offered only when no card links
+   * a profile.
    */
   const offersOfficialPage = Boolean(officialSource) && !applyPageUrl && !leadCardLinksProfile;
   const getInvolvedHasOwnAction =
@@ -617,16 +618,6 @@ const DecisionSummary = ({
                     >
                       See how to get involved
                     </a>
-                    {profileUrl && principalInvestigator ? (
-                      <a
-                        href={profileUrl}
-                        target="_blank"
-                        rel={EXTERNAL_LINK_REL}
-                        className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
-                      >
-                        {piName ? `Contact ${piName}` : 'Contact the director'}
-                      </a>
-                    ) : null}
                   </div>
                 </>
               ) : applyPageUrl ? (
@@ -639,25 +630,6 @@ const DecisionSummary = ({
                   >
                     See how to get involved
                   </a>
-                  {profileNeedsOwnButton ? (
-                    <a
-                      href={profileUrl}
-                      target="_blank"
-                      rel={EXTERNAL_LINK_REL}
-                      className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
-                    >
-                      Open official profile
-                    </a>
-                  ) : showsWebsiteCta ? (
-                    <a
-                      href={websiteUrl}
-                      target="_blank"
-                      rel={EXTERNAL_LINK_REL}
-                      className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
-                    >
-                      {researchWebsiteCtaLabel(group)}
-                    </a>
-                  ) : null}
                 </div>
               ) : profileNeedsOwnButton ? (
                 <div className="mt-3 flex flex-col gap-2">
@@ -1036,10 +1008,10 @@ const LabDetail = () => {
     principalInvestigators.some((member) => Boolean(resolveLeadOfficialProfileUrl(member)));
   // One composition, shared with `research-entity:audit-duplicate-action-links`. The
   // audit must not build this context a second way, or it stops measuring the page.
-  const decisionSummaryLinksWebsite = decisionSummaryShowsWebsiteCta(
+  const decisionSummaryActionLinks = resolveResearchDetailActionLinks(
     resolveResearchDetailActionLinkContext({ group, members, accessSignals }),
   );
-  const headerWebsiteDedupeUrls = decisionSummaryLinksWebsite
+  const headerWebsiteDedupeUrls = decisionSummaryActionLinks.showsWebsiteCta
     ? [decisionProfileUrl, officialWebsiteUrl]
     : [decisionProfileUrl];
   const isResearchEntitySaved = savedResearchPlanIds.includes(group._id);
@@ -1205,7 +1177,12 @@ const LabDetail = () => {
           {sources.length > 0 && (
             <section>
               <SectionHeading>Sources</SectionHeading>
-              <SourcesSection sources={sources} primaryProfileUrl={decisionProfileUrl} />
+              <SourcesSection
+                sources={sources}
+                primaryProfileUrl={
+                  decisionSummaryActionLinks.profileOpenedAbove ? decisionProfileUrl : undefined
+                }
+              />
             </section>
           )}
 
