@@ -19,7 +19,9 @@ const SMOKE_ZERO_RESULT_COPY =
 
 const isInsidePath = (root, target) => {
   const relative = path.relative(root, target);
-  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+  return (
+    relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative))
+  );
 };
 
 const safeSmokeBaseUrl = (raw, name) => {
@@ -61,7 +63,10 @@ const safeSmokeOutputDir = (raw) => {
   return resolved;
 };
 
-const baseUrl = safeSmokeBaseUrl(process.env.E2E_BASE_URL || 'http://localhost:4000', 'E2E_BASE_URL');
+const baseUrl = safeSmokeBaseUrl(
+  process.env.E2E_BASE_URL || 'http://localhost:4000',
+  'E2E_BASE_URL',
+);
 const outDir = safeSmokeOutputDir(process.env.OUT_DIR);
 
 await fs.mkdir(outDir, { recursive: true });
@@ -187,11 +192,9 @@ const submitSearch = async (query) => {
   await page.getByLabel('Search y/labs').fill(query);
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page
-    .waitForFunction(
-      () => !document.body.innerText.includes('Searching y/labs for'),
-      undefined,
-      { timeout: 20000 },
-    )
+    .waitForFunction(() => !document.body.innerText.includes('Searching y/labs for'), undefined, {
+      timeout: 20000,
+    })
     .catch(() => undefined);
   await settleResearchPage();
 };
@@ -245,7 +248,10 @@ await step('search returns a result and the header settles out of loading', asyn
     (await page.getByRole('button', { name: 'Searching...', exact: true }).count()) === 0,
     'Search button is stuck in the "Searching..." loading state.',
   );
-  assert(!(await searchButton.isDisabled()), 'Search button remained disabled after results loaded.');
+  assert(
+    !(await searchButton.isDisabled()),
+    'Search button remained disabled after results loaded.',
+  );
   const status = await page
     .locator('section[aria-label="Search results"]')
     .getByRole('status')
@@ -255,10 +261,7 @@ await step('search returns a result and the header settles out of loading', asyn
     /results? for '.+'/i.test(status.replace(/\s+/g, ' ')),
     `Search summary never settled out of the loading state (got "${status}").`,
   );
-  await page
-    .getByRole('link', { name: SMOKE_ENTITY_NAME })
-    .first()
-    .waitFor({ timeout: 20000 });
+  await page.getByRole('link', { name: SMOKE_ENTITY_NAME }).first().waitFor({ timeout: 20000 });
 });
 await screenshot('02-search-results');
 
@@ -269,7 +272,9 @@ await step('opening a result renders the detail identity and description', async
     new URL(page.url()).pathname === `/research/${SMOKE_ENTITY_SLUG}`,
     `Expected detail URL /research/${SMOKE_ENTITY_SLUG}, got ${page.url()}.`,
   );
-  await page.getByRole('heading', { level: 1, name: SMOKE_ENTITY_NAME }).waitFor({ timeout: 20000 });
+  await page
+    .getByRole('heading', { level: 1, name: SMOKE_ENTITY_NAME })
+    .waitFor({ timeout: 20000 });
   await page.getByRole('heading', { name: 'Research summary' }).waitFor({ timeout: 20000 });
   await assertTextIncludes('marsupials');
 });
