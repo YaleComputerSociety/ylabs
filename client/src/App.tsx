@@ -8,13 +8,7 @@ import UnprivateRoute from './components/UnprivateRoute';
 import AdminRoute from './components/AdminRoute';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import RootRedirect from './pages/rootRedirect';
-import Fellowships from './pages/fellowships';
 import Research from './pages/research';
-import ResearchDetail from './pages/labDetail';
-import Login from './pages/login';
-import About from './pages/about';
-import Dashboard from './pages/dashboard';
-import LoginError from './pages/loginError';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import NotFound from './pages/notFound';
@@ -25,7 +19,23 @@ import ScrollToTop from './components/shared/ScrollToTop';
 import HttpStatusNotifier from './components/HttpStatusNotifier';
 import LoadingSpinner from './components/shared/LoadingSpinner';
 
+// Only `/research` is eager among content pages: it is the entry point of the
+// student journey and the target of the root redirect, so it must not cost a
+// second round trip. The root redirect and not-found page are tiny and stay eager.
+const Fellowships = lazy(() => import('./pages/fellowships'));
+const ResearchDetail = lazy(() => import('./pages/labDetail'));
+const Login = lazy(() => import('./pages/login'));
+const About = lazy(() => import('./pages/about'));
+const Dashboard = lazy(() => import('./pages/dashboard'));
+const LoginError = lazy(() => import('./pages/loginError'));
 const Analytics = lazy(() => import('./pages/analytics'));
+
+const RouteLoadingFallback = () => (
+  <div role="status" aria-live="polite" className="flex min-h-[50vh] items-center justify-center">
+    <LoadingSpinner size="lg" inline />
+    <span className="sr-only">Loading page</span>
+  </div>
+);
 
 const RetiredListingsRedirect = () => <Navigate to="/research" replace />;
 const RetiredFellowshipsRedirect = () => <Navigate to="/programs" replace />;
@@ -61,49 +71,47 @@ const App = () => {
               <div className="flex-grow overflow-y-auto flex flex-col" data-scroll-container>
                 <HttpStatusNotifier />
                 <main id="main-content" tabIndex={-1} className="flex-grow focus:outline-none">
-                  <RouteFade>
-                    <Routes>
-                      <Route path="/" element={<PublicRoute Component={RootRedirect} />} />
-                      <Route
-                        path="/listings"
-                        element={<PrivateRoute Component={RetiredListingsRedirect} />}
-                      />
-                      <Route
-                        path="/fellowships"
-                        element={<PrivateRoute Component={RetiredFellowshipsRedirect} />}
-                      />
-                      <Route path="/programs" element={<PrivateRoute Component={Fellowships} />} />
-                      <Route path="/research" element={<PublicRoute Component={Research} />} />
-                      <Route
-                        path="/research/person/:publicKey"
-                        element={<RetiredPersonRedirect />}
-                      />
-                      <Route
-                        path="/research/:slug"
-                        element={<PublicRoute Component={ResearchDetail} />}
-                      />
-                      <Route path="/about" element={<PublicRoute Component={About} />} />
-                      <Route
-                        path="/account"
-                        element={<PrivateRoute Component={RetiredAccountRedirect} />}
-                      />
-                      <Route path="/dashboard" element={<PrivateRoute Component={Dashboard} />} />
-                      <Route
-                        path="/analytics"
-                        element={
-                          <Suspense fallback={<LoadingSpinner size="lg" />}>
-                            <AdminRoute Component={Analytics} />
-                          </Suspense>
-                        }
-                      />
-                      <Route path="/login" element={<Login />} />
-                      <Route
-                        path="/login-error"
-                        element={<UnprivateRoute Component={LoginError} />}
-                      />
-                      <Route path="*" element={<NotFound />} />
-                    </Routes>
-                  </RouteFade>
+                  <Suspense fallback={<RouteLoadingFallback />}>
+                    <RouteFade>
+                      <Routes>
+                        <Route path="/" element={<PublicRoute Component={RootRedirect} />} />
+                        <Route
+                          path="/listings"
+                          element={<PrivateRoute Component={RetiredListingsRedirect} />}
+                        />
+                        <Route
+                          path="/fellowships"
+                          element={<PrivateRoute Component={RetiredFellowshipsRedirect} />}
+                        />
+                        <Route
+                          path="/programs"
+                          element={<PrivateRoute Component={Fellowships} />}
+                        />
+                        <Route path="/research" element={<PublicRoute Component={Research} />} />
+                        <Route
+                          path="/research/person/:publicKey"
+                          element={<RetiredPersonRedirect />}
+                        />
+                        <Route
+                          path="/research/:slug"
+                          element={<PublicRoute Component={ResearchDetail} />}
+                        />
+                        <Route path="/about" element={<PublicRoute Component={About} />} />
+                        <Route
+                          path="/account"
+                          element={<PrivateRoute Component={RetiredAccountRedirect} />}
+                        />
+                        <Route path="/dashboard" element={<PrivateRoute Component={Dashboard} />} />
+                        <Route path="/analytics" element={<AdminRoute Component={Analytics} />} />
+                        <Route path="/login" element={<Login />} />
+                        <Route
+                          path="/login-error"
+                          element={<UnprivateRoute Component={LoginError} />}
+                        />
+                        <Route path="*" element={<NotFound />} />
+                      </Routes>
+                    </RouteFade>
+                  </Suspense>
                 </main>
                 <Footer />
               </div>

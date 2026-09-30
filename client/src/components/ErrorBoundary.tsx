@@ -19,7 +19,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    captureClientError(error, errorInfo.componentStack ?? undefined);
+    void captureClientError(error, errorInfo.componentStack ?? undefined);
   }
 
   private handleReload = () => {
