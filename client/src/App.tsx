@@ -19,8 +19,9 @@ import ScrollToTop from './components/shared/ScrollToTop';
 import HttpStatusNotifier from './components/HttpStatusNotifier';
 import LoadingSpinner from './components/shared/LoadingSpinner';
 
-// Only `/research` is eager: it is the entry point of the student journey and
-// the target of the root redirect, so it must not cost a second round trip.
+// Only `/research` is eager among content pages: it is the entry point of the
+// student journey and the target of the root redirect, so it must not cost a
+// second round trip. The root redirect and not-found page are tiny and stay eager.
 const Fellowships = lazy(() => import('./pages/fellowships'));
 const ResearchDetail = lazy(() => import('./pages/labDetail'));
 const Login = lazy(() => import('./pages/login'));
