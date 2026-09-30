@@ -1,4 +1,5 @@
 import { servedCitationIsWithheld } from './servedCitationPolicy';
+import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
@@ -625,6 +626,18 @@ export interface ResearchEntitySearchAliasOptions extends PublicResearchEntityDt
   leadMemberNamesUnavailable?: boolean;
 }
 
+/**
+ * The detail route resolves its card from this gate representation, so a list card
+ * resolved from the raw hit skips the description sanitizers that run first and reads
+ * differently from the detail card of the same row.
+ */
+function detailServedSource(
+  entity: Record<string, any>,
+  leadMemberNames: readonly string[] | undefined,
+): Record<string, any> {
+  return buildResearchEntityPublicDescriptionRepresentation({ entity, leadMemberNames }).entity;
+}
+
 export function addResearchEntitySearchAliases<T extends { hits: Record<string, any>[] }>(
   result: T,
   options: ResearchEntitySearchAliasOptions = {},
@@ -634,12 +647,16 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
   const { leadMemberNamesByEntityId, leadMemberNamesUnavailable, ...entityOptions } = options;
   const listOptions: PublicResearchEntityDtoOptions = { ...entityOptions, forList: true };
   const researchEntities = disambiguateCollidingResearchEntityNames(
-    (result.hits || []).map((hit) =>
-      toPublicResearchEntityDto(leadMemberNamesUnavailable ? withoutLeadGuardedCopy(hit) : hit, {
-        ...listOptions,
-        leadMemberNames: leadMemberNamesByEntityId?.get(String(hit?._id || hit?.id || '')),
-      }),
-    ),
+    (result.hits || []).map((hit) => {
+      const leadMemberNames = leadMemberNamesByEntityId?.get(String(hit?._id || hit?.id || ''));
+      return toPublicResearchEntityDto(
+        detailServedSource(
+          leadMemberNamesUnavailable ? withoutLeadGuardedCopy(hit) : hit,
+          leadMemberNames,
+        ),
+        { ...listOptions, leadMemberNames },
+      );
+    }),
   );
   const { hits: _hits, ...rest } = result;
   return {

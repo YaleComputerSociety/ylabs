@@ -84,6 +84,7 @@ Browse gates with the name-agnostic `researchEntityServesPublicDetail`, so a row
 The lead set is no longer part of that gap: since #2240 browse batches the detail route's own derivation (`optionalPublicLeadMemberNames`), so a possessive naming the record's own lead survives on both surfaces or on neither.
 Nor is the card line itself part of it any more: since #3747 the browse `cardDescription` is the row's own served card (`servedResearchEntityCardDescription`, the same resolver the detail card and the visibility gate read) or the named "Limited public description" state, so it cannot be a different summary of the same row.
 It used to be `resolveResearchHomeCardSummary` over the stored short and body, which put the whole body in the card slot on 143 of the 3,429 rows browse served.
+Since #4124 the list path also resolves that card from the same gate representation the detail route builds its DTO from (`buildResearchEntityPublicDescriptionRepresentation(...).entity`), because the resolver run over the raw hit skipped the description sanitizers and the short pre-resolution that representation applies, and 9 of 3,426 browse cards on Development read differently from their detail card.
 The card-only copy still out of scope here is the "Name (Department)" decoration the list path applies to colliding names.
 
 ## Numbers from before 2026-09-13 are not comparable
