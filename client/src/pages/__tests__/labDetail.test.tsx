@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import LabDetail from '../labDetail';
 import axios from '../../utils/axios';
@@ -8,6 +8,7 @@ import { LabDetailPayload } from '../../types/labDetail';
 import {
   flushResearchAnalytics,
   resetResearchAnalyticsDedupeForTests,
+  setResearchAnalyticsEnabled,
 } from '../../utils/researchAnalytics';
 import { captureClientError } from '../../utils/errorTracking';
 import UserContext, { defaultUserContext } from '../../contexts/UserContext';
@@ -85,9 +86,15 @@ function renderLabDetail(
   payload: LabDetailPayload = basePayload,
   {
     isAuthenticated = true,
+    isAuthLoading = false,
     routerState,
     savedResearchEntityIds = [],
-  }: { isAuthenticated?: boolean; routerState?: unknown; savedResearchEntityIds?: string[] } = {},
+  }: {
+    isAuthenticated?: boolean;
+    isAuthLoading?: boolean;
+    routerState?: unknown;
+    savedResearchEntityIds?: string[];
+  } = {},
 ) {
   mockedAxios.get.mockImplementation((url: string) => {
     if (url === '/users/savedResearchEntityIds') {
@@ -100,7 +107,9 @@ function renderLabDetail(
   });
 
   return render(
-    <UserContext.Provider value={{ ...defaultUserContext, isLoading: false, isAuthenticated }}>
+    <UserContext.Provider
+      value={{ ...defaultUserContext, isLoading: isAuthLoading, isAuthenticated }}
+    >
       <ConfigContext.Provider
         value={{ ...defaultConfigContext, departmentPillEligibleLabels: PILL_ELIGIBLE_LABELS }}
       >
@@ -116,6 +125,10 @@ function renderLabDetail(
     </UserContext.Provider>,
   );
 }
+
+beforeEach(() => {
+  setResearchAnalyticsEnabled(true);
+});
 
 afterEach(() => {
   cleanup();
@@ -224,6 +237,16 @@ describe('LabDetail page', () => {
         }),
       ]);
     });
+  });
+
+  it('shows neither the login CTA nor the save button while the session check is pending', async () => {
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    renderLabDetail(basePayload, { isAuthenticated: false, isAuthLoading: true });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByRole('link', { name: /log in with yale to save/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /save research plan/i })).toBeNull();
   });
 
   it('shows a Yale CAS login CTA instead of the save button for logged-out visitors', async () => {

@@ -359,6 +359,20 @@ const GuestSaveCta = ({ returnPath }: { returnPath: string }) => (
   </Link>
 );
 
+const PendingSaveActionSlot = () => (
+  <div
+    aria-hidden="true"
+    className="invisible flex w-full items-start gap-3 rounded-card border px-3 py-2 sm:w-auto sm:min-w-[13rem]"
+  >
+    <span className="min-w-0 flex-1">
+      <span className="block text-sm font-semibold">Log in with Yale to save</span>
+      <span className="mt-0.5 block text-xs leading-relaxed">
+        Save this research, keep private notes, and reach out
+      </span>
+    </span>
+  </div>
+);
+
 /**
  * Summarize recent grants like "Funded: 2x NIH R01, 1x NSF". Bucketed by agency
  * since the chip conveys breadth, not specific awards. (Relocated from the
@@ -785,7 +799,7 @@ const SourcesSection = ({
 };
 
 const LabDetail = () => {
-  const { isAuthenticated } = useContext(UserContext);
+  const { isAuthenticated, isLoading: isAuthLoading } = useContext(UserContext);
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -1102,7 +1116,9 @@ const LabDetail = () => {
             group={group}
             dedupeWebsiteUrls={headerWebsiteDedupeUrls}
             actions={
-              isAuthenticated ? (
+              isAuthLoading ? (
+                <PendingSaveActionSlot />
+              ) : isAuthenticated ? (
                 <ResearchPlanSaveButton
                   isSaved={isResearchEntitySaved}
                   onToggle={(e) => {

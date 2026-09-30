@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import axios from '../axios';
 import {
@@ -19,6 +19,10 @@ vi.mock('../axios', () => ({
 }));
 
 const post = (axios as unknown as { post: ReturnType<typeof vi.fn> }).post;
+
+beforeEach(() => {
+  setResearchAnalyticsEnabled(true);
+});
 
 afterEach(() => {
   vi.clearAllMocks();

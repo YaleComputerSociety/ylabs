@@ -1,9 +1,13 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import useFavorites from '../useFavorites';
 import axios from '../../utils/axios';
-import { flushResearchAnalytics } from '../../utils/researchAnalytics';
+import {
+  flushResearchAnalytics,
+  resetResearchAnalyticsDedupeForTests,
+  setResearchAnalyticsEnabled,
+} from '../../utils/researchAnalytics';
 import swal from 'sweetalert';
 
 vi.mock('../../utils/axios', () => ({
@@ -28,9 +32,14 @@ const mockedAxios = axios as unknown as {
 
 const mockedSwal = swal as unknown as ReturnType<typeof vi.fn>;
 
+beforeEach(() => {
+  setResearchAnalyticsEnabled(true);
+});
+
 afterEach(() => {
   vi.clearAllMocks();
   vi.restoreAllMocks();
+  resetResearchAnalyticsDedupeForTests();
 });
 
 describe('useFavorites', () => {

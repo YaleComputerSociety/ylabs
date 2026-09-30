@@ -12,6 +12,7 @@ import type { User } from '../../types/types';
 import {
   flushResearchAnalytics,
   resetResearchAnalyticsDedupeForTests,
+  setResearchAnalyticsEnabled,
 } from '../../utils/researchAnalytics';
 
 vi.mock('../../utils/axios', () => ({
@@ -329,6 +330,7 @@ const pathwayHit = {
 };
 
 beforeEach(() => {
+  setResearchAnalyticsEnabled(true);
   vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
   mockedAxios.get.mockResolvedValue({
     data: {
