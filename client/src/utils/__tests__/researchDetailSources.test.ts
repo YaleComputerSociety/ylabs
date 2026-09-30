@@ -11,6 +11,7 @@ import {
   isLikelyUnavailableSourceLink,
   isOrgEngagementSourceUrl,
   isRosterNestedPersonPageUrl,
+  isDepartmentDegreeProgramPageUrl,
   isSuppressedResearchWebsiteCtaUrl,
   isUnavailableResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
@@ -769,6 +770,27 @@ describe('isOrgEngagementSourceUrl', () => {
       false,
     );
     expect(isOrgEngagementSourceUrl('https://institute.example.yale.edu/research')).toBe(false);
+  });
+});
+
+describe('isDepartmentDegreeProgramPageUrl', () => {
+  it.each([
+    'https://statistics.yale.edu/undergraduates',
+    'https://earth.yale.edu/undergraduate-program/',
+    'https://history.yale.edu/academics/undergraduate-program',
+    'https://department.example.yale.edu/graduate-studies',
+  ])('refuses a degree-program landing page as a research website: %s', (url) => {
+    expect(isDepartmentDegreeProgramPageUrl(url)).toBe(true);
+    expect(isSuppressedResearchWebsiteCtaUrl(url)).toBe(true);
+  });
+
+  it.each([
+    'https://math.yale.edu/undergraduates/undergraduate-research',
+    'https://sociology.yale.edu/undergraduate-program/senior-project',
+    'https://psychology.yale.edu/what-undergraduate-research-opportunities-are-available',
+    'https://lab.example.yale.edu/undergraduate-research',
+  ])('keeps a page beneath or beside a program page: %s', (url) => {
+    expect(isDepartmentDegreeProgramPageUrl(url)).toBe(false);
   });
 });
 
