@@ -15,8 +15,8 @@ async function seedBeta(betaDb: Db): Promise<void> {
   await betaDb.collection('accounts').insertOne({
     _id: researcherAccountId,
     schemaVersion: 1,
-    netid: 'rs111',
-    email: 'rs111@yale.edu',
+    netid: 'fixture-researcher',
+    email: 'fixture-researcher@yale.edu',
     status: 'ACTIVE',
     archived: false,
   });
@@ -49,8 +49,8 @@ async function seedProduction(productionDb: Db): Promise<void> {
     {
       _id: productionTwinAccountId,
       schemaVersion: 1,
-      netid: 'rs111',
-      email: 'rs111@yale.edu',
+      netid: 'fixture-researcher',
+      email: 'fixture-researcher@yale.edu',
       status: 'ACTIVE',
       archived: false,
       lastLoginAt,
@@ -58,8 +58,8 @@ async function seedProduction(productionDb: Db): Promise<void> {
     {
       _id: studentAccountId,
       schemaVersion: 1,
-      netid: 'st222',
-      email: 'st222@yale.edu',
+      netid: 'fixture-login-holder',
+      email: 'fixture-login-holder@yale.edu',
       status: 'ACTIVE',
       archived: false,
       lastLoginAt,
@@ -67,16 +67,16 @@ async function seedProduction(productionDb: Db): Promise<void> {
     {
       _id: planOnlyAccountId,
       schemaVersion: 1,
-      netid: 'st333',
-      email: 'st333@yale.edu',
+      netid: 'fixture-plan-owner',
+      email: 'fixture-plan-owner@yale.edu',
       status: 'ACTIVE',
       archived: false,
     },
     {
       _id: staleAccountId,
       schemaVersion: 1,
-      netid: 'st444',
-      email: 'st444@yale.edu',
+      netid: 'fixture-no-evidence',
+      email: 'fixture-no-evidence@yale.edu',
       status: 'ACTIVE',
       archived: false,
     },
@@ -140,10 +140,12 @@ describe('Beta to Production promotion carries Production login accounts', () =>
     const accounts = productionDb.collection('accounts');
 
     expect(await accounts.findOne({ _id: studentAccountId })).toMatchObject({
-      netid: 'st222',
+      netid: 'fixture-login-holder',
       lastLoginAt,
     });
-    expect(await accounts.findOne({ _id: planOnlyAccountId })).toMatchObject({ netid: 'st333' });
+    expect(await accounts.findOne({ _id: planOnlyAccountId })).toMatchObject({
+      netid: 'fixture-plan-owner',
+    });
   });
 
   it('drops a Production account with no login evidence', async () => {
@@ -154,9 +156,9 @@ describe('Beta to Production promotion carries Production login accounts', () =>
     const accounts = productionDb.collection('accounts');
 
     expect(await accounts.findOne({ _id: researcherAccountId })).toBeNull();
-    expect(await accounts.countDocuments({ netid: 'rs111' })).toBe(1);
+    expect(await accounts.countDocuments({ netid: 'fixture-researcher' })).toBe(1);
     expect(await accounts.findOne({ _id: productionTwinAccountId })).toMatchObject({
-      netid: 'rs111',
+      netid: 'fixture-researcher',
       lastLoginAt,
     });
     expect(

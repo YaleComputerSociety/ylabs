@@ -10,16 +10,21 @@ const staleId = new ObjectId('68f0000000000000000000a5');
 const lastLoginAt = new Date('2026-09-20T12:00:00Z');
 
 const promotedAccounts = [
-  { _id: promotedId, netid: 'rs111', email: 'rs111@yale.edu', status: 'ACTIVE' },
+  {
+    _id: promotedId,
+    netid: 'fixture-researcher',
+    email: 'fixture-researcher@yale.edu',
+    status: 'ACTIVE',
+  },
 ];
 
 describe('planAccountCarry', () => {
   it('carries only accounts with Production login evidence', () => {
     const plan = planAccountCarry({
       productionAccounts: [
-        { _id: loginOnlyId, netid: 'st222', lastLoginAt },
-        { _id: planOwnerId, netid: 'st333' },
-        { _id: staleId, netid: 'st444' },
+        { _id: loginOnlyId, netid: 'fixture-login-holder', lastLoginAt },
+        { _id: planOwnerId, netid: 'fixture-plan-owner' },
+        { _id: staleId, netid: 'fixture-no-evidence' },
       ],
       promotedAccounts,
       planOwnerIds: new Set([String(planOwnerId)]),
@@ -32,7 +37,7 @@ describe('planAccountCarry', () => {
 
   it('keeps the Production _id when Beta holds the same netid under another _id', () => {
     const plan = planAccountCarry({
-      productionAccounts: [{ _id: productionTwinId, netid: 'rs111', lastLoginAt }],
+      productionAccounts: [{ _id: productionTwinId, netid: 'fixture-researcher', lastLoginAt }],
       promotedAccounts,
       planOwnerIds: new Set(),
     });
@@ -49,7 +54,7 @@ describe('planAccountCarry', () => {
   it('refreshes login fields onto a promoted row that shares the Production _id', () => {
     const profile = { userType: 'undergraduate' };
     const plan = planAccountCarry({
-      productionAccounts: [{ _id: promotedId, netid: 'rs111', lastLoginAt, profile }],
+      productionAccounts: [{ _id: promotedId, netid: 'fixture-researcher', lastLoginAt, profile }],
       promotedAccounts,
       planOwnerIds: new Set(),
     });
