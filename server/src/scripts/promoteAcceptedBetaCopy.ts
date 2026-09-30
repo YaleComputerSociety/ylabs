@@ -625,7 +625,9 @@ async function recordScrapeRunsRetirement(
 
 function withCarriedAccounts(plan: CollectionPlan[], carriedInserts: number): CollectionPlan[] {
   return plan.map((row) =>
-    row.name === 'accounts' ? { ...row, sourceCopyCount: row.sourceCopyCount + carriedInserts } : row,
+    row.name === 'accounts'
+      ? { ...row, sourceCopyCount: row.sourceCopyCount + carriedInserts }
+      : row,
   );
 }
 
