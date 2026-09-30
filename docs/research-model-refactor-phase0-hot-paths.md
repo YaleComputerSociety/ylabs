@@ -58,7 +58,7 @@ It enriches the bounded page with listing presence, access summaries, and planni
 - The access and planning enrichments reread overlapping collections for the same page.
 - A Meilisearch failure falls back to `ResearchEntity.find(...).lean()` without a database limit, then performs text matching, facet counting, and sorting across all matching entities in application memory.
 - The operator-only `low-first` branch also loads every matching research entity and computes quality and ordering in application memory before slicing the requested page.
-- Meilisearch may retry once without hybrid search when the embedder is missing and may retry without `browseRankScore` when deployed sortable settings are stale.
+- Meilisearch may retry once without hybrid search when the embedder is missing and may retry without `browseRankScore`, and on `name` in place of `sortTitle`, when deployed sortable settings are stale.
 
 ### Declared indexes and settings
 
