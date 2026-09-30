@@ -102,6 +102,7 @@ A control's fill equals the surface it sits on, so its border is the only thing 
 Its focus state keeps `focus:border-brand`, which sits 3.28:1 from `line-control`, so the state change is still perceptible.
 A checkbox proxy for a visually hidden input takes `.yr-check-proxy`, which carries the size, radius, and edge, and adds only its checked fill at the call site.
 `src/__tests__/controlEdgeContrastGuard.test.tsx` renders the shared filter controls, compiles their classes through the real Tailwind config and `index.css`, and fails when a rendered control's resolved border measures under 3:1 on any control surface.
+The same file sweeps every source file and fails on a control drawn with a hairline token or an uncoloured `border`, which is what reaches the operator surfaces the render does not.
 
 ### Categorical, state, and chart-series colors
 

@@ -1,5 +1,5 @@
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, readdirSync, statSync } from 'fs';
+import { join, relative } from 'path';
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -12,7 +12,8 @@ import ResearchFilterDisclosure from '../components/research/ResearchFilterDiscl
 import CombinedFilterDropdown from '../components/shared/CombinedFilterDropdown';
 
 const CLIENT = join(__dirname, '..', '..');
-const STYLESHEET = join(CLIENT, 'src', 'index.css');
+const SRC = join(CLIENT, 'src');
+const STYLESHEET = join(SRC, 'index.css');
 
 const WCAG_NON_TEXT_FLOOR = 3;
 
@@ -136,6 +137,78 @@ const edgesUnderTheFloor = async (page: HTMLElement): Promise<string[]> => {
   return findings;
 };
 
+/**
+ * The rendered checks below reach two surfaces. This source sweep reaches every
+ * other control in the tree, which is where the other sixty-odd hairline edges were.
+ */
+const CONTROL_TAG = /<(input|select|textarea|span|div)\b/g;
+const NON_TEXT_INPUT_TYPE = /\btype="(?:checkbox|radio|hidden|range|file)"/;
+const CHECKBOX_PROXY = /\byr-(?:focus-ring-peer|check-proxy)\b/;
+
+/**
+ * Hairline tokens, unprefixed so a state variant is not mistaken for the resting
+ * edge. `\b` treats a hyphen as a boundary, so each alias needs a lookahead or
+ * `border-line` would also match `border-line-control`.
+ */
+const HAIRLINE_EDGE =
+  /(?<![:\w-])border-(?:\[var\(--yr-(?:line|line-strong|border|border-warm)\)\]|line(?:-strong|-warm)?(?![-\w]))/;
+const BORDER_WIDTH = /(?<![:\w-])border(?![-\w])/;
+const BORDER_COLOR = /(?<![:\w-])border-(?:\[|[a-z]+-\d|line|brand|transparent|white)/;
+
+const sourceFiles = (dir: string): string[] =>
+  readdirSync(dir).flatMap((entry) => {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      return entry === '__tests__' ? [] : sourceFiles(full);
+    }
+    return /\.tsx$/.test(entry) && !/\.test\.tsx$/.test(entry) ? [full] : [];
+  });
+
+const openingTagAt = (source: string, from: number): string => {
+  let depth = 0;
+  for (let i = from; i < source.length; i += 1) {
+    const char = source[i];
+    if (char === '{') depth += 1;
+    else if (char === '}') depth -= 1;
+    else if (char === '>' && depth === 0) return source.slice(from, i);
+  }
+  return source.slice(from);
+};
+
+const isControlEdge = (element: string, tag: string): boolean => {
+  if (element === 'span' || element === 'div') return CHECKBOX_PROXY.test(tag);
+  return element !== 'input' || !NON_TEXT_INPUT_TYPE.test(tag);
+};
+
+/**
+ * A bare `border` with no colour falls back to the Tailwind default grey, which
+ * is a hairline too. An interpolated class list may supply the colour from a
+ * state scale, so it is left to the reviewer rather than guessed at.
+ */
+const edgeDefect = (tag: string): string | null => {
+  if (HAIRLINE_EDGE.test(tag)) return 'hairline token as the control edge';
+  if (BORDER_WIDTH.test(tag) && !BORDER_COLOR.test(tag) && !tag.includes('${')) {
+    return 'border with no colour, which falls back to a default hairline';
+  }
+  return null;
+};
+
+const controlsDrawnWithAHairline = (): string[] => {
+  const findings: string[] = [];
+  for (const file of sourceFiles(SRC)) {
+    const source = readFileSync(file, 'utf8');
+    for (const match of source.matchAll(CONTROL_TAG)) {
+      const tag = openingTagAt(source, match.index ?? 0);
+      if (!isControlEdge(match[1], tag)) continue;
+      const defect = edgeDefect(tag);
+      if (!defect) continue;
+      const line = source.slice(0, match.index).split('\n').length;
+      findings.push(`${relative(SRC, file)}:${line} <${match[1]}> ${defect}`);
+    }
+  }
+  return findings;
+};
+
 const FLOOR_MESSAGE =
   'A form control edge measures under the 3:1 WCAG 1.4.11 floor on a control surface. ' +
   'Use border-[var(--yr-line-control)] or border-line-control, and .yr-check-proxy for a ' +
@@ -192,5 +265,9 @@ describe('control edge contrast guard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
 
     expect(await edgesUnderTheFloor(document.body), FLOOR_MESSAGE).toEqual([]);
+  });
+
+  it('never draws an input, select, textarea, or checkbox proxy edge with a hairline anywhere in src', () => {
+    expect(controlsDrawnWithAHairline(), FLOOR_MESSAGE).toEqual([]);
   });
 });
