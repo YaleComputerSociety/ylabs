@@ -451,17 +451,34 @@ const partitionSavedResearchEntities = async (
   return { servableEntities, unavailableSavedResearchEntities };
 };
 
+/**
+ * The saved-list cards for already-partitioned servable records, in the order given.
+ *
+ * The roster read lives here rather than beside the partition because it exists only
+ * to feed the mismatched-person-name strip inside the card sanitizer: a caller that
+ * serves no card needs no names, and #4077 measured that read costing two
+ * `role_assignments` finds and a `researchers` find on a response that discarded
+ * every name it resolved.
+ */
+const savedResearchEntityCards = async (
+  servableEntities: Array<Record<string, any>>,
+): Promise<SavedResearchEntitySummary[]> => {
+  const leadMemberNameRead = await optionalPublicLeadMemberNames(servableEntities);
+  return servableEntities.map((entity) => {
+    const guarded = leadGuardedServingInput(entity, leadMemberNameRead);
+    return savedResearchEntitySummary(guarded.entity, guarded.leadMemberNames);
+  });
+};
+
 const resolveSavedResearchEntities = async (
   ids: Array<string | mongoose.Types.ObjectId>,
 ): Promise<SavedResearchEntityList> => {
   const { servableEntities, unavailableSavedResearchEntities } =
     await partitionSavedResearchEntities(ids);
-  const leadMemberNameRead = await optionalPublicLeadMemberNames(servableEntities);
-  const savedResearchEntities = servableEntities.map((entity) => {
-    const guarded = leadGuardedServingInput(entity, leadMemberNameRead);
-    return savedResearchEntitySummary(guarded.entity, guarded.leadMemberNames);
-  });
-  return { savedResearchEntities, unavailableSavedResearchEntities };
+  return {
+    savedResearchEntities: await savedResearchEntityCards(servableEntities),
+    unavailableSavedResearchEntities,
+  };
 };
 
 const visibleSavedResearchEntities = async (
@@ -530,13 +547,6 @@ const resolveSavedResearchEntityTargetId = async (
   return targetId;
 };
 
-interface LoadedPlans {
-  accountId: mongoose.Types.ObjectId;
-  entities: SavedResearchEntitySummary[];
-  unavailable: UnavailableSavedResearchEntity[];
-  plansByEntityId: Map<string, Record<string, unknown>>;
-}
-
 const activeResearchEntityPlansByTargetId = async (
   accountId: mongoose.Types.ObjectId,
   { withDetail }: { withDetail: boolean },
@@ -559,35 +569,25 @@ const activeResearchEntityPlansByTargetId = async (
   return planByEntity;
 };
 
-const loadVisibleAccountPlans = async (
+interface AccountSavedResearchEntities extends PartitionedSavedResearchEntities {
+  planByEntity: Map<string, Record<string, unknown>>;
+}
+
+/**
+ * The account's active research-entity plans and the servable record behind each one,
+ * both in plan order: newest-updated first, one plan per target.
+ *
+ * This stops short of building cards so that a caller needing only plans or slugs pays
+ * for neither the card sanitizer nor the roster read behind it (#3954, #4077).
+ */
+const loadAccountSavedResearchEntities = async (
   netid: any,
   { withDetail }: { withDetail: boolean },
-): Promise<LoadedPlans> => {
+): Promise<AccountSavedResearchEntities> => {
   const accountId = await resolveAccountIdByNetid(netid);
   const planByEntity = await activeResearchEntityPlansByTargetId(accountId, { withDetail });
-
-  const orderedIds = Array.from(planByEntity.keys());
-  const { savedResearchEntities, unavailableSavedResearchEntities } =
-    await resolveSavedResearchEntities(orderedIds);
-  const visibleById = new Map(
-    savedResearchEntities.map((entity) => [entity._id.toLowerCase(), entity]),
-  );
-  const orderedVisible = orderedIds
-    .map((id) => visibleById.get(id))
-    .filter((entity): entity is SavedResearchEntitySummary => Boolean(entity));
-
-  const plansByEntityId = new Map<string, Record<string, unknown>>();
-  for (const entity of orderedVisible) {
-    const plan = planByEntity.get(entity._id.toLowerCase());
-    if (plan) plansByEntityId.set(entity._id, plan);
-  }
-
-  return {
-    accountId,
-    entities: orderedVisible,
-    unavailable: unavailableSavedResearchEntities,
-    plansByEntityId,
-  };
+  const partitioned = await partitionSavedResearchEntities(Array.from(planByEntity.keys()));
+  return { planByEntity, ...partitioned };
 };
 
 /**
@@ -598,16 +598,18 @@ const loadVisibleAccountPlans = async (
  * from the dashboard AND from its count with no trace (#2174).
  */
 export const getSavedResearchEntityList = async (netid: any): Promise<SavedResearchEntityList> => {
-  const { entities, unavailable } = await loadVisibleAccountPlans(netid, { withDetail: false });
-  return { savedResearchEntities: entities, unavailableSavedResearchEntities: unavailable };
+  const { servableEntities, unavailableSavedResearchEntities } =
+    await loadAccountSavedResearchEntities(netid, { withDetail: false });
+  return {
+    savedResearchEntities: await savedResearchEntityCards(servableEntities),
+    unavailableSavedResearchEntities,
+  };
 };
 
 export const getSavedResearchEntitySlugs = async (netid: any): Promise<string[]> => {
-  const accountId = await resolveAccountIdByNetid(netid);
-  const planByEntity = await activeResearchEntityPlansByTargetId(accountId, { withDetail: false });
-  const { servableEntities } = await partitionSavedResearchEntities(
-    Array.from(planByEntity.keys()),
-  );
+  const { servableEntities } = await loadAccountSavedResearchEntities(netid, {
+    withDetail: false,
+  });
   return servableEntities.flatMap((entity) => {
     const slug = String(entity.slug || '');
     return slug ? [slug] : [];
@@ -617,10 +619,14 @@ export const getSavedResearchEntitySlugs = async (netid: any): Promise<string[]>
 export const getSavedResearchEntityPlans = async (
   netid: any,
 ): Promise<Record<string, ResearchPlanView>> => {
-  const { plansByEntityId } = await loadVisibleAccountPlans(netid, { withDetail: true });
+  const { planByEntity, servableEntities } = await loadAccountSavedResearchEntities(netid, {
+    withDetail: true,
+  });
   const result: Record<string, ResearchPlanView> = {};
-  for (const [entityId, plan] of plansByEntityId) {
-    result[entityId] = researchPlanViewFromDoc(plan);
+  for (const entity of servableEntities) {
+    const entityId = String(entity._id);
+    const plan = planByEntity.get(entityId.toLowerCase());
+    if (plan) result[entityId] = researchPlanViewFromDoc(plan);
   }
   return result;
 };
