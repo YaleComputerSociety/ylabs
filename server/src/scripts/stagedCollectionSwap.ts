@@ -13,7 +13,7 @@ import type { CreateCollectionOptions, Db, Document } from 'mongodb';
  *
  * 1. stage every collection under a temporary name in the TARGET database
  * 2. rename each live collection to a backup, then rename staging into place
- * 3. run `verify`
+ * 3. run `afterCutover`, which may read the backups, then `verify`
  * 4. only then drop the backups
  *
  * A failure at any point before `verify` passes rolls every collection back to
@@ -36,6 +36,12 @@ export interface StagedCollectionSwapArgs<T extends StagedSwapCollection> {
   backupPrefix: string;
   stage: (collection: T, operationId: string) => Promise<string>;
   verify: () => Promise<void>;
+  /**
+   * Runs after every rename and before `verify`, with each replaced collection's
+   * backup name, so rows the target owns can be carried from the backup into the
+   * swapped collection. A throw here rolls the whole swap back like a `verify` failure.
+   */
+  afterCutover?: (backups: ReadonlyMap<string, string>) => Promise<void>;
   /** Collections to retire during the same cutover, with no replacement staged. */
   clearedCollectionNames?: readonly string[];
   /** Used only in the AggregateError raised when rollback itself fails. */
@@ -121,6 +127,7 @@ export async function applyStagedCollectionSwap<T extends StagedSwapCollection>(
       backups.set(targetName, backupName);
     }
 
+    await args.afterCutover?.(backups);
     await verify();
     cutoverVerified = true;
 

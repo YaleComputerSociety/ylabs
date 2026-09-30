@@ -8,6 +8,12 @@ import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
+  applyAccountCarry,
+  loadAccountCarryPlan,
+  planAccountCarry,
+  type AccountCarryPlan,
+} from './promotionAccountCarry';
+import {
   applyStagedCollectionSwap,
   mirroredValidationOptions,
   stagedSwapCollectionExists,
@@ -617,6 +623,31 @@ async function recordScrapeRunsRetirement(
   });
 }
 
+function withCarriedAccounts(plan: CollectionPlan[], carriedInserts: number): CollectionPlan[] {
+  return plan.map((row) =>
+    row.name === 'accounts' ? { ...row, sourceCopyCount: row.sourceCopyCount + carriedInserts } : row,
+  );
+}
+
+export function summarizeAccountCarry(carry: AccountCarryPlan) {
+  return {
+    refreshed: carry.refreshes.length,
+    rekeyed: carry.rekeys.length,
+    inserted: carry.inserts.length,
+  };
+}
+
+export async function previewAccountCarry(betaDb: Db, productionDb: Db): Promise<AccountCarryPlan> {
+  const planOwnerIds = new Set(
+    (await productionDb.collection('research_plans').distinct('accountId')).map(String),
+  );
+  return planAccountCarry({
+    productionAccounts: await productionDb.collection('accounts').find({}).toArray(),
+    promotedAccounts: await betaDb.collection('accounts').find(SYNTHETIC_USER_FILTER).toArray(),
+    planOwnerIds,
+  });
+}
+
 export async function applyCopy(betaDb: Db, productionDb: Db, options: PromotionOptions) {
   const collections = promotionCollectionsForOptions(options);
   const plan = await buildPlan(betaDb, productionDb, options);
@@ -624,6 +655,8 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
   const retiredCount = retiring
     ? await productionDb.collection('scrape_runs').countDocuments({})
     : 0;
+
+  let carriedAccountInserts = 0;
 
   await applyStagedCollectionSwap({
     targetDb: productionDb,
@@ -633,6 +666,13 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
     label: 'Beta to Production promotion',
     stage: (collection, operationId) =>
       stageCollection(betaDb, productionDb, collection, operationId),
+    afterCutover: async (backups) => {
+      const productionAccounts = backups.get('accounts');
+      if (!productionAccounts) return;
+      const carry = await loadAccountCarryPlan(productionDb, productionAccounts);
+      await applyAccountCarry(productionDb, carry);
+      carriedAccountInserts = carry.inserts.length;
+    },
     verify: async () => {
       const actualCounts = new Map<string, number>();
       for (const collection of collections) {
@@ -642,7 +682,10 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
         );
       }
       const mismatches = buildPromotionCutoverMismatches(
-        plan.filter((row) => collections.some((collection) => collection.name === row.name)),
+        withCarriedAccounts(
+          plan.filter((row) => collections.some((collection) => collection.name === row.name)),
+          carriedAccountInserts,
+        ),
         actualCounts,
       );
       if (mismatches.length > 0) {
@@ -693,8 +736,14 @@ async function main() {
       productionObservationCount,
     );
 
-    console.log(JSON.stringify(summary, null, 2));
-    writePromotionOutput(summary, options.output);
+    const report = {
+      ...summary,
+      productionAccountCarry: summarizeAccountCarry(
+        await previewAccountCarry(betaDb, productionDb),
+      ),
+    };
+    console.log(JSON.stringify(report, null, 2));
+    writePromotionOutput(report, options.output);
 
     if (options.mode === 'apply') {
       assertPromotionSummaryCanApply(summary);

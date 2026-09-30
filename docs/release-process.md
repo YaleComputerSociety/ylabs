@@ -181,6 +181,12 @@ Since #2721 the clear no longer applies to the rest of the corpus, which narrows
 `docs/scraper-deployment-runbook.md` (`Rollback` -> `Rolling back a written description`) owns the mechanism and the repair.
 Production is a serve-only environment: evidence accumulates in Development and arrives already materialised.
 
+`accounts` is the one promoted collection that Production also writes, because every Production login upserts an account and every saved plan in `research_plans` references one.
+Beta's accounts never carry a Production login, so a plain swap deleted every account a real login had created and orphaned the plans that pointed at it: on 2026-09-30, 277 of 319 Production plans referenced an account that no longer existed (#4091).
+The promotion therefore carries every Production account with login evidence (`lastLoginAt`, or an owned research plan) from the pre-swap backup into the swapped collection before verification, and keeps its Production `_id`.
+Where Beta holds the same netid under another `_id`, the Beta row is re-keyed to the Production `_id` and every account reference follows it.
+The dry-run report's `productionAccountCarry` counts what will be carried; an `inserted` of 0 while Production has logged-in users is a stop.
+
 `--include-observations` flips the observation default.
 `--include-scrape-runs` flips the run-history default, which is off: a promoted `scrape_runs` is Development's history under Production's name (#2589).
 It reads like a completeness option and is not one: when the source is empty it deletes the target and copies nothing back.
