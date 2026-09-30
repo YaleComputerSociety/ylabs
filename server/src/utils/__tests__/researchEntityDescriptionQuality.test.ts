@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   assessResearchEntityDescriptionQuality,
@@ -14,9 +14,16 @@ import {
   programLikeCardShortDescription,
   shortDescriptionQuality,
   withMemoizedDescriptionQuality,
-  type FieldQualityMemoUsage,
 } from '../researchEntityDescriptionQuality';
-import { sanitizeResearchEntityDescription } from '../descriptionHygiene';
+import {
+  isConnectedToKeywordListStub,
+  sanitizeResearchEntityDescription,
+} from '../descriptionHygiene';
+
+vi.mock('../descriptionHygiene', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../descriptionHygiene')>();
+  return { ...actual, isConnectedToKeywordListStub: vi.fn(actual.isConnectedToKeywordListStub) };
+});
 
 describe('fullDescriptionQuality', () => {
   const repeatedWindowText = (windowWords: number): string => {
@@ -2333,46 +2340,49 @@ describe('withMemoizedDescriptionQuality', () => {
     'The group studies how estuarine sediment transport reshapes coastal marshes, combining flume experiments with field surveys to measure how storm surge redistributes fine sediment across the marsh platform.';
   const card = 'Studies estuarine sediment transport in coastal marshes.';
 
+  const probeCallsForBody = (): number =>
+    vi.mocked(isConnectedToKeywordListStub).mock.calls.filter(([text]) => text === body).length;
+
+  let probeCallsPerBodyScore = 0;
+
+  beforeEach(() => {
+    vi.mocked(isConnectedToKeywordListStub).mockClear();
+    fullDescriptionQuality(body);
+    probeCallsPerBodyScore = probeCallsForBody();
+    vi.mocked(isConnectedToKeywordListStub).mockClear();
+  });
+
+  const bodyScoreCount = (): number => probeCallsForBody() / probeCallsPerBodyScore;
+
   it('scores a repeated body once per derivation instead of once per caller', () => {
-    let usage: FieldQualityMemoUsage | undefined;
-    withMemoizedDescriptionQuality(
-      () => {
-        fullDescriptionQuality(body);
-        fullDescriptionQuality(body);
-        fullDescriptionQuality(body);
-      },
-      (reported) => {
-        usage = reported;
-      },
-    );
-    expect(usage).toEqual({ computed: 1, reused: 2 });
+    withMemoizedDescriptionQuality(() => {
+      fullDescriptionQuality(body);
+      fullDescriptionQuality(body);
+      fullDescriptionQuality(body);
+    });
+    expect(bodyScoreCount()).toBe(1);
   });
 
   it('scores the body a card is judged against once across several card candidates', () => {
-    let usage: FieldQualityMemoUsage | undefined;
-    withMemoizedDescriptionQuality(
-      () => {
-        shortDescriptionQuality(card, body);
-        shortDescriptionQuality('Studies coastal marsh sediment.', body);
-        shortDescriptionQuality('Studies storm surge across marsh platforms.', body);
-      },
-      (reported) => {
-        usage = reported;
-      },
-    );
-    expect(usage?.reused).toBeGreaterThan(0);
+    const cards = [
+      card,
+      'Studies coastal marsh sediment.',
+      'Studies storm surge across marsh platforms.',
+    ];
+    cards.forEach((candidate) => shortDescriptionQuality(candidate, body));
+    const unmemoizedBodyScores = bodyScoreCount();
+    vi.mocked(isConnectedToKeywordListStub).mockClear();
+    withMemoizedDescriptionQuality(() => {
+      cards.forEach((candidate) => shortDescriptionQuality(candidate, body));
+    });
+    expect(unmemoizedBodyScores).toBeGreaterThan(1);
+    expect(bodyScoreCount()).toBe(1);
   });
 
   it('reuses no verdict once the derivation that computed it has returned', () => {
     withMemoizedDescriptionQuality(() => fullDescriptionQuality(body));
-    let usage: FieldQualityMemoUsage | undefined;
-    withMemoizedDescriptionQuality(
-      () => fullDescriptionQuality(body),
-      (reported) => {
-        usage = reported;
-      },
-    );
-    expect(usage).toEqual({ computed: 1, reused: 0 });
+    withMemoizedDescriptionQuality(() => fullDescriptionQuality(body));
+    expect(bodyScoreCount()).toBe(2);
   });
 
   it('serves a verdict identical to the unmemoized one, field order included', () => {
@@ -2418,17 +2428,11 @@ describe('withMemoizedDescriptionQuality', () => {
   });
 
   it('reuses nothing across an asynchronous derivation, whose scope closes at its first suspension', async () => {
-    let usage: FieldQualityMemoUsage | undefined;
-    await withMemoizedDescriptionQuality(
-      async () => {
-        await Promise.resolve();
-        fullDescriptionQuality(body);
-        fullDescriptionQuality(body);
-      },
-      (reported) => {
-        usage = reported;
-      },
-    );
-    expect(usage).toEqual({ computed: 0, reused: 0 });
+    await withMemoizedDescriptionQuality(async () => {
+      await Promise.resolve();
+      fullDescriptionQuality(body);
+      fullDescriptionQuality(body);
+    });
+    expect(bodyScoreCount()).toBe(2);
   });
 });

@@ -90,31 +90,15 @@ export interface FieldQuality {
  * therefore memoizes nothing at all: the scope closes at the first suspension point,
  * which loses the reuse rather than sharing a verdict between requests.
  */
-interface FieldQualityMemo {
-  verdicts: Map<string, FieldQuality>;
-  computed: number;
-  reused: number;
-}
+let activeFieldQualityVerdicts: Map<string, FieldQuality> | null = null;
 
-export interface FieldQualityMemoUsage {
-  computed: number;
-  reused: number;
-}
-
-let activeFieldQualityMemo: FieldQualityMemo | null = null;
-
-export function withMemoizedDescriptionQuality<T>(
-  derive: () => T,
-  reportUsage?: (usage: FieldQualityMemoUsage) => void,
-): T {
-  if (activeFieldQualityMemo) return derive();
-  const memo: FieldQualityMemo = { verdicts: new Map(), computed: 0, reused: 0 };
-  activeFieldQualityMemo = memo;
+export function withMemoizedDescriptionQuality<T>(derive: () => T): T {
+  if (activeFieldQualityVerdicts) return derive();
+  activeFieldQualityVerdicts = new Map();
   try {
     return derive();
   } finally {
-    activeFieldQualityMemo = null;
-    reportUsage?.({ computed: memo.computed, reused: memo.reused });
+    activeFieldQualityVerdicts = null;
   }
 }
 
@@ -138,17 +122,13 @@ const memoizedFieldQuality = (
   args: readonly unknown[],
   compute: () => FieldQuality,
 ): FieldQuality => {
-  const memo = activeFieldQualityMemo;
-  const key = memo ? fieldQualityMemoKey(kind, args) : null;
-  if (!memo || key === null) return compute();
-  const cached = memo.verdicts.get(key);
-  if (cached) {
-    memo.reused += 1;
-    return copyOfFieldQuality(cached);
-  }
+  const verdicts = activeFieldQualityVerdicts;
+  const key = verdicts ? fieldQualityMemoKey(kind, args) : null;
+  if (!verdicts || key === null) return compute();
+  const cached = verdicts.get(key);
+  if (cached) return copyOfFieldQuality(cached);
   const computed = compute();
-  memo.computed += 1;
-  memo.verdicts.set(key, computed);
+  verdicts.set(key, computed);
   return copyOfFieldQuality(computed);
 };
 
