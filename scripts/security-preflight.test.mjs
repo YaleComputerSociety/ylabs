@@ -12,7 +12,6 @@ import {
   SYNTHETIC_ORCID_EXAMPLE,
 } from './orcidFixtureShape.mjs';
 import nodeTest, { after } from 'node:test';
-import yaml from 'js-yaml';
 
 import {
   DEFAULT_AUDIT_TIMEOUT_MS,
