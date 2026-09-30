@@ -38,6 +38,7 @@ const INDEXES_THIS_CHANGE_DECLARES = {
     'sourceUrl_1_observedAt_-1',
     'sourceName_1_entityType_1_superseded_1_entityKey_1_entityId_1',
     'sourceName_1_field_1',
+    'entityType_1_field_1_superseded_1',
   ],
   researchers: ['profileLinks.url_1', 'profile.websiteUrl_1'],
 } as const;
@@ -90,6 +91,45 @@ async function explainCaptured(command: Record<string, any>): Promise<PlanReadin
     nReturned: stats.nReturned,
     docsExamined: stats.totalDocsExamined,
     keysExamined: stats.totalKeysExamined,
+  };
+}
+
+/** The intervals the planner derived for one indexed field, read from the forced plan. */
+function indexBoundsFor(plan: unknown, field: string): string[] {
+  if (!plan || typeof plan !== 'object') return [];
+  const node = plan as Record<string, any>;
+  const bounds = node.indexBounds?.[field];
+  if (Array.isArray(bounds)) return bounds.map(String);
+  for (const value of Object.values(node)) {
+    const nested = indexBoundsFor(value, field);
+    if (nested.length > 0) return nested;
+  }
+  return [];
+}
+
+/**
+ * The same reading, but with the plan forced, plus the intervals the planner derived for
+ * `sourceUrl`. A predicate that contributes no bounds reports the interval covering every
+ * string, which is the difference between an index that narrows a read and one that cannot.
+ */
+async function explainCapturedWithHint(
+  command: Record<string, any>,
+  hint: string,
+): Promise<PlanReading & { sourceUrlBounds: string[] }> {
+  const { lsid: _lsid, $db: _db, $clusterTime: _clusterTime, ...explainable } = command;
+  const explained: any = await mongoose.connection.db!.command({
+    explain: { ...explainable, hint },
+    verbosity: 'executionStats',
+  });
+  const winningPlan = JSON.stringify(explained.queryPlanner.winningPlan);
+  const stats = explained.executionStats;
+  return {
+    stages: distinctValues(winningPlan, 'stage'),
+    indexes: distinctValues(winningPlan, 'indexName'),
+    nReturned: stats.nReturned,
+    docsExamined: stats.totalDocsExamined,
+    keysExamined: stats.totalKeysExamined,
+    sourceUrlBounds: indexBoundsFor(explained.queryPlanner.winningPlan, 'sourceUrl'),
   };
 }
 
@@ -438,31 +478,37 @@ describe('the hot observation and researcher lookups take their index against a 
     expect(plan.keysExamined).toBeLessThanOrEqual(1);
   });
 
-  it('takes no index bounds from a case-insensitive sourceUrl regex, so its plan is unchanged', async () => {
-    const hostFilterRead = async () => {
-      const before = capturedCommands.length;
-      await Observation.find({
-        entityType: 'researchEntity',
-        superseded: { $ne: true },
-        $or: [
-          { sourceUrl: { $regex: '^https?://(www\\.)?example\\.test(/|$|\\?)', $options: 'i' } },
-        ],
-      })
-        .select('sourceUrl entityKey entityId')
-        .lean();
-      return explainCaptured(
-        capturedCommands.slice(before).find((entry) => entry.find === 'observations')!,
-      );
-    };
+  /**
+   * Asserted as bounds rather than as the plan the planner picks. Which plan WINS for this
+   * query is a property of the corpus, not of the change: on Development the sourceUrl
+   * index loses the race on all six of the hosts measured, while on a smaller corpus where
+   * one host owns most of the matching rows it wins, and then it is a full index scan. So
+   * pinning "the planner does not choose it" would be a fixture-shaped assertion that a
+   * later change to the filler rows could flip. The durable fact is that the regex is
+   * case-insensitive and so contributes no bounds, which is why taking the index can never
+   * narrow the read and why no sourceUrl index is declared for this caller (#3934).
+   *
+   * `["", {})` is MongoDB's interval covering every string value, so a plan reporting it has
+   * to visit every indexed `sourceUrl` and re-test the regex as a filter.
+   */
+  it('takes no index bounds from a case-insensitive sourceUrl regex, so no index can narrow it', async () => {
+    const before = capturedCommands.length;
+    const result = await Observation.find({
+      entityType: 'researchEntity',
+      superseded: { $ne: true },
+      $or: [{ sourceUrl: { $regex: '^https?://(www\\.)?example\\.test(/|$|\\?)', $options: 'i' } }],
+    })
+      .select('sourceUrl entityKey entityId')
+      .lean();
+    const command = capturedCommands.slice(before).find((entry) => entry.find === 'observations')!;
 
-    const withIndexes = await hostFilterRead();
-    await setIndexesThisChangeDeclares(false);
-    const withoutIndexes = await hostFilterRead();
-    await setIndexesThisChangeDeclares(true);
+    const planner = await explainCaptured(command);
+    const forced = await explainCapturedWithHint(command, 'sourceUrl_1_observedAt_-1');
 
-    expect(withIndexes.indexes).not.toContain('sourceUrl_1_observedAt_-1');
-    expect(withIndexes.indexes).toEqual(withoutIndexes.indexes);
-    expect(withIndexes.keysExamined).toBe(withoutIndexes.keysExamined);
+    expect(forced.indexes).toEqual(['sourceUrl_1_observedAt_-1']);
+    expect(forced.sourceUrlBounds[0]).toBe('["", {})');
+    expect(forced.keysExamined).toBeGreaterThanOrEqual(planner.keysExamined);
+    expect(forced.nReturned).toBe(result.length);
   });
 
   it('indexes the profile URL paths without making them unique, because a URL is shared', async () => {

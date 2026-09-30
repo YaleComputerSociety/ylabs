@@ -47,6 +47,11 @@ const observationLookups: readonly HotLookup[] = [
     equalityFields: ['sourceName', 'field'],
     thenReads: [],
   },
+  {
+    name: 'the observation store host filter, which cannot narrow on sourceUrl',
+    equalityFields: ['entityType', 'field', 'superseded'],
+    thenReads: [],
+  },
 ];
 
 const researcherLookups: readonly HotLookup[] = [
@@ -95,6 +100,24 @@ describe('the hot observation and researcher lookups have a declared index (#393
     expect(
       indexServing([['sourceName', 'entityType', 'superseded']], observationLookups[1]),
     ).toBeUndefined();
+  });
+
+  it('does not accept the pre-existing indexes that bury field behind an identity key', () => {
+    const hostFilter = observationLookups[3];
+    expect(
+      indexServing(
+        [
+          ['entityType', 'entityId', 'field', 'observedAt'],
+          ['entityType', 'entityKey', 'field', 'observedAt'],
+        ],
+        hostFilter,
+      ),
+    ).toBeUndefined();
+    expect(indexServing(observationPatterns, hostFilter)).toEqual([
+      'entityType',
+      'field',
+      'superseded',
+    ]);
   });
 
   it('refuses an index that carries the fields without leading on them', () => {

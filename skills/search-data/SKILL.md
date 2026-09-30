@@ -32,14 +32,19 @@ A declared `schema.index(...)` does not build itself; `skills/contributing/SKILL
 | `observations` `{ sourceUrl: 1, observedAt: -1 }` | the repair queue's evidence lookup, a `sourceUrl` `$in` sorted newest-first under a limit | `observedAt` lets MongoDB merge the per-variant intervals already in sort order instead of buffering the whole match |
 | `observations` `{ sourceName: 1, entityType: 1, superseded: 1, entityKey: 1, entityId: 1 }` | the gate's two source-scoped `distinct` calls and the roster lane's observed-key read | `entityKey` and `entityId` are what those callers read, so carrying them makes the roster read a covered `DISTINCT_SCAN` and lets the gate's `entityId` read answer from the index |
 | `observations` `{ sourceName: 1, field: 1 }` | the controlled-vocabulary heading reload | the reload carries no `entityType`, so it cannot use the index above; on `sourceName` alone its two sources match 224,459 rows against 12,883 for the pair |
+| `observations` `{ entityType: 1, field: 1, superseded: 1 }` | the host filter in `observationStore` | `field` sits second because the two older `entityType_1_..._field_1_observedAt_-1` indexes bury it behind `entityId` or `entityKey`, and an unconstrained middle key takes no bounds |
 | `researchers` `{ 'profileLinks.url': 1 }` and `{ 'profile.websiteUrl': 1 }` | identity by profile URL, asked as one `$or` over both paths | an `$or` needs an index per clause, or the union degrades to the scan every such call used to pay |
 
-Two things an index cannot fix here, both measured rather than assumed:
+Two conclusions worth keeping, because both invert the guess:
 
-- The host filter in `observationStore` matches `sourceUrl` with a case-insensitive regex, which takes no index bounds, so it keeps its `entityType` plan and no `sourceUrl` index serves it.
-  Indexing for it would be indexing for a query that cannot use the index.
-- `{ sourceId: 1, observedAt: -1 }` looks unread and is not: the BBS research-track lane asks `Observation.exists({ sourceId, entityType, field, value })`, which leads on `sourceId` and answers in one key.
+- A `sourceUrl` index cannot help the host filter in `observationStore`, even though that filter is on `sourceUrl`.
+  Two independent properties of its regex each defeat index bounds, measured by forcing the index on Development: the regex is case-insensitive, and `https?` leaves it no fixed literal prefix.
+  Either alone makes the bounds the interval covering every string, so the forced plan walks all 1,880,941 keys.
+  What serves that read is an index on everything else it asks, which is why `{ entityType: 1, field: 1, superseded: 1 }` exists: 57,920 keys down to 12,284.
+  Which plan the planner picks for such a regex is corpus-dependent rather than fixed, so assert the bounds and never the chosen plan; a test that pins the choice flips when the fixture changes.
+- `{ sourceId: 1, observedAt: -1 }` was reported as serving no query and does serve one: the BBS research-track lane asks `Observation.exists({ sourceId, entityType, field, value })`, leading on `sourceId`.
   It stays declared.
+  Retiring it is now a more open question than when #3934 was written, because `{ entityType: 1, field: 1, superseded: 1 }` also answers that read in one key on the row measured, but a removal is a reviewed migration with its own issue and this change does not settle it.
 
 ## Meilisearch indexes
 

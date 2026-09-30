@@ -158,11 +158,26 @@ observationSchema.index(
  * match. Without it the planner fell back to `superseded_1` and walked 476,302 keys for
  * 7 rows (#3934).
  *
- * The host-regex read in `observationStore` also filters `sourceUrl`, but with a
- * case-insensitive regex, which takes no index bounds, so it keeps its `entityType`
- * plan and this index does not serve it. Measured unchanged at 57,920 keys either way.
+ * This index does NOT serve the host-regex read in `observationStore`, which filters
+ * `sourceUrl` too. Two independent properties of that regex each defeat index bounds,
+ * measured by forcing this index on Development: it is case-insensitive, and `https?`
+ * gives it no fixed literal prefix. Either one alone makes the bounds the interval
+ * covering every string, so the forced plan walks all 1,880,941 keys. That read is
+ * served by `entityType_1_field_1_superseded_1` below instead.
  */
 observationSchema.index({ sourceUrl: 1, observedAt: -1 });
+/**
+ * The host-filter read in `observationStore`, which cannot narrow on `sourceUrl` (above)
+ * and so has to be narrowed by everything else it asks: `entityType`, a `field` `$in`, and
+ * `superseded`.
+ *
+ * `field` sits second on purpose. The two `entityType_1_..._field_1_observedAt_-1` indexes
+ * already carry the same three fields, but with `entityId` or `entityKey` between
+ * `entityType` and `field`, and an unconstrained middle key takes no bounds, so `field`
+ * could not narrow anything. Ordering the keys as the query asks them took the read from
+ * 39,715 to 57,920 keys down to 12,284, and documents examined from 32,682 to 12,281 (#3934).
+ */
+observationSchema.index({ entityType: 1, field: 1, superseded: 1 });
 /**
  * Source-scoped reads: the gate's two `distinct` calls and the roster lane's observed-key
  * read, which filter `sourceName` with `entityType` and (for the gate) `superseded`.
