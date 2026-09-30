@@ -520,7 +520,8 @@ describe('publicProgramForReader card line (#3904)', () => {
   });
 
   it('leaves the card line undefined when the program has no summary or description', () => {
-    expect(publicProgramForReader({ _id: '6a6f84d074dd496b1d43b1a1', title: 'Fixture' }).cardSummary)
-      .toBeUndefined();
+    expect(
+      publicProgramForReader({ _id: '6a6f84d074dd496b1d43b1a1', title: 'Fixture' }).cardSummary,
+    ).toBeUndefined();
   });
 });
