@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CORPUS_QUALITY_SNAPSHOT_ONLY_METRICS } from '../corpusQualityDashboardService';
+import { readCorpusQualityLiveMetrics } from '../corpusQualityLiveMetrics';
+
+vi.mock('../../models/researchEntity', () => ({
+  ResearchEntity: { aggregate: vi.fn(async () => [{}]) },
+}));
 
 /**
  * The split between live and measured is the panel's whole freshness contract, so
@@ -42,6 +47,15 @@ describe('corpus quality freshness contract', () => {
 
     for (const metric of aggregatable) {
       expect(CORPUS_QUALITY_SNAPSHOT_ONLY_METRICS).not.toContain(metric);
+    }
+  });
+
+  it('never answers a snapshot-only metric from the live read', async () => {
+    const live = await readCorpusQualityLiveMetrics(new Date('2026-09-30T00:00:00.000Z'));
+    const liveMetricNames = [...Object.keys(live.richness), ...Object.keys(live.description)];
+
+    for (const metric of CORPUS_QUALITY_SNAPSHOT_ONLY_METRICS) {
+      expect(liveMetricNames).not.toContain(metric);
     }
   });
 });

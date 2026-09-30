@@ -20,7 +20,7 @@ Three rows cannot be an aggregation: each needs the roster resolved and `buildRe
 Read that 13 seconds as a pre-#4093 upper bound rather than a current figure.
 #4093 memoized the field-quality scoring a row was repeating once per card candidate, which cut this same representation over a 24-row browse page from 123 ms to 68 ms, so the pass over the corpus is now materially cheaper and has not been re-timed end to end.
 The choice does not turn on the exact number: it is seconds against milliseconds either way, and halving seconds leaves them seconds.
-Those three carry a `measured` tag and the header says how many rows are in that state, so nobody reads an as-of number as a now number.
+Every snapshot-sourced row carries a `measured` tag, the header topic average carries its measurement date, and the header says how many rows are in that state, so nobody reads an as-of number as a now number.
 
 **The other five were measured to be identical, not assumed.**
 Over 3,120 served Development rows on 2026-09-14 the aggregation and the representation returned the same counts: research website 1,276, topics 3,026, topic total 15,136, dead ends 69, generic title 1,471.
@@ -33,6 +33,12 @@ Measured on 3,386 served Development rows on 2026-09-25, with peers writing the 
 So the panel was reporting topic coverage on 77 rows where a student sees no topic at all, and counting 795 chips nobody can read.
 `servedRowFacts` now counts `publicResearchAreaArray(servedResearchEntityCopy(...))`, which is the DTO's own chip projection, and the two agree on every served row rather than on all but one.
 The withholding itself is untouched: the guard is doing what #1407 built it for.
+
+**#3379 moved the topic metrics on the server, and #4004 moved the panel with them.**
+Until #4004 the client still rendered "Has topics", "No website and no topics" and the header's topic average from the live aggregation, untagged, so the panel reported stored state under a "now" label and its trend compared that stored value against a served measurement.
+On Development on 2026-09-30 the panel read 17 dead ends where the newest measurement served 25.
+The panel now decides a row's source from the endpoint's `snapshotOnlyMetrics` list rather than from a second hard-coded list, so a metric the server moves to the measured side moves on screen with it.
+The live aggregation no longer computes the three topic metrics at all, so no reader can pick the stored count up by mistake, and the header's topic average reads the latest measurement.
 
 **The count was one of two defects, and #3401 is the other.**
 The guard judges only a chip with no `fieldProvenance.researchAreas`, and `applyDescriptionResearchAreaDerivation` set `researchAreas` without ever writing that entry, so every chip derived from a row's own description was exposed to it.

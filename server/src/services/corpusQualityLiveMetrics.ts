@@ -40,10 +40,7 @@ export interface CorpusQualityLiveMetrics {
   };
   richness: {
     hasResearchWebsite: CorpusQualityRatio;
-    hasTopic: CorpusQualityRatio;
     hasSourceUrl: CorpusQualityRatio;
-    topicTotal: CorpusQualityRatio;
-    noResearchWebsiteAndNoTopics: CorpusQualityRatio;
   };
   description: {
     nameIsGenericFacultyResearchTitle: CorpusQualityRatio;
@@ -51,7 +48,6 @@ export interface CorpusQualityLiveMetrics {
 }
 
 const hasText = (field: string) => ({ $gt: [{ $strLenCP: { $ifNull: [field, ''] } }, 0] });
-const topicCount = { $size: { $ifNull: ['$researchAreas', []] } };
 const sourceUrlCount = { $size: { $ifNull: ['$sourceUrls', []] } };
 const countWhen = (condition: unknown) => ({ $sum: { $cond: [condition, 1, 0] } });
 
@@ -96,12 +92,7 @@ export async function readCorpusQualityLiveMetrics(
               _id: null,
               studentReady: { $sum: 1 },
               hasResearchWebsite: countWhen(hasWebsite),
-              hasTopic: countWhen({ $gt: [topicCount, 0] }),
               hasSourceUrl: countWhen({ $gt: [sourceUrlCount, 0] }),
-              topicTotal: { $sum: topicCount },
-              noResearchWebsiteAndNoTopics: countWhen({
-                $and: [{ $not: hasWebsite }, { $eq: [topicCount, 0] }],
-              }),
               nameIsGenericFacultyResearchTitle: countWhen({
                 $regexMatch: {
                   input: { $ifNull: ['$name', ''] },
@@ -119,10 +110,7 @@ export async function readCorpusQualityLiveMetrics(
   const served = facet?.served?.[0] || {
     studentReady: 0,
     hasResearchWebsite: 0,
-    hasTopic: 0,
     hasSourceUrl: 0,
-    topicTotal: 0,
-    noResearchWebsiteAndNoTopics: 0,
     nameIsGenericFacultyResearchTitle: 0,
   };
   const of = served.studentReady;
@@ -141,10 +129,7 @@ export async function readCorpusQualityLiveMetrics(
     },
     richness: {
       hasResearchWebsite: ratio(served.hasResearchWebsite),
-      hasTopic: ratio(served.hasTopic),
       hasSourceUrl: ratio(served.hasSourceUrl),
-      topicTotal: ratio(served.topicTotal),
-      noResearchWebsiteAndNoTopics: ratio(served.noResearchWebsiteAndNoTopics),
     },
     description: {
       nameIsGenericFacultyResearchTitle: ratio(served.nameIsGenericFacultyResearchTitle),
