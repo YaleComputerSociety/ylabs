@@ -11,6 +11,7 @@ import {
   SYNTHETIC_ORCID_EXAMPLE,
 } from './orcidFixtureShape.mjs';
 import nodeTest, { after } from 'node:test';
+import yaml from 'js-yaml';
 
 import {
   DEFAULT_AUDIT_TIMEOUT_MS,
@@ -975,7 +976,10 @@ test('the keep-alive job probes the served API and keeps its exit status', () =>
   );
   for (const [name, source] of [
     ['keep-alive.yml', keepAliveWorkflow],
-    ['keep-alive-probe.sh', fs.readFileSync(new URL('./keep-alive-probe.sh', import.meta.url), 'utf8')],
+    [
+      'keep-alive-probe.sh',
+      fs.readFileSync(new URL('./keep-alive-probe.sh', import.meta.url), 'utf8'),
+    ],
   ]) {
     assert.doesNotMatch(
       source,
@@ -1030,11 +1034,19 @@ test('the release-hold job reads live state rather than the replayed event paylo
 });
 
 const workflowDirectory = new URL('../.github/workflows/', import.meta.url);
-const workflowFiles = () =>
+const parsedWorkflows = () =>
   fs
     .readdirSync(workflowDirectory)
     .filter((file) => file.endsWith('.yml') || file.endsWith('.yaml'))
-    .map((file) => [file, fs.readFileSync(new URL(file, workflowDirectory), 'utf8')]);
+    .map((file) => [file, yaml.load(fs.readFileSync(new URL(file, workflowDirectory), 'utf8'))]);
+const workflowSteps = (workflow) =>
+  Object.values(workflow.jobs ?? {}).flatMap((job) => job.steps ?? []);
+const runsCommand = (step, ...tokens) =>
+  typeof step.run === 'string' &&
+  step.run
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/))
+    .some((line) => tokens.every((token, index) => line[index] === token));
 
 test('every workflow takes its Node major from .node-version', () => {
   const declared = fs.readFileSync(new URL('../.node-version', import.meta.url), 'utf8').trim();
@@ -1044,18 +1056,20 @@ test('every workflow takes its Node major from .node-version', () => {
     '.node-version must hold a bare major, because it is read by setup-node and by the hosting provider',
   );
 
-  for (const [file, workflow] of workflowFiles()) {
-    if (!/uses:\s*actions\/setup-node@/.test(workflow)) continue;
-    assert.match(
-      workflow,
-      /node-version-file:\s*\.node-version/,
-      `${file} must read the Node major from .node-version so CI and the deployed runtime cannot drift (ylabs#3915)`,
-    );
-    assert.doesNotMatch(
-      workflow,
-      /^\s*node-version:\s*\d/m,
-      `${file} must not pin a Node major inline beside the file it is supposed to read`,
-    );
+  for (const [file, workflow] of parsedWorkflows()) {
+    for (const step of workflowSteps(workflow)) {
+      if (!step.uses?.startsWith('actions/setup-node@')) continue;
+      assert.equal(
+        step.with?.['node-version-file'],
+        '.node-version',
+        `${file} must read the Node major from .node-version so CI and the deployed runtime cannot drift (ylabs#3915)`,
+      );
+      assert.equal(
+        step.with?.['node-version'],
+        undefined,
+        `${file} must not pin a Node major inline beside the file it is supposed to read`,
+      );
+    }
   }
 
   // A bump is one commit that moves the file and every manifest together, so a
@@ -1072,34 +1086,37 @@ test('every workflow takes its Node major from .node-version', () => {
 });
 
 test('workflows pin Corepack instead of installing whatever is latest', () => {
-  for (const [file, workflow] of workflowFiles()) {
-    if (!/corepack/.test(workflow)) continue;
-    assert.doesNotMatch(
-      workflow,
-      /corepack@latest/,
-      `${file} must pin the Corepack version: an unpinned install lets a new release change the tool that selects Yarn between two runs of the same commit (ylabs#3915)`,
+  for (const [file, workflow] of parsedWorkflows()) {
+    const steps = workflowSteps(workflow);
+    const enableIndex = steps.findIndex((step) => runsCommand(step, 'corepack', 'enable'));
+    if (enableIndex === -1) continue;
+    const installs = steps
+      .slice(0, enableIndex)
+      .flatMap((step) => step.run?.trim().split(/\s+/) ?? [])
+      .filter((token) => token.startsWith('corepack@'));
+    assert.equal(
+      installs.length,
+      1,
+      `${file} must install Corepack exactly once before enabling it`,
     );
     assert.match(
-      workflow,
-      /npm install -g corepack@\d+\.\d+\.\d+/,
-      `${file} must install an explicit Corepack version`,
+      installs[0],
+      /^corepack@\d+\.\d+\.\d+$/,
+      `${file} must pin the Corepack version: an unpinned install lets a new release change the tool that selects Yarn between two runs of the same commit (ylabs#3915)`,
     );
   }
 });
 
 test('every workflow job bounds its runtime', () => {
-  for (const [file, workflow] of workflowFiles()) {
-    // Job ids are the only two-space keys below `jobs:`; everything inside a job
-    // is indented further, and the two-space keys under `on:` sit above it.
-    const jobsSection = workflow.slice(workflow.search(/^jobs:$/m));
-    const jobCount = jobsSection.match(/^ {2}[a-z0-9][a-z0-9_-]*:$/gim)?.length ?? 0;
-    assert.ok(jobCount > 0, `${file} must declare at least one job`);
-    const timeoutCount = jobsSection.match(/^ {4}timeout-minutes:\s*\d+$/gim)?.length ?? 0;
-    assert.equal(
-      timeoutCount,
-      jobCount,
-      `${file} must set timeout-minutes on every job: the 360-minute default holds a required check pending for six hours before it fails (ylabs#3916)`,
-    );
+  for (const [file, workflow] of parsedWorkflows()) {
+    const jobs = Object.entries(workflow.jobs ?? {});
+    assert.ok(jobs.length > 0, `${file} must declare at least one job`);
+    for (const [jobId, job] of jobs) {
+      assert.ok(
+        Number.isInteger(job['timeout-minutes']) && job['timeout-minutes'] > 0,
+        `${file} job ${jobId} must set timeout-minutes: the 360-minute default holds a required check pending for six hours before it fails (ylabs#3916)`,
+      );
+    }
   }
 });
 
@@ -1107,31 +1124,31 @@ test('the required checks also run on the commit that lands on beta', () => {
   // The beta ruleset does not require branches to be up to date (#3425), so a
   // pull request is tested against the base it last saw. The push run is the
   // only test of the squash commit that actually reaches beta (#1151, #1153).
-  for (const [file, workflow] of [
+  for (const [file, workflowSource] of [
     ['ci.yml', ciWorkflow],
     ['e2e-smoke.yml', e2eSmokeWorkflow],
   ]) {
-    assert.match(
-      workflow,
-      /push:\s*\n\s*branches:\s*\n\s*-\s*beta/,
+    const workflow = yaml.load(workflowSource);
+    assert.deepEqual(
+      workflow.on.push?.branches,
+      ['beta'],
       `${file} must run on pushes to beta so the merged result is tested (ylabs#3913)`,
     );
-    assert.match(
-      workflow,
-      /concurrency:\s*\n\s*group:[^\n]*github\.ref/,
-      `${file} must key its concurrency group on the ref`,
-    );
-    // A cancelled run reports as a non-success, so cancellation is scoped to
-    // push runs and never reaches a required pull request context.
-    assert.match(
-      workflow,
-      /cancel-in-progress:\s*\$\{\{\s*github\.event_name == 'push'\s*\}\}/,
-      `${file} must cancel only push runs`,
-    );
-    assert.match(
-      workflow,
-      /pull_request:\s*\n\s*branches:\s*\n\s*-\s*main\s*\n\s*-\s*beta/,
+    assert.deepEqual(
+      workflow.on.pull_request?.branches,
+      ['main', 'beta'],
       `${file} must keep its pull request trigger so the required context still reports`,
+    );
+    // A cancelled or queued pull request run delays or fails a required
+    // context, so only push runs share a concurrency group.
+    assert.deepEqual(
+      workflow.concurrency,
+      {
+        group:
+          "${{ github.workflow }}-${{ github.event_name == 'push' && github.ref || github.run_id }}",
+        'cancel-in-progress': true,
+      },
+      `${file} must share a concurrency group between push runs only`,
     );
   }
 });

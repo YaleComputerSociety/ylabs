@@ -87,9 +87,11 @@ node -v
 npm -v
 ```
 
-Enable Corepack. It reads the `packageManager` field in `package.json` and installs that exact Yarn version the first time you run a `yarn` command inside the repo, so you do not name a version yourself:
+Install and enable Corepack. Node 25 and later no longer ship it, so install the version CI pins in `.github/workflows/ci.yml` first.
+Corepack reads the `packageManager` field in `package.json` and installs that exact Yarn version the first time you run a `yarn` command inside the repo, so you do not name a Yarn version yourself:
 
 ```bash
+npm install -g corepack@0.36.0
 corepack enable
 yarn -v
 ```
@@ -222,9 +224,10 @@ which corepack
 If `which node` prints `/usr/bin/node`, switch to the `nvm` Node:
 
 ```bash
-nvm install 20
-nvm use 20
-nvm alias default 20
+nvm install "$(cat .node-version)"
+nvm use "$(cat .node-version)"
+nvm alias default "$(cat .node-version)"
+npm install -g corepack@0.36.0
 corepack enable
 yarn -v
 ```
