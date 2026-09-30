@@ -31,23 +31,17 @@ describe('isNavMenuChromeTitle', () => {
     expect(isNavMenuChromeTitle('About Us Our Team Upcoming Events Contact Us')).toBe(true);
   });
 
-  it('rejects a department site menu read with spaces between single-word items (#4046)', () => {
-    expect(
-      isNavMenuChromeTitle(
-        'Home About Research Academics People Media Events Outreach Opportunities Belonging For Prospectives',
-      ),
-    ).toBe(true);
-    expect(
-      isNavMenuChromeTitle(
-        'Graduate Program Undergraduate Major Research & Collections Media Gallery Prize People',
-      ),
-    ).toBe(true);
-    expect(
-      sanitizePersonTitle('Home About Research Academics People Media Events Outreach'),
-    ).toBeUndefined();
+  it('refuses a department site menu read with spaces between single-word items as a person title (#4046)', () => {
+    for (const menu of [
+      'Home About Research Academics People Media Events Outreach Opportunities Belonging For Prospectives',
+      'Graduate Program Undergraduate Major Research & Collections Media Gallery Prize People',
+      'Home About Research Academics People Media Events Outreach',
+    ]) {
+      expect(sanitizePersonTitle(menu)).toBeUndefined();
+    }
   });
 
-  it('keeps a multi-word capitalized title that names a role or carries no menu items (#4046)', () => {
+  it('keeps a multi-word capitalized title that names a role or carries few menu items (#4046)', () => {
     for (const title of [
       'Senior Administrative Assistant Child Study Center',
       'Social Worker Child Study Center',
@@ -59,8 +53,11 @@ describe('isNavMenuChromeTitle', () => {
       'News And Media Relations Office Staff Writer',
       'Communications Media Events And Outreach Team',
       'Senior Media Events Planner Office Staff',
+      'Senior Digital Media Collections Gallery Archivist',
+      'Public Health News Media Events Producer',
+      'Community Research Outreach Events Program Planner',
     ]) {
-      expect(isNavMenuChromeTitle(title)).toBe(false);
+      expect(sanitizePersonTitle(title)).toBe(title);
     }
   });
 

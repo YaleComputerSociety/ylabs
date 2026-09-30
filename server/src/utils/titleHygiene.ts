@@ -88,7 +88,7 @@ const ROLE_WORD_PATTERN =
 const TITLE_CONNECTIVE_WORDS = new Set(['and', 'of', 'in', 'the', 'at', 'to']);
 
 const MIN_SITE_MENU_ITEMS = 6;
-const MIN_SITE_MENU_ITEM_WORDS = 3;
+const MIN_SITE_MENU_ITEM_WORDS = 5;
 const MENU_ITEM_TOKEN_PATTERN = /^(?:[A-Z][A-Za-z'’-]*|&)$/;
 
 function isSpaceSeparatedSiteMenu(text: string): boolean {
@@ -112,9 +112,6 @@ function isSpaceSeparatedSiteMenu(text: string): boolean {
  *    boundaries never occur in a genuine job title.
  *  - breadcrumb trails with two or more chained separators (> » › • ·).
  *  - two or more distinct navigation/menu phrases.
- *  - a site menu read with spaces between its items (#4046): six or more
- *    capitalized single words, no role word or title connective (And, Of),
- *    three or more of them menu items.
  */
 export function isNavMenuChromeTitle(value: string | null | undefined): boolean {
   const text = normalizeTitleWhitespace(value);
@@ -122,7 +119,6 @@ export function isNavMenuChromeTitle(value: string | null | undefined): boolean 
   if (concatenatedWordRunCount(text) >= 3) return true;
   if ((text.match(breadcrumbSeparatorPattern) || []).length >= 2) return true;
   if ((text.match(navMenuPhrasePattern) || []).length >= 2) return true;
-  if (isSpaceSeparatedSiteMenu(text)) return true;
   return false;
 }
 
@@ -236,7 +232,11 @@ export const MAX_PERSON_TITLE_LENGTH = 140;
  * Fail-closed sanitizer for the short person `title` field, applied at both the
  * scraper write path and the member/PI card render path (#708). Returns a
  * normalized title, or undefined when the candidate is navigation/menu chrome,
- * a site section/directory label (#1257), a raw email, a street-address
+ * a site section/directory label (#1257), a site menu read with spaces between
+ * its items (#4046: six or more capitalized single words, no role word or title
+ * connective, five or more of them menu items; person titles only, because
+ * entity names such as a lab or program name legitimately run on menu words),
+ * a raw email, a street-address
  * fragment, a phone/fax contact fragment, multi-sentence bio prose, or simply
  * longer than a role string ever runs (#740's over-140-char scraped-junk
  * heuristic), so a corrupted title never lands in storage nor renders from
@@ -247,6 +247,7 @@ export function sanitizePersonTitle(value: string | null | undefined): string | 
   if (!text) return undefined;
   if (text.length > MAX_PERSON_TITLE_LENGTH) return undefined;
   if (isNavMenuChromeTitle(text)) return undefined;
+  if (isSpaceSeparatedSiteMenu(text)) return undefined;
   if (isSectionLabelTitle(text)) return undefined;
   if (hasRawEmailAddress(text)) return undefined;
   if (hasStreetAddressFragment(text)) return undefined;
