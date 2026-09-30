@@ -9,10 +9,12 @@ import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   ACCOUNT_ID_REFERENCE_FIELDS,
+  accountCountChange,
   applyAccountCarry,
   loadAccountCarryPlan,
+  summarizeAccountCarry,
   type AccountCarryPlan,
-} from './promotionAccountCarry';
+} from './accountSwapCarry';
 import {
   applyStagedCollectionSwap,
   mirroredValidationOptions,
@@ -619,28 +621,19 @@ async function recordScrapeRunsRetirement(
   });
 }
 
-function withCarriedAccounts(plan: CollectionPlan[], carriedInserts: number): CollectionPlan[] {
+function withCarriedAccounts(plan: CollectionPlan[], carriedAccounts: number): CollectionPlan[] {
   return plan.map((row) =>
     row.name === 'accounts'
-      ? { ...row, sourceCopyCount: row.sourceCopyCount + carriedInserts }
+      ? { ...row, sourceCopyCount: row.sourceCopyCount + carriedAccounts }
       : row,
   );
 }
 
-export function summarizeAccountCarry(carry: AccountCarryPlan) {
-  return {
-    refreshed: carry.refreshes.length,
-    rekeyed: carry.rekeys.length,
-    inserted: carry.inserts.length,
-  };
-}
-
 export async function previewAccountCarry(betaDb: Db, productionDb: Db): Promise<AccountCarryPlan> {
   return loadAccountCarryPlan({
-    productionDb,
-    productionAccountsCollection: 'accounts',
-    promotedAccounts: betaDb.collection('accounts'),
-    promotedAccountFilter: SYNTHETIC_USER_FILTER,
+    targetDb: productionDb,
+    targetAccountsCollection: 'accounts',
+    loadPromotedAccounts: () => betaDb.collection('accounts').find(SYNTHETIC_USER_FILTER).toArray(),
   });
 }
 
@@ -652,7 +645,7 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
     ? await productionDb.collection('scrape_runs').countDocuments({})
     : 0;
 
-  let carriedAccountInserts = 0;
+  let carriedAccountCountChange = 0;
 
   await applyStagedCollectionSwap({
     targetDb: productionDb,
@@ -666,13 +659,13 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
       const productionAccounts = backups.get('accounts');
       if (!productionAccounts) return;
       const carry = await loadAccountCarryPlan({
-        productionDb,
-        productionAccountsCollection: productionAccounts,
-        promotedAccounts: productionDb.collection('accounts'),
-        promotedAccountFilter: SYNTHETIC_USER_FILTER,
+        targetDb: productionDb,
+        targetAccountsCollection: productionAccounts,
+        loadPromotedAccounts: () =>
+          productionDb.collection('accounts').find(SYNTHETIC_USER_FILTER).toArray(),
       });
       await applyAccountCarry(productionDb, carry);
-      carriedAccountInserts = carry.inserts.length;
+      carriedAccountCountChange = accountCountChange(summarizeAccountCarry(carry));
     },
     verify: async () => {
       const actualCounts = new Map<string, number>();
@@ -685,7 +678,7 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
       const mismatches = buildPromotionCutoverMismatches(
         withCarriedAccounts(
           plan.filter((row) => collections.some((collection) => collection.name === row.name)),
-          carriedAccountInserts,
+          carriedAccountCountChange,
         ),
         actualCounts,
       );

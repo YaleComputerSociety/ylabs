@@ -119,8 +119,13 @@ describe('Beta to Development sync guards', () => {
             async *[Symbol.asyncIterator]() {
               for (const document of data.get(name)?.documents || []) yield { ...document };
             },
+            toArray: async () =>
+              (data.get(name)?.documents || []).map((document) => ({ ...document })),
             close: async () => undefined,
           }),
+          distinct: async (field: string) => [
+            ...new Set((data.get(name)?.documents || []).map((document) => document[field])),
+          ],
           countDocuments: async () => (data.get(name)?.documents || []).length,
           bulkWrite: async (operations: Array<{ insertOne: { document: Document } }>) => {
             data

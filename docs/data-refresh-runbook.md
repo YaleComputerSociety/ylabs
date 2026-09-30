@@ -237,6 +237,12 @@ The standard plan declares, and the standard apply clears, Atlas Development col
 It never reads Beta analytics, admin grants, admin audit and access-review projections, job locks, scraper caches, student profiles, applications, tracking, outreach, claims, private research plans, or release queues; the plan artifact's `excludedOperationalCollections` is the authoritative list.
 Every Beta account and role assignment has a Development counterpart so references and role distributions remain valid.
 Accounts reachable from a `Researcher` keep the directory netid and email Yale already publishes, every other account is deterministically pseudonymized, and each copied account is reduced to an allow-list of identity fields so student profile and account-activity state never crosses.
+The target's own logins are never lost to the copy: every target account with login evidence (`lastLoginAt`, or an owned research plan) is carried from the pre-swap backup before verification, keeping its `_id` so the target's `research_plans` still resolve (#4130).
+Where the source holds that `_id` as a `mirrored-<id>` pseudonym, which is what the opposite-direction mirror mints for the target's own login, the target row replaces the pseudonym.
+Where the source also re-created that login's netid under a new `_id`, the source row is re-keyed onto the target `_id` over the pseudonym, so the netid stays unique.
+Read `accountCarry` in the artifact: `restored` counts round-tripped logins, `merged` counts re-created ones, and `inserted` counts target-only ones.
+A dry run reports the preview, and an apply reports the carry it actually ran after cutover.
+Both mirror directions share this carry, as does `production:promote-beta-copy`.
 An unclassified Beta collection blocks apply until its mirror or exclusion policy is reviewed.
 Apply stages and validates every mirrored collection before cutover.
 It retains the prior mirrored and non-mirror collections as temporary backups until the complete cutover passes post-sync verification, then restores the entire prior Development dataset if cutover or verification fails.

@@ -84,7 +84,7 @@ const REVIEWED_RAW_RESEARCH_ENTITY_WRITERS: Record<
     reason:
       'copies whole collections from the accepted Beta copy into staging, so every document is one the model already accepted',
   },
-  'scripts/promotionAccountCarry.ts': {
+  'scripts/accountSwapCarry.ts': {
     sites: 1,
     unresolvedKeySites: 1,
     reason:

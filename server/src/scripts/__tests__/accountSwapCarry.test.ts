@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb';
 import { describe, expect, it } from 'vitest';
-import { planAccountCarry } from '../promotionAccountCarry';
+import { planAccountCarry } from '../accountSwapCarry';
 
 const promotedId = new ObjectId('68f0000000000000000000a1');
 const productionTwinId = new ObjectId('68f0000000000000000000a2');
@@ -47,6 +47,7 @@ describe('planAccountCarry', () => {
       {
         fromId: promotedId,
         document: { ...promotedAccounts[0], _id: productionTwinId, lastLoginAt },
+        replacesPseudonym: false,
       },
     ]);
   });
@@ -62,5 +63,56 @@ describe('planAccountCarry', () => {
     expect(plan.refreshes).toEqual([{ _id: promotedId, set: { lastLoginAt, profile } }]);
     expect(plan.inserts).toEqual([]);
     expect(plan.rekeys).toEqual([]);
+  });
+
+  it('restores the target row over a pseudonym the mirror minted under the same _id', () => {
+    const targetLogin = {
+      _id: promotedId,
+      netid: 'fixture-login-holder',
+      email: 'fixture-login-holder@yale.edu',
+      lastLoginAt,
+    };
+    const plan = planAccountCarry({
+      productionAccounts: [targetLogin],
+      promotedAccounts: [
+        {
+          _id: promotedId,
+          netid: `mirrored-${promotedId.toHexString()}`,
+          email: `mirrored-${promotedId.toHexString()}@example.invalid`,
+        },
+      ],
+      planOwnerIds: new Set(),
+    });
+
+    expect(plan.restores).toEqual([targetLogin]);
+    expect(plan.refreshes).toEqual([]);
+    expect(plan.rekeys).toEqual([]);
+    expect(plan.inserts).toEqual([]);
+  });
+
+  it('re-keys a same-netid source row onto a target login the source holds as a pseudonym', () => {
+    const targetLogin = { _id: productionTwinId, netid: 'fixture-researcher', lastLoginAt };
+    const plan = planAccountCarry({
+      productionAccounts: [targetLogin],
+      promotedAccounts: [
+        ...promotedAccounts,
+        {
+          _id: productionTwinId,
+          netid: `mirrored-${productionTwinId.toHexString()}`,
+          email: `mirrored-${productionTwinId.toHexString()}@example.invalid`,
+        },
+      ],
+      planOwnerIds: new Set(),
+    });
+
+    expect(plan.rekeys).toEqual([
+      {
+        fromId: promotedId,
+        document: { ...promotedAccounts[0], _id: productionTwinId, lastLoginAt },
+        replacesPseudonym: true,
+      },
+    ]);
+    expect(plan.restores).toEqual([]);
+    expect(plan.inserts).toEqual([]);
   });
 });

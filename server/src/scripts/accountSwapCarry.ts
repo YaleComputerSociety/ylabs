@@ -1,7 +1,8 @@
-import type { Collection, Db, Document, ObjectId } from 'mongodb';
+import type { Db, Document, ObjectId } from 'mongodb';
 
 /**
- * Production accounts a promotion must carry across its `accounts` swap.
+ * Target accounts a whole-collection `accounts` swap must carry: the Beta-to-
+ * Production promotion and both Development/Beta syncs (#4091, #4130).
  *
  * Beta's accounts are the researcher identity spine plus pseudonymized mirrors
  * and never carry a Production login, so a plain whole-collection swap deletes
@@ -9,9 +10,12 @@ import type { Collection, Db, Document, ObjectId } from 'mongodb';
  * is not promoted, keeps pointing at the deleted `_id` (#4091). An account is a
  * Production login when it carries `lastLoginAt` or owns a research plan.
  *
- * The Production `_id` always survives, because private rows reference it:
- * where Beta holds the same netid under another `_id`, the Beta row is re-keyed
- * to the Production `_id` and every reference to the Beta `_id` is rewritten.
+ * The target's `_id` always survives, because private rows reference it:
+ * where the source holds the same netid under another `_id`, the source row is
+ * re-keyed to the target `_id` and every reference to the source `_id` is
+ * rewritten, replacing any pseudonym the source holds under the target `_id`.
+ * Otherwise, where the source holds the same `_id` under another netid, it is a
+ * pseudonym the mirror minted for this very login, so the target row replaces it.
  */
 const CARRIED_ACCOUNT_LOGIN_FIELDS = ['lastLoginAt', 'profile'] as const;
 
@@ -24,7 +28,8 @@ export const ACCOUNT_ID_REFERENCE_FIELDS: ReadonlyArray<{ collection: string; fi
 
 export interface AccountCarryPlan {
   refreshes: Array<{ _id: ObjectId; set: Document }>;
-  rekeys: Array<{ fromId: ObjectId; document: Document }>;
+  restores: Document[];
+  rekeys: Array<{ fromId: ObjectId; document: Document; replacesPseudonym: boolean }>;
   inserts: Document[];
 }
 
@@ -49,12 +54,12 @@ export function planAccountCarry(args: {
 }): AccountCarryPlan {
   const promotedById = new Map(args.promotedAccounts.map((row) => [idKey(row._id), row]));
   const promotedByNetid = new Map(args.promotedAccounts.map((row) => [row.netid, row]));
-  const plan: AccountCarryPlan = { refreshes: [], rekeys: [], inserts: [] };
+  const plan: AccountCarryPlan = { refreshes: [], restores: [], rekeys: [], inserts: [] };
 
   for (const account of args.productionAccounts) {
     if (!isProductionLoginAccount(account, args.planOwnerIds)) continue;
     const sameId = promotedById.get(idKey(account._id));
-    if (sameId) {
+    if (sameId && sameId.netid === account.netid) {
       const set = loginFields(account);
       if (Object.keys(set).length > 0) plan.refreshes.push({ _id: sameId._id, set });
       continue;
@@ -64,7 +69,12 @@ export function planAccountCarry(args: {
       plan.rekeys.push({
         fromId: sameNetid._id,
         document: { ...sameNetid, ...loginFields(account), _id: account._id },
+        replacesPseudonym: sameId !== undefined,
       });
+      continue;
+    }
+    if (sameId) {
+      plan.restores.push(account);
       continue;
     }
     plan.inserts.push(account);
@@ -73,22 +83,43 @@ export function planAccountCarry(args: {
 }
 
 export async function loadAccountCarryPlan(args: {
-  productionDb: Db;
-  productionAccountsCollection: string;
-  promotedAccounts: Collection;
-  promotedAccountFilter: Document;
+  targetDb: Db;
+  targetAccountsCollection: string;
+  loadPromotedAccounts: () => Promise<Document[]>;
 }): Promise<AccountCarryPlan> {
   const planOwnerIds = new Set(
-    (await args.productionDb.collection('research_plans').distinct('accountId')).map(idKey),
+    (await args.targetDb.collection('research_plans').distinct('accountId')).map(idKey),
   );
   return planAccountCarry({
-    productionAccounts: await args.productionDb
-      .collection(args.productionAccountsCollection)
+    productionAccounts: await args.targetDb
+      .collection(args.targetAccountsCollection)
       .find({})
       .toArray(),
-    promotedAccounts: await args.promotedAccounts.find(args.promotedAccountFilter).toArray(),
+    promotedAccounts: await args.loadPromotedAccounts(),
     planOwnerIds,
   });
+}
+
+export interface AccountCarrySummary {
+  refreshed: number;
+  restored: number;
+  rekeyed: number;
+  merged: number;
+  inserted: number;
+}
+
+export function summarizeAccountCarry(carry: AccountCarryPlan): AccountCarrySummary {
+  return {
+    refreshed: carry.refreshes.length,
+    restored: carry.restores.length,
+    rekeyed: carry.rekeys.length,
+    merged: carry.rekeys.filter((rekey) => rekey.replacesPseudonym).length,
+    inserted: carry.inserts.length,
+  };
+}
+
+export function accountCountChange(summary: AccountCarrySummary): number {
+  return summary.inserted - summary.merged;
 }
 
 export async function applyAccountCarry(targetDb: Db, plan: AccountCarryPlan): Promise<void> {
@@ -96,9 +127,12 @@ export async function applyAccountCarry(targetDb: Db, plan: AccountCarryPlan): P
   for (const refresh of plan.refreshes) {
     await accounts.updateOne({ _id: refresh._id }, { $set: refresh.set });
   }
+  for (const restore of plan.restores) {
+    await accounts.replaceOne({ _id: restore._id }, restore);
+  }
   for (const rekey of plan.rekeys) {
     await accounts.deleteOne({ _id: rekey.fromId });
-    await accounts.insertOne(rekey.document);
+    await accounts.replaceOne({ _id: rekey.document._id }, rekey.document, { upsert: true });
     for (const { collection, field } of ACCOUNT_ID_REFERENCE_FIELDS) {
       await targetDb
         .collection(collection)

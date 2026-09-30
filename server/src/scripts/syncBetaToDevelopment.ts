@@ -13,6 +13,14 @@ import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  accountCountChange,
+  applyAccountCarry,
+  loadAccountCarryPlan,
+  summarizeAccountCarry,
+  type AccountCarryPlan,
+  type AccountCarrySummary,
+} from './accountSwapCarry';
 import { applyStagedCollectionSwap, mirroredValidationOptions } from './stagedCollectionSwap';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -578,13 +586,50 @@ async function copyCollection(
   }
 }
 
+export function syncCountMismatches(
+  after: readonly SyncCollectionPlan[],
+  carry: AccountCarrySummary,
+): SyncCollectionPlan[] {
+  return after.filter((row) => {
+    const expected =
+      row.name === 'accounts'
+        ? row.sourceCopyCount + accountCountChange(carry)
+        : row.sourceCopyCount;
+    return expected !== row.targetCount;
+  });
+}
+
+function mirroredSourceAccounts(sourceDb: Db, collections: readonly SyncCollection[]) {
+  const accounts = collections.find((collection) => collection.name === 'accounts');
+  return async () => {
+    const rows = await sourceDb
+      .collection('accounts')
+      .find(accounts?.filter ?? {})
+      .toArray();
+    return accounts?.transform ? rows.map(accounts.transform) : rows;
+  };
+}
+
+export function previewSyncAccountCarry(
+  sourceDb: Db,
+  targetDb: Db,
+  collections: readonly SyncCollection[],
+): Promise<AccountCarryPlan> {
+  return loadAccountCarryPlan({
+    targetDb,
+    targetAccountsCollection: 'accounts',
+    loadPromotedAccounts: mirroredSourceAccounts(sourceDb, collections),
+  });
+}
+
 export async function applySync(
   betaDb: Db,
   developmentDb: Db,
   collections: SyncCollection[],
   clearedCollectionNames: string[],
-  verify: () => Promise<void>,
-): Promise<void> {
+  verify: (carry: AccountCarrySummary) => Promise<void>,
+): Promise<AccountCarrySummary> {
+  let carry = summarizeAccountCarry({ refreshes: [], restores: [], rekeys: [], inserts: [] });
   await applyStagedCollectionSwap({
     targetDb: developmentDb,
     collections,
@@ -593,8 +638,20 @@ export async function applySync(
     label: 'Beta to Development sync',
     stage: (collection, operationId) =>
       copyCollection(betaDb, developmentDb, collection, operationId),
-    verify,
+    afterCutover: async (backups) => {
+      const targetAccounts = backups.get('accounts');
+      if (!targetAccounts) return;
+      const plan = await loadAccountCarryPlan({
+        targetDb: developmentDb,
+        targetAccountsCollection: targetAccounts,
+        loadPromotedAccounts: () => developmentDb.collection('accounts').find({}).toArray(),
+      });
+      await applyAccountCarry(developmentDb, plan);
+      carry = summarizeAccountCarry(plan);
+    },
+    verify: () => verify(carry),
   });
+  return carry;
 }
 
 async function main(): Promise<void> {
@@ -634,25 +691,36 @@ async function main(): Promise<void> {
     );
 
     if (options.mode === 'dry-run') {
-      console.log(JSON.stringify(summary, null, 2));
-      writeOutput(summary, options.output);
+      const accountCarry = summarizeAccountCarry(
+        await previewSyncAccountCarry(betaDb, developmentDb, collections),
+      );
+      const report = { ...summary, accountCarry };
+      console.log(JSON.stringify(report, null, 2));
+      writeOutput(report, options.output);
       return;
     }
 
     assertNoUnclassifiedBetaCollections(unclassifiedBetaCollections);
     const clearedDevelopmentCollections = localCollectionsClearedOnApply;
     let after: SyncCollectionPlan[] = [];
-    await applySync(betaDb, developmentDb, collections, clearedDevelopmentCollections, async () => {
-      after = await buildPlan(betaDb, developmentDb, collections);
-      const mismatches = after.filter((row) => row.sourceCopyCount !== row.targetCount);
-      if (mismatches.length > 0) {
-        throw new Error(
-          `Post-sync count verification failed for: ${mismatches.map((row) => row.name).join(', ')}`,
-        );
-      }
-    });
+    const accountCarry = await applySync(
+      betaDb,
+      developmentDb,
+      collections,
+      clearedDevelopmentCollections,
+      async (carry) => {
+        after = await buildPlan(betaDb, developmentDb, collections);
+        const mismatches = syncCountMismatches(after, carry);
+        if (mismatches.length > 0) {
+          throw new Error(
+            `Post-sync count verification failed for: ${mismatches.map((row) => row.name).join(', ')}`,
+          );
+        }
+      },
+    );
     const result = {
       ...summary,
+      accountCarry,
       status: 'applied',
       collections: after,
       clearedDevelopmentCollections,
