@@ -1211,7 +1211,7 @@ describe('searchResearchGroupsViaMeili', () => {
       'artificial intelligence machine learning deep learning ai',
       expect.objectContaining({
         attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'departments'],
-        facets: ['schools', 'departments', 'researchAreas', 'entityType'],
+        facets: ['schools', 'departments', 'entityType'],
       }),
     );
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
@@ -1303,6 +1303,72 @@ describe('searchResearchGroupsViaMeili', () => {
     await searchResearchGroupsViaMeili('', {}, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks for no topic facet on a browse page that filters on no topic (#3951)', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 0,
+      facetDistribution: {
+        schools: { 'School of Medicine': 4 },
+        departments: { Psychiatry: 2 },
+        entityType: { LAB: 4 },
+      },
+    });
+
+    const result = await searchResearchGroupsViaMeili('', { departments: ['Psychiatry'] }, 1, 24);
+
+    for (const [, params] of mocks.search.mock.calls) {
+      expect(params.facets ?? []).not.toContain('researchAreas');
+    }
+    expect(result.facetDistribution).not.toHaveProperty('researchAreas');
+    expect(result.facetDistribution).toMatchObject({
+      school: { 'School of Medicine': 4 },
+      entityType: { LAB: 4 },
+    });
+  });
+
+  it('still counts the topic facet disjunctively while a topic filter is active (#3951)', async () => {
+    mocks.search
+      .mockResolvedValueOnce({
+        hits: [],
+        estimatedTotalHits: 0,
+        facetDistribution: { schools: { 'School of Medicine': 1 }, departments: {} },
+      })
+      .mockResolvedValueOnce({
+        hits: [],
+        estimatedTotalHits: 0,
+        facetDistribution: { researchAreas: { Histones: 5, Medicare: 3 } },
+      });
+
+    const result = await searchResearchGroupsViaMeili('', { researchAreas: ['Histones'] }, 1, 24);
+
+    expect(mocks.search.mock.calls[1][1]).toMatchObject({ facets: ['researchAreas'] });
+    expect(result.facetDistribution?.researchAreas).toEqual({ Histones: 5, Medicare: 3 });
+  });
+
+  it('computes no topic facet on the Mongo fallback unless a topic filter is active (#3951)', async () => {
+    const row = {
+      _id: '67d8928150621bcef434a1f9',
+      slug: 'fallback-topic-facet',
+      name: 'Fallback Topic Facet Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      departments: ['Physics'],
+      researchAreas: ['Optics'],
+      keywords: [],
+      sourceUrls: [],
+      ...validPublicDescriptions,
+    };
+    mocks.search.mockRejectedValue(new Error('meili unavailable'));
+    mocks.researchEntityFind.mockReturnValue(queryResult([row]));
+
+    const unfiltered = await searchResearchGroupsViaMeili('', {}, 1, 24);
+    const filtered = await searchResearchGroupsViaMeili('', { researchAreas: ['Optics'] }, 1, 24);
+
+    expect(unfiltered.facetDistribution).not.toHaveProperty('researchAreas');
+    expect(unfiltered.facetDistribution?.departments).toEqual({ Physics: 1 });
+    expect(filtered.facetDistribution?.researchAreas).toEqual({ Optics: 1 });
   });
 
   it('strips glued "YSM Researcher" boilerplate from the researchAreas facet and merges counts (#742)', async () => {
@@ -2529,7 +2595,6 @@ describe('searchResearchGroupsViaMeili', () => {
         facetDistribution: {
           schools: { 'School of Medicine': 210, 'Faculty of Arts and Sciences': 90 },
           departments: { Oncology: 120 },
-          researchAreas: { Oncology: 300 },
         },
       });
 
@@ -2539,13 +2604,12 @@ describe('searchResearchGroupsViaMeili', () => {
       rankingScoreThreshold: 0.15,
       page: 1,
       hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
-      facets: ['schools', 'departments', 'researchAreas', 'entityType'],
+      facets: ['schools', 'departments', 'entityType'],
     });
     expect(result.estimatedTotalHits).toBe(313);
     expect(result.facetDistribution).toEqual({
       school: { 'School of Medicine': 210, 'Faculty of Arts and Sciences': 90 },
       departments: { Oncology: 120 },
-      researchAreas: { Oncology: 300 },
     });
   });
 

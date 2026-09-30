@@ -411,7 +411,11 @@ export interface PublicResearchEntityDtoOptions {
   leadMemberNames?: readonly string[];
 }
 
-const LIST_TRIMMED_DESCRIPTION_FIELDS = new Set(['fullDescription', 'profileSynthesisDescription']);
+const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set([
+  'fullDescription',
+  'profileSynthesisDescription',
+  'recentGrants',
+]);
 
 function publicTextValue(value: unknown): unknown {
   if (typeof value === 'string') {
@@ -475,7 +479,7 @@ export function toPublicResearchEntityDto(
 
   const currentFunding = servedCurrentFunding(group);
   for (const field of OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS) {
-    if (options.forList && LIST_TRIMMED_DESCRIPTION_FIELDS.has(field)) continue;
+    if (options.forList && LIST_TRIMMED_DETAIL_ONLY_FIELDS.has(field)) continue;
     if (isCurrentFundingField(field)) {
       if (currentFunding[field] !== undefined) dto[field] = publicTextValue(currentFunding[field]);
       continue;
@@ -560,7 +564,7 @@ export function toPublicResearchEntityDto(
     dto.methods = publicMethodsArray(group.methods, dto.researchAreas);
   }
 
-  if (group.sourceLinkHealth !== undefined) {
+  if (!options.forList && group.sourceLinkHealth !== undefined) {
     dto.sourceLinkHealth = publicSourceLinkHealthArray(group.sourceLinkHealth);
   }
 
