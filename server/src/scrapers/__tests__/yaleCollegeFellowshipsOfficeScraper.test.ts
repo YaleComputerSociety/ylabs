@@ -14,6 +14,7 @@ import {
   STEM_FELLOWSHIPS_FUNDING_HUB_URL,
   STUDENT_FACULTY_AWARDS_INDEX_URL,
   parseFundingYaleSitemapProgramUrls,
+  inferPurpose,
   YaleCollegeFellowshipsOfficeScraper,
 } from '../sources/yaleCollegeFellowshipsOfficeScraper';
 
@@ -2335,5 +2336,208 @@ describe('YaleCollegeFellowshipsOfficeScraper MacMillan council grant pages (#15
       .map((obs) => obs.value);
     expect(applicationLinks).toContain(communityForcePortalUrl);
     expect(applicationLinks).toContain('https://studentgrants.yale.edu/');
+  });
+});
+
+describe('YaleCollegeFellowshipsOfficeScraper third-party application routes (#4086)', () => {
+  const departmentProgramUrl =
+    'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program';
+
+  const pageWithApplyButton = (href: string, anchorText = 'Apply Now') => `
+        <main>
+          <h1>Fixture Department Research Internship Program</h1>
+          <p>
+            Interns conduct an independent research project with a faculty mentor.
+            <a href="${href}">${anchorText}</a>
+          </p>
+        </main>
+      `;
+
+  it('keeps a Google Form apply button as the application route', () => {
+    const candidates = parseFellowshipCatalogPage(
+      pageWithApplyButton('http://forms.gle/FIXTUREFORMKEY1'),
+      departmentProgramUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.applicationLink).toBe('https://forms.gle/FIXTUREFORMKEY1');
+    expect(candidates[0]?.links).toEqual([
+      { label: 'Apply Now', url: 'https://forms.gle/FIXTUREFORMKEY1' },
+    ]);
+  });
+
+  it.each([
+    ['https://apply.interfolio.com/00000', 'Start your application'],
+    ['https://fixture.slideroom.com/permalink/program/00000', 'Submit materials'],
+    ['https://fixture.submittable.com/submit', 'Submit'],
+  ])('keeps an application-management portal route: %s', (href, anchorText) => {
+    const candidates = parseFellowshipCatalogPage(
+      pageWithApplyButton(href, anchorText),
+      departmentProgramUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.applicationLink).toBe(href);
+  });
+
+  it('keeps an application-management portal route even when the anchor text does not say apply', () => {
+    const candidates = parseFellowshipCatalogPage(
+      pageWithApplyButton('https://apply.interfolio.com/00000', 'Program portal'),
+      departmentProgramUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.applicationLink).toBe('https://apply.interfolio.com/00000');
+  });
+
+  it('ignores a general-purpose form host the page does not present as the application', () => {
+    const candidates = parseFellowshipCatalogPage(
+      pageWithApplyButton(
+        'https://fixture.qualtrics.com/jfe/form/SV_0000',
+        'Tell us what you think',
+      ),
+      departmentProgramUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.applicationLink).toBeUndefined();
+    expect(candidates[0]?.links).toEqual([]);
+  });
+
+  it('keeps a Google Forms document path but not an unrelated Google Docs link', () => {
+    const [applicationForm] = parseFellowshipCatalogPage(
+      pageWithApplyButton('https://docs.google.com/forms/d/e/1FAIpQLSfixture/viewform'),
+      departmentProgramUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+    expect(applicationForm?.applicationLink).toBe(
+      'https://docs.google.com/forms/d/e/1FAIpQLSfixture/viewform',
+    );
+
+    const [spreadsheet] = parseFellowshipCatalogPage(
+      pageWithApplyButton('https://docs.google.com/spreadsheets/d/1fixture/edit', 'Apply Now'),
+      departmentProgramUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+    expect(spreadsheet?.applicationLink).toBeUndefined();
+  });
+
+  it('still refuses a portal URL whose only specificity is a fragment', () => {
+    // A hash-routed portal link normalizes to a bare root, which the shared
+    // bare-root guard refuses for the same reason it refuses a site homepage.
+    const candidates = parseFellowshipCatalogPage(
+      pageWithApplyButton('https://fixture.slideroom.com/#/permalink/program/00000'),
+      departmentProgramUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.applicationLink).toBeUndefined();
+  });
+
+  it('upgrades a plaintext portal route to https so an application is not submitted in the clear', () => {
+    const candidates = parseFellowshipCatalogPage(
+      pageWithApplyButton('http://forms.gle/FIXTUREFORMKEY1'),
+      departmentProgramUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.applicationLink).toBe('https://forms.gle/FIXTUREFORMKEY1');
+  });
+
+  it('does not admit a lookalike host that merely ends with a portal domain', () => {
+    const candidates = parseFellowshipCatalogPage(
+      pageWithApplyButton('https://notforms.gle.example.com/apply', 'Apply Now'),
+      departmentProgramUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.applicationLink).toBeUndefined();
+  });
+});
+
+describe('YaleCollegeFellowshipsOfficeScraper inferred purpose (#4086)', () => {
+  it('does not read a Study purpose out of the idiom "of course"', () => {
+    expect(inferPurpose('Can I contact a faculty member directly? Yes of course!')).not.toContain(
+      'Study',
+    );
+  });
+
+  it('does not read a Travel purpose out of international eligibility prose', () => {
+    expect(
+      inferPurpose(
+        'Does the program consider International Students? Yes! We have had international student interns.',
+      ),
+    ).not.toContain('Travel');
+  });
+
+  it('does not read a Travel purpose out of a FAQ declining to cover travel', () => {
+    expect(
+      inferPurpose('Does the program cover my travel cost? It depends on the research projects.'),
+    ).not.toContain('Travel');
+  });
+
+  it('does not read a Service purpose out of an unrelated use of the word service', () => {
+    expect(inferPurpose('Interns receive dining hall and health service access.')).not.toContain(
+      'Service',
+    );
+  });
+
+  it('still reads the purpose a page states', () => {
+    expect(inferPurpose('This travel grant supports conference attendance.')).toContain('Travel');
+    expect(inferPurpose('Supports a summer of study abroad.')).toEqual(
+      expect.arrayContaining(['Study', 'Travel']),
+    );
+    expect(inferPurpose('Covers tuition for an approved course of study.')).toContain('Study');
+    expect(inferPurpose('A public service fellowship for rising seniors.')).toContain('Service');
+    expect(inferPurpose('Funds an independent research project with a faculty mentor.')).toContain(
+      'Research',
+    );
+  });
+});
+
+describe('YaleCollegeFellowshipsOfficeScraper administering office (#4086)', () => {
+  const programHtml = `
+        <main>
+          <h1>Fixture Undergraduate Research Fellowship</h1>
+          <p>Supports an independent research project with a faculty mentor.</p>
+        </main>
+      `;
+
+  const officeFor = (pageUrl: string) => {
+    const [candidate] = parseFellowshipCatalogPage(
+      programHtml,
+      pageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+    return candidate?.contactOffice;
+  };
+
+  it('names the fellowships office for a page on the office’s own site', () => {
+    expect(
+      officeFor('https://funding.yale.edu/find-funding/fixture-undergraduate-research-fellowship'),
+    ).toBe('Yale Fellowships and Funding');
+  });
+
+  it('claims no office for a page on a department or school site', () => {
+    expect(
+      officeFor(
+        'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
+      ),
+    ).toBe('');
+    expect(officeFor('https://economics.yale.edu/undergraduate/tobin-ra-fellowship')).toBe('');
+  });
+
+  it('asserts the empty office so a re-read clears a row that carries the wrong one', () => {
+    const [candidate] = parseFellowshipCatalogPage(
+      programHtml,
+      'https://economics.yale.edu/undergraduate/tobin-ra-fellowship',
+      new Date('2026-01-01T00:00:00Z'),
+    );
+    const contactOffice = candidateToObservations(candidate).find(
+      (obs) => obs.field === 'contactOffice',
+    );
+
+    expect(contactOffice).toBeDefined();
+    expect(contactOffice?.value).toBe('');
   });
 });
