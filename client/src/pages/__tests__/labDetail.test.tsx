@@ -1253,7 +1253,7 @@ describe('LabDetail page', () => {
     expect(screen.queryByText('How to get involved')).toBeNull();
   });
 
-  it('keeps a join page as the place to apply beside a lead card that links the profile', async () => {
+  it('offers only the join page, not the research website too, beside a lead card that links the profile', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
@@ -1280,9 +1280,7 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: 'See how to get involved' }).getAttribute('href')).toBe(
       JOIN_PAGE_URL,
     );
-    expect(screen.getByRole('link', { name: 'Visit research website' }).getAttribute('href')).toBe(
-      RESEARCH_WEBSITE_URL,
-    );
+    expect(screen.queryByRole('link', { name: 'Visit research website' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
   });
 
