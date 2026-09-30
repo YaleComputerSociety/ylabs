@@ -557,6 +557,8 @@ Review the artifact and confirm all of the following:
 - `targetEnvironment` is `production`.
 - `syntheticReferenceBlockersClear` is `true`.
 - `applyBlockers` is empty.
+- `productionAccountCarry` accounts for every Production login: an `inserted` of 0 while Production has logged-in users is a stop.
+  `docs/release-process.md` ("Promoting data, not just code") owns why the promotion carries them and how a same-netid Beta row is re-keyed.
 - `includesObservations` is `false` unless the evidence log was deliberately requested with `--include-observations`.
 - `includesScrapeRuns` is `false` unless `--include-scrape-runs` was passed, and leaving it off is the correct default.
   Production has never scraped anything - Development is the only environment that does - so a promoted `scrape_runs` is a copy of Development's history wearing Production's name.
@@ -592,7 +594,7 @@ The promotion no longer requires an operator-supplied restore point, and no long
 `ATLAS_RESTORE_POINT` was the script's only rollback story and it was unverifiable: any non-empty string satisfied the check, so it recorded an operator's intention rather than a recoverable state (#2347).
 
 The rollback is now in the script.
-`promoteAcceptedBetaCopy` stages every collection under `__prod_promote_staging_*`, renames the live collections to `__prod_promote_backup_*`, swaps staging into place, verifies that each promoted collection holds exactly the row count Beta offered, and only then drops the backups.
+`promoteAcceptedBetaCopy` stages every collection under `__prod_promote_staging_*`, renames the live collections to `__prod_promote_backup_*`, swaps staging into place, carries Production's logged-in accounts out of the `accounts` backup, verifies that each promoted collection holds the row count Beta offered plus those carried accounts, and only then drops the backups.
 Any failure before that verification passes rolls every collection back to its pre-run state, which is asserted against a real mongod rather than a mocked driver.
 
 An Atlas restore point is still worth having as defence against something outside this script, and Atlas Free provides no managed backups, so record one if your tier supports it.
@@ -615,7 +617,7 @@ CONFIRM_PROD_SCRAPE=true \
   --output /tmp/ylabs-production-promotion-apply.json
 ```
 
-Stop if the command does not print `"status": "applied"` or if any post-copy count differs from the Beta source copy count.
+Stop if the command does not print `"status": "applied"` or if any post-copy count differs from the Beta source copy count, `accounts` excepted: it is expected to exceed Beta's count by the accounts carried from Production.
 
 ## Phase 5: Production Search and Smoke Gate - Run in the Production Render Shell
 

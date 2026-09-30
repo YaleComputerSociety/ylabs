@@ -8,6 +8,12 @@ import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
+  ACCOUNT_ID_REFERENCE_FIELDS,
+  applyAccountCarry,
+  loadAccountCarryPlan,
+  type AccountCarryPlan,
+} from './promotionAccountCarry';
+import {
   applyStagedCollectionSwap,
   mirroredValidationOptions,
   stagedSwapCollectionExists,
@@ -116,12 +122,6 @@ export interface PromotionSummary {
   applyBlockers: string[];
   blockedSyntheticUserReferences: SyntheticUserReference[];
 }
-
-const ACCOUNT_REFERENCE_FIELDS: Array<{ collection: string; field: string }> = [
-  { collection: 'researchers', field: 'accountId' },
-  { collection: 'research_entities', field: 'studentVisibilityReviewedByAccountId' },
-  { collection: 'fellowships', field: 'studentVisibilityReviewedByAccountId' },
-];
 
 const COLLECTION_CATEGORY_ORDER: PromotionCollectionCategory[] = [
   'research-discovery',
@@ -471,7 +471,7 @@ async function buildPlan(
   );
 }
 
-async function syntheticUserReferences(betaDb: Db): Promise<SyntheticUserReference[]> {
+export async function syntheticUserReferences(betaDb: Db): Promise<SyntheticUserReference[]> {
   const excludedUsers = await betaDb
     .collection('accounts')
     .find(SYNTHETIC_USER_MATCH, { projection: { _id: 1 } })
@@ -480,7 +480,9 @@ async function syntheticUserReferences(betaDb: Db): Promise<SyntheticUserReferen
   if (excludedIds.length === 0) return [];
 
   const rows = await Promise.all(
-    ACCOUNT_REFERENCE_FIELDS.map(async ({ collection, field }) => {
+    ACCOUNT_ID_REFERENCE_FIELDS.filter(({ collection }) =>
+      COPY_COLLECTIONS.some((copied) => copied.name === collection),
+    ).map(async ({ collection, field }) => {
       const exists = await betaDb
         .listCollections({ name: collection }, { nameOnly: true })
         .hasNext();
@@ -617,6 +619,31 @@ async function recordScrapeRunsRetirement(
   });
 }
 
+function withCarriedAccounts(plan: CollectionPlan[], carriedInserts: number): CollectionPlan[] {
+  return plan.map((row) =>
+    row.name === 'accounts'
+      ? { ...row, sourceCopyCount: row.sourceCopyCount + carriedInserts }
+      : row,
+  );
+}
+
+export function summarizeAccountCarry(carry: AccountCarryPlan) {
+  return {
+    refreshed: carry.refreshes.length,
+    rekeyed: carry.rekeys.length,
+    inserted: carry.inserts.length,
+  };
+}
+
+export async function previewAccountCarry(betaDb: Db, productionDb: Db): Promise<AccountCarryPlan> {
+  return loadAccountCarryPlan({
+    productionDb,
+    productionAccountsCollection: 'accounts',
+    promotedAccounts: betaDb.collection('accounts'),
+    promotedAccountFilter: SYNTHETIC_USER_FILTER,
+  });
+}
+
 export async function applyCopy(betaDb: Db, productionDb: Db, options: PromotionOptions) {
   const collections = promotionCollectionsForOptions(options);
   const plan = await buildPlan(betaDb, productionDb, options);
@@ -624,6 +651,8 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
   const retiredCount = retiring
     ? await productionDb.collection('scrape_runs').countDocuments({})
     : 0;
+
+  let carriedAccountInserts = 0;
 
   await applyStagedCollectionSwap({
     targetDb: productionDb,
@@ -633,6 +662,18 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
     label: 'Beta to Production promotion',
     stage: (collection, operationId) =>
       stageCollection(betaDb, productionDb, collection, operationId),
+    afterCutover: async (backups) => {
+      const productionAccounts = backups.get('accounts');
+      if (!productionAccounts) return;
+      const carry = await loadAccountCarryPlan({
+        productionDb,
+        productionAccountsCollection: productionAccounts,
+        promotedAccounts: productionDb.collection('accounts'),
+        promotedAccountFilter: SYNTHETIC_USER_FILTER,
+      });
+      await applyAccountCarry(productionDb, carry);
+      carriedAccountInserts = carry.inserts.length;
+    },
     verify: async () => {
       const actualCounts = new Map<string, number>();
       for (const collection of collections) {
@@ -642,7 +683,10 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
         );
       }
       const mismatches = buildPromotionCutoverMismatches(
-        plan.filter((row) => collections.some((collection) => collection.name === row.name)),
+        withCarriedAccounts(
+          plan.filter((row) => collections.some((collection) => collection.name === row.name)),
+          carriedAccountInserts,
+        ),
         actualCounts,
       );
       if (mismatches.length > 0) {
@@ -693,8 +737,14 @@ async function main() {
       productionObservationCount,
     );
 
-    console.log(JSON.stringify(summary, null, 2));
-    writePromotionOutput(summary, options.output);
+    const report = {
+      ...summary,
+      productionAccountCarry: summarizeAccountCarry(
+        await previewAccountCarry(betaDb, productionDb),
+      ),
+    };
+    console.log(JSON.stringify(report, null, 2));
+    writePromotionOutput(report, options.output);
 
     if (options.mode === 'apply') {
       assertPromotionSummaryCanApply(summary);
