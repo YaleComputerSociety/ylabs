@@ -16,9 +16,15 @@ Most of the panel is a single MongoDB aggregation on the request, so it says wha
 | Has a research website, Generic "Faculty Research" title | Live aggregation | Now |
 | Has topics, No website and no topics, Opens by stating the research, Card summary only echoes the topics, Public description invariant fails | Latest `corpus_quality_snapshots` row, tagged **measured** on screen | As of that measurement |
 
-Three rows cannot be an aggregation: each needs the roster resolved and `buildResearchEntityPublicDescriptionRepresentation` built per entity, which is JavaScript rules over 2,839 lines and about **13 seconds** over the served corpus, against about **150 ms** for the aggregation. Those three carry a `measured` tag and the header says how many rows are in that state, so nobody reads an as-of number as a now number.
+Three rows cannot be an aggregation: each needs the roster resolved and `buildResearchEntityPublicDescriptionRepresentation` built per entity, which is JavaScript rules over 2,839 lines and, measured on 2026-09-14, about **13 seconds** over the served corpus against about **150 ms** for the aggregation.
+Read that 13 seconds as a pre-#4093 upper bound rather than a current figure.
+#4093 memoized the field-quality scoring a row was repeating once per card candidate, which cut this same representation over a 24-row browse page from 123 ms to 68 ms, so the pass over the corpus is now materially cheaper and has not been re-timed end to end.
+The choice does not turn on the exact number: it is seconds against milliseconds either way, and halving seconds leaves them seconds.
+Those three carry a `measured` tag and the header says how many rows are in that state, so nobody reads an as-of number as a now number.
 
-**The other five were measured to be identical, not assumed.** Over 3,120 served Development rows on 2026-09-14 the aggregation and the representation returned the same counts: research website 1,276, topics 3,026, topic total 15,136, dead ends 69, generic title 1,471. Routing them through the representation cost 13 seconds and bought nothing, so they moved.
+**The other five were measured to be identical, not assumed.**
+Over 3,120 served Development rows on 2026-09-14 the aggregation and the representation returned the same counts: research website 1,276, topics 3,026, topic total 15,136, dead ends 69, generic title 1,471.
+Routing them through the representation cost those same seconds and bought nothing, so they moved.
 
 **The topic metrics crossed that line in #3379, and the drift this paragraph warned about is why.**
 The unsourced domain-coherence guard rewrites `researchAreas` at serve time, reading `fieldProvenance` and the row's own prose, so no aggregation can reproduce it.

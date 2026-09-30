@@ -3,7 +3,8 @@
  *
  * Measured on 3,120 served Development rows: this returns byte-identical counts
  * to the roster-resolved representation pass for every metric it covers, in
- * ~150ms against ~13,000ms. So routing these through the representation bought
+ * ~150ms against ~13,000ms before #4093 memoized the repeated field-quality
+ * scoring. So routing these through the representation bought
  * nothing and cost a live answer. The three metrics NOT here - lead sentence,
  * card-summary echo, and the public-description invariant - genuinely need the
  * representation and its quality rules, and stay snapshot-backed.
