@@ -58,12 +58,12 @@ It enriches the bounded page with listing presence, access summaries, and planni
 - The access and planning enrichments reread overlapping collections for the same page.
 - A Meilisearch failure falls back to `ResearchEntity.find(...).lean()` without a database limit, then performs text matching, facet counting, and sorting across all matching entities in application memory.
 - The operator-only `low-first` branch also loads every matching research entity and computes quality and ordering in application memory before slicing the requested page.
-- Meilisearch may retry once without hybrid search when the embedder is missing and may retry without `browseRankScore`, and on `name` in place of `sortTitle`, when deployed sortable settings are stale.
+- Meilisearch may retry once without hybrid search when the embedder is missing and may retry without `browseRankScore` and `sortTitleQualifier`, and on `name` in place of `sortTitle`, when deployed sortable settings are stale.
 
 ### Declared indexes and settings
 
 The Meilisearch settings in `researchEntitySearchIndexService.ts` declare the filterable attributes used here, including visibility, kind, school, departments, research areas, and `hasUndergradHostingEvidence`, derived by `entityHasHostedUndergraduates` in `accessAcceptanceLevel.ts` since #3593.
-They declare `browseRankScore`, `lastObservedAt`, `name`, `sortTitle`, `createdAt`, and `updatedAt` as sortable.
+They declare `browseRankScore`, `lastObservedAt`, `name`, `sortTitle`, `sortTitleQualifier`, `createdAt`, and `updatedAt` as sortable.
 The `research_entities` schema declares single-field indexes for the common browse filters and a compound `{ studentVisibilityTier: 1, archived: 1 }` index.
 It also declares `{ archived: 1, browseRankScore: -1 }`, which does not match the public visibility predicate plus the two-key browse order as one compound index.
 The access collections declare indexes beginning with `researchEntityId`, and listings declare `{ researchEntityId: 1, archived: 1 }`.

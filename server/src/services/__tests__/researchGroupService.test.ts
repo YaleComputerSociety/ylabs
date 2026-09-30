@@ -1131,7 +1131,7 @@ describe('searchResearchGroupsViaMeili', () => {
     await searchResearchGroupsViaMeili('', {}, 1, 24, { sortBy: 'name', sortOrder: 'asc' });
 
     expect(mocks.search.mock.calls[0][1]).toEqual(
-      expect.objectContaining({ sort: ['sortTitle:asc'] }),
+      expect.objectContaining({ sort: ['sortTitle:asc', 'sortTitleQualifier:asc'] }),
     );
   });
 
@@ -1151,6 +1151,48 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search).toHaveBeenCalledTimes(2);
     expect(mocks.search.mock.calls[1][1]).toEqual(expect.objectContaining({ sort: ['name:desc'] }));
     expect(result.degraded).toBe(true);
+  });
+
+  it('orders same-titled rows by the department suffix their cards carry in the Mongo fallback', async () => {
+    mocks.search.mockRejectedValueOnce(new Error('meili unavailable'));
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: '67d8928150621bcef434a1f1',
+          slug: 'nebula-physics',
+          name: 'Nebula Imaging Center',
+          kind: 'center',
+          entityType: 'CENTER',
+          departments: ['Physics'],
+          researchAreas: [],
+          keywords: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+        {
+          _id: '67d8928150621bcef434a1f2',
+          slug: 'nebula-astronomy',
+          name: 'Nebula Imaging Center',
+          kind: 'center',
+          entityType: 'CENTER',
+          departments: ['Astronomy'],
+          researchAreas: [],
+          keywords: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('', {}, 1, 24, {
+      sortBy: 'name',
+      sortOrder: 'asc',
+    });
+
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+      'nebula-astronomy',
+      'nebula-physics',
+    ]);
   });
 
   it('expands AI and restricts short alias searches to topic fields', async () => {

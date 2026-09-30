@@ -114,6 +114,7 @@ describe('syncEntity transform', () => {
       departments: ['Bio'],
       researchAreas: ['Genetics'],
       sortTitle: 'smith lab',
+      sortTitleQualifier: 'bio)',
     });
     expect(docs[0]).not.toHaveProperty('_id');
     expect(docs[0]).not.toHaveProperty('__v');
@@ -205,8 +206,8 @@ describe('syncEntities', () => {
     const [meiliDocs, opts] = mocks.addDocuments.mock.calls[0];
     expect(opts).toEqual({ primaryKey: 'id' });
     expect(meiliDocs).toEqual([
-      { id: 'a', name: 'A', sortTitle: 'a' },
-      { id: 'b', name: 'B', sortTitle: 'b' },
+      { id: 'a', name: 'A', sortTitle: 'a', sortTitleQualifier: '' },
+      { id: 'b', name: 'B', sortTitle: 'b', sortTitleQualifier: '' },
     ]);
   });
 

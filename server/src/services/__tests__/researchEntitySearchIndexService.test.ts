@@ -99,6 +99,39 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc?.sortTitle).toBe('emergent materials" center');
   });
 
+  it('indexes the department and school a same-titled card is suffixed with as the tiebreak', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-sort-title-qualifier',
+      name: 'Nebula Imaging Center',
+      kind: 'center',
+      entityType: 'CENTER',
+      departments: ['Écology', 'Physics'],
+      school: 'Graduate School',
+      archived: false,
+    });
+
+    expect(doc?.sortTitleQualifier).toBe('ecology) graduate school)');
+  });
+
+  it('breaks a title tie in the order the suffixed headings read when one label prefixes another', () => {
+    const qualifierFor = (department: string) =>
+      buildResearchEntitySearchIndexDocument({
+        _id: `entity-sort-title-qualifier-${department}`,
+        name: 'Nebula Imaging Center',
+        kind: 'center',
+        entityType: 'CENTER',
+        departments: [department],
+        archived: false,
+      })?.sortTitleQualifier as string;
+    const headings = ['Physics', 'Physics and Astronomy'].map(
+      (department) => `nebula imaging center (${department.toLowerCase()})`,
+    );
+
+    expect(qualifierFor('Physics and Astronomy') < qualifierFor('Physics')).toBe(
+      headings[1] < headings[0],
+    );
+  });
+
   it('sorts a faculty research row by its title without the synthesized suffix', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-sort-title-faculty',
@@ -656,7 +689,14 @@ describe('researchEntitySearchIndexService', () => {
     });
     expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain('mutated');
     expect(getResearchEntitySearchIndexSettings().sortableAttributes).toEqual(
-      expect.arrayContaining(['lastObservedAt', 'name', 'sortTitle', 'createdAt', 'updatedAt']),
+      expect.arrayContaining([
+        'lastObservedAt',
+        'name',
+        'sortTitle',
+        'sortTitleQualifier',
+        'createdAt',
+        'updatedAt',
+      ]),
     );
   });
 
