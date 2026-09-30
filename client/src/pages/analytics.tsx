@@ -745,7 +745,7 @@ const Analytics = () => {
                   ? `No qualified-action events were recorded in ${selectedRangeLabel}, so this rate is unmeasured rather than zero.`
                   : `Share of logged-in students who reached an official next step (application, open position, or reviewed route) in ${selectedRangeLabel}.`
               }
-              tooltip="Distinct students who reached an official next step, divided by distinct logged-in students, for the selected range. Reads as not recorded when no qualified-action event reached the store."
+              definition="Distinct students who reached an official next step, divided by distinct logged-in students, for the selected range. Reads as not recorded when no qualified-action event reached the store."
               tone={funnel && funnel.overallConversionRate === null ? 'amber' : 'blue'}
             />
             <DashboardMetric
@@ -767,7 +767,7 @@ const Analytics = () => {
               title="Source reviewers"
               value={formatNumber(journeyMetrics.sourceInspections)}
               context={`Students who opened a profile, publication, website, ORCID, or evidence record in ${selectedRangeLabel}.`}
-              tooltip="Distinct students who opened at least one source detail (profile, publication, website, ORCID, or evidence). Research reads, not applications."
+              definition="Distinct students who opened at least one source detail (profile, publication, website, ORCID, or evidence). Research reads, not applications."
               tone="blue"
             />
             <DashboardMetric
@@ -782,7 +782,7 @@ const Analytics = () => {
                   ? `No qualified-action events were recorded in ${selectedRangeLabel}, so this is unmeasured rather than zero.`
                   : `Students who clicked an application, open-position, or reviewed-route link in ${selectedRangeLabel}.`
               }
-              tooltip="Distinct students who clicked at least one official-route link: application, open position, or reviewed route."
+              definition="Distinct students who clicked at least one official-route link: application, open position, or reviewed route."
               tone="blue"
             />
             <DashboardMetric
@@ -797,7 +797,7 @@ const Analytics = () => {
                   ? `No qualified-action events were recorded in ${selectedRangeLabel}, so this is unmeasured rather than zero.`
                   : `Students who opened an application or open-position link in ${selectedRangeLabel}.`
               }
-              tooltip="Distinct students who opened an application or open-position link. A subset of official-route reach."
+              definition="Distinct students who opened an application or open-position link. A subset of official-route reach."
               tone="green"
             />
           </div>
