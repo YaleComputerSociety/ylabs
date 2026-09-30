@@ -78,13 +78,19 @@ No `research_qualified_action` can be recorded while planning contexts have no s
 The per-user Profile Opens column (the `researchViews` field) counts `research_profile_open`, because `research_view` was only ever emitted by the fellowship detail route and nothing emits it after #3766.
 Top Research Entities ranks research and profiles by `research_profile_open` and programs by `fellowship_view`; before #3766 it counted `research_view` and so listed programs only.
 Action needed and the top zero-result queries rank every query group with a zero-result search, not only the 100 most searched; action needed also requires at least 2 searches.
+Every action card is therefore a zero-result query group, so the Items to review tile counts distinct query groups, keyed by surface and query, across the action cards and the zero-result and low-result lists, and a query that appears in more than one of them counts once (#4006).
+Before #4006 the tile summed the three list lengths, and on Development on 2026-09-30 it read 18 for 15 distinct queries.
+
+The admin funnel's Saved research stage counts distinct students with a `research_save` whose `operation` is `save` and whose `entityType` is `research_entity` (#4005).
+A removal is the opposite of the step the stage names, and a program watch is a `fellowship` row from a different journey, so neither counts.
+Before #4005 the stage counted any `research_save`, and on Development it reported one saver where the only rows in range were program removals.
 
 The admin funnel reports source inspections, official-route attempts, application opens, and confirmed outcomes separately.
 Application opens include only `open_position` and `official_application` qualified categories.
 Official-route attempts include only the `open_position`, `official_application`, and `reviewed_route` categories, and exclude `qualified_participation`.
 Confirmed outcomes remain `outreach_outcome` records and are never inferred from route attempts.
 
-Search engagement is defined in [Topic matching and search engagement](topic-matching-and-search-engagement.md#search-engagement), and counts a `research_profile_open` or `research_save` as engagement.
+Search engagement is defined in [Topic matching and search engagement](topic-matching-and-search-engagement.md#search-engagement), and counts a `research_profile_open` or a `research_save` that saved rather than removed as engagement.
 `research_view` was only ever emitted by the fellowship detail route, so before #3632 a research-surface search could never read as engaged: on Production, 0 of 39 research searches with results counted, against 25 that were followed by a profile open.
 `research_profile_open.source` is the surface the student came from, carried in router state by the card, saved-plan, or related-profile link they followed, and `direct` only when no such link was followed.
 Links between profiles (related, affiliated, and similar research) record `related_research`.

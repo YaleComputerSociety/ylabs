@@ -39,6 +39,10 @@ import {
 import { SortOrder, UserActivitySort } from '../components/analytics/analyticsTypes';
 import ScrollableTableRegion from '../components/analytics/ScrollableTableRegion';
 import {
+  searchesThatReachedTheCorpus,
+  summarizeSearchReviewQueue,
+} from '../components/analytics/searchReviewQueue';
+import {
   AUDIT_ACTION_LABELS,
   DashboardMetric,
   DetailSectionHeader,
@@ -632,7 +636,8 @@ const Analytics = () => {
 
   const adminAccessHistory = adminAccess.history || [];
 
-  const searchTotal = searchQuality?.totalSearches || 0;
+  const searchesReached = searchesThatReachedTheCorpus(searchQuality);
+  const degradedSearches = searchQuality?.degradedSearches || 0;
   const engagedSearches = searchQuality?.engagedSearches || 0;
   const zeroResultQueries = searchQuality?.zeroResultQueries || [];
   const lowResultQueries = searchQuality?.lowResultQueries || [];
@@ -647,13 +652,14 @@ const Analytics = () => {
   const showSevenDayBreakdown =
     analyticsRange === '30d' || analyticsRange === 'semester' || analyticsRange === 'all';
   const showTodayBreakdown = analyticsRange !== 'today';
-  const searchSuccessRate = searchTotal > 0 ? engagedSearches / searchTotal : null;
+  const searchSuccessRate = searchesReached > 0 ? engagedSearches / searchesReached : null;
   const researchCoverage = data.researchEntities;
   const activeEntities = researchCoverage.overview.active;
   const studentReadyEntities =
     researchCoverage.byVisibilityTier.find((tier) => tier.tier === 'student_ready')?.count || 0;
   const studentReadyShare = activeEntities > 0 ? studentReadyEntities / activeEntities : null;
-  const attentionCount = actionCards.length + zeroResultQueries.length + lowResultQueries.length;
+  const reviewQueue = summarizeSearchReviewQueue(actionCards, zeroResultQueries, lowResultQueries);
+  const attentionCount = reviewQueue.total;
   const healthTone =
     attentionCount > 4 || (searchSuccessRate !== null && searchSuccessRate < 0.75)
       ? 'red'
@@ -661,14 +667,11 @@ const Analytics = () => {
         ? 'amber'
         : 'green';
   const attentionDrivers = [
-    actionCards.length > 0
-      ? `${formatNumber(actionCards.length)} action card${actionCards.length === 1 ? '' : 's'}`
+    reviewQueue.zeroResultQueries > 0
+      ? `${formatNumber(reviewQueue.zeroResultQueries)} zero-result quer${reviewQueue.zeroResultQueries === 1 ? 'y' : 'ies'}`
       : null,
-    zeroResultQueries.length > 0
-      ? `${formatNumber(zeroResultQueries.length)} zero-result quer${zeroResultQueries.length === 1 ? 'y' : 'ies'}`
-      : null,
-    lowResultQueries.length > 0
-      ? `${formatNumber(lowResultQueries.length)} low-result quer${lowResultQueries.length === 1 ? 'y' : 'ies'}`
+    reviewQueue.lowResultQueries > 0
+      ? `${formatNumber(reviewQueue.lowResultQueries)} low-result quer${reviewQueue.lowResultQueries === 1 ? 'y' : 'ies'}`
       : null,
   ].filter((driver): driver is string => driver !== null);
   const topActionTitle = actionCards[0]?.title;
@@ -730,7 +733,11 @@ const Analytics = () => {
             <DashboardMetric
               title="Search success"
               value={searchSuccessRate === null ? '-' : formatPercent(searchSuccessRate)}
-              context={`${formatNumber(engagedSearches)} of ${formatNumber(searchTotal)} site searches (legacy) led to a view or save within ${formatNumber(searchQuality?.attributionWindowMinutes || 30)} minutes in ${selectedRangeLabel}.`}
+              context={`${formatNumber(engagedSearches)} of ${formatNumber(searchesReached)} site searches (legacy) led to a view or save within ${formatNumber(searchQuality?.attributionWindowMinutes || 30)} minutes in ${selectedRangeLabel}.${
+                degradedSearches > 0
+                  ? ` ${formatNumber(degradedSearches)} degraded search${degradedSearches === 1 ? '' : 'es'} left out.`
+                  : ''
+              }`}
               tone={searchSuccessRate !== null && searchSuccessRate < 0.75 ? 'amber' : 'green'}
             />
             <DashboardMetric

@@ -156,6 +156,7 @@ describe('search engagement attribution', () => {
         overall: [
           {
             totalSearches: 10,
+            degradedSearches: 0,
             zeroResultSearches: 2,
             uniqueSearchers: 4,
             engagedSearches: 3,

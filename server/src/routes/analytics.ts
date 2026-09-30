@@ -9,6 +9,7 @@ import {
   AnalyticsSortDirection,
   AnalyticsUserSort,
   AnalyticsDateRange,
+  SearchQualityQueryAnalytics,
   MAX_USER_ANALYTICS_SEARCH_LENGTH,
   getAnalytics,
   getActionNeededAnalytics,
@@ -338,6 +339,18 @@ router.get(
   }),
 );
 
+const averageResultsOverSearchesThatReachedTheCorpus = (
+  queries: SearchQualityQueryAnalytics[],
+): number => {
+  const searches = queries.reduce((sum, query) => sum + query.searchesThatReachedTheCorpus, 0);
+  if (searches === 0) return 0;
+  const results = queries.reduce(
+    (sum, query) => sum + query.avgResultCount * query.searchesThatReachedTheCorpus,
+    0,
+  );
+  return results / searches;
+};
+
 router.get(
   '/search-quality',
   isAuthenticated,
@@ -350,13 +363,9 @@ router.get(
         analytics.totalSearches - analytics.degradedSearches - analytics.zeroResultSearches,
         0,
       ),
-      avgResultsPerSearch:
-        analytics.byQueryAndEntityType.length > 0
-          ? analytics.byQueryAndEntityType.reduce(
-              (sum, query) => sum + query.avgResultCount * query.totalSearches,
-              0,
-            ) / analytics.byQueryAndEntityType.reduce((sum, query) => sum + query.totalSearches, 0)
-          : 0,
+      avgResultsPerSearch: averageResultsOverSearchesThatReachedTheCorpus(
+        analytics.byQueryAndEntityType,
+      ),
       topQueries: analytics.topQueries.map((query) => ({
         ...query,
         count: query.totalSearches,
@@ -404,8 +413,12 @@ router.get(
     const stages = [
       { key: 'research_searches', label: 'Searched research', count: analytics.researchSearches },
       { key: 'profile_opens', label: 'Opened a profile', count: analytics.researchProfileOpens },
-      { key: 'research_saves', label: 'Saved a research home', count: analytics.researchSaves },
-      { key: 'comparisons', label: 'Compared saved homes', count: analytics.researchComparisons },
+      { key: 'research_saves', label: 'Saved research', count: analytics.researchSaves },
+      {
+        key: 'comparisons',
+        label: 'Compared saved research',
+        count: analytics.researchComparisons,
+      },
       { key: 'plans', label: 'Updated a plan', count: analytics.researchPlanUpdates },
       {
         key: 'qualified_actions',
@@ -450,6 +463,8 @@ router.get(
     const analytics = await getActionNeededAnalytics(parseAnalyticsRange(request.query.range));
     const searchCards = analytics.highSearchLowResults.slice(0, 4).map((query) => ({
       id: `search-${query.entityType}-${query.query}`,
+      query: query.query,
+      entityType: query.entityType,
       type: 'Search gap',
       priority: query.zeroResultRate >= 0.8 ? 'high' : 'medium',
       title: query.query || '(empty search)',

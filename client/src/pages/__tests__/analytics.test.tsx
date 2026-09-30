@@ -87,6 +87,24 @@ const analyticsData: AnalyticsData = {
   timestamp: '2026-05-17T00:00:00.000Z',
 };
 
+const dashboardEndpoints =
+  (overrides: Record<string, unknown> = {}) =>
+  (url: string) => {
+    const responses: Record<string, unknown> = {
+      '/analytics': analyticsData,
+      '/analytics/users': { users: [], total: 0, limit: 25 },
+      '/admin/admin-grants': { activeCount: 0, grants: [], legacyAdminsWithoutGrant: [] },
+      '/analytics/search-quality': { totalSearches: 0, zeroResultSearches: 0 },
+      '/analytics/search-queries': { queries: [], limit: 25 },
+      '/analytics/funnel': { stages: [] },
+      '/analytics/actions': { cards: [], items: [] },
+      ...overrides,
+    };
+    return url in responses
+      ? Promise.resolve({ data: responses[url] })
+      : Promise.reject(new Error(`Unexpected URL: ${url}`));
+  };
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -251,7 +269,7 @@ describe('Analytics page', () => {
               { key: 'profile_opens', label: 'Opened a profile', count: 30, conversionRate: 0.75 },
               {
                 key: 'research_saves',
-                label: 'Saved a research home',
+                label: 'Saved research',
                 count: 20,
                 conversionRate: 0.67,
               },
@@ -315,7 +333,7 @@ describe('Analytics page', () => {
       expect(screen.getAllByText('quantum materials').length).toBeGreaterThan(0);
       expect(
         screen.getByText(
-          /6 of 20 site searches \(legacy\) led to a view or save within 30 minutes/,
+          /6 of 17 site searches \(legacy\) led to a view or save within 30 minutes/,
         ),
       ).toBeTruthy();
     });
@@ -385,6 +403,64 @@ describe('Analytics page', () => {
     expect(tile.className).toContain('bg-red-50');
     expect(tile.textContent).toContain('5 zero-result queries, 1 low-result query to review.');
     expect(tile.textContent).not.toContain('No urgent admin action returned');
+  });
+
+  it('keeps degraded searches out of the Search success denominator', async () => {
+    mockedAxios.get.mockImplementation(
+      dashboardEndpoints({
+        '/analytics/search-quality': {
+          totalSearches: 6,
+          degradedSearches: 4,
+          engagedSearches: 2,
+          attributionWindowMinutes: 30,
+        },
+      }),
+    );
+
+    render(<Analytics />);
+
+    const tile = await waitFor(() => {
+      const container = screen.getByText('Search success').closest('div') as HTMLElement;
+      expect(container.querySelector('.text-3xl')?.textContent).toBe('100.0%');
+      return container;
+    });
+    expect(tile.textContent).toContain('2 of 2 site searches (legacy)');
+    expect(tile.textContent).toContain('4 degraded searches left out.');
+  });
+
+  it('counts a query once in Items to review when it is both an action card and a zero-result query', async () => {
+    mockedAxios.get.mockImplementation(
+      dashboardEndpoints({
+        '/analytics/search-quality': {
+          totalSearches: 10,
+          engagedSearches: 9,
+          zeroResultQueries: [{ query: 'orbital mechanics', entityType: 'research_entity' }],
+          lowResultQueries: [],
+        },
+        '/analytics/actions': {
+          cards: [
+            {
+              id: 'search-research_entity-orbital mechanics',
+              query: 'orbital mechanics',
+              entityType: 'research_entity',
+              title: 'orbital mechanics',
+              type: 'Search gap',
+              priority: 'high',
+            },
+          ],
+        },
+      }),
+    );
+
+    render(<Analytics />);
+
+    const tile = await waitFor(() => {
+      const container = screen.getByText('Items to review').closest('div') as HTMLElement;
+      expect(container.querySelector('.text-3xl')?.textContent).toBe('1');
+      return container;
+    });
+    expect(tile.className).toContain('bg-amber-50');
+    expect(tile.textContent).toContain('1 zero-result query to review');
   });
 
   it('shows the no-action caption only when nothing drives the Items to review count', async () => {
@@ -629,32 +705,7 @@ describe('Analytics page', () => {
   });
 
   const mockDashboardEndpoints = () => {
-    mockedAxios.get.mockImplementation((url: string) => {
-      if (url === '/analytics') {
-        return Promise.resolve({ data: analyticsData });
-      }
-      if (url === '/analytics/users') {
-        return Promise.resolve({ data: { users: [], total: 0, limit: 25 } });
-      }
-      if (url === '/admin/admin-grants') {
-        return Promise.resolve({
-          data: { activeCount: 0, grants: [], legacyAdminsWithoutGrant: [] },
-        });
-      }
-      if (url === '/analytics/search-quality') {
-        return Promise.resolve({ data: { totalSearches: 0, zeroResultSearches: 0 } });
-      }
-      if (url === '/analytics/search-queries') {
-        return Promise.resolve({ data: { queries: [], limit: 25 } });
-      }
-      if (url === '/analytics/funnel') {
-        return Promise.resolve({ data: { stages: [] } });
-      }
-      if (url === '/analytics/actions') {
-        return Promise.resolve({ data: { cards: [], items: [] } });
-      }
-      return Promise.reject(new Error(`Unexpected URL: ${url}`));
-    });
+    mockedAxios.get.mockImplementation(dashboardEndpoints());
   };
 
   it('labels usage metrics with the selected range and threads the range to the server', async () => {
