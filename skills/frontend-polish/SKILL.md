@@ -55,6 +55,10 @@ Take the tells, not the taste.
 - Disabled controls explain why they are disabled, near the control, rather than looking broken.
 - Reflect meaningful state in the URL where it aids sharing and back-button behavior.
 - Buttons that trigger async work show pending state and cannot be double-submitted.
+- A control that switches between panels is a tablist, not a row of plain buttons.
+Use `client/src/hooks/useRovingTabs.ts` for the selected tab and arrow, Home, and End roving focus, and give each tab `role="tab"`, `aria-selected`, `aria-controls`, and a matching `role="tabpanel"`.
+`client/src/pages/dashboard.tsx` and `client/src/components/admin/AdminPanel.tsx` are the reference uses.
+A strip that can outgrow a 320px viewport scrolls in its own `overflow-x-auto` region so the page never scrolls sideways.
 
 ## Content, loading, and errors
 
