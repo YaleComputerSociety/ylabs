@@ -12,8 +12,7 @@ const SRC = join(__dirname, '..');
  */
 const LITERAL_FORWARD_GLYPH = /[→➔➜⟶›»]/;
 
-const LITERAL_CLOSE_GLYPH =
-  /(?<![\d}])[×✕✖✗╳⨯]|&times;|\\u00d7|\\u2715|(?:^|>)\s*[xX]\s*(?:<|$)/;
+const LITERAL_CLOSE_GLYPH = /(?<![\d}])[×✕✖✗╳⨯]|&times;|\\u00d7|\\u2715|(?:^|>)\s*[xX]\s*(?:<|$)/;
 
 /** The arrow path itself, which should exist in exactly one place. */
 const ARROW_PATH = /d="m12 5 7 7-7 7"|d="M5 12h14"/;
