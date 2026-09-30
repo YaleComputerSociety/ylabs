@@ -146,6 +146,29 @@ export const createEntityCorrectionReport = async (
   return report.toObject();
 };
 
+const REPORTER_VISIBLE_REPORT_FIELDS = [
+  '_id',
+  'category',
+  'status',
+  'note',
+  'reviewerNote',
+  'createdAt',
+] as const;
+
+export type ReporterCorrectionReport = Partial<
+  Record<(typeof REPORTER_VISIBLE_REPORT_FIELDS)[number], unknown>
+>;
+
+export const toReporterCorrectionReport = (
+  report: Record<string, unknown>,
+): ReporterCorrectionReport => {
+  const projected: ReporterCorrectionReport = {};
+  for (const field of REPORTER_VISIBLE_REPORT_FIELDS) {
+    if (report[field] !== undefined) projected[field] = report[field];
+  }
+  return projected;
+};
+
 export const listEntityCorrectionReports = async (params: {
   status?: string;
   researchEntityId?: string;

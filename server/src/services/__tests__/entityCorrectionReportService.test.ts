@@ -5,6 +5,7 @@ import {
   deriveReporterRole,
   reviewEntityCorrectionReport,
   sanitizeReportNote,
+  toReporterCorrectionReport,
 } from '../entityCorrectionReportService';
 import { ResearchEntity } from '../../models/researchEntity';
 import { EntityCorrectionReport } from '../../models/entityCorrectionReport';
@@ -76,6 +77,34 @@ describe('entityCorrectionReportService', () => {
     expect(sanitizeReportNote('  bad\u0000value  ')).toBe('bad value');
     expect(sanitizeReportNote('x'.repeat(3000)).length).toBe(2000);
     expect(sanitizeReportNote(42)).toBe('');
+  });
+
+  it('projects a report to an allowlist so a field the reporter never needs cannot reach them', () => {
+    const createdAt = new Date('2026-09-01T00:00:00.000Z');
+    expect(
+      toReporterCorrectionReport({
+        _id: reportId,
+        category: 'other',
+        status: 'accepted',
+        note: 'note',
+        reviewerNote: 'thanks',
+        createdAt,
+        reviewedBy: 'zzadm01',
+        reviewHistory: [{ reviewedBy: 'zzadm01' }],
+        reporter: { netId: 'zzrep01' },
+        researchEntityId: entityId,
+        entitySnapshot: { name: 'x' },
+        fieldAddedLater: 'internal',
+        __v: 0,
+      }),
+    ).toEqual({
+      _id: reportId,
+      category: 'other',
+      status: 'accepted',
+      note: 'note',
+      reviewerNote: 'thanks',
+      createdAt,
+    });
   });
 
   it('creates an unreviewed report without mutating the entity', async () => {

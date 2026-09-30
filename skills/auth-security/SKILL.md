@@ -69,7 +69,15 @@ Defined in `server/src/middleware/auth.ts`.
 | `isAdmin` | active `AdminGrant` for the NetID (`hasActiveAdminGrant`). |
 
 There are no `userType`-based authorization guards.
-Correction-report and listing-claim submission use `isAuthenticated`.
+Correction-report submission and the reporter's own report history use `isAuthenticated`.
+
+### Responses to a non-admin caller are allowlists
+
+A route that returns a stored document to a non-admin caller serializes it through an explicit allowlist of the fields that caller's UI reads, never the raw document and never a denylist.
+A denylist leaks every field added to the model later, and a raw document leaks whatever the admin shape carries.
+The correction-report routes are the worked example (#4011): `POST /api/research/:slug/report` and `GET /api/research/:slug/reports/mine` return `toReporterCorrectionReport` from `entityCorrectionReportService.ts`, which keeps only `_id`, `category`, `status`, `note`, `reviewerNote`, and `createdAt`.
+The reviewer's netid (`reviewedBy`, `reviewHistory`), the reporter snapshot, and entity bookkeeping stay on the admin queue alone.
+Adding a field to the reporter panel means adding it to that allowlist, and `server/src/__tests__/correctionReportReporterProjection.integration.test.ts` pins the exact key set through the mounted routes.
 
 ## Admin audit log
 

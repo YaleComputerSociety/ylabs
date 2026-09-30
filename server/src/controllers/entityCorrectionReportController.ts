@@ -6,6 +6,7 @@ import {
   createEntityCorrectionReport,
   listEntityCorrectionReports,
   reviewEntityCorrectionReport,
+  toReporterCorrectionReport,
 } from '../services/entityCorrectionReportService';
 
 export const submitEntityCorrectionReport = async (
@@ -25,7 +26,7 @@ export const submitEntityCorrectionReport = async (
       userType: currentUser.isAdmin ? 'admin' : undefined,
     });
 
-    response.status(201).json({ report });
+    response.status(201).json({ report: toReporterCorrectionReport(report) });
   } catch (error) {
     next(error);
   }
@@ -48,7 +49,12 @@ export const listMyEntityCorrectionReports = async (
       page: request.query.page as string | undefined,
       pageSize: request.query.pageSize as string | undefined,
     });
-    response.json(result);
+    response.json({
+      ...result,
+      reports: result.reports.map((report) =>
+        toReporterCorrectionReport(report as Record<string, unknown>),
+      ),
+    });
   } catch (error) {
     next(error);
   }
