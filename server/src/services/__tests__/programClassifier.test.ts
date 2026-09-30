@@ -439,4 +439,47 @@ describe('classifyProgram internship identity (#2925)', () => {
       ).toMatchObject({ programCategory: 'SUMMER_RESEARCH_PROGRAM' });
     });
   });
+
+  describe('program role (#3904)', () => {
+    it('reads a department undergraduate research page as a way in, not funding', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Studies Undergraduate Research Opportunities',
+          description:
+            'Students interested in research should contact the faculty member directly.',
+        }),
+      ).toMatchObject({
+        programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+        programRole: 'ROUTE_IN',
+        entryMode: 'CONTACT_FACULTY',
+      });
+    });
+
+    it('does not read a named summer program as a department guide', () => {
+      expect(
+        classifyProgram({ title: 'Fixture Summer Research Opportunities' }).programKind,
+      ).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
+    });
+
+    it('reads a scholarship for students pursuing research careers as recognition', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture National Scholarship',
+          purpose: ['Study'],
+          description:
+            'For sophomores and juniors intending to pursue research careers in STEM fields.',
+        }),
+      ).toMatchObject({ programKind: 'RESEARCH_AWARD', programRole: 'RECOGNIZES_RESEARCH' });
+    });
+
+    it('gives funding kinds the funding role and archive review no role', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Research Grant',
+          description: 'Supports independent summer research projects.',
+        }).programRole,
+      ).toBe('FUNDS_RESEARCH');
+      expect(classifyProgram({ title: 'Fellowships & Grants' }).programRole).toBe('UNCLASSIFIED');
+    });
+  });
 });

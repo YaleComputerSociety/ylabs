@@ -20,6 +20,7 @@ import {
 export const CLASSIFIER_OWNED_FELLOWSHIP_FIELDS = [
   'programCategory',
   'programKind',
+  'programRole',
   'entryMode',
   'studentFacingCategory',
   'requiresMentorBeforeApply',

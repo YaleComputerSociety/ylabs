@@ -1,4 +1,9 @@
-import type { ProgramCategory, ProgramEntryMode, ProgramKind } from '../models/fellowship';
+import type {
+  ProgramCategory,
+  ProgramEntryMode,
+  ProgramKind,
+  ProgramRole,
+} from '../models/fellowship';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 
 export interface ProgramClassificationInput {
@@ -17,6 +22,7 @@ export interface ProgramClassificationInput {
 export interface ProgramClassification {
   programCategory: ProgramCategory;
   programKind: ProgramKind;
+  programRole: ProgramRole;
   entryMode: ProgramEntryMode;
   studentFacingCategory: string;
   requiresMentorBeforeApply: boolean;
@@ -28,6 +34,29 @@ export interface ProgramClassification {
   programDates?: string;
   bestNextStep: string;
   prepSteps: string[];
+}
+
+type KindClassification = Omit<ProgramClassification, 'programRole'>;
+
+const ROUTE_IN_KINDS: ReadonlySet<ProgramKind> = new Set([
+  'STRUCTURED_PROGRAM',
+  'CENTER_INTERNSHIP',
+  'RA_PROGRAM',
+  'MENTOR_MATCHING',
+  'DEPARTMENT_RESEARCH_GUIDE',
+]);
+
+const FUNDS_RESEARCH_KINDS: ReadonlySet<ProgramKind> = new Set([
+  'FELLOWSHIP_FUNDING',
+  'TRAVEL_RESEARCH_GRANT',
+  'SENIOR_THESIS_FUNDING',
+]);
+
+export function programRoleForKind(kind: ProgramKind): ProgramRole {
+  if (ROUTE_IN_KINDS.has(kind)) return 'ROUTE_IN';
+  if (FUNDS_RESEARCH_KINDS.has(kind)) return 'FUNDS_RESEARCH';
+  if (kind === 'RESEARCH_AWARD') return 'RECOGNIZES_RESEARCH';
+  return 'UNCLASSIFIED';
 }
 
 function normalizeText(value: string | undefined): string {
@@ -70,6 +99,16 @@ function proseForProgram(input: ProgramClassificationInput): string {
     .join(' ');
 }
 
+// A department's own undergraduate research page is a guide to finding a faculty mentor,
+// not an award, so it is a way in even though the page mentions funding (#3904).
+const DEPARTMENT_RESEARCH_GUIDE_TITLE =
+  /^[A-Z][\w&,' -]*\s(?:undergraduate research(?: opportunities)?|research opportunities)$/i;
+
+const RESEARCH_AWARD_TITLE = /\b(?:scholarships?|prizes?)\b/;
+
+const RESEARCH_CAREER_AWARD_PROSE =
+  /\b(?:pursue|pursuing|intend(?:s|ing)? to pursue)\s+research careers?\b/;
+
 const SENIOR_RESEARCH_NAME =
   /senior (?:research|essay)|senior project|mellon senior|residential college|richter/;
 
@@ -93,7 +132,7 @@ function identityTextForProgram(input: ProgramClassificationInput): string {
     .join(' ');
 }
 
-function baseFundingClassification(): ProgramClassification {
+function baseFundingClassification(): KindClassification {
   return {
     programCategory: 'FELLOWSHIP',
     programKind: 'FELLOWSHIP_FUNDING',
@@ -115,7 +154,7 @@ const GENERIC_AWARD_HUB_TITLE =
 
 export const ARCHIVE_REVIEW_STUDENT_FACING_CATEGORY = 'Archive / review';
 
-function archiveReviewClassification(): ProgramClassification {
+function archiveReviewClassification(): KindClassification {
   return {
     programCategory: 'FELLOWSHIP',
     programKind: 'OTHER',
@@ -144,8 +183,8 @@ const GRADUATE_TRAVEL_RESEARCH =
 const COLLECTIONS_RESEARCH_HOST =
   /\blibrar(?:y|ies)\b|\barchival\b|\barchives\b|special collections|\bmuseum\b|\bgallery\b|reading room|\bresidency\b/;
 
-function graduateResearchClassification(lower: string): ProgramClassification {
-  const base: ProgramClassification = {
+function graduateResearchClassification(lower: string): KindClassification {
+  const base: KindClassification = {
     programCategory: 'FELLOWSHIP',
     programKind: 'FELLOWSHIP_FUNDING',
     entryMode: 'SECURE_MENTOR_THEN_APPLY',
@@ -237,7 +276,7 @@ function namesInternshipProgram(input: ProgramClassificationInput): boolean {
   return !FUNDING_INSTRUMENT_NAME.test(normalizeText(input.title).toLowerCase());
 }
 
-function structuredProgram(overrides: Partial<ProgramClassification>): ProgramClassification {
+function structuredProgram(overrides: Partial<KindClassification>): KindClassification {
   return {
     programCategory: 'RECURRING_PROGRAM',
     programKind: 'STRUCTURED_PROGRAM',
@@ -252,7 +291,7 @@ function structuredProgram(overrides: Partial<ProgramClassification>): ProgramCl
   };
 }
 
-export function classifyProgram(input: ProgramClassificationInput): ProgramClassification {
+function classifyProgramKind(input: ProgramClassificationInput): KindClassification {
   const title = normalizeText(input.title);
   const text = textForProgram(input);
   const lower = text.toLowerCase();
@@ -443,6 +482,43 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     return archiveReviewClassification();
   }
 
+  if (
+    DEPARTMENT_RESEARCH_GUIDE_TITLE.test(title) &&
+    !FUNDING_INSTRUMENT_NAME.test(titleLower) &&
+    !/\bsummer\b/.test(titleLower)
+  ) {
+    return {
+      programCategory: 'RECURRING_PROGRAM',
+      programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+      entryMode: 'CONTACT_FACULTY',
+      studentFacingCategory: 'Department research guide',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      bestNextStep:
+        "Use the department's guide to find faculty whose research fits your interests, then contact them directly.",
+      prepSteps: ['Faculty research fit', 'Short introduction email'],
+    };
+  }
+
+  if (
+    RESEARCH_AWARD_TITLE.test(titleLower) &&
+    (RESEARCH_CAREER_AWARD_PROSE.test(proseForProgram(input).toLowerCase()) ||
+      /\b(?:essay|thesis|research) prizes?\b/.test(titleLower))
+  ) {
+    return {
+      programCategory: 'FELLOWSHIP',
+      programKind: 'RESEARCH_AWARD',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Research award',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      bestNextStep:
+        'Check the eligibility and the campus nomination deadline; this award recognizes research you have already done.',
+      prepSteps: ['Research record', 'Faculty recommendation', 'Campus nomination'],
+    };
+  }
+
   if (/first[- ]year summer research fellowship/.test(identityLower)) {
     return {
       ...baseFundingClassification(),
@@ -585,4 +661,9 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
   }
 
   return funding;
+}
+
+export function classifyProgram(input: ProgramClassificationInput): ProgramClassification {
+  const classification = classifyProgramKind(input);
+  return { ...classification, programRole: programRoleForKind(classification.programKind) };
 }

@@ -7,6 +7,7 @@ import {
   programCategories,
   programEntryModes,
   programKinds,
+  programRoles,
 } from '../models/fellowship';
 import {
   isStudentVisibilityTier,
@@ -60,6 +61,7 @@ const MONGO_OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 const POSITIVE_INTEGER_PARAM_RE = /^[1-9]\d*$/;
 const PROGRAM_CATEGORIES = new Set<string>(programCategories);
 const PROGRAM_KINDS = new Set<string>(programKinds);
+const PROGRAM_ROLES = new Set<string>(programRoles);
 const PROGRAM_ENTRY_MODES = new Set<string>(programEntryModes);
 
 const normalizeFellowshipObjectId = (id: unknown): string | undefined => {
@@ -149,6 +151,7 @@ const PUBLIC_FELLOWSHIP_FIELDS = [
   'id',
   'programCategory',
   'programKind',
+  'programRole',
   'entryMode',
   'studentFacingCategory',
   'requiresMentorBeforeApply',
@@ -192,6 +195,7 @@ const PUBLIC_FELLOWSHIP_PRIMITIVE_FIELDS = new Set([
   'id',
   'programCategory',
   'programKind',
+  'programRole',
   'entryMode',
   'studentFacingCategory',
   'requiresMentorBeforeApply',
@@ -492,6 +496,7 @@ const FELLOWSHIP_ADMIN_UPDATABLE_FIELDS = [
   'title',
   'programCategory',
   'programKind',
+  'programRole',
   'entryMode',
   'studentFacingCategory',
   'requiresMentorBeforeApply',
@@ -658,6 +663,7 @@ const filterFellowshipUpdate = (data: any): Record<string, any> => {
   if ('programCategory' in update && !PROGRAM_CATEGORIES.has(update.programCategory))
     delete update.programCategory;
   if ('programKind' in update && !PROGRAM_KINDS.has(update.programKind)) delete update.programKind;
+  if ('programRole' in update && !PROGRAM_ROLES.has(update.programRole)) delete update.programRole;
   if ('entryMode' in update && !PROGRAM_ENTRY_MODES.has(update.entryMode)) delete update.entryMode;
 
   if ('studentVisibilityReviewedByAccountId' in update) {
