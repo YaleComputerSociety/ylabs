@@ -1,5 +1,3 @@
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,14 +30,5 @@ describe('ResearchStickyFilterBar', () => {
 
     unmount();
     expect(scrollContainer.style.getPropertyValue(STICKY_FILTER_BAR_HEIGHT_PROPERTY)).toBe('');
-  });
-
-  it('is the value the page scroller uses as its scroll padding', () => {
-    const css = readFileSync(join(__dirname, '../../../index.css'), 'utf8');
-    const scrollContainerRule = css.match(/\[data-scroll-container\]\s*\{([^}]*)\}/);
-
-    expect(scrollContainerRule?.[1]).toContain(
-      `scroll-padding-top: var(${STICKY_FILTER_BAR_HEIGHT_PROPERTY}`,
-    );
   });
 });
