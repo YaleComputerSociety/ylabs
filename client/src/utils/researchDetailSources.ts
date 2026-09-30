@@ -1062,8 +1062,30 @@ export const isBoilerplatePlatformSourceUrl = (url?: string | null): boolean => 
   }
 };
 
+const DEPARTMENT_DEGREE_PROGRAM_PATH =
+  /^(?:\/academics)?\/(?:undergraduates?|undergraduate[-_](?:program|studies|major)s?|graduate[-_](?:program|studies)s?|graduates?)$/i;
+
+/**
+ * A department's degree-program landing page describes a curriculum, not any one
+ * research group, so it is never this research's website. Only the landing page
+ * matches: a page beneath it, such as an undergraduate research or assistantship
+ * page, can be a real way in and is left alone.
+ */
+export const isDepartmentDegreeProgramPageUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    const path = new URL(normalized).pathname.replace(/\/+$/, '');
+    return DEPARTMENT_DEGREE_PROGRAM_PATH.test(path);
+  } catch {
+    return false;
+  }
+};
+
 export const isSuppressedResearchWebsiteCtaUrl = (url?: string | null): boolean =>
   isFacetedOrSectionIndexSourceUrl(url) ||
+  isDepartmentDegreeProgramPageUrl(url) ||
   isBoilerplatePlatformSourceUrl(url) ||
   isDirectoryRosterRootUrl(url) ||
   isNonContactableDocumentSourceUrl(url) ||
