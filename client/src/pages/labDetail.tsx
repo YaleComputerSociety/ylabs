@@ -494,20 +494,26 @@ const DecisionSummary = ({
    * to offer, the block would only point back at that card, so it is omitted.
    */
   const leadCardLinksProfile = actionLinks.leadCardLinksProfile;
-  const offersOrgEngagementPage = preferOrgEngagementOutreach && Boolean(officialSource);
-  const applyPageUrl = offersOrgEngagementPage ? undefined : applySource?.url;
+  const offersOrgEngagementPage = actionLinks.offersOrgEngagementPage;
+  const applyPageUrl = actionLinks.offersApplyPage ? applySource?.url : undefined;
+  const showsProfileButton = actionLinks.showsProfileButton;
   /**
    * A generic official page beside a lead card that already links the profile is a
-   * third door to the same person. The block offers one action, a place to apply or
-   * else the research website, so the generic page is offered only when no card links
+   * third door to the same person. The block offers one action, the research's own
+   * homepage where it has one, so the generic page is offered only when no card links
    * a profile.
    */
-  const offersOfficialPage = Boolean(officialSource) && !applyPageUrl && !leadCardLinksProfile;
+  const offersOfficialPage =
+    Boolean(officialSource) &&
+    !showsWebsiteCta &&
+    !offersOrgEngagementPage &&
+    !applyPageUrl &&
+    !leadCardLinksProfile;
   const getInvolvedHasOwnAction =
+    showsWebsiteCta ||
     offersOrgEngagementPage ||
     Boolean(applyPageUrl) ||
-    profileNeedsOwnButton ||
-    showsWebsiteCta ||
+    showsProfileButton ||
     offersOfficialPage;
   const directoryFallbackCandidate = Boolean(piMailtoHref) || !hasActionablePath;
   const needsDirectoryFallback = !leadCardLinksProfile && directoryFallbackCandidate;
@@ -617,7 +623,18 @@ const DecisionSummary = ({
               <p className="text-xs font-semibold uppercase tracking-wider text-muted">
                 How to get involved
               </p>
-              {offersOrgEngagementPage && officialSource ? (
+              {showsWebsiteCta ? (
+                <div className="mt-3 flex flex-col gap-2">
+                  <a
+                    href={websiteUrl}
+                    target="_blank"
+                    rel={EXTERNAL_LINK_REL}
+                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                  >
+                    {researchWebsiteCtaLabel(group)}
+                  </a>
+                </div>
+              ) : offersOrgEngagementPage && officialSource ? (
                 <>
                   <p className="mt-1 text-sm leading-relaxed text-ink">
                     This organization coordinates involvement centrally. Open its get-involved page
@@ -645,7 +662,7 @@ const DecisionSummary = ({
                     See how to get involved
                   </a>
                 </div>
-              ) : profileNeedsOwnButton ? (
+              ) : showsProfileButton ? (
                 <div className="mt-3 flex flex-col gap-2">
                   <a
                     href={profileUrl}
@@ -654,17 +671,6 @@ const DecisionSummary = ({
                     className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                   >
                     Open official profile
-                  </a>
-                </div>
-              ) : showsWebsiteCta ? (
-                <div className="mt-3 flex flex-col gap-2">
-                  <a
-                    href={websiteUrl}
-                    target="_blank"
-                    rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
-                  >
-                    {researchWebsiteCtaLabel(group)}
                   </a>
                 </div>
               ) : offersOfficialPage && officialSource ? (
