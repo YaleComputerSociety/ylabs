@@ -74,6 +74,43 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc?.displayName).toBe('Yale Center for Customer Insights');
   });
 
+  it('indexes a sort title taken from the heading the card shows, not the stored name', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-sort-title',
+      name: 'Yale Optics Institute',
+      displayName: 'Institute for Applied Optics',
+      kind: 'institute',
+      entityType: 'INSTITUTE',
+      archived: false,
+    });
+
+    expect(doc?.sortTitle).toBe('institute for applied optics');
+  });
+
+  it('folds case, accents, and leading punctuation out of the sort title', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-sort-title-folded',
+      name: '"Émergent  Materials" Center',
+      kind: 'center',
+      entityType: 'CENTER',
+      archived: false,
+    });
+
+    expect(doc?.sortTitle).toBe('emergent materials" center');
+  });
+
+  it('sorts a faculty research row by its title without the synthesized suffix', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-sort-title-faculty',
+      name: 'Quasar Topics Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      archived: false,
+    });
+
+    expect(doc?.sortTitle).toBe('quasar topics');
+  });
+
   it('builds Meilisearch-ready research entity documents without internal fields', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-1',
@@ -619,7 +656,7 @@ describe('researchEntitySearchIndexService', () => {
     });
     expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain('mutated');
     expect(getResearchEntitySearchIndexSettings().sortableAttributes).toEqual(
-      expect.arrayContaining(['lastObservedAt', 'name', 'createdAt', 'updatedAt']),
+      expect.arrayContaining(['lastObservedAt', 'name', 'sortTitle', 'createdAt', 'updatedAt']),
     );
   });
 

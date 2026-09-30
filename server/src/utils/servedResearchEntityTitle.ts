@@ -62,3 +62,15 @@ export const servedResearchEntityTitle = (entity?: ServedTitleInput | null): str
   const normalized = base.replace(FACULTY_RESEARCH_TITLE_SUFFIX, '').trim();
   return normalized || base;
 };
+
+const COMBINING_MARKS = /[̀-ͯ]/g;
+const LEADING_NON_ALPHANUMERIC = /^[^\p{L}\p{N}]+/u;
+
+export const researchEntitySortTitle = (entity?: ServedTitleInput | null): string =>
+  servedResearchEntityTitle(entity)
+    .normalize('NFKD')
+    .replace(COMBINING_MARKS, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(LEADING_NON_ALPHANUMERIC, '')
+    .trim();

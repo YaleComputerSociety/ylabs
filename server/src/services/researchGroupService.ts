@@ -91,6 +91,7 @@ import { sanitizePersonName } from '../utils/personNameHygiene';
 import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabelHygiene';
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
 import { orcidProfileUrl, servableOrcid } from '../utils/orcid';
+import { researchEntitySortTitle } from '../utils/servedResearchEntityTitle';
 import { listPlanningContextsForResearchEntities } from './planningContextService';
 import {
   listDepartmentCourseCreditRoutes,
@@ -809,6 +810,25 @@ const isMissingMeiliEmbedderError = (error: unknown): boolean => {
   );
 };
 
+const SORT_TITLE_ATTRIBUTE = 'sortTitle';
+
+const meiliSortAttribute = (sortBy: NonNullable<ResearchGroupSearchSort['sortBy']>): string =>
+  sortBy === 'name' ? SORT_TITLE_ATTRIBUTE : sortBy;
+
+/**
+ * An index whose settings predate a sortable attribute rejects the whole query, so
+ * until `reindex:meili` pushes the settings the title sort falls back to the stored
+ * `name` rather than to no order at all.
+ */
+const withoutNotYetIndexedSortAttributes = (sortEntries: string[]): string[] =>
+  sortEntries
+    .filter((entry) => !entry.startsWith('browseRankScore'))
+    .map((entry) =>
+      entry.startsWith(`${SORT_TITLE_ATTRIBUTE}:`)
+        ? `name:${entry.slice(SORT_TITLE_ATTRIBUTE.length + 1)}`
+        : entry,
+    );
+
 /**
  * True when Meilisearch rejected the query because a requested sort attribute is
  * not in the index's sortableAttributes. Lets the default browse degrade
@@ -1294,7 +1314,7 @@ export async function searchResearchGroupsViaMeili(
   const sortConfig: string[] = [];
   if (sort.sortBy) {
     const order = sort.sortOrder === 'asc' ? 'asc' : 'desc';
-    sortConfig.push(`${sort.sortBy}:${order}`);
+    sortConfig.push(`${meiliSortAttribute(sort.sortBy)}:${order}`);
   } else if (isBrowseAllQuery) {
     // Default browse: surface the "best" research homes first — those with the
     // strongest completeness + undergrad-access signal — then fall back to
@@ -1431,10 +1451,8 @@ export async function searchResearchGroupsViaMeili(
           continue;
         }
         if (Array.isArray(params.sort) && isUnsortableAttributeError(error)) {
-          const filtered = params.sort.filter(
-            (entry: string) => !entry.startsWith('browseRankScore'),
-          );
-          if (filtered.length !== params.sort.length) {
+          const filtered = withoutNotYetIndexedSortAttributes(params.sort);
+          if (filtered.join(',') !== params.sort.join(',')) {
             params = { ...params };
             if (filtered.length > 0) params.sort = filtered;
             else delete params.sort;
@@ -1868,9 +1886,11 @@ const sortResearchEntitiesForMongoFallback = (
   const sorted = [...entities];
   if (sort.sortBy) {
     const direction = sort.sortOrder === 'asc' ? 1 : -1;
+    const sortValue = (entity: any): any =>
+      sort.sortBy === 'name' ? researchEntitySortTitle(entity) : entity[sort.sortBy as string];
     sorted.sort((a, b) => {
-      const aValue = a[sort.sortBy as string];
-      const bValue = b[sort.sortBy as string];
+      const aValue = sortValue(a);
+      const bValue = sortValue(b);
       if (aValue instanceof Date || bValue instanceof Date) {
         return direction * (new Date(aValue || 0).getTime() - new Date(bValue || 0).getTime());
       }

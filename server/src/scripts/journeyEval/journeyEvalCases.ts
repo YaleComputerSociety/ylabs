@@ -1,6 +1,7 @@
 import { dropDomainIncoherentUnsourcedResearchAreas } from '../../utils/researchAreaDomainCoherence';
 import { normalizeResearchAreaList } from '../../utils/researchAreaHygiene';
 import { maxReachableResearchSearchPage } from '../../services/researchSearchPagination';
+import { researchEntitySortTitle } from '../../utils/servedResearchEntityTitle';
 import {
   attributeTopicDrops,
   buildInconclusiveInvariant,
@@ -13,6 +14,7 @@ import {
   checkQueryRelevance,
   checkSortOrdering,
   checkSurvivorWebsiteAttribution,
+  checkTitleSortOrdering,
   checkTopicDropAttribution,
   checkUndergradEvidenceQuoteAttribution,
   corpusFingerprintMoved,
@@ -314,6 +316,41 @@ const sortedBrowseKeepsOrder: JourneyCase = {
           rows.map((row) => epochMillis(row.lastObservedAt)),
           'desc',
         ),
+      ],
+      rates: [],
+    };
+  },
+};
+
+const titleSortedBrowseFollowsCardTitle: JourneyCase = {
+  id: 'title-sorted-browse-follows-card-title',
+  title: 'A browse sorted A-Z is ordered by the title each card shows',
+  run: async (context) => {
+    const reachablePages = maxReachableResearchSearchPage(context.window);
+    const pagesToWalk = resolvePagesToWalk(context.pagesChecked, reachablePages);
+    const corpusBefore = await context.readCorpusFingerprint();
+    const sortTitles: string[] = [];
+    let degradedPages = 0;
+    for (let page = 1; page <= pagesToWalk; page += 1) {
+      const result = await context.browse({
+        page,
+        pageSize: context.window,
+        sort: { sortBy: 'name', sortOrder: 'asc' },
+      });
+      if (result.degraded !== false) degradedPages += 1;
+      sortTitles.push(...servedRows(result).map((row) => researchEntitySortTitle(row)));
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+
+    return {
+      invariants: [
+        buildInvariant(
+          'title-sorted-browse-is-not-degraded',
+          'An A-Z browse does not fall back to sorting by a field the card does not show',
+          degradedPages === 0,
+          { pagesWalked: pagesToWalk, degradedPages },
+        ),
+        checkTitleSortOrdering(sortTitles, 'asc', corpusBefore, corpusAfter),
       ],
       rates: [],
     };
@@ -632,6 +669,7 @@ export const journeyCases: readonly JourneyCase[] = [
   facetCountAgreement,
   paginationServesDistinctRows,
   sortedBrowseKeepsOrder,
+  titleSortedBrowseFollowsCardTitle,
   topicQueryRelevance,
   undergradEvidenceQuotePrecision,
   survivorWebsiteAttribution,

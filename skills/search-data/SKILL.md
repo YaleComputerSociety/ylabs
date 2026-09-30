@@ -117,6 +117,16 @@ A script that resyncs a batch goes through `syncResearchEntitiesWithOutcome` (`s
 `services/__tests__/indexSyncResultIsRead.test.ts` fails on any call to `syncEntity`, `syncEntities`, or that helper whose value is discarded, so a new caller cannot silently report a resync the index never received.
 Admin "weakest profiles first" with `browseQuality: 'low-first'` is a separate Mongo-side path.
 
+## A-Z ordering (#3945)
+
+The public `name` sort does not sort on the stored `name`.
+`researchGroupService` maps it to the indexed `sortTitle`, which `buildResearchEntitySearchIndexDocument` computes with `researchEntitySortTitle` from the same title rule the card heading uses (`servedResearchEntityTitle`, pinned to the client by `contracts/researchEntitySearchTitle.cases.json`).
+The key is case-folded, accent-folded, whitespace-collapsed, and has leading punctuation removed; a leading article is kept, because the card shows it and a student scanning headings files "The ..." under T.
+Before this, 46 of 3,425 served rows had a heading whose first letter differed from `name`, and 38 of them sat more than 500 places from where their heading would put them.
+`sortTitle` is a sortable attribute and a stored field, so it is inert until the index is rebuilt; until then Meili rejects the sort, the service retries on `name`, and the result is marked degraded.
+The Mongo fallback sorts by the same key.
+`yarn --cwd server journey:eval --case=title-sorted-browse-follows-card-title` walks the A-Z browse and fails on an inversion by heading or on a degraded page.
+
 ## `/research` client search state
 
 `client/src/pages/research.tsx` keeps three kinds of search: a text query, a filters-only search, and a department search (`dept` in the URL), which owns the department filter and composes with the school and type facets rather than turning into a free-text search of the department label.
