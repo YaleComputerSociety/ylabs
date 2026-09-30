@@ -276,6 +276,11 @@ Choose inset only when the control sits flush against the clipping edge.
 - Inset is the wrong choice on a saturated fill even when the ancestor does clip.
 The ring color is `color-mix(in srgb, var(--yr-blue) 72%, white)`, which lands near 2:1 when drawn inside `bg-brand` - painted but invisible, the very defect the token exists to prevent.
 An unpadded text or glyph button is the other exclusion: a negative offset strikes the outline through its own glyphs.
+- A segmented control, a row of buttons sharing one bordered, rounded wrapper, takes `.yr-segmented` on the wrapper and no `overflow-hidden`.
+`.yr-segmented` rounds the first and last segment to the wrapper's own radius, which is the only thing the clip was doing, so each segment keeps the outset `.yr-focus-ring`.
+Neither focus token works inside a clipping wrapper there: the outset ring is clipped to nothing, and the selected segment usually carries a saturated fill, which rules out the inset one.
+The dashboard surface tabs painted zero focus pixels and the view-mode toggle kept only the edges drawn over a neighbour until this changed.
+`src/__tests__/focusRingGuard.test.ts` fails when an outset `.yr-focus-ring` is a direct child of an unpadded `overflow-hidden` wrapper.
 - MUI controls cannot take the CSS classes, so they use `navFocusRingSx` from `src/utils/focusRing.ts`, with `menuItemFocusRingSx` for popover menu items whose scroll container would clip an outset ring.
 Both share one outline constant with `.yr-focus-ring`; do not hand-roll a `&:focus-visible` block with its own color.
 - `focus:ring-inset` has no effect alongside either class.

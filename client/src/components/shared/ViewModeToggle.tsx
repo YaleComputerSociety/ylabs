@@ -9,7 +9,7 @@ const ViewModeToggle = () => {
   const { viewMode, setViewMode } = useContext(UIContext);
 
   return (
-    <div className="flex border border-line rounded-control overflow-hidden">
+    <div className="yr-segmented flex rounded-control border border-line">
       <button
         onClick={() => setViewMode('card')}
         className={`yr-focus-ring min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 transition-colors ${viewMode === 'card' ? 'bg-brand-soft text-brand' : 'text-muted hover:text-ink-soft'}`}
