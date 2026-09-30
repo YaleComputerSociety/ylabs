@@ -1118,6 +1118,76 @@ describe('researchEntityDto', () => {
     expect(dto.recentGrantCount).toBe(2);
   });
 
+  it('serves only running awards as current funding and restates the count and agencies (#3924)', () => {
+    const endedAward = {
+      id: 'award-ended',
+      agency: 'NSF',
+      title: 'Ended award',
+      startDate: new Date('2015-09-01T00:00:00Z'),
+      endDate: new Date('2019-08-31T00:00:00Z'),
+    };
+    const runningAward = {
+      id: 'award-running',
+      agency: 'NCI',
+      title: 'Running award',
+      startDate: new Date('2024-09-01T00:00:00Z'),
+      endDate: new Date('2999-08-31T00:00:00Z'),
+    };
+    const openEndedAward = { id: 'award-open', agency: 'DOE', title: 'Open-ended award' };
+
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-mixed-funding',
+      slug: 'mixed-funding-lab',
+      name: 'Mixed Funding Lab',
+      kind: 'lab',
+      recentGrants: [endedAward, runningAward, openEndedAward],
+      recentGrantCount: 3,
+      fundingAgencies: ['NIH', 'NSF', 'DOE'],
+    });
+
+    expect((dto.recentGrants as Array<{ id: string }>).map((award) => award.id)).toEqual([
+      'award-running',
+      'award-open',
+    ]);
+    expect(dto.recentGrantCount).toBe(2);
+    expect(dto.fundingAgencies).toEqual(['NIH', 'DOE']);
+  });
+
+  it('serves no current funding when every stored award has ended (#3924)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-ended-funding',
+      slug: 'ended-funding-lab',
+      name: 'Ended Funding Lab',
+      kind: 'lab',
+      recentGrants: [
+        { id: 'award-a', agency: 'NHLBI', endDate: new Date('2020-06-30T00:00:00Z') },
+        { id: 'award-b', agency: 'NSF', endDate: '2021-01-31T00:00:00.000Z' },
+      ],
+      recentGrantCount: 2,
+      fundingAgencies: ['NIH', 'NSF'],
+    });
+
+    expect(dto.recentGrants).toEqual([]);
+    expect(dto).not.toHaveProperty('recentGrantCount');
+    expect(dto).not.toHaveProperty('fundingAgencies');
+  });
+
+  it('serves an all-running award list and its stored count unchanged (#3924)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-running-funding',
+      slug: 'running-funding-lab',
+      name: 'Running Funding Lab',
+      kind: 'lab',
+      recentGrants: [{ id: 'award-c', agency: 'NIGMS', endDate: new Date('2999-01-01T00:00:00Z') }],
+      recentGrantCount: 7,
+      fundingAgencies: ['NIH'],
+    });
+
+    expect((dto.recentGrants as unknown[]).length).toBe(1);
+    expect(dto.recentGrantCount).toBe(7);
+    expect(dto.fundingAgencies).toEqual(['NIH']);
+  });
+
   it('strips internal review, ownership, and provenance fields from public DTOs', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-private-fields',

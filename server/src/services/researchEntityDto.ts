@@ -45,6 +45,7 @@ import {
   MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS,
   SERVED_FIELD_CONTRIBUTION_LABEL_SET,
 } from '../utils/servedFieldContributionLabels';
+import { isCurrentFundingField, servedCurrentFunding } from './servedCurrentFunding';
 
 const MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS = MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS;
 const MAX_PUBLIC_RESEARCH_ENTITY_URLS = 50;
@@ -472,8 +473,13 @@ export function toPublicResearchEntityDto(
     ),
   };
 
+  const currentFunding = servedCurrentFunding(group);
   for (const field of OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS) {
     if (options.forList && LIST_TRIMMED_DESCRIPTION_FIELDS.has(field)) continue;
+    if (isCurrentFundingField(field)) {
+      if (currentFunding[field] !== undefined) dto[field] = publicTextValue(currentFunding[field]);
+      continue;
+    }
     if (field === 'shortDescription') {
       if (group.shortDescription !== undefined || group.fullDescription !== undefined) {
         dto.shortDescription = servedCard;

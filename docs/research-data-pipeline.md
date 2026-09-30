@@ -1611,6 +1611,10 @@ Canonical-home enrichment emits grant evidence without replacing official identi
 Ambiguous Yale user matches and archived or non-current lead memberships are ineligible, not safe absences.
 At materialization, only each source's latest grant snapshot participates.
 The public grant display is a recency-sorted, deduplicated union capped at ten records, while `recentGrantCount` sums the independent latest source totals without applying that display cap and funding agencies are unioned across sources.
+The stored list is what the lanes read and may hold awards that have since ended, because the NIH and NSF windows admit ended awards and a stored list ages between reads.
+The public DTO (`server/src/services/servedCurrentFunding.ts`) therefore re-reads each award's `endDate` on every request and serves an award as current funding only while its end day has not passed or it has no end date (#3924).
+When it drops an ended award it restates `recentGrantCount` as the number of running awards it serves and keeps only the funding agencies a running award still backs; when every award has ended it serves an empty list and omits both.
+It never writes the stored list, which stays the lane's evidence.
 
 ### Retired museum, collections, and digital-humanities research homes (#2202)
 
