@@ -1280,8 +1280,32 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: 'See how to get involved' }).getAttribute('href')).toBe(
       JOIN_PAGE_URL,
     );
-    expect(screen.queryByRole('link', { name: 'Visit research website' })).toBeNull();
+    const getInvolvedBlock = screen.getByText('How to get involved').parentElement as HTMLElement;
+    expect(within(getInvolvedBlock).getAllByRole('link')).toHaveLength(1);
+    expect(
+      screen
+        .getAllByRole('link', { name: 'Visit research website' })
+        .map((link) => link.getAttribute('href')),
+    ).toEqual([RESEARCH_WEBSITE_URL]);
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
+  });
+
+  it('does not mark an official profile opened above when a join page takes the only action', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        sourceUrls: [OFFICIAL_PROFILE_URL, JOIN_PAGE_URL],
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: 'See how to get involved' }).getAttribute('href')).toBe(
+      JOIN_PAGE_URL,
+    );
+    expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
+    expect(screen.queryByText('opened above')).toBeNull();
   });
 
   it('offers a working mailto email link without recording outreach', async () => {
@@ -1557,9 +1581,14 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: 'See how to get involved' }).getAttribute('href')).toBe(
       GET_INVOLVED_URL,
     );
+    const getInvolvedBlock = screen.getByText('How to get involved').parentElement as HTMLElement;
+    expect(within(getInvolvedBlock).getAllByRole('link')).toHaveLength(1);
+    expect(screen.queryByRole('link', { name: /^Contact / })).toBeNull();
     expect(
-      screen.getByRole('link', { name: 'Contact Fixture Director' }).getAttribute('href'),
-    ).toBe(DIRECTOR_PROFILE_URL);
+      screen
+        .getAllByRole('link')
+        .some((link) => link.getAttribute('href') === DIRECTOR_PROFILE_URL),
+    ).toBe(true);
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
     expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
   });

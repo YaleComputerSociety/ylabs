@@ -6,6 +6,7 @@ import {
   isUnreachableResearchWebsiteCtaUrl,
   prefersOrgEngagementOutreach,
   resolveDecisionProfileUrl,
+  resolveOutreachApplySource,
   resolveOutreachOfficialSource,
   sourceLedgerKey,
 } from './researchDetailSources';
@@ -39,23 +40,21 @@ export interface ResearchDetailActionLinkContext {
   profileNeedsOwnButton: boolean;
   preferOrgEngagementOutreach: boolean;
   officialSource?: { url: string } | null;
+  hasApplyPage: boolean;
 }
 
 export interface ResearchDetailActionLinks {
   leadCardProfileUrl?: string;
   websiteCtaUrl?: string;
   showsWebsiteCta: boolean;
+  showsProfileButton: boolean;
   leadCardLinksProfile: boolean;
+  profileOpenedAbove: boolean;
   /** Both slots resolved to a link, which is the population the duplicate audit walks. */
   offersBothLinks: boolean;
   /** Both slots resolved to the same destination, which is the defect lane. */
   slotsShareOneDestination: boolean;
 }
-
-export const resolveLeadCardProfileUrl = (
-  profileUrl: string | undefined,
-  preferOrgEngagementOutreach: boolean,
-): string | undefined => (preferOrgEngagementOutreach ? undefined : profileUrl);
 
 export function resolveResearchDetailActionLinks(
   context: ResearchDetailActionLinkContext,
@@ -67,34 +66,33 @@ export function resolveResearchDetailActionLinks(
     profileNeedsOwnButton,
     preferOrgEngagementOutreach,
     officialSource,
+    hasApplyPage,
   } = context;
-  const leadCardProfileUrl = resolveLeadCardProfileUrl(profileUrl, preferOrgEngagementOutreach);
+  const leadCardProfileUrl = profileUrl;
   const repeatsLeadCardProfileLink =
     hasLeadCard && isSameActionDestination(websiteUrl, leadCardProfileUrl);
+  const offersOrgEngagementPage = preferOrgEngagementOutreach && Boolean(officialSource);
+  const getInvolvedSlotTaken = offersOrgEngagementPage || hasApplyPage;
+  const websiteSlotOpen = Boolean(websiteUrl) && !getInvolvedSlotTaken;
+  const showsProfileButton = profileNeedsOwnButton && !getInvolvedSlotTaken;
 
-  const showsWebsiteCta = (() => {
-    if (!websiteUrl) return false;
-    if (preferOrgEngagementOutreach && officialSource) return false;
-    if (profileNeedsOwnButton) return false;
-    return !repeatsLeadCardProfileLink;
-  })();
+  const showsWebsiteCta = websiteSlotOpen && !profileNeedsOwnButton && !repeatsLeadCardProfileLink;
 
   const leadCardLinksProfile = hasLeadCard && Boolean(leadCardProfileUrl);
   return {
     leadCardProfileUrl,
     websiteCtaUrl: showsWebsiteCta ? websiteUrl : undefined,
     showsWebsiteCta,
+    showsProfileButton,
     leadCardLinksProfile,
+    profileOpenedAbove: !profileNeedsOwnButton || showsProfileButton,
     // Read before the CTA suppression, so the audit can separate "both slots would
     // link" from "the duplicate guard already collapsed them". A population measured
     // after the suppression cannot see the rows the suppression acted on.
-    offersBothLinks: leadCardLinksProfile && Boolean(websiteUrl),
-    slotsShareOneDestination: leadCardLinksProfile && repeatsLeadCardProfileLink,
+    offersBothLinks: leadCardLinksProfile && websiteSlotOpen,
+    slotsShareOneDestination: leadCardLinksProfile && websiteSlotOpen && repeatsLeadCardProfileLink,
   };
 }
-
-export const decisionSummaryShowsWebsiteCta = (context: ResearchDetailActionLinkContext): boolean =>
-  resolveResearchDetailActionLinks(context).showsWebsiteCta;
 
 /**
  * The payload a research detail page decides its action links from.
@@ -158,12 +156,23 @@ export function resolveResearchDetailActionLinkContext({
   const officialWebsiteUrl = isPrimaryWebsiteLikelyUnavailable
     ? undefined
     : safeHttpUrl(primaryWebsiteUrl) || undefined;
+  const outreachSchools = {
+    schools: [group.school, ...(Array.isArray(group.schools) ? group.schools : [])],
+  } as never;
   const outreachOfficialSource = resolveOutreachOfficialSource(
     sources,
     [decisionProfileUrl, officialWebsiteUrl],
     leadIdentityUnderReview,
     group.entityType,
-    { schools: [group.school, ...(Array.isArray(group.schools) ? group.schools : [])] } as never,
+    outreachSchools,
+    leadPersonNames,
+  );
+  const outreachApplySource = resolveOutreachApplySource(
+    sources,
+    [decisionProfileUrl, officialWebsiteUrl],
+    leadIdentityUnderReview,
+    group.entityType,
+    outreachSchools,
     leadPersonNames,
   );
   const singleLeadIsGenuinePrincipalInvestigator = singlePrincipalInvestigator
@@ -190,5 +199,6 @@ export function resolveResearchDetailActionLinkContext({
       Boolean(decisionProfileUrl) && !singlePrincipalInvestigator && !leadProfilesLinkedInline,
     preferOrgEngagementOutreach,
     officialSource: outreachOfficialSource,
+    hasApplyPage: Boolean(outreachApplySource),
   };
 }

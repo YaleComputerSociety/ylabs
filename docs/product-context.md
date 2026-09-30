@@ -135,7 +135,10 @@ They should not create a research-paper section, display metrics, or replace the
 Reaching out is constant and primary: always offer a way to contact the research entity, never gating outreach.
 The lead card carries the person: their official profile and, when one is served, their email.
 The "How to get involved" block offers exactly one action: a specific place to apply or join from the entity's own classified sources ("See how to get involved", for every entity type), or else the research website.
+When no lead card carries the profile, the official profile takes the website's place as that one action, and it still yields to a place to apply.
+An organization that coordinates involvement centrally offers its get-involved page as the one action, and its director's profile stays on the lead card.
 Every other page, including a lead's personal homepage, is listed under sources rather than offered as a second button.
+The header shows the research website whenever the block does not already offer it.
 Only when no official link exists does the block fall back to searching the Yale Directory for contact details.
 A prefilled mailto appears only when a non-redacted email is available.
 A generic official page from those sources is offered only when there is no place to apply and no lead card already links a profile, because beside such a card it is a third door to the same person.
