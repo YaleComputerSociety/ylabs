@@ -178,6 +178,8 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
     sitemapProgramsDiscovered?: number;
     detailPagesCrawled?: number;
     detailPagesCapped?: number;
+    nonProgramPagesRefused?: Record<string, number>;
+    nonProgramRowsRetired?: number;
   };
   reuPrograms?: {
     seeded: number;

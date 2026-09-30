@@ -6,6 +6,7 @@
  */
 import crypto from 'crypto';
 import * as cheerio from 'cheerio';
+import { Fellowship } from '../../models/fellowship';
 import { getCached, setCached } from '../snapshotCache';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
@@ -160,11 +161,18 @@ export interface FellowshipCatalogCandidate {
 
 type FetchPage = (url: string, useCache: boolean) => Promise<string>;
 
+export interface OwnedFellowshipRow {
+  sourceKey?: string;
+  title?: string;
+  sourceUrl?: string;
+}
+
 interface YaleCollegeFellowshipsOfficeScraperDeps {
   pageUrls?: string[];
   sitemapUrls?: string[];
   fetchPage?: FetchPage;
   retryDelay?: (attempt: number) => Promise<void>;
+  loadOwnedRows?: () => Promise<OwnedFellowshipRow[]>;
 }
 
 function normalizeWhitespace(value: string): string {
@@ -1218,6 +1226,146 @@ function candidatesFromCbeyFundingPage(
     .filter((candidate): candidate is FellowshipCatalogCandidate => !!candidate);
 }
 
+function detailContentRoot($: cheerio.CheerioAPI): cheerio.Cheerio<any> {
+  const specificContent = $('.node, article').first();
+  const primaryContent = $('main, [role="main"]').first();
+  return specificContent.length > 0
+    ? specificContent
+    : primaryContent.length > 0
+      ? primaryContent
+      : $('body');
+}
+
+function chromeFreeContent(contentRoot: cheerio.Cheerio<any>): cheerio.Cheerio<any> {
+  const chromeFreeRoot = contentRoot.clone();
+  chromeFreeRoot
+    .find(
+      'script, style, nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs, .menu, .sidebar',
+    )
+    .remove();
+  return chromeFreeRoot;
+}
+
+export type NonProgramPageShape = 'cms-post' | 'news-roundup' | 'program-hub' | 'sign-in-wall';
+
+const CMS_POST_CONTENT_TYPES = new Set([
+  'narrative',
+  'news',
+  'news-item',
+  'news-article',
+  'article',
+  'story',
+  'blog',
+  'blog-post',
+  'event',
+]);
+
+function cmsContentTypes($: cheerio.CheerioAPI): string[] {
+  const classes = [
+    $('body').attr('class') || '',
+    ...$('.node, article')
+      .toArray()
+      .map((node) => $(node).attr('class') || ''),
+  ].join(' ');
+  const types = new Set<string>();
+  for (const match of classes.matchAll(/\b(?:page-)?node-{1,2}type-([a-z0-9_-]+)/gi)) {
+    types.add(match[1].toLowerCase().replace(/_/g, '-'));
+  }
+  return Array.from(types);
+}
+
+const DATED_ARTICLE_PATH_RE = /\/(?:19|20)\d{2}\/\d{1,2}\/\d{1,2}\//;
+
+function isDatedArticleUrl(url: string): boolean {
+  try {
+    return DATED_ARTICLE_PATH_RE.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+}
+
+function isSignInWall($: cheerio.CheerioAPI): boolean {
+  return $('form input[type="password"]').length > 0;
+}
+
+interface ContentLinkCensus {
+  fundRecords: number;
+  otherPrograms: number;
+  datedArticles: number;
+  awardHeadings: number;
+}
+
+function contentLinkCensus(
+  $: cheerio.CheerioAPI,
+  content: cheerio.Cheerio<any>,
+  pageUrl: string,
+  pageTitle: string,
+): ContentLinkCensus {
+  const fundRecords = new Set<string>();
+  const otherPrograms = new Set<string>();
+  const datedArticles = new Set<string>();
+  const pageKey = indexSeedKey(normalizeLinkUrl(pageUrl));
+  const pageTitleKey = compactTitleIdentity(pageTitle);
+  for (const link of content.find('a').toArray()) {
+    const rawUrl = absoluteUrl($(link).attr('href'), pageUrl);
+    if (!rawUrl) continue;
+    const url = normalizeLinkUrl(rawUrl);
+    if (isRecordSpecificApplicationUrl(url)) {
+      fundRecords.add(url);
+      continue;
+    }
+    if (isDatedArticleUrl(url)) {
+      datedArticles.add(indexSeedKey(url));
+      continue;
+    }
+    const label = normalizedCandidateTitle($(link).text());
+    if (
+      indexSeedKey(url) !== pageKey &&
+      isLikelyPublicFellowshipDetailUrl(url) &&
+      isLikelyFellowshipTitle(label) &&
+      compactTitleIdentity(label) !== pageTitleKey
+    ) {
+      otherPrograms.add(indexSeedKey(url));
+    }
+  }
+  const awardHeadings = new Set<string>();
+  for (const heading of content.find('h2, h3, h4').toArray()) {
+    const label = normalizedCandidateTitle($(heading).text());
+    const key = compactTitleIdentity(label);
+    if (key && key !== pageTitleKey && isLikelyFellowshipTitle(label)) awardHeadings.add(key);
+  }
+  return {
+    fundRecords: fundRecords.size,
+    otherPrograms: otherPrograms.size,
+    datedArticles: datedArticles.size,
+    awardHeadings: awardHeadings.size,
+  };
+}
+
+const MIN_DATED_ARTICLES_FOR_ROUNDUP = 3;
+const MIN_FUND_RECORDS_FOR_HUB = 2;
+const MIN_LISTED_PROGRAMS_FOR_HUB = 3;
+const MIN_AWARD_SECTIONS_FOR_HUB = 3;
+
+export function nonProgramPageShape(
+  $: cheerio.CheerioAPI,
+  pageUrl: string,
+): NonProgramPageShape | undefined {
+  if (isSignInWall($)) return 'sign-in-wall';
+  if (cmsContentTypes($).some((type) => CMS_POST_CONTENT_TYPES.has(type))) return 'cms-post';
+  const title = normalizedCandidateTitle($('h1').first().text());
+  const census = contentLinkCensus($, chromeFreeContent(detailContentRoot($)), pageUrl, title);
+  if (census.datedArticles >= MIN_DATED_ARTICLES_FOR_ROUNDUP) return 'news-roundup';
+  if (
+    census.fundRecords >= MIN_FUND_RECORDS_FOR_HUB ||
+    census.fundRecords + census.otherPrograms >= MIN_LISTED_PROGRAMS_FOR_HUB ||
+    census.awardHeadings >= MIN_AWARD_SECTIONS_FOR_HUB
+  ) {
+    return 'program-hub';
+  }
+  return undefined;
+}
+
 function candidateFromDetailPage(
   $: cheerio.CheerioAPI,
   pageUrl: string,
@@ -1231,20 +1379,8 @@ function candidateFromDetailPage(
     return undefined;
   }
 
-  const specificContent = $('.node, article').first();
-  const primaryContent = $('main, [role="main"]').first();
-  const contentRoot =
-    specificContent.length > 0
-      ? specificContent
-      : primaryContent.length > 0
-        ? primaryContent
-        : $('body');
-  const chromeFreeRoot = contentRoot.clone();
-  chromeFreeRoot
-    .find(
-      'script, style, nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs, .menu, .sidebar',
-    )
-    .remove();
+  const contentRoot = detailContentRoot($);
+  const chromeFreeRoot = chromeFreeContent(contentRoot);
   const bodyText = normalizeWhitespace(chromeFreeRoot.text());
   const safeDescription = sanitizeStoredCatalogDescription(bodyText, 2000);
   const applicationInformation = applicationSectionText($);
@@ -1384,14 +1520,20 @@ function mergeCandidates(
   });
 }
 
-export function parseFellowshipCatalogPage(
+export interface FellowshipCatalogPageRead {
+  candidates: FellowshipCatalogCandidate[];
+  refusedPage?: { shape: NonProgramPageShape; sourceKey: string; title: string };
+}
+
+export function readFellowshipCatalogPage(
   html: string,
   pageUrl: string,
   referenceDate: Date = new Date(),
-): FellowshipCatalogCandidate[] {
+): FellowshipCatalogPageRead {
   const $ = cheerio.load(html);
   $('script, style, noscript').remove();
   const byKey = new Map<string, FellowshipCatalogCandidate>();
+  const sorted = () => Array.from(byKey.values()).sort((a, b) => a.title.localeCompare(b.title));
 
   const opportunityRowCandidates = candidatesFromMacmillanOpportunityPage(
     $,
@@ -1400,27 +1542,42 @@ export function parseFellowshipCatalogPage(
   );
   if (opportunityRowCandidates.length > 0) {
     for (const candidate of opportunityRowCandidates) upsertCandidate(byKey, candidate);
-    return Array.from(byKey.values()).sort((a, b) => a.title.localeCompare(b.title));
+    return { candidates: sorted() };
   }
 
   const cbeyProgramCandidates = candidatesFromCbeyFundingPage($, pageUrl);
   if (cbeyProgramCandidates.length > 0) {
     for (const candidate of cbeyProgramCandidates) upsertCandidate(byKey, candidate);
-    return Array.from(byKey.values()).sort((a, b) => a.title.localeCompare(b.title));
+    return { candidates: sorted() };
   }
 
   const detail = candidateFromDetailPage($, pageUrl, referenceDate);
-  if (detail) upsertCandidate(byKey, detail);
-
-  if (!detail) {
-    for (const link of $('a').toArray()) {
-      const candidate = candidateFromLink($, link, pageUrl, referenceDate);
-      if (!candidate) continue;
-      upsertCandidate(byKey, candidate);
+  if (detail) {
+    const shape = nonProgramPageShape($, pageUrl);
+    if (shape) {
+      return {
+        candidates: [],
+        refusedPage: { shape, sourceKey: detail.sourceKey, title: detail.title },
+      };
     }
+    upsertCandidate(byKey, detail);
+    return { candidates: sorted() };
   }
 
-  return Array.from(byKey.values()).sort((a, b) => a.title.localeCompare(b.title));
+  for (const link of $('a').toArray()) {
+    const candidate = candidateFromLink($, link, pageUrl, referenceDate);
+    if (!candidate) continue;
+    upsertCandidate(byKey, candidate);
+  }
+  return { candidates: sorted() };
+}
+
+export function parseFellowshipCatalogPage(
+  html: string,
+  pageUrl: string,
+  referenceDate: Date = new Date(),
+): FellowshipCatalogCandidate[] {
+  return readFellowshipCatalogPage(html, pageUrl, referenceDate).candidates;
 }
 
 function observation(
@@ -1497,6 +1654,62 @@ export function candidateToObservations(candidate: FellowshipCatalogCandidate): 
   ].filter((item): item is ObservationInput => !!item);
 }
 
+export async function loadRowsOwnedByLane(): Promise<OwnedFellowshipRow[]> {
+  return (await Fellowship.find(
+    { sourceName: YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE },
+    { sourceKey: 1, title: 1, sourceUrl: 1 },
+  ).lean()) as OwnedFellowshipRow[];
+}
+
+export interface RefusedCatalogPage {
+  url: string;
+  shape: NonProgramPageShape;
+  sourceKey: string;
+  title: string;
+}
+
+/**
+ * Matched on the cited page and on the identity that page would have minted, because a listing
+ * page is also the cited source of every program row it lists.
+ */
+export function rowsMintedByRefusedPages(
+  rows: OwnedFellowshipRow[],
+  refusedPages: RefusedCatalogPage[],
+  keptSourceKeys: ReadonlySet<string>,
+): Array<{ row: OwnedFellowshipRow & { sourceKey: string }; page: RefusedCatalogPage }> {
+  const pagesByUrl = new Map<string, RefusedCatalogPage[]>();
+  for (const page of refusedPages) {
+    const key = indexSeedKey(normalizeLinkUrl(page.url));
+    pagesByUrl.set(key, [...(pagesByUrl.get(key) || []), page]);
+  }
+  const matches: Array<{
+    row: OwnedFellowshipRow & { sourceKey: string };
+    page: RefusedCatalogPage;
+  }> = [];
+  for (const row of rows) {
+    const { sourceKey } = row;
+    if (!sourceKey || !row.sourceUrl || keptSourceKeys.has(sourceKey)) continue;
+    const page = (pagesByUrl.get(indexSeedKey(normalizeLinkUrl(row.sourceUrl))) || []).find(
+      (candidate) =>
+        candidate.sourceKey === sourceKey ||
+        compactTitleIdentity(candidate.title) === compactTitleIdentity(row.title || ''),
+    );
+    if (page) matches.push({ row: { ...row, sourceKey }, page });
+  }
+  return matches;
+}
+
+function retractionObservation(sourceKey: string, page: RefusedCatalogPage): ObservationInput {
+  return {
+    entityType: 'fellowship',
+    entityKey: sourceKey,
+    field: 'archived',
+    value: true,
+    sourceUrl: page.url,
+    confidenceOverride: 0.95,
+  };
+}
+
 async function fetchHtml(url: string, useCache: boolean): Promise<string> {
   const safeUrlText = (await assertPublicHttpUrl(url)).toString();
   const cacheKey = `page:${safeUrlText}`;
@@ -1527,6 +1740,7 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
   private readonly sitemapUrls: string[];
   private readonly fetchPage: FetchPage;
   private readonly retryDelay: (attempt: number) => Promise<void>;
+  private readonly loadOwnedRows: () => Promise<OwnedFellowshipRow[]>;
 
   constructor(deps: YaleCollegeFellowshipsOfficeScraperDeps = {}) {
     this.pageUrls = deps.pageUrls || DEFAULT_PAGE_URLS;
@@ -1535,6 +1749,7 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
     this.retryDelay =
       deps.retryDelay ||
       ((attempt) => new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt)));
+    this.loadOwnedRows = deps.loadOwnedRows || loadRowsOwnedByLane;
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -1548,6 +1763,7 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
     const indexDiscoveredDetailUrls = new Set<string>();
     const fetched = new Set<string>();
     const failedUrls: string[] = [];
+    const refusedPages: RefusedCatalogPage[] = [];
 
     const parseAndMerge = async (url: string) => {
       if (fetched.has(url)) return;
@@ -1559,8 +1775,9 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
         }
         return;
       }
-      const parsed = parseFellowshipCatalogPage(html, url, referenceDate);
-      for (const candidate of parsed) {
+      const read = readFellowshipCatalogPage(html, url, referenceDate);
+      if (read.refusedPage) refusedPages.push({ url, ...read.refusedPage });
+      for (const candidate of read.candidates) {
         upsertCandidate(candidatesByKey, candidate);
       }
     };
@@ -1646,8 +1863,24 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
       .sort((a, b) => a.title.localeCompare(b.title));
     const selected =
       limitOption !== undefined ? allCandidates.slice(0, limitOption) : allCandidates;
-    const observations = selected.flatMap(candidateToObservations);
+    // There is no clear-on-empty for a fellowship, so going silent on a refused page would leave
+    // the row it minted live forever; the lane re-reads the page and asserts the row is retired.
+    const retractions =
+      refusedPages.length > 0
+        ? rowsMintedByRefusedPages(
+            await this.loadOwnedRows(),
+            refusedPages,
+            new Set(allCandidates.map((candidate) => candidate.sourceKey)),
+          )
+        : [];
+    const observations = [
+      ...selected.flatMap(candidateToObservations),
+      ...retractions.map(({ row, page }) => retractionObservation(row.sourceKey, page)),
+    ];
     if (observations.length > 0) await ctx.emit(observations);
+    const refusedByShape: Record<string, number> = {};
+    for (const page of refusedPages)
+      refusedByShape[page.shape] = (refusedByShape[page.shape] || 0) + 1;
 
     const deadlineParsed = selected.filter((candidate) => !!candidate.deadline).length;
     const reviewRequired = selected.filter((candidate) => candidate.reviewRequired).length;
@@ -1661,10 +1894,15 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
         `Capped ${detailUrlsCapped} program detail page(s) at the ${detailCrawlCap}-page crawl limit.`,
       );
     }
+    if (refusedPages.length > 0) {
+      noteParts.push(
+        `Refused ${refusedPages.length} page(s) that are not programs and retired ${retractions.length} row(s) they minted.`,
+      );
+    }
 
     return {
       observationCount: observations.length,
-      entitiesObserved: selected.length,
+      entitiesObserved: selected.length + retractions.length,
       notes: noteParts.length > 0 ? noteParts.join(' ') : undefined,
       metrics: {
         fellowshipCatalog: {
@@ -1680,6 +1918,8 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
           sitemapProgramsDiscovered: sitemapProgramUrls.length,
           detailPagesCrawled: detailUrls.length,
           detailPagesCapped: detailUrlsCapped,
+          nonProgramPagesRefused: refusedByShape,
+          nonProgramRowsRetired: retractions.length,
         },
       },
     };
