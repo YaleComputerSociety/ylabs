@@ -85,9 +85,15 @@ function renderLabDetail(
   payload: LabDetailPayload = basePayload,
   {
     isAuthenticated = true,
+    isAuthLoading = false,
     routerState,
     savedResearchEntityIds = [],
-  }: { isAuthenticated?: boolean; routerState?: unknown; savedResearchEntityIds?: string[] } = {},
+  }: {
+    isAuthenticated?: boolean;
+    isAuthLoading?: boolean;
+    routerState?: unknown;
+    savedResearchEntityIds?: string[];
+  } = {},
 ) {
   mockedAxios.get.mockImplementation((url: string) => {
     if (url === '/users/savedResearchEntityIds') {
@@ -100,7 +106,9 @@ function renderLabDetail(
   });
 
   return render(
-    <UserContext.Provider value={{ ...defaultUserContext, isLoading: false, isAuthenticated }}>
+    <UserContext.Provider
+      value={{ ...defaultUserContext, isLoading: isAuthLoading, isAuthenticated }}
+    >
       <ConfigContext.Provider
         value={{ ...defaultConfigContext, departmentPillEligibleLabels: PILL_ELIGIBLE_LABELS }}
       >
@@ -224,6 +232,16 @@ describe('LabDetail page', () => {
         }),
       ]);
     });
+  });
+
+  it('shows neither the login CTA nor the save button while the session check is pending', async () => {
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    renderLabDetail(basePayload, { isAuthenticated: false, isAuthLoading: true });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByRole('link', { name: /log in with yale to save/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /save research plan/i })).toBeNull();
   });
 
   it('shows a Yale CAS login CTA instead of the save button for logged-out visitors', async () => {

@@ -42,9 +42,9 @@ describe('PublicRoute', () => {
     expect(screen.getByText('research content')).toBeTruthy();
   });
 
-  it('shows a loading state while auth resolves', () => {
+  it('renders the component without waiting for auth to resolve', () => {
     renderPublicRoute({ isLoading: true, isAuthenticated: false });
 
-    expect(screen.queryByText('research content')).toBeNull();
+    expect(screen.getByText('research content')).toBeTruthy();
   });
 });

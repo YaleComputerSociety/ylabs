@@ -72,7 +72,7 @@ Client route guards:
 |-------|---------|
 | `PrivateRoute` | Auth required. |
 | `AdminRoute` | Admin only, keyed off the server-provided `user.isAdmin`. |
-| `PublicRoute` | Renders for logged-out and authenticated users alike. |
+| `PublicRoute` | Renders for logged-out and authenticated users alike, without waiting for the `/api/check` session check, so a public page's first request starts at once. Auth-dependent UI on these pages reads `isLoading` itself and holds its slot invisible until the check resolves. |
 | `UnprivateRoute` | No auth required. |
 
 `PrivateRoute` and `AdminRoute` share one signed-out contract: they redirect to `/login` with `state.from` set to the requested path, query, and hash, and they `replace` the guarded entry so Back does not loop through `/login`.
@@ -174,6 +174,8 @@ That is a self-inflicted availability failure dressed as a security control.
 The genuine abuse controls are the two `getPeerIpKey` limiters, `firstContactLimiter` and `authLimiter`, which cannot be reset by dropping cookies.
 They carry the opposite exposure by construction: because they are IP-keyed, callers behind one Yale egress address do share a bucket.
 `firstContactLimiter` is the one that answers the cookie-discarding caller, by metering the scarce thing (a new session) rather than the abundant one (a request); see the design note in `rateLimiters.ts`.
+A cold visit to a public page sends `/api/check`, `/api/config`, and the first `/api/research/search` in parallel, before any response has set the cookie, so each new visitor spends three first-contact units where waiting for the check spent two (#3952).
+Size `FIRST_CONTACT_RATE_LIMIT_MAX` for that: the default 300 admits about 100 cold visits per egress address per window.
 
 Write limiting is opt-in per route, not inferred from the HTTP method.
 A route is billed as a write only if it lists the `writeLimit` middleware in its definition, so reads and telemetry (search, exports, `addView`, the `/analytics/research/batch` beacon) can never exhaust the mutation budget, and a new route defaults to read-safe.

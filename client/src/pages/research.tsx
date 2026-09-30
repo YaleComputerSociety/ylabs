@@ -78,6 +78,8 @@ const hasStructuredFilters = (filters: ResearchSearchFilters): boolean =>
     return value !== undefined && value !== null && value !== false;
   });
 
+const ADMIN_SEARCH_PARAM_KEYS = ['weak', 'quality', 'tier'] as const;
+
 const readSearchParamList = <T extends string>(
   params: URLSearchParams,
   key: string,
@@ -374,12 +376,12 @@ const scrollResearchViewportToTop = () => {
 const Research = () => {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user, isAuthenticated } = useContext(UserContext);
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useContext(UserContext);
   const {
     approachingCount: watchedDeadlineApproachingCount,
     notStartedCount: watchedDeadlineNotStartedCount,
   } = useWatchedDeadlineSummary(isAuthenticated);
-  const { departments } = useConfig();
+  const { departments, isLoading: isConfigLoading } = useConfig();
   const isAdmin = user?.isAdmin ?? false;
   const pageSnapshotKey = searchParams.toString();
   const snapshotForThisPage =
@@ -524,7 +526,7 @@ const Research = () => {
   const effectGenerationRef = useRef(0);
   const restoredSnapshotSyncKeyRef = useRef(
     restoredSnapshotRef.current
-      ? `${pageSnapshotKey}|${String(isAdmin)}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`
+      ? `${pageSnapshotKey}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`
       : null,
   );
   const departmentSearchTargets = useMemo(
@@ -535,6 +537,32 @@ const Research = () => {
     () => new Map(departmentSearchTargets.map((target) => [target.label.toLowerCase(), target])),
     [departmentSearchTargets],
   );
+  const urlWeakestFirst = isAdmin && searchParams.get('weak') === '1';
+  const urlQualityFiltersKey = isAdmin
+    ? readSearchParamList(
+        searchParams,
+        'quality',
+        QUALITY_FILTER_OPTIONS.map((option) => option.value),
+      ).join(',')
+    : '';
+  const urlTrustTierFiltersKey = isAdmin
+    ? readSearchParamList(
+        searchParams,
+        'tier',
+        TRUST_TIER_FILTER_OPTIONS.map((option) => option.value),
+      ).join(',')
+    : '';
+  const urlDepartmentLabelKey = (searchParams.get('dept') || '').toLowerCase();
+  const urlDepartmentSearch = useMemo(
+    () =>
+      urlDepartmentLabelKey
+        ? (departmentSearchTargetByLabel.get(urlDepartmentLabelKey) ?? null)
+        : null,
+    [departmentSearchTargetByLabel, urlDepartmentLabelKey],
+  );
+  const awaitingDepartmentConfig = Boolean(urlDepartmentLabelKey) && isConfigLoading;
+  const awaitingAdminScope =
+    isAuthLoading && ADMIN_SEARCH_PARAM_KEYS.some((key) => searchParams.has(key));
 
   useDocumentTitle('Research');
 
@@ -1002,22 +1030,13 @@ const Research = () => {
     const urlEntityType = readEntityTypeParam(searchParams);
     const urlSchool = searchParams.get('school') || '';
     const urlDepartment = searchParams.get('department') || '';
-    const urlWeakestFirst = isAdmin && searchParams.get('weak') === '1';
-    const urlQualityFilters = isAdmin
-      ? readSearchParamList(
-          searchParams,
-          'quality',
-          QUALITY_FILTER_OPTIONS.map((option) => option.value),
-        )
+    const urlQualityFilters = urlQualityFiltersKey
+      ? (urlQualityFiltersKey.split(',') as ResearchQualityFilter[])
       : [];
-    const urlTrustTierFilters = isAdmin
-      ? readSearchParamList(
-          searchParams,
-          'tier',
-          TRUST_TIER_FILTER_OPTIONS.map((option) => option.value),
-        )
+    const urlTrustTierFilters = urlTrustTierFiltersKey
+      ? (urlTrustTierFiltersKey.split(',') as ResearchTrustTierFilter[])
       : [];
-    const syncKey = `${pageSnapshotKey}|${String(isAdmin)}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`;
+    const syncKey = `${pageSnapshotKey}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`;
 
     if (restoredSnapshotSyncKeyRef.current === syncKey) {
       restoredSnapshotRef.current = null;
@@ -1057,9 +1076,7 @@ const Research = () => {
       ...(urlDepartment ? { departments: [urlDepartment] } : {}),
     };
 
-    const urlDepartmentSearch = urlDepartmentLabel
-      ? (departmentSearchTargetByLabel.get(urlDepartmentLabel.toLowerCase()) ?? null)
-      : null;
+    if (awaitingDepartmentConfig || awaitingAdminScope) return;
 
     if (urlDepartmentSearch) {
       const departmentSearchFilters = withDepartmentSearchTarget(
@@ -1154,14 +1171,18 @@ const Research = () => {
     setSearchParams,
     location.key,
     pageSnapshotKey,
-    isAdmin,
+    urlWeakestFirst,
+    urlQualityFiltersKey,
+    urlTrustTierFiltersKey,
+    urlDepartmentSearch,
+    awaitingDepartmentConfig,
+    awaitingAdminScope,
     showWeakestProfilesFirst,
     qualityFilters,
     trustTierFilters,
     selectedEntityType,
     selectedSchool,
     selectedDepartment,
-    departmentSearchTargetByLabel,
     departmentSearch,
     hasSubmittedSearch,
     submittedQuery,
@@ -1624,7 +1645,10 @@ const Research = () => {
             </p>
 
             {!isAuthenticated && (
-              <div className="mt-4 rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy">
+              <div
+                aria-hidden={isAuthLoading || undefined}
+                className={`mt-4 rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy${isAuthLoading ? ' invisible' : ''}`}
+              >
                 You&apos;re browsing as a guest.{' '}
                 <Link
                   to="/login"

@@ -32,7 +32,7 @@ const MOBILE_BREAKPOINT = '768px';
 const HamburgerIcon = () => <MenuIcon size={24} />;
 
 export default function Navbar() {
-  const { isAuthenticated, user } = useContext(UserContext);
+  const { isAuthenticated, isLoading: isAuthLoading, user } = useContext(UserContext);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isMobile = useMediaQuery(`(max-width:${MOBILE_BREAKPOINT})`);
   const location = useLocation();
@@ -283,12 +283,14 @@ export default function Navbar() {
 
             {!isAuthenticated && (
               <Box
+                aria-hidden={isAuthLoading || undefined}
                 sx={{
                   display: 'flex',
                   gap: { xs: '8px', lg: '14px' },
                   alignItems: 'center',
                   ml: 'auto',
                   flexShrink: 0,
+                  visibility: isAuthLoading ? 'hidden' : 'visible',
                 }}
               >
                 {!isMobile && (
