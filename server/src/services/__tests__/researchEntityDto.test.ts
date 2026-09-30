@@ -1668,7 +1668,9 @@ describe('researchEntityDto', () => {
           httpStatusCode: 404,
         },
       ],
-      recentGrants: [{ id: 'award-card', agency: 'NSF', endDate: new Date('2999-01-01T00:00:00Z') }],
+      recentGrants: [
+        { id: 'award-card', agency: 'NSF', endDate: new Date('2999-01-01T00:00:00Z') },
+      ],
       recentGrantCount: 4,
       fundingAgencies: ['NSF'],
     };
