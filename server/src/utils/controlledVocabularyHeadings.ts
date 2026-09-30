@@ -119,9 +119,12 @@ let servedWarmFailureReported = false;
  * vocabulary read that fails silently on every request is the inert-fix shape again.
  *
  * Only a process that has never loaded the vocabulary waits for the read. Once a set is loaded,
- * an expired one keeps serving while a single shared refresh runs in the background, because
- * the read scans the observation log for over a second and a stale set only splits a heading
- * published since the last load (#3953).
+ * an expired one keeps serving while a single shared refresh runs in the background, because a
+ * stale set only splits a heading published since the last load (#3953). The read is no longer
+ * the collection scan that motivated this: `sourceName_1_field_1` brought it from 1,879,161
+ * documents examined and over a second to 12,883 and under 40 ms (#3934). Keeping the refresh
+ * off the request path is still worth it, since neither the wait nor the shared in-flight read
+ * depends on how slow the read is.
  */
 export async function warmServedResearchAreaVocabulary(): Promise<void> {
   // A serve path with no connection cannot serve, so there is nothing to warm and the read

@@ -21,6 +21,29 @@ Department shorthands resolve through the `department` clusters in `searchTopicA
 Dropping the shorthand is what decides how widely the query then searches, so the cluster kind is a retrieval decision and not only a vocabulary one: see "An alias query is only as narrow as its own shorthand" below.
 A working-style phrase (`wet lab`, `dry lab`, `wet bench`) resolves through `RESEARCH_WORKING_STYLE_PHRASE_CLUSTERS` in the same file, which is a phrase catalog rather than a per-token one and is also why `lab` survives filler stripping there: see "A student's working-style words are not the corpus's" below.
 
+## MongoDB indexes
+
+A declared `schema.index(...)` does not build itself, because `db/connections.ts` sets `autoIndex: false`.
+Build it with `yarn --cwd server db:build-indexes` (dry-run, reports what is missing) then `--apply`, which is additive and never drops.
+Read `skills/contributing/SKILL.md` for the narrowing, widening, and removal rules.
+Run the build against Development only: Beta and Production receive indexes through promotion, which copies them from the source collection.
+
+`observations` and `researchers` carry indexes whose trailing keys exist for a specific reader rather than as padding, so trimming a key silently restores a scan that nothing else reports (#3934).
+
+| Index | Serves | Why the trailing keys |
+|---|---|---|
+| `observations` `{ sourceUrl: 1, observedAt: -1 }` | the repair queue's evidence lookup, a `sourceUrl` `$in` sorted newest-first under a limit | `observedAt` lets MongoDB merge the per-variant intervals already in sort order instead of buffering the whole match |
+| `observations` `{ sourceName: 1, entityType: 1, superseded: 1, entityKey: 1, entityId: 1 }` | the gate's two source-scoped `distinct` calls and the roster lane's observed-key read | `entityKey` and `entityId` are what those callers read, so carrying them makes the roster read a covered `DISTINCT_SCAN` and lets the gate's `entityId` read answer from the index |
+| `observations` `{ sourceName: 1, field: 1 }` | the controlled-vocabulary heading reload | the reload carries no `entityType`, so it cannot use the index above; on `sourceName` alone its two sources match 224,459 rows against 12,883 for the pair |
+| `researchers` `{ 'profileLinks.url': 1 }` and `{ 'profile.websiteUrl': 1 }` | identity by profile URL, asked as one `$or` over both paths | an `$or` needs an index per clause, or the union degrades to the scan every such call used to pay |
+
+Two things an index cannot fix here, both measured rather than assumed:
+
+- The host filter in `observationStore` matches `sourceUrl` with a case-insensitive regex, which takes no index bounds, so it keeps its `entityType` plan and no `sourceUrl` index serves it.
+  Indexing for it would be indexing for a query that cannot use the index.
+- `{ sourceId: 1, observedAt: -1 }` looks unread and is not: the BBS research-track lane asks `Observation.exists({ sourceId, entityType, field, value })`, which leads on `sourceId` and answers in one key.
+  It stays declared.
+
 ## Meilisearch indexes
 
 | Index              | Service                               | Purpose                                                                           |

@@ -151,6 +151,36 @@ observationSchema.index(
   { value: 1, superseded: 1 },
   { partialFilterExpression: { field: 'inferredPiUserKey' } },
 );
+/**
+ * The repair queue's evidence lookup sends `sourceUrl: { $in: variants }` with a
+ * descending `observedAt` sort and a limit, so `observedAt` is the second key to let
+ * MongoDB merge the per-variant intervals in sort order instead of buffering the whole
+ * match. Without it the planner fell back to `superseded_1` and walked 476,302 keys for
+ * 7 rows (#3934).
+ *
+ * The host-regex read in `observationStore` also filters `sourceUrl`, but with a
+ * case-insensitive regex, which takes no index bounds, so it keeps its `entityType`
+ * plan and this index does not serve it. Measured unchanged at 57,920 keys either way.
+ */
+observationSchema.index({ sourceUrl: 1, observedAt: -1 });
+/**
+ * Source-scoped reads: the gate's two `distinct` calls and the roster lane's observed-key
+ * read, which filter `sourceName` with `entityType` and (for the gate) `superseded`.
+ *
+ * `entityKey` and `entityId` trail the equality keys on purpose rather than as padding.
+ * They are what each caller READS, so carrying them turns the roster lane's read into a
+ * covered DISTINCT_SCAN (5,705 keys, 0 documents, from 433,176 of each) and lets the
+ * gate's `entityId` read answer from the index (2,917 keys, 2 documents, from 40,843).
+ * Dropping either trailing key costs those two wins and nothing else changes, so do not
+ * trim them back to the equality prefix (#3934).
+ */
+observationSchema.index({ sourceName: 1, entityType: 1, superseded: 1, entityKey: 1, entityId: 1 });
+/**
+ * The controlled-vocabulary heading reload, which filters `sourceName` with `field` and
+ * carries no `entityType`, so it cannot use the index above: on `sourceName` alone the
+ * two vocabulary sources match 224,459 rows against 12,883 for the pair (#3934, #3953).
+ */
+observationSchema.index({ sourceName: 1, field: 1 });
 
 export const Observation = mongoose.model('Observation', observationSchema);
 

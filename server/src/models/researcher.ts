@@ -300,6 +300,15 @@ researcherSchema.index({ accountId: 1 }, { unique: true, sparse: true });
 researcherSchema.index({ 'identifiers.orcid': 1 }, { unique: true, sparse: true });
 researcherSchema.index({ 'identifiers.netid': 1 }, { unique: true, sparse: true });
 researcherSchema.index({ displayName: 1, status: 1, archived: 1 });
+/**
+ * Identity by profile URL, which the roster member materializer, the PI backfill and the
+ * repair queue all ask as one `$or` over these two paths. Both paths need their own index
+ * or the union degrades to the collection scan every such call used to pay: 11,625
+ * documents examined per call, about 55 seconds across one full member materialize
+ * (#3934).
+ */
+researcherSchema.index({ 'profileLinks.url': 1 });
+researcherSchema.index({ 'profile.websiteUrl': 1 });
 
 export const Researcher =
   mongoose.models.Researcher ||
