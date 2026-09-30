@@ -51,20 +51,6 @@ export function trendPointsLabel(row: CorpusQualityMetricRow): string {
   return `${points > 0 ? '+' : ''}${points} pts`;
 }
 
-/**
- * Live rows are computed by one aggregation on this request; snapshot rows need
- * the roster resolved and the public description representation built per row,
- * which is ~13s over the served corpus, so they read from the latest
- * measurement. Keeping the two visibly distinct is the point: a reader must be
- * able to tell "this is now" from "this is as of last night".
- */
-/**
- * Live rows come from one aggregation on this request. Snapshot rows need the
- * roster resolved and the public description representation built per row, about
- * 13 seconds over the served corpus, so they read from the latest measurement.
- * Keeping the two visibly distinct is the point: a reader must be able to tell
- * "this is now" from "this is as of the last measurement".
- */
 interface CorpusQualityMetricDefinition {
   metric: string;
   label: string;
@@ -128,6 +114,20 @@ const CORPUS_QUALITY_METRICS: CorpusQualityMetricDefinition[] = [
   },
 ];
 
+/**
+ * Live rows are computed by one aggregation on this request; snapshot rows need
+ * the roster resolved and the public description representation built per row,
+ * which is ~13s over the served corpus, so they read from the latest
+ * measurement. Keeping the two visibly distinct is the point: a reader must be
+ * able to tell "this is now" from "this is as of last night".
+ */
+/**
+ * Live rows come from one aggregation on this request. Snapshot rows need the
+ * roster resolved and the public description representation built per row, about
+ * 13 seconds over the served corpus, so they read from the latest measurement.
+ * Keeping the two visibly distinct is the point: a reader must be able to tell
+ * "this is now" from "this is as of the last measurement".
+ */
 export function corpusQualityMetricRows(
   live: CorpusQualityLiveMetrics | null,
   latest: CorpusQualitySnapshotRow | null,

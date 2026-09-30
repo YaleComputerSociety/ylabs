@@ -94,7 +94,9 @@ const CorpusQualityPanel = ({ corpusQuality, isLoading, error }: CorpusQualityPa
           <p className="text-sm text-muted">
             Counted over the {formatNumber(live.coverage.studentReady)} rows served right now, every
             metric keeping its denominator so a growing corpus cannot read as improving quality.
-            {latest ? ` Topics served average ${formatMean(latest.richness.topicTotal)}.` : ''}
+            {latest
+              ? ` Topics served average ${formatMean(latest.richness.topicTotal)}, measured on ${formatDateTime(latest.measuredAt)}.`
+              : ''}
           </p>
           <p className="mt-1 text-xs text-muted">
             {snapshotRowCount === 0 ? (

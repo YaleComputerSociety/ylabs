@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { formatDateTime } from '../analyticsPresentation';
 import CorpusQualityPanel from '../CorpusQualityPanel';
 import type { CorpusQualityResponse, CorpusQualitySnapshotRow } from '../corpusQualityTypes';
 
@@ -81,7 +82,10 @@ describe('CorpusQualityPanel', () => {
     expect(deadEnds.textContent).toContain('12 / 100 (12%)');
     expect(deadEnds.textContent).toContain('measured');
 
-    expect(screen.getByText(/Topics served average 2\.5 per row\./)).toBeTruthy();
+    const topicAverage = screen.getByText(/Topics served average 2\.5 per row, measured on /);
+    expect(topicAverage.textContent).toContain(
+      `measured on ${formatDateTime('2026-09-29T08:00:00.000Z')}.`,
+    );
     expect(screen.queryByText(/4\.0 per row/)).toBeNull();
   });
 
