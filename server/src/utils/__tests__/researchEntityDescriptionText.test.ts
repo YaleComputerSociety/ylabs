@@ -1777,6 +1777,66 @@ describe('revoiceFirstPersonResearchLead', () => {
     );
   });
 
+  it("never keeps a noun that is the row after the row's own possessive name (#4044)", () => {
+    const lab = { name: 'Quill Lab', entityType: 'LAB', kind: 'lab' };
+    const doubledSelfNoun =
+      /\b(?:Lab|Laboratory|Group|Center|Institute|Program)['’]s (?:lab|laboratory|labs|group|team|center|program|institute)\b/;
+    const cases: Array<[string, string]> = [
+      ['Our lab is interested in cells.', 'The Quill Lab is interested in cells.'],
+      ['Our lab focuses on DNA repair.', 'The Quill Lab focuses on DNA repair.'],
+      [
+        'In addition, my laboratory is building tools.',
+        'In addition, the Quill Lab is building tools.',
+      ],
+      ['Our team is building tools.', 'The Quill Lab is building tools.'],
+      [
+        'Our lab members are drawn from many fields.',
+        'The Quill Lab members are drawn from many fields.',
+      ],
+      ['Our lab studies how cells sense force.', 'The Quill Lab studies how cells sense force.'],
+    ];
+    for (const [body, expected] of cases) {
+      const revoiced = revoiceFirstPersonResearchLead(body, lab);
+      expect(revoiced).toBe(expected);
+      expect(revoiced).not.toMatch(doubledSelfNoun);
+    }
+    expect(revoiceFirstPersonResearchLead('My research interests are broad.', lab)).toBe(
+      "The Quill Lab's research interests are broad.",
+    );
+  });
+
+  it('keeps the possessive for a plural self noun on a lab row (#4044)', () => {
+    const lab = { name: 'Quill Lab', entityType: 'LAB', kind: 'lab' };
+    expect(
+      revoiceFirstPersonResearchLead('Our labs are located in the science building.', lab),
+    ).toBe("The Quill Lab's labs are located in the science building.");
+  });
+
+  it('keeps a self noun possessed by the person a faculty research profile names (#4044)', () => {
+    const faculty = {
+      name: 'Robin Quill Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+    };
+    expect(revoiceFirstPersonResearchLead('Our lab is interested in cells.', faculty)).toBe(
+      "Robin Quill's lab is interested in cells.",
+    );
+    expect(revoiceFirstPersonResearchLead('Our lab studies how cells sense force.', faculty)).toBe(
+      'Robin Quill studies how cells sense force.',
+    );
+  });
+
+  it('leaves a center without a lead name on its demonstrative self noun (#4044)', () => {
+    const center = {
+      name: 'Quill Center for Synthetic Studies',
+      entityType: 'CENTER',
+      kind: 'center',
+    };
+    expect(revoiceFirstPersonResearchLead('Our center is a hub for research.', center)).toBe(
+      'This center is a hub for research.',
+    );
+  });
+
   it('converts an object pronoun only where the verb names the row as acted upon (#3481)', () => {
     const lab = { name: 'Akar Lab', entityType: 'LAB', kind: 'lab' };
     expect(

@@ -1426,11 +1426,17 @@ const firstPersonLeadRevoiceRules = (
    * interests are" was becoming "This research interests are" - "This"
    * agreeing with "research", a word the sentence's own verb never agreed
    * with in the first place).
+   *
+   * On a lab row a phrase led by a singular self noun ("Our lab is...") is left for the
+   * self-noun rule below, which names the row instead of serving "the <Lab>'s lab"
+   * (#4044). A plural self noun keeps the possessive, because collapsing it to the row
+   * name would pair a singular subject with the plural verb that follows.
    */
   [
     POSSESSIVE_HEAD_NOUN_AGREEMENT_PATTERN,
     (_match: string, lead: string, phrase: string, offset: number, full: string) => {
       const words = phrase.trim().split(/\s+/);
+      if (forms?.namesTheRow && isSingularEntitySelfNoun(words[0])) return _match;
       const headNoun = words[words.length - 1];
       const atSentenceStart = isAtSentenceStart(offset + lead.length, full);
       const subject = possessiveLead(
@@ -1502,6 +1508,7 @@ interface LeadSubjectForms {
   later: string;
   lowerFirst: string;
   lowerLater: string;
+  namesTheRow: boolean;
 }
 
 const LEAD_DEFINITE_ARTICLE_PREFIX = /^the\s+/i;
@@ -1519,13 +1526,20 @@ function leadSubjectForms(entity?: FacultyResearchTextEntity | null): LeadSubjec
       later: `The ${bare}`,
       lowerFirst: `the ${bare}`,
       lowerLater: `the ${bare}`,
+      namesTheRow: true,
     };
   }
   if (!isFacultyResearchTextEntity(entity)) return undefined;
 
   const words = baseName.split(/\s+/).filter(Boolean);
   const surname = words[words.length - 1] || baseName;
-  return { first: baseName, later: surname, lowerFirst: baseName, lowerLater: surname };
+  return {
+    first: baseName,
+    later: surname,
+    lowerFirst: baseName,
+    lowerLater: surname,
+    namesTheRow: false,
+  };
 }
 
 /**
@@ -1576,9 +1590,12 @@ function possessiveLeadSubject(entity?: FacultyResearchTextEntity | null): strin
 
 const SINGULAR_NOUN_S_ENDING_EXCEPTIONS = /(?:ss|us|is|ics)$/i;
 
+function isPluralNoun(noun: string): boolean {
+  return /s$/i.test(noun) && !SINGULAR_NOUN_S_ENDING_EXCEPTIONS.test(noun);
+}
+
 function pluralAwareDemonstrative(noun: string, capitalized: boolean): string {
-  const isPlural = /s$/i.test(noun) && !SINGULAR_NOUN_S_ENDING_EXCEPTIONS.test(noun);
-  const word = isPlural ? 'these' : 'this';
+  const word = isPluralNoun(noun) ? 'these' : 'this';
   return capitalized ? `${word[0].toUpperCase()}${word.slice(1)}` : word;
 }
 
@@ -1589,6 +1606,12 @@ function pluralAwareDemonstrative(noun: string, capitalized: boolean): string {
  */
 const ENTITY_SELF_NOUN =
   '(?:lab|laboratory|labs|group|team|center|centre|program|programme|institute|facility|core)';
+
+const ENTITY_SELF_NOUN_WORD = new RegExp(`^${ENTITY_SELF_NOUN}$`, 'i');
+
+function isSingularEntitySelfNoun(word: string): boolean {
+  return ENTITY_SELF_NOUN_WORD.test(word) && !isPluralNoun(word);
+}
 
 /**
  * Nouns the row HAS, so the possessive is kept: `our methods` becomes "the Foxman Lab's
