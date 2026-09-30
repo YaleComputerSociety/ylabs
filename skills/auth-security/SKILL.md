@@ -29,6 +29,16 @@ Per-request session restore in `deserializeUser` re-validates that the backing `
 The admin-grant check is cached in memory for 60 seconds in `adminGrantService` and invalidated on grant or revoke.
 A session whose `Account` no longer exists or is archived deserializes to unauthenticated.
 
+### The two legs of `GET /api/cas`
+
+A login callback completes a login only for the browser that started it, so the route is two distinct legs rather than one handler.
+Reached without a `ticket`, it is the start leg: it mints a single-use random value, keeps it in the signed cookie session as `casLoginState`, and carries it in the `service` URL it hands CAS, which is what makes CAS echo it back.
+Reached with a `ticket`, it is the callback leg: the returned value must equal the stored one, which is then cleared, so the same callback cannot be completed twice.
+A missing or mismatched value is refused with `401` before the ticket is ever presented to CAS, and nothing about the caller's session is written, so an existing sign-in survives the refusal untouched.
+The value has to ride inside the request URL rather than beside it, because `passport-cas` derives the CAS `service` parameter from `req.originalUrl` and recomputes it when it validates the ticket, and CAS refuses a ticket whose two service URLs differ.
+That byte-level equality is the fragile part of the arrangement, so `server/src/__tests__/casLoginCallbackSessionState.test.ts` asserts it directly against a loopback CAS stand-in that, like CAS, issues a ticket for one service URL and validates it against no other.
+The return path is unchanged: `safeRedirectTarget` still decides where a completed login lands.
+
 Dev login bypass:
 
 `GET http://localhost:4000/api/dev-login`
