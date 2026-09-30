@@ -410,6 +410,7 @@ That anonymous identifier lives in the caller's own cookie and is therefore rese
 See `skills/auth-security/SKILL.md` for what each limiter does and does not control (#2420).
 Anonymous bucket identifiers are initialized only for `/api` requests.
 For the per-IP limiters (`firstContactLimiter`, `authLimiter`), deployed runtimes require `TRUSTED_PROXY_CIDRS`; Express accepts forwarded visitor addresses only through peers in those explicitly validated address ranges.
+A range wider than IPv4 `/8` or IPv6 `/29` (including `0.0.0.0/0` and `::/0`) refuses startup, because it would let any client choose its own forwarded address.
 The `PUT .../addView` view-telemetry routes are likewise exempt from the write limiter so ordinary browsing can't 429 a user's real mutations.
 Sessions last 30 days; the per-request admin-grant check is cached in-memory for 60s (invalidated immediately on grant/revoke).
 Public detail endpoints (research entity by slug, opportunity by id) and `/api/config` allow brief HTTP caching instead of the global `/api` no-store.

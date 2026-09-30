@@ -191,6 +191,41 @@ describe('app security runtime classification', () => {
     },
   );
 
+  it.each(['0.0.0.0/0', '::/0', '10.0.0.0/4', '::ffff:0:0/96'])(
+    'refuses to start a deployed runtime that trusts the over-broad range %s',
+    async (trustedProxyCidrs) => {
+      process.env = {
+        ...ORIGINAL_ENV,
+        NODE_ENV: 'production',
+        SERVER_BASE_URL: 'https://yalelabs.io',
+        SSOBASEURL: 'https://secure.its.yale.edu/cas',
+        SESSION_SECRET: STRONG_SESSION_SECRET,
+        TRUSTED_PROXY_CIDRS: trustedProxyCidrs,
+      };
+
+      await expect(import('../app')).rejects.toThrow(
+        /TRUSTED_PROXY_CIDRS contains an over-broad range/,
+      );
+    },
+  );
+
+  it('keeps local development booting with no trusted proxy and with a bounded one', async () => {
+    for (const trustedProxyCidrs of ['', '10.0.0.0/8']) {
+      vi.resetModules();
+      mongoose.deleteModel(/.+/);
+      process.env = {
+        ...ORIGINAL_ENV,
+        NODE_ENV: 'development',
+        SERVER_BASE_URL: 'http://localhost:4000',
+        SSOBASEURL: 'https://secure.its.yale.edu/cas',
+        SESSION_SECRET: '',
+        TRUSTED_PROXY_CIDRS: trustedProxyCidrs,
+      };
+
+      await expect(import('../app')).resolves.toBeTruthy();
+    }
+  });
+
   it('requires a trusted proxy boundary in deployed runtimes', async () => {
     process.env = {
       ...ORIGINAL_ENV,

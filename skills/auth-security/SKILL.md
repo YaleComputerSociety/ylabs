@@ -179,6 +179,9 @@ A CAS ticket is minted and validated by CAS rather than supplied by the caller, 
 A caller that keeps its session cookie therefore reaches that ticketless start under no limiter at all, because `globalLimiter` skips `/api/cas` and `firstContactLimiter` meters cookie-less requests only.
 That is accepted rather than overlooked: the start is a bare redirect to CAS with no outbound call and no database write, so there is no scarce resource on it to meter.
 Every per-IP key is the client address the validated `trust proxy` predicate resolves, not the raw TCP peer: keying on the peer put the whole user base in one bucket behind a load balancer (#2318), and a forwarded address is accepted only when the connecting peer is inside `TRUSTED_PROXY_CIDRS`, so an ordinary client still cannot shift buckets by spoofing the header.
+That only holds while the list is narrow, so `parseTrustedProxyCidrs` (`server/src/utils/trustedProxyCidrs.ts`) refuses at startup, in every runtime, any IPv4 range wider than `/8`, any IPv6 range wider than `/29`, and any IPv6 range that reaches into IPv4-mapped space (`::ffff:0:0/96`) wider than `/104`, naming the offending entry (#4015).
+`0.0.0.0/0` and `::/0` fall under those floors, and the mapped arm matters because Node's `BlockList` matches an IPv4 peer against an IPv6 mapped rule, so `::ffff:0:0/96` or `::/80` trusts every IPv4 client.
+The IPv4 floor is the widest private block a proxy fleet sits in (`10.0.0.0/8`), and the IPv6 floor is `/29` rather than `/32` because a major CDN publishes a `/29` proxy range.
 All limiters are skipped in CI, development, and test.
 Responses with a `5x` status do not count against a caller's budget (`skipFailedRequests` with `requestWasSuccessful` = status under 500), so a transient backend outage (e.g. a MongoDB reconnect returning 503) cannot lock a user out for the rest of the window; `4xx` still counts.
 `globalLimiter` and `writeLimit` reach that exemption with `skipFailedRequests: true` and the shared predicate.
@@ -280,7 +283,7 @@ The server test suite must never read them either, and `server/src/test/hermetic
 | `AUTH_DEBUG` | No | Enables verbose auth tracing when `true`. |
 | `SSOBASEURL` | Yes | Yale CAS URL. |
 | `SERVER_BASE_URL` | Yes | Public server URL for CAS callbacks. |
-| `TRUSTED_PROXY_CIDRS` | Deployed | Non-empty comma-separated proxy CIDRs trusted for forwarded visitor IP resolution; empty is allowed only in local development and tests. |
+| `TRUSTED_PROXY_CIDRS` | Deployed | Non-empty comma-separated proxy CIDRs trusted for forwarded visitor IP resolution; empty is allowed only in local development and tests, and a range wider than IPv4 `/8`, IPv6 `/29`, or IPv4-mapped `/104` refuses startup. |
 | `FIRST_CONTACT_RATE_LIMIT_MAX` | No | Per-IP cookie-less request ceiling per 15 minutes for `firstContactLimiter`; defaults to 300 and is floored at 50, so a too-small value cannot lock out a NATed cohort. |
 | `YALIES_API_KEY` | No | API key for yalies.io. |
 | `OPENAI_API_KEY` | No | OpenAI key for Meilisearch embedder config and LLM extractors. |
