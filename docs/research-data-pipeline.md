@@ -1268,7 +1268,7 @@ That predicate is deliberately not the negation of `isLikelyUnavailableSourceLin
 The sweep re-probes by URL rather than by row, with `--reprobe-healthy-after-days=7` (`SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS`, #3568).
 A URL is probed when it has no stored verdict, including a URL new to the row since its last probe, and whenever its verdict is anything but `HEALTHY`, so `UNAVAILABLE`, `UNKNOWN` and `REDIRECTED` are re-probed on every sweep.
 A `HEALTHY` verdict is carried forward unprobed, with its original `checkedAt`, until it is more than 7 days old.
-The stored verdict is found by `sourceLinkCandidateKey`, the same normalization `findSourceLinkHealth` uses, so the sweep and the readers agree on which verdict belongs to which citation.
+The stored verdict is found by `sourceLinkCandidateKey`, which normalizes like `findSourceLinkHealth` but keeps the scheme, so each spelling carries only its own verdict and the readers rank the spellings as described below.
 The window is 7 days rather than the 30-day horizon because the gate and `dead-research-website-clear` act on these verdicts, and a site can die within a month: a dead site is noticed at most 7 days late.
 Keeping it well inside the 30-day horizon also means a regularly swept `HEALTHY` verdict never lapses into unverified.
 No reader of a dead verdict loses anything, because a dead verdict is never carried and so is at most one sweep old; `retireDeadCitationResearchEntities`, the only reader that ages a dead verdict, still applies the 30-day horizon.

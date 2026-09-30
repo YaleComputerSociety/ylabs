@@ -282,10 +282,10 @@ export interface DatedSourceLinkHealth extends SourceLinkHealth {
  * The key that groups a stored verdict with the resource it describes. `www.`, host
  * case, and a trailing slash are cosmetic; path and query are not. Scheme is left out
  * of the key and ranked by `findSourceLinkHealth` instead, because it is cosmetic
- * only while both schemes behave alike (#4080). Mirrors
- * `sourceLinkCandidateKey` in the backfill lane so a verdict written under one
- * spelling is found under the other, which is the whole reason a shared key
- * exists rather than a per-caller comparison.
+ * only while both schemes behave alike (#4080). Mirrors `sourceLinkCandidateKey`
+ * in the backfill lane minus its scheme, so a verdict written under one cosmetic
+ * spelling is found under the other, which is the whole reason a shared key exists
+ * rather than a per-caller comparison.
  */
 export function sourceLinkHealthKey(url: unknown): string | null {
   if (typeof url !== 'string' || !url.trim()) return null;
