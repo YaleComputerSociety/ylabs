@@ -40,12 +40,14 @@ const STRUCTURED_KINDS = new Set([
   'CENTER_INTERNSHIP',
   'RA_PROGRAM',
   'MENTOR_MATCHING',
+  'DEPARTMENT_RESEARCH_GUIDE',
 ]);
 
 const FUNDING_KINDS = new Set([
   'FELLOWSHIP_FUNDING',
   'TRAVEL_RESEARCH_GRANT',
   'SENIOR_THESIS_FUNDING',
+  'RESEARCH_AWARD',
 ]);
 
 export function getProgramJourneyStatus(
@@ -130,6 +132,8 @@ export function programKindLabel(kind: string): string {
     FELLOWSHIP_FUNDING: 'Fellowship funding',
     TRAVEL_RESEARCH_GRANT: 'Research travel grant',
     SENIOR_THESIS_FUNDING: 'Senior research funding',
+    DEPARTMENT_RESEARCH_GUIDE: 'Department research guide',
+    RESEARCH_AWARD: 'Research award',
     OTHER: 'Program record',
   };
   return labels[kind] || kind.replace(/_/g, ' ').toLowerCase();
@@ -142,6 +146,7 @@ export function entryModeLabel(mode: string): string {
     SECURE_MENTOR_THEN_APPLY: 'Find mentor first',
     DIRECT_FACULTY_MATCHING: 'Faculty matching',
     TRACK_NEXT_CYCLE: 'Track next cycle',
+    CONTACT_FACULTY: 'Contact faculty',
     UNKNOWN: 'Review source',
   };
   return labels[mode] || mode.replace(/_/g, ' ').toLowerCase();

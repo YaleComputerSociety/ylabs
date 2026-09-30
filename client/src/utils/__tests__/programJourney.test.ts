@@ -161,3 +161,27 @@ describe('programCategoryLabel', () => {
     expect(programCategoryLabel('SOME_NEW_KIND')).toBe('some new kind');
   });
 });
+
+describe('getProgramJourneyStatus for department guides and research awards (#3904)', () => {
+  it('groups a department research guide with the structured ways in', () => {
+    expect(
+      getProgramJourneyStatus(
+        baseFellowship({
+          programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+          entryMode: 'CONTACT_FACULTY',
+          requiresMentorBeforeApply: false,
+        }),
+        now,
+      ).category,
+    ).toBe('structured');
+  });
+
+  it('keeps a research award out of the archive group', () => {
+    expect(
+      getProgramJourneyStatus(
+        baseFellowship({ programKind: 'RESEARCH_AWARD', requiresMentorBeforeApply: false }),
+        now,
+      ).category,
+    ).toBe('fundingAfterMentor');
+  });
+});

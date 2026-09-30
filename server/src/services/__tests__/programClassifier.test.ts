@@ -461,6 +461,18 @@ describe('classifyProgram internship identity (#2925)', () => {
       ).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
     });
 
+    it('does not read a graduate audience research page as an undergraduate guide', () => {
+      const classification = classifyProgram({ title: 'Graduate Research Opportunities' });
+      expect(classification.programKind).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
+      expect(classification.undergraduateOnly).not.toBe(true);
+    });
+
+    it('asserts an undergraduate audience only when the guide title names one', () => {
+      const classification = classifyProgram({ title: 'Fixture Sciences Research Opportunities' });
+      expect(classification.programKind).toBe('DEPARTMENT_RESEARCH_GUIDE');
+      expect(classification.undergraduateOnly).toBeUndefined();
+    });
+
     it('reads a scholarship for students pursuing research careers as recognition', () => {
       expect(
         classifyProgram({

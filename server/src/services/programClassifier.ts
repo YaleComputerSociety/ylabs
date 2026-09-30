@@ -104,6 +104,8 @@ function proseForProgram(input: ProgramClassificationInput): string {
 const DEPARTMENT_RESEARCH_GUIDE_TITLE =
   /^[A-Z][\w&,' -]*\s(?:undergraduate research(?: opportunities)?|research opportunities)$/i;
 
+const NON_UNDERGRADUATE_AUDIENCE_TITLE = /\b(?:graduate|professional|postdoc(?:toral)?|doctoral|phd)\b/;
+
 const RESEARCH_AWARD_TITLE = /\b(?:scholarships?|prizes?)\b/;
 
 const RESEARCH_CAREER_AWARD_PROSE =
@@ -485,6 +487,7 @@ function classifyProgramKind(input: ProgramClassificationInput): KindClassificat
   if (
     DEPARTMENT_RESEARCH_GUIDE_TITLE.test(title) &&
     !FUNDING_INSTRUMENT_NAME.test(titleLower) &&
+    !NON_UNDERGRADUATE_AUDIENCE_TITLE.test(titleLower) &&
     !/\bsummer\b/.test(titleLower)
   ) {
     return {
@@ -494,7 +497,7 @@ function classifyProgramKind(input: ProgramClassificationInput): KindClassificat
       studentFacingCategory: 'Department research guide',
       requiresMentorBeforeApply: false,
       mentorMatching: false,
-      undergraduateOnly: true,
+      ...(/\bundergraduate\b/.test(titleLower) ? { undergraduateOnly: true } : {}),
       bestNextStep:
         "Use the department's guide to find faculty whose research fits your interests, then contact them directly.",
       prepSteps: ['Faculty research fit', 'Short introduction email'],

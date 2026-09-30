@@ -11,8 +11,10 @@
  * no longer produces. A conclusion is not evidence, so lanes now observe facts only and
  * this stage recomputes the label from them.
  */
+import type { ProgramKind } from '../models/fellowship';
 import {
   classifyProgram,
+  programRoleForKind,
   type ProgramClassification,
   type ProgramClassificationInput,
 } from '../services/programClassifier';
@@ -134,9 +136,16 @@ export function planFellowshipClassification(input: {
   const unset = input.unset ?? {};
   const lockedFields = input.lockedFields ?? [];
   const observedValues = input.observedValues ?? {};
-  const classification = classifyProgram(
+  const classifierReading = classifyProgram(
     fellowshipClassificationInput(input.stored, staged, unset),
   );
+  const standingKind = lockedFields.includes('programKind')
+    ? (input.stored?.programKind as ProgramKind)
+    : classifierReading.programKind;
+  const classification: ProgramClassification = {
+    ...classifierReading,
+    programRole: programRoleForKind(standingKind),
+  };
   const set: Record<string, unknown> = {};
   const withdrawn: string[] = [];
   const cleared: string[] = [];
