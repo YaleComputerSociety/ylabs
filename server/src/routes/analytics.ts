@@ -368,13 +368,13 @@ router.get(
       ),
       topQueries: analytics.topQueries.map((query) => ({
         ...query,
-        count: query.totalSearches,
+        count: query.searchesThatReachedTheCorpus,
         zeroResults: query.zeroResultSearches,
         avgResults: query.avgResultCount,
       })),
       zeroResultQueries: analytics.topZeroResultQueries.map((query) => ({
         ...query,
-        count: query.totalSearches,
+        count: query.searchesThatReachedTheCorpus,
         zeroResults: query.zeroResultSearches,
         avgResults: query.avgResultCount,
       })),
@@ -383,7 +383,7 @@ router.get(
         .slice(0, 10)
         .map((query) => ({
           ...query,
-          count: query.totalSearches,
+          count: query.searchesThatReachedTheCorpus,
           zeroResults: query.zeroResultSearches,
           avgResults: query.avgResultCount,
         })),
@@ -469,7 +469,7 @@ router.get(
       priority: query.zeroResultRate >= 0.8 ? 'high' : 'medium',
       title: query.query || '(empty search)',
       metric: `${Math.round(query.zeroResultRate * 100)}% zero-result`,
-      count: query.totalSearches,
+      count: query.searchesThatReachedTheCorpus,
       department: query.entityType,
     }));
 

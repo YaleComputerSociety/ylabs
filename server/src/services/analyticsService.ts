@@ -289,6 +289,7 @@ export interface HighSearchLowResultsAction {
   zeroResultRate: number;
   avgResultCount: number;
   uniqueSearchers: number;
+  searchesThatReachedTheCorpus: number;
 }
 
 export interface ActionNeededAnalytics {
@@ -1031,7 +1032,7 @@ const resultCountThatReachedTheCorpus = {
   $cond: [reachedTheCorpusAfterProjection, '$resultCount', null],
 };
 
-const zeroResultQueryGroupStages = [
+const queryGroupStages = [
   {
     $group: {
       _id: {
@@ -1044,6 +1045,9 @@ const zeroResultQueryGroupStages = [
       },
       uniqueSearchers: { $addToSet: '$netid' },
       avgResultCount: { $avg: resultCountThatReachedTheCorpus },
+      searchesThatReachedTheCorpus: {
+        $sum: { $cond: [reachedTheCorpusAfterProjection, 1, 0] },
+      },
     },
   },
   {
@@ -1055,8 +1059,13 @@ const zeroResultQueryGroupStages = [
       zeroResultSearches: 1,
       uniqueSearchers: { $size: '$uniqueSearchers' },
       avgResultCount: { $round: [{ $ifNull: ['$avgResultCount', 0] }, 2] },
+      searchesThatReachedTheCorpus: 1,
     },
   },
+];
+
+const zeroResultQueryGroupStages = [
+  ...queryGroupStages,
   { $match: { zeroResultSearches: { $gt: 0 } } },
 ];
 
@@ -1231,35 +1240,7 @@ const computeSearchQualityAnalytics = async (
           },
         ],
         byQueryAndEntityType: [
-          {
-            $group: {
-              _id: {
-                query: '$normalizedQuery',
-                entityType: '$searchEntityType',
-              },
-              totalSearches: { $sum: 1 },
-              zeroResultSearches: {
-                $sum: { $cond: [zeroResultAfterProjection, 1, 0] },
-              },
-              uniqueSearchers: { $addToSet: '$netid' },
-              avgResultCount: { $avg: resultCountThatReachedTheCorpus },
-              searchesThatReachedTheCorpus: {
-                $sum: { $cond: [reachedTheCorpusAfterProjection, 1, 0] },
-              },
-            },
-          },
-          {
-            $project: {
-              _id: 0,
-              query: '$_id.query',
-              entityType: '$_id.entityType',
-              totalSearches: 1,
-              zeroResultSearches: 1,
-              uniqueSearchers: { $size: '$uniqueSearchers' },
-              avgResultCount: { $round: [{ $ifNull: ['$avgResultCount', 0] }, 2] },
-              searchesThatReachedTheCorpus: 1,
-            },
-          },
+          ...queryGroupStages,
           { $sort: { totalSearches: -1, zeroResultSearches: -1, query: 1 } },
           { $limit: 100 },
         ],
@@ -1270,11 +1251,11 @@ const computeSearchQualityAnalytics = async (
         ],
         highSearchLowResults: [
           ...zeroResultQueryGroupStages,
-          { $match: { totalSearches: { $gte: 2 } } },
+          { $match: { searchesThatReachedTheCorpus: { $gte: 2 } } },
           {
             $addFields: {
               zeroResultRate: {
-                $round: [{ $divide: ['$zeroResultSearches', '$totalSearches'] }, 4],
+                $round: [{ $divide: ['$zeroResultSearches', '$searchesThatReachedTheCorpus'] }, 4],
               },
             },
           },

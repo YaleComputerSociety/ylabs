@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { AnalyticsEvent, AnalyticsEventType } from '../../models/analytics';
 import {
+  getActionNeededAnalytics,
   getFunnelAnalytics,
   getSearchQualityAnalytics,
   getSearchQueryAnalytics,
@@ -141,6 +142,27 @@ describe('funnel save stage and degraded searches over a real store', () => {
 
     expect(quality.topZeroResultQueries).toEqual([
       expect.objectContaining({ query: 'rare topic', avgResultCount: 0 }),
+    ]);
+  });
+
+  it('rates and thresholds a search gap over only the searches that reached the corpus', async () => {
+    await AnalyticsEvent.collection.insertMany([
+      search('stud01', 0, 'rare topic', { resultCount: 0 }),
+      search('stud02', 0, 'rare topic', { resultCount: 0 }),
+      search('stud03', 0, 'rare topic', { resultCount: 5, degraded: true }),
+      search('stud04', 0, 'rare topic', { resultCount: 5, degraded: true }),
+      search('stud05', 0, 'thin topic', { resultCount: 0 }),
+      search('stud06', 0, 'thin topic', { resultCount: 0, degraded: true }),
+    ]);
+
+    const { highSearchLowResults } = await getActionNeededAnalytics();
+
+    expect(highSearchLowResults).toEqual([
+      expect.objectContaining({
+        query: 'rare topic',
+        zeroResultRate: 1,
+        searchesThatReachedTheCorpus: 2,
+      }),
     ]);
   });
 });
