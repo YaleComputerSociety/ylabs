@@ -1835,6 +1835,36 @@ async function syncGatedResearchEntitiesToIndex(
   return result;
 }
 
+/**
+ * The corpus read's ordering, done in process rather than by the database.
+ *
+ * `sort({ name: 1 })` had no index to serve it, so MongoDB sorted the projected
+ * documents in memory, and the cluster refuses an in-memory sort above 33,554,432
+ * bytes unless the query opts in to disk use. On Development that sort already moved
+ * 24,526,308 of those bytes over 4,510 live rows, 73% of the limit, and the same sort
+ * without the projection fails outright, so the projection was the only thing holding
+ * the gate under a ceiling that rises with every new row and every longer description.
+ * When it crossed, every run, dry and apply alike, threw before planning a single row.
+ *
+ * Nothing downstream needs database order, because the plans are keyed by `recordId`.
+ * The report's samples do want label order, so it is restored here instead (#3748, the
+ * shape #3543 and #3574 already chose). Do not put a `name` or `title` sort back on
+ * either read: an `{ archived: 1, name: 1 }` index would also serve it, but the read
+ * then depends on an index nothing else needs, and the sort orders a list the caller
+ * re-orders anyway. The program read sorted only 1,662,371 bytes over 452 rows, 5% of
+ * the same limit, and is changed with it because it is the same read waiting to grow.
+ */
+const orderedByGateLabel = <T extends Record<string, any>>(
+  rows: T[],
+  field: 'name' | 'title',
+): T[] =>
+  [...rows].sort((a, b) => {
+    const left = typeof a?.[field] === 'string' ? (a[field] as string) : '';
+    const right = typeof b?.[field] === 'string' ? (b[field] as string) : '';
+    if (left === right) return 0;
+    return left < right ? -1 : 1;
+  });
+
 async function planResearchEntityGateUpdates(
   options: Pick<
     StudentVisibilityGateOptions,
@@ -1884,9 +1914,9 @@ async function planResearchEntityGateUpdates(
     }
   }
 
-  const query = ResearchEntity.find(match).select(researchEntityGateProjection).sort({ name: 1 });
+  const query = ResearchEntity.find(match).select(researchEntityGateProjection).sort({ _id: 1 });
   if (options.limit && Number.isFinite(options.limit)) query.limit(options.limit);
-  const entities = await query.lean();
+  const entities = orderedByGateLabel(await query.lean(), 'name');
   const needsDuplicateReferenceCorpus =
     Boolean(options.recordIds?.length) ||
     Boolean(options.sourceName) ||
@@ -2199,9 +2229,9 @@ async function planProgramGateUpdates(
   const match: Record<string, any> = { archived: false };
   if (options.recordIds?.length) match._id = { $in: options.recordIds };
   if (options.sourceName) match.sourceName = options.sourceName;
-  const query = Fellowship.find(match).sort({ title: 1 });
+  const query = Fellowship.find(match).sort({ _id: 1 });
   if (options.limit && Number.isFinite(options.limit)) query.limit(options.limit);
-  const programs = await query.lean();
+  const programs = orderedByGateLabel(await query.lean(), 'title');
 
   return programs.map((program: any) => {
     const recordId = studentVisibilityGateDocumentId(program._id);
