@@ -48,6 +48,26 @@ describe('summarizeWatchedDeadlines', () => {
     expect(summary.approaching.some((item) => item.programId === 'none')).toBe(false);
   });
 
+  it('does not count a deadline projected from a past cycle as closing soon', () => {
+    const projected = {
+      ...program('projected', daysFromNow(3)),
+      deadlineProjectedNextCycle: true,
+    } as Fellowship;
+    const watched: WatchedProgramWithStage[] = [
+      { program: projected, stage: 'SAVED' },
+      { program: program('confirmed', daysFromNow(5)), stage: 'SAVED' },
+    ];
+
+    const summary = summarizeWatchedDeadlines(watched, NOW);
+
+    expect(summary.approaching.map((item) => item.programId)).toEqual(['confirmed']);
+    expect(
+      sortByUpcomingDeadline([projected, program('confirmed', daysFromNow(5))], NOW).map(
+        (p) => p.id,
+      ),
+    ).toEqual(['confirmed', 'projected']);
+  });
+
   it('distinguishes not-started from in-progress approaching programs', () => {
     const watched: WatchedProgramWithStage[] = [
       { program: program('untouched', daysFromNow(5)), stage: 'SAVED' },

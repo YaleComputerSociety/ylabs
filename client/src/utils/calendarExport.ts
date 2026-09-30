@@ -20,6 +20,7 @@ export const fellowshipFutureDeadlineDate = (
   fellowship: Fellowship,
   now: Date = new Date(),
 ): Date | null => {
+  if (fellowship.deadlineProjectedNextCycle) return null;
   const date = validDeadlineDate(fellowship.deadline);
   if (!date || deadlineEndOfUtcDay(date).getTime() < now.getTime()) return null;
   return date;
