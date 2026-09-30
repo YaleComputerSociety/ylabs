@@ -209,7 +209,9 @@ describe('CAS login callback binding', () => {
       const { cookie, callbackUrl } = await startLogin(baseUrl, '?redirect=%2Fsaved');
 
       expect(fakeCas.loginServiceUrls.at(-1)).toMatch(/[?&]state=[0-9a-f]{32}(&|$)/);
-      expect(sessionPayloadOf(cookie).casLoginStates).toEqual([expect.stringMatching(/^[0-9a-f]{32}$/)]);
+      expect(sessionPayloadOf(cookie).casLoginStates).toEqual([
+        expect.stringMatching(/^[0-9a-f]{32}$/),
+      ]);
 
       const completed = await get(callbackUrl, cookie);
       expect(completed.status).toBe(302);
