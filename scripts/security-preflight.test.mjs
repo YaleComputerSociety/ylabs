@@ -885,7 +885,7 @@ const withStubEndpoint = async (statusCode, probe) => {
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
-    const url = `http://127.0.0.1:${server.address().port}/api/config`;
+    const url = `http://127.0.0.1:${server.address().port}/`;
     return { ...(await probe(url)), requests: () => requests };
   } finally {
     await new Promise((resolve) => server.close(resolve));
@@ -917,7 +917,7 @@ test('the keep-alive probe retries and reports a transport failure instead of ab
   const { port } = server.address();
   await new Promise((resolve) => server.close(resolve));
 
-  const result = await probeBeta(`http://127.0.0.1:${port}/api/config`);
+  const result = await probeBeta(`http://127.0.0.1:${port}/`);
   assert.equal(result.code, 1);
   assert.equal(result.output.match(/^attempt \d\/3: HTTP 000$/gm)?.length, 3);
   assert.match(result.output, /::error::.*last HTTP 000/);

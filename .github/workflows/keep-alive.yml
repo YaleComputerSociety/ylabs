@@ -21,7 +21,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Ping the beta API
+      - name: Ping the beta service
         env:
-          BETA_HEALTH_URL: https://ylabs-gr4v.onrender.com/api/config
+          # The service root, not an API route: a 2xx here means the instance
+          # answered, which is what warmth is. A data-backed route like
+          # /api/config mixes corpus and database health into the signal, so a
+          # red run would stop meaning "beta is cold".
+          BETA_HEALTH_URL: https://ylabs-gr4v.onrender.com/
         run: scripts/keep-alive-probe.sh

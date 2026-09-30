@@ -97,8 +97,10 @@ Re-running the check is therefore safe: it always evaluates the current state.
 
 ## Keeping beta warm
 
-The `Keep Alive` workflow pings `GET /api/config` on the beta service.
+The `Keep Alive` workflow pings the beta service root, `GET /`.
 It is a warm-up that doubles as the only scheduled signal about beta, so `scripts/keep-alive-probe.sh` fails when the endpoint does not answer 2xx after three attempts twenty seconds apart, and it prints the final HTTP status so a red run names what it saw (#3910).
+The root is served by the same instance a cold start has to wake, so a 2xx there is a warmth signal.
+Do not point the probe at a data-backed route such as `GET /api/config`: that route answers 500 whenever the database or the corpus is unhappy, and a red run would then say nothing about whether beta is cold.
 A timeout or refused connection counts as a failed attempt and is reported as HTTP `000`, so a cold start that outlasts one attempt still gets the remaining retries.
 A 500 is a running service returning an error, not a cold start, and it is reported as a failure.
 
