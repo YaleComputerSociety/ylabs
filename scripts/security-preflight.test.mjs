@@ -858,6 +858,63 @@ test('GitHub checkout steps do not persist repository credentials', () => {
   }
 });
 
+test('the keep-alive probe reports a failing beta endpoint instead of swallowing it', () => {
+  assert.doesNotMatch(
+    keepAliveWorkflow,
+    /curl[^\n]*\|\|\s*(echo|true)/,
+    'keep-alive.yml must not discard the probe exit status: `|| echo` turned three days of HTTP 500 on beta into an unbroken green history (ylabs#3910)',
+  );
+  assert.match(
+    keepAliveWorkflow,
+    /%\{http_code\}/,
+    'keep-alive.yml must print the final HTTP status so a red run names what it saw',
+  );
+  assert.match(
+    keepAliveWorkflow,
+    /^\s*exit 1$/m,
+    'keep-alive.yml must be able to fail the job on a persistent non-2xx response',
+  );
+});
+
+test('release-hold decides from the live pull request, not the replayed event payload', () => {
+  // github.event is a frozen copy of the payload that started the run, so a
+  // re-run of an earlier attempt re-reads the labels and draft flag as they were
+  // then and would clear a hold that is still in effect (ylabs#3911).
+  assert.doesNotMatch(
+    releaseHoldWorkflow,
+    /github\.event\.pull_request\.labels/,
+    'release-hold must not read labels from the event payload',
+  );
+  assert.doesNotMatch(
+    releaseHoldWorkflow,
+    /github\.event\.pull_request\.draft/,
+    'release-hold must not read draft state from the event payload',
+  );
+  assert.match(
+    releaseHoldWorkflow,
+    /gh pr view[^\n]*--json isDraft,labels/,
+    'release-hold must read the live label and draft state at run time',
+  );
+  assert.match(
+    releaseHoldWorkflow,
+    /pull-requests:\s*read/,
+    'reading the live pull request state needs the pull-requests: read scope',
+  );
+  for (const trigger of [
+    'labeled',
+    'unlabeled',
+    'ready_for_review',
+    'converted_to_draft',
+    'synchronize',
+  ]) {
+    assert.match(
+      releaseHoldWorkflow,
+      new RegExp(`\\b${trigger}\\b`),
+      `release-hold must keep the ${trigger} trigger so a state change still produces a new run`,
+    );
+  }
+});
+
 // The live-prod smoke now runs only on a promotion, so post-promotion-verify is
 // the sole workflow carrying these assertions. Deleting the standing schedule
 // left `security:smoke:production` reachable from this workflow and from an

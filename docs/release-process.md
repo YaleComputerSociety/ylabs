@@ -89,6 +89,21 @@ Draft state is the default hold.
 Open promotion pull requests as drafts, verify on staging, then mark ready.
 Use the `hold` label when a promotion must be blocked for a reason other than draft state, so the reason is visible in the pull request list.
 
+The check reads both conditions from the pull request itself at run time, with `gh pr view --json isDraft,labels`, rather than from the webhook payload that started the run.
+That is what makes "while" true.
+A re-run of a workflow run replays the original event, so a payload-driven check would re-read the labels and draft state as they were at that earlier event and could report clear on a promotion that is still held (#3911).
+Re-running the check is therefore safe: it always evaluates the current state.
+
+## Keeping beta warm
+
+The `Keep Alive` workflow pings `GET /api/config` on the beta service.
+It is a warm-up that doubles as the only scheduled signal about beta, so it fails when the endpoint does not answer 2xx after three attempts twenty seconds apart, and it prints the final HTTP status so a red run names what it saw (#3910).
+A 500 is a running service returning an error, not a cold start, and it is reported as a failure.
+
+Its cadence is best-effort and much lower than the cron line suggests.
+GitHub delays and drops scheduled runs under load; the observed rate has been roughly 6 to 7 runs a day against a cron that asks for 144.
+So read a red run as a real signal about beta, but never read a green history as proof that beta stayed warm, or that it was healthy, between runs.
+
 ## Holding one feature instead of the whole release
 
 Holding the whole promotion blocks every other change queued behind it.
