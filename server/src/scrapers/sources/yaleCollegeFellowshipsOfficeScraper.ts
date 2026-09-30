@@ -4,12 +4,12 @@
  * This source keeps Fellowship rows fresh from official Yale pages while
  * treating gated CommunityForce URLs as application links, not fetch targets.
  */
-import axios from 'axios';
 import crypto from 'crypto';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
+import { fetchPageWithPolicy } from '../utils/httpFetch';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
-import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { assertPublicHttpUrl } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
 import { humanizeProgramLinkLabel } from '../../utils/programLinkLabel';
@@ -1498,25 +1498,23 @@ export function candidateToObservations(candidate: FellowshipCatalogCandidate): 
 }
 
 async function fetchHtml(url: string, useCache: boolean): Promise<string> {
-  const safeUrl = await assertPublicHttpUrl(url);
-  const safeUrlText = safeUrl.toString();
+  const safeUrlText = (await assertPublicHttpUrl(url)).toString();
   const cacheKey = `page:${safeUrlText}`;
   if (useCache) {
     const cached = await getCached<string>(YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE, cacheKey);
     if (cached) return cached;
   }
-  const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: 30000,
+  const { html } = await fetchPageWithPolicy(safeUrlText, {
+    timeoutMs: 30000,
     headers: {
       'User-Agent': 'YLabsBot/1.0 (+https://ylabs.yale.edu)',
       Accept: 'text/html,application/xhtml+xml',
     },
     maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
+    // The run loop already retries every page three times, so a second retry layer here
+    // would multiply the requests a failing page costs.
+    maxRetries: 0,
   });
-  const html = String(res.data || '');
   if (useCache) await setCached(YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE, cacheKey, html);
   return html;
 }

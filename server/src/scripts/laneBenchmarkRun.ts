@@ -24,6 +24,7 @@ export const BENCHMARKABLE_LANES: ReadonlySet<string> = new Set([
   'lab-microsite-description-llm',
   'centers-institutes-index',
   'student-grants-database',
+  'yale-college-fellowships-office',
 ]);
 
 export const SOURCE_CONCURRENCY_LANES: ReadonlySet<string> = new Set([

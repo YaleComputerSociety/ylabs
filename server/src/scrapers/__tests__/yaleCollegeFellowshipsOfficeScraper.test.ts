@@ -17,6 +17,8 @@ import {
   inferPurpose,
   YaleCollegeFellowshipsOfficeScraper,
 } from '../sources/yaleCollegeFellowshipsOfficeScraper';
+import { beginBenchmarkReplay, finishBenchmarkReplay } from '../snapshotBenchmarkMode';
+import { POLICY_FETCH_BENCHMARK_NAMESPACE } from '../utils/httpFetch';
 
 const fundingPageUrl = 'https://funding.yale.edu/find-funding/yale-fellowships-offered-through';
 const sciencePageUrl =
@@ -2539,5 +2541,62 @@ describe('YaleCollegeFellowshipsOfficeScraper administering office (#4086)', () 
 
     expect(contactOffice).toBeDefined();
     expect(contactOffice?.value).toBe('');
+  });
+});
+
+describe('YaleCollegeFellowshipsOfficeScraper benchmark replay', () => {
+  it('reads every page from the frozen input, including a page that failed at capture', async () => {
+    const servedUrl = `${detailPageUrl}-served`;
+    const failedUrl = `${detailPageUrl}-failed`;
+    const emitted: any[] = [];
+    const log = vi.fn();
+    beginBenchmarkReplay([
+      {
+        sourceName: 'yale-college-fellowships-office',
+        requestKey: `page:${servedUrl}`,
+        payload:
+          '<main><h1>Fixture Frozen Research Fellowship</h1><p>Students research.</p></main>',
+        fetchedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+      {
+        sourceName: POLICY_FETCH_BENCHMARK_NAMESPACE,
+        requestKey: `page:v1:${failedUrl}`,
+        payload: { failedStatus: 404 },
+        fetchedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ]);
+    let replay;
+    try {
+      await new YaleCollegeFellowshipsOfficeScraper({
+        pageUrls: [servedUrl, failedUrl],
+        sitemapUrls: [],
+        retryDelay: async () => undefined,
+      }).run({
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'yale-college-fellowships-office',
+        sourceWeight: 0.95,
+        options: { dryRun: true, useCache: true, release: false },
+        emit: async (items) => {
+          emitted.push(...(Array.isArray(items) ? items : [items]));
+        },
+        log,
+      });
+    } finally {
+      replay = finishBenchmarkReplay();
+    }
+
+    expect(replay.networkBlocks).toBe(0);
+    expect(replay.servedByNamespace).toEqual({
+      'yale-college-fellowships-office': 1,
+      [POLICY_FETCH_BENCHMARK_NAMESPACE]: 1,
+    });
+    expect(emitted.find((observation) => observation.field === 'title')?.value).toBe(
+      'Fixture Frozen Research Fellowship',
+    );
+    expect(log).toHaveBeenCalledWith(
+      'Skipping fellowship catalog page after fetch/parse failure',
+      expect.objectContaining({ url: failedUrl }),
+    );
   });
 });
