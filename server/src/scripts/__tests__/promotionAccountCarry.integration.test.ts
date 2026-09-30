@@ -1,7 +1,11 @@
 import { MongoClient, ObjectId, type Db } from 'mongodb';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { applyCopy, type PromotionOptions } from '../promoteAcceptedBetaCopy';
+import {
+  applyCopy,
+  syntheticUserReferences,
+  type PromotionOptions,
+} from '../promoteAcceptedBetaCopy';
 
 const researcherAccountId = new ObjectId('68f1000000000000000000a1');
 const productionTwinAccountId = new ObjectId('68f1000000000000000000a2');
@@ -162,10 +166,10 @@ describe('Beta to Production promotion carries Production login accounts', () =>
     expect(await productionDb.collection('accounts').findOne({ _id: staleAccountId })).toBeNull();
   });
 
-  it('withholds a synthetic-shaped Production account even when it has logged in', async () => {
+  it('carries a synthetic-shaped Production account that has logged in', async () => {
     expect(
       await productionDb.collection('accounts').findOne({ _id: syntheticAccountId }),
-    ).toBeNull();
+    ).toMatchObject({ lastLoginAt });
   });
 
   it('re-keys a same-netid Beta account to the Production _id and follows its researcher', async () => {
@@ -180,5 +184,44 @@ describe('Beta to Production promotion carries Production login accounts', () =>
     expect(
       await productionDb.collection('researchers').findOne({ _id: researcherId }),
     ).toMatchObject({ accountId: productionTwinAccountId });
+  });
+});
+
+describe('synthetic-user apply blocker', () => {
+  let memoryServer: MongoMemoryServer | undefined;
+  let client: MongoClient | undefined;
+  let betaDb: Db;
+
+  beforeAll(async () => {
+    memoryServer = await MongoMemoryServer.create({ binary: { version: '8.0.12' } });
+    client = new MongoClient(memoryServer.getUri());
+    await client.connect();
+    betaDb = client.db('Beta_synthetic_reference_scan');
+    await betaDb.collection('accounts').insertOne({
+      _id: syntheticAccountId,
+      netid: 'fixture-synthetic',
+      email: 'fixture-synthetic@example.invalid',
+    });
+    await betaDb.collection('research_plans').insertOne({
+      accountId: syntheticAccountId,
+      target: { kind: 'RESEARCH_ENTITY', id: new ObjectId() },
+    });
+  });
+
+  afterAll(async () => {
+    await client?.close();
+    await memoryServer?.stop();
+  });
+
+  it('ignores references held only by collections the promotion does not copy', async () => {
+    expect(await syntheticUserReferences(betaDb)).toEqual([]);
+  });
+
+  it('reports references held by a copied collection', async () => {
+    await betaDb.collection('researchers').insertOne({ accountId: syntheticAccountId });
+
+    expect(await syntheticUserReferences(betaDb)).toEqual([
+      { collection: 'researchers', field: 'accountId', count: 1 },
+    ]);
   });
 });

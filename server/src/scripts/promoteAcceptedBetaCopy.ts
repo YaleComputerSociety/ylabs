@@ -471,7 +471,7 @@ async function buildPlan(
   );
 }
 
-async function syntheticUserReferences(betaDb: Db): Promise<SyntheticUserReference[]> {
+export async function syntheticUserReferences(betaDb: Db): Promise<SyntheticUserReference[]> {
   const excludedUsers = await betaDb
     .collection('accounts')
     .find(SYNTHETIC_USER_MATCH, { projection: { _id: 1 } })
@@ -480,7 +480,9 @@ async function syntheticUserReferences(betaDb: Db): Promise<SyntheticUserReferen
   if (excludedIds.length === 0) return [];
 
   const rows = await Promise.all(
-    ACCOUNT_ID_REFERENCE_FIELDS.map(async ({ collection, field }) => {
+    ACCOUNT_ID_REFERENCE_FIELDS.filter(({ collection }) =>
+      COPY_COLLECTIONS.some((copied) => copied.name === collection),
+    ).map(async ({ collection, field }) => {
       const exists = await betaDb
         .listCollections({ name: collection }, { nameOnly: true })
         .hasNext();
@@ -638,7 +640,7 @@ export async function previewAccountCarry(betaDb: Db, productionDb: Db): Promise
     productionDb,
     productionAccountsCollection: 'accounts',
     promotedAccounts: betaDb.collection('accounts'),
-    accountFilter: SYNTHETIC_USER_FILTER,
+    promotedAccountFilter: SYNTHETIC_USER_FILTER,
   });
 }
 
@@ -667,7 +669,7 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
         productionDb,
         productionAccountsCollection: productionAccounts,
         promotedAccounts: productionDb.collection('accounts'),
-        accountFilter: SYNTHETIC_USER_FILTER,
+        promotedAccountFilter: SYNTHETIC_USER_FILTER,
       });
       await applyAccountCarry(productionDb, carry);
       carriedAccountInserts = carry.inserts.length;

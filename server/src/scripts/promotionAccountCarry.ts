@@ -79,7 +79,7 @@ export async function loadAccountCarryPlan(args: {
   productionDb: Db;
   productionAccountsCollection: string;
   promotedAccounts: Collection;
-  accountFilter: Document;
+  promotedAccountFilter: Document;
 }): Promise<AccountCarryPlan> {
   const planOwnerIds = new Set(
     (await args.productionDb.collection('research_plans').distinct('accountId')).map(idKey),
@@ -87,9 +87,9 @@ export async function loadAccountCarryPlan(args: {
   return planAccountCarry({
     productionAccounts: await args.productionDb
       .collection(args.productionAccountsCollection)
-      .find(args.accountFilter)
+      .find({})
       .toArray(),
-    promotedAccounts: await args.promotedAccounts.find(args.accountFilter).toArray(),
+    promotedAccounts: await args.promotedAccounts.find(args.promotedAccountFilter).toArray(),
     planOwnerIds,
   });
 }
