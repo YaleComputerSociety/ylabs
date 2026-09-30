@@ -763,7 +763,7 @@ const FellowshipModal = ({
                         href={sourceHref}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-brand hover:underline yr-focus-ring"
+                        className="yr-link yr-focus-ring inline-flex min-h-[44px] items-center rounded-control"
                       >
                         {sourceLabel || 'Official source'}
                       </a>

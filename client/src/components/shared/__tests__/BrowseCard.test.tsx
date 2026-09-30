@@ -189,3 +189,78 @@ describe('Program card visual hierarchy', () => {
     expect(screen.getByText('Funding after mentor')).toBeTruthy();
   });
 });
+
+describe('Program card pointer target', () => {
+  it('does not promise a pointer target on a card wrapper that handles no click', () => {
+    const { container } = renderAdmin(
+      <BrowseCard item={item} isFavorite={false} onOpenModal={vi.fn()} />,
+    );
+
+    const wrapper = container.firstElementChild as HTMLElement;
+
+    expect(wrapper.className).not.toContain('cursor-pointer');
+  });
+
+  it('stretches the card View details action over the whole card', () => {
+    const { container } = renderAdmin(
+      <BrowseCard item={item} isFavorite={false} onOpenModal={vi.fn()} />,
+    );
+
+    const wrapper = container.firstElementChild as HTMLElement;
+    const action = screen.getByRole('button', { name: 'View details' });
+
+    expect(wrapper.className).toContain('relative');
+    expect(action.className).toContain('after:absolute');
+    expect(action.className).toContain('after:inset-0');
+  });
+
+  it('stretches the list row title action over the whole row', () => {
+    const { container } = renderAdmin(
+      <BrowseListItem item={item} isFavorite={false} onOpenModal={vi.fn()} />,
+    );
+
+    const wrapper = container.firstElementChild as HTMLElement;
+    const action = screen.getByRole('button', { name: /^View details for/ });
+
+    expect(wrapper.className).not.toContain('cursor-pointer');
+    expect(wrapper.className).toContain('relative');
+    expect(action.className).toContain('after:absolute');
+    expect(action.className).toContain('after:inset-0');
+  });
+
+  it('keeps each stretched target whole while pressed, because a transform or filter on the action shrinks its overlay to the action box', () => {
+    renderAdmin(<BrowseCard item={item} isFavorite={false} onOpenModal={vi.fn()} />);
+    const cardAction = screen.getByRole('button', { name: 'View details' });
+    cleanup();
+    renderAdmin(<BrowseListItem item={item} isFavorite={false} onOpenModal={vi.fn()} />);
+    const rowAction = screen.getByRole('button', { name: /^View details for/ });
+
+    for (const action of [cardAction, rowAction]) {
+      expect(action.className).toContain('[&:not(:disabled):active]:transform-none');
+      expect(action.className).toContain('[&:not(:disabled):active]:filter-none');
+    }
+  });
+
+  it('gives every card and row action a 44px minimum target', () => {
+    const controls = {
+      isFavorite: false,
+      onOpenModal: vi.fn(),
+      onToggleFavorite: vi.fn(),
+      onAdminEdit: vi.fn(),
+    };
+    const reaches44px = (element: HTMLElement) =>
+      /(^|\s)(min-h-11|min-h-\[44px\])(\s|$)/.test(element.className);
+
+    for (const surface of [
+      <BrowseCard key="card" item={item} {...controls} />,
+      <BrowseListItem key="row" item={item} {...controls} />,
+    ]) {
+      renderAdmin(surface);
+      const actions = [...screen.getAllByRole('button'), ...screen.queryAllByRole('link')];
+
+      expect(actions.length).toBeGreaterThan(2);
+      expect(actions.filter((action) => !reaches44px(action))).toEqual([]);
+      cleanup();
+    }
+  });
+});

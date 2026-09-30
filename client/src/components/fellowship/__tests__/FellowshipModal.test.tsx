@@ -434,6 +434,16 @@ describe('FellowshipModal', () => {
     expect(screen.queryByRole('heading', { name: 'Description' })).toBeNull();
   });
 
+  it('gives the source provenance link a 44px target like the other detail links', () => {
+    renderModal({
+      sourceName: 'example-programs-office',
+      sourceUrl: 'https://programs.example.edu/award',
+    });
+
+    const provenance = screen.getByRole('link', { name: 'Example Programs Office' });
+    expect(provenance.className).toContain('min-h-[44px]');
+  });
+
   it('falls back to the specific source page and shows legible provenance (#692)', () => {
     const specificSource =
       'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program';

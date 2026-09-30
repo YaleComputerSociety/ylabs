@@ -228,6 +228,12 @@ A Tailwind ring sits at offset 0, so its outer edge is adjacent to the page, whe
 The browse card carried three affordances for one destination: a clickable wrapper, a linked title, and a filled navy CTA, so a single viewport showed six filled primary buttons for six cards.
 A filled fill means "this is the one action on this surface"; six of them means none of them.
 Demote the CTA to a text link in `brand` with the shared arrow, which is what the sibling browse card already did, and anchor it on a `border-t border-line` hairline so the CTA row aligns across a row of cards.
+- A card that looks clickable is one real target, not a wrapper with a pointer cursor.
+Stretch its one action over the card with `after:absolute after:inset-0` on the action and `relative` on the card, and lift any other control above the overlay with `relative z-[1]`.
+Never put `onClick` on the wrapper instead: the program card lost its wrapper handler for keyboard access and kept `cursor-pointer`, so a 277x319 card promised a target and delivered a 20px button.
+The stretched action also opts out of the base press rule with `[&:not(:disabled):active]:transform-none` and `[&:not(:disabled):active]:filter-none`, because a transform or filter makes the action the overlay's containing block, so the press shrinks the overlay and the release lands outside it.
+A text-height action reaches 44px with `min-h-11` and a matching negative vertical margin, so the target grows without moving the layout.
+`components/shared/__tests__/BrowseCard.test.tsx` renders the browse card and row and holds every action to that.
 - A forward affordance is an icon, never a typed character.
 A literal `→` inherits the font's weight and metrics, so the same affordance rendered at a different size and stroke depending on which card you were looking at.
 `components/shared/ArrowRightIcon.tsx` is the only place the arrow path exists, and `src/__tests__/sharedGlyphGuard.test.ts` keeps it that way.
@@ -242,7 +248,7 @@ Normalising it into the set would mean redrawing it.
 It does still hardcode three hex colours, which §2 forbids; that is tracked separately rather than quietly folded in here.
 - Every control also has a pressed state, which comes from a base rule on `button` rather than from a component class.
 This client has no button component: all of its buttons are styled ad hoc with utilities, and `bg-brand` alone is repeated 30 times, so there is no primitive to put the rule in.
-Keying it on the element reaches every button at once, and a call site that wants its own press behaviour still wins, because a utility beats `@layer base`.
+Keying it on the element reaches every button at once, and a call site that wants its own press behaviour can still override it, but a plain `active:` utility does not: `button:not(:disabled):active` outranks it on specificity, so repeat the selector with `[&:not(:disabled):active]:`.
 Do not add `active:scale-*` at a call site; it duplicates the base rule.
 - A `Link` or `a` styled as a control takes `.yr-pressable`, which carries the same rule.
 An element selector cannot tell a button-shaped link from a prose link, so this half is opt-in.
