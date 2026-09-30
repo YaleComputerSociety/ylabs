@@ -39,7 +39,7 @@ Measured against a throwaway Meilisearch with a 300 ms embedder, 300 rows took 1
 The server refuses to start in a deployed runtime (`requiresDeployedRuntimeSecurity()`) unless both `MEILISEARCH_HOST` and `MEILISEARCH_INDEX_PREFIX` are set, because the local defaults would silently point Beta or Production at `localhost` or at the unprefixed Development index.
 The check runs in `app.ts` at startup rather than inside the client, so local scripts, which usually run with no `NODE_ENV`, keep the local defaults.
 The embedder check behind hybrid search (`readResearchEntitySearchEmbedderState`) caches `configured` and `absent` for five minutes but never caches a failed check: a thrown `getEmbedders()` is logged, reported as `unknown`, and makes that search keyword-only with `degraded: true`.
-The companion queries a search sends after its primary one (the exhaustive hybrid count and facet query, each disjunctive facet query, and the keyword-leg query) each keep their fallback on failure and also mark the response `degraded: true`, so a search that lost part of its answer to a timeout is shown as limited and kept out of the zero-result analytics (#3751).
+The companion queries a search sends after its primary one (the exhaustive hybrid count and facet query, each disjunctive facet query, the keyword-leg query, and the deep and semantic legs) each keep their fallback on failure and also mark the response `degraded: true`, so a search that lost part of its answer to a timeout is shown as limited and kept out of the zero-result analytics (#3751).
 
 Relevant config:
 
@@ -296,7 +296,20 @@ It used to be `max(200, offset + pageSize)` rows, so each page past the first 20
 Now the head keeps the fixed `HYBRID_CANDIDATE_POOL_SIZE` window for the pool and the keyword leg, so page 1 orders exactly as before, and when either head leg fills that window a deep pool and keyword leg to `RESEARCH_SEARCH_MAX_REACHABLE_RECORDS` supply every further row, appended after the head in their own order.
 Only the head window's keyword rows are fused with the semantic leg; the deeper keyword rows follow the fused list, then the remaining pool rows.
 Measured on Development, `people`, `cancers`, and `faculty development` each reported one total on every page, equal to the rows served, with no repeats; `research-search:relevance` precision and reciprocal rank were unchanged on all 19 cases and average overlap changed on 1 of 108 perturbations.
-In one run each, the median page latency for `cancers` at page size 24 moved from 718ms to 908ms, the cost of the two deep queries every page repeats.
+The two deep queries cost page latency as first merged, because they ran after every other leg and the deep keyword leg carried match positions on 5,000 rows: measured in-process on Development over 4 text queries, 10 warm runs each, the page-1 median rose from 673ms to 926ms and the p90 from 834ms to 1,230ms, with the same rise on a page past offset 200.
+#3949 removed that cost, and the next section records the result.
+
+### The legs of a text search run concurrently (#3949)
+
+After the primary pool query settles its fallbacks, every other leg depends only on its final parameters or on the keyword leg, so each starts as soon as what it reads has returned rather than one after another.
+The exhaustive count, each disjunctive facet query, the keyword leg, and, when the head pool filled its window, the deep pool start together.
+When the keyword leg returns, after its `'last'` retry, the semantic leg, the top-row match-position re-read, the deep keyword leg, and a deep pool the keyword leg alone made necessary start together.
+The semantic leg stays gated on a non-empty keyword leg, because the count query outlasts the keyword leg anyway, so the gate costs no wall time and saves a query on zero-keyword searches.
+Each leg keeps its own fallback and its own `degraded` contribution, applied after all of them settle.
+Measured in-process on Development against the same protocol (4 text queries, pages 1 and 11 at page size 24, 10 warm runs each, interleaved processes), the page-1 median went from 926ms to 564ms and the p90 from 1,230ms to 717ms, below the 673ms and 834ms before #3943, and page 11 from 992ms to 589ms median and 1,162ms to 699ms p90.
+Ordered result ids, totals, facet distributions and `degraded` flags were identical to the sequential form on 118 of 120 query, filter and page combinations; the other 2 were one query whose unchanged count query also differed between processes, the variance a fresh query embedding brings.
+Every measured request embedded its query at most once and Meilisearch embedded none, so repeated embedding is not where the remaining time goes: the last Meilisearch call now returns 220-320ms into the request, and the 220-390ms after it is Mongo hydration and the DTO.
+`server/src/services/__tests__/researchGroupService.test.ts` pins the start order in the case named "starts every leg as soon as the legs it depends on have returned".
 `yarn --cwd server journey:eval --case=text-query-total-is-stable` pages a text query and fails when its total changes, reporting inconclusive when the corpus moved during the walk.
 
 ### The two legs are merged by rank, not by score (#3797)
@@ -316,7 +329,10 @@ The names read are `leadProfessorNames`, `professorNames`, and the entity title 
 A title match counts only when the same row does not also match the query in a topic field (`researchAreas`, `departments`, `studentSearchTerms`, `methods`, `orgAffiliationLabels`, `school`), so `Statistics Lab` stays a topic answer to `statistics`; a query whose every word is matched in a lead or professor name always counts, while one that needs the title for any word, such as `green chemistry` under a lead named Green and a title "Green Chemistry Lab", still faces the topic check.
 A lone prefix (`stone` inside Stoneman) and a typo never count, because the highlighted text is not the typed word, while a short first name beside an exact surname does.
 Measured over 177 non-name queries, the topic veto cut false fires from 16 to 4 with every name query still firing; the remaining false fires are generic words that are whole words of a program title (`data`, `undergraduate`).
-The keyword leg therefore also retrieves those four fields, which the check reads through `_matchesPosition`.
+The check reads those four fields through `_matchesPosition` on the first surviving keyword row only, so the 200-row keyword leg asks for no match positions, and that one row is re-read alone, the same keyword query paged to its position with `hitsPerPage: 1`, with positions and the four fields (#3949).
+Positions cover every searchable attribute, retrieved or not, which is why the topic veto cannot be computed locally from the hit.
+Measured on Development, match positions took a 200-row keyword query from about 40ms to 130-160ms and a 5,000-row one from about 100ms to 410ms, while the one-row re-read costs about 45ms and runs beside the semantic leg.
+A re-read that returns a different row, because the index changed between the two queries, gives the check no positions and so serves the fused order; a failed re-read on a fused search marks it degraded.
 A withheld result reports only the rows it serves as its total, because the companion count still includes the withheld rows.
 A failed semantic leg falls back to the keyword-first order and marks the search degraded; `floorWeakSemanticOnlyHits` and `promoteExactAliasFieldMatches` now run only on that fallback path.
 A whole-query shorthand that keeps its typed alias (`ai`) still searches topic fields keyword-only and is unchanged.

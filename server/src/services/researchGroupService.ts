@@ -1511,6 +1511,16 @@ export async function searchResearchGroupsViaMeili(
     );
   }
 
+  const settleSearch = async <T>(
+    search: () => Promise<T>,
+  ): Promise<{ value: T; error?: undefined } | { value?: undefined; error: unknown }> => {
+    try {
+      return { value: await search() };
+    } catch (error) {
+      return { error };
+    }
+  };
+
   // The per-page totalHits and facetDistribution above only become exhaustive
   // once Meilisearch has scanned deep enough to have examined every candidate
   // that could pass rankingScoreThreshold, so a shallow first page can still
@@ -1518,43 +1528,24 @@ export async function searchResearchGroupsViaMeili(
   // candidate pool. Run one companion query deep enough to force the
   // exhaustive, threshold-aware count and facet distribution regardless of
   // which page was actually requested. See #885, #941.
-  if (finalSearchParams.rankingScoreThreshold !== undefined) {
-    try {
-      const exhaustiveCountResult = await index.search(meiliQueryText, {
-        filter: filterString,
-        hybrid: finalSearchParams.hybrid,
-        ...(finalSearchParams.vector ? { vector: finalSearchParams.vector } : {}),
-        rankingScoreThreshold: finalSearchParams.rankingScoreThreshold,
-        ...(finalSearchParams.matchingStrategy
-          ? { matchingStrategy: finalSearchParams.matchingStrategy }
-          : {}),
-        page: 1,
-        hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
-        attributesToRetrieve: ['id'],
-        ...(safeOptions.includeFacets ? { facets: RESEARCH_ENTITY_SEARCH_FACET_FIELDS } : {}),
-      });
-      if (typeof exhaustiveCountResult?.totalHits === 'number') {
-        searchResult = { ...searchResult, totalHits: exhaustiveCountResult.totalHits };
-      }
-      if (exhaustiveCountResult?.facetDistribution) {
-        searchResult = {
-          ...searchResult,
-          facetDistribution: exhaustiveCountResult.facetDistribution,
-        };
-      }
-    } catch (error) {
-      console.error('Optional exhaustive hybrid total-hits count failed:', sanitizeLogValue(error));
-      degraded = true;
-    }
-  }
-
-  const {
-    hits,
-    estimatedTotalHits,
-    totalHits,
-    facetDistribution: rawFacetDistribution,
-  } = searchResult;
-  const resolvedTotalHits = totalHits ?? estimatedTotalHits;
+  const exhaustiveCountSearch =
+    finalSearchParams.rankingScoreThreshold !== undefined
+      ? settleSearch<Record<string, any>>(() =>
+          index.search(meiliQueryText, {
+            filter: filterString,
+            hybrid: finalSearchParams.hybrid,
+            ...(finalSearchParams.vector ? { vector: finalSearchParams.vector } : {}),
+            rankingScoreThreshold: finalSearchParams.rankingScoreThreshold,
+            ...(finalSearchParams.matchingStrategy
+              ? { matchingStrategy: finalSearchParams.matchingStrategy }
+              : {}),
+            page: 1,
+            hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+            attributesToRetrieve: ['id'],
+            ...(safeOptions.includeFacets ? { facets: RESEARCH_ENTITY_SEARCH_FACET_FIELDS } : {}),
+          }),
+        )
+      : null;
 
   // For any facet the request is actively filtering on, recompute its
   // distribution disjunctively (excluding only its own filter clause) so the
@@ -1591,53 +1582,26 @@ export async function searchResearchGroupsViaMeili(
     return result?.facetDistribution;
   };
 
-  const disjunctiveRawFacetDistribution = await (async (): Promise<
-    Record<string, Record<string, number>> | undefined
-  > => {
-    if (!safeOptions.includeFacets) return undefined;
-    if (!rawFacetDistribution) return rawFacetDistribution;
-    const activeFacets = DISJUNCTIVE_RESEARCH_FACETS.filter(
-      ({ filterKey }) => (safeFilters[filterKey]?.length ?? 0) > 0,
-    );
-    if (activeFacets.length === 0) return rawFacetDistribution;
-    const merged: Record<string, Record<string, number>> = { ...rawFacetDistribution };
-    await Promise.all(
-      activeFacets.map(async ({ filterKey, meiliField }) => {
-        try {
-          const omittedFilterString = buildResearchGroupFilterString(
+  const activeDisjunctiveFacets = safeOptions.includeFacets
+    ? DISJUNCTIVE_RESEARCH_FACETS.filter(
+        ({ filterKey }) => (safeFilters[filterKey]?.length ?? 0) > 0,
+      )
+    : [];
+  const disjunctiveFacetSearches = Promise.all(
+    activeDisjunctiveFacets.map(({ filterKey, meiliField }) =>
+      settleSearch(() =>
+        searchFacetDistributionForFilter(
+          buildResearchGroupFilterString(
             applyVisibilityScopeToFilters(
               { ...safeFilters, [filterKey]: [] },
               safeOptions.includeNonPublic,
             ),
-          );
-          const distribution = await searchFacetDistributionForFilter(omittedFilterString, [
-            meiliField,
-          ]);
-          if (distribution?.[meiliField]) merged[meiliField] = distribution[meiliField];
-        } catch (error) {
-          console.error(
-            `Disjunctive facet computation for ${meiliField} failed; keeping conjunctive counts:`,
-            sanitizeLogValue(error),
-          );
-          degraded = true;
-        }
-      }),
-    );
-    return merged;
-  })();
-
-  // The School filter now facets on the multi-valued `schools` field; expose it
-  // to clients under the existing `school` key so the API contract is unchanged.
-  const facetDistribution = ((): Record<string, Record<string, number>> | undefined => {
-    if (!disjunctiveRawFacetDistribution) return disjunctiveRawFacetDistribution;
-    const { schools, researchAreas, ...rest } = disjunctiveRawFacetDistribution;
-    const cleanedResearchAreas = sanitizeResearchAreaFacetDistribution(researchAreas);
-    return {
-      ...rest,
-      ...(cleanedResearchAreas ? { researchAreas: cleanedResearchAreas } : {}),
-      ...(schools ? { school: schools } : {}),
-    };
-  })();
+          ),
+          [meiliField],
+        ),
+      ),
+    ),
+  );
 
   // `rankingScoreThreshold` bars on the *blended* score, which gives the keyword
   // leg only 0.2 weight, and Meilisearch's `exactness` rule scores a match that
@@ -1662,21 +1626,21 @@ export async function searchResearchGroupsViaMeili(
   // partial typo garbage. See #2732.
   const runsHybridLegs =
     Boolean(finalSearchParams.hybrid) && finalSearchParams.rankingScoreThreshold !== undefined;
+  const runsSemanticLeg = runsHybridLegs && !sort.sortBy;
+  const keywordLegParams = (matchingStrategy?: string): Record<string, any> => ({
+    filter: filterString,
+    ...(finalSearchParams.sort ? { sort: finalSearchParams.sort } : {}),
+    ...(matchingStrategy ? { matchingStrategy } : {}),
+  });
   const searchKeywordLeg = async (
     matchingStrategy?: string,
     hitsPerPage: number = HYBRID_CANDIDATE_POOL_SIZE,
   ): Promise<any[]> => {
     try {
       const keywordLegResult = await index.search(meiliQueryText, {
-        filter: filterString,
-        ...(finalSearchParams.sort ? { sort: finalSearchParams.sort } : {}),
-        ...(matchingStrategy ? { matchingStrategy } : {}),
+        ...keywordLegParams(matchingStrategy),
         showRankingScoreDetails: true,
-        showMatchesPosition: true,
-        attributesToRetrieve: [
-          ...RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
-          ...PERSON_NAME_ATTRIBUTES,
-        ],
+        attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
         page: 1,
         hitsPerPage,
       });
@@ -1688,89 +1652,222 @@ export async function searchResearchGroupsViaMeili(
     }
   };
 
+  // Match positions cost more than the rest of a 200-row keyword query, and only
+  // the first surviving hit's are read, so that one row is re-read with them (#3949).
+  const searchKeywordLegTopHitMatches = async (
+    matchingStrategy: string | undefined,
+    keywordLegRawHits: any[],
+  ): Promise<{ hit: any; failed: boolean } | null> => {
+    const topHit = dropCoincidentalTypoOnlyHits(keywordLegRawHits).hits[0];
+    if (!topHit) return null;
+    try {
+      const topHitResult = await index.search(meiliQueryText, {
+        ...keywordLegParams(matchingStrategy),
+        showMatchesPosition: true,
+        attributesToRetrieve: [
+          ...RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
+          ...PERSON_NAME_ATTRIBUTES,
+        ],
+        page: keywordLegRawHits.indexOf(topHit) + 1,
+        hitsPerPage: 1,
+      });
+      const pagedHit = Array.isArray(topHitResult?.hits) ? topHitResult.hits[0] : undefined;
+      const samePagedRow = pagedHit && candidateHitId(pagedHit) === candidateHitId(topHit);
+      return { hit: samePagedRow ? pagedHit : topHit, failed: false };
+    } catch (error) {
+      console.error('Optional keyword-leg match-position query failed:', sanitizeLogValue(error));
+      return { hit: topHit, failed: true };
+    }
+  };
+
   // #1015's garbage rule runs on each leg's own retrieval before the merge, so
   // ordering by the keyword leg changes rank without changing membership. A row
   // the pool admitted on semantics keeps being served when only its keyword-leg
   // copy is a coincidental typo, and it keeps the pool's position, because the
   // keyword relevance is the part that was garbage. Dropping it instead would
   // lose a match the search had already recovered. See #2732.
-  let keywordLegMatchingStrategy: string | undefined = finalSearchParams.matchingStrategy;
-  let keywordLegRawHits = runsHybridLegs ? await searchKeywordLeg(keywordLegMatchingStrategy) : [];
-  let genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(keywordLegRawHits).hits;
-  // A phrase no single row carries in full ("immigration policy", "wind power")
-  // left the keyword leg empty, so the fusion had nothing to anchor it. Rows
-  // matching the phrase's leading words are the next best evidence; a query
-  // matching nothing at all still takes the thresholded path below. Measured as
-  // part of the design: removing it cost concept queries 0.80 to 0.74 and
-  // question-style queries 0.72 to 0.65 nDCG@10 on the development set. See #3797.
-  if (
-    runsHybridLegs &&
-    genuineKeywordLegHits.length === 0 &&
-    finalSearchParams.matchingStrategy === 'all'
-  ) {
-    keywordLegMatchingStrategy = 'last';
-    keywordLegRawHits = await searchKeywordLeg(keywordLegMatchingStrategy);
-    genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(keywordLegRawHits).hits;
-  }
-
-  const semanticLegHits = await (async (): Promise<any[]> => {
-    if (!runsHybridLegs || sort.sortBy || genuineKeywordLegHits.length === 0) return [];
-    try {
-      const semanticLegResult = await index.search(meiliQueryText, {
-        filter: filterString,
-        hybrid: { ...finalSearchParams.hybrid, semanticRatio: 1 },
-        ...(finalSearchParams.vector ? { vector: finalSearchParams.vector } : {}),
-        attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
-        page: 1,
-        hitsPerPage: SEMANTIC_LEG_SIZE,
-      });
-      return Array.isArray(semanticLegResult?.hits) ? semanticLegResult.hits : [];
-    } catch (error) {
-      console.error('Optional semantic-leg candidate query failed:', sanitizeLogValue(error));
-      degraded = true;
-      return [];
+  const keywordLegSearch = (async (): Promise<{
+    matchingStrategy: string | undefined;
+    rawHits: any[];
+  }> => {
+    if (!runsHybridLegs) return { matchingStrategy: undefined, rawHits: [] };
+    const allWordsHits = await searchKeywordLeg(finalSearchParams.matchingStrategy);
+    // A phrase no single row carries in full ("immigration policy", "wind power")
+    // left the keyword leg empty, so the fusion had nothing to anchor it. Rows
+    // matching the phrase's leading words are the next best evidence; a query
+    // matching nothing at all still takes the thresholded path below. Measured as
+    // part of the design: removing it cost concept queries 0.80 to 0.74 and
+    // question-style queries 0.72 to 0.65 nDCG@10 on the development set. See #3797.
+    if (
+      dropCoincidentalTypoOnlyHits(allWordsHits).hits.length === 0 &&
+      finalSearchParams.matchingStrategy === 'all'
+    ) {
+      return { matchingStrategy: 'last', rawHits: await searchKeywordLeg('last') };
     }
+    return { matchingStrategy: finalSearchParams.matchingStrategy, rawHits: allWordsHits };
   })();
 
-  const fuseRankings = semanticLegHits.length > 0;
+  const semanticLegSearch = keywordLegSearch.then(({ rawHits }) =>
+    runsSemanticLeg && dropCoincidentalTypoOnlyHits(rawHits).hits.length > 0
+      ? settleSearch<Record<string, any>>(() =>
+          index.search(meiliQueryText, {
+            filter: filterString,
+            hybrid: { ...finalSearchParams.hybrid, semanticRatio: 1 },
+            ...(finalSearchParams.vector ? { vector: finalSearchParams.vector } : {}),
+            attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
+            page: 1,
+            hitsPerPage: SEMANTIC_LEG_SIZE,
+          }),
+        )
+      : null,
+  );
 
   // The head keeps the fixed 200-row window, so page 1 orders exactly as it always
   // has, while the rows past it are decided once per query rather than by how deep
   // the requesting page sits: a pool grown to `offset + pageSize` let each deeper
   // page admit more rows and raise the reported total as a student scrolled (#3943).
-  const searchDeepCandidatePool = async (): Promise<{
-    poolHits: any[];
-    keywordLegHits: any[];
-  } | null> => {
-    if (!paginateHybridPoolLocally) return null;
-    const headWindowFilled =
-      (hits || []).length >= HYBRID_CANDIDATE_POOL_SIZE ||
-      keywordLegRawHits.length >= HYBRID_CANDIDATE_POOL_SIZE;
-    if (!headWindowFilled) return null;
-    const { facets: _facets, ...poolParams } = finalSearchParams;
-    try {
-      const [deepPoolResult, deepKeywordLegRawHits] = await Promise.all([
-        index.search(meiliQueryText, {
-          ...poolParams,
-          page: 1,
-          hitsPerPage: RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
-        }),
-        runsHybridLegs
-          ? searchKeywordLeg(keywordLegMatchingStrategy, RESEARCH_SEARCH_MAX_REACHABLE_RECORDS)
-          : Promise.resolve([]),
-      ]);
-      return {
-        poolHits: Array.isArray(deepPoolResult?.hits) ? deepPoolResult.hits : [],
-        keywordLegHits: dropCoincidentalTypoOnlyHits(deepKeywordLegRawHits).hits,
+  const headPoolHits = searchResult.hits || [];
+  const headPoolFilled = headPoolHits.length >= HYBRID_CANDIDATE_POOL_SIZE;
+  const deepCandidatePoolWanted = (keywordLegRawHits: any[]): boolean =>
+    paginateHybridPoolLocally &&
+    (headPoolFilled || keywordLegRawHits.length >= HYBRID_CANDIDATE_POOL_SIZE);
+  const { facets: _facets, ...poolParams } = finalSearchParams;
+  const searchDeepPool = () =>
+    settleSearch<Record<string, any>>(() =>
+      index.search(meiliQueryText, {
+        ...poolParams,
+        page: 1,
+        hitsPerPage: RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
+      }),
+    );
+  const deepPoolSearch =
+    paginateHybridPoolLocally && headPoolFilled
+      ? searchDeepPool()
+      : keywordLegSearch.then(({ rawHits }) =>
+          deepCandidatePoolWanted(rawHits) ? searchDeepPool() : null,
+        );
+  const deepKeywordLegSearch = keywordLegSearch.then(({ matchingStrategy, rawHits }) =>
+    runsHybridLegs && deepCandidatePoolWanted(rawHits)
+      ? searchKeywordLeg(matchingStrategy, RESEARCH_SEARCH_MAX_REACHABLE_RECORDS)
+      : [],
+  );
+  const keywordLegTopHitSearch = keywordLegSearch.then(({ matchingStrategy, rawHits }) =>
+    runsSemanticLeg ? searchKeywordLegTopHitMatches(matchingStrategy, rawHits) : null,
+  );
+
+  const [
+    exhaustiveCountOutcome,
+    disjunctiveFacetOutcomes,
+    keywordLeg,
+    semanticLegOutcome,
+    keywordLegTopHit,
+    deepPoolOutcome,
+    deepKeywordLegRawHits,
+  ] = await Promise.all([
+    exhaustiveCountSearch,
+    disjunctiveFacetSearches,
+    keywordLegSearch,
+    semanticLegSearch,
+    keywordLegTopHitSearch,
+    deepPoolSearch,
+    deepKeywordLegSearch,
+  ]);
+
+  if (exhaustiveCountOutcome?.error !== undefined) {
+    console.error(
+      'Optional exhaustive hybrid total-hits count failed:',
+      sanitizeLogValue(exhaustiveCountOutcome.error),
+    );
+    degraded = true;
+  } else if (exhaustiveCountOutcome) {
+    const exhaustiveCountResult = exhaustiveCountOutcome.value;
+    if (typeof exhaustiveCountResult?.totalHits === 'number') {
+      searchResult = { ...searchResult, totalHits: exhaustiveCountResult.totalHits };
+    }
+    if (exhaustiveCountResult?.facetDistribution) {
+      searchResult = {
+        ...searchResult,
+        facetDistribution: exhaustiveCountResult.facetDistribution,
       };
-    } catch (error) {
-      console.error('Optional deep candidate-pool query failed:', sanitizeLogValue(error));
+    }
+  }
+
+  const { estimatedTotalHits, totalHits, facetDistribution: rawFacetDistribution } = searchResult;
+  const resolvedTotalHits = totalHits ?? estimatedTotalHits;
+
+  const disjunctiveRawFacetDistribution = (():
+    | Record<string, Record<string, number>>
+    | undefined => {
+    if (!safeOptions.includeFacets) return undefined;
+    if (!rawFacetDistribution) return rawFacetDistribution;
+    if (activeDisjunctiveFacets.length === 0) return rawFacetDistribution;
+    const merged: Record<string, Record<string, number>> = { ...rawFacetDistribution };
+    disjunctiveFacetOutcomes.forEach((outcome, facetIndex) => {
+      const { meiliField } = activeDisjunctiveFacets[facetIndex];
+      if (outcome.error !== undefined) {
+        console.error(
+          `Disjunctive facet computation for ${meiliField} failed; keeping conjunctive counts:`,
+          sanitizeLogValue(outcome.error),
+        );
+        degraded = true;
+        return;
+      }
+      if (outcome.value?.[meiliField]) merged[meiliField] = outcome.value[meiliField];
+    });
+    return merged;
+  })();
+
+  // The School filter now facets on the multi-valued `schools` field; expose it
+  // to clients under the existing `school` key so the API contract is unchanged.
+  const facetDistribution = ((): Record<string, Record<string, number>> | undefined => {
+    if (!disjunctiveRawFacetDistribution) return disjunctiveRawFacetDistribution;
+    const { schools, researchAreas, ...rest } = disjunctiveRawFacetDistribution;
+    const cleanedResearchAreas = sanitizeResearchAreaFacetDistribution(researchAreas);
+    return {
+      ...rest,
+      ...(cleanedResearchAreas ? { researchAreas: cleanedResearchAreas } : {}),
+      ...(schools ? { school: schools } : {}),
+    };
+  })();
+
+  const genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(keywordLeg.rawHits).hits;
+
+  const semanticLegHits = ((): any[] => {
+    if (!semanticLegOutcome) return [];
+    if (semanticLegOutcome.error !== undefined) {
+      console.error(
+        'Optional semantic-leg candidate query failed:',
+        sanitizeLogValue(semanticLegOutcome.error),
+      );
+      degraded = true;
+      return [];
+    }
+    return Array.isArray(semanticLegOutcome.value?.hits) ? semanticLegOutcome.value.hits : [];
+  })();
+
+  const fuseRankings = semanticLegHits.length > 0;
+  if (fuseRankings && keywordLegTopHit?.failed) degraded = true;
+
+  const deepCandidatePool = ((): { poolHits: any[]; keywordLegHits: any[] } | null => {
+    if (!deepPoolOutcome) return null;
+    if (deepPoolOutcome.error !== undefined) {
+      console.error(
+        'Optional deep candidate-pool query failed:',
+        sanitizeLogValue(deepPoolOutcome.error),
+      );
       degraded = true;
       return null;
     }
-  };
+    const deepPoolHits = deepPoolOutcome.value?.hits;
+    return {
+      poolHits: Array.isArray(deepPoolHits) ? deepPoolHits : [],
+      keywordLegHits: dropCoincidentalTypoOnlyHits(deepKeywordLegRawHits).hits,
+    };
+  })();
   const withholdSemanticOnlyRows =
-    fuseRankings && keywordLegTopHitIsNameMatch(genuineKeywordLegHits, normalizedQuery.tokens);
+    fuseRankings &&
+    keywordLegTopHit !== null &&
+    keywordLegTopHitIsNameMatch([keywordLegTopHit.hit], normalizedQuery.tokens);
   const orderCandidatePool = (
     poolHits: any[],
     keywordLegHits: any[],
@@ -1807,8 +1904,7 @@ export async function searchResearchGroupsViaMeili(
     };
   };
 
-  const candidatePoolHead = orderCandidatePool(hits || [], genuineKeywordLegHits);
-  const deepCandidatePool = await searchDeepCandidatePool();
+  const candidatePoolHead = orderCandidatePool(headPoolHits, genuineKeywordLegHits);
   const deepCandidatePoolOrder = deepCandidatePool
     ? orderCandidatePool(deepCandidatePool.poolHits, deepCandidatePool.keywordLegHits)
     : null;
