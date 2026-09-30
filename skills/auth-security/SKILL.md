@@ -37,6 +37,17 @@ This creates a test session as `test123` with user type `undergraduate`.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for a different local account.
 `?userType=admin` mints an idempotent local bootstrap `AdminGrant` (via `ensureBootstrapAdminGrant`), so dev admin authority comes from a real grant, not a `userType` shortcut.
 
+### Development affordances are scoped to the developer's own machine
+
+The runtime label alone never licenses a development affordance, because "this process is a local development process" and "this request came from the developer" are different facts.
+`isLoopbackRequest` in `server/src/utils/loopbackAccess.ts` answers the second one, and it requires both a loopback socket peer and a `Host` header in a localhost form.
+It reads the socket peer rather than `req.ip`, because `req.ip` can be resolved from a forwarded header.
+
+- `/api/dev-login` is registered only in a local development runtime (`isDevLoginAllowed`) and additionally answers `404 {"error":"Not found"}` to any caller that is not loopback (`isDevLoginRequestAllowed`).
+The refusal reuses the ordinary not-found shape rather than announcing a disabled route.
+- The `LOCAL_AUTH_BYPASS` user and its `x-dev-netid` / `x-dev-user-type` selection apply only to a loopback caller (`isLocalAuthBypassRequestAllowed`), so a request from elsewhere is simply unauthenticated.
+- `serverListenHost` in `server/src/utils/environment.ts` binds a local run to `127.0.0.1` and a deployed run to `0.0.0.0`, keyed off `requiresDeployedRuntimeSecurity`, because the hosting platform reaches the process from outside its network namespace and a local run needs no interface beyond loopback.
+
 ## Auth middleware
 
 Defined in `server/src/middleware/auth.ts`.
@@ -102,6 +113,10 @@ Applied globally or to `/api` in `app.ts`.
 | `sanitizeMongo` | Strips Mongo operator and prototype-pollution keys from body/query. |
 | `createCorsOriginHandler` | Dynamic CORS origin handler. |
 | `errorHandler` / `notFoundHandler` | Terminal error and 404 handlers. |
+
+The CORS policy is an allowlist in every runtime.
+`allowList` in `app.ts` holds the deployed browser origins, and outside a deployed runtime `createCorsOriginHandler` additionally accepts an `http` origin whose hostname is a loopback form, which is what lets a client dev server on any port (`scripts/new-agent-worktree.sh` hands out `3000` upward) talk to the API with credentials.
+Nothing reflects an arbitrary `Origin`, so an allowlist entry is the only way in from a browser.
 
 ### Static client files
 

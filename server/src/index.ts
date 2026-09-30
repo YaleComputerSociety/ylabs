@@ -10,11 +10,13 @@ import { startCorpusQualitySnapshotScheduler } from './services/corpusQualitySna
 import { sanitizeLogValue } from './utils/logSanitizer';
 import { captureStartupError, initializeErrorTracking } from './utils/errorTracking';
 import { describeFirstContactCeiling } from './middleware/rateLimiters';
+import { serverListenHost } from './utils/environment';
 
 dotenv.config();
 initializeErrorTracking();
 
-const port = process.env.PORT || 4000;
+const port = Number(process.env.PORT || 4000);
+const listenHost = serverListenHost();
 
 const startApp = async () => {
   try {
@@ -33,8 +35,8 @@ const startApp = async () => {
       ),
     );
 
-    app.listen(port, () => {
-      console.log(`Server is ready at: ${port} 🐶`);
+    app.listen(port, listenHost, () => {
+      console.log(`Server is ready at: ${listenHost}:${port} 🐶`);
       // Log the effective value so an unset or fat-fingered env var is visible
       // rather than inferred from behaviour (#2319).
       console.log(`[rate-limit] ${describeFirstContactCeiling()}`);

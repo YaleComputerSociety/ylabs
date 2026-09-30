@@ -237,7 +237,7 @@ yarn install:all
 
 ### Dev login bypass
 
-Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` / `undergraduate`) without CAS - `undergraduate` (not the legacy generic `student`) since that's what every real account in the database actually is. Use `?userType=admin` for the `devadmin` account (which mints an idempotent local bootstrap `AdminGrant`, so dev admin authority comes from a real grant rather than a `userType` shortcut), `?userType=professor` (or `faculty`) for the `devprofessor` account, `?userType=graduate` for the `devgraduate` account, or `?userType=unknown` for the `devunknown` account. Dev login is allowed only when `NODE_ENV=development` and `SERVER_BASE_URL` points at localhost or loopback; the Mongo database name does not control this local-runtime check.
+Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` / `undergraduate`) without CAS - `undergraduate` (not the legacy generic `student`) since that's what every real account in the database actually is. Use `?userType=admin` for the `devadmin` account (which mints an idempotent local bootstrap `AdminGrant`, so dev admin authority comes from a real grant rather than a `userType` shortcut), `?userType=professor` (or `faculty`) for the `devprofessor` account, `?userType=graduate` for the `devgraduate` account, or `?userType=unknown` for the `devunknown` account. Dev login is allowed only when `NODE_ENV=development` and `SERVER_BASE_URL` points at localhost or loopback; the Mongo database name does not control this local-runtime check. It is also scoped to your own machine: the request must arrive over loopback and carry a localhost `Host` header, and any other caller gets the ordinary `404 {"error":"Not found"}`.
 
 For request-level local testing, set `LOCAL_AUTH_BYPASS=true` in `server/.env`. In `development` or `test` only, protected `/api` requests without a session receive a dev admin user by default:
 
@@ -247,7 +247,7 @@ LOCAL_AUTH_BYPASS_USER_TYPE=admin
 ```
 
 If the selected local bypass user does not exist, the first request creates a synthetic confirmed and verified user so authenticated services can resolve it from MongoDB.
-Per-request overrides are available with `x-dev-netid` and `x-dev-user-type` headers. `/api/cas` and `/api/logout` are not bypassed, so leave `LOCAL_AUTH_BYPASS=false` or visit those routes directly when testing Yale CAS behavior.
+Per-request overrides are available with `x-dev-netid` and `x-dev-user-type` headers, and like dev login the bypass and those headers apply only to a loopback caller with a localhost `Host` header. `/api/cas` and `/api/logout` are not bypassed, so leave `LOCAL_AUTH_BYPASS=false` or visit those routes directly when testing Yale CAS behavior.
 
 The auth flow's verbose tracing (per-request deserialization, the find-or-create source cascade, analytics-event confirmations) is off by default - set `AUTH_DEBUG=true` in `server/.env` to turn it on when debugging an auth issue. Genuine auth errors and anomalies log regardless of the flag.
 

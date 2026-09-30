@@ -36,34 +36,36 @@ const normalizeCorsOrigin = (origin: string | undefined): string => {
 
 export const isAllowedCorsOrigin = ({
   allowedOrigins,
-  bypassCors,
+  allowLoopbackOrigins,
   origin,
 }: {
   allowedOrigins: ReadonlySet<string>;
-  bypassCors: boolean;
+  allowLoopbackOrigins: boolean;
   origin: string | undefined;
 }): boolean => {
   if (origin === undefined) {
-    return bypassCors;
+    return allowLoopbackOrigins;
   }
 
   const normalizedOrigin = normalizeCorsOrigin(origin);
   if (!normalizedOrigin) return false;
 
-  return bypassCors || allowedOrigins.has(normalizedOrigin);
+  if (allowedOrigins.has(normalizedOrigin)) return true;
+
+  return allowLoopbackOrigins && isLoopbackHttpOrigin(normalizedOrigin);
 };
 
 export const createCorsOriginHandler = (
   allowedOrigins: ReadonlySet<string>,
-  bypassCors: boolean,
+  allowLoopbackOrigins: boolean,
 ) => {
   return (origin: string | undefined, callback: CorsOriginCallback) => {
     if (origin === undefined) {
-      callback(null, bypassCors);
+      callback(null, allowLoopbackOrigins);
       return;
     }
 
-    if (isAllowedCorsOrigin({ allowedOrigins, bypassCors, origin })) {
+    if (isAllowedCorsOrigin({ allowedOrigins, allowLoopbackOrigins, origin })) {
       callback(null, true);
       return;
     }
@@ -72,3 +74,4 @@ export const createCorsOriginHandler = (
   };
 };
 import { isAsciiControlCode } from '../utils/asciiControl';
+import { isLoopbackHttpOrigin } from '../utils/loopbackAccess';

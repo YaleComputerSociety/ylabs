@@ -135,13 +135,14 @@ const deployedBrowserOrigins = new Set([
   'https://www.yalelabs.io',
 ]);
 const localDevelopmentOrigins = ['http://localhost:3000'];
+const allowsLoopbackBrowserOrigins = bypassRuntimeSecurity;
 const allowList = new Set([
   ...deployedBrowserOrigins,
-  ...(bypassRuntimeSecurity ? localDevelopmentOrigins : []),
+  ...(allowsLoopbackBrowserOrigins ? localDevelopmentOrigins : []),
 ]);
 
 const corsOptions = {
-  origin: createCorsOriginHandler(allowList, bypassRuntimeSecurity),
+  origin: createCorsOriginHandler(allowList, allowsLoopbackBrowserOrigins),
   credentials: true,
 };
 
