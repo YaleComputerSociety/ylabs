@@ -30,6 +30,42 @@ export function servedFieldContributionLabel(field: unknown): string | undefined
   return typeof field === 'string' ? SERVED_FIELD_CONTRIBUTION_LABELS[field] : undefined;
 }
 
+/**
+ * The served payload fields that must hold a value before a source may be credited
+ * with a label (#3922). A provenance entry is history and outlives the value it
+ * recorded, so several clear arms empty `websiteUrl` or resolve `departments` to
+ * nothing while the entry stays; crediting the page then tells a student it
+ * supplied something the row does not show. `Lead identity` and `Name` are absent
+ * because the lead is served on the roster outside this payload and a row always
+ * serves a name.
+ */
+const SERVED_CONTRIBUTION_LABEL_VALUE_FIELDS: Record<string, readonly string[]> = {
+  'Research summary': ['fullDescription', 'shortDescription', 'cardDescription'],
+  Topics: ['researchAreas'],
+  Methods: ['methods'],
+  'Research website': ['websiteUrl', 'website'],
+  Department: ['departments'],
+  School: ['school', 'schools'],
+};
+
+function servedValueIsPresent(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(servedValueIsPresent);
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (value && typeof value === 'object') {
+    return servedValueIsPresent((value as { text?: unknown }).text);
+  }
+  return false;
+}
+
+export function contributionLabelIsServed(
+  label: string,
+  servedPayload: Record<string, unknown>,
+): boolean {
+  const fields = SERVED_CONTRIBUTION_LABEL_VALUE_FIELDS[label];
+  if (!fields) return true;
+  return fields.some((field) => servedValueIsPresent(servedPayload[field]));
+}
+
 export interface SourceFieldContribution {
   sourceUrl: string;
   contributions: string[];

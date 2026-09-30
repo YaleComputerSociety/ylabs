@@ -1935,6 +1935,8 @@ describe('a dead provenance citation stays in the served list, qualified (#3312)
       name: 'Somebody Faculty Research',
       entityType: 'FACULTY_RESEARCH_AREA',
       kind: 'individual',
+      fullDescription:
+        'This research studies coastal sediment transport, estuary circulation, and shoreline change.',
       sourceUrls: [LIVE],
       sourceFieldContributions: [
         { sourceUrl: LIVE, contributions: ['Research summary'] },
@@ -1955,6 +1957,8 @@ describe('a dead provenance citation stays in the served list, qualified (#3312)
       name: 'Somebody Faculty Research',
       entityType: 'FACULTY_RESEARCH_AREA',
       kind: 'individual',
+      fullDescription:
+        'This research studies coastal sediment transport, estuary circulation, and shoreline change.',
       sourceFieldContributions: [{ sourceUrl: DEAD, contributions: ['Research summary'] }],
     } as Record<string, unknown>);
     expect(servedContributionUrls(dto)).toEqual([DEAD]);
@@ -1970,5 +1974,89 @@ describe('a dead provenance citation stays in the served list, qualified (#3312)
     expect(servedCitationIsWithheld('provenance', health, DEAD)).toBe(false);
     expect(servedCitationIsWithheld('instruction', health, LIVE)).toBe(false);
     expect(servedCitationIsWithheld('instruction', undefined, DEAD)).toBe(false);
+  });
+});
+
+describe('a source is credited only for a field the row serves (#3922)', () => {
+  const PAGE = 'https://example.yale.edu/people/fixture-page';
+  const BODY =
+    'This research studies coastal sediment transport, estuary circulation, and shoreline change.';
+  const ALL_LABELS = [
+    'Research summary',
+    'Topics',
+    'Methods',
+    'Research website',
+    'Department',
+    'School',
+    'Name',
+    'Lead identity',
+  ];
+  const creditedLabels = (row: Record<string, unknown>): string[] =>
+    (
+      (toPublicResearchEntityDto({
+        id: 'entity-credit',
+        slug: 'entity-credit',
+        name: 'Coastal Processes Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        sourceUrls: [PAGE],
+        sourceFieldContributions: [{ sourceUrl: PAGE, contributions: ALL_LABELS }],
+        ...row,
+      } as Record<string, unknown>).sourceFieldContributions ?? []) as Array<{
+        contributions: string[];
+      }>
+    ).flatMap((entry) => entry.contributions);
+
+  it('drops the research-website and department credit when the row serves neither', () => {
+    const labels = creditedLabels({ fullDescription: BODY, websiteUrl: '', departments: [] });
+    expect(labels).not.toContain('Research website');
+    expect(labels).not.toContain('Department');
+    expect(labels).toContain('Research summary');
+  });
+
+  it('keeps each credit whose field the row serves', () => {
+    const labels = creditedLabels({
+      fullDescription: BODY,
+      websiteUrl: 'https://coastal.example.yale.edu/',
+      departments: ['Earth & Planetary Sciences'],
+      researchAreas: ['Sediment transport'],
+      methods: ['Field sampling'],
+      school: 'Faculty of Arts and Sciences',
+    });
+    expect([...labels].sort()).toEqual([...ALL_LABELS].sort());
+  });
+
+  it('judges the value the payload serves, not the stored one', () => {
+    const labels = creditedLabels({
+      fullDescription: BODY,
+      websiteUrl: 'javascript:alert(1)',
+      departments: ['Earth & Planetary Sciences'],
+    });
+    expect(labels).not.toContain('Research website');
+    expect(labels).toContain('Department');
+  });
+
+  it('drops the research-summary credit when the row serves no description', () => {
+    const labels = creditedLabels({ departments: ['Earth & Planetary Sciences'] });
+    expect(labels).not.toContain('Research summary');
+    expect(labels).toContain('Name');
+    expect(labels).toContain('Lead identity');
+  });
+
+  it('drops a source entirely when none of its credits is served', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-credit-empty',
+      slug: 'entity-credit-empty',
+      name: 'Coastal Processes Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      fullDescription: BODY,
+      websiteUrl: '',
+      departments: [],
+      sourceFieldContributions: [
+        { sourceUrl: PAGE, contributions: ['Research website', 'Department'] },
+      ],
+    } as Record<string, unknown>);
+    expect(dto.sourceFieldContributions).toEqual([]);
   });
 });

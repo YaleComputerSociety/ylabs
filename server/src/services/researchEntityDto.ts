@@ -44,6 +44,7 @@ import {
 import {
   MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS,
   SERVED_FIELD_CONTRIBUTION_LABEL_SET,
+  contributionLabelIsServed,
 } from '../utils/servedFieldContributionLabels';
 import { isCurrentFundingField, servedCurrentFunding } from './servedCurrentFunding';
 import { withMemoizedDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
@@ -291,7 +292,8 @@ export function publicSourceLinkHealthArray(
  */
 function publicSourceFieldContributionsArray(
   value: unknown,
-  storedSourceLinkHealth?: unknown,
+  storedSourceLinkHealth: unknown,
+  servedPayload: Record<string, unknown>,
 ): PublicResearchEntitySourceFieldContribution[] {
   if (!Array.isArray(value)) return [];
   // Also `provenance`: an entry says which stored fields a page supplied, so dropping it
@@ -306,7 +308,9 @@ function publicSourceFieldContributionsArray(
       ...new Set(
         raw.filter(
           (label): label is string =>
-            typeof label === 'string' && SERVED_FIELD_CONTRIBUTION_LABEL_SET.has(label),
+            typeof label === 'string' &&
+            SERVED_FIELD_CONTRIBUTION_LABEL_SET.has(label) &&
+            contributionLabelIsServed(label, servedPayload),
         ),
       ),
     ].slice(0, MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS);
@@ -579,6 +583,7 @@ function derivePublicResearchEntityDto(
     dto.sourceFieldContributions = publicSourceFieldContributionsArray(
       group.sourceFieldContributions,
       group.sourceLinkHealth,
+      dto,
     );
   }
 
