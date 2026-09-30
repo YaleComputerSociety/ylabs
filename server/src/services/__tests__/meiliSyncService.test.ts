@@ -114,7 +114,7 @@ describe('syncEntity transform', () => {
       departments: ['Bio'],
       researchAreas: ['Genetics'],
       sortTitle: 'smith lab',
-      sortTitleQualifier: 'bio',
+      sortTitleQualifier: 'bio)',
     });
     expect(docs[0]).not.toHaveProperty('_id');
     expect(docs[0]).not.toHaveProperty('__v');

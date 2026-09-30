@@ -125,6 +125,8 @@ The key is case-folded, accent-folded, whitespace-collapsed, and has leading pun
 Before this, 46 of 3,425 served rows had a heading whose first letter differed from `name`, and 38 of them sat more than 500 places from where their heading would put them.
 `sortTitle` is a sortable attribute and a stored field, so it is inert until the index is rebuilt; until then Meili rejects the sort, the service retries on `name`, and the result is marked degraded.
 Rows sharing a title are served with a page-local "(Department)" suffix by `disambiguateCollidingResearchEntityNames`, which the index cannot store, so the sort breaks ties on `sortTitleQualifier`, the same department and school labels folded the same way (`researchEntitySortTitleQualifier`).
+Each label keeps the suffix's closing parenthesis, so a department that prefixes another sorts the way the folded heading does.
+The key cannot follow the school fallback: when any row in a same-titled group has no department, or two share one, the page suffixes the school, but the stored key still leads with the department, so that group can read out of order by heading.
 Without it, Meili ordered same-titled rows arbitrarily and 4 of 3,429 served A-Z rows on Development read out of order by their suffixed heading.
 The Mongo fallback sorts by the same two keys.
 `yarn --cwd server journey:eval --case=title-sorted-browse-follows-card-title` walks the A-Z browse and fails on an inversion by heading or on a degraded page.

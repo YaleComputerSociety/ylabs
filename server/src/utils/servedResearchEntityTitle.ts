@@ -83,11 +83,16 @@ const foldForSort = (text: string): string =>
 export const researchEntitySortTitle = (entity?: ServedTitleInput | null): string =>
   foldForSort(servedResearchEntityTitle(entity));
 
+const suffixSortKey = (label: string): string => (label ? `${foldForSort(label)})` : '');
+
 /**
  * Rows sharing a title get a page-local "(Department)" suffix from
  * `disambiguateCollidingResearchEntityNames`, which the index cannot store, so the
  * same labels break the tie and same-titled cards read in the order of their suffixes.
+ * Each label keeps the suffix's closing parenthesis so a label that prefixes another
+ * sorts the way the folded heading does. When the page falls back to the school
+ * suffix, the department still leads the key, so those ties can read out of order.
  */
 export const researchEntitySortTitleQualifier = (
   entity?: (ServedTitleInput & DisambiguatableResearchEntity) | null,
-): string => (entity ? foldForSort(disambiguatorLabels(entity).join(' ')) : '');
+): string => (entity ? disambiguatorLabels(entity).map(suffixSortKey).join(' ').trim() : '');
