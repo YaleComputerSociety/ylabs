@@ -240,4 +240,27 @@ describe('Program card pointer target', () => {
       expect(action.className).toContain('[&:not(:disabled):active]:filter-none');
     }
   });
+
+  it('gives every card and row action a 44px minimum target', () => {
+    const controls = {
+      isFavorite: false,
+      onOpenModal: vi.fn(),
+      onToggleFavorite: vi.fn(),
+      onAdminEdit: vi.fn(),
+    };
+    const reaches44px = (element: HTMLElement) =>
+      /(^|\s)(min-h-11|min-h-\[44px\])(\s|$)/.test(element.className);
+
+    for (const surface of [
+      <BrowseCard key="card" item={item} {...controls} />,
+      <BrowseListItem key="row" item={item} {...controls} />,
+    ]) {
+      renderAdmin(surface);
+      const actions = [...screen.getAllByRole('button'), ...screen.queryAllByRole('link')];
+
+      expect(actions.length).toBeGreaterThan(2);
+      expect(actions.filter((action) => !reaches44px(action))).toEqual([]);
+      cleanup();
+    }
+  });
 });

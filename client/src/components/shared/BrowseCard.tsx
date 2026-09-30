@@ -130,10 +130,10 @@ const BrowseCard = React.memo(
               <button
                 type="button"
                 onClick={handleClick}
-                className="yr-focus-ring relative z-[1] -my-3 line-clamp-2 min-h-11 py-3 text-left hover:text-brand focus-visible:rounded-control"
+                className="yr-focus-ring relative z-[1] -my-3 min-h-11 py-3 text-left hover:text-brand focus-visible:rounded-control"
                 aria-label={`View details for ${item.data.title}`}
               >
-                {item.data.title}
+                <span className="line-clamp-2">{item.data.title}</span>
               </button>
             </h3>
 

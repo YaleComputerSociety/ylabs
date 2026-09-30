@@ -233,7 +233,7 @@ Stretch its one action over the card with `after:absolute after:inset-0` on the 
 Never put `onClick` on the wrapper instead: the program card lost its wrapper handler for keyboard access and kept `cursor-pointer`, so a 277x319 card promised a target and delivered a 20px button.
 The stretched action also opts out of the base press rule with `[&:not(:disabled):active]:transform-none` and `[&:not(:disabled):active]:filter-none`, because a transform or filter makes the action the overlay's containing block, so the press shrinks the overlay and the release lands outside it.
 A text-height action reaches 44px with `min-h-11` and a matching negative vertical margin, so the target grows without moving the layout.
-`src/__tests__/browseTargetSizeGuard.test.ts` holds the browse card and row actions to that.
+`components/shared/__tests__/BrowseCard.test.tsx` renders the browse card and row and holds every action to that.
 - A forward affordance is an icon, never a typed character.
 A literal `→` inherits the font's weight and metrics, so the same affordance rendered at a different size and stroke depending on which card you were looking at.
 `components/shared/ArrowRightIcon.tsx` is the only place the arrow path exists, and `src/__tests__/sharedGlyphGuard.test.ts` keeps it that way.
