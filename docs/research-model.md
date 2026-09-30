@@ -378,6 +378,7 @@ Public research detail payloads no longer carry `activeListings`, and browse pay
 `profileSynthesisDescription` and `descriptionSource` are stored-only and are served on no payload (#3937).
 Neither is declared on the `ResearchEntity` schema and no lane writes either one, so the stored values are frozen, carry no provenance, and cannot be refreshed or retracted by evidence.
 Serving text nothing asserts is the unbacked case the evidence contract in `AGENTS.md` refuses, so the DTO, the browse card summary and the client detail page all read the source-backed `fullDescription`/`shortDescription` instead, and a row whose only prose was the synthesis serves no research summary rather than an unbacked one.
+Search reads neither field either: the index document allowlist leaves both out, so no query matches or embeds the synthesis, and `browseRankScore` scores a row's description from the copy it serves, so the stored synthesis earns a row no rank (#4120).
 The stored fields stay in the corpus because two live guards read them as evidence about the row rather than as copy to publish: `guardNonResearchProfileSynthesisText` uses `descriptionSource` to blank a source-unbacked body that carries no research signal, and the research-scope, Yale-status, deceased-lead and quality readers treat the stored synthesis text as narrative evidence.
 Unsetting either field is therefore a separate change that has to retire those readers first, not a cleanup that follows this one.
 
@@ -466,7 +467,7 @@ Public access excerpts should redact direct contact details. The scraper may kee
 `redactDirectContactInfo` in `server/src/utils/contactRedaction.ts` is the one owner of that rule, and `sanitizeLogValue` reuses its phone arm.
 A phone number is redacted even when extracted HTML glues it to a label, as in "Phone" then the number or the number then "Fax", because the pattern is bounded by digit lookarounds rather than word boundaries (#3738).
 The one shape it leaves alone is a bare digit run with a letter directly before it and no phone label, because on Development every such run was a record id, such as an IRB protocol number or a journal article number.
-The search index redacts the same way over every stored description field, `profileSynthesisDescription` and `description` included.
+The search index redacts the same way over every description field it indexes.
 
 The bibliographic ingestion pipeline is retired, so OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref are not research-activity, access, or description inputs.
 Reviewed Google Scholar and ORCID links remain outbound researcher navigation only.

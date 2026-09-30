@@ -140,6 +140,7 @@ The scorer lives in `researchEntityBrowseRank.ts`.
 The join, persist, and resync logic lives in `researchEntityBrowseRankService.ts`.
 
 The scorer rewards completeness plus strength-weighted undergrad access signals.
+Completeness is read from the copy a row serves, so the stored-only `profileSynthesisDescription` earns no rank: before #4120 it lifted a row with no served description from 0 or 2 description points to 8.
 Strong `CURRENT_UNDERGRADS` and `PAST_UNDERGRADS` signals outweigh the `REACH_OUT_PLAUSIBLE` fallback.
 `NOT_CURRENTLY_AVAILABLE` is negative.
 

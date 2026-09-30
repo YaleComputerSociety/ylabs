@@ -39,7 +39,6 @@ const descriptionPoints = (summary: ResearchEntityQualitySummary): number => {
   if (summary.descriptionState === 'source_backed') {
     return summary.cardState === 'complete' ? 30 : 18;
   }
-  if (summary.descriptionState === 'profile_synthesis') return 8;
   if (summary.descriptionState === 'thin') return 2;
   return 0; // missing
 };
@@ -91,12 +90,20 @@ const entityTypeRankAdjustment = (
   return adjustment;
 };
 
+const withoutUnservedDescriptions = (entity: Record<string, any>): Record<string, any> => {
+  const { profileSynthesisDescription: _unserved, ...served } = entity;
+  return served;
+};
+
 export function computeResearchEntityBrowseRank({
   entity,
   leadMembers = [],
   hostsAffiliatedResearchHomes = false,
 }: ResearchEntityBrowseRankInput): number {
-  const summary = buildResearchEntityQualitySummary({ entity, leadMembers });
+  const summary = buildResearchEntityQualitySummary({
+    entity: withoutUnservedDescriptions(entity),
+    leadMembers,
+  });
 
   let score = 0;
   score += descriptionPoints(summary);

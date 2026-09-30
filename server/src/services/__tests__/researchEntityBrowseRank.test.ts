@@ -144,4 +144,27 @@ describe('computeResearchEntityBrowseRank', () => {
     });
     expect(completeCenter).toBeGreaterThan(bareLab);
   });
+
+  it('earns no rank from stored profile-synthesis prose that no surface serves (#3937)', () => {
+    const unservedSynthesis =
+      'Investigates cortical circuits of decision making with electrophysiology and modeling.';
+    const synthesisOnly = { websiteUrl: 'https://example.yale.edu/synthesis-only' };
+    const withSynthesis = computeResearchEntityBrowseRank({
+      entity: { ...synthesisOnly, profileSynthesisDescription: unservedSynthesis },
+      leadMembers: attachedLead(),
+    });
+    const withoutSynthesis = computeResearchEntityBrowseRank({
+      entity: synthesisOnly,
+      leadMembers: attachedLead(),
+    });
+    expect(withSynthesis).toBe(withoutSynthesis);
+
+    const thinCopy = { ...synthesisOnly, shortDescription: 'Decision making.' };
+    expect(
+      computeResearchEntityBrowseRank({
+        entity: { ...thinCopy, profileSynthesisDescription: unservedSynthesis },
+        leadMembers: attachedLead(),
+      }),
+    ).toBe(computeResearchEntityBrowseRank({ entity: thinCopy, leadMembers: attachedLead() }));
+  });
 });
