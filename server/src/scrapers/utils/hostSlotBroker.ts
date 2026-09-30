@@ -1,5 +1,8 @@
 import fs from 'fs';
 import net from 'net';
+import os from 'os';
+import path from 'path';
+import { SHARED_TEMP_ROOT } from '../../utils/tempArtifactRoots';
 import {
   HostConcurrencyLimiter,
   type HostSlotLimiter,
@@ -9,6 +12,17 @@ import { lineReader, writeLine as send } from './brokerWire';
 import { handleSweepPageMessage, type SweepPageStore } from './sweepPageStore';
 
 export const SCRAPER_HOST_SLOT_BROKER_ENV = 'SCRAPER_HOST_SLOT_BROKER';
+
+// libuv silently truncates a longer path to sun_path, so listen succeeds on a different name.
+export const UNIX_SOCKET_PATH_MAX_BYTES = process.platform === 'darwin' ? 103 : 107;
+
+export const fitsUnixSocketPath = (socketPath: string): boolean =>
+  Buffer.byteLength(socketPath) <= UNIX_SOCKET_PATH_MAX_BYTES;
+
+export function brokerSocketPath(fileName: string, directory: string = os.tmpdir()): string {
+  const preferred = path.join(directory, fileName);
+  return fitsUnixSocketPath(preferred) ? preferred : path.join(SHARED_TEMP_ROOT, fileName);
+}
 
 type ClientMessage = { t: 'acquire'; id: number; host: string } | { t: 'release'; id: number };
 type BrokerMessage = { t: 'grant'; id: number };
@@ -27,6 +41,11 @@ export class HostSlotBroker {
     limiter: HostConcurrencyLimiter,
     options: { pageStore?: SweepPageStore } = {},
   ): Promise<HostSlotBroker> {
+    if (!fitsUnixSocketPath(socketPath)) {
+      throw new Error(
+        `host slot broker socket path is ${Buffer.byteLength(socketPath)} bytes, past the ${UNIX_SOCKET_PATH_MAX_BYTES}-byte Unix socket limit: ${socketPath}`,
+      );
+    }
     fs.rmSync(socketPath, { force: true });
     const server = net.createServer((socket) => broker.serve(socket, limiter));
     const broker = new HostSlotBroker(server, socketPath, options.pageStore);

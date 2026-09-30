@@ -1,8 +1,12 @@
-import os from 'os';
-import path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HostConcurrencyLimiter, type HostSlotRelease } from '../hostConcurrencyLimiter';
-import { BrokeredHostSlotLimiter, HostSlotBroker } from '../hostSlotBroker';
+import {
+  BrokeredHostSlotLimiter,
+  brokerSocketPath,
+  fitsUnixSocketPath,
+  HostSlotBroker,
+  UNIX_SOCKET_PATH_MAX_BYTES,
+} from '../hostSlotBroker';
 import { resolveScraperHostSlotLimiter } from '../scraperHostSlotLimiter';
 
 const openBrokers: HostSlotBroker[] = [];
@@ -11,8 +15,7 @@ const openClients: BrokeredHostSlotLimiter[] = [];
 async function startBroker(
   limiter: HostConcurrencyLimiter = new HostConcurrencyLimiter(4),
 ): Promise<HostSlotBroker> {
-  const socketPath = path.join(
-    os.tmpdir(),
+  const socketPath = brokerSocketPath(
     `ylabs-host-slots-test-${process.pid}-${Math.random().toString(36).slice(2, 8)}.sock`,
   );
   const broker = await HostSlotBroker.listen(socketPath, limiter);
@@ -114,7 +117,7 @@ describe('HostSlotBroker', () => {
     const reasons: string[] = [];
     const fallback = new HostConcurrencyLimiter(1);
     const limiter = new BrokeredHostSlotLimiter(
-      path.join(os.tmpdir(), `ylabs-host-slots-missing-${process.pid}.sock`),
+      brokerSocketPath(`ylabs-host-slots-missing-${process.pid}.sock`),
       fallback,
       (reason) => reasons.push(reason),
     );
@@ -132,5 +135,28 @@ describe('HostSlotBroker', () => {
     expect(
       resolveScraperHostSlotLimiter({ SCRAPER_HOST_SLOT_BROKER: '/tmp/x.sock' }, local),
     ).toBeInstanceOf(BrokeredHostSlotLimiter);
+  });
+
+  it('keeps a broker socket under the Unix path limit when the temp directory is deep', async () => {
+    const deepDirectory = `/tmp/${'d'.repeat(UNIX_SOCKET_PATH_MAX_BYTES)}`;
+    const fileName = `ylabs-host-slots-deep-${process.pid}.sock`;
+    const socketPath = brokerSocketPath(fileName, deepDirectory);
+    expect(fitsUnixSocketPath(socketPath)).toBe(true);
+    expect(socketPath.endsWith(fileName)).toBe(true);
+    const broker = await HostSlotBroker.listen(socketPath, new HostConcurrencyLimiter(1));
+    openBrokers.push(broker);
+    const release = await client(broker).acquire('c.yale.edu');
+    release();
+  });
+
+  it('prefers the requested directory when the socket fits there', () => {
+    expect(brokerSocketPath('broker.sock', '/tmp/short')).toBe('/tmp/short/broker.sock');
+  });
+
+  it('refuses a socket path past the Unix limit instead of listening on a truncated name', async () => {
+    const tooLong = `/tmp/${'x'.repeat(UNIX_SOCKET_PATH_MAX_BYTES)}.sock`;
+    await expect(HostSlotBroker.listen(tooLong, new HostConcurrencyLimiter(1))).rejects.toThrow(
+      /Unix socket limit/,
+    );
   });
 });

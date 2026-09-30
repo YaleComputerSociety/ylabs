@@ -6,7 +6,7 @@ import { promises as fs } from 'fs';
 import axios, { type AxiosInstance } from 'axios';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { attachHttpValidatorCache, HttpValidatorStore } from '../httpValidatorCache';
-import { HostSlotBroker } from '../hostSlotBroker';
+import { brokerSocketPath, HostSlotBroker } from '../hostSlotBroker';
 import { HostConcurrencyLimiter } from '../hostConcurrencyLimiter';
 import {
   BrokeredSweepPageClient,
@@ -342,7 +342,7 @@ describe('broker-held page store', () => {
   const brokers: HostSlotBroker[] = [];
   const clients: BrokeredSweepPageClient[] = [];
   const socketPath = () =>
-    path.join(os.tmpdir(), `ylabs-page-reuse-test-${process.pid}-${Math.random()}.sock`);
+    brokerSocketPath(`ylabs-page-reuse-test-${process.pid}-${Math.random()}.sock`);
 
   afterEach(async () => {
     for (const client of clients.splice(0)) client.close();
