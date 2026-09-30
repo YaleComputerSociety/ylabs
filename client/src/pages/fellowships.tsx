@@ -37,15 +37,16 @@ import useUndoableProgramUnwatch, {
 } from '../hooks/useUndoableProgramUnwatch';
 import { getFellowshipCycleStatus, type FellowshipCycleCategory } from '../utils/fellowshipCycle';
 import { createFellowship } from '../utils/createFellowship';
+import { programKindLabel, entryModeLabel, programCategoryLabel } from '../utils/programJourney';
 import {
-  cycleActionOrder,
-  getProgramJourneyStatus,
-  programKindLabel,
-  entryModeLabel,
-  programCategoryLabel,
-  type ProgramJourneyCategory,
-  type ProgramJourneySummary,
-} from '../utils/programJourney';
+  emptyProgramBoardSummary,
+  isOpenToFirstYears,
+  needsMentorBeforeApplying,
+  programBoardSectionOf,
+  PROGRAM_BOARD_SECTIONS,
+  type ProgramBoardSection,
+  type ProgramBoardSummary,
+} from '../utils/programBoard';
 
 const NEXT_CYCLE_FILTER_CATEGORIES: FellowshipCycleCategory[] = [
   'nextCycle',
@@ -128,13 +129,21 @@ const QuickFilterEmptyState = ({
 };
 
 const STATUS_SUMMARY_COLUMNS: Record<number, string> = {
-  3: 'lg:grid-cols-3',
   4: 'lg:grid-cols-4',
+  5: 'lg:grid-cols-5',
+  6: 'lg:grid-cols-6',
 };
 
-const StatusSummary = ({ summary }: { summary: ProgramJourneySummary }) => {
-  const tiles = journeySections.filter(
-    (section) => section.key !== 'archive' || summary.archive > 0,
+const ALWAYS_SHOWN_TILES = new Set<ProgramBoardSection>([
+  'closingSoon',
+  'open',
+  'openingSoon',
+  'nextCycle',
+]);
+
+const StatusSummary = ({ summary }: { summary: ProgramBoardSummary }) => {
+  const tiles = boardSections.filter(
+    (section) => ALWAYS_SHOWN_TILES.has(section.key) || summary[section.key] > 0,
   );
   return (
     <dl
@@ -161,8 +170,8 @@ const StatusSummary = ({ summary }: { summary: ProgramJourneySummary }) => {
 const fellowshipQuickFilters: QuickFilterDef[] = [
   { label: 'Open Only', value: 'open' },
   { label: 'Closing Soon', value: 'closingSoon' },
-  { label: 'Get Started', value: 'structured' },
-  { label: 'Mentor First', value: 'mentorFirst' },
+  { label: 'Open to First-Years', value: 'firstYear' },
+  { label: 'No Mentor Needed', value: 'noMentorFirst' },
   { label: 'Next Cycle', value: 'nextCycle' },
 ];
 
@@ -173,8 +182,8 @@ const trustTierFilterOptions: Array<{ value: StudentVisibilityTier; label: strin
   { value: 'suppressed', label: 'Suppressed' },
 ];
 
-const journeySections: Array<{
-  key: ProgramJourneyCategory;
+const boardSections: Array<{
+  key: ProgramBoardSection;
   title: string;
   description: string;
   tileLabel: string;
@@ -182,30 +191,44 @@ const journeySections: Array<{
   tileClassName: string;
 }> = [
   {
-    key: 'startsResearch',
-    title: 'Get Started in Research',
-    description:
-      'Programs, internships, RA roles, mentor matching, and department guides that help you find a lab or a mentor. Most need no mentor before you start.',
-    tileLabel: 'Get started',
-    tileDetail: 'No mentor needed yet',
+    key: 'closingSoon',
+    title: 'Due in the Next 30 Days',
+    description: 'Open now and closing soon, soonest deadline first.',
+    tileLabel: 'Due soon',
+    tileDetail: 'Within 30 days',
+    tileClassName: 'yr-pill-gold',
+  },
+  {
+    key: 'open',
+    title: 'Accepting Applications',
+    description: 'Open now, soonest deadline first.',
+    tileLabel: 'Open now',
+    tileDetail: 'Accepting applications',
     tileClassName: 'yr-pill-green',
   },
   {
-    key: 'fundsResearch',
-    title: "Funding for Research You've Arranged",
-    description:
-      'Grants and fellowships that usually need a mentor, a project, or a research plan before you apply.',
-    tileLabel: 'Funding',
-    tileDetail: 'Need a mentor or plan first',
+    key: 'openingSoon',
+    title: 'Opening Soon',
+    description: 'Applications have not opened yet, soonest opening first. Save one to track it.',
+    tileLabel: 'Opening soon',
+    tileDetail: 'Not open yet',
     tileClassName: 'yr-pill-blue',
   },
   {
-    key: 'recognizesResearch',
-    title: "Awards for Research You've Done",
+    key: 'nextCycle',
+    title: 'Plan for the Next Cycle',
     description:
-      'Competitive awards and scholarships for students who already have a research record.',
-    tileLabel: 'Awards',
-    tileDetail: 'For research already done',
+      "This year's deadline has passed. An estimated date is based on last year's cycle and is not confirmed, so check the source before you plan around it.",
+    tileLabel: 'Next cycle',
+    tileDetail: 'Deadline passed',
+    tileClassName: '',
+  },
+  {
+    key: 'noDates',
+    title: 'No Dates Posted',
+    description: 'No application window is listed. Check the source for timing.',
+    tileLabel: 'No dates',
+    tileDetail: 'Check the source',
     tileClassName: '',
   },
   {
@@ -244,11 +267,28 @@ const sortFellowshipsForDisplay = (
     });
   }
 
+  if (sortBy === 'openDate') {
+    return sorted.sort((a, b) => {
+      const da = dateValue(a.applicationOpenDate) ?? Number.MAX_SAFE_INTEGER;
+      const db = dateValue(b.applicationOpenDate) ?? Number.MAX_SAFE_INTEGER;
+      return (da - db) * direction;
+    });
+  }
+
   if (sortBy === 'title') {
     return sorted.sort((a, b) => a.title.localeCompare(b.title) * direction);
   }
 
   return sorted;
+};
+
+const DEFAULT_SECTION_SORT: Record<ProgramBoardSection, string> = {
+  closingSoon: 'deadline',
+  open: 'deadline',
+  openingSoon: 'openDate',
+  nextCycle: 'deadline',
+  noDates: 'title',
+  archive: 'title',
 };
 
 const PROGRAM_PARAM = 'program';
@@ -314,7 +354,6 @@ const Fellowships = () => {
     setPage,
     searchExhausted,
     total,
-    journeySummary,
     setFilterBarHeight,
   } = useContext(FellowshipSearchContext);
 
@@ -521,107 +560,59 @@ const Fellowships = () => {
     };
   });
 
-  const { closingSoon, open, nextCycleFilterCount, journeyGroups, cycleOf } = useMemo(() => {
-    const now = new Date();
-    const cycleGroups = {
-      closingSoon: [] as Fellowship[],
-      open: [] as Fellowship[],
-      openingSoon: [] as Fellowship[],
-      projectedNextCycle: [] as Fellowship[],
-      nextCycle: [] as Fellowship[],
-      closed: [] as Fellowship[],
-    };
-    const groups: Record<ProgramJourneyCategory, Fellowship[]> = {
-      startsResearch: [],
-      fundsResearch: [],
-      recognizesResearch: [],
-      archive: [],
-    };
-    const cycleOf = new Map<Fellowship, FellowshipCycleCategory>();
-    for (const f of fellowships) {
-      const cycleCat = getFellowshipCycleStatus(f, now).category;
-      cycleOf.set(f, cycleCat);
-      cycleGroups[cycleCat].push(f);
-      groups[getProgramJourneyStatus(f).category].push(f);
-    }
-    cycleGroups.closingSoon.sort((a, b) => {
-      const da = a.deadline ? new Date(a.deadline).getTime() : Infinity;
-      const db = b.deadline ? new Date(b.deadline).getTime() : Infinity;
-      return da - db;
-    });
-    if (sortBy !== 'default') {
-      cycleGroups.closingSoon = sortFellowshipsForDisplay(
-        cycleGroups.closingSoon,
-        sortBy,
-        sortDirection,
-      );
-      cycleGroups.open = sortFellowshipsForDisplay(cycleGroups.open, sortBy, sortDirection);
-      cycleGroups.openingSoon = sortFellowshipsForDisplay(
-        cycleGroups.openingSoon,
-        sortBy,
-        sortDirection,
-      );
-      cycleGroups.projectedNextCycle = sortFellowshipsForDisplay(
-        cycleGroups.projectedNextCycle,
-        sortBy,
-        sortDirection,
-      );
-      cycleGroups.nextCycle = sortFellowshipsForDisplay(
-        cycleGroups.nextCycle,
-        sortBy,
-        sortDirection,
-      );
-      cycleGroups.closed = sortFellowshipsForDisplay(cycleGroups.closed, sortBy, sortDirection);
-      for (const key of Object.keys(groups) as ProgramJourneyCategory[]) {
-        groups[key] = sortFellowshipsForDisplay(groups[key], sortBy, sortDirection);
+  const { closingSoon, open, nextCycleFilterCount, boardGroups, boardSummary, cycleOf } =
+    useMemo(() => {
+      const now = new Date();
+      const groups = Object.fromEntries(
+        PROGRAM_BOARD_SECTIONS.map((section) => [section, [] as Fellowship[]]),
+      ) as Record<ProgramBoardSection, Fellowship[]>;
+      const summary = emptyProgramBoardSummary();
+      const cycleOf = new Map<Fellowship, FellowshipCycleCategory>();
+      for (const f of fellowships) {
+        const cycle = getFellowshipCycleStatus(f, now).category;
+        cycleOf.set(f, cycle);
+        const section = programBoardSectionOf(f, cycle);
+        groups[section].push(f);
+        summary[section] += 1;
       }
-    } else {
-      for (const key of Object.keys(groups) as ProgramJourneyCategory[]) {
-        groups[key].sort((a, b) => {
-          const byAction = cycleActionOrder(cycleOf.get(a)!) - cycleActionOrder(cycleOf.get(b)!);
-          if (byAction !== 0) return byAction;
-          const da = dateValue(a.deadline) ?? Number.MAX_SAFE_INTEGER;
-          const db = dateValue(b.deadline) ?? Number.MAX_SAFE_INTEGER;
-          return da - db;
-        });
+      for (const key of PROGRAM_BOARD_SECTIONS) {
+        groups[key] =
+          sortBy === 'default'
+            ? sortFellowshipsForDisplay(groups[key], DEFAULT_SECTION_SORT[key], 'asc')
+            : sortFellowshipsForDisplay(groups[key], sortBy, sortDirection);
       }
-    }
-    const nextCycleFilterCount = NEXT_CYCLE_FILTER_CATEGORIES.reduce(
-      (count, category) => count + cycleGroups[category].length,
-      0,
-    );
-    return { ...cycleGroups, nextCycleFilterCount, journeyGroups: groups, cycleOf };
-  }, [fellowships, sortBy, sortDirection]);
+      const nextCycleFilterCount = fellowships.filter((f) =>
+        NEXT_CYCLE_FILTER_CATEGORIES.includes(cycleOf.get(f)!),
+      ).length;
+      return {
+        closingSoon: groups.closingSoon,
+        open: groups.open,
+        nextCycleFilterCount,
+        boardGroups: groups,
+        boardSummary: summary,
+        cycleOf,
+      };
+    }, [fellowships, sortBy, sortDirection]);
 
   const toBrowsable = (fs: Fellowship[]): BrowsableItem[] =>
     fs.map((f) => ({ type: 'fellowship' as const, data: f }));
 
-  const journeyItems = useMemo(() => {
-    const byKey = {} as Record<ProgramJourneyCategory, BrowsableItem[]>;
-    for (const key of Object.keys(journeyGroups) as ProgramJourneyCategory[]) {
-      let rows = journeyGroups[key];
-      if (quickFilter === 'open') {
-        rows = rows.filter((f) => ['open', 'closingSoon'].includes(cycleOf.get(f)!));
-      }
-      if (quickFilter === 'closingSoon') {
-        rows = rows.filter((f) => cycleOf.get(f) === 'closingSoon');
-      }
-      if (quickFilter === 'nextCycle') {
-        rows = rows.filter((f) => NEXT_CYCLE_FILTER_CATEGORIES.includes(cycleOf.get(f)!));
-      }
-      if (quickFilter === 'mentorFirst') {
-        rows = rows.filter((f) => f.requiresMentorBeforeApply);
-      }
-      byKey[key] = toBrowsable(rows);
+  const boardItems = useMemo(() => {
+    const matchesQuickFilter = (f: Fellowship): boolean => {
+      const cycle = cycleOf.get(f)!;
+      if (quickFilter === 'open') return cycle === 'open' || cycle === 'closingSoon';
+      if (quickFilter === 'closingSoon') return cycle === 'closingSoon';
+      if (quickFilter === 'nextCycle') return NEXT_CYCLE_FILTER_CATEGORIES.includes(cycle);
+      if (quickFilter === 'firstYear') return isOpenToFirstYears(f);
+      if (quickFilter === 'noMentorFirst') return !needsMentorBeforeApplying(f);
+      return true;
+    };
+    const byKey = {} as Record<ProgramBoardSection, BrowsableItem[]>;
+    for (const key of PROGRAM_BOARD_SECTIONS) {
+      byKey[key] = toBrowsable(boardGroups[key].filter(matchesQuickFilter));
     }
     return byKey;
-  }, [journeyGroups, cycleOf, quickFilter]);
-
-  const showSection = (section: ProgramJourneyCategory) => {
-    if (quickFilter === 'structured') return section === 'startsResearch';
-    if (quickFilter === 'mentorFirst') return section === 'fundsResearch';
-    return true;
-  };
+  }, [boardGroups, cycleOf, quickFilter]);
 
   const watchProgram = (programId: string) => {
     if (!localStorage.getItem(FIRST_PROGRAM_SAVE_KEY)) {
@@ -687,14 +678,11 @@ const Fellowships = () => {
       current.includes(tier) ? current.filter((value) => value !== tier) : [...current, tier],
     );
   };
-  const activeResultCount = journeySections.reduce(
-    (count, section) =>
-      showSection(section.key) ? count + journeyItems[section.key].length : count,
+  const activeResultCount = PROGRAM_BOARD_SECTIONS.reduce(
+    (count, key) => count + boardItems[key].length,
     0,
   );
   const resultCounterCount = quickFilter ? activeResultCount : total;
-  const sectionCount = (key: ProgramJourneyCategory): number =>
-    quickFilter ? journeyItems[key].length : journeySummary[key];
   const showQuickFilterEmptyState =
     !isLoading &&
     searchExhausted &&
@@ -749,9 +737,9 @@ const Fellowships = () => {
                 Programs & Fellowships
               </h1>
               <p className="mt-3 text-base leading-7 text-muted">
-                Yale research programs, fellowships, and awards, grouped by what you need first.
-                Some get you started in research with no mentor needed yet; others fund a project
-                once you have a mentor or a plan.
+                Yale research programs, fellowships, and grants you can apply to, soonest deadline
+                first. Each card says what it awards and whether you need a mentor lined up before
+                you apply.
               </p>
             </div>
             <div className="flex flex-col gap-2 border-l border-[var(--yr-line)] pl-0 sm:flex-row lg:flex-col lg:pl-5">
@@ -774,7 +762,7 @@ const Fellowships = () => {
 
           {!loadError && (
             <div className="mt-5">
-              <StatusSummary summary={journeySummary} />
+              <StatusSummary summary={boardSummary} />
             </div>
           )}
         </div>
@@ -913,17 +901,17 @@ const Fellowships = () => {
                     </p>
                   </div>
                 )}
-                {journeySections.map((section) =>
-                  showSection(section.key) && journeyItems[section.key].length > 0 ? (
+                {boardSections.map((section) =>
+                  boardItems[section.key].length > 0 ? (
                     <section key={section.key} aria-labelledby={`program-section-${section.key}`}>
                       <SectionHeader
                         headingId={`program-section-${section.key}`}
                         title={section.title}
-                        count={sectionCount(section.key)}
+                        count={boardItems[section.key].length}
                         description={section.description}
                       />
                       <BrowseGrid
-                        items={journeyItems[section.key]}
+                        items={boardItems[section.key]}
                         favIds={favFellowshipIds}
                         onToggleFavorite={handleToggleFavorite}
                         onOpenModal={handleOpenModal}

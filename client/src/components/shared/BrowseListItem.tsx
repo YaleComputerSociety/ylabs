@@ -21,6 +21,7 @@ import UrgentBadge from './UrgentBadge';
 import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
+import { programCardFacts } from '../../utils/programBoard';
 import { EditIcon } from './icons';
 
 interface BrowseListItemProps {
@@ -59,6 +60,7 @@ const BrowseListItem = React.memo(
       item.type === 'fellowship' ? getFellowshipJourneySummary(item.data) : null;
 
     const isAudited = isAdmin && item.data.audited;
+    const programFacts = programCardFacts(item.data);
 
     const handleClick = () => {
       trackView();
@@ -86,6 +88,9 @@ const BrowseListItem = React.memo(
                 </button>
               </h3>
               <p className={`text-xs ${subtitleColor} truncate`}>{subtitle}</p>
+              {!isCompact && programFacts.length > 0 && (
+                <p className="mt-0.5 truncate text-xs text-ink-soft">{programFacts.join(' · ')}</p>
+              )}
             </>
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-1.5">

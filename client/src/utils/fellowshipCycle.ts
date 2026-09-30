@@ -113,7 +113,7 @@ export function getFellowshipCycleStatus(
   if (likelyRecurring) {
     return {
       category: 'nextCycle',
-      label: 'Next Cycle Signal',
+      label: 'Deadline Passed',
       className: 'bg-sky-50 text-sky-700 border border-sky-100',
       deadlinePassed,
       sourceBacked,
@@ -123,7 +123,7 @@ export function getFellowshipCycleStatus(
 
   return {
     category: 'closed',
-    label: 'Closed',
+    label: deadline ? 'Closed' : 'No Dates Posted',
     className: 'bg-gray-100 text-gray-600 border border-gray-200',
     deadlinePassed,
     sourceBacked,

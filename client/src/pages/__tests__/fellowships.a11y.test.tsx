@@ -11,7 +11,6 @@ import FellowshipSearchContext, {
 import UserContext from '../../contexts/UserContext';
 import UIContext, { defaultUIContext } from '../../contexts/UIContext';
 import type { Fellowship } from '../../types/types';
-import { summarizeProgramJourney } from '../../utils/programJourney';
 import axios from '../../utils/axios';
 import { expectNoAxeViolations } from '../../testUtils/axe';
 
@@ -98,7 +97,6 @@ const renderPage = (
     setPage: vi.fn(),
     pageSize: 500,
     total: fellowships.length,
-    journeySummary: summarizeProgramJourney(fellowships),
     ...overrides,
   };
 

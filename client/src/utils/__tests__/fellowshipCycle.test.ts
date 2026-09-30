@@ -107,7 +107,7 @@ describe('fellowshipCycle', () => {
     expect(isLikelyRecurringFellowship(fellowship)).toBe(true);
     expect(getFellowshipCycleStatus(fellowship, now)).toMatchObject({
       category: 'nextCycle',
-      label: 'Next Cycle Signal',
+      label: 'Deadline Passed',
       likelyRecurring: true,
     });
     expect(getFellowshipDeadlineSubtitle(fellowship, now)).toBe('Past cycle; track for reopening');

@@ -8,6 +8,7 @@ import ConfigContext, { defaultConfigContext } from '../../../contexts/ConfigCon
 import UserContext, { defaultUserContext } from '../../../contexts/UserContext';
 import type { BrowsableItem } from '../../../types/browsable';
 import type { Fellowship } from '../../../types/types';
+import { createFellowship } from '../../../utils/createFellowship';
 
 vi.mock('../../../utils/axios', () => ({
   default: {
@@ -384,5 +385,42 @@ describe('Program card pointer target', () => {
       expect(actions.filter((action) => !reaches44px(action))).toEqual([]);
       cleanup();
     }
+  });
+});
+
+describe('Program card apply facts', () => {
+  const served = createFellowship({
+    _id: 'synthetic-served',
+    title: 'Synthetic Travel Grant',
+    programKind: 'FELLOWSHIP_FUNDING',
+    awardAmount: 'up to $1,500',
+    requiresMentorBeforeApply: true,
+  });
+
+  it('shows the served award and mentor requirement on a card', () => {
+    renderAdmin(
+      <BrowseCard
+        item={{ type: 'fellowship', data: served }}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Award: up to $1,500')).toBeTruthy();
+    expect(screen.getByText('Line up a mentor before you apply')).toBeTruthy();
+  });
+
+  it('shows the same facts on a list row', () => {
+    renderAdmin(
+      <BrowseListItem
+        item={{ type: 'fellowship', data: served }}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText('Award: up to $1,500 · Line up a mentor before you apply'),
+    ).toBeTruthy();
   });
 });
