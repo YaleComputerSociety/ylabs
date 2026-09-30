@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   attributeTopicDrops,
   buildRate,
+  checkConstantReportedTotal,
   checkFacetAgreement,
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
@@ -237,6 +238,30 @@ describe('checkTitleSortOrdering', () => {
     expect(checkTitleSortOrdering(['beta', 'alpha'], 'asc', still, moved).status).toBe(
       'inconclusive',
     );
+  });
+});
+
+describe('checkConstantReportedTotal', () => {
+  const still = { rowCount: 3, latestUpdatedAt: '2026-09-01T00:00:00.000Z' };
+  const moved = { rowCount: 4, latestUpdatedAt: '2026-09-02T00:00:00.000Z' };
+
+  it('passes when every page reports the same total', () => {
+    expect(checkConstantReportedTotal('q', [581, 581, 581], still, still).status).toBe('pass');
+  });
+
+  it('fails when the total grows as the student pages', () => {
+    const result = checkConstantReportedTotal('q', [242, 242, 260, 577], still, still);
+
+    expect(result.status).toBe('fail');
+    expect(result.detail.distinctTotals).toEqual([242, 260, 577]);
+  });
+
+  it('fails when a page reports no total at all', () => {
+    expect(checkConstantReportedTotal('q', [null], still, still).status).toBe('fail');
+  });
+
+  it('is inconclusive rather than failing when the corpus moved during the walk', () => {
+    expect(checkConstantReportedTotal('q', [242, 250], still, moved).status).toBe('inconclusive');
   });
 });
 

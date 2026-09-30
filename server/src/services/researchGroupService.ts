@@ -106,7 +106,10 @@ import {
   WORKING_STYLE_PHRASE_ALIASES,
   WORKING_STYLE_PHRASE_MAX_TOKENS,
 } from './searchTopicAliases';
-import { maxReachableResearchSearchPage } from './researchSearchPagination';
+import {
+  maxReachableResearchSearchPage,
+  RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
+} from './researchSearchPagination';
 import { warmServedResearchAreaVocabulary } from '../utils/controlledVocabularyHeadings';
 
 /**
@@ -989,6 +992,11 @@ export const SEMANTIC_LEG_SIZE = 100;
 
 const candidateHitId = (hit: any): string => String(hit?.id ?? hit?._id);
 
+const appendUnlistedHits = <T>(head: T[], tail: T[]): T[] => {
+  const headIds = new Set(head.map(candidateHitId));
+  return [...head, ...tail.filter((hit) => !headIds.has(candidateHitId(hit)))];
+};
+
 export const fuseKeywordAndSemanticRankings = <T>(
   keywordLegHits: T[],
   semanticLegHits: T[],
@@ -1406,12 +1414,8 @@ export async function searchResearchGroupsViaMeili(
   // below, which forces that scan on every request). See #885.
   const paginateHybridPoolLocally = searchParams.rankingScoreThreshold !== undefined;
   if (paginateHybridPoolLocally) {
-    const hybridCandidatePoolSize = Math.min(
-      RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
-      Math.max(HYBRID_CANDIDATE_POOL_SIZE, offset + safePageSize),
-    );
     searchParams.page = 1;
-    searchParams.hitsPerPage = hybridCandidatePoolSize;
+    searchParams.hitsPerPage = HYBRID_CANDIDATE_POOL_SIZE;
     delete searchParams.limit;
     delete searchParams.offset;
   }
@@ -1662,7 +1666,10 @@ export async function searchResearchGroupsViaMeili(
   // partial typo garbage. See #2732.
   const runsHybridLegs =
     Boolean(finalSearchParams.hybrid) && finalSearchParams.rankingScoreThreshold !== undefined;
-  const searchKeywordLeg = async (matchingStrategy?: string): Promise<any[]> => {
+  const searchKeywordLeg = async (
+    matchingStrategy?: string,
+    hitsPerPage: number = HYBRID_CANDIDATE_POOL_SIZE,
+  ): Promise<any[]> => {
     try {
       const keywordLegResult = await index.search(meiliQueryText, {
         filter: filterString,
@@ -1675,7 +1682,7 @@ export async function searchResearchGroupsViaMeili(
           ...PERSON_NAME_ATTRIBUTES,
         ],
         page: 1,
-        hitsPerPage: finalSearchParams.hitsPerPage ?? HYBRID_CANDIDATE_POOL_SIZE,
+        hitsPerPage,
       });
       return Array.isArray(keywordLegResult?.hits) ? keywordLegResult.hits : [];
     } catch (error) {
@@ -1691,9 +1698,9 @@ export async function searchResearchGroupsViaMeili(
   // copy is a coincidental typo, and it keeps the pool's position, because the
   // keyword relevance is the part that was garbage. Dropping it instead would
   // lose a match the search had already recovered. See #2732.
-  let genuineKeywordLegHits = runsHybridLegs
-    ? dropCoincidentalTypoOnlyHits(await searchKeywordLeg(finalSearchParams.matchingStrategy)).hits
-    : [];
+  let keywordLegMatchingStrategy: string | undefined = finalSearchParams.matchingStrategy;
+  let keywordLegRawHits = runsHybridLegs ? await searchKeywordLeg(keywordLegMatchingStrategy) : [];
+  let genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(keywordLegRawHits).hits;
   // A phrase no single row carries in full ("immigration policy", "wind power")
   // left the keyword leg empty, so the fusion had nothing to anchor it. Rows
   // matching the phrase's leading words are the next best evidence; a query
@@ -1705,7 +1712,9 @@ export async function searchResearchGroupsViaMeili(
     genuineKeywordLegHits.length === 0 &&
     finalSearchParams.matchingStrategy === 'all'
   ) {
-    genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(await searchKeywordLeg('last')).hits;
+    keywordLegMatchingStrategy = 'last';
+    keywordLegRawHits = await searchKeywordLeg(keywordLegMatchingStrategy);
+    genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(keywordLegRawHits).hits;
   }
 
   const semanticLegHits = await (async (): Promise<any[]> => {
@@ -1728,28 +1737,89 @@ export async function searchResearchGroupsViaMeili(
   })();
 
   const fuseRankings = semanticLegHits.length > 0;
+
+  // The head keeps the fixed 200-row window, so page 1 orders exactly as it always
+  // has, while the rows past it are decided once per query rather than by how deep
+  // the requesting page sits: a pool grown to `offset + pageSize` let each deeper
+  // page admit more rows and raise the reported total as a student scrolled (#3943).
+  const searchDeepCandidatePool = async (): Promise<{
+    poolHits: any[];
+    keywordLegHits: any[];
+  } | null> => {
+    if (!paginateHybridPoolLocally) return null;
+    const headWindowFilled =
+      (hits || []).length >= HYBRID_CANDIDATE_POOL_SIZE ||
+      keywordLegRawHits.length >= HYBRID_CANDIDATE_POOL_SIZE;
+    if (!headWindowFilled) return null;
+    const { facets: _facets, ...poolParams } = finalSearchParams;
+    try {
+      const [deepPoolResult, deepKeywordLegRawHits] = await Promise.all([
+        index.search(meiliQueryText, {
+          ...poolParams,
+          page: 1,
+          hitsPerPage: RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
+        }),
+        runsHybridLegs
+          ? searchKeywordLeg(keywordLegMatchingStrategy, RESEARCH_SEARCH_MAX_REACHABLE_RECORDS)
+          : Promise.resolve([]),
+      ]);
+      return {
+        poolHits: Array.isArray(deepPoolResult?.hits) ? deepPoolResult.hits : [],
+        keywordLegHits: dropCoincidentalTypoOnlyHits(deepKeywordLegRawHits).hits,
+      };
+    } catch (error) {
+      console.error('Optional deep candidate-pool query failed:', sanitizeLogValue(error));
+      degraded = true;
+      return null;
+    }
+  };
   const withholdSemanticOnlyRows =
     fuseRankings && keywordLegTopHitIsNameMatch(genuineKeywordLegHits, normalizedQuery.tokens);
-  const { hits: keywordFilteredHits, dropped: droppedCoincidentalHits } = fuseRankings
-    ? (() => {
-        // A name search keeps the keyword leg's own order: a surname's semantic
-        // neighbours carry no signal about which same-named row is the person, and
-        // fusing them in pushed the right row of a common surname out of the top 10.
-        if (withholdSemanticOnlyRows) return { hits: genuineKeywordLegHits, dropped: 0 };
-        const fused = fuseKeywordAndSemanticRankings(genuineKeywordLegHits, semanticLegHits);
-        const fusedIds = new Set(fused.map(candidateHitId));
-        const poolRemainder = dropCoincidentalTypoOnlyHits(
-          (hits || []).filter((hit: any) => !fusedIds.has(candidateHitId(hit))),
-        );
-        return { hits: [...fused, ...poolRemainder.hits], dropped: poolRemainder.dropped };
-      })()
-    : dropCoincidentalTypoOnlyHits(orderCandidatesByKeywordLeg(hits || [], genuineKeywordLegHits));
-  const reorderedPool = fuseRankings
-    ? keywordFilteredHits
-    : promoteExactAliasFieldMatches(
-        floorWeakSemanticOnlyHits(keywordFilteredHits),
-        normalizedQuery.aliasTerms,
+  const orderCandidatePool = (
+    poolHits: any[],
+    keywordLegHits: any[],
+  ): { hits: any[]; dropped: number } => {
+    if (!fuseRankings) {
+      const { hits: keywordOrdered, dropped } = dropCoincidentalTypoOnlyHits(
+        orderCandidatesByKeywordLeg(poolHits, keywordLegHits),
       );
+      return {
+        hits: promoteExactAliasFieldMatches(
+          floorWeakSemanticOnlyHits(keywordOrdered),
+          normalizedQuery.aliasTerms,
+        ),
+        dropped,
+      };
+    }
+    // A name search keeps the keyword leg's own order: a surname's semantic
+    // neighbours carry no signal about which same-named row is the person, and
+    // fusing them in pushed the right row of a common surname out of the top 10.
+    if (withholdSemanticOnlyRows) return { hits: keywordLegHits, dropped: 0 };
+    const fused = fuseKeywordAndSemanticRankings(
+      keywordLegHits.slice(0, HYBRID_CANDIDATE_POOL_SIZE),
+      semanticLegHits,
+    );
+    const fusedIds = new Set(fused.map(candidateHitId));
+    const keywordTail = keywordLegHits.filter((hit: any) => !fusedIds.has(candidateHitId(hit)));
+    const listedIds = new Set([...fusedIds, ...keywordTail.map(candidateHitId)]);
+    const poolRemainder = dropCoincidentalTypoOnlyHits(
+      poolHits.filter((hit: any) => !listedIds.has(candidateHitId(hit))),
+    );
+    return {
+      hits: [...fused, ...keywordTail, ...poolRemainder.hits],
+      dropped: poolRemainder.dropped,
+    };
+  };
+
+  const candidatePoolHead = orderCandidatePool(hits || [], genuineKeywordLegHits);
+  const deepCandidatePool = await searchDeepCandidatePool();
+  const deepCandidatePoolOrder = deepCandidatePool
+    ? orderCandidatePool(deepCandidatePool.poolHits, deepCandidatePool.keywordLegHits)
+    : null;
+  const reorderedPool = deepCandidatePoolOrder
+    ? appendUnlistedHits(candidatePoolHead.hits, deepCandidatePoolOrder.hits)
+    : candidatePoolHead.hits;
+  const droppedCoincidentalHits = (deepCandidatePoolOrder ?? candidatePoolHead).dropped;
   // The reorder helpers run across the whole fixed candidate pool so the ordering
   // is stable, then the requested page window is sliced locally. Non-thresholded
   // queries already come back pre-paginated from Meilisearch, so they are used

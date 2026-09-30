@@ -346,6 +346,28 @@ export function checkTitleSortOrdering(
   return buildInvariant(id, title, inversions === 0, tally);
 }
 
+export function checkConstantReportedTotal(
+  query: string,
+  totals: readonly (number | null)[],
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'text-query-total-is-constant-across-pages';
+  const title = 'A text query reports the same total on every page a student scrolls';
+  const distinctTotals = [...new Set(totals)];
+  const constant = distinctTotals.length === 1 && typeof distinctTotals[0] === 'number';
+  const tally = { query, pagesWalked: totals.length, firstTotal: totals[0], distinctTotals };
+  if (!constant && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the pages were read, so two pages may describe different corpora',
+      { ...tally, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, constant, tally);
+}
+
 export function checkNotDegraded(id: string, title: string, degraded: unknown): InvariantResult {
   return buildInvariant(id, title, degraded === false, { degraded });
 }

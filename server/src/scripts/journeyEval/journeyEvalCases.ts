@@ -9,6 +9,7 @@ import {
   buildRate,
   checkExpectedNoResults,
   checkFacetAgreement,
+  checkConstantReportedTotal,
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
   checkQueryRelevance,
@@ -288,6 +289,36 @@ const paginationServesDistinctRows: JourneyCase = {
           pagesRequested: context.pagesChecked,
           reachablePages,
         }),
+      ],
+      rates: [],
+    };
+  },
+};
+
+const TEXT_QUERY_TOTAL_PROBE = 'cancers';
+
+const textQueryTotalIsStable: JourneyCase = {
+  id: 'text-query-total-is-stable',
+  title: 'A text query reports the same total however far the student has scrolled',
+  run: async (context) => {
+    const reachablePages = maxReachableResearchSearchPage(context.window);
+    const pagesToWalk = resolvePagesToWalk(context.pagesChecked, reachablePages);
+    const corpusBefore = await context.readCorpusFingerprint();
+    const totals: (number | null)[] = [];
+    for (let page = 1; page <= pagesToWalk; page += 1) {
+      const result = await context.browse({
+        query: TEXT_QUERY_TOTAL_PROBE,
+        page,
+        pageSize: context.window,
+      });
+      totals.push(typeof result.estimatedTotalHits === 'number' ? result.estimatedTotalHits : null);
+      if (servedRows(result).length < context.window) break;
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+
+    return {
+      invariants: [
+        checkConstantReportedTotal(TEXT_QUERY_TOTAL_PROBE, totals, corpusBefore, corpusAfter),
       ],
       rates: [],
     };
@@ -668,6 +699,7 @@ export const journeyCases: readonly JourneyCase[] = [
   topicDropAttribution,
   facetCountAgreement,
   paginationServesDistinctRows,
+  textQueryTotalIsStable,
   sortedBrowseKeepsOrder,
   titleSortedBrowseFollowsCardTitle,
   topicQueryRelevance,
