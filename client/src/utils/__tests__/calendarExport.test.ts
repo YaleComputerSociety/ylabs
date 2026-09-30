@@ -49,6 +49,16 @@ describe('fellowshipFutureDeadlineDate', () => {
     });
     expect(fellowshipFutureDeadlineDate(fellowship, NOW)).toBeNull();
   });
+
+  it('fails closed for a deadline the server projected from a past cycle', () => {
+    const fellowship = createFellowship({
+      id: 'p1',
+      title: 'Fixture Grant',
+      deadline: '2026-06-30',
+      deadlineProjectedNextCycle: true,
+    });
+    expect(fellowshipFutureDeadlineDate(fellowship, NOW)).toBeNull();
+  });
 });
 
 describe('upcomingProgramDeadlineEvents', () => {
@@ -58,6 +68,12 @@ describe('upcomingProgramDeadlineEvents', () => {
       createFellowship({ id: 'p2', title: 'Expired Grant', deadline: '2025-01-01' }),
       createFellowship({ id: 'p3', title: 'Sooner Grant', deadline: '2026-03-01' }),
       createFellowship({ id: 'p4', title: 'No Deadline Grant', deadline: null }),
+      createFellowship({
+        id: 'p5',
+        title: 'Projected Grant',
+        deadline: '2026-02-01',
+        deadlineProjectedNextCycle: true,
+      }),
     ];
 
     const events = upcomingProgramDeadlineEvents(fellowships, NOW);
