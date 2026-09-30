@@ -18,6 +18,7 @@ const SECRET_BARE_FIELD_RE = new RegExp(
   `(["']?(?:${SECRET_FIELD_NAME_PATTERN})["']?\\s*:\\s*)([^"',}\\]\\s]+)`,
   'gi',
 );
+const DUPLICATE_KEY_VALUE_RE = /\b(dup key:)[^\r\n]*/gi;
 const MAX_SANITIZED_LOG_VALUE_LENGTH = 12000;
 const TRUNCATED_LOG_SUFFIX = '[log-truncated]';
 
@@ -52,6 +53,7 @@ export const sanitizeLogValue = (value: unknown): string => {
     .replace(TOKEN_ASSIGNMENT_RE, '$1=[secret-redacted]')
     .replace(SECRET_QUOTED_FIELD_RE, '$1$2[secret-redacted]$2')
     .replace(SECRET_BARE_FIELD_RE, '$1[secret-redacted]')
+    .replace(DUPLICATE_KEY_VALUE_RE, '$1 [key-redacted]')
     .replace(EMAIL_RE, '[email redacted]')
     .replace(PHONE_SHAPED_DIGITS_PATTERN, phoneRedactionReplacement);
 

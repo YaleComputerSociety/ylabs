@@ -26,6 +26,7 @@ import {
   type PlanningContextCategory,
   type PublicPlanningContext,
 } from './planningContextService';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 /** The subset of AnalyticsEventType that describes research-surface activity. */
 export const RESEARCH_EVENT_TYPES: readonly AnalyticsEventType[] = [
@@ -492,7 +493,9 @@ export const logResearchEventOnSuccess = (
           entityId: getEntityId(req),
           user: req.user as AnalyticsUser | undefined,
           payload: getPayload(req),
-        }).catch((err) => console.error(`Error logging ${eventType} event:`, err));
+        }).catch((err) =>
+          console.error(`Error logging ${eventType} event:`, sanitizeLogValue(err)),
+        );
       }
 
       return originalSend(data);

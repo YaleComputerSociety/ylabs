@@ -14,6 +14,7 @@ import { normalizeResearchDetailSlug } from './researchGroupService';
 import { BadRequestError, NotFoundError, ObjectIdError } from '../utils/errors';
 import { replaceAsciiControls } from '../utils/asciiControl';
 import { resolveReporterIdentityByNetid } from './accountService';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const CATEGORIES = new Set<string>(EntityCorrectionReportCategory);
 const RESOLUTION_STATUSES = new Set<string>(['accepted', 'dismissed']);
@@ -65,6 +66,15 @@ export const sanitizeReportNote = (value: unknown, maxLength = MAX_NOTE_LENGTH):
     .slice(0, maxLength);
 };
 
+const openReportConflictError = () => {
+  const error: any = new Error('An open report of this type already exists for this page');
+  error.status = 409;
+  return error;
+};
+
+const isDuplicateKeyError = (error: unknown): boolean =>
+  (error as { code?: unknown } | null)?.code === 11000;
+
 export const createEntityCorrectionReport = async (
   slug: string,
   input: unknown,
@@ -108,11 +118,7 @@ export const createEntityCorrectionReport = async (
   })
     .select('_id')
     .lean();
-  if (existingPending) {
-    const error: any = new Error('An open report of this type already exists for this page');
-    error.status = 409;
-    throw error;
-  }
+  if (existingPending) throw openReportConflictError();
 
   const providedName = [reporter.fname, reporter.lname].filter(Boolean).join(' ');
   const identity =
@@ -137,11 +143,12 @@ export const createEntityCorrectionReport = async (
       userType: reporter.userType || 'unknown',
       role: deriveReporterRole(reporter.userType),
     },
+  }).catch((error: unknown) => {
+    if (isDuplicateKeyError(error)) throw openReportConflictError();
+    throw error;
   });
 
-  console.info(
-    `Correction report ${report._id} submitted for ${entity._id} (${category}) by ${reporter.netId}`,
-  );
+  console.info(sanitizeLogValue(`Correction report ${report._id} submitted (${category})`));
 
   return report.toObject();
 };
