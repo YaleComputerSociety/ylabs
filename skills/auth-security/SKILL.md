@@ -165,15 +165,16 @@ Every per-IP key is the client address the validated `trust proxy` predicate res
 All limiters are skipped in CI, development, and test.
 Responses with a `5x` status do not count against a caller's budget (`skipFailedRequests` with `requestWasSuccessful` = status under 500), so a transient backend outage (e.g. a MongoDB reconnect returning 503) cannot lock a user out for the rest of the window; `4xx` still counts.
 `globalLimiter` and `writeLimit` reach that exemption with `skipFailedRequests: true` and the shared predicate.
-`authLimiter` reaches the same place from the other side: it sets `skipSuccessfulRequests: true` with its own predicate, which calls every status outside the `4xx` range successful, so a `5x` is refunded exactly as before and a rejected validation is the only response it charges.
+`authLimiter` reaches the same place from the other side: it sets `skipSuccessfulRequests: true` with its own predicate, which refunds a `5x` exactly as before and otherwise refunds only a request that `casLogin` recorded as accepted with `markCasValidationAccepted`, so a rejected validation is the only response it charges.
+Acceptance is recorded rather than read from the status because `casLogin` answers a rejected validation with a redirect when the caller names an `error` target, and a redirect is also what an accepted one returns; an unrecorded outcome is charged, so a new response path fails closed.
 Both flags together would refund every finished response and count nothing, so the two are alternatives rather than a pair.
 `firstContactLimiter` is deliberately excluded and counts every response, a `5x` included (#2990).
 It meters the session mint, and `ensureAnonymousRateLimitId` performs that mint before the limiter runs, so a request that ends `500` has already spent the resource; refunding it would turn an outage into a window for minting unlimited sessions, which is the bypass the limiter exists to close.
 The cost is accepted rather than unnoticed: a `5x` storm spends a NATed cohort's first-contact budget, and their recovery is the one the exhaustion message already names, retrying with the cookie issued regardless of the failure.
 Because express-rate-limit consults `requestWasSuccessful` only when a skip flag is set, declaring the predicate without the flag advertises an exemption that does not exist, so `scripts/security-preflight.test.mjs` pins that no limiter does.
 `server/src/middleware/__tests__/firstContactMetering.test.ts` drives the exported limiter over a `500` and a `404` and asserts the counter keeps climbing, so the guarantee rests on measured counting rather than on how the options block is written.
-`server/src/middleware/__tests__/authLimiterScope.test.ts` does the same for `authLimiter`, driving the exported limiter over a ticketless start, an accepted validation, a rejected one and a `503`, and pinning that the two request-scoped limiters still charge a successful response.
-It needs no CAS, because the stand-in route reproduces the statuses `casLogin` returns; `server/src/__tests__/appSecurityRuntime.test.ts` covers the route wiring by driving the mounted app's login start.
+`server/src/middleware/__tests__/authLimiterScope.test.ts` does the same for `authLimiter`, driving the exported limiter over a ticketless start, an accepted validation, a rejected one answering `401` or an error-page redirect, and a `503`, and pinning that the two request-scoped limiters still charge a successful response.
+It needs no CAS: one block uses a stand-in route, and another drives the real `/cas` route with the strategy's verdict stubbed, so the acceptance record is measured where `casLogin` writes it; `server/src/__tests__/appSecurityRuntime.test.ts` covers the route wiring by driving the mounted app's login start.
 
 ### What the request-scoped limiters do and do not control
 

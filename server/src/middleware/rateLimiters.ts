@@ -54,9 +54,9 @@ const withoutTrailingPort = (value: string): string => {
 // caller, so keying on it collapses every client into a single bucket and turns
 // a per-client limit into a global one - express-rate-limit's own troubleshooting
 // guide describes this as becoming "effectively a global one and blocking all
-// requests once the limit is reached" (#2318). `authLimiter` is 20 per 15 minutes
-// on the CAS login path, so that was 20 logins per window for the entire user
-// base.
+// requests once the limit is reached" (#2318). `authLimiter` is
+// `AUTH_VALIDATION_FAILURE_MAX` rejected CAS ticket validations per 15 minutes,
+// so that would be one failure budget per window for the entire user base.
 //
 // `req.ip` is the client address that the validated `trust proxy` predicate in
 // app.ts already resolves from the forwarded chain, which is why that apparatus
@@ -289,9 +289,17 @@ export const writeLimit = rateLimit({
 // spends a CAS validation. Mirrors the strategy's own `if (!ticket)` test
 // (`passport-cas`), so this limiter's idea of a validation attempt cannot drift
 // from what the strategy actually attempts.
-const attemptsCasTicketValidation = (req: Request): boolean => {
-  const ticket = (req.query as Record<string, unknown> | undefined)?.ticket;
-  return typeof ticket === 'string' ? ticket.length > 0 : ticket !== undefined && ticket !== null;
+const attemptsCasTicketValidation = (req: Request): boolean =>
+  Boolean((req.query as Record<string, unknown> | undefined)?.ticket);
+
+// The status cannot tell an accepted validation from a rejected one, because
+// `casLogin` answers both with a redirect when the caller names an `error`
+// target. So the route records acceptance itself, and every unrecorded outcome
+// is charged.
+const acceptedCasValidations = new WeakSet<Request>();
+
+export const markCasValidationAccepted = (req: Request): void => {
+  acceptedCasValidations.add(req);
 };
 
 // `skipSuccessfulRequests` refunds every response this predicate calls
@@ -299,8 +307,8 @@ const attemptsCasTicketValidation = (req: Request): boolean => {
 // `requestWasSuccessful` above: a 5xx has to read as successful here to keep the
 // same outage exemption the other limiters get from `skipFailedRequests`, leaving
 // a rejected validation as the only charge.
-const casValidationWasNotRejected = (_req: Request, res: Response): boolean =>
-  res.statusCode < 400 || res.statusCode >= 500;
+const casValidationEarnsRefund = (req: Request, res: Response): boolean =>
+  acceptedCasValidations.has(req) || res.statusCode >= 500;
 
 // Per-IP ceiling on repeated FAILED CAS ticket validation. Keyed by the client
 // address the validated `trust proxy` predicate resolves, which accepts a
@@ -328,7 +336,7 @@ export const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
-  requestWasSuccessful: casValidationWasNotRejected,
+  requestWasSuccessful: casValidationEarnsRefund,
   message: { error: 'Too many failed login attempts, please try again later.' },
   handler: createRateLimitHandler('Too many failed login attempts, please try again later.'),
   skip: (req) => bypassRuntimeSecurity || !attemptsCasTicketValidation(req),
