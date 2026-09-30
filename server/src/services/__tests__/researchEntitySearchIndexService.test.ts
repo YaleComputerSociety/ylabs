@@ -593,6 +593,25 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc).not.toHaveProperty('description');
   });
 
+  it('derives no match text, topic alias or rank from stored profile-synthesis prose no surface serves (#3937)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-unserved-synthesis',
+      name: 'Unserved Synthesis Lab',
+      shortDescription: 'Studies coastal sediment transport.',
+      profileSynthesisDescription:
+        'Applies machine learning to glacier imaging and hydroclimate forecasting.',
+      websiteUrl: 'https://example.yale.edu/unserved-synthesis',
+      archived: false,
+    });
+
+    const serialized = JSON.stringify(doc).toLowerCase();
+    expect(serialized).not.toContain('glacier');
+    expect(serialized).not.toContain('hydroclimate');
+    expect(doc?.studentSearchTerms ?? []).not.toEqual(
+      expect.arrayContaining(['artificial intelligence']),
+    );
+  });
+
   it('strips endowed-chair honorific titles from searchable description text so a chair-name term does not surface unrelated faculty (#1286)', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-townsend-chair',

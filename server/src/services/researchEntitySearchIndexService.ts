@@ -194,7 +194,6 @@ const SEARCH_INDEX_TEXT_FIELDS = [
   'summary',
   'shortDescription',
   'fullDescription',
-  'profileSynthesisDescription',
   'description',
   'undergradEvidenceQuote',
   'undergradAccessEvidence',
