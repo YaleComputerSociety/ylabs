@@ -14,6 +14,7 @@ export interface ProgramResearchRelevanceInput {
   studentFacingCategory?: string;
   programKind?: string;
   purpose?: string[];
+  sourceUrl?: string;
   summary?: string;
   description?: string;
   eligibility?: string;
@@ -52,7 +53,11 @@ const INHERENTLY_RESEARCH_PROGRAM_KINDS = new Set([
 ]);
 
 const FUNDS_RESEARCH_PROSE =
-  /\b(?:research (?:trips?|projects?|travel|expenses|costs|stays?)|(?:conduct|conducting|support|supports|fund|funds)\s+(?:\w+\s+){0,3}research|whose research)\b/i;
+  /\b(?:(?<!non-)research (?:trips?|projects?|travel|expenses|costs|stays?)|(?:conduct|conducting|support|supports|fund|funds)\s+(?:(?!(?:or|and|interested|in)\b)\w+\s+){0,3}research(?!\s+opportunit)|whose research)\b/i;
+
+// STARS classification is held for a product decision, so the facet gate must not move it.
+const isStarsProgram = (title: string, sourceUrl: string): boolean =>
+  /\bSTARS\b/.test(title) || /\/stars\//i.test(sourceUrl);
 
 const RESEARCH_CAREER_AWARD =
   /\b(?:pursue|pursuing|intend(?:s|ing)? to pursue)\s+research careers?\b/i;
@@ -103,7 +108,7 @@ export function classifyProgramResearchRelevance(
   // names research, or its kind is research by construction. Incidental prose ("research
   // opportunities", "language immersion or research") otherwise admitted study, language,
   // internship and postgraduate awards to a research surface (#3904).
-  if (purposes.length > 0 && !purposeResearch) {
+  if (purposes.length > 0 && !purposeResearch && !isStarsProgram(title, text(input.sourceUrl))) {
     const titleResearch = RESEARCH_TEXT.test(title);
     const inherentKind = INHERENTLY_RESEARCH_PROGRAM_KINDS.has(programKind);
     const sourceProse = [
