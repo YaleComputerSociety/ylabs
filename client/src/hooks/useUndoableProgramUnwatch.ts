@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
-import swal from 'sweetalert';
 import axios from '../utils/axios';
 import useUndoableRemoval from './useUndoableRemoval';
+import { showWarningDialog } from '../utils/warningDialog';
 import type { ResearchSaveSurface } from '../utils/researchAnalytics';
 import {
   DEFAULT_RESEARCH_PLAN_STAGE,
@@ -77,10 +77,9 @@ const useUndoableProgramUnwatch = ({
         return true;
       } catch {
         console.error('Error restoring watched program plan.');
-        void swal({
-          text: 'The program is watched again, but its note and stage were not restored. Press Undo to try again.',
-          icon: 'warning',
-        });
+        void showWarningDialog(
+          'The program is watched again, but its note and stage were not restored. Press Undo to try again.',
+        );
         return false;
       }
     },

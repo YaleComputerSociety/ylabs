@@ -102,12 +102,12 @@ describe('App routing', () => {
     expect(getByTestId('research-page').textContent).toBe('Yale Research');
   });
 
-  it('renders Programs & Fellowships at /programs', async () => {
+  it('renders Programs & Fellowships at /programs once its lazy chunk resolves', async () => {
     window.history.pushState({}, '', '/programs');
 
-    const { getByTestId } = render(<App />);
+    const { findByTestId } = render(<App />);
 
-    expect(getByTestId('programs-page').textContent).toBe('Programs & Fellowships');
+    expect((await findByTestId('programs-page')).textContent).toBe('Programs & Fellowships');
   });
 
   it('redirects retired /fellowships URLs to /programs', async () => {
@@ -138,6 +138,15 @@ describe('App routing', () => {
 
     expect(getByTestId('not-found-page').textContent).toBe('Page not found');
     expect(window.location.pathname).toBe(retiredPath);
+  });
+
+  it('keeps the research landing eager so it renders on the first paint', () => {
+    window.history.pushState({}, '', '/research');
+
+    const { container, getByTestId } = render(<App />);
+
+    expect(getByTestId('research-page').textContent).toBe('Yale Research');
+    expect(container.querySelector('.yr-fade-in > .flex.min-h-\\[50vh\\]')).toBeNull();
   });
 
   it('resolves the lazily-loaded admin analytics route behind AdminRoute at /analytics', async () => {

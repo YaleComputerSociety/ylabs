@@ -4,8 +4,8 @@
  */
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import axios from '../utils/axios';
-import swal from 'sweetalert';
 import useLatestRequest from './useLatestRequest';
+import { showWarningDialog } from '../utils/warningDialog';
 import {
   createResearchAnalyticsInteractionId,
   trackResearchEvent,
@@ -145,7 +145,7 @@ export const useFavorites = (
           intentsRef.current.delete(id);
           setFavIds((current) => withFavorite(current, id, !favorite));
         }
-        void swal({ text: config.mutationFailureText(favorite), icon: 'warning' });
+        void showWarningDialog(config.mutationFailureText(favorite));
         await reload();
         return false;
       }

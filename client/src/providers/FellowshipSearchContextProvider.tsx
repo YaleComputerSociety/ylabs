@@ -7,12 +7,12 @@
 import { FC, useEffect, useCallback, useContext, useReducer, useRef, ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import axios from '../utils/axios';
-import swal from 'sweetalert';
 
 import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
 import UserContext from '../contexts/UserContext';
 import { Fellowship, StudentVisibilityTier } from '../types/types';
 import { createFellowship } from '../utils/createFellowship';
+import { showWarningDialog } from '../utils/warningDialog';
 import { summarizeProgramJourney } from '../utils/programJourney';
 import {
   fellowshipSearchReducer,
@@ -361,10 +361,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         .catch((error) => {
           console.error('Error loading fellowships.');
           if (error?.response?.status !== 401) {
-            void swal({
-              text: 'Unable to load fellowships. Please try again later.',
-              icon: 'warning',
-            });
+            void showWarningDialog('Unable to load fellowships. Please try again later.');
           }
           dispatch({ type: 'LOAD_MORE_FAILURE' });
         });

@@ -1,4 +1,4 @@
-import * as Sentry from '@sentry/react';
+import type * as SentryModule from '@sentry/react';
 
 import { scrubBreadcrumb, scrubErrorEvent } from './errorReportScrubbing';
 
@@ -16,7 +16,7 @@ const getErrorTrackingConfig = (): ErrorTrackingConfig => ({
 
 export const buildErrorTrackingOptions = (
   config: ErrorTrackingConfig & { dsn: string },
-): Sentry.BrowserOptions => ({
+): SentryModule.BrowserOptions => ({
   dsn: config.dsn,
   environment: config.environment,
   release: config.release,
@@ -25,18 +25,29 @@ export const buildErrorTrackingOptions = (
   beforeBreadcrumb: scrubBreadcrumb,
 });
 
+// The SDK is about 30 KB gzip and does nothing without a DSN, so it is fetched
+// only once one is configured (#3947). A capture raised before the fetch settles
+// waits on it rather than being dropped.
+let loadingSentry: Promise<typeof SentryModule> | null = null;
+
 export const initializeErrorTracking = (config = getErrorTrackingConfig()) => {
   if (!config.dsn) {
     return false;
   }
 
-  Sentry.init(buildErrorTrackingOptions({ ...config, dsn: config.dsn }));
+  const dsn = config.dsn;
+  loadingSentry = import('@sentry/react').then((sentry) => {
+    sentry.init(buildErrorTrackingOptions({ ...config, dsn }));
+    return sentry;
+  });
 
   return true;
 };
 
-export const captureClientError = (error: unknown, componentStack?: string) => {
-  Sentry.captureException(error, {
+export const captureClientError = async (error: unknown, componentStack?: string) => {
+  if (!loadingSentry) return;
+  const sentry = await loadingSentry;
+  sentry.captureException(error, {
     contexts: componentStack
       ? {
           react: {
@@ -45,4 +56,8 @@ export const captureClientError = (error: unknown, componentStack?: string) => {
         }
       : undefined,
   });
+};
+
+export const __resetErrorTrackingForTests = () => {
+  loadingSentry = null;
 };
