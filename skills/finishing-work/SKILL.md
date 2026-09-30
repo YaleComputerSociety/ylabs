@@ -31,7 +31,7 @@ Treat a failure that appears only when that file exists as a hole in the fence r
 
 CI (`.github/workflows/ci.yml`) `test-and-build` runs, in this order:
 
-1. checkout -> Node 20 -> Corepack -> immutable root, server, and client installs
+1. checkout -> Node from `.node-version` -> pinned Corepack -> immutable root, server, and client installs
 2. `yarn format:check`
 3. `yarn lint`
 4. `npx tsc --noEmit -p server/tsconfig.json`

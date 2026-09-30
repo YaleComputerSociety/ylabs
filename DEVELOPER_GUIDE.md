@@ -76,26 +76,29 @@ Use `nvm` for Node. Avoid `apt install nodejs`, which often installs an older No
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
 ```
 
-Restart your shell, then install and select Node 20:
+Restart your shell, then install and select the major this repository runs on.
+`.node-version` at the repository root is the single declaration of that major, read by CI's `setup-node` and by the hosting provider, so take the number from the file rather than from this page:
 
 ```bash
-nvm install 20
-nvm use 20
-nvm alias default 20
+nvm install "$(cat .node-version)"
+nvm use "$(cat .node-version)"
+nvm alias default "$(cat .node-version)"
 node -v
 npm -v
 ```
 
-Enable Corepack. It reads the `packageManager` field in `package.json` and installs that exact Yarn version the first time you run a `yarn` command inside the repo, so you do not name a version yourself:
+Install and enable Corepack. Node 25 and later no longer ship it, so install the version CI pins in `.github/workflows/ci.yml` first.
+Corepack reads the `packageManager` field in `package.json` and installs that exact Yarn version the first time you run a `yarn` command inside the repo, so you do not name a Yarn version yourself:
 
 ```bash
+npm install -g corepack@0.36.0
 corepack enable
 yarn -v
 ```
 
 Expected versions:
 
-- `node` should be `v20.x` or newer.
+- `node` should match `.node-version`. CI tests that major only, so a different one is untested here (#3915).
 - `yarn` should match the `packageManager` field in `package.json`, which is the only place the version is pinned. Read it with `node -p "require('./package.json').packageManager"` rather than trusting a number written here, because a number written here goes stale on the next bump.
 
 ### 2. Install dependencies
@@ -221,9 +224,10 @@ which corepack
 If `which node` prints `/usr/bin/node`, switch to the `nvm` Node:
 
 ```bash
-nvm install 20
-nvm use 20
-nvm alias default 20
+nvm install "$(cat .node-version)"
+nvm use "$(cat .node-version)"
+nvm alias default "$(cat .node-version)"
+npm install -g corepack@0.36.0
 corepack enable
 yarn -v
 ```
@@ -483,19 +487,11 @@ When adding a new reducer:
 
 ### CI
 
-Pull requests into `main` or `beta` trigger [.github/workflows/ci.yml](.github/workflows/ci.yml), which runs:
+Pull requests into `main` or `beta`, and pushes to `beta`, trigger [.github/workflows/ci.yml](.github/workflows/ci.yml).
+The step order of its `test-and-build` job is recorded in [skills/finishing-work/SKILL.md](skills/finishing-work/SKILL.md), and the `beta` push run is described in [docs/release-process.md](docs/release-process.md#the-post-merge-signal-on-beta).
 
-1. Immutable Yarn installs for the root, server, and client lockfiles
-2. `npx tsc --noEmit -p server/tsconfig.json`
-3. `yarn --cwd server test`
-4. `yarn --cwd client test:ci`
-5. `yarn security:preflight`, including production dependency audits at moderate severity
-6. Root, server, and client all-environment dependency audits at moderate severity
-7. `yarn build` (server + client)
-
-The workflow also accepts `workflow_dispatch` so it can be run manually from the Actions tab. Branch protection (configured in GitHub repo settings → Branches) requires this check to pass before merging.
-
-Client `tsc --noEmit` is still not part of CI; the client has known pre-existing type errors that need a cleanup pass before strict type-checking can be enforced.
+The workflow also accepts `workflow_dispatch` so it can be run manually from the Actions tab.
+Which contexts must pass before merging is set by the repository rulesets, not classic branch protection; see the Merging section of [AGENTS.md](AGENTS.md).
 
 ---
 

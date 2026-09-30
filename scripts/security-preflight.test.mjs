@@ -11,6 +11,7 @@ import {
   SYNTHETIC_ORCID_EXAMPLE,
 } from './orcidFixtureShape.mjs';
 import nodeTest, { after } from 'node:test';
+import yaml from 'js-yaml';
 
 import {
   DEFAULT_AUDIT_TIMEOUT_MS,
@@ -83,6 +84,10 @@ const postPromotionVerifyWorkflow = fs.readFileSync(
 );
 const releaseHoldWorkflow = fs.readFileSync(
   new URL('../.github/workflows/release-hold.yml', import.meta.url),
+  'utf8',
+);
+const e2eSmokeWorkflow = fs.readFileSync(
+  new URL('../.github/workflows/e2e-smoke.yml', import.meta.url),
   'utf8',
 );
 const yarnrc = fs.readFileSync(new URL('../.yarnrc.yml', import.meta.url), 'utf8');
@@ -971,7 +976,10 @@ test('the keep-alive job probes the served API and keeps its exit status', () =>
   );
   for (const [name, source] of [
     ['keep-alive.yml', keepAliveWorkflow],
-    ['keep-alive-probe.sh', fs.readFileSync(new URL('./keep-alive-probe.sh', import.meta.url), 'utf8')],
+    [
+      'keep-alive-probe.sh',
+      fs.readFileSync(new URL('./keep-alive-probe.sh', import.meta.url), 'utf8'),
+    ],
   ]) {
     assert.doesNotMatch(
       source,
@@ -1023,6 +1031,126 @@ test('the release-hold job reads live state rather than the replayed event paylo
     /name:\s*release-hold/,
     'the job name is the required context name on the main ruleset and must not change',
   );
+});
+
+const workflowDirectory = new URL('../.github/workflows/', import.meta.url);
+const parsedWorkflows = () =>
+  fs
+    .readdirSync(workflowDirectory)
+    .filter((file) => file.endsWith('.yml') || file.endsWith('.yaml'))
+    .map((file) => [file, yaml.load(fs.readFileSync(new URL(file, workflowDirectory), 'utf8'))]);
+const workflowSteps = (workflow) =>
+  Object.values(workflow.jobs ?? {}).flatMap((job) => job.steps ?? []);
+const runsCommand = (step, ...tokens) =>
+  typeof step.run === 'string' &&
+  step.run
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/))
+    .some((line) => tokens.every((token, index) => line[index] === token));
+
+test('every workflow takes its Node major from .node-version', () => {
+  const declared = fs.readFileSync(new URL('../.node-version', import.meta.url), 'utf8').trim();
+  assert.match(
+    declared,
+    /^\d+$/,
+    '.node-version must hold a bare major, because it is read by setup-node and by the hosting provider',
+  );
+
+  for (const [file, workflow] of parsedWorkflows()) {
+    for (const step of workflowSteps(workflow)) {
+      if (!step.uses?.startsWith('actions/setup-node@')) continue;
+      assert.equal(
+        step.with?.['node-version-file'],
+        '.node-version',
+        `${file} must read the Node major from .node-version so CI and the deployed runtime cannot drift (ylabs#3915)`,
+      );
+      assert.equal(
+        step.with?.['node-version'],
+        undefined,
+        `${file} must not pin a Node major inline beside the file it is supposed to read`,
+      );
+    }
+  }
+
+  // A bump is one commit that moves the file and every manifest together, so a
+  // manifest floor can never sit below the only major CI exercises.
+  const bound = `>=${declared} <${Number(declared) + 1}`;
+  for (const manifest of ['../package.json', '../server/package.json', '../client/package.json']) {
+    const { engines } = JSON.parse(fs.readFileSync(new URL(manifest, import.meta.url), 'utf8'));
+    assert.equal(
+      engines?.node,
+      bound,
+      `${manifest} must bound engines.node to the major .node-version declares`,
+    );
+  }
+});
+
+test('workflows pin Corepack instead of installing whatever is latest', () => {
+  for (const [file, workflow] of parsedWorkflows()) {
+    const steps = workflowSteps(workflow);
+    const enableIndex = steps.findIndex((step) => runsCommand(step, 'corepack', 'enable'));
+    if (enableIndex === -1) continue;
+    const installs = steps
+      .slice(0, enableIndex)
+      .flatMap((step) => step.run?.trim().split(/\s+/) ?? [])
+      .filter((token) => token.startsWith('corepack@'));
+    assert.equal(
+      installs.length,
+      1,
+      `${file} must install Corepack exactly once before enabling it`,
+    );
+    assert.match(
+      installs[0],
+      /^corepack@\d+\.\d+\.\d+$/,
+      `${file} must pin the Corepack version: an unpinned install lets a new release change the tool that selects Yarn between two runs of the same commit (ylabs#3915)`,
+    );
+  }
+});
+
+test('every workflow job bounds its runtime', () => {
+  for (const [file, workflow] of parsedWorkflows()) {
+    const jobs = Object.entries(workflow.jobs ?? {});
+    assert.ok(jobs.length > 0, `${file} must declare at least one job`);
+    for (const [jobId, job] of jobs) {
+      assert.ok(
+        Number.isInteger(job['timeout-minutes']) && job['timeout-minutes'] > 0,
+        `${file} job ${jobId} must set timeout-minutes: the 360-minute default holds a required check pending for six hours before it fails (ylabs#3916)`,
+      );
+    }
+  }
+});
+
+test('the required checks also run on the commit that lands on beta', () => {
+  // The beta ruleset does not require branches to be up to date (#3425), so a
+  // pull request is tested against the base it last saw. The push run is the
+  // only test of the squash commit that actually reaches beta (#1151, #1153).
+  for (const [file, workflowSource] of [
+    ['ci.yml', ciWorkflow],
+    ['e2e-smoke.yml', e2eSmokeWorkflow],
+  ]) {
+    const workflow = yaml.load(workflowSource);
+    assert.deepEqual(
+      workflow.on.push?.branches,
+      ['beta'],
+      `${file} must run on pushes to beta so the merged result is tested (ylabs#3913)`,
+    );
+    assert.deepEqual(
+      workflow.on.pull_request?.branches,
+      ['main', 'beta'],
+      `${file} must keep its pull request trigger so the required context still reports`,
+    );
+    // A cancelled or queued pull request run delays or fails a required
+    // context, so only push runs share a concurrency group.
+    assert.deepEqual(
+      workflow.concurrency,
+      {
+        group:
+          "${{ github.workflow }}-${{ github.event_name == 'push' && github.ref || github.run_id }}",
+        'cancel-in-progress': true,
+      },
+      `${file} must share a concurrency group between push runs only`,
+    );
+  }
 });
 
 // The live-prod smoke now runs only on a promotion, so post-promotion-verify is

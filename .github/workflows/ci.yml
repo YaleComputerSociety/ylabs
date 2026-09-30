@@ -5,14 +5,30 @@ on:
     branches:
       - main
       - beta
+  # The beta ruleset does not require branches to be up to date, so a pull
+  # request is tested against the base it last saw rather than the squash commit
+  # that lands. This push run is the post-merge signal that catches a semantic
+  # conflict between two individually green pull requests (#3913). It is not a
+  # merge gate; the required contexts still come from the pull request runs.
+  push:
+    branches:
+      - beta
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Only push runs share a group, so a burst of merges only tests the newest beta
+# head. Every other run gets its own group and is neither queued nor cancelled,
+# because a cancelled run reports as a non-success on a required context.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Operator escape hatch for an advisory-registry outage. Absent or anything
     # other than "1" leaves the audit failing closed, so the default stays strict
     # and turning it on is a deliberate, revocable act recorded in repo settings
@@ -27,17 +43,23 @@ jobs:
         with:
           persist-credentials: false
 
+      # .node-version is the single declaration of the runtime major, read here
+      # and by the hosting provider, so CI and the deployed service cannot drift
+      # apart (#3915).
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 26
+          node-version-file: .node-version
 
       # Node 25 removed Corepack from the distribution, so `corepack enable` alone exits
       # non-zero on a current runner and the install dies before any test runs. The
       # preinstalled Yarn 1 does not delegate on its own either. `packageManager` in the
       # root package.json stays the single source of truth for the Yarn version (#3216).
+      # The version is pinned rather than @latest: an unpinned install lets a new
+      # Corepack release change the tool that selects Yarn between two runs of the
+      # same commit, and break every workflow at once (#3915).
       - name: Install Corepack
-        run: npm install -g corepack@latest
+        run: npm install -g corepack@0.36.0
 
       - name: Enable Corepack
         run: corepack enable
@@ -69,9 +91,10 @@ jobs:
       - name: Run server typecheck
         run: npx tsc --noEmit -p server/tsconfig.json
 
-      # A step inside test-and-build rather than a separate job: test-and-build
-      # is the only required check on the ruleset, so a new job would be
-      # advisory and could not block a merge.
+      # A step inside test-and-build rather than a separate job, so it reports
+      # under the required `test-and-build` context. A new job would report under
+      # a new context name that no ruleset requires, and so could not block a
+      # merge until someone added it to the ruleset.
       - name: Run client typecheck
         run: npx tsc --noEmit -p client/tsconfig.json
 

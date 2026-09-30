@@ -2187,6 +2187,7 @@ __metadata:
     eslint-plugin-react: "npm:^7.37.4"
     eslint-plugin-react-hooks: "npm:^5.1.0"
     globals: "npm:^15.14.0"
+    js-yaml: "npm:4.3.2"
     mongoose: "npm:^8.24.0"
     playwright: "npm:^1.60.0"
     prettier: "npm:3.8.3"

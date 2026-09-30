@@ -16,6 +16,24 @@ Every Render service builds with `corepack enable && yarn install:all:immutable`
 The immutable form is the security-relevant part: a plain `yarn install:all` resolves dependencies afresh at deploy time and can ship a version no lockfile in this repository pins.
 This repository declares no Render blueprint, so nothing here can enforce that build command; set it in the dashboard and check it when a service is created or its build settings change.
 
+The Node major is declared once, in `.node-version` at the repository root.
+CI's `setup-node` reads it with `node-version-file`, and Render reads the same file, so the tested runtime and the deployed runtime cannot drift apart (#3915).
+`engines.node` in the root, server, and client manifests is bounded to that major, so a bump is one commit that moves all four together.
+Without that file the deployed major was decided outside the repository, by the provider's default for the date the service was created.
+
+## The post-merge signal on beta
+
+`CI` and `E2E Smoke` run on pushes to `beta`, not only on pull requests.
+The `beta` ruleset deliberately does not require branches to be up to date (#3425), so each pull request is tested against the base it last saw rather than against the squash commit that lands.
+The push run is what tests the commit that is actually on `beta`, and it is the signal that catches a semantic conflict between two individually green pull requests (#1151, #1153, #3913).
+
+A push run is a post-merge signal, not a merge gate.
+The required contexts still come from the pull request runs, and the rulesets are unchanged.
+
+A red push run on `beta` blocks promotion.
+Fix it before opening a promotion pull request, because `beta` is the source of every promotion and a red `beta` otherwise surfaces as a failure on the next unrelated pull request.
+Consecutive merges cancel the older push run, so only the newest `beta` head is tested to completion.
+
 ## Promoting beta to main
 
 `main` and `beta` share history.
