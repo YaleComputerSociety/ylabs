@@ -84,6 +84,7 @@ describe('the served topic guard chain has one owner', () => {
       archived: false,
       ...coherenceContext,
       researchAreas: ['Membrane Transport', 'Medieval Troubadour Poetry'],
+      fieldProvenance: undefined,
     },
   ];
 
