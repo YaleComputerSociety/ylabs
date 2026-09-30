@@ -323,6 +323,28 @@ describe('researchGroupController', () => {
     });
   });
 
+  it('meters query-embedding spend against the shared client address, port stripped', async () => {
+    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+      researchEntities: [],
+      estimatedTotalHits: 0,
+      page: 1,
+      pageSize: 24,
+    });
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await searchResearchGroups(
+      {
+        body: { q: 'machine learning', page: 1, pageSize: 24, filters: {} },
+        ip: '203.0.113.7:54321',
+      } as any,
+      res,
+    );
+
+    expect(mocks.searchResearchGroupsViaMeili.mock.calls[0][5]).toMatchObject({
+      embeddingSpendKey: '203.0.113.7',
+    });
+  });
+
   it('does not expose nonpublic research results to legacy admin sessions without active authority', async () => {
     mocks.hasAdminAuthorityForUser.mockResolvedValue(false);
     mocks.searchResearchGroupsViaMeili.mockResolvedValue({

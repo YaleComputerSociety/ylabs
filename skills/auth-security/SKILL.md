@@ -228,6 +228,12 @@ A route is billed as a write only if it lists the `writeLimit` middleware in its
 | `authLimiter` | Rejected CAS ticket validation on `/api/cas`, keyed per IP. A ticketless login start is skipped and a successful validation is refunded. | 60 rejected validations per 15 minutes. |
 | `firstContactLimiter` | Cookie-less `/api` requests only, keyed per IP. The abuse control for callers who discard cookies. | `FIRST_CONTACT_RATE_LIMIT_MAX` per 15 minutes, default 300, floored at 50. |
 
+One paid dependency is metered separately, because a request budget does not bound it.
+Each distinct search query text is one paid embedding call, and `server/src/services/researchSearchQueryEmbeddingBudget.ts` bounds those calls per one-minute window, globally and per client address, with a breaker for an upstream rejection.
+It is not a rate limiter and never answers `429`: over budget the search drops its semantic leg, the keyword leg answers, and the response is marked `degraded`.
+The client address is `rateLimitClientIp(req)`, so it is the same validated forwarded address the limiters above meter, and a new derivation must not be written for it.
+`skills/search-data/SKILL.md` owns the ceilings, the defaults, and why the window ceiling rather than the per-address one is the real bound.
+
 `globalLimiter` is sized high because un-batched view and impression telemetry rides this budget; lower it once analytics beacons are batched client-side.
 The limiters use express-rate-limit's in-process MemoryStore, which is correct only because the Render web service runs a single instance; if it is ever scaled beyond one instance, move to a shared store (e.g. Redis) first.
 
@@ -273,6 +279,9 @@ The server test suite must never read them either, and `server/src/test/hermetic
 | `FIRST_CONTACT_RATE_LIMIT_MAX` | No | Per-IP cookie-less request ceiling per 15 minutes for `firstContactLimiter`; defaults to 300 and is floored at 50, so a too-small value cannot lock out a NATed cohort. |
 | `YALIES_API_KEY` | No | API key for yalies.io. |
 | `OPENAI_API_KEY` | No | OpenAI key for Meilisearch embedder config and LLM extractors. |
+| `RESEARCH_SEARCH_EMBEDDING_MAX_PER_MINUTE` | No | Search query-embedding calls a one-minute window may hold across all callers; defaults to 600 and is floored at 60. |
+| `RESEARCH_SEARCH_EMBEDDING_MAX_PER_CLIENT_PER_MINUTE` | No | Same window, per client address; defaults to 120 and is floored at 10. |
+| `RESEARCH_SEARCH_EMBEDDING_COOLDOWN_MS` | No | How long the query-embedding breaker stays open after an upstream rejection or repeated failures; defaults to 60000 and is floored at 1000. |
 | `MEILISEARCH_HOST` | Deployed | Meilisearch host; defaults to `http://localhost:7700` only outside deployed runtimes, and the server refuses to start without it when deployed. |
 | `MEILISEARCH_API_KEY` | No | Meilisearch API key. |
 | `MEILISEARCH_INDEX_PREFIX` | Deployed | Environment index prefix (`beta`, `prod`); unset locally, and the server refuses to start without it when deployed. |

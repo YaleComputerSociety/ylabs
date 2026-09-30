@@ -240,6 +240,46 @@ Meilisearch skips its own embedder whenever `vector` is present, which is also w
 A `null` vector is not an error path.
 No `OPENAI_API_KEY`, a failed call, or a malformed response all omit `vector` and let Meilisearch embed the query itself, so search keeps working at the old latency.
 
+`getResearchSearchQueryVector` therefore returns `{ vector, semanticLegAffordable }` rather than a bare vector, and the two fields answer different questions.
+`vector: null` with `semanticLegAffordable: true` is the fail-open path above.
+`semanticLegAffordable: false` is the budgeted path below, and it obliges the caller to delete `hybrid`, `rankingScoreThreshold` and `showRankingScoreDetails` rather than only omitting `vector`.
+
+### The query embedding is a budgeted call, not a free one (`researchSearchQueryEmbeddingBudget.ts`)
+
+`POST /api/research/search` is public and each distinct query text is one paid embedding call, so the number of calls a minute can hold has to be a number we choose rather than whatever the traffic happens to be.
+The same account serves the LLM scraper lanes, so exhausting it degrades the pipeline and not only search.
+
+`reserveResearchSearchQueryEmbedding` claims a call before it is made, because a call that fails has still spent the upstream capacity being rationed.
+It refuses with `window-ceiling`, `client-ceiling`, or `cooling-down`, and a refusal never fails a request: the search drops the whole semantic leg, the keyword leg answers, and the response is marked `degraded: true`, which is the same reduction the missing-embedder degradation already serves.
+
+Deleting only `vector` would not decline the call.
+Meilisearch embeds the query itself for any `hybrid` block that arrives without one, through the same account, so omitting the vector alone moves the spend rather than bounding it.
+That is the same reason the missing-embedder degradation deletes both.
+
+The window ceiling is the real bound and the per-client ceiling is a secondary guard, in that order for a reason.
+Yale NATs a large student body behind few egress addresses, so a tight per-address number would take the semantic leg away from a whole cohort for the traffic of one member of it.
+The per-address number is therefore set well above what a cohort of genuine searchers produces, and the absolute bound on a window's spend comes from the window ceiling.
+
+| Variable | Default | Floor | Meaning |
+|----------|---------|-------|---------|
+| `RESEARCH_SEARCH_EMBEDDING_MAX_PER_MINUTE` | 600 | 60 | Embedding calls a one-minute window may hold across all callers. |
+| `RESEARCH_SEARCH_EMBEDDING_MAX_PER_CLIENT_PER_MINUTE` | 120 | 10 | Same window, per client address. |
+| `RESEARCH_SEARCH_EMBEDDING_COOLDOWN_MS` | 60000 | 1000 | How long the breaker stays open. |
+
+Each is floored the way `FIRST_CONTACT_RATE_LIMIT_MAX` is floored, so a mistyped or zeroed override cannot switch the semantic leg off for everyone.
+
+The breaker opens for the cooldown on an upstream rejection, which is a direct instruction to stop, and on five consecutive failures of any other kind, because one timeout is not evidence that the next call will fail.
+A success forgets the run of failures.
+
+Three things are deliberately free and must stay free.
+A cache hit costs nothing upstream, so it is served even to a client that is over its ceiling.
+Joining a call already in flight costs nothing either, so the request that joins is not charged.
+A caller that supplies no client address is an in-process one rather than a network source, so it is metered by the window ceiling alone; the route supplies `embeddingSpendKey` from `rateLimitClientIp(req)`, the same validated forwarded-address helper the rate limiters use, so the address is the client's and never the proxy's.
+
+The client bucket map cannot outgrow the window ceiling, because an entry is only added when a call is allowed, and the whole of its bookkeeping is the window reset.
+
+The cache key is normalized for case and whitespace while the text sent upstream is not, because rank equivalence with Meilisearch's own embedder is only claimed for the exact text sent as `q`.
+
 Adding a new hybrid query to the request means threading the same vector into it.
 Supplying our own embedding is rank-equivalent as long as it uses `RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL` on the exact text sent as `q`: measured over six queries against the Development index, `totalHits` and the top-24 set were identical to Meilisearch's own embedding on 6 of 6, with the only order divergence past rank 60 of a 4,988-hit set.
 

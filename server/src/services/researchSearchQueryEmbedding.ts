@@ -1,6 +1,11 @@
 import axios from 'axios';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL } from './researchEntitySearchIndexService';
+import {
+  recordResearchSearchQueryEmbeddingFailure,
+  recordResearchSearchQueryEmbeddingSuccess,
+  reserveResearchSearchQueryEmbedding,
+} from './researchSearchQueryEmbeddingBudget';
 
 // Meilisearch 1.13 has no query-embedding cache, so every hybrid search it runs
 // is one synchronous OpenAI round trip. A single student search issues two to
@@ -29,6 +34,14 @@ export const clearResearchSearchQueryEmbeddingCache = (): void => {
   inFlightQueryVectors.clear();
 };
 
+// The dominant caller already hands over a lowercased, whitespace-collapsed query,
+// but the non-Latin path forwards the raw text, so casing and spacing variants of
+// one query each bought their own paid call. The cache key is normalized while the
+// text sent upstream is not, because rank equivalence with Meilisearch's own
+// embedder holds only for the exact text sent as `q`.
+const queryEmbeddingCacheKey = (queryText: string): string =>
+  queryText.trim().replace(/\s+/g, ' ').toLowerCase();
+
 const rememberQueryVector = (key: string, vector: number[]): void => {
   if (cachedQueryVectors.has(key)) cachedQueryVectors.delete(key);
   cachedQueryVectors.set(key, vector);
@@ -41,6 +54,11 @@ const rememberQueryVector = (key: string, vector: number[]): void => {
 
 const isVector = (value: unknown): value is number[] =>
   Array.isArray(value) && value.length > 0 && value.every((entry) => typeof entry === 'number');
+
+const isUpstreamRejection = (error: unknown): boolean => {
+  const status = (error as { response?: { status?: unknown } } | undefined)?.response?.status;
+  return status === 429;
+};
 
 const requestQueryVector = async (queryText: string, apiKey: string): Promise<number[] | null> => {
   const response = await axios.post(
@@ -55,34 +73,65 @@ const requestQueryVector = async (queryText: string, apiKey: string): Promise<nu
   return isVector(vector) ? vector : null;
 };
 
+export interface ResearchSearchQueryVectorOutcome {
+  /** The vector to hand Meilisearch, or `null` when one could not be produced. */
+  vector: number[] | null;
+  /**
+   * False when the budget or the breaker refused this call, which obliges the
+   * caller to drop `hybrid` as well as `vector`. A `hybrid` block with no vector
+   * makes Meilisearch embed the query through the same paid account, so omitting
+   * only the vector would move the call rather than decline it.
+   */
+  semanticLegAffordable: boolean;
+}
+
+const affordable = (vector: number[] | null): ResearchSearchQueryVectorOutcome => ({
+  vector,
+  semanticLegAffordable: true,
+});
+
 /**
- * Returns the query vector to hand Meilisearch for a hybrid search, or `null`
- * when one cannot be produced. `null` is not an error path: the caller omits
- * `vector`, Meilisearch embeds the query itself, and behaviour is unchanged
- * apart from the latency this exists to remove.
+ * Returns the query vector to hand Meilisearch for a hybrid search.
+ *
+ * A `null` vector with `semanticLegAffordable: true` is not an error path: the
+ * caller omits `vector`, Meilisearch embeds the query itself, and behaviour is
+ * unchanged apart from the latency this exists to remove.
+ *
+ * `clientKey` is the client address the route derives, used only to meter spend.
  */
-export const getResearchSearchQueryVector = async (queryText: string): Promise<number[] | null> => {
-  const key = queryText;
-  if (!key) return null;
+export const getResearchSearchQueryVector = async (
+  queryText: string,
+  clientKey?: string,
+): Promise<ResearchSearchQueryVectorOutcome> => {
+  const key = queryEmbeddingCacheKey(queryText);
+  if (!key) return affordable(null);
 
   const cached = cachedQueryVectors.get(key);
   if (cached) {
     rememberQueryVector(key, cached);
-    return cached;
+    return affordable(cached);
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-
+  // Joining a call already in flight costs nothing upstream, so it is not metered.
   const inFlight = inFlightQueryVectors.get(key);
-  if (inFlight) return inFlight;
+  if (inFlight) return affordable(await inFlight);
+
+  const decision = reserveResearchSearchQueryEmbedding(clientKey);
+  if (decision !== 'allowed') return { vector: null, semanticLegAffordable: false };
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return affordable(null);
 
   const pending = (async () => {
     try {
-      const vector = await requestQueryVector(key, apiKey);
+      const vector = await requestQueryVector(queryText, apiKey);
       if (vector) rememberQueryVector(key, vector);
+      recordResearchSearchQueryEmbeddingSuccess();
       return vector;
     } catch (error) {
+      recordResearchSearchQueryEmbeddingFailure(
+        isUpstreamRejection(error) ? 'upstream-rejected' : 'error',
+      );
       console.error('Research search query embedding failed:', sanitizeLogValue(error));
       return null;
     } finally {
@@ -90,5 +139,5 @@ export const getResearchSearchQueryVector = async (queryText: string): Promise<n
     }
   })();
   inFlightQueryVectors.set(key, pending);
-  return pending;
+  return affordable(await pending);
 };
