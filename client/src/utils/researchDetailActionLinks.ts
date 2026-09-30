@@ -75,7 +75,10 @@ export function resolveResearchDetailActionLinks(
     hasLeadCard && isSameActionDestination(websiteUrl, leadCardProfileUrl);
   const offersOrgEngagementPage = preferOrgEngagementOutreach && Boolean(officialSource);
   const websiteSlotOpen = Boolean(websiteUrl) && !offersOrgEngagementPage;
-  const showsWebsiteCta = websiteSlotOpen && !profileNeedsOwnButton && !repeatsLeadCardProfileLink;
+  const profileTakesWebsiteSlot =
+    profileNeedsOwnButton && !hasApplyPage && !offersOrgEngagementPage;
+  const showsWebsiteCta =
+    websiteSlotOpen && !profileTakesWebsiteSlot && !repeatsLeadCardProfileLink;
   /**
    * The research's own homepage is a better way in than a page deep inside it, so it
    * takes the block's one action and an apply or get-involved page is the fallback for
@@ -84,8 +87,7 @@ export function resolveResearchDetailActionLinks(
    * the way in rather than a page beneath a homepage.
    */
   const offersApplyPage = hasApplyPage && !offersOrgEngagementPage && !showsWebsiteCta;
-  const getInvolvedSlotTaken = offersOrgEngagementPage || offersApplyPage;
-  const showsProfileButton = profileNeedsOwnButton && !getInvolvedSlotTaken;
+  const showsProfileButton = profileTakesWebsiteSlot;
 
   const leadCardLinksProfile = hasLeadCard && Boolean(leadCardProfileUrl);
   return {

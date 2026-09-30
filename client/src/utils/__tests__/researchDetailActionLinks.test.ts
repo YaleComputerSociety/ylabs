@@ -87,6 +87,21 @@ describe('resolveResearchDetailActionLinks (#3288)', () => {
     expect(withoutLeadCard.profileOpenedAbove).toBe(false);
   });
 
+  it('gives the only action to the homepage over a place to apply for an own-button profile', () => {
+    const links = resolveResearchDetailActionLinks({
+      ...base,
+      hasLeadCard: false,
+      hasApplyPage: true,
+      profileUrl: PROFILE,
+      websiteUrl: WEBSITE,
+      profileNeedsOwnButton: true,
+    });
+    expect(links.showsWebsiteCta).toBe(true);
+    expect(links.offersApplyPage).toBe(false);
+    expect(links.showsProfileButton).toBe(false);
+    expect(links.profileOpenedAbove).toBe(false);
+  });
+
   it('suppresses the website slot for an own-button profile', () => {
     expect(
       resolveResearchDetailActionLinks({
