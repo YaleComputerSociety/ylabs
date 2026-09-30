@@ -1426,6 +1426,11 @@ const firstPersonLeadRevoiceRules = (
    * interests are" was becoming "This research interests are" - "This"
    * agreeing with "research", a word the sentence's own verb never agreed
    * with in the first place).
+   *
+   * On a lab row a phrase led by a singular self noun ("Our lab is...") is left for the
+   * self-noun rule below, which names the row instead of serving "the <Lab>'s lab"
+   * (#4044). A plural self noun keeps the possessive, because collapsing it to the row
+   * name would pair a singular subject with the plural verb that follows.
    */
   [
     POSSESSIVE_HEAD_NOUN_AGREEMENT_PATTERN,
