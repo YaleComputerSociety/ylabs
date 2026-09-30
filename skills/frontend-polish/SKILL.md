@@ -84,7 +84,7 @@ Debounce free-text search inputs with `client/src/hooks/useDebouncedCallback.ts`
 ## Animation
 
 - Respect `prefers-reduced-motion`.
-- Take a scripted scroll's `behavior` from `scrollBehavior()` in `client/src/utils/scrollBehavior.ts`, never a literal `'smooth'`, because a scripted value overrides the stylesheet's reduced-motion rule; `src/__tests__/scrollBehaviorGuard.test.ts` enforces it.
+- Take a scripted scroll's `behavior` from `scrollBehavior()` in `client/src/utils/scrollBehavior.ts`, never a literal `'smooth'`, because a scripted value overrides the stylesheet's reduced-motion rule; `client/src/__tests__/scrollBehaviorGuard.test.ts` enforces it.
 - Animate compositor-friendly properties (`transform`, `opacity`); avoid animating layout.
 - Keep motion short and interruptible; it should clarify, not delay.
 
