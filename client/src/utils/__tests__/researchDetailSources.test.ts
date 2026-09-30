@@ -2051,6 +2051,26 @@ describe('servedResearchWebsiteUrl (#4080)', () => {
     ).toBe(HTTPS);
   });
 
+  it('marks the https citation by its own verdict when both spellings are stored', () => {
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: HTTPS },
+      sourceLinkHealth: [
+        {
+          url: HTTPS,
+          healthStatus: 'UNAVAILABLE',
+          httpStatusCode: 404,
+          tlsVerificationFailed: true,
+        },
+        { url: HTTP, healthStatus: 'HEALTHY', httpStatusCode: 200 },
+      ],
+    });
+    expect(sources[0]).toMatchObject({
+      healthStatus: 'UNAVAILABLE',
+      httpStatusCode: 404,
+      isLikelyUnavailable: true,
+    });
+  });
+
   it('never downgrades on the strength of a plain-HTTP verdict alone', () => {
     expect(servedResearchWebsiteUrl(HTTPS, [{ url: HTTP, healthStatus: 'HEALTHY' }])).toBe(HTTPS);
     expect(

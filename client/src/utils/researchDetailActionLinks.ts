@@ -1,5 +1,6 @@
 import {
   buildResearchDetailSources,
+  findSourceLinkHealthEntry,
   isLikelyUnavailableSourceLink,
   isSameActionDestination,
   isSuppressedResearchWebsiteCtaUrl,
@@ -9,7 +10,6 @@ import {
   resolveOutreachApplySource,
   resolveOutreachOfficialSource,
   servedResearchWebsiteUrl,
-  sourceLedgerKey,
 } from './researchDetailSources';
 import { safeHttpUrl } from './url';
 import { dedupeLeadMembers, memberPersonName } from './leadMemberDedupe';
@@ -138,15 +138,8 @@ export function resolveResearchDetailActionLinkContext({
     !isUnreachableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth as never)
       ? servedResearchWebsiteUrl(group.websiteUrl, group.sourceLinkHealth as never)
       : undefined;
-  const primaryWebsiteHealthKey = sourceLedgerKey(primaryWebsiteUrl);
-  const primaryWebsiteHealth = primaryWebsiteHealthKey
-    ? (group.sourceLinkHealth as never[] | undefined)?.find(
-        (entry: never) =>
-          sourceLedgerKey((entry as { url?: string }).url) === primaryWebsiteHealthKey,
-      )
-    : undefined;
   const isPrimaryWebsiteLikelyUnavailable = isLikelyUnavailableSourceLink(
-    primaryWebsiteHealth as never,
+    findSourceLinkHealthEntry(group.sourceLinkHealth as never, primaryWebsiteUrl),
   );
   const fallbackSourceUrl = primaryWebsiteUrl || sources[0]?.url;
   const leadIdentityUnderReview = group.leadIdentityStatus === 'under_review';

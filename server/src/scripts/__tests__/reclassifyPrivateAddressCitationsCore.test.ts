@@ -165,7 +165,7 @@ describe('planPrivateAddressRouting', () => {
     const plan = planPrivateAddressRouting(
       {
         slug: 'a-lab',
-        websiteUrl: 'http://www.internal.example.edu/lab',
+        websiteUrl: 'https://www.internal.example.edu/lab',
         sourceLinkHealth: [{ url: PRIVATE_URL, healthStatus: 'UNKNOWN' }],
       },
       resolutions({ 'www.internal.example.edu': 'private-address' }),
@@ -174,6 +174,33 @@ describe('planPrivateAddressRouting', () => {
     expect(plan?.addedEntries).toEqual([]);
     expect(plan?.sourceLinkHealth).toHaveLength(1);
     expect(entryFor(plan, PRIVATE_URL)?.privateAddressHost).toBe(true);
+  });
+
+  it('patches each scheme spelling of one page on its own (#4080)', () => {
+    const plainUrl = 'http://internal.example.edu/lab/';
+    const plan = planPrivateAddressRouting(
+      {
+        slug: 'a-lab',
+        websiteUrl: PRIVATE_URL,
+        sourceUrls: [plainUrl],
+        sourceLinkHealth: [
+          { url: PRIVATE_URL, healthStatus: 'UNKNOWN' },
+          { url: plainUrl, healthStatus: 'HEALTHY', httpStatusCode: 200 },
+        ],
+      },
+      resolutions({ 'internal.example.edu': 'private-address' }),
+      NOW,
+    );
+    expect(plan?.flaggedUrls).toEqual([PRIVATE_URL, plainUrl]);
+    expect(plan?.sourceLinkHealth.map((entry) => entry.url)).toEqual([PRIVATE_URL, plainUrl]);
+    expect(entryFor(plan, PRIVATE_URL)).toMatchObject({
+      healthStatus: 'UNKNOWN',
+      privateAddressHost: true,
+    });
+    expect(entryFor(plan, plainUrl)).toMatchObject({
+      healthStatus: 'HEALTHY',
+      privateAddressHost: true,
+    });
   });
 });
 

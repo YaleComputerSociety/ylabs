@@ -1284,18 +1284,6 @@ export const buildResearchDetailSources = ({
     if (existing) labels.forEach((label) => existing.includes(label) || existing.push(label));
     else contributionsByDedupeKey.set(key, [...labels]);
   });
-  const healthByLedgerKey = new Map<string, DetailSourceLinkHealth>();
-
-  sourceLinkHealth.forEach((entry) => {
-    const key = sourceLedgerKey(entry.url);
-    if (!key) return;
-    healthByLedgerKey.set(key, {
-      healthStatus: entry.healthStatus,
-      httpStatusCode: entry.httpStatusCode,
-      privateAddressHost: entry.privateAddressHost,
-    });
-  });
-
   const contextsFor = (normalizedUrl: string, context: string): string[] => {
     if (context !== GENERIC_PROFILE_SOURCE_CONTEXT) return [context];
     const contributed = contributionsByDedupeKey.get(sourceDedupeKey(normalizedUrl) || '');
@@ -1381,7 +1369,7 @@ export const buildResearchDetailSources = ({
 
   const withHealth = Array.from(sources.values())
     .map((source) => {
-      const health = healthByLedgerKey.get(sourceLedgerKey(source.url) || '');
+      const health = findSourceLinkHealthEntry(sourceLinkHealth, source.url);
       return {
         ...source,
         ...(health?.healthStatus ? { healthStatus: health.healthStatus } : {}),

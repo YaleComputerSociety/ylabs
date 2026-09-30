@@ -1,8 +1,8 @@
 import { classifyHostnameResolution, type HostnameResolution } from '../utils/ssrfGuard';
 import { classifyOffCampusAddressing, type DohQuery } from '../utils/publicDnsResolution';
-import { sourceLinkHealthKey } from '../services/sourceLinkHealth';
 import {
   collectSourceLinkHealthCandidates,
+  sourceLinkCandidateKey,
   type SourceLinkHealthCandidateEntity,
   type StoredSourceLinkHealthEntry,
 } from './backfillSourceLinkHealthCore';
@@ -88,7 +88,7 @@ export function planPrivateAddressRouting(
   const entries = storedEntries(entity);
   const entryByKey = new Map<string, StoredSourceLinkHealthEntry>();
   for (const entry of entries) {
-    const key = sourceLinkHealthKey(entry.url);
+    const key = sourceLinkCandidateKey(entry.url);
     if (key) entryByKey.set(key, entry);
   }
 
@@ -99,7 +99,7 @@ export function planPrivateAddressRouting(
 
   for (const url of candidates) {
     const host = hostnameOf(url);
-    const key = sourceLinkHealthKey(url);
+    const key = sourceLinkCandidateKey(url);
     if (!host || !key) continue;
     const resolution = hostResolutions.get(host);
     if (!resolution) continue;
@@ -133,7 +133,7 @@ export function planPrivateAddressRouting(
   if (patched.size === 0) return null;
 
   const sourceLinkHealth = entries.map((entry) => {
-    const key = sourceLinkHealthKey(entry.url);
+    const key = sourceLinkCandidateKey(entry.url);
     const replacement = key ? patched.get(key) : undefined;
     if (replacement) patched.delete(key as string);
     return replacement ?? entry;
