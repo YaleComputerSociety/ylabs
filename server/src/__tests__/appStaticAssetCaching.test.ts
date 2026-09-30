@@ -54,7 +54,9 @@ describe('client static asset serving', () => {
     mkdirSync(path.join(clientDistPath, 'assets', 'developers'), { recursive: true });
     writeFileSync(path.join(clientDistPath, 'assets', HASHED_ENTRY_CHUNK), 'export {};\n');
     writeFileSync(path.join(clientDistPath, 'assets', UNHASHED_IMAGE), 'not-a-real-image');
+    writeFileSync(path.join(clientDistPath, 'assets', `${HASHED_ENTRY_CHUNK}.map`), '{}');
     writeFileSync(path.join(clientDistPath, 'index.html'), '<!doctype html><title>t</title>');
+    writeFileSync(path.join(clientDistPath, 'oauth-callback.html'), '<!doctype html><title>t</title>');
   });
 
   afterAll(() => {
@@ -187,5 +189,34 @@ describe('client static asset serving', () => {
     } finally {
       rmSync(path.join(clientDistPath, 'api'), { recursive: true, force: true });
     }
+  });
+
+  it('refuses to serve a source map even when the build emitted one', async () => {
+    prepareDeployedApp();
+
+    await withRunningApp(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/assets/${HASHED_ENTRY_CHUNK}.map`, {
+        headers: { 'x-forwarded-proto': 'https' },
+      });
+      await response.text();
+
+      expect(response.status).toBe(404);
+      expect(response.headers.get('cache-control')).toContain('no-store');
+    });
+  });
+
+  it('serves the OAuth callback page with no-store', async () => {
+    prepareDeployedApp();
+
+    await withRunningApp(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/oauth-callback.html`, {
+        headers: { 'x-forwarded-proto': 'https' },
+      });
+      await response.text();
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('cache-control')).toContain('no-store');
+      expect(sessionCookiesOf(response)).toEqual([]);
+    });
   });
 });

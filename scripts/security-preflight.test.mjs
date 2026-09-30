@@ -938,21 +938,10 @@ test('served browser assets do not expose source maps or hidden static files', (
   assert.match(staticSource, /req\.path\.endsWith\('\.map'\)/);
   assert.match(staticSource, /res\.setHeader\('Cache-Control', 'no-store, private, max-age=0'\)/);
   assert.match(staticSource, /res\.status\(404\)\.type\('text\/plain'\)\.send\('Not found'\)/);
-  assert.match(
-    staticSource,
-    /isApiPath\(req\.path\) \? next\('router'\) : next\(\)\)\);\s*router\.use\(blockSourceMapAssetRequests\);[\s\S]*express\.static/,
-  );
+  assert.match(staticSource, /router\.use\(blockSourceMapAssetRequests\);[\s\S]*express\.static/);
   assert.match(staticSource, /express\.static\(clientDistPath, \{/);
   assert.match(staticSource, /dotfiles: 'ignore'/);
   assert.match(staticSource, /index: false/);
-  assert.match(
-    appSource,
-    /const clientDistPath = path\.join\(__dirname, '\.\.\/\.\.\/client\/dist'\)/,
-  );
-  assert.match(
-    appSource,
-    /\.use\(createClientStaticAssets\(clientDistPath\)\)[\s\S]*cookieSession\(\{[\s\S]*passport\.session\(\)/,
-  );
   assert.match(appSource, /function shouldServeSpaFallback\(req: express\.Request\): boolean/);
   assert.match(appSource, /segments\.some\(\(segment\) => segment\.startsWith\('\.'\)\)/);
   assert.match(appSource, /path\.extname\(lastSegment\)/);
@@ -1372,10 +1361,6 @@ test('OAuth callback assets are served with no-store cache headers', () => {
   assert.match(source, /res\.setHeader\('Surrogate-Control', 'no-store'\)/);
   assert.match(source, /res\.setHeader\('Expires', '0'\)/);
   assert.match(source, /res\.setHeader\('X-Content-Type-Options', 'nosniff'\)/);
-  assert.match(
-    source,
-    /router\.use\(blockSourceMapAssetRequests\);\s*router\.use\(setOAuthCallbackAssetCacheHeaders\);\s*router\.use\(\s*express\.static/,
-  );
   for (const html of [callbackHtmlSource, callbackHtmlDistSource].filter(Boolean)) {
     assert.match(html, /<meta name="referrer" content="no-referrer">/);
     assert.match(html, /http-equiv="Content-Security-Policy"/);

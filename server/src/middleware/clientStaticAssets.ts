@@ -3,7 +3,7 @@ import express from 'express';
 const CONTENT_HASHED_ASSET_PATH = /^\/assets\/[^/]+-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$/;
 const IMMUTABLE_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 
-export const isContentHashedAssetPath = (requestPath: string): boolean =>
+const isContentHashedAssetPath = (requestPath: string): boolean =>
   CONTENT_HASHED_ASSET_PATH.test(requestPath);
 
 const isApiPath = (requestPath: string): boolean =>
