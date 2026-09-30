@@ -60,6 +60,11 @@ The assertion that carries signal is that every drop is attributable to a named 
 Apply the same shape to any new case.
 Assert that the difference between stored and served is explained, not that it is absent.
 
+The case computes its expectation by calling `withholdUnservableResearchAreas` in `server/src/utils/servedResearchAreaGuards.ts`, the same function the served DTO and the search index document call, rather than restating the guard chain.
+That chain is now two guards: `withoutMeshSourcedGeographicResearchAreas` withholds a MeSH geographic descriptor read from a MeSH-indexed profile, then the coherence guard runs.
+A restated chain goes stale the moment a guard is added: after #3693 added the MeSH geographic withhold to both serve paths, the case reported that guard's drops as unexplained.
+Add a new served topic guard to that function, never to one call site.
+
 ## What this harness does not cover
 
 The cases call `searchResearchGroupsViaMeili` directly rather than the HTTP route, so real Meilisearch, real Mongo, the ranking, the filters, the visibility gate, and the index-time guards are all exercised, but everything the Express layer adds is not: the oversized-request rejection, parameter coercion, the `includeFacets` policy, JSON serialization, auth, and rate limits.
