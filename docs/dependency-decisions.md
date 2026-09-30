@@ -4,6 +4,22 @@ Standing decisions about dependency advisories and version pins, so a Dependabot
 The gate is moderate and above: `yarn security:audit:production` plus the recursive audits in `.github/workflows/ci.yml`.
 A low advisory below that gate is a judgement call, and the ones we have judged are recorded here.
 
+## 2026-09-30: Action pins are maintained by a grouped Dependabot updater (#3914)
+
+Every third-party action is pinned to a commit SHA, which is right, and which also means nothing proposes an update to it.
+There was no `.github/dependabot.yml`, so the pins stayed frozen until someone edited them by hand, and they had drifted onto a runtime GitHub deprecated: every run logged that the pinned actions target Node 20 and were being forced onto a newer runtime.
+
+`.github/dependabot.yml` now declares a `github-actions` updater for directory `/`, weekly, with every action grouped into one pull request.
+Three things about it are deliberate.
+
+- **It targets `beta`.** Pull requests are based on `beta` here, so an updater left on the default target would open against the production branch.
+- **The pins stay SHAs.** Dependabot rewrites the SHA and the `# vX.Y.Z` comment beside it together, so the comment is load-bearing rather than decoration: a pin without it gets no update proposal at all.
+  `scripts/security-preflight.test.mjs` pins both halves, so a tag pin and a stripped comment each fail the build.
+- **The bump is grouped.** One pull request a week for all actions, rather than one per action, because they move together and a reviewer reads them together.
+
+The three actions in use were bumped in the same change to releases that target the current runtime, which removes the deprecation warning from every run.
+The updater is what keeps that true without another manual pass.
+
 ## 2026-09-22: One low advisory is patched in range, one is accepted (#2392)
 
 `node scripts/run-dependency-audit.mjs . server client -- --recursive --severity low` reported two, both in the server workspace and both reached only through the development toolchain, never through anything the server ships.

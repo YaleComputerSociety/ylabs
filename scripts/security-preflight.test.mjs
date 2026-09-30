@@ -5,13 +5,13 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import yaml from 'js-yaml';
 import {
   ORCID_PATTERN,
   orcidIsUnsafeForFixtures,
   SYNTHETIC_ORCID_EXAMPLE,
 } from './orcidFixtureShape.mjs';
 import nodeTest, { after } from 'node:test';
-import yaml from 'js-yaml';
 
 import {
   DEFAULT_AUDIT_TIMEOUT_MS,
@@ -1261,6 +1261,70 @@ test('the required checks also run on the commit that lands on beta', () => {
       `${file} must share a concurrency group between push runs only`,
     );
   }
+});
+
+test('third-party actions stay SHA-pinned beside the version comment Dependabot rewrites', () => {
+  const workflowDir = new URL('../.github/workflows/', import.meta.url);
+  let pins = 0;
+  for (const file of fs.readdirSync(workflowDir)) {
+    const source = fs.readFileSync(new URL(file, workflowDir), 'utf8');
+    const workflow = yaml.load(source);
+    const references = Object.values(workflow.jobs ?? {}).flatMap((job) => [
+      ...(job.uses ? [job.uses] : []),
+      ...(job.steps ?? []).flatMap((step) => (step.uses ? [step.uses] : [])),
+    ]);
+    for (const reference of references) {
+      pins += 1;
+      assert.match(
+        reference,
+        /^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/,
+        `${file} pins ${reference} by name: a mutable tag lets an upstream force-push change what runs here`,
+      );
+      // The same-line `# vX` comment is the text contract Dependabot reads and
+      // rewrites alongside the SHA, and YAML drops comments, so this one check
+      // reads the source line. A pin without it gets no update proposal (ylabs#3914).
+      const pinLines = source.split('\n').filter((line) => line.includes(`uses: ${reference}`));
+      assert.ok(pinLines.length > 0, `${file} must declare ${reference} on a single uses line`);
+      for (const line of pinLines) {
+        assert.match(
+          line,
+          /@[0-9a-f]{40}\s+#\s*v\d+(\.\d+)*\s*$/,
+          `${file} must name the release beside ${reference} so the pin stays maintainable`,
+        );
+      }
+    }
+  }
+  assert.ok(pins > 0, 'the workflows must still use at least one pinned action');
+});
+
+test('a Dependabot updater keeps the action pins from freezing', () => {
+  const config = yaml.load(
+    fs.readFileSync(new URL('../.github/dependabot.yml', import.meta.url), 'utf8'),
+  );
+  assert.equal(config.version, 2);
+  const actionUpdaters = (config.updates ?? []).filter(
+    (update) => update['package-ecosystem'] === 'github-actions',
+  );
+  assert.equal(
+    actionUpdaters.length,
+    1,
+    'a SHA pin never updates itself, so an updater is what keeps it from freezing on a deprecated runtime (ylabs#3914)',
+  );
+  const [updater] = actionUpdaters;
+  assert.equal(updater.directory, '/', 'the workflows live at the repository root');
+  assert.equal(
+    updater['target-branch'],
+    'beta',
+    'pull requests are based on beta here, so an updater left on the default target would open against the production branch',
+  );
+  assert.equal(updater.schedule?.interval, 'weekly');
+  const groupPatterns = Object.values(updater.groups ?? {}).flatMap(
+    (group) => group.patterns ?? [],
+  );
+  assert.ok(
+    groupPatterns.includes('*'),
+    'a group matching every action keeps a bump to one pull request rather than one per action',
+  );
 });
 
 // The live-prod smoke now runs only on a promotion, so post-promotion-verify is
