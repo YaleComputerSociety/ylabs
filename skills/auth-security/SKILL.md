@@ -177,6 +177,7 @@ Because express-rate-limit consults `requestWasSuccessful` only when a skip flag
 `server/src/middleware/__tests__/firstContactMetering.test.ts` drives the exported limiter over a `500` and a `404` and asserts the counter keeps climbing, so the guarantee rests on measured counting rather than on how the options block is written.
 `server/src/middleware/__tests__/authLimiterScope.test.ts` does the same for `authLimiter`, driving the exported limiter over a ticketless start, an accepted validation, a rejected one answering `401` or an error-page redirect, and a `503`, and pinning that the two request-scoped limiters still charge a successful response.
 It needs no CAS: one block uses a stand-in route, and another drives the real `/cas` route with the strategy's verdict stubbed, so the acceptance record is measured where `casLogin` writes it; `server/src/__tests__/appSecurityRuntime.test.ts` covers the route wiring by driving the mounted app's login start.
+That second block drives both legs with one cookie jar, because a callback that does not return the single-use state its session minted is refused before validation (#4081), and it pins that such a callback is charged.
 
 ### What the request-scoped limiters do and do not control
 

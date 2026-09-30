@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import cookieSession from 'cookie-session';
 import express from 'express';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
@@ -164,29 +165,49 @@ describe('the login limiter meters ticket validation failures only', () => {
   });
 });
 
+const SSO_BASE = 'https://sso.example.test/cas';
+const SERVER_BASE = 'https://labs.example.test';
+
 describe('the mounted CAS route tells the limiter which validations it accepted', () => {
   let server: Server;
   let baseUrl = '';
   let max = 0;
 
   beforeAll(async () => {
-    vi.stubEnv('SSOBASEURL', 'https://sso.example.test/cas');
-    vi.stubEnv('SERVER_BASE_URL', 'https://labs.example.test');
+    vi.stubEnv('SSOBASEURL', SSO_BASE);
+    vi.stubEnv('SERVER_BASE_URL', SERVER_BASE);
     const limiters = await loadLiveLimiters();
     max = limiters.AUTH_VALIDATION_FAILURE_MAX;
     const { default: passport } = await import('passport');
     const { passportRoutes } = await import('../../passport');
 
+    // Stands in for the strategy's verdict only. The ticketless leg redirects to
+    // CAS the way `passport-cas` does, carrying the `service` URL the route has
+    // already stamped with its single-use state, because the callback leg is
+    // refused unless it returns that state (#4081).
     const stubbedVerdict =
       (_strategy: unknown, callback: (err: Error | null, user: unknown) => void) =>
-      (req: express.Request) =>
-        req.query.ticket === 'accepted'
+      (req: express.Request, res: express.Response) => {
+        if (!req.query.ticket) {
+          const service = `${SERVER_BASE}${req.originalUrl}`;
+          return res.redirect(`${SSO_BASE}/login?service=${encodeURIComponent(service)}`);
+        }
+        return req.query.ticket === 'accepted'
           ? callback(null, { netId: 'synthetic1', userType: 'undergraduate' })
           : callback(new Error('CAS rejected the ticket'), false);
+      };
     vi.spyOn(passport, 'authenticate').mockImplementation(stubbedVerdict as never);
 
     const app = express()
       .set('trust proxy', () => true)
+      .use(
+        cookieSession({
+          name: 'ylabs-auth-limiter-test',
+          keys: ['auth-limiter-test-secret'],
+          httpOnly: true,
+          path: '/',
+        }),
+      )
       .use((req, _res, next) => {
         req.isAuthenticated = (() => false) as never;
         req.logIn = ((_user: unknown, done: (err?: unknown) => void) => done()) as never;
@@ -204,23 +225,49 @@ describe('the mounted CAS route tells the limiter which validations it accepted'
     vi.unstubAllEnvs();
   });
 
-  const probe = async (address: string, query: string) => {
-    const response = await fetch(`${baseUrl}/api/cas${query}`, {
-      headers: { 'X-Forwarded-For': address },
-      redirect: 'manual',
-    });
-    await response.text();
-    await afterRefund();
+  // One browser: a cookie jar carried across both legs of a login, because the
+  // callback only completes a login the same session started.
+  const loginSession = (address: string) => {
+    let cookie = '';
+    const request = async (query: string) => {
+      const response = await fetch(`${baseUrl}/api/cas${query}`, {
+        headers: { 'X-Forwarded-For': address, ...(cookie ? { cookie } : {}) },
+        redirect: 'manual',
+      });
+      // Split on the first `=` rather than testing the tail: the session cookie is
+      // base64 and its padding would read as an empty, cleared cookie.
+      const issued = response.headers
+        .getSetCookie()
+        .map((value) => value.split(';', 1)[0])
+        .filter((pair) => pair.slice(pair.indexOf('=') + 1).length > 0);
+      if (issued.length > 0) cookie = issued.join('; ');
+      await response.text();
+      await afterRefund();
+      return {
+        status: response.status,
+        location: response.headers.get('location'),
+        remaining: response.headers.get('ratelimit-remaining'),
+      };
+    };
+
     return {
-      status: response.status,
-      location: response.headers.get('location'),
-      remaining: response.headers.get('ratelimit-remaining'),
+      request,
+      start: async () => {
+        const started = await request('');
+        expect(started.status).toBe(302);
+        const service = new URL(started.location ?? '').searchParams.get('service') ?? '';
+        const state = new URL(service).searchParams.get('state');
+        expect(state).toMatch(/^[0-9a-f]{32}$/);
+        return state as string;
+      },
     };
   };
 
   it('refunds a validation the route accepted', async () => {
+    const browser = loginSession('203.0.113.31');
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const accepted = await probe('203.0.113.31', '?ticket=accepted&redirect=/account');
+      const state = await browser.start();
+      const accepted = await browser.request(`?ticket=accepted&redirect=%2Faccount&state=${state}`);
       expect(accepted.status).toBe(302);
       expect(accepted.location).toBe('/account');
       expect(accepted.remaining).toBe(String(max - 1));
@@ -228,12 +275,21 @@ describe('the mounted CAS route tells the limiter which validations it accepted'
   });
 
   it('charges a rejected validation even when the caller asked for an error-page redirect', async () => {
+    const browser = loginSession('203.0.113.32');
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const rejected = await probe('203.0.113.32', '?ticket=stale&error=/login-error');
+      const state = await browser.start();
+      const rejected = await browser.request(`?ticket=stale&error=%2Flogin-error&state=${state}`);
       expect(rejected.status).toBe(302);
       expect(rejected.location).toBe('/login-error');
       expect(rejected.remaining).toBe(String(max - attempt - 1));
     }
+  });
+
+  it('charges a callback that no login in this session started', async () => {
+    const stranger = loginSession('203.0.113.33');
+    const unmatched = await stranger.request('?ticket=stale&state=' + 'f'.repeat(32));
+    expect(unmatched.status).toBe(401);
+    expect(unmatched.remaining).toBe(String(max - 1));
   });
 });
 
