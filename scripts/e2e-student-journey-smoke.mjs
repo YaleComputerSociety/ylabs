@@ -121,6 +121,63 @@ const assertTextIncludes = async (expected, targetPage = page) => {
   assert(text.includes(expected), `Expected page text to include "${expected}".`);
 };
 
+const FOCUS_RING_OFFSET = 2;
+const FOCUS_RING_WIDTH = 2;
+
+const focusRingStrips = (box) => {
+  const reach = FOCUS_RING_OFFSET + FOCUS_RING_WIDTH;
+  return {
+    top: { x: box.x, y: box.y - reach, width: box.width, height: FOCUS_RING_WIDTH },
+    right: {
+      x: box.x + box.width + FOCUS_RING_OFFSET,
+      y: box.y,
+      width: FOCUS_RING_WIDTH,
+      height: box.height,
+    },
+    bottom: {
+      x: box.x,
+      y: box.y + box.height + FOCUS_RING_OFFSET,
+      width: box.width,
+      height: FOCUS_RING_WIDTH,
+    },
+    left: { x: box.x - reach, y: box.y, width: FOCUS_RING_WIDTH, height: box.height },
+  };
+};
+
+const captureStrips = async (strips) => {
+  const captured = {};
+  for (const [side, clip] of Object.entries(strips)) {
+    captured[side] = await page.screenshot({ clip });
+  }
+  return captured;
+};
+
+// Computed style reports the outline even when an ancestor clips it or a later
+// sibling paints over it, so only the pixels on each side of the box can tell.
+const assertFocusRingPaintsEverySide = async (control, label) => {
+  assert(
+    await control.evaluate((element) => element.matches(':focus-visible')),
+    `${label} did not take keyboard focus.`,
+  );
+  const box = await control.boundingBox();
+  assert(box, `${label} has no layout box.`);
+  const strips = focusRingStrips(box);
+  const focused = await captureStrips(strips);
+  await control.evaluate((element) => element.blur());
+  const blurred = await captureStrips(strips);
+  const unpainted = Object.keys(strips).filter((side) => focused[side].equals(blurred[side]));
+  assert(
+    unpainted.length === 0,
+    `${label} focus ring paints nothing on its ${unpainted.join(', ')} side(s).`,
+  );
+};
+
+const focusByKeyboard = async (control) => {
+  await control.focus();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+};
+
 const settleResearchPage = async (targetPage = page) => {
   await targetPage.waitForLoadState('domcontentloaded');
   await targetPage.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => undefined);
@@ -269,6 +326,32 @@ await step('the saved entity appears on the dashboard', async () => {
   }
 });
 await screenshot('05-account-saved');
+
+await step('each dashboard surface tab paints a full keyboard focus ring', async () => {
+  const tabs = page.getByRole('tablist', { name: 'Dashboard surfaces' });
+  const plansTab = tabs.getByRole('tab', { name: /^Dashboard/ });
+  const programsTab = tabs.getByRole('tab', { name: /^Program Watch/ });
+  await plansTab.scrollIntoViewIfNeeded();
+  await plansTab.focus();
+  await page.keyboard.press('ArrowRight');
+  await assertFocusRingPaintsEverySide(programsTab, 'The Program Watch tab');
+  await programsTab.focus();
+  await page.keyboard.press('ArrowLeft');
+  await assertFocusRingPaintsEverySide(plansTab, 'The Dashboard tab');
+});
+
+await step('each program view-mode segment paints a full keyboard focus ring', async () => {
+  await page.goto(`${baseUrl}/programs`, { waitUntil: 'domcontentloaded' });
+  await settleResearchPage();
+  const listView = page.getByRole('button', { name: 'List view', exact: true });
+  await listView.click();
+  for (const name of ['Card view', 'List view', 'Compact view']) {
+    const segment = page.getByRole('button', { name, exact: true });
+    await segment.scrollIntoViewIfNeeded();
+    await focusByKeyboard(segment);
+    await assertFocusRingPaintsEverySide(segment, `The ${name} segment`);
+  }
+});
 
 await step('a zero-result search renders an honest empty state, not an error', async () => {
   await page.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });

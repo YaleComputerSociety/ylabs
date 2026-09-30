@@ -314,6 +314,13 @@ code {
     border-bottom-right-radius: inherit;
   }
 
+  /* Flex items paint in document order, so without this the next segment's fill
+     covers the shared edge of the focused segment's outset ring. */
+  .yr-segmented > :focus-visible {
+    position: relative;
+    z-index: 1;
+  }
+
   .yr-focus-ring-inset {
     outline: none;
   }

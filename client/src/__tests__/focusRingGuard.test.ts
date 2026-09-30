@@ -8,13 +8,6 @@ const SRC = join(__dirname, '..');
 const INTERACTIVE_TAG = /<(button|a|Link|NavLink)\s/g;
 const LITERAL_CLASSNAME = /className="([^"]*)"/;
 const FOCUS_TOKEN = /yr-focus-ring/;
-const OUTSET_FOCUS_TOKEN = /\byr-focus-ring(?![-\w])/;
-const CLIPS_OVERFLOW = /(?<![:\w-])overflow-hidden\b/;
-const HAS_PADDING = /(?<![:\w-])p[xytblr]?-(?!0\b)[\w.[\]]+/;
-const OUT_OF_FLOW = /(?<![\w-])(?:absolute|fixed)\b/;
-const POSITIONED = /(?<![:\w-])(?:relative|absolute|fixed|sticky)\b/;
-const JSX_TAG = /<(\/?)([A-Za-z][\w.]*)/g;
-const CLASSNAME_ATTRIBUTE = /className=(?:"([^"]*)"|\{`([^`]*)`\}|\{\s*([A-Za-z_$][\w$]*))/;
 
 /**
  * There is no shared Button or Link wrapper in this client, so the focus token
@@ -67,80 +60,7 @@ const bareInteractiveElements = (): string[] => {
   return findings;
 };
 
-/**
- * The class list an opening tag resolves to, following a `className={helper(...)}`
- * or `className={constant}` to its declaration in the same file, because that is
- * how a segmented control shares one class list across its segments.
- */
-const resolvedClassName = (source: string, tag: string): string => {
-  const match = tag.match(CLASSNAME_ATTRIBUTE);
-  if (!match) return '';
-  if (match[1] !== undefined) return match[1];
-  if (match[2] !== undefined) return match[2];
-  const declaration = source.search(new RegExp(`\\bconst\\s+${match[3]}\\b`));
-  return declaration === -1 ? '' : source.slice(declaration, source.indexOf(';', declaration));
-};
-
-const directChildTags = (source: string, bodyStart: number): string[] => {
-  const children: string[] = [];
-  let depth = 0;
-  JSX_TAG.lastIndex = bodyStart;
-  for (let match = JSX_TAG.exec(source); match; match = JSX_TAG.exec(source)) {
-    if (match[1] === '/') {
-      if (depth === 0) return children;
-      depth -= 1;
-      continue;
-    }
-    const tag = openingTagAt(source, match.index);
-    if (depth === 0) children.push(tag);
-    if (!tag.endsWith('/')) depth += 1;
-    JSX_TAG.lastIndex = match.index + tag.length;
-  }
-  return children;
-};
-
-/**
- * An `overflow-hidden` wrapper with no padding hugs its children, so it clips an
- * outset outline on any of them to nothing while computed style still reports it.
- * That is how two segmented controls shipped a focus state that paints zero pixels.
- * An out-of-flow child of an unpositioned wrapper, such as the skip link, escapes
- * the clip because the wrapper is not its containing block.
- */
-const clippedOutsetRings = (): string[] => {
-  const findings: string[] = [];
-  for (const file of sourceFiles(SRC)) {
-    const rel = relative(SRC, file);
-    const source = readFileSync(file, 'utf8');
-    for (const match of source.matchAll(/<(div|span|nav|ul|li|fieldset)\s/g)) {
-      const start = match.index ?? 0;
-      const tag = openingTagAt(source, start);
-      if (tag.endsWith('/')) continue;
-      const className = tag.match(LITERAL_CLASSNAME)?.[1] ?? '';
-      if (!CLIPS_OVERFLOW.test(className) || HAS_PADDING.test(className)) continue;
-      const escapesClip = (childClassName: string): boolean =>
-        OUT_OF_FLOW.test(childClassName) && !POSITIONED.test(className);
-      const clipped = directChildTags(source, start + tag.length + 1)
-        .map((child) => resolvedClassName(source, child))
-        .filter((childClassName) => OUTSET_FOCUS_TOKEN.test(childClassName))
-        .filter((childClassName) => !escapesClip(childClassName));
-      if (clipped.length === 0) continue;
-      const line = source.slice(0, start).split('\n').length;
-      findings.push(`${rel}:${line} clips ${clipped.length} outset focus ring(s)`);
-    }
-  }
-  return findings;
-};
-
 describe('focus ring guard', () => {
-  it('never puts an outset focus ring directly inside an unpadded overflow-hidden wrapper', () => {
-    expect(
-      clippedOutsetRings(),
-      'A wrapper with overflow-hidden and no padding clips the outset yr-focus-ring on its ' +
-        'children, so focus paints nothing. For a segmented control drop overflow-hidden and use ' +
-        'yr-segmented, which rounds the end segments instead. See client/DESIGN.md section 4.',
-    ).toEqual([]);
-  });
-
   it('gives every interactive element with a literal className a focus token', () => {
     expect(
       bareInteractiveElements(),

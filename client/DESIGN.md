@@ -280,7 +280,7 @@ An unpadded text or glyph button is the other exclusion: a negative offset strik
 `.yr-segmented` rounds the first and last segment to the wrapper's own radius, which is the only thing the clip was doing, so each segment keeps the outset `.yr-focus-ring`.
 Neither focus token works inside a clipping wrapper there: the outset ring is clipped to nothing, and the selected segment usually carries a saturated fill, which rules out the inset one.
 The dashboard surface tabs painted zero focus pixels and the view-mode toggle kept only the edges drawn over a neighbour until this changed.
-`src/__tests__/focusRingGuard.test.ts` fails when an outset `.yr-focus-ring` is a direct child of an unpadded `overflow-hidden` wrapper.
+The student-journey smoke (`yarn e2e:smoke`) focuses each segment of both controls by keyboard and fails when any side of the ring paints no pixels, which catches a reintroduced clip and a neighbour painting over the ring alike.
 - MUI controls cannot take the CSS classes, so they use `navFocusRingSx` from `src/utils/focusRing.ts`, with `menuItemFocusRingSx` for popover menu items whose scroll container would clip an outset ring.
 Both share one outline constant with `.yr-focus-ring`; do not hand-roll a `&:focus-visible` block with its own color.
 - `focus:ring-inset` has no effect alongside either class.
