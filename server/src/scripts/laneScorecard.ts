@@ -95,6 +95,7 @@ interface StoredBenchmark {
   plannedObservationCount?: number;
   unfrozenRequestCount?: number;
   codeSha?: string;
+  capturedAt?: Date;
 }
 
 /**
@@ -155,6 +156,7 @@ export async function replayBenchmark(
       sourceName: benchmark.sourceName,
       only: benchmark.only ?? [],
       limit: benchmark.limit,
+      ...(benchmark.capturedAt ? { referenceDate: new Date(benchmark.capturedAt) } : {}),
     });
   } catch (error) {
     if (!(error instanceof BenchmarkReplayNetworkError)) throw error;

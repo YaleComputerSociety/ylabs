@@ -2600,3 +2600,57 @@ describe('YaleCollegeFellowshipsOfficeScraper benchmark replay', () => {
     );
   });
 });
+
+describe('YaleCollegeFellowshipsOfficeScraper reference date (#4132)', () => {
+  const programUrl =
+    'https://science.yalecollege.yale.edu/yale-undergraduate-research/fellowship-grants/fixture-clock-fellowship';
+  const html = `
+    <main>
+      <h1>Fixture Clock Research Fellowship</h1>
+      <p>Supports an independent research project.</p>
+      <p>Deadline: March 1</p>
+    </main>`;
+
+  const plannedDeadline = async (referenceDate: Date | undefined) => {
+    const emitted: any[] = [];
+    await new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [programUrl],
+      fetchPage: vi.fn(async () => html),
+    }).run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: {
+        dryRun: true,
+        useCache: false,
+        release: false,
+        ...(referenceDate ? { referenceDate } : {}),
+      },
+      emit: async (items) => {
+        emitted.push(...(Array.isArray(items) ? items : [items]));
+      },
+      log: vi.fn(),
+    });
+    const deadline = emitted.find((observation) => observation.field === 'deadline')?.value;
+    return deadline ? new Date(deadline).toISOString() : undefined;
+  };
+
+  it('infers an undated deadline from the pinned reference date, not the wall clock', async () => {
+    const winter = new Date('2026-01-15T12:00:00Z');
+    const summer = new Date('2026-06-15T12:00:00Z');
+
+    expect(await plannedDeadline(winter)).toBe(
+      parseDeadlineToUtcEndOfDay('Deadline: March 1', winter)?.toISOString(),
+    );
+    expect(await plannedDeadline(summer)).toBe(
+      parseDeadlineToUtcEndOfDay('Deadline: March 1', summer)?.toISOString(),
+    );
+    expect(await plannedDeadline(winter)).not.toBe(await plannedDeadline(summer));
+  });
+
+  it('gives the same planned deadline on every run pinned to the same moment', async () => {
+    const pinned = new Date('2026-01-15T12:00:00Z');
+    expect(await plannedDeadline(pinned)).toBe(await plannedDeadline(pinned));
+  });
+});

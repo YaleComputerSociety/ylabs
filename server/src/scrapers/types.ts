@@ -77,6 +77,9 @@ export interface ScraperOptions {
   explainLimit?: number;
   triggeredBy?: 'cli' | 'cron' | 'admin';
   benchmarkRun?: boolean;
+  // The moment a date-reading lane treats as now. A benchmark pins it to its capture time,
+  // so a replay next week infers the same deadline years and acceptance windows (#4132).
+  referenceDate?: Date;
 }
 
 export interface ScraperResult {

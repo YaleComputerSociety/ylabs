@@ -46,6 +46,7 @@ export interface LaneBenchmarkSpec {
   only: string[];
   limit?: number;
   sourceConcurrency?: number;
+  referenceDate?: Date;
 }
 
 export function assertBenchmarkableLane(sourceName: string): void {
@@ -86,6 +87,7 @@ export async function runLaneDry(spec: LaneBenchmarkSpec): Promise<{
     limit: spec.limit,
     triggeredBy: 'cli',
     benchmarkRun: true,
+    ...(spec.referenceDate ? { referenceDate: spec.referenceDate } : {}),
   };
   const { explainedObservations, explainTruncated } = await buildOrchestrator().run(
     spec.sourceName,

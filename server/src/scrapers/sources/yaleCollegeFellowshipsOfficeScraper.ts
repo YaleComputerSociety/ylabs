@@ -1543,7 +1543,7 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
       throw new Error('--limit must be a safe non-negative integer');
     }
 
-    const referenceDate = new Date();
+    const referenceDate = ctx.options.referenceDate ?? new Date();
     const candidatesByKey = new Map<string, FellowshipCatalogCandidate>();
     const indexDiscoveredDetailUrls = new Set<string>();
     const fetched = new Set<string>();
