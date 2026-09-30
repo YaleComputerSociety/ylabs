@@ -229,10 +229,12 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
             <p className="text-xs text-muted">ID: {fellowship.id}</p>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-muted hover:text-ink-soft text-2xl leading-none yr-focus-ring"
+            aria-label="Close fellowship editor"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-card text-muted hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft yr-focus-ring"
           >
-            &times;
+            <CloseIcon size={20} />
           </button>
         </div>
 
@@ -464,7 +466,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
           </div>
         </div>
 
-        <div className="flex justify-between px-6 py-4 border-t bg-[var(--yr-panel-muted)] rounded-b-lg">
+        <div className="flex flex-wrap justify-between gap-3 px-6 py-4 border-t bg-[var(--yr-panel-muted)] rounded-b-lg">
           <button
             onClick={() => void handleDelete()}
             className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors yr-focus-ring"

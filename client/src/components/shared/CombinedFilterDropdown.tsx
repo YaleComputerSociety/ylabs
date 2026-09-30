@@ -6,7 +6,7 @@
  */
 import { useState, useRef, useEffect } from 'react';
 import VennDiagramToggle from '../navbar/VennDiagramToggle';
-import { CheckIcon, ChevronDownIcon, TagIcon } from './icons';
+import { CheckIcon, ChevronDownIcon, CloseIcon, TagIcon } from './icons';
 
 export type FilterMode = 'intersection' | 'union';
 
@@ -174,9 +174,9 @@ const CombinedFilterDropdown = ({
                 aria-label="Close filters"
                 data-mobile-only="true"
                 onClick={() => closeFilters()}
-                className="flex h-11 w-11 items-center justify-center rounded-control text-2xl text-muted yr-focus-ring"
+                className="flex h-11 w-11 items-center justify-center rounded-control text-muted hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft yr-focus-ring"
               >
-                <span aria-hidden="true">×</span>
+                <CloseIcon size={20} />
               </button>
             </div>
           )}
