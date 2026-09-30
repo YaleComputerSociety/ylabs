@@ -167,4 +167,30 @@ describe('computeResearchEntityBrowseRank', () => {
       }),
     ).toBe(computeResearchEntityBrowseRank({ entity: thinCopy, leadMembers: attachedLead() }));
   });
+
+  it('scores no card that the serve guards withhold because it copies another person’s synthesis', () => {
+    const anotherPersonsBiography =
+      'Marlow Ashgate, MD, graduated from a liberal arts college with a B.A. in Psychology, then spent two years as a research trainee studying diagnostic tools for alcohol use disorder.';
+    const row = {
+      slug: 'marlow-lab-mtv4',
+      name: 'Marlow Lab',
+      displayName: 'Marlow Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription:
+        'Marlow Tiverton is a geologist whose work examines the tectonic and geomorphic evolution of convergent plate boundaries, combining low-temperature thermochronology with landscape-evolution modelling.',
+      shortDescription:
+        'Spent two years as a research trainee studying diagnostic tools for alcohol use disorder.',
+      websiteUrl: 'https://example.yale.edu/marlow-lab',
+    };
+    const withCopiedCard = computeResearchEntityBrowseRank({
+      entity: { ...row, profileSynthesisDescription: anotherPersonsBiography },
+    });
+    const withNoCard = computeResearchEntityBrowseRank({
+      entity: { ...row, shortDescription: '' },
+    });
+    const withOwnCard = computeResearchEntityBrowseRank({ entity: row });
+    expect(withCopiedCard).toBe(withNoCard);
+    expect(withCopiedCard).toBeLessThan(withOwnCard);
+  });
 });

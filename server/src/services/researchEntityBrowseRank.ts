@@ -18,6 +18,7 @@ import {
   buildResearchEntityQualitySummary,
   ResearchEntityQualitySummary,
 } from './researchEntityQuality';
+import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import {
   mapResearchGroupKindToEntityType,
   ResearchEntityType,
@@ -100,9 +101,17 @@ export function computeResearchEntityBrowseRank({
   leadMembers = [],
   hostsAffiliatedResearchHomes = false,
 }: ResearchEntityBrowseRankInput): number {
-  const summary = buildResearchEntityQualitySummary({
-    entity: withoutUnservedDescriptions(entity),
+  const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
+    entity,
     leadMembers,
+  });
+  const summary = buildResearchEntityQualitySummary({
+    entity,
+    leadMembers,
+    publicDescription: {
+      ...publicDescription,
+      entity: withoutUnservedDescriptions(publicDescription.entity),
+    },
   });
 
   let score = 0;
