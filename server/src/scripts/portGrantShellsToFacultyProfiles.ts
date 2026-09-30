@@ -15,7 +15,6 @@ import {
   archivedEntityUpdate,
 } from '../models/entityArchival';
 import { materializeEntity } from '../scrapers/entityMaterializer';
-import { GRANT_SHELL_ENTITY_TYPE } from '../scrapers/utils/grantShellIdentity';
 import { deleteFromIndex, syncEntities } from '../services/meiliSyncService';
 import { Observation } from '../models/observation';
 import {
