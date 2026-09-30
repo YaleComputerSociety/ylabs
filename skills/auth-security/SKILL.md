@@ -103,6 +103,15 @@ Applied globally or to `/api` in `app.ts`.
 | `createCorsOriginHandler` | Dynamic CORS origin handler. |
 | `errorHandler` / `notFoundHandler` | Terminal error and 404 handlers. |
 
+### Static client files
+
+`createClientStaticAssets` in `server/src/middleware/clientStaticAssets.ts` serves the client build, and `app.ts` mounts it after `securityHeaders` and CORS but ahead of `cookie-session` and Passport (#3950).
+A static file therefore never reads or writes a session cookie and never runs `deserializeUser`, which is what lets the CDN cache it.
+The router skips every `/api` path, so a file in the build can never shadow an API route, and it keeps the source-map block and the no-store OAuth callback headers ahead of `express.static`.
+Only content-hashed files directly under `/assets/` are served `public, max-age=31536000, immutable`; `index.html`, the SPA fallback, and unhashed files such as `/assets/developers/*` and `/brand/*` keep `max-age=0` so a deploy is seen on the next load.
+The Passport `regenerate`/`save` shim defines its methods as non-enumerable, because cookie-session writes a new session that has any own enumerable key, and an enumerable shim issued an empty session cookie to every anonymous response.
+`server/src/__tests__/appStaticAssetCaching.test.ts` pins all of this through the mounted app.
+
 SSRF protection lives in `server/src/utils/ssrfGuard.ts`.
 Any outbound fetch to a host derived from user input or stored data must go through it.
 Use `assertPublicHttpUrl`, `ssrfSafeLookup`, and `ssrfSafeAgents` as appropriate.

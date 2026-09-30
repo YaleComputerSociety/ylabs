@@ -925,22 +925,23 @@ test('deployed runtime emits HSTS independent of proxy request shape', () => {
 
 test('served browser assets do not expose source maps or hidden static files', () => {
   const appSource = fs.readFileSync(new URL('../server/src/app.ts', import.meta.url), 'utf8');
+  const staticSource = fs.readFileSync(
+    new URL('../server/src/middleware/clientStaticAssets.ts', import.meta.url),
+    'utf8',
+  );
   const tsupSource = fs.readFileSync(new URL('../server/tsup.config.ts', import.meta.url), 'utf8');
 
   assert.match(
-    appSource,
+    staticSource,
     /function blockSourceMapAssetRequests\(\s*req: express\.Request,\s*res: express\.Response,\s*next: express\.NextFunction,?\s*\)/,
   );
-  assert.match(appSource, /req\.path\.endsWith\('\.map'\)/);
-  assert.match(appSource, /res\.setHeader\('Cache-Control', 'no-store, private, max-age=0'\)/);
-  assert.match(appSource, /res\.status\(404\)\.type\('text\/plain'\)\.send\('Not found'\)/);
-  assert.match(appSource, /app\.use\(blockSourceMapAssetRequests\);[\s\S]*express\.static/);
-  assert.match(
-    appSource,
-    /express\.static\(path\.join\(__dirname, '\.\.\/\.\.\/client\/dist'\), \{/,
-  );
-  assert.match(appSource, /dotfiles: 'ignore'/);
-  assert.match(appSource, /index: false/);
+  assert.match(staticSource, /req\.path\.endsWith\('\.map'\)/);
+  assert.match(staticSource, /res\.setHeader\('Cache-Control', 'no-store, private, max-age=0'\)/);
+  assert.match(staticSource, /res\.status\(404\)\.type\('text\/plain'\)\.send\('Not found'\)/);
+  assert.match(staticSource, /router\.use\(blockSourceMapAssetRequests\);[\s\S]*express\.static/);
+  assert.match(staticSource, /express\.static\(clientDistPath, \{/);
+  assert.match(staticSource, /dotfiles: 'ignore'/);
+  assert.match(staticSource, /index: false/);
   assert.match(appSource, /function shouldServeSpaFallback\(req: express\.Request\): boolean/);
   assert.match(appSource, /segments\.some\(\(segment\) => segment\.startsWith\('\.'\)\)/);
   assert.match(appSource, /path\.extname\(lastSegment\)/);
@@ -1336,7 +1337,10 @@ test('API responses default to private no-store cache headers', () => {
 });
 
 test('OAuth callback assets are served with no-store cache headers', () => {
-  const source = fs.readFileSync(new URL('../server/src/app.ts', import.meta.url), 'utf8');
+  const source = fs.readFileSync(
+    new URL('../server/src/middleware/clientStaticAssets.ts', import.meta.url),
+    'utf8',
+  );
   const callbackHtmlSource = fs.readFileSync(
     new URL('../client/public/oauth-callback.html', import.meta.url),
     'utf8',
@@ -1357,10 +1361,6 @@ test('OAuth callback assets are served with no-store cache headers', () => {
   assert.match(source, /res\.setHeader\('Surrogate-Control', 'no-store'\)/);
   assert.match(source, /res\.setHeader\('Expires', '0'\)/);
   assert.match(source, /res\.setHeader\('X-Content-Type-Options', 'nosniff'\)/);
-  assert.match(
-    source,
-    /app\.use\(blockSourceMapAssetRequests\);\s*app\.use\(setOAuthCallbackAssetCacheHeaders\);\s*app\.use\(\s*express\.static/,
-  );
   for (const html of [callbackHtmlSource, callbackHtmlDistSource].filter(Boolean)) {
     assert.match(html, /<meta name="referrer" content="no-referrer">/);
     assert.match(html, /http-equiv="Content-Security-Policy"/);
@@ -5064,7 +5064,10 @@ test('scraper run failure records and reports sanitize persisted errors', () => 
   assert.match(orchestratorSource, /: \{ message: sanitizeLogValue\(err\), stack: undefined \}/);
   assert.match(orchestratorSource, /const errorMessage = sanitized\.message/);
   assert.match(orchestratorSource, /message: errorMessage \|\| 'Unknown scrape error'/);
-  assert.match(orchestratorSource, /\.\.\.\(sanitized\.stack \? \{ stack: sanitized\.stack \} : \{\}\)/);
+  assert.match(
+    orchestratorSource,
+    /\.\.\.\(sanitized\.stack \? \{ stack: sanitized\.stack \} : \{\}\)/,
+  );
   assert.doesNotMatch(orchestratorSource, /message: err\?\.message/);
   assert.doesNotMatch(orchestratorSource, /stack: err\?\.stack/);
   // The persisted stack is the sanitized one. Storing the raw stack would leak every
