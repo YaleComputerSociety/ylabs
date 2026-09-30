@@ -1713,7 +1713,7 @@ const Research = () => {
                   {searchLoading ? 'Searching…' : 'Search'}
                 </button>
               </div>
-              <p id="research-search-help" className="mt-2 text-sm text-muted">
+              <p id="research-search-help" className="mt-2 text-sm text-muted xl:text-xs">
                 {searchHelpText}
               </p>
             </form>
