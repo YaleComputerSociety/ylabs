@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   assessResearchEntityDescriptionQuality,
@@ -13,8 +13,17 @@ import {
   programCardShortDescriptionQuality,
   programLikeCardShortDescription,
   shortDescriptionQuality,
+  withMemoizedDescriptionQuality,
 } from '../researchEntityDescriptionQuality';
-import { sanitizeResearchEntityDescription } from '../descriptionHygiene';
+import {
+  isConnectedToKeywordListStub,
+  sanitizeResearchEntityDescription,
+} from '../descriptionHygiene';
+
+vi.mock('../descriptionHygiene', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../descriptionHygiene')>();
+  return { ...actual, isConnectedToKeywordListStub: vi.fn(actual.isConnectedToKeywordListStub) };
+});
 
 describe('fullDescriptionQuality', () => {
   const repeatedWindowText = (windowWords: number): string => {
@@ -2323,5 +2332,107 @@ describe('career-history prose is not glued into a card', () => {
     expect(deriveShortDescriptionFromFullDescription(body)).toBe(
       'Focuses on the application of mass spectrometry to qualitative and quantitative food, beverage and environmental testing.',
     );
+  });
+});
+
+describe('withMemoizedDescriptionQuality', () => {
+  const body =
+    'The group studies how estuarine sediment transport reshapes coastal marshes, combining flume experiments with field surveys to measure how storm surge redistributes fine sediment across the marsh platform.';
+  const card = 'Studies estuarine sediment transport in coastal marshes.';
+
+  const probeCallsForBody = (): number =>
+    vi.mocked(isConnectedToKeywordListStub).mock.calls.filter(([text]) => text === body).length;
+
+  let probeCallsPerBodyScore = 0;
+
+  beforeEach(() => {
+    vi.mocked(isConnectedToKeywordListStub).mockClear();
+    fullDescriptionQuality(body);
+    probeCallsPerBodyScore = probeCallsForBody();
+    vi.mocked(isConnectedToKeywordListStub).mockClear();
+  });
+
+  const bodyScoreCount = (): number => probeCallsForBody() / probeCallsPerBodyScore;
+
+  it('scores a repeated body once per derivation instead of once per caller', () => {
+    withMemoizedDescriptionQuality(() => {
+      fullDescriptionQuality(body);
+      fullDescriptionQuality(body);
+      fullDescriptionQuality(body);
+    });
+    expect(bodyScoreCount()).toBe(1);
+  });
+
+  it('scores the body a card is judged against once across several card candidates', () => {
+    const cards = [
+      card,
+      'Studies coastal marsh sediment.',
+      'Studies storm surge across marsh platforms.',
+    ];
+    cards.forEach((candidate) => shortDescriptionQuality(candidate, body));
+    const unmemoizedBodyScores = bodyScoreCount();
+    vi.mocked(isConnectedToKeywordListStub).mockClear();
+    withMemoizedDescriptionQuality(() => {
+      cards.forEach((candidate) => shortDescriptionQuality(candidate, body));
+    });
+    expect(unmemoizedBodyScores).toBeGreaterThan(1);
+    expect(bodyScoreCount()).toBe(1);
+  });
+
+  it('reuses no verdict once the derivation that computed it has returned', () => {
+    withMemoizedDescriptionQuality(() => fullDescriptionQuality(body));
+    withMemoizedDescriptionQuality(() => fullDescriptionQuality(body));
+    expect(bodyScoreCount()).toBe(2);
+  });
+
+  it('serves a verdict identical to the unmemoized one, field order included', () => {
+    const unmemoized = fullDescriptionQuality(body);
+    const memoized = withMemoizedDescriptionQuality(() => {
+      fullDescriptionQuality(body);
+      return fullDescriptionQuality(body);
+    });
+    expect(memoized).toEqual(unmemoized);
+    expect(JSON.stringify(memoized)).toBe(JSON.stringify(unmemoized));
+    expect(Object.keys(memoized)).toEqual(Object.keys(unmemoized));
+  });
+
+  it('serves a card verdict identical to the unmemoized one, field order included', () => {
+    const unmemoized = shortDescriptionQuality(card, body);
+    const memoized = withMemoizedDescriptionQuality(() => {
+      shortDescriptionQuality(card, body);
+      return shortDescriptionQuality(card, body);
+    });
+    expect(JSON.stringify(memoized)).toBe(JSON.stringify(unmemoized));
+    expect(Object.keys(memoized)).toEqual(Object.keys(unmemoized));
+  });
+
+  it('keeps a caller that mutates the flag list it was handed out of a later verdict', () => {
+    const unmemoized = fullDescriptionQuality(body);
+    withMemoizedDescriptionQuality(() => {
+      const first = fullDescriptionQuality(body);
+      first.flags.push('blank');
+      first.text = 'rewritten by the caller';
+      const second = fullDescriptionQuality(body);
+      expect(second.flags).toEqual(unmemoized.flags);
+      expect(second.text).toBe(unmemoized.text);
+    });
+  });
+
+  it('keeps two different bodies on their own verdicts inside one derivation', () => {
+    const blankVerdict = fullDescriptionQuality('');
+    withMemoizedDescriptionQuality(() => {
+      expect(fullDescriptionQuality(body).isUseful).toBe(true);
+      expect(fullDescriptionQuality('')).toEqual(blankVerdict);
+      expect(fullDescriptionQuality(body).isUseful).toBe(true);
+    });
+  });
+
+  it('reuses nothing across an asynchronous derivation, whose scope closes at its first suspension', async () => {
+    await withMemoizedDescriptionQuality(async () => {
+      await Promise.resolve();
+      fullDescriptionQuality(body);
+      fullDescriptionQuality(body);
+    });
+    expect(bodyScoreCount()).toBe(2);
   });
 });

@@ -1,5 +1,6 @@
 import {
   assessResearchEntityDescriptionQuality,
+  withMemoizedDescriptionQuality,
   type ResearchEntityDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import {
@@ -130,7 +131,15 @@ export function publicDescriptionLeadMemberNames(
   return Array.from(new Set(leadMembers.map(memberDisplayName).filter(Boolean)));
 }
 
-export function buildResearchEntityPublicDescriptionRepresentation({
+export function buildResearchEntityPublicDescriptionRepresentation(input: {
+  entity: Record<string, any>;
+  leadMembers?: Array<Record<string, any>>;
+  leadMemberNames?: readonly string[];
+}): ResearchEntityPublicDescriptionRepresentation {
+  return withMemoizedDescriptionQuality(() => derivePublicDescriptionRepresentation(input));
+}
+
+function derivePublicDescriptionRepresentation({
   entity,
   leadMembers = [],
   leadMemberNames,

@@ -76,6 +76,62 @@ export interface FieldQuality {
   flags: DescriptionQualityFlag[];
 }
 
+/**
+ * One derivation's field-quality verdicts, reused within that derivation.
+ *
+ * `shortDescriptionQuality` re-scores the body it is compared against, and the card
+ * synthesis templates score one candidate after another against that same body, so a
+ * single row used to score its body once per candidate. Measured on a Development
+ * browse page of 24 rows, 146 body scores and 116 card scores covered 28 and 26
+ * distinct inputs.
+ *
+ * The scope is one synchronous derivation rather than the process, because a verdict
+ * must not outlive the inputs the research-area checks read. An async callback
+ * therefore memoizes nothing at all: the scope closes at the first suspension point,
+ * which loses the reuse rather than sharing a verdict between requests.
+ */
+let activeFieldQualityVerdicts: Map<string, FieldQuality> | null = null;
+
+export function withMemoizedDescriptionQuality<T>(derive: () => T): T {
+  if (activeFieldQualityVerdicts) return derive();
+  activeFieldQualityVerdicts = new Map();
+  try {
+    return derive();
+  } finally {
+    activeFieldQualityVerdicts = null;
+  }
+}
+
+// A fresh verdict per call, so a caller that mutates the flag list it is handed
+// cannot reach the verdict a later call in the same derivation is served.
+const copyOfFieldQuality = (quality: FieldQuality): FieldQuality => ({
+  ...quality,
+  flags: [...quality.flags],
+});
+
+const fieldQualityMemoKey = (kind: string, args: readonly unknown[]): string | null => {
+  try {
+    return `${kind}\u0000${JSON.stringify(args)}`;
+  } catch {
+    return null;
+  }
+};
+
+const memoizedFieldQuality = (
+  kind: string,
+  args: readonly unknown[],
+  compute: () => FieldQuality,
+): FieldQuality => {
+  const verdicts = activeFieldQualityVerdicts;
+  const key = verdicts ? fieldQualityMemoKey(kind, args) : null;
+  if (!verdicts || key === null) return compute();
+  const cached = verdicts.get(key);
+  if (cached) return copyOfFieldQuality(cached);
+  const computed = compute();
+  verdicts.set(key, computed);
+  return copyOfFieldQuality(computed);
+};
+
 export interface ResearchEntityDescriptionQuality {
   full: FieldQuality;
   short: FieldQuality;
@@ -1366,7 +1422,7 @@ export function fullDescriptionWouldMaterialize(
   return fullDescriptionQuality(materialized, researchAreas, entityType).isUseful;
 }
 
-export function fullDescriptionQuality(
+function computeFullDescriptionQuality(
   value: unknown,
   researchAreas?: unknown,
   entityType?: ResearchEntityType,
@@ -1488,6 +1544,18 @@ export function fullDescriptionQuality(
     flags: uniqueFlags(flags),
     isUseful: flags.length === 0,
   };
+}
+
+export function fullDescriptionQuality(
+  value: unknown,
+  researchAreas?: unknown,
+  entityType?: ResearchEntityType,
+): FieldQuality {
+  return memoizedFieldQuality(
+    'full',
+    [value ?? null, researchAreas ?? null, entityType ?? null],
+    () => computeFullDescriptionQuality(value, researchAreas, entityType),
+  );
 }
 
 const FULL_DESCRIPTION_LEAD_CLAUSE_RE =
@@ -1688,7 +1756,7 @@ const isPastCardLengthCeiling = (text: string): boolean =>
   text.length > MAX_CARD_SHORT_DESCRIPTION_LENGTH ||
   wordCount(text) > MAX_CARD_SHORT_DESCRIPTION_WORDS;
 
-export function shortDescriptionQuality(
+function computeShortDescriptionQuality(
   value: unknown,
   fullDescription: unknown,
   researchAreas?: unknown,
@@ -1827,6 +1895,19 @@ export function shortDescriptionQuality(
     flags: uniqueFlags(flags),
     isUseful: flags.length === 0,
   };
+}
+
+export function shortDescriptionQuality(
+  value: unknown,
+  fullDescription: unknown,
+  researchAreas?: unknown,
+  options?: { entityType?: ResearchEntityType },
+): FieldQuality {
+  return memoizedFieldQuality(
+    'short',
+    [value ?? null, fullDescription ?? null, researchAreas ?? null, options?.entityType ?? null],
+    () => computeShortDescriptionQuality(value, fullDescription, researchAreas, options),
+  );
 }
 
 /**

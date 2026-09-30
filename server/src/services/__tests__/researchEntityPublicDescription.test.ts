@@ -5,6 +5,8 @@ import {
   publicDescriptionLeadMemberNames,
   researchEntityServesPublicDetail,
 } from '../researchEntityPublicDescription';
+import { toPublicResearchEntityDto } from '../researchEntityDto';
+import { withMemoizedDescriptionQuality } from '../../utils/researchEntityDescriptionQuality';
 
 describe('researchEntityPublicDescription', () => {
   it('assesses the lead-aware post-sanitization representation', () => {
@@ -460,5 +462,53 @@ describe('the gate judges the card the serve sanitizer produces (#3097)', () => 
 
     expect(representation.servedCard).toBe('');
     expect(representation.invariant.reasons).toContain('missing_public_card_description');
+  });
+});
+
+describe('one derivation scope shared across a page of rows', () => {
+  const sedimentBody =
+    'The group studies how estuarine sediment transport reshapes coastal marshes, combining flume experiments with field surveys to measure storm surge redistribution.';
+  const row = (id: string, fields: Record<string, unknown>) => ({
+    _id: id,
+    slug: id,
+    name: `${id} Lab`,
+    kind: 'group',
+    entityType: 'LAB',
+    sourceUrls: [`https://example.yale.edu/${id}`],
+    ...fields,
+  });
+
+  const rows = [
+    row('sediment-one', {
+      researchAreas: ['Sediment Transport'],
+      shortDescription: 'Studies estuarine sediment transport in coastal marshes.',
+      fullDescription: sedimentBody,
+    }),
+    row('sediment-twin', {
+      researchAreas: ['Sediment Transport'],
+      shortDescription: 'Studies estuarine sediment transport in coastal marshes.',
+      fullDescription: sedimentBody,
+    }),
+    row('no-copy', { researchAreas: [], shortDescription: '', fullDescription: '' }),
+    row('body-only', {
+      researchAreas: ['Sediment Transport'],
+      shortDescription: '',
+      fullDescription: sedimentBody,
+    }),
+  ];
+
+  const deriveAll = () =>
+    rows.map((entity) => ({
+      serves: researchEntityServesPublicDetail(entity),
+      card: JSON.stringify(toPublicResearchEntityDto(entity, { forList: true })),
+      detail: JSON.stringify(toPublicResearchEntityDto(entity, {})),
+    }));
+
+  it('gives every row the verdict and card it gets on its own', () => {
+    const alone = deriveAll();
+    const shared = withMemoizedDescriptionQuality(deriveAll);
+    expect(shared).toEqual(alone);
+    expect(alone.map((entry) => entry.serves)).toEqual([true, true, false, true]);
+    expect(alone[0].card).not.toBe(alone[1].card);
   });
 });
