@@ -10,6 +10,7 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
   isFacultyResearchEntity,
+  researchEntitySortTitle,
   servedResearchEntityTitle,
 } from '../utils/servedResearchEntityTitle';
 import { getMeiliIndex } from '../utils/meiliClient';
@@ -81,7 +82,14 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'hasUndergradHostingEvidence',
     'studentVisibilityTier',
   ],
-  sortableAttributes: ['browseRankScore', 'lastObservedAt', 'name', 'createdAt', 'updatedAt'],
+  sortableAttributes: [
+    'browseRankScore',
+    'lastObservedAt',
+    'name',
+    'sortTitle',
+    'createdAt',
+    'updatedAt',
+  ],
   displayedAttributes: ['*'],
   // `exactness` and `typo` precede `attribute` (Meili's default puts `attribute`
   // first) so an exact, typo-free topical match in a lower-priority field beats a
@@ -591,6 +599,7 @@ export function buildResearchEntitySearchIndexDocument(
       if (out.displayName) out.displayName = servedTitle;
     }
   }
+  out.sortTitle = researchEntitySortTitle(out);
 
   // Ordering constraint: topic aliases have to come off the sanitized document,
   // never the raw one. `studentSearchTerms` is a `searchableAttributes` entry, so

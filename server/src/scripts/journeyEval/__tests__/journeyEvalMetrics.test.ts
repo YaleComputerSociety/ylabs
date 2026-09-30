@@ -7,6 +7,7 @@ import {
   checkNotDegraded,
   checkSortOrdering,
   checkSurvivorWebsiteAttribution,
+  checkTitleSortOrdering,
   classifySurvivorWebsite,
   resolvePagesToWalk,
   tallySurvivorWebsites,
@@ -212,6 +213,30 @@ describe('checkSortOrdering', () => {
 
     expect(result.status).toBe('fail');
     expect(result.detail.inversions).toBe(1);
+  });
+});
+
+describe('checkTitleSortOrdering', () => {
+  const still = { rowCount: 3, latestUpdatedAt: '2026-09-01T00:00:00.000Z' };
+  const moved = { rowCount: 4, latestUpdatedAt: '2026-09-02T00:00:00.000Z' };
+
+  it('passes when the card titles read in alphabetical order', () => {
+    expect(
+      checkTitleSortOrdering(['alpha', 'beta', 'beta', 'gamma'], 'asc', still, still).status,
+    ).toBe('pass');
+  });
+
+  it('fails on a card title filed under a letter it does not start with', () => {
+    const result = checkTitleSortOrdering(['alpha', 'zeta', 'beta'], 'asc', still, still);
+
+    expect(result.status).toBe('fail');
+    expect(result.detail.inversions).toBe(1);
+  });
+
+  it('is inconclusive rather than failing when the corpus moved during the walk', () => {
+    expect(checkTitleSortOrdering(['beta', 'alpha'], 'asc', still, moved).status).toBe(
+      'inconclusive',
+    );
   });
 });
 

@@ -320,6 +320,32 @@ export function checkSortOrdering(
   );
 }
 
+export function checkTitleSortOrdering(
+  sortTitles: readonly string[],
+  order: 'asc' | 'desc',
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = `sort-title-${order}-follows-card-title`;
+  const title = `A browse sorted A-Z ${order} is ordered by the title each card shows`;
+  let inversions = 0;
+  for (let index = 1; index < sortTitles.length; index += 1) {
+    const previous = sortTitles[index - 1];
+    const current = sortTitles[index];
+    if (order === 'asc' ? current < previous : current > previous) inversions += 1;
+  }
+  const tally = { returned: sortTitles.length, inversions };
+  if (inversions > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the pages were read, so a row may have moved between two requests',
+      { ...tally, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, inversions === 0, tally);
+}
+
 export function checkNotDegraded(id: string, title: string, degraded: unknown): InvariantResult {
   return buildInvariant(id, title, degraded === false, { degraded });
 }

@@ -1125,6 +1125,34 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.degraded).toBe(true);
   });
 
+  it('sorts A-Z by the indexed card title rather than the stored name', async () => {
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('', {}, 1, 24, { sortBy: 'name', sortOrder: 'asc' });
+
+    expect(mocks.search.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ sort: ['sortTitle:asc'] }),
+    );
+  });
+
+  it('falls back to the stored name when the index cannot sort by card title yet', async () => {
+    mocks.search
+      .mockRejectedValueOnce({
+        code: 'invalid_search_sort',
+        message: 'Attribute `sortTitle` is not sortable.',
+      })
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('', {}, 1, 24, {
+      sortBy: 'name',
+      sortOrder: 'desc',
+    });
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search.mock.calls[1][1]).toEqual(expect.objectContaining({ sort: ['name:desc'] }));
+    expect(result.degraded).toBe(true);
+  });
+
   it('expands AI and restricts short alias searches to topic fields', async () => {
     mocks.search.mockResolvedValueOnce({
       hits: [],
