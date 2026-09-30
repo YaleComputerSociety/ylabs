@@ -285,6 +285,24 @@ await step('a zero-result search renders an honest empty state, not an error', a
 });
 await screenshot('06-zero-results');
 
+await step('the keyboard scrolls a page on first load without a click', async () => {
+  await page.goto(`${baseUrl}/about`, { waitUntil: 'domcontentloaded' });
+  await settleResearchPage();
+  await page.getByRole('heading', { level: 1 }).first().waitFor({ timeout: 20000 });
+  await page.keyboard.press('PageDown');
+  await page
+    .waitForFunction(
+      () => (document.querySelector('[data-scroll-container]')?.scrollTop ?? 0) > 0,
+      undefined,
+      { timeout: 5000 },
+    )
+    .catch(() => undefined);
+  const scrollTop = await page.evaluate(
+    () => document.querySelector('[data-scroll-container]')?.scrollTop ?? 0,
+  );
+  assert(scrollTop > 0, `PageDown on /about left the page scroller at ${scrollTop}.`);
+});
+
 const summary = {
   generatedAt: new Date().toISOString(),
   baseUrl,
