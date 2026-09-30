@@ -1630,8 +1630,8 @@ const Research = () => {
     <div className="yr-page min-h-[calc(100vh-8rem)]">
       <div className="mx-auto w-full max-w-screen-2xl px-5 py-5 sm:py-8 lg:px-8">
         <div className="grid gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
-          <header className="yr-panel rounded-card p-4 sm:p-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
-            <h1 className="yr-display max-w-3xl text-3xl font-semibold leading-tight text-ink sm:text-5xl xl:text-4xl">
+          <header className="yr-panel rounded-card p-4 sm:p-6 xl:p-5 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
+            <h1 className="yr-display max-w-3xl text-3xl font-semibold leading-tight text-ink sm:text-5xl xl:text-3xl">
               Find a Yale lab that fits you.
             </h1>
             <p
@@ -1681,7 +1681,7 @@ const Research = () => {
               </div>
             )}
 
-            <form onSubmit={onSubmit} className="mt-4 sm:mt-7 xl:mt-5">
+            <form onSubmit={onSubmit} className="mt-4 sm:mt-7 xl:mt-4">
               <label
                 htmlFor="research-search"
                 className="mb-2 block text-sm font-semibold text-ink"
@@ -1703,11 +1703,11 @@ const Research = () => {
                   }}
                   aria-describedby="research-search-context research-search-help"
                   placeholder={searchPlaceholder}
-                  className="yr-focus-ring min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-card border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-4 text-base text-ink placeholder:text-muted focus:border-[var(--yr-blue)] sm:min-h-14 xl:min-h-12"
+                  className="yr-focus-ring min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-card border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-4 text-base text-ink placeholder:text-muted focus:border-[var(--yr-blue)] sm:min-h-14 xl:min-h-11"
                 />
                 <button
                   type="submit"
-                  className="yr-focus-ring min-h-12 rounded-control bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-line disabled:text-ink-soft sm:min-h-14 xl:min-h-12"
+                  className="yr-focus-ring min-h-12 rounded-control bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-line disabled:text-ink-soft sm:min-h-14 xl:min-h-11"
                   disabled={searchDisabled}
                 >
                   {searchLoading ? 'Searching…' : 'Search'}
@@ -1719,12 +1719,12 @@ const Research = () => {
             </form>
 
             {hasSubmittedSearch && isWideFilterLayout && (
-              <div className="mt-6 border-t border-[var(--yr-line)] pt-6 xl:mt-5 xl:pt-5">
+              <div className="mt-6 border-t border-[var(--yr-line)] pt-6 xl:mt-4 xl:pt-4">
                 <ResearchFilterDisclosure variant="sidebar" {...researchFilterProps} />
               </div>
             )}
             {!hasSubmittedSearch && isWideFilterLayout && (
-              <div className="mt-6 border-t border-[var(--yr-line)] pt-6 xl:mt-5 xl:pt-5">
+              <div className="mt-6 border-t border-[var(--yr-line)] pt-6 xl:mt-4 xl:pt-4">
                 <ResearchFilterDisclosure variant="sidebar" {...browseFilterProps} />
               </div>
             )}
