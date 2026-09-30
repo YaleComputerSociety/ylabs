@@ -574,7 +574,9 @@ describe('Programs page', () => {
     expect(searchInput.className).toContain('min-h-[44px]');
     await userEvent.type(searchInput, 'summer');
     expect(screen.getByRole('button', { name: /filters/i }).className).toContain('min-h-[44px]');
-    expect(screen.getByRole('button', { name: /sort/i }).className).toContain('min-h-[44px]');
+    expect(screen.getByRole('combobox', { name: /sort programs/i }).className).toContain(
+      'min-h-[44px]',
+    );
     expect(screen.getByRole('button', { name: 'Open Only' }).className).toContain('min-h-[44px]');
 
     await userEvent.click(screen.getByRole('button', { name: /filters/i }));
@@ -591,6 +593,20 @@ describe('Programs page', () => {
       'false',
     );
     expect(screen.getByRole('status')).toHaveTextContent('1 result');
+  });
+
+  it('keeps keyboard focus on the program search after Enter and Escape', async () => {
+    renderPage([baseFellowship({ id: 'open', title: 'Open Fellowship' })]);
+
+    const searchInput = screen.getByLabelText('Search programs and fellowships');
+    await userEvent.click(searchInput);
+    expect(searchInput).toHaveFocus();
+
+    await userEvent.keyboard('{Enter}');
+    expect(searchInput).toHaveFocus();
+
+    await userEvent.keyboard('{Escape}');
+    expect(searchInput).toHaveFocus();
   });
 
   it('clears the subject filter along with every other program filter from Clear all', async () => {
@@ -694,9 +710,9 @@ describe('Programs page', () => {
       }),
     ]);
 
-    await userEvent.click(screen.getByRole('button', { name: /sort/i }));
+    await userEvent.click(screen.getByRole('combobox', { name: /sort programs/i }));
     await userEvent.click(screen.getByText('Name'));
-    await userEvent.click(screen.getByRole('button', { name: /sort descending/i }));
+    await userEvent.click(screen.getByRole('button', { name: /sorted descending/i }));
 
     const openSection = screen.getByRole('region', { name: 'No apply now records' });
     expect(

@@ -172,7 +172,7 @@ const submitSearch = (value: string) => {
 };
 
 const chooseSort = (optionName: string) => {
-  fireEvent.click(screen.getByRole('button', { name: /Sort research/ }));
+  fireEvent.click(screen.getByRole('combobox', { name: /Sort research/ }));
   fireEvent.click(screen.getByRole('option', { name: optionName }));
 };
 
