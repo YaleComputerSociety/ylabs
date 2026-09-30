@@ -585,7 +585,8 @@ function derivePublicResearchEntityDto(
       group.sourceLinkHealth,
       {
         ...dto,
-        shortDescription: dto.shortDescription === served.shortDescription ? dto.shortDescription : '',
+        shortDescription:
+          dto.shortDescription === served.shortDescription ? dto.shortDescription : '',
       },
     );
   }
