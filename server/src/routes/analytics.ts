@@ -368,13 +368,13 @@ router.get(
       ),
       topQueries: analytics.topQueries.map((query) => ({
         ...query,
-        count: query.searchesThatReachedTheCorpus,
+        count: query.totalSearches,
         zeroResults: query.zeroResultSearches,
         avgResults: query.avgResultCount,
       })),
       zeroResultQueries: analytics.topZeroResultQueries.map((query) => ({
         ...query,
-        count: query.searchesThatReachedTheCorpus,
+        count: query.totalSearches,
         zeroResults: query.zeroResultSearches,
         avgResults: query.avgResultCount,
       })),
@@ -383,7 +383,7 @@ router.get(
         .slice(0, 10)
         .map((query) => ({
           ...query,
-          count: query.searchesThatReachedTheCorpus,
+          count: query.totalSearches,
           zeroResults: query.zeroResultSearches,
           avgResults: query.avgResultCount,
         })),
