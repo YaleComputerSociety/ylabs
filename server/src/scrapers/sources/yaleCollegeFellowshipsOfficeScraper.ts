@@ -207,8 +207,11 @@ function normalizeLinkUrl(url: string): string {
   try {
     const parsed = new URL(url);
     parsed.hostname = parsed.hostname.toLowerCase();
-    if (parsed.hostname.endsWith('communityforce.com')) parsed.protocol = 'https:';
-    if (parsed.hostname.toLowerCase() === 'studentgrants.yale.edu') parsed.protocol = 'https:';
+    if (hostIsOrIsUnder(parsed.hostname, 'communityforce.com')) parsed.protocol = 'https:';
+    if (parsed.hostname === 'studentgrants.yale.edu') parsed.protocol = 'https:';
+    // An application is submitted through these, so never hand a student the
+    // plaintext spelling of one when the host serves https.
+    if (applicationPortalKind(parsed.toString())) parsed.protocol = 'https:';
     if (parsed.hostname === 'yalecollege.yale.edu') {
       const movedUrl =
         MOVED_YALE_COLLEGE_FINANCIAL_AWARD_URLS[parsed.pathname.toLowerCase().replace(/\/$/, '')];
@@ -230,14 +233,71 @@ function isPublicYaleUrl(url: string | undefined): boolean {
   }
 }
 
+function hostIsOrIsUnder(hostname: string, domain: string): boolean {
+  return hostname === domain || hostname.endsWith(`.${domain}`);
+}
+
 function isYaleOwnedUrl(url: string | undefined): boolean {
   if (!url) return false;
   try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    return hostname === 'yale.edu' || hostname.endsWith('.yale.edu');
+    return hostIsOrIsUnder(new URL(url).hostname.toLowerCase(), 'yale.edu');
   } catch {
     return false;
   }
+}
+
+/**
+ * Hosts that exist to receive an application, so a link to one is the way in
+ * whatever its anchor text says.
+ */
+const APPLICATION_MANAGEMENT_HOSTS = [
+  'interfolio.com',
+  'slideroom.com',
+  'submittable.com',
+  'smapply.io',
+  'smapply.org',
+  'awardspring.com',
+  'fluidreview.com',
+];
+
+/**
+ * General-purpose form hosts. These also serve surveys and sign-up sheets, so a
+ * link to one counts as an application route only when its anchor text says so.
+ */
+const GENERAL_FORM_HOSTS = [
+  'forms.gle',
+  'jotform.com',
+  'wufoo.com',
+  'formstack.com',
+  'qualtrics.com',
+  'typeform.com',
+  'airtable.com',
+];
+
+function applicationPortalKind(
+  url: string | undefined,
+): 'application-management' | 'general-form' | undefined {
+  if (!url) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return undefined;
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  if (APPLICATION_MANAGEMENT_HOSTS.some((host) => hostIsOrIsUnder(hostname, host))) {
+    return 'application-management';
+  }
+  if (GENERAL_FORM_HOSTS.some((host) => hostIsOrIsUnder(hostname, host))) return 'general-form';
+  // Google hosts a form under a path rather than a host of its own, so the path
+  // is what separates a form from an unrelated document or spreadsheet.
+  if (
+    (hostIsOrIsUnder(hostname, 'google.com') || hostIsOrIsUnder(hostname, 'docs.google.com')) &&
+    /^\/forms\//i.test(parsed.pathname)
+  ) {
+    return 'general-form';
+  }
+  return undefined;
 }
 
 function indexSeedKey(url: string): string {
@@ -286,7 +346,7 @@ function isFundingYaleIndexOrHubUrl(url: string | undefined): boolean {
 function isCommunityForceUrl(url: string | undefined): boolean {
   if (!url) return false;
   try {
-    return new URL(url).hostname.toLowerCase().endsWith('communityforce.com');
+    return hostIsOrIsUnder(new URL(url).hostname.toLowerCase(), 'communityforce.com');
   } catch {
     return false;
   }
@@ -437,9 +497,19 @@ export function extractIndexSeedChildDetailUrls(html: string, pageUrl: string): 
 
 const MAX_DETAIL_PROGRAM_LINKS = 12;
 
+const APPLY_LABEL_RE = /\b(?:apply|application|submit)\b/i;
+
+/**
+ * A Yale program routinely takes its applications on a host Yale does not own, so
+ * requiring a Yale host here dropped the only way in: the example in #4086 is a
+ * department page whose "Apply Now" button is a Google Form, which left the row
+ * with no route at all.
+ */
 function isProgramRelevantLink(url: string, label: string): boolean {
   if (isCommunityForceUrl(url) || isStudentGrantsUrl(url)) return true;
-  if (/\b(?:apply|application)\b/i.test(label) && isYaleOwnedUrl(url)) return true;
+  const portal = applicationPortalKind(url);
+  if (portal === 'application-management') return true;
+  if (APPLY_LABEL_RE.test(label) && (isYaleOwnedUrl(url) || portal === 'general-form')) return true;
   return isLikelyPublicFellowshipDetailUrl(url);
 }
 
@@ -463,12 +533,69 @@ function inferTerm(text: string): string[] {
   return Array.from(new Set(terms));
 }
 
-function inferPurpose(text: string): string[] {
+/**
+ * A purpose has to be stated, not merely mentioned, which is why each of these
+ * requires a phrase the way `isResearchFocused` does rather than a bare keyword.
+ * Measured on the #4086 example page, the bare keywords read two purposes out of
+ * prose that states neither: `course` matched the idiom "Yes of course!", and
+ * `international` matched a visa-eligibility answer. A page's only mention of
+ * travel is often a FAQ declining to cover it ("Does the program cover my travel
+ * cost?"), so the award-instrument word is what separates a funded purpose from a
+ * mention of the activity.
+ */
+const AWARD_INSTRUMENT =
+  '(?:grants?|awards?|fellowships?|scholarships?|prizes?|funds?|funding|stipends?|allowances?)';
+
+/**
+ * A program names its instrument close to its purpose but rarely adjacent to it,
+ * so the two are joined across a bounded gap: "Travel/Research Fellowship" and
+ * "Travel Research Grant" both state a travel purpose and both lost it when this
+ * required the instrument word to follow immediately.
+ */
+const nearAwardInstrument = (purpose: string): string =>
+  `\\b${purpose}\\b[\\s/&,-]+(?:\\w+[\\s/&,-]+){0,2}${AWARD_INSTRUMENT}\\b`;
+
+const forThePurposeOf = (purpose: string): string =>
+  `\\b${AWARD_INSTRUMENT} (?:for|supporting|toward) (?:the |a |an )?${purpose}\\b`;
+
+const STUDY_PURPOSE_RE = new RegExp(
+  [
+    '\\bstudy abroad\\b',
+    '\\bcourse of study\\b',
+    '\\bcourse ?work\\b',
+    '\\btuition\\b',
+    nearAwardInstrument('study'),
+    forThePurposeOf('(?:study|course ?work)'),
+  ].join('|'),
+  'i',
+);
+
+const TRAVEL_PURPOSE_RE = new RegExp(
+  [
+    '\\b(?:study|research|work|intern(?:ship)?s?) abroad\\b',
+    '\\binternational travel\\b',
+    nearAwardInstrument('travel'),
+    forThePurposeOf('travel'),
+  ].join('|'),
+  'i',
+);
+
+const SERVICE_PURPOSE_RE = new RegExp(
+  [
+    '\\b(?:public|community) service\\b',
+    '\\bservice learning\\b',
+    nearAwardInstrument('service'),
+    forThePurposeOf('(?:public |community )?service'),
+  ].join('|'),
+  'i',
+);
+
+export function inferPurpose(text: string): string[] {
   const purposes: string[] = [];
   if (isResearchFocused(text)) purposes.push('Research');
-  if (/\bstudy\b|\bcourse\b/i.test(text)) purposes.push('Study');
-  if (/\btravel\b|\binternational\b|\babroad\b/i.test(text)) purposes.push('Travel');
-  if (/\bservice\b|\bpublic service\b/i.test(text)) purposes.push('Service');
+  if (STUDY_PURPOSE_RE.test(text)) purposes.push('Study');
+  if (TRAVEL_PURPOSE_RE.test(text)) purposes.push('Travel');
+  if (SERVICE_PURPOSE_RE.test(text)) purposes.push('Service');
   return Array.from(new Set(purposes));
 }
 
@@ -866,6 +993,30 @@ function isBareDeadlineRowContext(text: string, title: string): boolean {
   return residual.length === 0;
 }
 
+/**
+ * The administering office is a claim about who runs a program, so it is read off
+ * the site the page belongs to rather than assumed. This lane follows links out
+ * across Yale, so the fellowships-office constant it used to stamp on every arm
+ * described one office's programs and then said the same of a department's and a
+ * school's (#4086). A host this map does not name yields no claim.
+ */
+const ADMINISTERING_OFFICE_BY_HOST: Array<[string, string]> = [
+  ['funding.yale.edu', 'Yale Fellowships and Funding'],
+  ['fellowships.yale.edu', 'Yale Fellowships and Funding'],
+  ['macmillan.yale.edu', 'MacMillan Center'],
+  ['cbey.yale.edu', 'Yale Center for Business and the Environment'],
+];
+
+function administeringOfficeForPage(pageUrl: string): string {
+  let hostname: string;
+  try {
+    hostname = new URL(pageUrl).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+  return ADMINISTERING_OFFICE_BY_HOST.find(([host]) => hostIsOrIsUnder(hostname, host))?.[1] ?? '';
+}
+
 function summaryFromRowContext(rowContext: string, title: string): string | undefined {
   const safe = sanitizeStoredCatalogDescription(rowContext);
   if (!safe || safe === title) return undefined;
@@ -901,7 +1052,8 @@ function candidateFromLink(
   const pageContext = normalizeWhitespace($('body').text());
   const contextText = normalizeWhitespace(`${headingContext} ${rowContext}`);
   const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(contextText), referenceDate);
-  const applicationLink = isCommunityForceUrl(href) ? href : undefined;
+  const applicationLink =
+    isCommunityForceUrl(href) || applicationPortalKind(href) ? href : undefined;
   const sourceUrl = pageUrl;
   const links = [{ label: applicationLink ? 'Application' : title, url: href }];
   const isAcceptingApplications =
@@ -925,7 +1077,7 @@ function candidateFromLink(
     links,
     deadline,
     applicationOpenDate: undefined,
-    contactOffice: 'Yale Fellowships and Funding',
+    contactOffice: administeringOfficeForPage(pageUrl),
     contactEmail: extractEmail(contextText) || extractEmail(pageContext),
     yearOfStudy: [],
     termOfAward: inferTerm(contextText || pageContext),
@@ -964,7 +1116,8 @@ function candidateFromMacmillanOpportunityRow(
   const summaryText = normalizeWhitespace($row.find('.node-teaser__summary').first().text());
   const rowContext = normalizeWhitespace(`${title} ${summaryText}`);
   const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(rowContext), referenceDate);
-  const applicationLink = isCommunityForceUrl(href) ? href : undefined;
+  const applicationLink =
+    isCommunityForceUrl(href) || applicationPortalKind(href) ? href : undefined;
   const links = [{ label: applicationLink ? 'Application' : title, url: href }];
   const isAcceptingApplications =
     (deadline ? deadline.getTime() > referenceDate.getTime() : false) ||
@@ -985,7 +1138,7 @@ function candidateFromMacmillanOpportunityRow(
     links,
     deadline,
     applicationOpenDate: undefined,
-    contactOffice: contactOffice || undefined,
+    contactOffice: contactOffice || administeringOfficeForPage(pageUrl),
     contactEmail: extractEmail(summaryText),
     yearOfStudy: [],
     termOfAward: inferTerm(rowContext),
@@ -1023,7 +1176,8 @@ function candidateFromCbeyProgramRow(
   const href = rawHref ? normalizeLinkUrl(rawHref) : undefined;
   if (!href) return undefined;
 
-  const applicationLink = isCommunityForceUrl(href) ? href : undefined;
+  const applicationLink =
+    isCommunityForceUrl(href) || applicationPortalKind(href) ? href : undefined;
   const links = [{ label: applicationLink ? 'Application' : title, url: href }];
 
   return finalizeCandidate({
@@ -1041,7 +1195,7 @@ function candidateFromCbeyProgramRow(
     links,
     deadline: undefined,
     applicationOpenDate: undefined,
-    contactOffice: 'Yale Center for Business and the Environment',
+    contactOffice: administeringOfficeForPage(pageUrl),
     contactEmail: undefined,
     yearOfStudy: [],
     termOfAward: inferTerm(title),
@@ -1116,6 +1270,7 @@ function candidateFromDetailPage(
   const applicationLink =
     links.find((link) => isCommunityForceUrl(link.url))?.url ||
     links.find((link) => isStudentGrantsUrl(link.url))?.url ||
+    links.find((link) => applicationPortalKind(link.url))?.url ||
     links.find((link) => /apply|application|student grants/i.test(link.label))?.url;
   const isAcceptingApplications =
     (deadline ? deadline.getTime() > referenceDate.getTime() : false) ||
@@ -1138,7 +1293,7 @@ function candidateFromDetailPage(
     links,
     deadline,
     applicationOpenDate,
-    contactOffice: 'Yale Fellowships and Funding',
+    contactOffice: administeringOfficeForPage(pageUrl),
     contactEmail: extractEmail(bodyText),
     yearOfStudy: [],
     termOfAward: inferTerm(bodyText),
@@ -1325,7 +1480,12 @@ export function candidateToObservations(candidate: FellowshipCatalogCandidate): 
     observation('links', candidate.links, candidate),
     observation('deadline', candidate.deadline, candidate),
     observation('applicationOpenDate', candidate.applicationOpenDate, candidate),
-    observation('contactOffice', candidate.contactOffice, candidate),
+    // Asserted rather than emitted-when-present, because the lane is the only
+    // writer of this field and it spent its history stamping one office on every
+    // row. Silence would leave every one of those in place: there is no
+    // clear-on-empty stage for a fellowship, so a field with no live observation
+    // keeps whatever it already holds (#4086).
+    currentSourceObservation('contactOffice', candidate.contactOffice || '', candidate),
     observation('contactEmail', candidate.contactEmail, candidate),
     observation('yearOfStudy', candidate.yearOfStudy, candidate),
     observation('termOfAward', candidate.termOfAward, candidate),
