@@ -127,7 +127,7 @@ async function main(): Promise<void> {
       writeOutput(report, options.output);
       return;
     }
-    await applySync(sourceDb, targetDb, collections, [], async (carry) => {
+    const accountCarry = await applySync(sourceDb, targetDb, collections, [], async (carry) => {
       after = await buildPlan(sourceDb, targetDb, collections);
       const mismatches = syncCountMismatches(after, carry);
       if (mismatches.length) {
@@ -136,7 +136,7 @@ async function main(): Promise<void> {
         );
       }
     });
-    const result = { ...report, status: 'applied', collections: after };
+    const result = { ...report, accountCarry, status: 'applied', collections: after };
     console.log(JSON.stringify(result, null, 2));
     writeOutput(result, options.output);
   } finally {

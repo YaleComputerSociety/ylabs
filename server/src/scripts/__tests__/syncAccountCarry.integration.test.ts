@@ -130,3 +130,88 @@ describe('a Development/Beta sync carries the target environment login accounts'
     expect(verifiedMismatches).toEqual([]);
   });
 });
+
+describe('a sync whose source re-created a round-tripped login under a new _id', () => {
+  const recreatedAccountId = new ObjectId('68f2000000000000000000a4');
+  const recreatedResearcherId = new ObjectId('68f2000000000000000000b2');
+  let memoryServer: MongoMemoryServer | undefined;
+  let client: MongoClient | undefined;
+  let targetDb: Db;
+  let verifiedMismatches: unknown[] = [];
+
+  beforeAll(async () => {
+    memoryServer = await MongoMemoryServer.create({ binary: { version: '8.0.12' } });
+    client = new MongoClient(memoryServer.getUri());
+    await client.connect();
+    const sourceDb = client.db('Beta_sync_recreated_source');
+    targetDb = client.db('Development_sync_recreated_target');
+    await sourceDb.collection('accounts').createIndex({ netid: 1 }, { unique: true });
+    await sourceDb.collection('accounts').insertMany([
+      {
+        _id: roundTrippedLoginId,
+        schemaVersion: 1,
+        netid: pseudonym,
+        email: `${pseudonym}@example.invalid`,
+        status: 'ACTIVE',
+        archived: false,
+      },
+      {
+        _id: recreatedAccountId,
+        schemaVersion: 1,
+        netid: 'fixture-login-holder',
+        email: 'fixture-login-holder@yale.edu',
+        status: 'ACTIVE',
+        archived: false,
+      },
+    ]);
+    await sourceDb.collection('researchers').insertOne({
+      _id: recreatedResearcherId,
+      schemaVersion: 1,
+      displayName: 'Synthetic Researcher',
+      accountId: recreatedAccountId,
+      status: 'ACTIVE',
+      archived: false,
+    });
+    await targetDb.collection('accounts').insertOne({
+      _id: roundTrippedLoginId,
+      schemaVersion: 1,
+      netid: 'fixture-login-holder',
+      email: 'fixture-login-holder@yale.edu',
+      status: 'ACTIVE',
+      archived: false,
+      lastLoginAt,
+    });
+    await targetDb.collection('research_plans').insertOne({
+      accountId: roundTrippedLoginId,
+      target: { kind: 'RESEARCH_ENTITY', id: new ObjectId() },
+    });
+    const collections = collectionsForOptions(
+      { includeObservations: false } as BetaToDevelopmentOptions,
+      await researchPersonAccountIds(sourceDb),
+    );
+    await applySync(sourceDb, targetDb, collections, [], async (carry) => {
+      verifiedMismatches = syncCountMismatches(
+        await buildPlan(sourceDb, targetDb, collections),
+        carry,
+      );
+    });
+  });
+
+  afterAll(async () => {
+    await client?.close();
+    await memoryServer?.stop();
+  });
+
+  it('keeps one account for the netid under the target _id and points its researcher there', async () => {
+    const accounts = targetDb.collection('accounts');
+
+    expect(await accounts.find({ netid: 'fixture-login-holder' }).toArray()).toEqual([
+      expect.objectContaining({ _id: roundTrippedLoginId, lastLoginAt }),
+    ]);
+    expect(await accounts.countDocuments({ netid: pseudonym })).toBe(0);
+    expect(
+      await targetDb.collection('researchers').findOne({ _id: recreatedResearcherId }),
+    ).toMatchObject({ accountId: roundTrippedLoginId });
+    expect(verifiedMismatches).toEqual([]);
+  });
+});

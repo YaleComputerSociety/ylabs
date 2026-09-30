@@ -14,10 +14,12 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  accountCountChange,
   applyAccountCarry,
   loadAccountCarryPlan,
   summarizeAccountCarry,
   type AccountCarryPlan,
+  type AccountCarrySummary,
 } from './accountSwapCarry';
 import { applyStagedCollectionSwap, mirroredValidationOptions } from './stagedCollectionSwap';
 
@@ -33,10 +35,7 @@ dotenv.config({ path: path.join(SERVER_ROOT, '.env') });
 
 type SyncMode = 'dry-run' | 'apply';
 type SyncCollectionCategory =
-  | 'research-discovery'
-  | 'identity-spine'
-  | 'source-audit'
-  | 'base-support';
+  'research-discovery' | 'identity-spine' | 'source-audit' | 'base-support';
 
 export interface SyncCollection {
   name: string;
@@ -584,17 +583,15 @@ async function copyCollection(
   }
 }
 
-export interface SyncAccountCarry {
-  accountInserts: number;
-}
-
 export function syncCountMismatches(
   after: readonly SyncCollectionPlan[],
-  carry: SyncAccountCarry,
+  carry: AccountCarrySummary,
 ): SyncCollectionPlan[] {
   return after.filter((row) => {
     const expected =
-      row.name === 'accounts' ? row.sourceCopyCount + carry.accountInserts : row.sourceCopyCount;
+      row.name === 'accounts'
+        ? row.sourceCopyCount + accountCountChange(carry)
+        : row.sourceCopyCount;
     return expected !== row.targetCount;
   });
 }
@@ -627,9 +624,9 @@ export async function applySync(
   developmentDb: Db,
   collections: SyncCollection[],
   clearedCollectionNames: string[],
-  verify: (carry: SyncAccountCarry) => Promise<void>,
-): Promise<void> {
-  const carry: SyncAccountCarry = { accountInserts: 0 };
+  verify: (carry: AccountCarrySummary) => Promise<void>,
+): Promise<AccountCarrySummary> {
+  let carry = summarizeAccountCarry({ refreshes: [], restores: [], rekeys: [], inserts: [] });
   await applyStagedCollectionSwap({
     targetDb: developmentDb,
     collections,
@@ -647,10 +644,11 @@ export async function applySync(
         loadPromotedAccounts: () => developmentDb.collection('accounts').find({}).toArray(),
       });
       await applyAccountCarry(developmentDb, plan);
-      carry.accountInserts = plan.inserts.length;
+      carry = summarizeAccountCarry(plan);
     },
     verify: () => verify(carry),
   });
+  return carry;
 }
 
 async function main(): Promise<void> {
@@ -689,10 +687,10 @@ async function main(): Promise<void> {
       localCollectionsClearedOnApply,
     );
 
-    const accountCarry = summarizeAccountCarry(
-      await previewSyncAccountCarry(betaDb, developmentDb, collections),
-    );
     if (options.mode === 'dry-run') {
+      const accountCarry = summarizeAccountCarry(
+        await previewSyncAccountCarry(betaDb, developmentDb, collections),
+      );
       const report = { ...summary, accountCarry };
       console.log(JSON.stringify(report, null, 2));
       writeOutput(report, options.output);
@@ -702,7 +700,7 @@ async function main(): Promise<void> {
     assertNoUnclassifiedBetaCollections(unclassifiedBetaCollections);
     const clearedDevelopmentCollections = localCollectionsClearedOnApply;
     let after: SyncCollectionPlan[] = [];
-    await applySync(
+    const accountCarry = await applySync(
       betaDb,
       developmentDb,
       collections,

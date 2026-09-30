@@ -13,7 +13,8 @@ import type { Db, Document, ObjectId } from 'mongodb';
  * The target's `_id` always survives, because private rows reference it:
  * where the source holds the same netid under another `_id`, the source row is
  * re-keyed to the target `_id` and every reference to the source `_id` is
- * rewritten. Where the source holds the same `_id` under another netid, it is a
+ * rewritten, replacing any pseudonym the source holds under the target `_id`.
+ * Otherwise, where the source holds the same `_id` under another netid, it is a
  * pseudonym the mirror minted for this very login, so the target row replaces it.
  */
 const CARRIED_ACCOUNT_LOGIN_FIELDS = ['lastLoginAt', 'profile'] as const;
@@ -28,7 +29,7 @@ export const ACCOUNT_ID_REFERENCE_FIELDS: ReadonlyArray<{ collection: string; fi
 export interface AccountCarryPlan {
   refreshes: Array<{ _id: ObjectId; set: Document }>;
   restores: Document[];
-  rekeys: Array<{ fromId: ObjectId; document: Document }>;
+  rekeys: Array<{ fromId: ObjectId; document: Document; replacesPseudonym: boolean }>;
   inserts: Document[];
 }
 
@@ -58,11 +59,7 @@ export function planAccountCarry(args: {
   for (const account of args.productionAccounts) {
     if (!isProductionLoginAccount(account, args.planOwnerIds)) continue;
     const sameId = promotedById.get(idKey(account._id));
-    if (sameId && sameId.netid !== account.netid) {
-      plan.restores.push(account);
-      continue;
-    }
-    if (sameId) {
+    if (sameId && sameId.netid === account.netid) {
       const set = loginFields(account);
       if (Object.keys(set).length > 0) plan.refreshes.push({ _id: sameId._id, set });
       continue;
@@ -72,7 +69,12 @@ export function planAccountCarry(args: {
       plan.rekeys.push({
         fromId: sameNetid._id,
         document: { ...sameNetid, ...loginFields(account), _id: account._id },
+        replacesPseudonym: sameId !== undefined,
       });
+      continue;
+    }
+    if (sameId) {
+      plan.restores.push(account);
       continue;
     }
     plan.inserts.push(account);
@@ -98,13 +100,26 @@ export async function loadAccountCarryPlan(args: {
   });
 }
 
-export function summarizeAccountCarry(carry: AccountCarryPlan) {
+export interface AccountCarrySummary {
+  refreshed: number;
+  restored: number;
+  rekeyed: number;
+  merged: number;
+  inserted: number;
+}
+
+export function summarizeAccountCarry(carry: AccountCarryPlan): AccountCarrySummary {
   return {
     refreshed: carry.refreshes.length,
     restored: carry.restores.length,
     rekeyed: carry.rekeys.length,
+    merged: carry.rekeys.filter((rekey) => rekey.replacesPseudonym).length,
     inserted: carry.inserts.length,
   };
+}
+
+export function accountCountChange(summary: AccountCarrySummary): number {
+  return summary.inserted - summary.merged;
 }
 
 export async function applyAccountCarry(targetDb: Db, plan: AccountCarryPlan): Promise<void> {
@@ -117,7 +132,7 @@ export async function applyAccountCarry(targetDb: Db, plan: AccountCarryPlan): P
   }
   for (const rekey of plan.rekeys) {
     await accounts.deleteOne({ _id: rekey.fromId });
-    await accounts.insertOne(rekey.document);
+    await accounts.replaceOne({ _id: rekey.document._id }, rekey.document, { upsert: true });
     for (const { collection, field } of ACCOUNT_ID_REFERENCE_FIELDS) {
       await targetDb
         .collection(collection)

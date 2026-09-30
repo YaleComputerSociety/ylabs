@@ -47,6 +47,7 @@ describe('planAccountCarry', () => {
       {
         fromId: promotedId,
         document: { ...promotedAccounts[0], _id: productionTwinId, lastLoginAt },
+        replacesPseudonym: false,
       },
     ]);
   });
@@ -86,6 +87,32 @@ describe('planAccountCarry', () => {
     expect(plan.restores).toEqual([targetLogin]);
     expect(plan.refreshes).toEqual([]);
     expect(plan.rekeys).toEqual([]);
+    expect(plan.inserts).toEqual([]);
+  });
+
+  it('re-keys a same-netid source row onto a target login the source holds as a pseudonym', () => {
+    const targetLogin = { _id: productionTwinId, netid: 'fixture-researcher', lastLoginAt };
+    const plan = planAccountCarry({
+      productionAccounts: [targetLogin],
+      promotedAccounts: [
+        ...promotedAccounts,
+        {
+          _id: productionTwinId,
+          netid: `mirrored-${productionTwinId.toHexString()}`,
+          email: `mirrored-${productionTwinId.toHexString()}@example.invalid`,
+        },
+      ],
+      planOwnerIds: new Set(),
+    });
+
+    expect(plan.rekeys).toEqual([
+      {
+        fromId: promotedId,
+        document: { ...promotedAccounts[0], _id: productionTwinId, lastLoginAt },
+        replacesPseudonym: true,
+      },
+    ]);
+    expect(plan.restores).toEqual([]);
     expect(plan.inserts).toEqual([]);
   });
 });
