@@ -140,6 +140,46 @@ describe('Browse admin controls', () => {
   });
 });
 
+describe('Program card deadline urgency', () => {
+  const inSixDays = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString();
+  const soonItem = (overrides: Partial<Fellowship>): BrowsableItem => ({
+    type: 'fellowship',
+    data: { ...fellowship, id: 'program-soon', deadline: inSixDays, ...overrides },
+  });
+
+  it('counts down to a confirmed deadline inside the urgency window', () => {
+    renderAdmin(
+      <BrowseCard item={soonItem({})} isFavorite={false} onOpenModal={vi.fn()} />,
+    );
+
+    expect(screen.getByText(/days left/)).toBeTruthy();
+  });
+
+  it('gives no countdown for a projected next-cycle date inside the urgency window (#3904)', () => {
+    renderAdmin(
+      <BrowseCard
+        item={soonItem({ deadlineProjectedNextCycle: true })}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/days left/)).toBeNull();
+  });
+
+  it('gives no countdown on a list row for a projected next-cycle date (#3904)', () => {
+    renderAdmin(
+      <BrowseListItem
+        item={soonItem({ deadlineProjectedNextCycle: true })}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/days left/)).toBeNull();
+  });
+});
+
 describe('Program card visual hierarchy', () => {
   const withDeadline: BrowsableItem = {
     type: 'fellowship',

@@ -179,6 +179,9 @@ export function getFellowshipJourneySummary(fellowship: Fellowship): string | nu
 }
 
 export function getDaysUntilDeadline(item: BrowsableItem): number | null {
+  // A projected next-cycle date is the server's estimate, so counting down to it would tell a
+  // student a window is closing that nobody has confirmed is open (#3904).
+  if (item.data.deadlineProjectedNextCycle) return null;
   if (!item.data.deadline) return null;
   const d = new Date(item.data.deadline);
   return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
