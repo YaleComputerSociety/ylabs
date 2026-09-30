@@ -1,5 +1,5 @@
 /**
- * Admin dashboard with tabs for access review, fellowships, users, and config.
+ * Admin dashboard with tabs for the operator board, correction reports, fellowships, topics, and departments.
  */
 import type { ComponentType } from 'react';
 import AdminFellowshipsTable from './AdminFellowshipsTable';
