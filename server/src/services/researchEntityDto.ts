@@ -46,6 +46,7 @@ import {
   SERVED_FIELD_CONTRIBUTION_LABEL_SET,
 } from '../utils/servedFieldContributionLabels';
 import { isCurrentFundingField, servedCurrentFunding } from './servedCurrentFunding';
+import { withMemoizedDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 
 const MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS = MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS;
 const MAX_PUBLIC_RESEARCH_ENTITY_URLS = 50;
@@ -441,6 +442,13 @@ function publicTextValue(value: unknown): unknown {
 export function toPublicResearchEntityDto(
   group: Record<string, any>,
   options: PublicResearchEntityDtoOptions = {},
+): PublicResearchEntityDto {
+  return withMemoizedDescriptionQuality(() => derivePublicResearchEntityDto(group, options));
+}
+
+function derivePublicResearchEntityDto(
+  group: Record<string, any>,
+  options: PublicResearchEntityDtoOptions,
 ): PublicResearchEntityDto {
   const id = publicResearchEntityId(group);
   const kind = group.kind;

@@ -308,9 +308,31 @@ The semantic leg stays gated on a non-empty keyword leg, because the count query
 Each leg keeps its own fallback and its own `degraded` contribution, applied after all of them settle.
 Measured in-process on Development against the same protocol (4 text queries, pages 1 and 11 at page size 24, 10 warm runs each, interleaved processes), the page-1 median went from 926ms to 564ms and the p90 from 1,230ms to 717ms, below the 673ms and 834ms before #3943, and page 11 from 992ms to 589ms median and 1,162ms to 699ms p90.
 Ordered result ids, totals, facet distributions and `degraded` flags were identical to the sequential form on 118 of 120 query, filter and page combinations; the other 2 were one query whose unchanged count query also differed between processes, the variance a fresh query embedding brings.
-Every measured request embedded its query at most once and Meilisearch embedded none, so repeated embedding is not where the remaining time goes: the last Meilisearch call now returns 220-320ms into the request, and the 220-390ms after it is Mongo hydration and the DTO.
+Every measured request embedded its query at most once and Meilisearch embedded none, so repeated embedding is not where the remaining time goes: the last Meilisearch call now returns 220-320ms into the request, and the 220-390ms after it is spent per served row rather than on I/O, which the next section attributes.
 `server/src/services/__tests__/researchGroupService.test.ts` pins the start order in the case named "starts every leg as soon as the legs it depends on have returned".
 `yarn --cwd server journey:eval --case=text-query-total-is-stable` pages a text query and fails when its total changes, reporting inconclusive when the corpus moved during the walk.
+
+### What a text search spends after its last Meilisearch leg (#4093)
+
+The time after the legs settle is not the Mongo row load, and treating it as one sends a fix at the wrong layer.
+Measured in-process on Development over five inputs at pages 1 and 11, page size 24, 30 warm runs per arm after a discarded warm-up with the two arms interleaved process by process: the one query that hydrates the page runs 29ms at p50 and 40ms at p90, returning 24 documents in about 310KB, and the whole request makes five Mongo commands.
+Against that, the live serve gate over those 24 rows costs 123ms at p50, the list DTO over them 61ms, and the batched lead-name roster read 61ms.
+So the dominant cost after search is per-row description derivation, and the reorder and fusion helpers over the candidate pool cost 0ms at p50 even where the deep legs return 5,000 rows.
+
+Within that derivation the repeated work was field-quality scoring.
+`shortDescriptionQuality` scores the body it judges a card against, and the card-synthesis templates score one candidate after another against that same body, so a row scored its own body once per candidate.
+On a 24-row page that was 146 body scores covering 28 distinct inputs and 116 card scores covering 26, so four fifths of the scoring was a repeat.
+`withMemoizedDescriptionQuality` in `researchEntityDescriptionQuality.ts` now scopes one map of verdicts to one synchronous derivation, and `buildResearchEntityPublicDescriptionRepresentation` and `toPublicResearchEntityDto` each install it around their own derivation.
+The scope is a derivation rather than the process because a verdict must not outlive the inputs its research-area checks read, and an async callback memoizes nothing at all, because the scope closes at its first suspension point and so loses the reuse rather than sharing a verdict between requests.
+Every call still receives a fresh verdict object with its own flag list, so a caller that mutates what it was handed cannot reach the verdict a later call is served, and the copy is a spread rather than a rebuilt literal because the gate representation serializes `quality` directly and a reordered field list is a changed payload.
+
+Measured after the change on the same protocol: page-1 p50 399ms to 322ms and p90 503ms to 415ms, page-11 p50 383ms to 323ms and p90 479ms to 387ms, with the gate over the page falling from 123ms to 68ms and the DTO from 61ms to 55ms.
+Served output was unchanged: 31,570 of 31,570 comparisons over 4,510 Development rows across the serve verdict, the browse card with and without lead names, the detail payload, the operator payload and the gate representation, and 72 of 72 route payloads byte-identical over 8 queries, 3 filter sets and 3 pages.
+
+Three residuals are the next levers and none of them is this one.
+The roster read is four sequential round trips, two `role_assignments` reads and then `researchers` and `accounts`, and browse discards the last of those because it serves lead names only.
+The row query loads whole documents, where `fieldProvenance` is 37% and `recentGrants` 26% of a stored row's 14.9KB and the served card reads both, while the fields no served surface reads are 25% of the row, so a field allowlist there is worth about a quarter of its bytes rather than all of them.
+And `listPlanningContextsForResearchEntities` returns an empty map for every input, so the planning-context enrichment every list path awaits is inert.
 
 ### The two legs are merged by rank, not by score (#3797)
 

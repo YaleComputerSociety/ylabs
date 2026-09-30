@@ -13,6 +13,8 @@ import {
   programCardShortDescriptionQuality,
   programLikeCardShortDescription,
   shortDescriptionQuality,
+  withMemoizedDescriptionQuality,
+  type FieldQualityMemoUsage,
 } from '../researchEntityDescriptionQuality';
 import { sanitizeResearchEntityDescription } from '../descriptionHygiene';
 
@@ -2323,5 +2325,110 @@ describe('career-history prose is not glued into a card', () => {
     expect(deriveShortDescriptionFromFullDescription(body)).toBe(
       'Focuses on the application of mass spectrometry to qualitative and quantitative food, beverage and environmental testing.',
     );
+  });
+});
+
+describe('withMemoizedDescriptionQuality', () => {
+  const body =
+    'The group studies how estuarine sediment transport reshapes coastal marshes, combining flume experiments with field surveys to measure how storm surge redistributes fine sediment across the marsh platform.';
+  const card = 'Studies estuarine sediment transport in coastal marshes.';
+
+  it('scores a repeated body once per derivation instead of once per caller', () => {
+    let usage: FieldQualityMemoUsage | undefined;
+    withMemoizedDescriptionQuality(
+      () => {
+        fullDescriptionQuality(body);
+        fullDescriptionQuality(body);
+        fullDescriptionQuality(body);
+      },
+      (reported) => {
+        usage = reported;
+      },
+    );
+    expect(usage).toEqual({ computed: 1, reused: 2 });
+  });
+
+  it('scores the body a card is judged against once across several card candidates', () => {
+    let usage: FieldQualityMemoUsage | undefined;
+    withMemoizedDescriptionQuality(
+      () => {
+        shortDescriptionQuality(card, body);
+        shortDescriptionQuality('Studies coastal marsh sediment.', body);
+        shortDescriptionQuality('Studies storm surge across marsh platforms.', body);
+      },
+      (reported) => {
+        usage = reported;
+      },
+    );
+    expect(usage?.reused).toBeGreaterThan(0);
+  });
+
+  it('reuses no verdict once the derivation that computed it has returned', () => {
+    withMemoizedDescriptionQuality(() => fullDescriptionQuality(body));
+    let usage: FieldQualityMemoUsage | undefined;
+    withMemoizedDescriptionQuality(
+      () => fullDescriptionQuality(body),
+      (reported) => {
+        usage = reported;
+      },
+    );
+    expect(usage).toEqual({ computed: 1, reused: 0 });
+  });
+
+  it('serves a verdict identical to the unmemoized one, field order included', () => {
+    const unmemoized = fullDescriptionQuality(body);
+    const memoized = withMemoizedDescriptionQuality(() => {
+      fullDescriptionQuality(body);
+      return fullDescriptionQuality(body);
+    });
+    expect(memoized).toEqual(unmemoized);
+    expect(JSON.stringify(memoized)).toBe(JSON.stringify(unmemoized));
+    expect(Object.keys(memoized)).toEqual(Object.keys(unmemoized));
+  });
+
+  it('serves a card verdict identical to the unmemoized one, field order included', () => {
+    const unmemoized = shortDescriptionQuality(card, body);
+    const memoized = withMemoizedDescriptionQuality(() => {
+      shortDescriptionQuality(card, body);
+      return shortDescriptionQuality(card, body);
+    });
+    expect(JSON.stringify(memoized)).toBe(JSON.stringify(unmemoized));
+    expect(Object.keys(memoized)).toEqual(Object.keys(unmemoized));
+  });
+
+  it('keeps a caller that mutates the flag list it was handed out of a later verdict', () => {
+    const unmemoized = fullDescriptionQuality(body);
+    withMemoizedDescriptionQuality(() => {
+      const first = fullDescriptionQuality(body);
+      first.flags.push('blank');
+      first.text = 'rewritten by the caller';
+      const second = fullDescriptionQuality(body);
+      expect(second.flags).toEqual(unmemoized.flags);
+      expect(second.text).toBe(unmemoized.text);
+    });
+  });
+
+  it('keeps two different bodies on their own verdicts inside one derivation', () => {
+    const blankVerdict = fullDescriptionQuality('');
+    withMemoizedDescriptionQuality(() => {
+      expect(fullDescriptionQuality(body).isUseful).toBe(true);
+      expect(fullDescriptionQuality('')).toEqual(blankVerdict);
+      expect(fullDescriptionQuality(body).isUseful).toBe(true);
+    });
+  });
+
+  it('reuses nothing across an asynchronous derivation, whose scope closes at its first suspension', async () => {
+    let usage: FieldQualityMemoUsage | undefined;
+    await withMemoizedDescriptionQuality(
+      async () => {
+        await Promise.resolve();
+        fullDescriptionQuality(body);
+        fullDescriptionQuality(body);
+      },
+      (reported) => {
+        usage = reported;
+      },
+    );
+    expect(usage).toEqual({ computed: 0, reused: 0 });
   });
 });
