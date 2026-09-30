@@ -7,6 +7,7 @@ import {
   programCategoryLabel,
 } from '../programJourney';
 import type { Fellowship } from '../../types/types';
+import { createFellowship } from '../createFellowship';
 
 const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   id: 'f1',
@@ -194,26 +195,25 @@ describe('programCategoryLabel', () => {
   });
 });
 
-describe('getProgramJourneyStatus for department guides and research awards (#3904)', () => {
-  it('groups a department research guide with the structured ways in', () => {
-    expect(
-      getProgramJourneyStatus(
-        baseFellowship({
-          programKind: 'DEPARTMENT_RESEARCH_GUIDE',
-          entryMode: 'CONTACT_FACULTY',
-          requiresMentorBeforeApply: false,
-        }),
-        now,
-      ).category,
-    ).toBe('structured');
+describe('served programRole through createFellowship', () => {
+  it('groups a served record by its programRole rather than its programKind', () => {
+    const served = createFellowship({
+      _id: 'served-award',
+      programKind: 'FELLOWSHIP_FUNDING',
+      programRole: 'RECOGNIZES_RESEARCH',
+      title: 'Synthetic Award',
+    });
+
+    expect(getProgramJourneyStatus(served).category).toBe('recognizesResearch');
   });
 
-  it('keeps a research award out of the archive group', () => {
-    expect(
-      getProgramJourneyStatus(
-        baseFellowship({ programKind: 'RESEARCH_AWARD', requiresMentorBeforeApply: false }),
-        now,
-      ).category,
-    ).toBe('fundingAfterMentor');
+  it('falls back to the programKind mapping when the served record has no programRole', () => {
+    const served = createFellowship({
+      _id: 'served-funding',
+      programKind: 'FELLOWSHIP_FUNDING',
+      title: 'Synthetic Funding',
+    });
+
+    expect(getProgramJourneyStatus(served).category).toBe('fundsResearch');
   });
 });

@@ -35,17 +35,23 @@ import useUndoableProgramUnwatch, {
   undoRestoresSummary,
   watchedProgramPlanSnapshot,
 } from '../hooks/useUndoableProgramUnwatch';
-import { getFellowshipCycleStatus } from '../utils/fellowshipCycle';
+import { getFellowshipCycleStatus, type FellowshipCycleCategory } from '../utils/fellowshipCycle';
 import { createFellowship } from '../utils/createFellowship';
 import {
+  cycleActionOrder,
   getProgramJourneyStatus,
-  programActionOrder,
   programKindLabel,
   entryModeLabel,
   programCategoryLabel,
   type ProgramJourneyCategory,
   type ProgramJourneySummary,
 } from '../utils/programJourney';
+
+const NEXT_CYCLE_FILTER_CATEGORIES: FellowshipCycleCategory[] = [
+  'nextCycle',
+  'projectedNextCycle',
+  'openingSoon',
+];
 
 const FIRST_PROGRAM_SAVE_KEY = 'yale-research.firstSave.program.v1';
 
@@ -515,7 +521,7 @@ const Fellowships = () => {
     };
   });
 
-  const { closingSoon, open, nextCycle, journeyGroups } = useMemo(() => {
+  const { closingSoon, open, nextCycleFilterCount, journeyGroups, cycleOf } = useMemo(() => {
     const now = new Date();
     const cycleGroups = {
       closingSoon: [] as Fellowship[],
@@ -531,8 +537,10 @@ const Fellowships = () => {
       recognizesResearch: [],
       archive: [],
     };
+    const cycleOf = new Map<Fellowship, FellowshipCycleCategory>();
     for (const f of fellowships) {
       const cycleCat = getFellowshipCycleStatus(f, now).category;
+      cycleOf.set(f, cycleCat);
       cycleGroups[cycleCat].push(f);
       groups[getProgramJourneyStatus(f).category].push(f);
     }
@@ -570,7 +578,7 @@ const Fellowships = () => {
     } else {
       for (const key of Object.keys(groups) as ProgramJourneyCategory[]) {
         groups[key].sort((a, b) => {
-          const byAction = programActionOrder(a, now) - programActionOrder(b, now);
+          const byAction = cycleActionOrder(cycleOf.get(a)!) - cycleActionOrder(cycleOf.get(b)!);
           if (byAction !== 0) return byAction;
           const da = dateValue(a.deadline) ?? Number.MAX_SAFE_INTEGER;
           const db = dateValue(b.deadline) ?? Number.MAX_SAFE_INTEGER;
@@ -578,7 +586,11 @@ const Fellowships = () => {
         });
       }
     }
-    return { ...cycleGroups, journeyGroups: groups };
+    const nextCycleFilterCount = NEXT_CYCLE_FILTER_CATEGORIES.reduce(
+      (count, category) => count + cycleGroups[category].length,
+      0,
+    );
+    return { ...cycleGroups, nextCycleFilterCount, journeyGroups: groups, cycleOf };
   }, [fellowships, sortBy, sortDirection]);
 
   const toBrowsable = (fs: Fellowship[]): BrowsableItem[] =>
@@ -589,19 +601,13 @@ const Fellowships = () => {
     for (const key of Object.keys(journeyGroups) as ProgramJourneyCategory[]) {
       let rows = journeyGroups[key];
       if (quickFilter === 'open') {
-        rows = rows.filter((f) =>
-          ['open', 'closingSoon'].includes(getFellowshipCycleStatus(f).category),
-        );
+        rows = rows.filter((f) => ['open', 'closingSoon'].includes(cycleOf.get(f)!));
       }
       if (quickFilter === 'closingSoon') {
-        rows = rows.filter((f) => getFellowshipCycleStatus(f).category === 'closingSoon');
+        rows = rows.filter((f) => cycleOf.get(f) === 'closingSoon');
       }
       if (quickFilter === 'nextCycle') {
-        rows = rows.filter((f) =>
-          ['nextCycle', 'projectedNextCycle', 'openingSoon'].includes(
-            getFellowshipCycleStatus(f).category,
-          ),
-        );
+        rows = rows.filter((f) => NEXT_CYCLE_FILTER_CATEGORIES.includes(cycleOf.get(f)!));
       }
       if (quickFilter === 'mentorFirst') {
         rows = rows.filter((f) => f.requiresMentorBeforeApply);
@@ -609,7 +615,7 @@ const Fellowships = () => {
       byKey[key] = toBrowsable(rows);
     }
     return byKey;
-  }, [journeyGroups, quickFilter]);
+  }, [journeyGroups, cycleOf, quickFilter]);
 
   const showSection = (section: ProgramJourneyCategory) => {
     if (quickFilter === 'structured') return section === 'routeIn';
@@ -888,7 +894,7 @@ const Fellowships = () => {
             ) : showQuickFilterEmptyState ? (
               <QuickFilterEmptyState
                 quickFilter={quickFilter}
-                nextCycleCount={nextCycle.length}
+                nextCycleCount={nextCycleFilterCount}
                 onViewNextCycle={() => setQuickFilter('nextCycle')}
                 onClearFilter={() => setQuickFilter(null)}
               />

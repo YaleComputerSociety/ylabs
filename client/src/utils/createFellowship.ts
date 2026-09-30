@@ -8,6 +8,7 @@ export function createFellowship(data: any): Fellowship {
     id: data._id || data.id,
     programCategory: data.programCategory || 'FELLOWSHIP',
     programKind: data.programKind || 'OTHER',
+    programRole: data.programRole || undefined,
     entryMode: data.entryMode || 'UNKNOWN',
     studentFacingCategory: data.studentFacingCategory || '',
     requiresMentorBeforeApply: data.requiresMentorBeforeApply || false,

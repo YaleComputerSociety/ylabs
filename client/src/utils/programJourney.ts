@@ -1,5 +1,5 @@
 import { Fellowship } from '../types/types';
-import { getFellowshipCycleStatus } from './fellowshipCycle';
+import { getFellowshipCycleStatus, type FellowshipCycleCategory } from './fellowshipCycle';
 
 export type ProgramJourneyCategory = 'routeIn' | 'fundsResearch' | 'recognizesResearch' | 'archive';
 
@@ -80,7 +80,7 @@ export function getProgramJourneyStatus(fellowship: Fellowship): ProgramJourneyS
   };
 }
 
-const CYCLE_ORDER: Record<string, number> = {
+const CYCLE_ORDER: Record<FellowshipCycleCategory, number> = {
   closingSoon: 0,
   open: 1,
   openingSoon: 2,
@@ -91,8 +91,12 @@ const CYCLE_ORDER: Record<string, number> = {
 
 // Within a section, programs a student can act on now come first, then the ones that open
 // soon, then recurring past cycles, each by deadline.
+export function cycleActionOrder(category: FellowshipCycleCategory): number {
+  return CYCLE_ORDER[category];
+}
+
 export function programActionOrder(fellowship: Fellowship, now: Date = new Date()): number {
-  return CYCLE_ORDER[getFellowshipCycleStatus(fellowship, now).category] ?? 6;
+  return cycleActionOrder(getFellowshipCycleStatus(fellowship, now).category);
 }
 
 export function summarizeProgramJourney(fellowships: Fellowship[]): ProgramJourneySummary {
