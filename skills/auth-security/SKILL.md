@@ -161,6 +161,8 @@ This prevents shared proxy buckets, because the netid and session arms do not co
 `authLimiter` is keyed per IP and meters rejected CAS ticket validation only, so repeated failures from one address stay bounded regardless of session.
 The ticketless first leg of login is skipped, because it only redirects the caller to CAS, and a validation that succeeds is refunded, so a completed login spends nothing from a bucket that a whole NATed cohort shares.
 A CAS ticket is minted and validated by CAS rather than supplied by the caller, so repeated failure is the only thing on this path the budget can usefully bound.
+A caller that keeps its session cookie therefore reaches that ticketless start under no limiter at all, because `globalLimiter` skips `/api/cas` and `firstContactLimiter` meters cookie-less requests only.
+That is accepted rather than overlooked: the start is a bare redirect to CAS with no outbound call and no database write, so there is no scarce resource on it to meter.
 Every per-IP key is the client address the validated `trust proxy` predicate resolves, not the raw TCP peer: keying on the peer put the whole user base in one bucket behind a load balancer (#2318), and a forwarded address is accepted only when the connecting peer is inside `TRUSTED_PROXY_CIDRS`, so an ordinary client still cannot shift buckets by spoofing the header.
 All limiters are skipped in CI, development, and test.
 Responses with a `5x` status do not count against a caller's budget (`skipFailedRequests` with `requestWasSuccessful` = status under 500), so a transient backend outage (e.g. a MongoDB reconnect returning 503) cannot lock a user out for the rest of the window; `4xx` still counts.
