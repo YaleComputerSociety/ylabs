@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import LabDetail from '../labDetail';
 import axios from '../../utils/axios';
@@ -8,6 +8,7 @@ import { LabDetailPayload } from '../../types/labDetail';
 import {
   flushResearchAnalytics,
   resetResearchAnalyticsDedupeForTests,
+  setResearchAnalyticsEnabled,
 } from '../../utils/researchAnalytics';
 import { captureClientError } from '../../utils/errorTracking';
 import UserContext, { defaultUserContext } from '../../contexts/UserContext';
@@ -124,6 +125,10 @@ function renderLabDetail(
     </UserContext.Provider>,
   );
 }
+
+beforeEach(() => {
+  setResearchAnalyticsEnabled(true);
+});
 
 afterEach(() => {
   cleanup();

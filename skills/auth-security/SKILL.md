@@ -75,6 +75,10 @@ Client route guards:
 | `PublicRoute` | Renders for logged-out and authenticated users alike, without waiting for the `/api/check` session check, so a public page's first request starts at once. Auth-dependent UI on these pages reads `isLoading` itself and holds its slot invisible until the check resolves. |
 | `UnprivateRoute` | No auth required. |
 
+Because a public page now runs before the check answers, client research analytics has three states rather than two.
+`setResearchAnalyticsEnabled` in `client/src/utils/researchAnalytics.ts` starts unknown: an event raised in that window buffers but is never flushed or beaconed, a logged-out answer discards the buffer, and a signed-in answer schedules its delivery.
+Treating unknown as enabled would post a guest's first browse impression to `/analytics/research/batch`, which is behind `isAuthenticated`, and spend a first-contact unit on the 401.
+
 `PrivateRoute` and `AdminRoute` share one signed-out contract: they redirect to `/login` with `state.from` set to the requested path, query, and hash, and they `replace` the guarded entry so Back does not loop through `/login`.
 `AdminRoute` also replaces the entry when it sends a signed-in non-admin home.
 `normalizeReturnPath` in `client/src/utils/returnPath.ts` reduces `state.from` to a same-origin path or an empty string.

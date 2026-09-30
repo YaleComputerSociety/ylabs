@@ -7,7 +7,10 @@ import Research, { __resetResearchPageSnapshotForTests } from '../research';
 import axios from '../../utils/axios';
 import ConfigContext, { defaultConfigContext } from '../../contexts/ConfigContext';
 import UserContext, { defaultUserContext } from '../../contexts/UserContext';
-import { resetResearchAnalyticsDedupeForTests } from '../../utils/researchAnalytics';
+import {
+  resetResearchAnalyticsDedupeForTests,
+  setResearchAnalyticsEnabled,
+} from '../../utils/researchAnalytics';
 
 vi.mock('../../utils/axios', () => ({
   default: {
@@ -189,6 +192,7 @@ const leaveAndComeBack = async () => {
 };
 
 beforeEach(() => {
+  setResearchAnalyticsEnabled(true);
   vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
   mockedAxios.get.mockResolvedValue({ data: {} });
 });

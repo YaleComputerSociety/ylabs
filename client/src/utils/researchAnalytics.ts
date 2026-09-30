@@ -87,16 +87,7 @@ interface TrackResearchEventParams {
 
 const sentOnceKeys = new Set<string>();
 let fallbackInteractionSequence = 0;
-let analyticsEnabled = true;
-
-/**
- * The research journey analytics endpoints require an authenticated session, and
- * personalization/analytics stay off for logged-out visitors. Callers set this
- * from auth state so guest browsing never emits an event.
- */
-export const setResearchAnalyticsEnabled = (enabled: boolean): void => {
-  analyticsEnabled = enabled;
-};
+let analyticsEnabled: boolean | null = null;
 
 const RESEARCH_PROFILE_OPEN_SOURCES = [
   'browse',
@@ -200,10 +191,12 @@ const takeBufferedEvents = (): OutgoingResearchEvent[] => {
  * batched request deterministically; also called on the size threshold.
  */
 export const flushResearchAnalytics = async (): Promise<void> => {
+  if (analyticsEnabled !== true) return;
   await sendResearchEventBatch(takeBufferedEvents());
 };
 
 const flushResearchAnalyticsViaBeacon = (): void => {
+  if (analyticsEnabled !== true) return;
   const events = takeBufferedEvents();
   if (events.length === 0) return;
   const body = JSON.stringify({ events });
@@ -234,13 +227,29 @@ const scheduleResearchAnalyticsFlush = (): void => {
 };
 
 /**
+ * The research journey analytics endpoints require an authenticated session, and
+ * personalization/analytics stay off for logged-out visitors. Callers set this
+ * from auth state so guest browsing never emits an event. Public pages render
+ * before `/check` answers, so until it does the session is unknown: events
+ * buffer, nothing is delivered, and a logged-out answer discards the buffer.
+ */
+export const setResearchAnalyticsEnabled = (enabled: boolean): void => {
+  analyticsEnabled = enabled;
+  if (!enabled) {
+    takeBufferedEvents();
+    return;
+  }
+  if (eventBuffer.length > 0) scheduleResearchAnalyticsFlush();
+};
+
+/**
  * Fire-and-forget analytics. Events are buffered and delivered in batches so
  * ordinary browsing does not emit one request per impression; delivery is
  * guaranteed on the size threshold, a short timer, and tab hide/unload. The
  * promise always resolves so a blocked tracker can never affect interaction.
  */
 export const trackResearchEvent = async (params: TrackResearchEventParams): Promise<void> => {
-  if (!analyticsEnabled) return;
+  if (analyticsEnabled === false) return;
   bindUnloadFlush();
   eventBuffer.push(buildOutgoingEvent(params));
   if (eventBuffer.length >= RESEARCH_EVENT_MAX_BATCH) {
@@ -254,7 +263,7 @@ export const trackResearchEventOnce = (
   onceKey: string,
   event: TrackResearchEventParams,
 ): Promise<void> => {
-  if (!analyticsEnabled) return Promise.resolve();
+  if (analyticsEnabled === false) return Promise.resolve();
   if (sentOnceKeys.has(onceKey)) return Promise.resolve();
   sentOnceKeys.add(onceKey);
   return trackResearchEvent({ ...event, dedupeKey: event.dedupeKey || onceKey });
@@ -279,7 +288,7 @@ export const trackResearchResultsView = (
 export const resetResearchAnalyticsDedupeForTests = (): void => {
   sentOnceKeys.clear();
   fallbackInteractionSequence = 0;
-  analyticsEnabled = true;
+  analyticsEnabled = null;
   if (flushTimer) {
     clearTimeout(flushTimer);
     flushTimer = null;
