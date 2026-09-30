@@ -22,7 +22,7 @@ const input = (overrides: Partial<GrantShellPortInput> = {}): GrantShellPortInpu
   shells: [shell()],
   leadPersonIdsByEntityId: new Map([['shell-1', ['person-1']]]),
   personNameById: new Map([['person-1', 'Jordan Avery']]),
-  liveFacultyRowsByPersonId: new Map(),
+  liveEnrichableRowsByPersonId: new Map(),
   rowsHoldingSlug: new Map(),
   tombstoneTerminusIdByArchivedRowId: new Map(),
   ...overrides,
@@ -49,7 +49,7 @@ describe('grant shell port onto a faculty research profile', () => {
   it('merges into the one live faculty row the same lead already has', () => {
     const outcome = planGrantShellPort(
       input({
-        liveFacultyRowsByPersonId: new Map([
+        liveEnrichableRowsByPersonId: new Map([
           [
             'person-1',
             [{ id: 'fra-1', slug: 'bbs-jordan-avery', entityType: 'FACULTY_RESEARCH_AREA' }],
@@ -67,18 +67,16 @@ describe('grant shell port onto a faculty research profile', () => {
     ]);
   });
 
-  it('refuses to choose between several faculty rows for one person', () => {
+  it('refuses to choose between several existing rows for one person', () => {
     const rows = [
       { id: 'fra-1', slug: 'bbs-jordan-avery', entityType: 'FACULTY_RESEARCH_AREA' },
       { id: 'fra-2', slug: 'ysm-faculty-jordan-avery', entityType: 'FACULTY_RESEARCH_AREA' },
     ];
     const outcome = planGrantShellPort(
-      input({ liveFacultyRowsByPersonId: new Map([['person-1', rows]]) }),
+      input({ liveEnrichableRowsByPersonId: new Map([['person-1', rows]]) }),
     );
     expect(outcome.plans).toEqual([]);
-    expect(outcome.refused).toEqual([
-      { shellId: 'shell-1', reason: 'severalFacultyRowsForPerson' },
-    ]);
+    expect(outcome.refused).toEqual([{ shellId: 'shell-1', reason: 'severalRowsForPerson' }]);
   });
 
   it('revives the faculty row that was folded into this grant row earlier', () => {
@@ -230,6 +228,45 @@ describe('grant-only rows are archived, not ported (#3992)', () => {
     expect(outcome.refused).toEqual([{ shellId: 'shell-1', reason: 'grantOnlyEvidence' }]);
   });
 
+  it('enriches the page the person already has rather than refusing a grant-only row', () => {
+    for (const entityType of ['FACULTY_RESEARCH_AREA', 'LAB']) {
+      const outcome = planGrantShellPort(
+        input({
+          shells: [shell({ grantOnly: true })],
+          liveEnrichableRowsByPersonId: new Map([
+            ['person-1', [{ id: 'existing', slug: 'ysm-avery-lab', entityType }]],
+          ]),
+        }),
+      );
+      expect(outcome.refused).toEqual([]);
+      expect(outcome.plans).toEqual([
+        {
+          kind: 'existing-faculty-row',
+          survivorId: 'existing',
+          survivorSlug: 'ysm-avery-lab',
+          shellIds: ['shell-1'],
+        },
+      ]);
+    }
+  });
+
+  it('plans a merge, not an archive, for a grant-only row whose person has a page', () => {
+    const plan = planGrantOnlyArchival([
+      {
+        id: 'has-page',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        grantOnly: true,
+        enrichmentTargetId: 'the-lab',
+      },
+      { id: 'no-page', entityType: 'FACULTY_RESEARCH_AREA', grantOnly: true },
+    ]);
+    expect(plan).toEqual({
+      archiveIds: ['no-page'],
+      keptForOperatorIntentIds: [],
+      enrichIntoExistingRow: [{ id: 'has-page', enrichmentTargetId: 'the-lab' }],
+    });
+  });
+
   it('archives a grant-only faculty row and leaves one an operator locked or overrode', () => {
     const plan = planGrantOnlyArchival([
       { id: 'plain', entityType: 'FACULTY_RESEARCH_AREA', grantOnly: true },
@@ -251,6 +288,7 @@ describe('grant-only rows are archived, not ported (#3992)', () => {
     expect(plan).toEqual({
       archiveIds: ['plain'],
       keptForOperatorIntentIds: ['locked', 'overridden'],
+      enrichIntoExistingRow: [],
     });
   });
 });

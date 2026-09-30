@@ -1,6 +1,16 @@
 import { facultyResearchAreaSlugForPersonName } from '../utils/researchEntityShellSlug';
 import { GRANT_SHELL_ENTITY_TYPE } from '../scrapers/utils/grantShellIdentity';
 
+/**
+ * A grant may enrich the person's lab as readily as their faculty research profile
+ * (#3145), so both are enrichment targets, and a grant-only row is archived only when
+ * the person has neither.
+ */
+export const GRANT_ENRICHABLE_ENTITY_TYPES: ReadonlySet<string> = new Set([
+  GRANT_SHELL_ENTITY_TYPE,
+  'LAB',
+]);
+
 export const GRANT_SHELL_PORT_SLUG_RE = /^(?:nih|nsf|federal|doe|neh)-pi-/i;
 
 const OBJECT_ID_TAIL_RE = /^[0-9a-f]{24}$/i;
@@ -35,7 +45,7 @@ export interface GrantShellPortInput {
   shells: GrantShellPortRow[];
   leadPersonIdsByEntityId: ReadonlyMap<string, readonly string[]>;
   personNameById: ReadonlyMap<string, string>;
-  liveFacultyRowsByPersonId: ReadonlyMap<string, readonly GrantShellPortRow[]>;
+  liveEnrichableRowsByPersonId: ReadonlyMap<string, readonly GrantShellPortRow[]>;
   rowsHoldingSlug: ReadonlyMap<string, GrantShellPortRow>;
   tombstoneTerminusIdByArchivedRowId: ReadonlyMap<string, string>;
 }
@@ -52,7 +62,7 @@ export type GrantShellPortRefusalReason =
   | 'grantOnlyEvidence'
   | 'severalLeads'
   | 'noPersonName'
-  | 'severalFacultyRowsForPerson'
+  | 'severalRowsForPerson'
   | 'targetSlugHeldByAnotherRow'
   | 'targetSlugHeldByUnrelatedArchivedRow';
 
@@ -96,22 +106,27 @@ function personSlugSourceForUnledShell(shellSlug: string): string {
 function targetForShell(shell: GrantShellPortRow, input: GrantShellPortInput): ShellTarget {
   if (shell.entityType !== GRANT_SHELL_ENTITY_TYPE)
     return { status: 'refused', reason: 'labTyped' };
-  if (shell.grantOnly) return { status: 'refused', reason: 'grantOnlyEvidence' };
   const leadPersonIds = [...new Set(input.leadPersonIdsByEntityId.get(shell.id) ?? [])];
   if (leadPersonIds.length > 1) return { status: 'refused', reason: 'severalLeads' };
   const [leadPersonId] = leadPersonIds;
 
+  // The enrichment check runs BEFORE the grant-only refusal: where the person already has
+  // a research page the grant evidence belongs on it, and refusing the row instead would
+  // throw the grants away rather than enrich (#3992).
   if (leadPersonId) {
-    const facultyRows = input.liveFacultyRowsByPersonId.get(leadPersonId) ?? [];
-    if (facultyRows.length > 1) return { status: 'refused', reason: 'severalFacultyRowsForPerson' };
-    if (facultyRows.length === 1) {
-      const [row] = facultyRows;
+    const existingRows = input.liveEnrichableRowsByPersonId.get(leadPersonId) ?? [];
+    if (existingRows.length > 1) return { status: 'refused', reason: 'severalRowsForPerson' };
+    if (existingRows.length === 1) {
+      const [row] = existingRows;
       return {
         status: 'target',
         survivor: { kind: 'existing-faculty-row', survivorId: row.id, survivorSlug: row.slug },
       };
     }
   }
+  // No page to enrich, so a row whose every citation and observation is a grant record
+  // exists only because a grant lane minted it.
+  if (shell.grantOnly) return { status: 'refused', reason: 'grantOnlyEvidence' };
 
   const nameSource = leadPersonId
     ? personNameForFacultySlug(input.personNameById.get(leadPersonId) ?? '')
@@ -244,6 +259,7 @@ export interface GrantOnlyArchivalCandidate {
   id: string;
   entityType: string;
   grantOnly: boolean;
+  enrichmentTargetId?: string;
   manuallyLockedFields?: unknown;
   studentVisibilityOverrideTier?: unknown;
 }
@@ -251,6 +267,7 @@ export interface GrantOnlyArchivalCandidate {
 export interface GrantOnlyArchivalPlan {
   archiveIds: string[];
   keptForOperatorIntentIds: string[];
+  enrichIntoExistingRow: Array<{ id: string; enrichmentTargetId: string }>;
 }
 
 function carriesOperatorIntent(row: GrantOnlyArchivalCandidate): boolean {
@@ -264,8 +281,10 @@ function carriesOperatorIntent(row: GrantOnlyArchivalCandidate): boolean {
 /**
  * A faculty-typed grant row, or a survivor the port wrote for one, that cites nothing
  * but grant records exists only because a grant lane minted it, so it is archived
- * rather than kept as a faculty research profile. A lock or a visibility override is
- * an operator's judgement about that row, so such a row is left for the operator.
+ * Where the person has another live research page the row is merged into it, so the
+ * grants enrich rather than being thrown away; where they have none it is archived.
+ * A lock or a visibility override is an operator's judgement, so such a row is left
+ * for the operator.
  */
 export function planGrantOnlyArchival(
   candidates: GrantOnlyArchivalCandidate[],
@@ -273,12 +292,14 @@ export function planGrantOnlyArchival(
   const grantOnlyFacultyRows = candidates.filter(
     (row) => row.grantOnly && row.entityType === GRANT_SHELL_ENTITY_TYPE,
   );
+  const actionable = grantOnlyFacultyRows.filter((row) => !carriesOperatorIntent(row));
   return {
-    archiveIds: grantOnlyFacultyRows
-      .filter((row) => !carriesOperatorIntent(row))
-      .map((row) => row.id),
+    archiveIds: actionable.filter((row) => !row.enrichmentTargetId).map((row) => row.id),
     keptForOperatorIntentIds: grantOnlyFacultyRows
       .filter(carriesOperatorIntent)
       .map((row) => row.id),
+    enrichIntoExistingRow: actionable
+      .filter((row) => row.enrichmentTargetId)
+      .map((row) => ({ id: row.id, enrichmentTargetId: row.enrichmentTargetId as string })),
   };
 }

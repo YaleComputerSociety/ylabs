@@ -36,6 +36,7 @@ import { applyResearchEntityDedupeMergeGroup } from './dedupeResearchEntitiesByP
 import {
   GRANT_SHELL_PORT_SLUG_RE,
   isGrantShellSlug,
+  GRANT_ENRICHABLE_ENTITY_TYPES,
   planGrantOnlyArchival,
   planGrantShellPort,
   portableGrantShellFields,
@@ -92,6 +93,8 @@ export interface GrantShellPortDelta {
   grantOnlyServedBefore: number;
   grantOnlyStillArchivedAfterTwoPasses: number;
   grantOnlyIndexDeleteFailures: number;
+  grantOnlyEnrichedIntoExistingRow: number;
+  grantOnlyEnrichmentDeferred: number;
 }
 
 type GrantOnlyArchivalDelta = Pick<
@@ -102,6 +105,8 @@ type GrantOnlyArchivalDelta = Pick<
   | 'grantOnlyServedBefore'
   | 'grantOnlyStillArchivedAfterTwoPasses'
   | 'grantOnlyIndexDeleteFailures'
+  | 'grantOnlyEnrichedIntoExistingRow'
+  | 'grantOnlyEnrichmentDeferred'
 >;
 
 /**
@@ -128,6 +133,83 @@ async function hasNonGrantObservationEvidence(doc: Record<string, any>): Promise
   });
 }
 
+/**
+ * The live research page a grant-only row's grants should enrich instead: the one live
+ * lab or faculty research profile its lead also leads, excluding another row this pass is
+ * itself acting on. Several such rows is not a choice this pass may make, so it returns
+ * none and the row is left alone rather than archived.
+ */
+/**
+ * Merges one grant row into the research page its lead already has, through the same
+ * never-demote merge path the port uses, so the page cannot lose visibility by gaining
+ * grants. Topics are carried only onto another low-trust shell, never onto a real lab,
+ * which is the #604 anti-graft rule.
+ */
+async function mergeGrantRowInto(
+  target: Record<string, any>,
+  grantRow: Record<string, any>,
+): Promise<boolean> {
+  const rows = [target, grantRow];
+  const mergedRecentGrants = unionRecentGrants(rows);
+  const result = await applyResearchEntityDedupeMergeGroup(
+    {
+      canonicalEntityId: idText(target._id),
+      duplicateEntityIds: [idText(grantRow._id)],
+      mergedDepartments: unionStringField(rows, 'departments'),
+      mergedResearchAreas: isLowTrustAreaShellSlug(idText(target.slug))
+        ? unionStringField(rows, 'researchAreas')
+        : [],
+      mergedSourceUrls: unionStringField(rows, 'sourceUrls'),
+      mergedRecentGrants,
+      mergedRecentGrantCount: mergedRecentGrants.length,
+      mergedFundingAgencies: unionStringField(rows, 'fundingAgencies'),
+    },
+    {
+      deleteDuplicates: false,
+      relinkReferences: true,
+      rematerializeCanonical: true,
+      neverDemote: true,
+      pinnedCanonical: true,
+    },
+  );
+  const deferred =
+    Boolean((result as { deferredAsWouldDemote?: boolean }).deferredAsWouldDemote) ||
+    Boolean(
+      (result as { deferredAsWouldSwapPinnedCanonical?: boolean })
+        .deferredAsWouldSwapPinnedCanonical,
+    );
+  return !deferred;
+}
+
+async function enrichmentTargetIdForRow(
+  doc: Record<string, any>,
+  actingOnIds: ReadonlySet<string>,
+): Promise<string | undefined> {
+  const leadPersonIds = [
+    ...new Set(
+      (await currentLeadEdges({ 'target.id': doc._id })).map((edge) => idText(edge.personId)),
+    ),
+  ].filter(Boolean);
+  if (leadPersonIds.length !== 1) return undefined;
+  const otherEntityIds = [
+    ...new Set(
+      (await currentLeadEdges({ personId: leadPersonIds[0] })).map((edge) =>
+        idText(edge.target?.id),
+      ),
+    ),
+  ].filter((id) => id && !actingOnIds.has(id));
+  if (otherEntityIds.length === 0) return undefined;
+  const rows = (await ResearchEntity.find({
+    _id: { $in: otherEntityIds },
+    archived: { $ne: true },
+    entityType: { $in: [...GRANT_ENRICHABLE_ENTITY_TYPES] },
+  })
+    .select('_id slug')
+    .lean()) as unknown as Array<Record<string, any>>;
+  const enrichable = rows.filter((row) => !isGrantShellSlug(idText(row.slug)));
+  return enrichable.length === 1 ? idText(enrichable[0]._id) : undefined;
+}
+
 async function grantOnlyRowIds(docs: Array<Record<string, any>>): Promise<Set<string>> {
   const ids = new Set<string>();
   for (const doc of docs) {
@@ -152,14 +234,18 @@ async function archiveGrantOnlyRows(dryRun: boolean): Promise<GrantOnlyArchivalD
     )
     .lean()) as unknown as Array<Record<string, any>>;
   const grantOnlyIds = await grantOnlyRowIds(candidates);
+  const candidateIdSet = new Set(candidates.map((doc) => idText(doc._id)));
   const plan = planGrantOnlyArchival(
-    candidates.map((doc) => ({
-      id: idText(doc._id),
-      entityType: idText(doc.entityType),
-      grantOnly: grantOnlyIds.has(idText(doc._id)),
-      manuallyLockedFields: doc.manuallyLockedFields,
-      studentVisibilityOverrideTier: doc.studentVisibilityOverrideTier,
-    })),
+    await Promise.all(
+      candidates.map(async (doc) => ({
+        id: idText(doc._id),
+        entityType: idText(doc.entityType),
+        grantOnly: grantOnlyIds.has(idText(doc._id)),
+        enrichmentTargetId: await enrichmentTargetIdForRow(doc, candidateIdSet),
+        manuallyLockedFields: doc.manuallyLockedFields,
+        studentVisibilityOverrideTier: doc.studentVisibilityOverrideTier,
+      })),
+    ),
   );
   const archiveIds = new Set(plan.archiveIds);
   const toArchive = candidates.filter((doc) => archiveIds.has(idText(doc._id)));
@@ -172,8 +258,25 @@ async function archiveGrantOnlyRows(dryRun: boolean): Promise<GrantOnlyArchivalD
     ).length,
     grantOnlyStillArchivedAfterTwoPasses: 0,
     grantOnlyIndexDeleteFailures: 0,
+    grantOnlyEnrichedIntoExistingRow: 0,
+    grantOnlyEnrichmentDeferred: 0,
   };
-  if (dryRun || toArchive.length === 0) return delta;
+  if (dryRun) {
+    delta.grantOnlyEnrichedIntoExistingRow = plan.enrichIntoExistingRow.length;
+    return delta;
+  }
+
+  // Enrich first: a grant-only row whose lead already has a research page is merged into
+  // it, so its grants land there instead of being archived out of reach (#3992).
+  for (const { id, enrichmentTargetId } of plan.enrichIntoExistingRow) {
+    const row = candidates.find((doc) => idText(doc._id) === id);
+    const target = await ResearchEntity.findById(enrichmentTargetId).lean();
+    if (!row || !target) continue;
+    const merged = await mergeGrantRowInto(target as Record<string, any>, row);
+    if (merged) delta.grantOnlyEnrichedIntoExistingRow += 1;
+    else delta.grantOnlyEnrichmentDeferred += 1;
+  }
+  if (toArchive.length === 0) return delta;
 
   for (const doc of toArchive) {
     const result = await ResearchEntity.updateOne(
@@ -293,33 +396,33 @@ async function loadPortInput(shellDocs: Array<Record<string, any>>): Promise<Gra
       personEdges.map((edge) => idText(edge.target?.id)).filter((id) => !shellIdSet.has(id)),
     ),
   ];
-  const facultyDocs = (await ResearchEntity.find({
+  const enrichableDocs = (await ResearchEntity.find({
     _id: { $in: otherEntityIds },
     archived: { $ne: true },
-    entityType: GRANT_SHELL_ENTITY_TYPE,
+    entityType: { $in: [...GRANT_ENRICHABLE_ENTITY_TYPES] },
   })
     .select('_id slug entityType studentVisibilityTier archived')
     .lean()) as unknown as Array<Record<string, any>>;
-  const facultyRowById = new Map(
-    facultyDocs
+  const enrichableRowById = new Map(
+    enrichableDocs
       .filter((doc) => !isGrantShellSlug(idText(doc.slug)))
       .map((doc) => [idText(doc._id), toPortRow(doc)]),
   );
-  const liveFacultyRowsByPersonId = new Map<string, GrantShellPortRow[]>();
+  const liveEnrichableRowsByPersonId = new Map<string, GrantShellPortRow[]>();
   for (const edge of personEdges) {
-    const row = facultyRowById.get(idText(edge.target?.id));
+    const row = enrichableRowById.get(idText(edge.target?.id));
     const personId = idText(edge.personId);
     if (!row || !personId) continue;
-    const rows = liveFacultyRowsByPersonId.get(personId) ?? [];
+    const rows = liveEnrichableRowsByPersonId.get(personId) ?? [];
     if (!rows.some((existing) => existing.id === row.id)) rows.push(row);
-    liveFacultyRowsByPersonId.set(personId, rows);
+    liveEnrichableRowsByPersonId.set(personId, rows);
   }
 
   const baseInput: GrantShellPortInput = {
     shells,
     leadPersonIdsByEntityId,
     personNameById,
-    liveFacultyRowsByPersonId,
+    liveEnrichableRowsByPersonId,
     rowsHoldingSlug: new Map(),
     tombstoneTerminusIdByArchivedRowId: new Map(),
   };
