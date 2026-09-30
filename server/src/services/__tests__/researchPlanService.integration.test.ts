@@ -14,6 +14,7 @@ import {
   updateWatchedProgramPlan,
 } from '../researchPlanService';
 import { toPublicResearchEntityDto } from '../researchEntityDto';
+import { researchPlanSchema } from '../../models/researchPlan';
 
 const NETID = 'teststud1';
 const ENTITY_ID = new mongoose.Types.ObjectId('64a0000000000000000000ab');
@@ -27,7 +28,7 @@ let memoryReplSet: MongoMemoryReplSet | undefined;
 const findPlan = (targetId: mongoose.Types.ObjectId) =>
   mongoose.connection.db!.collection('research_plans').findOne({ 'target.id': targetId });
 
-describe('researchPlanService unsave/unwatch clears private plan data', () => {
+describe('researchPlanService saved plans', () => {
   beforeAll(async () => {
     let mongoUrl = process.env.RESEARCH_PLAN_TEST_MONGO_URL;
     if (!mongoUrl) {
@@ -70,7 +71,37 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
     await memoryReplSet?.stop();
   });
 
-  it('clears saved-entity private notes on unsave and does not resurrect them on re-save', async () => {
+  const expireRestoreWindow = (targetId: mongoose.Types.ObjectId) =>
+    mongoose.connection
+      .db!.collection('research_plans')
+      .updateOne(
+        { 'target.id': targetId },
+        { $set: { restorableUntil: new Date(Date.now() - 1) } },
+      );
+
+  it('restores the whole saved-entity plan when the student undoes an unsave', async () => {
+    const entityId = ENTITY_ID.toHexString();
+    await addSavedResearchEntities(NETID, [entityId]);
+    await updateSavedResearchEntityPlan(NETID, entityId, {
+      stage: 'CONTACTED',
+      privateNotes: 'my private strategy notes',
+      checklist: plannedChecklist,
+      deadlines: [plannedDeadline],
+    });
+    const before = (await getSavedResearchEntityPlans(NETID))[entityId];
+
+    await removeSavedResearchEntities(NETID, [entityId]);
+    expect(await getSavedResearchEntityPlans(NETID)).toEqual({});
+    await addSavedResearchEntities(NETID, [entityId]);
+
+    const restored = (await getSavedResearchEntityPlans(NETID))[entityId];
+    expect(restored.stage).toBe('CONTACTED');
+    expect(restored.privateNotes).toBe('my private strategy notes');
+    expect(restored.checklist).toEqual(before.checklist);
+    expect(restored.deadlines).toEqual([plannedDeadline]);
+  });
+
+  it('does not resurrect saved-entity private notes on a re-save after the restore window', async () => {
     const entityId = ENTITY_ID.toHexString();
     await addSavedResearchEntities(NETID, [entityId]);
     await updateSavedResearchEntityPlan(NETID, entityId, {
@@ -80,27 +111,50 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
       deadlines: [plannedDeadline],
     });
 
-    const savedPlans = await getSavedResearchEntityPlans(NETID);
-    expect(savedPlans[entityId].privateNotes).toBe('my private strategy notes');
-    expect(savedPlans[entityId].stage).toBe('CONTACTED');
-
     await removeSavedResearchEntities(NETID, [entityId]);
     const archivedDoc = await findPlan(ENTITY_ID);
     expect(archivedDoc?.archived).toBe(true);
-    expect(archivedDoc?.privateNotes).toBe('');
-    expect(archivedDoc?.checklist).toEqual([]);
-    expect(archivedDoc?.deadlines).toEqual([]);
-    expect(archivedDoc?.stage).toBe('SAVED');
+    expect(archivedDoc?.restorableUntil).toBeInstanceOf(Date);
 
+    await expireRestoreWindow(ENTITY_ID);
     await addSavedResearchEntities(NETID, [entityId]);
     const resavedPlans = await getSavedResearchEntityPlans(NETID);
     expect(resavedPlans[entityId].privateNotes).toBe('');
     expect(resavedPlans[entityId].checklist).toEqual([]);
     expect(resavedPlans[entityId].deadlines).toEqual([]);
     expect(resavedPlans[entityId].stage).toBe('SAVED');
+    expect((await findPlan(ENTITY_ID))?.restorableUntil).toBeUndefined();
   });
 
-  it('clears watched-program private notes on unwatch and does not resurrect them on re-watch', async () => {
+  it('declares a TTL index that deletes an archived plan when its restore window passes', () => {
+    const ttlIndex = researchPlanSchema
+      .indexes()
+      .find(([fields]) => Object.keys(fields).join() === 'restorableUntil');
+    expect(ttlIndex?.[1]).toMatchObject({ expireAfterSeconds: 0 });
+  });
+
+  it('restores the watched-program plan when the student undoes an unwatch', async () => {
+    const programId = PROGRAM_ID.toHexString();
+    await addWatchedPrograms(NETID, [programId]);
+    await updateWatchedProgramPlan(NETID, programId, {
+      stage: 'APPLIED',
+      privateNotes: 'secret note',
+      checklist: plannedChecklist,
+      deadlines: [plannedDeadline],
+    });
+
+    await removeWatchedPrograms(NETID, [programId]);
+    expect(await getWatchedProgramPlans(NETID)).toEqual({});
+    await addWatchedPrograms(NETID, [programId]);
+
+    const restored = (await getWatchedProgramPlans(NETID))[programId];
+    expect(restored.stage).toBe('APPLIED');
+    expect(restored.privateNotes).toBe('secret note');
+    expect(restored.checklist.map((item) => item.label)).toEqual(['Read three papers']);
+    expect(restored.deadlines).toEqual([plannedDeadline]);
+  });
+
+  it('does not resurrect watched-program private notes on a re-watch after the restore window', async () => {
     const programId = PROGRAM_ID.toHexString();
     await addWatchedPrograms(NETID, [programId]);
     await updateWatchedProgramPlan(NETID, programId, {
@@ -108,16 +162,10 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
       privateNotes: 'secret note',
     });
 
-    const watchedPlans = await getWatchedProgramPlans(NETID);
-    expect(watchedPlans[programId].privateNotes).toBe('secret note');
-
     await removeWatchedPrograms(NETID, [programId]);
-    const archivedDoc = await findPlan(PROGRAM_ID);
-    expect(archivedDoc?.archived).toBe(true);
-    expect(archivedDoc?.privateNotes).toBe('');
-    expect(archivedDoc?.stage).toBe('SAVED');
-
+    await expireRestoreWindow(PROGRAM_ID);
     await addWatchedPrograms(NETID, [programId]);
+
     const rewatchedPlans = await getWatchedProgramPlans(NETID);
     expect(rewatchedPlans[programId].privateNotes).toBe('');
     expect(rewatchedPlans[programId].stage).toBe('SAVED');

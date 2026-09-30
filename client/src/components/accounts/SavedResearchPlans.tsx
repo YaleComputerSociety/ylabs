@@ -239,14 +239,10 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   );
 
   /**
-   * Unsaving a research plan destroys its privateNotes, and re-favouriting does not
-   * bring them back. Measured with a control on a real account: the note survives a
-   * plain reload, and is gone after unsave then re-save then reload.
-   *
-   * That is data the product cannot regenerate, since the student wrote it, and it
-   * was going with a single click that had no confirmation and no way back. So undo
-   * has to restore the note as well as the row, which means capturing it here before
-   * the unsave rather than relying on the server to have kept it.
+   * The server keeps an unsaved plan whole for a restore window, so re-favouriting
+   * within it brings back the stage, note, checklist and deadlines (#3643). Undo
+   * still re-posts the note captured here, so a restore that lands after the window
+   * does not lose the one field this surface holds.
    *
    * An undo window is the right shape rather than a confirmation dialog:
    * Shneiderman's sixth rule is about the reassurance as much as the recovery, and a
@@ -259,8 +255,8 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   } = useUndoableRemoval<{ slug: string; entityId: string; name: string; note: string }>();
 
   const unsavePlan = (slug: string, entityId: string, name: string) => {
-    // Read the note before the row leaves the list, because afterwards it is gone
-    // from both the server and this component's state.
+    // Read the note before the row leaves the list, because afterwards no read path
+    // serves it.
     const note = notes[entityId] || '';
     const removal = setFavorite(slug, false, 'saved_plans');
     void removal.then((removed) => {
@@ -273,8 +269,8 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     undoRemoval(async ({ slug, entityId, note }) => {
       const restored = await setFavorite(slug, true, 'saved_plans');
       // The note write is not gated on the favourite succeeding. Gating it means a
-      // failed re-favourite silently discards the only copy of the note, which is the
-      // loss this undo exists to prevent.
+      // failed re-favourite outside the server's restore window discards the only copy
+      // of the note, which is the loss this undo exists to prevent.
       if (note) {
         setNotes((current) => ({ ...current, [entityId]: note }));
         await saveNote(entityId, note);

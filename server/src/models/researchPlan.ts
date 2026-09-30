@@ -25,6 +25,7 @@ export const MAX_RESEARCH_PLAN_NOTES_LENGTH = 8_000;
 export const MAX_RESEARCH_PLAN_CHECKLIST_ITEMS = 50;
 export const MAX_RESEARCH_PLAN_DEADLINES = 20;
 export const MAX_RESEARCH_PLAN_ITEM_TEXT_LENGTH = 240;
+export const RESEARCH_PLAN_RESTORE_WINDOW_MS = 60 * 60 * 1000;
 
 const boundedArray = (maximum: number, label: string) => ({
   validator: (values: unknown[]) => Array.isArray(values) && values.length <= maximum,
@@ -146,6 +147,9 @@ export const researchPlanSchema = new mongoose.Schema<Record<string, unknown>>(
       type: Boolean,
       default: false,
     },
+    restorableUntil: {
+      type: Date,
+    },
   },
   {
     timestamps: true,
@@ -156,6 +160,7 @@ export const researchPlanSchema = new mongoose.Schema<Record<string, unknown>>(
 researchPlanSchema.index({ accountId: 1, 'target.kind': 1, 'target.id': 1 }, { unique: true });
 researchPlanSchema.index({ accountId: 1, archived: 1, updatedAt: -1 });
 researchPlanSchema.index({ 'target.kind': 1, 'target.id': 1, archived: 1 });
+researchPlanSchema.index({ restorableUntil: 1 }, { expireAfterSeconds: 0 });
 
 export const ResearchPlan =
   mongoose.models.ResearchPlan ||

@@ -7,8 +7,10 @@ import {
   MAX_RESEARCH_PLAN_DEADLINES,
   MAX_RESEARCH_PLAN_ITEM_TEXT_LENGTH,
   MAX_RESEARCH_PLAN_NOTES_LENGTH,
+  RESEARCH_PLAN_RESTORE_WINDOW_MS,
   researchPlanStages,
   type ResearchPlanStage,
+  type ResearchPlanTargetKind,
 } from '../models/researchPlan';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import {
@@ -269,6 +271,46 @@ const clearedResearchPlanFields = (): Record<string, unknown> => ({
     includeDeadlines: false,
   },
 });
+
+const archiveResearchPlans = async (
+  accountId: mongoose.Types.ObjectId,
+  kind: ResearchPlanTargetKind,
+  targetIds: mongoose.Types.ObjectId[],
+): Promise<void> => {
+  if (!targetIds.length) return;
+  await ResearchPlan.updateMany(
+    { accountId, 'target.kind': kind, 'target.id': { $in: targetIds }, archived: { $ne: true } },
+    {
+      $set: {
+        archived: true,
+        restorableUntil: new Date(Date.now() + RESEARCH_PLAN_RESTORE_WINDOW_MS),
+      },
+    },
+    { runValidators: true },
+  );
+};
+
+const activateResearchPlan = async (
+  accountId: mongoose.Types.ObjectId,
+  kind: ResearchPlanTargetKind,
+  targetId: mongoose.Types.ObjectId,
+): Promise<void> => {
+  const target = { accountId, 'target.kind': kind, 'target.id': targetId };
+  await ResearchPlan.updateOne(
+    { ...target, archived: true, restorableUntil: { $not: { $gt: new Date() } } },
+    { $set: clearedResearchPlanFields() },
+    { runValidators: true },
+  );
+  await ResearchPlan.updateOne(
+    target,
+    {
+      $set: { archived: false },
+      $unset: { restorableUntil: '' },
+      $setOnInsert: { accountId, target: { kind, id: targetId }, stage: 'SAVED' },
+    },
+    { upsert: true, runValidators: true, setDefaultsOnInsert: true },
+  );
+};
 
 export const researchPlanViewFromDoc = (doc: Record<string, unknown>): ResearchPlanView => {
   const stage =
@@ -560,18 +602,10 @@ export const addSavedResearchEntities = async (
   const ids = await resolveSavedResearchEntityObjectIds(values);
   const visible = await visibleSavedResearchEntities(ids);
   for (const entity of visible) {
-    const targetId = new mongoose.Types.ObjectId(entity._id);
-    await ResearchPlan.updateOne(
-      { accountId, 'target.kind': RESEARCH_ENTITY_TARGET_KIND, 'target.id': targetId },
-      {
-        $set: { archived: false },
-        $setOnInsert: {
-          accountId,
-          target: { kind: RESEARCH_ENTITY_TARGET_KIND, id: targetId },
-          stage: 'SAVED',
-        },
-      },
-      { upsert: true, runValidators: true, setDefaultsOnInsert: true },
+    await activateResearchPlan(
+      accountId,
+      RESEARCH_ENTITY_TARGET_KIND,
+      new mongoose.Types.ObjectId(entity._id),
     );
   }
   return getSavedResearchEntitySlugs(netid);
@@ -583,17 +617,7 @@ export const removeSavedResearchEntities = async (
 ): Promise<string[]> => {
   const accountId = await resolveAccountIdByNetid(netid);
   const ids = await resolveSavedResearchEntityObjectIds(values);
-  if (ids.length) {
-    await ResearchPlan.updateMany(
-      {
-        accountId,
-        'target.kind': RESEARCH_ENTITY_TARGET_KIND,
-        'target.id': { $in: ids },
-      },
-      { $set: { archived: true, ...clearedResearchPlanFields() } },
-      { runValidators: true },
-    );
-  }
+  await archiveResearchPlans(accountId, RESEARCH_ENTITY_TARGET_KIND, ids);
   return getSavedResearchEntitySlugs(netid);
 };
 
@@ -720,18 +744,10 @@ export const addWatchedPrograms = async (netid: any, values: unknown[]): Promise
   const ids = await resolveWatchedProgramObjectIds(values);
   const visiblePrograms = await readPrograms(ids);
   for (const program of visiblePrograms as Array<Record<string, any>>) {
-    const targetId = new mongoose.Types.ObjectId(String(program._id));
-    await ResearchPlan.updateOne(
-      { accountId, 'target.kind': PROGRAM_TARGET_KIND, 'target.id': targetId },
-      {
-        $set: { archived: false },
-        $setOnInsert: {
-          accountId,
-          target: { kind: PROGRAM_TARGET_KIND, id: targetId },
-          stage: 'SAVED',
-        },
-      },
-      { upsert: true, runValidators: true, setDefaultsOnInsert: true },
+    await activateResearchPlan(
+      accountId,
+      PROGRAM_TARGET_KIND,
+      new mongoose.Types.ObjectId(String(program._id)),
     );
   }
   return getWatchedProgramIds(netid);
@@ -740,17 +756,7 @@ export const addWatchedPrograms = async (netid: any, values: unknown[]): Promise
 export const removeWatchedPrograms = async (netid: any, values: unknown[]): Promise<string[]> => {
   const accountId = await resolveAccountIdByNetid(netid);
   const ids = await resolveWatchedProgramObjectIds(values);
-  if (ids.length) {
-    await ResearchPlan.updateMany(
-      {
-        accountId,
-        'target.kind': PROGRAM_TARGET_KIND,
-        'target.id': { $in: ids },
-      },
-      { $set: { archived: true, ...clearedResearchPlanFields() } },
-      { runValidators: true },
-    );
-  }
+  await archiveResearchPlans(accountId, PROGRAM_TARGET_KIND, ids);
   return getWatchedProgramIds(netid);
 };
 

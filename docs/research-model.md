@@ -136,6 +136,11 @@ Private student saved planning, keyed on `accountId` plus a target (`{ kind: 'RE
 The saved-research and program-watch routes read and write `ResearchPlan` through `researchPlanService` at runtime (PR #484 / commit `34b9fd7e`).
 With the `User` model retired (#2014), no embedded planning fields remain in code; any legacy `savedResearchEntities`/`savedPrograms` values that survive only in the orphaned `users` collection are covered by the human-gated #725 data backfill onto `ResearchPlan` before that collection is dropped, not an open design question.
 
+Unsave and unwatch archive the plan without clearing it and stamp `restorableUntil` one hour ahead (`RESEARCH_PLAN_RESTORE_WINDOW_MS`), so an undo, which re-saves the same target, brings back the stage, private notes, checklist and deadlines whole (#3643).
+A re-save after that moment clears those fields first, which keeps the #984 guarantee that a later save never resurrects text the student removed.
+A TTL index on `restorableUntil` deletes the archived plan once the window passes, so an unsaved plan's private text is not retained past it; the index is built by `yarn --cwd server db:build-indexes --apply` like every other declared index, and until it exists on an environment the re-save path still refuses to resurrect but the text is kept.
+Before #3643 unsave cleared the fields on the way to archiving, so no undo could restore a checklist, deadlines or stage, and plans archived before the change have nothing to restore.
+
 A plan outlives its target, and the target's visibility is not the plan's to decide, so `/users/savedResearchEntities` returns two lists: the servable summaries, and `unavailableSavedResearchEntities`, one `{ _id, reason }` row per saved plan the first list cannot show.
 `REMOVED` means no `ResearchEntity` carries that id and the owner's only move is to remove the plan; `UNAVAILABLE` means the record exists and is archived, held by the visibility gate, or failing the public-description invariant, any of which a repair or a re-gate reverses, so the plan and its private notes are kept.
 Only the id and the reason are reported, never the record's name or copy, because the gate exists to keep exactly that text away from a student, and the owner already holds the id.
