@@ -35,6 +35,11 @@ export function createFellowship(data: any): Fellowship {
     isAcceptingApplications: data.isAcceptingApplications || false,
     applicationOpenDate: data.applicationOpenDate || null,
     deadline: data.deadline || null,
+    // The server projects a recurring deadline forward and flags it (#1368). Dropping the
+    // flag here made every consumer read a projected date as a live window, so a browse card
+    // showed a green "Open" pill for next year's estimate and the detail modal suppressed its
+    // own "unconfirmed, verify at source" warning (#3904).
+    deadlineProjectedNextCycle: data.deadlineProjectedNextCycle === true,
     contactName: data.contactName || '',
     contactEmail: data.contactEmail || '',
     contactPhone: data.contactPhone || '',
