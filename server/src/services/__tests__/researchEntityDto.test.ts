@@ -1546,6 +1546,54 @@ describe('researchEntityDto', () => {
     });
   });
 
+  it('never serves the unmodelled profile-synthesis text or its source flag on any payload (#3937)', () => {
+    const stored = {
+      id: 'unbacked-synthesis-lab',
+      slug: 'unbacked-synthesis-lab',
+      name: 'Unbacked Synthesis Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      departments: ['Chemistry'],
+      shortDescription: 'Studies catalysis, reaction kinetics, and green chemistry routes.',
+      fullDescription:
+        'This lab studies catalysis, reaction kinetics, and green chemistry routes across many substrates.',
+      profileSynthesisDescription: 'Prose no lane asserts and no provenance records.',
+      descriptionSource: 'PI_PROFILE_SYNTHESIS',
+    };
+
+    for (const dto of [
+      toPublicResearchEntityDto(stored),
+      toPublicResearchEntityDto(stored, { forList: true }),
+      toPublicResearchEntitySummaryDto(stored),
+    ]) {
+      expect(dto).not.toHaveProperty('profileSynthesisDescription');
+      expect(dto).not.toHaveProperty('descriptionSource');
+      expect(JSON.stringify(dto)).not.toContain('Prose no lane asserts');
+      expect(JSON.stringify(dto)).not.toContain('PI_PROFILE_SYNTHESIS');
+    }
+
+    const detail = addResearchEntityDetailAlias({ group: stored, members: [] });
+    expect(JSON.stringify(detail)).not.toContain('Prose no lane asserts');
+    expect(JSON.stringify(detail)).not.toContain('PI_PROFILE_SYNTHESIS');
+  });
+
+  it('serves no profile-synthesis text even when it is the only stored prose on the row (#3937)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'synthesis-only-lab',
+      slug: 'synthesis-only-lab',
+      name: 'Synthesis Only Lab',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      departments: ['Statistics & Data Science'],
+      profileSynthesisDescription: 'Prose no lane asserts and no provenance records.',
+      descriptionSource: 'PI_PROFILE_SYNTHESIS',
+    });
+
+    expect(dto).not.toHaveProperty('profileSynthesisDescription');
+    expect(dto).not.toHaveProperty('descriptionSource');
+    expect(JSON.stringify(dto)).not.toContain('Prose no lane asserts');
+  });
+
   it('keeps fullDescription on the detail DTO untrimmed', () => {
     const detail = addResearchEntityDetailAlias({
       group: {

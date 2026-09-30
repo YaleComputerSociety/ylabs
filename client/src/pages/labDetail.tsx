@@ -281,26 +281,6 @@ const dedupeResearchEntitySummaries = (
 const detailDescription = (group: any): string =>
   (group.fullDescription || group.shortDescription || '').replace(/[ \t\f\v]+/g, ' ').trim();
 
-const hasProfileSynthesisDescription = (group: any): boolean =>
-  group.descriptionSource === 'PI_PROFILE_SYNTHESIS' &&
-  Boolean((group.profileSynthesisDescription || '').trim());
-
-const isProfileLikeWebsiteUrl = (url?: string): boolean =>
-  /(?:^|[/-])(?:profile|profiles|people|faculty)(?:[/-]|$)/i.test(url || '');
-
-const isFacultyResearchFallback = (group: any): boolean => {
-  const hasOnlyProfileWebsite =
-    (!group.websiteUrl || isProfileLikeWebsiteUrl(group.websiteUrl)) &&
-    (!group.website || isProfileLikeWebsiteUrl(group.website));
-
-  return (
-    group.descriptionSource === 'PI_PROFILE_SYNTHESIS' &&
-    (hasOnlyProfileWebsite ||
-      ['individual', 'solo'].includes(group.kind || '') ||
-      ['FACULTY_RESEARCH_AREA', 'INDIVIDUAL_RESEARCH'].includes(group.entityType || ''))
-  );
-};
-
 const isGenericTopic = (value: string): boolean =>
   /^(yale\s+)?school of\b/i.test(value) ||
   /^yale school\b/i.test(value) ||
@@ -437,13 +417,8 @@ const DecisionSummary = ({
   const { departments, departmentPillEligibleLabels } = useConfig();
   const topics = detailTopics(group, 5);
   const methods = detailMethods(group);
-  const usesProfileSynthesis = hasProfileSynthesisDescription(group) && !detailDescription(group);
-  const usesFacultyResearchWording =
-    isFacultyResearchEntity(group) || (usesProfileSynthesis && isFacultyResearchFallback(group));
-  const sourceBackedDescription = detailDescription(group);
-  const rawDescription =
-    (usesProfileSynthesis ? group.profileSynthesisDescription : '') || sourceBackedDescription;
-  const description = sanitizeResearchEntityCopy(rawDescription, group);
+  const usesFacultyResearchWording = isFacultyResearchEntity(group);
+  const description = sanitizeResearchEntityCopy(detailDescription(group), group);
   useEffect(() => {
     if (description) return;
     captureClientError(new Error('Public research description invariant failed'));
@@ -549,13 +524,6 @@ const DecisionSummary = ({
               </p>
             </>
           )}
-          {usesProfileSynthesis && (
-            <p className="mt-3 text-sm leading-relaxed text-muted">
-              This is profile-derived context. y/labs has not found a separate research website or
-              posted undergraduate opening for this research.
-            </p>
-          )}
-
           {topics.length > 0 && (
             <div className="mt-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted">
