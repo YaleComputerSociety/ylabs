@@ -18,6 +18,7 @@
   --yr-muted: #5f6570;
   --yr-line: var(--yr-border);
   --yr-line-strong: #cbd5e1;
+  --yr-line-control: #7c8594;
   --yr-paper: var(--yr-page);
   --yr-panel: #ffffff;
   --yr-panel-muted: #f7f3ec;
@@ -285,6 +286,17 @@ code {
   .yr-link:hover {
     color: var(--yr-navy);
     text-decoration-line: underline;
+  }
+
+  .yr-check-proxy {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    border: 1px solid var(--yr-line-control);
+    border-radius: var(--yr-radius-control);
   }
 
   .yr-focus-ring {

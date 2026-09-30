@@ -216,7 +216,7 @@ const AdminFellowshipsTable = () => {
           placeholder="Search fellowships…"
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring w-64"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-control)] rounded-lg yr-focus-ring w-64"
         />
 
         <select
@@ -224,7 +224,7 @@ const AdminFellowshipsTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'archived', value: e.target.value })
           }
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-control)] rounded-lg yr-focus-ring"
         >
           <option value="">All</option>
           <option value="false">Active</option>
@@ -236,7 +236,7 @@ const AdminFellowshipsTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'audited', value: e.target.value })
           }
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-control)] rounded-lg yr-focus-ring"
         >
           <option value="">All (Audit)</option>
           <option value="true">Audited</option>
@@ -246,7 +246,7 @@ const AdminFellowshipsTable = () => {
         <select
           value={pageSize}
           onChange={(e) => dispatch({ type: 'SET_PAGE_SIZE', payload: Number(e.target.value) })}
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-control)] rounded-lg yr-focus-ring"
         >
           {PAGE_SIZES.map((size) => (
             <option key={size} value={size}>
@@ -455,7 +455,7 @@ const ArrayFieldEditor = ({
             }
           }}
           placeholder={placeholder || `Add ${label.toLowerCase()}...`}
-          className="flex-1 px-3 py-1.5 border border-[var(--yr-line-strong)] rounded-lg text-sm"
+          className="flex-1 px-3 py-1.5 border border-[var(--yr-line-control)] rounded-lg text-sm"
         />
         <button
           type="button"
@@ -523,7 +523,7 @@ const LinksEditor = ({
           value={newLabel}
           onChange={(e) => setNewLabel(e.target.value)}
           placeholder="Label (optional)"
-          className="w-1/3 px-3 py-1.5 border border-[var(--yr-line-strong)] rounded-lg text-sm"
+          className="w-1/3 px-3 py-1.5 border border-[var(--yr-line-control)] rounded-lg text-sm"
         />
         <input
           type="text"
@@ -536,7 +536,7 @@ const LinksEditor = ({
             }
           }}
           placeholder="URL"
-          className="flex-1 px-3 py-1.5 border border-[var(--yr-line-strong)] rounded-lg text-sm"
+          className="flex-1 px-3 py-1.5 border border-[var(--yr-line-control)] rounded-lg text-sm"
         />
         <button
           type="button"
@@ -644,7 +644,7 @@ const FellowshipEditModal = ({
             <input
               value={title}
               onChange={(e) => formDispatch({ type: 'SET_TITLE', payload: e.target.value })}
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
             />
           </div>
           <div>
@@ -655,7 +655,7 @@ const FellowshipEditModal = ({
                 formDispatch({ type: 'SET_COMPETITION_TYPE', payload: e.target.value })
               }
               placeholder="e.g. Application/Funded Research"
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
             />
           </div>
 
@@ -676,7 +676,7 @@ const FellowshipEditModal = ({
               value={summary}
               onChange={(e) => formDispatch({ type: 'SET_SUMMARY', payload: e.target.value })}
               rows={3}
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
             />
           </div>
           <div>
@@ -685,7 +685,7 @@ const FellowshipEditModal = ({
               value={description}
               onChange={(e) => formDispatch({ type: 'SET_DESCRIPTION', payload: e.target.value })}
               rows={6}
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
             />
           </div>
           <div>
@@ -698,7 +698,7 @@ const FellowshipEditModal = ({
                 formDispatch({ type: 'SET_APPLICATION_INFORMATION', payload: e.target.value })
               }
               rows={4}
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
               placeholder="How to apply, required documents, etc."
             />
           </div>
@@ -710,7 +710,7 @@ const FellowshipEditModal = ({
               value={eligibility}
               onChange={(e) => formDispatch({ type: 'SET_ELIGIBILITY', payload: e.target.value })}
               rows={3}
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
             />
             {statusPreview.needsEligibilityReview && (
               <p className="mt-1 text-xs text-amber-700">
@@ -726,7 +726,7 @@ const FellowshipEditModal = ({
               value={restrictionsToUseOfAward}
               onChange={(e) => formDispatch({ type: 'SET_RESTRICTIONS', payload: e.target.value })}
               rows={3}
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
               placeholder="Any restrictions on how funds can be used…"
             />
           </div>
@@ -740,7 +740,7 @@ const FellowshipEditModal = ({
                 formDispatch({ type: 'SET_ADDITIONAL_INFORMATION', payload: e.target.value })
               }
               rows={4}
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
               placeholder="Any other relevant details…"
             />
           </div>
@@ -751,7 +751,7 @@ const FellowshipEditModal = ({
               onChange={(e) =>
                 formDispatch({ type: 'SET_APPLICATION_LINK', payload: e.target.value })
               }
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
             />
           </div>
           <div>
@@ -760,7 +760,7 @@ const FellowshipEditModal = ({
               value={awardAmount}
               onChange={(e) => formDispatch({ type: 'SET_AWARD_AMOUNT', payload: e.target.value })}
               placeholder="e.g. $5,000"
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
             />
           </div>
 
@@ -781,7 +781,7 @@ const FellowshipEditModal = ({
                   onChange={(e) =>
                     formDispatch({ type: 'SET_CONTACT_NAME', payload: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
                   placeholder="e.g. John Smith"
                 />
               </div>
@@ -794,7 +794,7 @@ const FellowshipEditModal = ({
                   onChange={(e) =>
                     formDispatch({ type: 'SET_CONTACT_EMAIL', payload: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
                 />
               </div>
               <div>
@@ -806,7 +806,7 @@ const FellowshipEditModal = ({
                   onChange={(e) =>
                     formDispatch({ type: 'SET_CONTACT_PHONE', payload: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
                   placeholder="e.g. (203) 432-1234"
                 />
               </div>
@@ -819,7 +819,7 @@ const FellowshipEditModal = ({
                   onChange={(e) =>
                     formDispatch({ type: 'SET_CONTACT_OFFICE', payload: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
                   placeholder="e.g. 55 Whitney Ave, Room 200"
                 />
               </div>
@@ -841,7 +841,7 @@ const FellowshipEditModal = ({
                       payload: e.target.value === 'true',
                     })
                   }
-                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
                 >
                   <option value="true">Yes</option>
                   <option value="false">No</option>
@@ -857,7 +857,7 @@ const FellowshipEditModal = ({
                   onChange={(e) =>
                     formDispatch({ type: 'SET_APPLICATION_OPEN_DATE', payload: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
                 />
               </div>
               <div>
@@ -868,7 +868,7 @@ const FellowshipEditModal = ({
                   type="datetime-local"
                   value={deadline}
                   onChange={(e) => formDispatch({ type: 'SET_DEADLINE', payload: e.target.value })}
-                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
                 />
               </div>
             </div>

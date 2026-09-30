@@ -221,7 +221,7 @@ const ResearchFilterDisclosure = ({
               aria-label="Filter by type"
               value={selectedEntityType}
               onChange={(event) => onEntityTypeChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-strong)] bg-white px-3 text-base text-ink"
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink"
             >
               <option value="">All types</option>
               {entityTypeOptions.map((option) => (
@@ -241,7 +241,7 @@ const ResearchFilterDisclosure = ({
               aria-label="Filter by school"
               value={selectedSchool}
               onChange={(event) => onSchoolChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-strong)] bg-white px-3 text-base text-ink"
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink"
             >
               <option value="">All schools</option>
               {schoolOptions.map((option) => (
@@ -261,7 +261,7 @@ const ResearchFilterDisclosure = ({
               aria-label="Filter by department"
               value={selectedDepartment}
               onChange={(event) => onDepartmentChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-strong)] bg-white px-3 text-base text-ink"
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink"
             >
               <option value="">All departments</option>
               {departmentOptions.map((option) => (

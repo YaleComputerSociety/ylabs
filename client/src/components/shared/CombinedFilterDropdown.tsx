@@ -228,7 +228,7 @@ const CombinedFilterDropdown = ({
                 value={getSearch(activeTab.key)}
                 onChange={(e) => setSearch(activeTab.key, e.target.value)}
                 placeholder={`Search ${activeTab.label.toLowerCase()}...`}
-                className="w-full px-3 py-2 border border-[var(--yr-line)] rounded-control text-base mb-3 yr-focus-ring focus:border-transparent"
+                className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-control text-base mb-3 yr-focus-ring focus:border-transparent"
               />
             )}
 
@@ -269,9 +269,9 @@ const CombinedFilterDropdown = ({
                       className="peer sr-only"
                     />
                     <span
-                      className={`w-4 h-4 rounded-control border flex-shrink-0 flex items-center justify-center transition-colors ${
-                        isSelected ? 'bg-brand border-brand' : 'border-[var(--yr-line-strong)]'
-                      } yr-focus-ring-peer`}
+                      className={`yr-check-proxy yr-focus-ring-peer transition-colors ${
+                        isSelected ? 'border-brand bg-brand' : ''
+                      }`}
                       aria-hidden="true"
                     >
                       {isSelected && <CheckIcon className="w-3 h-3 text-white" />}

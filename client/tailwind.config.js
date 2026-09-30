@@ -28,6 +28,7 @@ module.exports = {
         line: {
           DEFAULT: "var(--yr-line)",
           strong: "var(--yr-line-strong)",
+          control: "var(--yr-line-control)",
           warm: "var(--yr-border-warm)",
           brand: "var(--yr-blue-border)",
         },

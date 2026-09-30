@@ -128,7 +128,7 @@ export default function AdminCorrectionReports() {
           <select
             value={status}
             onChange={(event) => setStatus(event.target.value as ReportStatus)}
-            className="ml-2 min-h-11 rounded-md border border-line-strong px-3"
+            className="ml-2 min-h-11 rounded-md border border-line-control px-3"
           >
             <option value="unreviewed">Unreviewed</option>
             <option value="accepted">Accepted</option>
@@ -217,7 +217,7 @@ export default function AdminCorrectionReports() {
               maxLength={2000}
               value={reviewerNote}
               onChange={(event) => setReviewerNote(event.target.value)}
-              className="mt-1 w-full rounded-md border border-line-strong p-3"
+              className="mt-1 w-full rounded-md border border-line-control p-3"
             />
             {reviewError && (
               <p role="alert" className="mt-4 text-sm text-red-700">
