@@ -189,7 +189,7 @@ Contrast stays a measured check, so when you add or change a neutral, compute th
 - Choose a hover or state color one step darker than the element's resting step.
 A mechanical sweep onto this scale collapsed 9 hover states into their resting value, because `gray-400` and `gray-600` both map to `muted`, and a hover that paints the resting color is a hover nobody can see.
 - The same ban covers a neutral **surface** and **hairline**: no generic `bg-`, `border-`, `divide-`, or `ring-` in the `gray`, `slate`, `zinc`, or `neutral` families.
-Use `panel`, `panel-muted`, `canvas`, `parchment` for a surface, and `line`, `line-strong`, `line-warm`, `line-brand` for a hairline.
+Use `panel`, `panel-muted`, `canvas`, `parchment` for a surface, and `line`, `line-strong`, `line-warm`, `line-brand` for a hairline, and `line-control` for a form-control edge.
 `--yr-line` is `#e2e8f0`, which is exactly Tailwind's `slate-200`, so most of these swaps change nothing but the name.
 - Two things this surfaced are worth remembering, because neither is a colour-temperature problem.
 A selected filter chip was `bg-slate-900`, a near-black that is not in this palette at all and competed with the brand as a second dark; a selected state belongs on `brand`.

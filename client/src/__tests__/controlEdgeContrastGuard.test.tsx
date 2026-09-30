@@ -110,7 +110,9 @@ const describeControl = (element: Element): string =>
 
 const edgesUnderTheFloor = async (page: HTMLElement): Promise<string[]> => {
   const controls = [...page.querySelectorAll(CONTROL_EDGES)];
-  expect(controls.length, 'the rendered surface draws at least one form control').toBeGreaterThan(0);
+  expect(controls.length, 'the rendered surface draws at least one form control').toBeGreaterThan(
+    0,
+  );
   const stylesheet = await compileStylesheetFor(page.innerHTML);
   const properties = customProperties(stylesheet);
   const findings: string[] = [];
@@ -125,7 +127,9 @@ const edgesUnderTheFloor = async (page: HTMLElement): Promise<string[]> => {
       const fill = toSixDigitHex(resolveVariables(`var(${surface})`, properties));
       const ratio = fill === null ? 0 : contrast(edge, fill);
       if (ratio < WCAG_NON_TEXT_FLOOR) {
-        findings.push(`${describeControl(control)}: ${edge} on ${surface} measures ${ratio.toFixed(2)}:1`);
+        findings.push(
+          `${describeControl(control)}: ${edge} on ${surface} measures ${ratio.toFixed(2)}:1`,
+        );
       }
     }
   }
