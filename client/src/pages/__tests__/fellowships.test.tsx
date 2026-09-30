@@ -11,7 +11,6 @@ import FellowshipSearchContext, {
 import UserContext from '../../contexts/UserContext';
 import UIContext, { defaultUIContext } from '../../contexts/UIContext';
 import type { Fellowship } from '../../types/types';
-import { summarizeProgramJourney } from '../../utils/programJourney';
 import axios from '../../utils/axios';
 import { trackResearchEvent } from '../../utils/researchAnalytics';
 import swal from 'sweetalert';
@@ -236,7 +235,6 @@ const renderPage = (
     setPage: vi.fn(),
     pageSize: 500,
     total: fellowships.length,
-    journeySummary: summarizeProgramJourney(fellowships),
     filterOptions: {
       programCategory: [],
       programKind: [],
@@ -344,7 +342,6 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
                 setPage: vi.fn(),
                 pageSize: 500,
                 total: fellowships.length,
-                journeySummary: summarizeProgramJourney(fellowships),
                 filterOptions: {
                   programCategory: ['FELLOWSHIP', 'SUMMER_RESEARCH_PROGRAM'],
                   programKind: ['FELLOWSHIP_FUNDING', 'STRUCTURED_PROGRAM'],
@@ -384,7 +381,7 @@ afterEach(() => {
 });
 
 describe('Programs page', () => {
-  it('frames programs and fellowships as structured application planning with status counts', async () => {
+  it('frames the page as an application board with status counts', async () => {
     renderPage([
       baseFellowship({
         id: 'closing',
@@ -417,75 +414,36 @@ describe('Programs page', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'Programs & Fellowships' })).toBeTruthy();
-    expect(screen.getByText(/grouped by what you need first/i)).toBeTruthy();
-    expect(screen.getByText('Get started')).toBeTruthy();
-    expect(screen.getByText('Funding')).toBeTruthy();
-    expect(screen.getByText('Awards')).toBeTruthy();
+    expect(screen.getByText(/you can apply to, soonest deadline first/i)).toBeTruthy();
+    expect(screen.getByText('Due soon')).toBeTruthy();
+    expect(screen.getByText('Open now')).toBeTruthy();
+    expect(screen.getByText('Opening soon')).toBeTruthy();
+    expect(screen.getByText('Next cycle')).toBeTruthy();
     expect(screen.getByText('Archive / review')).toBeTruthy();
-    expect(screen.queryByText('Likely next cycle')).toBeNull();
+    expect(screen.queryByText('Get started')).toBeNull();
     expect(screen.getByText('Open Fellowship')).toBeTruthy();
     expect(screen.getByText('Next Cycle Fellowship')).toBeTruthy();
   });
 
-  it('shows full-set journey partition counts in the stat tiles rather than the loaded page count', async () => {
-    const journeySummary = {
-      startsResearch: 20,
-      fundsResearch: 70,
-      recognizesResearch: 7,
-      archive: 36,
-    };
-    const total = Object.values(journeySummary).reduce((sum, value) => sum + value, 0);
-
-    renderPage(
-      [
-        baseFellowship({
-          id: 'solo',
-          title: 'Solo Loaded Program',
-          isAcceptingApplications: false,
-          deadline: isoDaysFromNow(-10),
-        }),
-      ],
-      { total, journeySummary },
-    );
-
-    await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds', {
-        withCredentials: true,
-      });
-    });
-
-    expect(total).toBe(133);
-    expect(screen.getByText('20')).toBeTruthy();
-    expect(screen.getByText('7')).toBeTruthy();
-    expect(screen.getByText('36')).toBeTruthy();
-    expect(screen.getAllByText('70').length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('keeps each stat tile equal to its matching journey section header', async () => {
+  it('keeps each stat tile equal to its matching section header', async () => {
     const fellowships = [
       baseFellowship({
-        id: 'apply-now',
-        title: 'Open Apply Program',
-        programKind: 'STRUCTURED_PROGRAM',
-        requiresMentorBeforeApply: false,
-        studentFacingCategory: 'Structured program',
+        id: 'closing',
+        title: 'Closing Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(10),
+      }),
+      baseFellowship({
+        id: 'open-a',
+        title: 'Open Program A',
         isAcceptingApplications: true,
         deadline: isoDaysFromNow(60),
       }),
       baseFellowship({
-        id: 'structured',
-        title: 'Structured Program Record',
-        programKind: 'STRUCTURED_PROGRAM',
-        requiresMentorBeforeApply: false,
-        studentFacingCategory: 'Structured program',
-        isAcceptingApplications: false,
-        deadline: isoDaysFromNow(-40),
-      }),
-      baseFellowship({
-        id: 'funding',
-        title: 'Funding After Mentor Record',
-        isAcceptingApplications: false,
-        deadline: isoDaysFromNow(-40),
+        id: 'open-b',
+        title: 'Open Program B',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(90),
       }),
     ];
 
@@ -497,20 +455,17 @@ describe('Programs page', () => {
       });
     });
 
-    const summary = summarizeProgramJourney(fellowships);
-    expect(Object.values(summary).reduce((sum, value) => sum + value, 0)).toBe(fellowships.length);
-
-    for (const [title, key] of [
-      ['Get Started in Research', 'startsResearch'],
-      ["Funding for Research You've Arranged", 'fundsResearch'],
+    for (const [title, tile, count] of [
+      ['Due in the Next 30 Days', 'Due soon', 1],
+      ['Accepting Applications', 'Open now', 2],
     ] as const) {
-      if (summary[key] === 0) continue;
       const header = screen.getByRole('heading', { name: title }).parentElement;
-      expect(header?.textContent).toContain(String(summary[key]));
+      expect(header?.textContent).toContain(String(count));
+      expect(screen.getByText(tile).parentElement?.textContent).toContain(String(count));
     }
   });
 
-  it('puts an open program first in its section on first paint when it sits among closed records', async () => {
+  it('puts an open program above every closed record on first paint', async () => {
     const fellowships = [
       ...Array.from({ length: 40 }, (_, index) =>
         baseFellowship({
@@ -536,11 +491,13 @@ describe('Programs page', () => {
       });
     });
 
-    const fundingSection = screen.getByRole('region', {
-      name: "Funding for Research You've Arranged",
-    });
-    const [firstCard] = within(fundingSection).getAllByRole('article');
+    const [firstCard] = screen.getAllByRole('article');
     expect(within(firstCard).getByText('Open Late Program')).toBeTruthy();
+    const openSection = screen.getByRole('region', { name: 'Accepting Applications' });
+    const nextCycleSection = screen.getByRole('region', { name: 'Plan for the Next Cycle' });
+    expect(openSection.compareDocumentPosition(nextCycleSection)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
   });
 
   it('renders program controls on the page and wires filter selection to program context', async () => {
@@ -693,7 +650,7 @@ describe('Programs page', () => {
         id: 'zeta',
         title: 'Zeta Open Fellowship',
         isAcceptingApplications: true,
-        deadline: isoDaysFromNow(30),
+        deadline: isoDaysFromNow(45),
       }),
       baseFellowship({
         id: 'alpha',
@@ -707,9 +664,7 @@ describe('Programs page', () => {
     await userEvent.click(screen.getByText('Name'));
     await userEvent.click(screen.getByRole('button', { name: /sorted descending/i }));
 
-    const openSection = screen.getByRole('region', {
-      name: "Funding for Research You've Arranged",
-    });
+    const openSection = screen.getByRole('region', { name: 'Accepting Applications' });
     expect(
       within(openSection)
         .getAllByRole('article')

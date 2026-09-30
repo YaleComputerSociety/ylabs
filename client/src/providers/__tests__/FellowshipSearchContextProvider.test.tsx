@@ -48,7 +48,6 @@ const renderProvider = (userType: 'student' | 'admin' = 'student') =>
             {(context) => (
               <div>
                 <p data-testid="program-kind-count">{context.filterOptions.programKind.length}</p>
-                <p data-testid="journey-summary">{JSON.stringify(context.journeySummary)}</p>
                 <p data-testid="fellowship-count">{context.fellowships.length}</p>
                 <p data-testid="fellowship-titles">
                   {context.fellowships.map((fellowship) => fellowship.title).join('|')}
@@ -112,45 +111,6 @@ describe('FellowshipSearchContextProvider program routes', () => {
     });
   });
 
-  it('derives the journey summary from the full paginated result set, not one page', async () => {
-    const makeRecord = (index: number) => ({
-      _id: `program-${index}`,
-      title: `Program ${index}`,
-      isAcceptingApplications: false,
-    });
-    const total = 133;
-    const pageSize = 100;
-
-    mockedAxios.get.mockImplementation((url: string) => {
-      if (url === '/programs/filters') {
-        return Promise.resolve({ data: {} });
-      }
-      const pageMatch = url.match(/[?&]page=(\d+)/);
-      const requestedPage = pageMatch ? Number(pageMatch[1]) : 1;
-      const start = (requestedPage - 1) * pageSize;
-      const results = Array.from(
-        { length: Math.max(0, Math.min(pageSize, total - start)) },
-        (_, i) => makeRecord(start + i),
-      );
-      return Promise.resolve({ data: { results, total } });
-    });
-
-    renderProvider();
-
-    await waitFor(() => {
-      expect(JSON.parse(screen.getByTestId('journey-summary').textContent || '{}')).toEqual({
-        startsResearch: 0,
-        fundsResearch: 0,
-        recognizesResearch: 0,
-        archive: total,
-      });
-    });
-
-    expect(mockedAxios.get).toHaveBeenCalledWith(
-      expect.stringContaining('/programs/search?query=&page=2&pageSize=100'),
-    );
-  });
-
   it('loads the full result set into context on first paint so an apply-now program on a later page is not gated behind pagination', async () => {
     const total = 133;
     const pageSize = 100;
@@ -191,12 +151,9 @@ describe('FellowshipSearchContextProvider program routes', () => {
 
     expect(screen.getByTestId('fellowship-titles').textContent).toContain('Open Late Program');
     expect(screen.getByTestId('search-exhausted').textContent).toBe('true');
-    expect(JSON.parse(screen.getByTestId('journey-summary').textContent || '{}')).toEqual({
-      startsResearch: 0,
-      fundsResearch: 0,
-      recognizesResearch: 0,
-      archive: total,
-    });
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('/programs/search?query=&page=2&pageSize=100'),
+    );
   });
 
   it('narrows to only the chosen value when a program modal eligibility chip is clicked', async () => {
@@ -339,7 +296,6 @@ describe('FellowshipSearchContextProvider program routes', () => {
 
       renderProvider();
       await waitFor(() => expect(screen.getByTestId('fellowship-count').textContent).toBe('2'));
-      const summaryBefore = screen.getByTestId('journey-summary').textContent;
       const searchesBefore = mockedAxios.get.mock.calls.length;
 
       control.fail = true;
@@ -353,9 +309,8 @@ describe('FellowshipSearchContextProvider program routes', () => {
         staleUnfilteredRowShown: (
           screen.getByTestId('fellowship-titles').textContent || ''
         ).includes('Synthetic Funding'),
-        summaryChanged: screen.getByTestId('journey-summary').textContent !== summaryBefore,
         loadError: screen.getByTestId('load-error').textContent,
-      }).toEqual({ staleUnfilteredRowShown: false, summaryChanged: false, loadError: 'true' });
+      }).toEqual({ staleUnfilteredRowShown: false, loadError: 'true' });
     });
 
     it('reports a failed first load as an error and clears it on a successful retry', async () => {

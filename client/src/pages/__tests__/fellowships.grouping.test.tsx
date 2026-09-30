@@ -8,6 +8,7 @@ import FellowshipSearchContext, {
 } from '../../contexts/FellowshipSearchContext';
 import UserContext from '../../contexts/UserContext';
 import { Fellowship } from '../../types/types';
+import type { FellowshipQuickFilter } from '../../reducers/fellowshipSearchReducer';
 import Fellowships from '../fellowships';
 
 vi.stubGlobal(
@@ -115,7 +116,7 @@ const renderFellowships = ({
   quickFilter = null,
 }: {
   fellowships: Fellowship[];
-  quickFilter?: 'open' | 'closingSoon' | 'recent' | null;
+  quickFilter?: FellowshipQuickFilter;
 }) =>
   render(
     <MemoryRouter>
@@ -147,7 +148,7 @@ describe('Fellowships grouping', () => {
     cleanup();
   });
 
-  it('groups by program role and orders a section by what a student can act on now', () => {
+  it('groups by application status, soonest action first', () => {
     renderFellowships({
       fellowships: [
         makeFellowship({
@@ -155,6 +156,7 @@ describe('Fellowships grouping', () => {
           title: 'Closed Fellowship',
           programKind: 'FELLOWSHIP_FUNDING',
           deadline: pastDate(7),
+          applicationLink: 'https://example.org/apply',
         }),
         makeFellowship({
           id: 'future',
@@ -164,23 +166,95 @@ describe('Fellowships grouping', () => {
           applicationOpenDate: futureDate(14),
           deadline: futureDate(90),
         }),
-        makeFellowship({ id: 'open', title: 'Open Fellowship', programKind: 'FELLOWSHIP_FUNDING' }),
         makeFellowship({
-          id: 'route-in',
-          title: 'Mentor Matching Program',
+          id: 'open-late',
+          title: 'Later Open Fellowship',
+          programKind: 'FELLOWSHIP_FUNDING',
+          deadline: futureDate(120),
+        }),
+        makeFellowship({
+          id: 'open-early',
+          title: 'Earlier Open Fellowship',
           programKind: 'MENTOR_MATCHING',
+          deadline: futureDate(45),
+        }),
+        makeFellowship({
+          id: 'closing',
+          title: 'Closing Fellowship',
+          programKind: 'FELLOWSHIP_FUNDING',
+          deadline: futureDate(5),
         }),
       ],
     });
 
-    const startsResearch = screen.getByRole('region', { name: 'Get Started in Research' });
-    const funding = screen.getByRole('region', { name: "Funding for Research You've Arranged" });
-    expect(within(startsResearch).getByText('Mentor Matching Program')).toBeInTheDocument();
-    const order = within(funding)
-      .getAllByRole('article')
-      .map((card) => within(card).getByText(/Fellowship$/).textContent);
-    expect(order).toEqual(['Open Fellowship', 'Future Fellowship', 'Closed Fellowship']);
-    expect(startsResearch.compareDocumentPosition(funding)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    const regions = [
+      'Due in the Next 30 Days',
+      'Accepting Applications',
+      'Opening Soon',
+      'Plan for the Next Cycle',
+    ].map((name) => screen.getByRole('region', { name }));
+    for (let index = 1; index < regions.length; index += 1) {
+      expect(regions[index - 1].compareDocumentPosition(regions[index])).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    }
+    expect(
+      within(regions[1])
+        .getAllByRole('article')
+        .map((card) => card.textContent),
+    ).toEqual(['Earlier Open Fellowship', 'Later Open Fellowship']);
+    expect(within(regions[0]).getByText('Closing Fellowship')).toBeInTheDocument();
+    expect(within(regions[2]).getByText('Future Fellowship')).toBeInTheDocument();
+    expect(within(regions[3]).getByText('Closed Fellowship')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Get Started in Research' })).toBeNull();
+  });
+
+  it('narrows to programs open to first-years', () => {
+    renderFellowships({
+      quickFilter: 'firstYear',
+      fellowships: [
+        makeFellowship({
+          id: 'first-year',
+          title: 'First-Year Fellowship',
+          yearOfStudy: ['First-Year Student', 'Sophomore'],
+          deadline: futureDate(60),
+        }),
+        makeFellowship({
+          id: 'upper',
+          title: 'Upper-Level Fellowship',
+          yearOfStudy: ['Junior', 'Senior'],
+          deadline: futureDate(60),
+        }),
+      ],
+    });
+
+    expect(screen.getByText('First-Year Fellowship')).toBeInTheDocument();
+    expect(screen.queryByText('Upper-Level Fellowship')).not.toBeInTheDocument();
+  });
+
+  it('narrows to programs that do not need a mentor lined up first', () => {
+    renderFellowships({
+      quickFilter: 'noMentorFirst',
+      fellowships: [
+        makeFellowship({
+          id: 'mentor-first',
+          title: 'Mentor First Fellowship',
+          requiresMentorBeforeApply: true,
+          deadline: futureDate(60),
+        }),
+        makeFellowship({
+          id: 'matching',
+          title: 'Matching Program',
+          programKind: 'MENTOR_MATCHING',
+          requiresMentorBeforeApply: false,
+          mentorMatching: true,
+          deadline: futureDate(60),
+        }),
+      ],
+    });
+
+    expect(screen.getByText('Matching Program')).toBeInTheDocument();
+    expect(screen.queryByText('Mentor First Fellowship')).not.toBeInTheDocument();
   });
 
   it('keeps opening-soon fellowships out of the open quick filter', () => {

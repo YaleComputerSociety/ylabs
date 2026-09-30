@@ -5,14 +5,13 @@
  * state transitions are testable without mounting the provider.
  */
 import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
-import { ProgramJourneySummary, emptyProgramJourneySummary } from '../utils/programJourney';
 
 export type FellowshipQuickFilter =
   | 'open'
   | 'closingSoon'
   | 'nextCycle'
-  | 'structured'
-  | 'mentorFirst'
+  | 'firstYear'
+  | 'noMentorFirst'
   | null;
 
 export interface StudentProgramFilters {
@@ -54,7 +53,6 @@ export interface FellowshipSearchState extends StudentProgramFilters {
   loadError: boolean;
   searchExhausted: boolean;
   total: number;
-  journeySummary: ProgramJourneySummary;
   page: number;
   filterOptions: FellowshipFilterOptions;
   filterBarHeight: number;
@@ -105,7 +103,6 @@ export type FellowshipSearchAction =
     }
   | { type: 'SEARCH_FAILURE' }
   | { type: 'LOAD_MORE_FAILURE' }
-  | { type: 'SET_JOURNEY_SUMMARY'; payload: ProgramJourneySummary }
   | { type: 'MARK_QUERY_STRING_LOADED' }
   | { type: 'MARK_FILTERS_LOADED' }
   | { type: 'MARK_INITIAL_SEARCH_DONE' }
@@ -126,7 +123,6 @@ export const createInitialFellowshipSearchState = (
   loadError: false,
   searchExhausted: false,
   total: 0,
-  journeySummary: emptyProgramJourneySummary,
   page: 1,
   filterOptions: {
     programCategory: [],
@@ -266,9 +262,6 @@ export function fellowshipSearchReducer(
 
     case 'LOAD_MORE_FAILURE':
       return { ...state, isLoading: false };
-
-    case 'SET_JOURNEY_SUMMARY':
-      return { ...state, journeySummary: action.payload };
 
     case 'MARK_QUERY_STRING_LOADED':
       return { ...state, queryStringLoaded: true };

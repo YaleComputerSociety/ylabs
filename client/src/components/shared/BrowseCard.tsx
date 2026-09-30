@@ -19,6 +19,7 @@ import UrgentBadge from './UrgentBadge';
 import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
+import { programCardFacts } from '../../utils/programBoard';
 import { EditIcon } from './icons';
 
 const ICON_BUTTON_SIZE = 44;
@@ -59,6 +60,7 @@ const BrowseCard = React.memo(
       item.type === 'fellowship' ? getFellowshipCycleStatus(item.data) : null;
     const fellowshipNextStep =
       item.type === 'fellowship' ? item.data.bestNextStep?.trim() || null : null;
+    const fellowshipFacts = item.type === 'fellowship' ? programCardFacts(item.data) : [];
 
     const isAudited = isAdmin && item.data.audited;
 
@@ -146,6 +148,14 @@ const BrowseCard = React.memo(
               <p className={`text-sm text-muted mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
                 {getItemCardSummary(item)}
               </p>
+            )}
+
+            {fellowshipFacts.length > 0 && !isCompact && (
+              <ul className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-xs font-medium leading-snug text-ink-soft">
+                {fellowshipFacts.map((fact) => (
+                  <li key={fact}>{fact}</li>
+                ))}
+              </ul>
             )}
 
             {fellowshipNextStep && !isCompact && (

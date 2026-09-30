@@ -13,7 +13,6 @@ import UserContext from '../contexts/UserContext';
 import { Fellowship, StudentVisibilityTier } from '../types/types';
 import { createFellowship } from '../utils/createFellowship';
 import { showWarningDialog } from '../utils/warningDialog';
-import { summarizeProgramJourney } from '../utils/programJourney';
 import {
   fellowshipSearchReducer,
   createInitialFellowshipSearchState,
@@ -65,7 +64,6 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     loadError,
     searchExhausted,
     total,
-    journeySummary,
     page,
     filterOptions,
     quickFilter,
@@ -326,7 +324,6 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
             append: false,
           },
         });
-        dispatch({ type: 'SET_JOURNEY_SUMMARY', payload: summarizeProgramJourney(collected) });
       })
       .catch(() => {
         if (loadRequestIdRef.current !== requestId) return;
@@ -479,7 +476,6 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         setPage,
         pageSize,
         total,
-        journeySummary,
         filterOptions,
         sortableKeys,
         refreshFellowships,
