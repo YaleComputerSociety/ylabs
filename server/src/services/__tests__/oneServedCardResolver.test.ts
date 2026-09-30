@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildResearchEntityPublicDescriptionRepresentation } from '../researchEntityPublicDescription';
-import { toPublicResearchEntityDto } from '../researchEntityDto';
+import { addResearchEntitySearchAliases, toPublicResearchEntityDto } from '../researchEntityDto';
 import {
   servedResearchEntityCardDescription,
   servedResearchEntityCardWithoutLastResort,
@@ -133,5 +133,49 @@ describe('a browse card is the served card or the named limited state (#3747)', 
 
     expect(card?.state).toBe('sparse');
     expect(card?.label).toBe('Summary limited');
+  });
+});
+
+describe('a browse card is the detail card of the same row', () => {
+  const detailCardFor = (entity: Record<string, any>, leadMemberNames: string[]): string => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity,
+      leadMemberNames,
+    });
+    return String(
+      toPublicResearchEntityDto(representation.entity, { leadMemberNames }).shortDescription || '',
+    );
+  };
+
+  const browseCardFor = (entity: Record<string, any>, leadMemberNames: string[]) => {
+    const [row] = addResearchEntitySearchAliases(
+      { hits: [{ ...entity, _id: entity.slug }] },
+      { leadMemberNamesByEntityId: new Map([[entity.slug, leadMemberNames]]) },
+    ).researchEntities;
+    return row.cardDescription;
+  };
+
+  const labRow = {
+    slug: 'fixture-ridge-lab',
+    name: 'Fixture Ridge Lab',
+    kind: 'lab',
+    entityType: 'LAB',
+    researchAreas: [
+      'Tectonic and geomorphic evolution of convergent plate boundaries',
+      'Low-temperature deformational processes',
+      'Exhumation processes',
+    ],
+    sourceUrls: ['https://example.edu/fixture-ridge-lab'],
+    shortDescription:
+      'Research on tectonic and geomorphic evolution of convergent plate boundaries and low-temperature deformational processes.',
+    fullDescription:
+      'The Fixture Ridge Lab focuses on the tectonic and geomorphic evolution of convergent plate boundaries, investigating low-temperature deformational processes such as faulting and pressure solution. The lab also studies exhumation processes, including erosion and tectonic thinning, across several mountain belts.',
+  };
+
+  it('serves the detail card when the stored card is refused in favour of a line from the body', () => {
+    const card = browseCardFor(labRow, []);
+
+    expect(card?.state).toBe('complete');
+    expect(card?.text).toBe(detailCardFor(labRow, []));
   });
 });
