@@ -178,6 +178,22 @@ describe('Program card visual hierarchy', () => {
     expect(screen.queryByText(wholeBodyAsSummary)).toBeNull();
   });
 
+  it('shows no card line when the served card line is empty rather than the stored brief (#3904)', () => {
+    const storedBrief = 'Fixture program deadline announcement that fails the card bar.';
+    const withEmptyCardLine: BrowsableItem = {
+      type: 'fellowship',
+      data: {
+        ...fellowship,
+        id: 'program-empty-card-line',
+        summary: storedBrief,
+        cardSummary: '',
+      },
+    };
+    renderAdmin(<BrowseCard item={withEmptyCardLine} isFavorite={false} onOpenModal={vi.fn()} />);
+
+    expect(screen.queryByText(storedBrief)).toBeNull();
+  });
+
   it('drops the next-step line when no curated best next step exists', () => {
     const withoutNextStep: BrowsableItem = {
       type: 'fellowship',

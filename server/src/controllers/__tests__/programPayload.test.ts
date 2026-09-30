@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { publicProgramForReader } from '../programPayload';
+import { publicFellowshipForStudent } from '../../services/fellowshipService';
 
 const specificPage =
   'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program';
@@ -484,5 +485,43 @@ describe('publicProgramForReader program role', () => {
 
     expect(payload.programKind).toBe('DEPARTMENT_RESEARCH_GUIDE');
     expect(payload.programRole).toBe('STARTS_RESEARCH');
+  });
+});
+
+describe('publicProgramForReader card line (#3904)', () => {
+  const firstSentence =
+    'The fixture program provides summer term support for undergraduate students who do laboratory research with Yale faculty.';
+  const body = `${firstSentence} Students work full time for ten weeks.`;
+  const deadlineOnly =
+    'Fixture Summer Research Program Deadline: Friday, February 6, 2026 at 11:00pm ET.';
+  const readerPayload = (program: Record<string, unknown>) =>
+    publicProgramForReader(
+      publicFellowshipForStudent({ _id: '6a6f84d074dd496b1d43b1a0', title: 'Fixture', ...program }),
+    );
+
+  it('serves a card line from the body in place of a deadline-only summary', () => {
+    const payload = readerPayload({ summary: deadlineOnly, description: body });
+
+    expect(payload.cardSummary).toBe(firstSentence);
+    expect(payload.summary).toBe(deadlineOnly);
+  });
+
+  it('serves a card line from the body when the stored summary is empty', () => {
+    const payload = readerPayload({ summary: '', description: body });
+
+    expect(payload.cardSummary).toBe(firstSentence);
+    expect(payload.summary).toBe('');
+  });
+
+  it('serves an empty card line when a deadline-only summary has no body to derive from', () => {
+    const payload = readerPayload({ summary: deadlineOnly, description: '' });
+
+    expect(payload.cardSummary).toBe('');
+  });
+
+  it('leaves the card line undefined when the program has no summary or description', () => {
+    expect(
+      publicProgramForReader({ _id: '6a6f84d074dd496b1d43b1a1', title: 'Fixture' }).cardSummary,
+    ).toBeUndefined();
   });
 });

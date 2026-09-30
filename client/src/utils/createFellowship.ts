@@ -23,6 +23,7 @@ export function createFellowship(data: any): Fellowship {
     title: data.title || '',
     competitionType: data.competitionType || '',
     summary: data.summary || '',
+    cardSummary: typeof data.cardSummary === 'string' ? data.cardSummary : undefined,
     description: data.description || '',
     applicationInformation: data.applicationInformation || '',
     eligibility: data.eligibility || '',

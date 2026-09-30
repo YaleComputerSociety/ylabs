@@ -1920,6 +1920,12 @@ const relativizeStaleAbsoluteYearSeasonPhrase = (value: string): string =>
 const normalizeProgramCardCandidateSentence = (value: string): string =>
   relativizeStaleAbsoluteYearSeasonPhrase(stripStrayFootnoteMarks(textValue(value)));
 
+// A catalog row whose only line is "<Program> Deadline: Friday, February 6, 2026 at 11:00pm
+// ET." announces a date rather than describing the program, and the card already shows the
+// deadline beside it (#3904).
+const PROGRAM_CARD_DEADLINE_ANNOUNCEMENT =
+  /\bdeadline\s*:\s*(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day,?\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b/i;
+
 /**
  * Program-typed research entities (fellowships, RA programs) describe what
  * they offer and how to apply, not a lab-style "Studies X" research focus, so
@@ -1970,6 +1976,7 @@ export function programCardShortDescriptionQuality(
   if (text && isNonOfferProgramCardClause(text)) flags.push('non-offer-clause');
   if (text && isProgramCardAdministrativeAnnouncementChrome(text))
     flags.push('administrative-chrome');
+  if (text && PROGRAM_CARD_DEADLINE_ANNOUNCEMENT.test(text)) flags.push('administrative-chrome');
   if (text && isGrantSignificanceBoilerplateShort(text))
     flags.push('grant-significance-boilerplate');
   if (!full) flags.push('full-not-useful');
@@ -2019,15 +2026,19 @@ export function deriveProgramCardShortDescription(fullDescription: unknown): str
  * because dropping a card line lost more than keeping it (#1878). A body-less
  * program therefore keeps its stored line: `full-not-useful` asks whether a
  * derived card is grounded, which is not a defect in a source-asserted summary.
+ * The exception is a line that announces a deadline, which says nothing the
+ * card's deadline does not, so it fails closed to empty (#3904).
  */
 export function programLikeCardShortDescription(input: {
   shortDescription: unknown;
   fullDescription: unknown;
 }): string {
   const stored = typeof input.shortDescription === 'string' ? input.shortDescription : '';
-  if (!textValue(stored)) return stored;
+  if (!textValue(stored)) return deriveProgramCardShortDescription(input.fullDescription);
   if (programCardShortDescriptionQuality(stored, input.fullDescription).isUseful) return stored;
-  return deriveProgramCardShortDescription(input.fullDescription) || stored;
+  const derived = deriveProgramCardShortDescription(input.fullDescription);
+  if (derived) return derived;
+  return PROGRAM_CARD_DEADLINE_ANNOUNCEMENT.test(stored) ? '' : stored;
 }
 
 export function describesResearchFocus(value: unknown): boolean {

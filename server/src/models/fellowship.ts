@@ -72,7 +72,7 @@ export const programEntryModes = [
 export type ProgramEntryMode = (typeof programEntryModes)[number];
 
 // What a student needs before the program is useful to them, which is the axis /programs
-// groups by (#3904): a way into research, funding for research already arranged, or
+// groups by (#3904): getting started in research, funding for research already arranged, or
 // recognition for research already done.
 export const programRoles = [
   'STARTS_RESEARCH',

@@ -440,7 +440,10 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
   // The browse card renders one clamped line, so a summary that is the whole
   // body reaches a student cut off mid-sentence. `summary` stays as stored
   // because the detail surface falls back to it as the body (#2215).
-  if (typeof publicFellowship.summary === 'string') {
+  if (
+    typeof publicFellowship.summary === 'string' ||
+    typeof publicFellowship.description === 'string'
+  ) {
     publicFellowship.cardSummary = programLikeCardShortDescription({
       shortDescription: publicFellowship.summary,
       fullDescription: publicFellowship.description,

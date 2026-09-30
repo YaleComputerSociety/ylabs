@@ -750,8 +750,8 @@ const Fellowships = () => {
               </h1>
               <p className="mt-3 text-base leading-7 text-muted">
                 Yale research programs, fellowships, and awards, grouped by what you need first.
-                Some are a way into research with no mentor needed yet; others fund a project once
-                you have a mentor or a plan.
+                Some get you started in research with no mentor needed yet; others fund a project
+                once you have a mentor or a plan.
               </p>
             </div>
             <div className="flex flex-col gap-2 border-l border-[var(--yr-line)] pl-0 sm:flex-row lg:flex-col lg:pl-5">
