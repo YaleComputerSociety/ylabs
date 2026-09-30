@@ -76,12 +76,13 @@ Use `nvm` for Node. Avoid `apt install nodejs`, which often installs an older No
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
 ```
 
-Restart your shell, then install and select Node 20:
+Restart your shell, then install and select the major this repository runs on.
+`.node-version` at the repository root is the single declaration of that major, read by CI's `setup-node` and by the hosting provider, so take the number from the file rather than from this page:
 
 ```bash
-nvm install 20
-nvm use 20
-nvm alias default 20
+nvm install "$(cat .node-version)"
+nvm use "$(cat .node-version)"
+nvm alias default "$(cat .node-version)"
 node -v
 npm -v
 ```
@@ -95,7 +96,7 @@ yarn -v
 
 Expected versions:
 
-- `node` should be `v20.x` or newer.
+- `node` should match `.node-version`. CI tests that major only, so a different one is untested here (#3915).
 - `yarn` should match the `packageManager` field in `package.json`, which is the only place the version is pinned. Read it with `node -p "require('./package.json').packageManager"` rather than trusting a number written here, because a number written here goes stale on the next bump.
 
 ### 2. Install dependencies

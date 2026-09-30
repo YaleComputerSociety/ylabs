@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=26 <27"
   },
   "dependencies": {
     "@emotion/react": "^11.8.1",

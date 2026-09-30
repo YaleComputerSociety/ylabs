@@ -5,14 +5,27 @@ on:
     branches:
       - main
       - beta
+  # Post-merge signal on the commit that actually lands on beta, since the beta
+  # ruleset does not require branches to be up to date (#3913). Not a merge gate.
+  push:
+    branches:
+      - beta
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Cancellation is scoped to push runs so a burst of merges only tests the newest
+# beta head. A pull request run is never cancelled, because a cancelled run
+# reports as a non-success on a required context.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
 jobs:
   student-journey-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     services:
       mongodb:
@@ -49,17 +62,22 @@ jobs:
         with:
           persist-credentials: false
 
+      # .node-version is the single declaration of the runtime major, read here
+      # and by the hosting provider, so CI and the deployed service cannot drift
+      # apart (#3915).
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 26
+          node-version-file: .node-version
 
       # Node 25 removed Corepack from the distribution, so `corepack enable` alone exits
       # non-zero on a current runner and the install dies before any test runs. The
       # preinstalled Yarn 1 does not delegate on its own either. `packageManager` in the
       # root package.json stays the single source of truth for the Yarn version (#3216).
+      # The version is pinned rather than @latest so a new Corepack release cannot
+      # change the tool that selects Yarn between two runs of the same commit (#3915).
       - name: Install Corepack
-        run: npm install -g corepack@latest
+        run: npm install -g corepack@0.36.0
 
       - name: Enable Corepack
         run: corepack enable

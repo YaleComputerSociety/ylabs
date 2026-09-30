@@ -17,23 +17,31 @@ jobs:
   verify:
     name: post-promotion-verify
     runs-on: ubuntu-latest
+    # Installs plus the fixed 180s rollout wait plus the smoke; the observed run
+    # is well under this, and the default 360-minute ceiling is no bound at all.
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
 
+      # .node-version is the single declaration of the runtime major, read here
+      # and by the hosting provider, so CI and the deployed service cannot drift
+      # apart (#3915).
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 26
+          node-version-file: .node-version
 
       # Node 25 removed Corepack from the distribution, so `corepack enable` alone exits
       # non-zero on a current runner and the install dies before any test runs. The
       # preinstalled Yarn 1 does not delegate on its own either. `packageManager` in the
       # root package.json stays the single source of truth for the Yarn version (#3216).
+      # The version is pinned rather than @latest so a new Corepack release cannot
+      # change the tool that selects Yarn between two runs of the same commit (#3915).
       - name: Install Corepack
-        run: npm install -g corepack@latest
+        run: npm install -g corepack@0.36.0
 
       - name: Enable Corepack
         run: corepack enable

@@ -48,6 +48,10 @@ Transitional note: until the human-gated `signalConsolidationMigration` is appli
 
 ## Safe Audit Commands
 
+The `corepack@0.34.7` pin below is deliberate and is not the version CI uses.
+The workflows pin `corepack@0.36.0`, which is the version the tested Node major ships against; 0.34.7 is the version that runs cleanly on the older Node major an operator's shell may still be on.
+Both are pinned rather than floating, because an unpinned Corepack changes the tool that selects Yarn between two runs of the same commit (#3915).
+
 List available scrapers:
 
 ```bash
