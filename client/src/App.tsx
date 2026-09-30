@@ -68,7 +68,10 @@ const App = () => {
               <div className="flex-shrink-0 flex-grow-0">
                 <Navbar />
               </div>
-              <div className="flex-grow overflow-y-auto flex flex-col" data-scroll-container>
+              <div
+                className="relative flex-grow overflow-y-auto flex flex-col"
+                data-scroll-container
+              >
                 <HttpStatusNotifier />
                 <main id="main-content" tabIndex={-1} className="flex-grow focus:outline-none">
                   <Suspense fallback={<RouteLoadingFallback />}>
