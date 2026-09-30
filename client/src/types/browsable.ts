@@ -147,7 +147,8 @@ export function getItemSubtitle(item: BrowsableItem): string {
 
 export function getItemSubtitleColor(item: BrowsableItem): string {
   const status = getFellowshipCycleStatus(item.data);
-  if (status.category === 'nextCycle') return 'text-sky-700 font-medium';
+  if (status.category === 'nextCycle' || status.category === 'projectedNextCycle')
+    return 'text-sky-700 font-medium';
   const { deadline } = item.data;
   if (!deadline) return 'text-muted';
   const d = new Date(deadline);

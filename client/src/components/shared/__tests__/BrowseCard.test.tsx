@@ -167,6 +167,20 @@ describe('Program card deadline urgency', () => {
     expect(screen.queryByText(/days left/)).toBeNull();
   });
 
+  it('does not colour a projected next-cycle date inside the urgency window as closing (#3904)', () => {
+    renderAdmin(
+      <BrowseCard
+        item={soonItem({ deadlineProjectedNextCycle: true })}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+      />,
+    );
+
+    const subtitle = screen.getByText(/Est\. next cycle/);
+    expect(subtitle.className).not.toMatch(/amber/);
+    expect(subtitle.className).toMatch(/sky/);
+  });
+
   it('gives no countdown on a list row for a projected next-cycle date (#3904)', () => {
     renderAdmin(
       <BrowseListItem
