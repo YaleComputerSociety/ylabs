@@ -38,6 +38,7 @@ Attribution recomputes the coherence guard from the row's current stored state a
 Both cases take a corpus fingerprint, the row count plus the latest `updatedAt`, before and after their reads, and report inconclusive when the corpus moved.
 The confound is one-directional in both, which is what makes the rule tighter than "moved, so give up": corpus mutation can manufacture a repeat but cannot hide one, so zero repeats is a genuine pass even on a moving corpus, and the same holds for zero unexplained drops.
 Attribution also reports inconclusive when no row could be compared at all, because a zero unexplained count over an empty population is a green signal that means nothing.
+The text-query total case follows the same rule: a write between two pages can change the reported total, so a total that changed on a moving corpus is inconclusive, while one total on every page is a pass either way.
 
 Verified by running four times against a live Development: before this rule the same three checks returned 24, 21 and 16 drops with 1, 1 and 0 unexplained and 3, 3 and 2 page repeats, failing twice for reasons no code change caused.
 
