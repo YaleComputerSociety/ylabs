@@ -81,7 +81,7 @@ describe('the gate corpus read does not depend on the in-memory sort limit (#374
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
     await mongoose.connect(mongoServer.getUri());
-  }, 120000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
