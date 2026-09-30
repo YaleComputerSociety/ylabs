@@ -151,6 +151,51 @@ observationSchema.index(
   { value: 1, superseded: 1 },
   { partialFilterExpression: { field: 'inferredPiUserKey' } },
 );
+/**
+ * The repair queue's evidence lookup sends `sourceUrl: { $in: variants }` with a
+ * descending `observedAt` sort and a limit, so `observedAt` is the second key to let
+ * MongoDB merge the per-variant intervals in sort order instead of buffering the whole
+ * match. Without it the planner fell back to `superseded_1` and walked 476,302 keys for
+ * 7 rows (#3934).
+ *
+ * This index does NOT serve the host-regex read in `observationStore`, which filters
+ * `sourceUrl` too. Two independent properties of that regex each defeat index bounds,
+ * measured by forcing this index on Development: it is case-insensitive, and `https?`
+ * gives it no fixed literal prefix. Either one alone makes the bounds the interval
+ * covering every string, so the forced plan walks all 1,880,941 keys. That read is
+ * served by `entityType_1_field_1_superseded_1` below instead.
+ */
+observationSchema.index({ sourceUrl: 1, observedAt: -1 });
+/**
+ * The host-filter read in `observationStore`, which cannot narrow on `sourceUrl` (above)
+ * and so has to be narrowed by everything else it asks: `entityType`, a `field` `$in`, and
+ * `superseded`.
+ *
+ * `field` sits second on purpose. The two `entityType_1_..._field_1_observedAt_-1` indexes
+ * already carry the same three fields, but with `entityId` or `entityKey` between
+ * `entityType` and `field`, and an unconstrained middle key takes no bounds, so `field`
+ * could not narrow anything. Ordering the keys as the query asks them took the read from
+ * 39,715 to 57,920 keys down to 12,284, and documents examined from 32,682 to 12,281 (#3934).
+ */
+observationSchema.index({ entityType: 1, field: 1, superseded: 1 });
+/**
+ * Source-scoped reads: the gate's two `distinct` calls and the roster lane's observed-key
+ * read, which filter `sourceName` with `entityType` and (for the gate) `superseded`.
+ *
+ * `entityKey` and `entityId` trail the equality keys on purpose rather than as padding.
+ * They are what each caller READS, so carrying them turns the roster lane's read into a
+ * covered DISTINCT_SCAN (5,705 keys, 0 documents, from 433,176 of each) and lets the
+ * gate's `entityId` read answer from the index (2,917 keys, 2 documents, from 40,843).
+ * Dropping either trailing key costs those two wins and nothing else changes, so do not
+ * trim them back to the equality prefix (#3934).
+ */
+observationSchema.index({ sourceName: 1, entityType: 1, superseded: 1, entityKey: 1, entityId: 1 });
+/**
+ * The controlled-vocabulary heading reload, which filters `sourceName` with `field` and
+ * carries no `entityType`, so it cannot use the index above: on `sourceName` alone the
+ * two vocabulary sources match 224,459 rows against 12,883 for the pair (#3934, #3953).
+ */
+observationSchema.index({ sourceName: 1, field: 1 });
 
 export const Observation = mongoose.model('Observation', observationSchema);
 
