@@ -6,6 +6,7 @@ import { isResearchHomeResetState } from '../components/researchHomeNavigation';
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
 import ResearchSearchDegradedNotice from '../components/research/ResearchSearchDegradedNotice';
+import ResearchStickyFilterBar from '../components/research/ResearchStickyFilterBar';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
 import ResearchSortDropdown, {
   ResearchSortField,
@@ -1737,13 +1738,13 @@ const Research = () => {
                   </div>
                 </div>
                 {!isWideFilterLayout && (
-                  <div className="sticky top-0 z-30 bg-[var(--yr-paper)] pb-2">
+                  <ResearchStickyFilterBar>
                     <ResearchFilterDisclosure
                       {...browseFilterProps}
                       isOpen={isFilterPanelOpen}
                       onOpenChange={setIsFilterPanelOpen}
                     />
-                  </div>
+                  </ResearchStickyFilterBar>
                 )}
                 {defaultSearchError && (
                   <div
@@ -1878,13 +1879,13 @@ const Research = () => {
                 </div>
 
                 {!isWideFilterLayout && (
-                  <div className="sticky top-0 z-30 bg-[var(--yr-paper)] pb-2">
+                  <ResearchStickyFilterBar>
                     <ResearchFilterDisclosure
                       {...researchFilterProps}
                       isOpen={isFilterPanelOpen}
                       onOpenChange={setIsFilterPanelOpen}
                     />
-                  </div>
+                  </ResearchStickyFilterBar>
                 )}
 
                 {searchError && (
