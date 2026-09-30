@@ -84,6 +84,12 @@ const REVIEWED_RAW_RESEARCH_ENTITY_WRITERS: Record<
     reason:
       'copies whole collections from the accepted Beta copy into staging, so every document is one the model already accepted',
   },
+  'scripts/promotionAccountCarry.ts': {
+    sites: 1,
+    unresolvedKeySites: 1,
+    reason:
+      'rewrites a re-keyed account id in every collection named by its account-reference fields, so one writer serves several collections; the written key is a reviewer account id field and it authors no provenance entry',
+  },
   'scripts/repairGluedSentenceBoundaries.ts': {
     sites: 1,
     reason:
