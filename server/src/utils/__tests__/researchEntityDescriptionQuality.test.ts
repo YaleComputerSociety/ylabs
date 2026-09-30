@@ -1865,6 +1865,16 @@ describe('program card line for deadline announcements and empty summaries (#390
     );
   });
 
+  it('fails closed to empty when a line only announces a deadline and no body sentence clears the bar', () => {
+    expect(
+      programLikeCardShortDescription({
+        shortDescription:
+          'Fixture Summer Research Program Deadline: Friday, February 6, 2026 at 11:00pm ET.',
+        fullDescription: '',
+      }),
+    ).toBe('');
+  });
+
   it('stays empty when neither a summary nor a usable body sentence exists', () => {
     expect(programLikeCardShortDescription({ shortDescription: '', fullDescription: '' })).toBe('');
   });

@@ -160,10 +160,11 @@ export function getItemSubtitleColor(item: BrowsableItem): string {
 /**
  * The clamped line a browse row shows. `cardSummary` is the server's card-bar
  * answer and `summary` is the stored brief, which on the browse surface is often
- * the whole body and so reads as a sentence cut off mid-word (#2215).
+ * the whole body and so reads as a sentence cut off mid-word (#2215). An empty
+ * `cardSummary` is the server failing closed, so it is not replaced (#3904).
  */
 export function getItemCardSummary(item: BrowsableItem): string {
-  return item.data.cardSummary || item.data.summary;
+  return item.data.cardSummary ?? item.data.summary;
 }
 
 export function getFellowshipJourneySummary(fellowship: Fellowship): string | null {
