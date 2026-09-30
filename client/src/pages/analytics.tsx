@@ -713,6 +713,9 @@ const Analytics = () => {
                 </select>
                 <span className="mt-1 block text-xs text-muted">
                   Scopes usage metrics. Corpus and account snapshots show current state.
+                  {data.timeZone
+                    ? ` Today and Semester start at midnight ${data.timeZone} time.`
+                    : ''}
                 </span>
               </label>
               <button

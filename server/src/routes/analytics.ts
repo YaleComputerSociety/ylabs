@@ -8,7 +8,6 @@ import { asyncHandler } from '../middleware/errorHandler';
 import {
   AnalyticsSortDirection,
   AnalyticsUserSort,
-  AnalyticsDateRange,
   SearchQualityQueryAnalytics,
   MAX_USER_ANALYTICS_SEARCH_LENGTH,
   getAnalytics,
@@ -23,6 +22,7 @@ import { getCorpusQualityDashboard } from '../services/corpusQualityDashboardSer
 import { getLaneBenchmarkDashboard } from '../services/laneBenchmarkDashboardService';
 import { validateNetid } from '../middleware/validation';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { ANALYTICS_TIME_ZONE, parseAnalyticsRange } from '../utils/analyticsRange';
 import { BadRequestError } from '../utils/errors';
 import {
   emitResearchEvent,
@@ -154,31 +154,6 @@ router.post(
   }),
 );
 
-const parseAnalyticsRange = (range: unknown): AnalyticsDateRange => {
-  if (range === 'all') {
-    return {};
-  }
-
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  if (range === 'today') {
-    return { start: today, end: now };
-  }
-
-  if (range === '7d') {
-    return { start: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), end: now };
-  }
-
-  if (range === 'semester') {
-    const semesterStart =
-      now.getMonth() >= 6 ? new Date(now.getFullYear(), 6, 1) : new Date(now.getFullYear(), 0, 1);
-    return { start: semesterStart, end: now };
-  }
-
-  return { start: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), end: now };
-};
-
 const parseUserAnalyticsSearch = (search: unknown): string | undefined => {
   if (typeof search !== 'string') {
     return undefined;
@@ -297,7 +272,7 @@ router.get(
   isAdmin,
   asyncHandler(async (request: Request, response: Response) => {
     const analytics = await getAnalytics(parseAnalyticsRange(request.query.range));
-    response.status(200).json(analytics);
+    response.status(200).json({ ...analytics, timeZone: ANALYTICS_TIME_ZONE });
   }),
 );
 

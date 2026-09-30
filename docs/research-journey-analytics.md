@@ -67,6 +67,10 @@ Before #3673 nothing was excluded, and the 4 Production grant holders had writte
 The per-user table still lists every actor, maintainers included.
 
 A signed-in visitor is a distinct netid with any recorded event in the window, typed by that netid's most recent row.
+The dashboard's `today` and `semester` ranges, and the "today" breakdown on every usage card, start at midnight `America/New_York`, the zone Yale's students and operators live in (#4008).
+`ANALYTICS_TIME_ZONE` in `server/src/utils/analyticsRange.ts` declares it once and `parseAnalyticsRange` and `computeAnalytics` both read it, so the boundary no longer follows the host: before #4008 both used server-local midnight, which is UTC on Render and the laptop's zone in local development, so "Today" on a UTC host started at 20:00 or 19:00 New Haven time the previous evening.
+The semester starts at New Haven midnight on 1 July or 1 January, the overview response carries the zone as `timeZone`, and the range picker names it.
+The rolling `7d` and `30d` ranges are relative to the request time and need no zone.
 A `visitor` row carries a `visitor:<UTC date>` dedupe key, so it is written at most once per student per UTC day, and counting only `login` and `visitor` rows missed a returning student whose first visit that day fell before the window.
 Before #3692 the first burst of parallel requests in a session each wrote one, and a local auth-bypass session wrote one per request: 31 of 475 Production and 27,085 of 30,416 Development visitor rows followed the same student's previous row within 10 seconds.
 Logins count `login` rows only.
