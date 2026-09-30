@@ -303,6 +303,41 @@ await step('the keyboard scrolls a page on first load without a click', async ()
   assert(scrollTop > 0, `PageDown on /about left the page scroller at ${scrollTop}.`);
 });
 
+await step('shift-tabbing back through results never parks focus under the sticky filter bar', async () => {
+  const narrowPage = await context.newPage();
+  try {
+    await narrowPage.setViewportSize({ width: 640, height: 400 });
+    await narrowPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+    await settleResearchPage(narrowPage);
+    await narrowPage.getByRole('link', { name: SMOKE_ENTITY_NAME }).first().waitFor({ timeout: 20000 });
+    await narrowPage.locator('#main-content').focus();
+    const tabStops = 60;
+    for (let press = 0; press < tabStops; press += 1) await narrowPage.keyboard.press('Tab');
+    const obscured = [];
+    for (let press = 0; press < tabStops; press += 1) {
+      await narrowPage.keyboard.press('Shift+Tab');
+      const stop = await narrowPage.evaluate(() => {
+        const focused = document.activeElement;
+        const main = document.getElementById('main-content');
+        if (!focused || !main?.contains(focused) || focused === main) return null;
+        const bars = [...document.querySelectorAll('[data-scroll-container] .sticky.top-0')];
+        if (bars.length === 0 || bars.some((bar) => bar.contains(focused))) return null;
+        const rect = focused.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        if (!hit || !bars.some((bar) => bar.contains(hit))) return null;
+        return `${focused.tagName.toLowerCase()} at y ${Math.round(rect.top)}-${Math.round(rect.bottom)}`;
+      });
+      if (stop) obscured.push(stop);
+    }
+    assert(
+      obscured.length === 0,
+      `${obscured.length} focus stops were centred under the sticky filter bar at 640x400, first: ${obscured[0]}.`,
+    );
+  } finally {
+    await narrowPage.close();
+  }
+});
+
 const summary = {
   generatedAt: new Date().toISOString(),
   baseUrl,

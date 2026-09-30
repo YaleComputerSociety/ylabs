@@ -96,6 +96,10 @@ code {
     scroll-margin-top: 6rem;
   }
 
+  [data-scroll-container] {
+    scroll-padding-top: var(--yr-sticky-filter-bar-height, 0px);
+  }
+
   /* Proportional digits in Inter change width between rows, so a column of
      figures fails to align. Every table here is a raw <table>. */
   table {

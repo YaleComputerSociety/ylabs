@@ -80,6 +80,8 @@ Debounce free-text search inputs with `client/src/hooks/useDebouncedCallback.ts`
 - Verify alignment on a consistent grid; watch content width and gutters.
 - Test the range from 1280 to 1536px where sticky rails can overflow, plus mobile.
 - Sticky sidebars must never hide content below the fold on short viewports.
+- A bar pinned with `sticky top-0` inside `[data-scroll-container]` must reserve its height as the scroller's `scroll-padding-top`, or a keyboard focus scrolled into view lands under it (WCAG 2.4.11).
+`ResearchStickyFilterBar` does this by writing its measured height to `--yr-sticky-filter-bar-height`, which `index.css` reads; reuse that pattern for any new sticky bar.
 
 ## Forms
 
