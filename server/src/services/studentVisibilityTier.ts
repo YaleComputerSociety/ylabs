@@ -224,7 +224,7 @@ function isNonOwnerResearchTitle(value: unknown): boolean {
   );
 }
 
-function isGrantOrOrcidSourceUrl(value: string): boolean {
+export function isGrantOrOrcidSourceUrl(value: string): boolean {
   try {
     const url = new URL(value);
     const host = url.hostname.toLowerCase();
@@ -393,7 +393,7 @@ function isNonOwnerGrantShell({
  * An entity with any non-grant URL is unaffected: a real lab website or official
  * Yale page is exactly the corroboration this requires.
  */
-function isUncorroboratedGrantOnlyEntity(entity: Record<string, any>): boolean {
+export function isUncorroboratedGrantOnlyEntity(entity: Record<string, any>): boolean {
   const urls = entityUrls(entity);
   if (urls.length === 0) return false;
   return urls.every(isGrantOrOrcidSourceUrl);

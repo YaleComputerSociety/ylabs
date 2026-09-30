@@ -84,6 +84,13 @@ export const GRANT_SHELL_FACULTY_PORT_ARCHIVE_REASON =
   'research-entity:port-grant-shells-to-faculty-profiles';
 
 /**
+ * A grant enriches a research row and never creates one (#3145), so a faculty-typed row
+ * whose every citation is a grant record exists only because a grant lane minted it.
+ */
+export const GRANT_ONLY_ROW_ARCHIVE_REASON =
+  'research-entity:port-grant-shells-to-faculty-profiles:grant-only';
+
+/**
  * The archivers that fold a row into a canonical one automatically. The eval harness reads
  * this to tell a merge a script decided from one an operator did, because a label produced
  * by the system under measurement caps its recall at what that system already found (#3514).
