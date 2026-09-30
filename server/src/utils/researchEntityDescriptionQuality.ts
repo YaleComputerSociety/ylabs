@@ -740,6 +740,10 @@ const endsWithCardCompletionMarker = (value: string): boolean =>
 const isTruncatedCardCopy = (value: string): boolean =>
   !endsWithCardCompletionMarker(value) && !isConciseSpecificResearchDescription(value);
 
+// Only the shortest window is scanned: a repeated longer window begins with a repeated
+// window of this length at the same positions, so longer passes cannot change the answer (#3955).
+const DUPLICATED_FRAGMENT_MIN_WORDS = 10;
+
 function hasDuplicatedLongFragment(value: string): boolean {
   const sentences = sentenceList(value)
     .map((sentence) =>
@@ -753,14 +757,12 @@ function hasDuplicatedLongFragment(value: string): boolean {
   if (new Set(sentences).size !== sentences.length) return true;
 
   const words = value.toLowerCase().match(/[a-z0-9]+/g) || [];
-  for (let size = 10; size <= 18; size += 1) {
-    const seen = new Map<string, number>();
-    for (let index = 0; index <= words.length - size; index += 1) {
-      const key = words.slice(index, index + size).join(' ');
-      const previous = seen.get(key);
-      if (previous !== undefined && index - previous >= size) return true;
-      seen.set(key, index);
-    }
+  const seen = new Map<string, number>();
+  for (let index = 0; index <= words.length - DUPLICATED_FRAGMENT_MIN_WORDS; index += 1) {
+    const key = words.slice(index, index + DUPLICATED_FRAGMENT_MIN_WORDS).join(' ');
+    const previous = seen.get(key);
+    if (previous !== undefined && index - previous >= DUPLICATED_FRAGMENT_MIN_WORDS) return true;
+    seen.set(key, index);
   }
   return false;
 }

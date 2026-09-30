@@ -763,7 +763,7 @@ export function computeResearchEntityStudentVisibility({
     entity,
     leadMembers,
   });
-  const quality = buildResearchEntityQualitySummary({ entity, leadMembers });
+  const quality = buildResearchEntityQualitySummary({ entity, leadMembers, publicDescription });
   const reasons: string[] = [];
   const hasActionEvidence =
     openPostedOpportunityCount > 0 || accessSignalCount > 0 || actionablePathwayCount > 0;
