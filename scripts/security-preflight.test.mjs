@@ -1153,6 +1153,48 @@ test('the required checks also run on the commit that lands on beta', () => {
   }
 });
 
+test('third-party actions stay SHA-pinned beside the version comment Dependabot rewrites', () => {
+  const workflowDir = new URL('../.github/workflows/', import.meta.url);
+  let pins = 0;
+  for (const file of fs.readdirSync(workflowDir)) {
+    const workflow = fs.readFileSync(new URL(file, workflowDir), 'utf8');
+    for (const [, reference, trailer] of workflow.matchAll(/^\s*uses:\s*(\S+)(.*)$/gm)) {
+      pins += 1;
+      assert.match(
+        reference,
+        /^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/,
+        `${file} pins ${reference} by name: a mutable tag lets an upstream force-push change what runs here`,
+      );
+      // The comment is not decoration. It is the only record of which release the
+      // SHA is, and it is the field Dependabot rewrites alongside the SHA, so a
+      // pin without it gets no update proposal at all (ylabs#3914).
+      assert.match(
+        trailer,
+        /#\s*v\d+(\.\d+)*/,
+        `${file} must name the release beside ${reference} so the pin stays maintainable`,
+      );
+    }
+  }
+  assert.ok(pins > 0, 'the workflows must still use at least one pinned action');
+});
+
+test('a Dependabot updater keeps the action pins from freezing', () => {
+  const config = fs.readFileSync(new URL('../.github/dependabot.yml', import.meta.url), 'utf8');
+  assert.match(
+    config,
+    /package-ecosystem:\s*github-actions/,
+    'a SHA pin never updates itself, so an updater is what keeps it from freezing on a deprecated runtime (ylabs#3914)',
+  );
+  assert.match(config, /directory:\s*\/\s*$/m, 'the workflows live at the repository root');
+  assert.match(
+    config,
+    /target-branch:\s*beta/,
+    'pull requests are based on beta here, so an updater left on the default target would open against the production branch',
+  );
+  assert.match(config, /interval:\s*weekly/);
+  assert.match(config, /groups:/, 'grouping keeps an action bump to one pull request rather than one per action');
+});
+
 // The live-prod smoke now runs only on a promotion, so post-promotion-verify is
 // the sole workflow carrying these assertions. Deleting the standing schedule
 // left `security:smoke:production` reachable from this workflow and from an
