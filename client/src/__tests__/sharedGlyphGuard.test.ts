@@ -12,6 +12,9 @@ const SRC = join(__dirname, '..');
  */
 const LITERAL_FORWARD_GLYPH = /[→➔➜⟶›»]/;
 
+const LITERAL_CLOSE_GLYPH =
+  /(?<![\d}])[×✕✖✗╳⨯]|&times;|\\u00d7|\\u2715|(?:^|>)\s*[xX]\s*(?:<|$)/;
+
 /** The arrow path itself, which should exist in exactly one place. */
 const ARROW_PATH = /d="m12 5 7 7-7 7"|d="M5 12h14"/;
 
@@ -45,6 +48,10 @@ const sitesWhere = (matches: (line: string, file: string) => boolean): string[] 
 describe('shared glyph guard', () => {
   it('renders a forward affordance as an icon rather than a character', () => {
     expect(sitesWhere((line) => LITERAL_FORWARD_GLYPH.test(line))).toEqual([]);
+  });
+
+  it('renders a close or remove affordance as an icon rather than a character', () => {
+    expect(sitesWhere((line) => LITERAL_CLOSE_GLYPH.test(line))).toEqual([]);
   });
 
   it('draws the arrow path only in the icon set', () => {
