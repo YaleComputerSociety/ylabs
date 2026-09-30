@@ -43,7 +43,6 @@ const FUNDS_RESEARCH_KINDS = new Set([
   'FELLOWSHIP_FUNDING',
   'TRAVEL_RESEARCH_GRANT',
   'SENIOR_THESIS_FUNDING',
-  'RESEARCH_AWARD',
 ]);
 
 export function programRoleOf(fellowship: Fellowship): string {
