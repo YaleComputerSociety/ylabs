@@ -88,4 +88,70 @@ describe('classifyProgramResearchRelevance', () => {
     });
     expect(result.researchRelated).toBe(false);
   });
+
+  describe('the purpose facet decides for a record that carries one (#3904)', () => {
+    const related = (input: Parameters<typeof classifyProgramResearchRelevance>[0]) =>
+      classifyProgramResearchRelevance(input).researchRelated;
+
+    it('excludes a study, service or internship award whose facet names no research', () => {
+      expect(
+        related({
+          title: 'Fixture Fellowship for Nonprofit Internships',
+          programKind: 'TRAVEL_RESEARCH_GRANT',
+          studentFacingCategory: 'Research travel funding',
+          purpose: ['Service'],
+          description: 'Awards support domestic non-profit internships over the summer.',
+        }),
+      ).toBe(false);
+    });
+
+    it('never counts the derived category label as research evidence', () => {
+      expect(
+        related({
+          title: 'Fixture Summer Grant',
+          studentFacingCategory: 'Research travel funding',
+          purpose: ['Study'],
+          description: 'Limited summer funding for language and area study.',
+        }),
+      ).toBe(false);
+    });
+
+    it('keeps a travel award whose own prose says it funds research trips', () => {
+      expect(
+        related({
+          title: 'Fixture Council Travel Award',
+          purpose: ['Travel'],
+          description:
+            'Helps defray travel costs for short-term research trips relating to Europe.',
+        }),
+      ).toBe(true);
+    });
+
+    it('keeps an award whose own title names research', () => {
+      expect(
+        related({ title: 'Fixture Pre-Dissertation Research Fellowship', purpose: ['Travel'] }),
+      ).toBe(true);
+    });
+
+    it('keeps a national award for students pursuing research careers', () => {
+      expect(
+        related({
+          title: 'Fixture National Scholarship',
+          purpose: ['Study'],
+          description:
+            'For sophomores and juniors intending to pursue research careers in STEM fields.',
+        }),
+      ).toBe(true);
+    });
+
+    it('leaves a record with no facet to the existing text rule', () => {
+      expect(
+        related({
+          title: 'Fixture Fund',
+          purpose: [],
+          description: 'Supports independent research projects.',
+        }),
+      ).toBe(true);
+    });
+  });
 });
