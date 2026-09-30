@@ -310,13 +310,13 @@ describe('classifyProgram internship identity (#2925)', () => {
         description:
           'Provides a financial award and mentorship for research, an internship, or an applied project in conservation.',
       }),
-    ).toMatchObject({ studentFacingCategory: 'Funding after mentor' });
+    ).toMatchObject({ programKind: 'FELLOWSHIP_FUNDING', programCategory: 'FELLOWSHIP' });
     expect(
       classifyProgram({
         title: 'Fixture Studies Student Internship and Research Grant',
         summary: 'A small grant supporting eligible student internships or research.',
       }),
-    ).toMatchObject({ studentFacingCategory: 'Funding after mentor' });
+    ).toMatchObject({ programKind: 'FELLOWSHIP_FUNDING', programCategory: 'FELLOWSHIP' });
   });
 
   it('still classifies a record that names itself an internship program', () => {
@@ -503,5 +503,78 @@ describe('classifyProgram internship identity (#2925)', () => {
     });
     expect(result.programKind).not.toBe('MENTOR_MATCHING');
     expect(result.programRole).toBe('FUNDS_RESEARCH');
+  });
+});
+
+describe('classifyProgram mentor requirement is read off the page (#4131)', () => {
+  const fund = (applicationInformation: string) =>
+    classifyProgram({ title: 'Fixture Memorial Fund', applicationInformation });
+
+  it('claims no mentor requirement for a funding record whose page states none', () => {
+    expect(fund('Submit a budget and a one-page statement through the database.')).toMatchObject({
+      entryMode: 'APPLY_TO_PROGRAM',
+      requiresMentorBeforeApply: false,
+      studentFacingCategory: 'Fellowship or grant',
+      prepSteps: ['Eligibility check', 'Official application'],
+    });
+  });
+
+  it('does not treat a letter of recommendation as a mentor requirement', () => {
+    expect(fund('One letter of recommendation from a faculty advisor.')).toMatchObject({
+      requiresMentorBeforeApply: false,
+    });
+    expect(fund('Letter of support from a faculty advisor.')).toMatchObject({
+      requiresMentorBeforeApply: false,
+    });
+  });
+
+  it.each([
+    'The letter must include confirmation that this person has agreed to be the mentor for this project.',
+    'The Fellow must have a written commitment from a Yale faculty member to conduct research in the laboratory.',
+    'In order to receive consideration, a candidate must have as a sponsor a member of the faculty.',
+    'All applicants require a school-affiliated mentor.',
+    'The signature of the applicant’s thesis advisor is required.',
+    'Proposals should include the name of your faculty mentor and a description of their role.',
+  ])('claims a mentor requirement the page states: %s', (text) => {
+    expect(fund(text)).toMatchObject({
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      requiresMentorBeforeApply: true,
+      studentFacingCategory: 'Funding after mentor',
+    });
+  });
+
+  it.each([
+    'Projects may have a faculty advisor or collaborator, but are not required to.',
+    'Meeting with an adviser is not mandatory.',
+    'A faculty mentor is not required, but applicants are encouraged to consult one.',
+  ])('does not claim a requirement the page explicitly waives: %s', (text) => {
+    expect(fund(text)).toMatchObject({ requiresMentorBeforeApply: false });
+  });
+
+  it('judges each sentence alone, so a waiver elsewhere cannot cancel a stated requirement', () => {
+    expect(
+      fund(
+        'Meeting with a fellowship adviser is not mandatory. All applicants require a faculty mentor.',
+      ),
+    ).toMatchObject({ requiresMentorBeforeApply: true });
+  });
+
+  it('keeps the faculty sponsor prep step on travel funding only when the page requires one', () => {
+    const travel = (applicationInformation: string) =>
+      classifyProgram({
+        title: 'Fixture Travel Research Grant',
+        description: 'Supports field research travel abroad.',
+        applicationInformation,
+      });
+    expect(travel('Submit a budget.').prepSteps).not.toContain('Faculty sponsor');
+    expect(travel('All applicants require a faculty sponsor.').prepSteps).toContain(
+      'Faculty sponsor',
+    );
+  });
+
+  it('never tells a student to find a research home', () => {
+    for (const text of ['Submit a budget.', 'All applicants require a faculty mentor.']) {
+      expect(fund(text).bestNextStep).not.toMatch(/research home/i);
+    }
   });
 });

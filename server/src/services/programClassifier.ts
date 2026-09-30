@@ -147,8 +147,65 @@ function baseFundingClassification(): KindClassification {
     requiresMentorBeforeApply: true,
     mentorMatching: false,
     bestNextStep:
-      'Identify a research home or mentor, then use this funding record to plan the application.',
+      'Find a faculty mentor or sponsor, then use this funding record to plan the application.',
     prepSteps: ['Research plan', 'Faculty mentor or sponsor', 'Official application'],
+  };
+}
+
+const MENTOR_NOUN = '(?:mentor|sponsor|adviser|advisor|supervisor)s?';
+
+const MENTOR_ROLE = `(?:[\\w-]+ )?(?:faculty |research |project |thesis )?${MENTOR_NOUN}`;
+
+const MENTOR_REQUIREMENT_SENTENCE = new RegExp(
+  [
+    `\\b(?:requires?|required|must (?:have|secure|identify|find|obtain|include)(?: as)?|needs? (?:to have )?) (?:a |an |the |your )?${MENTOR_ROLE}\\b`,
+    `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN} (?:is|are|must be) (?:required|needed)\\b`,
+    `\\bmust have as (?:a |an )?${MENTOR_NOUN} (?:a )?(?:member of the )?faculty\\b`,
+    `\\bagreed to (?:be|serve as) (?:the |your |a )?${MENTOR_NOUN}\\b`,
+    `\\b(?:written )?commitment from (?:a |an |the )?(?:yale )?faculty member\\b`,
+    `\\bname of (?:your|the) (?:faculty )?${MENTOR_NOUN}\\b`,
+    `\\bdeveloped with (?:a |an )?(?:potential )?${MENTOR_ROLE}\\b`,
+    `\\b(?:signature|approval|endorsement) (?:of|from) (?:the applicant['’]s |your |a |an |the )?[^.]{0,60}?${MENTOR_NOUN}\\b[^.]{0,20}\\b(?:is |are )?required\\b`,
+    `\\b${MENTOR_NOUN}['’]s? (?:letter|statement|approval|endorsement|signature) (?:is |are )?required\\b`,
+    `\\bunder the (?:supervision|guidance|direction) of (?:a |an )?(?:yale )?faculty\\b`,
+  ].join('|'),
+  'i',
+);
+
+const MENTOR_NOT_REQUIRED_SENTENCE =
+  /\b(?:not (?:required|mandatory|necessary)|not required to|(?:is|are) not required|does not require|do not need|don['’]t need|no (?:faculty )?(?:mentor|sponsor|adviser|advisor) (?:is )?(?:required|needed))\b/i;
+
+/**
+ * Whether a funding record's own page says a mentor is required. This used to be assumed
+ * for every funding record no specific arm claimed, which told students to find a faculty
+ * mentor for internship, travel and event funds that ask for none (#4131). A recommendation
+ * letter alone is not a mentor requirement. Each sentence is judged on its own, so "a
+ * faculty advisor is welcome but not required" cannot be cancelled or confirmed by a
+ * different sentence about a letter of reference.
+ */
+export function mentorRequirementSentence(input: ProgramClassificationInput): string | undefined {
+  return proseForProgram(input)
+    .split(/(?<=[.!?])\s+|\n+|(?<=[a-z])(?=[A-Z][a-z]+:)/)
+    .find(
+      (sentence) =>
+        MENTOR_REQUIREMENT_SENTENCE.test(sentence) && !MENTOR_NOT_REQUIRED_SENTENCE.test(sentence),
+    );
+}
+
+function statesMentorRequirement(input: ProgramClassificationInput): boolean {
+  return mentorRequirementSentence(input) !== undefined;
+}
+
+function fundingClassificationFromPage(input: ProgramClassificationInput): KindClassification {
+  if (statesMentorRequirement(input)) return baseFundingClassification();
+  return {
+    ...baseFundingClassification(),
+    entryMode: 'APPLY_TO_PROGRAM',
+    studentFacingCategory: 'Fellowship or grant',
+    requiresMentorBeforeApply: false,
+    bestNextStep:
+      'Check the eligibility and application requirements on the official page, then apply.',
+    prepSteps: ['Eligibility check', 'Official application'],
   };
 }
 
@@ -609,7 +666,7 @@ function classifyProgramKind(input: ProgramClassificationInput): KindClassificat
     });
   }
 
-  const funding = baseFundingClassification();
+  const funding = fundingClassificationFromPage(input);
   if (/not for undergraduates|graduate students only|doctoral dissertation/.test(lower)) {
     return archiveReviewClassification();
   }
@@ -655,7 +712,9 @@ function classifyProgramKind(input: ProgramClassificationInput): KindClassificat
       ...funding,
       programKind: 'TRAVEL_RESEARCH_GRANT',
       studentFacingCategory: 'Research travel funding',
-      prepSteps: ['Research plan', 'Budget', 'Faculty sponsor', 'Official application'],
+      prepSteps: funding.requiresMentorBeforeApply
+        ? ['Research plan', 'Budget', 'Faculty sponsor', 'Official application']
+        : ['Research plan', 'Budget', 'Official application'],
     };
   }
 
