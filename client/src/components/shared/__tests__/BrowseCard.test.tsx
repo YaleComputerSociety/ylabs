@@ -206,6 +206,60 @@ describe('Program card visual hierarchy', () => {
   });
 });
 
+describe('Program card icon cluster placement', () => {
+  const closingSoon: BrowsableItem = {
+    type: 'fellowship',
+    data: {
+      ...fellowship,
+      id: 'program-urgent',
+      deadline: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+  };
+
+  it('anchors the icon cluster below the urgency banner rather than across it', () => {
+    const { container } = renderAdmin(
+      <BrowseCard
+        item={closingSoon}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        onAdminEdit={vi.fn()}
+      />,
+    );
+
+    const card = container.firstElementChild as HTMLElement;
+    const banner = screen.getByText(/days left/).parentElement as HTMLElement;
+    const cluster = screen.getByRole('button', { name: 'Admin edit' }).parentElement as HTMLElement;
+    const anchor = cluster.parentElement as HTMLElement;
+
+    expect(banner.parentElement).toBe(card);
+    expect(cluster.className).toContain('absolute');
+    expect(anchor.className).toContain('relative');
+    expect(anchor.parentElement).toBe(card);
+    expect(anchor.previousElementSibling).toBe(banner);
+    expect(anchor.childElementCount).toBe(1);
+  });
+
+  it('keeps the icon cluster at the top of the card when no urgency banner renders', () => {
+    const { container } = renderAdmin(
+      <BrowseCard
+        item={item}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        onAdminEdit={vi.fn()}
+      />,
+    );
+
+    const card = container.firstElementChild as HTMLElement;
+    const cluster = screen.getByRole('button', { name: 'Admin edit' }).parentElement as HTMLElement;
+    const anchor = cluster.parentElement as HTMLElement;
+
+    expect(anchor.parentElement).toBe(card);
+    expect(anchor.previousElementSibling).toBeNull();
+  });
+});
+
 describe('Program card pointer target', () => {
   it('does not promise a pointer target on a card wrapper that handles no click', () => {
     const { container } = renderAdmin(

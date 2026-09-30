@@ -87,8 +87,11 @@ const BrowseCard = React.memo(
           <UrgentBadge daysUntil={daysUntil} variant="banner" />
         )}
 
-        <div className="p-5 flex-1 flex flex-col">
-          <div className="absolute top-2 right-2 flex items-center gap-1 z-10 flex-shrink-0">
+        {/* Zero-height anchor: the icon cluster must hang below the urgency banner
+            rather than straddle it, and the card root must stay the containing block
+            for the whole-card click overlay on "View details". */}
+        <div className="relative z-10">
+          <div className="absolute top-2 right-2 flex items-center gap-1 flex-shrink-0">
             {isAdmin && onAdminEdit && (
               <button
                 onClick={(e) => {
@@ -106,7 +109,9 @@ const BrowseCard = React.memo(
               <FavoriteButton isFavorite={isFavorite} onToggle={onToggleFavorite} />
             )}
           </div>
+        </div>
 
+        <div className="p-5 flex-1 flex flex-col">
           <>
             <div
               className="mb-2 flex flex-col items-start gap-1"
