@@ -1499,8 +1499,8 @@ describe('index document field allowlist (#3944)', () => {
   });
 
   it('allowlists every field the embedder template renders and every field an index reader retrieves', () => {
-    const template = buildResearchEntitySearchEmbedderConfig('synthetic-key').default
-      .documentTemplate;
+    const template =
+      buildResearchEntitySearchEmbedderConfig('synthetic-key').default.documentTemplate;
     const templateFields = Array.from(template.matchAll(/doc\.([A-Za-z_]+)/g), (match) => match[1]);
 
     expect(templateFields.length).toBeGreaterThan(0);
