@@ -89,6 +89,29 @@ Draft state is the default hold.
 Open promotion pull requests as drafts, verify on staging, then mark ready.
 Use the `hold` label when a promotion must be blocked for a reason other than draft state, so the reason is visible in the pull request list.
 
+The check, `scripts/release-hold-check.sh`, reads both conditions from the pull request itself at run time, with `gh pr view --json isDraft,labels`, rather than from the webhook payload that started the run.
+The label match ignores case, so `Hold` holds as well as `hold`, and a failure to read the live state fails the check.
+That is what makes "while" true.
+A re-run of a workflow run replays the original event, so a payload-driven check would re-read the labels and draft state as they were at that earlier event and could report clear on a promotion that is still held (#3911).
+Re-running the check is therefore safe: it always evaluates the current state.
+
+## Keeping beta warm
+
+The `Keep Alive` workflow pings `GET /api/config` on the beta service.
+It is a warm-up that doubles as the only scheduled signal about beta, so `scripts/keep-alive-probe.sh` fails when the route does not answer 2xx after three attempts twenty seconds apart, and it prints the final HTTP status so a red run names what it saw (#3910).
+
+The probed route is deliberately `/api/config` rather than the service root.
+The root answers 2xx from a cold instance and keeps answering 2xx while the API is broken, which is how #3910's three days of HTTP 500 produced an unbroken green history.
+`/api/config` is the route the client cannot start without, so it is the one worth reporting on, and a cold start is absorbed by the retries rather than by narrowing what is probed.
+That makes this job a monitor of the served API that also keeps the instance warm, not a liveness check on the instance alone.
+
+A 500 is a running service returning an error, not a cold start, and it is reported as a failure.
+A timeout or refused connection counts as a failed attempt and is reported as HTTP `000`, so a cold start that outlasts one attempt still gets the remaining retries.
+
+Its cadence is best-effort and much lower than the cron line suggests.
+GitHub delays and drops scheduled runs under load; the observed rate has been roughly 6 to 7 runs a day against a cron that asks for 144.
+So read a red run as a real signal about beta, but never read a green history as proof that beta stayed warm, or that it was healthy, between runs.
+
 ## Holding one feature instead of the whole release
 
 Holding the whole promotion blocks every other change queued behind it.

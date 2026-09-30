@@ -1,5 +1,10 @@
 import nodeAssert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   ORCID_PATTERN,
   orcidIsUnsafeForFixtures,
@@ -841,6 +846,8 @@ test('GitHub workflows run with read-only repository token permissions', () => {
 test('GitHub checkout steps do not persist repository credentials', () => {
   for (const [name, workflow] of [
     ['ci', ciWorkflow],
+    ['keep-alive', keepAliveWorkflow],
+    ['release-hold', releaseHoldWorkflow],
     ['post-promotion-verify', postPromotionVerifyWorkflow],
   ]) {
     const checkoutStep =
@@ -856,6 +863,166 @@ test('GitHub checkout steps do not persist repository credentials', () => {
       `${name} checkout must not leave GITHUB_TOKEN in local git config`,
     );
   }
+});
+
+const runScript = (script, env) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(fileURLToPath(new URL(script, import.meta.url)), {
+      env: { ...process.env, ...env },
+    });
+    let output = '';
+    child.stdout.on('data', (chunk) => (output += chunk));
+    child.stderr.on('data', (chunk) => (output += chunk));
+    child.on('error', reject);
+    child.on('close', (code) => resolve({ code, output }));
+  });
+
+const withStubEndpoint = async (statusCode, probe) => {
+  let requests = 0;
+  const server = http.createServer((request, response) => {
+    requests += 1;
+    response.writeHead(statusCode).end();
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/`;
+    return { ...(await probe(url)), requests: () => requests };
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+};
+
+const probeBeta = (url) =>
+  runScript('./keep-alive-probe.sh', {
+    BETA_HEALTH_URL: url,
+    KEEP_ALIVE_RETRY_DELAY_SECONDS: '0',
+  });
+
+test('the keep-alive probe fails after retrying a beta endpoint that answers 500', async () => {
+  const result = await withStubEndpoint(500, probeBeta);
+  assert.equal(result.code, 1, 'a persistent 500 must fail the job (ylabs#3910)');
+  assert.equal(result.requests(), 3, 'the probe retries before failing');
+  assert.match(result.output, /::error::.*last HTTP 500/, 'a red run names the status it saw');
+});
+
+test('the keep-alive probe passes when beta answers 2xx', async () => {
+  const result = await withStubEndpoint(204, probeBeta);
+  assert.equal(result.code, 0);
+  assert.equal(result.requests(), 1);
+});
+
+test('the keep-alive probe retries and reports a transport failure instead of aborting', async () => {
+  const server = http.createServer();
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  await new Promise((resolve) => server.close(resolve));
+
+  const result = await probeBeta(`http://127.0.0.1:${port}/`);
+  assert.equal(result.code, 1);
+  assert.equal(result.output.match(/^attempt \d\/3: HTTP 000$/gm)?.length, 3);
+  assert.match(result.output, /::error::.*last HTTP 000/);
+});
+
+const checkReleaseHold = (liveState) => {
+  const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'release-hold-gh-'));
+  const ghStub = path.join(stubDir, 'gh');
+  fs.writeFileSync(
+    ghStub,
+    liveState === null
+      ? '#!/usr/bin/env bash\necho "gh: HTTP 502" >&2\nexit 1\n'
+      : `#!/usr/bin/env bash\ncat <<'JSON'\n${JSON.stringify(liveState)}\nJSON\n`,
+    { mode: 0o755 },
+  );
+  return runScript('./release-hold-check.sh', {
+    PATH: `${stubDir}${path.delimiter}${process.env.PATH}`,
+    PR_NUMBER: '1',
+    TARGET_REPO: 'example/example',
+  }).finally(() => fs.rmSync(stubDir, { recursive: true, force: true }));
+};
+
+test('release-hold decides from the live pull request state it reads at run time', async () => {
+  // A re-run replays the original event payload, so the check must read the
+  // labels and draft flag live or it would clear a hold still in effect (ylabs#3911).
+  const clear = await checkReleaseHold({ isDraft: false, labels: [{ name: 'ready' }] });
+  assert.equal(clear.code, 0, clear.output);
+
+  const draft = await checkReleaseHold({ isDraft: true, labels: [] });
+  assert.equal(draft.code, 1);
+  assert.match(draft.output, /::error::This promotion is still a draft/);
+
+  for (const spelling of ['hold', 'Hold', 'HOLD']) {
+    const held = await checkReleaseHold({ isDraft: false, labels: [{ name: spelling }] });
+    assert.equal(held.code, 1, `a '${spelling}' label must block the promotion`);
+    assert.match(held.output, /::error::The 'hold' label is set/);
+  }
+
+  const unreadable = await checkReleaseHold(null);
+  assert.notEqual(unreadable.code, 0, 'an unreadable live state must fail closed');
+});
+
+// The behaviour tests above run the scripts, so they cannot see the workflow
+// wiring them up. These pin the wiring: what the job probes, and where its
+// decision comes from. Both defects were in the workflow, not in a script.
+test('the keep-alive job probes the served API and keeps its exit status', () => {
+  assert.match(
+    keepAliveWorkflow,
+    /BETA_HEALTH_URL:\s*https:\/\/ylabs-gr4v\.onrender\.com\/api\/config\s*$/m,
+    'keep-alive must probe /api/config: the service root answers 2xx while the API answers 500, which is exactly the green history ylabs#3910 reports',
+  );
+  for (const [name, source] of [
+    ['keep-alive.yml', keepAliveWorkflow],
+    ['keep-alive-probe.sh', fs.readFileSync(new URL('./keep-alive-probe.sh', import.meta.url), 'utf8')],
+  ]) {
+    assert.doesNotMatch(
+      source,
+      /curl[^\n]*\|\|\s*(echo|true)/,
+      `${name} must not discard the probe exit status: \`|| echo\` turned three days of HTTP 500 on beta into an unbroken green history (ylabs#3910)`,
+    );
+  }
+});
+
+test('the release-hold job reads live state rather than the replayed event payload', () => {
+  // github.event is a frozen copy of the payload that started the run, so a
+  // re-run of an earlier attempt re-reads the labels and draft flag as they were
+  // then and would clear a hold that is still in effect (ylabs#3911).
+  assert.doesNotMatch(
+    releaseHoldWorkflow,
+    /github\.event\.pull_request\.labels/,
+    'release-hold must not read labels from the event payload',
+  );
+  assert.doesNotMatch(
+    releaseHoldWorkflow,
+    /github\.event\.pull_request\.draft/,
+    'release-hold must not read draft state from the event payload',
+  );
+  assert.match(
+    releaseHoldWorkflow,
+    /pull-requests:\s*read/,
+    'reading the live pull request state needs the pull-requests: read scope',
+  );
+  assert.match(
+    fs.readFileSync(new URL('./release-hold-check.sh', import.meta.url), 'utf8'),
+    /gh pr view[^\n]*--json isDraft,labels/,
+    'the check must read the live label and draft state at run time',
+  );
+  for (const trigger of [
+    'labeled',
+    'unlabeled',
+    'ready_for_review',
+    'converted_to_draft',
+    'synchronize',
+  ]) {
+    assert.match(
+      releaseHoldWorkflow,
+      new RegExp(`\\b${trigger}\\b`),
+      `release-hold must keep the ${trigger} trigger so a state change still produces a new run`,
+    );
+  }
+  assert.match(
+    releaseHoldWorkflow,
+    /name:\s*release-hold/,
+    'the job name is the required context name on the main ruleset and must not change',
+  );
 });
 
 // The live-prod smoke now runs only on a promotion, so post-promotion-verify is
