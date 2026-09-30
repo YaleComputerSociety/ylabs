@@ -27,6 +27,12 @@ const fellowship = (id: string, title: string, archived: boolean) => ({
   applicationOpenDate: null,
   isAcceptingApplications: true,
   createdAt: '2026-09-01T00:00:00.000Z',
+  yearOfStudy: ['Senior'],
+  termOfAward: [],
+  purpose: [],
+  globalRegions: [],
+  citizenshipStatus: [],
+  links: [{ label: 'Program page', url: 'https://example.org/program' }],
 });
 
 const pageOf = (...fellowships: ReturnType<typeof fellowship>[]) => ({
@@ -58,5 +64,18 @@ describe('AdminFellowshipsTable', () => {
 
     expect(screen.queryByText('Synthetic Active')).toBeNull();
     expect(screen.getByText('Synthetic Archived')).toBeTruthy();
+  });
+
+  it('names each tag and link remove button after the value it removes', async () => {
+    mockedAxios.get.mockResolvedValue(pageOf(fellowship('f1', 'Synthetic Active', false)));
+    render(<AdminFellowshipsTable />);
+
+    await screen.findByText('Synthetic Active');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Senior from Year of Study' }));
+    expect(screen.queryByRole('button', { name: 'Remove Senior from Year of Study' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove link Program page' }));
+    expect(screen.queryByRole('button', { name: 'Remove link Program page' })).toBeNull();
   });
 });

@@ -14,6 +14,7 @@ import {
 } from '../../reducers/adminFellowshipFormReducer';
 import { getFellowshipApplicationStatus } from '../../utils/fellowshipStatus';
 import useLatestRequest from '../../hooks/useLatestRequest';
+import { CloseIcon } from '../shared/icons';
 
 interface FellowshipLink {
   label: string;
@@ -434,9 +435,10 @@ const ArrayFieldEditor = ({
             <button
               type="button"
               onClick={() => handleRemove(value)}
+              aria-label={`Remove ${value} from ${label}`}
               className="ml-1.5 text-muted hover:text-brand yr-focus-ring"
             >
-              &times;
+              <CloseIcon size={10} />
             </button>
           </span>
         ))}
@@ -506,9 +508,10 @@ const LinksEditor = ({
               <button
                 type="button"
                 onClick={() => handleRemove(i)}
+                aria-label={`Remove link ${link.label}`}
                 className="ml-auto text-muted hover:text-brand flex-shrink-0 yr-focus-ring"
               >
-                &times;
+                <CloseIcon size={10} />
               </button>
             </div>
           ))}
