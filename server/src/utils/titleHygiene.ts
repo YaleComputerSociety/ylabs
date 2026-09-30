@@ -85,8 +85,10 @@ const SITE_MENU_ITEM_WORDS = new Set([
 const ROLE_WORD_PATTERN =
   /\b(?:professor|lecturer|lector|instructor|scientist|scholar|researcher|director|fellow|chair|dean|provost|president|head|lead|assistant|associate|adjunct|affiliate|visiting|emeritus|emerita|postdoc|postdoctoral|student|candidate|manager|coordinator|administrator|officer|specialist|technician|technologist|analyst|engineer|counselor|librarian|curator|editor|advisor|adviser|nurse|physician|clinician|worker)\b/i;
 
+const TITLE_CONNECTIVE_WORDS = new Set(['and', 'of', 'in', 'the', 'at', 'to']);
+
 const MIN_SITE_MENU_ITEMS = 6;
-const MIN_SITE_MENU_ITEM_WORDS = 2;
+const MIN_SITE_MENU_ITEM_WORDS = 3;
 const MENU_ITEM_TOKEN_PATTERN = /^(?:[A-Z][A-Za-z'’-]*|&)$/;
 
 function isSpaceSeparatedSiteMenu(text: string): boolean {
@@ -94,9 +96,9 @@ function isSpaceSeparatedSiteMenu(text: string): boolean {
   if (tokens.length < MIN_SITE_MENU_ITEMS) return false;
   if (!tokens.every((token) => MENU_ITEM_TOKEN_PATTERN.test(token))) return false;
   if (ROLE_WORD_PATTERN.test(text)) return false;
-  const menuItemWords = new Set(
-    tokens.map((token) => token.toLowerCase()).filter((word) => SITE_MENU_ITEM_WORDS.has(word)),
-  );
+  const words = tokens.map((token) => token.toLowerCase());
+  if (words.some((word) => TITLE_CONNECTIVE_WORDS.has(word))) return false;
+  const menuItemWords = new Set(words.filter((word) => SITE_MENU_ITEM_WORDS.has(word)));
   return menuItemWords.size >= MIN_SITE_MENU_ITEM_WORDS;
 }
 
@@ -111,7 +113,8 @@ function isSpaceSeparatedSiteMenu(text: string): boolean {
  *  - breadcrumb trails with two or more chained separators (> » › • ·).
  *  - two or more distinct navigation/menu phrases.
  *  - a site menu read with spaces between its items (#4046): six or more
- *    capitalized single words, no role word, two or more of them menu items.
+ *    capitalized single words, no role word or title connective (And, Of),
+ *    three or more of them menu items.
  */
 export function isNavMenuChromeTitle(value: string | null | undefined): boolean {
   const text = normalizeTitleWhitespace(value);

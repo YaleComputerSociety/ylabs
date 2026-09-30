@@ -55,6 +55,10 @@ describe('isNavMenuChromeTitle', () => {
       'Yale-Foundation Medicine Retrospective Oncology Research Award',
       'Director Of Research Media And Outreach Programs',
       'Home About Research',
+      'Senior Communications And Media Events Planner',
+      'News And Media Relations Office Staff Writer',
+      'Communications Media Events And Outreach Team',
+      'Senior Media Events Planner Office Staff',
     ]) {
       expect(isNavMenuChromeTitle(title)).toBe(false);
     }
