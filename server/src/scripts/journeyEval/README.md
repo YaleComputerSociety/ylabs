@@ -64,6 +64,8 @@ The case computes its expectation by calling `withholdUnservableResearchAreas` i
 That chain is now two guards: `withoutMeshSourcedGeographicResearchAreas` withholds a MeSH geographic descriptor read from a MeSH-indexed profile, then the coherence guard runs.
 A restated chain goes stale the moment a guard is added: after #3693 added the MeSH geographic withhold to both serve paths, the case reported that guard's drops as unexplained.
 Add a new served topic guard to that function, never to one call site.
+`__tests__/journeyEvalCases.test.ts` runs the case itself over synthetic rows, so it fails if the case stops using that function: a drop of only place names read from a MeSH-indexed profile is attributed, while a drop no guard explains, or a place-name drop from any other source, still fails the invariant.
+Measured on Development on 2026-09-30 at `--window=100`, 2 of 100 cards served fewer topics than they stored and both were attributed, so the invariant passes (#4075).
 
 ## What this harness does not cover
 
