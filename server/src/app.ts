@@ -11,7 +11,6 @@ import passport, { passportRoutes } from './passport';
 import routes from './routes/index';
 import cookieSession from 'cookie-session';
 import dotenv from 'dotenv';
-import { BlockList, isIP } from 'node:net';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
@@ -21,6 +20,7 @@ import { sanitizeMongo } from './middleware/sanitizeMongo';
 import { csrfOriginGuard } from './middleware/csrfOriginGuard';
 import { createCorsOriginHandler } from './middleware/corsOrigin';
 import { sessionCookieName } from './utils/sessionCookie';
+import { parseTrustedProxyCidrs } from './utils/trustedProxyCidrs';
 import { assertDeployedMeiliConnectionConfig } from './utils/meiliClient';
 import {
   ensureAnonymousRateLimitId,
@@ -81,52 +81,15 @@ if (sessionSecret.length < MIN_SESSION_SECRET_LENGTH || isWeakSessionSecret(sess
 
 const bypassRuntimeSecurity = allowsNonProductionSecurityBypass();
 
-const trustedProxyAddresses = new BlockList();
-let trustedProxyAddressCount = 0;
-for (const entry of (process.env.TRUSTED_PROXY_CIDRS || '').split(',')) {
-  const value = entry.trim();
-  if (!value) continue;
-  const cidrParts = value.split('/');
-  const [address, prefixValue] = cidrParts;
-  const addressType = isIP(address);
-  const hasValidPrefixSyntax = prefixValue === undefined || /^\d+$/.test(prefixValue);
-  const prefix = prefixValue === undefined ? undefined : Number(prefixValue);
-  const maximumPrefix = addressType === 4 ? 32 : 128;
-  if (
-    cidrParts.length > 2 ||
-    addressType === 0 ||
-    !hasValidPrefixSyntax ||
-    (prefix !== undefined && (!Number.isInteger(prefix) || prefix < 0 || prefix > maximumPrefix))
-  ) {
-    throw new Error(`TRUSTED_PROXY_CIDRS contains an invalid address or CIDR: ${value}`);
-  }
-  const family = addressType === 4 ? 'ipv4' : 'ipv6';
-  if (prefix === undefined) {
-    trustedProxyAddresses.addAddress(address, family);
-  } else {
-    trustedProxyAddresses.addSubnet(address, prefix, family);
-  }
-  trustedProxyAddressCount += 1;
-}
+const trustedProxyAddresses = parseTrustedProxyCidrs(process.env.TRUSTED_PROXY_CIDRS);
 
-if (!bypassRuntimeSecurity && trustedProxyAddressCount === 0) {
+if (!bypassRuntimeSecurity && trustedProxyAddresses.count === 0) {
   throw new Error(
     'TRUSTED_PROXY_CIDRS must define at least one trusted proxy in deployed runtimes.',
   );
 }
 
 assertDeployedMeiliConnectionConfig();
-
-const normalizedPeerAddress = (value: string): string =>
-  value.startsWith('::ffff:') && isIP(value.slice(7)) === 4 ? value.slice(7) : value;
-
-const isTrustedProxyAddress = (value: string): boolean => {
-  const address = normalizedPeerAddress(value);
-  const addressType = isIP(address);
-  return (
-    addressType !== 0 && trustedProxyAddresses.check(address, addressType === 4 ? 'ipv4' : 'ipv6')
-  );
-};
 
 const deployedBrowserOrigins = new Set([
   'https://yalelabs.onrender.com',
@@ -191,7 +154,7 @@ function sendStaticNotFound(res: express.Response) {
 }
 
 const app = express()
-  .set('trust proxy', isTrustedProxyAddress)
+  .set('trust proxy', trustedProxyAddresses.isTrusted)
   .set('query parser', 'simple')
   .disable('x-powered-by')
   .use(securityHeaders)
