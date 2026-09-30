@@ -13,7 +13,8 @@ There was no `.github/dependabot.yml`, so the pins stayed frozen until someone e
 Three things about it are deliberate.
 
 - **It targets `beta`.** Pull requests are based on `beta` here, so an updater left on the default target would open against the production branch.
-- **The pins stay SHAs.** Dependabot rewrites the SHA and the `# vX.Y.Z` comment beside it together, so the comment is load-bearing rather than decoration: a pin without it gets no update proposal at all. `scripts/security-preflight.test.mjs` pins both halves, so a tag pin and a stripped comment each fail the build.
+- **The pins stay SHAs.** Dependabot rewrites the SHA and the `# vX.Y.Z` comment beside it together, so the comment is load-bearing rather than decoration: a pin without it gets no update proposal at all.
+  `scripts/security-preflight.test.mjs` pins both halves, so a tag pin and a stripped comment each fail the build.
 - **The bump is grouped.** One pull request a week for all actions, rather than one per action, because they move together and a reviewer reads them together.
 
 The three actions in use were bumped in the same change to releases that target the current runtime, which removes the deprecation warning from every run.
