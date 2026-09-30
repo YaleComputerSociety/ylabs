@@ -1293,6 +1293,7 @@ describe('LabDetail page', () => {
       ...basePayload,
       group: {
         ...basePayload.group,
+        websiteUrl: '',
         sourceUrls: [OFFICIAL_PROFILE_URL, JOIN_PAGE_URL],
       },
     });
@@ -1304,6 +1305,28 @@ describe('LabDetail page', () => {
     );
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
     expect(screen.queryByText('opened above')).toBeNull();
+  });
+
+  it('offers the research homepage over a join page and over an own-button profile', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [OFFICIAL_PROFILE_URL, JOIN_PAGE_URL],
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const getInvolvedBlock = screen.getByText('How to get involved').parentElement as HTMLElement;
+    expect(
+      within(getInvolvedBlock)
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('href')),
+    ).toEqual([RESEARCH_WEBSITE_URL]);
+    expect(screen.queryByRole('link', { name: 'See how to get involved' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
   });
 
   it('offers a working mailto email link without recording outreach', async () => {
