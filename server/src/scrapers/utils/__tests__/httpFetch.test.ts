@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   fetchPageWithPolicy,
   HostRateLimiter,
+  postFormWithPolicy,
   POLICY_FETCH_BENCHMARK_NAMESPACE,
   type HttpRequestFn,
 } from '../httpFetch';
@@ -297,6 +298,71 @@ describe('fetchPageWithPolicy under a benchmark', () => {
       expect(replayRequest).not.toHaveBeenCalled();
     } finally {
       expect(finishBenchmarkReplay()).toMatchObject({ pagesServed: 0, pagesMissed: 1 });
+    }
+  });
+});
+
+describe('postFormWithPolicy', () => {
+  const options = (request: HttpRequestFn) => ({
+    assertUrl: passthroughAssert,
+    request,
+    sleep: noSleep,
+    jitter: noJitter,
+  });
+
+  it('posts the url-encoded form through the guarded request and returns its cookies', async () => {
+    const assertUrl = vi.fn(passthroughAssert);
+    const request: HttpRequestFn = vi.fn(async (url) => ({
+      status: 200,
+      data: '<html>grid</html>',
+      finalUrl: url,
+      setCookies: ['Session=fixture; path=/'],
+    }));
+    const form = new URLSearchParams([
+      ['__VIEWSTATE', 'state'],
+      ['button', 'View all'],
+    ]);
+
+    const page = await postFormWithPolicy('https://portal.example.edu/search', form, {
+      ...options(request),
+      assertUrl,
+      headers: { 'User-Agent': 'fixture-agent', Cookie: 'Session=old' },
+    });
+
+    expect(assertUrl).toHaveBeenCalledWith('https://portal.example.edu/search');
+    expect(request).toHaveBeenCalledWith('https://portal.example.edu/search', {
+      timeoutMs: 10_000,
+      maxRedirects: 5,
+      method: 'POST',
+      body: '__VIEWSTATE=state&button=View+all',
+      headers: {
+        'User-Agent': 'fixture-agent',
+        Cookie: 'Session=old',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    });
+    expect(page).toEqual({
+      url: 'https://portal.example.edu/search',
+      html: '<html>grid</html>',
+      status: 200,
+      setCookies: ['Session=fixture; path=/'],
+    });
+  });
+
+  it('refuses to post during a benchmark replay', async () => {
+    beginBenchmarkReplay([]);
+    const request = vi.fn(() => ok());
+    try {
+      await expect(
+        postFormWithPolicy(
+          'https://portal.example.edu/search',
+          new URLSearchParams(),
+          options(request),
+        ),
+      ).rejects.toBeInstanceOf(BenchmarkReplayNetworkError);
+      expect(request).not.toHaveBeenCalled();
+    } finally {
+      expect(finishBenchmarkReplay()).toMatchObject({ networkBlocks: 1 });
     }
   });
 });

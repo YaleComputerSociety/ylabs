@@ -37,6 +37,7 @@ A benchmark captured before #3590 has no record of the renderer, so it replays a
 `centers-institutes-index` and `student-grants-database` joined `BENCHMARKABLE_LANES` on this basis.
 `student-grants-database` also reads the live corpus to choose its targets: it adds every FundDetails page the live catalog cites to the funds it reads (#3984).
 A fund first cited after capture is therefore a page the benchmark never froze, so it counts in `pagesMissed` rather than changing the score, and a benchmark scoped with `--only` holds its fund list still.
+Its static grid enumeration (#4214) never runs under `--only` or during any capture or replay, because a postback carries per-session view state that no replay could serve, so `programs-grants-gold-v1` replayed with the same fingerprint before and after it landed.
 `yale-college-fellowships-office` joined once its page fetch moved from a raw `axios.get` onto `fetchPageWithPolicy` (#4132), and a dry-run explain of the whole lane before and after that move planned the same 4,009 values.
 That lane reads no `--only`, so its capture freezes the whole crawl and the scope only bounds which programs may carry labels.
 It also reads the live corpus once a page is refused as not a program, to find the row that page minted and plan its `archived: true` retraction (#4110), so those retraction values move with the corpus rather than with the lane.

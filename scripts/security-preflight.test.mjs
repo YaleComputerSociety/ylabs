@@ -3945,6 +3945,39 @@ test('shared microsite fetch policy enforces the SSRF guard before requesting un
   assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
 });
 
+test('shared form post goes through the same SSRF guard, agents, and host limiter as the page fetch', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/scrapers/utils/httpFetch.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(
+    source,
+    /export async function postFormWithPolicy\([\s\S]*?\n\): Promise<FetchedHttpPage> \{\n  if \(isBenchmarkReplayActive\(\)\) refuseBenchmarkReplayNetwork\(\);\n  return fetchPageLive\(url, options, \{ method: 'POST', body: form\.toString\(\) \}\);\n\}/,
+  );
+  assert.match(
+    source,
+    /await axios\.request\(\{\n\s+url,\n\s+method: 'POST',[^}]*?httpAgent: agents\.httpAgent,\n\s+httpsAgent: agents\.httpsAgent,/,
+  );
+  assert.match(source, /result = await limiter\.run\(host, \(\) => request\(safeUrl, config\)\)/);
+});
+
+test('student grants fund search enumerates only through the SSRF-guarded shared fetch policy', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/scrapers/utils/communityForceFundSearch.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(source, /\} from '\.\/httpFetch';/);
+  assert.match(source, /fetchPageWithPolicy\(options\.searchUrl, policy\(\)\)/);
+  assert.match(source, /postFormWithPolicy\(options\.searchUrl, allFundsForm, policy\(\)\)/);
+  assert.match(source, /postFormWithPolicy\(options\.searchUrl, postback, policy\(\)\)/);
+  assert.match(source, /fetchPublicHttpUrl\(fund\.shortLink, \{\n\s+maxRedirects: 0,/);
+  assert.doesNotMatch(source, /\baxios\b/);
+  assert.doesNotMatch(source, /(?<![\w.$])fetch\(/);
+  assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
+});
+
 test('lab-microsite fetchers delegate to the SSRF-guarded shared fetch policy', () => {
   const fetcherFiles = [
     '../server/src/scrapers/sources/labMicrositeDescriptionLLMExtractor.ts',

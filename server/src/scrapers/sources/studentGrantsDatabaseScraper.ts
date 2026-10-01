@@ -14,6 +14,12 @@
  * always from the FundDetails pages the live catalog already cites, so the lane still
  * reads every cited fund on a machine with no renderer (#3984).
  *
+ * When the rendered search returns nothing, the grid is enumerated statically instead, by
+ * replaying its WebForms postbacks one row at a time (#4214). A row whose fund name matches a
+ * fund page already read is not posted back. A run scoped with `--only`, and any benchmark
+ * capture or replay, holds its fund list still and never enumerates the grid, and a grid that
+ * fails or lists nothing is reported as a partial failure rather than as an empty success.
+ *
  * It cites each fund's own FundDetails page - never the search/index root - per the
  * self-referential / index-page source guards (#516/#549), and a page with no fund name
  * fails closed rather than minting a login shell. Contact data is fail-closed: the
@@ -31,8 +37,16 @@ import {
   fetchUsableRenderedPage,
   type RenderedFetcher,
 } from '../renderedFetch';
+import { BenchmarkReplayNetworkError, isBenchmarkModeActive } from '../snapshotBenchmarkMode';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import {
+  createStaticFundSearchEnumerator,
+  normalizeFundName,
+  type FundSearchGrid,
+  type FundSearchGridEnumerator,
+  type FundSearchGridRow,
+} from '../utils/communityForceFundSearch';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import { type ProgramDateBoundary, parseProgramDate } from '../utils/programDeadline';
 import { Fellowship } from '../../models/fellowship';
@@ -48,6 +62,7 @@ export const DEFAULT_STUDENT_GRANTS_SEARCH_URL = `https://${COMMUNITYFORCE_HOST}
 
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_FUNDS = 1_000;
+const MAX_CONSECUTIVE_POSTBACK_FAILURES = 5;
 
 export interface StudentGrantsFundLink {
   title: string;
@@ -448,6 +463,7 @@ export interface StudentGrantsDatabaseScraperOptions {
   searchUrl?: string;
   searchFetcher?: StudentGrantsHtmlFetcher;
   detailFetcher?: StudentGrantsHtmlFetcher;
+  gridEnumerator?: FundSearchGridEnumerator | null;
   loadSeedUrls?: () => Promise<string[]>;
 }
 
@@ -470,6 +486,33 @@ function isInScope(link: StudentGrantsFundLink, only: string[] | undefined): boo
   return only.includes(sourceKeyForFund(link.url)) || only.includes(link.url);
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+interface StaticGridReading {
+  linkedFunds: StudentGrantsFundLink[];
+  rows: FundSearchGridRow[];
+  grid: FundSearchGrid | null;
+  partialFailures: string[];
+}
+
+const NO_STATIC_GRID: StaticGridReading = {
+  linkedFunds: [],
+  rows: [],
+  grid: null,
+  partialFailures: [],
+};
+
+function rowsSafeToSkipByName(rows: FundSearchGridRow[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const name = normalizeFundName(row.name);
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return counts;
+}
+
 export class StudentGrantsDatabaseScraper implements IScraper {
   readonly name = STUDENT_GRANTS_DATABASE_SOURCE;
   readonly displayName = 'Yale Student Grants Database (CommunityForce)';
@@ -477,13 +520,57 @@ export class StudentGrantsDatabaseScraper implements IScraper {
   private readonly searchUrl: string;
   private readonly searchFetcher: StudentGrantsHtmlFetcher;
   private readonly detailFetcher: StudentGrantsHtmlFetcher;
+  private readonly gridEnumerator: FundSearchGridEnumerator | null;
   private readonly loadSeedUrls: () => Promise<string[]>;
 
   constructor(options: StudentGrantsDatabaseScraperOptions = {}) {
     this.searchUrl = options.searchUrl ?? DEFAULT_STUDENT_GRANTS_SEARCH_URL;
     this.searchFetcher = options.searchFetcher ?? createRenderedStudentGrantsHtmlFetcher();
     this.detailFetcher = options.detailFetcher ?? createStudentGrantsDetailFetcher();
+    this.gridEnumerator =
+      options.gridEnumerator !== undefined
+        ? options.gridEnumerator
+        : createStaticFundSearchEnumerator({ searchUrl: this.searchUrl });
     this.loadSeedUrls = options.loadSeedUrls ?? loadCitedFundDetailUrls;
+  }
+
+  private async readStaticGrid(ctx: ScraperContext): Promise<StaticGridReading> {
+    if ((ctx.options.only?.length ?? 0) > 0 || isBenchmarkModeActive()) {
+      ctx.log(
+        '[student-grants] rendered search unavailable; a scoped or benchmark run reads cited fund pages only',
+      );
+      return NO_STATIC_GRID;
+    }
+    if (!this.gridEnumerator) {
+      ctx.log('[student-grants] rendered search unavailable; enumerating cited fund pages only');
+      return NO_STATIC_GRID;
+    }
+    ctx.log('[student-grants] rendered search unavailable; enumerating the grid by postback');
+    let grid: FundSearchGrid;
+    try {
+      grid = await this.gridEnumerator();
+    } catch (error) {
+      if (error instanceof BenchmarkReplayNetworkError) throw error;
+      return {
+        ...NO_STATIC_GRID,
+        partialFailures: [`fund search grid unavailable: ${errorMessage(error)}`],
+      };
+    }
+    const partialFailures: string[] = [];
+    if (grid.rows.length === 0) {
+      partialFailures.push('fund search grid listed no funds; read cited fund pages only');
+    }
+    if (grid.pageCount > 1) {
+      partialFailures.push(
+        `fund search grid has ${grid.pageCount} pages and only the first was read`,
+      );
+    }
+    return {
+      linkedFunds: parseFundSearchResults(grid.html, grid.url || this.searchUrl),
+      rows: grid.rows.slice(0, MAX_FUNDS),
+      grid,
+      partialFailures,
+    };
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -497,27 +584,33 @@ export class StudentGrantsDatabaseScraper implements IScraper {
     ctx.log(`[student-grants] fetching rendered fund search ${this.searchUrl}`);
     const searchHtml = await this.searchFetcher(this.searchUrl, ctx.options.useCache, this.name);
     const gridLinks = searchHtml ? parseFundSearchResults(searchHtml, this.searchUrl) : [];
-    if (!searchHtml) {
-      ctx.log('[student-grants] rendered search unavailable; enumerating cited fund pages only');
-    }
+    const staticGrid = searchHtml ? NO_STATIC_GRID : await this.readStaticGrid(ctx);
+    const partialFailures = [...staticGrid.partialFailures];
     const seedUrls = await this.loadSeedUrls();
-    const fundLinks = mergeFundLinks(gridLinks, seedUrls).filter((link) =>
-      isInScope(link, ctx.options.only),
+    const fundLinks = mergeFundLinks([...gridLinks, ...staticGrid.linkedFunds], seedUrls).filter(
+      (link) => isInScope(link, ctx.options.only),
     );
     ctx.log(
-      `[student-grants] ${fundLinks.length} funds to read (${gridLinks.length} from the search grid, ${seedUrls.length} cited fund pages)`,
+      `[student-grants] ${fundLinks.length} funds to read (${gridLinks.length} from the search grid, ${staticGrid.rows.length} postback rows, ${seedUrls.length} cited fund pages)`,
     );
-    if (fundLinks.length === 0) {
-      return { observationCount: 0, entitiesObserved: 0, notes: 'no-funds-to-read' };
+    if (fundLinks.length === 0 && staticGrid.rows.length === 0) {
+      return {
+        observationCount: 0,
+        entitiesObserved: 0,
+        notes: 'no-funds-to-read',
+        ...(partialFailures.length > 0 ? { partialFailures } : {}),
+      };
     }
 
     let totalObservations = 0;
     let totalEntities = 0;
     let withDeadline = 0;
     let unavailable = 0;
+    const readKeys = new Set<string>();
+    const readNames = new Set<string>();
 
-    for (const link of fundLinks) {
-      if (totalEntities >= limit) break;
+    const readFund = async (link: StudentGrantsFundLink): Promise<void> => {
+      readKeys.add(fundIdentityKey(link.url));
       const detailHtml = await this.detailFetcher(link.url, ctx.options.useCache, this.name);
       const fund = detailHtml ? parseFundDetailPage(detailHtml, link, referenceDate) : null;
       if (!fund) {
@@ -525,14 +618,28 @@ export class StudentGrantsDatabaseScraper implements IScraper {
         ctx.log('[student-grants] skipped fund - detail unavailable or not a fund page', {
           url: link.url,
         });
-        continue;
+        return;
       }
+      readNames.add(normalizeFundName(fund.title));
       const observations = fundToObservations(fund);
       await ctx.emit(observations);
       totalObservations += observations.length;
       totalEntities += 1;
       if (fund.deadline) withDeadline += 1;
+    };
+
+    for (const link of fundLinks) {
+      if (totalEntities >= limit) break;
+      await readFund(link);
     }
+
+    const postback = await this.readPostbackRows(ctx, staticGrid, {
+      readKeys,
+      readNames,
+      isFull: () => totalEntities >= limit,
+      readFund,
+    });
+    partialFailures.push(...postback.partialFailures);
 
     ctx.log(
       `Emitted ${totalObservations} observations across ${totalEntities} student-grants funds (${withDeadline} with a parsed deadline, ${unavailable} skipped)`,
@@ -541,7 +648,75 @@ export class StudentGrantsDatabaseScraper implements IScraper {
     return {
       observationCount: totalObservations,
       entitiesObserved: totalEntities,
-      notes: `funds=${totalEntities}, grid=${gridLinks.length}, cited=${seedUrls.length}, withDeadline=${withDeadline}, skipped=${unavailable}`,
+      notes: `funds=${totalEntities}, grid=${gridLinks.length}, postbackRows=${staticGrid.rows.length}, postbacks=${postback.posted}, postbackSkippedKnown=${postback.skippedKnown}, postbackUnresolved=${postback.unresolved}, cited=${seedUrls.length}, withDeadline=${withDeadline}, skipped=${unavailable}`,
+      ...(partialFailures.length > 0 ? { partialFailures } : {}),
     };
+  }
+
+  private async readPostbackRows(
+    ctx: ScraperContext,
+    staticGrid: StaticGridReading,
+    state: {
+      readKeys: Set<string>;
+      readNames: Set<string>;
+      isFull: () => boolean;
+      readFund: (link: StudentGrantsFundLink) => Promise<void>;
+    },
+  ): Promise<{
+    posted: number;
+    skippedKnown: number;
+    unresolved: number;
+    partialFailures: string[];
+  }> {
+    const outcome = { posted: 0, skippedKnown: 0, unresolved: 0, partialFailures: [] as string[] };
+    const grid = staticGrid.grid;
+    if (!grid) return outcome;
+    const nameCounts = rowsSafeToSkipByName(staticGrid.rows);
+    let consecutiveFailures = 0;
+    let abandoned = 0;
+
+    for (const [index, row] of staticGrid.rows.entries()) {
+      if (state.isFull()) break;
+      const name = normalizeFundName(row.name);
+      if (nameCounts.get(name) === 1 && state.readNames.has(name)) {
+        outcome.skippedKnown += 1;
+        continue;
+      }
+      if (consecutiveFailures >= MAX_CONSECUTIVE_POSTBACK_FAILURES) {
+        abandoned = staticGrid.rows.length - index;
+        break;
+      }
+      outcome.posted += 1;
+      let url: string | null;
+      try {
+        url = await grid.resolveRowFundUrl(row);
+      } catch (error) {
+        if (error instanceof BenchmarkReplayNetworkError) throw error;
+        ctx.log('[student-grants] fund search postback failed', {
+          eventTarget: row.eventTarget,
+          error: errorMessage(error),
+        });
+        url = null;
+      }
+      if (!url || !isRecordSpecificFundDetailUrl(url)) {
+        outcome.unresolved += 1;
+        consecutiveFailures += 1;
+        continue;
+      }
+      consecutiveFailures = 0;
+      const normalized = normalizeFundDetailUrl(url);
+      if (state.readKeys.has(fundIdentityKey(normalized))) {
+        outcome.skippedKnown += 1;
+        continue;
+      }
+      await state.readFund({ title: row.name, url: normalized });
+    }
+
+    if (outcome.unresolved > 0 || abandoned > 0) {
+      outcome.partialFailures.push(
+        `${outcome.unresolved + abandoned} of ${staticGrid.rows.length} fund search rows did not resolve to a fund page${abandoned > 0 ? ` (${abandoned} abandoned after ${MAX_CONSECUTIVE_POSTBACK_FAILURES} consecutive failures)` : ''}`,
+      );
+    }
+    return outcome;
   }
 }

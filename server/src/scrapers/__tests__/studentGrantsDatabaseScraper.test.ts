@@ -12,6 +12,8 @@ import {
   sourceKeyForFund,
 } from '../sources/studentGrantsDatabaseScraper';
 import type { ObservationInput, ScraperContext } from '../types';
+import type { FundSearchGrid, FundSearchGridRow } from '../utils/communityForceFundSearch';
+import { beginBenchmarkCapture, finishBenchmarkCapture } from '../snapshotBenchmarkMode';
 
 const FUND_A_URL =
   'https://yale.communityforce.com/Funds/FundDetails.aspx?B4C5D6E7F8091A2B3C4D5E6F';
@@ -335,6 +337,7 @@ describe('StudentGrantsDatabaseScraper.run', () => {
     const scraper = new StudentGrantsDatabaseScraper({
       searchFetcher,
       detailFetcher,
+      gridEnumerator: null,
       loadSeedUrls: async () => [FUND_A_URL],
     });
     const { ctx, emitted } = makeContext();
@@ -352,6 +355,7 @@ describe('StudentGrantsDatabaseScraper.run', () => {
     const scraper = new StudentGrantsDatabaseScraper({
       searchFetcher: vi.fn(async () => ''),
       detailFetcher: vi.fn(async () => AUTH_SHELL_HTML),
+      gridEnumerator: null,
       loadSeedUrls: async () => [FUND_B_URL],
     });
     const { ctx, emitted } = makeContext();
@@ -386,6 +390,7 @@ describe('StudentGrantsDatabaseScraper.run', () => {
     const scraper = new StudentGrantsDatabaseScraper({
       searchFetcher: vi.fn(async () => ''),
       detailFetcher,
+      gridEnumerator: null,
       loadSeedUrls: async () => [FUND_A_URL, FUND_B_URL],
     });
     const { ctx } = makeContext({ only: [sourceKeyForFund(FUND_B_URL)] });
@@ -393,5 +398,198 @@ describe('StudentGrantsDatabaseScraper.run', () => {
     await scraper.run(ctx);
 
     expect(detailFetcher.mock.calls.map(([url]) => url)).toEqual([FUND_B_URL]);
+  });
+
+  const ROW_FUND_URL =
+    'https://yale.communityforce.com/Funds/FundDetails.aspx?5A5A5A5A5A5A5A5A5A5A5A5A5A5A';
+  const KNOWN_ROW: FundSearchGridRow = {
+    eventTarget: 'ctl00$PreContent$GrantsSearch1$grdFund$ctl02$lnkFundName',
+    name: 'Fixture Summer Research Fellowship',
+  };
+  const NEW_ROW: FundSearchGridRow = {
+    eventTarget: 'ctl00$PreContent$GrantsSearch1$grdFund$ctl03$lnkFundName',
+    name: 'Fixture Postback Fellowship',
+  };
+
+  function fakeGrid(
+    rows: FundSearchGridRow[],
+    resolve: (row: FundSearchGridRow) => Promise<string | null>,
+    overrides: Partial<FundSearchGrid> = {},
+  ) {
+    const resolveRowFundUrl = vi.fn(resolve);
+    const grid: FundSearchGrid = {
+      html: '<html><body></body></html>',
+      url: DEFAULT_STUDENT_GRANTS_SEARCH_URL,
+      rows,
+      pageCount: 1,
+      resolveRowFundUrl,
+      ...overrides,
+    };
+    return { gridEnumerator: vi.fn(async () => grid), resolveRowFundUrl };
+  }
+
+  const postbackDetailHtml = FUND_A_DETAIL_HTML.replace(
+    'Fixture Summer Research Fellowship',
+    'Fixture Postback Fellowship',
+  );
+
+  it('enumerates the grid by postback when no renderer is configured', async () => {
+    const { gridEnumerator, resolveRowFundUrl } = fakeGrid([NEW_ROW], async () => ROW_FUND_URL);
+    const detailFetcher = vi.fn(async (url: string) =>
+      url === ROW_FUND_URL ? postbackDetailHtml : '',
+    );
+    const scraper = new StudentGrantsDatabaseScraper({
+      searchFetcher: createRenderedStudentGrantsHtmlFetcher(null),
+      detailFetcher,
+      gridEnumerator,
+      loadSeedUrls: async () => [],
+    });
+    const { ctx, emitted } = makeContext();
+
+    const result = await scraper.run(ctx);
+
+    expect(gridEnumerator).toHaveBeenCalledTimes(1);
+    expect(resolveRowFundUrl).toHaveBeenCalledWith(NEW_ROW);
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.partialFailures).toBeUndefined();
+    expect(emitted.find((obs) => obs.field === 'sourceKey')?.value).toBe(
+      sourceKeyForFund(ROW_FUND_URL),
+    );
+  });
+
+  it('keeps the rendered grid as the first choice and never posts back when it renders', async () => {
+    const { gridEnumerator } = fakeGrid([NEW_ROW], async () => ROW_FUND_URL);
+    const scraper = new StudentGrantsDatabaseScraper({
+      searchFetcher: vi.fn(async () => SEARCH_RESULTS_HTML),
+      detailFetcher: vi.fn(async () => FUND_A_DETAIL_HTML),
+      gridEnumerator,
+      loadSeedUrls: async () => [],
+    });
+
+    await scraper.run(makeContext().ctx);
+
+    expect(gridEnumerator).not.toHaveBeenCalled();
+  });
+
+  it('skips the postback for a row whose fund page was already read, and rereads no known url', async () => {
+    const OTHER_ROW: FundSearchGridRow = {
+      eventTarget: 'ctl00$PreContent$GrantsSearch1$grdFund$ctl04$lnkFundName',
+      name: 'Fixture Renamed Listing',
+    };
+    const { gridEnumerator, resolveRowFundUrl } = fakeGrid(
+      [KNOWN_ROW, NEW_ROW, OTHER_ROW],
+      async (row) => (row === OTHER_ROW ? FUND_A_URL : ROW_FUND_URL),
+    );
+    const detailFetcher = vi.fn(async (url: string) =>
+      url === FUND_A_URL ? FUND_A_DETAIL_HTML : postbackDetailHtml,
+    );
+    const scraper = new StudentGrantsDatabaseScraper({
+      searchFetcher: vi.fn(async () => ''),
+      detailFetcher,
+      gridEnumerator,
+      loadSeedUrls: async () => [FUND_A_URL],
+    });
+
+    const result = await scraper.run(makeContext().ctx);
+
+    expect(resolveRowFundUrl.mock.calls.map(([row]) => row)).toEqual([NEW_ROW, OTHER_ROW]);
+    expect(detailFetcher.mock.calls.map(([url]) => url)).toEqual([FUND_A_URL, ROW_FUND_URL]);
+    expect(result.entitiesObserved).toBe(2);
+    expect(result.notes).toContain('postbackSkippedKnown=2');
+  });
+
+  it('reports a failed grid as a partial failure and still reads the cited funds', async () => {
+    const gridEnumerator = vi.fn(async (): Promise<FundSearchGrid> => {
+      throw new Error('Request failed with status code 503');
+    });
+    const scraper = new StudentGrantsDatabaseScraper({
+      searchFetcher: vi.fn(async () => ''),
+      detailFetcher: vi.fn(async () => FUND_A_DETAIL_HTML),
+      gridEnumerator,
+      loadSeedUrls: async () => [FUND_A_URL],
+    });
+
+    const result = await scraper.run(makeContext().ctx);
+
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.partialFailures).toEqual([
+      'fund search grid unavailable: Request failed with status code 503',
+    ]);
+  });
+
+  it('never reports success over a grid that lists no funds', async () => {
+    const { gridEnumerator } = fakeGrid([], async () => null);
+    const scraper = new StudentGrantsDatabaseScraper({
+      searchFetcher: vi.fn(async () => ''),
+      detailFetcher: vi.fn(async () => ''),
+      gridEnumerator,
+      loadSeedUrls: async () => [],
+    });
+
+    const result = await scraper.run(makeContext().ctx);
+
+    expect(result.entitiesObserved).toBe(0);
+    expect(result.partialFailures).toEqual([
+      'fund search grid listed no funds; read cited fund pages only',
+    ]);
+  });
+
+  it('reports rows that do not resolve, and stops posting back after repeated failures', async () => {
+    const rows = Array.from({ length: 8 }, (_unused, index) => ({
+      eventTarget: `ctl00$PreContent$GrantsSearch1$grdFund$ctl1${index}$lnkFundName`,
+      name: `Fixture Unresolved Fund ${index}`,
+    }));
+    const { gridEnumerator, resolveRowFundUrl } = fakeGrid(rows, async () => {
+      throw new Error('socket hang up');
+    });
+    const scraper = new StudentGrantsDatabaseScraper({
+      searchFetcher: vi.fn(async () => ''),
+      detailFetcher: vi.fn(async () => ''),
+      gridEnumerator,
+      loadSeedUrls: async () => [],
+    });
+
+    const result = await scraper.run(makeContext().ctx);
+
+    expect(resolveRowFundUrl).toHaveBeenCalledTimes(5);
+    expect(result.partialFailures).toEqual([
+      '8 of 8 fund search rows did not resolve to a fund page (3 abandoned after 5 consecutive failures)',
+    ]);
+  });
+
+  it('never enumerates the grid in a run scoped with --only', async () => {
+    const { gridEnumerator } = fakeGrid([NEW_ROW], async () => ROW_FUND_URL);
+    const detailFetcher = vi.fn(async (_url: string) => FUND_A_DETAIL_HTML);
+    const scraper = new StudentGrantsDatabaseScraper({
+      searchFetcher: vi.fn(async () => ''),
+      detailFetcher,
+      gridEnumerator,
+      loadSeedUrls: async () => [FUND_A_URL],
+    });
+
+    const result = await scraper.run(makeContext({ only: [sourceKeyForFund(FUND_A_URL)] }).ctx);
+
+    expect(gridEnumerator).not.toHaveBeenCalled();
+    expect(detailFetcher.mock.calls.map(([url]) => url)).toEqual([FUND_A_URL]);
+    expect(result.partialFailures).toBeUndefined();
+  });
+
+  it('never enumerates the grid during a benchmark capture', async () => {
+    const { gridEnumerator } = fakeGrid([NEW_ROW], async () => ROW_FUND_URL);
+    const scraper = new StudentGrantsDatabaseScraper({
+      searchFetcher: vi.fn(async () => ''),
+      detailFetcher: vi.fn(async () => FUND_A_DETAIL_HTML),
+      gridEnumerator,
+      loadSeedUrls: async () => [FUND_A_URL],
+    });
+
+    beginBenchmarkCapture();
+    try {
+      await scraper.run(makeContext().ctx);
+    } finally {
+      finishBenchmarkCapture();
+    }
+
+    expect(gridEnumerator).not.toHaveBeenCalled();
   });
 });
