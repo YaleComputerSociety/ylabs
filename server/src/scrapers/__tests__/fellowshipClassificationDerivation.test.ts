@@ -36,7 +36,9 @@ describe('planFellowshipClassification department internships (#4089)', () => {
       programKind: 'STRUCTURED_PROGRAM',
       studentFacingCategory: 'Internship program',
     });
-    const rerun = planFellowshipClassification({ stored: { ...departmentInternship, ...first.set } });
+    const rerun = planFellowshipClassification({
+      stored: { ...departmentInternship, ...first.set },
+    });
     expect(rerun.set).toEqual({});
   });
 
