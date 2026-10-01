@@ -4,12 +4,15 @@ import {
   contestedSurnamesAmong,
   flattenForNameMatch,
   judgeLeadAgainstSite,
+  leadIsTheRecordSubjectFor,
   peopleSubpageUrls,
+  personNameTokensFromSlug,
   personSlugsOnSite,
   profileSlugFromUrl,
   rollUpVerificationState,
   siteHaystack,
   siteNamesPerson,
+  slugNamesAnotherLead,
   surnameCore,
   surnameInSiteUrl,
   unreachableLabSiteVerification,
@@ -104,6 +107,94 @@ describe('siteNamesPerson', () => {
 
   it('refuses to judge a single-token display name', () => {
     expect(siteNamesPerson(hay('<p>Quill</p>'), 'Quill')).toBe(false);
+  });
+
+  it('accepts a two-letter surname written next to its given name', () => {
+    expect(siteNamesPerson(hay('<p>Three minutes with the PI, Dr. Ana Vo.</p>'), 'Ana Vo')).toBe(
+      true,
+    );
+  });
+
+  it('accepts a two-letter surname behind a middle initial', () => {
+    expect(siteNamesPerson(hay('<p>the primary base for Dr. Ana B. Vo</p>'), 'Ana B. Vo')).toBe(
+      true,
+    );
+  });
+
+  it('accepts a name whose given and family name are the same two letters', () => {
+    expect(siteNamesPerson(hay('<p>Lab head: Vo Vo</p>'), 'Vo Vo')).toBe(true);
+  });
+
+  it('accepts a display name whose given name is only an initial', () => {
+    expect(siteNamesPerson(hay('<p>R. Quillon is professor of marketing.</p>'), 'R. Quillon')).toBe(
+      true,
+    );
+  });
+
+  it('keeps a two-letter surname strict about what sits between the names', () => {
+    expect(siteNamesPerson(hay('<p>Ana works with Dale Vo.</p>'), 'Ana Vo')).toBe(false);
+    expect(siteNamesPerson(hay('<p>Dale Vo runs this lab.</p>'), 'Ana Vo')).toBe(false);
+  });
+});
+
+describe('personNameTokensFromSlug', () => {
+  it('reads the name parts of a person slug', () => {
+    expect(personNameTokensFromSlug('dale-quill')).toEqual(['dale', 'quill']);
+    expect(personNameTokensFromSlug('dale_quill93')).toEqual(['dale', 'quill']);
+  });
+
+  it('reads nothing from a single word, a handle, or a file name', () => {
+    expect(personNameTokensFromSlug('collaborators')).toEqual([]);
+    expect(personNameTokensFromSlug('quilllab.bsky.social')).toEqual([]);
+    expect(personNameTokensFromSlug('dale_quill.profile')).toEqual([]);
+  });
+});
+
+describe('slugNamesAnotherLead', () => {
+  const hay = (html: string) => siteHaystack(html);
+
+  it('counts a namesake with a different given name', () => {
+    expect(slugNamesAnotherLead('dale-quill', 'Robin Quill', hay('<p>Members</p>'))).toBe(true);
+  });
+
+  it('counts a person the page names next to a lead-role phrase', () => {
+    expect(
+      slugNamesAnotherLead(
+        'ada-brook',
+        'Robin Quill',
+        hay('<h2>Principal Investigator</h2><p>Ada E. Brook, PhD</p>'),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not count a member the page lists without a lead role', () => {
+    expect(
+      slugNamesAnotherLead(
+        'ada-brook',
+        'Robin Quill',
+        hay('<h2>Lab members</h2><p>Ada Brook, graduate student</p>'),
+      ),
+    ).toBe(false);
+  });
+
+  it('does not count a director of undergraduate studies as a lead', () => {
+    expect(
+      slugNamesAnotherLead(
+        'ada-brook',
+        'Robin Quill',
+        hay('<p>Ada Brook, co-director of undergraduate studies</p>'),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('leadIsTheRecordSubjectFor', () => {
+  it('holds for a faculty research profile and its retired spellings only', () => {
+    expect(leadIsTheRecordSubjectFor('FACULTY_RESEARCH_AREA')).toBe(true);
+    expect(leadIsTheRecordSubjectFor('FACULTY_RESEARCH')).toBe(true);
+    expect(leadIsTheRecordSubjectFor('LAB')).toBe(false);
+    expect(leadIsTheRecordSubjectFor('CENTER')).toBe(false);
+    expect(leadIsTheRecordSubjectFor(undefined)).toBe(false);
   });
 });
 
@@ -269,6 +360,56 @@ describe('judgeLeadAgainstSite', () => {
     expect(result.verdict).toBe('UNSTATED');
   });
 
+  // Each of these shapes was a hand-read false contradiction on Development (#3750).
+  it('reports UNSTATED when the site links only its own members', () => {
+    const result = judge(
+      lead(),
+      '<h2>Our team</h2><a href="/people/ada-brook">Ada Brook</a><p>graduate student</p>',
+      'https://cmb-lab.org/',
+    );
+    expect(result.verdict).toBe('UNSTATED');
+  });
+
+  it('reports UNSTATED when the only other link is a social handle or a section word', () => {
+    const result = judge(
+      lead(),
+      '<a href="https://bsky.app/profile/quilllab.bsky.social">Follow</a>' +
+        '<a href="/lab/quill/people/collaborators">Collaborators</a>',
+    );
+    expect(result.verdict).toBe('UNSTATED');
+  });
+
+  it('contradicts when the site names somebody else as its principal investigator', () => {
+    const result = judge(
+      lead({ displayName: 'Robin Quill' }),
+      '<h2>Principal Investigator</h2><a href="/lab/quill/profile/ada-brook/">Ada Brook, PhD</a>',
+    );
+    expect(result.verdict).toBe('CONTRADICTED');
+  });
+
+  it('never contradicts the subject of a faculty research profile', () => {
+    const html =
+      '<p>Welcome to the lab of Dale Quill.</p><a href="/lab/quill/profile/dale-quill/">Dale</a>';
+    const website = 'https://medicine.yale.edu/lab/quill/';
+    const result = judgeLeadAgainstSite(
+      lead(),
+      { website, visitedUrls: [website], html },
+      personSlugsOnSite(html),
+      siteHaystack(html, [website]),
+      new Set(),
+      true,
+    );
+    expect(result.verdict).toBe('UNSTATED');
+  });
+
+  it('confirms a two-letter surname lead the page names', () => {
+    const result = judge(
+      lead({ displayName: 'Ana Vo', officialProfileUrls: [] }),
+      '<p>Three minutes with the PI, Dr. Ana Vo.</p><a href="/people/ada-brook">Ada</a>',
+    );
+    expect(result.verdict).toBe('CONFIRMED');
+  });
+
   it('does not treat the lead own linked profile as somebody else', () => {
     const result = judge(
       lead(),
@@ -354,6 +495,21 @@ describe('buildLabSiteLeadVerification', () => {
     expect(verification.unstatedCount).toBe(0);
     expect(verification.observedAt).toBe('2026-09-14T12:00:00.000Z');
     expect(JSON.stringify(verification)).not.toContain('Quill');
+  });
+
+  it('reads a faculty research profile lead as unstated rather than contradicted', () => {
+    const verification = buildLabSiteLeadVerification(
+      [lead({ displayName: 'Dale Quill', officialProfileUrls: [] })],
+      {
+        website: 'https://medicine.yale.edu/lab/quill/',
+        visitedUrls: ['https://medicine.yale.edu/lab/quill/'],
+        html: '<a href="/lab/quill/profile/robin-quill/">Robin Quill</a>',
+      },
+      observedAt,
+      'FACULTY_RESEARCH_AREA',
+    );
+    expect(verification.state).toBe('unstated');
+    expect(verification.contradictedCount).toBe(0);
   });
 
   it('bounds the number of judged leads', () => {

@@ -28,6 +28,41 @@ A lane that later fills one of these fields with evidence restores it by adding 
 
 This is a serve-time change and reaches students on deploy; no data operation is required.
 
+## 2026-10-01: A Contradicted Lab-Site Lead Keeps Serving, Because The Shipped Verdict Was Mostly Wrong (#3750)
+
+`lab-site-lead-verification` records per lead whether the row's own website confirms or contradicts that lead, and nothing reads it.
+#2714 left acting on a contradiction to a follow-up that needed a precision measurement first, so this is that measurement and the decision it supports.
+
+Measured on Development on 2026-09-30 by hand-reading the cited site against the lead for every `CONTRADICTED` judgement on a live row, which was 59 judgements on 55 rows, 38 of them on `student_ready` rows with no confirmed lead.
+Each was labelled right (the site names somebody else as the lead), wrong (the attached lead is correct), or undecidable (the site does not say who leads it).
+
+- **All 59: 15 right, 32 wrong, 12 undecidable, so 32% precision over the 47 decidable.**
+- **The 38 served rows with no confirmed lead, the population any serve-time behaviour would act on: 4 right, 24 wrong, 10 undecidable, so 14%.**
+- By type: 6 right of 21 decidable on `LAB`, 1 of 18 on `FACULTY_RESEARCH_AREA`, and every decidable `CENTER` and `INITIATIVE` judgement (8 of 8) right.
+
+Decided: a contradicted lead is not suppressed, not held by the gate, and not demoted, and it keeps serving.
+At 14% on the served population, suppression would have removed 24 correct leads to remove 4 wrong ones.
+The verifier is fixed instead, and `leadVerification` stays unread by every serving path until a later measurement on a fresh lane run supports a reader.
+
+The 32 wrong verdicts fell into classes, and each is now a rule in `scrapers/utils/labSiteLeadVerification.ts`:
+
+- **17: the row's website is not its own page.** A faculty research profile, or an eponymous lab, whose website is a department, center or admissions page that names other people.
+The website is the defect, not the lead, and for a faculty research profile the lead is the subject by construction, so that type is never `CONTRADICTED` (`leadIsTheRecordSubjectFor`).
+- **8: a two-letter surname.** `siteNamesPerson` refused any surname under three letters, so a site naming its PI in full could never confirm one.
+A two-letter surname now confirms when the given name sits next to it, with at most two initials between.
+- **1: an initial-only given name**, now matched as the initial next to the surname.
+- **6: another person linked without being a lead.** The shipped rule contradicted on ANY person-shaped link other than the lead's, which included a members page, a section word (`collaborators`) and a social handle.
+A contradiction now needs a person-shaped slug that is either a namesake with a different given name, which is the collision the lane was built to find, or a person the page names next to a lead-role phrase (`slugNamesAnotherLead`).
+A bare `director` is not a lead-role phrase, because department pages name directors of undergraduate studies and of cores.
+
+Replayed over the same pages, re-fetched on 2026-09-30, the fixed verifier contradicts 8 judgements, all 8 hand-labelled right, and none of the 32 wrong ones; 11 of those now confirm and 21 are unstated.
+That is an in-sample result on the sample the rules were drawn from, so it is not yet the precision that would license a reader.
+Recall falls: 7 of the 15 right contradictions are lost, mostly centers whose pages name their directors in prose without a person-shaped link.
+That is the intended trade for a verdict that must never accuse a correct lead.
+
+Undecidable is recorded, not chased: 12 judgements sit on pages that name no lead at all, and no lane can settle them from the site.
+Before a reader lands, re-measure on a fresh lane run, and freeze that sample as a lane-scorecard benchmark so the next change is measured on the same input.
+
 ## 2026-09-29: A Stored Topic List No Evidence States Is Extended By Derivation, Never Replaced (#3836)
 
 #3836 traced every served chip that no live observation backs to one mechanism: `researchAreas` is not clear-on-empty, and the description fallback returned early on any non-empty stored list, so a list whose evidence was retired, rolled back, or never existed had no owner and no pass could replace it.

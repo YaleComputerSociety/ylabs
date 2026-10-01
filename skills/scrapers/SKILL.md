@@ -951,12 +951,17 @@ Of 619 live `<Token> Lab/Group` entities, 530 of the 575 with a lead have a surn
 That is self-consistency.
 Reading the lab's own website instead found 19 entities carrying a lead the site contradicts, 17 of them `student_ready`, and 30 whose `website` is dead.
 
-Four rules earn their place, each because a simpler version was measured to be wrong:
+Five rules earn their place, each because a simpler version was measured to be wrong:
 
 - **Search markup, text, and the final URL together, with every separator flattened to one space.** A first matcher searched visible text only, with word boundaries, and **42 of 62 re-checked rows were false positives**: it missed a name in an href slug (`jane_roe`), in a host (`roelab.yale.edu`), in a social handle (`janeroe.bsky.social`), and in a maiden name on the person's own site.
 - **A surname in the site's HOSTNAME may confirm; a surname in a PATH segment may not.** `roelab.yale.edu` is the lab asserting whose lab it is, but `medicine.yale.edu/lab/roe/` is one slug on a multi-lab CMS that every namesake matches equally. Accepting the path segment made the weakest signal certify precisely the surname-only attachment `surnameOnlyMatch` forbids, and a unit test caught it confirming two different same-surname people on one lab.
 - **No surname-shaped signal may confirm a surname the entity's own leads disagree over** (`contestedSurnamesAmong`). When two attached leads share a surname and differ in given name, exactly one can be right, so a surname cannot break the tie.
 - **`CONTRADICTED` requires positive evidence naming somebody else, never mere absence.** A YSM lab landing page usually does not name its own PI; the members page does. So the lane follows a bounded set of same-subtree people pages, confined to the subtree rather than the host so a shared CMS cannot lend another lab its people, and a page that names nobody resolves to `UNSTATED`. Omission is not absence (#2647).
+- **Somebody else must be named as a LEAD, not merely named.** The shipped rule contradicted on any person-shaped link other than the lead's, so a members page, a section word, and a social handle each accused a correct lead; a hand-read of every live contradiction found 32 of 47 decidable verdicts wrong, and 24 of 28 on served rows with no confirmed lead (#3750).
+A contradiction now needs a person-shaped slug (`personNameTokensFromSlug`: two or more name tokens, no dot) that is a namesake with a different given name, or that the page names next to a lead-role phrase (`slugNamesAnotherLead`); a bare `director` does not count.
+A faculty research profile is never `CONTRADICTED`, because its lead is its subject and a site naming others means the website is wrong, not the lead.
+A two-letter surname confirms when written next to its given name, and an initial-only given name confirms as the initial next to the surname, because refusing both left a correct PI unconfirmable.
+Nothing reads `leadVerification`, by decision: `docs/decisions.md` (2026-10-01) records the precision and the condition for a first reader.
 
 Pace roughly 1.1s per host: 519 entities plus subpages took about 25 minutes against Yale hosts with no 429s.
 

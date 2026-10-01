@@ -8,6 +8,8 @@
  */
 
 import {
+  CANONICAL_FACULTY_RESEARCH_ENTITY_TYPE,
+  isLegacyFacultyResearchEntityType,
   labSiteLeadMatchReasons,
   labSiteLeadVerdicts,
   labSiteVerificationStates,
@@ -205,6 +207,11 @@ export function givenNameCore(displayName: unknown): string {
   return tokens.length >= 2 ? tokens[0] : '';
 }
 
+function givenInitialOnly(displayName: unknown): string {
+  const raw = flattenForNameMatch(displayName).trim().split(' ').filter(Boolean);
+  return raw.length >= 2 && raw[0].length === 1 && /[a-z]/.test(raw[0]) ? raw[0] : '';
+}
+
 /**
  * Strip markup so prose reads as prose, then keep the markup too: a members grid
  * often carries a name only in an `href` or an `aria-label`.
@@ -228,15 +235,28 @@ export function siteHaystack(html: string, visitedUrls: readonly string[] = []):
 export function siteNamesPerson(haystack: string, displayName: unknown): boolean {
   const given = givenNameCore(displayName);
   const surname = surnameCore(displayName);
-  if (given.length < 2 || surname.length < 3 || given === surname) return false;
-  const escape = (token: string) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (surname.length >= 4 && !given) return siteNamesInitialAndSurname(haystack, displayName);
+  if (given.length < 2 || surname.length < 2) return false;
+  const shortSurname = surname.length < 3;
+  const between = shortSurname ? '(?: [a-z]){0,2}' : '(?: [a-z0-9]{1,12}){0,3}';
   const forward = new RegExp(
-    `(?:^| )${escape(given)}(?: [a-z0-9]{1,12}){0,3} ${escape(surname)}(?: |$)`,
+    `(?:^| )${escapeForRegExp(given)}${between} ${escapeForRegExp(surname)}(?: |$)`,
   );
   if (forward.test(haystack)) return true;
-  const reversed = new RegExp(`(?:^| )${escape(surname)} ${escape(given)}(?: |$)`);
+  const reversed = new RegExp(
+    `(?:^| )${escapeForRegExp(surname)} ${escapeForRegExp(given)}(?: |$)`,
+  );
   if (reversed.test(haystack)) return true;
-  return haystack.includes(`${given}${surname}`);
+  return given.length >= 3 && haystack.includes(`${given}${surname}`);
+}
+
+const escapeForRegExp = (token: string) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+function siteNamesInitialAndSurname(haystack: string, displayName: unknown): boolean {
+  const initial = givenInitialOnly(displayName);
+  if (!initial) return false;
+  const surname = surnameCore(displayName);
+  return new RegExp(`(?:^| )${initial} ${escapeForRegExp(surname)}(?: |$)`).test(haystack);
 }
 
 /**
@@ -346,9 +366,77 @@ export interface LabSiteReading {
 }
 
 /**
+ * The words a page uses to say who leads it. Deliberately not a bare
+ * `director`: a department page names a director of undergraduate studies, a
+ * medical director and a co-director of a core, and none of them leads the lab
+ * the row is about.
+ */
+const LEAD_ROLE_PHRASE =
+  /(?:^| )(?:principal investigator|lab director|laboratory director|faculty director|executive director|founding director|led by|lab head)(?: |$)/;
+
+const LEAD_ROLE_WINDOW_CHARS = 60;
+
+export function personNameTokensFromSlug(slug: string): string[] {
+  if (slug.includes('.')) return [];
+  const tokens = slug
+    .replace(/[0-9]+$/, '')
+    .split(/[-_]+/)
+    .filter(Boolean);
+  if (tokens.length < 2 || tokens.some((token) => !/^[a-z]{2,}$/.test(token))) return [];
+  return tokens;
+}
+
+/**
+ * Whether a person the site links is positively another lead of this row, which
+ * is what `CONTRADICTED` must mean. A members page linking a student, a staff
+ * listing and a social handle all name somebody else without saying that
+ * somebody else leads the lab, and reading them as a contradiction made 32 of 47
+ * hand-read decidable contradictions wrong (#3750).
+ *
+ * Two shapes count. A namesake, because a same-surname person with a different
+ * given name is the collision this lane exists to find. Or a person the page
+ * itself names next to a lead-role phrase.
+ */
+export function slugNamesAnotherLead(
+  slug: string,
+  leadDisplayName: unknown,
+  haystack: string,
+): boolean {
+  const tokens = personNameTokensFromSlug(slug);
+  if (!tokens.length) return false;
+  const surname = surnameCore(leadDisplayName);
+  const given = givenNameCore(leadDisplayName);
+  if (surname.length >= 2 && tokens.includes(surname) && !(given && tokens.includes(given))) {
+    return true;
+  }
+  const first = escapeForRegExp(tokens[0]);
+  const last = escapeForRegExp(tokens[tokens.length - 1]);
+  const named = new RegExp(`(?:^| )${first}(?: [a-z0-9]{1,12}){0,3} ${last}(?= |$)`, 'g');
+  for (const match of haystack.matchAll(named)) {
+    const start = Math.max(0, (match.index ?? 0) - LEAD_ROLE_WINDOW_CHARS);
+    const end = (match.index ?? 0) + match[0].length + LEAD_ROLE_WINDOW_CHARS;
+    if (LEAD_ROLE_PHRASE.test(haystack.slice(start, end))) return true;
+  }
+  return false;
+}
+
+/**
+ * A faculty research profile is about its lead, so the lead is right by
+ * construction and a site naming other people says the row's website is not the
+ * profile's own page. That is a website defect, and reading it as a lead
+ * contradiction accused the subject of 17 of the 19 hand-read profile rows (#3750).
+ */
+export function leadIsTheRecordSubjectFor(entityType: unknown): boolean {
+  return (
+    entityType === CANONICAL_FACULTY_RESEARCH_ENTITY_TYPE ||
+    isLegacyFacultyResearchEntityType(typeof entityType === 'string' ? entityType : undefined)
+  );
+}
+
+/**
  * Judge one lead against what the site says. `CONTRADICTED` is returned only
- * when the site names somebody else, so a thin, JS-rendered, or director-less
- * page yields `UNSTATED` and never accuses a correct attachment.
+ * when the site names somebody else as a lead, so a thin, JS-rendered, or
+ * director-less page yields `UNSTATED` and never accuses a correct attachment.
  */
 export function judgeLeadAgainstSite(
   lead: LabSiteLeadCandidate,
@@ -356,6 +444,7 @@ export function judgeLeadAgainstSite(
   siteSlugs: Set<string>,
   haystack: string,
   contestedSurnames: ReadonlySet<string> = new Set(),
+  leadIsTheRecordSubject = false,
 ): LabSiteLeadJudgement {
   const base = { personId: lead.personId, role: lead.role };
   const leadSlugs = lead.officialProfileUrls.map(profileSlugFromUrl).filter(Boolean);
@@ -386,7 +475,11 @@ export function judgeLeadAgainstSite(
       evidenceUrl: reading.website,
     };
   }
-  const namesSomebodyElse = [...siteSlugs].some((slug) => !leadSlugs.includes(slug));
+  const namesSomebodyElse =
+    !leadIsTheRecordSubject &&
+    [...siteSlugs].some(
+      (slug) => !leadSlugs.includes(slug) && slugNamesAnotherLead(slug, lead.displayName, haystack),
+    );
   return {
     ...base,
     verdict: namesSomebodyElse ? 'CONTRADICTED' : 'UNSTATED',
@@ -448,13 +541,22 @@ export function buildLabSiteLeadVerification(
   leads: readonly LabSiteLeadCandidate[],
   reading: LabSiteReading,
   observedAt: Date,
+  entityType?: unknown,
 ): LabSiteLeadVerification {
   const bounded = leads.slice(0, MAX_VERIFIED_LEADS_PER_ENTITY);
   const siteSlugs = personSlugsOnSite(reading.html);
   const haystack = siteHaystack(reading.html, reading.visitedUrls);
   const contestedSurnames = contestedSurnamesAmong(bounded);
+  const leadIsTheRecordSubject = leadIsTheRecordSubjectFor(entityType);
   const judgements = bounded.map((lead) =>
-    judgeLeadAgainstSite(lead, reading, siteSlugs, haystack, contestedSurnames),
+    judgeLeadAgainstSite(
+      lead,
+      reading,
+      siteSlugs,
+      haystack,
+      contestedSurnames,
+      leadIsTheRecordSubject,
+    ),
   );
   return {
     state: rollUpVerificationState(judgements),
