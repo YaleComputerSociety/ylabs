@@ -249,7 +249,9 @@ There are roughly twenty sites that set `archived: true`, several through the ra
 It is idempotent: once the corpus is clean its filter matches nothing.
 `clearArchivedProgramStudentVisibility` runs beside it and applies the same filter to `Fellowship`, because `planProgramGateUpdates` scopes itself to `archived: false` too: before it existed, 17 archived Development programs still stored `student_ready` (#3753).
 - Programs hold the invariant at both admin transitions as well.
-`archiveFellowship` unsets the five verdict fields in the write that archives the program, and `unarchiveFellowship` re-gates the restored program before returning it, so a restored program is judged on its current evidence instead of serving the verdict it held before it was archived.
+`updateFellowship` owns both, so the archive and unarchive actions and the admin edit form all take the same path.
+A write that archives a program unsets the five verdict fields in that write.
+A write that restores an archived program unsets them too and then re-gates the program before returning it, so a restored program is judged on its current evidence instead of serving the verdict it held before it was archived, and a failed re-gate leaves it unserved.
 - `yarn --cwd server research-entity:archived-visibility-verdicts` is the measurement.
 Its dry-run prints every tier both ways plus the zero-hard-blocker held population both ways, and `--assert-clean` exits non-zero while the two readings disagree.
 `--apply --confirm-archived-visibility-verdict-repair` repairs stored rows and re-reads the census afterwards.
