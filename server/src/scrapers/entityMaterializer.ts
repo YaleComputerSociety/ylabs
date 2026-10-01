@@ -5491,6 +5491,10 @@ export interface ProjectFromLogResult {
 
 export const RESEARCH_ENTITY_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as const;
 
+function isPersonBiographyDescription(candidateText: string): boolean {
+  return isHighConfidencePersonBio(candidateText) || isCareerBiographyDescription(candidateText);
+}
+
 /**
  * A `fullDescription` that the served-copy sanitizer strips renders as nothing, so
  * the row serves no description while storing hundreds of characters. The usual
@@ -5575,7 +5579,9 @@ function adoptServableFullDescription(input: {
     }))
     .find(
       ({ materialized }) =>
-        textValue(materialized) !== textValue(servedValue) && servesAsDescription(materialized),
+        textValue(materialized) !== textValue(servedValue) &&
+        !isPersonBiographyDescription(textValue(materialized)) &&
+        servesAsDescription(materialized),
     );
 
   if (!replacement) return 0;
@@ -6216,8 +6222,6 @@ export async function projectFromLog(
       // winner, which is what the restatement branch below already wants: it keeps
       // the body and reconsiders the card, because the card is derivable from the
       // body and the body is not derivable from the card (#2721).
-      const candidateIsPersonBiography = (candidateText: string): boolean =>
-        isHighConfidencePersonBio(candidateText) || isCareerBiographyDescription(candidateText);
       if (!winnerFullUseful) {
         const rankedFull = resolveFieldRanked('fullDescription', resolverObs, {
           now: input.now,
@@ -6238,7 +6242,7 @@ export async function projectFromLog(
           );
           const materializedText = textValue(materialized);
           if (!fullDescriptionReadsWell(materializedText)) continue;
-          if (candidateIsPersonBiography(materializedText)) continue;
+          if (isPersonBiographyDescription(materializedText)) continue;
           if (!readableFallback) readableFallback = { materialized, candidate };
           if (!fullDescriptionServes(materializedText)) continue;
           if (!fallback) fallback = { materialized, candidate };

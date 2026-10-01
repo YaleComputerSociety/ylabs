@@ -18,6 +18,11 @@ const TOPIC_ECHO_BODY =
 const RESEARCH_BODY =
   'Synthetic Scholar studies how early childhood programs shape later earnings, using randomized evaluations and structural models of household investment in children.';
 
+const THIN_BODY = 'Synthetic Scholar studies economics.';
+
+const CAREER_BIOGRAPHY =
+  'Synthetic Scholar is Professor of Economics and Chair of Public Policy at a university in New England. Synthetic Scholar completed a BA in Mathematics in 1990 and a PhD in Economics in 1997, and teaches a wide variety of courses on labor markets and statistics. Synthetic Scholar was appointed to an endowed chair in 2011 and has served as Deputy Dean. Current research interests include the economics of early childhood and household investment.';
+
 const entityDoc = {
   _id: 'c'.repeat(24),
   slug: 'faculty-research-area-synthetic-scholar',
@@ -112,5 +117,20 @@ describe('full description adoption asks the serving check (#3437)', () => {
       input([observation(TOPIC_ECHO_BODY, 'synthetic-page-source', 0.82)]),
     );
     expect(result.set.fullDescription ?? entityDoc.fullDescription).toBe(TOPIC_ECHO_BODY);
+  });
+
+  it('never adopts a career biography that serves over research prose ranked below it', async () => {
+    expect(servingBarAcceptsFullDescription(entityDoc, {}, CAREER_BIOGRAPHY, '')).toBe(true);
+    const resolverObs = [
+      observation(THIN_BODY, 'synthetic-page-source', 0.82),
+      observation(CAREER_BIOGRAPHY, 'synthetic-profile-source', 0.7),
+      observation(RESEARCH_BODY, 'synthetic-signal-source', 0.55),
+    ];
+    const result = await projectFromLog('researchEntity', {
+      ...input(resolverObs),
+      resolved: { fullDescription: resolvedField(THIN_BODY, 0.82) },
+      entityDoc: { ...entityDoc, fullDescription: THIN_BODY },
+    });
+    expect(result.set.fullDescription).toBe(RESEARCH_BODY);
   });
 });
