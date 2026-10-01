@@ -31,10 +31,10 @@ const yearsOfStudy = (value: unknown): string[] =>
     ? value.filter((item): item is string => typeof item === 'string').map((item) => item.trim())
     : [];
 
-export const isUndergraduateYearOfStudy = (year: string): boolean =>
+const isUndergraduateYearOfStudy = (year: string): boolean =>
   UNDERGRADUATE_YEAR_OF_STUDY.test(year.trim());
 
-export const isGraduateYearOfStudy = (year: string): boolean =>
+const isGraduateYearOfStudy = (year: string): boolean =>
   GRADUATE_YEAR_OF_STUDY.test(year.trim());
 
 function audienceFromYearsOfStudy(years: string[]): ProgramAudience | null {
