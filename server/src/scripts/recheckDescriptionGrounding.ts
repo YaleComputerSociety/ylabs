@@ -222,6 +222,7 @@ async function main(): Promise<void> {
   assertScriptApplyAllowed({
     apply: !options.dryRun,
     scriptName: 'research-entity:recheck-description-grounding',
+    mongoUrl: process.env.MONGODBURL,
   });
 
   await initializeConnections();

@@ -59,3 +59,64 @@ describe('assertScriptApplyAllowed', () => {
     ).toMatchObject({ environment: 'production', dbLabel: 'localhost/Prod' });
   });
 });
+
+describe('the apply guard resolves its target rather than trusting the caller', () => {
+  const productionUrl = 'mongodb+srv://user:secret@cluster.example.net/Prod';
+
+  it('blocks an apply whose production target is only in MONGODBURL', () => {
+    expect(() =>
+      assertScriptApplyAllowed({
+        apply: true,
+        scriptName: 'fixture-script',
+        env: { MONGODBURL: productionUrl },
+      }),
+    ).toThrow('target looks like production');
+  });
+
+  it('still requires confirmation for a production apply whose target comes from the environment', () => {
+    expect(() =>
+      assertScriptApplyAllowed({
+        apply: true,
+        scriptName: 'fixture-script',
+        env: { MONGODBURL: productionUrl, SCRAPER_ENV: 'production' },
+      }),
+    ).toThrow('CONFIRM_PROD_SCRAPE=true');
+  });
+
+  it('names the environment target in the report instead of calling it missing', () => {
+    expect(
+      assertScriptApplyAllowed({
+        apply: false,
+        scriptName: 'fixture-script',
+        env: { MONGODBURL: productionUrl },
+      }),
+    ).toMatchObject({ dbLabel: 'cluster.example.net/Prod' });
+  });
+
+  it('prefers an explicit target over MONGODBURL', () => {
+    expect(
+      assertScriptApplyAllowed({
+        apply: true,
+        scriptName: 'fixture-script',
+        mongoUrl: 'mongodb://localhost:27017/Development',
+        env: { MONGODBURL: productionUrl },
+      }),
+    ).toMatchObject({ environment: 'development', dbLabel: 'localhost/Development' });
+  });
+
+  it('leaves a dry run against a production environment target allowed', () => {
+    expect(
+      assertScriptApplyAllowed({
+        apply: false,
+        scriptName: 'fixture-script',
+        env: { MONGODBURL: productionUrl, SCRAPER_ENV: 'production' },
+      }),
+    ).toMatchObject({ environment: 'production' });
+  });
+
+  it('reports no target when neither the caller nor the environment names one', () => {
+    expect(
+      assertScriptApplyAllowed({ apply: true, scriptName: 'fixture-script', env: {} }),
+    ).toMatchObject({ dbLabel: 'missing' });
+  });
+});

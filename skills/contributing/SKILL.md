@@ -56,6 +56,12 @@ A new entry script anywhere under `server/src/scripts` that calls `assertScriptA
 
 A read-only instrument that names `--apply` only to refuse it goes in `INSTRUMENTS_THAT_REFUSE_APPLY` instead.
 
+Pass `mongoUrl: process.env.MONGODBURL` at every `assertScriptApplyAllowed` call, so the call says out loud which database the apply would write.
+`server/src/scripts/__tests__/scriptApplyGuardCannotBeSkipped.test.ts` parses every non-test call site and fails on one that omits it.
+The guard also resolves `MONGODBURL` itself when the argument is absent, because before #3725 four apply-capable scripts omitted it: `summarizeMongoUrl(undefined)` returned `missing`, no production pattern matched, and the refusal could not fire while the script connected through `MONGODBURL` anyway.
+Omission is therefore no longer unsafe, and the convention is what keeps the target reviewable.
+Never hand the guard an `env` override while omitting `mongoUrl`: the guard would resolve its target from that stub while the script connects through the real `process.env`, which is the one remaining way past the check, and the same test fails on it.
+
 `humanRunWriteScripts.pending.json` lists the legacy one-offs awaiting conversion.
 Converting or deleting one means removing it from that list and lowering `PENDING_CONVERSION_CEILING` to match, because the test requires the two to be equal, which is what keeps the count moving in one direction.
 
