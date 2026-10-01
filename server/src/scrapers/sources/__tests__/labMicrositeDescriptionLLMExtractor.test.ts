@@ -7,6 +7,7 @@ import {
   descriptionExtractionToObservations,
   discoverResearchSubPageUrls,
   researchSubPageCrawlUrls,
+  researchSentencesOfBiographyBody,
 } from '../labMicrositeDescriptionLLMExtractor';
 
 describe('isRejectedDescriptionSourceUrl', () => {
@@ -390,5 +391,59 @@ describe('a multi-project symposium booklet is never a lab description source (#
       BOOKLET_URL,
     ]);
     expect(researchSubPageCrawlUrls(anchor, 'https://science.example.edu/programs/')).toEqual([]);
+  });
+});
+
+describe('a personal homepage bio is narrowed to the research it states', () => {
+  const BIO_HOMEPAGE =
+    'I am an assistant professor of Computer Science at Example University. Before that, I was a postdoc at the Department of Statistics of Northfield University. I received my PhD from the Department of Mathematics at Eastbrook Institute. During my Ph.D. studies, I was awarded the Example Society Dissertation Award and an Example Graduate Fellowship. My research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.';
+  const AWARD_CARD =
+    'During my Ph.D. studies, I was awarded the Example Society Dissertation Award and an Example Graduate Fellowship.';
+  const CONTEXT = {
+    sourceUrl: 'https://example.org/',
+    entityKey: 'dept-cs-faculty-example',
+    entityType: 'FACULTY_RESEARCH_AREA',
+    knownPersonSurnames: NO_SURNAME_ROSTER,
+  };
+
+  const observe = (fullDescription: string, shortDescription: string) =>
+    Object.fromEntries(
+      descriptionExtractionToObservations(
+        { fullDescription, shortDescription, topics: [], methods: [], name: '' },
+        CONTEXT,
+      ).map((observation) => [observation.field, observation.value]),
+    );
+
+  it('keeps only the research sentence of a first-person CV bio', () => {
+    expect(observe(BIO_HOMEPAGE, '').fullDescription).toBe(
+      'My research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+    );
+  });
+
+  it('never asserts an award sentence as the card', () => {
+    expect(observe(BIO_HOMEPAGE, AWARD_CARD).shortDescription).toBeUndefined();
+  });
+
+  it('keeps a bio whole when no sentence of it is recognised as research', () => {
+    const careerOnly = BIO_HOMEPAGE.replace(/ My research interests include:.*$/, '');
+    expect(researchSentencesOfBiographyBody(careerOnly)).toBe(careerOnly);
+  });
+
+  it('does not narrow at a boundary the splitters disagree on', () => {
+    const ambiguous =
+      'I am an assistant professor of Medicine at Example University. I received my M.D. at Example University in St. Louis where my dissertation examined cell signalling. My research interests include: kidney transport and ion channels in disease models.';
+    expect(researchSentencesOfBiographyBody(ambiguous)).toBe(ambiguous);
+  });
+
+  it('leaves research prose without biography sentences untouched', () => {
+    const prose =
+      'We study how cardiac tissue remodels after injury, combining live imaging with computational models to test how mechanical load reshapes the myocardium.';
+    expect(researchSentencesOfBiographyBody(prose)).toBe(prose);
+  });
+
+  it('keeps a career sentence that also states the research', () => {
+    const prose =
+      'After completing her doctorate, she joined the faculty, where she studies how coastal wetlands store carbon. Her group combines field sampling with isotope modelling.';
+    expect(researchSentencesOfBiographyBody(prose)).toBe(prose);
   });
 });

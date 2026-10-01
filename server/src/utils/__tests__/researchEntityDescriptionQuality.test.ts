@@ -2436,3 +2436,21 @@ describe('withMemoizedDescriptionQuality', () => {
     expect(bodyScoreCount()).toBe(2);
   });
 });
+
+describe('describesResearchFocus reads degree-stage "studies" as a noun', () => {
+  it('does not read a training stage as a research verb', () => {
+    expect(
+      describesResearchFocus(
+        'During my Ph.D. studies, I was awarded the Example Society Dissertation Award.',
+      ),
+    ).toBe(false);
+    expect(describesResearchFocus('She completed her doctoral studies in Lisbon.')).toBe(false);
+  });
+
+  it('still reads the verb', () => {
+    expect(describesResearchFocus('The lab studies how neurons encode time.')).toBe(true);
+    expect(
+      describesResearchFocus('After her graduate studies, she studies coastal wetlands.'),
+    ).toBe(true);
+  });
+});

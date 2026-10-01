@@ -293,7 +293,9 @@ const EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS: RegExp[] = [
   // the philosophy department at Yale. I completed my PhD in philosophy at
   // MIT in ...", a CV/bio opener rather than a research summary).
   /\bI\s+am\s+(?:an?\s+|the\s+)?(?:assistant|associate|full|adjunct|clinical|visiting)?\s*(?:professor|lecturer|instructor|faculty\s+member)\b/i,
-  /\bI\s+completed\s+(?:my|a)\b[^.!?]{0,60}\b(?:Ph\.?D\.?|doctorate|M\.?D\.?|master'?s|bachelor'?s|degree)\b/i,
+  /\bI\s+(?:completed|received|earned|obtained|did)\s+(?:my|a)\b[^.!?]{0,60}\b(?:Ph\.?D\.?|doctorate|M\.?D\.?|master'?s|bachelor'?s|degree)\b/i,
+  /\bI\s+was\s+(?:an?\s+)?(?:post-?doc(?:toral)?|research\s+fellow|visiting\s+(?:scholar|scientist|researcher|professor))\b/i,
+  /\bI\s+was\s+awarded\b/i,
   /\b(?:resulted\s+in\s+me\s+being|I\s+was)\s+(?:an?\s+)?invited\s+speaker\b/i,
   /\bI\s+have\s+a\s+wealth\s+of\s+experience\b/i,
   /\bI\s+am\s+a\s+recognized\s+authority\s+on\b/i,
