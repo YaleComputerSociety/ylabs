@@ -120,8 +120,8 @@ export function checkFilteredRowsCarryValue(
 }
 
 export interface DeadlineOrderRow {
-  deadlineMs: number | null;
-  projectedNextCycle: boolean;
+  storedRowFound: boolean;
+  storedDeadlineMs: number | null;
 }
 
 export function checkDeadlineSortOrder(
@@ -134,25 +134,25 @@ export function checkDeadlineSortOrder(
   let inversions = 0;
   let seenDated = false;
   let previous: number | null = null;
-  let projectedExcluded = 0;
+  let storedRowMissing = 0;
   for (const row of rows) {
-    if (row.projectedNextCycle) {
-      projectedExcluded += 1;
+    if (!row.storedRowFound) {
+      storedRowMissing += 1;
       continue;
     }
-    if (row.deadlineMs === null) {
+    if (row.storedDeadlineMs === null) {
       if (seenDated) undatedAfterDated += 1;
       continue;
     }
     seenDated = true;
-    if (previous !== null && row.deadlineMs < previous) inversions += 1;
-    previous = row.deadlineMs;
+    if (previous !== null && row.storedDeadlineMs < previous) inversions += 1;
+    previous = row.storedDeadlineMs;
   }
   return inconclusiveWhenMoved(
     `${surface}-default-sort-orders-by-stored-deadline`,
-    'The default browse is ordered by deadline, earliest first, for every row not projected to its next cycle',
+    'The default browse is ordered by the stored deadline the service sorts on, undated rows first, then earliest first',
     inversions === 0 && undatedAfterDated === 0,
-    { returned: rows.length, projectedExcluded, inversions, undatedAfterDated },
+    { returned: rows.length, storedRowMissing, inversions, undatedAfterDated },
     corpusBefore,
     corpusAfter,
     'The corpus changed while the pages were read, so a row may have moved between two requests',

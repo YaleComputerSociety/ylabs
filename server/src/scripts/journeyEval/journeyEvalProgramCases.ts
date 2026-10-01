@@ -477,16 +477,20 @@ const sortedBrowseKeepsOrder = (surface: ProgramSurface): ProgramJourneyCase => 
       titleRows.push(...byTitle);
       if (byDeadline.length < pageSize && byTitle.length < pageSize) break;
     }
+    const stored = await context.readStoredPrograms(defaultRows.map(rowKey));
     const corpusAfter = await context.readCorpusFingerprint();
 
     return {
       invariants: [
         checkDeadlineSortOrder(
           surface.id,
-          defaultRows.map((row) => ({
-            deadlineMs: epochMillis(row.deadline),
-            projectedNextCycle: row.deadlineProjectedNextCycle === true,
-          })),
+          defaultRows.map((row) => {
+            const storedRow = stored.get(rowKey(row));
+            return {
+              storedRowFound: storedRow !== undefined,
+              storedDeadlineMs: epochMillis(storedRow?.deadline),
+            };
+          }),
           corpusBefore,
           corpusAfter,
         ),

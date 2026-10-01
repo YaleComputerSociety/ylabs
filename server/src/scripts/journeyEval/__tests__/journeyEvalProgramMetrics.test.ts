@@ -128,46 +128,50 @@ describe('checkFilteredRowsCarryValue', () => {
 });
 
 describe('checkDeadlineSortOrder', () => {
-  it('passes undated rows first, then non-decreasing deadlines, skipping projected rows', () => {
+  const storedAt = (storedDeadlineMs: number | null) => ({
+    storedRowFound: true,
+    storedDeadlineMs,
+  });
+
+  it('passes undated rows first, then non-decreasing stored deadlines', () => {
     const result = checkDeadlineSortOrder(
       'programs',
-      [
-        { deadlineMs: null, projectedNextCycle: false },
-        { deadlineMs: 5, projectedNextCycle: true },
-        { deadlineMs: 10, projectedNextCycle: false },
-        { deadlineMs: 1, projectedNextCycle: true },
-        { deadlineMs: 20, projectedNextCycle: false },
-      ],
+      [storedAt(null), storedAt(5), storedAt(10), storedAt(10), storedAt(20)],
       steadyCorpus,
       steadyCorpus,
     );
 
     expect(result.status).toBe('pass');
-    expect(result.detail.projectedExcluded).toBe(2);
   });
 
   it('fails on an inversion or an undated row after a dated one', () => {
     const inverted = checkDeadlineSortOrder(
       'programs',
-      [
-        { deadlineMs: 20, projectedNextCycle: false },
-        { deadlineMs: 10, projectedNextCycle: false },
-      ],
+      [storedAt(20), storedAt(10)],
       steadyCorpus,
       steadyCorpus,
     );
     const undatedLate = checkDeadlineSortOrder(
       'programs',
-      [
-        { deadlineMs: 10, projectedNextCycle: false },
-        { deadlineMs: null, projectedNextCycle: false },
-      ],
+      [storedAt(10), storedAt(null)],
       steadyCorpus,
       steadyCorpus,
     );
 
     expect(inverted.status).toBe('fail');
     expect(undatedLate.status).toBe('fail');
+  });
+
+  it('skips and counts a served row whose stored row is gone', () => {
+    const result = checkDeadlineSortOrder(
+      'programs',
+      [storedAt(10), { storedRowFound: false, storedDeadlineMs: null }, storedAt(20)],
+      steadyCorpus,
+      steadyCorpus,
+    );
+
+    expect(result.status).toBe('pass');
+    expect(result.detail.storedRowMissing).toBe(1);
   });
 });
 

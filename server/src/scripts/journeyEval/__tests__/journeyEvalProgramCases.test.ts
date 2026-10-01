@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CLIENT_PROGRAM_PAGE_SIZE,
+  PROGRAMS_SURFACE,
   programSurfaceCases,
   rowCarriesFilterValue,
   walkProgramBrowseLikeTheClient,
@@ -9,6 +10,7 @@ import {
 } from '../journeyEvalProgramCases';
 import { fellowshipJourneyCases } from '../journeyEvalFellowshipCases';
 import { studentProgramSearchQuery } from '../programJourneyContext';
+import { publicFellowshipForStudent } from '../../../services/fellowshipService';
 
 const steadyFingerprint = { rowCount: 3, latestUpdatedAt: '2026-09-01T00:00:00.000Z' };
 
@@ -80,6 +82,67 @@ describe('full walk case', () => {
 
     expect(statusById['programs-no-row-repeats-across-pages']).toBe('fail');
     expect(statusById['programs-full-walk-serves-the-reported-total']).toBe('fail');
+  });
+});
+
+describe('deadline cases over the serve path', () => {
+  const recurringFields = {
+    summary: 'An annual summer research fellowship with a stipend.',
+    applicationLink: 'https://apply.example.edu/programs/synthetic',
+    programCategory: 'FELLOWSHIP',
+    isAcceptingApplications: true,
+    updatedAt: new Date('2026-09-01T00:00:00.000Z'),
+  };
+  const storedInSortOrder = [
+    {
+      ...recurringFields,
+      _id: 'row-date-only',
+      title: 'Synthetic Program A',
+      deadline: new Date('2026-12-01T23:59:59.999Z'),
+    },
+    {
+      ...recurringFields,
+      _id: 'row-stated-time',
+      title: 'Synthetic Program B',
+      deadline: new Date('2026-12-02T02:00:00.000Z'),
+    },
+  ];
+  const servedContext = (): ProgramJourneyContext => ({
+    ...fakeContext(storedInSortOrder.map((row) => publicFellowshipForStudent(row))),
+    readStoredPrograms: async (ids) =>
+      new Map(
+        storedInSortOrder
+          .filter((row) => ids.includes(row._id))
+          .map((row) => [row._id, row as Record<string, unknown>]),
+      ),
+  });
+  const statusOf = async (caseId: string, invariantId: string) => {
+    const journeyCase = programSurfaceCases(PROGRAMS_SURFACE).find(
+      (candidate) => candidate.id === caseId,
+    );
+    const outcome = await journeyCase!.run(servedContext());
+    return outcome.invariants.find((invariant) => invariant.id === invariantId)?.status;
+  };
+
+  it('passes the default sort when a date-only close moves a served deadline past its stored successor', async () => {
+    const served = storedInSortOrder.map((row) => publicFellowshipForStudent(row));
+    expect(served[0].deadline.getTime()).toBeGreaterThan(served[1].deadline.getTime());
+
+    expect(
+      await statusOf(
+        'programs-sorted-browse-keeps-order',
+        'programs-default-sort-orders-by-stored-deadline',
+      ),
+    ).toBe('pass');
+  });
+
+  it('attributes every served deadline the serve path produced', async () => {
+    expect(
+      await statusOf(
+        'programs-served-field-difference-attribution',
+        'programs-every-served-field-difference-is-attributable',
+      ),
+    ).toBe('pass');
   });
 });
 

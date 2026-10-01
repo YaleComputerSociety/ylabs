@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { publicFellowshipForStudent } from '../../../services/fellowshipService';
 import {
   attributeProgramServedFields,
   type ProgramAttributedField,
@@ -68,6 +69,63 @@ describe('attributeProgramServedFields', () => {
       status: 'attributed',
       guard: 'deadlineIsPast',
     });
+  });
+
+  it('attributes a date-only deadline served at the end of its New York day to the close guard', () => {
+    const stored = { ...recurringStoredRow, deadline: new Date('2026-12-01T23:59:59.999Z') };
+    const served = publicFellowshipForStudent(stored, servedAt.from);
+
+    expect(served.deadline.toISOString()).toBe('2026-12-02T04:59:59.999Z');
+    expect(outcomeFor(attributeProgramServedFields(stored, served, servedAt), 'deadline')).toEqual({
+      field: 'deadline',
+      status: 'attributed',
+      guard: 'programDeadlineClosesAt',
+    });
+  });
+
+  it('flags a date-only deadline served at the end of the UTC day the close guard moves', () => {
+    const stored = { ...recurringStoredRow, deadline: new Date('2026-12-01T23:59:59.999Z') };
+    const outcomes = attributeProgramServedFields(
+      stored,
+      { ...stored, deadlineProjectedNextCycle: false },
+      servedAt,
+    );
+
+    expect(outcomeFor(outcomes, 'deadline').status).toBe('unexplained');
+  });
+
+  it('attributes a past date-only recurring deadline to the projection of its closing instant', () => {
+    const stored = { ...recurringStoredRow, deadline: new Date('2026-02-01T23:59:59.999Z') };
+    const served = publicFellowshipForStudent(stored, servedAt.from);
+
+    expect(served.deadlineProjectedNextCycle).toBe(true);
+    expect(served.deadline.toISOString()).toBe('2027-02-02T04:59:59.999Z');
+    const outcomes = attributeProgramServedFields(stored, served, servedAt);
+    expect(outcomeFor(outcomes, 'deadline')).toEqual({
+      field: 'deadline',
+      status: 'attributed',
+      guard: 'projectNextCycleDeadline',
+    });
+    expect(outcomeFor(outcomes, 'isAcceptingApplications')).toEqual({
+      field: 'isAcceptingApplications',
+      status: 'attributed',
+      guard: 'deadlineIsPast',
+    });
+  });
+
+  it('keeps an application open until the end of the New York day of a date-only deadline', () => {
+    const stored = { ...recurringStoredRow, deadline: new Date('2026-09-30T23:59:59.999Z') };
+    const eveningInNewYork = {
+      from: new Date('2026-10-01T02:00:00.000Z'),
+      to: new Date('2026-10-01T02:00:05.000Z'),
+    };
+    const outcomes = attributeProgramServedFields(
+      stored,
+      { ...stored, isAcceptingApplications: false },
+      eveningInNewYork,
+    );
+
+    expect(outcomeFor(outcomes, 'isAcceptingApplications').status).toBe('unexplained');
   });
 
   it('flags a served deadline the projection would not produce', () => {
