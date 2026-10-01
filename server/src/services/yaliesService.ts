@@ -34,13 +34,11 @@ export interface YaliesPerson {
   last_name?: string;
   preferred_name?: string;
   email?: string;
-  phone?: string;
   title?: string;
   school_code?: string;
   school_name?: string;
   school?: string;
   year?: string | number;
-  college?: string;
   major?: string | string[];
   image?: string;
   orcid?: string;
