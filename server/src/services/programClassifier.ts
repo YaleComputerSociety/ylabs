@@ -339,7 +339,7 @@ function namesInternshipProgram(input: ProgramClassificationInput): boolean {
   return !FUNDING_INSTRUMENT_NAME.test(normalizeText(input.title).toLowerCase());
 }
 
-const DEPARTMENT_PAGE_PATH_SEGMENT = /^(?:departments?|undergraduate-stud(?:y|ies))$/i;
+const DEPARTMENT_PAGE_PATH_SEGMENT = /^(?:departments|undergraduate-study)$/;
 
 function publishedOnDepartmentPage(input: ProgramClassificationInput): boolean {
   const sourceUrl = normalizeText(input.sourceUrl);
