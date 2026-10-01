@@ -1300,6 +1300,13 @@ function chromeFreeContent(contentRoot: cheerio.Cheerio<any>): cheerio.Cheerio<a
   return chromeFreeRoot;
 }
 
+function descriptionFieldText(chromeFreeRoot: cheerio.Cheerio<any>): string | undefined {
+  const descriptionField = chromeFreeRoot
+    .find('.field-name-field-description .field-items')
+    .first();
+  return descriptionField.length > 0 ? normalizeWhitespace(descriptionField.text()) : undefined;
+}
+
 export type NonProgramPageShape =
   | 'cms-post'
   | 'news-roundup'
@@ -1487,7 +1494,10 @@ function candidateFromDetailPage(
   const bodyBlocks = textBlocks(chromeFreeRoot);
   const titledBodyText = `${title} ${bodyText}`;
   const eligibility = eligibilitySentences(bodyBlocks);
-  const safeDescription = sanitizeStoredCatalogDescription(bodyText, 2000);
+  const safeDescription = sanitizeStoredCatalogDescription(
+    descriptionFieldText(chromeFreeRoot) ?? bodyText,
+    2000,
+  );
   const applicationInformation = applicationSectionText($);
   const deadline = parseProgramDate(bestDeadlineText(bodyText), 'deadline', referenceDate);
   const applicationOpenDate = parseProgramDate(
