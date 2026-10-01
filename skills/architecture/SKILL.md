@@ -74,7 +74,7 @@ Cycles are not the problem here and a cycle rule is not worth adding: the whole 
 
 | Command                                                          | Effect                                                                                       |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `yarn install:all`                                               | Install deps in root, server, and client.                                                    |
+| `bash scripts/install-all.sh`                                    | Install deps in root, server, and client, also on a fresh checkout.                          |
 | `yarn dev:client`                                                | Vite dev server on port 3000.                                                                |
 | `yarn dev:server`                                                | Express with tsx watch on port 4000.                                                         |
 | `yarn build`                                                     | Corepack enable, install all deps, build server, build client.                               |

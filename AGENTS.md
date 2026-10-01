@@ -218,7 +218,7 @@ Never `git switch`, commit, or edit feature work directly in it.
 Multiple agents sharing one checkout will switch branches under each other and serve the wrong code.
 - Create one worktree plus branch per workstream, based on `beta`:
 `scripts/new-agent-worktree.sh <branch-name>`.
-The helper creates the worktree, runs `yarn install:all` so dependencies are fully isolated, and reserves a free client dev-server port.
+The helper creates the worktree, runs `scripts/install-all.sh` so dependencies are fully isolated, and reserves a free client dev-server port.
 - Do not symlink `node_modules` between worktrees when running dev servers concurrently.
 They share Vite's `node_modules/.vite` cache and clobber each other.
 A real per-worktree install is the isolation boundary.

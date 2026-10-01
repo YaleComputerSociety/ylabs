@@ -664,12 +664,12 @@ test('root package exposes a deploy security preflight', () => {
     packageJson.scripts['security:identifiers'],
     'node scripts/check-no-person-identifiers.mjs',
   );
-  // No repo file invokes install:all:immutable: its consumer is the Render
-  // dashboard build command, which docs/release-process.md prescribes. It looks
-  // dead to a caller search, so do not delete it on that evidence.
+  // No repo file invokes install:all:immutable: a Render dashboard build command
+  // configured before #4035 may still call it. It looks dead to a caller search,
+  // so do not delete it on that evidence.
   assert.equal(
     packageJson.scripts['install:all:immutable'],
-    'yarn install --immutable && cd server && yarn install --immutable && cd ../client && yarn install --immutable',
+    'bash scripts/install-all.sh --immutable',
   );
 });
 
@@ -1090,9 +1090,9 @@ test('the checkout guard rejects a checkout that leaves credentials in git confi
   );
 });
 
-const runScript = (script, env) =>
+const runScript = (script, env, args = []) =>
   new Promise((resolve, reject) => {
-    const child = spawn(fileURLToPath(new URL(script, import.meta.url)), {
+    const child = spawn(fileURLToPath(new URL(script, import.meta.url)), args, {
       env: { ...process.env, ...env },
     });
     let output = '';
@@ -1303,6 +1303,71 @@ test('every workflow takes its Node major from .node-version', () => {
       `${manifest} must bound engines.node to the major .node-version declares`,
     );
   }
+});
+
+test('the documented installs use the Corepack pin and builtin installer CI uses', () => {
+  const readDoc = (doc) => fs.readFileSync(new URL(doc, import.meta.url), 'utf8');
+  const ciCorepack = ciWorkflow.match(/npm install -g (corepack@\d+\.\d+\.\d+)/)?.[1];
+  assert.ok(ciCorepack, 'ci.yml must pin a Corepack version for the documented build to match');
+  assert.ok(
+    readDoc('../docs/release-process.md').includes(
+      `\`npm install -g ${ciCorepack} && corepack enable && bash scripts/install-all.sh --immutable\``,
+    ),
+    'docs/release-process.md must give the Render build the Corepack pin ci.yml installs and the builtin immutable installs, because a package.json script cannot run on a fresh checkout',
+  );
+  for (const doc of ['../README.md', '../DEVELOPER_GUIDE.md']) {
+    const text = readDoc(doc);
+    const pins = [...text.matchAll(/npm install -g (corepack@\S+)/g)].map((match) => match[1]);
+    assert.ok(pins.length > 0, `${doc} must tell contributors to install Corepack`);
+    for (const pin of pins) {
+      assert.equal(pin, ciCorepack, `${doc} must install the Corepack version ci.yml pins`);
+    }
+    assert.match(
+      text,
+      /^bash scripts\/install-all\.sh$/m,
+      `${doc} must give the builtin installer as the first install`,
+    );
+  }
+});
+
+const runInstallAll = (args) => {
+  const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'install-all-yarn-'));
+  const log = path.join(stubDir, 'yarn.log');
+  fs.writeFileSync(
+    path.join(stubDir, 'yarn'),
+    '#!/usr/bin/env bash\necho "$PWD|$*" >> "$YARN_STUB_LOG"\n',
+    { mode: 0o755 },
+  );
+  return runScript(
+    './install-all.sh',
+    { PATH: `${stubDir}${path.delimiter}${process.env.PATH}`, YARN_STUB_LOG: log },
+    args,
+  )
+    .then((result) => ({
+      ...result,
+      calls: fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n') : [],
+    }))
+    .finally(() => fs.rmSync(stubDir, { recursive: true, force: true }));
+};
+
+test('the first-install entry point runs only yarn install builtins', async () => {
+  const repoRoot = fs.realpathSync(fileURLToPath(new URL('..', import.meta.url)));
+  const expectedCalls = (flag) =>
+    ['install', '--cwd server install', '--cwd client install'].map(
+      (argv) => `${repoRoot}|${argv}${flag}`,
+    );
+
+  const plain = await runInstallAll([]);
+  assert.equal(plain.code, 0, plain.output);
+  assert.deepEqual(plain.calls, expectedCalls(''));
+
+  const immutable = await runInstallAll(['--immutable']);
+  assert.equal(immutable.code, 0, immutable.output);
+  assert.deepEqual(immutable.calls, expectedCalls(' --immutable'));
+
+  const unknown = await runInstallAll(['--frozen']);
+  assert.notEqual(unknown.code, 0, 'an unknown flag must fail rather than install');
+  assert.deepEqual(unknown.calls, []);
 });
 
 test('workflows pin Corepack instead of installing whatever is latest', () => {

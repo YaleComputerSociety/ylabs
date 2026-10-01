@@ -11,7 +11,7 @@ When changing UI, read `DESIGN.md` (the design-token system) and `../skills/fron
 - Node 20 (see the repo toolchain notes; newer majors can break the jsdom test environment).
 - Yarn (managed via Corepack).
 
-Install dependencies from the repository root with `yarn install:all`, or from this directory with `yarn`.
+Install dependencies from the repository root with `bash scripts/install-all.sh`, or from this directory with `yarn`.
 
 ## Scripts
 

@@ -62,9 +62,7 @@ git -C "$REPO_ROOT" worktree add -b "$BRANCH" "$WORKTREE_DIR" "$BASE_REF"
   echo "WARNING: the gh identifier guard is not installed, so gh bodies are not checked before posting." >&2
 
 if [ "${SKIP_INSTALL:-0}" != "1" ]; then
-  (cd "$WORKTREE_DIR" && yarn)
-  (cd "$WORKTREE_DIR/server" && yarn)
-  (cd "$WORKTREE_DIR/client" && yarn)
+  bash "$WORKTREE_DIR/scripts/install-all.sh"
 fi
 
 find_free_port() {
