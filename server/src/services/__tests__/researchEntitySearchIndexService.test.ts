@@ -559,7 +559,8 @@ describe('researchEntitySearchIndexService', () => {
     expect(researchEntityTypeSearchTerms('FACULTY_RESEARCH_AREA')).toEqual([]);
     expect(researchEntityTypeSearchTerms('LAB')).toEqual(['lab']);
     expect(researchEntityTypeSearchTerms('not-a-type')).toEqual([]);
-    expect(facilityRow?.studentSearchTerms).toContain('core facility');
+    expect(facilityRow?.entityTypeSearchTerms).toEqual(['core facility']);
+    expect(facilityRow?.studentSearchTerms ?? []).not.toContain('core facility');
     expect(facilityRow).toMatchObject({ kind: 'core_facility', entityType: 'CORE_FACILITY' });
   });
 

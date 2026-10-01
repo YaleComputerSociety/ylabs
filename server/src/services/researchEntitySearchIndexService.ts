@@ -66,6 +66,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'shortDescription',
     'fullDescription',
     'school',
+    'entityTypeSearchTerms',
   ],
   filterableAttributes: [
     'archived',
@@ -574,9 +575,9 @@ export function buildResearchEntitySearchIndexDocument(
   // an alias derived from copy the sanitizer removes (a chip-echo or synthetic
   // metadata description, an endowed-chair title, a domain-incoherent research
   // area) makes the entity match a term no surface ever serves (#2396).
-  const studentSearchTerms = Array.from(
-    new Set([...buildStudentSearchTerms(out), ...researchEntityTypeSearchTerms(out.entityType)]),
-  );
+  const entityTypeSearchTerms = researchEntityTypeSearchTerms(out.entityType);
+  if (entityTypeSearchTerms.length > 0) out.entityTypeSearchTerms = entityTypeSearchTerms;
+  const studentSearchTerms = buildStudentSearchTerms(out);
   if (studentSearchTerms.length > 0) {
     out.studentSearchTerms = studentSearchTerms;
   }

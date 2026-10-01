@@ -1867,6 +1867,21 @@ describe('searchResearchGroupsViaMeili', () => {
       );
     });
 
+    it('keeps a person-named center a title match when its type word also matches (#3942)', () => {
+      const center = {
+        name: 'Vexmoor Center',
+        entityTypeSearchTerms: ['center'],
+        _matchesPosition: {
+          name: [
+            { start: 0, length: 7 },
+            { start: 8, length: 6 },
+          ],
+          entityTypeSearchTerms: [{ start: 0, length: 6, indices: [0] }],
+        },
+      };
+      expect(keywordLegTopHitIsNameMatch([center], ['vexmoor', 'center'])).toBe(true);
+    });
+
     it('is false when a topic word only happens to match a surname', () => {
       const greenLead = {
         ...lead('Pat Green', [[4, 5]]),
