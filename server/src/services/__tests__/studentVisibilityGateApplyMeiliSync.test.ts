@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   queueBulkWrite: vi.fn(async (..._args: unknown[]) => ({})),
   queueUpdateMany: vi.fn(async (..._args: unknown[]) => ({ modifiedCount: 0 })),
   researchUpdateMany: vi.fn(async (..._args: unknown[]) => ({ modifiedCount: 0 })),
+  fellowshipUpdateMany: vi.fn(async (..._args: unknown[]) => ({ modifiedCount: 0 })),
   researchDocsById: new Map<string, Record<string, unknown>>(),
 }));
 
@@ -42,6 +43,7 @@ vi.mock('../../models/researchEntity', () => ({
 vi.mock('../../models/fellowship', () => ({
   Fellowship: {
     bulkWrite: (...args: unknown[]) => mocks.fellowshipBulkWrite(...args),
+    updateMany: (...args: unknown[]) => mocks.fellowshipUpdateMany(...args),
   },
 }));
 
