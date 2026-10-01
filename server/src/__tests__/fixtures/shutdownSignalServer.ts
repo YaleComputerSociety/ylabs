@@ -6,6 +6,7 @@ const SLOW_RESPONSE_MS = 2000;
 
 const app = express();
 app.get('/slow', (_request, response) => {
+  console.log('IN_FLIGHT');
   setTimeout(() => response.status(200).json({ finished: true }), SLOW_RESPONSE_MS);
 });
 

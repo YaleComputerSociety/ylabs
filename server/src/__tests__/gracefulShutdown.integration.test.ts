@@ -25,6 +25,12 @@ const startServerWith = async (configure: (app: express.Express) => void) => {
   baseUrl = `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
 };
 
+let markReachedHandler: () => void = () => undefined;
+const requestReachedHandler = () =>
+  new Promise<void>((resolve) => {
+    markReachedHandler = resolve;
+  });
+
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 describe('shutting the server down on a stop signal', () => {
@@ -53,12 +59,14 @@ describe('shutting the server down on a stop signal', () => {
   it('finishes a request that was in flight and refuses a new connection', async () => {
     await startServerWith((app) => {
       app.get('/slow', (_request, response) => {
+        markReachedHandler();
         setTimeout(() => response.status(200).json({ finished: true }), SLOW_RESPONSE_MS);
       });
     });
 
+    const reached = requestReachedHandler();
     const inFlight = fetch(`${baseUrl}/slow`);
-    await delay(200);
+    await reached;
 
     const outcome = await shutdownServer({
       server: server!,
@@ -75,11 +83,12 @@ describe('shutting the server down on a stop signal', () => {
 
   it('cuts a request that outlives the drain window, and says so', async () => {
     await startServerWith((app) => {
-      app.get('/never', () => undefined);
+      app.get('/never', () => markReachedHandler());
     });
 
+    const reached = requestReachedHandler();
     const abandoned = fetch(`${baseUrl}/never`).catch(() => 'cut');
-    await delay(200);
+    await reached;
 
     const outcome = await shutdownServer({
       server: server!,

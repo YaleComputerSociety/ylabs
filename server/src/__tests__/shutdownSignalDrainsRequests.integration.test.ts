@@ -11,23 +11,30 @@ const SERVER_ROOT = path.resolve(__dirname, '../..');
 
 let child: ChildProcess | undefined;
 
+const outputLine = (marker: RegExp) =>
+  new Promise<RegExpExecArray>((resolve) => {
+    let output = '';
+    child!.stdout?.on('data', (chunk) => {
+      output += String(chunk);
+      const match = marker.exec(output);
+      if (match) resolve(match);
+    });
+  });
+
 const startFixtureServer = async (signalHandling: '--graceful' | '--default') => {
   child = spawn(TSX_BIN, [FIXTURE, signalHandling], {
     cwd: SERVER_ROOT,
     env: hermeticChildEnvironment({ NODE_ENV: 'development' }),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const baseUrl = await new Promise<string>((resolve, reject) => {
-    let output = '';
-    child!.stdout?.on('data', (chunk) => {
-      output += String(chunk);
-      const ready = /READY (\d+)/.exec(output);
-      if (ready) resolve(`http://127.0.0.1:${ready[1]}`);
-    });
+  const exitedEarly = new Promise<never>((_resolve, reject) => {
     child!.on('exit', (code) => reject(new Error(`fixture server exited early with ${code}`)));
   });
-  return baseUrl;
+  const ready = await Promise.race([outputLine(/READY (\d+)/), exitedEarly]);
+  return `http://127.0.0.1:${ready[1]}`;
 };
+
+const requestReachedHandler = () => outputLine(/IN_FLIGHT/);
 
 const exitCode = () =>
   new Promise<number | null>((resolve) => child!.on('exit', (code) => resolve(code)));
@@ -43,8 +50,9 @@ describe('a real stop signal sent to the running server', () => {
   it('lets a request in flight finish, then exits cleanly', async () => {
     const baseUrl = await startFixtureServer('--graceful');
 
+    const reached = requestReachedHandler();
     const inFlight = fetch(`${baseUrl}/slow`);
-    await delay(300);
+    await reached;
     child!.kill('SIGTERM');
 
     const answered = await inFlight;
@@ -56,8 +64,9 @@ describe('a real stop signal sent to the running server', () => {
   it('keeps draining when a second stop signal of the other kind arrives', async () => {
     const baseUrl = await startFixtureServer('--graceful');
 
+    const reached = requestReachedHandler();
     const inFlight = fetch(`${baseUrl}/slow`);
-    await delay(300);
+    await reached;
     child!.kill('SIGTERM');
     await delay(300);
     child!.kill('SIGINT');
@@ -71,11 +80,12 @@ describe('a real stop signal sent to the running server', () => {
   it('cuts the same request when the signal is left to its default action', async () => {
     const baseUrl = await startFixtureServer('--default');
 
+    const reached = requestReachedHandler();
     const cut = fetch(`${baseUrl}/slow`).then(
       () => 'answered',
       () => 'cut',
     );
-    await delay(300);
+    await reached;
     child!.kill('SIGTERM');
 
     await expect(cut).resolves.toBe('cut');
