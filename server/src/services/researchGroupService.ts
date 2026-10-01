@@ -606,9 +606,27 @@ const boundedResearchSearchQuery = (value: unknown): string => {
   return value.trim().slice(0, MAX_SEARCH_QUERY_LENGTH);
 };
 
+const UNDECOMPOSABLE_LATIN_LETTERS: Record<string, string> = {
+  ı: 'i',
+  ø: 'o',
+  ł: 'l',
+  đ: 'd',
+  ð: 'd',
+  ħ: 'h',
+  ß: 'ss',
+  æ: 'ae',
+  œ: 'oe',
+  þ: 'th',
+};
+
+const foldLatinDiacritics = (value: string): string =>
+  value
+    .normalize('NFKD')
+    .replace(/\p{M}+/gu, '')
+    .replace(/[ıøłđðħßæœþ]/g, (letter) => UNDECOMPOSABLE_LATIN_LETTERS[letter]);
+
 const tokenizeStudentResearchQuery = (query: string): string[] =>
-  query
-    .toLowerCase()
+  foldLatinDiacritics(query.toLowerCase())
     .replace(/['']/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .split(/\s+/)

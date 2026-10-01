@@ -224,6 +224,16 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('folds accented letters instead of splitting the word apart at them', () => {
+    expect(normalizeResearchSearchQuery('Pâtisserie Chimique Münchner')).toMatchObject({
+      query: 'patisserie chimique munchner',
+      tokens: ['patisserie', 'chimique', 'munchner'],
+    });
+    expect(normalizeResearchSearchQuery('Kıyı Økologi Straße')).toMatchObject({
+      tokens: ['kiyi', 'okologi', 'strasse'],
+    });
+  });
+
   it('strips question and course-topic filler so the topical terms drive ranking', () => {
     expect(normalizeResearchSearchQuery('labs studying black holes')).toMatchObject({
       query: 'black holes',

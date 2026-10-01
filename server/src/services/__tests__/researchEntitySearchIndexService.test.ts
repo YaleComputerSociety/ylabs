@@ -546,6 +546,29 @@ describe('researchEntitySearchIndexService', () => {
     );
   });
 
+  it('indexes a type word only for types whose label a student searches by, never the raw enum (#3942)', () => {
+    const facultyRow = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-faculty-type-term',
+      name: 'Synthetic Person Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      shortDescription: 'Studies tidal sediment transport.',
+      archived: false,
+    });
+    const facilityRow = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-core-facility-type-term',
+      name: 'Synthetic Imaging Suite',
+      kind: 'core_facility',
+      entityType: 'CORE_FACILITY',
+      archived: false,
+    });
+
+    const facultyTerms = (facultyRow?.studentSearchTerms ?? []).join(' ').toLowerCase();
+    expect(facultyTerms).not.toMatch(/\b(faculty|area)\b/);
+    expect(facilityRow?.studentSearchTerms).toContain('core facility');
+    expect(facilityRow).toMatchObject({ kind: 'core_facility', entityType: 'CORE_FACILITY' });
+  });
+
   it('filters unsafe URLs and direct contact text from public research entity index documents', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-url-safety',
@@ -566,9 +589,10 @@ describe('researchEntitySearchIndexService', () => {
       id: 'entity-url-safety',
       fullDescription: '',
       shortDescription: 'Email [email redacted] for details.',
-      websiteUrl: 'https://safe.example.edu/lab',
-      sourceUrls: ['https://safe.example.edu/source'],
     });
+    expect(doc).not.toHaveProperty('websiteUrl');
+    expect(doc).not.toHaveProperty('website');
+    expect(doc).not.toHaveProperty('sourceUrls');
     expect(JSON.stringify(doc)).not.toContain('javascript:');
     expect(JSON.stringify(doc)).not.toContain('mailto:');
     expect(JSON.stringify(doc)).not.toContain('pi@example.edu');
@@ -678,6 +702,9 @@ describe('researchEntitySearchIndexService', () => {
     expect(searchable).toEqual(expect.arrayContaining(['leadProfessorNames', 'professorNames']));
     expect(searchable).toEqual(expect.arrayContaining(['methods']));
     expect(searchable).toEqual(expect.arrayContaining(['shortDescription', 'fullDescription']));
+    for (const unseenTokenField of ['websiteUrl', 'sourceUrls', 'kind', 'entityType']) {
+      expect(searchable).not.toContain(unseenTokenField);
+    }
     expect(searchable).not.toContain('keywords');
     expect(searchable).not.toContain('summary');
     expect(searchable).not.toContain('description');
