@@ -668,6 +668,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'content_page_risk',
   'non_research_entity',
   'non_research_program',
+  'duplicate_program',
   'research_infrastructure_only',
   'non_owner_grant_shell',
   'grant_only_no_current_yale_source',
@@ -1098,8 +1099,13 @@ function isInfoPageWithoutApplicationCycle(
   return Boolean(source) && routes.length > 0 && routes.every((route) => route === source);
 }
 
+export interface ProgramStudentVisibilityContext {
+  duplicateOfServedCopy?: boolean;
+}
+
 export function computeProgramStudentVisibility(
   program: ProgramStudentVisibilityInput,
+  context: ProgramStudentVisibilityContext = {},
 ): StudentVisibilityResult {
   const reasons: string[] = [];
   const title = textValue(program.title);
@@ -1142,9 +1148,10 @@ export function computeProgramStudentVisibility(
   if (descriptionState === 'missing') reasons.push('missing_description');
   else if (descriptionState === 'thin') reasons.push('thin_description');
   if (!researchRelated) reasons.push('non_research_program');
+  if (context.duplicateOfServedCopy) reasons.push('duplicate_program');
 
   let computedTier: StudentVisibilityTier = 'operator_review';
-  if (catalogOrAdmin || !researchRelated) {
+  if (catalogOrAdmin || !researchRelated || context.duplicateOfServedCopy) {
     computedTier = 'suppressed';
   } else if (
     !isArchiveReview &&
