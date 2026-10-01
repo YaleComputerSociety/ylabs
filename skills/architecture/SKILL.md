@@ -137,7 +137,7 @@ Nothing on the boot path may disconnect the shared MongoDB connection, because e
 That is not a style rule.
 `source:health` used to tear it down on every deploy, because its `process.argv[1]` direct-run guard is true inside the bundle, where the module's own path is the bundle's path (#4186).
 A module that needs to tell a direct CLI run from an import asks `isDirectScriptInvocation(import.meta.url, '<module name>')` in `server/src/scripts/directScriptInvocation.ts`, which also requires the entry file to carry the script's own name, so the bundle can never satisfy it.
-`server/src/scripts/__tests__/serverBundleRunsNoScriptCli.test.ts` walks the import graph from `src/index.ts` and fails on any other reachable module that reads `process.argv[1]`.
+Any other module the server entry reaches owes the same, and `server/src/scripts/__tests__/directScriptInvocation.test.ts` pins the bundle shape it has to survive: with the entry argument and the module's own path both `build/index.js`, the answer is false.
 The keep-alive is the only thing that heals a connection no request has touched, so `mongoKeepAliveTick` reconnects a connection that is disconnected or was never established instead of pinging a `connection.db` that is undefined in exactly that state.
 
 ## TypeScript
