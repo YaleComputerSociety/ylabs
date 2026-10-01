@@ -15,6 +15,7 @@ import { isBibliographyCitationEntryText } from '../../utils/descriptionHygiene'
 import {
   hasMultipleCareerTimelineSentences,
   isEducationOrCareerTimelineSentence,
+  MULTIPLE_CAREER_TIMELINE_SENTENCE_THRESHOLD,
   protectedSentenceList,
 } from '../../utils/researchEntityBiographyDescriptionRepair';
 import {
@@ -991,9 +992,24 @@ function firstPersonShortToCardShort(value: string, fullDescription: string): st
  * were awarded, rather than what they study. A sentence that also states research is
  * kept, because it carries the thing a student opened the page to learn.
  */
+// Kept out of the shared timeline patterns on purpose: those also drive the
+// whole-extraction refusal, and widening them refused bodies this lane cannot narrow.
+const FIRST_PERSON_TRAINING_OR_AWARD_SENTENCE_PATTERNS: RegExp[] = [
+  /\bI\s+(?:received|earned|obtained|did)\s+(?:my|a)\b[^.!?]{0,60}\b(?:Ph\.?D\.?|doctorate|M\.?D\.?|master'?s|bachelor'?s|degree)\b/i,
+  /\bI\s+was\s+(?:an?\s+)?(?:post-?doc(?:toral)?|research\s+fellow|visiting\s+(?:scholar|scientist|researcher|professor))\b/i,
+  /\bI\s+was\s+awarded\b/i,
+];
+
+function isTrainingOrCareerTimelineSentence(sentence: string): boolean {
+  return (
+    isEducationOrCareerTimelineSentence(sentence) ||
+    FIRST_PERSON_TRAINING_OR_AWARD_SENTENCE_PATTERNS.some((pattern) => pattern.test(sentence))
+  );
+}
+
 function isBiographySentence(sentence: string): boolean {
   return (
-    (isEducationOrCareerTimelineSentence(sentence) || isCareerFactSentence(sentence)) &&
+    (isTrainingOrCareerTimelineSentence(sentence) || isCareerFactSentence(sentence)) &&
     !describesResearchFocus(sentence)
   );
 }
@@ -1006,7 +1022,8 @@ function isBiographyBody(value: string): boolean {
   return (
     isDemotablePersonBio(value) ||
     isCareerBiographyDescription(value) ||
-    hasMultipleCareerTimelineSentences(value)
+    protectedSentenceList(value).filter(isTrainingOrCareerTimelineSentence).length >=
+      MULTIPLE_CAREER_TIMELINE_SENTENCE_THRESHOLD
   );
 }
 

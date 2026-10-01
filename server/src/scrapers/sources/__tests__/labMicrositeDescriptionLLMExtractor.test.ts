@@ -433,6 +433,7 @@ describe('a personal homepage bio is narrowed to the research it states', () => 
     const ambiguous =
       'I am an assistant professor of Medicine at Example University. I received my M.D. at Example University in St. Louis where my dissertation examined cell signalling. My research interests include: kidney transport and ion channels in disease models.';
     expect(researchSentencesOfBiographyBody(ambiguous)).toBe(ambiguous);
+    expect(observe(ambiguous, '').fullDescription).toBe(ambiguous);
   });
 
   it('leaves research prose without biography sentences untouched', () => {
