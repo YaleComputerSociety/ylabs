@@ -103,7 +103,11 @@ async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const apply = argv.includes('--apply');
   const confirmed = argv.includes(CONFIRM_FLAG);
-  const guard = assertScriptApplyAllowed({ scriptName: SCRIPT_NAME, apply });
+  const guard = assertScriptApplyAllowed({
+    scriptName: SCRIPT_NAME,
+    apply,
+    mongoUrl: process.env.MONGODBURL,
+  });
   if (apply && !confirmed) {
     throw new Error(`${SCRIPT_NAME} --apply requires ${CONFIRM_FLAG}`);
   }

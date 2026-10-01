@@ -48,7 +48,13 @@ export function assertScriptApplyAllowed(args: {
 }): ScriptApplyGuardResult {
   const env = args.env || process.env;
   const environment = resolveScraperEnvironment(env);
-  const dbLabel = summarizeMongoUrl(args.mongoUrl);
+  // Resolved here rather than taken from the caller, because a caller that
+  // omitted `mongoUrl` got the label 'missing', which no production pattern
+  // matches, so the refusal below could not fire at all while the script went on
+  // to connect through `MONGODBURL` anyway. Omission must not be a way past this
+  // check, so the guard reads the same variable the connection does (#3725).
+  const mongoUrl = args.mongoUrl ?? env.MONGODBURL;
+  const dbLabel = summarizeMongoUrl(mongoUrl);
   const targetLooksProduction = /\/(prod|production)$/i.test(dbLabel);
 
   if (args.apply && environment !== 'production' && targetLooksProduction) {
@@ -63,7 +69,7 @@ export function assertScriptApplyAllowed(args: {
     );
   }
 
-  return { environment, dbLabel, dbFingerprint: mongoTargetFingerprint(args.mongoUrl) };
+  return { environment, dbLabel, dbFingerprint: mongoTargetFingerprint(mongoUrl) };
 }
 
 export function resolveSafeJsonReportOutputPath(

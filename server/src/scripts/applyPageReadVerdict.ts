@@ -98,7 +98,11 @@ export function parsePageReadVerdictArgs(argv: readonly string[]): {
 
 async function main(): Promise<void> {
   const options = parsePageReadVerdictArgs(process.argv.slice(2));
-  const guard = assertScriptApplyAllowed({ scriptName: SCRIPT_NAME, apply: options.apply });
+  const guard = assertScriptApplyAllowed({
+    scriptName: SCRIPT_NAME,
+    apply: options.apply,
+    mongoUrl: process.env.MONGODBURL,
+  });
   if (options.apply && !options.confirmed) {
     throw new Error(`${SCRIPT_NAME} --apply requires ${CONFIRM_FLAG}`);
   }
