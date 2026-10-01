@@ -199,11 +199,19 @@ export function isCareerFactSentence(sentence: unknown): boolean {
   return CAREER_BIOGRAPHY_MARKERS.some((marker) => marker.test(text));
 }
 
+export function opensOnResearchHomeSubject(opening: string): boolean {
+  return LED_BY_CONSTRUCTION.test(opening) || ORG_SUBJECT_LEAD.test(opening);
+}
+
+export function careerBiographyOpening(value: unknown): string[] {
+  return splitDescriptionSentences(textValue(value)).slice(0, CAREER_MARKER_SENTENCE_WINDOW);
+}
+
 export function isCareerBiographyDescription(value: unknown): boolean {
   const text = textValue(value);
   if (!text) return false;
-  const opening = splitDescriptionSentences(text).slice(0, CAREER_MARKER_SENTENCE_WINDOW).join(' ');
-  if (LED_BY_CONSTRUCTION.test(opening) || ORG_SUBJECT_LEAD.test(opening)) return false;
+  const opening = careerBiographyOpening(text).join(' ');
+  if (opensOnResearchHomeSubject(opening)) return false;
   if (CAREER_BIOGRAPHY_MARKERS.some((marker) => marker.test(opening))) return true;
   return (
     hasPersonSubjectLead(opening) &&

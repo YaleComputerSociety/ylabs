@@ -3,6 +3,7 @@ import {
   buildResearchAreasCardSummary,
   describesResearchFocus,
 } from '../utils/researchEntityDescriptionQuality';
+import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import { publicResearchAreaArray } from './researchEntityDto';
 import { servedResearchEntityCopy } from './servedResearchEntityCard';
@@ -82,6 +83,9 @@ export function servedRowFacts(
       leadSentence(representation.fullDescription || served.fullDescription),
     ),
     shortDescriptionIsAreaEchoOnly: shortDescription.length > 0 && shortDescription === areaSummary,
+    fullDescriptionIsBiography:
+      representation.invariant.fullDescriptionUseful &&
+      isBiographyRatherThanResearch(representation.fullDescription),
     nameIsGenericFacultyResearchTitle: GENERIC_FACULTY_RESEARCH_TITLE.test(textValue(served.name)),
     publicDescriptionInvariantPasses: representation.invariant.pass,
   };

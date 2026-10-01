@@ -5,6 +5,7 @@ import {
   sanitizeCatalogDescription,
 } from '../utils/descriptionHygiene';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
 import { servedDescriptionCitationIsGone } from './descriptionGrounding';
 import {
   buildResearchEntityPublicDescriptionRepresentation,
@@ -630,8 +631,11 @@ export function enforceStudentReadyDescriptionInvariant(
 // (`fieldProvenance[*].sourceUrl` / observations' `sourceUrl`), so a bare
 // `entity.sourceUrls` is a PROJECTION GAP - closed at write time by the
 // materializer - never a genuinely source-less entity.
+export const BIOGRAPHY_DESCRIPTION_FALLBACK_REASON = 'biography_description_fallback';
+
 export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
   'source_backed_description',
+  BIOGRAPHY_DESCRIPTION_FALLBACK_REASON,
   'concrete_next_step',
   'missing_action_evidence',
   'missing_facet_signal',
@@ -925,6 +929,12 @@ export function computeResearchEntityStudentVisibility({
   // because a page that went away does not make the prose it once carried wrong.
   if (quality.descriptionState === 'source_backed' && !servedDescriptionCitationIsGone(entity)) {
     reasons.push('source_backed_description');
+  }
+  if (
+    publicDescription.invariant.fullDescriptionUseful &&
+    isBiographyRatherThanResearch(publicDescription.fullDescription)
+  ) {
+    reasons.push(BIOGRAPHY_DESCRIPTION_FALLBACK_REASON);
   }
   if (quality.descriptionState === 'profile_synthesis') reasons.push('profile_fallback_only');
   if (quality.descriptionState === 'thin') reasons.push('thin_description');

@@ -43,6 +43,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
   it('classifies the finalized enrichment set as soft, and no hard blocker as soft', () => {
     expect([...STUDENT_READY_SOFT_SIGNAL_REASONS].sort()).toEqual(
       [
+        'biography_description_fallback',
         'concrete_next_step',
         'missing_action_evidence',
         'missing_alternate_access_path',
@@ -56,6 +57,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
     );
     for (const soft of [
       'source_backed_description',
+      'biography_description_fallback',
       'concrete_next_step',
       'missing_action_evidence',
       'missing_facet_signal',

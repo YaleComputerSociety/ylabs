@@ -98,6 +98,13 @@ const CORPUS_QUALITY_METRICS: CorpusQualityMetricDefinition[] = [
     fromSnapshot: (row) => row.description.shortDescriptionIsAreaEchoOnly,
   },
   {
+    metric: 'fullDescriptionIsBiography',
+    label: 'Serves a biography as its description',
+    hint: 'No research prose exists, so the career biography is the fallback',
+    direction: 'lower-is-better',
+    fromSnapshot: (row) => row.description.fullDescriptionIsBiography,
+  },
+  {
     metric: 'nameIsGenericFacultyResearchTitle',
     label: 'Generic \u201cFaculty Research\u201d title',
     hint: 'The card is titled from a role rather than from the research',

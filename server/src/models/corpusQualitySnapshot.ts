@@ -73,6 +73,7 @@ const corpusQualitySnapshotSchema = new mongoose.Schema(
       shortDescriptionUseful: { type: ratioSchema, required: true },
       leadSentenceStatesResearch: { type: ratioSchema, required: true },
       shortDescriptionIsAreaEchoOnly: { type: ratioSchema, required: true },
+      fullDescriptionIsBiography: { type: ratioSchema, required: true },
       nameIsGenericFacultyResearchTitle: { type: ratioSchema, required: true },
     },
     integrity: {

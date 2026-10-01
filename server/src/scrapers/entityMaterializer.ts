@@ -45,8 +45,11 @@ import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike'
 import { relationshipEndpointsAreSameEntity } from '../utils/researchEntityRelationshipEndpoints';
 import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
 import {
+  isBiographyRatherThanResearch,
+  opensByStatingResearch,
+} from '../utils/biographyRatherThanResearch';
+import {
   descriptionEntityKindForResearchEntity,
-  isDemotablePersonBio,
   isHighConfidencePersonBio,
 } from '../utils/researchHomeDescriptionSelection';
 import {
@@ -5509,14 +5512,15 @@ export interface ProjectFromLogResult {
 export const RESEARCH_ENTITY_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as const;
 
 function isPersonBiographyDescription(candidateText: string): boolean {
-  return isHighConfidencePersonBio(candidateText) || isCareerBiographyDescription(candidateText);
+  return (
+    isHighConfidencePersonBio(candidateText) ||
+    isCareerBiographyDescription(candidateText) ||
+    isBiographyRatherThanResearch(candidateText)
+  );
 }
 
-// The pre-step ranks one servable body below another, so it uses the narrow biography test
-// `researchHomeDescriptionSelection` records as safe for ranking; the wide one also flags
-// research prose that opens on a title (#4280).
-function isRankablePersonBiography(candidateText: string): boolean {
-  return isDemotablePersonBio(candidateText) || isCareerBiographyDescription(candidateText);
+function isResearchProse(candidateText: string): boolean {
+  return !isBiographyRatherThanResearch(candidateText) && opensByStatingResearch(candidateText);
 }
 
 /**
@@ -5534,9 +5538,10 @@ function isRankablePersonBiography(candidateText: string): boolean {
  * that is not a person biography.
  *
  * Mirrors `enforceResearchEntityNameAuthority`: same `resolveFieldRanked` walk, same
- * refusal discipline. The guard requires the incumbent to be unservable, so this can
- * never displace a description a student can already read, and it never touches a
- * manually locked field. When no candidate survives, the stored value is left alone
+ * refusal discipline. The guard requires the incumbent to be unservable or a biography,
+ * so the only description a student can already read that this displaces is a biography,
+ * and only for research prose that also serves (#4288); it never touches a manually
+ * locked field. When no candidate survives, the stored value is left alone
  * rather than cleared: an unservable description is inert, and clearing it would
  * discard the only text a future lane could repair.
  */
@@ -5578,7 +5583,9 @@ function adoptServableFullDescription(input: {
   };
 
   const servedValue = set[field] ?? entityDoc?.[field];
-  if (!textValue(servedValue) || servesAsDescription(servedValue)) return 0;
+  if (!textValue(servedValue)) return 0;
+  const incumbentServes = servesAsDescription(servedValue);
+  if (incumbentServes && !isBiographyRatherThanResearch(textValue(servedValue))) return 0;
 
   const servable = resolveFieldRanked(field, input.resolverObs, {
     now: input.now,
@@ -5606,12 +5613,14 @@ function adoptServableFullDescription(input: {
       ({ materialized }) =>
         textValue(materialized) !== textValue(servedValue) && servesAsDescription(materialized),
     );
-  // Research prose that serves is preferred, and a biography that serves still outranks an
-  // incumbent that serves nothing, because refusing it took a served row off the surface
-  // (#4280).
-  const replacement =
-    servable.find(({ materialized }) => !isRankablePersonBiography(textValue(materialized))) ??
-    servable[0];
+  // A biography is a fallback only (#4288): an incumbent biography that serves yields to
+  // servable research prose and to nothing else, and one that serves nothing still yields to a
+  // servable biography, because refusing that took a served row off the surface (#4280).
+  const replacement = incumbentServes
+    ? servable.find(({ materialized }) => isResearchProse(textValue(materialized)))
+    : (servable.find(
+        ({ materialized }) => !isBiographyRatherThanResearch(textValue(materialized)),
+      ) ?? servable[0]);
 
   if (!replacement) return 0;
 

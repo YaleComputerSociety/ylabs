@@ -28,6 +28,7 @@ const snapshot = (overrides: {
     shortDescriptionUseful: { n: 50, of: 50 },
     leadSentenceStatesResearch: { n: 24, of: 50 },
     shortDescriptionIsAreaEchoOnly: { n: 2, of: 50 },
+    fullDescriptionIsBiography: { n: 1, of: 50 },
     nameIsGenericFacultyResearchTitle: { n: 20, of: 50 },
   },
   integrity: {
@@ -61,6 +62,7 @@ const liveMetrics = (
 const SNAPSHOT_ONLY_METRICS = [
   'leadSentenceStatesResearch',
   'shortDescriptionIsAreaEchoOnly',
+  'fullDescriptionIsBiography',
   'publicDescriptionInvariantFails',
   'hasTopic',
   'topicTotal',
@@ -208,6 +210,7 @@ describe('corpusQualityMetricRows', () => {
       'No website and no topics',
       'Opens by stating the research',
       'Card summary only echoes the topics',
+      'Serves a biography as its description',
       'Public description invariant fails',
     ]);
   });

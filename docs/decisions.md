@@ -29,6 +29,33 @@ Four of the 33 are common applications rather than single programs, which is the
 
 This is a stored-data change: rows move only after the lane re-scrapes and the gate re-evaluates on Development.
 
+## 2026-10-01: A Biography Description Is A Fallback Only (#4288)
+
+The fixes for #3437 (#4262, #4281, #4283) newly served 26 Development rows, and most of them served a career biography ("received a PhD from ... joined Yale in ...") rather than research prose.
+The serving check admits a biography, and it should: #4262 at first refused a row's only servable body because it was a biography, which took the row off the surface, and #4283 reverted that refusal (#4280).
+
+Decided:
+
+- **A biography is served only when no research prose exists for the row, and the row stays visible either way.**
+The `fullDescription` choice ranks research prose above a biography as derivation inside `projectFromLog`, so it runs on every resolve and writes no locked field.
+`adoptServableFullDescription` now also runs when the incumbent serves a biography: it adopts the first ranked candidate that passes the serving check, is not a biography, and opens by stating research, and otherwise keeps the biography.
+It never trades one biography for another and never trades a biography for a body that states no research, because a publication list or an organization's chrome that happens to serve is not the research prose the preference is for.
+An incumbent that serves nothing keeps the #4281 fallback order: a servable non-biography, then a servable biography.
+A second resolve re-derives the same body from the same ranked list, so the choice converges.
+- **The biography test is calibrated, not assumed.**
+`isBiographyRatherThanResearch` in `server/src/utils/biographyRatherThanResearch.ts` reads a body as a biography when its opening states career facts and its opening two sentences state no research.
+Hand-read on 169 served Development bodies in three stratified samples (49 biographies), the test #4262 introduced (`isHighConfidencePersonBio || isCareerBiographyDescription`) scored precision 28 of 63 and recall 28 of 49, and the narrower one #4283 ranked on scored 23 of 38 and 23 of 49.
+Every false positive was research prose that opens on an orienting role ("is a cardiologist whose research focuses on"), which is why a research statement in the opening withdraws the verdict.
+On the third sample, read before the last calibration pass, the new test scored precision 9 of 11 and recall 9 of 17, and after that pass 38 of 39 and 38 of 49 across all three; the misses are biographies whose opening names a research activity or that never state a career fact, so the residual errs toward keeping a biography rather than displacing research prose.
+- **A row serving a biography is flagged, not held.**
+The gate records the soft reason `biography_description_fallback` when the served body is a biography, so it never blocks and is the cohort a research-prose lane should select on.
+The Corpus Quality panel counts it as "Serves a biography as its description", measured by `corpus:snapshot` over the same representation the gate reads.
+- **The card follows the same preference.**
+The shared card resolver serves a research card derived from the body in place of a stored biography card when that derived card clears the gate's card bar, and keeps the biography card otherwise, so browse, detail and the gate read one line (#4100, #4127).
+
+This is a stored-data effect, delivered by rematerializing the affected rows on Development and re-gating them; promotion carries it to Beta and Production.
+The rows that keep a biography after delivery are not fixable by ranking, because no research prose exists in their evidence; they are counted by the flag rather than patched.
+
 ## 2026-10-01: Three Undergraduate-Access Fields No Lane Fills Are No Longer Served (#3579)
 
 Five undergraduate-access fields were served on every research entity, and three of them were empty on every served row.
