@@ -1032,9 +1032,9 @@ const PERSON_NAME_ATTRIBUTES = [...PERSON_FIELD_ATTRIBUTES, 'name', 'displayName
 // person's name on the best keyword hit. The semantic neighbours of a name
 // are other people with similar names: the blind judges preferred production on 7
 // of 15 name queries until those rows were withheld. The entity title counts,
-// because a faculty row is titled after its person and its lead names are often
-// not indexed (#3745): with titles excluded the guard fired on none of 10 held-out
-// name queries and person-name nDCG@10 fell from 0.750 to 0.580. A typo or prefix
+// because a faculty row is titled after its person and, when this was measured,
+// its lead names were often not indexed (#3745): with titles excluded the guard
+// fired on none of 10 held-out name queries and person-name nDCG@10 fell from 0.750 to 0.580. A typo or prefix
 // match does not count, so `green chemistry` under a lead named Green or `brain`
 // reaching Braun keeps its meaning-based rows. A topic word that is a whole title
 // word ("Neuroscience Lab") withholds them only when the row does not also match
