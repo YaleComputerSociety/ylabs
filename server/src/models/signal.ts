@@ -10,7 +10,7 @@
  * and the materializers must not cross-infer one type from another.
  */
 import mongoose from 'mongoose';
-import { archiveAttributionFields } from './entityArchival';
+import { archiveAttributionFields, enforceArchiveAttribution } from './entityArchival';
 import { recordSuppressionSchema } from './modelPrimitives';
 import { signalConfidences, signalStatuses, signalTypes } from './researchAccessTypes';
 
@@ -185,6 +185,8 @@ signalSchema.index(
     },
   },
 );
+
+enforceArchiveAttribution(signalSchema);
 
 export const Signal = mongoose.model('Signal', signalSchema, 'signals');
 
