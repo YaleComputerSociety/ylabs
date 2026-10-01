@@ -52,7 +52,12 @@ import { fetchPageWithPolicy } from '../utils/httpFetch';
 import { type ProgramDateBoundary, parseProgramDate } from '../utils/programDeadline';
 import { Fellowship } from '../../models/fellowship';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
-import { slugify } from '../utils/scraperHelpers';
+import {
+  fundIdentityKey,
+  isRecordSpecificFundDetailUrl,
+  normalizeFundDetailUrl,
+  sourceKeyForFund,
+} from '../fellowshipFundFacets';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import {
   FUND_PROSE_BLOCK_BREAK,
@@ -66,7 +71,6 @@ import {
   type FundEligibilityProse,
   type FundYearOfStudyResolution,
 } from '../utils/fundYearOfStudy';
-import { isRecordSpecificApplicationPortalUrl } from '../../utils/researchHomeWebsiteUrl';
 
 export const STUDENT_GRANTS_DATABASE_SOURCE = 'student-grants-database';
 
@@ -129,47 +133,6 @@ function absoluteUrl(href: string | undefined, baseUrl: string): string {
   } catch {
     return '';
   }
-}
-
-export function isRecordSpecificFundDetailUrl(url: string | undefined): boolean {
-  if (!url) return false;
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname.toLowerCase() !== COMMUNITYFORCE_HOST) return false;
-    if (!/^\/Funds\/FundDetails\.aspx$/i.test(parsed.pathname)) return false;
-    return isRecordSpecificApplicationPortalUrl(parsed.toString());
-  } catch {
-    return false;
-  }
-}
-
-function normalizeFundDetailUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    parsed.protocol = 'https:';
-    parsed.hostname = parsed.hostname.toLowerCase();
-    parsed.hash = '';
-    return parsed.toString();
-  } catch {
-    return url;
-  }
-}
-
-function fundIdentityKey(url: string): string {
-  try {
-    const parsed = new URL(normalizeFundDetailUrl(url));
-    const params = Array.from(parsed.searchParams.entries())
-      .map(([key, value]) => `${key.toLowerCase()}=${value}`)
-      .sort();
-    const query = params.length > 0 ? params.join('&') : parsed.search.replace(/^\?/, '');
-    return `${parsed.pathname.toLowerCase()}?${query}`;
-  } catch {
-    return url;
-  }
-}
-
-export function sourceKeyForFund(url: string): string {
-  return `${STUDENT_GRANTS_DATABASE_SOURCE}:${slugify(fundIdentityKey(url)).slice(0, 90)}`;
 }
 
 /**
@@ -843,3 +806,5 @@ export class StudentGrantsDatabaseScraper implements IScraper {
     return outcome;
   }
 }
+
+export { isRecordSpecificFundDetailUrl, sourceKeyForFund };
