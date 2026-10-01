@@ -53,6 +53,21 @@ describe('a real stop signal sent to the running server', () => {
     await expect(exitCode()).resolves.toBe(0);
   }, 29000);
 
+  it('keeps draining when a second stop signal of the other kind arrives', async () => {
+    const baseUrl = await startFixtureServer('--graceful');
+
+    const inFlight = fetch(`${baseUrl}/slow`);
+    await delay(300);
+    child!.kill('SIGTERM');
+    await delay(300);
+    child!.kill('SIGINT');
+
+    const answered = await inFlight;
+    expect(answered.status).toBe(200);
+    await expect(answered.json()).resolves.toEqual({ finished: true });
+    await expect(exitCode()).resolves.toBe(0);
+  }, 29000);
+
   it('cuts the same request when the signal is left to its default action', async () => {
     const baseUrl = await startFixtureServer('--default');
 

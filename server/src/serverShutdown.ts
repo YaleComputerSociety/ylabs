@@ -87,9 +87,12 @@ export async function shutdownServer({
 }
 
 export function registerGracefulShutdown(server: Server, drainTimeoutMs = DRAIN_TIMEOUT_MS): void {
+  let shutdown: Promise<ShutdownOutcome> | undefined;
   for (const signal of SHUTDOWN_SIGNALS) {
     process.once(signal, () => {
-      void shutdownServer({ server, signal, drainTimeoutMs }).then((outcome) => {
+      if (shutdown) return;
+      shutdown = shutdownServer({ server, signal, drainTimeoutMs });
+      void shutdown.then((outcome) => {
         process.exit(outcome === 'drained' ? 0 : 1);
       });
     });
