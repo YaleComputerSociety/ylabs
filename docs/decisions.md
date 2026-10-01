@@ -5,6 +5,26 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-01: The Yale Fellowship Database Is An Official Source (#4284)
+
+The owner decided that the Yale Student Grants and Fellowships database (`yale.communityforce.com`) is an official source, so a fund's own FundDetails page is Yale's official record of that fund.
+
+This reverses part of #3984, which read a database page as an application portal and never as an official source.
+Under that rule a fund the database alone describes could not be served, and after #4214 enumerated all 286 funds the ones no other Yale page describes were held as `missing_official_source`.
+
+Decided: the visibility gate no longer caps a row whose `sourceUrl` is a FundDetails page, the `student-grants-database` lane asserts its fund page as `sourceUrl`, and the materializer no longer ignores that observation.
+
+One part of #3984 stays, because it is about stability rather than officialness.
+On a row another lane owns, the database lane writes no identity field, and a fund page never replaces a program's own web page as `sourceUrl`, because the page that describes the program is the richer citation.
+The first sweep without that guard moved 93 rows to new keys and demoted 111 served rows.
+
+The decision makes the database official; it does not make every fund research-related.
+The research-relevance, audience, application-route and description checks are unchanged, so a non-research fund in the database stays suppressed.
+Measured on Development before the change, diffing the gate before and after on the same rows: 33 programs become `student_ready`, 20 of which already cited their fund page and were capped at `limited_but_safe`, and 13 of which had no source at all.
+Four of the 33 are common applications rather than single programs, which is the non-program shape #4110 tracks.
+
+This is a stored-data change: rows move only after the lane re-scrapes and the gate re-evaluates on Development.
+
 ## 2026-10-01: Three Undergraduate-Access Fields No Lane Fills Are No Longer Served (#3579)
 
 Five undergraduate-access fields were served on every research entity, and three of them were empty on every served row.

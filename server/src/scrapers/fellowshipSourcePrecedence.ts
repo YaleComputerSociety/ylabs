@@ -12,10 +12,10 @@
  * So an enrich-only source owns only a row no other lane owns. On another lane's row it
  * writes no identity field and fills only fields the row lacks, except the application
  * window, where the fund page is Yale's own application system and so the authority.
- * It asserts no `sourceUrl`, and the observations it logged before that are ignored, so
- * a stale fund page cannot outrank the owning lane's official page. Independently of
- * ownership, an application portal page never replaces an official source page as
- * `sourceUrl`.
+ * The database is an official Yale source (owner decision, #4284), so on a row it owns
+ * the fund page is the row's `sourceUrl`. Independently of ownership, a fund page never
+ * replaces a program's own web page as `sourceUrl`: the page that describes the program
+ * is the richer citation, and swapping it is what demoted 111 served rows in #3984.
  */
 import { isProgramApplicationPortalUrl } from '../utils/researchHomeWebsiteUrl';
 
@@ -44,16 +44,6 @@ function hasValue(value: unknown): boolean {
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
-}
-
-export function isEnrichOnlyFellowshipSourceUrl(observation: {
-  field?: string;
-  sourceName?: string;
-}): boolean {
-  return (
-    observation.field === 'sourceUrl' &&
-    ENRICH_ONLY_FELLOWSHIP_SOURCES.has(text(observation.sourceName))
-  );
 }
 
 function isEnrichOnlyWriteOnAnotherLanesRow(

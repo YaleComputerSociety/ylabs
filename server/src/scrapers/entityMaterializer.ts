@@ -132,7 +132,6 @@ import { planFellowshipClassification } from './fellowshipClassificationDerivati
 import {
   ENRICH_ONLY_FELLOWSHIP_SOURCES,
   fellowshipFieldsWithheldBySourcePrecedence,
-  isEnrichOnlyFellowshipSourceUrl,
 } from './fellowshipSourcePrecedence';
 import {
   isDirectoryGraftCitation,
@@ -1316,9 +1315,6 @@ export function shouldIgnoreObservationForEntityMaterialization(
   observation: MaterializerObservationLike,
 ): boolean {
   if (observation.field && MATERIALIZER_MANAGED_FIELDS.has(observation.field)) {
-    return true;
-  }
-  if (entityType === 'fellowship' && isEnrichOnlyFellowshipSourceUrl(observation)) {
     return true;
   }
   if (entityType === 'user' && observation.field === OFFICIAL_PROFILE_PUBLICATIONS_FIELD) {

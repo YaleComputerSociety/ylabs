@@ -504,7 +504,7 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toBe(true);
   });
 
-  it('ignores a sourceUrl the enrich-only fellowship source logged, and nothing else it asserts', () => {
+  it('keeps the sourceUrl the fellowship database lane asserts, because the database is official (#4284)', () => {
     const fundPage = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FUNDA';
     expect(
       shouldIgnoreObservationForEntityMaterialization('fellowship', {
@@ -512,7 +512,7 @@ describe('entityMaterializer post-materialization metrics', () => {
         sourceName: 'student-grants-database',
         value: fundPage,
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       shouldIgnoreObservationForEntityMaterialization('fellowship', {
         field: 'deadline',
