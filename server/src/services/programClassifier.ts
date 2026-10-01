@@ -115,8 +115,9 @@ const RESEARCH_AWARD_TITLE = /\b(?:scholarships?|prizes?)\b/;
 const RESEARCH_CAREER_AWARD_PROSE =
   /\b(?:pursue|pursuing|intend(?:s|ing)? to pursue)\s+research careers?\b/;
 
-const SENIOR_RESEARCH_NAME =
-  /senior (?:research|essay)|senior project|mellon senior|residential college|richter/;
+// A residential college or a fund's donor name says who administers the award, not what it
+// funds: every college Richter fellowship is open to first-years through juniors (#4218).
+const SENIOR_RESEARCH_NAME = /senior (?:research|essay)|senior project|mellon senior/;
 
 const SENIOR_RESEARCH_PROSE =
   /([^.]{0,60})\b(?:fund(?:s|ing)?|support(?:s|ing)?|costs? associated with|off-?set)\b([^.]{0,80})\bsenior (?:research project|essay|thesis|project)s?\b/g;
@@ -168,6 +169,11 @@ const MENTOR_REQUIREMENT_SENTENCE = new RegExp(
     `\\b(?:signature|approval|endorsement) (?:of|from) (?:the applicant['’]s |your |a |an |the )?[^.]{0,60}?${MENTOR_NOUN}\\b[^.]{0,20}\\b(?:is |are )?required\\b`,
     `\\b${MENTOR_NOUN}['’]s? (?:letter|statement|approval|endorsement|signature) (?:is |are )?required\\b`,
     `\\bunder the (?:supervision|guidance|direction) of (?:a |an )?(?:yale )?faculty\\b`,
+    `\\bmust be supervised by (?:a |an )?(?:yale )?faculty\\b`,
+    `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN} who (?:will|would) (?:supervise|oversee|advise)\\b`,
+    `\\b${MENTOR_NOUN}\\b[^.]{0,40}\\b(?:has |have )?agreed to (?:work with|supervise|advise|oversee)\\b`,
+    `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN}(?:['’]s)? (?:letter of )?(?:reference|letter|statement)[^.]{0,30}\\b(?:stipulat|endors|approv|support)\\w*[^.]{0,20}\\b(?:your |the |their |a )?(?:proposed )?(?:project|essay|research)\\b`,
+    `\\bletter approving the (?:proposed )?(?:project|research) from (?:a |the )?(?:member of the )?(?:yale )?faculty\\b`,
   ].join('|'),
   'i',
 );
@@ -179,7 +185,8 @@ const MENTOR_NOT_REQUIRED_SENTENCE =
  * Whether a funding record's own page says a mentor is required. This used to be assumed
  * for every funding record no specific arm claimed, which told students to find a faculty
  * mentor for internship, travel and event funds that ask for none (#4131). A recommendation
- * letter alone is not a mentor requirement. Each sentence is judged on its own, so "a
+ * letter alone is not a mentor requirement, but a letter from the applicant's own adviser
+ * approving the project is one, because it presupposes an adviser for that project (#4218). Each sentence is judged on its own, so "a
  * faculty advisor is welcome but not required" cannot be cancelled or confirmed by a
  * different sentence about a letter of reference.
  */
@@ -642,14 +649,19 @@ function classifyProgramKind(input: ProgramClassificationInput): KindClassificat
     SENIOR_RESEARCH_NAME.test(identityLower) ||
     proseFundsSeniorResearch(proseForProgram(input).toLowerCase())
   ) {
+    const funding = fundingClassificationFromPage(input);
     return {
-      ...baseFundingClassification(),
+      ...funding,
       programKind: 'SENIOR_THESIS_FUNDING',
       studentFacingCategory: 'Senior research funding',
       undergraduateOnly: true,
       yaleCollegeOnly: true,
-      bestNextStep: 'Use this record after you have a senior project, adviser, or research plan.',
-      prepSteps: ['Adviser or sponsor', 'Senior project plan', 'Budget or proposal'],
+      bestNextStep: funding.requiresMentorBeforeApply
+        ? 'Confirm your project and faculty adviser, then prepare the proposal and budget.'
+        : 'Prepare your senior project plan and budget, then apply.',
+      prepSteps: funding.requiresMentorBeforeApply
+        ? ['Faculty adviser', 'Senior project plan', 'Budget or proposal']
+        : ['Senior project plan', 'Budget or proposal'],
     };
   }
 

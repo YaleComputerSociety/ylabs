@@ -598,3 +598,73 @@ describe('classifyProgram mentor requirement is read off the page (#4131)', () =
     }
   });
 });
+
+describe('classifyProgram senior research funding reads its mentor requirement off the page (#4218)', () => {
+  it('does not file a college fellowship as senior research because of the college or donor name', () => {
+    const richter = classifyProgram({
+      title: 'Fixture College Richter Summer Fellowship',
+      description:
+        'Awarded for independent study and research. First years, sophomores and juniors are eligible.',
+    });
+    expect(richter.programKind).not.toBe('SENIOR_THESIS_FUNDING');
+    expect(richter.requiresMentorBeforeApply).toBe(false);
+  });
+
+  it('claims an adviser requirement when the adviser must endorse the project', () => {
+    for (const applicationInformation of [
+      'Provide a faculty advisor reference stipulating your project/essay.',
+      'Applicant will need a faculty adviser reference supporting your project/essay.',
+      'Each application must include the approval of a faculty advisor who will supervise the research project.',
+    ]) {
+      expect(
+        classifyProgram({
+          title: 'Fixture College Mellon Senior Research Grant',
+          applicationInformation,
+        }),
+      ).toMatchObject({
+        programKind: 'SENIOR_THESIS_FUNDING',
+        requiresMentorBeforeApply: true,
+        entryMode: 'SECURE_MENTOR_THEN_APPLY',
+        prepSteps: ['Faculty adviser', 'Senior project plan', 'Budget or proposal'],
+      });
+    }
+  });
+
+  it('claims no requirement for senior research funding whose page states none', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Studies Senior Essay Research Grant',
+        description: 'Supports travel and research costs for a senior essay.',
+      }),
+    ).toMatchObject({
+      programKind: 'SENIOR_THESIS_FUNDING',
+      requiresMentorBeforeApply: false,
+      entryMode: 'APPLY_TO_PROGRAM',
+      prepSteps: ['Senior project plan', 'Budget or proposal'],
+    });
+  });
+
+  it.each([
+    'All research projects must be supervised by Yale faculty who work with students on the design.',
+    'Include support letters from a faculty advisor who has agreed to work with the student.',
+    'Include a letter approving the proposed project from a member of the Yale Faculty.',
+  ])('reads a supervision requirement: %s', (applicationInformation) => {
+    expect(
+      classifyProgram({ title: 'Fixture Memorial Fund', applicationInformation })
+        .requiresMentorBeforeApply,
+    ).toBe(true);
+  });
+
+  it('does not read a requirement from a recommendation of the candidate or an unrelated agreement', () => {
+    for (const applicationInformation of [
+      'One letter of recommendation from a faculty member.',
+      'A letter of recommendation from a faculty advisor describing your preparation.',
+      'Selected fellows have agreed to work with program staff on a short report.',
+    ]) {
+      expect(
+        classifyProgram({ title: 'Fixture Memorial Fund', applicationInformation })
+          .requiresMentorBeforeApply,
+      ).toBe(false);
+    }
+  });
+});
