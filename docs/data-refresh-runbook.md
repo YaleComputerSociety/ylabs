@@ -233,7 +233,7 @@ It refuses local MongoDB and any Production database.
 
 The sync mirrors every document in the approved Beta research-discovery, identity-spine, source-audit, and base-support collections, and leaves `observations` behind in Beta unless `--include-observations` is passed.
 See ["Observations stay in Development"](#observations-stay-in-development) above for the exact copy set and why it is drawn that way.
-The standard plan declares, and the standard apply clears, Atlas Development collections that are outside that approved mirror.
+The standard plan declares, and the standard apply clears, Atlas Development collections that are outside that approved mirror, except for the environment-local measurement history named later in this section, which the refresh preserves.
 It never reads Beta analytics, admin grants, admin audit and access-review projections, job locks, scraper caches, student profiles, applications, tracking, outreach, claims, private research plans, or release queues; the plan artifact's `excludedOperationalCollections` is the authoritative list.
 Every Beta account and role assignment has a Development counterpart so references and role distributions remain valid.
 Accounts reachable from a `Researcher` keep the directory netid and email Yale already publishes, every other account is deterministically pseudonymized, and each copied account is reduced to an allow-list of identity fields so student profile and account-activity state never crosses.
@@ -284,13 +284,13 @@ Local scraping and materialization can intentionally change Development after th
 Running the standard sync again replaces the approved Atlas Development mirror with the latest accepted Beta snapshot and clears the non-mirror Development collections that hold stale scrape residue.
 
 It never clears Development's own measurement history.
-`PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS` in `server/src/scripts/mirrorCollectionPolicy.ts` names the collections the refresh keeps: `lane_benchmarks`, `lane_benchmark_pages`, `lane_scorecard_snapshots`, `corpus_quality_snapshots`, `gate_scorecard_snapshots`, `engine_benchmarks`, `engine_benchmark_rows`, `engine_benchmark_snapshots`, and `analytics_events`.
-These are exactly the collections Beta never mirrors, so without the allowlist the clear would be the thing that destroys them, and a frozen lane benchmark carries hand labels that no code can re-derive.
-`scrape_job_locks` is the one environment-local collection the refresh still clears, because a lease is state rather than history and expires anyway.
+`PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS` in `server/src/scripts/mirrorCollectionPolicy.ts` is the authoritative list of what the refresh keeps: the frozen lane benchmarks and their hand labels, the lane and gate scorecard snapshots, the corpus quality trend, the engine benchmark rows and snapshots, and the analytics event log.
+Beta never mirrors any of them, so without the allowlist the clear would be the thing that destroys them, and a frozen lane benchmark carries hand labels that no code can re-derive.
+`scrape_job_locks` is the one unmirrored collection the refresh still clears, because a lease is state rather than history and expires anyway.
 The dry-run and apply artifacts report both sides: read `localCollectionsClearedOnApply` for what goes and `localCollectionsPreservedOnApply` for what stays.
 
 Adding a collection to `NEVER_COPY_COLLECTIONS` without classifying it as preserved or ephemeral fails `assertEnvironmentLocalCollectionsClassified`, so a new instrument's history cannot join the cleared set by omission.
-`applySync` refuses outright if a caller hands it a clear list naming a preserved collection.
+The refusal itself sits in `applyStagedCollectionSwap`, the staged swap every whole-collection replacement goes through, so any caller that hands it a clear list naming a preserved collection fails before a single drop, promotion included.
 A deliberate full wipe is not part of this script; drop the collections directly with the operator tooling instead.
 
 ## Phase 1: Development Sweep - Run Locally

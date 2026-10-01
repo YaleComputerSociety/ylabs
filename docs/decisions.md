@@ -1458,7 +1458,7 @@ Development uses the Atlas `Development` database and local Docker Meilisearch s
 Development can be refreshed one way from accepted Beta through an allowlist-only, Atlas-Beta-to-Atlas-Development copy.
 The refresh never reads Beta operational or student-workflow collections, clears Atlas Development non-mirror collections, sanitizes copied account state, and rebuilds local Meilisearch separately.
 Unclassified Beta collections block apply until their mirror policy is reviewed.
-See [`data-refresh-runbook.md`](./data-refresh-runbook.md) for the current copy set, the account sanitization rule, and the observation policy.
+See [`data-refresh-runbook.md`](./data-refresh-runbook.md) for the current copy set, the account sanitization rule, the observation policy, and which non-mirror collections the clear actually touches, since the environment-local measurement history is preserved by name rather than cleared (#4034).
 The VPN-connected local Beta operator fetches observations into the Atlas `Beta` database but does not materialize them locally.
 The Beta Render service materializes accepted run IDs and updates its private Beta Meilisearch indexes.
 Production receives data only through the guarded accepted-Beta promotion, followed by the Production search and smoke gates.
