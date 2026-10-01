@@ -50,6 +50,31 @@ describe('fellowshipFutureDeadlineDate', () => {
     expect(fellowshipFutureDeadlineDate(fellowship, NOW)).toBeNull();
   });
 
+  it('keeps a date-only deadline until the end of its New York day', () => {
+    const fellowship = createFellowship({
+      id: 'p1',
+      title: 'Fixture Grant',
+      deadline: '2026-03-24T23:59:59.999Z',
+    });
+    expect(
+      fellowshipFutureDeadlineDate(fellowship, new Date('2026-03-25T02:00:00.000Z'))?.toISOString(),
+    ).toBe('2026-03-25T03:59:59.999Z');
+    expect(
+      fellowshipFutureDeadlineDate(fellowship, new Date('2026-03-25T04:00:00.000Z')),
+    ).toBeNull();
+  });
+
+  it('drops a stated-time deadline once its minute has passed', () => {
+    const fellowship = createFellowship({
+      id: 'p1',
+      title: 'Fixture Grant',
+      deadline: '2026-03-24T17:00:00.000Z',
+    });
+    expect(
+      fellowshipFutureDeadlineDate(fellowship, new Date('2026-03-24T17:01:00.000Z')),
+    ).toBeNull();
+  });
+
   it('fails closed for a deadline the server projected from a past cycle', () => {
     const fellowship = createFellowship({
       id: 'p1',
@@ -97,7 +122,7 @@ describe('buildProgramDeadlinesIcsCalendar', () => {
           programId: 'p1',
           title: 'Fixture Grant',
           link: 'https://example.edu/fixture-grant',
-          date: new Date('2026-06-30'),
+          date: new Date('2026-07-01T03:59:59.999Z'),
         },
       ],
       NOW,
@@ -115,6 +140,27 @@ describe('buildProgramDeadlinesIcsCalendar', () => {
     );
     expect(lines).toContain('URL:https://example.edu/fixture-grant');
     expect(ics).not.toMatch(/[^\r]\n/);
+  });
+
+  it('dates a stated-time deadline on its New York day and names the time', () => {
+    const ics = buildProgramDeadlinesIcsCalendar(
+      [
+        {
+          programId: 'p1',
+          title: 'Fixture Grant',
+          link: '',
+          date: new Date('2027-03-25T02:30:00.000Z'),
+        },
+      ],
+      NOW,
+    );
+
+    const lines = ics.split('\r\n');
+    expect(lines).toContain('DTSTART;VALUE=DATE:20270324');
+    expect(lines).toContain('DTEND;VALUE=DATE:20270325');
+    expect(lines).toContain(
+      'DESCRIPTION:Application deadline for Fixture Grant\\, due 10:30 PM ET.',
+    );
   });
 
   it('escapes RFC 5545 special characters in text fields', () => {

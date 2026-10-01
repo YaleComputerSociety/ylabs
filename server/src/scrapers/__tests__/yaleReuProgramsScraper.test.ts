@@ -3,7 +3,6 @@ import { classificationFromObservedFacts } from '../fellowshipClassificationDeri
 import {
   candidateToObservations,
   extractYaleSiteUrlsFromNsfDirectory,
-  parseDeadlineToUtcEndOfDay,
   parseReuProgramPage,
   YaleReuProgramsScraper,
   YALE_REU_PROGRAMS_SOURCE,
@@ -70,9 +69,7 @@ describe('parseReuProgramPage', () => {
     expect(candidate?.sourceUrl).toBe(astronomyUrl);
     expect(candidate?.description).toMatch(/ten-week summer research program in astrophysics/);
     expect(candidate?.competitionType).toBe('NSF REU (Research Experiences for Undergraduates)');
-    expect(candidate?.deadline?.toISOString()).toBe(
-      parseDeadlineToUtcEndOfDay('February 6, 2026', referenceDate)?.toISOString(),
-    );
+    expect(candidate?.deadline?.toISOString()).toBe('2026-02-07T04:59:59.999Z');
     expect(candidate?.applicationLink).toBe('https://app.smarterselect.com/programs/999-fixture');
     expect(candidate?.termOfAward).toContain('Summer');
   });

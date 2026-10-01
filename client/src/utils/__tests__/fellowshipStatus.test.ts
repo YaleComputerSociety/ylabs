@@ -288,4 +288,27 @@ describe('getStructuredEligibilityDetails', () => {
       { label: 'Year of study', value: 'Junior, PhD Pre-Candidacy' },
     ]);
   });
+
+  it('labels a stated deadline with its New York time and a date-only one with its date', () => {
+    const stated = getFellowshipApplicationStatus(
+      makeFellowship({ deadline: '2026-04-20T17:00:00.000Z' }),
+      NOW,
+    );
+    expect(stated.deadlineLabel).toBe('Apr 20, 2026, 1:00 PM ET');
+
+    const dateOnly = getFellowshipApplicationStatus(
+      makeFellowship({ deadline: '2026-04-21T03:59:59.999Z' }),
+      NOW,
+    );
+    expect(dateOnly.deadlineLabel).toBe('Apr 20, 2026');
+  });
+
+  it('keeps a date-only deadline open until the end of its New York day', () => {
+    const lateEveningInNewHaven = new Date('2026-04-21T01:00:00.000Z');
+    const stored = (deadline: string) =>
+      getFellowshipApplicationStatus(makeFellowship({ deadline }), lateEveningInNewHaven).kind;
+    expect(stored('2026-04-20T23:59:59.999Z')).toBe('closingSoon');
+    expect(stored('2026-04-21T03:59:59.999Z')).toBe('closingSoon');
+    expect(stored('2026-04-20T17:00:00.000Z')).toBe('deadlinePassed');
+  });
 });

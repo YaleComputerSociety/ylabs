@@ -924,6 +924,14 @@ The description is read from the page's prose paragraphs before the whole body, 
 A first `<h1>` that is only a link to the site root is the site name, so a later heading that names a program wins over it; on a single-program site whose page heading is generic the site name is kept.
 A deadline label whose own clause says "has passed" or "is closed" is skipped, because the date after it is the program's start date, not a deadline.
 
+Every program lane reads a date through `parseProgramDate` in `scrapers/utils/programDeadline.ts` (#4215), which interprets it in America/New_York with the offset in force on that date.
+A stated time is stored as that New York minute, so "3/24/2027 1:00 PM" is `17:00Z`, and "12:00 AM" is the start of its date, not the end.
+A date with no time is its whole New York day: a deadline closes at 23:59:59.999 New York time and an opening starts at New York midnight.
+A time stated in another zone is not read, so the date falls back to that whole-day boundary rather than to a wrong minute.
+Pages never state seconds, so a deadline ending in `:59.999` is how a reader knows no time was stated; there is no separate flag to drift from the value.
+That rule also reads the end of a UTC day, which every lane stored before #4215, as date-only, and `programDeadlineClosesAt` (`utils/programDeadlineInstant.ts`) closes such a deadline at the end of its New York day, so the served deadline and the "deadline passed" status agree before a re-scrape rewrites it.
+The client mirrors both rules in `client/src/utils/programDates.ts` and shows a time, with an `ET` label, only when one was stated.
+
 A fellowship lane observes facts only and never emits a `classifyProgram` field (`programKind`, `programCategory`, `entryMode`, `studentFacingCategory`, `bestNextStep`, and the rest).
 The projection derives them from the resolved facts on every resolve (`scrapers/fellowshipClassificationDerivation.ts`, #3904), so a classifier fix reaches stored rows on the next materialize, and a test asserts the derived label through `classificationFromObservedFacts` rather than reading it off a lane's observations.
 

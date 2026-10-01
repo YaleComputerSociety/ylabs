@@ -171,6 +171,52 @@ describe('fellowship public serializer', () => {
     expect(payload.isAcceptingApplications).toBe(false);
   });
 
+  it('projects a stated New York time to the same wall-clock time across a daylight-saving change', () => {
+    const payload = publicFellowshipForStudent(
+      {
+        _id: '67d8928150621bcef434a1e1',
+        title: 'Annual Summer Research Fellowship',
+        summary: 'An annual grant awarded each spring for undergraduate research.',
+        deadline: new Date('2026-03-10T17:00:00.000Z'),
+        applicationLink: 'https://fellowships.yale.edu/annual-summer',
+      },
+      new Date('2026-08-22T00:00:00.000Z'),
+    );
+    expect(payload.deadlineProjectedNextCycle).toBe(true);
+    expect(payload.deadline).toEqual(new Date('2027-03-10T18:00:00.000Z'));
+  });
+
+  it('serves a deadline stored at the end of a UTC day as the end of that New York day', () => {
+    const fellowship = {
+      _id: '67d8928150621bcef434a1e2',
+      title: 'Fixture Fund',
+      isAcceptingApplications: true,
+      deadline: new Date('2026-03-24T23:59:59.999Z'),
+    };
+    const eveningOfTheDeadline = new Date('2026-03-25T01:00:00.000Z');
+    const payload = publicFellowshipForStudent(fellowship, eveningOfTheDeadline);
+    expect(payload.deadline).toEqual(new Date('2026-03-25T03:59:59.999Z'));
+    expect(payload.isAcceptingApplications).toBe(true);
+    expect(
+      publicFellowshipForStudent(fellowship, new Date('2026-03-25T04:00:00.000Z'))
+        .isAcceptingApplications,
+    ).toBe(false);
+  });
+
+  it('closes a stated deadline at its stated minute', () => {
+    const payload = publicFellowshipForStudent(
+      {
+        _id: '67d8928150621bcef434a1e3',
+        title: 'Fixture Fund',
+        isAcceptingApplications: true,
+        deadline: new Date('2026-03-24T17:00:00.000Z'),
+      },
+      new Date('2026-03-24T17:01:00.000Z'),
+    );
+    expect(payload.deadline).toEqual(new Date('2026-03-24T17:00:00.000Z'));
+    expect(payload.isAcceptingApplications).toBe(false);
+  });
+
   it('does not project a stale deadline when the program is not source-backed', () => {
     const now = new Date('2026-08-22T00:00:00.000Z');
     const payload = publicFellowshipForStudent(

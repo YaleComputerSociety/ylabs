@@ -9,6 +9,12 @@ import * as cheerio from 'cheerio';
 import { Fellowship } from '../../models/fellowship';
 import { getCached, setCached } from '../snapshotCache';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
+import {
+  NAMED_PROGRAM_DATE_SOURCE,
+  NUMERIC_PROGRAM_DATE_SOURCE,
+  OPTIONAL_STATED_CLOCK_TIME,
+  parseProgramDate,
+} from '../utils/programDeadline';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { assertPublicHttpUrl } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -115,21 +121,6 @@ const PUBLIC_YALE_HOSTS = new Set([
 const MOVED_YALE_COLLEGE_FINANCIAL_AWARD_URLS: Record<string, string> = {
   '/finances/financial-awards-prizes/mellon-mays-undergraduate-fellowship-program':
     'https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program',
-};
-
-const MONTHS: Record<string, number> = {
-  january: 0,
-  february: 1,
-  march: 2,
-  april: 3,
-  may: 4,
-  june: 5,
-  july: 6,
-  august: 7,
-  september: 8,
-  october: 9,
-  november: 10,
-  december: 11,
 };
 
 export interface FellowshipCatalogCandidate {
@@ -722,10 +713,10 @@ function nearestDateTextForLabel(
   const label = labelPattern.exec(normalized);
   if (!label || label.index === undefined) return '';
 
-  const monthPattern = Object.keys(MONTHS).join('|');
-  const namedDate = `(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(?:${monthPattern})\\s+\\d{1,2}(?!\\d)(?:,\\s*\\d{4})?`;
-  const numericDate = String.raw`\d{1,2}\/\d{1,2}\/\d{2,4}`;
-  const datePattern = new RegExp(`(?:${namedDate}|${numericDate})`, 'gi');
+  const datePattern = new RegExp(
+    `(?:${NAMED_PROGRAM_DATE_SOURCE}|${NUMERIC_PROGRAM_DATE_SOURCE})${OPTIONAL_STATED_CLOCK_TIME}`,
+    'gi',
+  );
   const before = normalized.slice(Math.max(0, label.index - 100), label.index);
   const datesBefore = Array.from(before.matchAll(datePattern));
   const after = normalized.slice(
@@ -768,53 +759,6 @@ function bestApplicationOpenText(text: string): string {
     /\bapplication\s+(?:opens?|open\s+date)\b|\bapplications?\s+open\b/i,
     'before',
   );
-}
-
-function utcStartOfDay(date: Date | undefined): Date | undefined {
-  if (!date) return undefined;
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-}
-
-export function parseDeadlineToUtcEndOfDay(
-  text: string,
-  referenceDate: Date = new Date(),
-): Date | undefined {
-  const normalized = normalizeWhitespace(text);
-  const numeric = normalized.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/);
-  if (numeric) {
-    const numericMonth = Number(numeric[1]) - 1;
-    const numericDay = Number(numeric[2]);
-    const numericYear = numeric[3].length === 2 ? 2000 + Number(numeric[3]) : Number(numeric[3]);
-    const numericDate = new Date(Date.UTC(numericYear, numericMonth, numericDay, 23, 59, 59, 999));
-    if (
-      numericDate.getUTCFullYear() === numericYear &&
-      numericDate.getUTCMonth() === numericMonth &&
-      numericDate.getUTCDate() === numericDay
-    ) {
-      return numericDate;
-    }
-  }
-  const monthPattern = Object.keys(MONTHS).join('|');
-  const match = normalized.match(
-    new RegExp(
-      `(?:deadline[^A-Za-z0-9]*)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(${monthPattern})\\s+(\\d{1,2})(?!\\d)(?:,\\s*(\\d{4}))?`,
-      'i',
-    ),
-  );
-  if (!match) return undefined;
-
-  const month = MONTHS[match[1].toLowerCase()];
-  const day = Number(match[2]);
-  let year = match[3] ? Number(match[3]) : referenceDate.getUTCFullYear();
-  let date = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
-  if (!match[3] && date.getTime() < referenceDate.getTime() - 30 * 24 * 60 * 60 * 1000) {
-    year += 1;
-    date = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
-  }
-  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month || date.getUTCDate() !== day) {
-    return undefined;
-  }
-  return date;
 }
 
 function fingerprintCandidate(
@@ -1059,7 +1003,7 @@ function candidateFromLink(
   const rowContext = normalizeWhitespace(contextContainer.text());
   const pageContext = normalizeWhitespace($('body').text());
   const contextText = normalizeWhitespace(`${headingContext} ${rowContext}`);
-  const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(contextText), referenceDate);
+  const deadline = parseProgramDate(bestDeadlineText(contextText), 'deadline', referenceDate);
   const applicationLink =
     isCommunityForceUrl(href) || applicationPortalKind(href) ? href : undefined;
   const sourceUrl = pageUrl;
@@ -1123,7 +1067,7 @@ function candidateFromMacmillanOpportunityRow(
   const contactOffice = normalizeWhitespace($row.find('.node-teaser__groups').first().text());
   const summaryText = normalizeWhitespace($row.find('.node-teaser__summary').first().text());
   const rowContext = normalizeWhitespace(`${title} ${summaryText}`);
-  const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(rowContext), referenceDate);
+  const deadline = parseProgramDate(bestDeadlineText(rowContext), 'deadline', referenceDate);
   const applicationLink =
     isCommunityForceUrl(href) || applicationPortalKind(href) ? href : undefined;
   const links = [{ label: applicationLink ? 'Application' : title, url: href }];
@@ -1445,9 +1389,11 @@ function candidateFromDetailPage(
   const bodyText = normalizeWhitespace(chromeFreeRoot.text());
   const safeDescription = sanitizeStoredCatalogDescription(bodyText, 2000);
   const applicationInformation = applicationSectionText($);
-  const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(bodyText), referenceDate);
-  const applicationOpenDate = utcStartOfDay(
-    parseDeadlineToUtcEndOfDay(bestApplicationOpenText(bodyText), referenceDate),
+  const deadline = parseProgramDate(bestDeadlineText(bodyText), 'deadline', referenceDate);
+  const applicationOpenDate = parseProgramDate(
+    bestApplicationOpenText(bodyText),
+    'opens',
+    referenceDate,
   );
   const links = dedupeProgramLinks(
     contentRoot

@@ -34,6 +34,7 @@ import {
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
+import { type ProgramDateBoundary, parseProgramDate } from '../utils/programDeadline';
 import { Fellowship } from '../../models/fellowship';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
 import { slugify } from '../utils/scraperHelpers';
@@ -228,26 +229,25 @@ function parseFacets($: cheerio.CheerioAPI): Record<FundFacetField, string[]> {
   return facets;
 }
 
-function parseCatalogDate(text: string): Date | undefined {
-  const match = cleanText(text).match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
-  if (!match) return undefined;
-  const [, month, day, year] = match.map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
-  return date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? date : undefined;
+const NUMERIC_CATALOG_DATE = /\b\d{1,2}\/\d{1,2}\/\d{4}\b/;
+
+function applicationWindowBoundary(label: string): ProgramDateBoundary | null {
+  if (/deadline/.test(label)) return 'deadline';
+  if (/begin accepting/.test(label)) return 'opens';
+  return null;
 }
 
 function parseApplicationWindow($: cheerio.CheerioAPI): { opensAt?: Date; deadline?: Date } {
   const window: { opensAt?: Date; deadline?: Date } = {};
   $('.fdi-start-date-title').each((_i, titleEl) => {
     const label = cleanText($(titleEl).text()).toLowerCase();
-    const date = parseCatalogDate($(titleEl).nextAll('.fdi-start-date').first().text());
+    const value = cleanText($(titleEl).nextAll('.fdi-start-date').first().text());
+    if (!NUMERIC_CATALOG_DATE.test(value)) return;
+    const boundary = applicationWindowBoundary(label);
+    const date = boundary ? parseProgramDate(value, boundary) : undefined;
     if (!date) return;
-    if (/deadline/.test(label)) window.deadline = date;
-    else if (/begin accepting/.test(label)) {
-      window.opensAt = new Date(
-        Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-      );
-    }
+    if (boundary === 'deadline') window.deadline = date;
+    else window.opensAt = date;
   });
   return window;
 }

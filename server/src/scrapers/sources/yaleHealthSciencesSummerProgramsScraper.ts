@@ -33,6 +33,7 @@ import {
   programPageDescription,
   programPageTitle,
 } from '../utils/programPageEvidence';
+import { parseProgramDate } from '../utils/programDeadline';
 
 export const YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE = 'yale-health-sciences-summer-programs';
 
@@ -100,21 +101,6 @@ export const EXCLUDED_ALREADY_COVERED_URLS = [
 
 const MAX_DISCOVERED_PROGRAM_PAGES = 80;
 const MAX_PROGRAM_LINKS = 8;
-
-const MONTHS: Record<string, number> = {
-  january: 0,
-  february: 1,
-  march: 2,
-  april: 3,
-  may: 4,
-  june: 5,
-  july: 6,
-  august: 7,
-  september: 8,
-  october: 9,
-  november: 10,
-  december: 11,
-};
 
 export interface HealthSciencesProgramCandidate {
   sourceKey: string;
@@ -257,44 +243,6 @@ function sectionTextForHeading($: cheerio.CheerioAPI, headingPattern: RegExp): s
   return combined ? combined.slice(0, 1200) : undefined;
 }
 
-export function parseDeadlineToUtcEndOfDay(
-  text: string,
-  referenceDate: Date = new Date(),
-): Date | undefined {
-  const normalized = normalizeWhitespace(text);
-  const numeric = normalized.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/);
-  if (numeric) {
-    const month = Number(numeric[1]) - 1;
-    const day = Number(numeric[2]);
-    const year = numeric[3].length === 2 ? 2000 + Number(numeric[3]) : Number(numeric[3]);
-    const date = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
-    if (
-      date.getUTCFullYear() === year &&
-      date.getUTCMonth() === month &&
-      date.getUTCDate() === day
-    ) {
-      return date;
-    }
-  }
-  const monthPattern = Object.keys(MONTHS).join('|');
-  const match = normalized.match(
-    new RegExp(`(${monthPattern})\\s+(\\d{1,2})(?!\\d)(?:,\\s*(\\d{4}))?`, 'i'),
-  );
-  if (!match) return undefined;
-  const month = MONTHS[match[1].toLowerCase()];
-  const day = Number(match[2]);
-  let year = match[3] ? Number(match[3]) : referenceDate.getUTCFullYear();
-  let date = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
-  if (!match[3] && date.getTime() < referenceDate.getTime() - 30 * 24 * 60 * 60 * 1000) {
-    year += 1;
-    date = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
-  }
-  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month || date.getUTCDate() !== day) {
-    return undefined;
-  }
-  return date;
-}
-
 function hasActiveApplicationLanguage(text: string): boolean {
   return /\bapplications?\s+(?:are\s+)?(?:now\s+)?open\b|\bcurrently accepting applications\b|\baccepting applications\b|\bapplications?\s+(?:are\s+)?accepted\b/i.test(
     text,
@@ -362,8 +310,9 @@ export function parseHealthSciencesProgramPage(
   const description = programPageDescription($, chromeFree, bodyText);
   const eligibility = sectionTextForHeading($, ELIGIBILITY_HEADING_RE);
   const applicationInfo = sectionTextForHeading($, APPLICATION_HEADING_RE);
-  const deadline = parseDeadlineToUtcEndOfDay(
+  const deadline = parseProgramDate(
     nearestDeadlineText(`${applicationInfo || ''} ${bodyText}`),
+    'deadline',
     referenceDate,
   );
 

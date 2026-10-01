@@ -364,6 +364,27 @@ describe('FellowshipModal', () => {
     expect(screen.queryByText(/Applications are not open yet/i)).not.toBeInTheDocument();
   });
 
+  it('shows the deadline time in New York with an ET label only when the source stated one', () => {
+    renderModal({
+      isAcceptingApplications: true,
+      applicationOpenDate: '2026-05-01T04:00:00.000Z',
+      deadline: '2026-07-01T17:00:00.000Z',
+    });
+
+    expect(screen.getByText('Jul 1, 2026, 1:00 PM ET')).toBeInTheDocument();
+    expect(screen.getByText('May 1, 2026')).toBeInTheDocument();
+  });
+
+  it('shows a date-only deadline as its New York date with no time', () => {
+    renderModal({
+      isAcceptingApplications: true,
+      deadline: '2026-07-02T03:59:59.999Z',
+    });
+
+    expect(screen.getByText('Jul 1, 2026')).toBeInTheDocument();
+    expect(screen.queryByText(/Jul 1, 2026, \d/)).toBeNull();
+  });
+
   it('does not show missing eligibility copy when structured region metadata is present', () => {
     renderModal({
       eligibility: '',

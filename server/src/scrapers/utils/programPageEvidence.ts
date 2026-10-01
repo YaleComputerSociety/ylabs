@@ -2,6 +2,11 @@ import type * as cheerio from 'cheerio';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
 import { humanizeProgramLinkLabel } from '../../utils/programLinkLabel';
 import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
+import {
+  NAMED_PROGRAM_DATE_SOURCE,
+  NUMERIC_PROGRAM_DATE_SOURCE,
+  OPTIONAL_STATED_CLOCK_TIME,
+} from './programDeadline';
 
 const SITE_CHROME_SELECTOR =
   'header, nav, footer, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs, .menu';
@@ -21,26 +26,11 @@ const FAQ_OR_QUESTION_PARAGRAPH = /\?|\bfaqs?\b|\bfrequently asked questions\b/i
 
 const MIN_PROSE_DESCRIPTION_WORDS = 25;
 
-const MONTH_NAMES = [
-  'january',
-  'february',
-  'march',
-  'april',
-  'may',
-  'june',
-  'july',
-  'august',
-  'september',
-  'october',
-  'november',
-  'december',
-];
-
 const DEADLINE_LABEL =
   /\b(?:application\s+)?deadline\b|\bapplications?\s+(?:are\s+)?due\b|\bapply\s+by\b|\bdue\s+by\b/gi;
 
 const DEADLINE_DATE = new RegExp(
-  `(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(?:${MONTH_NAMES.join('|')})\\s+\\d{1,2}(?!\\d)(?:,\\s*\\d{4})?|\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})`,
+  `(?:${NAMED_PROGRAM_DATE_SOURCE}|${NUMERIC_PROGRAM_DATE_SOURCE})${OPTIONAL_STATED_CLOCK_TIME}`,
   'i',
 );
 

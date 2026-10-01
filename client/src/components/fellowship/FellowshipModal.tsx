@@ -384,7 +384,7 @@ const FellowshipModal = ({
                     <div>
                       <span className="text-xs text-brand">Application Opens</span>
                       <p className="text-sm font-medium text-brand-navy">
-                        {formatFellowshipDate(fellowship.applicationOpenDate)}
+                        {formatFellowshipDate(fellowship.applicationOpenDate, 'opens')}
                       </p>
                     </div>
                     <div>
@@ -394,7 +394,7 @@ const FellowshipModal = ({
                           : 'Deadline'}
                       </span>
                       <p className="text-sm font-medium text-brand-navy">
-                        {formatFellowshipDate(fellowship.deadline)}
+                        {formatFellowshipDate(fellowship.deadline, 'deadline')}
                       </p>
                       {fellowship.deadlineProjectedNextCycle && (
                         <p className="text-xs text-brand">
@@ -726,7 +726,7 @@ const FellowshipModal = ({
                     {!applicationStatus.isApplicationWindowOpen && (
                       <p className="mb-3 rounded-card border border-line-brand bg-brand-soft p-3 text-sm text-brand">
                         {applicationStatus.kind === 'notOpenYet'
-                          ? `Applications are not open yet. They open ${formatFellowshipDate(fellowship.applicationOpenDate)}.`
+                          ? `Applications are not open yet. They open ${formatFellowshipDate(fellowship.applicationOpenDate, 'opens')}.`
                           : 'This application window is not currently open. Use the source to verify the next cycle.'}
                       </p>
                     )}
