@@ -60,6 +60,7 @@ Pass `mongoUrl: process.env.MONGODBURL` at every `assertScriptApplyAllowed` call
 The guard also resolves `MONGODBURL` itself when the argument is absent, because before #3725 four apply-capable scripts omitted it: `summarizeMongoUrl(undefined)` returned `missing`, no production pattern matched, and the refusal could not fire while the script connected through `MONGODBURL` anyway.
 Omission is therefore no longer unsafe, and the convention is what keeps the target reviewable.
 Never hand the guard an `env` override while omitting `mongoUrl`: the guard would resolve its target from that stub while the script connects through the real `process.env`, which is the one remaining way past the check.
+`server/src/scripts/__tests__/scriptWriteGuards.test.ts` closes the argument-shape space rather than enumerating call sites, so a new apply path is covered by whichever shape it uses, and the shape that resolves nothing is recorded there as the one to avoid.
 
 `humanRunWriteScripts.pending.json` lists the legacy one-offs awaiting conversion.
 Converting or deleting one means removing it from that list and lowering `PENDING_CONVERSION_CEILING` to match, because the test requires the two to be equal, which is what keeps the count moving in one direction.
