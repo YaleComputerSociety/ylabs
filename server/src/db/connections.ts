@@ -7,7 +7,6 @@ import mongoose from 'mongoose';
 // declare, so the shape is spelled out here rather than inferred.
 export type MongoConnectOptions = mongoose.ConnectOptions & { bufferTimeoutMS: number };
 
-// Shared across initializeConnections and triggerReconnect so both use identical options.
 export const mongoOptions: MongoConnectOptions = {
   // Connecting must not be a schema-mutating act. `autoIndex` builds a model's
   // declared indexes on connect and `autoCreate` creates its collection, so with
@@ -159,7 +158,7 @@ export function triggerReconnect(): Promise<void> {
       console.error('MongoDB: topology lost — forcing reconnect');
 
       await mongoose.disconnect();
-      await mongoose.connect(primaryUrl, mongoOptions);
+      await mongoose.connect(primaryUrl, activeConnectOptions);
       console.log('MongoDB: reconnected');
     } catch (err) {
       console.error('MongoDB: reconnect failed:', (err as Error)?.message ?? err);
@@ -362,7 +361,14 @@ export async function logMissingMongoIndexes(
   return drift;
 }
 
-export async function initializeConnections(): Promise<void> {
+let activeConnectOptions: MongoConnectOptions = mongoOptions;
+
+// Defaults to the script budget because nearly every caller is an operator entry
+// point; the serving process opts into mongoOptions explicitly. triggerReconnect
+// reuses whatever budget connected, so a reconnect never swaps one for the other.
+export async function initializeConnections(
+  connectOptions: MongoConnectOptions = scriptMongoConnectOptions(),
+): Promise<void> {
   // Surface connection lifecycle so Render logs show exactly when the driver
   // loses or regains the server — makes the next incident much easier to trace.
   mongoose.connection.on('disconnected', () => console.error('MongoDB: disconnected'));
@@ -375,7 +381,8 @@ export async function initializeConnections(): Promise<void> {
   if (!url) {
     throw new Error('MONGODBURL is required');
   }
-  await mongoose.connect(url, mongoOptions);
+  activeConnectOptions = connectOptions;
+  await mongoose.connect(url, connectOptions);
   console.log(`Connected to database 🚀`);
   // Deliberately non-fatal. An unbuilt index is a performance problem, and
   // refusing to boot on one would turn a slow query into an outage on the very

@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import mongoose from 'mongoose';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { mongoOptions, scriptMongoConnectOptions } from '../connections';
+import {
+  initializeConnections,
+  mongoOptions,
+  scriptMongoConnectOptions,
+  triggerReconnect,
+} from '../connections';
 
 const PROXY_REQUEST_CEILING_MS = 100000;
 const SLOWEST_SERVED_REQUEST_MS = 10000;
@@ -34,5 +40,40 @@ describe('an operator entry point', () => {
       autoIndex: false,
       autoCreate: false,
     });
+  });
+});
+
+describe('connecting and reconnecting', () => {
+  const originalUrl = process.env.MONGODBURL;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalUrl === undefined) delete process.env.MONGODBURL;
+    else process.env.MONGODBURL = originalUrl;
+  });
+
+  const connectBudgets = async (initialize: () => Promise<void>) => {
+    process.env.MONGODBURL = 'mongodb://127.0.0.1:1/budget-test';
+    const connect = vi.spyOn(mongoose, 'connect').mockResolvedValue(mongoose);
+    vi.spyOn(mongoose, 'disconnect').mockResolvedValue(undefined);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await initialize();
+    await triggerReconnect();
+    return connect.mock.calls.map(([, options]) => options);
+  };
+
+  it('gives an entry point that connects without a budget the script waits, reconnect included', async () => {
+    const [initial, reconnect] = await connectBudgets(() => initializeConnections());
+
+    expect(initial).toMatchObject({ socketTimeoutMS: 0 });
+    expect(reconnect).toEqual(initial);
+  });
+
+  it('keeps the serving process on the serving budget across a reconnect', async () => {
+    const [initial, reconnect] = await connectBudgets(() => initializeConnections(mongoOptions));
+
+    expect(initial).toBe(mongoOptions);
+    expect(reconnect).toBe(mongoOptions);
   });
 });

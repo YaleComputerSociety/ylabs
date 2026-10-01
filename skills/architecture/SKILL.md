@@ -146,11 +146,14 @@ The keep-alive is the only thing that heals a connection no request has touched,
 The serving process and an operator script want opposite things from the driver, so `server/src/db/connections.ts` gives them different budgets.
 `mongoOptions` is the serving budget: 5 s to select a server, a 5 s Mongoose command buffer, and a 20 s socket ceiling.
 `scriptMongoConnectOptions` restores the long ones, 30 s selection and no socket timeout, because a sweep that starts during a replica-set election should wait for it rather than abort.
+`initializeConnections()` connects with the script budget by default, because nearly every caller is an operator entry point, and `server/src/index.ts` is the one caller that passes `mongoOptions`.
+`triggerReconnect` reuses whichever budget the process connected with, so a reconnect never moves a script onto the serving budget or the server onto the script one.
 The numbers come from measurement rather than taste: a reachable database answers a detail request in under 10 ms, while the driver's 30 s and 60 s defaults turned an unreachable or hung one into a 30 s to 63 s wait that ended in a generic 500 (#4188).
 The socket ceiling stays above the slowest request this server makes, a database-fallback search over the whole corpus, and under the hosting platform's own request timeout.
 Any single in-process operation that legitimately needs longer than the socket ceiling belongs in a script or a child process, which is where the heavy audits already run.
 
 A request that could not reach the database answers `503` with a `Retry-After`, never `500`, and `isMongoUnavailableError` is the one predicate that decides it.
+Every arm except a lost topology is still reported to error tracking, because a socket timeout against a reachable database is a slow query that needs fixing rather than an outage.
 Selection timeouts, socket timeouts, a closed client, and a Mongoose buffering timeout are all the same condition under different names, so adding a newly observed name means adding it there rather than at a call site.
 `triggerReconnect` stays scoped to a lost topology, because the driver recovers from the others on its own and reconnecting under them would close the pool the next request is about to use.
 On the client, `isRetryableUnavailableError` in `client/src/utils/clientErrorMessage.ts` turns that `503` into the existing limited-search notice with its retry action, so an outage never renders as "no research matches".

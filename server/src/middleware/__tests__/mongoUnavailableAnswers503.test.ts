@@ -72,9 +72,17 @@ describe('a request that could not reach the database', () => {
       expect(response.status).toHaveBeenCalledWith(503);
       expect(response.json).toHaveBeenCalledWith({ error: 'Service temporarily unavailable' });
       expect(Number(response.headers['Retry-After'])).toBeGreaterThan(0);
-      expect(captureServerError).not.toHaveBeenCalled();
     },
   );
+
+  it('keeps every outage except a lost topology in error tracking', () => {
+    handle(unreachableDatabaseErrors['a lost topology']);
+    expect(captureServerError).not.toHaveBeenCalled();
+
+    handle(unreachableDatabaseErrors['a socket timeout']);
+    handle(unreachableDatabaseErrors['a server-selection timeout']);
+    expect(captureServerError).toHaveBeenCalledTimes(2);
+  });
 
   it('answers 503 when the reason is only in the cause chain', () => {
     const wrapped = Object.assign(new Error('read failed'), {

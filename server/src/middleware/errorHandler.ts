@@ -90,8 +90,11 @@ export const errorHandler = (error: Error, req: Request, res: Response, next: Ne
   if (isMongoUnavailableError(error)) {
     // Only a lost topology needs the forced reconnect: the driver recovers from a
     // selection or socket timeout on its own, and reconnecting under it would
-    // close the pool the next request is about to use.
+    // close the pool the next request is about to use. The other arms stay in
+    // error tracking, because a socket timeout on a reachable database is a slow
+    // query rather than an outage.
     if (isTopologyLostError(error)) void triggerReconnect();
+    else captureServerError(error, req);
     res.set('Retry-After', String(MONGO_UNAVAILABLE_RETRY_AFTER_SECONDS));
     return res.status(503).json({ error: 'Service temporarily unavailable' });
   }
