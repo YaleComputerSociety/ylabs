@@ -842,6 +842,9 @@ Read `brokenLanes`, not `status`: `section-contract-broken`, `stale-publish-date
 | `centerDirectorLLMExtractor.ts` | LLM extraction of the single named director of an organizational home from its official site and leadership pages. |
 | `centerAffiliationLLMExtractor.ts` | LLM extraction of the faculty explicitly named on a CENTER/INSTITUTE/INITIATIVE/CORE_FACILITY official page for the heterogeneous long tail with no uniform roster; emits only `researchEntityRelationship` observations keyed by the center slug. The shared materializer resolves each name to an existing PI-led lab (`AFFILIATED_LAB`) or faculty-research-area entity and skips anyone who does not uniquely resolve, so hallucinated or ambiguous names never create an entity or edge. Never emits name-only member rows. |
 
+A relationship edge cites the page its lane read: the materializer stores the top-level `sourceUrl` of the observation that won `targetEntityKey`, because no lane emits a `sourceUrl` or `evidenceQuote` field for a `researchEntityRelationship` (#4024).
+An observation that carries no page leaves a stored citation alone rather than blanking it.
+
 #### Minting a center that only exists as a URL on somebody's faculty row
 
 A real Yale organization often reaches the corpus only as a `websiteUrl` grafted onto the two or three people whose faculty profiles link it, so no student can reach it as an entity (#2535).
