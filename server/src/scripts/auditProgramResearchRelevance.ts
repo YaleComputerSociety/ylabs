@@ -88,7 +88,7 @@ async function main() {
 
   const programs: any[] = await Fellowship.find({ archived: false })
     .select(
-      'title purpose studentFacingCategory programKind summary description eligibility studentVisibilityTier studentVisibilityOverrideTier',
+      'title purpose studentFacingCategory programKind sourceName summary description eligibility studentVisibilityTier studentVisibilityOverrideTier',
     )
     .lean();
 
