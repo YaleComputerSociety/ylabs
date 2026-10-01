@@ -144,6 +144,7 @@ The keep-alive is the only thing that heals a connection no request has touched,
 Shutdown is the mirror of that, and it lives in `server/src/serverShutdown.ts` rather than in the entry point so it can be tested.
 The hosting platform stops an instance by sending `SIGTERM` and killing it after a shutdown delay that defaults to 30 seconds, and Node's default action for `SIGTERM` is to exit at once, so before #4189 every request in flight during a deploy was cut with an empty reply.
 `registerGracefulShutdown` now stops accepting new connections, closes idle keep-alive sockets so no browser holds the drain open, waits up to `DRAIN_TIMEOUT_MS` (20 seconds, deliberately inside the 30 second kill timeout) for the requests already in flight, disconnects MongoDB, and exits 0, or 1 when the window expired and it had to cut what was left.
+A later `SIGTERM` or `SIGINT` during the drain joins the shutdown already running rather than starting a second one that would exit early.
 Lengthening the drain window means raising the platform's shutdown delay first, because a drain the platform interrupts is the same defect under another name.
 The timer stops come before the disconnect, and that order is load-bearing: the keep-alive pass reconnects a connection it finds down, so a shutdown that disconnected first would have the connection re-opened under it.
 
