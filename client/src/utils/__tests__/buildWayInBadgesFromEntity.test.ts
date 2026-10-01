@@ -5,7 +5,7 @@ import type { PathwaySearchHit } from '../../types/pathway';
 import type { ResearchEntity } from '../../types/researchGroup';
 
 const entity = (fields: Partial<ResearchEntity>): ResearchEntity =>
-  ({ typicalUndergradRoles: [], ...fields }) as ResearchEntity;
+  ({ ...fields }) as ResearchEntity;
 
 describe('buildWayInBadgesFromEntity', () => {
   it('finds no signal in an entity carrying no evidence', () => {
@@ -27,11 +27,8 @@ describe('buildWayInBadgesFromEntity', () => {
    * predicate the browse filter and saved plans also read, so a field the server
    * does not count, such as a roster count it holds out, must not light the badge.
    */
-  it.each([
-    ['a current undergraduate count', { currentUndergradCount: 3 }],
-    ['typical roles', { typicalUndergradRoles: ['Data analysis'] }],
-  ])('does not re-derive hosting from %s', (_label, fields) => {
-    expect(buildWayInBadgesFromEntity(entity(fields))).toEqual([]);
+  it('does not re-derive hosting from a current undergraduate count', () => {
+    expect(buildWayInBadgesFromEntity(entity({ currentUndergradCount: 3 }))).toEqual([]);
   });
 
   /**
@@ -58,17 +55,12 @@ describe('buildWayInBadgesFromEntity', () => {
   });
 
   it.each([
-    ['the independent-study flag', { offersIndependentStudy: true }],
-    [
-      'a listed course',
-      { independentStudyCourses: [{}] as ResearchEntity['independentStudyCourses'] },
-    ],
-  ])('reads student-project evidence from %s', (_label, fields) => {
-    expect(buildWayInBadgesFromEntity(entity(fields))).toEqual(['Student project evidence']);
-  });
-
-  it('treats a false independent-study flag as no evidence', () => {
-    expect(buildWayInBadgesFromEntity(entity({ offersIndependentStudy: false }))).toEqual([]);
+    ['an independent-study flag', { offersIndependentStudy: true }],
+    ['a listed course', { independentStudyCourses: [{ code: 'ABCD 4900' }] }],
+    ['typical roles', { typicalUndergradRoles: ['Data analysis'] }],
+  ])('reads nothing from %s, a field the API no longer serves (#3579)', (_label, fields) => {
+    const legacyPayload = { ...fields } as unknown as ResearchEntity;
+    expect(buildWayInBadgesFromEntity(legacyPayload)).toEqual([]);
   });
 
   /**
@@ -79,14 +71,12 @@ describe('buildWayInBadgesFromEntity', () => {
    */
   it('never claims a contact route', () => {
     const everything = entity({
-      offersIndependentStudy: true,
       hasUndergradHostingEvidence: true,
+      currentUndergradCount: 3,
+      undergradEvidenceQuote: 'Undergraduates have contributed to this work every term.',
     });
 
-    expect(buildWayInBadgesFromEntity(everything)).toEqual([
-      'Undergrad evidence',
-      'Student project evidence',
-    ]);
+    expect(buildWayInBadgesFromEntity(everything)).toEqual(['Undergrad evidence']);
   });
 });
 

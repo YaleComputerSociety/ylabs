@@ -65,11 +65,6 @@ export interface PastUndergradAdvisee {
   count?: number;
 }
 
-export interface IndependentStudyCourse {
-  code?: string;
-  title?: string;
-}
-
 export interface RecentGrant {
   id?: string;
   agency?: string;
@@ -128,13 +123,9 @@ export interface ResearchGroup {
   pastUndergradAdvisees?: PastUndergradAdvisee[];
   /** Served by the API from the one hosted-undergraduates predicate the browse filter also uses. */
   hasUndergradHostingEvidence?: boolean;
-  /** True when the lab is reachable via an independent-study course. */
-  offersIndependentStudy?: boolean;
-  independentStudyCourses?: IndependentStudyCourse[];
   recentGrants?: RecentGrant[];
   recentGrantCount?: number;
   fundingAgencies?: string[];
-  typicalUndergradRoles: string[];
   prerequisiteCourses: string[];
   creditOptions: string[];
   fundingPrograms: string[];

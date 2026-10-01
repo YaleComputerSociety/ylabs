@@ -38,7 +38,6 @@ const richPayload: LabDetailPayload = {
     departments: ['Neurology'],
     researchAreas: ['Neuroscience', 'Imaging'],
     school: 'School of Medicine',
-    typicalUndergradRoles: ['Research assistant'],
     prerequisiteCourses: ['Introductory neuroscience'],
     creditOptions: ['Course credit'],
     fundingPrograms: [],

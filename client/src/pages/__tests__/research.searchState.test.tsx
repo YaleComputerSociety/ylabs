@@ -57,7 +57,6 @@ const entity = (id: string, name: string) => ({
   departments: ['Computer Science'],
   researchAreas: ['Systems'],
   school: 'Yale College',
-  typicalUndergradRoles: [],
   prerequisiteCourses: [],
   creditOptions: [],
   fundingPrograms: [],

@@ -437,12 +437,7 @@ export const buildWayInBadgesFromEntity = (entity: ResearchEntity | undefined): 
   // The badge reads the served flag rather than re-deriving it here, so it
   // cannot disagree with the `hostsUndergrads` browse filter or saved plans,
   // which read the same server predicate (#3593).
-  const hasUndergradEvidence = entity.hasUndergradHostingEvidence === true;
-  const hasStudentProjectEvidence =
-    entity.offersIndependentStudy === true || (entity.independentStudyCourses?.length ?? 0) > 0;
-
-  if (hasUndergradEvidence) badges.push('Undergrad evidence');
-  if (hasStudentProjectEvidence) badges.push('Student project evidence');
+  if (entity.hasUndergradHostingEvidence === true) badges.push('Undergrad evidence');
 
   return badges;
 };

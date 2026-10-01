@@ -699,6 +699,41 @@ describe('researchEntityDto', () => {
     expect(retiredCount.hasUndergradHostingEvidence).toBeUndefined();
   });
 
+  describe('undergraduate access fields no lane fills (#3579)', () => {
+    const storedRow = {
+      id: 'entity-unfilled-access',
+      slug: 'unfilled-access-lab',
+      name: 'Unfilled Access Lab',
+      undergradEvidenceQuote: 'Undergraduates join the lab each summer.',
+      pastUndergradAdvisees: [{ year: 2024, programName: 'Summer Program', count: 2 }],
+      offersIndependentStudy: true,
+      independentStudyCourses: [{ code: 'ABCD 4900', title: 'Independent Research' }],
+      typicalUndergradRoles: ['Data analysis'],
+    };
+    const unfilledFields = [
+      'offersIndependentStudy',
+      'independentStudyCourses',
+      'typicalUndergradRoles',
+    ];
+
+    it('serves none of them on the detail route, even when the stored row holds a value', () => {
+      const { researchEntity } = addResearchEntityDetailAlias({ group: { ...storedRow } });
+      for (const field of unfilledFields) expect(researchEntity).not.toHaveProperty(field);
+    });
+
+    it('serves none of them on a browse hit', () => {
+      const { researchEntities } = addResearchEntitySearchAliases({ hits: [{ ...storedRow }] });
+      for (const field of unfilledFields) expect(researchEntities[0]).not.toHaveProperty(field);
+    });
+
+    it('still serves the evidence quote and past advisees exactly as stored', () => {
+      const detail = toPublicResearchEntityDto({ ...storedRow });
+      expect(detail.undergradEvidenceQuote).toBe(storedRow.undergradEvidenceQuote);
+      expect(detail.pastUndergradAdvisees).toEqual(storedRow.pastUndergradAdvisees);
+      expect(detail.hasUndergradHostingEvidence).toBe(true);
+    });
+  });
+
   it('withholds a current-undergraduate count held only by the retired cache backfill (#3789)', () => {
     const retired = toPublicResearchEntityDto({
       id: 'entity-retired-count',
