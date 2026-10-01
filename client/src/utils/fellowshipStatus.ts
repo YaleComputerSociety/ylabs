@@ -1,4 +1,11 @@
 import type { Fellowship, ProgramAudience } from '../types/types';
+import {
+  type ProgramDateBoundary,
+  formatProgramDate,
+  formatShortProgramDate,
+  parseProgramDate,
+  programDeadlineClosingInstant,
+} from './programDates';
 
 export const CLOSING_SOON_DAYS = 30;
 
@@ -24,42 +31,16 @@ export interface FellowshipApplicationStatus {
   needsEligibilityReview: boolean;
 }
 
-const DATE_OPTIONS: Intl.DateTimeFormatOptions = {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-};
-
-const SHORT_DATE_OPTIONS: Intl.DateTimeFormatOptions = {
-  month: 'short',
-  day: 'numeric',
-};
-
-const parseDate = (value: string | null | undefined): Date | null => {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-
 export const formatFellowshipDate = (
   value: string | null | undefined,
+  boundary: ProgramDateBoundary,
   fallback = 'Not specified',
-): string => {
-  const date = parseDate(value);
-  if (!date) return fallback;
-  return date.toLocaleString('en-US', DATE_OPTIONS);
-};
+): string => formatProgramDate(value, boundary, fallback);
 
 export const formatShortFellowshipDate = (
   value: string | null | undefined,
   fallback = 'Date not specified',
-): string => {
-  const date = parseDate(value);
-  if (!date) return fallback;
-  return date.toLocaleDateString('en-US', SHORT_DATE_OPTIONS);
-};
+): string => formatShortProgramDate(value, fallback);
 
 const ROLLING_APPLICATION_RE =
   /\brolling\b|\breview(?:ed|ing)?\s+applications?\s+as\s+(?:we|they)\s+(?:are\s+)?receiv|\bas\s+applications?\s+are\s+received\b|\bapplications?\s+(?:are\s+)?accepted\s+(?:on\s+a\s+)?(?:rolling|continuous|year[-\s]?round)\b|\bno\s+(?:fixed|set)\s+deadline\b/i;
@@ -109,8 +90,8 @@ export const getFellowshipApplicationStatus = (
     FellowshipApplicationTextFields,
   now = new Date(),
 ): FellowshipApplicationStatus => {
-  const openDate = parseDate(fellowship.applicationOpenDate);
-  const deadline = parseDate(fellowship.deadline);
+  const openDate = parseProgramDate(fellowship.applicationOpenDate);
+  const deadline = programDeadlineClosingInstant(fellowship.deadline);
   const deadlinePassed = deadline ? deadline.getTime() < now.getTime() : false;
   const notOpenYet = openDate ? openDate.getTime() > now.getTime() : false;
   const rollingApplications = hasRollingApplicationWindow(fellowship);
@@ -129,8 +110,8 @@ export const getFellowshipApplicationStatus = (
   const needsDateReview = fellowship.isAcceptingApplications && !deadline;
 
   const base = {
-    deadlineLabel: formatFellowshipDate(fellowship.deadline),
-    openDateLabel: formatFellowshipDate(fellowship.applicationOpenDate),
+    deadlineLabel: formatFellowshipDate(fellowship.deadline, 'deadline'),
+    openDateLabel: formatFellowshipDate(fellowship.applicationOpenDate, 'opens'),
     daysUntilDeadline,
     needsDateReview,
     needsEligibilityReview,

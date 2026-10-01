@@ -21,6 +21,7 @@ import {
   icsFilenameForProgram,
   upcomingProgramDeadlineEvents,
 } from '../../utils/calendarExport';
+import { formatProgramCalendarDate } from '../../utils/programDates';
 import BrowseListItem from '../shared/BrowseListItem';
 import FellowshipModal from '../fellowship/FellowshipModal';
 import LoadingSpinner from '../shared/LoadingSpinner';
@@ -70,13 +71,6 @@ const fellowshipToBrowsable = (fellowship: Fellowship): BrowsableItem => ({
   data: fellowship,
 });
 
-const dateFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
-
 export const watchedProgramDeadlineSummary = (
   fellowships: Fellowship[],
   now = new Date(),
@@ -98,7 +92,7 @@ export const watchedProgramDeadlineSummary = (
     : `${next.fellowship.title}: Due `;
   return {
     nextDeadlineDate: next.fellowship.deadline || undefined,
-    nextDeadlineLabel: `${prefix}${dateFormatter.format(next.date)}`,
+    nextDeadlineLabel: `${prefix}${formatProgramCalendarDate(next.date)}`,
   };
 };
 

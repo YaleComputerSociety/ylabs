@@ -8,6 +8,7 @@ import {
   getUniqueDepartmentLabels,
 } from '../utils/departmentNames';
 import { getFellowshipCycleStatus, getFellowshipDeadlineSubtitle } from '../utils/fellowshipCycle';
+import { programDeadlineClosingInstant } from '../utils/programDates';
 import { getFellowshipApplicationStatus } from '../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../utils/programJourney';
 
@@ -149,9 +150,8 @@ export function getItemSubtitleColor(item: BrowsableItem): string {
   const status = getFellowshipCycleStatus(item.data);
   if (status.category === 'nextCycle' || status.category === 'projectedNextCycle')
     return 'text-sky-700 font-medium';
-  const { deadline } = item.data;
-  if (!deadline) return 'text-muted';
-  const d = new Date(deadline);
+  const d = programDeadlineClosingInstant(item.data.deadline);
+  if (!d) return 'text-muted';
   if (d < new Date()) return 'text-red-700';
   const daysUntil = Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
   if (daysUntil <= 14) return 'text-amber-700 font-medium';
@@ -183,7 +183,7 @@ export function getDaysUntilDeadline(item: BrowsableItem): number | null {
   // A projected next-cycle date is the server's estimate, so counting down to it would tell a
   // student a window is closing that nobody has confirmed is open (#3904).
   if (item.data.deadlineProjectedNextCycle) return null;
-  if (!item.data.deadline) return null;
-  const d = new Date(item.data.deadline);
+  const d = programDeadlineClosingInstant(item.data.deadline);
+  if (!d) return null;
   return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }

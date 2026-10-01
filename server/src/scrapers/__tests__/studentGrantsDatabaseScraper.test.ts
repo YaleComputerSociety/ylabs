@@ -182,8 +182,43 @@ describe('parseFundDetailPage', () => {
       { title: '', url: FUND_A_URL },
       referenceDate,
     );
-    expect(fund?.deadline?.toISOString()).toBe('2099-02-12T23:59:59.999Z');
-    expect(fund?.applicationOpenDate?.toISOString()).toBe('2099-01-15T00:00:00.000Z');
+    expect(fund?.deadline?.toISOString()).toBe('2099-02-12T17:00:00.000Z');
+    expect(fund?.applicationOpenDate?.toISOString()).toBe('2099-01-15T05:00:00.000Z');
+  });
+
+  it('reads the deadline at the time the EST Time Zone label states, as New York time', () => {
+    const deadlineOf = (deadline: string, opens = '1/15/2027') =>
+      parseFundDetailPage(
+        fundDetailHtml({ opens, deadline }),
+        { title: '', url: FUND_A_URL },
+        referenceDate,
+      )?.deadline?.toISOString();
+    expect(deadlineOf('3/24/2027 1:00 PM')).toBe('2027-03-24T17:00:00.000Z');
+    expect(deadlineOf('2/24/2027 1:00 PM')).toBe('2027-02-24T18:00:00.000Z');
+    expect(deadlineOf('11/10/2027 1:00 PM')).toBe('2027-11-10T18:00:00.000Z');
+    expect(deadlineOf('3/24/2027')).toBe('2027-03-25T03:59:59.999Z');
+  });
+
+  it('reads a stated opening time and opens a date-only window at New York midnight', () => {
+    const opensOf = (opens: string) =>
+      parseFundDetailPage(
+        fundDetailHtml({ opens }),
+        { title: '', url: FUND_A_URL },
+        referenceDate,
+      )?.applicationOpenDate?.toISOString();
+    expect(opensOf('9/01/2026 9:00 AM')).toBe('2026-09-01T13:00:00.000Z');
+    expect(opensOf('9/01/2026')).toBe('2026-09-01T04:00:00.000Z');
+  });
+
+  it('stops accepting at the stated minute rather than at the end of the day', () => {
+    const acceptingAt = (now: string) =>
+      parseFundDetailPage(
+        fundDetailHtml({ opens: '1/15/2027', deadline: '3/24/2027 1:00 PM' }),
+        { title: '', url: FUND_A_URL },
+        new Date(now),
+      )?.isAcceptingApplications;
+    expect(acceptingAt('2027-03-24T16:59:00.000Z')).toBe(true);
+    expect(acceptingAt('2027-03-24T17:01:00.000Z')).toBe(false);
   });
 
   it('keeps regions and drops the countries listed under them', () => {
@@ -235,7 +270,7 @@ describe('fundToObservations', () => {
     expect(byField.get('sourceName')).toBe(STUDENT_GRANTS_DATABASE_SOURCE);
     expect(byField.get('applicationLink')).toBe(FUND_A_URL);
     expect(byField.get('awardAmount')).toBe('$4,000');
-    expect(byField.get('applicationOpenDate')).toEqual(new Date('2099-01-15T00:00:00.000Z'));
+    expect(byField.get('applicationOpenDate')).toEqual(new Date('2099-01-15T05:00:00.000Z'));
     expect(byField.get('archived')).toBe(false);
     expect([...byField.keys()]).not.toContain('contactEmail');
   });

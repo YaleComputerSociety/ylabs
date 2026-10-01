@@ -5,7 +5,6 @@ import {
   extractProgramUrlsFromDirectory,
   isExcludedAlreadyCoveredUrl,
   isHealthSciencesSummerProgramUrl,
-  parseDeadlineToUtcEndOfDay,
   parseHealthSciencesProgramPage,
   YaleHealthSciencesSummerProgramsScraper,
   YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE,
@@ -74,9 +73,7 @@ describe('parseHealthSciencesProgramPage', () => {
     expect(candidate?.title).toBe('Yale Biomedical Summer Undergraduate Research Fellowship');
     expect(candidate?.sourceUrl).toBe(surfUrl);
     expect(candidate?.description).toMatch(/ten-week summer research program/);
-    expect(candidate?.deadline?.toISOString()).toBe(
-      parseDeadlineToUtcEndOfDay('February 3, 2026', referenceDate)?.toISOString(),
-    );
+    expect(candidate?.deadline?.toISOString()).toBe('2026-02-04T04:59:59.999Z');
     expect(candidate?.applicationLink).toBe('https://apply.example.org/biomedsurf-2026');
     expect(candidate?.termOfAward).toContain('Summer');
   });
@@ -154,7 +151,7 @@ describe('parseHealthSciencesProgramPage', () => {
       </main>
     `;
     const candidate = parseHealthSciencesProgramPage(html, surfUrl, 'Yale', referenceDate);
-    expect(candidate?.deadline?.toISOString()).toBe('2027-01-31T23:59:59.999Z');
+    expect(candidate?.deadline?.toISOString()).toBe('2027-02-01T04:59:59.999Z');
   });
 
   it('leaves a photo caption out of the description read from prose paragraphs', () => {

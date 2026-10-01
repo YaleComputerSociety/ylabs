@@ -1,5 +1,6 @@
 import { Fellowship } from '../types/types';
 import { getFellowshipApplicationStatus } from './fellowshipStatus';
+import { formatShortProgramDate, programDeadlineClosingInstant } from './programDates';
 
 export const CLOSING_SOON_DAYS = 30;
 
@@ -57,7 +58,7 @@ export function getFellowshipCycleStatus(
   now: Date = new Date(),
 ): FellowshipCycleStatus {
   const applicationStatus = getFellowshipApplicationStatus(fellowship, now);
-  const deadline = fellowship.deadline ? new Date(fellowship.deadline) : null;
+  const deadline = programDeadlineClosingInstant(fellowship.deadline);
   const deadlinePassed = deadline ? deadline.getTime() < now.getTime() : false;
   const isOpen = applicationStatus.isApplicationWindowOpen;
   const sourceBacked = hasSourceUrl(fellowship);
@@ -137,16 +138,14 @@ export function getFellowshipDeadlineSubtitle(
 ): string {
   const status = getFellowshipCycleStatus(fellowship, now);
   if (status.category === 'openingSoon') {
-    const openDate = new Date(String(fellowship.applicationOpenDate));
-    return `Opens ${openDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+    return `Opens ${formatShortProgramDate(fellowship.applicationOpenDate)}`;
   }
   if (status.category === 'projectedNextCycle' && fellowship.deadline) {
-    const projected = new Date(fellowship.deadline);
-    return `Est. next cycle ~${projected.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (unconfirmed)`;
+    return `Est. next cycle ~${formatShortProgramDate(fellowship.deadline)} (unconfirmed)`;
   }
-  if (!fellowship.deadline) return 'No deadline';
-  const deadline = new Date(fellowship.deadline);
+  const deadline = programDeadlineClosingInstant(fellowship.deadline);
+  if (!deadline) return 'No deadline';
   if (status.category === 'nextCycle') return 'Past cycle; track for reopening';
   if (deadline.getTime() < now.getTime()) return 'Deadline passed';
-  return `Due ${deadline.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+  return `Due ${formatShortProgramDate(fellowship.deadline)}`;
 }

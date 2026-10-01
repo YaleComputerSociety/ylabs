@@ -9,7 +9,6 @@ import {
   extractIndexSeedChildDetailUrls,
   MACMILLAN_COUNCIL_GRANT_PAGE_URLS,
   MACMILLAN_UNDERGRADUATE_RESEARCH_GRANTS_ROOT,
-  parseDeadlineToUtcEndOfDay,
   parseFellowshipCatalogPage,
   STEM_FELLOWSHIPS_FUNDING_HUB_URL,
   STUDENT_FACULTY_AWARDS_INDEX_URL,
@@ -20,6 +19,7 @@ import {
   sourceKeyForTitle,
   YaleCollegeFellowshipsOfficeScraper,
 } from '../sources/yaleCollegeFellowshipsOfficeScraper';
+import { parseProgramDate } from '../utils/programDeadline';
 import { beginBenchmarkReplay, finishBenchmarkReplay } from '../snapshotBenchmarkMode';
 import { POLICY_FETCH_BENCHMARK_NAMESPACE } from '../utils/httpFetch';
 
@@ -501,7 +501,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     expect(candidates[0]).toMatchObject({
       title: 'YC Fixture Research Fellowships in the Sciences',
       sourceUrl: sciencePageUrl,
-      deadline: new Date('2026-02-19T23:59:59.999Z'),
+      deadline: new Date('2026-02-20T04:00:00.000Z'),
       isAcceptingApplications: true,
       reviewRequired: false,
     });
@@ -521,7 +521,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
 
     expect(candidates[0]).toMatchObject({
       title: 'Yale College Fixture Research Fellowship & Synthetic Science Scholars Program',
-      deadline: new Date('2026-02-19T23:59:59.999Z'),
+      deadline: new Date('2026-02-20T04:00:00.000Z'),
       isAcceptingApplications: true,
     });
   });
@@ -543,8 +543,8 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     );
 
     expect(candidates[0]).toMatchObject({
-      applicationOpenDate: new Date('2025-12-05T00:00:00.000Z'),
-      deadline: new Date('2026-02-18T23:59:59.999Z'),
+      applicationOpenDate: new Date('2025-12-05T05:00:00.000Z'),
+      deadline: new Date('2026-02-19T00:00:00.000Z'),
     });
   });
 
@@ -562,8 +562,8 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     );
 
     expect(candidates[0]).toMatchObject({
-      applicationOpenDate: new Date('2026-12-05T00:00:00.000Z'),
-      deadline: new Date('2027-02-18T23:59:59.999Z'),
+      applicationOpenDate: new Date('2026-12-05T05:00:00.000Z'),
+      deadline: new Date('2027-02-19T04:59:59.999Z'),
     });
   });
 
@@ -580,7 +580,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
       new Date('2026-01-01T00:00:00Z'),
     );
 
-    expect(candidates[0]?.deadline).toEqual(new Date('2026-02-06T23:59:59.999Z'));
+    expect(candidates[0]?.deadline).toEqual(new Date('2026-02-07T04:00:00.000Z'));
   });
 
   it('does not use a preceding program date as the application deadline', () => {
@@ -595,7 +595,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
       new Date('2026-01-01T00:00:00Z'),
     );
 
-    expect(candidates[0]?.deadline).toEqual(new Date('2026-02-06T23:59:59.999Z'));
+    expect(candidates[0]?.deadline).toEqual(new Date('2026-02-07T04:59:59.999Z'));
   });
 
   it('extracts application requirements introduced by a strong inline label', () => {
@@ -896,7 +896,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
 
     expect(candidates[0]).toMatchObject({
       title: 'STARS Summer Research Program',
-      deadline: new Date('2026-02-19T23:59:59.999Z'),
+      deadline: new Date('2026-02-20T04:59:59.999Z'),
     });
     const observations = candidateToObservations(candidates[0]);
     expect(classifierFieldsIn(observations)).toEqual([]);
@@ -1078,24 +1078,24 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     ]);
   });
 
-  it('parses Month Day Year deadlines as UTC end-of-day and ignores fuzzy dates', () => {
-    expect(parseDeadlineToUtcEndOfDay('Deadline: Monday, January 5, 2026 at 11:00pm ET')).toEqual(
-      new Date('2026-01-05T23:59:59.999Z'),
+  it('parses a Month Day Year deadline at its stated New York time and ignores fuzzy dates', () => {
+    expect(parseProgramDate('Deadline: Monday, January 5, 2026 at 11:00pm ET', 'deadline')).toEqual(
+      new Date('2026-01-06T04:00:00.000Z'),
     );
     expect(
-      parseDeadlineToUtcEndOfDay('Application deadline typically in February/March.'),
+      parseProgramDate('Application deadline typically in February/March.', 'deadline'),
     ).toBeUndefined();
-    expect(parseDeadlineToUtcEndOfDay('Deadline: February 30, 2026')).toBeUndefined();
+    expect(parseProgramDate('Deadline: February 30, 2026', 'deadline')).toBeUndefined();
   });
 
-  it('parses numeric MM/DD/YY and MM/DD/YYYY deadlines', () => {
-    expect(parseDeadlineToUtcEndOfDay('Application Deadline 09/11/26')).toEqual(
-      new Date('2026-09-11T23:59:59.999Z'),
+  it('parses numeric MM/DD/YY and MM/DD/YYYY deadlines as the end of the New York day', () => {
+    expect(parseProgramDate('Application Deadline 09/11/26', 'deadline')).toEqual(
+      new Date('2026-09-12T03:59:59.999Z'),
     );
-    expect(parseDeadlineToUtcEndOfDay('Deadline 3/4/2026')).toEqual(
-      new Date('2026-03-04T23:59:59.999Z'),
+    expect(parseProgramDate('Deadline 3/4/2026', 'deadline')).toEqual(
+      new Date('2026-03-05T04:59:59.999Z'),
     );
-    expect(parseDeadlineToUtcEndOfDay('Applications due 13/40/26')).toBeUndefined();
+    expect(parseProgramDate('Applications due 13/40/26', 'deadline')).toBeUndefined();
   });
 
   it('captures a numeric deadline near a deadline label and marks it accepting when in the future', () => {
@@ -1112,7 +1112,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
       new Date('2026-08-22T00:00:00Z'),
     );
 
-    expect(candidates[0]?.deadline).toEqual(new Date('2026-09-11T23:59:59.999Z'));
+    expect(candidates[0]?.deadline).toEqual(new Date('2026-09-12T03:59:59.999Z'));
     expect(candidates[0]?.isAcceptingApplications).toBe(true);
   });
 
@@ -1580,7 +1580,7 @@ describe('YaleCollegeFellowshipsOfficeScraper macmillan opportunity catalog (#67
 
     const prize = candidates.find((candidate) => candidate.title === 'Albert Bildner Travel Prize');
     expect(prize?.summary).toContain('Supports travel to Latin America');
-    expect(prize?.deadline?.toISOString()).toBe('2027-03-15T23:59:59.999Z');
+    expect(prize?.deadline?.toISOString()).toBe('2027-03-16T03:59:59.999Z');
     expect(prize?.reviewRequired).toBe(false);
     expect(prize?.applicationLink).toBeUndefined();
     expect(prize?.links).toEqual([
@@ -2644,10 +2644,10 @@ describe('YaleCollegeFellowshipsOfficeScraper reference date (#4132)', () => {
     const summer = new Date('2026-06-15T12:00:00Z');
 
     expect(await plannedDeadline(winter)).toBe(
-      parseDeadlineToUtcEndOfDay('Deadline: March 1', winter)?.toISOString(),
+      parseProgramDate('Deadline: March 1', 'deadline', winter)?.toISOString(),
     );
     expect(await plannedDeadline(summer)).toBe(
-      parseDeadlineToUtcEndOfDay('Deadline: March 1', summer)?.toISOString(),
+      parseProgramDate('Deadline: March 1', 'deadline', summer)?.toISOString(),
     );
     expect(await plannedDeadline(winter)).not.toBe(await plannedDeadline(summer));
   });

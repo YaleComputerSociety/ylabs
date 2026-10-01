@@ -23,6 +23,8 @@ import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { programLikeCardShortDescription } from '../utils/researchEntityDescriptionQuality';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
+import { newYorkCalendarDate, newYorkInstant, newYorkWallClock } from '../utils/newYorkTime';
+import { programDeadlineClosesAt } from '../utils/programDeadlineInstant';
 import {
   inferProgramSubjects,
   PROGRAM_TOPIC_TAXONOMY,
@@ -312,7 +314,7 @@ export const toValidDate = (value: unknown): Date | undefined => {
 
 export const deadlineIsPast = (value: unknown, now: Date): boolean => {
   const date = toValidDate(value);
-  return date !== undefined && date.getTime() < now.getTime();
+  return date !== undefined && programDeadlineClosesAt(date).getTime() < now.getTime();
 };
 
 const RECURRING_PROGRAM_TEXT_RE =
@@ -353,18 +355,17 @@ export const isLikelyRecurringProgram = (fellowship: any): boolean =>
   RECURRING_PROGRAM_TEXT_RE.test(textForRecurrenceDetection(fellowship));
 
 export const projectNextCycleDeadline = (deadline: Date, now: Date): Date | undefined => {
-  let projected = deadline;
-  for (let yearsAdded = 0; yearsAdded < MAX_NEXT_CYCLE_PROJECTION_YEARS; yearsAdded += 1) {
-    projected = new Date(
-      Date.UTC(
-        projected.getUTCFullYear() + 1,
-        projected.getUTCMonth(),
-        projected.getUTCDate(),
-        projected.getUTCHours(),
-        projected.getUTCMinutes(),
-        projected.getUTCSeconds(),
-      ),
+  const stated = newYorkWallClock(deadline);
+  for (let yearsAdded = 1; yearsAdded <= MAX_NEXT_CYCLE_PROJECTION_YEARS; yearsAdded += 1) {
+    const sameDayNextCycle = new Date(
+      Date.UTC(stated.year + yearsAdded, stated.monthIndex, stated.day),
     );
+    const projected = newYorkInstant({
+      ...stated,
+      year: sameDayNextCycle.getUTCFullYear(),
+      monthIndex: sameDayNextCycle.getUTCMonth(),
+      day: sameDayNextCycle.getUTCDate(),
+    });
     if (projected.getTime() > now.getTime()) return projected;
   }
   return undefined;
@@ -389,7 +390,8 @@ const PRESENTATION_DATE_CLAUSE_RE =
   /\s+by\s+(January|February|March|April|May|June|July|August|September|October|November|December),?\s+(\d{4})(?=[.,;)\s]|$)/gi;
 
 const stripStalePresentationDate = (text: string, deadline: Date): string => {
-  const deadlineMonthOrdinal = deadline.getUTCFullYear() * 12 + deadline.getUTCMonth();
+  const { year, monthIndex } = newYorkCalendarDate(deadline);
+  const deadlineMonthOrdinal = year * 12 + monthIndex;
   return text.replace(
     PRESENTATION_DATE_CLAUSE_RE,
     (match, monthName: string, yearText: string, offset: number, whole: string) => {
@@ -415,6 +417,9 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
   }
 
   publicFellowship.audience = programAudience(fellowship);
+
+  const statedDeadline = toValidDate(publicFellowship.deadline);
+  if (statedDeadline) publicFellowship.deadline = programDeadlineClosesAt(statedDeadline);
 
   const deadlinePast = deadlineIsPast(publicFellowship.deadline, now);
   if (publicFellowship.isAcceptingApplications === true && deadlinePast) {

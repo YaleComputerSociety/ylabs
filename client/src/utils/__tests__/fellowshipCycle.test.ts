@@ -141,4 +141,12 @@ describe('fellowshipCycle', () => {
       'Est. next cycle ~Feb 17 (unconfirmed)',
     );
   });
+
+  it('names the New York date in the short due label, not the UTC date', () => {
+    const endOfNewYorkDay = baseFellowship({
+      isAcceptingApplications: true,
+      deadline: '2099-03-25T03:59:59.999Z',
+    });
+    expect(getFellowshipDeadlineSubtitle(endOfNewYorkDay, now)).toBe('Due Mar 24');
+  });
 });
