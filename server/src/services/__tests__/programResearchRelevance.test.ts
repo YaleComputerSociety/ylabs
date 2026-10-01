@@ -89,6 +89,40 @@ describe('classifyProgramResearchRelevance', () => {
     expect(result.researchRelated).toBe(false);
   });
 
+  describe('a sentence that denies faculty mentorship (#4246)', () => {
+    const internship = (sentence: string, purpose: string[]) =>
+      classifyProgramResearchRelevance({
+        title: 'Fixture Department Summer Internship',
+        programKind: 'STRUCTURED_PROGRAM',
+        purpose,
+        description: `Paid office internship. ${sentence}`,
+      });
+
+    it.each([
+      'No faculty mentor is required.',
+      'Students do not need a faculty mentor to apply.',
+      'This internship is not a faculty mentorship program.',
+      'A faculty mentor is not provided.',
+    ])('does not admit a program whose page says "%s"', (sentence) => {
+      for (const purpose of [['Internship'], []]) {
+        const result = internship(sentence, purpose);
+        expect(result.researchRelated).toBe(false);
+        expect(result.reasons).not.toContain('mentored_research_pathway');
+      }
+    });
+
+    it('still admits a program that pairs students with a faculty mentor', () => {
+      expect(
+        internship('Students without prior experience work with a faculty mentor.', ['Internship'])
+          .reasons,
+      ).toContain('mentored_research_pathway');
+      expect(
+        internship('Each fellow is paired with a faculty mentor, not a graduate student.', [])
+          .reasons,
+      ).toContain('mentored_research_pathway');
+    });
+  });
+
   it('admits a structured program built on faculty mentorship whose page never says research', () => {
     const pathway = {
       title: 'Fixture Academic Year Program',
