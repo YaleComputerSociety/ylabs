@@ -18,7 +18,7 @@ y/labs is a **Yale research discovery platform**. Students discover Yale researc
 ```
 React (Vite) → Express (Passport.js) → MongoDB Atlas + Meilisearch
                     ↓
-            External APIs: Yale CAS, Yalies, Yale Directory, CourseTable, OpenAI (via Meilisearch)
+            External APIs: Yale CAS, Yalies, CourseTable, OpenAI (via Meilisearch)
 ```
 
 The server follows: **Routes → Middleware → Controllers → Services → Models**
@@ -391,11 +391,11 @@ Beta suppresses real student analytics while permitting fixture and admin valida
 
 ```
 User → Yale CAS SSO → passport.ts resolveLoginPrincipalForCas
-     → Yalies lookup, then Yale Directory (classification cascade: skills/auth-security/SKILL.md)
+     → Yalies lookup (classification cascade: skills/auth-security/SKILL.md)
      → accountService.recordAccountLogin: resolve-or-create Account (netid/email) → cookie-session
 ```
 
-Authentication runs on the canonical `Account`; the legacy `User` model has been retired (#2014) and `userType` is derived per login and carried in the signed session rather than persisted. The classification cascade runs at login time only. Per-request session restore (`deserializeUser`) re-validates that the backing `Account` exists and is not archived plus the admin-grant check - no account creation and no Yalies/Directory calls - so a hiccup in those external sources can't fail already-authenticated requests. The CAS login callback (`/api/cas`) is exempt from the general API rate limiter so rate limiting cannot lock users out of login.
+Authentication runs on the canonical `Account`; the legacy `User` model has been retired (#2014) and `userType` is derived per login and carried in the signed session rather than persisted. The classification cascade runs at login time only. Per-request session restore (`deserializeUser`) re-validates that the backing `Account` exists and is not archived plus the admin-grant check - no account creation and no Yalies calls - so a hiccup in those external sources can't fail already-authenticated requests. The CAS login callback (`/api/cas`) is exempt from the general API rate limiter so rate limiting cannot lock users out of login.
 
 The public browse surface (`/api/research`) carries no discovery limiter of its own: it rides the general limiter like every other `/api` route (`globalLimiter`, 1000 req / 15 min), and is exempt only from the write limiter, because `writeLimit` is opt-in per route and `POST /api/research/search` is a pure read despite its method.
 The general limiter is keyed per authenticated netid, then per anonymous identifier in the signed cookie session, so debounced search-as-you-type, filters, infinite scroll, and detail views all bill to the browsing session rather than to a shared address.

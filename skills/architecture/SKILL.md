@@ -13,7 +13,7 @@ Yale CAS provides SSO authentication.
 ```
 React (Vite) -> Express (Passport.js) -> MongoDB Atlas + Meilisearch
                     |
-            External APIs: Yale CAS, Yalies, Yale Directory, CourseTable, OpenAI via Meilisearch embedder
+            External APIs: Yale CAS, Yalies, CourseTable, OpenAI via Meilisearch embedder
 ```
 
 The server follows **Routes -> Middleware -> Controllers -> Services -> Models**.
@@ -167,7 +167,7 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts`                                                    | Scraper/source health and paper-quality scoring.                     |
 | `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts`                                          | Student visibility tiering and repair queue.                         |
 | `programClassifier.ts`                                                                                                                      | Program classification.                                              |
-| `directoryService.ts` / `yaliesService.ts` / `courseTableService.ts`                                                                        | External integrations.                                               |
+| `yaliesService.ts` / `courseTableService.ts`                                                                                               | External integrations.                                               |
 
 ## Naming conventions
 
@@ -206,7 +206,6 @@ Use `docs/data-refresh-runbook.md` for the canonical commands.
 | -------------- | ------------------------------------------------------ | ---------------------------------------------- |
 | Yale CAS SSO   | Authentication                                         | `passport.ts`                                  |
 | Yalies API     | Student, faculty and staff lookup at login             | `yaliesService.ts`                             |
-| Yale Directory | Faculty fallback lookup; endpoint currently 404s       | `directoryService.ts`                          |
 | CourseTable    | Professor course data                                  | `courseTableService.ts`                        |
 | Meilisearch    | Hybrid search                                          | `meiliClient.ts`                               |
 | OpenAI         | Embeddings via Meilisearch embedder and LLM extractors | Meilisearch/index setup and scraper extractors |

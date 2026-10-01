@@ -74,7 +74,7 @@ This probe lane is the safety net behind the cheaper sweep-time rule in the mate
 ### `Account` (`accounts`)
 
 The private login principal: the student or user who logs in.
-[`server/src/models/account.ts`](../server/src/models/account.ts) defines `netid` (unique), `email`, `status`, an optional `lastLoginAt`, an optional descriptive `profile` (name, `userType`, faculty title/department or student college/year/major) persisted from the Yalies/Directory record at login, and `archived`.
+[`server/src/models/account.ts`](../server/src/models/account.ts) defines `netid` (unique), `email`, `status`, an optional `lastLoginAt`, an optional descriptive `profile` (name, `userType`, faculty or staff title/department, or student college/year/major) persisted from the Yalies record at login, and `archived`.
 Authentication is wired onto `Account` (#367): CAS, dev-login, and the local bypass resolve-or-create an `Account` by netid and stamp `lastLoginAt`.
 The legacy `User` model has been retired (#2014): no runtime code reads or writes `User`, and identity lives entirely on `Account` (login) plus `Researcher` (public identity).
 Dropping the now-orphaned `users` collection is a separate, human-gated database cleanup.
@@ -502,7 +502,7 @@ This metadata is a planning and review contract, not a substitute for evidence. 
 
 ORCID may disambiguate a Yale-confirmed researcher and support a reviewed outbound profile link, but it must not act as an account-creation shortcut or a works feed.
 
-Create a `Researcher` only when a research signal attaches the person to the corpus (a roster or PI/director role on a research entity); bare directory identity (a Yalies/Directory record with a netid and a faculty-ish title) no longer mints a `Researcher` or `Account` on its own.
+Create a `Researcher` only when a research signal attaches the person to the corpus (a roster or PI/director role on a research entity); bare directory identity (a Yalies record with a netid and a faculty-ish title) no longer mints a `Researcher` or `Account` on its own.
 Directory identity instead enriches an already-existing researcher: it fills profile fields and stamps the linked account's own netid on `Researcher.identifiers.netid` (the disambiguation spine, replacing the retired scraper-minted `Account` lookup), but never creates the person record.
 The [`Researcher`](#researcher-researchers) section owns how that identity is resolved and which netid may be stamped.
 Accounts are created only at login; the pruned directory people become login-provisioned identities if and when they actually sign in.

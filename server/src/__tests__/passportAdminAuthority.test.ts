@@ -14,11 +14,6 @@ vi.mock('../services/yaliesService', () => ({
   lookupYalieByNetid: vi.fn(),
 }));
 
-vi.mock('../services/directoryService', () => ({
-  fetchFromDirectory: vi.fn(),
-  isFacultyTitle: vi.fn(() => false),
-}));
-
 vi.mock('../services/analyticsService', () => ({
   logEvent: vi.fn(),
 }));

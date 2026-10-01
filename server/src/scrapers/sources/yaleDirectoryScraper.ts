@@ -160,7 +160,7 @@ export function isSubordinateResearchRank(title: string | undefined | null): boo
 }
 
 /**
- * Pure helper: does this title look faculty? Mirrors directoryService.isFacultyTitle
+ * Pure helper: does this title look faculty? Mirrors the login classifier in utils/facultyTitle.ts
  * but with a slightly broader vocabulary for the bulk-roster case.
  */
 export function isFacultyTitle(title: string | undefined | null): boolean {
