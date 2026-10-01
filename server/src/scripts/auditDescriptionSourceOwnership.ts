@@ -33,6 +33,7 @@ import {
   classifyDescriptionSourceOwnership,
   type DescriptionSourceOwnershipFinding,
 } from './auditDescriptionSourceOwnershipCore';
+import { connectScriptMongo } from '../db/connections';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -53,8 +54,7 @@ async function main(): Promise<void> {
   if (!url) throw new Error('MONGODBURL is required');
   console.log(`Reading ${summarizeMongoUrl(url)}`);
 
-  mongoose.set('autoIndex', false);
-  await mongoose.connect(url);
+  await connectScriptMongo(url);
   try {
     // The shared-URL and institutional-host sets are properties of the whole corpus,
     // so they are derived from every live row rather than from the served slice. A set

@@ -19,6 +19,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { getSourceCoverage } from './sourceCoverageRegistry';
 import { RETIRED_SOURCE_NAMES } from './sourceDispatch';
 import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -675,7 +676,7 @@ async function main(): Promise<void> {
     throw new Error('MONGODBURL not set');
   }
   const guard = assertSeedSourcesWriteAllowed(options);
-  await mongoose.connect(url);
+  await connectScriptMongo(url);
   try {
     const report = await seedSources(options);
     const output = buildSeedSourcesOutput(report, {

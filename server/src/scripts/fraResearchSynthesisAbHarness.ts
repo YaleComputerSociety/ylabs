@@ -69,6 +69,7 @@ import {
   servedFullDescription,
   type FraProfileSynthesisEntity,
 } from './fraProfileSynthesisLane';
+import { connectScriptMongo } from '../db/connections';
 
 dotenv.config();
 
@@ -195,7 +196,7 @@ async function main(): Promise<void> {
     ? resolveSafeJsonReportOutputPath(argValue('--output') as string)
     : '';
 
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   // The lane's own cohort and candidate pages, not a copy of them: a harness that
   // reads only what a row cites, or only rows already serving a bio, measures a
   // narrower cohort than the lane visits, so its guardrail rates would describe

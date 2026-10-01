@@ -12,6 +12,7 @@ import {
 } from '../services/claimValidation/accessClaims';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -181,7 +182,7 @@ async function main(): Promise<void> {
     scriptName: 'scraper:claim-gate',
     mongoUrl,
   });
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   const artifacts = await loadResearchAccessArtifacts(options.limit);
   const report = buildClaimGateOutput(
     buildClaimGateReport({

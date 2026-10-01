@@ -62,6 +62,7 @@ import {
   type ServedCorpusScoreboardEnvironment,
   type ServedResearchEntityRow,
 } from './servedCorpusScoreboardCore';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -158,8 +159,7 @@ async function scoreboardForEnvironment(
         ).map((doc) => String((doc as any).slug || ''))
       : [];
 
-    mongoose.set('autoIndex', false);
-    await mongoose.connect(mongoUrl);
+    await connectScriptMongo(mongoUrl);
     const rows: ServedResearchEntityRow[] = [];
     let reachability: { reachable: number; servesNoPageSlugs: string[] } | undefined;
     try {

@@ -16,6 +16,7 @@ import {
 import { resolveMongoDatabaseName, summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { connectScriptMongo } from '../db/connections';
 
 dotenv.config();
 
@@ -250,7 +251,7 @@ async function main(args: NormalizeFingerprintsArgs): Promise<void> {
   const databaseName = resolveMongoDatabaseName(mongoUrl);
   assertNormalizeFingerprintsApplyAllowed({ ...args, databaseName });
 
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   try {
     const fingerprints = await rewriteFingerprints(args, args.apply);
     const collapse = await collapseActiveDuplicates(args, args.apply);

@@ -18,6 +18,7 @@ import {
   type ProvenanceRepairTally,
   type ResolvedProvenanceReference,
 } from './backfillFieldProvenanceObservationIdCore';
+import { connectScriptMongo } from '../db/connections';
 
 dotenv.config();
 
@@ -89,7 +90,7 @@ async function main(args: BackfillProvenanceObservationIdArgs): Promise<void> {
   const dbLabel = summarizeMongoUrl(mongoUrl);
   assertBackfillProvenanceObservationIdApplyAllowed(args, dbLabel, environment);
 
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
 
   const rows = (await ResearchEntity.find({ fieldProvenance: { $exists: true, $ne: {} } })
     .select('_id fieldProvenance')

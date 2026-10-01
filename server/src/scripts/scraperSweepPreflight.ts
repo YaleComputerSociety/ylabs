@@ -329,8 +329,8 @@ export async function runSweepPreflight(input: {
   const connect =
     input.connect ??
     (async (mongoUrl: string) => {
-      const { default: mongoose } = await import('mongoose');
-      return mongoose.createConnection(mongoUrl).asPromise();
+      const { createScriptMongoConnection } = await import('../db/connections');
+      return createScriptMongoConnection(mongoUrl);
     });
 
   let storage: ClusterStorage | undefined;

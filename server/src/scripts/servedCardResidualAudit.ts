@@ -48,6 +48,7 @@ import {
   formatServedCardResidualAudit,
   type ServedCardResidualRow,
 } from './servedCardResidualAuditCore';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -168,8 +169,7 @@ async function main(): Promise<void> {
     ).map((doc) => String((doc as any).slug || ''));
     console.log(`tier-admitted rows: ${slugs.length}`);
 
-    mongoose.set('autoIndex', false);
-    await mongoose.connect(url);
+    await connectScriptMongo(url);
     const walked = new Array<ServedCardResidualRow | null>(slugs.length).fill(null);
     let servesNoPage = 0;
     try {

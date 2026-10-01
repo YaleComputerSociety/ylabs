@@ -45,7 +45,6 @@ export function parseAuditCrossDomainAreaCollisionsArgs(argv: string[]): { outpu
 
 async function main(): Promise<void> {
   const args = parseAuditCrossDomainAreaCollisionsArgs(process.argv.slice(2));
-  mongoose.set('autoIndex', false);
   await initializeConnections();
 
   const rows = (await ResearchEntity.find({

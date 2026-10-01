@@ -66,6 +66,7 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2695,7 +2696,7 @@ async function main() {
     scriptName: 'research-entity:dedupe-by-pi',
     mongoUrl: process.env.MONGODBURL,
   });
-  await mongoose.connect(process.env.MONGODBURL);
+  await connectScriptMongo(process.env.MONGODBURL);
 
   const usesNonPiLane = officialLabUrlOnly || profileLabUrlOnly || orgNameOnly || websiteUrlOnly;
   const unattendedUrlIdentityLane = profileLabUrlOnly || websiteUrlOnly;

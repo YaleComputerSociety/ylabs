@@ -224,7 +224,6 @@ async function main(): Promise<void> {
     scriptName: 'research-entity:recheck-description-grounding',
   });
 
-  mongoose.set('autoIndex', false);
   await initializeConnections();
   const now = new Date();
 

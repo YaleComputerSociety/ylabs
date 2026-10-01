@@ -59,6 +59,7 @@ import {
   formatBiographyCardReachability,
   type ServedBiographyCardRow,
 } from './servedBiographyCardReachabilityAuditCore';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -235,8 +236,7 @@ async function main(): Promise<void> {
     ).map((doc) => String((doc as { slug?: unknown }).slug || ''));
     console.log(`tier-admitted rows: ${slugs.length}`);
 
-    mongoose.set('autoIndex', false);
-    await mongoose.connect(url);
+    await connectScriptMongo(url);
     const rows: ServedBiographyCardRow[] = [];
     let servesNoPage = 0;
     let laneReach: SynthesisLaneReach | undefined;

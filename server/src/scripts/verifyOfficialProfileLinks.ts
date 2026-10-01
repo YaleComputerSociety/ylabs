@@ -27,6 +27,7 @@ import {
   type DepartmentLinkHealthSummary,
   type OfficialProfileLinkRow,
 } from './verifyOfficialProfileLinksCore';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -484,7 +485,7 @@ async function main(): Promise<void> {
     process.once(signal, () => flushAndExit(signal));
   }
 
-  await mongoose.connect(process.env.MONGODBURL as string);
+  await connectScriptMongo(process.env.MONGODBURL as string);
   try {
     latest = await runVerifyOfficialProfileLinks({
       apply: options.apply,

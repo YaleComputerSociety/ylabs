@@ -22,6 +22,7 @@ import {
   formatPersonPageCitationMirrorAudit,
   type AuditCitationRow,
 } from './auditPersonPageCitationMirrorsCore';
+import { connectScriptMongo } from '../db/connections';
 
 dotenv.config();
 
@@ -29,7 +30,7 @@ const run = async (): Promise<void> => {
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL is not set');
 
-  await mongoose.connect(mongoUrl, { maxPoolSize: 5 });
+  await connectScriptMongo(mongoUrl, { maxPoolSize: 5 });
 
   const filter = process.argv.includes('--all-tiers')
     ? { archived: { $ne: true } }

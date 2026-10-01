@@ -109,7 +109,6 @@ async function main(): Promise<void> {
   }
   console.log(`Environment: ${guard.environment}; mode: ${apply ? 'apply' : 'dry-run'}`);
 
-  mongoose.set('autoIndex', false);
   await initializeConnections();
   try {
     const candidates = (await ResearchEntity.find({

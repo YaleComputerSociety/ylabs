@@ -43,6 +43,7 @@ import {
   type CatchUpArgs,
   type CatchUpKeyReport,
 } from './catchUpMaterializeStrandedKeysCore';
+import { connectScriptMongo } from '../db/connections';
 
 dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -107,7 +108,7 @@ async function main(): Promise<void> {
     }`,
   );
 
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   try {
     const audit = await runOrphanObservationKeyAudit();
     const eligible = audit.classifications.filter(

@@ -76,6 +76,7 @@ export {
   scrapeCliCompletionOutcome,
   unmaterializedWriteRunWarning,
 } from './cliHelpers';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -281,7 +282,7 @@ Concurrency:
 
   const preflight = buildScraperCliPreflight(command, flags, url);
 
-  await mongoose.connect(url);
+  await connectScriptMongo(url);
 
   try {
     const connectedDbLabel = (): string =>

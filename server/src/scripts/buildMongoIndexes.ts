@@ -18,9 +18,9 @@ import mongoose from 'mongoose';
 import '../models';
 import {
   declaredIndexName,
-  mongoOptions,
   reportMissingMongoIndexes,
   reportUnbuildableDeclaredIndexSpecs,
+  connectScriptMongo,
 } from '../db/connections';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
@@ -78,7 +78,7 @@ async function main(): Promise<void> {
     mongoUrl,
   });
 
-  await mongoose.connect(mongoUrl, mongoOptions);
+  await connectScriptMongo(mongoUrl);
   try {
     const plans = planDeclaredIndexes(mongoose.connection);
     const declaredTotal = plans.reduce((sum, plan) => sum + plan.declaredIndexNames.length, 0);

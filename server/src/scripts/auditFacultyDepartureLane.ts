@@ -196,7 +196,6 @@ async function readRosterHealthHistory(): Promise<DepartmentRosterHealthHistoryE
 
 async function main(): Promise<void> {
   const options = parseFacultyDepartureLaneAuditArgs(process.argv.slice(2));
-  mongoose.set('autoIndex', false);
   await initializeConnections();
   try {
     const [rosterHealthObservations, rosterHealthRunIds] = await Promise.all([

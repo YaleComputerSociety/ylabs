@@ -92,7 +92,6 @@ async function main(): Promise<void> {
     `Environment: ${guard.environment}; mode: ${options.apply ? 'apply' : 'dry-run'}; kind: ${options.kind}`,
   );
 
-  mongoose.set('autoIndex', false);
   await initializeConnections();
   try {
     const doc = (await ResearchEntity.findOne({ slug: options.slug })
