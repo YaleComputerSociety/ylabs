@@ -64,6 +64,44 @@ function concatenatedWordRunCount(value: string): number {
   return (value.match(/[a-z][A-Z]/g) || []).length;
 }
 
+const SITE_MENU_ITEM_WORDS = new Set([
+  'home',
+  'about',
+  'research',
+  'academics',
+  'people',
+  'media',
+  'events',
+  'news',
+  'outreach',
+  'opportunities',
+  'contact',
+  'publications',
+  'resources',
+  'gallery',
+  'collections',
+]);
+
+const ROLE_WORD_PATTERN =
+  /\b(?:professor|lecturer|lector|instructor|scientist|scholar|researcher|director|fellow|chair|dean|provost|president|head|lead|assistant|associate|adjunct|affiliate|visiting|emeritus|emerita|postdoc|postdoctoral|student|candidate|manager|coordinator|administrator|officer|specialist|technician|technologist|analyst|engineer|counselor|librarian|curator|editor|advisor|adviser|nurse|physician|clinician|worker)\b/i;
+
+const TITLE_CONNECTIVE_WORDS = new Set(['and', 'of', 'in', 'the', 'at', 'to']);
+
+const MIN_SITE_MENU_ITEMS = 6;
+const MIN_SITE_MENU_ITEM_WORDS = 5;
+const MENU_ITEM_TOKEN_PATTERN = /^(?:[A-Z][A-Za-z'’-]*|&)$/;
+
+function isSpaceSeparatedSiteMenu(text: string): boolean {
+  const tokens = text.split(' ');
+  if (tokens.length < MIN_SITE_MENU_ITEMS) return false;
+  if (!tokens.every((token) => MENU_ITEM_TOKEN_PATTERN.test(token))) return false;
+  if (ROLE_WORD_PATTERN.test(text)) return false;
+  const words = tokens.map((token) => token.toLowerCase());
+  if (words.some((word) => TITLE_CONNECTIVE_WORDS.has(word))) return false;
+  const menuItemWords = new Set(words.filter((word) => SITE_MENU_ITEM_WORDS.has(word)));
+  return menuItemWords.size >= MIN_SITE_MENU_ITEM_WORDS;
+}
+
 /**
  * True when a candidate title looks like navigation, menu, or breadcrumb chrome
  * rather than a real job title.
@@ -194,7 +232,11 @@ export const MAX_PERSON_TITLE_LENGTH = 140;
  * Fail-closed sanitizer for the short person `title` field, applied at both the
  * scraper write path and the member/PI card render path (#708). Returns a
  * normalized title, or undefined when the candidate is navigation/menu chrome,
- * a site section/directory label (#1257), a raw email, a street-address
+ * a site section/directory label (#1257), a site menu read with spaces between
+ * its items (#4046: six or more capitalized single words, no role word or title
+ * connective, five or more of them menu items; person titles only, because
+ * entity names such as a lab or program name legitimately run on menu words),
+ * a raw email, a street-address
  * fragment, a phone/fax contact fragment, multi-sentence bio prose, or simply
  * longer than a role string ever runs (#740's over-140-char scraped-junk
  * heuristic), so a corrupted title never lands in storage nor renders from
@@ -205,6 +247,7 @@ export function sanitizePersonTitle(value: string | null | undefined): string | 
   if (!text) return undefined;
   if (text.length > MAX_PERSON_TITLE_LENGTH) return undefined;
   if (isNavMenuChromeTitle(text)) return undefined;
+  if (isSpaceSeparatedSiteMenu(text)) return undefined;
   if (isSectionLabelTitle(text)) return undefined;
   if (hasRawEmailAddress(text)) return undefined;
   if (hasStreetAddressFragment(text)) return undefined;

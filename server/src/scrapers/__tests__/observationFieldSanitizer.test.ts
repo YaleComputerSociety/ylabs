@@ -101,6 +101,18 @@ describe('sanitizeObservationField', () => {
       });
     });
 
+    it('keeps a lab or program name that runs on site menu words (#4046)', () => {
+      for (const name of [
+        'Digital Humanities Research Resources Collections Lab',
+        'Global Health Research Outreach Opportunities Program',
+      ]) {
+        expect(sanitizeObservationField('researchEntity', 'name', name)).toEqual({
+          value: name,
+          rejected: false,
+        });
+      }
+    });
+
     it('does not treat a plain user name as a research-home name', () => {
       expect(sanitizeObservationField('user', 'name', 'Ada Lovelace')).toEqual({
         value: 'Ada Lovelace',
