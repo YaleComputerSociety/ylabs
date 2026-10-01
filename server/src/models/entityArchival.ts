@@ -1,3 +1,5 @@
+import type mongoose from 'mongoose';
+
 import { studentVisibilityFields } from './studentVisibility';
 
 type StudentVisibilityField = keyof typeof studentVisibilityFields;
@@ -80,6 +82,11 @@ export const PI_DEDUPE_ARCHIVE_REASON = 'research-entity:dedupe-by-pi';
 export const SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON =
   'Merged into the corroborated survivor of its duplicate-url group: same lead person plus a corroborating name or shell asymmetry (#3326).';
 
+export const PI_DEDUPE_SELF_RELATIONSHIP_ARCHIVE_REASON =
+  'research-entity:dedupe-by-pi:self-relationship';
+export const SUPERSEDED_RELATIONSHIP_TYPE_ARCHIVE_REASON =
+  'materialize:relationship-type-superseded';
+
 export const GRANT_SHELL_FACULTY_PORT_ARCHIVE_REASON =
   'research-entity:port-grant-shells-to-faculty-profiles';
 
@@ -115,12 +122,58 @@ export const archivedEntityUpdate = (
   archivedReason: string,
   set: Record<string, unknown> = {},
 ): { $set: Record<string, unknown>; $unset: Record<string, ''> } => {
-  const reason = typeof archivedReason === 'string' ? archivedReason.trim() : '';
-  if (!reason) {
-    throw new Error('archivedEntityUpdate requires a non-empty archivedReason attribution.');
-  }
   return {
-    $set: { archived: true, archivedReason: reason, archivedAt: new Date(), ...set },
+    $set: attributedArchiveSet(archivedReason, set),
     $unset: clearedStudentVisibilityVerdict(),
   };
+};
+
+export const attributedArchiveSet = (
+  archivedReason: string,
+  set: Record<string, unknown> = {},
+): Record<string, unknown> => {
+  const reason = typeof archivedReason === 'string' ? archivedReason.trim() : '';
+  if (!reason) {
+    throw new Error('An archive requires a non-empty archivedReason attribution.');
+  }
+  return { archived: true, archivedReason: reason, archivedAt: new Date(), ...set };
+};
+
+const ARCHIVE_GUARDED_UPDATES: mongoose.MongooseQueryMiddleware[] = [
+  'updateOne',
+  'updateMany',
+  'findOneAndUpdate',
+];
+
+const updateSetFields = (update: Record<string, unknown>): Record<string, unknown> => ({
+  ...Object.fromEntries(Object.entries(update).filter(([key]) => !key.startsWith('$'))),
+  ...((update.$set as Record<string, unknown> | undefined) ?? {}),
+});
+
+/**
+ * Refuses an update that archives a row without saying why, and withdraws the old
+ * attribution from a row an update revives, so a live row never reads as archived
+ * by a lane that no longer holds it (#3935). Raw collection writes bypass this, so
+ * they must build their update with `attributedArchiveSet`.
+ */
+export const enforceArchiveAttribution = (schema: mongoose.Schema): void => {
+  schema.pre(ARCHIVE_GUARDED_UPDATES, function (this: mongoose.Query<unknown, unknown>) {
+    const update = this.getUpdate() as Record<string, unknown> | null;
+    if (!update || Array.isArray(update)) return;
+    const set = updateSetFields(update);
+    if (set.archived === true) {
+      const reason = typeof set.archivedReason === 'string' ? set.archivedReason.trim() : '';
+      if (!reason) {
+        throw new Error('An archive requires a non-empty archivedReason attribution.');
+      }
+      return;
+    }
+    if (set.archived === false) {
+      const unset = (update.$unset as Record<string, unknown> | undefined) ?? {};
+      for (const field of ARCHIVE_ATTRIBUTION_FIELDS) {
+        if (!(field in set)) unset[field] = '';
+      }
+      update.$unset = unset;
+    }
+  });
 };

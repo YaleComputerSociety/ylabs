@@ -487,6 +487,10 @@ The blast radius is confined to queries containing a catalog phrase: `machine le
 - Prefer first-class collections for access signals and other product-model records.
 - Spell "live" as `archived: { $ne: true }` by importing `LIVE_ENTITY_FILTER` or `liveEntityFilter` from `server/src/models/entityArchival.ts`, never as a local constant.
   An archived row stores no student-visibility verdict, so a count grouped by `studentVisibilityTier` must read the same with and without the `archived` filter; `research-entity:archived-visibility-verdicts --assert-clean` is the check.
+- Archive a `Signal` or a `ResearchEntityRelationship` with `attributedArchiveSet(reason)` from `server/src/models/entityArchival.ts`, which stamps `archived`, `archivedReason` and `archivedAt` and refuses an empty reason; both schemas model the two fields, so a write through the model keeps them (#3935).
+  Both schemas register `enforceArchiveAttribution`, so a model update that archives either one with no `archivedReason` throws, and a model update that sets `archived: false` unsets the old attribution.
+  A raw collection write bypasses that guard, so it must build its `$set` with `attributedArchiveSet` too, and `models/__tests__/signalAndRelationshipArchivesAreAttributed.test.ts` fails on a raw or model update of either collection whose `$set` archives with no `archivedReason`.
+  The archives that predate it are unattributed history and are never backfilled, because nothing records who made them: on Development on 2026-09-30, 3,659 of 7,776 signals and 601 of 612 relationship edges where `archived` is true have no `archivedReason`, absent or empty.
 - If a schema change affects Research search, update the relevant index config and rebuild path.
 - Add a backfill script in `server/src/scripts/` when existing data needs transformation.
 - Migration scripts run with `npx tsx --transpile-only <script>.ts`.

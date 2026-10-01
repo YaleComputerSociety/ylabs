@@ -13,6 +13,7 @@ import {
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { attributedArchiveSet } from '../models/entityArchival';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -423,6 +424,8 @@ function plannedWriteCount(plans: DuplicateAccessSignalRepairPlan[]): number {
   return plans.reduce((sum, plan) => sum + plan.duplicateSignalIds.length, 0);
 }
 
+const DUPLICATE_ACCESS_SIGNAL_ARCHIVE_REASON = 'access-signals:repair-duplicates';
+
 async function applyPlans(plans: DuplicateAccessSignalRepairPlan[]) {
   const now = new Date();
   const signalIds = plans
@@ -432,7 +435,11 @@ async function applyPlans(plans: DuplicateAccessSignalRepairPlan[]) {
   const signals = signalIds.length
     ? await Signal.updateMany(
         { _id: { $in: signalIds }, archived: { $ne: true } },
-        { $set: { archived: true, lastMaterializedAt: now } },
+        {
+          $set: attributedArchiveSet(DUPLICATE_ACCESS_SIGNAL_ARCHIVE_REASON, {
+            lastMaterializedAt: now,
+          }),
+        },
       )
     : { modifiedCount: 0 };
   return {

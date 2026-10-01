@@ -11,7 +11,9 @@ import { ResearchEntity } from '../models/researchEntity';
 import { DERIVED_RESEARCH_AREA_SOURCE_NAME } from '../models/fieldProvenanceBacking';
 import {
   archivedEntityUpdate,
+  attributedArchiveSet,
   DEPT_ROSTER_SHELL_FOLD_ARCHIVE_REASON,
+  SUPERSEDED_RELATIONSHIP_TYPE_ARCHIVE_REASON,
 } from '../models/entityArchival';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import {
@@ -3787,7 +3789,7 @@ async function materializeResearchEntityRelationship(
         relationshipType: { $ne: resolvedRelationshipType },
         archived: { $ne: true },
       },
-      { $set: { archived: true } },
+      { $set: attributedArchiveSet(SUPERSEDED_RELATIONSHIP_TYPE_ARCHIVE_REASON) },
     );
   }
 

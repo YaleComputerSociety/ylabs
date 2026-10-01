@@ -25,6 +25,7 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { attributedArchiveSet } from '../models/entityArchival';
 
 dotenv.config();
 
@@ -507,6 +508,8 @@ function planSummary(plan: ArchivedEntityArtifactRepairPlan) {
   };
 }
 
+const ARCHIVED_ENTITY_ARTIFACT_ARCHIVE_REASON = 'research-entity:repair-archived-artifacts';
+
 function retireArtifactUpdate(
   artifactType: ArchivedEntityArtifactType,
   note: string,
@@ -521,7 +524,11 @@ function retireArtifactUpdate(
       },
     };
   }
-  return { $set: { archived: true, lastMaterializedAt: now } };
+  return {
+    $set: attributedArchiveSet(ARCHIVED_ENTITY_ARTIFACT_ARCHIVE_REASON, {
+      lastMaterializedAt: now,
+    }),
+  };
 }
 
 async function retireArtifact(

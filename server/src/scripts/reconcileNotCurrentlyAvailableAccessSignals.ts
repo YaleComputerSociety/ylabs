@@ -17,6 +17,7 @@ import {
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { attributedArchiveSet } from '../models/entityArchival';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -234,13 +235,19 @@ async function buildReconcilePlan(limit: number): Promise<ReconcilePlanResult> {
   return { plans, lockedSkipped, stillValid };
 }
 
+const NOT_CURRENTLY_AVAILABLE_ARCHIVE_REASON = 'access-signals:reconcile-not-currently-available';
+
 async function applyPlans(plans: StaleSignalPlan[]): Promise<{ archivedSignals: number }> {
   if (plans.length === 0) return { archivedSignals: 0 };
   const now = new Date();
   const ids = plans.map((plan) => new mongoose.Types.ObjectId(plan.signalId));
   const result = await Signal.updateMany(
     { _id: { $in: ids }, archived: { $ne: true } },
-    { $set: { archived: true, lastMaterializedAt: now } },
+    {
+      $set: attributedArchiveSet(NOT_CURRENTLY_AVAILABLE_ARCHIVE_REASON, {
+        lastMaterializedAt: now,
+      }),
+    },
   );
   return { archivedSignals: result.modifiedCount || 0 };
 }

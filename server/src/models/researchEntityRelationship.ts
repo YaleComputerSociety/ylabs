@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { archiveAttributionFields, enforceArchiveAttribution } from './entityArchival';
 
 /**
  * Only these two are reachable. `centersInstitutesScraper` hard-codes
@@ -54,6 +55,7 @@ const researchEntityRelationshipSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    ...archiveAttributionFields,
   },
   { timestamps: true },
 );
@@ -66,6 +68,8 @@ researchEntityRelationshipSchema.index({ sourceResearchEntityId: 1, relationship
 researchEntityRelationshipSchema.index({ targetResearchEntityId: 1, relationshipType: 1 });
 researchEntityRelationshipSchema.index({ sourceResearchEntityId: 1, archived: 1 });
 researchEntityRelationshipSchema.index({ targetResearchEntityId: 1, archived: 1 });
+
+enforceArchiveAttribution(researchEntityRelationshipSchema);
 
 export const ResearchEntityRelationship =
   mongoose.models.ResearchEntityRelationship ||
