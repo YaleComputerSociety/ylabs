@@ -7,6 +7,7 @@ import { initializeConnections } from '../db/connections';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
 import { buildSourceHealthRows, type SourceHealthRow } from '../services/sourceHealthService';
+import { isDirectScriptInvocation } from './directScriptInvocation';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -605,7 +606,7 @@ async function main(): Promise<void> {
   if (options.strict && riskCounts.error > 0) process.exitCode = 1;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+if (isDirectScriptInvocation(import.meta.url, 'sourceHealth')) {
   main()
     .catch((error) => {
       console.error(sanitizeLogValue(error));
