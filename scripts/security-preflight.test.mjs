@@ -2,6 +2,7 @@ import nodeAssert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -702,6 +703,62 @@ test('all-environment dependency audit covers every workspace recursively', () =
   assert.deepEqual(audit.directories, ['.', 'server', 'client']);
   assert.deepEqual(audit.auditArgs, ['--recursive', '--severity', 'moderate']);
   assert.match(ciWorkflow, /run:\s*yarn security:audit:all-environments/);
+});
+
+const PATCHED_BRACE_EXPANSION_BY_MAJOR = new Map([
+  [1, [1, 1, 21]],
+  [2, [2, 1, 7]],
+  [3, [3, 0, 9]],
+  [5, [5, 0, 12]],
+]);
+
+const lockfileVersionsOf = (lockfileText, packageName) =>
+  [
+    ...lockfileText.matchAll(
+      new RegExp(`^"${packageName}@[^\\n]*":\\n  version: ([0-9.]+)$`, 'gm'),
+    ),
+  ].map((match) => match[1].split('.').map(Number));
+
+const isAtLeast = (version, floor) => {
+  for (let index = 0; index < floor.length; index += 1) {
+    if (version[index] !== floor[index]) return version[index] > floor[index];
+  }
+  return true;
+};
+
+test('every locked brace-expansion is on a patched release of its own major', () => {
+  for (const lockfile of ['../yarn.lock', '../server/yarn.lock', '../client/yarn.lock']) {
+    const versions = lockfileVersionsOf(
+      fs.readFileSync(new URL(lockfile, import.meta.url), 'utf8'),
+      'brace-expansion',
+    );
+    assert.ok(
+      versions.length > 0,
+      `${lockfile} locks no brace-expansion, so this pin reads nothing`,
+    );
+    for (const version of versions) {
+      const floor = PATCHED_BRACE_EXPANSION_BY_MAJOR.get(version[0]);
+      assert.ok(
+        floor,
+        `${lockfile} locks brace-expansion ${version.join('.')}, a major with no patched floor here`,
+      );
+      assert.ok(
+        isAtLeast(version, floor),
+        `${lockfile} locks brace-expansion ${version.join('.')}, below the patched ${floor.join('.')}`,
+      );
+    }
+  }
+});
+
+test('the minimatch the root lint toolchain loads can expand a brace set', () => {
+  const requireFromConfigArray = createRequire(
+    new URL('../node_modules/@eslint/config-array/package.json', import.meta.url),
+  );
+  const minimatch = requireFromConfigArray('minimatch');
+  const match = typeof minimatch === 'function' ? minimatch : minimatch.minimatch;
+
+  assert.equal(match('a.js', '*.{js,ts}'), true);
+  assert.equal(match('a.md', '*.{js,ts}'), false);
 });
 
 test('the advisory verdict is published as an artifact, never as a merge-gating check', () => {

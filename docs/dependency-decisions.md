@@ -4,6 +4,17 @@ Standing decisions about dependency advisories and version pins, so a Dependabot
 The gate is moderate and above: `yarn security:audit:production` plus the recursive audits in `.github/workflows/ci.yml`.
 A low advisory below that gate is a judgement call, and the ones we have judged are recorded here.
 
+## 2026-09-30: `brace-expansion` is pinned per major in the root project (#4033)
+
+The `brace-expansion` advisories (GHSA-q2hr-2g5m-vwhr, GHSA-qhr7-859c-m2p7) are patched on every major line: 1.1.21, 2.1.7, 3.0.9, and 5.0.12.
+The root `resolutions` once forced 5.0.12 onto every consumer, which included the `minimatch` 3 that ESLint's `@eslint/config-array` loads.
+`minimatch` 3 calls `brace-expansion` as a CommonJS default function and 5.x exports only named bindings, so any brace glob crashed ESLint with `expand is not a function`.
+
+The root override is now keyed by the declared range, `brace-expansion@npm:^1.1.7` to 1.1.21 and `brace-expansion@npm:^5.0.5` to 5.0.12, so each consumer gets a patched release of the major it was written for.
+The `server` and `client` pins stay unscoped, because both resolve only `minimatch` 10.
+`scripts/security-preflight.test.mjs` pins both halves: every locked `brace-expansion` in the three lockfiles must be on the patched floor of its own major, and the `minimatch` ESLint loads must match a brace set.
+A new parent that declares a range neither key covers resolves unpinned, and the first of those guards fails if the version it locks is not patched.
+
 ## 2026-09-30: Action pins are maintained by a grouped Dependabot updater (#3914)
 
 Every third-party action is pinned to a commit SHA, which is right, and which also means nothing proposes an update to it.
