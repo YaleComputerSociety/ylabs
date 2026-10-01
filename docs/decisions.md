@@ -5,6 +5,29 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-01: Three Undergraduate-Access Fields No Lane Fills Are No Longer Served (#3579)
+
+Five undergraduate-access fields were served on every research entity, and three of them were empty on every served row.
+Measured through `POST /api/research/search` on Development, all 3,426 served rows: `undergradEvidenceQuote` non-empty on 260, `pastUndergradAdvisees` on 5, and `offersIndependentStudy`, `independentStudyCourses` and `typicalUndergradRoles` on 0 of the 3,417 rows that carried the key.
+
+The question was whether a lane had the evidence and dropped it, because that would be a lane bug to fix rather than a field to stop serving.
+It does not.
+Across the whole observation log, superseded rows included and both identity forms counted, `typicalUndergradRoles` and `independentStudyCourses` have 0 observations.
+`offersIndependentStudy` has 13, all from `course-based-research-pathways`, all keyed by `entityKey`, and all on archived `COURSE_SEQUENCE` rows whose stored value is already `true`, so the materializer wrote what the lane said and the rows are simply not served.
+`undergradRoleEvidenceQuote` is the nearest live evidence, and it is a free-text quote rather than a role list, so turning it into role labels would be a new extraction lane, not a wiring fix.
+
+Decided: the public projection (`OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS` in `server/src/services/researchEntityDto.ts`) no longer serves the three fields, and the client type no longer declares them.
+The browse card's entity fallback no longer derives "Student project evidence" from the independent-study pair, because it was reading two fields that never held a value; the pathway arm that derives that badge from `FACULTY_SUPERVISES_STUDENT_PROJECTS` is unchanged.
+The client rendered nothing for an empty field before this change, measured headlessly on a served detail page, so a student sees no difference; the change removes a payload that asserted three empty facts on every row.
+
+`undergradEvidenceQuote` and `pastUndergradAdvisees` are served exactly as before: a simultaneous pre-fix and post-fix read of all 3,426 rows found 0 differences in either field or in `hasUndergradHostingEvidence`.
+
+The stored fields and the `offersIndependentStudy` index stay, deliberately.
+The access materializer still derives `CREDIT_FORMALIZATION_POSSIBLE` from `offersIndependentStudy` and `independentStudyCourses` observations, and `course-based-research-pathways` still writes the flag, so this is not a vertical with no producer the way the logistics enums were.
+A lane that later fills one of these fields with evidence restores it by adding it back to the projection, with a measured served count, rather than by the projection waiting for it.
+
+This is a serve-time change and reaches students on deploy; no data operation is required.
+
 ## 2026-09-29: A Stored Topic List No Evidence States Is Extended By Derivation, Never Replaced (#3836)
 
 #3836 traced every served chip that no live observation backs to one mechanism: `researchAreas` is not clear-on-empty, and the description fallback returned early on any non-empty stored list, so a list whose evidence was retired, rolled back, or never existed had no owner and no pass could replace it.

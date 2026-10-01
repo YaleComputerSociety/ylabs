@@ -28,7 +28,6 @@ const baseGroup: ResearchGroup = {
   departments: ['Computer Science', 'Mathematics'],
   researchAreas: ['Theoretical CS'],
   school: 'School of Engineering & Applied Science',
-  typicalUndergradRoles: [],
   prerequisiteCourses: [],
   creditOptions: [],
   fundingPrograms: [],

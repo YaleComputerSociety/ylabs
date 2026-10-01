@@ -129,7 +129,8 @@ It appeared on 0 of 24 browse cards, and the cause was neither coverage nor layo
 `ResearchHomeCard` derived its badges only from `pathways`, and the browse response from `/api/research/search` carries no `pathways` and no `wayInBadges` field, so the signals were always empty and the block that renders them was never entered.
 The same response does carry the evidence, in the entity shape, so the card could not see data that had already reached it.
 Fixed in #3555 by deriving from the entity fields as a fallback, and then **withdrawn** in #3569's wake.
-The corpus-wide figure was 270 of 800 sampled rows, 33.8%, and every one of those came from `undergradEvidenceQuote` alone, because the other four fields are empty on ~100% of rows and two of them have no writing lane at all (#3579).
+The corpus-wide figure was 270 of 800 sampled rows, 33.8%, and every one of those came from `undergradEvidenceQuote` alone.
+Of the other four fields, `pastUndergradAdvisees` is filled on 5 served rows and the remaining three were empty on every one, so they are no longer served at all (`docs/decisions.md`, 2026-10-01, #3579).
 #3569 then measured that field's dominant source, `lab-microsite-undergrad-llm`, at a badge precision of 0.36 with a Wilson 95% upper bound of 0.50, and found that 19 of 50 sampled quotes were the model's own absence commentary, "No explicit mention of undergraduates on the provided pages", which passed the plausibility regex and switched the badge **on** exactly where the lane had found nothing.
 So the badge is off the browse card again, and it is off for the right reason this time.
 
