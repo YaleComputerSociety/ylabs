@@ -1,12 +1,11 @@
 /**
  * Deletes the directory-lane observations of fields nothing reads: a person's phone
- * number and residential college from the Yalies lane, and the physical-location
- * values a retired CSV lane left behind (#4161).
+ * number and residential college from the Yalies lane (#4161).
  *
  * The lane stopped emitting them in the same change, so this clears what earlier runs
  * already stored. The selection is fixed in this file rather than taken from the
  * command line: an operator-supplied field could name one a materializer reads, and
- * the point of the operation is that these three have no reader at all.
+ * the point of the operation is that these two have no reader at all.
  *
  * An observation a served document cites, through a `fieldProvenance` entry or a signal's
  * evidence, is history and is never deleted: the run reports it as protected and leaves it
@@ -44,7 +43,6 @@ export interface UnreadContactFieldSelector {
 export const UNREAD_DIRECTORY_CONTACT_SELECTORS: UnreadContactFieldSelector[] = [
   { field: 'phone', sourceName: 'yale-directory' },
   { field: 'college', sourceName: 'yale-directory' },
-  { field: 'physicalLocation', sourceName: 'yale-directory-csv' },
 ];
 
 export interface PurgeUnreadDirectoryContactArgs {
