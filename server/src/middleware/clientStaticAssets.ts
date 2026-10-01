@@ -30,18 +30,6 @@ function blockSourceMapAssetRequests(
   return next();
 }
 
-function setOAuthCallbackAssetCacheHeaders(
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction,
-) {
-  if (req.path === '/oauth-callback.html' || req.path === '/oauth-callback.js') {
-    setNoStoreHeaders(res);
-  }
-
-  return next();
-}
-
 function setContentHashedAssetCacheHeaders(res: express.Response) {
   if (isContentHashedAssetPath(res.req.path)) {
     res.setHeader('Cache-Control', IMMUTABLE_ASSET_CACHE_CONTROL);
@@ -52,7 +40,6 @@ export function createClientStaticAssets(clientDistPath: string): express.Router
   const router = express.Router();
   router.use((req, _res, next) => (isApiPath(req.path) ? next('router') : next()));
   router.use(blockSourceMapAssetRequests);
-  router.use(setOAuthCallbackAssetCacheHeaders);
   router.use(
     express.static(clientDistPath, {
       dotfiles: 'ignore',

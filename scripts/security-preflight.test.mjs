@@ -1980,40 +1980,16 @@ test('API responses default to private no-store cache headers', () => {
   );
 });
 
-test('OAuth callback assets are served with no-store cache headers', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/middleware/clientStaticAssets.ts', import.meta.url),
-    'utf8',
-  );
-  const callbackHtmlSource = fs.readFileSync(
-    new URL('../client/public/oauth-callback.html', import.meta.url),
-    'utf8',
-  );
-  const callbackHtmlDistUrl = new URL('../client/dist/oauth-callback.html', import.meta.url);
-  // dist/ is a build output; enforce the dist copy only when a build exists.
-  const callbackHtmlDistSource = fs.existsSync(callbackHtmlDistUrl)
-    ? fs.readFileSync(callbackHtmlDistUrl, 'utf8')
-    : null;
-
-  assert.match(source, /function setOAuthCallbackAssetCacheHeaders\(/);
-  assert.match(
-    source,
-    /req\.path === '\/oauth-callback\.html' \|\| req\.path === '\/oauth-callback\.js'/,
-  );
-  assert.match(source, /res\.setHeader\('Cache-Control', 'no-store, private, max-age=0'\)/);
-  assert.match(source, /res\.setHeader\('Pragma', 'no-cache'\)/);
-  assert.match(source, /res\.setHeader\('Surrogate-Control', 'no-store'\)/);
-  assert.match(source, /res\.setHeader\('Expires', '0'\)/);
-  assert.match(source, /res\.setHeader\('X-Content-Type-Options', 'nosniff'\)/);
-  for (const html of [callbackHtmlSource, callbackHtmlDistSource].filter(Boolean)) {
-    assert.match(html, /<meta name="referrer" content="no-referrer">/);
-    assert.match(html, /http-equiv="Content-Security-Policy"/);
-    assert.match(html, /default-src 'none'/);
-    assert.match(html, /script-src 'self'/);
-    assert.match(html, /connect-src 'none'/);
-    assert.match(html, /form-action 'none'/);
-    assert.match(html, /<script src="\/oauth-callback\.js"><\/script>/);
-    assert.doesNotMatch(html, /<script>[\s\S]*access_token/);
+test('no page in the client build receives an OAuth token', () => {
+  const publicDir = new URL('../client/public/', import.meta.url);
+  for (const file of fs.readdirSync(publicDir, { recursive: true })) {
+    if (!/\.(?:html|js)$/.test(file)) continue;
+    const source = fs.readFileSync(new URL(file, publicDir), 'utf8');
+    assert.doesNotMatch(
+      source,
+      /access_token|BroadcastChannel/,
+      `client/public/${file} reads an OAuth token or rebroadcasts one; a same-origin page that hands a token to any listener needs a caller and a review, not a static file (#4016)`,
+    );
   }
 });
 
