@@ -961,6 +961,45 @@ Widening coverage is not a configuration change.
 `dept-faculty-roster` holds 15 of the 26 and emits `websiteUrl` only when `entry.labUrl` is set, which looks like the contracted source's shape but is not: `labUrl` is left unset by several refusal paths, a website the same roster lists for two or more people among them, as well as by a genuinely empty entry, so testing `!entry.labUrl` would reintroduce exactly what #2647 measured, where 2 of 4 planned retractions were refusals of links the page still carried.
 An honest contract for a source needs a parse-time "no candidate was present at all" signal kept distinct from every refusal path and from every unread page, which is what `labSlotAttestation` is on the YSM and department-roster sources.
 
+### Fellowship field absence: how a program lane withdraws a value (#4230)
+
+A fellowship lane could not withdraw a value it used to assert, and three mechanisms each ruled themselves out.
+`fieldRetraction.ts` reads and writes `ResearchEntity` only; the clear-on-empty stage in `entityMaterializer.ts` is gated on `isResearchEntityObservationType`; and every fellowship field is latest-wins (`usesLatestWinsFingerprint`), which keeps a single live row per (source, entity, field) and so cannot record the two separate complete reads the research-entity quorum counts, making a declared witness field a false witness by construction.
+So the only correction available was asserting an empty value through an always-emit helper, which `yaleCollegeFellowshipsOfficeScraper` does for `contactOffice` (#4086): it works for a scalar string, says nothing a reader can tell from a failed parse, and has no form at all for a date.
+
+`scrapers/fellowshipFieldAbsence.ts` closes the gap with a positive claim rather than a second retraction engine.
+A lane states `assertsNoValueFor: [field]` on the `sourceKey` observation that witnesses its read of the row, built by `fellowshipAbsenceAssertion`.
+Three properties follow from latest-wins, and they are why this is smaller than the research-entity contract rather than a port of it.
+
+- The claim supersedes and withdraws itself. A later run's `sourceKey` row for the same source and entity supersedes the one carrying the claim whatever its value, so exactly one claim per source is ever live and a run that does not repeat it withdraws it. No cross-run quorum is countable, and none is needed: a claim has the same standing as the values the same read asserts, both being that lane's current statement about the page, and both superseded by its next read.
+- It withdraws only its own source's values. `withoutFellowshipFieldsAssertedAbsent` removes that source's live observations of the field before the pass resolves, so a rival lane's assertion still resolves and still wins. The claim is compared with that source's own live value for the field and the later read wins, which is the whole point: the stale value is live by construction, because the lane stopped emitting the field and nothing superseded it.
+- Nothing is retired. The observation log is untouched, the next pass re-derives the same answer from the same evidence, and a second pass over an unchanged corpus plans nothing. That makes this a derivation rather than a repair, so it needs no `manuallyLockedFields` entry to stick - which matters because a fellowship has no such field for a lane to respect.
+
+Silence still retracts nothing, for the reason #2647 measured: a scraper omits a field both when the page stopped stating it and when a guard refused what it saw, and the log cannot separate those.
+A fetch failure, a content-hash skip and a page the lane could not parse emit no observation at all, so they carry no claim, and a field a lane never reads is never declared.
+
+What may be declared is bounded by `assertDeclarableFellowshipAbsenceField`: never an identity field, because a row that cannot be found again cannot be corrected; never a field the operator owns, which is every key of `studentVisibilityFields` plus `audited`, since `studentVisibilityOverrideTier` is the operator's judgement about a row and fellowships carry no lock for a lane to respect; and never a field the classifier derives (`CLASSIFIER_DERIVED_FELLOWSHIP_FIELDS`), which the projection recomputes from facts on every resolve.
+`fellowshipAbsenceAssertion` also refuses a read that asserts both a value and no value for one field, which is what lets an array or a date be withdrawn at all: an ingest rejection of the value cannot manufacture a claim, because the claim rides on a different observation and the pair is refused at the point of emission.
+
+The projection clears the stored field only where nothing is left standing: no source states a value for it after the withdrawal, and the row stores one.
+It runs after the source-precedence stage, so a field that stage withheld reads as unstaged, and before the classifier, which already reads `unset` as a cleared value.
+An enrich-only source may not clear a field on another lane's row (`fellowshipAbsenceClearWithheldBySourcePrecedence`), for a sharper reason than the write rule: the Student Grants Database lane's pass is entered through its own fund key and never read the owning lane's observations, which sit under that lane's key, so its "nothing states this" is a fact about its own evidence rather than about the row.
+The materialize result reports the clears per row as `fellowshipAbsenceClears`, and a dry run plans them into `plannedUnset`.
+
+Two lanes declare a contract.
+`student-grants-database` may state no `applicationLink`, when the fund page's prose routes applications elsewhere and links nowhere (`FundApplicationRoute` `elsewhere-unlinked`), and no `yearOfStudy`, when the eligibility prose names a level the stored vocabulary cannot express ("graduate affiliates") and `resolveFundYearOfStudy` returns `unreconcilable`; a silent prose with an empty filter states nothing (#4216).
+`yale-college-fellowships-office` may state no `deadline`, decided by `programDeadlineStatement` over the program's own detail page: `none` when a sentence about applying says review is rolling or that there is no fixed deadline, or when its only date is marked as encouragement or preference; `stated` when a date is presented as a requirement, whether or not the lane can parse it; `unresolved` otherwise, including a page that says nothing about applying.
+That last branch is load-bearing and was measured: a CBEY grant page states "Applications are due on September 27" in wording `bestDeadlineText` does not match, so reading its silence as an absence would have cleared a real deadline, and a first draft whose suggestion marker matched "two letters of recommendation ... must be received by February 01" would have done the same.
+A catalog row or teaser never read the program page, so it states `unresolved`, and a merged candidate takes its statement from the page that owns the evidence.
+
+Measured on Development on 2026-10-01, from a dry-run `--explain` of each lane joined to the stored rows and the real `planFellowshipAbsenceClears`: the two lanes plan 19 claims, of which 15 clear a stored value - 13 `yearOfStudy`, 1 `applicationLink`, 1 `deadline`.
+All 13 `yearOfStudy` rows are Richter college fellowships whose eligibility prose admits "graduate affiliates" beside juniors, sophomores and first years, so each stored list named undergraduate years only and excluded students the page admits.
+The `applicationLink` row stored its own fund page while the page says application is via a common application it does not link.
+The `deadline` row is the one served program whose page answers "Is there a deadline for applications?" with rolling review and an encouraged December 15.
+The other 4 claims name a field the row already stores nothing for.
+Running the real `computeProgramStudentVisibility` on each of the 15 rows with the cleared field removed keeps every tier unchanged, and none of the rows carries a `studentVisibilityOverrideTier`.
+Both gold benchmarks replay to the same output fingerprint and the same per-field precision and recall as before the change (`programs-grants-gold-v1`, `programs-fellowships-office-gold-v1`).
+
 ### Value refusal: how a repair persists without freezing a field
 
 Retraction answers "the source stopped saying it". A refusal answers "the source still says it and it is wrong", which is a different question and was not answerable until #3167.

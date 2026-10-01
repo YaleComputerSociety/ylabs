@@ -67,6 +67,21 @@ function isEnrichOnlyWriteOnAnotherLanesRow(
  * another. Returned rather than applied so the projection keeps one place that edits
  * its `$set`.
  */
+/**
+ * Whether an enrich-only source's claim that a field has no value may clear it on this
+ * row (#4230). It may not on a row another lane owns, for a sharper reason than the
+ * write rule above: the database lane's pass is entered through its own fund key, so it
+ * never read the owning lane's observations, which sit under that lane's key. Its
+ * "nothing states this" is therefore a fact about its own evidence rather than about
+ * the row, and clearing on it would delete a value the owning lane still asserts.
+ */
+export function fellowshipAbsenceClearWithheldBySourcePrecedence(input: {
+  stored: Record<string, unknown> | null | undefined;
+  assertedBy: readonly string[];
+}): boolean {
+  return isEnrichOnlyWriteOnAnotherLanesRow(input.stored, input.assertedBy);
+}
+
 export function fellowshipFieldsWithheldBySourcePrecedence(input: {
   stored: Record<string, unknown> | null | undefined;
   staged: Record<string, unknown>;

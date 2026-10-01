@@ -30,6 +30,7 @@ import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene
 import { humanizeProgramLinkLabel } from '../../utils/programLinkLabel';
 import { normalizedProgramTitleKey, primaryConcatenatedAwardTitle } from '../../utils/programTitle';
 import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
+import { fellowshipAbsenceAssertion } from '../fellowshipFieldAbsence';
 import { eligibilitySentences, eligibilityStatement } from '../utils/programEligibilityStatement';
 import { resolveFundYearOfStudy } from '../utils/fundYearOfStudy';
 
@@ -148,6 +149,12 @@ export interface FellowshipCatalogCandidate {
   applicationLink?: string;
   links: Array<{ label: string; url: string }>;
   deadline?: Date;
+  /**
+   * What the read this candidate came from can say about a deadline, which is not the
+   * same question as whether it found one: only a whole program page read can state
+   * that there is none (#4230).
+   */
+  deadlineStatement: ProgramDeadlineStatement;
   applicationOpenDate?: Date;
   contactOffice?: string;
   contactEmail?: string;
@@ -827,12 +834,63 @@ function nearestDateTextForLabel(
   return closestBeforeMatch?.[0] || closestAfterMatch?.[0] || '';
 }
 
+const DEADLINE_LABEL =
+  /\bdeadline\s+for\s+submission\b|\b(?:application\s+)?deadline\b|\bapplications?\s+due\b|\b(?:apply|submit(?:\s+your\s+application)?|due)\s+by\b/i;
+
 function bestDeadlineText(text: string): string {
-  return nearestDateTextForLabel(
-    text,
-    /\bdeadline\s+for\s+submission\b|\b(?:application\s+)?deadline\b|\bapplications?\s+due\b|\b(?:apply|submit(?:\s+your\s+application)?|due)\s+by\b/i,
-    'after',
-  );
+  return nearestDateTextForLabel(text, DEADLINE_LABEL, 'after');
+}
+
+/**
+ * What a page says about having a deadline, as opposed to which date it names (#4230).
+ *
+ * `none` is a positive reading, and the page has to say it: a sentence about applying
+ * that states review is rolling or that there is no fixed deadline, or one whose only
+ * date is marked as encouragement or preference. Everything else is `unresolved`,
+ * including a page that says nothing about applying at all, because this lane's
+ * vocabulary is not the page's: a CBEY grant page measured on 2026-10-01 states
+ * "Applications are due on September 27" in wording `bestDeadlineText` does not match,
+ * so reading its silence as an absence would have cleared a real deadline (#2647 is the
+ * same mistake made from the other direction).
+ *
+ * A date the page presents as a requirement is `stated` whether or not this lane can
+ * parse it, so a date it misses keeps whatever the row already holds.
+ */
+export type ProgramDeadlineStatement = 'stated' | 'none' | 'unresolved';
+
+const PROGRAM_DATE = new RegExp(
+  `(?:${NAMED_PROGRAM_DATE_SOURCE}|${NUMERIC_PROGRAM_DATE_SOURCE})`,
+  'i',
+);
+
+const ABOUT_APPLICATION_TIMING =
+  /\bdeadlines?\b|\bdue\b|\bclos(?:e|es|ed|ing)\b|\blast day\b|\bfinal day\b|\bno later than\b|\bmust\s+(?:be\s+)?(?:submitted|received)\b|\bapply\s+by\b|\bsubmit\s+(?:your\s+application\s+)?by\b|\bapplications?\s+(?:are\s+)?(?:accepted|reviewed|open)\b|\breview(?:ed|ing|s)?\s+applications?\b/i;
+
+/**
+ * The marker has to govern the act of applying, not merely appear in the sentence: a
+ * bare `recommend\w*` read "two letters of recommendation ... must be received by
+ * February 01" as a suggestion, which turned a hard deadline into a claim that the page
+ * states none (measured on the CRISP REU page, 2026-10-01).
+ */
+const DEADLINE_IS_A_SUGGESTION =
+  /\b(?:encourag\w+|recommend(?:s|ed|ing)?|suggest\w+|prefer\w+|ideally|aim(?:ing)?\s+to)\b(?:\W+\w+){0,4}?\W+(?:to\s+)?(?:appl(?:y|ies|ying|ication)|submi(?:t|ts|tted|ssions?)|send|complete)\b/i;
+
+const STATES_NO_DEADLINE =
+  /\bno\s+(?:fixed|set|firm|specific|formal)?\s*deadlines?\b|\brolling\b|\bas\s+(?:we|they)\s+(?:are\s+)?receiv\w*\b|\byear[-\s]?round\b|\bcontinuous(?:ly)?\b/i;
+
+export function programDeadlineStatement(text: string): ProgramDeadlineStatement {
+  let suggestedDate = false;
+  let saysThereIsNone = false;
+  for (const sentence of normalizeWhitespace(text).split(/(?<=[.!?])\s+(?=\S)/)) {
+    if (!ABOUT_APPLICATION_TIMING.test(sentence)) continue;
+    const suggestion = DEADLINE_IS_A_SUGGESTION.test(sentence);
+    if (PROGRAM_DATE.test(sentence)) {
+      if (!suggestion) return 'stated';
+      suggestedDate = true;
+    }
+    if (STATES_NO_DEADLINE.test(sentence)) saysThereIsNone = true;
+  }
+  return suggestedDate || saysThereIsNone ? 'none' : 'unresolved';
 }
 
 function bestApplicationOpenText(text: string): string {
@@ -1126,6 +1184,9 @@ function candidateFromLink(
     applicationLink,
     links,
     deadline,
+    // A catalog row is not the program's page, so it cannot state that there is no
+    // deadline even when its own context names none.
+    deadlineStatement: 'unresolved',
     applicationOpenDate: undefined,
     contactOffice: administeringOfficeForPage(pageUrl),
     contactEmail: extractEmail(contextText) || extractEmail(pageContext),
@@ -1193,6 +1254,7 @@ function candidateFromMacmillanOpportunityRow(
     applicationLink,
     links,
     deadline,
+    deadlineStatement: 'unresolved',
     applicationOpenDate: undefined,
     contactOffice: contactOffice || administeringOfficeForPage(pageUrl),
     contactEmail: extractEmail(summaryText),
@@ -1251,6 +1313,7 @@ function candidateFromCbeyProgramRow(
     applicationLink,
     links,
     deadline: undefined,
+    deadlineStatement: 'unresolved',
     applicationOpenDate: undefined,
     contactOffice: administeringOfficeForPage(pageUrl),
     contactEmail: undefined,
@@ -1509,7 +1572,11 @@ function candidateFromDetailPage(
     2000,
   );
   const applicationInformation = applicationSectionText($);
-  const deadline = parseProgramDate(bestDeadlineText(bodyText), 'deadline', referenceDate);
+  const deadlineStatement = programDeadlineStatement(bodyText);
+  const deadline =
+    deadlineStatement === 'none'
+      ? undefined
+      : parseProgramDate(bestDeadlineText(bodyText), 'deadline', referenceDate);
   const applicationOpenDate = parseProgramDate(
     bestApplicationOpenText(bodyText),
     'opens',
@@ -1558,6 +1625,7 @@ function candidateFromDetailPage(
     applicationLink,
     links,
     deadline,
+    deadlineStatement,
     applicationOpenDate,
     contactOffice: administeringOfficeForPage(pageUrl),
     contactEmail: extractEmail(bodyText),
@@ -1637,6 +1705,7 @@ function mergeCandidates(
     applicationLink: applicationLink ? normalizeLinkUrl(applicationLink) : undefined,
     links,
     deadline: incoming.deadline || existing.deadline,
+    deadlineStatement: evidenceOwner.deadlineStatement,
     applicationOpenDate: incoming.applicationOpenDate || existing.applicationOpenDate,
     contactOffice: incoming.contactOffice || existing.contactOffice,
     contactEmail: incoming.contactEmail || existing.contactEmail,
@@ -1747,8 +1816,20 @@ function currentSourceObservation(
 }
 
 export function candidateToObservations(candidate: FellowshipCatalogCandidate): ObservationInput[] {
+  // Carried on the identity observation, which every read of this program emits, so a
+  // page the lane could not fetch or parse makes no claim, and the next read's own
+  // identity row supersedes this one and withdraws the claim with it (#4230).
+  const identity = observation('sourceKey', candidate.sourceKey, candidate);
+  const witness = identity && {
+    ...identity,
+    ...fellowshipAbsenceAssertion(
+      YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE,
+      !candidate.deadline && candidate.deadlineStatement === 'none' ? ['deadline'] : [],
+      candidate.deadline ? ['deadline'] : [],
+    ),
+  };
   return [
-    observation('sourceKey', candidate.sourceKey, candidate),
+    witness,
     observation('sourceName', YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE, candidate),
     observation('sourceUrl', candidate.sourceUrl, candidate),
     observation('sourceFingerprint', candidate.sourceFingerprint, candidate),

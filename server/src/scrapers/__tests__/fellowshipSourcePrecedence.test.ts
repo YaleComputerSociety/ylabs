@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { fellowshipFieldsWithheldBySourcePrecedence } from '../fellowshipSourcePrecedence';
+import {
+  fellowshipAbsenceClearWithheldBySourcePrecedence,
+  fellowshipFieldsWithheldBySourcePrecedence,
+} from '../fellowshipSourcePrecedence';
 
 const FUND_PAGE = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FUNDA';
 const OFFICIAL_PAGE = 'https://funding.yale.edu/fixture-fellowship';
@@ -131,5 +134,31 @@ describe('the fellowship database as an official source (#4284)', () => {
         resolved: { sourceUrl: { contributingSources: ['student-grants-database'] } },
       }),
     ).toContain('sourceUrl');
+  });
+});
+
+describe('fellowshipAbsenceClearWithheldBySourcePrecedence', () => {
+  it('refuses an enrich-only source clearing a field on another lane’s row', () => {
+    expect(
+      fellowshipAbsenceClearWithheldBySourcePrecedence({
+        stored: ownedRow,
+        assertedBy: ['student-grants-database'],
+      }),
+    ).toBe(true);
+  });
+
+  it('lets a row’s own lane clear a field, and lets the database clear its own row', () => {
+    expect(
+      fellowshipAbsenceClearWithheldBySourcePrecedence({
+        stored: ownedRow,
+        assertedBy: ['yale-college-fellowships-office'],
+      }),
+    ).toBe(false);
+    expect(
+      fellowshipAbsenceClearWithheldBySourcePrecedence({
+        stored: { ...ownedRow, sourceName: 'student-grants-database' },
+        assertedBy: ['student-grants-database'],
+      }),
+    ).toBe(false);
   });
 });
