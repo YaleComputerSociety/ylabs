@@ -88,7 +88,7 @@ SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
 ```
 
 There is no Beta or Production write command.
-The CLI refuses a `run`, `cron`, or `materialize` write against either, because both receive data only through promotion; [`docs/data-refresh-runbook.md`](./data-refresh-runbook.md) owns that sequence.
+The CLI refuses a `run` or `materialize` write against either, because both receive data only through promotion; [`docs/data-refresh-runbook.md`](./data-refresh-runbook.md) owns that sequence.
 
 ## Audit Checklist
 
