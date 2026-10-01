@@ -392,8 +392,23 @@ export interface LabSiteReading {
  * medical director and a co-director of a core, and none of them leads the lab
  * the row is about.
  */
-const LEAD_ROLE_PHRASE =
-  /(?:^| )(?:principal investigator|lab director|laboratory director|faculty director|executive director|founding director|led by|lab head)(?: |$)/;
+const LEAD_ROLE_PHRASES = [
+  'principal investigator',
+  'lab director',
+  'laboratory director',
+  'faculty director',
+  'executive director',
+  'founding director',
+  'led by',
+  'lab head',
+];
+
+const LEAD_ROLE_PHRASE = new RegExp(`(?:^| )(?:${LEAD_ROLE_PHRASES.join('|')})(?: |$)`);
+
+/** A slug carrying a section or role word is a nav label, never another person. */
+const NON_NAME_SLUG_WORDS = new Set(
+  [...NON_PERSON_SLUGS, ...LEAD_ROLE_PHRASES, 'manager'].flatMap((entry) => entry.split(/[- ]/)),
+);
 
 const LEAD_ROLE_WINDOW_CHARS = 60;
 
@@ -404,7 +419,7 @@ export function personNameTokensFromSlug(slug: string): string[] {
     .split(/[-_]+/)
     .filter(Boolean);
   if (tokens.length < 2 || tokens.some((token) => !/^[a-z]{2,}$/.test(token))) return [];
-  if (LEAD_ROLE_PHRASE.test(tokens.join(' '))) return [];
+  if (tokens.some((token) => NON_NAME_SLUG_WORDS.has(token))) return [];
   return tokens;
 }
 

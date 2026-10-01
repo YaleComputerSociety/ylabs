@@ -210,11 +210,25 @@ describe('slugNamesAnotherLead', () => {
         'lab-members',
         'Robin Quill',
         hay(
-          '<nav><a href="/people/principal-investigator">PI</a>' +
-            '<a href="/people/lab-members">Members</a></nav>',
+          '<nav><a href="/people/principal-investigator">Principal Investigator</a>' +
+            '<a href="/people/lab-members">Lab Members</a></nav>',
         ),
       ),
     ).toBe(false);
+  });
+
+  it('does not read a section or role slug as a person', () => {
+    for (const slug of ['lab-manager', 'graduate-students', 'research-staff', 'current-members']) {
+      expect(personNameTokensFromSlug(slug)).toEqual([]);
+    }
+  });
+
+  it('leaves a lead unstated when the page only labels its sections by role', () => {
+    const html =
+      '<nav><a href="/people/principal-investigator">Principal Investigator</a>' +
+      '<a href="/people/lab-members">Lab Members</a>' +
+      '<a href="/people/lab-manager">Lab Manager</a></nav>';
+    expect(judge(lead(), html).verdict).toBe('UNSTATED');
   });
 
   it('still counts a namesake with a different initial', () => {
