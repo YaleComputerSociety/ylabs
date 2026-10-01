@@ -26,11 +26,13 @@ export function programRoleOf(fellowship: Fellowship): string {
   return 'UNCLASSIFIED';
 }
 
-// The server derives this kind only for a page that states no application cycle
-// (server/src/services/departmentResearchGuidance.ts); changing that rule requires revisiting
-// every caller, because each one drops its application affordances on this answer.
-export function isDepartmentResearchGuidance(fellowship: Pick<Fellowship, 'programKind'>): boolean {
-  return fellowship.programKind === 'DEPARTMENT_RESEARCH_GUIDE';
+// The server serves the gate's own predicate (server/src/services/departmentResearchGuidance.ts)
+// rather than the kind alone, because a locked or stale kind can sit on a row admitted as an
+// application; every caller drops its application affordances on this answer.
+export function isDepartmentResearchGuidance(
+  fellowship: Pick<Fellowship, 'departmentResearchGuidance'>,
+): boolean {
+  return fellowship.departmentResearchGuidance === true;
 }
 
 export const DEPARTMENT_RESEARCH_GUIDANCE_LABEL = 'Department research guidance';

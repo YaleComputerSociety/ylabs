@@ -10,7 +10,7 @@ import { publicHttpUrl } from '../utils/urlSafety';
 import { isUnhelpfulProgramUrl } from '../utils/researchHomeWebsiteUrl';
 import { classifyProgram, type ProgramClassificationInput } from '../services/programClassifier';
 import { programAudience } from '../services/programAudience';
-import { DEPARTMENT_RESEARCH_GUIDE_KIND } from '../services/departmentResearchGuidance';
+import { isDepartmentResearchGuidance } from '../services/departmentResearchGuidance';
 
 const MAX_PROGRAM_LINKS = 8;
 
@@ -132,17 +132,23 @@ const publicProgramSourceLinkHealth = (
 
 export const withProgramAudience = (program: any) =>
   program && typeof program === 'object'
-    ? { ...program, audience: programAudience(program) }
+    ? {
+        ...program,
+        audience: programAudience(program),
+        departmentResearchGuidance: isDepartmentResearchGuidance(program),
+      }
     : program;
 
 export const publicProgramForReader = (program: any) => {
   const id = serializedDocumentId(program._id) || serializedDocumentId(program.id) || '';
+  const departmentResearchGuidance = program.departmentResearchGuidance === true;
   return {
     _id: id,
     id,
     programCategory: program.programCategory,
     programKind: program.programKind,
     programRole: program.programRole,
+    departmentResearchGuidance,
     entryMode: program.entryMode,
     studentFacingCategory: program.studentFacingCategory,
     requiresMentorBeforeApply: program.requiresMentorBeforeApply,
@@ -167,10 +173,9 @@ export const publicProgramForReader = (program: any) => {
     restrictionsToUseOfAward: publicProgramDescription(program.restrictionsToUseOfAward),
     additionalInformation: publicProgramDescription(program.additionalInformation),
     links: publicProgramLinks(program.links, program.sourceUrl),
-    applicationLink:
-      program.programKind === DEPARTMENT_RESEARCH_GUIDE_KIND
-        ? undefined
-        : publicSpecificProgramUrl(program.applicationLink, program.sourceUrl),
+    applicationLink: departmentResearchGuidance
+      ? undefined
+      : publicSpecificProgramUrl(program.applicationLink, program.sourceUrl),
     awardAmount: program.awardAmount,
     isAcceptingApplications: program.isAcceptingApplications,
     applicationOpenDate: program.applicationOpenDate,

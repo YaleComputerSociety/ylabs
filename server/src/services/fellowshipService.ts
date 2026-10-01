@@ -18,6 +18,7 @@ import { runStudentVisibilityGate } from './studentVisibilityGateService';
 import { clearedStudentVisibilityVerdict } from '../models/entityArchival';
 import { programRoleForKind } from './programClassifier';
 import { programAudience } from './programAudience';
+import { isDepartmentResearchGuidance } from './departmentResearchGuidance';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { programLikeCardShortDescription } from '../utils/researchEntityDescriptionQuality';
@@ -437,6 +438,7 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
   }
 
   publicFellowship.audience = programAudience(fellowship);
+  publicFellowship.departmentResearchGuidance = isDepartmentResearchGuidance(fellowship);
 
   const served = servedProgramDeadline(fellowship, now);
   if (served.deadline) publicFellowship.deadline = served.deadline;

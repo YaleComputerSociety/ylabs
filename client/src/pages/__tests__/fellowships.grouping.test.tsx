@@ -299,6 +299,7 @@ describe('Fellowships grouping', () => {
         id: 'guidance',
         title: 'Fixture Guidance Page',
         programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+        departmentResearchGuidance: true,
         isAcceptingApplications: false,
         deadline: null,
         yearOfStudy: [],

@@ -36,6 +36,7 @@ const guidance = createFellowship({
   _id: 'synthetic-guidance',
   title: 'Fixture Studies Undergraduate Research',
   programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+  departmentResearchGuidance: true,
   programRole: 'STARTS_RESEARCH',
   entryMode: 'CONTACT_FACULTY',
   studentFacingCategory: 'Department research guidance',
@@ -144,6 +145,7 @@ describe('department research guidance (#4285)', () => {
       ...guidance,
       _id: 'synthetic-application',
       programKind: 'MENTOR_MATCHING',
+      departmentResearchGuidance: false,
       deadline: '2999-06-01T00:00:00.000Z',
       isAcceptingApplications: true,
     });
@@ -158,6 +160,27 @@ describe('department research guidance (#4285)', () => {
     expect(screen.getByText(/^Due /)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'View details' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: "Read the department's guidance" })).toBeNull();
+  });
+
+  it('keeps a guidance kind the server did not serve as guidance on its application affordances', () => {
+    const application = createFellowship({
+      ...guidance,
+      _id: 'synthetic-locked-kind',
+      departmentResearchGuidance: false,
+      deadline: '2999-06-01T00:00:00.000Z',
+      isAcceptingApplications: true,
+    });
+    withContexts(
+      <BrowseCard
+        item={{ type: 'fellowship', data: application }}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/^Due /)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: "Read the department's guidance" })).toBeNull();
+    expect(programBoardSectionOf(application, 'open')).toBe('open');
   });
 
   it('files guidance in its own board section rather than among undated programs', () => {

@@ -2,8 +2,8 @@
  * The page's own title is the evidence, because the lane-authored record title names every
  * configured page "<Department> Undergraduate Research", including undergraduate-program
  * overviews and senior-essay registration pages that #4113 holds (#4285). The classifier, the
- * programs visibility gate and the client's guidance rendering all key on this predicate, so
- * changing it changes all three.
+ * programs visibility gate and the served `departmentResearchGuidance` flag the client renders
+ * from all key on this predicate, so changing it changes all three.
  */
 
 const UNDERGRADUATE_RESEARCH_GUIDANCE_TITLE =

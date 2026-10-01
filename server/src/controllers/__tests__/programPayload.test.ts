@@ -489,22 +489,45 @@ describe('publicProgramForReader program role', () => {
 });
 
 describe('publicProgramForReader department research guidance (#4285)', () => {
-  it('serves no application link for guidance, which is not an application', () => {
-    const payload = publicProgramForReader({
-      _id: '6a6f84d074dd496b1d43b18f',
-      title: 'Fixture Undergraduate Research',
-      programKind: 'DEPARTMENT_RESEARCH_GUIDE',
-      sourceUrl: specificPage,
-      applicationLink: 'https://fixture.yale.edu/undergraduate/apply-form',
-      links: [],
-    });
+  const studentPayload = (program: Record<string, unknown>) =>
+    publicProgramForReader(publicFellowshipForStudent(program));
+  const guidancePage = {
+    _id: '6a6f84d074dd496b1d43b18f',
+    title: 'Fixture Undergraduate Research',
+    programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+    sourcePageTitle: 'Undergraduate Research Opportunities',
+    sourceUrl: specificPage,
+    applicationLink: 'https://fixture.yale.edu/undergraduate/apply-form',
+    links: [],
+  };
 
+  it('serves guidance as guidance with no application link, because it is not an application', () => {
+    const payload = studentPayload(guidancePage);
+
+    expect(payload.departmentResearchGuidance).toBe(true);
     expect(payload.applicationLink).toBeUndefined();
     expect(payload.sourceUrl).toBe(specificPage);
   });
 
+  it('serves a guidance kind that states an application cycle as an application', () => {
+    const payload = studentPayload({
+      ...guidancePage,
+      deadline: new Date('2099-02-01T00:00:00Z'),
+    });
+
+    expect(payload.departmentResearchGuidance).toBe(false);
+    expect(payload.applicationLink).toBe('https://fixture.yale.edu/undergraduate/apply-form');
+  });
+
+  it('serves a guidance kind whose page title does not name research guidance as an application', () => {
+    const payload = studentPayload({ ...guidancePage, sourcePageTitle: 'Department News' });
+
+    expect(payload.departmentResearchGuidance).toBe(false);
+    expect(payload.applicationLink).toBe('https://fixture.yale.edu/undergraduate/apply-form');
+  });
+
   it('keeps the application link of an application program', () => {
-    const payload = publicProgramForReader({
+    const payload = studentPayload({
       _id: '6a6f84d074dd496b1d43b190',
       title: 'Fixture Research Internship',
       programKind: 'MENTOR_MATCHING',
@@ -513,6 +536,7 @@ describe('publicProgramForReader department research guidance (#4285)', () => {
       links: [],
     });
 
+    expect(payload.departmentResearchGuidance).toBe(false);
     expect(payload.applicationLink).toBe('https://fixture.yale.edu/undergraduate/apply-form');
   });
 });

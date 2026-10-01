@@ -194,6 +194,7 @@ describe('fellowships surface accessibility', () => {
       id: 'guidance',
       title: 'Fixture Guidance Page',
       programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+      departmentResearchGuidance: true,
       entryMode: 'CONTACT_FACULTY',
       studentFacingCategory: 'Department research guidance',
       requiresMentorBeforeApply: false,

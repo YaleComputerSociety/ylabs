@@ -150,6 +150,7 @@ Prefer it to a throwaway script.
 **Department research guidance.**
 A department's own page on how an undergraduate gets into research there, served on `/programs` with no application affordance and the action "Read the department's guidance".
 Stored as `programKind: 'DEPARTMENT_RESEARCH_GUIDE'`, earned only by the page's own title (`sourcePageTitle`) on a record that states no application cycle, and admitted by the programs gate with the reason `department_research_guidance`.
+The served `departmentResearchGuidance` flag carries that same predicate to the client, so a row whose kind alone reads as guidance keeps its application affordances.
 Owner: `server/src/services/departmentResearchGuidance.ts`; `docs/decisions.md` 2026-10-01 holds the decision.
 
 ## Environments and operations
