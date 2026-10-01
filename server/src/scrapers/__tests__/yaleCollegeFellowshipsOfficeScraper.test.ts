@@ -401,6 +401,52 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     }
   });
 
+  it('reads a detail description without the breadcrumb toggle, the page heading, or glued line breaks', () => {
+    const [candidate] = parseFellowshipCatalogPage(
+      `
+        <main>
+          <div class="breadcrumbs__wrapper">
+            <button class="breadcrumbs__button"><span>Fixture Awards</span></button>
+            <nav class="breadcrumbs"><a href="/awards">Fixture Awards</a></nav>
+          </div>
+          <h1>Fixture Research Fellowship</h1>
+          <div class="text">
+            <p>The fellowship funds summer research with a faculty mentor.<br><br>Juniors and seniors may apply.</p>
+          </div>
+        </main>
+      `,
+      detailPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidate.title).toBe('Fixture Research Fellowship');
+    expect(candidate.description).toBe(
+      'The fellowship funds summer research with a faculty mentor. Juniors and seniors may apply.',
+    );
+  });
+
+  it('reads a labelled-field award description from its description field, not the field list after it', () => {
+    const [candidate] = parseFellowshipCatalogPage(
+      `
+        <h1>Fixture Scholar Fellowship</h1>
+        <div class="node node-external-award">
+          <div class="field field-name-field-description"><div class="field-label">Description:&nbsp;</div><div class="field-items"><div class="field-item"><p>The fixture institute seeks applications from Ph.D candidates with policy relevant research on conflict management. Scholars receive funding for a 10-month, non-residential fellowship.</p></div></div></div>
+          <div class="field field-name-field-adviser"><div class="field-label">Adviser:&nbsp;</div><div class="field-items"><div class="field-item">Any Adviser</div></div></div>
+          <div class="field field-name-field-application-deadline"><div class="field-label">Application Open/Deadline:&nbsp;</div><div class="field-items"><div class="field-item">Thursday, September 1, 2022 to Tuesday, October 18, 2022</div></div></div>
+          <div class="field field-name-field-citizenship"><div class="field-label">Citizenship:&nbsp;</div><div class="field-items"><div class="field-item">US Citizen</div></div></div>
+          <div class="field field-name-field-academic-field"><div class="field-label">Field:&nbsp;</div><div class="field-items"><div class="field-item">Social Science</div></div></div>
+          <div class="field field-name-field-application-year"><div class="field-label">Application Year:&nbsp;</div><div class="field-items"><div class="field-item">Graduate Student and Alumni</div></div></div>
+        </div>
+      `,
+      'https://funding.yale.edu/external-award/fixture-scholar-fellowship',
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidate.description).toBe(
+      'The fixture institute seeks applications from Ph.D candidates with policy relevant research on conflict management. Scholars receive funding for a 10-month, non-residential fellowship.',
+    );
+  });
+
   it('scopes detail links to program content and prefers the Student Grants host', () => {
     const candidates = parseFellowshipCatalogPage(
       `

@@ -1292,10 +1292,19 @@ function chromeFreeContent(contentRoot: cheerio.Cheerio<any>): cheerio.Cheerio<a
   const chromeFreeRoot = contentRoot.clone();
   chromeFreeRoot
     .find(
-      'script, style, nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs, .menu, .sidebar',
+      'script, style, nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], [class*="breadcrumb"], .menu, .sidebar',
     )
     .remove();
+  chromeFreeRoot.find('br').replaceWith(' ');
+  chromeFreeRoot.find('h1').remove();
   return chromeFreeRoot;
+}
+
+function descriptionFieldText(chromeFreeRoot: cheerio.Cheerio<any>): string | undefined {
+  const descriptionField = chromeFreeRoot
+    .find('.field-name-field-description .field-items')
+    .first();
+  return descriptionField.length > 0 ? normalizeWhitespace(descriptionField.text()) : undefined;
 }
 
 export type NonProgramPageShape =
@@ -1485,7 +1494,10 @@ function candidateFromDetailPage(
   const bodyBlocks = textBlocks(chromeFreeRoot);
   const titledBodyText = `${title} ${bodyText}`;
   const eligibility = eligibilitySentences(bodyBlocks);
-  const safeDescription = sanitizeStoredCatalogDescription(bodyText, 2000);
+  const safeDescription = sanitizeStoredCatalogDescription(
+    descriptionFieldText(chromeFreeRoot) ?? bodyText,
+    2000,
+  );
   const applicationInformation = applicationSectionText($);
   const deadline = parseProgramDate(bestDeadlineText(bodyText), 'deadline', referenceDate);
   const applicationOpenDate = parseProgramDate(

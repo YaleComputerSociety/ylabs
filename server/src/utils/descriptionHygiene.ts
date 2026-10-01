@@ -133,18 +133,43 @@ export function stripDanglingSourceSiteReferenceSentences(text: string): string 
 }
 
 const PROTECTED_ABBREVIATION_TAIL =
-  /(?:^|\s)(?:Prof|Drs?|Mr|Mrs|Ms|Mx|Sr|Jr|St|Ave|Rd|Blvd|Inc|Ltd|Co|Corp|Dept|Univ|Assoc|Vol|No|pp|Fig|vs|etc|al)\.\s*$/i;
+  /(?:^|\s)(?:Prof|Drs?|Mr|Mrs|Ms|Mx|Sr|Jr|St|Ave|Rd|Blvd|Inc|Ltd|Co|Corp|Dept|Univ|Assoc|Vol|No|pp|Fig|vs|etc|al|Ph)\.\s*$/i;
+
+// "Jordan Q. Fixture" is a middle initial; "vitamin E." and "Hepatitis B. To read" end a
+// sentence (#3866). A capitalized word before the initial and a capitalized word after it
+// that is not a common sentence opener are what separate the two.
+const MIDDLE_INITIAL_TAIL = /(?:^|\s)[A-Z][a-z]+\s[A-Z]\.\s*$/;
+const SURNAME_HEAD = /^([A-Z][a-z]+)\b/;
+const SENTENCE_OPENER_WORDS = new Set(
+  (
+    'A An The This That These Those It Its We Our Us They Their He She His Her You Your I ' +
+    'In On At For From To With By Of As If When While Since After Before During Through ' +
+    'And But Or So Yet Also However Moreover Furthermore Additionally Thus Therefore ' +
+    'Please Contact Visit See Learn Read Click Email Call Apply Find Join More ' +
+    'There Here Each All Some Many Most Both Every Any No Not Students Applicants Researchers'
+  ).split(' '),
+);
+
+function continuesMiddleInitialName(segment: string, next: string): boolean {
+  if (!MIDDLE_INITIAL_TAIL.test(segment)) return false;
+  const surname = next.match(SURNAME_HEAD)?.[1];
+  return Boolean(surname) && !SENTENCE_OPENER_WORDS.has(surname as string);
+}
 
 const LATIN_EXAMPLE_ABBREVIATION_TAIL = /(?:^|[\s([])(?:[ei]\.|e\.g\.\s*|i\.e\.\s*)$/i;
 
-function isAbbreviationSplit(segment: string): boolean {
-  return PROTECTED_ABBREVIATION_TAIL.test(segment) || LATIN_EXAMPLE_ABBREVIATION_TAIL.test(segment);
+function isAbbreviationSplit(segment: string, next: string): boolean {
+  return (
+    PROTECTED_ABBREVIATION_TAIL.test(segment) ||
+    continuesMiddleInitialName(segment, next) ||
+    LATIN_EXAMPLE_ABBREVIATION_TAIL.test(segment)
+  );
 }
 
 /**
  * Re-join sentence segments that the terminal-punctuation tiling split inside a
- * common abbreviation (a title like "Prof."/"Dr.", "Inc."/"etc.", or a
- * parenthetical "e.g."/"i.e."). Operating on the lossless partition means the
+ * common abbreviation (a title like "Prof."/"Dr.", "Inc."/"etc.", "Ph.D.", a
+ * middle initial followed by a surname, or a parenthetical "e.g."/"i.e."). Operating on the lossless partition means the
  * merge cannot drop or reorder any character; it only removes an internal split
  * point, so segment-level filtering and deduplication downstream reason over
  * whole sentences rather than abbreviation fragments.
@@ -153,7 +178,7 @@ function mergeAbbreviationSplitSentences(segments: string[]): string[] {
   const merged: string[] = [];
   for (const segment of segments) {
     const previousIndex = merged.length - 1;
-    if (previousIndex >= 0 && isAbbreviationSplit(merged[previousIndex])) {
+    if (previousIndex >= 0 && isAbbreviationSplit(merged[previousIndex], segment)) {
       merged[previousIndex] += segment;
     } else {
       merged.push(segment);
@@ -359,8 +384,6 @@ const redactionPlaceholderPattern =
 
 const redactionTokenTest = /\[(?:email|phone) redacted\]/i;
 const redactionTokenGlobal = /\[(?:email|phone) redacted\]/gi;
-const splitIntoSentences = (value: string): string[] =>
-  value.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [value];
 const endsWithTerminalPunctuation = (value: string): boolean => /[.!?]["')\]]?$/.test(value.trim());
 const wordCount = (value: string): number => (value.match(/[A-Za-z]{2,}/g) || []).length;
 
@@ -379,11 +402,11 @@ export function stripRedactionPlaceholders(text: string): string {
   const value = normalizeHygieneWhitespace(text);
   if (!value || !redactionTokenTest.test(value)) return value;
   const kept: string[] = [];
-  for (const rawSentence of splitIntoSentences(value)) {
+  for (const rawSentence of partitionSentencesForFiltering(value)) {
     const sentence = rawSentence.trim();
     if (!sentence) continue;
     if (!redactionTokenTest.test(sentence)) {
-      kept.push(sentence);
+      kept.push(rawSentence);
       continue;
     }
     const matches = [...sentence.matchAll(redactionTokenGlobal)];
@@ -394,10 +417,10 @@ export function stripRedactionPlaceholders(text: string): string {
       sentence.replace(redactionPlaceholderPattern, ' ').replace(/\s+([.,;:!?])/g, '$1'),
     );
     if (stripped && endsWithTerminalPunctuation(stripped) && wordCount(stripped) >= 2) {
-      kept.push(stripped);
+      kept.push(`${stripped} `);
     }
   }
-  return normalizeHygieneWhitespace(kept.join(' '));
+  return normalizeHygieneWhitespace(kept.join(''));
 }
 
 /**
@@ -415,10 +438,10 @@ export function stripRedactionPlaceholders(text: string): string {
 export function sanitizeEvidenceExcerpt(value: string): string {
   const redacted = normalizeHygieneWhitespace(redactDirectContactInfo(String(value ?? '')));
   if (!redacted || !redactionTokenTest.test(redacted)) return redacted;
-  const kept = splitIntoSentences(redacted)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence && !redactionTokenTest.test(sentence));
-  return normalizeHygieneWhitespace(kept.join(' '));
+  const kept = partitionSentencesForFiltering(redacted).filter(
+    (sentence) => sentence.trim() && !redactionTokenTest.test(sentence),
+  );
+  return normalizeHygieneWhitespace(kept.join(''));
 }
 
 const CATALOG_CHROME_PATTERNS: RegExp[] = [
