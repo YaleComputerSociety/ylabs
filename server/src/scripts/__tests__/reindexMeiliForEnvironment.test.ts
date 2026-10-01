@@ -132,6 +132,17 @@ describe('planIndexReconcile', () => {
     expect(plan.unknown).toEqual([]);
   });
 
+  it('retires the researchers index the removed person search left behind (#3946)', () => {
+    const plan = planIndexReconcile({
+      allIndexUids: ['prod_researchentities', 'prod_researchers', 'beta_researchers'],
+      prefix: 'prod',
+    });
+
+    expect(plan.retire).toEqual(['prod_researchers']);
+    expect(plan.unknown).toEqual([]);
+    expect(plan.keep).toEqual(['prod_researchentities']);
+  });
+
   it('only touches indexes carrying the exact prefix, never a nested prefix', () => {
     const plan = planIndexReconcile({
       allIndexUids: [
