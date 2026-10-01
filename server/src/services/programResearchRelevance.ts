@@ -58,10 +58,7 @@ const FUNDS_RESEARCH_PROSE =
 
 // A structured program built on faculty mentorship is a student's way into research even when
 // its page never uses the word, so it belongs on /programs (product decision, 2026-09-30).
-const FACULTY_MENTORSHIP_PROSE = /\bfaculty\b[\w\s-]{0,30}\bmentor(?:s|ship|ing)?\b/i;
-
-const isMentoredResearchPathway = (programKind: string, prose: string): boolean =>
-  programKind === 'STRUCTURED_PROGRAM' && FACULTY_MENTORSHIP_PROSE.test(prose);
+const FACULTY_MENTORSHIP_PROSE = /\bfaculty\b[\w\s-]{0,30}\bmentor(?:s|ship|ing)?\b/gi;
 
 const RESEARCH_CAREER_AWARD =
   /\b(?:pursue|pursuing|intend(?:s|ing)? to pursue)\s+research careers?\b/i;
@@ -82,6 +79,28 @@ const affirmedIn = (fields: string[], pattern: RegExp): boolean =>
       const match = pattern.exec(sentence);
       return match !== null && !NEGATION.test(clauseBefore(sentence, match.index));
     });
+
+const NEGATION_JUST_BEFORE = /(?:\b(?:no|not|never|nor|without)\b|n't)(?:\s+[\w'-]+){0,3}\s*$/i;
+
+const NEGATED_PREDICATE_AFTER =
+  /^\s*(?:program\s+)?(?:(?:is|are|was|were)\s+not|isn't|aren't|wasn't|weren't|not\s+(?:required|needed|necessary|provided|offered))\b/i;
+
+// A sentence that names faculty mentorship only to deny it ("No faculty mentor is required",
+// "A faculty mentor is not provided") says the opposite, so the clause around each match is
+// read for a negation (#4246).
+const assertsFacultyMentorship = (fields: string[]): boolean =>
+  fields
+    .flatMap((field) => field.split(SENTENCE_BOUNDARY))
+    .some((sentence) =>
+      [...sentence.matchAll(FACULTY_MENTORSHIP_PROSE)].some(
+        (match) =>
+          !NEGATION_JUST_BEFORE.test(sentence.slice(0, match.index)) &&
+          !NEGATED_PREDICATE_AFTER.test(sentence.slice(match.index + match[0].length)),
+      ),
+    );
+
+const isMentoredResearchPathway = (programKind: string, fields: string[]): boolean =>
+  programKind === 'STRUCTURED_PROGRAM' && assertsFacultyMentorship(fields);
 
 const LANGUAGE_STUDY_PURPOSE = 'Language Study';
 
@@ -117,7 +136,7 @@ export function classifyProgramResearchRelevance(
   );
   const sourceFields = [title, ...bodyFields].filter(Boolean);
   const sourceProse = sourceFields.join(' ');
-  const mentoredPathway = isMentoredResearchPathway(programKind, sourceProse);
+  const mentoredPathway = isMentoredResearchPathway(programKind, sourceFields);
 
   const facetResearch = purposes.some((p) => RESEARCH_PURPOSES.has(p));
   const facetSaysLanguageStudy = purposes.includes(LANGUAGE_STUDY_PURPOSE) && !facetResearch;
