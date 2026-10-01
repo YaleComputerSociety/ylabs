@@ -28,7 +28,7 @@ Accounts are created only at login (never by the scraper); the scraper's identit
 Admin authority is a separate signal: `buildAuthenticatedSessionUser` sets `isAdmin` from `hasActiveAdminGrant`, and that boolean is what guards and the client key off.
 The classification cascade runs only at login time.
 `unknown` means Yalies has no record of the person, or could not answer and no earlier login stored a type; a request failure is never read as "not in Yalies", because that typed returning students `unknown` (#4234).
-Yalies lists faculty and staff with a `title` and `organization` but no `year` or `school_code`, so the lookup reads such a record as an employee rather than discarding it.
+Yalies lists faculty and staff with a `title` and an organization or unit (`unit_name`, `organization_name`) but no `year` or `school_code`, so the lookup reads such a record as an employee rather than discarding it.
 The Yale Directory endpoint `directory.yale.edu/api/people` answers an HTML 404 page for every query as of 2026-09-30, so the Directory leg currently resolves nobody; `fetchFromDirectory` logs a non-JSON 404 as an unavailable endpoint rather than reading it as a missing person.
 Per-request session restore in `deserializeUser` re-validates that the backing `Account` exists and is not archived, then recomputes `isAdmin` from the admin-grant check.
 The admin-grant check is cached in memory for 60 seconds in `adminGrantService` and invalidated on grant or revoke.

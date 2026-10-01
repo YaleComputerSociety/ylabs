@@ -143,7 +143,11 @@ function employeeRecord(record: YaliesRecord, netid: string): YaliesEmployee {
     lname: text(record.last_name),
     email: text(record.email),
     title: text(record.title),
-    department: text(record.organization) || text(record.unit),
+    department:
+      text(record.unit_name) ||
+      text(record.primary_division_name) ||
+      text(record.organization_name) ||
+      text(record.primary_organization_name),
   };
 }
 

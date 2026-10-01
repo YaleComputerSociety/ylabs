@@ -52,7 +52,14 @@ describe('lookupYalieByNetid', () => {
   });
 
   it('reads a titled record without enrolment fields as an employee', async () => {
-    respond([{ ...person, title: 'Program Coordinator', organization: 'Fixture Office' }]);
+    respond([
+      {
+        ...person,
+        title: 'Program Coordinator',
+        unit_name: 'Fixture Office',
+        organization_name: 'Fixture Organization',
+      },
+    ]);
 
     expect(await lookupYalieByNetid('fixturenetid')).toEqual({
       kind: 'employee',
