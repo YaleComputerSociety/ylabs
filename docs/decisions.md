@@ -52,7 +52,7 @@ The website is the defect, not the lead, and for a faculty research profile the 
 A two-letter surname now confirms when the given name sits next to it, with at most two initials between.
 - **1: an initial-only given name**, now matched as the initial, with its period, next to the surname.
 - **6: another person linked without being a lead.** The shipped rule contradicted on ANY person-shaped link other than the lead's, which included a members page, a section word (`collaborators`) and a social handle.
-A contradiction now needs a person-shaped slug that is either a namesake with a different given name, which is the collision the lane was built to find, or a person the page names next to a lead-role phrase (`slugNamesAnotherLead`).
+A contradiction now needs a person-shaped slug that is either a namesake with a different given name and a surname of three or more letters, which is the collision the lane was built to find, or a person the page names next to a lead-role phrase (`slugNamesAnotherLead`).
 A bare `director` is not a lead-role phrase, because department pages name directors of undergraduate studies and of cores.
 
 Replayed over the same pages, re-fetched on 2026-09-30, the fixed verifier contradicts 8 judgements, all 8 hand-labelled right, and none of the 32 wrong ones; 11 of those now confirm and 21 are unstated.

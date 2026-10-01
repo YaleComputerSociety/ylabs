@@ -179,6 +179,13 @@ describe('slugNamesAnotherLead', () => {
     expect(slugNamesAnotherLead('dale-quill', 'Robin Quill', hay('<p>Members</p>'))).toBe(true);
   });
 
+  it('does not count a two-letter-surname namesake without a lead role', () => {
+    expect(slugNamesAnotherLead('dale-vo', 'Ana Vo', hay('<p>Members</p>'))).toBe(false);
+    expect(
+      slugNamesAnotherLead('dale-vo', 'Ana Vo', hay('<p>Principal Investigator: Dale Vo</p>')),
+    ).toBe(true);
+  });
+
   it('counts a person the page names next to a lead-role phrase', () => {
     expect(
       slugNamesAnotherLead(

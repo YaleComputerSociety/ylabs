@@ -412,6 +412,9 @@ const NON_NAME_SLUG_WORDS = new Set(
 
 const LEAD_ROLE_WINDOW_CHARS = 60;
 
+/** Two-letter surnames collide by chance among lab members, so they need the lead-role arm. */
+const MIN_NAMESAKE_SURNAME_LETTERS = 3;
+
 export function personNameTokensFromSlug(slug: string): string[] {
   if (slug.includes('.')) return [];
   const tokens = slug
@@ -451,7 +454,7 @@ export function slugNamesAnotherLead(
   const tokens = personNameTokensFromSlug(slug);
   if (!tokens.length || slugNamesTheLead(tokens, leadDisplayName)) return false;
   const surname = surnameCore(leadDisplayName);
-  if (surname.length >= 2 && tokens.includes(surname)) return true;
+  if (surname.length >= MIN_NAMESAKE_SURNAME_LETTERS && tokens.includes(surname)) return true;
   const first = escapeForRegExp(tokens[0]);
   const last = escapeForRegExp(tokens[tokens.length - 1]);
   const named = new RegExp(`(?:^| )${first}(?: [a-z0-9]{1,12}){0,3} ${last}(?= |$)`, 'g');
