@@ -154,7 +154,7 @@ describe('Beta to Production promotion leaves Beta logins in Beta', () => {
     await seedBeta(betaDb);
     await seedProduction(productionDb);
     await applyCopy(betaDb, productionDb, promotionOptions());
-  }, 120_000);
+  });
 
   afterAll(async () => {
     await client?.close();
