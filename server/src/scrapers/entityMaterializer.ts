@@ -5506,8 +5506,9 @@ function isPersonBiographyDescription(candidateText: string): boolean {
  * The resolver cannot catch it: by design it makes no DB calls, so it has no entity
  * context, and every predicate it owns reads that text exactly like genuine person
  * research. Only the sanitizer, which knows whose row this is, can tell them apart.
- * So the winner is judged here and, when it cannot serve, the next ranked candidate
- * that can is adopted instead.
+ * So the winner is judged here against `servingBarAcceptsFullDescription` and, when it
+ * cannot serve, the next ranked candidate that can, and is not a person biography the
+ * walk would refuse, is adopted instead.
  *
  * Mirrors `enforceResearchEntityNameAuthority`: same `resolveFieldRanked` walk, same
  * refusal discipline. The guard requires the incumbent to be unservable, so this can
