@@ -282,6 +282,7 @@ describe('fundToObservations', () => {
     expect(observations.every((obs) => obs.sourceUrl === FUND_A_URL)).toBe(true);
     expect(observations.every((obs) => obs.entityKey === fund.sourceKey)).toBe(true);
     expect(byField.get('sourceName')).toBe(STUDENT_GRANTS_DATABASE_SOURCE);
+    expect(byField.get('sourceUrl')).toBe(FUND_A_URL);
     expect(byField.get('applicationLink')).toBe(FUND_A_URL);
     expect(byField.get('awardAmount')).toBe('$4,000');
     expect(byField.get('applicationOpenDate')).toEqual(new Date('2099-01-15T05:00:00.000Z'));

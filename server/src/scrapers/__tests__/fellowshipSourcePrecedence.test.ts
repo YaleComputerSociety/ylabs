@@ -106,3 +106,30 @@ describe('fellowshipFieldsWithheldBySourcePrecedence', () => {
     ).toEqual([]);
   });
 });
+
+describe('the fellowship database as an official source (#4284)', () => {
+  const fundPage = 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123';
+
+  it('lets the database lane set its fund page as sourceUrl on a row it owns', () => {
+    expect(
+      fellowshipFieldsWithheldBySourcePrecedence({
+        stored: { sourceName: 'student-grants-database', sourceUrl: '' },
+        staged: { sourceUrl: fundPage },
+        resolved: { sourceUrl: { contributingSources: ['student-grants-database'] } },
+      }),
+    ).not.toContain('sourceUrl');
+  });
+
+  it('never lets the fund page replace a program web page another lane owns', () => {
+    expect(
+      fellowshipFieldsWithheldBySourcePrecedence({
+        stored: {
+          sourceName: 'yale-college-fellowships-office',
+          sourceUrl: 'https://funding.yale.edu/fixture-fellowship',
+        },
+        staged: { sourceUrl: fundPage },
+        resolved: { sourceUrl: { contributingSources: ['student-grants-database'] } },
+      }),
+    ).toContain('sourceUrl');
+  });
+});

@@ -2214,31 +2214,35 @@ describe('computeProgramStudentVisibility', () => {
     expect(result.reasons).not.toContain('undergraduate_relevant');
   });
 
-  it('caps application-portal-only undergraduate programs at limited visibility', () => {
-    const result = computeProgramStudentVisibility({
-      title: 'Senior Research Fellowship',
-      studentFacingCategory: 'Senior research funding',
-      sourceUrl: 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123',
-      applicationLink: 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123',
-      undergraduateOnly: true,
-    });
-
-    expect(result.tier).toBe('limited_but_safe');
-    expect(result.reasons).toContain('application_source_only');
-  });
-
-  it('caps fellowship funding to limited when its only source is the application portal', () => {
+  it('treats a fund page in the Yale fellowship database as an official source (#4284)', () => {
     const result = computeProgramStudentVisibility({
       title: 'Senior Research Fellowship',
       studentFacingCategory: 'Senior research funding',
       programKind: 'FELLOWSHIP_FUNDING',
+      summary:
+        'Funds senior undergraduates conducting independent research toward a thesis at Yale.',
+      sourceUrl: 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123',
+      applicationLink: 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123',
+      deadline: '2027-03-24T17:00:00.000Z',
+      undergraduateOnly: true,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toContain('official_source');
+    expect(result.reasons).not.toContain('application_source_only');
+  });
+
+  it('still holds a database-sourced fund back when it is not research-related', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Fixture Conference Attendance Fund',
+      studentFacingCategory: 'Fellowship or grant',
+      summary: 'Covers registration fees for attending a professional conference.',
       sourceUrl: 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123',
       applicationLink: 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123',
       undergraduateOnly: true,
     });
 
-    expect(result.tier).toBe('limited_but_safe');
-    expect(result.reasons).toContain('application_source_only');
+    expect(result.tier).not.toBe('student_ready');
   });
 
   it('promotes undergraduate research funding with a real source + application route to student-ready', () => {

@@ -1119,8 +1119,6 @@ export function computeProgramStudentVisibility(
   const hasOfficialSource = hasHttpUrl(sourceUrl);
   const applicationRouteIsInfoPage = isInfoPageWithoutApplicationCycle(program, routeUrls);
   const hasApplicationRoute = hasAnyHttpUrl(routeUrls) && !applicationRouteIsInfoPage;
-  const sourceIsApplicationPortal =
-    /^https:\/\/yale\.communityforce\.com\/Funds\/FundDetails\.aspx\?/i.test(sourceUrl);
   const isArchiveReview = category === 'Archive / review';
   const audience = programAudience(program);
   const graduateOnly = audience === 'GRADUATE';
@@ -1136,7 +1134,6 @@ export function computeProgramStudentVisibility(
 
   if (hasOfficialSource) reasons.push('official_source');
   else reasons.push('missing_official_source');
-  if (sourceIsApplicationPortal) reasons.push('application_source_only');
   if (hasApplicationRoute) reasons.push('application_route');
   else reasons.push('missing_application_route');
   if (applicationRouteIsInfoPage) reasons.push('application_link_is_info_page');
@@ -1153,14 +1150,8 @@ export function computeProgramStudentVisibility(
   let computedTier: StudentVisibilityTier = 'operator_review';
   if (catalogOrAdmin || !researchRelated || context.duplicateOfServedCopy) {
     computedTier = 'suppressed';
-  } else if (
-    !isArchiveReview &&
-    audienceKnown &&
-    hasOfficialSource &&
-    hasApplicationRoute &&
-    !sourceIsApplicationPortal
-  ) {
-    // A research program with a known audience, a real (non-portal) official source, and an
+  } else if (!isArchiveReview && audienceKnown && hasOfficialSource && hasApplicationRoute) {
+    // A research program with a known audience, an official source, and an
     // application route is student-ready regardless of whether that audience is undergraduate
     // or graduate: on a research-discovery surface, audience is an honest label (surfaced as a
     // Graduate badge for graduate-only records), not a suppression trigger. Only catalog/admin
