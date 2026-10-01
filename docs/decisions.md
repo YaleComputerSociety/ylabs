@@ -38,7 +38,8 @@ Decided:
 
 - **A biography is served only when no research prose exists for the row, and the row stays visible either way.**
 The `fullDescription` choice ranks research prose above a biography as derivation inside `projectFromLog`, so it runs on every resolve and writes no locked field.
-`adoptServableFullDescription` now also runs when the incumbent serves a biography: it adopts the first ranked candidate that passes the serving check, is not a biography, and opens by stating research, and otherwise keeps the biography.
+`adoptServableFullDescription` now also runs when the incumbent serves a biography: it adopts the first ranked candidate that passes the serving check, is not a biography, opens by stating research, and leaves the row's description pair passing the public-description invariant, and otherwise keeps the biography.
+The pair condition was added after delivery, when one Development row adopted a one-sentence research body identical to its own card, lost its card, and dropped out of `student_ready`; a body that costs the row its card is not admissible, so that row keeps its biography.
 It never trades one biography for another and never trades a biography for a body that states no research, because a publication list or an organization's chrome that happens to serve is not the research prose the preference is for.
 An incumbent that serves nothing keeps the #4281 fallback order: a servable non-biography, then a servable biography.
 A second resolve re-derives the same body from the same ranked list, so the choice converges.

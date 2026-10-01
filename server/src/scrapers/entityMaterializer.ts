@@ -5616,8 +5616,21 @@ function adoptServableFullDescription(input: {
   // A biography is a fallback only (#4288): an incumbent biography that serves yields to
   // servable research prose and to nothing else, and one that serves nothing still yields to a
   // servable biography, because refusing that took a served row off the surface (#4280).
+  // Displacing a biography that serves must not cost the row its card: a research body that
+  // restates the card leaves no card to serve, which held a served row on Development (#4288).
+  const keepsDescriptionPair = (value: unknown): boolean =>
+    servingBarAcceptsDescriptionPair(
+      entityDoc,
+      { ...set, kind: identity.kind },
+      textValue(value),
+      input.leadPersonName,
+    );
   const replacement = incumbentServes
-    ? servable.find(({ materialized }) => isResearchProse(textValue(materialized)))
+    ? servable.find(
+        ({ materialized }) =>
+          isResearchProse(textValue(materialized)) &&
+          (keepsDescriptionPair(materialized) || !keepsDescriptionPair(servedValue)),
+      )
     : (servable.find(
         ({ materialized }) => !isBiographyRatherThanResearch(textValue(materialized)),
       ) ?? servable[0]);
@@ -6043,12 +6056,12 @@ export function descriptionSanitizerRejectedCandidateOverStoredProse(
  * Calling the serving function itself, rather than restating it, is what keeps the two
  * bars one predicate.
  */
-export function servingBarAcceptsFullDescription(
+function servingRepresentationForCandidate(
   entityDoc: Record<string, unknown> | null | undefined,
   projected: Record<string, unknown>,
   candidateText: string,
   leadPersonName: string,
-): boolean {
+) {
   const projectedFields = Object.fromEntries(
     Object.entries(projected).filter(([field]) => !field.includes('.')),
   );
@@ -6065,15 +6078,39 @@ export function servingBarAcceptsFullDescription(
     fullDescription: storedText,
   };
   const leadMemberNames = leadPersonName ? [leadPersonName] : [];
-  const representation = buildResearchEntityPublicDescriptionRepresentation({
-    entity,
+  return {
     leadMemberNames,
-  });
+    representation: buildResearchEntityPublicDescriptionRepresentation({ entity, leadMemberNames }),
+  };
+}
+
+export function servingBarAcceptsFullDescription(
+  entityDoc: Record<string, unknown> | null | undefined,
+  projected: Record<string, unknown>,
+  candidateText: string,
+  leadPersonName: string,
+): boolean {
+  const { representation, leadMemberNames } = servingRepresentationForCandidate(
+    entityDoc,
+    projected,
+    candidateText,
+    leadPersonName,
+  );
   return (
     representation.invariant.fullDescriptionUseful &&
     textValue(servedResearchEntityCopy(representation.entity, leadMemberNames).fullDescription)
       .length > 0
   );
+}
+
+export function servingBarAcceptsDescriptionPair(
+  entityDoc: Record<string, unknown> | null | undefined,
+  projected: Record<string, unknown>,
+  candidateText: string,
+  leadPersonName: string,
+): boolean {
+  return servingRepresentationForCandidate(entityDoc, projected, candidateText, leadPersonName)
+    .representation.invariant.pass;
 }
 
 export async function projectFromLog(

@@ -165,6 +165,21 @@ describe('a biography description is a fallback only (#4288)', () => {
     expect(plannedBody(result, researchProse)).toBe(researchProse);
   });
 
+  it('keeps a servable biography rather than adopt research prose that restates the card and leaves no card', async () => {
+    const card =
+      'Research focuses on the economics of early childhood, examining how state preschool statutes govern program quality and access, measuring the social costs of early disadvantage, and addressing childcare challenges internationally.';
+    const resolverObs = [
+      observation(CAREER_BIOGRAPHY, 'synthetic-profile-source', 0.82),
+      observation(card, 'synthetic-signal-source', 0.55),
+    ];
+    const withCard = input(CAREER_BIOGRAPHY, resolverObs);
+    const result = await projectFromLog('researchEntity', {
+      ...withCard,
+      entityDoc: { ...withCard.entityDoc, shortDescription: card },
+    });
+    expect(plannedBody(result, CAREER_BIOGRAPHY)).toBe(CAREER_BIOGRAPHY);
+  });
+
   it('never trades one servable biography for another', async () => {
     const otherBiography =
       'Synthetic Scholar received a PhD in Economics from a university in the Midwest and joined the faculty in 2004. Synthetic Scholar was named a fellow of a national academy in 2015. Current research interests include labor markets and household investment.';
