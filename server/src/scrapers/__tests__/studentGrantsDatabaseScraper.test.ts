@@ -371,6 +371,28 @@ describe('the application route a fund page names (#4216)', () => {
     expect(links).toEqual([{ label: 'Fixture Summer Research Fellowship', url: FUND_A_URL }]);
   });
 
+  it('keeps the fund page when a link only carries information or a separate admission', () => {
+    for (const sentence of [
+      `Detailed information and the official application may be found on the <a href="${DEPARTMENT_URL}">program website</a>.`,
+      `Students must apply for admission separately through <a href="${DEPARTMENT_URL}">the summer session</a>.`,
+      `Applicants who are not eligible to apply through any of the <a href="${DEPARTMENT_URL}">regional rounds</a> may apply here.`,
+      `Applications from scholars who wish to pursue research using the <a href="${DEPARTMENT_URL}">fixture collection</a> are welcome.`,
+    ]) {
+      expect(observationsFor({ applicationInformation: sentence }).applicationLink).toBe(
+        FUND_A_URL,
+      );
+    }
+  });
+
+  it('keeps the fund page when an unlinked common application is reached through its Apply button', () => {
+    expect(
+      observationsFor({
+        applicationInformation:
+          "Applicants must apply via the Fixture Common Application, accessible via the 'Apply' link.",
+      }).applicationLink,
+    ).toBe(FUND_A_URL);
+  });
+
   it('applies to a common application page directly', () => {
     expect(
       observationsFor({
@@ -485,6 +507,28 @@ describe('the year of study a fund page admits (#4216)', () => {
         yearOfStudy: ['Sophomore', 'Junior', 'Senior'],
       }),
     ).toEqual(['Junior', 'Senior']);
+  });
+
+  it('does not read a program a student will enter or an organization name as a year', () => {
+    expect(
+      yearOfStudyFor({
+        brief:
+          'Eligible candidates must be planning to attend a graduate program in public service.',
+        eligibility:
+          'Research must take place in the region defined by the Association of Yale Alumni.',
+        yearOfStudy: ['Junior'],
+      }),
+    ).toEqual(['Junior']);
+  });
+
+  it('adds an exception to the years the filter lists', () => {
+    expect(
+      yearOfStudyFor({
+        brief: 'The fellowship funds summer journalism internships.',
+        eligibility: 'Graduating seniors may also be considered on a case-by-case basis.',
+        yearOfStudy: ['Sophomore', 'Junior'],
+      }),
+    ).toEqual(['Sophomore', 'Junior', 'Senior']);
   });
 
   it('does not read a negated relative clause or a qualified refusal as an exclusion', () => {

@@ -40,7 +40,7 @@ const CONDITIONAL_OPENING = /^\W*(?:if|when|unless|should you)\b/i;
 
 const routeBeforeLink = (prepositions: string) =>
   new RegExp(
-    `\\b${APPLY_WORD_SOURCE}\\b(?:\\W+\\w+){0,10}?\\W+(?:${prepositions})\\b(?:\\s+(?:the|this|our|a|an))?[\\s:]*(?:[^\\s.]+\\s+){0,6}$`,
+    `\\b${APPLY_WORD_SOURCE}\\b(?:\\W+(?!who\\b|which\\b|that\\b|whose\\b)\\w+){0,10}?\\W+(?:${prepositions})\\b(?:\\s+(?:the|this|our|a|an))?[\\s:]*(?:[^\\s.]+\\s+){0,6}$`,
     'i',
   );
 
