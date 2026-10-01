@@ -3953,7 +3953,7 @@ test('shared form post goes through the same SSRF guard, agents, and host limite
 
   assert.match(
     source,
-    /export async function postFormWithPolicy\([\s\S]*?\n\): Promise<FetchedHttpPage> \{\n  if \(isBenchmarkReplayActive\(\)\) refuseBenchmarkReplayNetwork\(\);\n  return fetchPageLive\(url, options, \{ method: 'POST', body: form\.toString\(\) \}\);\n\}/,
+    /export async function postFormWithPolicy\([\s\S]*?\n\): Promise<FetchedHttpPage> \{\n {2}if \(isBenchmarkReplayActive\(\)\) refuseBenchmarkReplayNetwork\(\);\n {2}return fetchPageLive\(url, options, \{ method: 'POST', body: form\.toString\(\) \}\);\n\}/,
   );
   assert.match(
     source,
