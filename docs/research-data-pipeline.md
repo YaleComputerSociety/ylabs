@@ -82,7 +82,7 @@ The sweep modes fix the environment, database, write posture, and confirmation f
 | `fellowship-development-full` | development / Development | yes | yes | `--confirm-fellowship-sweep` (fellowship engine only, `--exhaustive --ignore-work-planner`) |
 
 Every mode targets Development, because sweeps run only there (decision 2026-09-27 in `docs/decisions.md`).
-Beta and Production receive the swept result through promotion, and the scrape CLI refuses any `run`, `cron`, or `materialize` write against either of them.
+Beta and Production receive the swept result through promotion, and the scrape CLI refuses any `run` or `materialize` write against either of them.
 
 Only the two `--limit 100` modes pass `--use-cache`.
 An exhaustive mode always fetches live and writes no `scrape_snapshots` rows, because the cache persists every fetched payload for 24 hours and one cached `development-full` sweep wrote about 3.5 GB of it, pushed the Development Atlas cluster over its space quota, and failed 19 sources (#3536).
@@ -108,7 +108,7 @@ On 2026-09-26 `medicine.yale.edu` carried about 18,600 discovery requests shared
 - A department roster snapshot's `read` block records `pagesReusedWithinSweep`, and the roster's fetch attempt reads `http-sweep-reused` instead of `http`.
   The departure lane classifies such a snapshot as `reused-within-sweep` and admits it exactly like `fetched` and `cache-permitted`, because the page came off the wire during this sweep; the provenance says what happened without weighting it.
   The departure lane's own Yale-profile probe never reuses a page: a suppression asserts that a person left, so it reads the profile live at decision time.
-- Outside a sweep nothing changes: a hand-run `scrape run`, a cron and the preflight canaries never install reuse, and a child without both `SCRAPER_HOST_SLOT_BROKER` and `SCRAPER_SWEEP_PAGE_REUSE=1` fetches every page as before.
+- Outside a sweep nothing changes: a hand-run `scrape run` and the preflight canaries never install reuse, and a child without both `SCRAPER_HOST_SLOT_BROKER` and `SCRAPER_SWEEP_PAGE_REUSE=1` fetches every page as before.
   If the broker cannot be reached, the child logs one warning and fetches every page from the site.
 - Post-run stages run after the broker closes, so `source-link-health` still probes each URL live.
 
@@ -192,15 +192,22 @@ The two exhaustive Development modes (`development-full`, `development-increment
 5. `url-identity-dedupe` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES=0`)
 6. `website-url-identity-dedupe` (the same lane family keyed on the whole normalized `websiteUrl` rather than a Yale `/lab/` or `/profile/` path; gated by the same flag)
 7. `source-link-health` (`research-homes:backfill-source-link-health --apply --reprobe-healthy-after-days=7`; ordered before the gate because the gate reads `sourceLinkHealth`; `--full-link-health-reprobe` on the sweep drops the window and probes every URL)
-8. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
-9. `search-rebuild` (`meili:rebuild-research-entities --clear`)
-10. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
-11. `coverage-audit`
-12. `data-quality` (`beta:data-quality --strict`)
-13. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
-14. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
-15. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
-16. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
+8. `profile-link-health` (`researchers:verify-official-profile-links --apply --stale-after-days=<window>`; the sibling of `source-link-health` for a lead's `YALE_OFFICIAL` profile link, #3222)
+9. `dead-research-website-clear` (`research-entity:clear-dead-research-websites --apply`; ordered after both link-health probes because it consumes their verdicts, #3309)
+10. `organization-identity-website-retire` (`observations:retire-organization-identity-websites --apply`; idempotent, plans nothing once the corpus is clean, #3484)
+11. `shared-roster-website-retire` (`observations:retire-shared-roster-websites --apply`; ordered before `refusal-lane-attribution` so its refusals are attributed the same sweep, #3615)
+12. `refusal-lane-attribution` (`refusals:attribute-lanes --apply`; after every stage that records a refusal, #3521)
+13. `inferred-pi-lead-reclaim` (`data:materialize-inferred-pi-leads --all --apply`; ordered before the gate so the gate judges the leads it links in the same sweep; its result reports `materialized-lead` and `still-unresolved`, #3741)
+14. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
+15. `search-rebuild` (`meili:rebuild-research-entities --clear`)
+16. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
+17. `engine-benchmark` (`engine:benchmark --apply --replays=2`; never `--capture`, see [`engine-benchmark.md`](engine-benchmark.md))
+18. `coverage-audit`
+19. `data-quality` (`beta:data-quality --strict`)
+20. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
+21. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
+22. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
+23. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 The `researcher-dedupe`, `grant-shell-faculty-port`, `eponymous-fra-merge`, both URL-identity dedupe stages, and merge-residue deletion stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value: `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_PORT_GRANT_SHELLS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. One flag gates the whole URL-identity family, because `url-identity-dedupe` and `website-url-identity-dedupe` are two keys onto one question and an operator suppressing URL-keyed merges wants both off. `url-identity-dedupe` was opt-in until #2699; it defaults on because the never-demote survivor resolution defers rather than demotes (#2070) and because the whole post-run set is unreachable outside Development, so the flag only ever gated Dev. Every `SCRAPER_SWEEP_*` stage flag in either engine parses through the one shared helper pair in `server/src/scripts/sweepStageFlags.ts`, so the accepted truthy values (`1`, `true`, `yes`, `y`, `on`, `enable`, `enabled`) and falsey values (`0`, `false`, `no`, `n`, `off`, `disable`, `disabled`) are identical for every flag.
 
@@ -253,7 +260,6 @@ It classifies every run of a source as `productive` (emitted at least one observ
 
 Nothing new reports it, because a stored `failure` is what the existing surfaces already act on.
 `scraperSweepArtifactError` fails the sweep step on any `runStatus` other than `success`, so the sweep counts the source in `failed` and exits non-zero; `sourceHealthService` raises the source to `error` risk with "Latest run failed; inspect scraper report before rerunning"; and `runReport` warns not to materialize without inspecting errors.
-The cron path is the one surface that was reading only its own materialization counters, so `runScraperCron` now also exits 1 and releases its job lock as `failure` when the run it just finished is a `failure`.
 The sweep's own `sourcesThatProducedNothing` stays report-only for the shorter streaks it can still see.
 
 Four properties of the rule are load-bearing.
@@ -325,7 +331,7 @@ The contract now has four parts.
   The signal write carries a 4-second deadline (`SCRAPE_RUN_INTERRUPT_WRITE_DEADLINE_MS`): a hung attempt is abandoned at the deadline and no retry starts whose backoff would pass it, so the handler still re-raises the signal inside the shared budget.
   The signal write shares one handler with the job-lock release (`scrapers/interruptCleanup.ts`), so neither cleanup can kill the process while the other is still writing, and both must settle inside `INTERRUPT_CLEANUP_TIMEOUT_MS` (5 seconds) because the sweep sends `SIGKILL` 10 seconds after its `SIGTERM`.
 - **A running run proves it is alive.**
-  The orchestrator stamps `heartbeatAt` at creation and every `SCRAPE_RUN_HEARTBEAT_INTERVAL_MS` (1 minute), and records `owner: { host, pid, lockOwnerId }`, where `lockOwnerId` is the `ScrapeJobLock` owner for a writing CLI or cron run.
+  The orchestrator stamps `heartbeatAt` at creation and every `SCRAPE_RUN_HEARTBEAT_INTERVAL_MS` (1 minute), and records `owner: { host, pid, lockOwnerId }`, where `lockOwnerId` is the `ScrapeJobLock` owner for a writing CLI run.
   It also records `codeSha`, the commit the process loaded (`scrapers/scrapeRunCodeIdentity.ts`: a declared `SOURCE_COMMIT`, `RENDER_GIT_COMMIT` or `GIT_COMMIT`, else the checkout's `HEAD` when the process started), so a reader can ask by ancestry whether a fix was in the run (#3824); runs before that change carry none.
   `classifyScrapeRunLiveness` in `scrapers/scrapeRunLiveness.ts` reads a row as `finished`, `live` (heartbeat within `SCRAPE_RUN_STALE_HEARTBEAT_MS`, 15 minutes), `stale`, or `unverifiable` (a `running` row that predates heartbeats).
   Only `live` means a writer is working.
@@ -345,7 +351,7 @@ The contract now has four parts.
   It never closes a row with a fresh heartbeat, a live owner or a held lock, and never one that started at or after the sweep began (`started_at_or_after_cutoff`), so the sweep's own runs are left for the next sweep.
   A row that predates heartbeats is kept as `legacy_operator_only` when it is past the 72-hour bound, or `legacy_too_recent` when it is not, because its start time is its only sign of life; closing those stays the operator-run command without `--heartbeat-stale-only`.
 
-`interrupted` is a stored value, so every consumer handles it: the sweep fails the step (any status other than `success`), `scrape run` and `runScraperCron` exit nonzero, `runReport` warns not to materialize the run, `sourceHealthService` rates it `warn` with a rerun action, and the barren-streak guard steps over it as `inconclusive`.
+`interrupted` is a stored value, so every consumer handles it: the sweep fails the step (any status other than `success`), `scrape run` exits nonzero, `runReport` warns not to materialize the run, `sourceHealthService` rates it `warn` with a rerun action, and the barren-streak guard steps over it as `inconclusive`.
 Treat the stored set as open anyway, because Development still holds a few `completed` and `failed` rows written by raw updates that bypassed the validator.
 
 ### Faculty Researcher spine creation
@@ -1444,7 +1450,7 @@ The audit reads each configured page with the source's own extractor and joins i
 
 ## Read-Only Control Plane
 
-The first control-plane slice is the admin Operator Board. It remains read-only and does not replace CLI or cron execution. It should show:
+The first control-plane slice is the admin Operator Board. It remains read-only and does not replace CLI or sweep execution. It should show:
 
 - source readiness from seeded `Source` rows, recent `ScrapeRun` posture, expected artifacts, and next actions
 - latest dry-run and write-run posture so operators can see whether Mongo writes need a follow-up Meili rebuild
@@ -1456,11 +1462,11 @@ The first control-plane slice is the admin Operator Board. It remains read-only 
 
 Pending Meili sync is an operator warning, not a worker. Local or one-off operator jobs may make Mongo current while Render-owned Meili remains stale; production promotion must explicitly rebuild or verify the prefixed production indexes before smoke checks.
 
-The release queue is written by `yarn --cwd server student-visibility:gate`. Scraper `--auto-materialize`, manual materialize, and production cron paths run the gate after clean write materialization.
+The release queue is written by `yarn --cwd server student-visibility:gate`. Scraper `--auto-materialize` and manual materialize run the gate after clean write materialization.
 
 The gate recomputes visibility for the whole corpus on every run rather than tracking a version stamp.
 A per-plan write guard, `isStudentVisibilityGatePlanMateriallyChanged`, means only records whose recomputed plan actually changes are written, so an unconditional recompute stays cheap in writes (issue #2044 retired the former `STUDENT_VISIBILITY_VERSION` stamp and its stale-version sweep in favor of this model; do not reintroduce a version).
-After a clean cron materialization the runner (`server/src/scrapers/cronRunner.ts`) runs one full-corpus `--collection=all` apply gate before marking the source crawled, and the exhaustive Development sweep runs the same gate as its `visibility-gate` post-run stage.
+The exhaustive Development sweep runs one full-corpus `--collection=all` apply gate as its `visibility-gate` post-run stage, immediately after the `inferred-pi-lead-reclaim` stage so the gate judges the leads that stage links in the same sweep (#3741).
 The gate keeps search consistent itself (issue #1958): `applyStudentVisibilityGatePlans` re-syncs entities to Meilisearch so the index reflects the freshly applied tiers without waiting for a separate rebuild, in addition to the sweep's explicit `search-rebuild` stage.
 That sync is keyed on a read of the index rather than on the plan's changed flag (#3049).
 After the corpus write the gate projects the indexed `studentVisibilityTier` for every planned row and syncs the materially-changed rows plus every row the index disagrees with, so a sync that failed during a Meilisearch outage is repaired by the next run instead of being invisible to it: a plan that has already been written is no longer materially changed, so the old plan-keyed arm had nothing left to push and reported a clean `changed: 0` over a permanently stale index.
@@ -1814,7 +1820,7 @@ A workable second witness has to be something a person in somebody else's group 
 ### Source dispatch and the freshness worklist (#2619)
 
 `server/src/scrapers/sourceDispatch.ts` sorts every `Source` row into `sweep-registered`, `script-driven`, `retired`, or `unowned`.
-`buildOrchestrator()` is the authority for the first: the CLI, the cron, and the sweep all resolve a name through it, so a row it does not name fails with "No scraper registered with name" no matter what the row says.
+`buildOrchestrator()` is the authority for the first: the CLI and the sweep both resolve a name through it, so a row it does not name fails with "No scraper registered with name" no matter what the row says.
 `scrapers:audit-freshness` therefore computes overdue and never-crawled over sweep-registered rows only, reports script-driven lanes next to the command that runs each one, lists retired rows separately, and fails rather than reporting phantom work when a registered scraper has no row, a row is `unowned`, or a retired lane's row is still enabled.
 Admin source health reads the same classification, so a retired row is `ok` with its retirement stated rather than a warning asking an operator to confirm a decision the repo already made, and a script-driven lane with no scrape run names its command instead of suggesting a crawl that would fail.
 Source health and the freshness worklist also share one recurrence rule, `sourceIsExpectedToRecur` in `scrapers/sourceYieldGuard.ts`: a source that is disabled, `MANUAL_OVERRIDE`, or in the sweep's manual-only set (`scrapers/manualOnlySweepSources.ts`) has no recurring run expectation, so it never reads as stale and its latest failed run is `ok` with the report command rather than `error` risk (#3582).

@@ -11,7 +11,7 @@ Scraper sweeps run only against Development, from the local machine, and need no
 Beta receives the accepted Development dataset only through the guarded `beta:refresh-from-development` mirror.
 Production receives data only through the guarded accepted-Beta promotion, `production:promote-beta-copy`.
 Each promotion is followed by a re-gate and a search reindex on its target, run from that environment's Render shell.
-The scrape CLI refuses any `run`, `cron`, or `materialize` write against Beta or Production, and `docs/decisions.md` records why (2026-09-27).
+The scrape CLI refuses any `run` or `materialize` write against Beta or Production, and `docs/decisions.md` records why (2026-09-27).
 
 ## Source Reachability Preflight
 

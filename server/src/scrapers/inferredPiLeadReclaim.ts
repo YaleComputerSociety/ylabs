@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
 import { researchEntityIdsWithGateAttachedLead } from '../services/studentVisibilityGateService';
-import { materializeInferredPiMembership } from './entityMaterializer';
+import { materializeInferredPiMembership, planInferredPiMembership } from './entityMaterializer';
 import {
   runInferredPiLeadMaterializationBackfill,
   type InferredPiLagEntity,
@@ -75,6 +75,9 @@ export function createInferredPiLeadMaterializationDeps(
         .select('field value sourceName sourceUrl observedAt confidence')
         .lean();
       return observations as Array<Record<string, unknown>>;
+    },
+    async countResolvableInferredPis(entityId, observations) {
+      return (await planInferredPiMembership(entityId, observations)).length;
     },
     async materializeInferredPiLead(entityId, observations) {
       await materializeInferredPiMembership(entityId, observations);

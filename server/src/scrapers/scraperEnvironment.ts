@@ -121,7 +121,7 @@ export function promotionOnlyScraperWriteRefusal(environment: ScraperEnvironment
 }
 
 export function applyScraperEnvironmentGuards(args: {
-  command: 'run' | 'cron' | 'materialize' | 'report';
+  command: 'run' | 'materialize' | 'report';
   options: ScraperOptions;
   autoMaterialize: boolean;
   mongoUrl?: string;
@@ -140,11 +140,7 @@ export function applyScraperEnvironmentGuards(args: {
   const allowNonProdWrites = env.ALLOW_NON_PROD_SCRAPER_WRITES === 'true';
 
   if (environment !== 'production') {
-    if (
-      (args.command === 'run' || args.command === 'cron') &&
-      !options.dryRun &&
-      !allowNonProdWrites
-    ) {
+    if (args.command === 'run' && !options.dryRun && !allowNonProdWrites) {
       options.dryRun = true;
       warnings.push(
         `SCRAPER_ENV=${environment}; forcing --dry-run. Set ALLOW_NON_PROD_SCRAPER_WRITES=true to write to this non-production DB.`,
@@ -166,9 +162,7 @@ export function applyScraperEnvironmentGuards(args: {
     }
   }
 
-  const writes =
-    (args.command === 'run' || args.command === 'cron' || args.command === 'materialize') &&
-    !options.dryRun;
+  const writes = (args.command === 'run' || args.command === 'materialize') && !options.dryRun;
   if (writes && isPromotionOnlyEnvironment(environment)) {
     throw new Error(promotionOnlyScraperWriteRefusal(environment));
   }

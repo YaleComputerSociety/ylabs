@@ -197,7 +197,7 @@ Beta is the staging gate.
 Scraper fetches run from the local machine and need no Yale VPN or campus wifi; only private-address hosts such as `ensemble.yale.edu` are Yale-network-only.
 Development is the only environment scrapers write to: every sweep fetches and materializes there.
 Beta receives the accepted Development dataset through `beta:refresh-from-development`, Production receives accepted Beta through `production:promote-beta-copy`, and each target then re-gates and reindexes from its Render shell.
-The scrape CLI refuses a `run`, `cron`, or `materialize` write against Beta or Production.
+The scrape CLI refuses a `run` or `materialize` write against Beta or Production.
 Use `docs/data-refresh-runbook.md` for the canonical commands.
 
 ## External integrations

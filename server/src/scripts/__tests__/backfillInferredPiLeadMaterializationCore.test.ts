@@ -26,22 +26,34 @@ describe('runInferredPiLeadMaterializationBackfill', () => {
     loadCurrentObservationsForEntity: vi
       .fn()
       .mockResolvedValue([{ field: 'inferredPiUserId', value: 'user-a' }]),
+    countResolvableInferredPis: vi.fn().mockResolvedValue(1),
     materializeInferredPiLead: vi.fn().mockResolvedValue(undefined),
     hasCurrentLeadAfter: vi.fn().mockResolvedValue(true),
     ...overrides,
   });
 
-  it('does not materialize anything in dry-run and marks lagging entities pending', async () => {
+  it('classifies the lagging entity in dry-run by whether its evidence resolves to a researcher, without materializing anything', async () => {
     const deps = baseDeps();
     const report = await runInferredPiLeadMaterializationBackfill(deps, { apply: false });
 
     expect(report.scanned).toBe(2);
     expect(report.lagging).toBe(1);
     expect(deps.materializeInferredPiLead).not.toHaveBeenCalled();
-    expect(report.rows).toEqual([
-      { entityId: 'a', entityKey: 'nih-pi-a', disposition: 'pending-apply' },
+    expect(deps.countResolvableInferredPis).toHaveBeenCalledWith('a', [
+      { field: 'inferredPiUserId', value: 'user-a' },
     ]);
-    expect(report.tally['pending-apply']).toBe(1);
+    expect(report.rows).toEqual([
+      { entityId: 'a', entityKey: 'nih-pi-a', disposition: 'resolvable-pi' },
+    ]);
+    expect(report.tally['resolvable-pi']).toBe(1);
+  });
+
+  it('separates a lagging entity whose evidence resolves to no researcher in dry-run', async () => {
+    const deps = baseDeps({ countResolvableInferredPis: vi.fn().mockResolvedValue(0) });
+    const report = await runInferredPiLeadMaterializationBackfill(deps, { apply: false });
+
+    expect(report.tally['unresolvable-pi']).toBe(1);
+    expect(report.tally['resolvable-pi']).toBe(0);
   });
 
   it('materializes only the lagging entity and records the attached lead on apply', async () => {

@@ -9,7 +9,8 @@ export type InferredPiLagDisposition =
   | 'materialized-lead'
   | 'already-linked'
   | 'still-unresolved'
-  | 'pending-apply';
+  | 'resolvable-pi'
+  | 'unresolvable-pi';
 
 export interface InferredPiLagRow {
   entityId: string;
@@ -23,6 +24,10 @@ export interface InferredPiLeadMaterializationDeps {
   loadCurrentObservationsForEntity: (
     entity: InferredPiLagEntity,
   ) => Promise<MaterializerObservationLike[]>;
+  countResolvableInferredPis: (
+    entityId: string,
+    observations: MaterializerObservationLike[],
+  ) => Promise<number>;
   materializeInferredPiLead: (
     entityId: string,
     observations: MaterializerObservationLike[],
@@ -49,7 +54,8 @@ function emptyTally(): Record<InferredPiLagDisposition, number> {
     'materialized-lead': 0,
     'already-linked': 0,
     'still-unresolved': 0,
-    'pending-apply': 0,
+    'resolvable-pi': 0,
+    'unresolvable-pi': 0,
   };
 }
 
@@ -65,11 +71,15 @@ export async function runInferredPiLeadMaterializationBackfill(
 
   const rows: InferredPiLagRow[] = [];
   for (const entity of lagging) {
+    const observations = await deps.loadCurrentObservationsForEntity(entity);
     if (!options.apply) {
-      rows.push({ ...entity, disposition: 'pending-apply' });
+      const resolvablePis = await deps.countResolvableInferredPis(entity.entityId, observations);
+      rows.push({
+        ...entity,
+        disposition: resolvablePis > 0 ? 'resolvable-pi' : 'unresolvable-pi',
+      });
       continue;
     }
-    const observations = await deps.loadCurrentObservationsForEntity(entity);
     await deps.materializeInferredPiLead(entity.entityId, observations);
     const linked = await deps.hasCurrentLeadAfter(entity.entityId);
     rows.push({

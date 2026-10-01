@@ -216,10 +216,8 @@ describe('applyScraperEnvironmentGuards', () => {
 
   it.each([
     ['run', 'beta', 'Beta', { ALLOW_NON_PROD_SCRAPER_WRITES: 'true' }],
-    ['cron', 'beta', 'Beta', { ALLOW_NON_PROD_SCRAPER_WRITES: 'true' }],
     ['materialize', 'beta', 'Beta', { ALLOW_NON_PROD_SCRAPER_WRITES: 'true' }],
     ['run', 'production', 'Prod', { CONFIRM_PROD_SCRAPE: 'true' }],
-    ['cron', 'production', 'Prod', { CONFIRM_PROD_SCRAPE: 'true' }],
     ['materialize', 'production', 'Prod', { CONFIRM_PROD_SCRAPE: 'true' }],
   ] as const)(
     'refuses a %s write against %s and points at the promotion path',

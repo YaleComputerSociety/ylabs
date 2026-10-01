@@ -5,7 +5,7 @@ Status: active runbook
 Last updated: 2026-09-27
 
 For the concise Development sweep -> Development-to-Beta mirror -> Beta re-gate and reindex -> Production promotion sequence, use [`docs/data-refresh-runbook.md`](./data-refresh-runbook.md).
-Scrapers write only to Development; Beta and Production receive data only through promotion, and the scrape CLI refuses a `run`, `cron`, or `materialize` write against either (decision 2026-09-27 in `docs/decisions.md`).
+Scrapers write only to Development; Beta and Production receive data only through promotion, and the scrape CLI refuses a `run` or `materialize` write against either (decision 2026-09-27 in `docs/decisions.md`).
 This longer document remains the source-specific deployment and recovery reference.
 
 ## Goal
@@ -51,7 +51,7 @@ The web app can stay on Render while scraper execution remains separate:
 
 ```txt
 Source metadata
-  -> ScrapeJobLock for every writing run, cron or CLI
+  -> ScrapeJobLock for every writing run
   -> ScrapeRun
   -> append-only Observation rows
   -> entity materialization
@@ -133,7 +133,7 @@ Use `--skip-meili`, `--skip-source-metadata`, or `--skip-readiness` only for a t
 
 OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref ingestion are retired and are not valid sweep sources.
 Researcher profiles may expose reviewed Google Scholar and ORCID links for outbound navigation, but those links do not rebuild a local publication corpus.
-Ordinary scraper runs, cron runs, and standalone materialization never read or write paper data; paper materialization and the `Paper` and `PaperAuthor` models and their readers are retired with no rollback opt-in.
+Ordinary scraper runs and standalone materialization never read or write paper data; paper materialization and the `Paper` and `PaperAuthor` models and their readers are retired with no rollback opt-in.
 Historical `paper` observations are retained as read-only archived evidence and are never materialized.
 Retain historical source rows and observations and the stored scholarly collections until the human-gated `papers`/`paper_authors` collection drop in issue #207.
 
@@ -289,7 +289,7 @@ Dry-run rollback drill before using Lane A:
 
 The former Lane B ran scrapers directly against Production, one source at a time, and scheduled `scrape cron` against it.
 It was retired on 2026-09-27 together with the Beta sweep modes, because a second write path into Production produces evidence that Development, the only environment anyone measures, has never seen.
-The scrape CLI now refuses any Production `run`, `cron`, or `materialize` write, so a delta is a Development sweep followed by a promotion.
+The scrape CLI now refuses any Production `run` or `materialize` write, so a delta is a Development sweep followed by a promotion.
 
 ### Meilisearch Gate
 
@@ -367,7 +367,7 @@ After a successful gate, update the promotion's GitHub issue with:
 
 A recurring refresh is a Development incremental sweep, `yarn scrape:development:all:incremental`, followed by the mirror to Beta and the promotion to Production in [`data-refresh-runbook.md`](./data-refresh-runbook.md).
 No scheduled job scrapes Beta or Production.
-`scrape cron` remains in the CLI but refuses to write, because it only ever targeted Production.
+`scrape cron` is gone: it only ever targeted Production, and #3741 moved its one remaining duty, the inferred-PI lead reclaim, into the Development sweep as the `inferred-pi-lead-reclaim` post-run stage.
 
 The `run` and `materialize` commands take a per-source `ScrapeJobLock` when they write (#2498), so a second writer on one source is refused rather than interleaved, and they exit nonzero because an operator asked for work that did not happen.
 A `--dry-run` does not contend for the lock and instead warns when a live holder exists.

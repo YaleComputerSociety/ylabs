@@ -4,7 +4,6 @@
  * Usage:
  *   npx tsx server/src/scrapers/cli.ts list
  *   npx tsx server/src/scrapers/cli.ts run --source nih-reporter [flags] [--output <path>]
- *   npx tsx server/src/scrapers/cli.ts cron --source nih-reporter --release   (retired; refuses to write)
  *   npx tsx server/src/scrapers/cli.ts materialize --run <runId> [--dry-run|--confirm-materialize] [--output <path>]
  *   npx tsx server/src/scrapers/cli.ts report --run <runId> [--output <path>]
  *   npx tsx server/src/scrapers/cli.ts prune-observations [--apply --confirm-observation-prune] [--output <path>]
@@ -40,7 +39,6 @@ import {
   summarizeMongoUrl,
   type ScraperEnvironment,
 } from './scraperEnvironment';
-import { createCronRunnerDependencies, runScraperCron } from './cronRunner';
 import {
   createScrapeJobLockOwnerId,
   findHeldScrapeJobLock,
@@ -54,7 +52,6 @@ import {
 import { writeOptionalJsonOutput } from './scraperCliOutput';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
-  buildCronOutputPayload,
   buildMaterializeOutputPayload,
   buildScraperCliOutputPayload,
   buildScraperCliPreflight,
@@ -66,7 +63,6 @@ import {
 } from './cliHelpers';
 
 export {
-  buildCronOutputPayload,
   buildMaterializeOutputPayload,
   buildScraperCliOutputPayload,
   buildScraperCliPreflight,
@@ -83,8 +79,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 // What a guarded CLI write reports back to the lock: the reason the lock row
-// records and the run it belongs to, so a CLI holder's provenance matches what
-// `cronRunner` already stores.
+// records and the run it belongs to.
 interface ScrapeCliLockedOutcome {
   runId?: string;
   failed?: boolean;
@@ -96,9 +91,9 @@ function reportScrapeCliCompletion(outcome: ScrapeCliCompletionOutcome): void {
   if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode;
 }
 
-// Every CLI write to a source runs inside that source's job lock, which is what
-// `cronRunner` already did and the CLI did not, so two operators or two agents
-// could write one source concurrently with nothing objecting (#2498).
+// Every CLI write to a source runs inside that source's job lock; before #2498 the
+// CLI took none, so two operators or two agents could write one source concurrently
+// with nothing objecting.
 //
 // Refusing is reported rather than thrown so the caller can print an operator
 // message and set an exit code; returning `true` means the work did not complete
@@ -196,8 +191,6 @@ ylabs scraper CLI
 
   list                                       List registered scrapers
   run --source <name> [flags]                Run a scraper
-  cron --source <name> --release             Retired: refuses to write in every environment;
-                                             use the Development sweep plus promotion
   materialize --run <runId> [--output <path>]
                                              Materialize observations from a previous run
   report --run <runId> [--output <path>]     Print or save a QA report for a ScrapeRun
@@ -227,10 +220,6 @@ Run flags:
   --auto-materialize   Materialize immediately after a successful run
   --output <path>      Save the ScrapeRun report JSON
 
-Cron flags:
-  --force-disabled     Run a disabled source only for manual recovery
-  --output <path>      Save the cron result and ScrapeRun report JSON
-
 Materialize flags:
   --dry-run            Preview materialization without writing derived records
   --confirm-materialize
@@ -252,7 +241,7 @@ Environment guardrails:
   SCRAPER_ENV=development|beta|production
   Development runs default to --dry-run and disable --auto-materialize;
   set ALLOW_NON_PROD_SCRAPER_WRITES=true to write.
-  Beta and Production refuse run, cron, and materialize writes: they receive
+  Beta and Production refuse run and materialize writes: they receive
   data only through promotion (docs/data-refresh-runbook.md).
 
 Concurrency:
@@ -400,52 +389,6 @@ Concurrency:
         run: performRun,
       });
       if (runRefusal) process.exitCode = 1;
-      return;
-    }
-
-    if (command === 'cron') {
-      if (preflight.command !== 'cron') throw new Error('Invalid cron preflight state.');
-      const cronPreflight = preflight as Extract<ScraperCliPreflight, { command: 'cron' }>;
-      const { sourceName, guard } = cronPreflight;
-      for (const warning of guard.warnings) console.warn(`WARNING: ${warning}`);
-      console.log(`Scraper environment: ${guard.environment}; Mongo target: ${guard.dbLabel}`);
-      const result = await runScraperCron(
-        {
-          sourceName,
-          environment: guard.environment,
-          options: guard.options,
-          forceDisabled: cronPreflight.forceDisabled,
-        },
-        createCronRunnerDependencies(orchestrator),
-      );
-
-      const { report, ...summary } = result as any;
-      console.log(`\nCron scrape result for "${sourceName}":`);
-      console.log(JSON.stringify(summary, null, 2));
-      const cronOutput = await writeOptionalJsonOutput({
-        outputPath: flags.output,
-        payload: buildScraperCliOutputPayload(buildCronOutputPayload(result), {
-          command: 'cron',
-          environment: guard.environment,
-          db: connectedDbLabel(),
-          options: {
-            sourceName,
-            ...guard.options,
-            forceDisabled: cronPreflight.forceDisabled,
-            output: typeof flags.output === 'string' ? flags.output : undefined,
-          },
-        }),
-        label: 'cron scrape report',
-      });
-      if (report) {
-        if (!cronOutput.saved) {
-          console.log(
-            `\nRun report for ${result.status === 'completed' ? result.runId : sourceName}:`,
-          );
-          console.log(JSON.stringify(report, null, 2));
-        }
-      }
-      if (result.exitCode !== 0) process.exitCode = result.exitCode;
       return;
     }
 

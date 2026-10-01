@@ -198,6 +198,7 @@ export interface DevelopmentPostRunStage {
     | 'organization-identity-website-retire'
     | 'shared-roster-website-retire'
     | 'refusal-lane-attribution'
+    | 'inferred-pi-lead-reclaim'
     | 'visibility-gate'
     | 'search-rebuild'
     | 'lane-scorecard'
@@ -219,6 +220,7 @@ export interface DevelopmentPostRunStage {
   profileLinkHealthDelta?: ProfileLinkHealthStageDelta;
   deadResearchWebsiteDelta?: DeadResearchWebsiteStageDelta;
   staleScrapeRunReapDelta?: StaleScrapeRunReapStageDelta;
+  inferredPiLeadReclaimDelta?: InferredPiLeadReclaimStageDelta;
 }
 
 export interface DevelopmentPostRunStageOptions {
@@ -887,6 +889,7 @@ interface PostRunStageDelta {
   profileLinkHealthDelta?: ProfileLinkHealthStageDelta;
   deadResearchWebsiteDelta?: DeadResearchWebsiteStageDelta;
   staleScrapeRunReapDelta?: StaleScrapeRunReapStageDelta;
+  inferredPiLeadReclaimDelta?: InferredPiLeadReclaimStageDelta;
 }
 
 export interface StaleScrapeRunReapStageDelta {
@@ -966,6 +969,36 @@ export function parseDeadResearchWebsiteResult(artifact: unknown): PostRunStageD
       demotedRepairedRows: Number(record.demotedRepairedRows ?? 0),
       completed: record.completed,
       stoppedAfter: String(record.stoppedAfter ?? ''),
+    },
+  };
+}
+
+export interface InferredPiLeadReclaimStageDelta {
+  scanned: number;
+  lagging: number;
+  materializedLead: number;
+  stillUnresolved: number;
+}
+
+export function parseInferredPiLeadReclaimResult(artifact: unknown): PostRunStageDelta {
+  const record = artifact as Record<string, unknown> | null;
+  if (!record || typeof record !== 'object' || record.mode !== 'apply' || record.scope !== 'all') {
+    throw new Error('inferred-pi-lead-reclaim result is not an apply report over every entity');
+  }
+  const tally = (record.tally ?? {}) as Record<string, unknown>;
+  const count = (source: Record<string, unknown>, field: string): number => {
+    const value = source[field];
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw new Error(`inferred-pi-lead-reclaim result is missing a numeric ${field}`);
+    }
+    return value;
+  };
+  return {
+    inferredPiLeadReclaimDelta: {
+      scanned: count(record, 'scanned'),
+      lagging: count(record, 'lagging'),
+      materializedLead: count(tally, 'materialized-lead'),
+      stillUnresolved: count(tally, 'still-unresolved'),
     },
   };
 }
@@ -1320,6 +1353,18 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     artifactName: 'development-refusal-lane-attribution.json',
     buildArgs: () => ['--apply', '--confirm-attribute-refusal-lanes'],
     isEnabled: () => true,
+  },
+  {
+    // Ordered before `visibility-gate` so the gate judges the leads this writes in the same
+    // sweep. The materializer links an inferred PI only for rows a run re-observes, so a row
+    // whose PI key became resolvable after its last materialize stays leadless until this
+    // pass revisits every row whose evidence names a PI the gate does not yet accept (#3741).
+    name: 'inferred-pi-lead-reclaim',
+    command: 'data:materialize-inferred-pi-leads',
+    artifactName: 'development-inferred-pi-lead-reclaim.json',
+    buildArgs: () => ['--all', '--apply'],
+    isEnabled: () => true,
+    parseResult: parseInferredPiLeadReclaimResult,
   },
   {
     name: 'visibility-gate',

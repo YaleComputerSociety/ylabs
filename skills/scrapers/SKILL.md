@@ -117,7 +117,7 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
 ## Safety rules (write guards)
 
 - Scrapers write only to Development. Non-production environments default to dry-run; set `ALLOW_NON_PROD_SCRAPER_WRITES=true` to write to the Development DB.
-- Beta and Production receive data only through promotion, so `applyScraperEnvironmentGuards` refuses any `run`, `cron`, or `materialize` write against either, with `promotionOnlyScraperWriteRefusal` naming the promotion commands (#3670). Dry runs stay allowed. Never add a Beta or Production sweep mode or a direct-write command; `docs/decisions.md` (2026-09-27) records why.
+- Beta and Production receive data only through promotion, so `applyScraperEnvironmentGuards` refuses any `run` or `materialize` write against either, with `promotionOnlyScraperWriteRefusal` naming the promotion commands (#3670). Dry runs stay allowed. Never add a Beta or Production sweep mode or a direct-write command; `docs/decisions.md` (2026-09-27) records why.
 - `scraperEnvironment.ts` enforces `SCRAPER_ENV` write guards.
 - Observation retention must preserve every Observation referenced by durable materialized records, including archived rollback records. Run it dry-run-first with an explicit environment, keep scrapers and materializers paused, and leave Production retention disabled unless a separate reviewed issue authorizes it. Retention is keyed on `superseded: true`, which only means "not projected" while the materializer's read scope excludes superseded rows, so `supersededPruneIsProjectionNeutral` reads `materializationReadScopeFilter()` rather than restating that scope, and both pruners refuse to apply unless `C4_LOSSLESS_INGEST` is declared off in the environment the target materializes from (#2944). Never decouple them by restating the scope in the pruner. `docs/research-data-pipeline.md` owns the guard contract, including why an undeclared flag is not the same as an off one.
 - Settle live artifacts left on archived research entities with `research-entity:repair-archived-artifacts`.
@@ -150,7 +150,7 @@ The refusal is host plus path shape, so a genuine personal or lab site on a non-
 ## Concurrency: only one writer per source
 
 Every CLI write to a source runs inside that source's `ScrapeJobLock`, through `withScrapeJobLock`.
-Before #2498 only `cronRunner` took the lock, so two operators or two agents could write one source concurrently with nothing objecting, and any sequencing was convention rather than enforcement.
+Before #2498 only the cron runner took the lock, so two operators or two agents could write one source concurrently with nothing objecting, and any sequencing was convention rather than enforcement.
 
 - `scrape run` without `--dry-run` acquires the lock, heartbeats it, and releases it on success or failure.
   A second writer on the same source is **refused** with a nonzero exit and does not start.
@@ -164,7 +164,7 @@ Before #2498 only `cronRunner` took the lock, so two operators or two agents cou
 - An interrupted holder does not wedge it either: `withScrapeJobLock` releases the lock on `SIGINT` or `SIGTERM` through `onInterrupt`, which also closes the run as `interrupted`, and then re-raises the signal, so a Ctrl-C or a `kill` frees the source immediately instead of blocking the operator's own retry for the rest of the lease.
 - A release that cannot be written is logged and swallowed, because rewriting a completed write as a failure, or replacing a scrape's real error with a Mongo error from the cleanup, is worse than a lock that expires on its own.
 - Losing the lease mid-run is reported, not ignored: a renewal that matches no row means the row no longer belongs to this process, so the command prints `LOCK LOST` and exits nonzero rather than reporting an exclusive write it did not have.
-- The lock row records the same provenance for a CLI writer as for cron: `releaseReason` follows the run's own outcome, and `lastRunId` names the run.
+- The lock row records a CLI writer's provenance: `releaseReason` follows the run's own outcome, and `lastRunId` names the run.
 
 ### `scrape_runs.status` is read through a heartbeat
 
@@ -206,7 +206,7 @@ A failure that reads as success or as a legitimate verdict is worse than a crash
 - `scrape run` exits nonzero when the run status is `failure` or when `--auto-materialize` reports row errors, and `scrape materialize` exits nonzero on row errors, dry run included (`scrapeCliCompletionOutcome` in `cliHelpers.ts`).
   A `partial` run prints a warning and exits zero.
   When row errors skip the student visibility gate, the command says so, because a silently skipped gate leaves every row the run touched un-regated.
-  `cronRunner` already exited nonzero on either condition, and the sweep fails the step on a nonzero exit, a non-`success` status, or materialization errors, so neither changes.
+  The sweep fails the step on a nonzero exit, a non-`success` status, or materialization errors.
 
 ### Killing a scraper process
 
@@ -633,7 +633,12 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
 - `snapshotCache.ts` - the opt-in `--use-cache` Mongo `ScrapeSnapshot` cache of whole payloads; it is what filled the Development quota (#3536), so prefer the disk-backed validator cache below for routine reruns
 - `scraperEnvironment.ts` - enforces `SCRAPER_ENV` write guards
 - `sourceCoverageRegistry.ts` - declares source priority, tier, and artifact types
-- `cronRunner.ts` - cron-aware runner with distributed job locking (`ScrapeJobLock`); production-only, so on a repository whose only scraping environment is Development this path does not run
+- `inferredPiLeadReclaim.ts` - the inferred-PI lead reclaim (`data:materialize-inferred-pi-leads`): it revisits every non-archived row holding a live `inferredPiUserId` or `inferredPiUserKey` observation but no lead the visibility gate accepts, and re-runs `materializeInferredPiMembership` on it.
+  The materializer links an inferred PI only for rows a run re-observes, so a row whose PI key became resolvable later (a researcher minted afterwards, an alias map healed) stays leadless until this pass reaches it.
+  It runs as the `inferred-pi-lead-reclaim` Development post-run stage with `--all --apply`, ordered before `visibility-gate`, and its result contract reports `materialized-lead` and `still-unresolved` (#3741).
+  Its dry run classifies each lagging row with the materializer's own `planInferredPiMembership`: `resolvable-pi` when some PI evidence resolves to a researcher, `unresolvable-pi` when none does.
+  A resolvable PI is not a promise of a new edge: a `DISPUTED` archived edge for that person stays archived (`roleAssignmentReattachWrite`), and a live edge the gate judges too weak stays rejected, so the apply tally is the yield.
+  The only automatic caller used to be the cron runner, which could write only to Production and so never ran once Production became promotion-only; #3741 deleted it and the `scrape cron` command.
 - `confidenceResolver.ts` - pure-function aggregator that picks a winning observation value and computes a confidence score (no DB calls, fully testable)
 - `observationRetention.ts` - TTL/cleanup for old observation rows
 - `renderedFetch.ts` - headless-browser fetch helper for JS-rendered pages
@@ -667,7 +672,7 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
   The orchestrator attributes counters to the run through `AsyncLocalStorage` and records them as `fetchMetrics.httpCache` (`revalidations`, `notModified`, `bytesSaved`, `bytesDownloaded`, `stored`, `refetched`, `storeErrors`) on the `ScrapeRun`; when the cache saw activity, a lane that reports no fetch attempts gets an empty `attempts` list beside it, which the run report reads the same as absent.
 - `utils/sweepPageReuse.ts` and `utils/sweepPageStore.ts` - within-sweep page reuse (#3568), on by default in the three exhaustive Development sweep modes and off with `--no-page-reuse`.
   The store is a bounded in-memory LRU of gzip-compressed pages held by the sweep parent's host slot broker (`SweepPageStore`, `SCRAPER_SWEEP_PAGE_REUSE_MAX_MB`, default 1024), so it is shared by every source child, discarded when the source phases end, and never written to Mongo, which is what #3536 forbids.
-  A child installs the interceptor in `cli.ts` after the validator cache only when the parent set `SCRAPER_SWEEP_PAGE_REUSE=1` beside `SCRAPER_HOST_SLOT_BROKER`, so a hand-run `scrape run`, a cron and the canaries are unchanged.
+  A child installs the interceptor in `cli.ts` after the validator cache only when the parent set `SCRAPER_SWEEP_PAGE_REUSE=1` beside `SCRAPER_HOST_SLOT_BROKER`, so a hand-run `scrape run` and the canaries are unchanged.
   It covers only the explicit `SWEEP_PAGE_REUSE_HOSTS` (`medicine.yale.edu` and `ysph.yale.edu`, deliberately listed rather than derived from `HOST_THROTTLE_OVERRIDES`), only a later `GET` of the same URL, and only a stored `200`; a redirected page is keyed by its final URL, and by the requested URL only when every hop was `301` or `308`.
   A hit takes no host slot and skips the validator cache, both through `isSweepPageReuseHit`; that ordering depends on the reuse interceptor being installed last, because axios runs request interceptors in reverse order.
   Provenance stays honest: a hit carries `x-ylabs-sweep-reused-fetched-at`, a run records `fetchMetrics.sweepPageReuse`, and a roster read records `pagesReusedWithinSweep` with fetch mode `http-sweep-reused`.
@@ -687,7 +692,7 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
 - `seedSources.ts` - populates active `Source` rows from the coverage registry and disables retained historical rows for retired sources.
   Every scraper registered in `registry.ts` needs a seed entry here, because `validateScraperSweepSourceRows` refuses to start a sweep without the row and `scrapers:audit-freshness` blocks on it; applying the seed is the remediation, so a registered scraper the seed does not declare leaves the audit failing with nothing an operator can do.
 - `sourceDispatch.ts` - owns `RETIRED_SOURCE_NAMES` and declares which lanes are script-driven, so a worklist can tell runnable work from work that cannot be done (#2619).
-  `buildOrchestrator()` is the authority for sweep dispatch, because the CLI, the cron, and the sweep all resolve a source name through it; a `Source` row it does not name cannot be crawled whatever the row says.
+  `buildOrchestrator()` is the authority for sweep dispatch, because the CLI and the sweep both resolve a source name through it; a `Source` row it does not name cannot be crawled whatever the row says.
   A row that is neither registered, nor declared script-driven, nor retired is `unowned`, and `scrapers:audit-freshness` fails on it rather than listing it as pending work.
   Retiring a lane means adding its name here and applying `scrape:seed-sources`, which stamps `enabled: false`, `cadence: 'retired'`, and a retirement note while leaving stored observations and scrape runs intact as evidence.
 - `integrityGate.ts` - post-materialization integrity gate (duplicate entities/people, current members on archived entities, duplicate access signals, active artifacts on archived entities, and a `deadEndTombstoneChains` warning for malformed tombstone pointers), with recommended CLI repair commands
@@ -1252,7 +1257,7 @@ Three distinct upstream mechanisms produce wrong-attribution prose and a single 
 
 ## Deprecated: bibliographic paper pipeline
 
-The bibliographic ingestion implementations for arXiv, OpenAlex, ORCID works, Europe PMC/PubMed, and Crossref have been removed and cannot run via the CLI, cron, a sweep, or the work planner.
+The bibliographic ingestion implementations for arXiv, OpenAlex, ORCID works, Europe PMC/PubMed, and Crossref have been removed and cannot run via the CLI, a sweep, or the work planner.
 The official-profile publication producer and materializer retirement contract is documented in `docs/research-data-pipeline.md`.
 Paper materialization and the `Paper` and `PaperAuthor` models and their readers are fully retired with no rollback opt-in; see `docs/scraper-deployment-runbook.md`.
 The launch-trust gate no longer enforces paper-quality or research-activity checks.
