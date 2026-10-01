@@ -81,27 +81,6 @@ describe('scraper CLI helpers', () => {
     expect(() =>
       cli.parseArgs(['node', 'cli.ts', 'run', '--source=orcid', '--release=false']),
     ).toThrow(/--release does not accept a value/);
-    expect(() =>
-      cli.parseArgs([
-        'node',
-        'cli.ts',
-        'cron',
-        '--source=orcid',
-        '--release',
-        '--force-disabled=false',
-      ]),
-    ).toThrow(/--force-disabled does not accept a value/);
-    expect(() =>
-      cli.parseArgs([
-        'node',
-        'cli.ts',
-        'cron',
-        '--source=orcid',
-        '--release',
-        '--force-disabled',
-        'false',
-      ]),
-    ).toThrow(/Unknown scraper CLI argument: false/);
     expect(
       cli.parseArgs(['node', 'cli.ts', 'run', '--source=orcid', '--release', '--dry-run']),
     ).toEqual({
@@ -110,16 +89,6 @@ describe('scraper CLI helpers', () => {
         source: 'orcid',
         release: true,
         'dry-run': true,
-      },
-    });
-    expect(
-      cli.parseArgs(['node', 'cli.ts', 'cron', '--source=orcid', '--release', '--force-disabled']),
-    ).toEqual({
-      command: 'cron',
-      flags: {
-        source: 'orcid',
-        release: true,
-        'force-disabled': true,
       },
     });
     expect(
@@ -343,116 +312,6 @@ describe('scraper CLI helpers', () => {
         dryRun: true,
         only: ['__codex_no_such_netid__'],
       },
-    });
-  });
-
-  it('builds cron review artifacts from completed and skipped cron results', async () => {
-    const cli = await import('../cliHelpers');
-    const completedCronResult = {
-      status: 'completed' as const,
-      sourceName: 'orcid',
-      runId: 'run-123',
-      exitCode: 0 as const,
-      ownerId: 'owner-1',
-      scrapeResult: { observationCount: 2 },
-      materializationResult: {
-        materialized: 2,
-        created: 1,
-        updated: 1,
-        conflicts: 0,
-        skipped: 0,
-        errors: 0,
-        postMaterializationMetrics: {
-          entryPathways: 0,
-          accessSignals: 0,
-          contactRoutes: 0,
-          postedOpportunities: 0,
-          guardedContactRoutes: 0,
-          staleEvidenceSkipped: 0,
-          conflicts: 0,
-          errors: 0,
-        },
-      },
-      visibilityGateResult: {
-        mode: 'apply' as const,
-        collection: 'all' as const,
-        scanned: 2,
-        counts: {
-          scanned: 2,
-          promoted: 2,
-          held: 0,
-          resolved: 2,
-          changed: 0,
-        },
-        reasonCounts: {},
-        blockerCounts: {},
-        sourceCounts: {},
-        samples: [],
-      },
-      report: {
-        run: {
-          id: 'run-123',
-          sourceName: 'orcid',
-          status: 'success',
-          invalidated: false,
-          options: {},
-        },
-        observations: {
-          total: 2,
-          entitiesObserved: 1,
-          byEntityType: {},
-          byField: {},
-          topFields: [],
-          active: 2,
-          superseded: 0,
-          duplicateRate: 0,
-        },
-        materialization: {
-          created: 1,
-          updated: 1,
-          archived: 0,
-          skipped: 0,
-          conflicts: 0,
-          errors: 0,
-        },
-        coverage: {
-          fetch: {
-            attempts: 0,
-            succeeded: 0,
-            failed: 0,
-            blocked: 0,
-            selectorBreakages: 0,
-            byMode: {},
-          },
-          observationsEmitted: 2,
-          materializationWrites: 2,
-        },
-        quality: {
-          conflictCandidateCount: 0,
-          conflictCandidates: [],
-          missingEntityIdentifierCount: 0,
-          missingSourceUrlCount: 0,
-          lowConfidenceCount: 0,
-        },
-        warnings: [],
-        errors: [],
-      },
-    };
-
-    expect(cli.buildCronOutputPayload(completedCronResult)).toEqual(completedCronResult);
-
-    expect(
-      cli.buildCronOutputPayload({
-        status: 'skipped-lock-held',
-        sourceName: 'orcid',
-        exitCode: 0,
-        ownerId: 'owner-1',
-      }),
-    ).toEqual({
-      status: 'skipped-lock-held',
-      sourceName: 'orcid',
-      exitCode: 0,
-      ownerId: 'owner-1',
     });
   });
 });

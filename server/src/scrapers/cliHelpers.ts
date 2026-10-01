@@ -20,12 +20,6 @@ export type ScraperCliPreflight =
       guard: ScraperCommandGuardResult;
     }
   | {
-      command: 'cron';
-      sourceName: string;
-      forceDisabled: boolean;
-      guard: ScraperCommandGuardResult;
-    }
-  | {
       command: 'materialize';
       runId: string;
       confirmMaterialize: boolean;
@@ -66,7 +60,6 @@ const BOOLEAN_FLAGS = new Set([
   'dry-run',
   'exhaustive',
   'explain',
-  'force-disabled',
   'force-llm',
   'ignore-work-planner',
   'release',
@@ -291,10 +284,6 @@ export function buildMaterializeOutputPayload({
   };
 }
 
-export function buildCronOutputPayload<T>(result: T): T {
-  return result;
-}
-
 export function buildScraperCliOutputPayload<T extends object>(
   payload: T,
   metadata: ScraperCliOutputMetadata,
@@ -327,26 +316,6 @@ export function buildScraperCliPreflight(
         command,
         options,
         autoMaterialize: !!flags['auto-materialize'],
-        mongoUrl,
-        env,
-      }),
-    };
-  }
-
-  if (command === 'cron') {
-    const sourceName = flags.source as string;
-    if (!sourceName) {
-      throw new Error('ERROR: --source <name> is required');
-    }
-    const options = parseScraperOptions(flags);
-    return {
-      command,
-      sourceName,
-      forceDisabled: !!flags['force-disabled'],
-      guard: applyScraperEnvironmentGuards({
-        command,
-        options,
-        autoMaterialize: true,
         mongoUrl,
         env,
       }),

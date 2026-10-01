@@ -29,6 +29,7 @@ import {
   parseDevelopmentPostRunStageResult,
   parseEponymousFraMergeResult,
   parseGrantShellPortResult,
+  parseInferredPiLeadReclaimResult,
   parseResearcherDedupeResult,
   parseUrlIdentityDedupeResult,
   parseProfileLinkHealthResult,
@@ -545,6 +546,7 @@ describe('runScraperSweep', () => {
       'organization-identity-website-retire',
       'shared-roster-website-retire',
       'refusal-lane-attribution',
+      'inferred-pi-lead-reclaim',
       'visibility-gate',
       'search-rebuild',
       'lane-scorecard',
@@ -712,6 +714,7 @@ describe('runScraperSweep', () => {
       'organization-identity-website-retire',
       'shared-roster-website-retire',
       'refusal-lane-attribution',
+      'inferred-pi-lead-reclaim',
       'visibility-gate',
       'search-rebuild',
       'lane-scorecard',
@@ -765,6 +768,7 @@ describe('runScraperSweep', () => {
       'organization-identity-website-retire',
       'shared-roster-website-retire',
       'refusal-lane-attribution',
+      'inferred-pi-lead-reclaim',
       'visibility-gate',
       'search-rebuild',
       'lane-scorecard',
@@ -1637,5 +1641,63 @@ describe('the profile-link-health stage carries a result contract', () => {
       (definition) => definition.name === 'profile-link-health',
     );
     expect(stage?.parseResult).toBe(parseProfileLinkHealthResult);
+  });
+});
+
+describe('inferred-PI lead reclaim post-run stage', () => {
+  const reclaimReport = (overrides: Record<string, unknown> = {}) => ({
+    mode: 'apply',
+    scope: 'all',
+    scanned: 40,
+    lagging: 7,
+    rows: [],
+    tally: {
+      'materialized-lead': 3,
+      'already-linked': 0,
+      'still-unresolved': 4,
+      'resolvable-pi': 0,
+      'unresolvable-pi': 0,
+    },
+    ...overrides,
+  });
+
+  it('runs on every Development sweep, over every entity, before the visibility gate', () => {
+    const stages = buildDevelopmentPostRunStages('/tmp/development-sweep');
+    const names = stages.map((stage) => stage.name);
+    expect(names).toContain('inferred-pi-lead-reclaim');
+    expect(names.indexOf('inferred-pi-lead-reclaim')).toBeLessThan(
+      names.indexOf('visibility-gate'),
+    );
+    expect(stages.find((stage) => stage.name === 'inferred-pi-lead-reclaim')?.args).toEqual([
+      '--cwd',
+      'server',
+      'data:materialize-inferred-pi-leads',
+      '--all',
+      '--apply',
+      '--output',
+      '/tmp/development-sweep/development-inferred-pi-lead-reclaim.json',
+    ]);
+  });
+
+  it('reports the leads it linked and the rows it could not in the sweep summary', () => {
+    expect(parseInferredPiLeadReclaimResult(reclaimReport()).inferredPiLeadReclaimDelta).toEqual({
+      scanned: 40,
+      lagging: 7,
+      materializedLead: 3,
+      stillUnresolved: 4,
+    });
+  });
+
+  it('fails its contract on a dry-run, grant-shell-only or countless report', () => {
+    expect(() => parseInferredPiLeadReclaimResult(null)).toThrow(/not an apply report/);
+    expect(() => parseInferredPiLeadReclaimResult(reclaimReport({ mode: 'dry-run' }))).toThrow(
+      /not an apply report/,
+    );
+    expect(() =>
+      parseInferredPiLeadReclaimResult(reclaimReport({ scope: 'grant-shells' })),
+    ).toThrow(/not an apply report/);
+    expect(() => parseInferredPiLeadReclaimResult(reclaimReport({ tally: {} }))).toThrow(
+      /missing a numeric materialized-lead/,
+    );
   });
 });

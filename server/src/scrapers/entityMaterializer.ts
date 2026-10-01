@@ -2555,15 +2555,15 @@ function withResolvedFieldProvenance(
   return output;
 }
 
-export async function materializeInferredPiMembership(
+export async function planInferredPiMembership(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
-): Promise<void> {
+): Promise<InferredPiLeadFacts[]> {
+  const leads: InferredPiLeadFacts[] = [];
   const piObservations = observations.filter((obs) => obs.field === 'inferredPiUserId');
   for (const observation of piObservations) {
     const facts = buildInferredPiLeadFacts(researchEntityId, observation);
-    if (!facts) continue;
-    await materializeCanonicalPiMembership(researchEntityId, facts);
+    if (facts) leads.push(facts);
   }
 
   const piKeyObservations = observations.filter((obs) => obs.field === 'inferredPiUserKey');
@@ -2572,12 +2572,20 @@ export async function materializeInferredPiMembership(
       inferredPiUserKeyIdentity(observation.value),
     );
     if (resolution.status !== 'matched' || !resolution.researcherId) continue;
-    const researcherId = resolution.researcherId.toString();
     const facts = buildInferredPiLeadFacts(researchEntityId, {
       ...observation,
-      value: researcherId,
+      value: resolution.researcherId.toString(),
     });
-    if (!facts) continue;
+    if (facts) leads.push(facts);
+  }
+  return leads;
+}
+
+export async function materializeInferredPiMembership(
+  researchEntityId: string,
+  observations: MaterializerObservationLike[],
+): Promise<void> {
+  for (const facts of await planInferredPiMembership(researchEntityId, observations)) {
     await materializeCanonicalPiMembership(researchEntityId, facts);
   }
 }
