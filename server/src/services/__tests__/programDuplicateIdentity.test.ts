@@ -33,19 +33,23 @@ describe('programFundTitleKey', () => {
 });
 
 describe('selectDuplicateProgramCopies', () => {
-  it('keeps the copy most fit to serve and retires the rest onto it', () => {
-    expect(
-      redundant(
-        copy('a', { tier: 'suppressed' }),
-        copy('b', { sourceName: 'student-grants-database' }),
-      ),
-    ).toEqual([['a', 'b']]);
+  it('keeps the copy most fit to serve among copies from one lane', () => {
+    expect(redundant(copy('a', { tier: 'suppressed' }), copy('b'))).toEqual([['a', 'b']]);
   });
 
-  it('prefers the owning lane over the enrich-only catalog when both could serve', () => {
+  it('keeps the Yale fellowship database record over another lane copy (#4289)', () => {
     expect(redundant(copy('a', { sourceName: 'student-grants-database' }), copy('b'))).toEqual([
-      ['a', 'b'],
+      ['b', 'a'],
     ]);
+  });
+
+  it('keeps the database record even when the other copy is more fit to serve (#4289)', () => {
+    expect(
+      redundant(
+        copy('a'),
+        copy('b', { sourceName: 'student-grants-database', tier: 'suppressed' }),
+      ),
+    ).toEqual([['a', 'b']]);
   });
 
   it('keeps the older row when nothing else separates two copies', () => {
@@ -69,7 +73,7 @@ describe('selectDuplicateProgramCopies', () => {
           description: `Student and faculty awards. Apply now. ${DESCRIPTION} Questions go to the fellowships office, and recipients are announced in April.`,
         }),
       ),
-    ).toEqual([['a', 'b']]);
+    ).toEqual([['b', 'a']]);
   });
 
   it('leaves funds that share a description but name different colleges apart', () => {
@@ -101,5 +105,104 @@ describe('selectDuplicateProgramCopies', () => {
         copy('b', { description: 'Supports research.' }),
       ),
     ).toEqual([]);
+  });
+});
+
+describe('selectDuplicateProgramCopies on a shared fund page', () => {
+  const FUND_PAGE = 'https://yale.communityforce.com/Funds/FundDetails.aspx?46495854555245';
+  const OTHER_FUND_PAGE = 'https://yale.communityforce.com/Funds/FundDetails.aspx?4F54484552';
+  const CATALOG_BLURB =
+    'A one-line catalog summary of the fixture award for summer travel abroad, listed with every other grant this office administers.';
+
+  it('joins two copies of one fund page with one title despite different descriptions', () => {
+    expect(
+      redundant(
+        copy('a', { sourceName: 'student-grants-database', sourceUrl: FUND_PAGE }),
+        copy('b', {
+          description: CATALOG_BLURB,
+          sourceUrl: 'https://catalog.example.edu/fellowships-and-grants',
+          applicationLink: 'https://bit.ly/fixture',
+          links: [{ url: FUND_PAGE }],
+        }),
+      ),
+    ).toEqual([['b', 'a']]);
+  });
+
+  it('joins copies whose titles differ by a prefix or a parenthetical aside', () => {
+    expect(
+      redundant(
+        copy('a', {
+          title: 'Fixture Council (FC) - Summer Travel Grant',
+          sourceName: 'student-grants-database',
+          sourceUrl: FUND_PAGE,
+        }),
+        copy('b', {
+          title: 'Fixture Council - Summer Travel Grant',
+          description: CATALOG_BLURB,
+          applicationLink: FUND_PAGE,
+        }),
+      ),
+    ).toEqual([['b', 'a']]);
+    expect(
+      redundant(
+        copy('a', { title: 'Center Fixture Travel Fellowship', sourceUrl: FUND_PAGE }),
+        copy('b', {
+          title: 'Fixture Travel Fellowship',
+          description: CATALOG_BLURB,
+          links: [{ url: FUND_PAGE }],
+        }),
+      ),
+    ).toEqual([['b', 'a']]);
+  });
+
+  it('leaves two titles apart when a catalog page gave one fund another fund page', () => {
+    expect(
+      redundant(
+        copy('a', {
+          title: 'Fixture Council Grants for Language Study',
+          sourceName: 'student-grants-database',
+          sourceUrl: FUND_PAGE,
+        }),
+        copy('b', {
+          title: 'Fixture Union Studies Grants',
+          description: CATALOG_BLURB,
+          applicationLink: FUND_PAGE,
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('never joins copies on this rule when their fund pages differ', () => {
+    expect(
+      redundant(
+        copy('a', { sourceUrl: FUND_PAGE }),
+        copy('b', { description: CATALOG_BLURB, applicationLink: OTHER_FUND_PAGE }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('keeps the database record, then the copy most fit to serve, whichever cites the page', () => {
+    expect(
+      redundant(
+        copy('a', { tier: 'suppressed', sourceUrl: FUND_PAGE }),
+        copy('b', {
+          sourceName: 'student-grants-database',
+          description: CATALOG_BLURB,
+          applicationLink: FUND_PAGE,
+        }),
+      ),
+    ).toEqual([['a', 'b']]);
+    expect(
+      redundant(
+        copy('a', { sourceName: 'student-grants-database', sourceUrl: FUND_PAGE }),
+        copy('b', { description: CATALOG_BLURB, links: [{ url: FUND_PAGE }] }),
+      ),
+    ).toEqual([['b', 'a']]);
+    expect(
+      redundant(
+        copy('a', { tier: 'suppressed', sourceUrl: FUND_PAGE }),
+        copy('b', { description: CATALOG_BLURB, applicationLink: FUND_PAGE }),
+      ),
+    ).toEqual([['a', 'b']]);
   });
 });

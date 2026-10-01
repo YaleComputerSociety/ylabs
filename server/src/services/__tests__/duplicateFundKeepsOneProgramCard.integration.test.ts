@@ -71,27 +71,27 @@ describe('one fund reached through two fund-page URLs serves one program card (#
     await memoryServer?.stop();
   });
 
-  it('serves the owning lane copy and suppresses the catalog copy as a duplicate', () => {
-    expect(planFor(OFFICE_COPY_ID).tier).toBe('student_ready');
-    expect(planFor(OFFICE_COPY_ID).reasons).not.toContain('duplicate_program');
-    expect(planFor(CATALOG_COPY_ID).tier).toBe('suppressed');
-    expect(planFor(CATALOG_COPY_ID).reasons).toContain('duplicate_program');
+  it('serves the database copy and suppresses the other lane copy as a duplicate (#4289)', () => {
+    expect(planFor(CATALOG_COPY_ID).tier).toBe('student_ready');
+    expect(planFor(CATALOG_COPY_ID).reasons).not.toContain('duplicate_program');
+    expect(planFor(OFFICE_COPY_ID).tier).toBe('suppressed');
+    expect(planFor(OFFICE_COPY_ID).reasons).toContain('duplicate_program');
   });
 
   it('reaches the same verdict when the gate is run over one record', async () => {
     const targeted = await planStudentVisibilityGate({
       collection: 'programs',
       mode: 'dry-run',
-      recordIds: [String(CATALOG_COPY_ID)],
+      recordIds: [String(OFFICE_COPY_ID)],
     });
-    expect(targeted.map((plan) => plan.recordId)).toEqual([String(CATALOG_COPY_ID)]);
-    expect(planFor(CATALOG_COPY_ID, targeted).tier).toBe('suppressed');
+    expect(targeted.map((plan) => plan.recordId)).toEqual([String(OFFICE_COPY_ID)]);
+    expect(planFor(OFFICE_COPY_ID, targeted).tier).toBe('suppressed');
   });
 
   it('still serves exactly one copy after the verdict is applied and the gate runs again', async () => {
     await applyStudentVisibilityGatePlans(plans);
     const rerun = await planStudentVisibilityGate({ collection: 'programs', mode: 'dry-run' });
     const served = rerun.filter((plan) => plan.tier === 'student_ready');
-    expect(served.map((plan) => plan.recordId)).toEqual([String(OFFICE_COPY_ID)]);
+    expect(served.map((plan) => plan.recordId)).toEqual([String(CATALOG_COPY_ID)]);
   });
 });

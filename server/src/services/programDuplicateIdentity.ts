@@ -1,17 +1,21 @@
 import type { StudentVisibilityTier } from '../models/studentVisibility';
-import { ENRICH_ONLY_FELLOWSHIP_SOURCES } from '../scrapers/fellowshipSourcePrecedence';
+import { YALE_FELLOWSHIP_DATABASE_SOURCE } from '../scrapers/fellowshipSourcePrecedence';
+import { recordSpecificApplicationPortalIdentity } from '../utils/researchHomeWebsiteUrl';
 
 export interface ProgramDuplicateCandidate {
   id: string;
   title?: string;
   description?: string;
   sourceName?: string;
+  sourceUrl?: string;
+  applicationLink?: string;
+  links?: ReadonlyArray<{ url?: string } | null | undefined>;
   tier: StudentVisibilityTier | string | undefined;
 }
 
 // A CommunityForce fund page is reached through an encrypted query that differs from link
-// to link, so one fund carries several FundDetails URLs and the URL cannot identify it
-// (#3988). Neither the title nor the description can identify a fund alone: distinct funds
+// to link, so one fund carries several FundDetails URLs and a differing URL never tells two
+// funds apart (#3988). Neither the title nor the description can identify a fund alone: distinct funds
 // share titles, and each residential college's copy of a fund shares one description word
 // for word, differing only in the college its title names. The two together can.
 const MIN_IDENTIFYING_DESCRIPTION_LENGTH = 80;
@@ -74,65 +78,106 @@ const TIER_PREFERENCE: Record<string, number> = {
 
 const tierPreference = (tier: unknown): number => TIER_PREFERENCE[String(tier)] ?? 4;
 
-const ownerPreference = (sourceName: unknown): number =>
-  ENRICH_ONLY_FELLOWSHIP_SOURCES.has(String(sourceName || '')) ? 1 : 0;
+const fellowshipDatabasePreference = (sourceName: unknown): number =>
+  sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE ? 0 : 1;
 
 function preferredCopy(a: ProgramDuplicateCandidate, b: ProgramDuplicateCandidate): number {
   return (
+    fellowshipDatabasePreference(a.sourceName) - fellowshipDatabasePreference(b.sourceName) ||
     tierPreference(a.tier) - tierPreference(b.tier) ||
-    ownerPreference(a.sourceName) - ownerPreference(b.sourceName) ||
     a.id.localeCompare(b.id)
   );
 }
 
-function fundsAmongSameTitleCopies(
-  copies: readonly ProgramDuplicateCandidate[],
-): ProgramDuplicateCandidate[][] {
-  const descriptions = copies.map((copy) => fundDescription(copy.description));
-  const fundOf = copies.map((_, index) => index);
-  const root = (index: number): number => {
-    while (fundOf[index] !== index) index = fundOf[index];
-    return index;
-  };
-  for (let a = 0; a < copies.length; a += 1) {
-    for (let b = a + 1; b < copies.length; b += 1) {
-      if (sameFundDescription(descriptions[a], descriptions[b])) fundOf[root(b)] = root(a);
+// Safe despite #3988 because this rule only joins copies whose fund page is EQUAL and never
+// splits on a differing one. The titles must still agree, because a catalog page can give one
+// fund another fund's link.
+function fundPageIdentities(program: ProgramDuplicateCandidate): string[] {
+  const urls = [
+    program.sourceUrl,
+    program.applicationLink,
+    ...(program.links || []).map((link) => link?.url),
+  ];
+  return [...new Set(urls.map(recordSpecificApplicationPortalIdentity).filter(Boolean))];
+}
+
+const titleKeyWithoutAsides = (title: unknown): string =>
+  programFundTitleKey(String(title || '').replace(/\([^)]*\)/g, ' '));
+
+function titlesNameOneFund(a: unknown, b: unknown): boolean {
+  const keyA = programFundTitleKey(a);
+  const keyB = programFundTitleKey(b);
+  if (!keyA || !keyB) return false;
+  if (keyA === keyB) return true;
+  const [shorter, longer] = [titleKeyWithoutAsides(a), titleKeyWithoutAsides(b)].sort(
+    (x, y) => x.length - y.length,
+  );
+  return !!shorter && ` ${longer} `.includes(` ${shorter} `);
+}
+
+function groupIndexes(
+  programs: readonly ProgramDuplicateCandidate[],
+  keysOf: (program: ProgramDuplicateCandidate) => string[],
+): number[][] {
+  const groups = new Map<string, number[]>();
+  programs.forEach((program, index) => {
+    for (const key of keysOf(program)) {
+      if (!key) continue;
+      const group = groups.get(key);
+      if (group) group.push(index);
+      else groups.set(key, [index]);
     }
-  }
-  const funds = new Map<number, ProgramDuplicateCandidate[]>();
-  copies.forEach((copy, index) => {
-    const fund = funds.get(root(index));
-    if (fund) fund.push(copy);
-    else funds.set(root(index), [copy]);
   });
-  return [...funds.values()];
+  return [...groups.values()].filter((group) => group.length > 1);
+}
+
+function forEachPair(indexes: readonly number[], visit: (a: number, b: number) => void): void {
+  for (let a = 0; a < indexes.length; a += 1) {
+    for (let b = a + 1; b < indexes.length; b += 1) visit(indexes[a], indexes[b]);
+  }
 }
 
 /**
  * Maps each redundant copy of a fund to the copy that is served in its place. The kept copy
- * is the one most fit to serve on its own, then the one an owning lane holds rather than the
- * enrich-only catalog, then the oldest row.
+ * is the Yale fellowship database's record whenever the fund has one (owner decision, #4289),
+ * then the one most fit to serve on its own, then the oldest row.
  */
 export function selectDuplicateProgramCopies(
   programs: readonly ProgramDuplicateCandidate[],
 ): Map<string, string> {
-  const copiesByTitle = new Map<string, ProgramDuplicateCandidate[]>();
-  for (const program of programs) {
-    const title = programFundTitleKey(program.title);
-    if (!title) continue;
-    const copies = copiesByTitle.get(title);
-    if (copies) copies.push(program);
-    else copiesByTitle.set(title, [program]);
+  const fundOf = programs.map((_, index) => index);
+  const root = (index: number): number => {
+    while (fundOf[index] !== index) index = fundOf[index];
+    return index;
+  };
+  const join = (a: number, b: number): void => {
+    fundOf[root(b)] = root(a);
+  };
+
+  const descriptions = programs.map((program) => fundDescription(program.description));
+  for (const copies of groupIndexes(programs, (program) => [programFundTitleKey(program.title)])) {
+    forEachPair(copies, (a, b) => {
+      if (sameFundDescription(descriptions[a], descriptions[b])) join(a, b);
+    });
+  }
+  for (const copies of groupIndexes(programs, fundPageIdentities)) {
+    forEachPair(copies, (a, b) => {
+      if (titlesNameOneFund(programs[a].title, programs[b].title)) join(a, b);
+    });
   }
 
+  const funds = new Map<number, ProgramDuplicateCandidate[]>();
+  programs.forEach((program, index) => {
+    const fund = funds.get(root(index));
+    if (fund) fund.push(program);
+    else funds.set(root(index), [program]);
+  });
+
   const keptCopyById = new Map<string, string>();
-  for (const copies of copiesByTitle.values()) {
-    if (copies.length < 2) continue;
-    for (const fund of fundsAmongSameTitleCopies(copies)) {
-      if (fund.length < 2) continue;
-      const [kept, ...redundant] = [...fund].sort(preferredCopy);
-      for (const copy of redundant) keptCopyById.set(copy.id, kept.id);
-    }
+  for (const fund of funds.values()) {
+    if (fund.length < 2) continue;
+    const [kept, ...redundant] = [...fund].sort(preferredCopy);
+    for (const copy of redundant) keptCopyById.set(copy.id, kept.id);
   }
   return keptCopyById;
 }
