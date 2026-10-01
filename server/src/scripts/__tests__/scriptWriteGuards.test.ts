@@ -61,7 +61,7 @@ describe('assertScriptApplyAllowed', () => {
 });
 
 describe('the apply guard resolves its target rather than trusting the caller', () => {
-  const productionUrl = 'mongodb+srv://user:secret@cluster.example.net/Prod';
+  const productionUrl = 'mongodb+srv://user:pass@example.mongodb.net/Prod';
 
   it('blocks an apply whose production target is only in MONGODBURL', () => {
     expect(() =>
@@ -90,7 +90,7 @@ describe('the apply guard resolves its target rather than trusting the caller', 
         scriptName: 'fixture-script',
         env: { MONGODBURL: productionUrl },
       }),
-    ).toMatchObject({ dbLabel: 'cluster.example.net/Prod' });
+    ).toMatchObject({ dbLabel: 'example.mongodb.net/Prod' });
   });
 
   it('prefers an explicit target over MONGODBURL', () => {
