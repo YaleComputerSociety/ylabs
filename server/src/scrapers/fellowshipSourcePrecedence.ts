@@ -50,6 +50,27 @@ export const FUND_FACET_FIELDS: ReadonlySet<string> = new Set([
   'globalRegions',
 ]);
 
+// A row can cite a fund page that is not its own program's: a common application that
+// admits to many funds, or a sibling award at another level ("Undergraduate Travel" linking
+// the "Postgraduate" fund). That fund's facets describe a different program, so they are
+// not this row's evidence (#4173).
+const COMMON_APPLICATION_TITLE = /\bcommon application\b/i;
+
+const programLevel = (title: string): 'undergraduate' | 'graduate' | null => {
+  if (/\bundergraduate\b/i.test(title)) return 'undergraduate';
+  if (/\b(?:post-?graduate|graduate)\b/i.test(title)) return 'graduate';
+  return null;
+};
+
+export function fundFacetsDescribeProgram(programTitle: unknown, fundTitle: unknown): boolean {
+  const fund = typeof fundTitle === 'string' ? fundTitle : '';
+  if (!fund) return true;
+  if (COMMON_APPLICATION_TITLE.test(fund)) return false;
+  const programLevelStated = programLevel(typeof programTitle === 'string' ? programTitle : '');
+  const fundLevelStated = programLevel(fund);
+  return !(programLevelStated && fundLevelStated && programLevelStated !== fundLevelStated);
+}
+
 function hasValue(value: unknown): boolean {
   if (value === undefined || value === null || value === '') return false;
   return !(Array.isArray(value) && value.length === 0);
@@ -117,7 +138,10 @@ export function fellowshipFieldsWithheldBySourcePrecedence(input: {
     if (FELLOWSHIP_IDENTITY_FIELDS.has(field)) withheld.add(field);
     else if (
       !APPLICATION_WINDOW_FIELDS.has(field) &&
-      !FUND_FACET_FIELDS.has(field) &&
+      !(
+        FUND_FACET_FIELDS.has(field) &&
+        fundFacetsDescribeProgram(input.stored?.title, input.staged.title)
+      ) &&
       hasValue(input.stored?.[field])
     ) {
       withheld.add(field);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  fundFacetsDescribeProgram,
   fundKeyCitedByFellowship,
   preferFundFacetObservations,
   sourceKeyForFund,
@@ -98,5 +99,69 @@ describe('fund facets on another lane row (#4173)', () => {
         },
       }),
     ).toEqual(['summary']);
+  });
+});
+
+describe('fundFacetsDescribeProgram (#4173)', () => {
+  it("takes a fund's facets for its own program written differently", () => {
+    expect(
+      fundFacetsDescribeProgram(
+        'Fixture Fellowships for Baltic Studies',
+        'Fixture Fellowship for Baltic Studies',
+      ),
+    ).toBe(true);
+    expect(
+      fundFacetsDescribeProgram(
+        'Fixture Journalism Fellowship',
+        'Summer Journalism Fellowships: Fixture',
+      ),
+    ).toBe(true);
+    expect(fundFacetsDescribeProgram('Fixture Fellowship', undefined)).toBe(true);
+  });
+
+  it('refuses the facets of a common application that admits to many funds', () => {
+    expect(
+      fundFacetsDescribeProgram(
+        'Fixture Postgraduate Fellowships',
+        'Fixture Postgraduate Fellowships Common Application',
+      ),
+    ).toBe(false);
+  });
+
+  it('refuses the facets of a sibling award at another level', () => {
+    expect(
+      fundFacetsDescribeProgram(
+        'Fixture Undergraduate Travel Fellowship',
+        'Fixture Postgraduate Fellowship',
+      ),
+    ).toBe(false);
+    expect(
+      fundFacetsDescribeProgram(
+        'Fixture Graduate Research Grant',
+        'Fixture Undergraduate Research Grant',
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('the fund pass on another lane row whose fund names a different program (#4173)', () => {
+  it("withholds a common application's facets from the program row it reaches", () => {
+    expect(
+      fellowshipFieldsWithheldBySourcePrecedence({
+        stored: {
+          sourceName: 'yale-college-fellowships-office',
+          title: 'Fixture Postgraduate Fellowships',
+          purpose: ['Service'],
+        },
+        staged: {
+          title: 'Fixture Postgraduate Fellowships Common Application',
+          purpose: ['Research'],
+        },
+        resolved: {
+          title: { contributingSources: ['student-grants-database'] },
+          purpose: { contributingSources: ['student-grants-database'] },
+        },
+      }),
+    ).toEqual(['title', 'purpose']);
   });
 });

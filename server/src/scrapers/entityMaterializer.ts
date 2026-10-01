@@ -139,7 +139,11 @@ import {
   fellowshipAbsenceClearWithheldBySourcePrecedence,
   fellowshipFieldsWithheldBySourcePrecedence,
 } from './fellowshipSourcePrecedence';
-import { fundKeyCitedByFellowship, preferFundFacetObservations } from './fellowshipFundFacets';
+import {
+  fundFacetsDescribeProgram,
+  fundKeyCitedByFellowship,
+  preferFundFacetObservations,
+} from './fellowshipFundFacets';
 import {
   fellowshipFieldsAssertedAbsent,
   planFellowshipAbsenceClears,
@@ -4355,9 +4359,19 @@ async function fundFacetObservationsCitedBy(
       ...materializationReadScopeFilter(),
       entityKey: fundKey,
       sourceName: YALE_FELLOWSHIP_DATABASE_SOURCE,
-      field: { $in: [...FUND_FACET_FIELDS] },
+      field: { $in: [...FUND_FACET_FIELDS, 'title'] },
     }).lean());
   const { kept } = partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds());
+  const fundTitle = kept
+    .filter(
+      (observation: any) =>
+        observation.sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE && observation.field === 'title',
+    )
+    .sort(
+      (a: any, b: any) =>
+        new Date(b.observedAt || 0).getTime() - new Date(a.observedAt || 0).getTime(),
+    )[0]?.value;
+  if (!fundFacetsDescribeProgram(entityDoc?.title, fundTitle)) return [];
   return kept.filter(
     (observation: any) =>
       observation.sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE &&

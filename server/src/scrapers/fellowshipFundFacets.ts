@@ -14,7 +14,13 @@
  * lane's for that field. Both passes then resolve the same value, which makes this a
  * derivation: it writes nothing on its own and needs no lock.
  */
-import { FUND_FACET_FIELDS, YALE_FELLOWSHIP_DATABASE_SOURCE } from './fellowshipSourcePrecedence';
+import {
+  FUND_FACET_FIELDS,
+  YALE_FELLOWSHIP_DATABASE_SOURCE,
+  fundFacetsDescribeProgram,
+} from './fellowshipSourcePrecedence';
+
+export { fundFacetsDescribeProgram };
 import { slugify } from './utils/scraperHelpers';
 import { isRecordSpecificApplicationPortalUrl } from '../utils/researchHomeWebsiteUrl';
 
