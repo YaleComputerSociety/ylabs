@@ -233,7 +233,8 @@ The `--output` artifact contains the same redacted dry-run summary printed to st
 
 The Operator Board reads `/tmp/ylabs-lane-a-promotion-dry-run.json` by default, or `PROMOTION_COPY_DRY_RUN_REPORT_PATH` when set. A blocker-free dry-run appears as `review_required`, not ready, until the restore point, rollback test, and smoke gates are also recorded.
 
-Apply mode is blocked unless the restore point and both production confirmations are present:
+Apply mode is blocked unless both production confirmations are present.
+It no longer requires or accepts a restore point; `docs/data-refresh-runbook.md` (Phase 4) owns why and how the script rolls back on its own:
 
 ```bash
 BETA_MONGODBURL='<beta-mongodb-url>' \
