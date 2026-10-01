@@ -34,8 +34,7 @@ const yearsOfStudy = (value: unknown): string[] =>
 const isUndergraduateYearOfStudy = (year: string): boolean =>
   UNDERGRADUATE_YEAR_OF_STUDY.test(year.trim());
 
-const isGraduateYearOfStudy = (year: string): boolean =>
-  GRADUATE_YEAR_OF_STUDY.test(year.trim());
+const isGraduateYearOfStudy = (year: string): boolean => GRADUATE_YEAR_OF_STUDY.test(year.trim());
 
 function audienceFromYearsOfStudy(years: string[]): ProgramAudience | null {
   const admitsUndergraduates = years.some(isUndergraduateYearOfStudy);
