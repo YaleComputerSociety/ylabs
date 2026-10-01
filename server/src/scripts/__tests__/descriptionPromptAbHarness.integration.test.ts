@@ -4,7 +4,12 @@ import path from 'path';
 import axios from 'axios';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/ssrfGuard')>()),
+  assertPublicHttpUrl: async (url: string) => new URL(url),
+}));
 
 const REPORT_PATH = path.join(os.tmpdir(), `ylabs-description-ab-test-${process.pid}.json`);
 

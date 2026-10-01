@@ -23,6 +23,7 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { checkSourceLinkHealth, probeSourceLink } from '../services/sourceLinkHealth';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { fetchPublicHttpUrl, type PublicHttpResponse } from '../scrapers/utils/httpFetch';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   MAX_VANITY_REDIRECT_HOPS,
@@ -61,22 +62,21 @@ export function parseVanityRepairArgs(argv: string[]): VanityRepairOptions {
 }
 
 /** Follows plain-HTTP redirects by hand so the hop count is visible to the caller. */
-async function followHttpRedirects(
+export async function followHttpRedirects(
   httpsUrl: string,
 ): Promise<{ destinationUrl?: string; hops: number }> {
   let current = httpsUrl.replace(/^https:/i, 'http:');
   for (let hops = 1; hops <= MAX_VANITY_REDIRECT_HOPS; hops += 1) {
-    let res: Response;
+    let res: PublicHttpResponse;
     try {
-      res = await fetch(current, {
+      res = await fetchPublicHttpUrl(current, {
         headers: { 'user-agent': USER_AGENT },
-        redirect: 'manual',
-        signal: AbortSignal.timeout(25_000),
+        maxRedirects: 0,
       });
     } catch {
       return { hops };
     }
-    const location = res.headers.get('location');
+    const location = res.location;
     if (!location) return { destinationUrl: current, hops };
     try {
       current = new URL(location, current).toString();

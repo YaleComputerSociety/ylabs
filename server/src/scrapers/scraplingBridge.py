@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+
+FORCED_LOOPBACK_PROXY_OPT_OUT = "PLAYWRIGHT_DISABLE_FORCED_CHROMIUM_PROXIED_LOOPBACK"
 
 
 def main() -> int:
@@ -19,7 +22,10 @@ def main() -> int:
     parser.add_argument("--mode", choices=["dynamic", "stealthy"], default="dynamic")
     parser.add_argument("--timeout-ms", type=int, default=30000)
     parser.add_argument("--wait-selector", default=None)
+    parser.add_argument("--proxy-server", required=True)
     args = parser.parse_args()
+
+    os.environ.pop(FORCED_LOOPBACK_PROXY_OPT_OUT, None)
 
     try:
         from scrapling.fetchers import DynamicFetcher, StealthyFetcher
@@ -32,6 +38,8 @@ def main() -> int:
         "network_idle": True,
         "timeout": args.timeout_ms,
         "disable_resources": True,
+        "proxy": args.proxy_server,
+        "extra_flags": ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],
     }
     if args.wait_selector:
         kwargs["wait_selector"] = args.wait_selector

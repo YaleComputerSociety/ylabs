@@ -8,6 +8,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
 import { websiteIdentity } from '../scrapers/survivorOwnedWebsiteClear';
+import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 import {
   isUnsourcedProvenanceRecord,
   storedWebsiteUrlProvenance,
@@ -208,14 +209,16 @@ async function searchWithRetry(queries: string[]): Promise<string[]> {
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-async function fetchPage(url: string): Promise<{ status: number; title: string; text: string }> {
+export async function fetchPage(
+  url: string,
+): Promise<{ status: number; title: string; text: string }> {
   try {
-    const response = await fetch(url, {
-      redirect: 'follow',
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    const response = await fetchPublicHttpUrl(url, {
+      timeoutMs: FETCH_TIMEOUT_MS,
       headers: { 'User-Agent': 'ylabs-lab-site-discovery/1.0 (+research home discovery)' },
     });
-    const html = response.ok ? (await response.text()).slice(0, MAX_HTML_BYTES) : '';
+    const ok = response.status >= 200 && response.status < 300;
+    const html = ok ? response.body.slice(0, MAX_HTML_BYTES) : '';
     return { status: response.status, title: titleOf(html), text: extractVisibleText(html) };
   } catch {
     return { status: 0, title: '', text: '' };

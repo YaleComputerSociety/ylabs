@@ -12,6 +12,12 @@ import {
   SYNTHETIC_ORCID_EXAMPLE,
 } from './orcidFixtureShape.mjs';
 import nodeTest, { after } from 'node:test';
+import {
+  findUnguardedOutboundFetches,
+  listOutboundFetchScanFiles,
+  REVIEWED_OUTBOUND_FETCHES,
+  unreviewedOutboundFetches,
+} from './unguardedOutboundFetchScan.mjs';
 
 import {
   DEFAULT_AUDIT_TIMEOUT_MS,
@@ -3367,7 +3373,7 @@ test('rendered scraper fetch blocks cross-origin redirect content', () => {
 
   assert.match(
     source,
-    /import \{ assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents \} from '\.\/\.\.\/utils\/ssrfGuard'/,
+    /import \{\s*assertPublicHttpUrl,\s*SsrfBlockedError,\s*ssrfSafeAgents,\s*stripIpv6Brackets,\s*\} from '\.\/\.\.\/utils\/ssrfGuard'/,
   );
   assert.match(source, /const defaultRenderedSeedRedirectCheck = \(/);
   assert.match(source, /method: 'GET'/);
@@ -3391,6 +3397,131 @@ test('rendered scraper fetch blocks cross-origin redirect content', () => {
   assert.doesNotMatch(
     source,
     /url:\s*parsed\.url \|\| request\.url,\s*html:\s*parsed\.html \|\| ''/,
+  );
+});
+
+test('server code never sends a non-constant URL outside the shared SSRF guard', () => {
+  const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+  const files = listOutboundFetchScanFiles(repoRoot);
+  assert.ok(files.length > 100, `expected to scan the server tree, found ${files.length} files`);
+
+  const unreviewed = [];
+  const exemptionsStillNeeded = new Set();
+  for (const file of files) {
+    const relative = path.relative(repoRoot, file).split(path.sep).join('/');
+    const findings = findUnguardedOutboundFetches(fs.readFileSync(file, 'utf8'));
+    if (findings.length === 0) continue;
+    if (REVIEWED_OUTBOUND_FETCHES.has(relative)) exemptionsStillNeeded.add(relative);
+    for (const finding of unreviewedOutboundFetches(relative, findings)) {
+      unreviewed.push(`${relative}:${finding.line} ${finding.kind}(${finding.argument})`);
+    }
+  }
+
+  assert.deepEqual(
+    unreviewed,
+    [],
+    'route these through fetchPublicHttpUrl (server/src/scrapers/utils/httpFetch.ts), or assertPublicHttpUrl plus ssrfSafeAgents, so neither the first host nor any redirect hop can be private',
+  );
+  assert.deepEqual(
+    [...REVIEWED_OUTBOUND_FETCHES.keys()].filter((file) => !exemptionsStillNeeded.has(file)),
+    [],
+    'a reviewed exemption no longer matches any call; remove it',
+  );
+});
+
+test('the unguarded-fetch scan flags a deliberately unguarded fixture', () => {
+  const unguardedFixture = [
+    "import axios from 'axios';",
+    'export async function probe(url: string) {',
+    "  const response = await fetch(url, { redirect: 'follow' });",
+    '  const page = await axios.get(row.websiteUrl, { maxRedirects: 5 });',
+    '  http.get(target, (res) => res.resume());',
+    '  return response.status + page.status;',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(
+    findUnguardedOutboundFetches(unguardedFixture).map(({ kind, line }) => `${kind}@${line}`),
+    ['global fetch@3', 'axios@4', 'node http@5'],
+  );
+});
+
+test('the unguarded-fetch scan passes constant hosts, guarded agents, comments and shadowed fetch', () => {
+  const guardedFixture = [
+    "const INDEX_URL = 'https://example.edu/index';",
+    '// fetch(url) inside a comment is not a call',
+    "const note = 'fetch(url) inside a string is not a call';",
+    'await fetch(INDEX_URL);',
+    "await fetch('https://api.example.com/search', { method: 'POST' });",
+    'await fetch(`https://api.example.com/v1/${id}`);',
+    'const agents = ssrfSafeAgents();',
+    'await axios.get(url, { httpAgent: agents.httpAgent, httpsAgent: agents.httpsAgent });',
+    'http.request(url, { agent: agents.httpAgent });',
+  ].join('\n');
+  const shadowedFixture = [
+    'export async function each(items: string[], fetch: (item: string) => Promise<void>) {',
+    '  for (const item of items) await fetch(item);',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(findUnguardedOutboundFetches(guardedFixture), []);
+  assert.deepEqual(findUnguardedOutboundFetches(shadowedFixture), []);
+});
+
+test('the unguarded-fetch scan exempts only the reviewed number of calls in an exempt file', () => {
+  const [exemptFile, { calls }] = [...REVIEWED_OUTBOUND_FETCHES][0];
+  const reviewedCall = { kind: 'global fetch', line: 3, argument: 'url' };
+  const addedCall = { kind: 'global fetch', line: 9, argument: 'row.websiteUrl' };
+  const reviewed = Array.from({ length: calls }, () => reviewedCall);
+
+  assert.deepEqual(unreviewedOutboundFetches(exemptFile, reviewed), []);
+  assert.deepEqual(unreviewedOutboundFetches(exemptFile, [...reviewed, addedCall]), [
+    ...reviewed,
+    addedCall,
+  ]);
+  assert.deepEqual(unreviewedOutboundFetches('server/src/other.ts', [reviewedCall]), [
+    reviewedCall,
+  ]);
+});
+
+test('the unguarded-fetch scan still checks global fetch in a file that passes fetch as an argument', () => {
+  const passesGlobalFetchFixture = [
+    'export async function probe(url: string) {',
+    '  const client = createClient(url, fetch);',
+    '  return fetch(url);',
+    '}',
+  ].join('\n');
+  const declaresFetchFixture = [
+    'export async function probe(url: string, fetch?: typeof globalThis.fetch) {',
+    '  return fetch?.(url);',
+    '}',
+    'function fetch(url: string) {',
+    '  return url;',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(
+    findUnguardedOutboundFetches(passesGlobalFetchFixture).map(
+      ({ kind, line }) => `${kind}@${line}`,
+    ),
+    ['global fetch@3'],
+  );
+  assert.deepEqual(findUnguardedOutboundFetches(declaresFetchFixture), []);
+});
+
+test('the unguarded-fetch scan counts agents as guarded only when they come from ssrfSafeAgents', () => {
+  const plainAgentsFixture = [
+    "import http from 'node:http';",
+    "import https from 'node:https';",
+    'const httpAgent = new http.Agent();',
+    'const httpsAgent = new https.Agent();',
+    'await axios.get(url, { httpAgent, httpsAgent });',
+    'http.request(url, { agent: httpAgent });',
+  ].join('\n');
+
+  assert.deepEqual(
+    findUnguardedOutboundFetches(plainAgentsFixture).map(({ kind, line }) => `${kind}@${line}`),
+    ['axios@5', 'node http@6'],
   );
 });
 

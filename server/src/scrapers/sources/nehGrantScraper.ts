@@ -24,6 +24,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
 import {
   resolveCanonicalResearchHomeForResearcher,
@@ -371,8 +372,11 @@ async function fetchAwardSearchYear(
     const cached = await getCached<{ html: string }>(sourceName, cacheKey);
     if (cached) return cached.html;
   }
+  const agents = ssrfSafeAgents();
   const res = await axios.get(url, {
     timeout: FETCH_TIMEOUT_MS,
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
     responseType: 'text',
     transformResponse: [(data) => data],
     maxRedirects: 0,

@@ -153,6 +153,13 @@ The Passport `regenerate`/`save` shim defines its methods as non-enumerable, bec
 SSRF protection lives in `server/src/utils/ssrfGuard.ts`.
 Any outbound fetch to a host derived from user input or stored data must go through it.
 Use `assertPublicHttpUrl`, `ssrfSafeLookup`, and `ssrfSafeAgents` as appropriate.
+Operator scripts and scrapers that need a status, a body, or a redirect location use `fetchPublicHttpUrl` in `server/src/scrapers/utils/httpFetch.ts`: it follows redirects by hand, asserts every hop with `assertPublicHttpUrl`, and connects through `ssrfSafeAgents`, so neither the first host nor any redirect target can be private (#4013).
+`ssrfSafeAgents` also refuses a private IP-literal host before opening a socket, because Node connects to an IP literal without calling the agent's `lookup`, so a redirect to `http://127.0.0.1/` used to pass the connect-time check.
+A headless render cannot use Node's agents, so every request the browser makes goes through a per-render forward proxy, `startSsrfGuardedForwardProxy` in `server/src/scrapers/utils/ssrfGuardedForwardProxy.ts`, which runs `ssrfSafeLookup` on each request, tunnel, and redirect hop and connects to the address it vetted.
+Playwright forces loopback through a configured proxy unless `PLAYWRIGHT_DISABLE_FORCED_CHROMIUM_PROXIED_LOOPBACK` is set, so `scraplingBridge.py` removes that variable, and the renderer discards a page whose seed request never passed through the proxy.
+`scripts/security-preflight.test.mjs` scans all of `server/src` with `scripts/unguardedOutboundFetchScan.mjs` and fails on a global `fetch`, an `axios` call without both agents, or a Node `http.get`/`request` without an `agent`, whenever the URL is not a constant; agents count only in a file that calls `ssrfSafeAgents()`.
+A reviewed exemption, such as a constant host or the forward proxy's connection to the address it vetted, lists its file, its reason, and the exact number of calls it covers, so a further call in that file fails the scan, and the exemption is removed once it stops matching.
+A guard refusal is inconclusive rather than evidence that a page is gone: on a machine inside Yale's split-horizon DNS a Yale host can resolve to `10.x` and be refused, so a script that clears data on a failed probe must treat a guard refusal, `isSsrfGuardRefusal` in `server/src/utils/ssrfGuard.ts`, as its own outcome, as `clearDeadLabResearchHomes` does with `address-refused`.
 
 The guard refuses first and reports second, so its refusal is the only signal a caller ever sees for a host it never reached.
 `classifyHostnameResolution` returns which of `public`, `private-address`, `unresolvable`, or `resolver-failure` applies, and `assertPublicHttpUrl` carries the same value on `SsrfBlockedError.reason`.
