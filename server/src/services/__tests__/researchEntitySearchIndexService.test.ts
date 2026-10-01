@@ -960,8 +960,8 @@ describe('researchEntitySearchIndexService', () => {
               },
             ]
           : [],
-      fetchMemberNames: async (entityIds: unknown[]) => {
-        expect(entityIds).toEqual([entityId]);
+      fetchMemberNames: async (entities: any[]) => {
+        expect(entities.map((entity) => entity._id)).toEqual([entityId]);
         return new Map([
           [
             entityId,
@@ -1259,11 +1259,54 @@ describe('fetchResearchEntitySearchMemberNames canonical roster projection', () 
     await seedMember(entityId, 'Lab Staff', 'STAFF');
     await seedMember(entityId, 'Former Professor', 'PI', 'HISTORICAL');
 
-    const byEntityId = await fetchResearchEntitySearchMemberNames([entityId]);
+    const byEntityId = await fetchResearchEntitySearchMemberNames([{ _id: entityId }]);
     const fields = byEntityId.get(entityId.toString());
 
     expect(fields?.leadProfessorNames).toEqual(['Lead Professor']);
     expect(fields?.professorNames).toEqual(['Lead Professor', 'Core Faculty Member']);
+  });
+
+  it('names a lead whose edge state is unknown, as the detail page serves it (#3745)', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    await seedMember(entityId, 'Unknown State Lead', 'PI', 'UNKNOWN');
+    await seedMember(entityId, 'Unknown State Faculty', 'CORE_FACULTY', 'UNKNOWN');
+    await seedMember(entityId, 'Departed Lead', 'DIRECTOR', 'HISTORICAL');
+
+    const fields = (await fetchResearchEntitySearchMemberNames([{ _id: entityId }])).get(
+      entityId.toString(),
+    );
+
+    expect(fields?.leadProfessorNames).toEqual(['Unknown State Lead']);
+    expect(fields?.professorNames).toEqual(['Unknown State Lead', 'Unknown State Faculty']);
+  });
+
+  it('withholds an official-roster lead the detail page drops as stale (#3745)', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    const person = await Researcher.create({
+      displayName: 'Stale Roster Lead',
+      profileLinks: [],
+      status: 'ACTIVE',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'PI',
+      state: 'UNKNOWN',
+      confidence: 0.9,
+      rosterProvenance: {
+        sourceName: 'official-research-home-roster',
+        evidenceStatus: 'verified',
+        membershipKey: 'roster-key',
+        sourceUrl: 'https://example.org/people',
+        observedAt: new Date('2020-01-01T00:00:00Z'),
+        freshnessExpiresAt: new Date('2020-02-01T00:00:00Z'),
+      },
+    });
+
+    const byEntityId = await fetchResearchEntitySearchMemberNames([{ _id: entityId }]);
+
+    expect(byEntityId.get(entityId.toString())).toBeUndefined();
   });
 });
 

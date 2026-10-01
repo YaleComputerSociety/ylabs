@@ -135,7 +135,7 @@ export interface ResearchEntitySearchIndexRebuildOptions {
   clearExisting?: boolean;
   getIndex?: typeof getMeiliIndex;
   fetchPage?: (page: number, pageSize: number) => Promise<any[]>;
-  fetchMemberNames?: (entityIds: unknown[]) => Promise<ResearchEntitySearchMemberNameMap>;
+  fetchMemberNames?: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>;
   /**
    * Injectable for the same reason the index and the page fetch are: a rebuild test has no
    * database, and a warm that reached for one would make every rebuild assertion wait for a
@@ -231,20 +231,6 @@ const MONGO_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 const researchEntitySearchDocumentId = (doc: any): string =>
   serializedDocumentId(doc?._id) || serializedDocumentId(doc?.id) || '';
-
-const uniqueObjectIdValues = (values: unknown[]): unknown[] => {
-  const seen = new Set<string>();
-  const out: unknown[] = [];
-
-  for (const value of values) {
-    const id = serializedDocumentId(value);
-    if (!id || !MONGO_OBJECT_ID_RE.test(id) || seen.has(id)) continue;
-    seen.add(id);
-    out.push(value);
-  }
-
-  return out;
-};
 
 const cleanPersonName = (value: unknown): string => {
   if (typeof value !== 'string') return '';
@@ -390,17 +376,24 @@ const emptyMemberNameFields = (): ResearchEntitySearchMemberNameFields => ({
 });
 
 export async function fetchResearchEntitySearchMemberNames(
-  entityIds: unknown[],
+  entities: any[],
 ): Promise<ResearchEntitySearchMemberNameMap> {
-  const ids = uniqueObjectIdValues(entityIds);
-  if (ids.length === 0) return new Map();
+  const entityById = new Map<string, any>();
+  for (const entity of entities) {
+    const id = researchEntitySearchDocumentId(entity);
+    if (MONGO_OBJECT_ID_RE.test(id) && !entityById.has(id)) entityById.set(id, entity);
+  }
+  if (entityById.size === 0) return new Map();
 
-  const rosterByEntityId = await getResearchEntityRosterByEntityId(ids);
+  const rosterByEntityId = await getResearchEntityRosterByEntityId(Array.from(entityById.keys()));
+  const { publicResearchEntityDetailMemberNames } = await import('./researchGroupService');
+  const now = new Date();
   const byEntityId: ResearchEntitySearchMemberNameMap = new Map();
 
   for (const [entityId, roster] of rosterByEntityId) {
-    for (const member of roster) {
-      if (!member.isCurrentMember) continue;
+    const entity = entityById.get(entityId);
+    if (!entity) continue;
+    for (const member of publicResearchEntityDetailMemberNames(entity, roster, now)) {
       if (!SEARCHABLE_PROFESSOR_MEMBER_ROLES.has(member.role)) continue;
 
       const name = cleanPersonName(member.name);
@@ -624,10 +617,10 @@ export function buildResearchEntitySearchIndexDocuments(
 export async function buildResearchEntitySearchIndexDocumentsWithMemberNames(
   docs: any[],
   fetchMemberNames: (
-    entityIds: unknown[],
+    entities: any[],
   ) => Promise<ResearchEntitySearchMemberNameMap> = fetchResearchEntitySearchMemberNames,
 ): Promise<Record<string, any>[]> {
-  const memberNamesByEntityId = await fetchMemberNames(docs.map((doc) => doc?._id ?? doc?.id));
+  const memberNamesByEntityId = await fetchMemberNames(docs);
   return buildResearchEntitySearchIndexDocuments(docs, memberNamesByEntityId);
 }
 

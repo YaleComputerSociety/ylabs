@@ -3417,10 +3417,27 @@ export function publicResearchEntityLeadMemberNames(
   rosterEntries: ResearchEntityRosterEntry[],
   now = new Date(),
 ): string[] {
-  const canonicalMembers = canonicalPublicDetailMembers(entity, rosterEntries, now);
-  return publicLeadMemberNames(
-    dedupeSameNameLeadMembers(dropUncorroboratedPhantomLeads(canonicalMembers), entity),
+  return publicLeadMemberNames(publicResearchEntityDetailRosterMembers(entity, rosterEntries, now));
+}
+
+const publicResearchEntityDetailRosterMembers = (
+  entity: Record<string, any>,
+  rosterEntries: ResearchEntityRosterEntry[],
+  now: Date,
+) =>
+  dedupeSameNameLeadMembers(
+    dropUncorroboratedPhantomLeads(canonicalPublicDetailMembers(entity, rosterEntries, now)),
+    entity,
   );
+
+export function publicResearchEntityDetailMemberNames(
+  entity: Record<string, any>,
+  rosterEntries: ResearchEntityRosterEntry[],
+  now = new Date(),
+): Array<{ name: string; role: string }> {
+  return publicResearchEntityDetailRosterMembers(entity, rosterEntries, now)
+    .map((member) => ({ name: memberDisplayName(member), role: member.role }))
+    .filter((member) => Boolean(member.name));
 }
 
 export async function resolveArchivedResearchEntityCanonicalSlug(
