@@ -5,6 +5,10 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-01: The Yale Fellowship Database Copy Of A Program Is The One Served (#4289)
+
+When a program has a copy in the Yale fellowship database and another lane's copy, the database record is the one served (#4289, owner decision).
+
 ## 2026-10-01: The Yale Fellowship Database Is An Official Source (#4284)
 
 The owner decided that the Yale Student Grants and Fellowships database (`yale.communityforce.com`) is an official source, so a fund's own FundDetails page is Yale's official record of that fund.

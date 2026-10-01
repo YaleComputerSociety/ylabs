@@ -2254,6 +2254,9 @@ async function loadDuplicateProgramCopies(): Promise<Map<string, string>> {
       title: program.title,
       description: program.description,
       sourceName: program.sourceName,
+      sourceUrl: program.sourceUrl,
+      applicationLink: program.applicationLink,
+      links: program.links,
       tier: computeProgramStudentVisibility(program).tier,
     })),
   );

@@ -19,8 +19,10 @@
  */
 import { isProgramApplicationPortalUrl } from '../utils/researchHomeWebsiteUrl';
 
+export const YALE_FELLOWSHIP_DATABASE_SOURCE = 'student-grants-database';
+
 export const ENRICH_ONLY_FELLOWSHIP_SOURCES: ReadonlySet<string> = new Set([
-  'student-grants-database',
+  YALE_FELLOWSHIP_DATABASE_SOURCE,
 ]);
 
 const FELLOWSHIP_IDENTITY_FIELDS: ReadonlySet<string> = new Set([

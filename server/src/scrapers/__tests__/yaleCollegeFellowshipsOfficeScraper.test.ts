@@ -5,6 +5,7 @@ import {
 } from '../fellowshipClassificationDerivation';
 import {
   candidateToObservations,
+  createFundShortLinkResolver,
   DEFAULT_PAGE_URLS,
   extractIndexSeedChildDetailUrls,
   MACMILLAN_COUNCIL_GRANT_PAGE_URLS,
@@ -3273,5 +3274,181 @@ describe('YaleCollegeFellowshipsOfficeScraper eligibility, year of study and fun
     expect(inferPurpose('Awards help defray travel costs for conference trips.')).toEqual([
       'Travel',
     ]);
+  });
+});
+
+describe('YaleCollegeFellowshipsOfficeScraper short links (#4289)', () => {
+  const catalogUrl = 'https://macmillan.yale.edu/fellowships-and-grants';
+  const FUND_PAGE = 'https://yale.communityforce.com/Funds/FundDetails.aspx?46495854555245';
+  const opportunityRow = (title: string, href: string) => `
+    <div class="view__row">
+      <article class="node-teaser node-teaser--opportunity node-teaser--text">
+        <header class="node-teaser__header">
+          <div class="node-teaser__groups">Fixture Council</div>
+          <div class="node-teaser__heading"><a href="${href}"><span>${title}</span></a></div>
+        </header>
+        <div class="node-teaser__content">
+          <div class="node-teaser__summary">
+            <div class="ck-content"><p>Supports summer research travel for undergraduates.</p></div>
+          </div>
+        </div>
+      </article>
+    </div>`;
+  const catalogHtml = (...rows: string[]) =>
+    `<main><div class="view__rows">${rows.join('')}</div></main>`;
+
+  const runLane = async (
+    html: string,
+    deps: Partial<ConstructorParameters<typeof YaleCollegeFellowshipsOfficeScraper>[0]> = {},
+  ) => {
+    const emitted: any[] = [];
+    const log = vi.fn();
+    const result = await new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [catalogUrl],
+      sitemapUrls: [],
+      fetchPage: async () => html,
+      shortLinkDelayMs: 0,
+      ...deps,
+    }).run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (items) => {
+        emitted.push(...(Array.isArray(items) ? items : [items]));
+      },
+      log,
+    });
+    const valueFor = (title: string, field: string) => {
+      const entityKey = sourceKeyForTitle(title);
+      return emitted.find(
+        (observation) => observation.entityKey === entityKey && observation.field === field,
+      )?.value;
+    };
+    return { result, log, valueFor };
+  };
+
+  it('cites the fund page a short link redirects to, reading each short link once', async () => {
+    const hop = vi.fn(async () => FUND_PAGE);
+    const { valueFor, result } = await runLane(
+      catalogHtml(
+        opportunityRow('Fixture Travel Prize', 'https://bit.ly/fixture-fund'),
+        opportunityRow('Fixture Travel Prize for Seniors', 'https://bit.ly/fixture-fund'),
+      ),
+      { shortLinkHop: hop },
+    );
+
+    expect(hop).toHaveBeenCalledTimes(1);
+    expect(hop).toHaveBeenCalledWith('https://bit.ly/fixture-fund');
+    expect(valueFor('Fixture Travel Prize', 'applicationLink')).toBe(FUND_PAGE);
+    expect(valueFor('Fixture Travel Prize', 'links')).toEqual([
+      { label: 'Application', url: FUND_PAGE },
+    ]);
+    expect(valueFor('Fixture Travel Prize for Seniors', 'applicationLink')).toBe(FUND_PAGE);
+    expect(result.metrics?.fellowshipCatalog?.shortLinks).toMatchObject({
+      lookedUp: 1,
+      citedAsFundPage: 1,
+    });
+  });
+
+  it('keeps a short link whose target is not a record-specific fund page', async () => {
+    const hop = vi.fn(async () => 'https://yale.communityforce.com/Funds/Search.aspx');
+    const { valueFor } = await runLane(
+      catalogHtml(opportunityRow('Fixture Travel Prize', 'https://bit.ly/fixture-search')),
+      { shortLinkHop: hop },
+    );
+
+    expect(hop).toHaveBeenCalledTimes(1);
+    expect(valueFor('Fixture Travel Prize', 'applicationLink')).toBe(
+      'https://bit.ly/fixture-search',
+    );
+    expect(valueFor('Fixture Travel Prize', 'links')).toEqual([
+      { label: 'Application', url: 'https://bit.ly/fixture-search' },
+    ]);
+  });
+
+  it('never follows a link that is not a short link', async () => {
+    const hop = vi.fn(async () => FUND_PAGE);
+    const ownFundPage = 'https://yale.communityforce.com/Funds/FundDetails.aspx?4F574E';
+    const { valueFor } = await runLane(
+      catalogHtml(opportunityRow('Fixture Travel Prize', ownFundPage)),
+      { shortLinkHop: hop },
+    );
+
+    expect(hop).not.toHaveBeenCalled();
+    expect(valueFor('Fixture Travel Prize', 'applicationLink')).toBe(ownFundPage);
+  });
+
+  it('keeps the short link and finishes the run when the redirect cannot be read', async () => {
+    const hop = vi.fn(async () => {
+      throw new Error('connect ETIMEDOUT');
+    });
+    const { valueFor, log, result } = await runLane(
+      catalogHtml(opportunityRow('Fixture Travel Prize', 'https://bit.ly/fixture-down')),
+      { shortLinkHop: hop },
+    );
+
+    expect(valueFor('Fixture Travel Prize', 'applicationLink')).toBe('https://bit.ly/fixture-down');
+    expect(log).toHaveBeenCalledWith(
+      'Keeping fellowship short link after its redirect could not be read',
+      expect.objectContaining({ url: 'https://bit.ly/fixture-down' }),
+    );
+    expect(result.notes).toContain('Kept 1 fellowship short link(s) whose target was not read.');
+    expect(result.metrics?.fellowshipCatalog?.shortLinks).toMatchObject({ failed: 1 });
+  });
+
+  it('reads no redirect under a benchmark replay, so the frozen input still replays', async () => {
+    const hop = vi.fn(async () => FUND_PAGE);
+    const emitted: any[] = [];
+    beginBenchmarkReplay([
+      {
+        sourceName: 'yale-college-fellowships-office',
+        requestKey: `page:${catalogUrl}`,
+        payload: catalogHtml(opportunityRow('Fixture Travel Prize', 'https://bit.ly/fixture-fund')),
+        fetchedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ]);
+    let replay;
+    try {
+      await new YaleCollegeFellowshipsOfficeScraper({
+        pageUrls: [catalogUrl],
+        sitemapUrls: [],
+        shortLinkHop: hop,
+      }).run({
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'yale-college-fellowships-office',
+        sourceWeight: 0.95,
+        options: { dryRun: true, useCache: true, release: false },
+        emit: async (items) => {
+          emitted.push(...(Array.isArray(items) ? items : [items]));
+        },
+        log: vi.fn(),
+      });
+    } finally {
+      replay = finishBenchmarkReplay();
+    }
+
+    expect(hop).not.toHaveBeenCalled();
+    expect(replay.networkBlocks).toBe(0);
+    expect(emitted.find((observation) => observation.field === 'applicationLink')?.value).toBe(
+      'https://bit.ly/fixture-fund',
+    );
+  });
+
+  it('paces lookups and stops reading redirects at its bound', async () => {
+    const sleep = vi.fn(async () => undefined);
+    const hop = vi.fn(async (shortLink: string) => `${FUND_PAGE}${shortLink.slice(-1)}`);
+    const resolver = createFundShortLinkResolver({ hop, sleep, delayMs: 300, maxLookups: 2 });
+
+    expect(await resolver.fundPageFor('https://bit.ly/a')).toBe(`${FUND_PAGE}a`);
+    expect(await resolver.fundPageFor('https://bit.ly/b')).toBe(`${FUND_PAGE}b`);
+    expect(await resolver.fundPageFor('https://bit.ly/c')).toBe('');
+    expect(await resolver.fundPageFor('https://bit.ly/a')).toBe(`${FUND_PAGE}a`);
+    expect(hop).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(300);
+    expect(resolver.metrics).toMatchObject({ lookedUp: 2, citedAsFundPage: 2, capped: 1 });
   });
 });

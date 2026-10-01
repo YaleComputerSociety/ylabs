@@ -3712,11 +3712,16 @@ test('Yale College fellowships scraper fetches configurable catalog pages throug
   // The live fetch goes through the shared fetch policy, whose SSRF-safe agents are pinned by
   // the shared-fetch-policy test, so a benchmark capture can freeze it (#4132).
   assert.match(source, /import \{ assertPublicHttpUrl \} from '\.\.\/\.\.\/utils\/ssrfGuard'/);
-  assert.match(source, /import \{ fetchPageWithPolicy \} from '\.\.\/utils\/httpFetch'/);
   assert.match(source, /const safeUrlText = \(await assertPublicHttpUrl\(url\)\)\.toString\(\)/);
   assert.match(source, /const cacheKey = `page:\$\{safeUrlText\}`/);
   assert.match(source, /await fetchPageWithPolicy\(safeUrlText, \{/);
   assert.match(source, /maxRedirects: 5/);
+  assert.match(
+    source,
+    /import \{ fetchPageWithPolicy, fetchPublicHttpUrl \} from '\.\.\/utils\/httpFetch'/,
+  );
+  assert.match(source, /await fetchPublicHttpUrl\(shortLink, \{\n\s+maxRedirects: 0,/);
+  assert.doesNotMatch(source, /(?<![\w.$])fetch\(/);
   assert.doesNotMatch(source, /axios\.get\(/);
   assert.doesNotMatch(source, /fetchPageWithPolicy\(url\b/);
   assert.doesNotMatch(source, /\bassertUrl:/);

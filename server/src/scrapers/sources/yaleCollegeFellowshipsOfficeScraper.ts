@@ -7,15 +7,23 @@
 import crypto from 'crypto';
 import * as cheerio from 'cheerio';
 import { Fellowship } from '../../models/fellowship';
+import { isBenchmarkModeActive } from '../snapshotBenchmarkMode';
 import { getCached, setCached } from '../snapshotCache';
-import { fetchPageWithPolicy } from '../utils/httpFetch';
+import { fetchPageWithPolicy, fetchPublicHttpUrl } from '../utils/httpFetch';
 import {
   NAMED_PROGRAM_DATE_SOURCE,
   NUMERIC_PROGRAM_DATE_SOURCE,
   OPTIONAL_STATED_CLOCK_TIME,
   parseProgramDate,
 } from '../utils/programDeadline';
-import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import type {
+  FundShortLinkMetrics,
+  IScraper,
+  ObservationInput,
+  ScraperContext,
+  ScraperResult,
+} from '../types';
+import { isRecordSpecificFundDetailUrl } from './studentGrantsDatabaseScraper';
 import { assertPublicHttpUrl } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
@@ -167,6 +175,8 @@ interface YaleCollegeFellowshipsOfficeScraperDeps {
   fetchPage?: FetchPage;
   retryDelay?: (attempt: number) => Promise<void>;
   loadOwnedRows?: () => Promise<OwnedFellowshipRow[]>;
+  shortLinkHop?: ShortLinkHop;
+  shortLinkDelayMs?: number;
 }
 
 function normalizeWhitespace(value: string): string {
@@ -1857,6 +1867,109 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
   return html;
 }
 
+export type ShortLinkHop = (shortLink: string) => Promise<string>;
+
+export const MAX_SHORT_LINK_LOOKUPS = 200;
+const SHORT_LINK_DELAY_MS = 500;
+const SHORT_LINK_TIMEOUT_MS = 15_000;
+
+async function followShortLinkHop(shortLink: string): Promise<string> {
+  const hop = await fetchPublicHttpUrl(shortLink, {
+    maxRedirects: 0,
+    timeoutMs: SHORT_LINK_TIMEOUT_MS,
+  });
+  return hop.location ? new URL(hop.location, hop.finalUrl).toString() : '';
+}
+
+export interface FundShortLinkResolver {
+  fundPageFor(shortLink: string): Promise<string>;
+  metrics: FundShortLinkMetrics;
+}
+
+/**
+ * A catalog entry often links its fund only through a short link, which hides the fund page
+ * the cross-source match and the gate identify a fund by (#4289). One hop is followed, and
+ * the target is cited only when it is that fund page.
+ */
+export function createFundShortLinkResolver(
+  options: {
+    hop?: ShortLinkHop;
+    delayMs?: number;
+    maxLookups?: number;
+    sleep?: (ms: number) => Promise<void>;
+    log?: ScraperContext['log'];
+  } = {},
+): FundShortLinkResolver {
+  const hop = options.hop ?? followShortLinkHop;
+  const delayMs = options.delayMs ?? SHORT_LINK_DELAY_MS;
+  const maxLookups = options.maxLookups ?? MAX_SHORT_LINK_LOOKUPS;
+  const sleep =
+    options.sleep ??
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms))));
+  const fundPageByShortLink = new Map<string, string>();
+  const metrics: FundShortLinkMetrics = {
+    lookedUp: 0,
+    citedAsFundPage: 0,
+    notAFundPage: 0,
+    failed: 0,
+    capped: 0,
+  };
+
+  const lookUp = async (shortLink: string): Promise<string | null> => {
+    if (metrics.lookedUp >= maxLookups) {
+      metrics.capped += 1;
+      return null;
+    }
+    if (metrics.lookedUp > 0) await sleep(delayMs);
+    metrics.lookedUp += 1;
+    try {
+      const target = await hop(shortLink);
+      const fundPage =
+        target && isRecordSpecificFundDetailUrl(target) ? normalizeLinkUrl(target) : '';
+      if (fundPage) metrics.citedAsFundPage += 1;
+      else metrics.notAFundPage += 1;
+      return fundPage;
+    } catch (error) {
+      metrics.failed += 1;
+      options.log?.('Keeping fellowship short link after its redirect could not be read', {
+        url: shortLink,
+        error: sanitizeLogValue(error),
+      });
+      return '';
+    }
+  };
+
+  return {
+    metrics,
+    async fundPageFor(shortLink: string): Promise<string> {
+      const cached = fundPageByShortLink.get(shortLink);
+      if (cached !== undefined) return cached;
+      const fundPage = await lookUp(shortLink);
+      if (fundPage === null) return '';
+      fundPageByShortLink.set(shortLink, fundPage);
+      return fundPage;
+    },
+  };
+}
+
+export async function citeFundPagesInPlaceOfShortLinks(
+  candidate: FellowshipCatalogCandidate,
+  resolver: FundShortLinkResolver,
+): Promise<FellowshipCatalogCandidate> {
+  const citedUrl = async (url: string): Promise<string> =>
+    isLinkShortenerUrl(url) ? (await resolver.fundPageFor(url)) || url : url;
+  const applicationLink = candidate.applicationLink
+    ? await citedUrl(candidate.applicationLink)
+    : undefined;
+  const links: FellowshipCatalogCandidate['links'] = [];
+  for (const link of candidate.links) links.push({ ...link, url: await citedUrl(link.url) });
+  const unchanged =
+    applicationLink === candidate.applicationLink &&
+    links.every((link, index) => link.url === candidate.links[index].url);
+  if (unchanged) return candidate;
+  return finalizeCandidate({ ...candidate, applicationLink, links: dedupeProgramLinks(links) });
+}
+
 export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
   readonly name = YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE;
   readonly displayName = 'Yale College Fellowships Office';
@@ -1866,6 +1979,8 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
   private readonly fetchPage: FetchPage;
   private readonly retryDelay: (attempt: number) => Promise<void>;
   private readonly loadOwnedRows: () => Promise<OwnedFellowshipRow[]>;
+  private readonly shortLinkHop?: ShortLinkHop;
+  private readonly shortLinkDelayMs?: number;
 
   constructor(deps: YaleCollegeFellowshipsOfficeScraperDeps = {}) {
     this.pageUrls = deps.pageUrls || DEFAULT_PAGE_URLS;
@@ -1875,6 +1990,8 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
       deps.retryDelay ||
       ((attempt) => new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt)));
     this.loadOwnedRows = deps.loadOwnedRows || loadRowsOwnedByLane;
+    this.shortLinkHop = deps.shortLinkHop;
+    this.shortLinkDelayMs = deps.shortLinkDelayMs;
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -1986,8 +2103,24 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
     const allCandidates = Array.from(candidatesByKey.values())
       .filter((candidate) => !isIndexSeedOnlyUrl(candidate.sourceUrl))
       .sort((a, b) => a.title.localeCompare(b.title));
-    const selected =
-      limitOption !== undefined ? allCandidates.slice(0, limitOption) : allCandidates;
+    const limited = limitOption !== undefined ? allCandidates.slice(0, limitOption) : allCandidates;
+    // A benchmark freezes the pages a run reads, and a redirect is not one of them, so a
+    // capture or replay keeps the short link rather than reading the network.
+    const shortLinkResolver = isBenchmarkModeActive()
+      ? null
+      : createFundShortLinkResolver({
+          hop: this.shortLinkHop,
+          delayMs: this.shortLinkDelayMs,
+          log: ctx.log,
+        });
+    const selected: FellowshipCatalogCandidate[] = [];
+    for (const candidate of limited) {
+      selected.push(
+        shortLinkResolver
+          ? await citeFundPagesInPlaceOfShortLinks(candidate, shortLinkResolver)
+          : candidate,
+      );
+    }
     // There is no clear-on-empty for a fellowship, so going silent on a refused page would leave
     // the row it minted live forever; the lane re-reads the page and asserts the row is retired.
     const retractions =
@@ -2019,6 +2152,14 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
         `Capped ${detailUrlsCapped} program detail page(s) at the ${detailCrawlCap}-page crawl limit.`,
       );
     }
+    const unreadShortLinks = shortLinkResolver
+      ? shortLinkResolver.metrics.failed + shortLinkResolver.metrics.capped
+      : 0;
+    if (unreadShortLinks > 0) {
+      noteParts.push(
+        `Kept ${unreadShortLinks} fellowship short link(s) whose target was not read.`,
+      );
+    }
     if (refusedPages.length > 0) {
       noteParts.push(
         `Refused ${refusedPages.length} page(s) that are not programs and retired ${retractions.length} row(s) they minted.`,
@@ -2045,6 +2186,7 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
           detailPagesCapped: detailUrlsCapped,
           nonProgramPagesRefused: refusedByShape,
           nonProgramRowsRetired: retractions.length,
+          ...(shortLinkResolver ? { shortLinks: shortLinkResolver.metrics } : {}),
         },
       },
     };
