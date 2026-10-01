@@ -155,6 +155,50 @@ describe('selectDuplicateProgramCopies on a shared fund page', () => {
     ).toEqual([['b', 'a']]);
   });
 
+  it('joins copies whose titles name the award in another form', () => {
+    expect(
+      redundant(
+        copy('a', {
+          title: 'Fixture Undergraduate Fellowship',
+          sourceName: 'student-grants-database',
+          sourceUrl: FUND_PAGE,
+        }),
+        copy('b', {
+          title: 'Fixture Undergraduate Fellows Program',
+          description: CATALOG_BLURB,
+          applicationLink: FUND_PAGE,
+        }),
+      ),
+    ).toEqual([['b', 'a']]);
+    expect(
+      redundant(
+        copy('a', { title: 'Fixture Fellowships for Baltic Studies', sourceUrl: FUND_PAGE }),
+        copy('b', {
+          title: 'Fixture Fellowship for Baltic Studies',
+          description: CATALOG_BLURB,
+          links: [{ url: FUND_PAGE }],
+        }),
+      ),
+    ).toEqual([['b', 'a']]);
+  });
+
+  it('keeps a common application apart from a fund on its page even with the award noun folded', () => {
+    expect(
+      redundant(
+        copy('a', {
+          title: 'Fixture Fellows and Scholars Common Application',
+          sourceName: 'student-grants-database',
+          sourceUrl: FUND_PAGE,
+        }),
+        copy('b', {
+          title: 'Fixture Undergraduate Fellows Program',
+          description: CATALOG_BLURB,
+          applicationLink: FUND_PAGE,
+        }),
+      ),
+    ).toEqual([]);
+  });
+
   it('leaves two titles apart when a catalog page gave one fund another fund page', () => {
     expect(
       redundant(
