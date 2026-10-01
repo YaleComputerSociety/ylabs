@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { hermeticChildEnvironment } from '../test/hermeticEnvironment';
 
 const FIXTURE = path.resolve(__dirname, 'fixtures/shutdownSignalServer.ts');
-const TSX_BIN = path.resolve(__dirname, '../../node_modules/.bin/tsx');
 const SERVER_ROOT = path.resolve(__dirname, '../..');
 
 let child: ChildProcess | undefined;
@@ -22,7 +21,9 @@ const outputLine = (marker: RegExp) =>
   });
 
 const startFixtureServer = async (signalHandling: '--graceful' | '--default') => {
-  child = spawn(TSX_BIN, [FIXTURE, signalHandling], {
+  // Not the tsx CLI: on Node 26 its wrapper process dies on the relayed SIGTERM
+  // and takes the server child with it, so the signal must reach the server itself.
+  child = spawn(process.execPath, ['--import', 'tsx', FIXTURE, signalHandling], {
     cwd: SERVER_ROOT,
     env: hermeticChildEnvironment({ NODE_ENV: 'development' }),
     stdio: ['ignore', 'pipe', 'pipe'],
