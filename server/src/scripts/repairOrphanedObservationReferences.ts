@@ -36,6 +36,9 @@ import {
   type ValidatedOrphanReferenceDecision,
 } from './orphanedObservationReferenceRepairCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { attributedArchiveSet } from '../models/entityArchival';
+
+const ORPHANED_REFERENCE_ARCHIVE_REASON = 'observations:repair-orphaned-references';
 
 dotenv.config();
 
@@ -725,7 +728,7 @@ async function applyRematerialization(
       },
       {
         $set: {
-          archived: true,
+          ...attributedArchiveSet(ORPHANED_REFERENCE_ARCHIVE_REASON),
           'suppression.reason': 'evidence_replaced',
           'suppression.suppressedAt': new Date(),
           'suppression.note':
@@ -813,7 +816,7 @@ async function applyArchiveOwner(
     },
     {
       $set: {
-        archived: true,
+        ...attributedArchiveSet(ORPHANED_REFERENCE_ARCHIVE_REASON),
         'suppression.reason': 'evidence_lost',
         'suppression.suppressedAt': new Date(),
         'suppression.note':

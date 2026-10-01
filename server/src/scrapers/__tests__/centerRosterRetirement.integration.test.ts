@@ -413,6 +413,12 @@ describe(
         new Date(),
       );
       expect(await isArchived()).toBe(true);
+      const archivedEdge = (await ResearchEntityRelationship.findById(relationship._id).lean()) as {
+        archivedReason?: string;
+        archivedAt?: Date;
+      };
+      expect(archivedEdge.archivedReason).toBe(CENTER_ROSTER_RETIREMENT_REASON);
+      expect(archivedEdge.archivedAt).toBeInstanceOf(Date);
       expect(applied.regated).toBe(true);
       expect(applied.indexSyncFailures).toBe(1);
     });

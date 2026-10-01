@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { archiveAttributionFields } from './entityArchival';
 
 /**
  * Only these two are reachable. `centersInstitutesScraper` hard-codes
@@ -54,6 +55,7 @@ const researchEntityRelationshipSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    ...archiveAttributionFields,
   },
   { timestamps: true },
 );

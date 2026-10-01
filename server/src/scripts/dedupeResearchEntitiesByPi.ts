@@ -4,7 +4,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
-import { archivedEntityUpdate, PI_DEDUPE_ARCHIVE_REASON } from '../models/entityArchival';
+import {
+  archivedEntityUpdate,
+  attributedArchiveSet,
+  PI_DEDUPE_ARCHIVE_REASON,
+  PI_DEDUPE_SELF_RELATIONSHIP_ARCHIVE_REASON,
+} from '../models/entityArchival';
 import {
   rematerializeMergeCanonicalFillOnly,
   type MergeCanonicalRematerialization,
@@ -2007,7 +2012,11 @@ async function archiveSurvivorSelfRelationships(args: {
       targetResearchEntityId: args.canonicalId,
       archived: { $ne: true },
     },
-    { $set: { archived: true, updatedAt: args.now } },
+    {
+      $set: attributedArchiveSet(PI_DEDUPE_SELF_RELATIONSHIP_ARCHIVE_REASON, {
+        updatedAt: args.now,
+      }),
+    },
   );
   return result.modifiedCount || 0;
 }

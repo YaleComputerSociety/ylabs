@@ -56,6 +56,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { escapeRegex } from '../utils/regex';
 import { retireObservations } from './observationStore';
 import { officialProfileIdentityKey } from './utils/rosterMembershipKey';
+import { attributedArchiveSet } from '../models/entityArchival';
 
 export const CENTERS_INSTITUTES_SOURCE_NAME = 'centers-institutes-index';
 export const CENTER_ROSTER_HEALTH_ENTITY_TYPE = 'centerRosterHealth' as const;
@@ -814,7 +815,7 @@ export async function applyCenterRosterRetirementPlan(
           targetResearchEntityId: new mongoose.Types.ObjectId(targetId),
           archived: { $ne: true },
         },
-        { $set: { archived: true } },
+        { $set: attributedArchiveSet(CENTER_ROSTER_RETIREMENT_REASON) },
       );
       applied.archivedRelationships += (result as { modifiedCount?: number }).modifiedCount ?? 0;
     }

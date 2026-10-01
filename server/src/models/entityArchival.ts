@@ -80,6 +80,11 @@ export const PI_DEDUPE_ARCHIVE_REASON = 'research-entity:dedupe-by-pi';
 export const SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON =
   'Merged into the corroborated survivor of its duplicate-url group: same lead person plus a corroborating name or shell asymmetry (#3326).';
 
+export const PI_DEDUPE_SELF_RELATIONSHIP_ARCHIVE_REASON =
+  'research-entity:dedupe-by-pi:self-relationship';
+export const SUPERSEDED_RELATIONSHIP_TYPE_ARCHIVE_REASON =
+  'materialize:relationship-type-superseded';
+
 export const GRANT_SHELL_FACULTY_PORT_ARCHIVE_REASON =
   'research-entity:port-grant-shells-to-faculty-profiles';
 
@@ -120,7 +125,18 @@ export const archivedEntityUpdate = (
     throw new Error('archivedEntityUpdate requires a non-empty archivedReason attribution.');
   }
   return {
-    $set: { archived: true, archivedReason: reason, archivedAt: new Date(), ...set },
+    $set: attributedArchiveSet(reason, set),
     $unset: clearedStudentVisibilityVerdict(),
   };
+};
+
+export const attributedArchiveSet = (
+  archivedReason: string,
+  set: Record<string, unknown> = {},
+): Record<string, unknown> => {
+  const reason = typeof archivedReason === 'string' ? archivedReason.trim() : '';
+  if (!reason) {
+    throw new Error('An archive requires a non-empty archivedReason attribution.');
+  }
+  return { archived: true, archivedReason: reason, archivedAt: new Date(), ...set };
 };
