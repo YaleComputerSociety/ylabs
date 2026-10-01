@@ -1178,6 +1178,22 @@ A frozen lane still counts as presence evidence: when a sibling lane governs the
 A run in which every attempted lane failed to read throws, so it is stored as a `failure` rather than a `success`, and so does an `official-research-home-rosters` run in which every roster fetch failed.
 Without that, a lane whose every page was unreachable still emitted its honest not-read snapshot, which counted as an observation, so the barren-streak guard could never fire and the run read healthy.
 
+#### A first absence counts only for its own department and its own read
+
+`absentFromRosterSinceRunId` stores a run id and nothing else, so on its own it cannot say which department it was read against or whether that read was whole (#3702).
+Measured on Development on 2026-10-01, all 22 stored markers came from one 2026-09-23 run scoped with `--only` to a single department and written before #3661, 16 of them on `student_ready` rows.
+A complete read clears a marker only on a row it classifies `present`, so 20 of the 22 were unreachable, and one served row whose covered department had since changed was planned `suppress_departed` on a marker recorded against a different department.
+Three rules now decide an absence, and none of them writes a field.
+
+1. A standing marker completes a departure only when its own run, re-read with the current rules (`createAbsenceMarkerJudge`), classifies the row `absent` from the row's current departments, and that run carried the #3661 fix (`ROSTER_ABSENCE_MARKER_CUTOFF`, judged by `ScrapeRun.codeSha` ancestry and then `startedAt`, as `fieldRetraction.ts` judges its cutoffs).
+A marker that fails is not trusted and not cleared: an absent row gets a first absence of the current run in its place, counted as `refusedAbsenceMarkers`, and any other row keeps an inert marker that can never prime a suppression.
+2. A row is `absent` only from a department whose roster listed it on an earlier read (`loadPreviousRosterListings`, superseded snapshots included).
+A department tag the materialize added, or a row the lane observed only on another department's page, is `inconclusive` there, so moving a row between departments or moving a department across the drop guard cannot turn an unchanged read into first absences.
+3. A row listed anywhere in the run is `present` (`loadRunRosterPresence`): every snapshot's discovered keys, whatever that snapshot was worth as evidence of absence, plus every `researchEntity` key the lane observed in the run, which covers cross-listing tabs that publish no discovery set and departments no `OrgUnit` names.
+
+On the run the #3647 verification read, these rules moved the read-only plan from 494 `refresh_present` and 89 `record_first_absence` to 522 and 12, with 0 `suppress_departed` before and after, and the judge refuses all 22 stored markers.
+The fix needs no data operation: the plan re-judges markers at decision time, so the stale markers stop mattering on the next plan without a repair.
+
 Writing the Yale-status fields is not the same as removing the row from the directory, so every suppressed or cleared row is re-gated through `planStudentVisibilityGate`/`applyStudentVisibilityGatePlans` and the count is reported as `regatedEntities`.
 `studentVisibilityTier` is a stored field and `activeAtYaleCache === false` only decides the tier the next gate pass computes.
 The first enabled run on Development proved the gap: of two rows written `departed`, one was re-gated by a later pass in the same materialize and left the surface, and the other kept serving `student_ready` at HTTP 200.

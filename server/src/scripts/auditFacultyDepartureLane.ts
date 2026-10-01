@@ -241,6 +241,7 @@ async function main(): Promise<void> {
       ...(plan?.admissibilityCounts ? { admissibilityCounts: plan.admissibilityCounts } : {}),
       regressedDepartments: plan?.regressedDepartments ?? 0,
       incompleteReadDepartments: plan?.incompleteReadDepartments ?? 0,
+      refusedAbsenceMarkers: plan?.refusedAbsenceMarkers ?? 0,
       liveEntities,
       entitiesWithLastSeen,
       entitiesWithAbsenceRecorded,
