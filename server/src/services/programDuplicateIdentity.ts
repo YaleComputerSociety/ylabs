@@ -101,8 +101,27 @@ function fundPageIdentities(program: ProgramDuplicateCandidate): string[] {
   return [...new Set(urls.map(recordSpecificApplicationPortalIdentity).filter(Boolean))];
 }
 
+const AWARD_NOUN_FORMS: Readonly<Record<string, string>> = {
+  fellows: 'fellow',
+  fellowship: 'fellow',
+  fellowships: 'fellow',
+  scholars: 'scholar',
+  scholarship: 'scholar',
+  scholarships: 'scholar',
+  grants: 'grant',
+  awards: 'award',
+  prizes: 'prize',
+};
+
+// A fund page names its award in one form and a catalog in another ("Undergraduate
+// Fellowship", "Undergraduate Fellows Program"), so the award noun is compared by its stem and
+// a trailing "program" is dropped. The shared fund page is still required (#4289).
 const titleKeyWithoutAsides = (title: unknown): string =>
-  programFundTitleKey(String(title || '').replace(/\([^)]*\)/g, ' '));
+  programFundTitleKey(String(title || '').replace(/\([^)]*\)/g, ' '))
+    .split(' ')
+    .map((word) => AWARD_NOUN_FORMS[word] ?? word)
+    .join(' ')
+    .replace(/ programs?$/, '');
 
 function titlesNameOneFund(a: unknown, b: unknown): boolean {
   const keyA = programFundTitleKey(a);
