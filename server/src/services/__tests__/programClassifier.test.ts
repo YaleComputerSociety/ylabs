@@ -330,6 +330,26 @@ describe('classifyProgram internship identity (#2925)', () => {
     ).toMatchObject({ studentFacingCategory: 'Internship program' });
   });
 
+  it('files an internship a department page publishes as a department program, not a center internship (#4089)', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Research Internship Program',
+        sourceUrl:
+          'https://example.yale.edu/academic-study/departments/fixture-studies/undergraduate-study/research-internship-program',
+      }),
+    ).toMatchObject({
+      programCategory: 'RECURRING_PROGRAM',
+      programKind: 'STRUCTURED_PROGRAM',
+      studentFacingCategory: 'Internship program',
+    });
+    expect(
+      classifyProgram({
+        title: 'Fixture Research Internship Program',
+        sourceUrl: 'https://fixturecenter.yale.edu/education/research-internship-program',
+      }),
+    ).toMatchObject({ programCategory: 'CENTER_INTERNSHIP', programKind: 'CENTER_INTERNSHIP' });
+  });
+
   describe('frozen Development misreadings (#3904)', () => {
     it('reads the STARS first-year mentoring program as a way in rather than funding', () => {
       expect(
