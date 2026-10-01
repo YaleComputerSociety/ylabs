@@ -5628,8 +5628,7 @@ function adoptServableFullDescription(input: {
   const replacement = incumbentServes
     ? servable.find(
         ({ materialized }) =>
-          isResearchProse(textValue(materialized)) &&
-          (keepsDescriptionPair(materialized) || !keepsDescriptionPair(servedValue)),
+          isResearchProse(textValue(materialized)) && keepsDescriptionPair(materialized),
       )
     : (servable.find(
         ({ materialized }) => !isBiographyRatherThanResearch(textValue(materialized)),
