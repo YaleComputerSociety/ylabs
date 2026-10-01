@@ -62,6 +62,7 @@ Absence is deliberately not a blocker, since `name` is `required` on the schema 
 Measured on Development, 2026-09-25: 75 live rows, 57 of them `student_ready`, and 1 of the 75 carries a live `name` observation after all, so the row-local reading agrees with the observation log on 74 of 75.
 The discriminator is the ABSENCE of a lab-named URL rather than the presence of a person-page one, because a paginated department listing (`/people-economics?page=4`) is the weakest evidence of a lab there is while no shared URL predicate recognises it as a person page.
 - Redundant program copy: `duplicate_program`. A program row that is a second copy of a fund another row already serves. Removed at `suppressed`; `docs/research-data-pipeline.md` owns how the gate picks the copy it keeps (#3988).
+- Application container: `common_application_container`. A program row whose title names a common application, which admits to several funds that are each served as their own program and link it as their route. Removed at `suppressed`.
 - Inactive / out of scope: `inactive_at_yale`, `archive_review`, `not_undergraduate_relevant`.
 - Citations: `all_citations_dead`, `citations_identify_no_person`. Maps to `citationIdentifiesSubject`: a row whose every citation is dead, or whose every citation is shared across person rows, has no live evidence about its own subject (#2464/#2635).
 Both block, because both are the same question; leaving the second unclassified made it read as non-blocking while the field it maps to still held the row.

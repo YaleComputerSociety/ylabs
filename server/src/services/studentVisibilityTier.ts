@@ -682,6 +682,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'non_research_entity',
   'non_research_program',
   'duplicate_program',
+  'common_application_container',
   'research_infrastructure_only',
   'non_owner_grant_shell',
   'grant_only_no_current_yale_source',
@@ -1122,6 +1123,8 @@ export interface ProgramStudentVisibilityContext {
   duplicateOfServedCopy?: boolean;
 }
 
+const COMMON_APPLICATION_TITLE = /\bcommon application\b/i;
+
 export function computeProgramStudentVisibility(
   program: ProgramStudentVisibilityInput,
   context: ProgramStudentVisibilityContext = {},
@@ -1169,9 +1172,14 @@ export function computeProgramStudentVisibility(
   else if (descriptionState === 'thin') reasons.push('thin_description');
   if (!researchRelated) reasons.push('non_research_program');
   if (context.duplicateOfServedCopy) reasons.push('duplicate_program');
+  // A common application admits to several funds, each served as its own program that links
+  // the application as its route, so the application is a container rather than a program
+  // a student chooses.
+  const applicationContainer = COMMON_APPLICATION_TITLE.test(title);
+  if (applicationContainer) reasons.push('common_application_container');
 
   let computedTier: StudentVisibilityTier = 'operator_review';
-  if (catalogOrAdmin || !researchRelated || context.duplicateOfServedCopy) {
+  if (catalogOrAdmin || !researchRelated || context.duplicateOfServedCopy || applicationContainer) {
     computedTier = 'suppressed';
   } else if (
     !isArchiveReview &&

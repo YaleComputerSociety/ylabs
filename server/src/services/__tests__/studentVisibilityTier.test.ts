@@ -2191,6 +2191,22 @@ describe('computeProgramStudentVisibility', () => {
     expect(result.reasons).not.toContain('missing_description');
   });
 
+  it('suppresses a common application as a container rather than a program', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Fixture Office Summer Research Common Application',
+      studentFacingCategory: 'Fellowship or grant',
+      summary:
+        'One application for the summer research fellowships the office administers, each of which funds independent research.',
+      sourceUrl: 'https://fellowships.example.edu/summer',
+      applicationLink: 'https://apply.example.edu/summer',
+      undergraduateOnly: true,
+      purpose: ['Research'],
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.reasons).toContain('common_application_container');
+  });
+
   it('keeps official but ambiguous program records in review', () => {
     const result = computeProgramStudentVisibility({
       title: 'Research Travel Funding',
