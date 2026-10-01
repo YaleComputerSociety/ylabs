@@ -3,8 +3,11 @@
  */
 import mongoose from 'mongoose';
 
-// Shared across initializeConnections and triggerReconnect so both use identical options.
-export const mongoOptions = {
+// `bufferTimeoutMS` is a Mongoose connection option the driver's own type does not
+// declare, so the shape is spelled out here rather than inferred.
+export type MongoConnectOptions = mongoose.ConnectOptions & { bufferTimeoutMS: number };
+
+export const mongoOptions: MongoConnectOptions = {
   // Connecting must not be a schema-mutating act. `autoIndex` builds a model's
   // declared indexes on connect and `autoCreate` creates its collection, so with
   // both defaulted on a process that merely imports a model recreates the
@@ -22,8 +25,24 @@ export const mongoOptions = {
   // forgotten build is loud rather than a silent performance cliff.
   autoIndex: false,
   autoCreate: false,
-  serverSelectionTimeoutMS: 30000,
-  socketTimeoutMS: 60000,
+  // Bounded on purpose, because the request path is the only consumer of these
+  // and a student waiting on a database that is not answering is waiting for
+  // nothing. Measured against a local server: a reachable database answers a
+  // detail request in under 10 ms, while the driver's own 30 s selection default
+  // turned an unreachable one into a 30 s wait and a 60 s socket default turned a
+  // hung one into a 63 s wait, both ending in a generic error (#4188). 5 s is
+  // generous for selecting a reachable replica set and short enough that a
+  // retrying client learns the answer quickly; the 20 s socket ceiling is well
+  // above the slowest request this server makes, a database-fallback search over
+  // the whole corpus, and well under the hosting platform's own request timeout.
+  // Scripts need the opposite trade-off and get it from scriptMongoConnectOptions.
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 20000,
+  // Mongoose queues an operation issued while the connection is down and throws
+  // after this long. The default is 10 s, which outlives the whole point of the
+  // bound above. Kept non-zero rather than disabled so a reconnect in flight is
+  // still waited out instead of failing every request during it.
+  bufferTimeoutMS: 5000,
   // Close idle connections after 3.5 min so we beat the ~4-min AWS NAT TCP
   // idle timeout before the NAT silently kills them under us. startMongoKeepAlive
   // pings well inside this window so the live connection never hits the cap.
@@ -36,17 +55,24 @@ export const mongoOptions = {
   minPoolSize: 1,
 };
 
-export type ScriptMongoConnectOptions = Omit<mongoose.ConnectOptions, 'autoIndex' | 'autoCreate'>;
+export type ScriptMongoConnectOptions = Omit<
+  Partial<MongoConnectOptions>,
+  'autoIndex' | 'autoCreate'
+>;
 
 export function scriptMongoConnectOptions(
   extra: ScriptMongoConnectOptions = {},
-): mongoose.ConnectOptions {
+): MongoConnectOptions {
   return {
     ...mongoOptions,
     // A request-sized socket timeout suits the API, but an operator scan or a
     // materialize can wait longer than a minute for one batch, so entry points
-    // keep the driver's no-timeout default.
+    // keep the driver's no-timeout default. The serving process's fail-fast
+    // selection and buffer bounds are wrong here for the same reason: a sweep that
+    // starts while a replica set is electing should wait for it, not abort.
     socketTimeoutMS: 0,
+    serverSelectionTimeoutMS: 30000,
+    bufferTimeoutMS: 30000,
     ...extra,
     autoIndex: false,
     autoCreate: false,
@@ -90,6 +116,33 @@ export function isTopologyLostError(error: unknown): boolean {
   return isTopologyLostError(cause);
 }
 
+const UNAVAILABLE_ERROR_NAMES = new Set([
+  'MongooseServerSelectionError',
+  'MongoServerSelectionError',
+  'MongoNetworkTimeoutError',
+  'MongoTimeoutError',
+  'MongoClientClosedError',
+]);
+
+const BUFFERING_TIMEOUT_MESSAGE = 'buffering timed out';
+
+/**
+ * True when an error says the database could not be reached, rather than that the
+ * request itself was wrong. Every arm is the same condition reported under a
+ * different name: selection gave up, a socket timed out, the client was closed, or
+ * the operation waited out Mongoose's buffer while the connection was down. The
+ * caller owes such a request a 503 and a retry, never a 500 (#4188).
+ */
+export function isMongoUnavailableError(error: unknown): boolean {
+  const e = error as { name?: string; message?: string; cause?: unknown } | null | undefined;
+  if (!e) return false;
+  if (isTopologyLostError(e)) return true;
+  if (typeof e.name === 'string' && UNAVAILABLE_ERROR_NAMES.has(e.name)) return true;
+  if (typeof e.message === 'string' && e.message.includes(BUFFERING_TIMEOUT_MESSAGE)) return true;
+  const cause = typeof (e as any).cause === 'function' ? (e as any).cause() : (e as any).cause;
+  return isMongoUnavailableError(cause);
+}
+
 /**
  * Forces an explicit disconnect + reconnect when the topology is lost. Returns
  * the in-flight promise so callers can await recovery and retry their operation
@@ -105,7 +158,7 @@ export function triggerReconnect(): Promise<void> {
       console.error('MongoDB: topology lost — forcing reconnect');
 
       await mongoose.disconnect();
-      await mongoose.connect(primaryUrl, mongoOptions);
+      await mongoose.connect(primaryUrl, activeConnectOptions);
       console.log('MongoDB: reconnected');
     } catch (err) {
       console.error('MongoDB: reconnect failed:', (err as Error)?.message ?? err);
@@ -308,7 +361,14 @@ export async function logMissingMongoIndexes(
   return drift;
 }
 
-export async function initializeConnections(): Promise<void> {
+let activeConnectOptions: MongoConnectOptions = mongoOptions;
+
+// Defaults to the script budget because nearly every caller is an operator entry
+// point; the serving process opts into mongoOptions explicitly. triggerReconnect
+// reuses whatever budget connected, so a reconnect never swaps one for the other.
+export async function initializeConnections(
+  connectOptions: MongoConnectOptions = scriptMongoConnectOptions(),
+): Promise<void> {
   // Surface connection lifecycle so Render logs show exactly when the driver
   // loses or regains the server — makes the next incident much easier to trace.
   mongoose.connection.on('disconnected', () => console.error('MongoDB: disconnected'));
@@ -321,7 +381,8 @@ export async function initializeConnections(): Promise<void> {
   if (!url) {
     throw new Error('MONGODBURL is required');
   }
-  await mongoose.connect(url, mongoOptions);
+  activeConnectOptions = connectOptions;
+  await mongoose.connect(url, connectOptions);
   console.log(`Connected to database 🚀`);
   // Deliberately non-fatal. An unbuilt index is a performance problem, and
   // refusing to boot on one would turn a slow query into an outage on the very

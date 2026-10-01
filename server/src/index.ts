@@ -3,7 +3,7 @@
  */
 import app from './app';
 import dotenv from 'dotenv';
-import { initializeConnections, startMongoKeepAlive } from './db/connections';
+import { initializeConnections, mongoOptions, startMongoKeepAlive } from './db/connections';
 import { warmControlledVocabularyHeadings } from './utils/controlledVocabularyHeadings';
 import { startGateRefreshScheduler } from './scripts/gateRefreshScheduler';
 import { startCorpusQualitySnapshotScheduler } from './services/corpusQualitySnapshotScheduler';
@@ -20,7 +20,7 @@ const listenHost = serverListenHost();
 
 const startApp = async () => {
   try {
-    await initializeConnections();
+    await initializeConnections(mongoOptions);
 
     // Before the first request, because the research-area splitter reads this set
     // synchronously and an unloaded set means a published controlled-vocabulary heading is

@@ -3276,4 +3276,35 @@ describe('Research degraded search notice', () => {
     expect(searchJourneyEvents).toHaveLength(1);
     expect(searchJourneyEvents[0].payload).toMatchObject({ outcome: 'degraded' });
   });
+
+  const serviceUnavailable = () =>
+    Promise.reject({
+      response: { status: 503, data: { error: 'Service temporarily unavailable' } },
+    });
+
+  it('tells a student browsing to retry rather than that nothing matches when the server is unavailable', async () => {
+    mockSearchResponses((url) =>
+      url === '/research/search' ? serviceUnavailable() : unexpectedSearchEndpoint(url),
+    );
+
+    renderResearch();
+
+    const notice = await screen.findByRole('region', { name: degradedNoticeName });
+    expect(within(notice).getByRole('button', { name: 'Try again' })).toBeTruthy();
+    expect(screen.queryByText(/No research matches these filters/)).toBeNull();
+  });
+
+  it('offers a retry instead of recovery advice when a search cannot reach the server', async () => {
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return body.q === '' ? researchSearchResponse([]) : serviceUnavailable();
+    });
+
+    renderResearch(departments, ['/research?q=quantum+materials+physics']);
+
+    const notice = await screen.findByRole('region', { name: degradedNoticeName });
+    expect(within(notice).getByRole('button', { name: 'Try again' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Ways to recover this search' })).toBeNull();
+    expect(document.body.textContent).not.toContain('Your search still works');
+  });
 });
