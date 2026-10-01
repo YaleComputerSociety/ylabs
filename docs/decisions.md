@@ -55,9 +55,9 @@ A two-letter surname now confirms when the given name sits next to it, with at m
 A contradiction now needs a person-shaped slug that is either a namesake with a different given name and a surname of three or more letters, which is the collision the lane was built to find, or a person the page names next to a lead-role phrase (`slugNamesAnotherLead`).
 A bare `director` is not a lead-role phrase, because department pages name directors of undergraduate studies and of cores.
 
-Replayed over the same pages, re-fetched on 2026-09-30, the fixed verifier contradicts 8 judgements, all 8 hand-labelled right, and none of the 32 wrong ones; 11 of those now confirm and 21 are unstated.
+Replayed over the same pages, re-fetched on 2026-09-30, the fixed verifier contradicts 7 judgements, all 7 hand-labelled right, and none of the 32 wrong ones; 11 of those now confirm and 21 are unstated.
 That is an in-sample result on the sample the rules were drawn from, so it is not yet the precision that would license a reader.
-Recall falls: 7 of the 15 right contradictions are lost, mostly centers whose pages name their directors in prose without a person-shaped link.
+Recall falls: 8 of the 15 right contradictions are lost, mostly centers whose pages name their directors in prose without a person-shaped link, and one two-letter-surname namesake the three-letter floor now refuses.
 That is the intended trade for a verdict that must never accuse a correct lead.
 
 Undecidable is recorded, not chased: 12 judgements sit on pages that name no lead at all, and no lane can settle them from the site.
