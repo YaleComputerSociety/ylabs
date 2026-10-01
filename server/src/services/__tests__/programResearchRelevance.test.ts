@@ -250,7 +250,8 @@ describe('classifyProgramResearchRelevance', () => {
         related({
           title: 'Fixture National Scholarship',
           purpose: ['Study'],
-          description: 'Not limited to one major. For students intending to pursue research careers.',
+          description:
+            'Not limited to one major. For students intending to pursue research careers.',
         }),
       ).toBe(true);
     });
@@ -267,7 +268,8 @@ describe('classifyProgramResearchRelevance', () => {
       expect(
         related({
           ...award,
-          eligibility: 'Students who have not yet graduated may use the grant to conduct research abroad.',
+          eligibility:
+            'Students who have not yet graduated may use the grant to conduct research abroad.',
         }),
       ).toBe(true);
       expect(

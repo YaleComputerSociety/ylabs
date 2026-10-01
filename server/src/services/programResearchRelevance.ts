@@ -141,8 +141,9 @@ export function classifyProgramResearchRelevance(
   if (purposeUnbackedByProse) reasons.push('inferred_research_purpose_unbacked');
 
   // A title that explicitly disclaims research (e.g. "...Non-Research Projects", journalism,
-  // language study, study/tuition scholarship) is not research-related even if a generic
-  // "Research" purpose tag is attached — unless the program kind is a dedicated research kind.
+  // language study, study/tuition scholarship), or a facet naming only language study, is not
+  // research-related even if a generic "Research" purpose tag is attached, unless the program
+  // kind is research by construction. A kind derived from travel wording does not exempt it.
   if ((titleSaysNonResearch || facetSaysLanguageStudy) && !inherentKind) {
     return { researchRelated: false, reasons };
   }
