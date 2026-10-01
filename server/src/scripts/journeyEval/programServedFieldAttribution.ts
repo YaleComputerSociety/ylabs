@@ -107,14 +107,11 @@ function attributeAcceptingApplications(
       : undefined;
   const servedFlag = served.isAcceptingApplications;
   if (storedFlag === servedFlag) return unchanged('isAcceptingApplications');
-<<<<<<< ours
   const closedByPastDeadline =
     storedFlag === true &&
     servedFlag === false &&
     servedDeadlinesIn(stored, servedAt).some((candidate) => candidate.closed);
   if (closedByPastDeadline) return attributed('isAcceptingApplications', 'deadlineIsPast');
-=======
->>>>>>> theirs
   const decidedByServedWindow = instantsIn(servedAt).some(
     (now) =>
       acceptingFromServedWindow(stored, servedProgramDeadline(stored, now), now) === servedFlag,

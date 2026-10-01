@@ -71,7 +71,7 @@ describe('attributeProgramServedFields', () => {
     expect(outcomeFor(outcomes, 'isAcceptingApplications')).toEqual({
       field: 'isAcceptingApplications',
       status: 'attributed',
-      guard: 'acceptingFromServedWindow',
+      guard: 'deadlineIsPast',
     });
   });
 
@@ -113,7 +113,7 @@ describe('attributeProgramServedFields', () => {
     expect(outcomeFor(outcomes, 'isAcceptingApplications')).toEqual({
       field: 'isAcceptingApplications',
       status: 'attributed',
-      guard: 'acceptingFromServedWindow',
+      guard: 'deadlineIsPast',
     });
   });
 
