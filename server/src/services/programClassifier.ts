@@ -339,6 +339,23 @@ function namesInternshipProgram(input: ProgramClassificationInput): boolean {
   return !FUNDING_INSTRUMENT_NAME.test(normalizeText(input.title).toLowerCase());
 }
 
+const DEPARTMENT_PAGE_PATH_SEGMENT = /^(?:departments|undergraduate-study)$/;
+
+function publishedOnDepartmentPage(input: ProgramClassificationInput): boolean {
+  const sourceUrl = normalizeText(input.sourceUrl);
+  if (!sourceUrl) return false;
+  let pathname: string;
+  try {
+    pathname = new URL(sourceUrl).pathname;
+  } catch {
+    return false;
+  }
+  return pathname
+    .split('/')
+    .filter(Boolean)
+    .some((segment) => DEPARTMENT_PAGE_PATH_SEGMENT.test(segment));
+}
+
 function structuredProgram(overrides: Partial<KindClassification>): KindClassification {
   return {
     programCategory: 'RECURRING_PROGRAM',
@@ -672,9 +689,10 @@ function classifyProgramKind(input: ProgramClassificationInput): KindClassificat
   }
 
   if (namesInternshipProgram(input)) {
+    const runByDepartment = publishedOnDepartmentPage(input);
     return structuredProgram({
-      programCategory: 'CENTER_INTERNSHIP',
-      programKind: 'CENTER_INTERNSHIP',
+      programCategory: runByDepartment ? 'RECURRING_PROGRAM' : 'CENTER_INTERNSHIP',
+      programKind: runByDepartment ? 'STRUCTURED_PROGRAM' : 'CENTER_INTERNSHIP',
       studentFacingCategory: 'Internship program',
       bestNextStep: 'Review the official internship page and application requirements.',
       prepSteps: ['Eligibility check', 'Official application'],
