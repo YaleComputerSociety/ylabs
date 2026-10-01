@@ -9,11 +9,14 @@ import {
   buildBetaToDevelopmentSummary,
   buildPlan,
   collectionsForOptions,
+  localNonMirrorCollectionNames,
   parseBetaToDevelopmentOptions,
+  preservedDevelopmentCollectionNames,
   researchPersonAccountIds,
   unclassifiedBetaCollectionNames,
   type BetaToDevelopmentOptions,
 } from '../syncBetaToDevelopment';
+import { PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS } from '../mirrorCollectionPolicy';
 
 const facultyAccountId = new ObjectId('68d0000000000000000000a1');
 const studentAccountId = new ObjectId('68d0000000000000000000a2');
@@ -21,6 +24,7 @@ const researcherId = new ObjectId('68d0000000000000000000b1');
 const researchEntityId = new ObjectId('68d0000000000000000000c1');
 const orgUnitId = new ObjectId('68d0000000000000000000d1');
 const observationId = new ObjectId('68d0000000000000000000e1');
+const frozenBenchmarkId = 'example-lane-gold-v1';
 
 const accountsValidator = CANONICAL_MONGO_VALIDATORS.find(
   (candidate) => candidate.collectionName === 'accounts',
@@ -170,6 +174,31 @@ async function seedTarget(targetDb: Db): Promise<void> {
   await targetDb
     .collection('analytics_events')
     .insertOne({ event: 'development_student_search', netid: 'local001' });
+  await targetDb.collection('lane_benchmarks').insertOne({
+    benchmarkId: frozenBenchmarkId,
+    lane: 'example-lane',
+    pageCount: 1,
+    goldLabels: [{ entityKey: 'example-entity', verdict: 'correct' }],
+  });
+  await targetDb
+    .collection('lane_benchmark_pages')
+    .insertOne({ benchmarkId: frozenBenchmarkId, url: 'https://example.test/a', body: '<html/>' });
+  await targetDb
+    .collection('lane_scorecard_snapshots')
+    .insertOne({ benchmarkId: frozenBenchmarkId, knownWrong: 2 });
+  await targetDb.collection('corpus_quality_snapshots').insertOne({ studentReady: 7 });
+  await targetDb.collection('gate_scorecard_snapshots').insertOne({ verdict: 'accepted' });
+  await targetDb.collection('engine_benchmarks').insertOne({ benchmarkId: frozenBenchmarkId });
+  await targetDb
+    .collection('engine_benchmark_rows')
+    .insertOne({ benchmarkId: frozenBenchmarkId, entityKey: 'example-entity' });
+  await targetDb
+    .collection('engine_benchmark_snapshots')
+    .insertOne({ benchmarkId: frozenBenchmarkId, planned: 3 });
+  await targetDb.collection('scrape_snapshots').insertOne({ runId: 'stale-development-run' });
+  await targetDb
+    .collection('scrape_job_locks')
+    .insertOne({ environment: 'development', sourceName: 'example-directory', locked: true });
 }
 
 describe('Beta to Development mirror against MongoDB', () => {
@@ -178,6 +207,8 @@ describe('Beta to Development mirror against MongoDB', () => {
   let sourceDb: Db;
   let targetDb: Db;
   let options: BetaToDevelopmentOptions;
+  let clearedCollectionNames: string[] = [];
+  let preservedCollectionNames: string[] = [];
 
   beforeAll(async () => {
     memoryServer = await MongoMemoryServer.create({ binary: { version: '8.0.12' } });
@@ -205,11 +236,26 @@ describe('Beta to Development mirror against MongoDB', () => {
     expect(unclassified).toEqual([]);
     assertNoUnclassifiedBetaCollections(unclassified);
 
+    const targetCollectionNames = (await targetDb.listCollections({}, { nameOnly: true }).toArray())
+      .map((row) => row.name)
+      .sort();
+    clearedCollectionNames = localNonMirrorCollectionNames(
+      targetCollectionNames,
+      betaToDevelopmentCollectionNames(true),
+    );
+    preservedCollectionNames = preservedDevelopmentCollectionNames(targetCollectionNames);
+
     const plan = await buildPlan(sourceDb, targetDb, collections);
-    const summary = buildBetaToDevelopmentSummary(options, plan, unclassified, []);
+    const summary = buildBetaToDevelopmentSummary(
+      options,
+      plan,
+      unclassified,
+      clearedCollectionNames,
+      preservedCollectionNames,
+    );
     expect(summary.includesObservations).toBe(false);
 
-    await applySync(sourceDb, targetDb, collections, [], async () => {
+    await applySync(sourceDb, targetDb, collections, clearedCollectionNames, async () => {
       const after = await buildPlan(sourceDb, targetDb, collections);
       const mismatches = after.filter((row) => row.sourceCopyCount !== row.targetCount);
       expect(mismatches).toEqual([]);
@@ -269,6 +315,22 @@ describe('Beta to Development mirror against MongoDB', () => {
     expect(await targetDb.listCollections({ name: 'scrape_job_locks' }).hasNext()).toBe(false);
     expect(await targetDb.listCollections({ name: 'student_profiles' }).hasNext()).toBe(false);
     expect(await targetDb.listCollections({ name: 'evidence_claims' }).hasNext()).toBe(false);
+  });
+
+  it('keeps the frozen benchmarks and measurement history a refresh cannot re-derive', async () => {
+    expect(clearedCollectionNames).toEqual(['scrape_job_locks', 'scrape_snapshots']);
+    expect(preservedCollectionNames).toEqual([...PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS].sort());
+
+    const benchmark = await targetDb
+      .collection('lane_benchmarks')
+      .findOne({ benchmarkId: frozenBenchmarkId });
+    expect(benchmark?.goldLabels).toHaveLength(1);
+
+    for (const preserved of PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS) {
+      expect(await targetDb.collection(preserved).countDocuments()).toBe(1);
+    }
+
+    expect(await targetDb.collection('scrape_snapshots').countDocuments()).toBe(0);
   });
 
   it('keeps the researcher-backed account resolvable without mirroring its student PII', async () => {

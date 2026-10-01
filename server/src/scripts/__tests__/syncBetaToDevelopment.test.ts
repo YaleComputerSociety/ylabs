@@ -12,13 +12,22 @@ import {
   betaToDevelopmentCollectionNames,
   buildBetaToDevelopmentSummary,
   collectionsForOptions,
+  localNonMirrorCollectionNames,
   parseBetaToDevelopmentOptions,
+  preservedDevelopmentCollectionNames,
   researchPersonAccountIds,
   replaceMongoDatabaseName,
   sanitizeMirroredAccount,
   unclassifiedBetaCollectionNames,
 } from '../syncBetaToDevelopment';
-import { assertNoNeverCopyCollections } from '../mirrorCollectionPolicy';
+import {
+  assertEnvironmentLocalCollectionsClassified,
+  assertNoNeverCopyCollections,
+  assertNoPreservedCollectionsCleared,
+  EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS,
+  NEVER_COPY_COLLECTIONS,
+  PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS,
+} from '../mirrorCollectionPolicy';
 
 const baseEnv = {
   BETA_MONGODBURL: 'mongodb+srv://user:pass@beta.example.test/Beta',
@@ -75,7 +84,7 @@ describe('Beta to Development sync guards', () => {
     const beta = createFakeDb({ research_entities: [{ _id: 'beta' }] });
     const development = createFakeDb({
       research_entities: [{ _id: 'development' }],
-      analytics_events: [{ _id: 'local' }],
+      scrape_snapshots: [{ _id: 'local' }],
     });
 
     await expect(
@@ -83,7 +92,7 @@ describe('Beta to Development sync guards', () => {
         beta.db,
         development.db,
         [{ name: 'research_entities', category: 'research-discovery' }],
-        ['analytics_events'],
+        ['scrape_snapshots'],
         async () => {
           throw new Error('verification failed');
         },
@@ -91,7 +100,7 @@ describe('Beta to Development sync guards', () => {
     ).rejects.toThrow('verification failed');
 
     expect(development.data.get('research_entities')).toEqual([{ _id: 'development' }]);
-    expect(development.data.get('analytics_events')).toEqual([{ _id: 'local' }]);
+    expect(development.data.get('scrape_snapshots')).toEqual([{ _id: 'local' }]);
     expect([...development.data.keys()].some((name) => name.startsWith('__beta_'))).toBe(false);
   });
 
@@ -244,9 +253,16 @@ describe('Beta to Development sync guards', () => {
     const options = parseBetaToDevelopmentOptions(['--clear-development-non-mirror-data'], baseEnv);
 
     expect(options.clearDevelopmentNonMirrorData).toBe(true);
-    const summary = buildBetaToDevelopmentSummary(options, [], [], ['analytics_events']);
+    const summary = buildBetaToDevelopmentSummary(
+      options,
+      [],
+      [],
+      ['scrape_job_locks'],
+      ['lane_benchmarks'],
+    );
     expect(summary.clearsDevelopmentNonMirrorData).toBe(true);
-    expect(summary.localCollectionsClearedOnApply).toEqual(['analytics_events']);
+    expect(summary.localCollectionsClearedOnApply).toEqual(['scrape_job_locks']);
+    expect(summary.localCollectionsPreservedOnApply).toEqual(['lane_benchmarks']);
     expect(summary.excludedOperationalCollections).toEqual(
       expect.arrayContaining([
         'admin_grants',
@@ -255,6 +271,62 @@ describe('Beta to Development sync guards', () => {
         'student_profiles',
       ]),
     );
+  });
+
+  it('keeps every environment-local measurement collection out of the cleared set', () => {
+    const developmentCollections = [
+      ...PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS,
+      ...EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS,
+      'research_entities',
+      'scrape_snapshots',
+      'system.views',
+    ];
+
+    const cleared = localNonMirrorCollectionNames(developmentCollections, ['research_entities']);
+
+    for (const preserved of PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS) {
+      expect(cleared).not.toContain(preserved);
+    }
+    expect(cleared).toEqual(['scrape_job_locks', 'scrape_snapshots']);
+    expect(preservedDevelopmentCollectionNames(developmentCollections)).toEqual(
+      [...PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS].sort(),
+    );
+  });
+
+  it('pins the preserved collections so dropping one from the list fails', () => {
+    expect([...PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS].sort()).toEqual([
+      'analytics_events',
+      'corpus_quality_snapshots',
+      'engine_benchmark_rows',
+      'engine_benchmark_snapshots',
+      'engine_benchmarks',
+      'gate_scorecard_snapshots',
+      'lane_benchmark_pages',
+      'lane_benchmarks',
+      'lane_scorecard_snapshots',
+    ]);
+    expect(EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS).toEqual(['scrape_job_locks']);
+  });
+
+  it('refuses an environment-local collection that is classified neither way', () => {
+    expect(() => assertEnvironmentLocalCollectionsClassified()).not.toThrow();
+
+    NEVER_COPY_COLLECTIONS.push('unclassified_instrument_snapshots');
+    try {
+      expect(() => assertEnvironmentLocalCollectionsClassified()).toThrow(
+        /must be classified as preserved or ephemeral/,
+      );
+    } finally {
+      NEVER_COPY_COLLECTIONS.pop();
+    }
+    expect(() => assertEnvironmentLocalCollectionsClassified()).not.toThrow();
+  });
+
+  it('refuses a clear list that names preserved history', () => {
+    expect(() => assertNoPreservedCollectionsCleared(['scrape_snapshots'])).not.toThrow();
+    expect(() =>
+      assertNoPreservedCollectionsCleared(['scrape_snapshots', 'lane_benchmark_pages']),
+    ).toThrow(/Refusing to clear environment-local history/);
   });
 
   it('refuses the wrong source or destination direction', () => {
@@ -550,6 +622,7 @@ describe('Beta to Development sync guards', () => {
       includesObservations: false,
       unclassifiedBetaCollections: [],
       localCollectionsClearedOnApply: [],
+      localCollectionsPreservedOnApply: [],
     });
   });
 

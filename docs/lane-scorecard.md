@@ -176,3 +176,5 @@ Two replays of unchanged code must give the same fingerprint.
 If they do not, the lane depends on something the benchmark did not freeze, and its numbers are not comparable until that is found.
 
 The collections are environment-local and listed in `NEVER_COPY_COLLECTIONS`, so a promotion never replaces a benchmark or its history.
+They are also listed in `PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS`, so the Development refresh never clears one either (#4034).
+Being unmirrored used to be the reason the refresh destroyed them, because the refresh cleared every collection Beta does not mirror; the allowlist is what makes "never mirrored" mean "kept" rather than "unprotected".

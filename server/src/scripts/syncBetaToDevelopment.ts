@@ -11,7 +11,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
+import {
+  assertEnvironmentLocalCollectionsClassified,
+  assertNoNeverCopyCollections,
+  PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS,
+} from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   accountCountChange,
@@ -123,6 +127,7 @@ export interface BetaToDevelopmentSummary {
   excludedOperationalCollections: string[];
   unclassifiedBetaCollections: string[];
   localCollectionsClearedOnApply: string[];
+  localCollectionsPreservedOnApply: string[];
   userCopyPolicy: string;
 }
 
@@ -458,6 +463,7 @@ export function buildBetaToDevelopmentSummary(
   collections: SyncCollectionPlan[],
   unclassifiedBetaCollections: string[] = [],
   localCollectionsClearedOnApply: string[] = [],
+  localCollectionsPreservedOnApply: string[] = [],
 ): BetaToDevelopmentSummary {
   return {
     mode: options.mode,
@@ -471,6 +477,7 @@ export function buildBetaToDevelopmentSummary(
     excludedOperationalCollections: EXCLUDED_BETA_COLLECTIONS,
     unclassifiedBetaCollections,
     localCollectionsClearedOnApply,
+    localCollectionsPreservedOnApply,
     userCopyPolicy:
       'Copy the identity spine. Preserve accounts reachable from a Researcher, pseudonymize every other account, and remove account activity fields.',
   };
@@ -493,14 +500,23 @@ export function assertNoUnclassifiedBetaCollections(collectionNames: string[]): 
   );
 }
 
-function localNonMirrorCollectionNames(
+export function localNonMirrorCollectionNames(
   developmentCollectionNames: string[],
   mirrorCollectionNames: string[],
 ): string[] {
+  assertEnvironmentLocalCollectionsClassified();
   const mirror = new Set(mirrorCollectionNames);
+  const preserved = new Set(PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS);
   return developmentCollectionNames
-    .filter((name) => !name.startsWith('system.') && !mirror.has(name))
+    .filter((name) => !name.startsWith('system.') && !mirror.has(name) && !preserved.has(name))
     .sort();
+}
+
+export function preservedDevelopmentCollectionNames(
+  developmentCollectionNames: string[],
+): string[] {
+  const preserved = new Set(PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS);
+  return developmentCollectionNames.filter((name) => preserved.has(name)).sort();
 }
 
 function writeOutput(report: unknown, output?: string): void {
@@ -682,12 +698,16 @@ async function main(): Promise<void> {
           approvedMirrorCollectionNames,
         )
       : [];
+    const localCollectionsPreservedOnApply = preservedDevelopmentCollectionNames(
+      developmentCollectionRows.map((collection) => collection.name),
+    );
     const before = await buildPlan(betaDb, developmentDb, collections);
     const summary = buildBetaToDevelopmentSummary(
       options,
       before,
       unclassifiedBetaCollections,
       localCollectionsClearedOnApply,
+      localCollectionsPreservedOnApply,
     );
 
     if (options.mode === 'dry-run') {
