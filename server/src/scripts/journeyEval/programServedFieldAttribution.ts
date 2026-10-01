@@ -4,6 +4,7 @@ import {
   type ServedProgramReaderField,
 } from '../../controllers/programPayload';
 import {
+  acceptingFromServedWindow,
   publicFellowshipForStudent,
   servedProgramDeadline,
   toValidDate,
@@ -110,8 +111,13 @@ function attributeAcceptingApplications(
     storedFlag === true &&
     servedFlag === false &&
     servedDeadlinesIn(stored, servedAt).some((candidate) => candidate.closed);
-  return closedByPastDeadline
-    ? attributed('isAcceptingApplications', 'deadlineIsPast')
+  if (closedByPastDeadline) return attributed('isAcceptingApplications', 'deadlineIsPast');
+  const decidedByServedWindow = instantsIn(servedAt).some(
+    (now) =>
+      acceptingFromServedWindow(stored, servedProgramDeadline(stored, now), now) === servedFlag,
+  );
+  return decidedByServedWindow
+    ? attributed('isAcceptingApplications', 'acceptingFromServedWindow')
     : unexplained(
         'isAcceptingApplications',
         'serves an application status the deadline does not explain',

@@ -167,6 +167,59 @@ describe('attributeProgramServedFields', () => {
     expect(outcomeFor(outcomes, 'isAcceptingApplications').status).toBe('unexplained');
   });
 
+  it('attributes a window that opened since the lane wrote the flag to the served window', () => {
+    const stored = {
+      ...recurringStoredRow,
+      isAcceptingApplications: false,
+      applicationOpenDate: new Date('2026-09-15T05:00:00.000Z'),
+      deadline: new Date('2026-12-01T05:00:00.000Z'),
+    };
+    const served = publicFellowshipForStudent(stored, servedAt.from);
+
+    expect(served.isAcceptingApplications).toBe(true);
+    expect(
+      outcomeFor(attributeProgramServedFields(stored, served, servedAt), 'isAcceptingApplications'),
+    ).toEqual({
+      field: 'isAcceptingApplications',
+      status: 'attributed',
+      guard: 'acceptingFromServedWindow',
+    });
+  });
+
+  it('attributes a window that has not opened yet to the served window', () => {
+    const stored = {
+      ...recurringStoredRow,
+      applicationOpenDate: new Date('2026-11-01T05:00:00.000Z'),
+      deadline: new Date('2027-01-15T05:00:00.000Z'),
+    };
+    const served = publicFellowshipForStudent(stored, servedAt.from);
+
+    expect(served.isAcceptingApplications).toBe(false);
+    expect(
+      outcomeFor(attributeProgramServedFields(stored, served, servedAt), 'isAcceptingApplications'),
+    ).toEqual({
+      field: 'isAcceptingApplications',
+      status: 'attributed',
+      guard: 'acceptingFromServedWindow',
+    });
+  });
+
+  it('flags a row served as accepting before its stated window opens', () => {
+    const stored = {
+      ...recurringStoredRow,
+      isAcceptingApplications: false,
+      applicationOpenDate: new Date('2026-11-01T05:00:00.000Z'),
+      deadline: new Date('2027-01-15T05:00:00.000Z'),
+    };
+    const outcomes = attributeProgramServedFields(
+      stored,
+      { ...stored, isAcceptingApplications: true },
+      servedAt,
+    );
+
+    expect(outcomeFor(outcomes, 'isAcceptingApplications').status).toBe('unexplained');
+  });
+
   it('attributes a non-http apply link the student projection drops to that projection', () => {
     const stored = { ...recurringStoredRow, applicationLink: 'mailto:office@example.edu' };
     const outcomes = attributeProgramServedFields(

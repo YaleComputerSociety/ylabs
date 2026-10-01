@@ -164,10 +164,23 @@ describe('fellowship public serializer', () => {
       deadline: new Date('2026-10-30T00:00:00.000Z'),
     };
     expect(publicFellowshipForStudent(row, now).isAcceptingApplications).toBe(true);
-    expect(
-      publicFellowshipForStudent({ ...row, applicationOpenDate: undefined }, now)
-        .isAcceptingApplications,
-    ).toBe(true);
+  });
+
+  it('keeps the stored flag when an open deadline has no stated opening date (#4231)', () => {
+    const now = new Date('2026-10-01T16:00:00.000Z');
+    for (const stored of [true, false]) {
+      expect(
+        publicFellowshipForStudent(
+          {
+            _id: '67d8928150621bcef434a1dc',
+            title: 'Unstated-opening program',
+            isAcceptingApplications: stored,
+            deadline: new Date('2026-10-30T00:00:00.000Z'),
+          },
+          now,
+        ).isAcceptingApplications,
+      ).toBe(stored);
+    }
   });
 
   it('serves a window that has not opened yet as not accepting whatever the stored flag says (#4231)', () => {
