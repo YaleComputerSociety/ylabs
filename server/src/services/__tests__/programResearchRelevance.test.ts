@@ -255,6 +255,33 @@ describe('classifyProgramResearchRelevance', () => {
       ).toBe(true);
     });
 
+    it('reads a negation only within the field and clause that hold the rescue', () => {
+      const award = { title: 'Fixture Fund', purpose: ['Study', 'Travel'] };
+      expect(
+        related({
+          ...award,
+          summary: 'Not restricted to any major',
+          description: 'Supports research projects abroad.',
+        }),
+      ).toBe(true);
+      expect(
+        related({
+          ...award,
+          eligibility: 'Students who have not yet graduated may use the grant to conduct research abroad.',
+        }),
+      ).toBe(true);
+      expect(
+        related({
+          ...award,
+          eligibility:
+            'Open to any major, with no citizenship requirement, to support independent research projects.',
+        }),
+      ).toBe(true);
+      expect(
+        related({ ...award, eligibility: 'The grant cannot be used to conduct research abroad.' }),
+      ).toBe(false);
+    });
+
     it('treats a facet that names only language study like a language-study title', () => {
       const languageProgram = {
         title: 'Fixture Fields Program',

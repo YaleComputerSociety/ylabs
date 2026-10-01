@@ -1543,6 +1543,7 @@ The derived `studentFacingCategory` is never read as evidence there, because a l
 A record without the facet keeps the text rule.
 Four evidence shapes narrow that rule (#4291).
 A prose rescue counts only from a sentence that does not negate it before the match, so "the fund is not meant to support independent or archival research projects" no longer admits an internship fund.
+The negation is read within the one field and the one clause, up to the nearest comma or colon, that hold the match, and "not yet" is not a negation, so an earlier "no citizenship requirement," or "students who have not yet graduated" leaves a research rescue standing.
 A facet that names `Language Study` and no research purpose is read like a title that says language study, because a downstream mention ("language study that can support research") is not what the award funds.
 Only a research-by-construction kind exempts a non-research title or a language-study facet; `TRAVEL_RESEARCH_GRANT` is derived from travel wording and no longer does.
 On a lane whose `purpose` is `inferPurpose` output rather than a catalog facet (`yale-college-fellowships-office`), a `Research` purpose counts only when the record's own prose names research; a record with no prose at all keeps it, because absence is not evidence.

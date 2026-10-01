@@ -66,15 +66,22 @@ const isMentoredResearchPathway = (programKind: string, prose: string): boolean 
 const RESEARCH_CAREER_AWARD =
   /\b(?:pursue|pursuing|intend(?:s|ing)? to pursue)\s+research careers?\b/i;
 
-const NEGATION = /\b(?:not|no|never|nor|without|cannot)\b|n't\b/i;
+const NEGATION = /\b(?:not(?!\s+yet\b)|no|never|nor|without|cannot)\b|n't\b(?!\s+yet\b)/i;
 
 const SENTENCE_BOUNDARY = /(?<=[.!?;])\s+/;
 
-const affirmedIn = (prose: string, pattern: RegExp): boolean =>
-  prose.split(SENTENCE_BOUNDARY).some((sentence) => {
-    const match = pattern.exec(sentence);
-    return match !== null && !NEGATION.test(sentence.slice(0, match.index));
-  });
+const CLAUSE_BOUNDARY = /[,:]/;
+
+const clauseBefore = (sentence: string, index: number): string =>
+  sentence.slice(0, index).split(CLAUSE_BOUNDARY).pop() ?? '';
+
+const affirmedIn = (fields: string[], pattern: RegExp): boolean =>
+  fields
+    .flatMap((field) => field.split(SENTENCE_BOUNDARY))
+    .some((sentence) => {
+      const match = pattern.exec(sentence);
+      return match !== null && !NEGATION.test(clauseBefore(sentence, match.index));
+    });
 
 const LANGUAGE_STUDY_PURPOSE = 'Language Study';
 
@@ -105,10 +112,11 @@ export function classifyProgramResearchRelevance(
   const purposes = Array.isArray(input.purpose) ? input.purpose.map(text) : [];
   const programKind = text(input.programKind).toUpperCase();
   const reasons: string[] = [];
-  const bodyProse = [text(input.summary), text(input.description), text(input.eligibility)]
-    .filter(Boolean)
-    .join(' ');
-  const sourceProse = [title, bodyProse].filter(Boolean).join(' ');
+  const bodyFields = [text(input.summary), text(input.description), text(input.eligibility)].filter(
+    Boolean,
+  );
+  const sourceFields = [title, ...bodyFields].filter(Boolean);
+  const sourceProse = sourceFields.join(' ');
   const mentoredPathway = isMentoredResearchPathway(programKind, sourceProse);
 
   const facetResearch = purposes.some((p) => RESEARCH_PURPOSES.has(p));
@@ -117,7 +125,7 @@ export function classifyProgramResearchRelevance(
   const purposeUnbackedByProse =
     facetResearch &&
     PURPOSE_INFERRED_FROM_PROSE_SOURCES.has(text(input.sourceName)) &&
-    bodyProse.length > 0 &&
+    bodyFields.length > 0 &&
     !RESEARCH_TEXT.test(sourceProse);
   const purposeResearch = facetResearch && !purposeUnbackedByProse;
   const kindResearch = RESEARCH_PROGRAM_KINDS.has(programKind);
@@ -146,8 +154,8 @@ export function classifyProgramResearchRelevance(
   // internship and postgraduate awards to a research surface (#3904).
   if (purposes.length > 0 && !purposeResearch && !mentoredPathway) {
     const titleResearch = RESEARCH_TEXT.test(title);
-    const researchCareer = affirmedIn(sourceProse, RESEARCH_CAREER_AWARD);
-    const fundsResearch = affirmedIn(sourceProse, FUNDS_RESEARCH_PROSE);
+    const researchCareer = affirmedIn(sourceFields, RESEARCH_CAREER_AWARD);
+    const fundsResearch = affirmedIn(sourceFields, FUNDS_RESEARCH_PROSE);
     if (!titleResearch && !inherentKind && !researchCareer && !fundsResearch) {
       reasons.push('purpose_not_research');
       return { researchRelated: false, reasons };
