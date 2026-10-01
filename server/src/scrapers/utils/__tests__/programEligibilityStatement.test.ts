@@ -55,10 +55,14 @@ describe('eligibilitySentences', () => {
       isEligibilitySentence('Graduate students are eligible; contact the program office to apply.'),
     ).toBe(false);
     expect(
-      isEligibilitySentence('Eligible students should reach out to Professor Fixture before applying.'),
+      isEligibilitySentence(
+        'Eligible students should reach out to Professor Fixture before applying.',
+      ),
     ).toBe(false);
     expect(
-      isEligibilitySentence('Juniors are eligible and should speak with the fixture adviser first.'),
+      isEligibilitySentence(
+        'Juniors are eligible and should speak with the fixture adviser first.',
+      ),
     ).toBe(false);
     expect(
       isEligibilitySentence(
