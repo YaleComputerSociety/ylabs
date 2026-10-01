@@ -247,7 +247,7 @@ export function goldValueMatches(emitted: string, acceptable: readonly string[])
   });
 }
 
-export type GoldComparison = 'text' | 'url' | 'set' | 'deadline' | 'exact';
+export type GoldComparison = 'text' | 'statement' | 'url' | 'set' | 'deadline' | 'exact';
 
 const GOLD_SCORED_ENTITY_TYPES: ReadonlySet<string> = new Set(['researchEntity', 'fellowship']);
 
@@ -259,7 +259,26 @@ const FELLOWSHIP_GOLD_COMPARISONS: ReadonlyMap<string, GoldComparison> = new Map
   ['purpose', 'set'],
   ['requiresMentorBeforeApply', 'exact'],
   ['entryMode', 'exact'],
+  ['eligibility', 'statement'],
 ]);
+
+/**
+ * How far a statement may run past the judged text that it contains. Containment alone
+ * would credit a lane that stored the whole page as the statement, so a value carries
+ * the judged sentence plus at most about two more sentences (#4233).
+ */
+export const MAX_STATEMENT_OVERRUN_CHARS = 400;
+
+export function goldStatementMatches(emitted: string, acceptable: readonly string[]): boolean {
+  return acceptable.some((candidate) => {
+    const judged = normalizedGoldText(candidate);
+    if (!judged || !emitted) return false;
+    if (emitted.includes(judged)) {
+      return emitted.length - judged.length <= MAX_STATEMENT_OVERRUN_CHARS;
+    }
+    return emitted.length >= MIN_CONTAINED_QUOTE_CHARS && judged.includes(emitted);
+  });
+}
 
 /**
  * No lane emits these: the materializer derives them from a fellowship's observed facts
@@ -364,7 +383,10 @@ const exactGoldText = (value: unknown): string | undefined =>
 
 function isEmittedGoldValue(emission: GoldEmission): boolean {
   const { entityType, field, value } = emission;
-  if (goldComparisonFor(entityType, field) === 'text') return Boolean(goldValueKey(field, value));
+  const comparison = goldComparisonFor(entityType, field);
+  if (comparison === 'text' || comparison === 'statement') {
+    return Boolean(goldValueKey(field, value));
+  }
   if (value === undefined || value === null || value === '') return false;
   return !(Array.isArray(value) && value.length === 0);
 }
@@ -398,6 +420,8 @@ export function goldEmissionMatches(
       const emitted = exactGoldText(value);
       return emitted !== undefined && acceptable.some((candidate) => candidate.trim() === emitted);
     }
+    case 'statement':
+      return goldStatementMatches(goldValueKey(field, value), acceptable);
     default:
       return goldValueMatches(goldValueKey(field, value), acceptable);
   }

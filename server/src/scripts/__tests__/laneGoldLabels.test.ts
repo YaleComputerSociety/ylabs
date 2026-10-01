@@ -157,6 +157,34 @@ describe('scoreGoldLabels on fellowship observations', () => {
     expect(score.truePositive).toBe(1);
   });
 
+  it('scores eligibility as a statement that may not run far past the judged text', () => {
+    expect(goldComparisonFor('fellowship', 'eligibility')).toBe('statement');
+    expect(goldComparisonFor('researchEntity', 'eligibility')).toBe('text');
+    const judged = 'Currently enrolled sophomores and juniors are eligible to apply.';
+    const statement = scoreOf(
+      [
+        fellowshipObservation(
+          'eligibility',
+          `${judged} Applicants must be enrolled at the time of the award.`,
+        ),
+      ],
+      present('eligibility', [judged]),
+    );
+    expect(statement).toMatchObject({ truePositive: 1, falsePositive: 0 });
+
+    const clause = scoreOf(
+      [fellowshipObservation('eligibility', 'sophomores and juniors are eligible')],
+      present('eligibility', [judged]),
+    );
+    expect(clause.truePositive).toBe(1);
+
+    const pageDump = scoreOf(
+      [fellowshipObservation('eligibility', `${'Program overview prose. '.repeat(40)}${judged}`)],
+      present('eligibility', [judged]),
+    );
+    expect(pageDump).toMatchObject({ truePositive: 0, falsePositive: 1, falseNegative: 1 });
+  });
+
   it('counts an asserted empty contact office as no emission', () => {
     const score = scoreOf([fellowshipObservation('contactOffice', '')], {
       entityKey: fellowshipKey,

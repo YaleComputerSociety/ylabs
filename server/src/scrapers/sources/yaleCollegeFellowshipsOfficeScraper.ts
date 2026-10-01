@@ -22,6 +22,8 @@ import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene
 import { humanizeProgramLinkLabel } from '../../utils/programLinkLabel';
 import { normalizedProgramTitleKey, primaryConcatenatedAwardTitle } from '../../utils/programTitle';
 import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
+import { eligibilitySentences, eligibilityStatement } from '../utils/programEligibilityStatement';
+import { resolveFundYearOfStudy } from '../utils/fundYearOfStudy';
 
 export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-office';
 
@@ -141,6 +143,7 @@ export interface FellowshipCatalogCandidate {
   applicationOpenDate?: Date;
   contactOffice?: string;
   contactEmail?: string;
+  eligibility?: string;
   yearOfStudy: string[];
   termOfAward: string[];
   purpose: string[];
@@ -191,9 +194,11 @@ function normalizedCandidateTitle(value: string): string {
   return primaryConcatenatedAwardTitle(cleaned);
 }
 
+const DOUBLED_SCHEME_RE = /^https?:\/\/(https?)(?::\/\/|\/\/)/i;
+
 function absoluteUrl(rawUrl: string | undefined, pageUrl: string): string | undefined {
   if (!rawUrl) return undefined;
-  const trimmed = rawUrl.trim();
+  const trimmed = rawUrl.trim().replace(DOUBLED_SCHEME_RE, '$1://');
   if (!trimmed || trimmed.startsWith('#') || /^mailto:/i.test(trimmed)) return undefined;
   try {
     return new URL(trimmed, pageUrl).toString();
@@ -361,6 +366,18 @@ function isRecordSpecificApplicationUrl(url: string | undefined): boolean {
   }
 }
 
+const LINK_SHORTENER_HOSTS = ['bit.ly', 'tinyurl.com', 'ow.ly', 'goo.gl'];
+
+function isLinkShortenerUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return LINK_SHORTENER_HOSTS.some((host) => hostIsOrIsUnder(hostname, host));
+  } catch {
+    return false;
+  }
+}
+
 function isStudentGrantsUrl(url: string | undefined): boolean {
   if (!url) return false;
   try {
@@ -498,6 +515,8 @@ const MAX_DETAIL_PROGRAM_LINKS = 12;
 
 const APPLY_LABEL_RE = /\b(?:apply|application|submit)\b/i;
 
+const STUDENT_GRANTS_LABEL_RE = /\bstudent grants\b/i;
+
 /**
  * A Yale program routinely takes its applications on a host Yale does not own, so
  * requiring a Yale host here dropped the only way in: the example in #4086 is a
@@ -509,6 +528,12 @@ function isProgramRelevantLink(url: string, label: string): boolean {
   const portal = applicationPortalKind(url);
   if (portal === 'application-management') return true;
   if (APPLY_LABEL_RE.test(label) && (isYaleOwnedUrl(url) || portal === 'general-form')) return true;
+  if (
+    isLinkShortenerUrl(url) &&
+    (APPLY_LABEL_RE.test(label) || STUDENT_GRANTS_LABEL_RE.test(label))
+  ) {
+    return true;
+  }
   return isLikelyPublicFellowshipDetailUrl(url);
 }
 
@@ -557,12 +582,17 @@ const nearAwardInstrument = (purpose: string): string =>
 const forThePurposeOf = (purpose: string): string =>
   `\\b${AWARD_INSTRUMENT} (?:for|supporting|toward) (?:the |a |an )?${purpose}\\b`;
 
+/**
+ * Coursework and tuition state a purpose only when the award pays for them: a page that
+ * asks for "a foundation through their coursework", or a research program that also
+ * covers one course's tuition, funds research rather than study (#4233).
+ */
 const STUDY_PURPOSE_RE = new RegExp(
   [
     '\\bstudy abroad\\b',
     '\\bcourse of study\\b',
-    '\\bcourse ?work\\b',
-    '\\btuition\\b',
+    '\\b(?:supports?|funds?|covers?|pays?)(?: for)?(?: the)? (?:\\w+ ){0,2}(?:course ?work|tuition)\\b',
+    '(?<!can )\\b(?:supports?|funds?) (?:(?!(?:but|not)\\b)[\\w-]+ ){0,6}(?<!\\bof )study\\b',
     nearAwardInstrument('study'),
     forThePurposeOf('(?:study|course ?work)'),
   ].join('|'),
@@ -573,6 +603,7 @@ const TRAVEL_PURPOSE_RE = new RegExp(
   [
     '\\b(?:study|research|work|intern(?:ship)?s?) abroad\\b',
     '\\binternational travel\\b',
+    '\\b(?:defray|offset)s? (?:\\w+ ){0,2}travel (?:costs?|expenses?)\\b',
     nearAwardInstrument('travel'),
     forThePurposeOf('travel'),
   ].join('|'),
@@ -687,11 +718,52 @@ function hasExplicitNegativeResearchFocus(text: string): boolean {
   );
 }
 
+/**
+ * Research the award funds, named by what kind of research it is or by the award it
+ * funds. Plurals count, because "Graduate Research Fellowships" states the same purpose
+ * as "Research Fellowship", and the dissertation and field forms are how graduate awards
+ * state it (#4233).
+ */
+const RESEARCH_FOCUS_RE = new RegExp(
+  [
+    String.raw`\b(?:original|independent|summer|faculty[- ]mentored|undergraduate|student|dissertation|pre-dissertation|doctoral|thesis|field|laboratory|primary source) research\b`,
+    String.raw`\bresearch (?:projects?|proposals?|experiences?|fellowships?|programs?|grants?|awards?|trips?|internships?|assistantships?)\b`,
+    String.raw`\bconduct(?:s|ing)? (?:\w+ ){0,2}research\b`,
+  ].join('|'),
+  'i',
+);
+
 function isResearchFocused(text: string): boolean {
   if (hasExplicitNegativeResearchFocus(text)) return false;
-  return /\b(?:original|independent|summer|faculty[- ]mentored|undergraduate) research\b|\bresearch (?:project|proposal|experience|fellowship|program)\b/i.test(
-    text,
+  return RESEARCH_FOCUS_RE.test(text);
+}
+
+const TEXT_BLOCK_SELECTOR = 'p, li, dd, dt, td, th, h1, h2, h3, h4, h5, h6, div, br';
+
+function textBlocks(root: cheerio.Cheerio<any>): string[] {
+  const copy = root.clone();
+  copy.find('a[href^="mailto:" i], a[href^="tel:" i]').each((_, anchor) => {
+    const link = copy.find(anchor);
+    link.text(`${link.text()} ${link.attr('href')}`);
+  });
+  copy.find(TEXT_BLOCK_SELECTOR).before('\n').after('\n');
+  return copy.text().split('\n').map(normalizeWhitespace).filter(Boolean);
+}
+
+/**
+ * The years a page admits, read with the same prose rules as a Student Grants Database
+ * fund, where the page's eligibility sentences play the fund's eligibility section. These
+ * pages carry no year filter, so prose that names no year emits nothing.
+ */
+function statedYearOfStudy(blocks: readonly string[], eligibility: readonly string[]): string[] {
+  const resolution = resolveFundYearOfStudy(
+    [
+      { text: eligibility.join(' ¶ '), isEligibilitySection: true },
+      { text: blocks.join(' ¶ '), isEligibilitySection: false },
+    ],
+    [],
   );
+  return resolution.kind === 'prose' ? resolution.values : [];
 }
 
 function extractEmail(text: string): string | undefined {
@@ -778,6 +850,7 @@ function fingerprintCandidate(
     applicationOpenDate: candidate.applicationOpenDate?.toISOString() || '',
     contactOffice: candidate.contactOffice || '',
     contactEmail: candidate.contactEmail || '',
+    eligibility: candidate.eligibility || '',
     yearOfStudy: candidate.yearOfStudy,
     termOfAward: candidate.termOfAward,
     purpose: candidate.purpose,
@@ -1068,12 +1141,18 @@ function candidateFromMacmillanOpportunityRow(
   const summaryText = normalizeWhitespace($row.find('.node-teaser__summary').first().text());
   const rowContext = normalizeWhitespace(`${title} ${summaryText}`);
   const deadline = parseProgramDate(bestDeadlineText(rowContext), 'deadline', referenceDate);
+  // An opportunity row has no page of its own on this site: its heading links straight to
+  // the fund record, and a short link there redirects to one (#4233).
   const applicationLink =
-    isCommunityForceUrl(href) || applicationPortalKind(href) ? href : undefined;
+    isCommunityForceUrl(href) || applicationPortalKind(href) || isLinkShortenerUrl(href)
+      ? href
+      : undefined;
   const links = [{ label: applicationLink ? 'Application' : title, url: href }];
   const isAcceptingApplications =
     (deadline ? deadline.getTime() > referenceDate.getTime() : false) ||
     hasExplicitActiveApplicationLanguage(rowContext);
+  const summaryBlocks = summaryText ? [summaryText] : [];
+  const eligibility = eligibilitySentences(summaryBlocks);
 
   return finalizeCandidate({
     sourceKey: sourceKeyForTitle(title),
@@ -1092,7 +1171,8 @@ function candidateFromMacmillanOpportunityRow(
     applicationOpenDate: undefined,
     contactOffice: contactOffice || administeringOfficeForPage(pageUrl),
     contactEmail: extractEmail(summaryText),
-    yearOfStudy: [],
+    eligibility: eligibilityStatement(eligibility),
+    yearOfStudy: statedYearOfStudy(summaryBlocks, eligibility),
     termOfAward: inferTerm(rowContext),
     purpose: inferPurpose(rowContext),
     globalRegions: [],
@@ -1387,6 +1467,9 @@ function candidateFromDetailPage(
   const contentRoot = detailContentRoot($);
   const chromeFreeRoot = chromeFreeContent(contentRoot);
   const bodyText = normalizeWhitespace(chromeFreeRoot.text());
+  const bodyBlocks = textBlocks(chromeFreeRoot);
+  const titledBodyText = `${title} ${bodyText}`;
+  const eligibility = eligibilitySentences(bodyBlocks);
   const safeDescription = sanitizeStoredCatalogDescription(bodyText, 2000);
   const applicationInformation = applicationSectionText($);
   const deadline = parseProgramDate(bestDeadlineText(bodyText), 'deadline', referenceDate);
@@ -1410,11 +1493,14 @@ function candidateFromDetailPage(
       .filter((item): item is { label: string; url: string } => !!item)
       .filter((item) => isProgramRelevantLink(item.url, item.label)),
   ).slice(0, MAX_DETAIL_PROGRAM_LINKS);
+  // Chosen among the links the candidate keeps, so a chrome link that only labels itself
+  // "Application" cannot take the slot and then be dropped, leaving no route (#4233).
+  const routeLinks = links.filter((link) => !isUnhelpfulProgramUrl(link.url, pageUrl));
   const applicationLink =
-    links.find((link) => isCommunityForceUrl(link.url))?.url ||
-    links.find((link) => isStudentGrantsUrl(link.url))?.url ||
-    links.find((link) => applicationPortalKind(link.url))?.url ||
-    links.find((link) => /apply|application|student grants/i.test(link.label))?.url;
+    routeLinks.find((link) => isCommunityForceUrl(link.url))?.url ||
+    routeLinks.find((link) => isStudentGrantsUrl(link.url))?.url ||
+    routeLinks.find((link) => applicationPortalKind(link.url))?.url ||
+    routeLinks.find((link) => /apply|application|student grants/i.test(link.label))?.url;
   const isAcceptingApplications =
     (deadline ? deadline.getTime() > referenceDate.getTime() : false) ||
     hasExplicitActiveApplicationLanguage(bodyText);
@@ -1428,7 +1514,7 @@ function candidateFromDetailPage(
     applicationMaterials: applicationInformation
       ? inferApplicationMaterials(applicationInformation)
       : [],
-    researchFocused: isResearchFocused(bodyText),
+    researchFocused: isResearchFocused(titledBodyText),
     researchFocusExplicitNegative: hasExplicitNegativeResearchFocus(bodyText),
     sourcePageKind: 'detail',
     sourceUrl: pageUrl,
@@ -1438,9 +1524,10 @@ function candidateFromDetailPage(
     applicationOpenDate,
     contactOffice: administeringOfficeForPage(pageUrl),
     contactEmail: extractEmail(bodyText),
-    yearOfStudy: [],
+    eligibility: eligibilityStatement(eligibility),
+    yearOfStudy: statedYearOfStudy(bodyBlocks, eligibility),
     termOfAward: inferTerm(bodyText),
-    purpose: inferPurpose(bodyText),
+    purpose: inferPurpose(titledBodyText),
     globalRegions: [],
     citizenshipStatus: [],
     isAcceptingApplications,
@@ -1480,6 +1567,7 @@ function mergeCandidates(
             !existing.description)
         ? incoming
         : existing;
+  const evidenceSecond = evidenceOwner === incoming ? existing : incoming;
   const sourceUrl = evidenceOwner.sourceUrl;
   const researchEvidenceOwner = evidenceOwner;
   const researchFocusExplicitNegative =
@@ -1515,7 +1603,9 @@ function mergeCandidates(
     applicationOpenDate: incoming.applicationOpenDate || existing.applicationOpenDate,
     contactOffice: incoming.contactOffice || existing.contactOffice,
     contactEmail: incoming.contactEmail || existing.contactEmail,
-    yearOfStudy: Array.from(new Set([...existing.yearOfStudy, ...incoming.yearOfStudy])),
+    eligibility: evidenceOwner.eligibility || evidenceSecond.eligibility,
+    yearOfStudy:
+      evidenceOwner.yearOfStudy.length > 0 ? evidenceOwner.yearOfStudy : evidenceSecond.yearOfStudy,
     termOfAward: Array.from(new Set([...existing.termOfAward, ...incoming.termOfAward])),
     purpose,
     globalRegions: Array.from(new Set([...existing.globalRegions, ...incoming.globalRegions])),
@@ -1651,6 +1741,7 @@ export function candidateToObservations(candidate: FellowshipCatalogCandidate): 
     // keeps whatever it already holds (#4086).
     currentSourceObservation('contactOffice', candidate.contactOffice || '', candidate),
     observation('contactEmail', candidate.contactEmail, candidate),
+    observation('eligibility', candidate.eligibility, candidate),
     observation('yearOfStudy', candidate.yearOfStudy, candidate),
     observation('termOfAward', candidate.termOfAward, candidate),
     observation('purpose', candidate.purpose, candidate),
