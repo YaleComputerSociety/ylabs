@@ -18,10 +18,13 @@ import {
   refuseBenchmarkReplayNetwork,
 } from '../snapshotBenchmarkMode';
 
+export const SCRAPER_USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
+
 export interface FetchedHttpPage {
   url: string;
   html: string;
   status: number;
+  setCookies?: string[];
 }
 
 export interface HttpRequestResult {
@@ -29,12 +32,18 @@ export interface HttpRequestResult {
   data: string;
   finalUrl: string;
   retryAfterMs?: number;
+  setCookies?: string[];
 }
 
-export type HttpRequestFn = (
-  url: string,
-  config: { timeoutMs: number; headers: Record<string, string>; maxRedirects: number },
-) => Promise<HttpRequestResult>;
+export interface HttpRequestConfig {
+  timeoutMs: number;
+  headers: Record<string, string>;
+  maxRedirects: number;
+  method?: 'GET' | 'POST';
+  body?: string;
+}
+
+export type HttpRequestFn = (url: string, config: HttpRequestConfig) => Promise<HttpRequestResult>;
 
 export interface HostRateLimiterOptions {
   maxConcurrency?: number;
@@ -97,18 +106,38 @@ function parseRetryAfterMs(header: unknown): number | undefined {
   return undefined;
 }
 
+function setCookieHeaders(header: unknown): string[] | undefined {
+  if (Array.isArray(header)) return header.map(String);
+  return typeof header === 'string' && header ? [header] : undefined;
+}
+
 const defaultAxiosRequest: HttpRequestFn = async (url, config) => {
   const agents = ssrfSafeAgents();
-  const res = await axios.get(url, {
-    timeout: config.timeoutMs,
-    headers: config.headers,
-    maxRedirects: config.maxRedirects,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-    responseType: 'text',
-    validateStatus: () => true,
-    transitional: { clarifyTimeoutError: true } as never,
-  });
+  const res =
+    config.method === 'POST'
+      ? await axios.request({
+          url,
+          method: 'POST',
+          data: config.body ?? '',
+          timeout: config.timeoutMs,
+          headers: config.headers,
+          maxRedirects: config.maxRedirects,
+          httpAgent: agents.httpAgent,
+          httpsAgent: agents.httpsAgent,
+          responseType: 'text',
+          validateStatus: () => true,
+          transitional: { clarifyTimeoutError: true } as never,
+        })
+      : await axios.get(url, {
+          timeout: config.timeoutMs,
+          headers: config.headers,
+          maxRedirects: config.maxRedirects,
+          httpAgent: agents.httpAgent,
+          httpsAgent: agents.httpsAgent,
+          responseType: 'text',
+          validateStatus: () => true,
+          transitional: { clarifyTimeoutError: true } as never,
+        });
   const finalUrl =
     typeof res.request?.res?.responseUrl === 'string' ? res.request.res.responseUrl : url;
   return {
@@ -116,6 +145,7 @@ const defaultAxiosRequest: HttpRequestFn = async (url, config) => {
     data: typeof res.data === 'string' ? res.data : String(res.data ?? ''),
     finalUrl,
     retryAfterMs: parseRetryAfterMs(res.headers?.['retry-after']),
+    setCookies: setCookieHeaders(res.headers?.['set-cookie']),
   };
 };
 
@@ -166,9 +196,26 @@ export async function fetchPageWithPolicy(
   return page;
 }
 
+// A postback body carries per-session view state, so no replay could key it: a form post is
+// never frozen, and replay refuses it like any other unfrozen request.
+export async function postFormWithPolicy(
+  url: string,
+  form: URLSearchParams,
+  options: FetchPageWithPolicyOptions = {},
+): Promise<FetchedHttpPage> {
+  if (isBenchmarkReplayActive()) refuseBenchmarkReplayNetwork();
+  return fetchPageLive(url, options, { method: 'POST', body: form.toString() });
+}
+
+interface FormSubmission {
+  method: 'POST';
+  body: string;
+}
+
 async function fetchPageLive(
   url: string,
   options: FetchPageWithPolicyOptions,
+  submission?: FormSubmission,
 ): Promise<FetchedHttpPage> {
   const assertUrl = options.assertUrl ?? assertPublicHttpUrl;
   const safeUrl = (await assertUrl(url)).toString();
@@ -185,10 +232,14 @@ async function fetchPageLive(
   const backoffMs = (attempt: number): number =>
     Math.min(maxBackoff, base * 2 ** attempt + Math.floor(jitter() * base));
 
-  const config = {
+  const headers = options.headers ?? { 'User-Agent': SCRAPER_USER_AGENT };
+  const config: HttpRequestConfig = {
     timeoutMs: options.timeoutMs ?? 10_000,
-    headers: options.headers ?? { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    headers: submission
+      ? { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }
+      : headers,
     maxRedirects: options.maxRedirects ?? 5,
+    ...submission,
   };
 
   let lastError: unknown;
@@ -203,7 +254,12 @@ async function fetchPageLive(
       continue;
     }
     if (result.status >= 200 && result.status < 300) {
-      return { url: result.finalUrl || safeUrl, html: result.data ?? '', status: result.status };
+      return {
+        url: result.finalUrl || safeUrl,
+        html: result.data ?? '',
+        status: result.status,
+        ...(result.setCookies?.length ? { setCookies: result.setCookies } : {}),
+      };
     }
     if (retryable.has(result.status) && attempt < maxRetries) {
       const retryDelay =
@@ -273,7 +329,7 @@ export async function fetchPublicHttpUrl(
   const maxRedirects = options.maxRedirects ?? 5;
   const config = {
     timeoutMs: options.timeoutMs ?? 25_000,
-    headers: options.headers ?? { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    headers: options.headers ?? { 'User-Agent': SCRAPER_USER_AGENT },
   };
 
   let current = url;
