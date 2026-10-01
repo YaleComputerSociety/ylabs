@@ -470,24 +470,16 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
-  it('expands cross-domain biomedical, environmental, and social-science vernacular to canonical terms (#1463)', () => {
-    expect(normalizeResearchSearchQuery('cancer')).toMatchObject({
-      query: 'oncology cancer biology tumor biology cancer',
-      isTopicAliasQuery: true,
-      aliasTerms: ['oncology', 'cancer biology', 'tumor biology', 'cancer'],
-    });
-    expect(normalizeResearchSearchQuery('climate')).toMatchObject({
-      isTopicAliasQuery: true,
-      aliasTerms: expect.arrayContaining(['climate change', 'environmental science']),
-    });
-    expect(normalizeResearchSearchQuery('mental health')).toMatchObject({
-      isTopicAliasQuery: true,
-      aliasTerms: expect.arrayContaining(['psychiatry']),
-    });
-    expect(normalizeResearchSearchQuery('infectious disease')).toMatchObject({
-      isTopicAliasQuery: true,
-      aliasTerms: expect.arrayContaining(['epidemiology', 'microbiology']),
-    });
+  it('sends a full-word topic the student typed down the ordinary path unexpanded (#1463, #3940)', () => {
+    for (const word of ['cancer', 'climate', 'mental health', 'infectious disease', 'heart']) {
+      expect(normalizeResearchSearchQuery(word)).toMatchObject({
+        query: word,
+        isTopicAliasQuery: false,
+        isAliasExpanded: false,
+        aliasExpansionKeepsShorthand: false,
+        aliasTerms: null,
+      });
+    }
   });
 
   it('expands a topic alias only when it is the whole query (#3797)', () => {
@@ -502,9 +494,9 @@ describe('searchResearchGroupsViaMeili', () => {
       query: 'neuro ethics',
       isAliasExpanded: false,
     });
-    expect(normalizeResearchSearchQuery('drug')).toMatchObject({
+    expect(normalizeResearchSearchQuery('neuro')).toMatchObject({
       isTopicAliasQuery: true,
-      aliasTerms: expect.arrayContaining(['pharmacology', 'drug discovery']),
+      aliasTerms: expect.arrayContaining(['neuroscience', 'neurology']),
     });
   });
 
@@ -1265,6 +1257,18 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search.mock.calls[0][1]).toMatchObject({
       hybrid: { semanticRatio: 0.8, embedder: 'default' },
       matchingStrategy: 'all',
+    });
+  });
+
+  it('searches a full-word topic over every attribute with the semantic leg, as the typed word (#3940)', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('heart', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][0]).toBe('heart');
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('attributesToSearchOn');
+    expect(mocks.search.mock.calls[0][1]).toMatchObject({
+      hybrid: { semanticRatio: 0.8, embedder: 'default' },
     });
   });
 
