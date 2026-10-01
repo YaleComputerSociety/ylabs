@@ -89,6 +89,30 @@ describe('classifyProgramResearchRelevance', () => {
     expect(result.researchRelated).toBe(false);
   });
 
+  it('admits a structured program built on faculty mentorship whose page never says research', () => {
+    const pathway = {
+      title: 'Fixture Academic Year Program',
+      programKind: 'STRUCTURED_PROGRAM',
+      purpose: [],
+      summary: 'A mentoring and support program for first-year students interested in STEM.',
+      description: 'The program builds a network of faculty and peer mentorship.',
+    };
+    expect(classifyProgramResearchRelevance(pathway)).toEqual({
+      researchRelated: true,
+      reasons: ['mentored_research_pathway'],
+    });
+    expect(
+      classifyProgramResearchRelevance({ ...pathway, programKind: 'CENTER_INTERNSHIP' })
+        .researchRelated,
+    ).toBe(false);
+    expect(
+      classifyProgramResearchRelevance({
+        ...pathway,
+        description: 'The program builds a network of peer advising.',
+      }).researchRelated,
+    ).toBe(false);
+  });
+
   describe('the purpose facet decides for a record that carries one (#3904)', () => {
     const related = (input: Parameters<typeof classifyProgramResearchRelevance>[0]) =>
       classifyProgramResearchRelevance(input).researchRelated;
@@ -181,24 +205,27 @@ describe('classifyProgramResearchRelevance', () => {
       ).toBe(true);
     });
 
-    it('leaves a STARS program carrying a derived non-research facet to the existing rule', () => {
+    it('keeps a structured program built on faculty mentorship whatever its facet says', () => {
       expect(
         related({
-          title: 'STARS I Academic Year Program',
+          title: 'Fixture Academic Year Program',
           programKind: 'STRUCTURED_PROGRAM',
           purpose: ['Study'],
           description:
-            'A first-year mentoring and support program in STEM, rather than a direct research placement.',
+            'A first-year mentoring program in STEM built on faculty and peer mentorship.',
         }),
       ).toBe(true);
+    });
+
+    it('no longer exempts a program by its STARS name or URL alone', () => {
       expect(
         related({
           title: 'Fixture Academic Year Program',
           sourceUrl: 'https://example.edu/stars/fixture-program',
           purpose: ['Study'],
-          description: 'A mentoring program, rather than a direct research placement.',
+          description: 'A peer advising program for first-year students.',
         }),
-      ).toBe(true);
+      ).toBe(false);
     });
 
     it('leaves a record with no facet to the existing text rule', () => {

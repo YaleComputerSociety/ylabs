@@ -55,9 +55,12 @@ const INHERENTLY_RESEARCH_PROGRAM_KINDS = new Set([
 const FUNDS_RESEARCH_PROSE =
   /\b(?:(?<!non-)research (?:trips?|projects?|travel|expenses|costs|stays?)|(?:conduct|conducting|support|supports|fund|funds)\s+(?:(?!(?:or|and|interested|in)\b)\w+\s+){0,3}research(?!\s+opportunit)|whose research)\b/i;
 
-// STARS classification is held for a product decision, so the facet gate must not move it.
-const isStarsProgram = (title: string, sourceUrl: string): boolean =>
-  /\bSTARS\b/.test(title) || /\/stars\//i.test(sourceUrl);
+// A structured program built on faculty mentorship is a student's way into research even when
+// its page never uses the word, so it belongs on /programs (product decision, 2026-09-30).
+const FACULTY_MENTORSHIP_PROSE = /\bfaculty\b[\w\s-]{0,30}\bmentor(?:s|ship|ing)?\b/i;
+
+const isMentoredResearchPathway = (programKind: string, prose: string): boolean =>
+  programKind === 'STRUCTURED_PROGRAM' && FACULTY_MENTORSHIP_PROSE.test(prose);
 
 const RESEARCH_CAREER_AWARD =
   /\b(?:pursue|pursuing|intend(?:s|ing)? to pursue)\s+research careers?\b/i;
@@ -85,6 +88,10 @@ export function classifyProgramResearchRelevance(
   const purposes = Array.isArray(input.purpose) ? input.purpose.map(text) : [];
   const programKind = text(input.programKind).toUpperCase();
   const reasons: string[] = [];
+  const sourceProse = [title, text(input.summary), text(input.description), text(input.eligibility)]
+    .filter(Boolean)
+    .join(' ');
+  const mentoredPathway = isMentoredResearchPathway(programKind, sourceProse);
 
   const titleSaysNonResearch = NON_RESEARCH_TITLE.test(title);
   const purposeResearch = purposes.some((p) => RESEARCH_PURPOSES.has(p));
@@ -94,6 +101,7 @@ export function classifyProgramResearchRelevance(
   if (purposeResearch) reasons.push('research_purpose');
   if (kindResearch) reasons.push('research_program_kind');
   if (textResearch) reasons.push('research_text');
+  if (mentoredPathway) reasons.push('mentored_research_pathway');
   if (titleSaysNonResearch) reasons.push('non_research_title');
 
   // A title that explicitly disclaims research (e.g. "...Non-Research Projects", journalism,
@@ -108,17 +116,9 @@ export function classifyProgramResearchRelevance(
   // names research, or its kind is research by construction. Incidental prose ("research
   // opportunities", "language immersion or research") otherwise admitted study, language,
   // internship and postgraduate awards to a research surface (#3904).
-  if (purposes.length > 0 && !purposeResearch && !isStarsProgram(title, text(input.sourceUrl))) {
+  if (purposes.length > 0 && !purposeResearch && !mentoredPathway) {
     const titleResearch = RESEARCH_TEXT.test(title);
     const inherentKind = INHERENTLY_RESEARCH_PROGRAM_KINDS.has(programKind);
-    const sourceProse = [
-      title,
-      text(input.summary),
-      text(input.description),
-      text(input.eligibility),
-    ]
-      .filter(Boolean)
-      .join(' ');
     const researchCareer = RESEARCH_CAREER_AWARD.test(sourceProse);
     const fundsResearch = FUNDS_RESEARCH_PROSE.test(sourceProse);
     if (!titleResearch && !inherentKind && !researchCareer && !fundsResearch) {
@@ -127,7 +127,7 @@ export function classifyProgramResearchRelevance(
     }
   }
 
-  const researchRelated = purposeResearch || kindResearch || textResearch;
+  const researchRelated = purposeResearch || kindResearch || textResearch || mentoredPathway;
   if (!researchRelated) reasons.push('no_research_signal');
   return { researchRelated, reasons };
 }
