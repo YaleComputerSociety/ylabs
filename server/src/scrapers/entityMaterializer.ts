@@ -134,8 +134,15 @@ import {
 import { planFellowshipClassification } from './fellowshipClassificationDerivation';
 import {
   ENRICH_ONLY_FELLOWSHIP_SOURCES,
+  fellowshipAbsenceClearWithheldBySourcePrecedence,
   fellowshipFieldsWithheldBySourcePrecedence,
 } from './fellowshipSourcePrecedence';
+import {
+  fellowshipFieldsAssertedAbsent,
+  planFellowshipAbsenceClears,
+  withoutFellowshipFieldsAssertedAbsent,
+  type FellowshipAbsenceClear,
+} from './fellowshipFieldAbsence';
 import {
   isDirectoryGraftCitation,
   planDirectoryGraftCitationRetraction,
@@ -566,6 +573,8 @@ interface MaterializeResult {
   plannedUnset?: Record<string, ''>;
   identityJoin?: UserIdentityJoin;
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
+  /** Fellowship fields this pass cleared because their only source states they have none. */
+  fellowshipAbsenceClears?: FellowshipAbsenceClear[];
 }
 
 /**
@@ -5479,6 +5488,7 @@ export interface ProjectFromLogInput {
   resolverObs: ResolverObservation[];
   fullDescriptionShellGated: boolean;
   undergradEvidenceQuoteWithdrawnBy?: ReadonlySet<string>;
+  fellowshipFieldsAssertedAbsent?: ReadonlyMap<string, ReadonlySet<string>>;
   droppedLoserWebsiteValues?: readonly unknown[];
   loserRosterReads?: readonly ResolverObservation[];
   now: Date;
@@ -5507,6 +5517,7 @@ export interface ProjectFromLogResult {
   retiredProvenanceFields: string[];
   relinkedProvenance: Record<string, Record<string, unknown>>;
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
+  fellowshipAbsenceClears?: FellowshipAbsenceClear[];
 }
 
 export const RESEARCH_ENTITY_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as const;
@@ -6125,6 +6136,10 @@ export async function projectFromLog(
     resolverObs,
     fullDescriptionShellGated,
     undergradEvidenceQuoteWithdrawnBy = new Set<string>(),
+    fellowshipFieldsAssertedAbsent: fellowshipAbsentByField = new Map<
+      string,
+      ReadonlySet<string>
+    >(),
     droppedLoserWebsiteValues = [],
     loserRosterReads = [],
   } = input;
@@ -6158,6 +6173,7 @@ export async function projectFromLog(
   let conflicts = 0;
   let fieldsWritten = 0;
   let unbackedResearchAreas: UnbackedResearchAreaOutcome | undefined;
+  let fellowshipAbsenceClears: FellowshipAbsenceClear[] = [];
   const derivedKind = isResearchEntityObservationType(entityType)
     ? derivedResearchGroupKind(
         manuallyLockedFields.includes('entityType') ? undefined : resolved.entityType?.value,
@@ -6987,6 +7003,25 @@ export async function projectFromLog(
       }
       fieldsWritten = Math.max(0, fieldsWritten - 1);
     }
+    // Runs after the precedence stage, so a field that stage just withheld reads as
+    // unstaged here and the clear decides on what the row will actually be left with,
+    // and before the classifier, which reads `unset` as a cleared value (#4230).
+    fellowshipAbsenceClears = planFellowshipAbsenceClears({
+      stored: entityDoc as Record<string, unknown> | null,
+      staged: set,
+      resolvedFields: Object.keys(resolved),
+      absentByField: fellowshipAbsentByField,
+      withheldBySourcePrecedence: (_field, assertedBy) =>
+        fellowshipAbsenceClearWithheldBySourcePrecedence({
+          stored: entityDoc as Record<string, unknown> | null,
+          assertedBy,
+        }),
+    });
+    for (const clear of fellowshipAbsenceClears) {
+      unset[clear.field] = '';
+      delete confidenceByField[clear.field];
+      fieldsWritten++;
+    }
     const classification = planFellowshipClassification({
       stored: entityDoc as Record<string, unknown> | null,
       staged: set,
@@ -7057,6 +7092,7 @@ export async function projectFromLog(
     storedTextNormalization,
     retiredProvenanceFields,
     relinkedProvenance,
+    ...(fellowshipAbsenceClears.length > 0 ? { fellowshipAbsenceClears } : {}),
     ...(unbackedResearchAreas &&
     !input.provenanceOnly &&
     (!scopedFields || scopedFields.includes('researchAreas'))
@@ -7578,13 +7614,23 @@ export async function materializeEntity(
   const undergradEvidenceQuoteWithdrawnBy = isResearchEntityObservationType(entityType)
     ? sourcesWithdrawingUndergradEvidenceQuote(obs, entityDoc)
     : new Set<string>();
+  // A lane's claim that a field has no value withdraws that lane's own live
+  // assertions of it before anything resolves, so a rival lane's value still wins the
+  // field and only a field nothing states at all reaches the clear (#4230).
+  const fellowshipAbsentByField =
+    entityType === 'fellowship'
+      ? fellowshipFieldsAssertedAbsent(obs)
+      : new Map<string, Set<string>>();
   const materializationObs = collapseLatestWins(
-    withoutWithdrawnUndergradEvidenceQuotes(
-      withoutUnpairedProfileHomeIdentity(
-        obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o)),
-        entityDoc?.fieldValueRefusals,
+    withoutFellowshipFieldsAssertedAbsent(
+      withoutWithdrawnUndergradEvidenceQuotes(
+        withoutUnpairedProfileHomeIdentity(
+          obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o)),
+          entityDoc?.fieldValueRefusals,
+        ),
+        undergradEvidenceQuoteWithdrawnBy,
       ),
-      undergradEvidenceQuoteWithdrawnBy,
+      fellowshipAbsentByField,
     ),
     entityType,
   );
@@ -7768,6 +7814,7 @@ export async function materializeEntity(
     resolverObs: refusalScreen.kept,
     fullDescriptionShellGated,
     undergradEvidenceQuoteWithdrawnBy,
+    fellowshipFieldsAssertedAbsent: fellowshipAbsentByField,
     droppedLoserWebsiteValues,
     loserRosterReads,
     now: projectionNow,
@@ -7792,9 +7839,14 @@ export async function materializeEntity(
         fieldsWritten: 0,
       }
     : projection;
-  const unbackedResearchAreasOutcome = projection.unbackedResearchAreas
-    ? { unbackedResearchAreas: projection.unbackedResearchAreas }
-    : {};
+  const reportedProjectionOutcomes = {
+    ...(projection.unbackedResearchAreas
+      ? { unbackedResearchAreas: projection.unbackedResearchAreas }
+      : {}),
+    ...(projection.fellowshipAbsenceClears
+      ? { fellowshipAbsenceClears: projection.fellowshipAbsenceClears }
+      : {}),
+  };
 
   if (options.dryRun) {
     return {
@@ -7807,7 +7859,7 @@ export async function materializeEntity(
       resolved,
       plannedSet: set,
       plannedUnset: unset,
-      ...unbackedResearchAreasOutcome,
+      ...reportedProjectionOutcomes,
     };
   }
 
@@ -7821,7 +7873,7 @@ export async function materializeEntity(
       created: false,
       resolved,
       skipped: 'no-scoped-fields',
-      ...unbackedResearchAreasOutcome,
+      ...reportedProjectionOutcomes,
     };
   }
 
@@ -7855,7 +7907,7 @@ export async function materializeEntity(
         created: false,
         resolved,
         skipped: 'no-scoped-fields',
-        ...unbackedResearchAreasOutcome,
+        ...reportedProjectionOutcomes,
       };
     }
     // Skip the write (and, below, the redundant search re-sync) when the
@@ -8044,7 +8096,7 @@ export async function materializeEntity(
     created,
     resolved,
     postMaterializationMetrics,
-    ...unbackedResearchAreasOutcome,
+    ...reportedProjectionOutcomes,
     ...(indexStale ? { indexSyncFailed: true as const } : {}),
     ...(entityScalarUnchanged ? { skipped: 'unchanged' as const } : {}),
   };

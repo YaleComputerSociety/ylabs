@@ -47,6 +47,7 @@ import {
   type FundSearchGridEnumerator,
   type FundSearchGridRow,
 } from '../utils/communityForceFundSearch';
+import { fellowshipAbsenceAssertion } from '../fellowshipFieldAbsence';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import { type ProgramDateBoundary, parseProgramDate } from '../utils/programDeadline';
 import { Fellowship } from '../../models/fellowship';
@@ -60,7 +61,11 @@ import {
   type FundApplicationRoute,
   type FundProseSection,
 } from '../utils/fundApplicationRoute';
-import { resolveFundYearOfStudy, type FundEligibilityProse } from '../utils/fundYearOfStudy';
+import {
+  resolveFundYearOfStudy,
+  type FundEligibilityProse,
+  type FundYearOfStudyResolution,
+} from '../utils/fundYearOfStudy';
 import { isRecordSpecificApplicationPortalUrl } from '../../utils/researchHomeWebsiteUrl';
 
 export const STUDENT_GRANTS_DATABASE_SOURCE = 'student-grants-database';
@@ -91,6 +96,12 @@ export interface StudentGrantsFund {
   applicationOpenDate?: Date;
   applicationRoute: FundApplicationRoute;
   yearOfStudy: string[];
+  /**
+   * How the page settled the year of study, kept beside the values because
+   * `unreconcilable` and an empty filter both read as no values and only the first
+   * is the page stating that none apply (#4230).
+   */
+  yearOfStudyResolution: FundYearOfStudyResolution['kind'];
   termOfAward: string[];
   purpose: string[];
   globalRegions: string[];
@@ -373,6 +384,7 @@ export function parseFundDetailPage(
       { url, title },
     ),
     yearOfStudy: yearOfStudy.kind === 'unreconcilable' ? [] : yearOfStudy.values,
+    yearOfStudyResolution: yearOfStudy.kind,
     ...otherFacets,
     isAcceptingApplications:
       !closed &&
@@ -422,6 +434,22 @@ function fundLinks(fund: StudentGrantsFund, applicationLink: string | undefined)
   return applicationLink ? [{ label: 'Application', url: applicationLink }, fundPage] : [fundPage];
 }
 
+/**
+ * The fields this read states the fund has none of (#4230).
+ *
+ * Both are a conclusion the page forces rather than a gap: a route named with no link
+ * says the fund page is not where a student applies, and prose naming a level the
+ * stored vocabulary cannot express says the filter's values do not describe who may
+ * apply. A fund-page route, a linked route, and a year of study the prose or filter
+ * settles all state a value, so they claim nothing.
+ */
+function fundFieldsStatedAbsent(fund: StudentGrantsFund): string[] {
+  return [
+    ...(fund.applicationRoute.kind === 'elsewhere-unlinked' ? ['applicationLink'] : []),
+    ...(fund.yearOfStudyResolution === 'unreconcilable' ? ['yearOfStudy'] : []),
+  ];
+}
+
 export function fundToObservations(fund: StudentGrantsFund): ObservationInput[] {
   const base = {
     entityType: 'fellowship' as const,
@@ -436,9 +464,18 @@ export function fundToObservations(fund: StudentGrantsFund): ObservationInput[] 
   };
 
   const applicationLink = applicationLinkFor(fund);
+  const statedAbsent = fundFieldsStatedAbsent(fund);
+
+  const identity = observation('sourceKey', fund.sourceKey);
 
   return [
-    observation('sourceKey', fund.sourceKey),
+    identity && {
+      ...identity,
+      ...fellowshipAbsenceAssertion(STUDENT_GRANTS_DATABASE_SOURCE, statedAbsent, [
+        ...(applicationLink ? ['applicationLink'] : []),
+        ...(fund.yearOfStudy.length > 0 ? ['yearOfStudy'] : []),
+      ]),
+    },
     observation('sourceName', STUDENT_GRANTS_DATABASE_SOURCE),
     observation('sourceUrl', fund.url),
     observation('sourceFingerprint', fundFingerprint(fund)),

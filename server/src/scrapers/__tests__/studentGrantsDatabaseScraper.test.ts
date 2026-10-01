@@ -859,3 +859,66 @@ describe('StudentGrantsDatabaseScraper.run', () => {
     expect(gridEnumerator).not.toHaveBeenCalled();
   });
 });
+
+describe('the fields a fund page states it has none of (#4230)', () => {
+  const absenceClaimFor = (options: Parameters<typeof fundDetailHtml>[0]) => {
+    const fund = parseFundDetailPage(fundDetailHtml(options), { title: '', url: FUND_A_URL })!;
+    const observations = fundToObservations(fund);
+    const witness = observations.find((obs) => obs.field === 'sourceKey');
+    return {
+      claim: witness?.assertsNoValueFor ?? [],
+      fields: observations.map((obs) => obs.field),
+      carriers: observations.filter((obs) => obs.assertsNoValueFor).map((obs) => obs.field),
+    };
+  };
+
+  it('states no application link when the page routes applications elsewhere and links nowhere', () => {
+    const { claim, fields, carriers } = absenceClaimFor({
+      brief:
+        'Applications for these fellowships will be accepted via the Fixture Summer Research Common Application.',
+      yearOfStudy: ['Junior'],
+    });
+
+    expect(claim).toEqual(['applicationLink']);
+    expect(fields).not.toContain('applicationLink');
+    expect(carriers).toEqual(['sourceKey']);
+  });
+
+  it('states no year of study when the prose names a level the vocabulary cannot express', () => {
+    const { claim, fields } = absenceClaimFor({
+      brief: 'The fellowship funds independent summer research.',
+      eligibility:
+        'Fellowships are ordinarily awarded to juniors, but first years, sophomores and graduate affiliates are eligible.',
+      yearOfStudy: ['First-Year Student', 'Sophomore', 'Junior'],
+    });
+
+    expect(claim).toEqual(['yearOfStudy']);
+    expect(fields).not.toContain('yearOfStudy');
+  });
+
+  it('states nothing about a field it read a value for', () => {
+    const { claim, fields } = absenceClaimFor({
+      brief: 'The fellowship funds independent summer research.',
+      eligibility: 'Juniors may apply.',
+      yearOfStudy: ['Junior'],
+    });
+
+    expect(claim).toEqual([]);
+    expect(fields).toContain('applicationLink');
+    expect(fields).toContain('yearOfStudy');
+  });
+
+  it('states nothing when the prose is silent and the filter lists no year', () => {
+    const { claim } = absenceClaimFor({
+      brief: 'The fellowship funds independent summer research.',
+      eligibility: 'Applicants must be in good academic standing.',
+      yearOfStudy: [],
+    });
+
+    expect(claim).toEqual([]);
+  });
+
+  it('claims nothing at all when the page could not be parsed as a fund', () => {
+    expect(parseFundDetailPage(AUTH_SHELL_HTML, { title: 'Anything', url: FUND_A_URL })).toBeNull();
+  });
+});

@@ -1009,6 +1009,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
       sourceKey: 'yale-college-fellowships-office:yale-uc-louvain-summer-research-program',
       sourceUrl: 'https://science.yalecollege.yale.edu/yale-uc-louvain-summer-research-program',
       sourceFingerprint: 'fixture',
+      deadlineStatement: 'unresolved',
       applicationLink: 'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=louvain',
       links: [],
       purpose: ['Research'],
@@ -1234,6 +1235,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     const observations = candidateToObservations({
       sourceKey: 'yale-college-fellowships-office:fixture-family-research-fellowship',
       sourceFingerprint: 'fingerprint',
+      deadlineStatement: 'unresolved',
       title: 'Fixture Family Research Fellowship',
       summary: 'Supports research.',
       description: 'Supports research.',
@@ -3450,5 +3452,112 @@ describe('YaleCollegeFellowshipsOfficeScraper short links (#4289)', () => {
     expect(sleep).toHaveBeenCalledTimes(1);
     expect(sleep).toHaveBeenCalledWith(300);
     expect(resolver.metrics).toMatchObject({ lookedUp: 2, citedAsFundPage: 2, capped: 1 });
+  });
+});
+
+describe('what a program page says about having a deadline (#4230)', () => {
+  const detailPage = (body: string) =>
+    parseFellowshipCatalogPage(
+      `<main><h1>Fixture Research Fellowship</h1><div class="text">${body}</div></main>`,
+      detailPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    )[0];
+
+  const claimOf = (candidate: Parameters<typeof candidateToObservations>[0]) =>
+    candidateToObservations(candidate).find((obs) => obs.field === 'sourceKey')
+      ?.assertsNoValueFor ?? [];
+
+  it('states no deadline when review is rolling and the only date is encouraged', () => {
+    const candidate = detailPage(
+      '<p>Is there a deadline for applications? While we review applications as we receive them, we encourage you to submit your application by December 15th.</p>',
+    );
+
+    expect(candidate.deadlineStatement).toBe('none');
+    expect(candidate.deadline).toBeUndefined();
+    expect(claimOf(candidate)).toEqual(['deadline']);
+  });
+
+  it('states no deadline when the page says there is no fixed one', () => {
+    const candidate = detailPage(
+      '<p>The fellowship funds summer research. There is no fixed deadline, and applications are accepted year-round.</p>',
+    );
+
+    expect(candidate.deadlineStatement).toBe('none');
+    expect(claimOf(candidate)).toEqual(['deadline']);
+  });
+
+  it('states a deadline it cannot read rather than an absence, recommendation letters and all', () => {
+    const candidate = detailPage(
+      '<p>The entire application package, including two letters of recommendation and official transcripts, must be received by February 01.</p>',
+    );
+
+    expect(candidate.deadlineStatement).toBe('stated');
+    expect(candidate.deadline).toBeUndefined();
+    expect(claimOf(candidate)).toEqual([]);
+  });
+
+  it('says nothing when the date a requirement names is one it cannot recognize', () => {
+    const candidate = detailPage(
+      '<p>Applications must be received by the first Monday of February.</p>',
+    );
+
+    expect(candidate.deadlineStatement).toBe('unresolved');
+    expect(claimOf(candidate)).toEqual([]);
+  });
+
+  it('says nothing about a deadline on a page that says nothing about applying', () => {
+    const candidate = detailPage(
+      '<p>The fellowship funds summer research with a faculty mentor in the sciences.</p>',
+    );
+
+    expect(candidate.deadlineStatement).toBe('unresolved');
+    expect(claimOf(candidate)).toEqual([]);
+  });
+
+  it('reads the deadline the page states and claims nothing', () => {
+    const candidate = detailPage(
+      '<p>The fellowship funds summer research. Application deadline: February 20, 2026.</p>',
+    );
+
+    expect(candidate.deadlineStatement).toBe('stated');
+    expect(candidate.deadline).toEqual(parseProgramDate('February 20, 2026', 'deadline'));
+    expect(claimOf(candidate)).toEqual([]);
+  });
+
+  it('says nothing from a catalog row, which never read the program page', () => {
+    const [candidate] = parseFellowshipCatalogPage(
+      `
+        <main>
+          <ul>
+            <li><a href="${detailPageUrl}">Fixture Research Fellowship</a> Applications are reviewed on a rolling basis.</li>
+          </ul>
+        </main>
+      `,
+      fundingPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidate.deadlineStatement).toBe('unresolved');
+    expect(claimOf(candidate)).toEqual([]);
+  });
+
+  it('claims nothing for a page the lane refused as not a program', () => {
+    const read = readFellowshipCatalogPage(
+      `
+        <main>
+          <h1>Fellowships and Funding</h1>
+          <p>Applications are reviewed as we receive them.</p>
+          <ul>
+            <li><a href="https://funding.yale.edu/a">First Research Fellowship</a></li>
+            <li><a href="https://funding.yale.edu/b">Second Research Fellowship</a></li>
+            <li><a href="https://funding.yale.edu/c">Third Research Fellowship</a></li>
+          </ul>
+        </main>
+      `,
+      'https://funding.yale.edu/fellowships-and-funding',
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(read.candidates.flatMap((candidate) => claimOf(candidate))).toEqual([]);
   });
 });
