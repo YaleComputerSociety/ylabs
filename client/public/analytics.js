@@ -10,9 +10,6 @@
     window.dataLayer.push(arguments);
   };
 
-  window.gtag('js', new Date());
-  window.gtag('config', MEASUREMENT_ID);
-
   function withoutQueryOrFragment(value) {
     try {
       var url = new URL(value);
@@ -33,13 +30,19 @@
     });
   }
 
+  function rewritableTarget(resource) {
+    if (typeof resource === 'string') return resource;
+    return resource && typeof resource.href === 'string' ? resource.href : null;
+  }
+
+  function requestTarget(resource) {
+    var rewritable = rewritableTarget(resource);
+    if (rewritable !== null) return rewritable;
+    return resource && typeof resource.url === 'string' ? resource.url : null;
+  }
+
   function isMeasurementRequest(resource) {
-    var target =
-      typeof resource === 'string'
-        ? resource
-        : resource && typeof resource.url === 'string'
-          ? resource.url
-          : '';
+    var target = requestTarget(resource);
     if (!target) return false;
     try {
       return MEASUREMENT_HOST.test(new URL(target, window.location.href).hostname);
@@ -71,7 +74,7 @@
   }
 
   // The tag builds its own hits out of location.href and out of the query parameters the
-  // property treats as a site search, so neither the config above nor any gtag call can
+  // property treats as a site search, so neither the config call below nor any gtag call can
   // keep a student's typed query out of them. Redacting on the way out is the only place
   // this repository can make that guarantee rather than leaving it to a Google property
   // setting. A hit whose shape cannot be read is dropped rather than sent, so a transport
@@ -80,13 +83,14 @@
   if (typeof nativeFetch === 'function') {
     window.fetch = function (resource, options) {
       if (!isMeasurementRequest(resource)) return nativeFetch.apply(this, arguments);
+      var target = rewritableTarget(resource);
       var body = options && options.body;
-      if (typeof resource !== 'string' || !isRedactableBody(body)) {
+      if (target === null || !isRedactableBody(body)) {
         return Promise.resolve(new Response(null, { status: 204 }));
       }
       var redactedOptions = Object.assign({}, options);
       if (body != null) redactedOptions.body = redactedBody(body);
-      return nativeFetch.call(this, redactedUrl(resource), redactedOptions);
+      return nativeFetch.call(this, redactedUrl(target), redactedOptions);
     };
   }
 
@@ -95,10 +99,11 @@
   if (nativeSendBeacon) {
     navigator.sendBeacon = function (resource, body) {
       if (!isMeasurementRequest(resource)) return nativeSendBeacon(resource, body);
-      if (typeof resource !== 'string' || !isRedactableBody(body)) return true;
+      var target = rewritableTarget(resource);
+      if (target === null || !isRedactableBody(body)) return true;
       return body == null
-        ? nativeSendBeacon(redactedUrl(resource))
-        : nativeSendBeacon(redactedUrl(resource), redactedBody(body));
+        ? nativeSendBeacon(redactedUrl(target))
+        : nativeSendBeacon(redactedUrl(target), redactedBody(body));
     };
   }
 
@@ -106,11 +111,9 @@
   var nativeSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function (method, resource) {
     this.__measurementHit = isMeasurementRequest(resource);
-    this.__unredactableMeasurementHit = this.__measurementHit && typeof resource !== 'string';
-    var target =
-      this.__measurementHit && !this.__unredactableMeasurementHit
-        ? redactedUrl(resource)
-        : resource;
+    var rewritable = this.__measurementHit ? rewritableTarget(resource) : null;
+    this.__unredactableMeasurementHit = this.__measurementHit && rewritable === null;
+    var target = rewritable === null ? resource : redactedUrl(rewritable);
     return nativeOpen.apply(
       this,
       [method, target].concat(Array.prototype.slice.call(arguments, 2)),
@@ -121,4 +124,12 @@
     if (this.__unredactableMeasurementHit || !isRedactableBody(body)) return undefined;
     return body == null ? nativeSend.call(this) : nativeSend.call(this, redactedBody(body));
   };
+
+  // These two pushes come last because gtag.js loads async and may already have replaced
+  // dataLayer.push with its command processor, in which case the config push initialises
+  // GA4 and sends its first hit synchronously, through whichever transports are installed
+  // at that moment. Configuring before the wrappers exist would let that first hit leave
+  // unredacted on exactly the page whose address bar holds the typed query.
+  window.gtag('js', new Date());
+  window.gtag('config', MEASUREMENT_ID);
 })();

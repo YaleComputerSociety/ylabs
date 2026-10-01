@@ -140,6 +140,63 @@ describe('no research search text reaches the Google Analytics collect endpoint'
     expect(sent).toHaveLength(0);
   });
 
+  it('redacts a hit whose target is given as a URL object rather than a string', () => {
+    runAnalyticsTag();
+
+    void window.fetch(new URL(`${COLLECT_ENDPOINT}?v=2&ep.search_term=${SEARCH_TEXT}`), {
+      keepalive: true,
+    });
+
+    expect(sent).toHaveLength(1);
+    expect(parametersOfLastRequest().has('ep.search_term')).toBe(false);
+    expect(sent[0].url).not.toContain(SEARCH_TEXT);
+  });
+
+  it('sends no hit at all when its target carries a shape that cannot be rewritten', () => {
+    runAnalyticsTag();
+
+    void window.fetch(new Request(`${COLLECT_ENDPOINT}?v=2&ep.search_term=${SEARCH_TEXT}`));
+
+    expect(sent).toHaveLength(0);
+  });
+
+  it('redacts a hit sent through the request transport', () => {
+    const location = `https://yalelabs.io/research?q=${SEARCH_TEXT}`;
+    XMLHttpRequest.prototype.open = function recordOpen(_method: string, url: string | URL) {
+      sent.push({ url: String(url) });
+    } as unknown as typeof XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.send = function recordSend(body?: unknown) {
+      sent[sent.length - 1].body = body;
+    } as unknown as typeof XMLHttpRequest.prototype.send;
+
+    runAnalyticsTag();
+
+    const request = new XMLHttpRequest();
+    request.open('POST', `${COLLECT_ENDPOINT}?v=2&dl=${encodeURIComponent(location)}`);
+    request.send(`en=view_search_results&ep.search_term=${SEARCH_TEXT}`);
+
+    expect(sent).toHaveLength(1);
+    expect(parametersOfLastRequest().get('dl')).toBe('https://yalelabs.io/research');
+    expect(sent[0].url).not.toContain(SEARCH_TEXT);
+    expect(String(sent[0].body)).not.toContain(SEARCH_TEXT);
+    expect(String(sent[0].body)).toContain('en=view_search_results');
+  });
+
+  it('redacts the first hit even when the tag is already configuring itself', () => {
+    const configureSynchronously = {
+      push: () =>
+        void window.fetch(`${COLLECT_ENDPOINT}?v=2&en=page_view&ep.search_term=${SEARCH_TEXT}`, {
+          keepalive: true,
+        }),
+    };
+    (window as unknown as { dataLayer?: unknown }).dataLayer = configureSynchronously;
+
+    runAnalyticsTag();
+
+    expect(sent.length).toBeGreaterThan(0);
+    sent.forEach((request) => expect(request.url).not.toContain(SEARCH_TEXT));
+  });
+
   it('leaves a first-party request and its query string untouched', () => {
     runAnalyticsTag();
     const apiCall = `https://yalelabs.io/api/research/search?q=${SEARCH_TEXT}`;

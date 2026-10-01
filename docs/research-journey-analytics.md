@@ -108,7 +108,8 @@ This section records what it is and what it does, because until #3102 nothing in
 
 Three files carry it.
 `client/index.html` is the Vite entry document, and it loads `https://www.googletagmanager.com/gtag/js?id=G-3SQLGT56ZM` and then `/analytics.js`.
-`client/public/analytics.js` defines `window.gtag`, then calls `gtag('js', new Date())` and `gtag('config', 'G-3SQLGT56ZM')`, and then installs the outgoing redaction described under [What the tag may not send](#what-the-tag-may-not-send).
+`client/public/analytics.js` defines `window.gtag`, then installs the outgoing redaction described under [What the tag may not send](#what-the-tag-may-not-send), and only then calls `gtag('js', new Date())` and `gtag('config', 'G-3SQLGT56ZM')`.
+That order is load-bearing rather than cosmetic: `gtag/js` loads async, so it can already have replaced `dataLayer.push` with its command processor by the time this file runs, and the config push then initialises GA4 and sends its first hit synchronously through whatever transports exist at that moment.
 The same two script tags also sit in `client/public/index.html`, a Create React App leftover whose `%PUBLIC_URL%` placeholders are never substituted, so that copy is inert rather than a second live tag.
 It is inert because it never ships: Vite copies `client/public/` into `dist/` and then writes the built entry document over the copied one, so a build emits exactly one `dist/index.html` and it is the root document.
 Nothing in `client/src` calls `gtag` or pushes to `dataLayer`, so this repository sends no custom events and no user properties.
