@@ -5,7 +5,10 @@ import {
   preferFundFacetObservations,
   sourceKeyForFund,
 } from '../fellowshipFundFacets';
-import { fellowshipFieldsWithheldBySourcePrecedence } from '../fellowshipSourcePrecedence';
+import {
+  fellowshipFieldsWithheldBySourcePrecedence,
+  newestFundTitle,
+} from '../fellowshipSourcePrecedence';
 
 const FUND_PAGE = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FIXTUREFUND';
 
@@ -97,6 +100,7 @@ describe('fund facets on another lane row (#4173)', () => {
           purpose: { contributingSources: ['student-grants-database'] },
           summary: { contributingSources: ['student-grants-database'] },
         },
+        fundTitle: undefined,
       }),
     ).toEqual(['summary']);
   });
@@ -161,7 +165,43 @@ describe('the fund pass on another lane row whose fund names a different program
           title: { contributingSources: ['student-grants-database'] },
           purpose: { contributingSources: ['student-grants-database'] },
         },
+        fundTitle: 'Fixture Postgraduate Fellowships Common Application',
       }),
     ).toEqual(['title', 'purpose']);
+  });
+
+  it("reads the fund's title from its observations when the row's locked title is not staged", () => {
+    const fundObservations = [
+      {
+        sourceName: 'student-grants-database',
+        field: 'title',
+        value: 'Fixture Postgraduate Fellowship',
+        observedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+      {
+        sourceName: 'student-grants-database',
+        field: 'title',
+        value: 'Fixture Postgraduate Fellowships Common Application',
+        observedAt: new Date('2026-03-01T00:00:00Z'),
+      },
+      {
+        sourceName: 'student-grants-database',
+        field: 'purpose',
+        value: ['Research'],
+        observedAt: new Date('2026-03-01T00:00:00Z'),
+      },
+    ];
+    expect(
+      fellowshipFieldsWithheldBySourcePrecedence({
+        stored: {
+          sourceName: 'yale-college-fellowships-office',
+          title: 'Fixture Postgraduate Fellowships',
+          purpose: ['Service'],
+        },
+        staged: { purpose: ['Research'] },
+        resolved: { purpose: { contributingSources: ['student-grants-database'] } },
+        fundTitle: newestFundTitle(fundObservations),
+      }),
+    ).toEqual(['purpose']);
   });
 });

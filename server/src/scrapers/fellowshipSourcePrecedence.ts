@@ -71,6 +71,17 @@ export function fundFacetsDescribeProgram(programTitle: unknown, fundTitle: unkn
   return !(programLevelStated && fundLevelStated && programLevelStated !== fundLevelStated);
 }
 
+export function newestFundTitle(observations: readonly any[]): unknown {
+  return observations
+    .filter(
+      (observation) =>
+        observation.sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE && observation.field === 'title',
+    )
+    .sort(
+      (a, b) => new Date(b.observedAt || 0).getTime() - new Date(a.observedAt || 0).getTime(),
+    )[0]?.value;
+}
+
 function hasValue(value: unknown): boolean {
   if (value === undefined || value === null || value === '') return false;
   return !(Array.isArray(value) && value.length === 0);
@@ -118,6 +129,7 @@ export function fellowshipFieldsWithheldBySourcePrecedence(input: {
   stored: Record<string, unknown> | null | undefined;
   staged: Record<string, unknown>;
   resolved: Readonly<Record<string, { contributingSources?: readonly string[] } | undefined>>;
+  fundTitle: unknown;
 }): string[] {
   const withheld = new Set<string>();
   const stagedSourceUrl = text(input.staged.sourceUrl);
@@ -140,7 +152,7 @@ export function fellowshipFieldsWithheldBySourcePrecedence(input: {
       !APPLICATION_WINDOW_FIELDS.has(field) &&
       !(
         FUND_FACET_FIELDS.has(field) &&
-        fundFacetsDescribeProgram(input.stored?.title, input.staged.title)
+        fundFacetsDescribeProgram(input.stored?.title, input.fundTitle)
       ) &&
       hasValue(input.stored?.[field])
     ) {
