@@ -286,6 +286,60 @@ describe('fellowship materialization', () => {
     expect(result.entityId).toBe('existing-richter-public-page-id');
   });
 
+  it('keys a fund on the page it was read from when its application goes through another fund page (#4216)', async () => {
+    const fundUrl = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FUNDOWN';
+    const commonApplicationUrl = 'https://yale.communityforce.com/Funds/FundDetails.aspx?COMMONAPP';
+    vi.spyOn(Observation, 'find').mockReturnValue({
+      lean: vi.fn().mockResolvedValue(
+        [
+          ['title', 'Fixture Travel Fellowship'],
+          ['sourceName', 'student-grants-database'],
+          ['applicationLink', commonApplicationUrl],
+        ].map(([field, value]) => ({
+          field,
+          value,
+          sourceName: 'student-grants-database',
+          sourceUrl: fundUrl,
+          confidence: 0.9,
+          observedAt: new Date('2026-03-01T00:00:00Z'),
+        })),
+      ),
+    } as any);
+    vi.spyOn(Fellowship, 'findOne').mockReturnValue({
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const commonApplicationRow = {
+      _id: 'common-application-row-id',
+      title: 'Fixture Summer Common Application',
+      applicationLink: commonApplicationUrl,
+      archived: false,
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    };
+    const byApplicationLink = vi.fn((query: any) => ({
+      lean: vi
+        .fn()
+        .mockResolvedValue(
+          query.applicationLink.test(commonApplicationUrl) ? [commonApplicationRow] : [],
+        ),
+    }));
+    const find = vi
+      .spyOn(Fellowship, 'find')
+      .mockReturnValueOnce({ lean: vi.fn().mockResolvedValue([]) } as any)
+      .mockImplementationOnce(((query: any) => ({ limit: () => byApplicationLink(query) })) as any);
+
+    const result = await materializeEntity(
+      'fellowship',
+      { entityKey: 'student-grants-database:funds-funddetails-aspx-fundown' },
+      { dryRun: true },
+    );
+
+    const lookup = (find.mock.lastCall as any[] | undefined)?.[0];
+    expect(lookup.applicationLink.test(fundUrl)).toBe(true);
+    expect(lookup.applicationLink.test(commonApplicationUrl)).toBe(false);
+    expect(result.entityId).not.toBe('common-application-row-id');
+    expect(result.created).toBe(true);
+  });
+
   it('does not fold a fund into a same-title row that cites a different fund page (#3984)', async () => {
     const fundUrl = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FUNDB';
     const otherFundUrl = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FUNDA';
