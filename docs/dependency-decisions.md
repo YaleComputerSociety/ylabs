@@ -4,6 +4,18 @@ Standing decisions about dependency advisories and version pins, so a Dependabot
 The gate is moderate and above: `yarn security:audit:production` plus the recursive audits in `.github/workflows/ci.yml`.
 A low advisory below that gate is a judgement call, and the ones we have judged are recorded here.
 
+## 2026-09-30: Dead overrides, a spent advisory ignore and `ts-node` are removed (#4037)
+
+An override that matches nothing reads as a security pin, so nobody removes it and every dependency review re-derives that it does nothing.
+The root `resolutions` for `form-data`, `axios`, `underscore`, `path-to-regexp`, `uuid`, and `xml2js` matched no root lockfile entry, because `server` and `client` are separate Yarn projects that root `resolutions` never reach, and the `server` `braces` pin matched no `server` lockfile entry.
+All seven are removed, and `scripts/security-preflight.test.mjs` now fails when any workspace declares an override its own lockfile does not resolve.
+
+The `.yarnrc.yml` ignore for GHSA-qwww-vcr4-c8h2 (advisory 1124282) is removed, because its 7.x range ends below 7.18.2 and the client installs 7.18.2; the moderate audits stay clean without it.
+The `client` `react-router` pin is removed too: `react-router-dom` pins its own exact `react-router`, and the client's `^7.18.2` floor already keeps both on the patched release, so the lockfile is byte-identical without it.
+
+`ts-node` had no caller, since the server runs everything through `tsx`, and it was the only parent of `diff`, so both it and the `diff` 4.0.4 pin recorded below are gone.
+`domhandler`, `bson`, and `@eslint/js` were imported without being declared and are now declared at the versions already resolved.
+
 ## 2026-09-30: `brace-expansion` is pinned per major in the root project (#4033)
 
 The `brace-expansion` advisories (GHSA-q2hr-2g5m-vwhr, GHSA-qhr7-859c-m2p7) are patched on every major line: 1.1.21, 2.1.7, 3.0.9, and 5.0.12.
@@ -40,6 +52,7 @@ They needed opposite answers, and the discriminator is whether a patched version
 The advisory is fixed in 4.0.4 and its only parent, `ts-node@10.9.2`, pins `diff@^4.0.1`, which 4.0.4 satisfies.
 That makes it an ordinary patch bump rather than an override, so it is pinned through the server `resolutions` block alongside the other security pins there and the advisory is gone.
 A transitive dependency will not move on `yarn up` because `up` only rewrites a workspace's own ranges, which is why this needs the `resolutions` entry rather than an upgrade command.
+`ts-node` and this pin were removed together on 2026-09-30 (#4037), so `diff` is no longer installed at all.
 
 **`esbuild` GHSA-g7r4-m6w7-qqqr: accepted.**
 

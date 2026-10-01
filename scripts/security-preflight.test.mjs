@@ -761,6 +761,34 @@ test('the minimatch the root lint toolchain loads can expand a brace set', () =>
   assert.equal(match('a.md', '*.{js,ts}'), false);
 });
 
+const resolutionTargetName = (key) => {
+  const segments = key.split('/');
+  const scope = segments.at(-2);
+  const target = scope?.startsWith('@') ? `${scope}/${segments.at(-1)}` : segments.at(-1);
+  return target.replace(/^(@?[^@]+)@.*$/, '$1');
+};
+
+test('every dependency override matches a package its own lockfile resolves', () => {
+  for (const workspace of ['.', 'server', 'client']) {
+    const manifest = JSON.parse(
+      fs.readFileSync(new URL(`../${workspace}/package.json`, import.meta.url), 'utf8'),
+    );
+    const lockfile = fs.readFileSync(new URL(`../${workspace}/yarn.lock`, import.meta.url), 'utf8');
+    const overrides = Object.keys(manifest.resolutions ?? {});
+    assert.ok(
+      overrides.length > 0,
+      `${workspace} declares no resolutions, so this pin reads nothing`,
+    );
+    for (const key of overrides) {
+      const name = resolutionTargetName(key);
+      assert.ok(
+        lockfile.includes(`\n"${name}@`) || lockfile.includes(`, ${name}@`),
+        `${workspace}/package.json overrides ${key}, which no ${workspace}/yarn.lock entry resolves, so the pin does nothing`,
+      );
+    }
+  }
+});
+
 test('the advisory verdict is published as an artifact, never as a merge-gating check', () => {
   // The verdict distinguishes exit 1 (advisories found) from exit 75 (registry
   // unreachable) for a merge consumer, but it must stay informational: a

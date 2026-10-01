@@ -51,7 +51,7 @@ Cycles are not the problem here and a cycle rule is not worth adding: the whole 
 | Search          | Meilisearch 0.57 with keyword search plus OpenAI `text-embedding-3-small` semantic search where appropriate |
 | Database        | MongoDB Atlas with separate Development, Beta, and Production databases                                     |
 | Package Manager | Yarn 4 via Corepack                                                                                         |
-| Tooling         | concurrently, nodemon, ts-node, cross-env                                                                   |
+| Tooling         | concurrently, tsx, cross-env                                                                                |
 
 ## Repo map
 
