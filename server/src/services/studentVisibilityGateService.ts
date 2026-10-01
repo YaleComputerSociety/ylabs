@@ -163,6 +163,7 @@ export interface StudentVisibilityGateDeps {
   ) => Promise<void>;
   resolveArchivedResearchQueueItems?: () => Promise<number>;
   clearArchivedResearchStudentVisibility?: () => Promise<number>;
+  clearArchivedProgramStudentVisibility?: () => Promise<number>;
 }
 
 export interface StudentVisibilityGateReport {
@@ -1284,6 +1285,9 @@ const defaultGateDeps: StudentVisibilityGateDeps = {
   async clearArchivedResearchStudentVisibility() {
     return clearArchivedResearchStudentVisibility();
   },
+  async clearArchivedProgramStudentVisibility() {
+    return clearArchivedProgramStudentVisibility();
+  },
 };
 
 const archivedQueueResolutionMessage =
@@ -1443,6 +1447,19 @@ export async function clearArchivedResearchStudentVisibility(): Promise<number> 
   return result.modifiedCount || 0;
 }
 
+/**
+ * The program half of the same reconciliation. `planProgramGateUpdates` scopes itself
+ * to `archived: false` exactly as the research planner does, so an archived program
+ * kept the tier it held when it was last gated: 17 archived Development programs
+ * stored `student_ready` (#3753).
+ */
+export async function clearArchivedProgramStudentVisibility(): Promise<number> {
+  const result = await Fellowship.updateMany(archivedStudentVisibilityVerdictFilter(), {
+    $unset: clearedStudentVisibilityVerdict(),
+  });
+  return result.modifiedCount || 0;
+}
+
 export async function runStudentVisibilityGateForPlans(
   plans: StudentVisibilityGatePlan[],
   options: {
@@ -1528,6 +1545,7 @@ export async function runStudentVisibilityGateForPlans(
   if (options.mode === 'apply') {
     await deps.resolveArchivedResearchQueueItems?.();
     await deps.clearArchivedResearchStudentVisibility?.();
+    await deps.clearArchivedProgramStudentVisibility?.();
   }
 
   return {
@@ -1706,6 +1724,7 @@ export async function applyStudentVisibilityGatePlans(
   ]);
   await resolveArchivedResearchQueueItems(now);
   await clearArchivedResearchStudentVisibility();
+  await clearArchivedProgramStudentVisibility();
   return syncGatedResearchEntitiesToIndex(researchOps, plans);
 }
 

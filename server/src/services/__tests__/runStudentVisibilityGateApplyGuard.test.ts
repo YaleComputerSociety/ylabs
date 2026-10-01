@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   queueFind: vi.fn(),
   resolveArchived: vi.fn(),
   clearArchivedVerdicts: vi.fn(async () => ({ modifiedCount: 0 })),
+  clearArchivedProgramVerdicts: vi.fn(async () => ({ modifiedCount: 0 })),
 }));
 
 vi.mock('../../models/researchEntity', async (importOriginal) => ({
@@ -19,6 +20,13 @@ vi.mock('../../models/researchEntity', async (importOriginal) => ({
     find: mocks.find,
     bulkWrite: mocks.bulkWrite,
     updateMany: mocks.clearArchivedVerdicts,
+  },
+}));
+
+vi.mock('../../models/fellowship', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../models/fellowship')>()),
+  Fellowship: {
+    updateMany: mocks.clearArchivedProgramVerdicts,
   },
 }));
 

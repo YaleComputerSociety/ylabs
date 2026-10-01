@@ -237,7 +237,7 @@ It was added later (#2604) and the cleared list did not name it, so it went on s
 That one is not merely untidy, because `hasRecordedGateVerdict` reads it first to decide the `regate` bucket, so a stale stamp on an archived row is an instrument input rather than dead weight.
 
 The invariant is now that those five fields exist only on a live row.
-Three things hold it:
+Four things hold it:
 
 - `server/src/models/entityArchival.ts` owns the shapes.
 `archivedEntityUpdate(extra?)` is the one update document that archives a research row: it sets `archived: true` alongside whatever the calling lane records, and unsets the five verdict fields in the same write.
@@ -247,6 +247,11 @@ Operator intent survives archiving: `studentVisibilityOverrideTier`, `studentVis
 - `clearArchivedResearchStudentVisibility` in `studentVisibilityGateService.ts` runs inside `applyStudentVisibilityGatePlans`, next to the archived-queue reconciliation it already did.
 There are roughly twenty sites that set `archived: true`, several through the raw driver on a collection name, so the gate apply is the backstop that reconciles any lane which archives a row and never re-gates it.
 It is idempotent: once the corpus is clean its filter matches nothing.
+`clearArchivedProgramStudentVisibility` runs beside it and applies the same filter to `Fellowship`, because `planProgramGateUpdates` scopes itself to `archived: false` too: before it existed, 17 archived Development programs still stored `student_ready` (#3753).
+- Programs hold the invariant at both admin transitions as well.
+`updateFellowship` owns both, so the archive and unarchive actions and the admin edit form all take the same path.
+A write that archives a program unsets the five verdict fields in that write.
+A write that restores an archived program unsets them too and then re-gates the program before returning it, so a restored program is judged on its current evidence instead of serving the verdict it held before it was archived, and a failed re-gate leaves it unserved.
 - `yarn --cwd server research-entity:archived-visibility-verdicts` is the measurement.
 Its dry-run prints every tier both ways plus the zero-hard-blocker held population both ways, and `--assert-clean` exits non-zero while the two readings disagree.
 `--apply --confirm-archived-visibility-verdict-repair` repairs stored rows and re-reads the census afterwards.

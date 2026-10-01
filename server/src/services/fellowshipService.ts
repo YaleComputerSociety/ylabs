@@ -14,6 +14,8 @@ import {
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
 import * as itemOps from './itemOperations';
+import { runStudentVisibilityGate } from './studentVisibilityGateService';
+import { clearedStudentVisibilityVerdict } from '../models/entityArchival';
 import { programRoleForKind } from './programClassifier';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
@@ -676,32 +678,38 @@ const filterFellowshipUpdate = (data: any): Record<string, any> => {
   return update;
 };
 
+const withoutClearedVerdict = (update: Record<string, unknown>) =>
+  Object.fromEntries(
+    Object.entries(update).filter(([field]) => !(field in clearedStudentVisibilityVerdict())),
+  );
+
 export const updateFellowship = async (id: any, data: any) => {
   const safeId = normalizeFellowshipObjectId(id);
-  if (safeId) {
-    const safeData = filterFellowshipUpdate(data);
-    const fellowship = await Fellowship.findByIdAndUpdate(safeId, safeData, {
-      new: true,
-      runValidators: true,
-    });
+  if (!safeId) throw new ObjectIdError('Did not receive expected id type ObjectId');
 
-    if (!fellowship) {
-      throw new NotFoundError('Fellowship not found');
-    }
+  const safeData = filterFellowshipUpdate(data);
+  const restoring =
+    safeData.archived === false &&
+    (await Fellowship.exists({ _id: safeId, archived: true })) !== null;
+  const withdrawsVerdict = safeData.archived === true || restoring;
+  const update = withdrawsVerdict
+    ? { $set: withoutClearedVerdict(safeData), $unset: clearedStudentVisibilityVerdict() }
+    : safeData;
+  const fellowship = await Fellowship.findByIdAndUpdate(safeId, update, {
+    new: true,
+    runValidators: true,
+  });
+  if (!fellowship) throw new NotFoundError('Fellowship not found');
+  if (!restoring) return fellowship.toObject();
 
-    return fellowship.toObject();
-  } else {
-    throw new ObjectIdError('Did not receive expected id type ObjectId');
-  }
+  await runStudentVisibilityGate({ collection: 'programs', mode: 'apply', recordIds: [safeId] });
+  const regated = await Fellowship.findById(safeId).lean();
+  return regated || fellowship.toObject();
 };
 
-export const archiveFellowship = async (id: any) => {
-  return await updateFellowship(id, { archived: true });
-};
+export const archiveFellowship = async (id: any) => updateFellowship(id, { archived: true });
 
-export const unarchiveFellowship = async (id: any) => {
-  return await updateFellowship(id, { archived: false });
-};
+export const unarchiveFellowship = async (id: any) => updateFellowship(id, { archived: false });
 
 export const addView = async (id: any) => {
   return publicFellowshipForStudent(
