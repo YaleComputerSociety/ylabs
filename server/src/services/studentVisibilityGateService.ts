@@ -234,6 +234,7 @@ export const ACTION_EVIDENCE_REPAIR_REASONS: ReadonlySet<string> = new Set([
 export const SUPPRESSION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'archive_review',
   'content_page_risk',
+  'duplicate_program',
   'exact_url_duplicate_risk',
   'generic_directory_shell',
   'inactive_at_yale',
