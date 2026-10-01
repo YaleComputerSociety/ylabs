@@ -6047,14 +6047,6 @@ export function descriptionSanitizerRejectedCandidateOverStoredProse(
   );
 }
 
-/**
- * The serving check's own verdict on a candidate body, asked of the row as this pass
- * would leave it. The adoption bar used to be `fullDescriptionQuality` alone, which is
- * weaker than the serve chain's sanitizers, so a body could win the field and then be
- * refused at serve time while a body that serves sat lower in the ranked list (#3437).
- * Calling the serving function itself, rather than restating it, is what keeps the two
- * bars one predicate.
- */
 function servingRepresentationForCandidate(
   entityDoc: Record<string, unknown> | null | undefined,
   projected: Record<string, unknown>,
@@ -6083,6 +6075,14 @@ function servingRepresentationForCandidate(
   };
 }
 
+/**
+ * The serving check's own verdict on a candidate body, asked of the row as this pass
+ * would leave it. The adoption bar used to be `fullDescriptionQuality` alone, which is
+ * weaker than the serve chain's sanitizers, so a body could win the field and then be
+ * refused at serve time while a body that serves sat lower in the ranked list (#3437).
+ * Calling the serving function itself, rather than restating it, is what keeps the two
+ * bars one predicate.
+ */
 export function servingBarAcceptsFullDescription(
   entityDoc: Record<string, unknown> | null | undefined,
   projected: Record<string, unknown>,
