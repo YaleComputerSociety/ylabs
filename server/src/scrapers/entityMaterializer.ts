@@ -13,6 +13,7 @@ import {
   archivedEntityUpdate,
   attributedArchiveSet,
   DEPT_ROSTER_SHELL_FOLD_ARCHIVE_REASON,
+  PROGRAM_LIVES_ON_PROGRAMS_ARCHIVE_REASON,
   SUPERSEDED_RELATIONSHIP_TYPE_ARCHIVE_REASON,
 } from '../models/entityArchival';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
@@ -864,6 +865,8 @@ export function winningObservedEntityTypeIsRetiredProgram(
   return isRetiredProgramResearchEntityType(winner?.value);
 }
 
+const PROGRAM_RESEARCH_GROUP_KIND = 'program';
+
 /**
  * Heal a retired-`PROGRAM` entityType assertion into a live entity type using the
  * co-observed `kind` from the same observation set, which already states the
@@ -873,6 +876,10 @@ export function winningObservedEntityTypeIsRetiredProgram(
  * unrecognized kind to `LAB`, so a row carrying no usable `kind` would otherwise
  * be silently minted as a lab. Gate on `researchGroupKinds` first and return
  * undefined instead, leaving the caller to keep skipping.
+ *
+ * A `program` kind confirms the retired type rather than healing it: programs live only
+ * on `/programs` (docs/decisions.md 2026-08-26), and healing that kind is what re-minted
+ * the department undergraduate research pages into `/research` (#3746).
  */
 export function healedEntityTypeForRetiredProgramObservations(
   observations: MaterializerObservationLike[],
@@ -891,7 +898,14 @@ export function healedEntityTypeForRetiredProgramObservations(
   const [winner] = resolveFieldRanked('kind', kindObservations, { now });
   const kind = textValue(winner?.value).toLowerCase();
   if (!researchGroupKinds.includes(kind as ResearchGroupKind)) return undefined;
+  if (kind === PROGRAM_RESEARCH_GROUP_KIND) return undefined;
   return mapResearchGroupKindToEntityType(kind);
+}
+
+export async function programLivesAsFellowship(entityKey: string | undefined): Promise<boolean> {
+  if (!entityKey) return false;
+  const fellowship = await Fellowship.exists({ sourceKey: entityKey, archived: { $ne: true } });
+  return Boolean(fellowship);
 }
 
 /**
@@ -7231,11 +7245,41 @@ export async function materializeEntity(
   // same source's co-observed `kind` and mint, and only skip when no usable kind
   // resolves, so an unclassifiable row still fails closed instead of defaulting to
   // LAB.
-  if (
+  const programTyped =
     isResearchEntityObservationType(entityType) &&
-    !entityDoc &&
-    winningObservedEntityTypeIsRetiredProgram(obs, options.now ?? new Date())
-  ) {
+    winningObservedEntityTypeIsRetiredProgram(obs, options.now ?? new Date());
+
+  if (programTyped) {
+    const programKey = entityDoc ? textValue(entityDoc.slug) : identifier.entityKey;
+    if (await programLivesAsFellowship(programKey)) {
+      const archiveUpdate =
+        entityDoc && entityDoc.archived !== true
+          ? archivedEntityUpdate(PROGRAM_LIVES_ON_PROGRAMS_ARCHIVE_REASON)
+          : undefined;
+      if (archiveUpdate && !options.dryRun) {
+        await ResearchEntity.updateOne(
+          { _id: entityDoc._id, archived: { $ne: true } },
+          archiveUpdate,
+        );
+        await deleteFromIndex('researchEntity', String(entityDoc._id));
+      }
+      return {
+        entityType,
+        entityId: entityDoc ? materializerDocumentId(entityDoc._id) : undefined,
+        entityKey: identifier.entityKey,
+        fieldsWritten: archiveUpdate && !options.dryRun ? 1 : 0,
+        conflicts: 0,
+        created: false,
+        resolved: {},
+        skipped: 'program-lives-on-programs',
+        ...(archiveUpdate
+          ? { plannedSet: archiveUpdate.$set, plannedUnset: archiveUpdate.$unset }
+          : {}),
+      };
+    }
+  }
+
+  if (programTyped && !entityDoc) {
     const healedEntityType = healedEntityTypeForRetiredProgramObservations(
       obs,
       options.now ?? new Date(),

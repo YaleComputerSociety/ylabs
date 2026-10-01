@@ -78,6 +78,7 @@ export const archiveAttributionFields = {
  * string literal that would drift from the writer (#2558).
  */
 export const DEPT_ROSTER_SHELL_FOLD_ARCHIVE_REASON = 'materialize:fold-dept-roster-shell';
+export const PROGRAM_LIVES_ON_PROGRAMS_ARCHIVE_REASON = 'materialize:program-lives-on-programs';
 export const PI_DEDUPE_ARCHIVE_REASON = 'research-entity:dedupe-by-pi';
 export const SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON =
   'Merged into the corroborated survivor of its duplicate-url group: same lead person plus a corroborating name or shell asymmetry (#3326).';
