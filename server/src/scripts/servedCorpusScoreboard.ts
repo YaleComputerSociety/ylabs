@@ -20,7 +20,7 @@
  * That needs a Mongoose connection, which is the one thing this must not let
  * change the environment being read: connecting builds indexes for every
  * registered model and so recreates a collection that was deliberately dropped.
- * So `autoIndex` is disabled before connecting and the collection set is
+ * So it connects through `connectScriptMongo` and the collection set is
  * compared before and after, failing loudly if it moved. Corpus counts come from
  * the raw driver.
  *

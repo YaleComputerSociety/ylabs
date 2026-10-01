@@ -210,11 +210,11 @@ A run where nothing is served because nothing is `student_ready` is a different 
 ## Why it opens a Mongoose connection, and why that is safe
 
 Calling the real route needs the models, so this command connects Mongoose.
-That is the one thing a read-only command must not let change the environment it reads: connecting builds indexes for every registered model, which recreates a collection somebody deliberately dropped.
+That is the one thing a read-only command must not let change the environment it reads: connecting with Mongoose's defaults builds indexes for every registered model, which recreates a collection somebody deliberately dropped.
 
 Two things make it safe, and the second is a check rather than an assumption:
 
-- `autoIndex` is disabled before `mongoose.connect`, and a test pins that ordering rather than merely pinning that both calls exist.
+- It connects through `connectScriptMongo`, which sets `autoIndex: false` and `autoCreate: false` on the connection, and `db/__tests__/everyEntryPointConnectsWithMongoOptions.test.ts` fails on any direct connect that bypasses it.
 - The collection set is listed with the raw driver before and after, and the run fails naming any collection that appeared or disappeared.
 
 Corpus counts come from the raw driver, not the models.
