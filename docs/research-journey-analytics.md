@@ -108,11 +108,11 @@ This section records what it is and what it does, because until #3102 nothing in
 
 Three files carry it.
 `client/index.html` is the Vite entry document, and it loads `https://www.googletagmanager.com/gtag/js?id=G-3SQLGT56ZM` and then `/analytics.js`.
-`client/public/analytics.js` defines `window.gtag`, then calls `gtag('js', new Date())` and `gtag('config', 'G-3SQLGT56ZM')`.
+`client/public/analytics.js` defines `window.gtag`, then calls `gtag('js', new Date())` and `gtag('config', 'G-3SQLGT56ZM')`, and then installs the outgoing redaction described under [What the tag may not send](#what-the-tag-may-not-send).
 The same two script tags also sit in `client/public/index.html`, a Create React App leftover whose `%PUBLIC_URL%` placeholders are never substituted, so that copy is inert rather than a second live tag.
 It is inert because it never ships: Vite copies `client/public/` into `dist/` and then writes the built entry document over the copied one, so a build emits exactly one `dist/index.html` and it is the root document.
 Nothing in `client/src` calls `gtag` or pushes to `dataLayer`, so this repository sends no custom events and no user properties.
-Everything GA4 records here comes from the default `config` call plus whatever enhanced measurement the GA4 property has enabled, and the property is configured outside this repository.
+Everything GA4 records here comes from the default `config` call plus whatever enhanced measurement the GA4 property has enabled, and the property is configured outside this repository, which is why the redaction below sits on the transport rather than in the configuration.
 
 Every environment carries the tag, and all of them report to the same property.
 The measurement id is a literal in `client/index.html` and in `client/public/analytics.js` with no condition of any kind around it: no `import.meta.env` check, no environment variable, and no server-side gate.
@@ -131,6 +131,30 @@ The tag carries no anonymization and no consent flags today.
 There is no `anonymize_ip`, no Consent Mode default, no cookie banner, and no opt-out anywhere in the repository.
 A default GA4 configuration therefore collects the client IP, the user agent, the page path, and a persistent client-id cookie, cross-session, from every visitor.
 `server/src/utils/logSanitizer.ts` does not redact IP addresses, and nothing currently requires it to.
+
+### What the tag may not send
+
+Until #4158 the tag also received every research search a visitor typed.
+The research page writes the query into the address bar as `?q=`, `page_location` defaults to `location.href` and keeps the query string, and `q` is one of the five parameters GA4's site-search enhanced measurement lifts into a `search_term`.
+Measured in a headless browser against a built client, a single landing on `/research?q=<term>&dept=<label>` produced a `view_search_results` hit carrying `ep.search_term=<term>`, and an in-page search produced a further `page_view` whose `dl` and `dr` both carried the raw query string.
+
+Configuring the tag cannot fix that, and this is the load-bearing fact.
+`send_page_view: false` suppresses only the tag's own initial page view; the enhanced-measurement features build their hits from `location.href` and from the query parameters themselves, and a `gtag('set', { page_location })` default is overridden by the explicit parameters those hits carry.
+That was measured too, not reasoned: with a sanitized `page_location` default in place, `scroll` and `form_start` reported the redacted path while `view_search_results` still carried the term and the history-driven `page_view` still carried the full URL.
+
+So `client/public/analytics.js` redacts on the way out instead, which is the one place this repository can hold the guarantee rather than delegating it to a property setting nobody here can see.
+It wraps `fetch`, `navigator.sendBeacon` and `XMLHttpRequest`, acts only on requests to `google-analytics.com`, `analytics.google.com` and `doubleclick.net`, and leaves every other request, first-party telemetry included, byte-for-byte untouched.
+On a measurement request it reduces every parameter whose value is an absolute http(s) URL to origin and path, which covers `dl`, `dr` and `ep.form_destination`, and deletes `ep.search_term`.
+A measurement hit whose shape it cannot read, a non-string body or a `Request` object, is dropped rather than sent, so a transport change by Google costs measurement instead of leaking text.
+
+What still reaches Google after that, from the same headless capture: the measurement id, a persistent client id and session id, the connection's IP address, the user agent and its client hints, screen size and language, the page title, `dl` and `dr` as origin and path only, and the events `page_view`, `view_search_results`, `scroll`, `form_start` and `user_engagement` with their non-text parameters (`epn.percent_scrolled`, `ep.form_id`, `ep.first_field_id`, `ep.first_field_type`, `epn.form_length`, `epn.first_field_position`, engagement time).
+`view_search_results` survives deliberately: that a search happened is the non-identifying count the product wants, and the term is what it may not have.
+No query string, no fragment, and no search term appear in any of it.
+
+Verification is a capture rather than a reading.
+Build the client, serve `dist`, and drive a headless browser through a landing on `/research?q=<synthetic>`, a second in-page search, and a navigation to another route, intercepting every request to Google's `collect` endpoints and asserting the synthetic terms appear in none of them.
+Block those requests in the probe rather than letting them through: a probe that forwards them files a real page view from a developer's machine into the live property.
+`client/src/__tests__/googleAnalyticsQueryRedaction.test.ts` holds the same contract as a unit test, executing the shipped `analytics.js` against recorded transports.
 
 Anonymous-visitor measurement currently comes only from this tag.
 `analytics_events` cannot record a logged-out visitor at all (#2333), so the two instruments do not overlap: the strict one sees only signed-in students, and the unconstrained one sees everybody, on a product that deliberately serves logged-out discovery (#1657).
