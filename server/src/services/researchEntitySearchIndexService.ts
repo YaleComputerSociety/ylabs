@@ -1,4 +1,5 @@
 import { ResearchEntity } from '../models/researchEntity';
+import { asResearchEntityType, type ResearchEntityType } from '../models/researchAccessTypes';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizePersonName } from '../utils/personNameHygiene';
@@ -28,7 +29,6 @@ import {
   isSyntheticResearchHomeMetadataDescription,
   revoiceFirstPersonResearchLead,
 } from '../utils/researchEntityDescriptionText';
-import { isPublicHttpUrl } from '../utils/urlSafety';
 import {
   isPlaceholderEntityName,
   personScopedResearchEntityNameFromPersonName,
@@ -66,10 +66,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'shortDescription',
     'fullDescription',
     'school',
-    'kind',
-    'entityType',
-    'websiteUrl',
-    'sourceUrls',
+    'entityTypeSearchTerms',
   ],
   filterableAttributes: [
     'archived',
@@ -326,6 +323,20 @@ const stripEndowedChairTitles = (text: string): string =>
     .replace(/[ \t]+/g, ' ')
     .trim();
 
+const RESEARCH_ENTITY_TYPE_SEARCH_TERMS: Partial<Record<ResearchEntityType, string>> = {
+  LAB: 'lab',
+  CENTER: 'center',
+  INSTITUTE: 'institute',
+  INITIATIVE: 'initiative',
+  CORE_FACILITY: 'core facility',
+};
+
+export const researchEntityTypeSearchTerms = (entityType: unknown): string[] => {
+  const type = asResearchEntityType(entityType);
+  const term = type ? RESEARCH_ENTITY_TYPE_SEARCH_TERMS[type] : undefined;
+  return term ? [term] : [];
+};
+
 export function buildStudentSearchTerms(doc: any): string[] {
   const textFields = [
     doc?.name,
@@ -410,21 +421,6 @@ export async function fetchResearchEntitySearchMemberNames(
 
   return byEntityId;
 }
-
-const publicHttpUrl = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-
-  try {
-    return isPublicHttpUrl(trimmed) ? trimmed : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
-const publicHttpUrls = (value: unknown): string[] =>
-  Array.isArray(value) ? value.flatMap((item) => publicHttpUrl(item) ?? []) : [];
 
 const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   for (const field of SEARCH_INDEX_DIRECT_CONTACT_FIELDS) {
@@ -513,20 +509,6 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     else delete out[field];
   }
 
-  const websiteUrl = publicHttpUrl(out.websiteUrl);
-  const website = publicHttpUrl(out.website);
-  if (websiteUrl || website) out.websiteUrl = websiteUrl || website;
-  else delete out.websiteUrl;
-
-  if (website) out.website = website;
-  else delete out.website;
-
-  if ('sourceUrls' in out) {
-    const sourceUrls = publicHttpUrls(out.sourceUrls);
-    if (sourceUrls.length > 0) out.sourceUrls = sourceUrls;
-    else delete out.sourceUrls;
-  }
-
   if (Array.isArray(out.researchAreas)) {
     const coherentAreas = withholdUnservableResearchAreas(out.researchAreas, out.fieldProvenance, {
       name: out.name,
@@ -593,6 +575,8 @@ export function buildResearchEntitySearchIndexDocument(
   // an alias derived from copy the sanitizer removes (a chip-echo or synthetic
   // metadata description, an endowed-chair title, a domain-incoherent research
   // area) makes the entity match a term no surface ever serves (#2396).
+  const entityTypeSearchTerms = researchEntityTypeSearchTerms(out.entityType);
+  if (entityTypeSearchTerms.length > 0) out.entityTypeSearchTerms = entityTypeSearchTerms;
   const studentSearchTerms = buildStudentSearchTerms(out);
   if (studentSearchTerms.length > 0) {
     out.studentSearchTerms = studentSearchTerms;

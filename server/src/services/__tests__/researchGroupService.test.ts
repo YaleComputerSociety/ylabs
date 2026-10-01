@@ -224,6 +224,16 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('folds accented letters instead of splitting the word apart at them', () => {
+    expect(normalizeResearchSearchQuery('Pâtisserie Chimique Münchner')).toMatchObject({
+      query: 'patisserie chimique munchner',
+      tokens: ['patisserie', 'chimique', 'munchner'],
+    });
+    expect(normalizeResearchSearchQuery('Kıyı Økologi Straße')).toMatchObject({
+      tokens: ['kiyi', 'okologi', 'strasse'],
+    });
+  });
+
   it('strips question and course-topic filler so the topical terms drive ranking', () => {
     expect(normalizeResearchSearchQuery('labs studying black holes')).toMatchObject({
       query: 'black holes',
@@ -1810,6 +1820,21 @@ describe('searchResearchGroupsViaMeili', () => {
       ).toBe(true);
     });
 
+    it('matches a typed accented name against the same accented name in a lead', () => {
+      const query = normalizeResearchSearchQuery('Jösef Fixtüre');
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            lead('Jösef Fixtüre', [
+              [0, 5],
+              [6, 7],
+            ]),
+          ],
+          query.tokens,
+        ),
+      ).toBe(true);
+    });
+
     it('admits a short first name beside an exact surname, never a lone prefix (#3853)', () => {
       expect(
         keywordLegTopHitIsNameMatch(
@@ -1840,6 +1865,21 @@ describe('searchResearchGroupsViaMeili', () => {
       expect(keywordLegTopHitIsNameMatch([lead('Steven Vexmoor', [[0, 6]])], ['steve'])).toBe(
         false,
       );
+    });
+
+    it('keeps a person-named center a title match when its type word also matches (#3942)', () => {
+      const center = {
+        name: 'Vexmoor Center',
+        entityTypeSearchTerms: ['center'],
+        _matchesPosition: {
+          name: [
+            { start: 0, length: 7 },
+            { start: 8, length: 6 },
+          ],
+          entityTypeSearchTerms: [{ start: 0, length: 6, indices: [0] }],
+        },
+      };
+      expect(keywordLegTopHitIsNameMatch([center], ['vexmoor', 'center'])).toBe(true);
     });
 
     it('is false when a topic word only happens to match a surname', () => {
@@ -2939,6 +2979,30 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('rankingScoreThreshold');
     expect(mocks.search.mock.calls[1][1]).toHaveProperty('hybrid');
     expect(result.degraded).toBe(true);
+  });
+
+  it('finds an accented name typed with its accents on the Mongo fallback', async () => {
+    mocks.search.mockRejectedValueOnce(new Error('meili unavailable'));
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: '67d8928150621bcef434a1d7',
+          slug: 'accented-fixture-lab',
+          name: 'Ölvexmoor Fixture Lab',
+          departments: [],
+          researchAreas: [],
+          keywords: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('Ölvexmoor', {}, 1, 24);
+
+    expect(result.researchEntities).toEqual([
+      expect.objectContaining({ slug: 'accented-fixture-lab' }),
+    ]);
   });
 
   it('does not let short AI fallback matching resolve Ailong or airway substrings', async () => {

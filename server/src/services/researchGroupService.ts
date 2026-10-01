@@ -606,9 +606,27 @@ const boundedResearchSearchQuery = (value: unknown): string => {
   return value.trim().slice(0, MAX_SEARCH_QUERY_LENGTH);
 };
 
+const UNDECOMPOSABLE_LATIN_LETTERS: Record<string, string> = {
+  ı: 'i',
+  ø: 'o',
+  ł: 'l',
+  đ: 'd',
+  ð: 'd',
+  ħ: 'h',
+  ß: 'ss',
+  æ: 'ae',
+  œ: 'oe',
+  þ: 'th',
+};
+
+const foldLatinDiacritics = (value: string): string =>
+  value
+    .normalize('NFKD')
+    .replace(/\p{M}+/gu, '')
+    .replace(/[ıøłđðħßæœþ]/g, (letter) => UNDECOMPOSABLE_LATIN_LETTERS[letter]);
+
 const tokenizeStudentResearchQuery = (query: string): string[] =>
-  query
-    .toLowerCase()
+  foldLatinDiacritics(query.toLowerCase())
     .replace(/['']/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .split(/\s+/)
@@ -1041,7 +1059,7 @@ const PERSON_NAME_ATTRIBUTES = [...PERSON_FIELD_ATTRIBUTES, 'name', 'displayName
 // the query in a topic field, which the evaluation measured as cheap, because such
 // a query already has many keyword rows. See #3797, #3853.
 const normalizeNameMatchText = (value: string): string =>
-  value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  foldLatinDiacritics(value.toLowerCase()).replace(/[^a-z0-9]+/g, '');
 
 interface PersonNameSpans {
   wholeWords: Set<string>;
@@ -2019,23 +2037,25 @@ export async function searchResearchGroupsViaMeili(
 }
 
 const researchEntitySearchText = (entity: any): string =>
-  [
-    entity.name,
-    entity.displayName,
-    ...(Array.isArray(entity.leadProfessorNames) ? entity.leadProfessorNames : []),
-    ...(Array.isArray(entity.professorNames) ? entity.professorNames : []),
-    entity.shortDescription,
-    entity.fullDescription,
-    entity.summary,
-    ...(Array.isArray(entity.departments) ? entity.departments : []),
-    ...(Array.isArray(entity.researchAreas) ? entity.researchAreas : []),
-    ...(Array.isArray(entity.keywords) ? entity.keywords : []),
-    ...(Array.isArray(entity.studentSearchTerms) ? entity.studentSearchTerms : []),
-    ...(Array.isArray(entity.schools) ? entity.schools : []),
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
+  foldLatinDiacritics(
+    [
+      entity.name,
+      entity.displayName,
+      ...(Array.isArray(entity.leadProfessorNames) ? entity.leadProfessorNames : []),
+      ...(Array.isArray(entity.professorNames) ? entity.professorNames : []),
+      entity.shortDescription,
+      entity.fullDescription,
+      entity.summary,
+      ...(Array.isArray(entity.departments) ? entity.departments : []),
+      ...(Array.isArray(entity.researchAreas) ? entity.researchAreas : []),
+      ...(Array.isArray(entity.keywords) ? entity.keywords : []),
+      ...(Array.isArray(entity.studentSearchTerms) ? entity.studentSearchTerms : []),
+      ...(Array.isArray(entity.schools) ? entity.schools : []),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase(),
+  )
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();

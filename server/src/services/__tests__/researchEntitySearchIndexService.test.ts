@@ -20,6 +20,7 @@ import {
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
   RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET,
   rebuildResearchEntitySearchIndex,
+  researchEntityTypeSearchTerms,
 } from '../researchEntitySearchIndexService';
 import { RESEARCH_SEARCH_RELEVANCE_TEXT_FIELDS } from '../../scripts/researchSearchRelevanceCore';
 
@@ -546,6 +547,23 @@ describe('researchEntitySearchIndexService', () => {
     );
   });
 
+  it('indexes a type word only for types whose label a student searches by, never the raw enum (#3942)', () => {
+    const facilityRow = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-core-facility-type-term',
+      name: 'Synthetic Imaging Suite',
+      kind: 'core_facility',
+      entityType: 'CORE_FACILITY',
+      archived: false,
+    });
+
+    expect(researchEntityTypeSearchTerms('FACULTY_RESEARCH_AREA')).toEqual([]);
+    expect(researchEntityTypeSearchTerms('LAB')).toEqual(['lab']);
+    expect(researchEntityTypeSearchTerms('not-a-type')).toEqual([]);
+    expect(facilityRow?.entityTypeSearchTerms).toEqual(['core facility']);
+    expect(facilityRow?.studentSearchTerms ?? []).not.toContain('core facility');
+    expect(facilityRow).toMatchObject({ kind: 'core_facility', entityType: 'CORE_FACILITY' });
+  });
+
   it('filters unsafe URLs and direct contact text from public research entity index documents', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-url-safety',
@@ -566,9 +584,10 @@ describe('researchEntitySearchIndexService', () => {
       id: 'entity-url-safety',
       fullDescription: '',
       shortDescription: 'Email [email redacted] for details.',
-      websiteUrl: 'https://safe.example.edu/lab',
-      sourceUrls: ['https://safe.example.edu/source'],
     });
+    expect(doc).not.toHaveProperty('websiteUrl');
+    expect(doc).not.toHaveProperty('website');
+    expect(doc).not.toHaveProperty('sourceUrls');
     expect(JSON.stringify(doc)).not.toContain('javascript:');
     expect(JSON.stringify(doc)).not.toContain('mailto:');
     expect(JSON.stringify(doc)).not.toContain('pi@example.edu');
@@ -678,6 +697,9 @@ describe('researchEntitySearchIndexService', () => {
     expect(searchable).toEqual(expect.arrayContaining(['leadProfessorNames', 'professorNames']));
     expect(searchable).toEqual(expect.arrayContaining(['methods']));
     expect(searchable).toEqual(expect.arrayContaining(['shortDescription', 'fullDescription']));
+    for (const unseenTokenField of ['websiteUrl', 'sourceUrls', 'kind', 'entityType']) {
+      expect(searchable).not.toContain(unseenTokenField);
+    }
     expect(searchable).not.toContain('keywords');
     expect(searchable).not.toContain('summary');
     expect(searchable).not.toContain('description');
