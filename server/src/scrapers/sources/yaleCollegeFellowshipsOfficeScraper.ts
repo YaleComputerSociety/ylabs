@@ -884,6 +884,20 @@ function compactTitleIdentity(title: string): string {
   return normalizedProgramTitleKey(title);
 }
 
+// Two programs can share one application, as two fellowships that a single form admits to
+// do, so a shared application link is not evidence that two program pages are one program.
+function areDistinctProgramPages(
+  existing: FellowshipCatalogCandidate,
+  candidate: FellowshipCatalogCandidate,
+): boolean {
+  return (
+    existing.sourcePageKind === 'detail' &&
+    candidate.sourcePageKind === 'detail' &&
+    normalizeLinkUrl(existing.sourceUrl) !== normalizeLinkUrl(candidate.sourceUrl) &&
+    compactTitleIdentity(existing.title) !== compactTitleIdentity(candidate.title)
+  );
+}
+
 function existingKeyForCandidate(
   byKey: Map<string, FellowshipCatalogCandidate>,
   candidate: FellowshipCatalogCandidate,
@@ -895,6 +909,7 @@ function existingKeyForCandidate(
     : undefined;
   if (applicationLink && isRecordSpecificApplicationUrl(applicationLink)) {
     for (const [key, existing] of byKey) {
+      if (areDistinctProgramPages(existing, candidate)) continue;
       const existingUrls = [existing.applicationLink, ...existing.links.map((link) => link.url)]
         .filter((url): url is string => !!url)
         .map(normalizeLinkUrl);

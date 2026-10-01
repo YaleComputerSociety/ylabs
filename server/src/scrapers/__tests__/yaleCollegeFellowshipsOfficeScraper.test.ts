@@ -352,6 +352,55 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     ).toEqual(['Fixture First Research Fellowship', 'Fixture Second Research Fellowship']);
   });
 
+  it('keeps two program pages apart when one links the application the other uses', async () => {
+    const firstUrl = `${detailPageUrl}-first`;
+    const secondUrl = `${detailPageUrl}-second`;
+    const sharedApplication =
+      'https://yale.communityforce.com/Funds/FundDetails.aspx?FixtureSharedApplication';
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === firstUrl) {
+        return `<main><h1>Fixture First Research Fellowship</h1><p>The first fellowship supports independent research with a faculty mentor.</p><a href="${sharedApplication}">Joint application</a></main>`;
+      }
+      if (url === secondUrl) {
+        return `<main><h1>Fixture Second Research Fellowship</h1><p>The second fellowship funds summer research for juniors.</p><a href="${sharedApplication}">Apply</a></main>`;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const emitted: any[] = [];
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [firstUrl, secondUrl],
+      fetchPage,
+    });
+
+    await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (items) => {
+        emitted.push(...(Array.isArray(items) ? items : [items]));
+      },
+      log: vi.fn(),
+    });
+
+    const descriptionByKey = new Map(
+      emitted
+        .filter((observation) => observation.field === 'description')
+        .map((observation) => [observation.entityKey, String(observation.value)]),
+    );
+    expect(descriptionByKey.size).toBe(2);
+    expect(
+      [...descriptionByKey.values()].filter((value) => /first fellowship/.test(value)),
+    ).toHaveLength(1);
+    expect(
+      [...descriptionByKey.values()].filter((value) => /second fellowship/.test(value)),
+    ).toHaveLength(1);
+    for (const value of descriptionByKey.values()) {
+      expect(/first fellowship/.test(value) && /second fellowship/.test(value)).toBe(false);
+    }
+  });
+
   it('scopes detail links to program content and prefers the Student Grants host', () => {
     const candidates = parseFellowshipCatalogPage(
       `
