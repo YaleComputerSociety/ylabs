@@ -427,32 +427,6 @@ test('service-layer search and materialization sync logs sanitize caught errors'
   }
 });
 
-test('external directory integration sanitizes fetch errors before logging', () => {
-  const directorySource = fs.readFileSync(
-    new URL('../server/src/services/directoryService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(directorySource, /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/);
-  assert.match(directorySource, /const MAX_DIRECTORY_QUERY_LENGTH = 120/);
-  assert.match(directorySource, /const DIRECTORY_SEARCH_TYPES = new Set\(\['netid', 'name'\]\)/);
-  assert.match(
-    directorySource,
-    /query\.trim\(\)\.replace\(\s*\/\\s\+\/g, ' '\)\.slice\(0, MAX_DIRECTORY_QUERY_LENGTH\)/,
-  );
-  assert.match(
-    directorySource,
-    /const safeSearchType = DIRECTORY_SEARCH_TYPES\.has\(searchType\) \? searchType : 'netid'/,
-  );
-  assert.match(directorySource, /params: \{ search: safeQuery, searchType: safeSearchType \}/);
-  assert.match(
-    directorySource,
-    /console\.error\('Directory lookup failed:', sanitizeLogValue\(error\)\)/,
-  );
-  assert.doesNotMatch(directorySource, /Directory lookup for/);
-  assert.doesNotMatch(directorySource, /error\.message/);
-});
-
 test('shared pagination validation rejects object and array query controls before numeric coercion', () => {
   const source = fs.readFileSync(
     new URL('../server/src/middleware/validation.ts', import.meta.url),

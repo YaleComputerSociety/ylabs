@@ -12,7 +12,7 @@ import {
 } from './services/accountService';
 import type { AccountProfile } from './models/account';
 import { lookupYalieByNetid } from './services/yaliesService';
-import { fetchFromDirectory, isFacultyTitle } from './services/directoryService';
+import { isFacultyTitle } from './utils/facultyTitle';
 import { logEvent } from './services/analyticsService';
 import { AnalyticsEventType } from './models/index';
 import {
@@ -395,8 +395,8 @@ async function ensureDevLoginUser(userType: unknown) {
 
   const normalizedUserType = normalizeDevUserType(userType);
   const profile = DEV_LOGIN_PROFILES[normalizedUserType] ?? DEV_LOGIN_PROFILES.undergraduate;
-  // A real 'unknown' user is unconfirmed/unverified because Yalies and the
-  // Directory could not classify them; every other dev role is pre-confirmed
+  // A real 'unknown' user is unconfirmed/unverified because Yalies could not
+  // classify them; every other dev role is pre-confirmed
   // so it can exercise the rest of the app immediately.
   const isBootstrappedType = normalizedUserType !== 'unknown';
   const netId = profile.netId;
@@ -444,7 +444,9 @@ async function buildAuthenticatedSessionUser(
  * Yalies answers for students and employees alike. An employee is `professor`
  * when its title is a faculty title and `staff` otherwise. When Yalies cannot
  * answer at all, the type a previous login stored on the account stands, so a
- * timeout never re-types a known student `unknown` (#4234).
+ * timeout never re-types a known student `unknown` (#4234). A netid Yalies has
+ * no record of is `unknown`: the Yale Directory, once the fallback here, is
+ * behind a per-person CAS sign-in and has no server-callable API (#4287).
  */
 async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedUser> {
   const netid = normalizeAuthNetId(rawNetid);
@@ -485,25 +487,6 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
     };
   } else if (lookup.kind === 'unavailable') {
     userType = (await lastKnownAccountUserType(netid)) ?? 'unknown';
-  } else {
-    try {
-      const dirPerson = await fetchFromDirectory(netid, 'netid');
-      if (dirPerson && dirPerson.name) {
-        const facultyTitle = isFacultyTitle(dirPerson.title);
-        userType = facultyTitle ? 'professor' : 'unknown';
-        userConfirmed = facultyTitle;
-        email = dirPerson.email || undefined;
-        profile = {
-          firstName: dirPerson.firstName,
-          lastName: dirPerson.lastName,
-          userType,
-          title: dirPerson.title,
-          department: dirPerson.department,
-        };
-      }
-    } catch {
-      authDebug('resolveLoginPrincipalForCas: directory lookup failed, using default principal');
-    }
   }
   authDebug(`resolveLoginPrincipalForCas: lookup=${lookup.kind}, type=${userType}`);
 
@@ -544,7 +527,7 @@ passport.serializeUser(function (user: any, done) {
 });
 
 // Runs on every authenticated request, so login-time classification
-// (Yalies/Directory) must not run here; the signed session carries the
+// (Yalies) must not run here; the signed session carries the
 // classified principal and only the dynamic admin grant is re-applied. A
 // missing or archived Account deserializes to unauthenticated.
 passport.deserializeUser(async (stored: unknown, done) => {

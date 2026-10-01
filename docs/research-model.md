@@ -74,7 +74,7 @@ This probe lane is the safety net behind the cheaper sweep-time rule in the mate
 ### `Account` (`accounts`)
 
 The private login principal: the student or user who logs in.
-[`server/src/models/account.ts`](../server/src/models/account.ts) defines `netid` (unique), `email`, `status`, an optional `lastLoginAt`, an optional descriptive `profile` (name, `userType`, faculty title/department or student college/year/major) persisted from the Yalies/Directory record at login, and `archived`.
+[`server/src/models/account.ts`](../server/src/models/account.ts) defines `netid` (unique), `email`, `status`, an optional `lastLoginAt`, an optional descriptive `profile` (name, `userType`, faculty or staff title/department, or student college/year/major) persisted from the Yalies record at login, and `archived`.
 Authentication is wired onto `Account` (#367): CAS, dev-login, and the local bypass resolve-or-create an `Account` by netid and stamp `lastLoginAt`.
 The legacy `User` model has been retired (#2014): no runtime code reads or writes `User`, and identity lives entirely on `Account` (login) plus `Researcher` (public identity).
 Dropping the now-orphaned `users` collection is a separate, human-gated database cleanup.

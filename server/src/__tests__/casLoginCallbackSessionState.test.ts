@@ -27,11 +27,6 @@ vi.mock('../services/yaliesService', () => ({
   lookupYalieByNetid: vi.fn(async () => ({ kind: 'not_found' })),
 }));
 
-vi.mock('../services/directoryService', () => ({
-  fetchFromDirectory: vi.fn(async () => null),
-  isFacultyTitle: vi.fn(() => false),
-}));
-
 vi.mock('../services/adminGrantService', () => ({
   ensureBootstrapAdminGrant: vi.fn(async () => undefined),
   hasActiveAdminGrant: vi.fn(async () => false),

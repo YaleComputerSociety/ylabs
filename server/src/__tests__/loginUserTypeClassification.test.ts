@@ -25,11 +25,6 @@ vi.mock('../services/accountService', () => accountServiceMock);
 const yaliesMock = vi.hoisted(() => ({ lookupYalieByNetid: vi.fn() }));
 vi.mock('../services/yaliesService', () => yaliesMock);
 
-vi.mock('../services/directoryService', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../services/directoryService')>()),
-  fetchFromDirectory: vi.fn(async () => null),
-}));
-
 vi.mock('../services/adminGrantService', () => ({
   ensureBootstrapAdminGrant: vi.fn(async () => undefined),
   hasActiveAdminGrant: vi.fn(async () => false),
