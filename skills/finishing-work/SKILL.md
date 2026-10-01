@@ -77,6 +77,10 @@ Use `hasRecordedGateVerdict` in `server/src/scripts/visibilityRecoverabilityAudi
 
 Known live instance, so it is not re-discovered from scratch: `entityContentMatchesCard` in `server/src/services/studentVisibilityTier.ts` is sub-shape 3. It is `!isLabNameOrgTypeMismatch`, which does compare the name against the description, but only after two preconditions that almost nothing meets: the name must end in "lab" or "laboratory", and the `entityType` must be `CENTER` or `INSTITUTE`. So a criterion that reads as general card-and-content agreement reports it only for that one name shape, and the narrowing to fix is the precondition, not a missing description comparison. The inert merge veto is sub-shape 2 and is tracked separately in #2270.
 
+A serve-time guard is a second-owner risk of its own, because the journey harness must name every guard that changes a served value.
+When a change withholds or rewrites a served program field, put the guard inside that field's serve-path decision (`servedProgramDeadline` in `server/src/services/fellowshipService.ts`, or the field's entry in `PROGRAM_READER_FIELD_DECISIONS` in `server/src/controllers/programPayload.ts`) rather than inline at a call site, and add a synthetic row exercising it to `server/src/scripts/journeyEval/__tests__/programServedFieldAttribution.test.ts`.
+Three inline guards in one day (#4111, #4278, #4304) each left `programs-every-served-field-difference-is-attributable` reporting correct served values as unexplained.
+
 ## Fold durable changes into docs
 
 Update repo documentation only when the task changes **durable** product, schema, architecture, setup, or design decisions - never speculatively.

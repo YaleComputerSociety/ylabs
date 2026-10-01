@@ -1,20 +1,31 @@
-import { publicProgramDescription } from '../../controllers/programPayload';
 import {
+  PROGRAM_READER_FIELD_DECISIONS,
+  type ProgramReaderDecidedField,
+  type ServedProgramReaderField,
+} from '../../controllers/programPayload';
+import {
+  publicFellowshipForStudent,
   servedProgramDeadline,
   toValidDate,
   type ServedProgramDeadline,
 } from '../../services/fellowshipService';
-import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
-import { publicHttpUrl } from '../../utils/urlSafety';
+
+const PROGRAM_READER_DECIDED_FIELDS = Object.keys(
+  PROGRAM_READER_FIELD_DECISIONS,
+) as ProgramReaderDecidedField[];
 
 export const PROGRAM_ATTRIBUTED_FIELDS = [
   'deadline',
   'isAcceptingApplications',
-  'applicationLink',
-  'eligibility',
+  ...PROGRAM_READER_DECIDED_FIELDS,
 ] as const;
 
-export type ProgramAttributedField = (typeof PROGRAM_ATTRIBUTED_FIELDS)[number];
+export type ProgramAttributedField =
+  | 'deadline'
+  | 'isAcceptingApplications'
+  | ProgramReaderDecidedField;
+
+export const STUDENT_PROJECTION_GUARD = 'publicFellowshipForStudent';
 
 export type ProgramFieldOutcome =
   | { field: ProgramAttributedField; status: 'unchanged' }
@@ -107,38 +118,28 @@ function attributeAcceptingApplications(
       );
 }
 
-function attributeApplicationLink(stored: Row, served: Row): ProgramFieldOutcome {
-  const storedLink = publicHttpUrl(stored.applicationLink);
-  const servedLink =
-    typeof served.applicationLink === 'string' ? served.applicationLink : undefined;
+const sameServedValue = (left: unknown, right: unknown): boolean =>
+  left === right || (!hasText(left) && !hasText(right));
 
-  if (servedLink !== undefined) {
-    return servedLink === storedLink
-      ? unchanged('applicationLink')
-      : unexplained('applicationLink', 'serves an apply link other than the stored one');
-  }
-  if (!hasText(stored.applicationLink)) return unchanged('applicationLink');
-  if (!storedLink) return attributed('applicationLink', 'publicHttpUrl');
-  if (isUnhelpfulProgramUrl(storedLink, publicHttpUrl(stored.sourceUrl)))
-    return attributed('applicationLink', 'isUnhelpfulProgramUrl');
-  return unexplained('applicationLink', 'withholds a public, specific stored apply link');
-}
+function attributeReaderDecidedField(
+  field: ProgramReaderDecidedField,
+  stored: Row,
+  served: Row,
+  readerInput: Row,
+): ProgramFieldOutcome {
+  const decision: ServedProgramReaderField<unknown> =
+    PROGRAM_READER_FIELD_DECISIONS[field](readerInput);
+  const storedHasValue = hasText(stored[field]);
 
-function attributeEligibility(stored: Row, served: Row): ProgramFieldOutcome {
-  const storedHasText = hasText(stored.eligibility);
-  const servedHasText = hasText(served.eligibility);
-  if (!storedHasText) {
-    return servedHasText
-      ? unexplained('eligibility', 'serves eligibility text the row does not store')
-      : unchanged('eligibility');
+  if (!sameServedValue(served[field], decision.value)) {
+    return hasText(served[field]) && !storedHasValue
+      ? unexplained(field, `serves ${field} the row does not store`)
+      : unexplained(field, `serves ${field} the serve-time ${field} decision does not produce`);
   }
-  if (servedHasText) return unchanged('eligibility');
-  return hasText(publicProgramDescription(stored.eligibility))
-    ? unexplained(
-        'eligibility',
-        'withholds stored eligibility text the description sanitizer keeps',
-      )
-    : attributed('eligibility', 'publicProgramDescription');
+  if (!storedHasValue) return unchanged(field);
+  if (!hasText(readerInput[field])) return attributed(field, STUDENT_PROJECTION_GUARD);
+  if (decision.withheldBy) return attributed(field, decision.withheldBy);
+  return unchanged(field);
 }
 
 export function attributeProgramServedFields(
@@ -146,10 +147,12 @@ export function attributeProgramServedFields(
   served: Row,
   servedAt: ServedAtWindow,
 ): ProgramFieldOutcome[] {
+  const readerInput = publicFellowshipForStudent(stored, servedAt.from) as Row;
   return [
     attributeDeadline(stored, served, servedAt),
     attributeAcceptingApplications(stored, served, servedAt),
-    attributeApplicationLink(stored, served),
-    attributeEligibility(stored, served),
+    ...PROGRAM_READER_DECIDED_FIELDS.map((field) =>
+      attributeReaderDecidedField(field, stored, served, readerInput),
+    ),
   ];
 }
