@@ -37,6 +37,8 @@ A benchmark captured before #3590 has no record of the renderer, so it replays a
 `centers-institutes-index` and `student-grants-database` joined `BENCHMARKABLE_LANES` on this basis.
 `student-grants-database` also reads the live corpus to choose its targets: it adds every FundDetails page the live catalog cites to the funds it reads (#3984).
 A fund first cited after capture is therefore a page the benchmark never froze, so it counts in `pagesMissed` rather than changing the score, and a benchmark scoped with `--only` holds its fund list still.
+`yale-college-fellowships-office` joined once its page fetch moved from a raw `axios.get` onto `fetchPageWithPolicy` (#4132), and a dry-run explain of the whole lane before and after that move planned the same 4,009 values.
+That lane reads no `--only`, so its capture freezes the whole crawl and the scope only bounds which programs may carry labels.
 
 A replay is compared only once it has resolved something from the frozen input.
 One that served none of its frozen pages, or a rendered lane that served none of its frozen renders, is reported as unscored rather than scored, because it measured a path that never engaged.
@@ -122,6 +124,16 @@ Refusals can only say a lane is wrong, so a benchmark can also carry hand-judged
 A label is one `(entityKey, field)` pair judged against the frozen benchmark page, never the live page, so the judgement and the input it judges cannot drift apart.
 `absent` means the lane should emit nothing for that field, and `present` lists the page text a reader accepted, of which an emitted value must contain one, or be a clause of one at least 20 characters long.
 An access verdict is judged on `openToUndergrads` alone, because its quote is judged under its own field.
+
+Gold labels score `researchEntity` and `fellowship` observations, and each is checked against the ingest refusals for its own entity type.
+A fellowship's structured fields compare by kind rather than by containment, because a URL, a date, or a set contained in another is a different value rather than a shorter quote of it.
+The comparison is chosen by entity type and field together, so a research-entity field that shares a name keeps containment.
+`applicationLink` compares as a URL after upgrading `http` to `https`, lowercasing the host, and dropping the fragment and any trailing slash.
+`yearOfStudy`, `termOfAward`, and `purpose` compare by set equality, with each acceptable set written as a JSON array string, so a superset does not match.
+A `deadline` label written `YYYY-MM-DD` matches an emitted instant that falls on that America/New_York calendar date, and one written `YYYY-MM-DDTHH:MM` matches only the same New York minute.
+`requiresMentorBeforeApply` and `entryMode` compare by exact value, and a fellowship `title` and `contactOffice` keep containment.
+No lane emits `requiresMentorBeforeApply` or `entryMode`, because the materializer derives them with the program classifier.
+The scorecard therefore derives both per program from the replay's planned observations with `classificationFromObservedFacts` and scores that derivation, and a program with no planned observations derives nothing.
 
 ```bash
 yarn --cwd server lane:benchmark-label --id=<benchmark-id> --file=<labels.json>

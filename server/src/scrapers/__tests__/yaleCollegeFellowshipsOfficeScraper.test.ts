@@ -17,6 +17,8 @@ import {
   inferPurpose,
   YaleCollegeFellowshipsOfficeScraper,
 } from '../sources/yaleCollegeFellowshipsOfficeScraper';
+import { beginBenchmarkReplay, finishBenchmarkReplay } from '../snapshotBenchmarkMode';
+import { POLICY_FETCH_BENCHMARK_NAMESPACE } from '../utils/httpFetch';
 
 const fundingPageUrl = 'https://funding.yale.edu/find-funding/yale-fellowships-offered-through';
 const sciencePageUrl =
@@ -2539,5 +2541,116 @@ describe('YaleCollegeFellowshipsOfficeScraper administering office (#4086)', () 
 
     expect(contactOffice).toBeDefined();
     expect(contactOffice?.value).toBe('');
+  });
+});
+
+describe('YaleCollegeFellowshipsOfficeScraper benchmark replay', () => {
+  it('reads every page from the frozen input, including a page that failed at capture', async () => {
+    const servedUrl = `${detailPageUrl}-served`;
+    const failedUrl = `${detailPageUrl}-failed`;
+    const emitted: any[] = [];
+    const log = vi.fn();
+    beginBenchmarkReplay([
+      {
+        sourceName: 'yale-college-fellowships-office',
+        requestKey: `page:${servedUrl}`,
+        payload:
+          '<main><h1>Fixture Frozen Research Fellowship</h1><p>Students research.</p></main>',
+        fetchedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+      {
+        sourceName: POLICY_FETCH_BENCHMARK_NAMESPACE,
+        requestKey: `page:v1:${failedUrl}`,
+        payload: { failedStatus: 404 },
+        fetchedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ]);
+    let replay;
+    try {
+      await new YaleCollegeFellowshipsOfficeScraper({
+        pageUrls: [servedUrl, failedUrl],
+        sitemapUrls: [],
+        retryDelay: async () => undefined,
+      }).run({
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'yale-college-fellowships-office',
+        sourceWeight: 0.95,
+        options: { dryRun: true, useCache: true, release: false },
+        emit: async (items) => {
+          emitted.push(...(Array.isArray(items) ? items : [items]));
+        },
+        log,
+      });
+    } finally {
+      replay = finishBenchmarkReplay();
+    }
+
+    expect(replay.networkBlocks).toBe(0);
+    expect(replay.servedByNamespace).toEqual({
+      'yale-college-fellowships-office': 1,
+      [POLICY_FETCH_BENCHMARK_NAMESPACE]: 1,
+    });
+    expect(emitted.find((observation) => observation.field === 'title')?.value).toBe(
+      'Fixture Frozen Research Fellowship',
+    );
+    expect(log).toHaveBeenCalledWith(
+      'Skipping fellowship catalog page after fetch/parse failure',
+      expect.objectContaining({ url: failedUrl }),
+    );
+  });
+});
+
+describe('YaleCollegeFellowshipsOfficeScraper reference date (#4132)', () => {
+  const programUrl =
+    'https://science.yalecollege.yale.edu/yale-undergraduate-research/fellowship-grants/fixture-clock-fellowship';
+  const html = `
+    <main>
+      <h1>Fixture Clock Research Fellowship</h1>
+      <p>Supports an independent research project.</p>
+      <p>Deadline: March 1</p>
+    </main>`;
+
+  const plannedDeadline = async (referenceDate: Date | undefined) => {
+    const emitted: any[] = [];
+    await new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [programUrl],
+      fetchPage: vi.fn(async () => html),
+    }).run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: {
+        dryRun: true,
+        useCache: false,
+        release: false,
+        ...(referenceDate ? { referenceDate } : {}),
+      },
+      emit: async (items) => {
+        emitted.push(...(Array.isArray(items) ? items : [items]));
+      },
+      log: vi.fn(),
+    });
+    const deadline = emitted.find((observation) => observation.field === 'deadline')?.value;
+    return deadline ? new Date(deadline).toISOString() : undefined;
+  };
+
+  it('infers an undated deadline from the pinned reference date, not the wall clock', async () => {
+    const winter = new Date('2026-01-15T12:00:00Z');
+    const summer = new Date('2026-06-15T12:00:00Z');
+
+    expect(await plannedDeadline(winter)).toBe(
+      parseDeadlineToUtcEndOfDay('Deadline: March 1', winter)?.toISOString(),
+    );
+    expect(await plannedDeadline(summer)).toBe(
+      parseDeadlineToUtcEndOfDay('Deadline: March 1', summer)?.toISOString(),
+    );
+    expect(await plannedDeadline(winter)).not.toBe(await plannedDeadline(summer));
+  });
+
+  it('gives the same planned deadline on every run pinned to the same moment', async () => {
+    const pinned = new Date('2026-01-15T12:00:00Z');
+    expect(await plannedDeadline(pinned)).toBe(await plannedDeadline(pinned));
   });
 });

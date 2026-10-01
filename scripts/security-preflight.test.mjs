@@ -3472,19 +3472,18 @@ test('Yale College fellowships scraper fetches configurable catalog pages throug
     'utf8',
   );
 
-  assert.match(
-    source,
-    /import \{ assertPublicHttpUrl, ssrfSafeAgents \} from '\.\.\/\.\.\/utils\/ssrfGuard'/,
-  );
-  assert.match(source, /const safeUrl = await assertPublicHttpUrl\(url\)/);
-  assert.match(source, /const safeUrlText = safeUrl\.toString\(\)/);
+  // The live fetch goes through the shared fetch policy, whose SSRF-safe agents are pinned by
+  // the shared-fetch-policy test, so a benchmark capture can freeze it (#4132).
+  assert.match(source, /import \{ assertPublicHttpUrl \} from '\.\.\/\.\.\/utils\/ssrfGuard'/);
+  assert.match(source, /import \{ fetchPageWithPolicy \} from '\.\.\/utils\/httpFetch'/);
+  assert.match(source, /const safeUrlText = \(await assertPublicHttpUrl\(url\)\)\.toString\(\)/);
   assert.match(source, /const cacheKey = `page:\$\{safeUrlText\}`/);
-  assert.match(source, /const agents = ssrfSafeAgents\(\)/);
-  assert.match(source, /axios\.get\(safeUrlText, \{/);
+  assert.match(source, /await fetchPageWithPolicy\(safeUrlText, \{/);
   assert.match(source, /maxRedirects: 5/);
-  assert.match(source, /httpAgent: agents\.httpAgent/);
-  assert.match(source, /httpsAgent: agents\.httpsAgent/);
-  assert.doesNotMatch(source, /axios\.get\(url,\s*\{/);
+  assert.doesNotMatch(source, /axios\.get\(/);
+  assert.doesNotMatch(source, /fetchPageWithPolicy\(url\b/);
+  assert.doesNotMatch(source, /\bassertUrl:/);
+  assert.doesNotMatch(source, /\brequest:\s*[a-zA-Z(]/);
   assert.doesNotMatch(source, /const cacheKey = `page:\$\{url\}`/);
   assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
 });

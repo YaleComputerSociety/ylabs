@@ -118,12 +118,13 @@ async function main(): Promise<void> {
     );
   }
 
+  const capturedAt = new Date();
   beginBenchmarkCapture();
   let pages;
   let unfrozenRequestCount = 0;
   let run;
   try {
-    run = await runLaneDry(args);
+    run = await runLaneDry({ ...args, referenceDate: capturedAt });
   } finally {
     ({ pages, unfrozenRequestCount } = finishBenchmarkCaptureWithCoverage());
   }
@@ -165,7 +166,7 @@ async function main(): Promise<void> {
         sourceName: args.sourceName,
         only: args.only,
         limit: args.limit,
-        capturedAt: new Date(),
+        capturedAt,
         environment: guard.environment,
         databaseName: mongoose.connection.db?.databaseName ?? 'unknown',
         codeSha: currentCodeSha(),

@@ -24,6 +24,7 @@ export const BENCHMARKABLE_LANES: ReadonlySet<string> = new Set([
   'lab-microsite-description-llm',
   'centers-institutes-index',
   'student-grants-database',
+  'yale-college-fellowships-office',
 ]);
 
 export const SOURCE_CONCURRENCY_LANES: ReadonlySet<string> = new Set([
@@ -45,6 +46,7 @@ export interface LaneBenchmarkSpec {
   only: string[];
   limit?: number;
   sourceConcurrency?: number;
+  referenceDate?: Date;
 }
 
 export function assertBenchmarkableLane(sourceName: string): void {
@@ -85,6 +87,7 @@ export async function runLaneDry(spec: LaneBenchmarkSpec): Promise<{
     limit: spec.limit,
     triggeredBy: 'cli',
     benchmarkRun: true,
+    ...(spec.referenceDate ? { referenceDate: spec.referenceDate } : {}),
   };
   const { explainedObservations, explainTruncated } = await buildOrchestrator().run(
     spec.sourceName,

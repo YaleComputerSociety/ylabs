@@ -492,7 +492,7 @@ export class StudentGrantsDatabaseScraper implements IScraper {
       throw new Error('--limit must be a safe positive integer');
     }
     const limit = Math.min(limitOption ?? Infinity, MAX_FUNDS);
-    const referenceDate = new Date();
+    const referenceDate = ctx.options.referenceDate ?? new Date();
 
     ctx.log(`[student-grants] fetching rendered fund search ${this.searchUrl}`);
     const searchHtml = await this.searchFetcher(this.searchUrl, ctx.options.useCache, this.name);
