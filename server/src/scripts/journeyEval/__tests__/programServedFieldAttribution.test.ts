@@ -117,6 +117,44 @@ describe('attributeProgramServedFields', () => {
     });
   });
 
+  it('attributes a window that opened after the lane stored a closed flag (#4231)', () => {
+    const stored = {
+      ...recurringStoredRow,
+      isAcceptingApplications: false,
+      applicationOpenDate: new Date(servedAt.from.getTime() - 14 * 24 * 60 * 60 * 1000),
+      deadline: new Date(servedAt.from.getTime() + 30 * 24 * 60 * 60 * 1000),
+    };
+    const served = publicFellowshipForStudent(stored, servedAt.from);
+
+    expect(served.isAcceptingApplications).toBe(true);
+    expect(
+      outcomeFor(attributeProgramServedFields(stored, served, servedAt), 'isAcceptingApplications'),
+    ).toEqual({
+      field: 'isAcceptingApplications',
+      status: 'attributed',
+      guard: 'acceptingFromServedWindow',
+    });
+  });
+
+  it('flags an application status the served window does not produce (#4231)', () => {
+    const stored = {
+      ...recurringStoredRow,
+      isAcceptingApplications: false,
+      applicationOpenDate: new Date(servedAt.from.getTime() + 14 * 24 * 60 * 60 * 1000),
+      deadline: new Date(servedAt.from.getTime() + 60 * 24 * 60 * 60 * 1000),
+    };
+    expect(
+      outcomeFor(
+        attributeProgramServedFields(
+          stored,
+          { ...stored, isAcceptingApplications: true },
+          servedAt,
+        ),
+        'isAcceptingApplications',
+      ).status,
+    ).toBe('unexplained');
+  });
+
   it('keeps an application open until the end of the New York day of a date-only deadline', () => {
     const stored = { ...recurringStoredRow, deadline: new Date('2026-09-30T23:59:59.999Z') };
     const eveningInNewYork = {
@@ -161,6 +199,59 @@ describe('attributeProgramServedFields', () => {
     const outcomes = attributeProgramServedFields(
       stored,
       { ...stored, isAcceptingApplications: false },
+      servedAt,
+    );
+
+    expect(outcomeFor(outcomes, 'isAcceptingApplications').status).toBe('unexplained');
+  });
+
+  it('attributes a window that opened since the lane wrote the flag to the served window', () => {
+    const stored = {
+      ...recurringStoredRow,
+      isAcceptingApplications: false,
+      applicationOpenDate: new Date('2026-09-15T05:00:00.000Z'),
+      deadline: new Date('2026-12-01T05:00:00.000Z'),
+    };
+    const served = publicFellowshipForStudent(stored, servedAt.from);
+
+    expect(served.isAcceptingApplications).toBe(true);
+    expect(
+      outcomeFor(attributeProgramServedFields(stored, served, servedAt), 'isAcceptingApplications'),
+    ).toEqual({
+      field: 'isAcceptingApplications',
+      status: 'attributed',
+      guard: 'acceptingFromServedWindow',
+    });
+  });
+
+  it('attributes a window that has not opened yet to the served window', () => {
+    const stored = {
+      ...recurringStoredRow,
+      applicationOpenDate: new Date('2026-11-01T05:00:00.000Z'),
+      deadline: new Date('2027-01-15T05:00:00.000Z'),
+    };
+    const served = publicFellowshipForStudent(stored, servedAt.from);
+
+    expect(served.isAcceptingApplications).toBe(false);
+    expect(
+      outcomeFor(attributeProgramServedFields(stored, served, servedAt), 'isAcceptingApplications'),
+    ).toEqual({
+      field: 'isAcceptingApplications',
+      status: 'attributed',
+      guard: 'acceptingFromServedWindow',
+    });
+  });
+
+  it('flags a row served as accepting before its stated window opens', () => {
+    const stored = {
+      ...recurringStoredRow,
+      isAcceptingApplications: false,
+      applicationOpenDate: new Date('2026-11-01T05:00:00.000Z'),
+      deadline: new Date('2027-01-15T05:00:00.000Z'),
+    };
+    const outcomes = attributeProgramServedFields(
+      stored,
+      { ...stored, isAcceptingApplications: true },
       servedAt,
     );
 

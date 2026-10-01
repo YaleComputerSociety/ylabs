@@ -430,6 +430,22 @@ const stripStalePresentationDate = (text: string, deadline: Date): string => {
   );
 };
 
+// The stored flag freezes whatever a lane last wrote, so a window that opened since then would
+// still read as closed (#4231). Where the row states a deadline, the served window decides in
+// both directions; without both a deadline and a stated opening date the dates cannot show the
+// window opened, so the stored flag stands unless the window is closed.
+export const acceptingFromServedWindow = (
+  program: any,
+  served: ServedProgramDeadline,
+  now: Date,
+): boolean | undefined => {
+  if (!served.deadline) return undefined;
+  if (served.closed || served.projectedNextCycle) return false;
+  const opensAt = toValidDate(program?.applicationOpenDate);
+  if (!opensAt) return undefined;
+  return opensAt.getTime() <= now.getTime();
+};
+
 export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date()) => {
   if (!fellowship || typeof fellowship !== 'object') return fellowship;
 
@@ -445,9 +461,8 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
 
   const served = servedProgramDeadline(fellowship, now);
   if (served.deadline) publicFellowship.deadline = served.deadline;
-  if (publicFellowship.isAcceptingApplications === true && served.closed) {
-    publicFellowship.isAcceptingApplications = false;
-  }
+  const windowAcceptance = acceptingFromServedWindow(fellowship, served, now);
+  if (windowAcceptance !== undefined) publicFellowship.isAcceptingApplications = windowAcceptance;
   publicFellowship.deadlineProjectedNextCycle = served.projectedNextCycle;
 
   const deadlineDate = toValidDate(publicFellowship.deadline);

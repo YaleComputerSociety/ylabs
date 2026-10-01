@@ -154,6 +154,85 @@ describe('fellowship public serializer', () => {
     expect(noDeadline.isAcceptingApplications).toBe(true);
   });
 
+  it('serves a window that has opened since the lane last wrote the flag as accepting (#4231)', () => {
+    const now = new Date('2026-10-01T16:00:00.000Z');
+    const row = {
+      _id: '67d8928150621bcef434a1d8',
+      title: 'Opened-window program',
+      isAcceptingApplications: false,
+      applicationOpenDate: new Date('2026-09-15T00:00:00.000Z'),
+      deadline: new Date('2026-10-30T00:00:00.000Z'),
+    };
+    expect(publicFellowshipForStudent(row, now).isAcceptingApplications).toBe(true);
+  });
+
+  it('keeps the stored flag when an open deadline has no stated opening date (#4231)', () => {
+    const now = new Date('2026-10-01T16:00:00.000Z');
+    for (const stored of [true, false]) {
+      expect(
+        publicFellowshipForStudent(
+          {
+            _id: '67d8928150621bcef434a1dc',
+            title: 'Unstated-opening program',
+            isAcceptingApplications: stored,
+            deadline: new Date('2026-10-30T00:00:00.000Z'),
+          },
+          now,
+        ).isAcceptingApplications,
+      ).toBe(stored);
+    }
+  });
+
+  it('serves a window that has not opened yet as not accepting whatever the stored flag says (#4231)', () => {
+    const now = new Date('2026-10-01T16:00:00.000Z');
+    expect(
+      publicFellowshipForStudent(
+        {
+          _id: '67d8928150621bcef434a1d9',
+          title: 'Not-yet-open program',
+          isAcceptingApplications: true,
+          applicationOpenDate: new Date('2026-11-01T00:00:00.000Z'),
+          deadline: new Date('2027-01-15T00:00:00.000Z'),
+        },
+        now,
+      ).isAcceptingApplications,
+    ).toBe(false);
+  });
+
+  it('keeps the stored flag when the row states no deadline (#4231)', () => {
+    const now = new Date('2026-10-01T16:00:00.000Z');
+    for (const stored of [true, false]) {
+      expect(
+        publicFellowshipForStudent(
+          {
+            _id: '67d8928150621bcef434a1da',
+            title: 'Undated program',
+            isAcceptingApplications: stored,
+            applicationOpenDate: new Date('2026-09-15T00:00:00.000Z'),
+          },
+          now,
+        ).isAcceptingApplications,
+      ).toBe(stored);
+    }
+  });
+
+  it('never serves an estimated next-cycle window as accepting (#4231)', () => {
+    const now = new Date('2026-10-01T16:00:00.000Z');
+    const payload = publicFellowshipForStudent(
+      {
+        _id: '67d8928150621bcef434a1db',
+        title: 'Recurring summer research fellowship',
+        isAcceptingApplications: true,
+        deadline: new Date('2026-02-06T00:00:00.000Z'),
+        applicationLink: 'https://example.edu/apply',
+        sourceUrl: 'https://example.edu/fellowship',
+      },
+      now,
+    );
+    expect(payload.deadlineProjectedNextCycle).toBe(true);
+    expect(payload.isAcceptingApplications).toBe(false);
+  });
+
   it('projects a stale, source-backed recurring deadline forward to its next annual cycle', () => {
     const now = new Date('2026-08-22T00:00:00.000Z');
     const payload = publicFellowshipForStudent(
