@@ -93,7 +93,6 @@ describe('topic-drop-attribution case', () => {
         dropped: 1,
         attributedToGuard: 1,
         unexplained: 0,
-        withheldTopicsByGuard: { filterProseResearchAreaChips: 1 },
         drops: [{ attributed: true, withheldBy: ['filterProseResearchAreaChips'] }],
       },
     });

@@ -62,7 +62,7 @@ Assert that the difference between stored and served is explained, not that it i
 
 The case computes its expectation by calling `decideServedResearchEntityTopics` in `server/src/services/researchEntityDto.ts` on the stored row, after the same `researchEntityListServedSource` step and the same lead names the browse route uses, rather than restating the guard chain.
 The DTO builds its `researchAreas` from that same composition, so a stored-to-served difference the case reports as unexplained is one no named guard accounts for.
-The decision returns the served topics and the guard that withheld each dropped topic, and the case reports both: `withheldTopicsByGuard` counts withheld topics per guard over the attributed drops, and `drops` lists each drop with its guards, never with a slug or a topic.
+The decision returns the served topics and the guard that withheld each dropped topic, and the case reports both: `drops` lists each drop with its guards, never with a slug or a topic.
 A drop is attributed only when the served list equals the decision and every stored topic missing from it is charged to a guard.
 
 The guards, in serve order, are the stages of `decideServedResearchAreas` in `server/src/utils/servedResearchAreaGuards.ts` plus the two the served copy and the DTO add around it:

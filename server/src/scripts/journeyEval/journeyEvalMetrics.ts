@@ -68,7 +68,6 @@ export interface TopicAttributionTally {
   unexplained: number;
   servedNoneWhileStoringSome: number;
   servedNoneUnexplained: number;
-  withheldTopicsByGuard: Record<string, number>;
   drops: TopicDropAttribution[];
 }
 
@@ -84,7 +83,6 @@ export function attributeTopicDrops(
     unexplained: 0,
     servedNoneWhileStoringSome: 0,
     servedNoneUnexplained: 0,
-    withheldTopicsByGuard: {},
     drops: [],
   };
 
@@ -100,11 +98,6 @@ export function attributeTopicDrops(
     if (attributed) tally.attributedToGuard += 1;
     else tally.unexplained += 1;
     tally.drops.push({ attributed, withheldBy: [...new Set(observation.withheldBy)] });
-    if (attributed) {
-      for (const guard of observation.withheldBy) {
-        tally.withheldTopicsByGuard[guard] = (tally.withheldTopicsByGuard[guard] ?? 0) + 1;
-      }
-    }
 
     if (observation.servedCount === 0 && observation.storedCount > 0) {
       tally.servedNoneWhileStoringSome += 1;

@@ -53,10 +53,6 @@ describe('attributeTopicDrops', () => {
     expect(tally.attributedToGuard).toBe(1);
     expect(tally.unexplained).toBe(0);
     expect(tally.comparable).toBe(2);
-    expect(tally.withheldTopicsByGuard).toEqual({
-      dropDomainIncoherentUnsourcedResearchAreas: 2,
-      filterProseResearchAreaChips: 1,
-    });
     expect(tally.drops).toEqual([
       {
         attributed: true,
@@ -77,7 +73,6 @@ describe('attributeTopicDrops', () => {
 
     expect(tally.dropped).toBe(1);
     expect(tally.unexplained).toBe(1);
-    expect(tally.withheldTopicsByGuard).toEqual({});
     expect(tally.drops).toEqual([{ attributed: false, withheldBy: coherence }]);
   });
 
@@ -361,7 +356,6 @@ describe('checkTopicDropAttribution', () => {
     unexplained: 0,
     servedNoneWhileStoringSome: 3,
     servedNoneUnexplained: 0,
-    withheldTopicsByGuard: { dropDomainIncoherentUnsourcedResearchAreas: 14 },
     drops: [],
     ...overrides,
   });
