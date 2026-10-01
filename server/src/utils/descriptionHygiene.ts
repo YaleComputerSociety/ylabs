@@ -135,16 +135,33 @@ export function stripDanglingSourceSiteReferenceSentences(text: string): string 
 const PROTECTED_ABBREVIATION_TAIL =
   /(?:^|\s)(?:Prof|Drs?|Mr|Mrs|Ms|Mx|Sr|Jr|St|Ave|Rd|Blvd|Inc|Ltd|Co|Corp|Dept|Univ|Assoc|Vol|No|pp|Fig|vs|etc|al|Ph)\.\s*$/i;
 
-// "Jordan Q." is a middle initial; "vitamin E." ends a sentence (#3866). A capitalized
-// word before the initial is what separates the two.
+// "Jordan Q. Fixture" is a middle initial; "vitamin E." and "Hepatitis B. To read" end a
+// sentence (#3866). A capitalized word before the initial and a capitalized word after it
+// that is not a common sentence opener are what separate the two.
 const MIDDLE_INITIAL_TAIL = /(?:^|\s)[A-Z][a-z]+\s[A-Z]\.\s*$/;
+const SURNAME_HEAD = /^([A-Z][a-z]+)\b/;
+const SENTENCE_OPENER_WORDS = new Set(
+  (
+    'A An The This That These Those It Its We Our Us They Their He She His Her You Your I ' +
+    'In On At For From To With By Of As If When While Since After Before During Through ' +
+    'And But Or So Yet Also However Moreover Furthermore Additionally Thus Therefore ' +
+    'Please Contact Visit See Learn Read Click Email Call Apply Find Join More ' +
+    'There Here Each All Some Many Most Both Every Any No Not Students Applicants Researchers'
+  ).split(' '),
+);
+
+function continuesMiddleInitialName(segment: string, next: string): boolean {
+  if (!MIDDLE_INITIAL_TAIL.test(segment)) return false;
+  const surname = next.match(SURNAME_HEAD)?.[1];
+  return Boolean(surname) && !SENTENCE_OPENER_WORDS.has(surname as string);
+}
 
 const LATIN_EXAMPLE_ABBREVIATION_TAIL = /(?:^|[\s([])(?:[ei]\.|e\.g\.\s*|i\.e\.\s*)$/i;
 
-function isAbbreviationSplit(segment: string): boolean {
+function isAbbreviationSplit(segment: string, next: string): boolean {
   return (
     PROTECTED_ABBREVIATION_TAIL.test(segment) ||
-    MIDDLE_INITIAL_TAIL.test(segment) ||
+    continuesMiddleInitialName(segment, next) ||
     LATIN_EXAMPLE_ABBREVIATION_TAIL.test(segment)
   );
 }
@@ -161,7 +178,7 @@ function mergeAbbreviationSplitSentences(segments: string[]): string[] {
   const merged: string[] = [];
   for (const segment of segments) {
     const previousIndex = merged.length - 1;
-    if (previousIndex >= 0 && isAbbreviationSplit(merged[previousIndex])) {
+    if (previousIndex >= 0 && isAbbreviationSplit(merged[previousIndex], segment)) {
       merged[previousIndex] += segment;
     } else {
       merged.push(segment);
