@@ -294,6 +294,14 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
       title: 'Computer Science Research Internship Program',
     },
     {
+      key: 'isps-dahl-scholars',
+      url: 'https://isps.yale.edu/isps-opportunities/student-fellowships/dahl-scholars',
+      department: 'Institution for Social and Policy Studies',
+      school: 'Yale University',
+      parser: 'structured-opportunity',
+      title: 'ISPS Dahl Scholars',
+    },
+    {
       key: 'sociology',
       url: 'https://sociology.yale.edu/undergraduate-program/senior-project',
       department: 'Sociology',
@@ -550,7 +558,7 @@ function bestApplicationUrl($: cheerio.CheerioAPI, pageUrl: string): string | un
     }))
     .filter((link): link is { text: string; url: string } => Boolean(link.url));
   return links.find((link) =>
-    /apply|application|form|qualtrics|survey/i.test(`${link.text} ${link.url}`),
+    /apply|application|\bforms?\b|qualtrics|survey/i.test(`${link.text} ${link.url}`),
   )?.url;
 }
 
@@ -718,6 +726,7 @@ function programRecordToFellowshipObservations(
   const observations: ObservationInput[] = [
     { ...base, field: 'sourceKey', value: record.entityKey },
     { ...base, field: 'sourceName', value: DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE },
+    { ...base, field: 'sourceUrl', value: record.sourceUrl },
     { ...base, field: 'title', value: record.name },
     { ...base, field: 'summary', value: summary },
     { ...base, field: 'description', value: record.description },

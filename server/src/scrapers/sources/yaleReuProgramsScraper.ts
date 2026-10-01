@@ -23,9 +23,14 @@ import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
-import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
-import { humanizeProgramLinkLabel } from '../../utils/programLinkLabel';
-import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
+import {
+  PROGRAM_PAGE_NON_PROSE_SELECTOR,
+  isApplyLink,
+  nearestDeadlineText,
+  programApplicationLinks,
+  programPageDescription,
+  programPageTitle,
+} from '../utils/programPageEvidence';
 
 export const YALE_REU_PROGRAMS_SOURCE = 'yale-reu-programs';
 
@@ -48,6 +53,14 @@ export const CURATED_YALE_REU_PROGRAM_SEEDS: ReuProgramSeed[] = [
   {
     url: 'https://sumry.yale.edu/',
     hostingOffice: 'Yale Department of Mathematics',
+  },
+  {
+    url: 'https://physics-engineering-biology.yale.edu/summer-research-in-physical-engineering-biology',
+    hostingOffice: 'Yale Integrated Graduate Program in Physical and Engineering Biology',
+  },
+  {
+    url: 'https://yibs.yale.edu/sures',
+    hostingOffice: 'Yale Institute for Biospheric Studies',
   },
 ];
 
@@ -208,24 +221,6 @@ function sectionTextForHeading($: cheerio.CheerioAPI, headingPattern: RegExp): s
   return combined ? combined.slice(0, 1200) : undefined;
 }
 
-function nearestDeadlineText(text: string): string {
-  const normalized = normalizeWhitespace(text);
-  const label =
-    /\b(?:application\s+)?deadline\b|\bapplications?\s+(?:are\s+)?due\b|\bapply\s+by\b|\bdue\s+by\b/i.exec(
-      normalized,
-    );
-  if (!label || label.index === undefined) return '';
-  const monthPattern = Object.keys(MONTHS).join('|');
-  const namedDate = `(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(?:${monthPattern})\\s+\\d{1,2}(?!\\d)(?:,\\s*\\d{4})?`;
-  const numericDate = String.raw`\d{1,2}\/\d{1,2}\/\d{2,4}`;
-  const datePattern = new RegExp(`(?:${namedDate}|${numericDate})`, 'i');
-  const after = normalized.slice(
-    label.index + label[0].length,
-    label.index + label[0].length + 120,
-  );
-  return datePattern.exec(after)?.[0] || '';
-}
-
 export function parseDeadlineToUtcEndOfDay(
   text: string,
   referenceDate: Date = new Date(),
@@ -277,18 +272,6 @@ function competitionTypeForText(text: string): string {
   return 'Summer Undergraduate Research Program';
 }
 
-function isInExcludedRegion($link: cheerio.Cheerio<any>): boolean {
-  return (
-    $link.closest(
-      'header, nav, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs, .menu, .sidebar',
-    ).length > 0
-  );
-}
-
-function isApplyLink(url: string, label: string): boolean {
-  return /\bapply|application|register\b/i.test(label) || /\bapply|application\b/i.test(url);
-}
-
 function fingerprintCandidate(candidate: Omit<ReuProgramCandidate, 'sourceFingerprint'>): string {
   const stable = {
     title: candidate.title,
@@ -323,17 +306,13 @@ export function parseReuProgramPage(
   const $ = cheerio.load(html);
   $('script, style, noscript').remove();
 
-  const title = normalizeWhitespace($('h1').first().text());
+  const title = programPageTitle($, pageUrl);
   if (!title || title.length > 200) return undefined;
 
   const contentRoot = $('main, [role="main"], article').first();
   const root = contentRoot.length > 0 ? contentRoot : $('body');
   const chromeFree = root.clone();
-  chromeFree
-    .find(
-      'nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs, .menu, .sidebar',
-    )
-    .remove();
+  chromeFree.find(PROGRAM_PAGE_NON_PROSE_SELECTOR).remove();
   const bodyText = normalizeWhitespace(chromeFree.text());
   const identityText = `${title} ${bodyText}`;
 
@@ -346,7 +325,7 @@ export function parseReuProgramPage(
       ));
   if (!isSummerResearchProgram) return undefined;
 
-  const description = sanitizeStoredCatalogDescription(bodyText, 2000) || undefined;
+  const description = programPageDescription($, chromeFree, bodyText);
   const eligibility = sectionTextForHeading($, ELIGIBILITY_HEADING_RE);
   const applicationInfo = sectionTextForHeading($, APPLICATION_HEADING_RE);
   const deadline = parseDeadlineToUtcEndOfDay(
@@ -354,25 +333,7 @@ export function parseReuProgramPage(
     referenceDate,
   );
 
-  const links: Array<{ label: string; url: string }> = [];
-  const seenUrls = new Set<string>();
-  for (const link of root.find('a').toArray()) {
-    const $link = $(link);
-    if (isInExcludedRegion($link)) continue;
-    const rawUrl = absoluteUrl($link.attr('href'), pageUrl);
-    if (!rawUrl) continue;
-    const url = normalizeUrl(rawUrl);
-    if (seenUrls.has(url)) continue;
-    const rawLabel = normalizeWhitespace($link.text());
-    if (!isApplyLink(url, rawLabel)) continue;
-    if (isUnhelpfulProgramUrl(url, pageUrl)) continue;
-    seenUrls.add(url);
-    links.push({
-      label: humanizeProgramLinkLabel(rawLabel, url) || rawLabel || 'Application',
-      url,
-    });
-    if (links.length >= MAX_PROGRAM_LINKS) break;
-  }
+  const links = programApplicationLinks($, root, pageUrl, MAX_PROGRAM_LINKS);
   const applicationLink = links.find((link) => isApplyLink(link.url, link.label))?.url;
 
   const termOfAward = inferTerm(identityText);
