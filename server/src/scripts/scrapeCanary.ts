@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { installMongoWriteRefusal } from '../scrapers/utils/mongoWriteRefusal';
+import { connectScriptMongo } from '../db/connections';
 
 export interface ScrapeCanaryCliOptions {
   sourceName: string;
@@ -69,7 +70,7 @@ async function main(): Promise<number> {
 
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL is required for a scrape canary');
-  await mongoose.connect(mongoUrl, { autoIndex: false, autoCreate: false });
+  await connectScriptMongo(mongoUrl);
   try {
     const scraper = buildOrchestrator().get(options.sourceName);
     if (!scraper) throw new Error(`No scraper registered with name "${options.sourceName}"`);

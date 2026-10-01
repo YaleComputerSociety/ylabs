@@ -70,6 +70,7 @@ import {
 import { SweepRunLogger } from './scraperSweepLogging';
 import { PRUNE_DEAD_OBSERVATIONS_CONFIRM_FLAG } from './pruneDeadObservationsCore';
 import { formatSweepPreflightReport, runSweepPreflight } from './scraperSweepPreflight';
+import { connectScriptMongo } from '../db/connections';
 
 export type ScraperSweepMode =
   | 'development-plan'
@@ -649,7 +650,7 @@ export function validateScraperSweepSourceRows(
 async function validateScraperSweepDatabasePreflight(registeredNames: string[]): Promise<void> {
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL is required for the scraper sweep');
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   try {
     const sourceRowNames = await Source.find({ name: { $in: registeredNames } }).distinct('name');
     validateScraperSweepSourceRows(registeredNames, sourceRowNames);

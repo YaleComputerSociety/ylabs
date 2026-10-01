@@ -72,6 +72,7 @@ import {
 import { openAiChatSampling } from '../utils/openAiChatSampling';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
+import { connectScriptMongo } from '../db/connections';
 
 dotenv.config();
 
@@ -484,7 +485,7 @@ async function main(): Promise<void> {
     ? resolveSafeJsonReportOutputPath(argValue('--output') as string)
     : '';
 
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   const sample = await buildSample(randomCount);
   console.log(`sample size: ${sample.length} (model ${model})`);
 

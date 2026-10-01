@@ -27,7 +27,6 @@ function declaredTypeFromPage(text: string): string {
 }
 
 async function main(): Promise<void> {
-  mongoose.set('autoIndex', false);
   await initializeConnections();
   const slugs = reads.map((r) => r.slug);
   const rows = (await ResearchEntity.find({ slug: { $in: slugs }, archived: { $ne: true } })

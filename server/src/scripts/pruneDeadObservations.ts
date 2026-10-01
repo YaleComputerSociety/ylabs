@@ -16,6 +16,7 @@ import {
   parsePruneDeadObservationsArgs,
   type PruneDeadObservationsArgs,
 } from './pruneDeadObservationsCore';
+import { connectScriptMongo } from '../db/connections';
 
 dotenv.config();
 
@@ -52,7 +53,7 @@ async function main(args: PruneDeadObservationsArgs): Promise<void> {
 
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL is required for prune-dead-observations');
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
 
   const prune = await pruneDeadObservations({
     apply,

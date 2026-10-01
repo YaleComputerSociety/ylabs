@@ -16,9 +16,9 @@
  * One route call per row, thousands of them, so the walk takes tens of minutes. It
  * writes nothing to any environment.
  *
- * Connecting Mongoose builds indexes for every registered model, which recreates a
- * collection that was deliberately dropped (#2812), so `autoIndex` is disabled and
- * the collection set is compared before and after.
+ * Connecting Mongoose with its defaults builds indexes for every registered model,
+ * which recreates a collection that was deliberately dropped (#2812), so it connects
+ * through `connectScriptMongo` and the collection set is compared before and after.
  *
  * Usage:
  *   yarn --cwd server research-entity:audit-served-biography-cards \
@@ -59,6 +59,7 @@ import {
   formatBiographyCardReachability,
   type ServedBiographyCardRow,
 } from './servedBiographyCardReachabilityAuditCore';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -235,8 +236,7 @@ async function main(): Promise<void> {
     ).map((doc) => String((doc as { slug?: unknown }).slug || ''));
     console.log(`tier-admitted rows: ${slugs.length}`);
 
-    mongoose.set('autoIndex', false);
-    await mongoose.connect(url);
+    await connectScriptMongo(url);
     const rows: ServedBiographyCardRow[] = [];
     let servesNoPage = 0;
     let laneReach: SynthesisLaneReach | undefined;

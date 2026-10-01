@@ -248,9 +248,6 @@ async function main(): Promise<void> {
   const configs = selectRosterConfigs(OFFICIAL_ROSTER_CONFIGS, options.only);
   if (configs.length === 0) throw new Error('--only matched no roster config');
 
-  // Indexes are not built on connect elsewhere in the operator scripts either: a
-  // read-only audit must not recreate a collection somebody deliberately dropped.
-  mongoose.set('autoIndex', false);
   await initializeConnections();
   try {
     const evidence: OfficialRosterLaneEvidence[] = [];

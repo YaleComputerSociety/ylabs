@@ -41,6 +41,7 @@ import {
   summarizeOrphanObservationKeys,
   type OrphanObservationKeyClassification,
 } from './orphanObservationKeyAuditCore';
+import { connectScriptMongo } from '../db/connections';
 
 dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -320,7 +321,7 @@ async function main(): Promise<void> {
   const options = parseOrphanObservationKeyAuditArgs(process.argv.slice(2));
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL is required');
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   try {
     const report = await runOrphanObservationKeyAudit();
     reportOrphanObservationKeyAudit(report, options.limitExamples);

@@ -9,6 +9,7 @@ import {
   defaultFetchPage,
 } from '../scrapers/sources/labMicrositeUndergradLLMExtractor';
 import { openAiChatSampling } from '../utils/openAiChatSampling';
+import { connectScriptMongo } from '../db/connections';
 
 const DEFAULT_MODELS = ['gpt-4o-mini', 'gpt-5-mini'];
 const QUOTE_FIELDS = [
@@ -113,7 +114,7 @@ async function main(): Promise<void> {
   const models = (argValue('--models') ?? DEFAULT_MODELS.join(',')).split(',').map((m) => m.trim());
   const limit = Number(argValue('--limit') ?? '12');
 
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   const entities = await ResearchEntity.find({
     website: { $regex: /^https?:\/\// },
     entityType: { $in: ['LAB', 'CENTER', 'INSTITUTE'] },

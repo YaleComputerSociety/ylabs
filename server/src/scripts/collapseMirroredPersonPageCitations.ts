@@ -35,6 +35,7 @@ import {
   type MirroredCitationRow,
 } from './collapseMirroredPersonPageCitationsCore';
 import { retireCitationValueObservations } from './retireCitationValueObservations';
+import { connectScriptMongo } from '../db/connections';
 
 const MIRRORED_CITATION_ROLLBACK_REASON =
   'mirrored person-page citation collapsed to one address: the duplicate spellings assert the same page (#3362)';
@@ -125,7 +126,7 @@ async function main(): Promise<void> {
     }`,
   );
 
-  await mongoose.connect(process.env.MONGODBURL as string, { maxPoolSize: 5 });
+  await connectScriptMongo(process.env.MONGODBURL as string, { maxPoolSize: 5 });
   try {
     const filter = options.allTiers
       ? { archived: { $ne: true } }

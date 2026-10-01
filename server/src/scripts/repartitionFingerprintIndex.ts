@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { connectScriptMongo } from '../db/connections';
 
 dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
@@ -28,7 +29,7 @@ async function main(apply: boolean): Promise<void> {
   });
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL is required');
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   const collection = mongoose.connection.db!.collection('observations');
 
   const before: any = await mongoose.connection.db!.command({ collStats: 'observations' });

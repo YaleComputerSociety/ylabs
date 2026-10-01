@@ -49,6 +49,7 @@ import {
   type OffEntityGraftRunResult,
 } from './offEntityGraftAuditCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { connectScriptMongo } from '../db/connections';
 
 dotenv.config();
 
@@ -187,7 +188,7 @@ async function main(): Promise<void> {
     scriptName: 'research-entity:audit-off-entity-graft',
     mongoUrl: process.env.MONGODBURL,
   });
-  await mongoose.connect(String(process.env.MONGODBURL));
+  await connectScriptMongo(String(process.env.MONGODBURL));
 
   // Deliberately unprojected, for the reason documented on
   // `auditStudentReadyPublicDescriptions`: the serve gate fails closed on any

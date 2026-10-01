@@ -50,6 +50,7 @@ import {
   isSuspiciousUserEmail,
 } from './userEmailHygieneCore';
 import { auditStudentReadyPublicDescriptions } from '../services/researchEntityPublicDescriptionAuditService';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -215,7 +216,7 @@ async function main(): Promise<void> {
     mongoUrl,
   });
 
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   const scorecard = await buildBetaDataQualityScorecard(options, mongoUrl);
   const output = buildBetaDataQualityOutput(scorecard, {
     environment: guard.environment,

@@ -17,6 +17,7 @@ import {
 import { isCenterOrInstituteEntity } from '../utils/profileAreaDuplicateRisk';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -299,7 +300,7 @@ async function main(): Promise<void> {
     scriptName: SCRIPT_NAME,
     mongoUrl: process.env.MONGODBURL,
   });
-  await mongoose.connect(process.env.MONGODBURL);
+  await connectScriptMongo(process.env.MONGODBURL);
   try {
     const mergeDelta = await runEponymousFraLabMergeStage({
       apply: args.apply,

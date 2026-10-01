@@ -754,7 +754,7 @@ Removing an index stays a reviewed migration, never a side effect of an operator
 When a build fails, the command reports the failure, leaves the existing index alone, and exits non-zero.
 
 Scope is the shared `mongoOptions`, which covers the server boot and every script that goes through `initializeConnections`, and that is the path all three incidents took.
-Roughly fifteen scripts call `mongoose.connect` directly with their own options and still default `autoIndex` on; routing those through the shared options is a separate change.
+Roughly fifteen scripts called `mongoose.connect` directly with their own options and still defaulted `autoIndex` on; #3932 later routed every entry point through `connectScriptMongo` or `createScriptMongoConnection`, and `db/__tests__/everyEntryPointConnectsWithMongoOptions.test.ts` fails on any new direct connect.
 Tests are untouched on purpose: they connect with their own options and several depend on a unique index existing, so a global `mongoose.set` would have broken them.
 The change is a connection default, so it is inert until a process next connects; the two Development drifts it reports were not repaired here because a unique index blocked by a duplicate and a text index needing a drop are both reviewed migrations.
 

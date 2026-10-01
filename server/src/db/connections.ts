@@ -36,6 +36,37 @@ export const mongoOptions = {
   minPoolSize: 1,
 };
 
+export type ScriptMongoConnectOptions = Omit<mongoose.ConnectOptions, 'autoIndex' | 'autoCreate'>;
+
+export function scriptMongoConnectOptions(
+  extra: ScriptMongoConnectOptions = {},
+): mongoose.ConnectOptions {
+  return {
+    ...mongoOptions,
+    // A request-sized socket timeout suits the API, but an operator scan or a
+    // materialize can wait longer than a minute for one batch, so entry points
+    // keep the driver's no-timeout default.
+    socketTimeoutMS: 0,
+    ...extra,
+    autoIndex: false,
+    autoCreate: false,
+  };
+}
+
+export function connectScriptMongo(
+  url: string,
+  extra?: ScriptMongoConnectOptions,
+): Promise<typeof mongoose> {
+  return mongoose.connect(url, scriptMongoConnectOptions(extra));
+}
+
+export function createScriptMongoConnection(
+  url: string,
+  extra?: ScriptMongoConnectOptions,
+): Promise<mongoose.Connection> {
+  return mongoose.createConnection(url, scriptMongoConnectOptions(extra)).asPromise();
+}
+
 // Serialise reconnect attempts: if one is already in flight, later callers
 // await the same promise rather than launching a second parallel reconnect.
 let reconnectInFlight: Promise<void> | null = null;
