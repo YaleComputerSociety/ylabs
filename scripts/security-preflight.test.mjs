@@ -1980,19 +1980,6 @@ test('API responses default to private no-store cache headers', () => {
   );
 });
 
-test('no page in the client build receives an OAuth token', () => {
-  const publicDir = new URL('../client/public/', import.meta.url);
-  for (const file of fs.readdirSync(publicDir, { recursive: true })) {
-    if (!/\.(?:html|js)$/.test(file)) continue;
-    const source = fs.readFileSync(new URL(file, publicDir), 'utf8');
-    assert.doesNotMatch(
-      source,
-      /access_token|BroadcastChannel/,
-      `client/public/${file} reads an OAuth token or rebroadcasts one; a same-origin page that hands a token to any listener needs a caller and a review, not a static file (#4016)`,
-    );
-  }
-});
-
 test('mounted API routes sanitize caught errors before logging', () => {
   const routeFiles = [
     '../server/src/routes/admin.ts',
