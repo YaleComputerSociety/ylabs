@@ -1508,10 +1508,11 @@ Only catalog and administrative program pages (`not_undergraduate_relevant`), no
 
 The programs gate also serves one row per fund (`server/src/services/programDuplicateIdentity.ts`, #3988).
 A CommunityForce fund page is reached through an encrypted query that differs from link to link, so one fund can carry several FundDetails URLs, and two lanes, or one lane twice, can mint a row for each.
-Two live rows with the same normalized title and the same normalized description of at least 80 characters are one fund; the title alone is not enough, because distinct funds share titles.
+Two live rows are one fund when their titles match once case, punctuation, an ampersand, apostrophes and a leading "The" are set aside, and their descriptions match: identical at 80 characters or more, or with at least 80% of the shorter description's five-word phrases found in the longer one, because one lane stores the fund's own paragraph and another the page around it.
+Neither half is enough alone: distinct funds share titles, and each residential college's copy of a fund shares one description word for word, differing only in the college its title names.
 The gate keeps the copy most fit to serve on its own, then the copy an owning lane holds rather than the enrich-only catalog, then the oldest, and suppresses the others with `duplicate_program`.
 The verdict is recomputed over every live program on each gate run, including a run scoped to some records, so it writes no field and needs no lock.
-Projected on Development on 2026-10-01, it finds 9 redundant copies, 3 of them funds that were served twice, and served programs go from 150 to 147 with no fund lost.
+Applied on Development on 2026-10-01 with exact titles and descriptions it removed 3 funds served twice; the tolerant comparison found 17 redundant copies and removed 7 more, taking served programs from 145 to 138, with no fund left without a served copy.
 
 What counts as a research program is decided by `classifyProgramResearchRelevance` in `server/src/services/programResearchRelevance.ts`.
 When a record carries the source catalog's purpose facet (Research, Study, Travel, Service, and the rest), the facet is the authority: the record is research-related only when a purpose is research, a senior project or dissertation support, its own title names research, its kind is research by construction (senior thesis funding, an RA program, mentor matching, a summer research program), or its own prose says the award funds research or is for students pursuing research careers (#3904).
