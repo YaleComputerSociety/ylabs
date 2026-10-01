@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  fundKeysCitedByFellowship,
+  fundKeyCitedByFellowship,
   preferFundFacetObservations,
   sourceKeyForFund,
 } from '../fellowshipFundFacets';
@@ -8,23 +8,33 @@ import { fellowshipFieldsWithheldBySourcePrecedence } from '../fellowshipSourceP
 
 const FUND_PAGE = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FIXTUREFUND';
 
-describe('fundKeysCitedByFellowship', () => {
-  it('reads the fund key from every link a row cites, once', () => {
+describe('fundKeyCitedByFellowship', () => {
+  it('reads the one fund a row cites, however many links name it', () => {
     expect(
-      fundKeysCitedByFellowship({
+      fundKeyCitedByFellowship({
         sourceUrl: 'https://fellowships.example.edu/fixture',
         applicationLink: FUND_PAGE,
         links: [{ url: FUND_PAGE.replace('https://', 'http://') }, { url: 'https://example.edu' }],
       }),
-    ).toEqual([sourceKeyForFund(FUND_PAGE)]);
+    ).toBe(sourceKeyForFund(FUND_PAGE));
+  });
+
+  it('cites no fund when a row cites two different fund pages', () => {
+    expect(
+      fundKeyCitedByFellowship({
+        sourceUrl: FUND_PAGE,
+        applicationLink: 'https://yale.communityforce.com/Funds/FundDetails.aspx?FIXTURECOMMON',
+        links: [{ url: FUND_PAGE }],
+      }),
+    ).toBeNull();
   });
 
   it('cites no fund for a row without a record-specific fund page', () => {
     expect(
-      fundKeysCitedByFellowship({
+      fundKeyCitedByFellowship({
         applicationLink: 'https://yale.communityforce.com/Funds/Search.aspx',
       }),
-    ).toEqual([]);
+    ).toBeNull();
   });
 });
 

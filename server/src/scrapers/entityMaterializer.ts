@@ -139,7 +139,7 @@ import {
   fellowshipAbsenceClearWithheldBySourcePrecedence,
   fellowshipFieldsWithheldBySourcePrecedence,
 } from './fellowshipSourcePrecedence';
-import { fundKeysCitedByFellowship, preferFundFacetObservations } from './fellowshipFundFacets';
+import { fundKeyCitedByFellowship, preferFundFacetObservations } from './fellowshipFundFacets';
 import {
   fellowshipFieldsAssertedAbsent,
   planFellowshipAbsenceClears,
@@ -4345,15 +4345,15 @@ async function fundFacetObservationsCitedBy(
   entityDoc: any,
   prefetch?: MaterializationReadSource,
 ): Promise<any[]> {
-  const fundKeys = fundKeysCitedByFellowship(entityDoc);
-  if (fundKeys.length === 0) return [];
-  const routedFundEvidence = routedObservationsForKeysAndIds('fellowship', fundKeys, [], prefetch);
+  const fundKey = fundKeyCitedByFellowship(entityDoc);
+  if (!fundKey) return [];
+  const routedFundEvidence = routedObservationsForKeysAndIds('fellowship', [fundKey], [], prefetch);
   const read =
     routedFundEvidence ??
     (await Observation.find({
       entityType: 'fellowship',
       ...materializationReadScopeFilter(),
-      entityKey: { $in: fundKeys },
+      entityKey: fundKey,
       sourceName: YALE_FELLOWSHIP_DATABASE_SOURCE,
       field: { $in: [...FUND_FACET_FIELDS] },
     }).lean());

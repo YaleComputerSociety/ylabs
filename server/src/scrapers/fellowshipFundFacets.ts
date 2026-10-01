@@ -9,7 +9,7 @@
  * `purpose` as the catalog's own facet, suppressed funds whose page lists Research.
  *
  * The fund's observations sit under the fund's own key, which an owning lane's pass never
- * reads. So every pass over a row that cites a fund page loads that fund's facet
+ * reads. So every pass over a row that cites one fund page loads that fund's facet
  * observations too, and where the fund states a facet its value replaces every other
  * lane's for that field. Both passes then resolve the same value, which makes this a
  * derivation: it writes nothing on its own and needs no lock.
@@ -61,14 +61,17 @@ export function isRecordSpecificFundDetailUrl(url: string | undefined): boolean 
   }
 }
 
-export function fundKeysCitedByFellowship(row: Record<string, any> | null | undefined): string[] {
-  if (!row) return [];
+export function fundKeyCitedByFellowship(
+  row: Record<string, any> | null | undefined,
+): string | null {
+  if (!row) return null;
   const urls = [
     row.sourceUrl,
     row.applicationLink,
     ...(Array.isArray(row.links) ? row.links.map((link: any) => link?.url) : []),
   ].filter((url): url is string => typeof url === 'string' && isRecordSpecificFundDetailUrl(url));
-  return [...new Set(urls.map(sourceKeyForFund))];
+  const keys = new Set(urls.map(sourceKeyForFund));
+  return keys.size === 1 ? [...keys][0] : null;
 }
 
 interface FacetObservationLike {
