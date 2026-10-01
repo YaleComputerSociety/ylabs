@@ -1397,6 +1397,7 @@ const Research = () => {
     if (department !== selectedDepartment) {
       filterChanges.push({ operation: department ? 'apply' : 'remove', filter: 'department' });
     }
+    if (filterChanges.length > 0) scrollResearchViewportToTop();
     setSelectedEntityType(entityType);
     setSelectedSchool(school);
     setSelectedDepartment(department);
