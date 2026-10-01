@@ -168,8 +168,8 @@ function isAbbreviationSplit(segment: string, next: string): boolean {
 
 /**
  * Re-join sentence segments that the terminal-punctuation tiling split inside a
- * common abbreviation (a title like "Prof."/"Dr.", "Inc."/"etc.", or a
- * parenthetical "e.g."/"i.e."). Operating on the lossless partition means the
+ * common abbreviation (a title like "Prof."/"Dr.", "Inc."/"etc.", "Ph.D.", a
+ * middle initial followed by a surname, or a parenthetical "e.g."/"i.e."). Operating on the lossless partition means the
  * merge cannot drop or reorder any character; it only removes an internal split
  * point, so segment-level filtering and deduplication downstream reason over
  * whole sentences rather than abbreviation fragments.

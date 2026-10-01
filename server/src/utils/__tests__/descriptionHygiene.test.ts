@@ -3356,7 +3356,9 @@ describe('short description whole-sentence cap (#2184)', () => {
 
   it('still ends a sentence at a disease or vitamin name that ends in a capital letter (#3988)', () => {
     expect(
-      partitionSentencesForFiltering('The lab studies Hepatitis B. To read more, see the Research page.'),
+      partitionSentencesForFiltering(
+        'The lab studies Hepatitis B. To read more, see the Research page.',
+      ),
     ).toEqual(['The lab studies Hepatitis B. ', 'To read more, see the Research page.']);
     expect(
       stripSelfReferentialResearchCtaSentences(
@@ -3364,7 +3366,9 @@ describe('short description whole-sentence cap (#2184)', () => {
       ),
     ).toBe('The lab studies Hepatitis B.');
     expect(
-      sanitizeEvidenceExcerpt('The lab studies Vitamin D. Contact fixture.office@example.edu for details.'),
+      sanitizeEvidenceExcerpt(
+        'The lab studies Vitamin D. Contact fixture.office@example.edu for details.',
+      ),
     ).toBe('The lab studies Vitamin D.');
   });
 
