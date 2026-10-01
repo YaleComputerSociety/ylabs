@@ -160,6 +160,18 @@ const employee = (title: string) => ({
   },
 });
 
+const student = () => ({
+  kind: 'student',
+  identity: {
+    netid: CAS_NETID,
+    fname: 'Fixture',
+    lname: 'Student',
+    email: 'fixture.student@example.invalid',
+    userType: 'undergraduate',
+    userConfirmed: true,
+  },
+});
+
 describe('login types a person from what Yalies knows about them', () => {
   beforeAll(async () => {
     fakeCas = await startFakeCas();
@@ -206,6 +218,21 @@ describe('login types a person from what Yalies knows about them', () => {
     expect(accountServiceMock.recordAccountLogin).toHaveBeenCalledWith(
       expect.objectContaining({ profile: undefined }),
     );
+  });
+
+  it('persists no residential college, class year or major for a student who signs in', async () => {
+    prepareApp();
+    yaliesMock.lookupYalieByNetid.mockResolvedValue(student());
+
+    await withRunningApp(async (baseUrl) => {
+      expect((await signInAndCheck(baseUrl)).user.userType).toBe('undergraduate');
+    });
+
+    const [loginInput] = accountServiceMock.recordAccountLogin.mock.calls[0];
+    const persistedProfile =
+      (loginInput as { profile?: Record<string, unknown> }).profile ??
+      ({} as Record<string, unknown>);
+    expect(Object.keys(persistedProfile).sort()).toEqual(['firstName', 'lastName', 'userType']);
   });
 
   it('types a person Yalies has never heard of as unknown', async () => {

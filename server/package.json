@@ -78,6 +78,7 @@
     "observations:retarget-foreign-lab-websites": "tsx src/scripts/retargetForeignLabWebsites.ts",
     "observations:prune-dead": "tsx src/scripts/pruneDeadObservations.ts",
     "observations:purge-unread-directory-contact": "tsx src/scripts/purgeUnreadDirectoryContactObservations.ts",
+    "accounts:purge-retired-login-profile-fields": "tsx src/scripts/purgeRetiredLoginProfileFields.ts",
     "observations:repartition-fingerprint-index": "tsx src/scripts/repartitionFingerprintIndex.ts",
     "research-entity:backfill-provenance-observation-id": "tsx src/scripts/backfillFieldProvenanceObservationId.ts",
     "observations:audit-orphan-keys": "tsx src/scripts/orphanObservationKeyAudit.ts",

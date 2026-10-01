@@ -22,7 +22,12 @@ User -> Yale CAS SSO -> passport.ts resolveLoginPrincipalForCas
 ```
 
 Authentication runs on the canonical `Account` (the private login principal); the legacy `User` model has been retired (#2014).
-Classification (undergraduate, graduate, professor, staff) is derived at login and carried in the signed session for authorization decisions; a descriptive copy of the Yalies profile (name, `userType`, title/department for faculty and staff, college/year/major for students) is persisted onto `Account.profile` at login via `recordAccountLogin`, refreshed on each sign-in that resolves a record and left untouched when the Yalies lookup is unavailable.
+Classification (undergraduate, graduate, professor, staff) is derived at login and carried in the signed session for authorization decisions; a descriptive copy of the Yalies profile (name and `userType`, plus title/department for faculty and staff) is persisted onto `Account.profile` at login via `recordAccountLogin`, refreshed on each sign-in that resolves a record.
+A student's residential college, class year and major were persisted here until #4162 and are not any more: nothing read them, so every signed-in student carried three extra personal attributes against their netid for no product purpose.
+A login that resolves a record replaces `profile` wholesale and so sheds them; a login whose Yalies lookup was unavailable writes no profile and unsets those three paths instead, so an account stops carrying them either way.
+Accounts stored before the fix that never sign in again keep the values until a one-off cleanup runs, which is an operator decision rather than something a login may do for them.
+`yarn --cwd server accounts:purge-retired-login-profile-fields --environment=<env>` is that cleanup: it is dry-run by default, and a dry run is read-only, so it is also how the population is counted before anyone decides to clear it.
+Count it in Production rather than Development, because a Development login does not go through CAS and so never wrote these values: on 2026-10-01, 0 of 4,179 Development accounts held any of the three.
 Accounts are created only at login (never by the scraper); the scraper's identity materialization enriches researchers that already exist but mints no Account or Researcher on its own.
 `userType` is a classification/analytics dimension only; it does not authorize anything, whether read from the session or the persisted profile.
 Admin authority is a separate signal: `buildAuthenticatedSessionUser` sets `isAdmin` from `hasActiveAdminGrant`, and that boolean is what guards and the client key off.
