@@ -11,6 +11,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { reduceAccountToMirroredFields } from './mirroredAccountFields';
 import {
   assertEnvironmentLocalCollectionsClassified,
   assertNoNeverCopyCollections,
@@ -72,27 +73,6 @@ const BASE_COPY_COLLECTIONS: SyncCollection[] = [
   { name: 'research_areas', category: 'base-support' },
   { name: 'taxonomy_terms', category: 'base-support' },
   { name: 'fellowships', category: 'base-support' },
-];
-
-// An allow-list rather than a delete-list: account state and student PII live
-// under `profile` on the current model, so a top-level field blocklist silently
-// stops covering them the moment a field moves or a new one is added.
-const MIRRORED_ACCOUNT_FIELDS = [
-  '_id',
-  'schemaVersion',
-  'netid',
-  'email',
-  'status',
-  'createdAt',
-  'updatedAt',
-];
-
-const MIRRORED_ACCOUNT_PROFILE_FIELDS = [
-  'firstName',
-  'lastName',
-  'userType',
-  'title',
-  'department',
 ];
 
 export interface BetaToDevelopmentOptions {
@@ -337,25 +317,7 @@ export function sanitizeMirroredAccount(
     };
   }
 
-  const sanitized: Document = pickDefinedFields(document, MIRRORED_ACCOUNT_FIELDS);
-  sanitized.archived = document.archived === true;
-  const profile = mirroredAccountProfile(document.profile);
-  if (profile) sanitized.profile = profile;
-  return sanitized;
-}
-
-function pickDefinedFields(source: Document, fields: string[]): Document {
-  const picked: Document = {};
-  for (const field of fields) {
-    if (source[field] !== undefined) picked[field] = source[field];
-  }
-  return picked;
-}
-
-function mirroredAccountProfile(profile: unknown): Document | undefined {
-  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return undefined;
-  const picked = pickDefinedFields(profile as Document, MIRRORED_ACCOUNT_PROFILE_FIELDS);
-  return Object.keys(picked).length > 0 ? picked : undefined;
+  return reduceAccountToMirroredFields(document);
 }
 
 function collectionExists(db: Db, collectionName: string): Promise<boolean> {

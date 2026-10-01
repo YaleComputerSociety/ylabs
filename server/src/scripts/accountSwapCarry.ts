@@ -4,11 +4,14 @@ import type { Db, Document, ObjectId } from 'mongodb';
  * Target accounts a whole-collection `accounts` swap must carry: the Beta-to-
  * Production promotion and both Development/Beta syncs (#4091, #4130).
  *
- * Beta's accounts are the researcher identity spine plus pseudonymized mirrors
- * and never carry a Production login, so a plain whole-collection swap deletes
- * every account a real Production login created while `research_plans`, which
- * is not promoted, keeps pointing at the deleted `_id` (#4091). An account is a
- * Production login when it carries `lastLoginAt` or owns a research plan.
+ * Beta's accounts are the researcher identity spine, pseudonymized mirrors, and
+ * since #4139 Beta's own logins. None of them is a Production login, so a plain
+ * whole-collection swap deletes every account a real Production login created
+ * while `research_plans`, which is not promoted, keeps pointing at the deleted
+ * `_id` (#4091). An account carries login evidence when it has `lastLoginAt` or
+ * owns a research plan. Read against Production that makes it authoritative and
+ * carried; read against Beta it marks a Beta login the promotion must leave in
+ * Beta rather than write into Production (#4244).
  *
  * The target's `_id` always survives, because private rows reference it:
  * where the source holds the same netid under another `_id`, the source row is
