@@ -110,6 +110,61 @@ const publicProgramSourceLinkHealth = (
   };
 };
 
+export type ProgramReaderFieldGuard =
+  | 'departmentResearchGuidance'
+  | 'publicHttpUrl'
+  | 'isUnhelpfulProgramUrl'
+  | 'publicProgramDescription';
+
+export interface ServedProgramReaderField<Value> {
+  value: Value | undefined;
+  withheldBy: ProgramReaderFieldGuard | null;
+}
+
+const nothingStored: ServedProgramReaderField<never> = { value: undefined, withheldBy: null };
+
+const servedValue = <Value>(value: Value): ServedProgramReaderField<Value> => ({
+  value,
+  withheldBy: null,
+});
+
+const withheld = <Value>(guard: ProgramReaderFieldGuard): ServedProgramReaderField<Value> => ({
+  value: undefined,
+  withheldBy: guard,
+});
+
+const hasStoredText = (value: unknown): boolean =>
+  typeof value === 'string' && value.trim().length > 0;
+
+export const servedProgramApplicationLink = (program: any): ServedProgramReaderField<string> => {
+  if (!hasStoredText(program?.applicationLink)) return nothingStored;
+  if (program.departmentResearchGuidance === true) return withheld('departmentResearchGuidance');
+  const url = publicHttpUrl(program.applicationLink);
+  if (!url) return withheld('publicHttpUrl');
+  if (isUnhelpfulProgramUrl(url, program.sourceUrl)) return withheld('isUnhelpfulProgramUrl');
+  return servedValue(url);
+};
+
+export const servedProgramEligibility = (program: any): ServedProgramReaderField<unknown> => {
+  const eligibility = publicProgramDescription(program?.eligibility);
+  return hasStoredText(program?.eligibility) && !hasStoredText(eligibility)
+    ? { value: eligibility, withheldBy: 'publicProgramDescription' }
+    : servedValue(eligibility);
+};
+
+/**
+ * Every reader field a serve-time guard can withhold. `publicProgramForReader` serves these
+ * fields only through their decision, and the journey harness attributes a stored-to-served
+ * difference by calling the same decision, so a new guard belongs inside the decision and
+ * never inline in the payload (#4304).
+ */
+export const PROGRAM_READER_FIELD_DECISIONS = {
+  applicationLink: servedProgramApplicationLink,
+  eligibility: servedProgramEligibility,
+} as const;
+
+export type ProgramReaderDecidedField = keyof typeof PROGRAM_READER_FIELD_DECISIONS;
+
 export const withProgramAudience = (program: any) =>
   program && typeof program === 'object'
     ? {
@@ -149,13 +204,11 @@ export const publicProgramForReader = (program: any) => {
     cardSummary: publicProgramDescription(program.cardSummary),
     description: publicProgramDescription(program.description),
     applicationInformation: publicProgramDescription(program.applicationInformation),
-    eligibility: publicProgramDescription(program.eligibility),
+    eligibility: servedProgramEligibility(program).value,
     restrictionsToUseOfAward: publicProgramDescription(program.restrictionsToUseOfAward),
     additionalInformation: publicProgramDescription(program.additionalInformation),
     links: publicProgramLinks(program.links, program.sourceUrl),
-    applicationLink: departmentResearchGuidance
-      ? undefined
-      : publicSpecificProgramUrl(program.applicationLink, program.sourceUrl),
+    applicationLink: servedProgramApplicationLink(program).value,
     awardAmount: program.awardAmount,
     isAcceptingApplications: program.isAcceptingApplications,
     applicationOpenDate: program.applicationOpenDate,

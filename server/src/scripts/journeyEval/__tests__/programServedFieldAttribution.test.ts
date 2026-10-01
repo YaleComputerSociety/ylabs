@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import {
+  PROGRAM_READER_FIELD_DECISIONS,
+  publicProgramForReader,
+} from '../../../controllers/programPayload';
 import { publicFellowshipForStudent } from '../../../services/fellowshipService';
 import {
   attributeProgramServedFields,
@@ -163,7 +167,7 @@ describe('attributeProgramServedFields', () => {
     expect(outcomeFor(outcomes, 'isAcceptingApplications').status).toBe('unexplained');
   });
 
-  it('attributes a withheld non-http apply link to the public url guard', () => {
+  it('attributes a non-http apply link the student projection drops to that projection', () => {
     const stored = { ...recurringStoredRow, applicationLink: 'mailto:office@example.edu' };
     const outcomes = attributeProgramServedFields(
       stored,
@@ -174,7 +178,7 @@ describe('attributeProgramServedFields', () => {
     expect(outcomeFor(outcomes, 'applicationLink')).toEqual({
       field: 'applicationLink',
       status: 'attributed',
-      guard: 'publicHttpUrl',
+      guard: 'publicFellowshipForStudent',
     });
   });
 
@@ -190,6 +194,26 @@ describe('attributeProgramServedFields', () => {
       field: 'applicationLink',
       status: 'attributed',
       guard: 'isUnhelpfulProgramUrl',
+    });
+  });
+
+  it('attributes an apply link withheld from department research guidance to that guard', () => {
+    const stored = {
+      ...recurringStoredRow,
+      deadline: undefined,
+      isAcceptingApplications: undefined,
+      programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+      sourcePageTitle: 'Undergraduate Research Opportunities',
+    };
+    const served = publicProgramForReader(publicFellowshipForStudent(stored, servedAt.from));
+
+    expect(served.applicationLink).toBeUndefined();
+    expect(
+      outcomeFor(attributeProgramServedFields(stored, served, servedAt), 'applicationLink'),
+    ).toEqual({
+      field: 'applicationLink',
+      status: 'attributed',
+      guard: 'departmentResearchGuidance',
     });
   });
 
@@ -243,5 +267,43 @@ describe('attributeProgramServedFields', () => {
     );
 
     expect(outcomeFor(outcomes, 'eligibility').status).toBe('unexplained');
+  });
+});
+
+describe('program reader decision registry', () => {
+  const guidanceRow = {
+    ...recurringStoredRow,
+    deadline: undefined,
+    isAcceptingApplications: undefined,
+    programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+    sourcePageTitle: 'Undergraduate Research Opportunities',
+  };
+  const storedRows = [
+    recurringStoredRow,
+    guidanceRow,
+    { ...recurringStoredRow, applicationLink: 'mailto:office@example.edu' },
+    { ...recurringStoredRow, applicationLink: 'https://www.example.edu/' },
+    { ...recurringStoredRow, eligibility: 'office@example.edu' },
+    { ...recurringStoredRow, applicationLink: undefined, eligibility: undefined },
+  ];
+
+  it('serves each decided field as exactly the value its decision returns', () => {
+    for (const stored of storedRows) {
+      const readerInput = publicFellowshipForStudent(stored, servedAt.from);
+      const served = publicProgramForReader(readerInput) as Record<string, unknown>;
+      for (const [field, decide] of Object.entries(PROGRAM_READER_FIELD_DECISIONS)) {
+        expect(served[field]).toEqual(decide(readerInput).value);
+      }
+    }
+  });
+
+  it('explains every difference the real serve path makes on these rows', () => {
+    for (const stored of storedRows) {
+      const served = publicProgramForReader(publicFellowshipForStudent(stored, servedAt.from));
+      const unexplained = attributeProgramServedFields(stored, served, servedAt).filter(
+        (outcome) => outcome.status === 'unexplained',
+      );
+      expect(unexplained).toEqual([]);
+    }
   });
 });
