@@ -14,6 +14,8 @@ import {
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
 import * as itemOps from './itemOperations';
+import { runStudentVisibilityGate } from './studentVisibilityGateService';
+import { clearedStudentVisibilityVerdict } from '../models/entityArchival';
 import { programRoleForKind } from './programClassifier';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
@@ -696,11 +698,23 @@ export const updateFellowship = async (id: any, data: any) => {
 };
 
 export const archiveFellowship = async (id: any) => {
-  return await updateFellowship(id, { archived: true });
+  const safeId = normalizeFellowshipObjectId(id);
+  if (!safeId) throw new ObjectIdError('Did not receive expected id type ObjectId');
+  const fellowship = await Fellowship.findByIdAndUpdate(
+    safeId,
+    { $set: { archived: true }, $unset: clearedStudentVisibilityVerdict() },
+    { new: true },
+  );
+  if (!fellowship) throw new NotFoundError('Fellowship not found');
+  return fellowship.toObject();
 };
 
 export const unarchiveFellowship = async (id: any) => {
-  return await updateFellowship(id, { archived: false });
+  const restored = await updateFellowship(id, { archived: false });
+  const recordId = serializedDocumentId(restored._id);
+  await runStudentVisibilityGate({ collection: 'programs', mode: 'apply', recordIds: [recordId] });
+  const regated = await Fellowship.findById(restored._id).lean();
+  return regated || restored;
 };
 
 export const addView = async (id: any) => {
