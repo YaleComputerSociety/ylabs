@@ -13,7 +13,7 @@ const ORIGINAL_KEY = process.env.YALIES_API_KEY;
 const respond = (records: unknown[]) => post.mockResolvedValue({ data: records });
 
 const person = {
-  netid: 'fx123',
+  netid: 'fixturenetid',
   first_name: 'Fixture',
   last_name: 'Person',
   email: 'fixture.person@example.invalid',
@@ -34,7 +34,7 @@ describe('lookupYalieByNetid', () => {
   it('reads a record with enrolment fields as a student', async () => {
     respond([{ ...person, year: 2028, school_code: 'YC', college: 'Fixture College' }]);
 
-    const lookup = await lookupYalieByNetid('fx123');
+    const lookup = await lookupYalieByNetid('fixturenetid');
 
     expect(lookup).toMatchObject({
       kind: 'student',
@@ -45,7 +45,7 @@ describe('lookupYalieByNetid', () => {
   it('reads a graduate school code as a graduate student', async () => {
     respond([{ ...person, year: 2027, school_code: 'GS' }]);
 
-    expect(await lookupYalieByNetid('fx123')).toMatchObject({
+    expect(await lookupYalieByNetid('fixturenetid')).toMatchObject({
       kind: 'student',
       identity: { userType: 'graduate' },
     });
@@ -54,10 +54,10 @@ describe('lookupYalieByNetid', () => {
   it('reads a titled record without enrolment fields as an employee', async () => {
     respond([{ ...person, title: 'Program Coordinator', organization: 'Fixture Office' }]);
 
-    expect(await lookupYalieByNetid('fx123')).toEqual({
+    expect(await lookupYalieByNetid('fixturenetid')).toEqual({
       kind: 'employee',
       employee: {
-        netid: 'fx123',
+        netid: 'fixturenetid',
         fname: 'Fixture',
         lname: 'Person',
         email: 'fixture.person@example.invalid',
@@ -69,22 +69,22 @@ describe('lookupYalieByNetid', () => {
 
   it('answers not found when Yalies returns no record, or one with neither enrolment nor title', async () => {
     respond([]);
-    expect(await lookupYalieByNetid('fx123')).toEqual({ kind: 'not_found' });
+    expect(await lookupYalieByNetid('fixturenetid')).toEqual({ kind: 'not_found' });
 
     respond([{ ...person }]);
-    expect(await lookupYalieByNetid('fx123')).toEqual({ kind: 'not_found' });
+    expect(await lookupYalieByNetid('fixturenetid')).toEqual({ kind: 'not_found' });
   });
 
   it('answers unavailable, not not-found, when the request fails', async () => {
     post.mockRejectedValue(new Error('timeout of 10000ms exceeded'));
 
-    expect(await lookupYalieByNetid('fx123')).toEqual({ kind: 'unavailable' });
+    expect(await lookupYalieByNetid('fixturenetid')).toEqual({ kind: 'unavailable' });
   });
 
   it('answers unavailable without calling Yalies when no API key is configured', async () => {
     process.env.YALIES_API_KEY = '';
 
-    expect(await lookupYalieByNetid('fx123')).toEqual({ kind: 'unavailable' });
+    expect(await lookupYalieByNetid('fixturenetid')).toEqual({ kind: 'unavailable' });
     expect(post).not.toHaveBeenCalled();
   });
 });
