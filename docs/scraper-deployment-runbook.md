@@ -228,7 +228,8 @@ PROMOTION_DATASET_VERSION='prod-promote-2026-05-28-lane-a-beta-copy' \
 yarn --cwd server production:promote-beta-copy --output /tmp/ylabs-lane-a-promotion-dry-run.json
 ```
 
-The `--output` artifact contains the same redacted dry-run summary printed to stdout, including collection category totals, excluded synthetic-user counts, and synthetic-user reference blockers. Saving the artifact does not verify readiness; the real Production dry-run still needs operator review before apply mode.
+The `--output` artifact contains the same redacted dry-run summary printed to stdout, including collection category totals, excluded synthetic-user counts, excluded Beta-login account counts, and synthetic-user reference blockers. Saving the artifact does not verify readiness; the real Production dry-run still needs operator review before apply mode.
+`docs/release-process.md` ("Promoting data, not just code") owns the rest of the `accounts` rule: which Beta logins the promotion leaves behind, and the allow-list every promoted account row is reduced to.
 
 The Operator Board reads `/tmp/ylabs-lane-a-promotion-dry-run.json` by default, or `PROMOTION_COPY_DRY_RUN_REPORT_PATH` when set. A blocker-free dry-run appears as `review_required`, not ready, until the restore point, rollback test, and smoke gates are also recorded.
 

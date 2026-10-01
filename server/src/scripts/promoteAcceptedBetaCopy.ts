@@ -475,6 +475,11 @@ async function distinctReferenceKeys(
  * references is kept and no promoted reference is left dangling. `research_plans`
  * is not promoted, which is why owning one is evidence of a login rather than of
  * spine membership.
+ *
+ * Synthetic rows are read out under `SYNTHETIC_USER_FILTER` even though they are
+ * excluded anyway, so that this set and the synthetic exclusion stay disjoint:
+ * `excludedSyntheticUsers` is `excludedCount` minus this count, and an overlap
+ * would under-report it.
  */
 export async function betaOnlyLoginAccountIds(
   betaDb: Db,

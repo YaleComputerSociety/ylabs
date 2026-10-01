@@ -215,7 +215,8 @@ Reachability is measured over the promoted collections only, which is why owning
 That exclusion is deliberately narrower than "every Beta login": an account a promoted `researchers` row reaches is the identity spine and still crosses, reduced to the allow-list.
 Without both halves a promoted Beta login becomes permanent, because its promoted `lastLoginAt` makes the carry read it as a Production login and re-carry it on every later promotion.
 The dry-run report's `productionAccountCarry` counts what will be carried; an `inserted` of 0 while Production has logged-in users is a stop.
-`excludedBetaLoginAccounts` counts the Beta logins the promotion will leave behind, and `excludedSyntheticUsers` counts the synthetic rows, the two parts of the `accounts` row's `excludedCount`.
+`excludedBetaLoginAccounts` counts the Beta logins the promotion will leave behind and `excludedSyntheticUsers` counts the synthetic rows, the two disjoint parts of the `accounts` row's `excludedCount`.
+A synthetic row that also carries a Beta login is counted once, as a synthetic row, because `excludedSyntheticUsers` is derived by subtracting the one count from `excludedCount`.
 
 `--include-observations` flips the observation default.
 `--include-scrape-runs` flips the run-history default, which is off: a promoted `scrape_runs` is Development's history under Production's name (#2589).

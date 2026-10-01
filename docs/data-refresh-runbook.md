@@ -576,6 +576,9 @@ Review the artifact and confirm all of the following:
 - `applyBlockers` is empty.
 - `productionAccountCarry` accounts for every Production login: an `inserted` of 0 while Production has logged-in users is a stop.
   `docs/release-process.md` ("Promoting data, not just code") owns why the promotion carries them and how a same-netid Beta row is re-keyed.
+- `excludedBetaLoginAccounts` is not a blocker at any value: Beta holds its own logins, and an account whose only evidence is one of them does not cross.
+  Every account that does cross is reduced to the mirror allow-list, so no Beta login timestamp or student profile field reaches Production.
+  The same `docs/release-process.md` section owns both halves of that rule and why `excludedSyntheticUsers` is reported separately.
 - `includesObservations` is `false` unless the evidence log was deliberately requested with `--include-observations`.
 - `includesScrapeRuns` is `false` unless `--include-scrape-runs` was passed, and leaving it off is the correct default.
   Production has never scraped anything - Development is the only environment that does - so a promoted `scrape_runs` is a copy of Development's history wearing Production's name.
