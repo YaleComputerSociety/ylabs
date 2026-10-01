@@ -56,6 +56,16 @@ export const validateAccount = async (netid: unknown): Promise<AccountRecordView
   return account ? toAccountView(account) : null;
 };
 
+export const lastKnownAccountUserType = async (netid: unknown): Promise<string | undefined> => {
+  const normalizedNetid = normalizeNetid(netid);
+  if (!normalizedNetid) return undefined;
+  const account = await Account.findOne({ netid: normalizedNetid })
+    .select('profile.userType')
+    .lean();
+  const userType = (account as { profile?: { userType?: unknown } } | null)?.profile?.userType;
+  return typeof userType === 'string' && userType.trim() ? userType.trim() : undefined;
+};
+
 export const resolveAccountIdByNetid = async (netid: unknown): Promise<mongoose.Types.ObjectId> => {
   const normalizedNetid = normalizeNetid(netid);
   if (!normalizedNetid) {

@@ -205,8 +205,8 @@ Use `docs/data-refresh-runbook.md` for the canonical commands.
 | Service        | Purpose                                                | Location                                       |
 | -------------- | ------------------------------------------------------ | ---------------------------------------------- |
 | Yale CAS SSO   | Authentication                                         | `passport.ts`                                  |
-| Yalies API     | Student and graduate data lookup                       | `yaliesService.ts`                             |
-| Yale Directory | Faculty data lookup                                    | `directoryService.ts`                          |
+| Yalies API     | Student, faculty and staff lookup at login             | `yaliesService.ts`                             |
+| Yale Directory | Faculty fallback lookup; endpoint currently 404s       | `directoryService.ts`                          |
 | CourseTable    | Professor course data                                  | `courseTableService.ts`                        |
 | Meilisearch    | Hybrid search                                          | `meiliClient.ts`                               |
 | OpenAI         | Embeddings via Meilisearch embedder and LLM extractors | Meilisearch/index setup and scraper extractors |

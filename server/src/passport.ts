@@ -5,9 +5,13 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import express from 'express';
 import passport from 'passport';
 import { Strategy } from 'passport-cas';
-import { recordAccountLogin, validateAccount } from './services/accountService';
+import {
+  lastKnownAccountUserType,
+  recordAccountLogin,
+  validateAccount,
+} from './services/accountService';
 import type { AccountProfile } from './models/account';
-import { classifyYalieByNetid } from './services/yaliesService';
+import { lookupYalieByNetid } from './services/yaliesService';
 import { fetchFromDirectory, isFacultyTitle } from './services/directoryService';
 import { logEvent } from './services/analyticsService';
 import { AnalyticsEventType } from './models/index';
@@ -434,9 +438,13 @@ async function buildAuthenticatedSessionUser(
 
 /**
  * Resolve the login principal for a CAS-authenticated netid and ensure the
- * backing Account exists. Classification is derived at login (Yalies for
- * undergrad/grad, Yale Directory for faculty) without persisting a legacy
- * User; only the private Account is written, stamping lastLoginAt.
+ * backing Account exists. Classification is derived at login without persisting
+ * a legacy User; only the private Account is written, stamping lastLoginAt.
+ *
+ * Yalies answers for students and employees alike. An employee is `professor`
+ * when its title is a faculty title and `staff` otherwise. When Yalies cannot
+ * answer at all, the type a previous login stored on the account stands, so a
+ * timeout never re-types a known student `unknown` (#4234).
  */
 async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedUser> {
   const netid = normalizeAuthNetId(rawNetid);
@@ -449,8 +457,9 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
   let email: string | undefined;
   let profile: AccountProfile | undefined;
 
-  const yalie = await classifyYalieByNetid(netid);
-  if (yalie) {
+  const lookup = await lookupYalieByNetid(netid);
+  if (lookup.kind === 'student') {
+    const yalie = lookup.identity;
     userType = yalie.userType;
     userConfirmed = yalie.userConfirmed;
     email = yalie.email;
@@ -462,7 +471,20 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
       year: yalie.year != null ? String(yalie.year) : undefined,
       major: yalie.major,
     };
-    authDebug(`resolveLoginPrincipalForCas: Yalies success, type=${userType}`);
+  } else if (lookup.kind === 'employee') {
+    const employee = lookup.employee;
+    userType = isFacultyTitle(employee.title) ? 'professor' : 'staff';
+    userConfirmed = true;
+    email = employee.email;
+    profile = {
+      firstName: employee.fname,
+      lastName: employee.lname,
+      userType,
+      title: employee.title,
+      department: employee.department || undefined,
+    };
+  } else if (lookup.kind === 'unavailable') {
+    userType = (await lastKnownAccountUserType(netid)) ?? 'unknown';
   } else {
     try {
       const dirPerson = await fetchFromDirectory(netid, 'netid');
@@ -478,12 +500,12 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
           title: dirPerson.title,
           department: dirPerson.department,
         };
-        authDebug(`resolveLoginPrincipalForCas: Directory record found, type=${userType}`);
       }
     } catch {
       authDebug('resolveLoginPrincipalForCas: directory lookup failed, using default principal');
     }
   }
+  authDebug(`resolveLoginPrincipalForCas: lookup=${lookup.kind}, type=${userType}`);
 
   await recordAccountLogin({ netid, email, profile });
 
