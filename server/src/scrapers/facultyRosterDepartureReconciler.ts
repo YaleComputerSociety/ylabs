@@ -3,6 +3,7 @@ import { Researcher } from '../models/researcher';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment } from '../models/roleAssignment';
+import { ScrapeRun } from '../models/scrapeRun';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   hasRecordedClosureEvidence,
@@ -12,7 +13,9 @@ import {
   applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
+import { runCarriesAbsenceClaimFix, type AbsenceClaimCutoff } from './fieldRetraction';
 import { getOrgUnitCanonicalizer } from './orgUnitCanonicalization';
+import { gitCommitIsAncestor, isFullCommitSha } from './scrapeRunCodeIdentity';
 import { fetchPageWithPolicy } from './utils/httpFetch';
 import { withoutSweepPageReuse } from './utils/sweepPageReuse';
 import {
@@ -25,6 +28,18 @@ import {
 export const DEPARTMENT_ROSTER_HEALTH_FIELD = 'departmentRosterHealth';
 export const FACULTY_DEPARTURE_ENTITY_TYPES = ['FACULTY_RESEARCH_AREA', 'LAB'];
 export const ROSTER_DROP_GUARD_MIN_FRACTION = 0.5;
+
+/**
+ * The fix a run must carry before its read can stand as the first of two absences.
+ * Before #3661 a truncated walk published `complete: true`, and nothing in such a
+ * snapshot tells it apart from a full read, so its marker cannot be re-judged (#3702).
+ */
+export const ROSTER_ABSENCE_MARKER_CUTOFF: AbsenceClaimCutoff = {
+  field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+  fixedBy: '#3661',
+  fixCommit: '5798045b283dfa5f62d14ba5fae8c4939f88aba7',
+  fixMergedAt: new Date('2026-09-27T17:17:07Z'),
+};
 
 export interface DepartmentRosterHealthSnapshotRead {
   pagesRead?: unknown;
@@ -176,6 +191,8 @@ export interface EntityDepartureState {
    * read the human marker as its own past output and clear it.
    */
   hasRecordedClosure?: boolean;
+  /** Unset fails closed: the marker is replaced by this run's absence (#3702). */
+  absenceMarkerCorroborated?: boolean;
 }
 
 export type RunPresenceSignal = 'present' | 'absent' | 'inconclusive';
@@ -305,9 +322,17 @@ export function classifyEntityRunSignal(params: {
   healthyDiscoveredByDept: Map<string, Set<string>>;
   entitySlug: string;
   rosterObservedEntityKeys: ReadonlySet<string>;
+  presentElsewhereInRun: ReadonlySet<string>;
+  previouslyListedByDept: ReadonlyMap<string, ReadonlySet<string>>;
 }): RunPresenceSignal {
-  const { coveredDeptNames, healthyDiscoveredByDept, entitySlug, rosterObservedEntityKeys } =
-    params;
+  const {
+    coveredDeptNames,
+    healthyDiscoveredByDept,
+    entitySlug,
+    rosterObservedEntityKeys,
+    presentElsewhereInRun,
+    previouslyListedByDept,
+  } = params;
   if (coveredDeptNames.length === 0) return 'inconclusive';
   // A row this lane has never observed cannot be found present by it, so comparing it
   // against a discovery set can only ever return `absent`. Measured on Development,
@@ -320,10 +345,17 @@ export function classifyEntityRunSignal(params: {
   if (coveredDeptNames.some((deptName) => !healthyDiscoveredByDept.has(deptName))) {
     return 'inconclusive';
   }
-  const present = coveredDeptNames.some((deptName) =>
-    healthyDiscoveredByDept.get(deptName)?.has(entitySlug),
+  const present =
+    presentElsewhereInRun.has(entitySlug) ||
+    coveredDeptNames.some((deptName) => healthyDiscoveredByDept.get(deptName)?.has(entitySlug));
+  if (present) return 'present';
+  // Absence from a roster that never listed the row says nothing about the row. A
+  // department tag a materialize added, or a cross-listing another department's lane
+  // read, would otherwise turn every rerun of an unchanged read into first absences.
+  const listedBefore = coveredDeptNames.some((deptName) =>
+    previouslyListedByDept.get(deptName)?.has(entitySlug),
   );
-  return present ? 'present' : 'absent';
+  return listedBefore ? 'absent' : 'inconclusive';
 }
 
 export function decideFacultyRosterDeparture(params: {
@@ -363,6 +395,9 @@ export function decideFacultyRosterDeparture(params: {
   }
   if (absentSinceRunId === currentRunId) return NOOP;
   if (reason === 'departed') return NOOP;
+  if (!entity.absenceMarkerCorroborated) {
+    return { action: 'record_first_absence', set: { absentFromRosterSinceRunId: currentRunId } };
+  }
   return {
     action: 'suppress_departed',
     set: {
@@ -696,11 +731,13 @@ export async function loadRosterObservedEntityKeys(): Promise<ReadonlySet<string
  */
 export async function loadPreviousDiscoveryCounts(
   currentRunObjectId: mongoose.Types.ObjectId,
+  observedNoLaterThan: Date | null,
 ): Promise<Map<string, number>> {
   const snapshots = (await Observation.find({
     entityType: 'departmentRosterHealth',
     field: DEPARTMENT_ROSTER_HEALTH_FIELD,
     scrapeRunId: { $ne: currentRunObjectId },
+    ...(observedNoLaterThan ? { observedAt: { $lte: observedNoLaterThan } } : {}),
   })
     .sort({ observedAt: 1 })
     .select('entityKey value observedAt')
@@ -732,6 +769,307 @@ async function countRosterGovernedEntities(
   return slugs.filter(
     (row) => typeof row.slug === 'string' && rosterObservedEntityKeys.has(row.slug),
   ).length;
+}
+
+export interface RunDepartmentEvidence {
+  snapshotCount: number;
+  snapshotObservedAts: string[];
+  scrapedDeptNames: Set<string>;
+  healthyDiscoveredByDept: Map<string, Set<string>>;
+  presentElsewhereInRun: Set<string>;
+  previouslyListedByDept: Map<string, Set<string>>;
+  snapshotObservedAtByDept: Map<string, Date>;
+  unresolvedDepartments: string[];
+  readProvenanceCounts: Record<RosterHealthReadProvenance, number>;
+  admissibilityCounts: Record<string, number>;
+  frozenDepartments: number;
+  departmentsGoverningNothing: number;
+  regressedDepartments: number;
+  incompleteReadDepartments: number;
+  latestObservedAt: Date;
+}
+
+/**
+ * A listing on a cross-listing tab, a frozen or regressed lane, or a department no
+ * `OrgUnit` names is not evidence of absence, but it is still a listing (#3702).
+ */
+export async function loadRunRosterPresence(
+  runObjectId: mongoose.Types.ObjectId,
+  snapshots: ReadonlyArray<{ value?: unknown }>,
+): Promise<Set<string>> {
+  const present = new Set<string>();
+  for (const row of snapshots) {
+    const snapshot = (row.value ?? {}) as DepartmentRosterHealthSnapshot;
+    for (const key of snapshotDiscoveredEntityKeys(snapshot)) present.add(key);
+  }
+  const observed = (await Observation.distinct('entityKey', {
+    scrapeRunId: runObjectId,
+    sourceName: ROSTER_LANE_SOURCE_NAME,
+    entityType: 'researchEntity',
+  })) as unknown[];
+  for (const key of observed) {
+    if (typeof key === 'string' && key) present.add(key);
+  }
+  return present;
+}
+
+/**
+ * Reads superseded snapshots on purpose, as `loadPreviousDiscoveryCounts` does: each
+ * run supersedes the last, so earlier listings exist nowhere else.
+ */
+export async function loadPreviousRosterListings(
+  runObjectId: mongoose.Types.ObjectId,
+  listedBefore: Date | null,
+): Promise<Map<string, Set<string>>> {
+  const byDept = new Map<string, Set<string>>();
+  if (!listedBefore) return byDept;
+  const snapshots = (await Observation.find({
+    entityType: 'departmentRosterHealth',
+    field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+    scrapeRunId: { $ne: runObjectId },
+    observedAt: { $lt: listedBefore },
+  })
+    .select('value')
+    .lean()) as Array<{ value?: unknown }>;
+  const canonicalByRaw = new Map<string, string | null>();
+  for (const row of snapshots) {
+    const snapshot = (row.value ?? {}) as DepartmentRosterHealthSnapshot;
+    const keys = snapshotDiscoveredEntityKeys(snapshot);
+    const raw = typeof snapshot.deptName === 'string' ? snapshot.deptName : '';
+    if (keys.length === 0 || !raw) continue;
+    if (!canonicalByRaw.has(raw)) canonicalByRaw.set(raw, await resolveGovernedDepartmentName(raw));
+    const deptName = canonicalByRaw.get(raw);
+    if (!deptName) continue;
+    const listed = byDept.get(deptName) ?? new Set<string>();
+    for (const key of keys) listed.add(key);
+    byDept.set(deptName, listed);
+  }
+  return byDept;
+}
+
+export async function readRunDepartmentEvidence(
+  runObjectId: mongoose.Types.ObjectId,
+  rosterObservedEntityKeys: ReadonlySet<string>,
+  warn: (message: string) => void,
+): Promise<RunDepartmentEvidence | null> {
+  const snapshots = (await Observation.find({
+    scrapeRunId: runObjectId,
+    entityType: 'departmentRosterHealth',
+    field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+  })
+    .select('entityKey value observedAt')
+    .lean()) as any[];
+  if (snapshots.length === 0) return null;
+
+  const snapshotObservedAts = snapshots
+    .map((entry) => (entry.observedAt instanceof Date ? entry.observedAt.toISOString() : ''))
+    .filter(Boolean);
+  const earliestSnapshotObservedAt = snapshotObservedAts.length
+    ? new Date([...snapshotObservedAts].sort()[0])
+    : null;
+
+  const scrapedDeptNames = new Set<string>();
+  const healthyDiscoveredByDept = new Map<string, Set<string>>();
+  const frozenDiscoveredByDept = new Map<string, string[]>();
+  const incompletelyReadDeptNames = new Set<string>();
+  const regressedDeptNames = new Set<string>();
+  // A run covers many departments read at different moments, so one scalar cannot
+  // date them. It used to be overwritten by each snapshot in turn, so every entity
+  // was stamped with whichever department happened to be last in the cursor (#3251).
+  const snapshotObservedAtByDept = new Map<string, Date>();
+  const unresolvedDepartments: string[] = [];
+  const readProvenanceCounts: Record<RosterHealthReadProvenance, number> = {
+    ...EMPTY_READ_PROVENANCE,
+  };
+  let frozenDepartments = 0;
+  const admissibilityCounts: Record<string, number> = {};
+  let departmentsGoverningNothing = 0;
+  const previousDiscoveryByLane = await loadPreviousDiscoveryCounts(
+    runObjectId,
+    earliestSnapshotObservedAt,
+  );
+  let regressedDepartments = 0;
+  let latestObservedAt = new Date();
+
+  for (const snapshotObservation of snapshots) {
+    const snapshot = (snapshotObservation.value || {}) as DepartmentRosterHealthSnapshot;
+    const rawDeptName = typeof snapshot.deptName === 'string' ? snapshot.deptName : '';
+    readProvenanceCounts[rosterHealthReadProvenance(snapshot)] += 1;
+    if (!rawDeptName) continue;
+    const snapshotObservedAt =
+      rosterHealthReadAt(snapshot) ??
+      (snapshotObservation.observedAt instanceof Date ? snapshotObservation.observedAt : null);
+    if (snapshotObservedAt) latestObservedAt = snapshotObservedAt;
+
+    const deptName = await resolveGovernedDepartmentName(rawDeptName);
+    if (!deptName) {
+      unresolvedDepartments.push(rawDeptName);
+      warn(
+        `[faculty-departure] unresolved department ${sanitizeLogValue(rawDeptName)}: no OrgUnit names it, so it governs no entity and this run cannot reconcile it`,
+      );
+      continue;
+    }
+    scrapedDeptNames.add(deptName);
+    if (snapshotObservedAt) {
+      const known = snapshotObservedAtByDept.get(deptName);
+      if (!known || snapshotObservedAt > known) {
+        snapshotObservedAtByDept.set(deptName, snapshotObservedAt);
+      }
+    }
+    if (rosterHealthRecordsAnIncompleteRead(snapshot)) incompletelyReadDeptNames.add(deptName);
+    const admissibility = rosterHealthAdmissibility(snapshot);
+    admissibilityCounts[admissibility] = (admissibilityCounts[admissibility] || 0) + 1;
+    if (admissibility === 'read-discovered-nobody') {
+      warn(
+        `[faculty-departure] inadmissible department ${sanitizeLogValue(deptName)}: the read completed and discovered nobody, which is not evidence about who is present`,
+      );
+    }
+    if (admissibility !== 'read-discovered-people') continue;
+
+    const discovered = snapshotDiscoveredEntityKeys(snapshot);
+    // The guard is measured over exactly the rows it protects. Counting every row that
+    // carries the department inflates the denominator with rows this lane can never
+    // name, which decides freeze verdicts on rows outside its reach: on Development one
+    // department read 86 of 200 and froze at 0.43, while over the 124 rows the lane has
+    // actually observed the same read scores 0.69 and passes (#3302).
+    const governedCount = await countRosterGovernedEntities(deptName, rosterObservedEntityKeys);
+    const previousDiscovered = previousDiscoveryByLane.get(snapshotObservation.entityKey) ?? null;
+    if (rosterDiscoveryRegressed(previousDiscovered, discovered.length)) {
+      regressedDepartments += 1;
+      regressedDeptNames.add(deptName);
+      warn(
+        `[faculty-departure] regressed department ${sanitizeLogValue(deptName)}: discovered ${discovered.length} against ${previousDiscovered} on its previous read, so this read does not govern`,
+      );
+      continue;
+    }
+    const verdict = rosterDropGuardVerdict(discovered.length, governedCount);
+    if (verdict === 'governs-nothing') {
+      departmentsGoverningNothing += 1;
+      continue;
+    }
+    if (verdict === 'freeze') {
+      frozenDepartments += 1;
+      warn(
+        `[faculty-departure] frozen department ${sanitizeLogValue(deptName)}: discovered ${discovered.length} of ${governedCount} governed entities (below drop guard)`,
+      );
+      frozenDiscoveredByDept.set(deptName, [
+        ...(frozenDiscoveredByDept.get(deptName) ?? []),
+        ...discovered,
+      ]);
+      continue;
+    }
+    // Two roster configs can resolve to one canonical department, and they disagree
+    // permanently: measured on Development one department carried a lane reading 19 of 20
+    // and a lane reading 0 of 20, both admitted. `Map.set` took whichever was iterated
+    // last, so a correct read and an empty read were interchangeable by iteration order
+    // (#3302). Union instead: a discovery is positive evidence that a person is present,
+    // and absence may only be concluded from every lane failing to find them. The union
+    // can only shrink the absent set, never grow it.
+    const alreadyDiscovered = healthyDiscoveredByDept.get(deptName);
+    if (alreadyDiscovered) {
+      for (const key of discovered) alreadyDiscovered.add(key);
+    } else {
+      healthyDiscoveredByDept.set(deptName, new Set(discovered));
+    }
+  }
+
+  // A frozen lane cannot govern, but the people it did list are still present, so a
+  // sibling lane that governs the department cannot conclude their absence.
+  for (const [deptName, discovered] of frozenDiscoveredByDept) {
+    const governingDiscovered = healthyDiscoveredByDept.get(deptName);
+    if (!governingDiscovered) continue;
+    for (const key of discovered) governingDiscovered.add(key);
+  }
+
+  let incompleteReadDepartments = 0;
+  for (const deptName of incompletelyReadDeptNames) {
+    if (!healthyDiscoveredByDept.delete(deptName)) continue;
+    incompleteReadDepartments += 1;
+    warn(
+      `[faculty-departure] withheld department ${sanitizeLogValue(deptName)}: one of its roster lanes left part of the roster unread in this run`,
+    );
+  }
+  // A regressed lane is distrusted for the same reason a truncated one is, so a sibling
+  // lane that passed cannot conclude absence for the people only the regressed lane lists.
+  for (const deptName of regressedDeptNames) {
+    if (!healthyDiscoveredByDept.delete(deptName)) continue;
+    warn(
+      `[faculty-departure] withheld department ${sanitizeLogValue(deptName)}: one of its roster lanes regressed against its own previous read`,
+    );
+  }
+
+  return {
+    snapshotCount: snapshots.length,
+    snapshotObservedAts,
+    scrapedDeptNames,
+    healthyDiscoveredByDept,
+    presentElsewhereInRun: await loadRunRosterPresence(runObjectId, snapshots),
+    previouslyListedByDept: await loadPreviousRosterListings(
+      runObjectId,
+      earliestSnapshotObservedAt,
+    ),
+    snapshotObservedAtByDept,
+    unresolvedDepartments,
+    readProvenanceCounts,
+    admissibilityCounts,
+    frozenDepartments,
+    departmentsGoverningNothing,
+    regressedDepartments,
+    incompleteReadDepartments,
+    latestObservedAt,
+  };
+}
+
+function parseRunObjectId(runId: string): mongoose.Types.ObjectId | null {
+  return /^[0-9a-f]{24}$/i.test(runId) ? new mongoose.Types.ObjectId(runId) : null;
+}
+
+/**
+ * A marker is only a run id, so it cannot say which department it was read against or
+ * whether that read was whole; its run is re-read under the current rules instead of
+ * trusted (#3702).
+ */
+export function createAbsenceMarkerJudge(rosterObservedEntityKeys: ReadonlySet<string>) {
+  const evidenceByRun = new Map<string, Promise<RunDepartmentEvidence | null>>();
+  const readMarkerRun = async (markerRunId: string): Promise<RunDepartmentEvidence | null> => {
+    const runObjectId = parseRunObjectId(markerRunId);
+    if (!runObjectId) return null;
+    const run = (await ScrapeRun.findById(runObjectId).select('startedAt codeSha').lean()) as {
+      startedAt?: unknown;
+      codeSha?: unknown;
+    } | null;
+    const provenance = run
+      ? {
+          startedAt: run.startedAt instanceof Date ? run.startedAt : undefined,
+          codeSha: isFullCommitSha(run.codeSha) ? run.codeSha : undefined,
+        }
+      : undefined;
+    if (!runCarriesAbsenceClaimFix(provenance, ROSTER_ABSENCE_MARKER_CUTOFF, gitCommitIsAncestor)) {
+      return null;
+    }
+    return readRunDepartmentEvidence(runObjectId, rosterObservedEntityKeys, () => {});
+  };
+  return async (params: {
+    markerRunId: string;
+    coveredDeptNames: string[];
+    entitySlug: string;
+  }): Promise<boolean> => {
+    if (!evidenceByRun.has(params.markerRunId)) {
+      evidenceByRun.set(params.markerRunId, readMarkerRun(params.markerRunId));
+    }
+    const evidence = await evidenceByRun.get(params.markerRunId);
+    if (!evidence) return false;
+    return (
+      classifyEntityRunSignal({
+        coveredDeptNames: params.coveredDeptNames,
+        healthyDiscoveredByDept: evidence.healthyDiscoveredByDept,
+        entitySlug: params.entitySlug,
+        rosterObservedEntityKeys,
+        presentElsewhereInRun: evidence.presentElsewhereInRun,
+        previouslyListedByDept: evidence.previouslyListedByDept,
+      }) === 'absent'
+    );
+  };
 }
 
 export async function reconcileFacultyRosterDeparturesFromRun(
@@ -770,173 +1108,40 @@ export async function reconcileFacultyRosterDeparturesFromRun(
   if (applying && !facultyRosterDepartureDetectionEnabled()) {
     return { ...base, outcome: 'disabled' };
   }
-  let runObjectId: mongoose.Types.ObjectId;
-  try {
-    runObjectId = new mongoose.Types.ObjectId(scrapeRunId);
-  } catch {
-    return { ...base, outcome: 'invalid-run-id' };
-  }
+  const runObjectId = parseRunObjectId(scrapeRunId);
+  if (!runObjectId) return { ...base, outcome: 'invalid-run-id' };
 
-  const snapshots = (await Observation.find({
-    scrapeRunId: runObjectId,
-    entityType: 'departmentRosterHealth',
-    field: DEPARTMENT_ROSTER_HEALTH_FIELD,
-  })
-    .select('entityKey value observedAt')
-    .lean()) as any[];
-  if (snapshots.length === 0) return { ...base, outcome: 'no-roster-health-observations' };
-
-  const scrapedDeptNames = new Set<string>();
-  const healthyDiscoveredByDept = new Map<string, Set<string>>();
-  const frozenDiscoveredByDept = new Map<string, string[]>();
-  const incompletelyReadDeptNames = new Set<string>();
-  const regressedDeptNames = new Set<string>();
-  // A run covers many departments read at different moments, so one scalar cannot
-  // date them. It used to be overwritten by each snapshot in turn, so every entity
-  // was stamped with whichever department happened to be last in the cursor (#3251).
-  const snapshotObservedAtByDept = new Map<string, Date>();
-  const unresolvedDepartments: string[] = [];
-  const readProvenanceCounts: Record<RosterHealthReadProvenance, number> = {
-    fetched: 0,
-    'reused-within-sweep': 0,
-    'cache-permitted': 0,
-    'not-read': 0,
-    unrecorded: 0,
-  };
-  let frozenDepartments = 0;
-  const admissibilityCounts: Record<string, number> = {};
-  let departmentsGoverningNothing = 0;
   const rosterObservedEntityKeys = await loadRosterObservedEntityKeys();
-  const previousDiscoveryByLane = await loadPreviousDiscoveryCounts(runObjectId);
-  let regressedDepartments = 0;
-  let latestObservedAt = new Date();
-
-  for (const snapshotObservation of snapshots) {
-    const snapshot = (snapshotObservation.value || {}) as DepartmentRosterHealthSnapshot;
-    const rawDeptName = typeof snapshot.deptName === 'string' ? snapshot.deptName : '';
-    readProvenanceCounts[rosterHealthReadProvenance(snapshot)] += 1;
-    if (!rawDeptName) continue;
-    const snapshotObservedAt =
-      rosterHealthReadAt(snapshot) ??
-      (snapshotObservation.observedAt instanceof Date ? snapshotObservation.observedAt : null);
-    if (snapshotObservedAt) latestObservedAt = snapshotObservedAt;
-
-    const deptName = await resolveGovernedDepartmentName(rawDeptName);
-    if (!deptName) {
-      unresolvedDepartments.push(rawDeptName);
-      console.warn(
-        `[faculty-departure] unresolved department ${sanitizeLogValue(rawDeptName)}: no OrgUnit names it, so it governs no entity and this run cannot reconcile it`,
-      );
-      continue;
-    }
-    scrapedDeptNames.add(deptName);
-    if (snapshotObservedAt) {
-      const known = snapshotObservedAtByDept.get(deptName);
-      if (!known || snapshotObservedAt > known) {
-        snapshotObservedAtByDept.set(deptName, snapshotObservedAt);
-      }
-    }
-    if (rosterHealthRecordsAnIncompleteRead(snapshot)) incompletelyReadDeptNames.add(deptName);
-    const admissibility = rosterHealthAdmissibility(snapshot);
-    admissibilityCounts[admissibility] = (admissibilityCounts[admissibility] || 0) + 1;
-    if (admissibility === 'read-discovered-nobody') {
-      console.warn(
-        `[faculty-departure] inadmissible department ${sanitizeLogValue(deptName)}: the read completed and discovered nobody, which is not evidence about who is present`,
-      );
-    }
-    if (admissibility !== 'read-discovered-people') continue;
-
-    const discovered = snapshotDiscoveredEntityKeys(snapshot);
-    // The guard is measured over exactly the rows it protects. Counting every row that
-    // carries the department inflates the denominator with rows this lane can never
-    // name, which decides freeze verdicts on rows outside its reach: on Development one
-    // department read 86 of 200 and froze at 0.43, while over the 124 rows the lane has
-    // actually observed the same read scores 0.69 and passes (#3302).
-    const governedCount = await countRosterGovernedEntities(deptName, rosterObservedEntityKeys);
-    const previousDiscovered = previousDiscoveryByLane.get(snapshotObservation.entityKey) ?? null;
-    if (rosterDiscoveryRegressed(previousDiscovered, discovered.length)) {
-      regressedDepartments += 1;
-      regressedDeptNames.add(deptName);
-      console.warn(
-        `[faculty-departure] regressed department ${sanitizeLogValue(deptName)}: discovered ${discovered.length} against ${previousDiscovered} on its previous read, so this read does not govern`,
-      );
-      continue;
-    }
-    const verdict = rosterDropGuardVerdict(discovered.length, governedCount);
-    if (verdict === 'governs-nothing') {
-      departmentsGoverningNothing += 1;
-      continue;
-    }
-    if (verdict === 'freeze') {
-      frozenDepartments += 1;
-      console.warn(
-        `[faculty-departure] frozen department ${sanitizeLogValue(deptName)}: discovered ${discovered.length} of ${governedCount} governed entities (below drop guard)`,
-      );
-      frozenDiscoveredByDept.set(deptName, [
-        ...(frozenDiscoveredByDept.get(deptName) ?? []),
-        ...discovered,
-      ]);
-      continue;
-    }
-    // Two roster configs can resolve to one canonical department, and they disagree
-    // permanently: measured on Development one department carried a lane reading 19 of 20
-    // and a lane reading 0 of 20, both admitted. `Map.set` took whichever was iterated
-    // last, so a correct read and an empty read were interchangeable by iteration order
-    // (#3302). Union instead: a discovery is positive evidence that a person is present,
-    // and absence may only be concluded from every lane failing to find them. The union
-    // can only shrink the absent set, never grow it.
-    const alreadyDiscovered = healthyDiscoveredByDept.get(deptName);
-    if (alreadyDiscovered) {
-      for (const key of discovered) alreadyDiscovered.add(key);
-    } else {
-      healthyDiscoveredByDept.set(deptName, new Set(discovered));
-    }
-  }
-
-  // A frozen lane cannot govern, but the people it did list are still present, so a
-  // sibling lane that governs the department cannot conclude their absence.
-  for (const [deptName, discovered] of frozenDiscoveredByDept) {
-    const governingDiscovered = healthyDiscoveredByDept.get(deptName);
-    if (!governingDiscovered) continue;
-    for (const key of discovered) governingDiscovered.add(key);
-  }
-
-  let incompleteReadDepartments = 0;
-  for (const deptName of incompletelyReadDeptNames) {
-    if (!healthyDiscoveredByDept.delete(deptName)) continue;
-    incompleteReadDepartments += 1;
-    console.warn(
-      `[faculty-departure] withheld department ${sanitizeLogValue(deptName)}: one of its roster lanes left part of the roster unread in this run`,
-    );
-  }
-  // A regressed lane is distrusted for the same reason a truncated one is, so a sibling
-  // lane that passed cannot conclude absence for the people only the regressed lane lists.
-  for (const deptName of regressedDeptNames) {
-    if (!healthyDiscoveredByDept.delete(deptName)) continue;
-    console.warn(
-      `[faculty-departure] withheld department ${sanitizeLogValue(deptName)}: one of its roster lanes regressed against its own previous read`,
-    );
-  }
+  const evidence = await readRunDepartmentEvidence(
+    runObjectId,
+    rosterObservedEntityKeys,
+    (message) => console.warn(message),
+  );
+  if (!evidence) return { ...base, outcome: 'no-roster-health-observations' };
+  const {
+    scrapedDeptNames,
+    healthyDiscoveredByDept,
+    snapshotObservedAtByDept,
+    frozenDepartments,
+    regressedDepartments,
+    latestObservedAt,
+  } = evidence;
 
   const evidenceFreshness: FacultyRosterDepartureEvidenceFreshness = {
-    snapshotsRead: snapshots.length,
-    distinctSnapshotObservedAt: new Set(
-      snapshots
-        .map((entry) => (entry.observedAt instanceof Date ? entry.observedAt.toISOString() : ''))
-        .filter(Boolean),
-    ).size,
+    snapshotsRead: evidence.snapshotCount,
+    distinctSnapshotObservedAt: new Set(evidence.snapshotObservedAts).size,
     planningRunFetchesSucceeded: await countPlanningRunFetchSuccesses(runObjectId),
-    readProvenance: readProvenanceCounts,
+    readProvenance: evidence.readProvenanceCounts,
   };
   const reported = {
     ...base,
     evidenceFreshness,
     frozenDepartments,
-    admissibilityCounts,
-    departmentsGoverningNothing,
+    admissibilityCounts: evidence.admissibilityCounts,
+    departmentsGoverningNothing: evidence.departmentsGoverningNothing,
     regressedDepartments,
-    incompleteReadDepartments,
-    unresolvedDepartments,
+    incompleteReadDepartments: evidence.incompleteReadDepartments,
+    unresolvedDepartments: evidence.unresolvedDepartments,
     governedDepartments: Array.from(healthyDiscoveredByDept.keys()),
   };
   if (healthyDiscoveredByDept.size === 0 && frozenDepartments === 0 && regressedDepartments === 0) {
@@ -953,6 +1158,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     )
     .lean()) as any[];
 
+  const absenceMarkerCorroborates = createAbsenceMarkerJudge(rosterObservedEntityKeys);
   let suppressed = 0;
   let cleared = 0;
   let held = 0;
@@ -971,7 +1177,22 @@ export async function reconcileFacultyRosterDeparturesFromRun(
       healthyDiscoveredByDept,
       entitySlug: entity.slug,
       rosterObservedEntityKeys,
+      presentElsewhereInRun: evidence.presentElsewhereInRun,
+      previouslyListedByDept: evidence.previouslyListedByDept,
     });
+    const markerRunId =
+      typeof entity.absentFromRosterSinceRunId === 'string'
+        ? entity.absentFromRosterSinceRunId
+        : '';
+    const markerIsStanding =
+      signal === 'absent' && Boolean(markerRunId) && markerRunId !== scrapeRunId;
+    const absenceMarkerCorroborated = markerIsStanding
+      ? await absenceMarkerCorroborates({
+          markerRunId,
+          coveredDeptNames,
+          entitySlug: entity.slug,
+        })
+      : false;
     // Date the row from its own departments' reads, not from whichever snapshot the
     // cursor returned last (#3251).
     const observedAt =
@@ -984,6 +1205,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
         yaleStatusReasonCache: entity.yaleStatusReasonCache,
         absentFromRosterSinceRunId: entity.absentFromRosterSinceRunId,
         hasRecordedClosure: hasRecordedClosureEvidence(entity),
+        absenceMarkerCorroborated,
       },
     });
     if (decision.action === 'noop') continue;
@@ -993,9 +1215,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
       action: decision.action,
       coveredDepartments: coveredDeptNames,
       absenceRestsOnRunId:
-        typeof entity.absentFromRosterSinceRunId === 'string' && entity.absentFromRosterSinceRunId
-          ? entity.absentFromRosterSinceRunId
-          : scrapeRunId,
+        decision.action === 'suppress_departed' && markerRunId ? markerRunId : scrapeRunId,
       departmentSnapshotObservedAt:
         newestSnapshotDateFor(coveredDeptNames, snapshotObservedAtByDept)?.toISOString() ?? null,
       decisionObservedAt: observedAt.toISOString(),
