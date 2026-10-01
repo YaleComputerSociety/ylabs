@@ -1,4 +1,5 @@
 import type { CreateCollectionOptions, Db, Document } from 'mongodb';
+import { assertNoPreservedCollectionsCleared } from './mirrorCollectionPolicy';
 
 /**
  * Staged swap with rollback, shared by every whole-collection replacement.
@@ -96,6 +97,7 @@ export async function applyStagedCollectionSwap<T extends StagedSwapCollection>(
 ): Promise<void> {
   const { targetDb, collections, backupPrefix, stage, verify } = args;
   const clearedCollectionNames = args.clearedCollectionNames ?? [];
+  assertNoPreservedCollectionsCleared(clearedCollectionNames);
   const label = args.label ?? 'staged collection swap';
 
   const operationId = stagedSwapOperationId();

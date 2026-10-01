@@ -265,6 +265,7 @@ yarn development:refresh-from-beta:plan
 
 The artifact is `/tmp/ylabs-beta-to-development-plan.json`.
 Confirm that the source ends in `/Beta`, the destination ends in `/Development`, every mirrored source count matches its copy count, `includesObservations` is `false` unless the evidence log was deliberately requested, and `unclassifiedBetaCollections` is empty.
+Confirm too that `localCollectionsClearedOnApply` names no benchmark, scorecard, or snapshot collection, and that every environment-local collection Development currently holds appears in `localCollectionsPreservedOnApply`.
 
 Apply the reviewed sync:
 
@@ -280,7 +281,17 @@ yarn development:search:rebuild
 
 This is a snapshot refresh rather than continuous replication.
 Local scraping and materialization can intentionally change Development after the sync.
-Running the standard sync again replaces the approved Atlas Development mirror with the latest accepted Beta snapshot and clears all non-mirror Development collections.
+Running the standard sync again replaces the approved Atlas Development mirror with the latest accepted Beta snapshot and clears the non-mirror Development collections that hold stale scrape residue.
+
+It never clears Development's own measurement history.
+`PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS` in `server/src/scripts/mirrorCollectionPolicy.ts` names the collections the refresh keeps: `lane_benchmarks`, `lane_benchmark_pages`, `lane_scorecard_snapshots`, `corpus_quality_snapshots`, `gate_scorecard_snapshots`, `engine_benchmarks`, `engine_benchmark_rows`, `engine_benchmark_snapshots`, and `analytics_events`.
+These are exactly the collections Beta never mirrors, so without the allowlist the clear would be the thing that destroys them, and a frozen lane benchmark carries hand labels that no code can re-derive.
+`scrape_job_locks` is the one environment-local collection the refresh still clears, because a lease is state rather than history and expires anyway.
+The dry-run and apply artifacts report both sides: read `localCollectionsClearedOnApply` for what goes and `localCollectionsPreservedOnApply` for what stays.
+
+Adding a collection to `NEVER_COPY_COLLECTIONS` without classifying it as preserved or ephemeral fails `assertEnvironmentLocalCollectionsClassified`, so a new instrument's history cannot join the cleared set by omission.
+`applySync` refuses outright if a caller hands it a clear list naming a preserved collection.
+A deliberate full wipe is not part of this script; drop the collections directly with the operator tooling instead.
 
 ## Phase 1: Development Sweep - Run Locally
 

@@ -111,6 +111,10 @@ Tightening a description flag shows up here as a dip, with no parallel heuristic
 A promotion replaces whole collections with an unguarded `deleteMany({})`, so carrying this one would erase the history it exists to keep, and would attribute one environment's measurements to another.
 Two tests pin that.
 
+Staying out of the mirror is not by itself protection.
+The Development refresh clears every Development collection Beta does not mirror, which was every environment-local collection, so until #4034 one refresh erased this history.
+`PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS` in the same policy file now exempts it, and `docs/data-refresh-runbook.md` records what the refresh keeps.
+
 ## How the history keeps growing
 
 The serving process records a measurement itself, using the connection it already holds.
