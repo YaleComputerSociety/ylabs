@@ -72,6 +72,7 @@ export interface DepartmentUndergradResearchRecord {
   contactEmail?: string;
   contactRole?: string;
   joinPageUrl?: string;
+  pageTitle?: string;
 }
 
 type FetchHtml = (url: string, useCache: boolean) => Promise<string>;
@@ -536,6 +537,11 @@ function pageMainText($: cheerio.CheerioAPI): string {
   return normalizeText((chunks.length > 0 ? chunks.join(' ') : root.text()) || '');
 }
 
+function pageOwnTitle($: cheerio.CheerioAPI): string | undefined {
+  const documentTitle = normalizeText($('title').first().text()).split(/\s+\|\s+/)[0];
+  return documentTitle || normalizeText($('h1').first().text()) || undefined;
+}
+
 function departmentEntityKey(config: DepartmentUndergradResearchPageConfig): string {
   return `department-undergrad-research-${slugify(config.department || config.key)}`.slice(0, 100);
 }
@@ -662,6 +668,7 @@ export function parseGeneralDepartmentResearchPage(
       evidenceQuote: description.evidenceQuote,
       undergradAccessEvidence: true,
       contactRole: 'Faculty member for undergraduate research',
+      pageTitle: pageOwnTitle($),
     },
   ];
 }
@@ -699,6 +706,7 @@ export function parseStructuredOpportunityPage(
       contactEmail,
       contactRole: contactEmail ? 'Program contact for undergraduate research' : undefined,
       joinPageUrl,
+      pageTitle: pageOwnTitle($),
     },
   ];
 }
@@ -746,6 +754,9 @@ function programRecordToFellowshipObservations(
       value: record.contactEmail,
       confidenceOverride: 0.75,
     });
+  }
+  if (record.pageTitle) {
+    observations.push({ ...base, field: 'sourcePageTitle', value: record.pageTitle });
   }
   return observations;
 }

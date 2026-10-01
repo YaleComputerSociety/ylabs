@@ -9,6 +9,7 @@ import {
   parsePhysicsUndergradResearchPage,
   parseStructuredOpportunityPage,
 } from '../sources/departmentUndergradResearchScraper';
+import { classificationFromObservedFacts } from '../fellowshipClassificationDerivation';
 import type { ObservationInput, ScraperContext } from '../types';
 
 const PHYSICS_HTML = `
@@ -629,6 +630,76 @@ describe('departmentUndergradResearchScraper', () => {
       ]),
     );
     expect(fields).not.toContain('joinPageUrl');
+  });
+
+  describe('the page title the lane observes (#4285)', () => {
+    const guidanceConfig = {
+      key: 'fixture',
+      url: 'https://fixture.yale.edu/undergraduate/undergraduate-research',
+      department: 'Fixture Studies',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance' as const,
+      title: 'Fixture Studies Undergraduate Research',
+    };
+    const pageWith = (head: string, heading: string, body: string) =>
+      `<html><head>${head}</head><body><main><h1>${heading}</h1>${body}</main></body></html>`;
+    const guidanceBody =
+      '<p>Undergraduate students interested in research should contact a faculty member whose laboratory matches their interests.</p>';
+    const seniorEssayBody =
+      '<p>Majors write a senior essay under the supervision of a faculty adviser and submit a prospectus to the director of undergraduate studies.</p>';
+    const observedPageTitle = (html: string) =>
+      departmentUndergradResearchRecordsToObservations(
+        parseGeneralDepartmentResearchPage(html, guidanceConfig),
+      ).find((observation) => observation.field === 'sourcePageTitle')?.value;
+    const classificationOf = (html: string) => {
+      const records = parseGeneralDepartmentResearchPage(html, guidanceConfig);
+      expect(records).toHaveLength(1);
+      return classificationFromObservedFacts(
+        departmentUndergradResearchRecordsToObservations(records),
+      );
+    };
+
+    it('observes the document title without its site suffix', () => {
+      expect(
+        observedPageTitle(
+          pageWith(
+            '<title>Undergraduate Fixture Research | Fixture School</title>',
+            'Research',
+            guidanceBody,
+          ),
+        ),
+      ).toBe('Undergraduate Fixture Research');
+    });
+
+    it('falls back to the page heading when the document has no title', () => {
+      expect(observedPageTitle(pageWith('', 'Undergraduate Research', guidanceBody))).toBe(
+        'Undergraduate Research',
+      );
+    });
+
+    it('derives department research guidance from a page titled as undergraduate research', () => {
+      expect(
+        classificationOf(
+          pageWith(
+            '<title>Undergraduate Research | Fixture</title>',
+            'Undergraduate Research',
+            guidanceBody,
+          ),
+        ).programKind,
+      ).toBe('DEPARTMENT_RESEARCH_GUIDE');
+    });
+
+    it('derives no guidance from a senior essay page the lane titles as research', () => {
+      expect(
+        classificationOf(
+          pageWith(
+            '<title>The Senior Essay | Fixture</title>',
+            'The Senior Essay',
+            seniorEssayBody,
+          ),
+        ).programKind,
+      ).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
+    });
   });
 
   it('parses new official guidance configs as source-backed entity/access evidence only', () => {

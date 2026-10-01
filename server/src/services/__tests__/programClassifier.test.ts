@@ -461,10 +461,11 @@ describe('classifyProgram internship identity (#2925)', () => {
   });
 
   describe('program role (#3904)', () => {
-    it('reads a department undergraduate research page as a way in, not funding', () => {
+    it('reads a page titled as undergraduate research guidance as a way in, not funding', () => {
       expect(
         classifyProgram({
           title: 'Fixture Studies Undergraduate Research Opportunities',
+          sourcePageTitle: 'Undergraduate Research Opportunities',
           description:
             'Students interested in research should contact the faculty member directly.',
         }),
@@ -472,23 +473,68 @@ describe('classifyProgram internship identity (#2925)', () => {
         programKind: 'DEPARTMENT_RESEARCH_GUIDE',
         programRole: 'STARTS_RESEARCH',
         entryMode: 'CONTACT_FACULTY',
+        studentFacingCategory: 'Department research guidance',
       });
+    });
+
+    it('does not read a guide from the lane-authored record title alone (#4285)', () => {
+      expect(
+        classifyProgram({ title: 'Fixture Studies Undergraduate Research Opportunities' })
+          .programKind,
+      ).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
+    });
+
+    it('does not read a general undergraduate program page as a guide (#4285)', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Studies Undergraduate Research',
+          sourcePageTitle: 'Undergraduate Program',
+        }).programKind,
+      ).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
+    });
+
+    it('does not read a senior essay page as a guide (#4285)', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Studies Undergraduate Research',
+          sourcePageTitle: 'Senior Project',
+        }).programKind,
+      ).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
+    });
+
+    it('does not read a guidance page that states an application cycle as a guide (#4285)', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Studies Undergraduate Research',
+          sourcePageTitle: 'Undergraduate Research',
+          deadline: new Date('2099-02-01T00:00:00Z'),
+        }).programKind,
+      ).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
     });
 
     it('does not read a named summer program as a department guide', () => {
       expect(
-        classifyProgram({ title: 'Fixture Summer Research Opportunities' }).programKind,
+        classifyProgram({
+          title: 'Fixture Summer Research Opportunities',
+          sourcePageTitle: 'Summer Research Opportunities',
+        }).programKind,
       ).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
     });
 
     it('does not read a graduate audience research page as an undergraduate guide', () => {
-      const classification = classifyProgram({ title: 'Graduate Research Opportunities' });
+      const classification = classifyProgram({
+        title: 'Graduate Research Opportunities',
+        sourcePageTitle: 'Graduate Research Opportunities',
+      });
       expect(classification.programKind).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
       expect(classification.undergraduateOnly).not.toBe(true);
     });
 
-    it('asserts an undergraduate audience only when the guide title names one', () => {
-      const classification = classifyProgram({ title: 'Fixture Sciences Research Opportunities' });
+    it('asserts an undergraduate audience only when the guide page title names one', () => {
+      const classification = classifyProgram({
+        title: 'Fixture Sciences Research Opportunities',
+        sourcePageTitle: 'Research Opportunities',
+      });
       expect(classification.programKind).toBe('DEPARTMENT_RESEARCH_GUIDE');
       expect(classification.undergraduateOnly).toBeUndefined();
     });

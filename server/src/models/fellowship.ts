@@ -258,6 +258,10 @@ const fellowshipSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    sourcePageTitle: {
+      type: String,
+      required: false,
+    },
     sourceLinkHealth: {
       type: fellowshipSourceLinkHealthSchema,
       required: false,

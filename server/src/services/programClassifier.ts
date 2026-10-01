@@ -4,6 +4,7 @@ import type {
   ProgramKind,
   ProgramRole,
 } from '../models/fellowship';
+import { isDepartmentResearchGuidancePage } from './departmentResearchGuidance';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 
 export interface ProgramClassificationInput {
@@ -17,6 +18,10 @@ export interface ProgramClassificationInput {
   purpose?: string[];
   termOfAward?: string[];
   sourceUrl?: string;
+  sourcePageTitle?: string;
+  deadline?: unknown;
+  applicationOpenDate?: unknown;
+  isAcceptingApplications?: boolean;
 }
 
 export interface ProgramClassification {
@@ -98,14 +103,6 @@ function proseForProgram(input: ProgramClassificationInput): string {
     .filter(Boolean)
     .join(' ');
 }
-
-// A department's own undergraduate research page is a guide to finding a faculty mentor,
-// not an award, so it is a way in even though the page mentions funding (#3904).
-const DEPARTMENT_RESEARCH_GUIDE_TITLE =
-  /^[A-Z][\w&,' -]*\s(?:undergraduate research(?: opportunities)?|research opportunities)$/i;
-
-const NON_UNDERGRADUATE_AUDIENCE_TITLE =
-  /\b(?:graduate|professional|postdoc(?:toral)?|doctoral|phd)\b/;
 
 const AWARD_INSTRUMENT_TITLE =
   /\b(?:awards?|grants?|funds?|funding|scholarships?|prizes?|stipends?)\b/;
@@ -569,20 +566,17 @@ function classifyProgramKind(input: ProgramClassificationInput): KindClassificat
     return archiveReviewClassification();
   }
 
-  if (
-    DEPARTMENT_RESEARCH_GUIDE_TITLE.test(title) &&
-    !FUNDING_INSTRUMENT_NAME.test(titleLower) &&
-    !NON_UNDERGRADUATE_AUDIENCE_TITLE.test(titleLower) &&
-    !/\bsummer\b/.test(titleLower)
-  ) {
+  if (isDepartmentResearchGuidancePage(input)) {
     return {
       programCategory: 'RECURRING_PROGRAM',
       programKind: 'DEPARTMENT_RESEARCH_GUIDE',
       entryMode: 'CONTACT_FACULTY',
-      studentFacingCategory: 'Department research guide',
+      studentFacingCategory: 'Department research guidance',
       requiresMentorBeforeApply: false,
       mentorMatching: false,
-      ...(/\bundergraduate\b/.test(titleLower) ? { undergraduateOnly: true } : {}),
+      ...(/\bundergraduate\b/i.test(input.sourcePageTitle ?? '')
+        ? { undergraduateOnly: true }
+        : {}),
       bestNextStep:
         "Use the department's guide to find faculty whose research fits your interests, then contact them directly.",
       prepSteps: ['Faculty research fit', 'Short introduction email'],

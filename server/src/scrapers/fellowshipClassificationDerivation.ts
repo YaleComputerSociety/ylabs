@@ -74,9 +74,16 @@ const CLASSIFIER_INPUT_TEXT_FIELDS = [
   'eligibility',
   'additionalInformation',
   'sourceUrl',
+  'sourcePageTitle',
 ] as const;
 
 const CLASSIFIER_INPUT_LIST_FIELDS = ['purpose', 'termOfAward'] as const;
+
+const CLASSIFIER_INPUT_CYCLE_FIELDS = [
+  'deadline',
+  'applicationOpenDate',
+  'isAcceptingApplications',
+] as const;
 
 function standingValue(
   field: string,
@@ -110,6 +117,10 @@ export function fellowshipClassificationInput(
   }
   for (const field of CLASSIFIER_INPUT_LIST_FIELDS) {
     input[field] = stringList(standingValue(field, stored, staged, unset));
+  }
+  for (const field of CLASSIFIER_INPUT_CYCLE_FIELDS) {
+    const value = standingValue(field, stored, staged, unset);
+    if (value !== undefined && value !== null) input[field] = value;
   }
   return input as ProgramClassificationInput;
 }

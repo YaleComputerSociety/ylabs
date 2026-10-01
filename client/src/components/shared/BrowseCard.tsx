@@ -10,6 +10,7 @@ import {
   getItemSubtitleColor,
   getDaysUntilDeadline,
   getItemCardSummary,
+  getItemStatusBadge,
   FELLOWSHIP_TAG_CAP,
   DESCRIPTION_CLAMP_CLASS,
 } from '../../types/browsable';
@@ -18,9 +19,14 @@ import FavoriteButton from './FavoriteButton';
 import UrgentBadge from './UrgentBadge';
 import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
-import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
 import { programCardFacts } from '../../utils/programBoard';
-import { EditIcon } from './icons';
+import {
+  DEPARTMENT_RESEARCH_GUIDANCE_ACTION,
+  departmentResearchGuidanceHref,
+  isDepartmentResearchGuidance,
+} from '../../utils/programJourney';
+import { trackResearchEvent } from '../../utils/researchAnalytics';
+import { EditIcon, ExternalLinkIcon } from './icons';
 
 const ICON_BUTTON_SIZE = 44;
 const ICON_BUTTON_GAP = 4;
@@ -56,8 +62,10 @@ const BrowseCard = React.memo(
 
     const subtitle = getItemSubtitle(item);
     const subtitleColor = getItemSubtitleColor(item);
-    const fellowshipCycleStatus =
-      item.type === 'fellowship' ? getFellowshipCycleStatus(item.data) : null;
+    const statusBadge = getItemStatusBadge(item);
+    const guidanceHref = isDepartmentResearchGuidance(item.data)
+      ? departmentResearchGuidanceHref(item.data)
+      : undefined;
     const fellowshipNextStep =
       item.type === 'fellowship' ? item.data.bestNextStep?.trim() || null : null;
     const fellowshipFacts = item.type === 'fellowship' ? programCardFacts(item.data) : [];
@@ -119,13 +127,11 @@ const BrowseCard = React.memo(
               className="mb-2 flex flex-col items-start gap-1"
               style={{ paddingRight: iconClusterClearance }}
             >
-              {fellowshipCycleStatus && (
-                <span
-                  className={`whitespace-nowrap rounded-card px-1.5 py-0.5 text-xs font-semibold ${fellowshipCycleStatus.className}`}
-                >
-                  {fellowshipCycleStatus.label}
-                </span>
-              )}
+              <span
+                className={`whitespace-nowrap rounded-card px-1.5 py-0.5 text-xs font-semibold ${statusBadge.className}`}
+              >
+                {statusBadge.label}
+              </span>
               {subtitle && (
                 <span className={`text-sm font-semibold leading-snug ${subtitleColor}`}>
                   {subtitle}
@@ -186,14 +192,35 @@ const BrowseCard = React.memo(
               ) : (
                 <span />
               )}
-              <button
-                type="button"
-                onClick={handleClick}
-                className="yr-focus-ring -my-3 inline-flex min-h-11 flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors after:absolute after:inset-0 after:content-[''] hover:text-brand-navy [&:not(:disabled):active]:transform-none [&:not(:disabled):active]:filter-none"
-              >
-                View details
-                <ArrowRightIcon />
-              </button>
+              {guidanceHref ? (
+                <a
+                  href={guidanceHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => {
+                    trackView();
+                    void trackResearchEvent({
+                      eventType: 'source_link_click',
+                      entityType: 'fellowship',
+                      entityId: item.data.id,
+                      payload: { sourceCategory: 'external', url: guidanceHref },
+                    });
+                  }}
+                  className="yr-focus-ring -my-3 ml-auto inline-flex min-h-11 min-w-0 items-center gap-1 rounded-control text-right text-sm font-semibold text-brand transition-colors after:absolute after:inset-0 after:content-[''] hover:text-brand-navy [&:not(:disabled):active]:transform-none [&:not(:disabled):active]:filter-none"
+                >
+                  {DEPARTMENT_RESEARCH_GUIDANCE_ACTION}
+                  <ExternalLinkIcon size={14} />
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleClick}
+                  className="yr-focus-ring -my-3 inline-flex min-h-11 flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors after:absolute after:inset-0 after:content-[''] hover:text-brand-navy [&:not(:disabled):active]:transform-none [&:not(:disabled):active]:filter-none"
+                >
+                  View details
+                  <ArrowRightIcon />
+                </button>
+              )}
             </div>
           </>
         </div>

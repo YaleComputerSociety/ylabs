@@ -12,6 +12,7 @@ export function createFellowship(data: any): Fellowship {
     programCategory: data.programCategory || 'FELLOWSHIP',
     programKind: data.programKind || 'OTHER',
     programRole: data.programRole || undefined,
+    departmentResearchGuidance: data.departmentResearchGuidance === true,
     entryMode: data.entryMode || 'UNKNOWN',
     studentFacingCategory: data.studentFacingCategory || '',
     requiresMentorBeforeApply: data.requiresMentorBeforeApply || false,

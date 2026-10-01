@@ -8,8 +8,10 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { humanizeProgramLinkLabel } from '../utils/programLinkLabel';
 import { publicHttpUrl } from '../utils/urlSafety';
 import { isUnhelpfulProgramUrl } from '../utils/researchHomeWebsiteUrl';
-import { classifyProgram, type ProgramClassificationInput } from '../services/programClassifier';
+import { classifyProgram } from '../services/programClassifier';
+import { fellowshipClassificationInput } from '../scrapers/fellowshipClassificationDerivation';
 import { programAudience } from '../services/programAudience';
+import { isDepartmentResearchGuidance } from '../services/departmentResearchGuidance';
 
 const MAX_PROGRAM_LINKS = 8;
 
@@ -73,27 +75,6 @@ const publicProgramTextArray = (value: unknown): string[] =>
     ? value.flatMap((item) => (typeof item === 'string' ? [redactDirectContactInfo(item)] : []))
     : [];
 
-const asClassificationText = (value: unknown): string | undefined =>
-  typeof value === 'string' ? value : undefined;
-
-const asClassificationTextArray = (value: unknown): string[] | undefined =>
-  Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : undefined;
-
-const classificationInputFromProgram = (program: any): ProgramClassificationInput => ({
-  title: asClassificationText(program.title),
-  competitionType: asClassificationText(program.competitionType),
-  summary: asClassificationText(program.summary),
-  description: asClassificationText(program.description),
-  applicationInformation: asClassificationText(program.applicationInformation),
-  eligibility: asClassificationText(program.eligibility),
-  additionalInformation: asClassificationText(program.additionalInformation),
-  purpose: asClassificationTextArray(program.purpose),
-  termOfAward: asClassificationTextArray(program.termOfAward),
-  sourceUrl: asClassificationText(program.sourceUrl),
-});
-
 const publicBestNextStep = (program: any): unknown => {
   const stored = publicProgramDescription(program.bestNextStep);
   if (typeof stored === 'string' && stored.trim()) return stored;
@@ -101,7 +82,7 @@ const publicBestNextStep = (program: any): unknown => {
     typeof program.bestNextStep === 'string' && program.bestNextStep.trim().length > 0;
   if (hadStoredText) return stored;
   return publicProgramDescription(
-    classifyProgram(classificationInputFromProgram(program)).bestNextStep,
+    classifyProgram(fellowshipClassificationInput(program)).bestNextStep,
   );
 };
 
@@ -131,17 +112,23 @@ const publicProgramSourceLinkHealth = (
 
 export const withProgramAudience = (program: any) =>
   program && typeof program === 'object'
-    ? { ...program, audience: programAudience(program) }
+    ? {
+        ...program,
+        audience: programAudience(program),
+        departmentResearchGuidance: isDepartmentResearchGuidance(program),
+      }
     : program;
 
 export const publicProgramForReader = (program: any) => {
   const id = serializedDocumentId(program._id) || serializedDocumentId(program.id) || '';
+  const departmentResearchGuidance = program.departmentResearchGuidance === true;
   return {
     _id: id,
     id,
     programCategory: program.programCategory,
     programKind: program.programKind,
     programRole: program.programRole,
+    departmentResearchGuidance,
     entryMode: program.entryMode,
     studentFacingCategory: program.studentFacingCategory,
     requiresMentorBeforeApply: program.requiresMentorBeforeApply,
@@ -166,7 +153,9 @@ export const publicProgramForReader = (program: any) => {
     restrictionsToUseOfAward: publicProgramDescription(program.restrictionsToUseOfAward),
     additionalInformation: publicProgramDescription(program.additionalInformation),
     links: publicProgramLinks(program.links, program.sourceUrl),
-    applicationLink: publicSpecificProgramUrl(program.applicationLink, program.sourceUrl),
+    applicationLink: departmentResearchGuidance
+      ? undefined
+      : publicSpecificProgramUrl(program.applicationLink, program.sourceUrl),
     awardAmount: program.awardAmount,
     isAcceptingApplications: program.isAcceptingApplications,
     applicationOpenDate: program.applicationOpenDate,

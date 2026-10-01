@@ -114,6 +114,27 @@ That is the intended trade for a verdict that must never accuse a correct lead.
 Undecidable is recorded, not chased: 12 judgements sit on pages that name no lead at all, and no lane can settle them from the site.
 Before a reader lands, re-measure on a fresh lane run, and freeze that sample as a lane-scorecard benchmark so the next change is measured on the same input.
 
+## 2026-10-01: Department Research Guidance Is Served On `/programs` As A Labelled Non-Application (#4285)
+
+#4237 (#3746) stopped minting department undergraduate research pages as research entities, and the #4113 rule held their program records off `/programs` because a page whose only link is its own page and that states no application cycle is not an application.
+Together they left a department's own guidance on finding a research mentor on neither student surface, and that guidance is the bridge from a vague interest to a lab a student could join.
+
+Decided:
+
+- **Keep #3746.** There is still no research row for these pages and no cross-surface duplicate.
+- **Serve them on `/programs` as department research guidance**, `programKind: 'DEPARTMENT_RESEARCH_GUIDE'`, rather than as something to apply to.
+The #4113 rule still holds every other own-page record with no application cycle; guidance is the one admitted exception, recorded with the `department_research_guidance` gate reason.
+- **The type is earned by the page, not by the lane's title.** The department undergraduate research lane observes the page's own document title as `sourcePageTitle`, and `server/src/services/departmentResearchGuidance.ts` admits a page only when that title names undergraduate research or research opportunities, names no senior essay, capstone, application, internship, scholars, funding, summer, news, flyer or graduate audience, and the record states no deadline, opening date or accepting-applications evidence.
+The lane-authored record title reads "<Department> Undergraduate Research" for every configured page, so it is not evidence: it named general undergraduate-program overviews, a labs list and senior-essay registration pages alike, which is why the classifier no longer derives the kind from it.
+- **A guidance item carries no application affordance anywhere.** The card, the list row (and so the watched-program view), and the detail modal show a "Department guidance" label and "Not an application" in place of a cycle status, no deadline, no urgency banner, no apply action, and the served payload omits `applicationLink`.
+The one action is "Read the department's guidance", linking to the page.
+- **Shown by default, in its own section.** `/programs` files guidance under "Department Research Guidance", after the application sections and apart from "No Dates Posted", and offers "Department Guidance" and "Applications Only" quick filters; every other quick filter is about an application and so excludes guidance.
+It is shown by default because it serves the student who does not yet know what to apply to, and a separate section costs an applicant nothing to skip.
+
+Measured on Development on 2026-10-01 through `searchProgramsController` as a signed-out student: of the 31 pages the lane reads, 11 carry a page title the predicate admits and 20 do not (9 senior-essay or senior-requirement pages, 1 capstone page, 5 general undergraduate-program or undergraduate-study pages, 1 labs list, 1 senior-project page, and 3 application pages).
+Of the 19 program records twinned with the #3746 archived rows that #4113 held, 11 are admitted and 8 stay held: 7 because their configured page is a program overview, a labs list or a senior-project page, so the lane should be pointed at those departments' own research pages rather than the predicate widened, and 1 because it is an application page with no stated cycle.
+Applied through a re-scrape and materialize of the lane, served guidance went from 0 to 11; a dry run of the programs gate with the pre-fix and the fixed code over the same 533 live programs differs on exactly those 11 rows, so no application program's verdict changed.
+
 ## 2026-09-29: A Stored Topic List No Evidence States Is Extended By Derivation, Never Replaced (#3836)
 
 #3836 traced every served chip that no live observation backs to one mechanism: `researchAreas` is not clear-on-empty, and the description fallback returned early on any non-empty stored list, so a list whose evidence was retired, rolled back, or never existed had no owner and no pass could replace it.

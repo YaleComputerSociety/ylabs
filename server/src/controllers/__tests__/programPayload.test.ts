@@ -488,6 +488,67 @@ describe('publicProgramForReader program role', () => {
   });
 });
 
+describe('publicProgramForReader department research guidance (#4285)', () => {
+  const studentPayload = (program: Record<string, unknown>) =>
+    publicProgramForReader(publicFellowshipForStudent(program));
+  const guidancePage = {
+    _id: '6a6f84d074dd496b1d43b18f',
+    title: 'Fixture Undergraduate Research',
+    programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+    sourcePageTitle: 'Undergraduate Research Opportunities',
+    sourceUrl: specificPage,
+    applicationLink: 'https://fixture.yale.edu/undergraduate/apply-form',
+    links: [],
+  };
+
+  it('serves guidance as guidance with no application link, because it is not an application', () => {
+    const payload = studentPayload(guidancePage);
+
+    expect(payload.departmentResearchGuidance).toBe(true);
+    expect(payload.applicationLink).toBeUndefined();
+    expect(payload.sourceUrl).toBe(specificPage);
+  });
+
+  it('derives the guidance next step from the page title when no next step is stored', () => {
+    const payload = studentPayload(guidancePage) as { bestNextStep: string };
+
+    expect(payload.bestNextStep).toBe(
+      "Use the department's guide to find faculty whose research fits your interests, then contact them directly.",
+    );
+  });
+
+  it('serves a guidance kind that states an application cycle as an application', () => {
+    const payload = studentPayload({
+      ...guidancePage,
+      deadline: new Date('2099-02-01T00:00:00Z'),
+    });
+
+    expect(payload.departmentResearchGuidance).toBe(false);
+    expect(payload.applicationLink).toBe('https://fixture.yale.edu/undergraduate/apply-form');
+  });
+
+  it('serves a guidance kind whose page title does not name research guidance as an application', () => {
+    const payload = studentPayload({ ...guidancePage, sourcePageTitle: 'Department News' });
+
+    expect(payload.departmentResearchGuidance).toBe(false);
+    expect(payload.applicationLink).toBe('https://fixture.yale.edu/undergraduate/apply-form');
+  });
+
+  it('keeps the application link of an application program', () => {
+    const payload = studentPayload({
+      _id: '6a6f84d074dd496b1d43b190',
+      title: 'Fixture Research Internship',
+      programKind: 'MENTOR_MATCHING',
+      sourceUrl: specificPage,
+      applicationLink: 'https://fixture.yale.edu/undergraduate/apply-form',
+      links: [],
+    });
+
+    expect(payload.departmentResearchGuidance).toBe(false);
+    expect(payload.applicationLink).toBe('https://fixture.yale.edu/undergraduate/apply-form');
+  });
+});
+
 describe('publicProgramForReader card line (#3904)', () => {
   const firstSentence =
     'The fixture program provides summer term support for undergraduate students who do laboratory research with Yale faculty.';

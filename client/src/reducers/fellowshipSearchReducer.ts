@@ -12,6 +12,8 @@ export type FellowshipQuickFilter =
   | 'nextCycle'
   | 'firstYear'
   | 'noMentorFirst'
+  | 'guidance'
+  | 'applicationsOnly'
   | null;
 
 export interface StudentProgramFilters {
