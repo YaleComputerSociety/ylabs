@@ -10,8 +10,10 @@ import {
 } from '../utils/errors';
 import { sanitizeErrorForLog } from '../utils/logSanitizer';
 import { requiresDeployedRuntimeSecurity } from '../utils/environment';
-import { triggerReconnect, isTopologyLostError } from '../db/connections';
+import { triggerReconnect, isMongoUnavailableError, isTopologyLostError } from '../db/connections';
 import { captureServerError } from '../utils/errorTracking';
+
+const MONGO_UNAVAILABLE_RETRY_AFTER_SECONDS = 5;
 
 const clientErrorStatus = (error: Error): number | null => {
   const status = (error as any).status ?? (error as any).statusCode;
@@ -85,8 +87,12 @@ export const errorHandler = (error: Error, req: Request, res: Response, next: Ne
     return res.status(409).json({ error: 'Duplicate key error' });
   }
 
-  if (isTopologyLostError(error)) {
-    void triggerReconnect();
+  if (isMongoUnavailableError(error)) {
+    // Only a lost topology needs the forced reconnect: the driver recovers from a
+    // selection or socket timeout on its own, and reconnecting under it would
+    // close the pool the next request is about to use.
+    if (isTopologyLostError(error)) void triggerReconnect();
+    res.set('Retry-After', String(MONGO_UNAVAILABLE_RETRY_AFTER_SECONDS));
     return res.status(503).json({ error: 'Service temporarily unavailable' });
   }
 

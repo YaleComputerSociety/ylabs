@@ -34,6 +34,7 @@ import {
   StudentVisibilityTier,
 } from '../types/researchEntity';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
+import { isRetryableUnavailableError } from '../utils/clientErrorMessage';
 import { isKnownResearchEntityType } from '../utils/researchEntityCopy';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
 import { scrollBehavior } from '../utils/scrollBehavior';
@@ -682,7 +683,11 @@ const Research = () => {
         !controller.signal.aborted &&
         !isCancel(error)
       ) {
-        setDefaultSearchError('Research results are temporarily unavailable.');
+        if (isRetryableUnavailableError(error)) {
+          setDefaultSearchDegraded(true);
+        } else {
+          setDefaultSearchError('Research results are temporarily unavailable.');
+        }
       }
     } finally {
       if (requestId === defaultSearchRequestIdRef.current && !controller.signal.aborted) {
@@ -845,10 +850,14 @@ const Research = () => {
         !controller.signal.aborted &&
         !isCancel(error)
       ) {
-        setSearchError(
-          'Live search metadata is unavailable right now. Try another topic or check back soon.',
-        );
-        setHasFacetError(true);
+        if (isRetryableUnavailableError(error)) {
+          setSearchDegraded(true);
+        } else {
+          setSearchError(
+            'Live search metadata is unavailable right now. Try another topic or check back soon.',
+          );
+          setHasFacetError(true);
+        }
         setSearchExhausted(true);
         void trackResearchEvent({
           eventType: 'research_search',
