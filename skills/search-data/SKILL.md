@@ -77,7 +77,9 @@ Relevant config:
 | `OPENAI_API_KEY`           | Used by Meilisearch embedder config and LLM extractors.    |
 
 Documents sync via `meiliSyncService.ts` after upserts.
-`researchEntity` is the only syncable type; the legacy `listings` and `papers` indexes are retired.
+`researchEntity` is the only syncable type; the `listings`, `papers`, `pathways`, and `researchers` indexes are retired and listed in `RETIRED_INDEX_BASE_NAMES` in `reindexMeiliForEnvironment.ts`.
+A retired index base name must be added there when its surface is removed, or `reindex:meili` reports the prefixed copy as `unknown` and keeps it, as `researchers` survived the removal of person search (#3946).
+Development has no index prefix, so `reindex:meili` does not reconcile it, and a retired unprefixed index there is deleted by hand.
 After copying Mongo data into Beta or Prod, run `reindex:meili` inside that Render service to rebuild the prefixed `researchentities` index and delete any retired prefixed indexes.
 Rebuild scripts do full repopulation.
 An index document is built from the whole Mongo row, because the sanitizer reads `fieldProvenance` and other stored fields while it builds, and is then projected to `RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS`: the primary key, `slug`, and every searchable, filterable, and sortable attribute, derived from the settings so the two cannot drift (#3944).
