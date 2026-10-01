@@ -371,6 +371,26 @@ export const projectNextCycleDeadline = (deadline: Date, now: Date): Date | unde
   return undefined;
 };
 
+export interface ServedProgramDeadline {
+  deadline: Date | undefined;
+  closed: boolean;
+  projectedNextCycle: boolean;
+}
+
+export const servedProgramDeadline = (program: any, now: Date): ServedProgramDeadline => {
+  const statedDeadline = toValidDate(program?.deadline);
+  if (!statedDeadline) return { deadline: undefined, closed: false, projectedNextCycle: false };
+  const closesAt = programDeadlineClosesAt(statedDeadline);
+  const closed = deadlineIsPast(closesAt, now);
+  const projectedDeadline =
+    closed && isLikelyRecurringProgram(program)
+      ? projectNextCycleDeadline(closesAt, now)
+      : undefined;
+  return projectedDeadline
+    ? { deadline: projectedDeadline, closed, projectedNextCycle: true }
+    : { deadline: closesAt, closed, projectedNextCycle: false };
+};
+
 const MONTH_NAME_TO_INDEX: Record<string, number> = {
   january: 0,
   february: 1,
@@ -418,25 +438,12 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
 
   publicFellowship.audience = programAudience(fellowship);
 
-  const statedDeadline = toValidDate(publicFellowship.deadline);
-  if (statedDeadline) publicFellowship.deadline = programDeadlineClosesAt(statedDeadline);
-
-  const deadlinePast = deadlineIsPast(publicFellowship.deadline, now);
-  if (publicFellowship.isAcceptingApplications === true && deadlinePast) {
+  const served = servedProgramDeadline(fellowship, now);
+  if (served.deadline) publicFellowship.deadline = served.deadline;
+  if (publicFellowship.isAcceptingApplications === true && served.closed) {
     publicFellowship.isAcceptingApplications = false;
   }
-
-  publicFellowship.deadlineProjectedNextCycle = false;
-  if (deadlinePast && isLikelyRecurringProgram(fellowship)) {
-    const originalDeadline = toValidDate(publicFellowship.deadline);
-    const projectedDeadline = originalDeadline
-      ? projectNextCycleDeadline(originalDeadline, now)
-      : undefined;
-    if (projectedDeadline) {
-      publicFellowship.deadline = projectedDeadline;
-      publicFellowship.deadlineProjectedNextCycle = true;
-    }
-  }
+  publicFellowship.deadlineProjectedNextCycle = served.projectedNextCycle;
 
   const deadlineDate = toValidDate(publicFellowship.deadline);
   if (deadlineDate) {

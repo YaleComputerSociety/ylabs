@@ -13,6 +13,7 @@ vi.mock('../../models/fellowship', async (importOriginal) => ({
 import {
   publicFellowshipForStudent,
   readFellowships,
+  servedProgramDeadline,
   updateFellowship,
 } from '../fellowshipService';
 
@@ -201,6 +202,33 @@ describe('fellowship public serializer', () => {
       publicFellowshipForStudent(fellowship, new Date('2026-03-25T04:00:00.000Z'))
         .isAcceptingApplications,
     ).toBe(false);
+  });
+
+  it('serves exactly the deadline, closure, and projection servedProgramDeadline reports', () => {
+    const recurring = {
+      _id: '67d8928150621bcef434a1e3',
+      title: 'Fixture Annual Summer Fellowship',
+      applicationLink: 'https://apply.example.edu/fixture',
+      isAcceptingApplications: true,
+    };
+    const now = new Date('2026-06-01T12:00:00.000Z');
+    for (const deadline of [
+      new Date('2026-03-24T23:59:59.999Z'),
+      new Date('2026-09-24T23:59:59.999Z'),
+      new Date('2026-09-24T18:00:00.000Z'),
+    ]) {
+      const fellowship = { ...recurring, deadline };
+      const served = servedProgramDeadline(fellowship, now);
+      const payload = publicFellowshipForStudent(fellowship, now);
+      expect(payload.deadline).toEqual(served.deadline);
+      expect(payload.deadlineProjectedNextCycle).toBe(served.projectedNextCycle);
+      expect(payload.isAcceptingApplications).toBe(!served.closed);
+    }
+    expect(servedProgramDeadline({ ...recurring, deadline: 'not a date' }, now)).toEqual({
+      deadline: undefined,
+      closed: false,
+      projectedNextCycle: false,
+    });
   });
 
   it('closes a stated deadline at its stated minute', () => {

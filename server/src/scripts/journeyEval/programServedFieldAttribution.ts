@@ -1,9 +1,8 @@
 import { publicProgramDescription } from '../../controllers/programPayload';
 import {
-  deadlineIsPast,
-  isLikelyRecurringProgram,
-  projectNextCycleDeadline,
+  servedProgramDeadline,
   toValidDate,
+  type ServedProgramDeadline,
 } from '../../services/fellowshipService';
 import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
 import { publicHttpUrl } from '../../utils/urlSafety';
@@ -53,6 +52,14 @@ const sameInstant = (left: Date | undefined, right: Date | undefined): boolean =
 
 const instantsIn = (servedAt: ServedAtWindow): Date[] => [servedAt.from, servedAt.to];
 
+const servedDeadlinesIn = (stored: Row, servedAt: ServedAtWindow): ServedProgramDeadline[] =>
+  instantsIn(servedAt).map((now) => servedProgramDeadline(stored, now));
+
+const deadlineGuard = (stored: Date | undefined, served: ServedProgramDeadline): string | null => {
+  if (served.projectedNextCycle) return 'projectNextCycleDeadline';
+  return sameInstant(stored, served.deadline) ? null : 'programDeadlineClosesAt';
+};
+
 function attributeDeadline(
   stored: Row,
   served: Row,
@@ -62,23 +69,19 @@ function attributeDeadline(
   const servedDeadline = toValidDate(served.deadline);
   const flaggedProjected = served.deadlineProjectedNextCycle === true;
 
-  if (sameInstant(storedDeadline, servedDeadline)) {
-    return flaggedProjected
-      ? unexplained('deadline', 'flagged as projected while serving the stored deadline')
-      : unchanged('deadline');
+  const producing = servedDeadlinesIn(stored, servedAt).find(
+    (candidate) =>
+      sameInstant(candidate.deadline, servedDeadline) &&
+      candidate.projectedNextCycle === flaggedProjected,
+  );
+  if (producing) {
+    const guard = deadlineGuard(storedDeadline, producing);
+    return guard ? attributed('deadline', guard) : unchanged('deadline');
   }
-  const projectionProducesServed =
-    storedDeadline !== undefined &&
-    flaggedProjected &&
-    isLikelyRecurringProgram(stored) &&
-    instantsIn(servedAt).some(
-      (now) =>
-        deadlineIsPast(storedDeadline, now) &&
-        sameInstant(projectNextCycleDeadline(storedDeadline, now), servedDeadline),
-    );
-  return projectionProducesServed
-    ? attributed('deadline', 'projectNextCycleDeadline')
-    : unexplained('deadline', 'serves a deadline the next-cycle projection does not produce');
+  if (sameInstant(storedDeadline, servedDeadline) && flaggedProjected) {
+    return unexplained('deadline', 'flagged as projected while serving the stored deadline');
+  }
+  return unexplained('deadline', 'serves a deadline the serve-time deadline path does not produce');
 }
 
 function attributeAcceptingApplications(
@@ -95,7 +98,7 @@ function attributeAcceptingApplications(
   const closedByPastDeadline =
     storedFlag === true &&
     servedFlag === false &&
-    instantsIn(servedAt).some((now) => deadlineIsPast(stored.deadline, now));
+    servedDeadlinesIn(stored, servedAt).some((candidate) => candidate.closed);
   return closedByPastDeadline
     ? attributed('isAcceptingApplications', 'deadlineIsPast')
     : unexplained(
