@@ -58,8 +58,14 @@ const researchEntityRelationshipSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+researchEntityRelationshipSchema.index(
+  { sourceResearchEntityId: 1, targetResearchEntityId: 1, relationshipType: 1 },
+  { unique: true },
+);
 researchEntityRelationshipSchema.index({ sourceResearchEntityId: 1, relationshipType: 1 });
 researchEntityRelationshipSchema.index({ targetResearchEntityId: 1, relationshipType: 1 });
+researchEntityRelationshipSchema.index({ sourceResearchEntityId: 1, archived: 1 });
+researchEntityRelationshipSchema.index({ targetResearchEntityId: 1, archived: 1 });
 
 export const ResearchEntityRelationship =
   mongoose.models.ResearchEntityRelationship ||
