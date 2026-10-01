@@ -15,6 +15,7 @@ import {
 } from '../models/studentVisibility';
 import * as itemOps from './itemOperations';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
+import { Observation } from '../models/observation';
 import { clearedStudentVisibilityVerdict } from '../models/entityArchival';
 import { programRoleForKind } from './programClassifier';
 import { programAudience } from './programAudience';
@@ -698,9 +699,57 @@ const withoutClearedVerdict = (update: Record<string, unknown>) =>
     Object.entries(update).filter(([field]) => !(field in clearedStudentVisibilityVerdict())),
   );
 
+const VISIBILITY_OVERRIDE_FIELDS = [
+  'studentVisibilityOverrideTier',
+  'studentVisibilitySuppressionReason',
+] as const;
+
+const LIFTED_OVERRIDE_REASON =
+  'operator lifted the student-visibility override in the admin editor';
+
+/**
+ * Lifting an override clears the stored field and retires the observations that assert it.
+ * Clearing the field alone does not stick: a `manual-admin-edit` observation still asserts
+ * the old tier, and the next materialization projects it back, which is how per-row repairs
+ * of research-entity overrides came undone before #1898.
+ */
+async function liftFellowshipVisibilityOverride(fellowship: { _id: unknown; sourceKey?: unknown }) {
+  const identity: Record<string, unknown>[] = [{ entityId: fellowship._id }];
+  if (typeof fellowship.sourceKey === 'string' && fellowship.sourceKey) {
+    identity.push({ entityKey: fellowship.sourceKey });
+  }
+  await Observation.updateMany(
+    {
+      entityType: 'fellowship',
+      $or: identity,
+      field: { $in: [...VISIBILITY_OVERRIDE_FIELDS] },
+      superseded: { $ne: true },
+    },
+    {
+      $set: {
+        superseded: true,
+        rollback: { rolledBackAt: new Date(), reason: LIFTED_OVERRIDE_REASON },
+      },
+    },
+  );
+  await Fellowship.updateOne(
+    { _id: fellowship._id },
+    {
+      $unset: Object.fromEntries(
+        VISIBILITY_OVERRIDE_FIELDS.flatMap((field) => [
+          [field, ''],
+          [`fieldProvenance.${field}`, ''],
+        ]),
+      ),
+    },
+  );
+}
+
 export const updateFellowship = async (id: any, data: any) => {
   const safeId = normalizeFellowshipObjectId(id);
   if (!safeId) throw new ObjectIdError('Did not receive expected id type ObjectId');
+  const liftsOverride =
+    data !== null && typeof data === 'object' && data.studentVisibilityOverrideTier === null;
 
   const safeData = filterFellowshipUpdate(data);
   const restoring =
@@ -715,7 +764,8 @@ export const updateFellowship = async (id: any, data: any) => {
     runValidators: true,
   });
   if (!fellowship) throw new NotFoundError('Fellowship not found');
-  if (!restoring) return fellowship.toObject();
+  if (liftsOverride) await liftFellowshipVisibilityOverride(fellowship);
+  if (!restoring && !liftsOverride) return fellowship.toObject();
 
   await runStudentVisibilityGate({ collection: 'programs', mode: 'apply', recordIds: [safeId] });
   const regated = await Fellowship.findById(safeId).lean();
