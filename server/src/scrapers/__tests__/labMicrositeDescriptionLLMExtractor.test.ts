@@ -1132,6 +1132,51 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(emitted.some((obs) => obs.field === 'fullDescription')).toBe(true);
   });
 
+  it('writes the card from the research sentences of a bio it keeps as the body', async () => {
+    const { ctx, emitted } = makeContext();
+    const bio =
+      'I am an assistant professor of Computer Science at Example University. Before that, I was a postdoc at the Department of Statistics of Northfield University. I received my PhD from the Department of Mathematics at Eastbrook Institute. During my Ph.D. studies, I was awarded the Example Society Dissertation Award. My research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.';
+    const fetchPage = vi.fn().mockResolvedValue({
+      url: 'https://example.org/',
+      html: `<main><p>${bio}</p></main>`,
+    });
+    const researchCard =
+      'Studies learning theory, optimization, game theory, and mechanism design.';
+    const callCardLLM = vi.fn().mockResolvedValue(researchCard);
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'bio-1',
+          slug: 'dept-example-bio-homepage',
+          name: 'Example Faculty Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          websiteUrl: 'https://example.org/',
+        },
+      ],
+      fetchPage,
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription: bio,
+        shortDescription:
+          'During my Ph.D. studies, I was awarded the Example Society Dissertation Award.',
+        topics: [],
+        methods: [],
+      } satisfies DescriptionExtraction),
+      callCardLLM,
+    });
+
+    await scraper.run(ctx);
+
+    expect(callCardLLM).toHaveBeenCalledOnce();
+    expect(callCardLLM.mock.calls[0][0].fullDescription).not.toMatch(/awarded|postdoc|PhD/);
+    expect(emitted.find((obs) => obs.field === 'shortDescription')?.value).toBe(researchCard);
+    expect(emitted.find((obs) => obs.field === 'fullDescription')?.value).toBe(bio);
+  });
+
   it('does not synthesize a card when the extraction already carries a usable one (#557)', async () => {
     const { ctx, emitted } = makeContext();
     const fullDescription =

@@ -476,7 +476,8 @@ const CARD_PAIR_FIELDS: ReadonlySet<string> = new Set(['fullDescription', 'short
 /**
  * Removes, in place, a research row's incoming description pair when it would take away the
  * card the source's current pair gives, and returns how many rows were held. Judged per row
- * as a pair because the card is built from both fields together.
+ * as a pair because the card is built from both fields together. The incoming card alone is
+ * kept when it still gives a card under the current body.
  */
 async function dropCardLosingDescriptionRefreshes(
   kept: ObservationInput[],
@@ -503,16 +504,31 @@ async function dropCardLosingDescriptionRefreshes(
       fullDescription: incomingFull ? incomingFull.value : existing.fullDescription,
       shortDescription: incomingShort ? incomingShort.value : existing.shortDescription,
     };
+    const researchAreas = researchAreasByEntity.get(entityKey);
     if (
-      await isCardLosingDescriptionRefresh({
-        subject,
-        existing,
-        incoming,
-        researchAreas: researchAreasByEntity.get(entityKey),
-        judge,
-      })
+      !(await isCardLosingDescriptionRefresh({ subject, existing, incoming, researchAreas, judge }))
     ) {
-      for (const obs of pairObs) held.add(obs);
+      continue;
+    }
+    // The incoming card can still be taken under the current body. That is the owner's
+    // choice for a biography whose only research statement is a topic list: keep the
+    // biography as the body and serve a research card rather than the bio's own (#4299).
+    const cardUnderCurrentBody =
+      incomingShort && incomingFull
+        ? !(await isCardLosingDescriptionRefresh({
+            subject,
+            existing,
+            incoming: {
+              fullDescription: existing.fullDescription,
+              shortDescription: incomingShort.value,
+            },
+            researchAreas,
+            judge,
+          }))
+        : false;
+    for (const obs of pairObs) {
+      if (cardUnderCurrentBody && obs === incomingShort) continue;
+      held.add(obs);
     }
   }
   if (held.size === 0) return { rows: 0, observations: 0 };

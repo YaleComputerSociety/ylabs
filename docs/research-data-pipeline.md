@@ -630,6 +630,8 @@ Read the served output afterwards with `yarn --cwd server research-entity:served
   `appendObservations` resolves every incumbent prose lookup the batch can need once, up front and concurrently, and judges the incumbent with the same `entityType` and `researchAreas` as the incoming value, so an incumbent the quality bar rejects cannot block a refresh.
 - The card-loss guard `isCardLosingDescriptionRefresh` (`server/src/scrapers/descriptionCardRefreshGuard.ts`, #3767) judges a research row's `fullDescription` and `shortDescription` as one pair, because the card is built from both.
   It drops the whole incoming pair when the source's current pair builds a complete card and the incoming one does not, filling a field the batch does not refresh from the current value.
+  When the incoming card still builds a complete card under the current body, only the incoming body is dropped and the card is kept (#4299).
+  That is the owner's choice for a biography whose only research statement is a topic list: the biography stays the body, and the row serves a research card instead of a sentence from the biography.
   The verdict comes from the gate's own `buildResearchEntityPublicDescriptionRepresentation` with the row's stored fields and its gate lead members, not from the raw prose checks, because a keyword list, a citation or a recruiting line can pass those and still build no card.
   An equal or better pair still replaces the current one, and a row the judge cannot load raises no objection.
   It is one of the two write-path/collapse asymmetries recorded above.

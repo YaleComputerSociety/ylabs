@@ -24,7 +24,8 @@ const subject = { entityType: 'researchEntity' as const, entityKey: 'example-lab
 const judgeByText =
   (withCard: ReadonlySet<unknown>): DescriptionCardJudge =>
   async (_subject, pair) =>
-    withCard.has(pair.fullDescription);
+    withCard.has(pair.fullDescription) &&
+    (pair.shortDescription === undefined || withCard.has(pair.shortDescription));
 
 describe('isCardLosingDescriptionRefresh', () => {
   it('refuses a refresh that would lose the card', async () => {
@@ -107,6 +108,27 @@ describe('appendObservations card refresh guard', () => {
     const inserted = (insertMany.mock.calls[0]?.[0] ?? []) as Array<{ field: string }>;
     expect(inserted.map((doc) => doc.field)).toEqual(['methods']);
     expect(result.skipped).toBe(2);
+  });
+
+  it('takes only the incoming card when it still gives a card under the current body', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([] as any);
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
+    const card = 'Studies how cells sense mechanical force during tissue repair.';
+    const cardless =
+      'The Example Lab studies how tissues rebuild their structure after injury in adults.';
+    await appendObservations(
+      [
+        { ...subject, field: 'fullDescription', value: cardless },
+        { ...subject, field: 'shortDescription', value: card },
+      ],
+      ctx,
+      {
+        loadActiveProse: async (query) => (query.field === 'fullDescription' ? GOOD : undefined),
+        judgeDescriptionCard: judgeByText(new Set([GOOD, card])),
+      },
+    );
+    const inserted = (insertMany.mock.calls[0]?.[0] ?? []) as Array<{ field: string }>;
+    expect(inserted.map((doc) => doc.field)).toEqual(['shortDescription']);
   });
 
   it('lets a refresh through when the incoming pair also gives a card', async () => {

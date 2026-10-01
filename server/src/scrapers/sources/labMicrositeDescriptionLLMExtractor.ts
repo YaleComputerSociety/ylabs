@@ -45,6 +45,7 @@ import {
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
 import { extractLabHomepageDescription } from './ysmAtoZScraper';
+import { buildResearchEntityPublicDescriptionRepresentation } from '../../services/researchEntityPublicDescription';
 import { extractElementTextWithBlockSeparators, plainTextContent } from '../utils/htmlText';
 import {
   institutionalEvidenceHosts,
@@ -1061,6 +1062,29 @@ export function researchSentencesOfBiographyBody(value: string): string {
   return describesResearchFocus(rebuilt) ? rebuilt : value;
 }
 
+/**
+ * The body this lane asserts for a biography: its research sentences when they serve
+ * as a body on their own, and otherwise the biography itself. A research statement
+ * that is only a topic list ("My research interests include: A, B, C") is not a body
+ * the serve path accepts, so storing it alone would cost the row its card and its
+ * place in browse. The owner chose to keep such a biography as the body and write the
+ * card from its research sentences instead (#4299).
+ */
+function bodyForBiography(raw: string, context: { entityType?: string; kind?: string }): string {
+  const research = researchSentencesOfBiographyBody(raw);
+  if (research === raw) return raw;
+  const served = buildResearchEntityPublicDescriptionRepresentation({
+    entity: {
+      entityType: context.entityType,
+      kind: context.kind,
+      fullDescription: research,
+      shortDescription: '',
+    },
+    leadMemberNames: [],
+  });
+  return served.quality.full.isUseful ? research : raw;
+}
+
 function usefulShortDescription(value: unknown, fullDescription: string): string {
   const candidate = usefulDescription(value);
   const text = normalizeKnownDescriptionAcronyms(isBiographySentence(candidate) ? '' : candidate);
@@ -1142,7 +1166,7 @@ export function descriptionExtractionToObservations(
   if (pageAttribution === 'ANOTHER_PERSONS_LAB') return [];
 
   const fullDescription = normalizeKnownDescriptionAcronyms(
-    usefulDescription(researchSentencesOfBiographyBody(textValue(extraction.fullDescription))),
+    usefulDescription(bodyForBiography(textValue(extraction.fullDescription), context)),
   );
   if (
     !fullDescription ||
@@ -1555,8 +1579,10 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
     if (!fullObservation || !fullDescription || !this.apiKey) return unchanged;
     const apiKey = this.apiKey;
     let cardCallFailed = false;
+    // A biography body is kept whole when its research sentences cannot serve alone,
+    // so the card is written from those sentences rather than from the career facts.
     const card = await synthesizeGroundedCardDescription({
-      fullDescription,
+      fullDescription: researchSentencesOfBiographyBody(fullDescription),
       callLLM: async (llmInput) => {
         try {
           return await this.callCardLLM({ ...llmInput, apiKey, model: this.cardModel });
