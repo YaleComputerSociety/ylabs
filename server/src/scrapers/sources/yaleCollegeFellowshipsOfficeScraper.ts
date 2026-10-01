@@ -1226,8 +1226,19 @@ function candidatesFromCbeyFundingPage(
     .filter((candidate): candidate is FellowshipCatalogCandidate => !!candidate);
 }
 
+const TEASER_NODE_CLASS_RE = /\bnode-{1,2}(?:view-mode-)?teaser\b/i;
+
+function primaryContentNode($: cheerio.CheerioAPI): cheerio.Cheerio<any> {
+  return $('.node, article')
+    .filter((_index, node) => {
+      const $node = $(node);
+      return !isInExcludedPageRegion($node) && !TEASER_NODE_CLASS_RE.test($node.attr('class') || '');
+    })
+    .first();
+}
+
 function detailContentRoot($: cheerio.CheerioAPI): cheerio.Cheerio<any> {
-  const specificContent = $('.node, article').first();
+  const specificContent = primaryContentNode($);
   const primaryContent = $('main, [role="main"]').first();
   return specificContent.length > 0
     ? specificContent
@@ -1261,12 +1272,9 @@ const CMS_POST_CONTENT_TYPES = new Set([
 ]);
 
 function cmsContentTypes($: cheerio.CheerioAPI): string[] {
-  const classes = [
-    $('body').attr('class') || '',
-    ...$('.node, article')
-      .toArray()
-      .map((node) => $(node).attr('class') || ''),
-  ].join(' ');
+  const classes = [$('body').attr('class') || '', primaryContentNode($).attr('class') || ''].join(
+    ' ',
+  );
   const types = new Set<string>();
   for (const match of classes.matchAll(/\b(?:page-)?node-{1,2}type-([a-z0-9_-]+)/gi)) {
     types.add(match[1].toLowerCase().replace(/_/g, '-'));
@@ -1342,6 +1350,25 @@ function contentLinkCensus(
   };
 }
 
+const AWARD_NOUN_RE =
+  /^(?:fellowships?|grants?|scholars?|scholarships?|awards?|prizes?|internships?|assistantships?|programs?)$/i;
+const AWARD_NAME_CONNECTOR_RE =
+  /^(?:and|&|or|the|a|an|of|for|in|on|to|with|by|about|this|that|these|our|your|its|each|per)$/i;
+
+function namesSingleAward(title: string): boolean {
+  const words = normalizeWhitespace(title)
+    .replace(/(?:\s*\([^)]*\)|\s+\d{4})+$/, '')
+    .split(' ');
+  const finalWord = words[words.length - 1] || '';
+  const qualifier = words[words.length - 2];
+  return (
+    isLikelyFellowshipTitle(title) &&
+    AWARD_NOUN_RE.test(finalWord) &&
+    !!qualifier &&
+    !AWARD_NAME_CONNECTOR_RE.test(qualifier)
+  );
+}
+
 const MIN_DATED_ARTICLES_FOR_ROUNDUP = 3;
 const MIN_FUND_RECORDS_FOR_HUB = 2;
 const MIN_LISTED_PROGRAMS_FOR_HUB = 3;
@@ -1354,6 +1381,7 @@ export function nonProgramPageShape(
   if (isSignInWall($)) return 'sign-in-wall';
   if (cmsContentTypes($).some((type) => CMS_POST_CONTENT_TYPES.has(type))) return 'cms-post';
   const title = normalizedCandidateTitle($('h1').first().text());
+  if (namesSingleAward(title)) return undefined;
   const census = contentLinkCensus($, chromeFreeContent(detailContentRoot($)), pageUrl, title);
   if (census.datedArticles >= MIN_DATED_ARTICLES_FOR_ROUNDUP) return 'news-roundup';
   if (

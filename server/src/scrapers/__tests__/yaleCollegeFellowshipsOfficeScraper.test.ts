@@ -2799,6 +2799,63 @@ describe('YaleCollegeFellowshipsOfficeScraper pages that are not programs (#4110
     ]);
   });
 
+  it.each([
+    [
+      'section headings that each mention the award',
+      `
+        <h2>Fellowship Benefits</h2><p>Fellows receive a stipend.</p>
+        <h2>Program Requirements</h2><p>Fellows present a poster.</p>
+        <h2>Grant Timeline</h2><p>Funds are disbursed in May.</p>
+      `,
+    ],
+    [
+      'links to dated stories about past fellows',
+      [1, 2, 3]
+        .map(
+          (day) =>
+            `<a href="https://news.yale.edu/2025/06/0${day}/fixture-past-fellow-story">Read about a past fellow</a>`,
+        )
+        .join(''),
+    ],
+    [
+      'a fund record per term and links to related programs',
+      `
+        <a href="${fundRecord('summer-term')}">Apply for the summer term</a>
+        <a href="${fundRecord('fall-term')}">Apply for the fall term</a>
+        <p>Related:</p>
+        <a href="https://funding.yale.edu/fellowships/fixture-alpha-fellowship">Fixture Alpha Fellowship</a>
+        <a href="https://funding.yale.edu/fellowships/fixture-beta-grant">Fixture Beta Grant</a>
+        <a href="https://funding.yale.edu/fellowships/fixture-gamma-prize">Fixture Gamma Prize</a>
+      `,
+    ],
+  ])('keeps a page titled as one award that carries %s', (_shape, body) => {
+    const read = readFellowshipCatalogPage(
+      pageWith('Fixture Summer Research Fellowship', `<p>Ten weeks of mentored research.</p>${body}`),
+      officePageUrl,
+      referenceDate,
+    );
+
+    expect(read.refusedPage).toBeUndefined();
+    expect(read.candidates.map((candidate) => candidate.title)).toEqual([
+      'Fixture Summer Research Fellowship',
+    ]);
+  });
+
+  it('keeps a program page that shows a news teaser in its sidebar', () => {
+    const html = programPage.replace(
+      '</body>',
+      `<aside class="layout-sidebar"><article class="node node--type-news node--view-mode-teaser">
+        <a href="https://funding.yale.edu/news/fixture-update">Fixture update</a>
+      </article></aside></body>`,
+    );
+    const read = readFellowshipCatalogPage(html, officePageUrl, referenceDate);
+
+    expect(read.refusedPage).toBeUndefined();
+    expect(read.candidates.map((candidate) => candidate.title)).toEqual([
+      'Fixture Summer Research Fellowship',
+    ]);
+  });
+
   it('still reads a catalog page that lists many fund records as a catalog', () => {
     const rows = ['Fixture Alpha Research Fellowship', 'Fixture Beta Travel Grant']
       .map(
