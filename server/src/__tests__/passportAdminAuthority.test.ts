@@ -11,7 +11,7 @@ vi.mock('../services/accountService', () => ({
 }));
 
 vi.mock('../services/yaliesService', () => ({
-  classifyYalieByNetid: vi.fn(),
+  lookupYalieByNetid: vi.fn(),
 }));
 
 vi.mock('../services/directoryService', () => ({

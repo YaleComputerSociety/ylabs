@@ -24,7 +24,7 @@ const accountServiceMock = vi.hoisted(() => ({
 vi.mock('../services/accountService', () => accountServiceMock);
 
 vi.mock('../services/yaliesService', () => ({
-  classifyYalieByNetid: vi.fn(async () => null),
+  lookupYalieByNetid: vi.fn(async () => ({ kind: 'not_found' })),
 }));
 
 vi.mock('../services/directoryService', () => ({

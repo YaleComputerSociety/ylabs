@@ -12,9 +12,11 @@ Prefer source verification before editing `passport.ts`, `app.ts`, security midd
 
 ```
 User -> Yale CAS SSO -> passport.ts resolveLoginPrincipalForCas
-     -> Yalies API for undergrad/grad classification
-     -> Yale Directory for faculty classification
-     -> Fallback: userType "unknown"
+     -> Yalies lookup (lookupYalieByNetid): student, employee, not_found, or unavailable
+        student  -> undergraduate (school_code YC) or graduate
+        employee -> professor when isFacultyTitle(title), otherwise staff
+        unavailable -> the userType a previous login stored on Account.profile, else "unknown"
+        not_found -> Yale Directory (faculty -> professor), else "unknown"
      -> accountService.recordAccountLogin: resolve-or-create Account (netid/email), stamp lastLoginAt
      -> cookie-session for 30 days, httpOnly, secure in prod, sameSite lax
 ```
@@ -25,6 +27,9 @@ Accounts are created only at login (never by the scraper); the scraper's identit
 `userType` is a classification/analytics dimension only; it does not authorize anything, whether read from the session or the persisted profile.
 Admin authority is a separate signal: `buildAuthenticatedSessionUser` sets `isAdmin` from `hasActiveAdminGrant`, and that boolean is what guards and the client key off.
 The classification cascade runs only at login time.
+`unknown` means Yalies has no record of the person, or could not answer and no earlier login stored a type; a request failure is never read as "not in Yalies", because that typed returning students `unknown` (#4234).
+Yalies lists faculty and staff with a `title` and `organization` but no `year` or `school_code`, so the lookup reads such a record as an employee rather than discarding it.
+The Yale Directory endpoint `directory.yale.edu/api/people` answers an HTML 404 page for every query as of 2026-09-30, so the Directory leg currently resolves nobody; `fetchFromDirectory` logs a non-JSON 404 as an unavailable endpoint rather than reading it as a missing person.
 Per-request session restore in `deserializeUser` re-validates that the backing `Account` exists and is not archived, then recomputes `isAdmin` from the admin-grant check.
 The admin-grant check is cached in memory for 60 seconds in `adminGrantService` and invalidated on grant or revoke.
 A session whose `Account` no longer exists or is archived deserializes to unauthenticated.

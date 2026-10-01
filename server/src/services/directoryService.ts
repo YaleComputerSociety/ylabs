@@ -41,6 +41,11 @@ export function isFacultyTitle(title: string): boolean {
   return facultyKeywords.some((kw) => lower.includes(kw));
 }
 
+function isJsonResponse(response: { headers?: Record<string, unknown> } | undefined): boolean {
+  const contentType = response?.headers?.['content-type'];
+  return typeof contentType === 'string' && contentType.toLowerCase().includes('json');
+}
+
 /**
  * Query the Yale Directory for a person by netid or name.
  * The public directory API at directory.yale.edu returns basic info
@@ -101,6 +106,10 @@ export async function fetchFromDirectory(
   } catch (error: any) {
     if (error.response?.status !== 404) {
       console.error('Directory lookup failed:', sanitizeLogValue(error));
+    } else if (!isJsonResponse(error.response)) {
+      console.error(
+        'Directory endpoint unavailable: a non-JSON 404 is a missing route, not a missing person',
+      );
     }
     return null;
   }

@@ -99,60 +99,98 @@ export interface YaliesIdentity {
   major: string[];
 }
 
-export const classifyYalieByNetid = async (netid: any): Promise<YaliesIdentity | null> => {
-  try {
-    const normalizedNetid = normalizeYaliesNetid(netid);
-    if (!normalizedNetid) return null;
+export interface YaliesEmployee {
+  netid: string;
+  fname: string;
+  lname: string;
+  email: string;
+  title: string;
+  department: string;
+}
 
-    const apiKey = yaliesApiKey();
-    if (!apiKey) {
-      console.error('YALIES_API_KEY not set');
-      return null;
-    }
+export type YaliesLookup =
+  | { kind: 'student'; identity: YaliesIdentity }
+  | { kind: 'employee'; employee: YaliesEmployee }
+  | { kind: 'not_found' }
+  | { kind: 'unavailable' };
 
-    let yaliesResponse;
-    try {
-      yaliesResponse = await axios.post(
-        YALIES_API_URL,
-        { filters: { netid: [normalizedNetid] } },
-        { headers: { Authorization: `Bearer ${apiKey}` }, timeout: YALIES_API_TIMEOUT_MS },
-      );
-    } catch (error) {
-      console.error('Error fetching from Yalies API:', sanitizeLogValue(yaliesRequestError(error)));
-      return null;
-    }
+const NOT_FOUND: YaliesLookup = { kind: 'not_found' };
+const UNAVAILABLE: YaliesLookup = { kind: 'unavailable' };
 
-    const yaliesData = yaliesResponse.data;
-    if (!yaliesData || yaliesData.length === 0) {
-      return null;
-    }
+type YaliesRecord = Record<string, unknown>;
 
-    const yalie = yaliesData[0];
-    const responseNetid = normalizeYaliesNetid(yalie.netid) || normalizedNetid;
+const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
-    if (
-      !yalie.first_name ||
-      !yalie.last_name ||
-      !yalie.email ||
-      !yalie.year ||
-      !yalie.school_code
-    ) {
-      return null;
-    }
+function studentIdentity(record: YaliesRecord, netid: string): YaliesIdentity {
+  const major = record.major;
+  return {
+    netid,
+    fname: text(record.first_name),
+    lname: text(record.last_name),
+    email: text(record.email),
+    college: text(record.college),
+    year: record.year as string | number,
+    userType: record.school_code === 'YC' ? 'undergraduate' : 'graduate',
+    userConfirmed: true,
+    major: Array.isArray(major) ? major.map(String) : major ? [String(major)] : [],
+  };
+}
 
-    return {
-      netid: responseNetid,
-      fname: yalie.first_name || '',
-      lname: yalie.last_name || '',
-      email: yalie.email,
-      college: yalie.college || '',
-      year: yalie.year,
-      userType: yalie.school_code === 'YC' ? 'undergraduate' : 'graduate',
-      userConfirmed: true,
-      major: (yalie.major && Array.isArray(yalie.major) ? yalie.major : [yalie.major]) || [],
-    };
-  } catch (error) {
-    console.error('Error fetching user:', sanitizeLogValue(error));
-    return null;
+function employeeRecord(record: YaliesRecord, netid: string): YaliesEmployee {
+  return {
+    netid,
+    fname: text(record.first_name),
+    lname: text(record.last_name),
+    email: text(record.email),
+    title: text(record.title),
+    department: text(record.organization) || text(record.unit),
+  };
+}
+
+/**
+ * Classify a netid against Yalies, keeping "not in Yalies" apart from "Yalies
+ * could not answer". A caller that merges the two types a returning student
+ * `unknown` whenever the request times out (#4234).
+ *
+ * A record carrying `year` and `school_code` is a student. One carrying a
+ * `title` without them is an employee: Yalies lists faculty and staff with an
+ * appointment title and organization but no enrolment fields.
+ */
+export const lookupYalieByNetid = async (netid: unknown): Promise<YaliesLookup> => {
+  const normalizedNetid = normalizeYaliesNetid(netid);
+  if (!normalizedNetid) return NOT_FOUND;
+
+  const apiKey = yaliesApiKey();
+  if (!apiKey) {
+    console.error('YALIES_API_KEY not set');
+    return UNAVAILABLE;
   }
+
+  let records: unknown;
+  try {
+    const response = await axios.post(
+      YALIES_API_URL,
+      { filters: { netid: [normalizedNetid] } },
+      { headers: { Authorization: `Bearer ${apiKey}` }, timeout: YALIES_API_TIMEOUT_MS },
+    );
+    records = response.data;
+  } catch (error) {
+    console.error('Error fetching from Yalies API:', sanitizeLogValue(yaliesRequestError(error)));
+    return UNAVAILABLE;
+  }
+
+  const record = Array.isArray(records) ? (records[0] as YaliesRecord | undefined) : undefined;
+  if (!record || typeof record !== 'object') return NOT_FOUND;
+
+  const responseNetid = normalizeYaliesNetid(record.netid) || normalizedNetid;
+  const hasName = Boolean(text(record.first_name) && text(record.last_name));
+  if (!hasName || !text(record.email)) return NOT_FOUND;
+
+  if (record.year && record.school_code) {
+    return { kind: 'student', identity: studentIdentity(record, responseNetid) };
+  }
+  if (text(record.title)) {
+    return { kind: 'employee', employee: employeeRecord(record, responseNetid) };
+  }
+  return NOT_FOUND;
 };
