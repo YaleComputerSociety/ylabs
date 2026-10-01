@@ -133,25 +133,51 @@ export async function withMongoReconnect<T>(operation: () => Promise<T>): Promis
 
 let keepAliveTimer: ReturnType<typeof setInterval> | null = null;
 
+const MONGO_READY_STATE_DISCONNECTED = 0;
+const MONGO_READY_STATE_UNINITIALIZED = 99;
+
+function sharedConnectionNeedsReconnect(): boolean {
+  const readyState = mongoose.connection.readyState as number;
+  return (
+    readyState === MONGO_READY_STATE_DISCONNECTED || readyState === MONGO_READY_STATE_UNINITIALIZED
+  );
+}
+
 /**
- * Pings the primary connection on an interval inside maxIdleTimeMS so a
- * low-traffic instance never lets its live connection go idle-closed, and so a
- * silently dead socket is detected and healed before the next real request.
+ * One keep-alive pass over the primary connection: reconnects a connection that
+ * is no longer established, and otherwise pings it so a silently dead socket is
+ * detected and healed before the next real request.
+ *
+ * The reconnect arm is what makes the pass able to heal at all. A ping reaches
+ * `connection.db`, which is undefined on a connection that was dropped or never
+ * established, so optional chaining made the pass a silent no-op in exactly the
+ * state that needs it and the process served errors until someone restarted it
+ * (#4186).
+ */
+export async function mongoKeepAliveTick(): Promise<void> {
+  try {
+    if (sharedConnectionNeedsReconnect()) {
+      await triggerReconnect();
+      return;
+    }
+    await mongoose.connection.db?.admin().ping();
+  } catch (error) {
+    if (isTopologyLostError(error)) {
+      await triggerReconnect();
+    } else {
+      console.error('MongoDB: keepAlive ping failed:', (error as Error)?.message ?? error);
+    }
+  }
+}
+
+/**
+ * Runs mongoKeepAliveTick on an interval inside maxIdleTimeMS so a low-traffic
+ * instance never lets its live connection go idle-closed.
  */
 export function startMongoKeepAlive(intervalMs = 120000): void {
   if (keepAliveTimer) return;
   keepAliveTimer = setInterval(() => {
-    void (async () => {
-      try {
-        await mongoose.connection.db?.admin().ping();
-      } catch (error) {
-        if (isTopologyLostError(error)) {
-          await triggerReconnect();
-        } else {
-          console.error('MongoDB: keepAlive ping failed:', (error as Error)?.message ?? error);
-        }
-      }
-    })();
+    void mongoKeepAliveTick();
   }, intervalMs);
   keepAliveTimer.unref?.();
 }
