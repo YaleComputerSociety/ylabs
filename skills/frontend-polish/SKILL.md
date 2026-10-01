@@ -88,7 +88,8 @@ Debounce free-text search inputs with `client/src/hooks/useDebouncedCallback.ts`
 - Sticky sidebars must never hide content below the fold on short viewports.
 - Public pages paint before the session check answers, so UI that mounts only for a resolved session must not land above content that is already painted.
 Reserve its slot when every viewer needs it, or place it where nothing follows it.
-The `/research` operator controls sit at the bottom of the wide-layout sidebar for this reason, and the student-journey smoke fails when a late admin session check pushes browse to a CLS of 0.1.
+The `/research` operator controls sit at the bottom of the wide-layout sidebar for this reason.
+The student-journey smoke holds the session check until browse has painted, counts only the layout shifts after it answers with an admin grant, and fails at a CLS of 0.1; first-paint shifts are excluded because their size depends on frame timing, which once doubled the total (#4169).
 - A bar pinned with `sticky top-0` inside `[data-scroll-container]` must reserve its height as the scroller's `scroll-padding-top`, or a keyboard focus scrolled into view lands under it (WCAG 2.4.11).
 `ResearchStickyFilterBar` does this by writing its measured height to `--yr-sticky-filter-bar-height`, which `index.css` reads; reuse that pattern for any new sticky bar.
 
