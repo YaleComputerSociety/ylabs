@@ -121,6 +121,14 @@ describe('classifyProgramResearchRelevance', () => {
           .reasons,
       ).toContain('mentored_research_pathway');
     });
+
+    it.each([
+      'Each fellow works with a faculty mentor who is not affiliated with the sponsor.',
+      'Fellows meet weekly with a faculty mentor and prior experience is not required.',
+      'No faculty mentor is required to apply, though admitted fellows are matched with a faculty mentor.',
+    ])('still admits a program whose negation qualifies something else: "%s"', (sentence) => {
+      expect(internship(sentence, ['Internship']).reasons).toContain('mentored_research_pathway');
+    });
   });
 
   it('admits a structured program built on faculty mentorship whose page never says research', () => {

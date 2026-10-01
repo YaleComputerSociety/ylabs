@@ -58,7 +58,7 @@ const FUNDS_RESEARCH_PROSE =
 
 // A structured program built on faculty mentorship is a student's way into research even when
 // its page never uses the word, so it belongs on /programs (product decision, 2026-09-30).
-const FACULTY_MENTORSHIP_PROSE = /\bfaculty\b[\w\s-]{0,30}\bmentor(?:s|ship|ing)?\b/i;
+const FACULTY_MENTORSHIP_PROSE = /\bfaculty\b[\w\s-]{0,30}\bmentor(?:s|ship|ing)?\b/gi;
 
 const RESEARCH_CAREER_AWARD =
   /\b(?:pursue|pursuing|intend(?:s|ing)? to pursue)\s+research careers?\b/i;
@@ -83,7 +83,7 @@ const affirmedIn = (fields: string[], pattern: RegExp): boolean =>
 const NEGATION_JUST_BEFORE = /(?:\b(?:no|not|never|nor|without)\b|n't)(?:\s+[\w'-]+){0,3}\s*$/i;
 
 const NEGATED_PREDICATE_AFTER =
-  /^[^,:;]*?\b(?:(?:is|are|was|were)\s+not|isn't|aren't|not\s+(?:required|needed|necessary|provided|offered))\b/i;
+  /^\s*(?:program\s+)?(?:(?:is|are|was|were)\s+not|isn't|aren't|wasn't|weren't|not\s+(?:required|needed|necessary|provided|offered))\b/i;
 
 // A sentence that names faculty mentorship only to deny it ("No faculty mentor is required",
 // "A faculty mentor is not provided") says the opposite, so the clause around each match is
@@ -91,15 +91,13 @@ const NEGATED_PREDICATE_AFTER =
 const assertsFacultyMentorship = (fields: string[]): boolean =>
   fields
     .flatMap((field) => field.split(SENTENCE_BOUNDARY))
-    .some((sentence) => {
-      const match = FACULTY_MENTORSHIP_PROSE.exec(sentence);
-      if (!match) return false;
-      const after = sentence.slice(match.index + match[0].length);
-      return (
-        !NEGATION_JUST_BEFORE.test(sentence.slice(0, match.index)) &&
-        !NEGATED_PREDICATE_AFTER.test(after)
-      );
-    });
+    .some((sentence) =>
+      [...sentence.matchAll(FACULTY_MENTORSHIP_PROSE)].some(
+        (match) =>
+          !NEGATION_JUST_BEFORE.test(sentence.slice(0, match.index)) &&
+          !NEGATED_PREDICATE_AFTER.test(sentence.slice(match.index + match[0].length)),
+      ),
+    );
 
 const isMentoredResearchPathway = (programKind: string, fields: string[]): boolean =>
   programKind === 'STRUCTURED_PROGRAM' && assertsFacultyMentorship(fields);
