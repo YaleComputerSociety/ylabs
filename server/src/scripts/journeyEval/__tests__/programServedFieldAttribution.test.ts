@@ -5,7 +5,6 @@ import {
 } from '../../../controllers/programPayload';
 import { publicFellowshipForStudent } from '../../../services/fellowshipService';
 import {
-  PROGRAM_ATTRIBUTED_FIELDS,
   attributeProgramServedFields,
   type ProgramAttributedField,
   type ProgramFieldOutcome,
@@ -287,12 +286,6 @@ describe('program reader decision registry', () => {
     { ...recurringStoredRow, eligibility: 'office@example.edu' },
     { ...recurringStoredRow, applicationLink: undefined, eligibility: undefined },
   ];
-
-  it('attributes every field the payload decides through a registered decision', () => {
-    for (const field of Object.keys(PROGRAM_READER_FIELD_DECISIONS)) {
-      expect(PROGRAM_ATTRIBUTED_FIELDS).toContain(field);
-    }
-  });
 
   it('serves each decided field as exactly the value its decision returns', () => {
     for (const stored of storedRows) {

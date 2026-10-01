@@ -25,7 +25,7 @@ export type ProgramAttributedField =
   | 'isAcceptingApplications'
   | ProgramReaderDecidedField;
 
-export const STUDENT_PROJECTION_GUARD = 'publicFellowshipForStudent';
+const STUDENT_PROJECTION_GUARD = 'publicFellowshipForStudent';
 
 export type ProgramFieldOutcome =
   | { field: ProgramAttributedField; status: 'unchanged' }
