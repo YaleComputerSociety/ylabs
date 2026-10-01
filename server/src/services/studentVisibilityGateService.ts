@@ -2,6 +2,7 @@ import { Signal } from '../models/signal';
 import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { Fellowship } from '../models/fellowship';
+import { selectDuplicateProgramCopies } from './programDuplicateIdentity';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
@@ -233,6 +234,7 @@ export const ACTION_EVIDENCE_REPAIR_REASONS: ReadonlySet<string> = new Set([
 export const SUPPRESSION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'archive_review',
   'content_page_risk',
+  'duplicate_program',
   'exact_url_duplicate_risk',
   'generic_directory_shell',
   'inactive_at_yale',
@@ -2242,6 +2244,21 @@ async function planResearchEntityGateUpdates(
   });
 }
 
+// Which copy of a fund serves is a corpus-wide question, so it is answered over every live
+// program even when the plan is scoped to some of them.
+async function loadDuplicateProgramCopies(): Promise<Map<string, string>> {
+  const livePrograms = await Fellowship.find({ archived: false }).lean();
+  return selectDuplicateProgramCopies(
+    livePrograms.map((program: any) => ({
+      id: studentVisibilityGateDocumentId(program._id),
+      title: program.title,
+      description: program.description,
+      sourceName: program.sourceName,
+      tier: computeProgramStudentVisibility(program).tier,
+    })),
+  );
+}
+
 async function planProgramGateUpdates(
   options: Pick<StudentVisibilityGateOptions, 'sourceName' | 'recordIds' | 'limit'>,
 ): Promise<StudentVisibilityGatePlan[]> {
@@ -2250,11 +2267,17 @@ async function planProgramGateUpdates(
   if (options.sourceName) match.sourceName = options.sourceName;
   const query = Fellowship.find(match).sort({ _id: 1 });
   if (options.limit && Number.isFinite(options.limit)) query.limit(options.limit);
-  const programs = orderedByGateLabel(await query.lean(), 'title');
+  const [scopedPrograms, duplicateProgramCopies] = await Promise.all([
+    query.lean(),
+    loadDuplicateProgramCopies(),
+  ]);
+  const programs = orderedByGateLabel(scopedPrograms, 'title');
 
   return programs.map((program: any) => {
     const recordId = studentVisibilityGateDocumentId(program._id);
-    const result = computeProgramStudentVisibility(program);
+    const result = computeProgramStudentVisibility(program, {
+      duplicateOfServedCopy: duplicateProgramCopies.has(recordId),
+    });
     return {
       collection: 'programs' as const,
       recordId,

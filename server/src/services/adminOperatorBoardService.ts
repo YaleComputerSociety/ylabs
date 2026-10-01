@@ -1924,6 +1924,7 @@ const programReasonActions: Record<string, string> = {
   archive_review: 'Keep hidden or rewrite as a real recurring planning record.',
   not_undergraduate_relevant:
     'Catalog or administrative page, not a real program; keep suppressed.',
+  duplicate_program: 'Redundant copy of a fund already served by another row; keep suppressed.',
   graduate_relevant:
     'Graduate-audience research program; surface with a Graduate label, not suppressed.',
   official_source: 'Review for possible promotion if audience and route are student-safe.',
