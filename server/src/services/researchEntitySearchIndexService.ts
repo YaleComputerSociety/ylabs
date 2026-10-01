@@ -24,7 +24,7 @@ import {
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { warmControlledVocabularyHeadings } from '../utils/controlledVocabularyHeadings';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
-import { withholdUnservableResearchAreas } from '../utils/servedResearchAreaGuards';
+import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
 import {
   isSyntheticResearchHomeMetadataDescription,
   revoiceFirstPersonResearchLead,
@@ -510,14 +510,17 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   }
 
   if (Array.isArray(out.researchAreas)) {
-    const coherentAreas = withholdUnservableResearchAreas(out.researchAreas, out.fieldProvenance, {
-      name: out.name,
-      displayName: out.displayName,
-      departments: out.departments,
-      shortDescription: out.shortDescription,
-      fullDescription: out.fullDescription,
-    });
-    const researchAreas = normalizeResearchAreaList(coherentAreas);
+    const researchAreas = decideServedResearchAreas(out.researchAreas, {
+      surface: 'searchIndex',
+      fieldProvenance: out.fieldProvenance,
+      coherenceContext: {
+        name: out.name,
+        displayName: out.displayName,
+        departments: out.departments,
+        shortDescription: out.shortDescription,
+        fullDescription: out.fullDescription,
+      },
+    }).served;
     if (researchAreas.length > 0) out.researchAreas = researchAreas;
     else delete out.researchAreas;
   }

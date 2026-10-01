@@ -5,8 +5,7 @@ import {
 } from '../utils/researchEntityDescriptionQuality';
 import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
-import { publicResearchAreaArray } from './researchEntityDto';
-import { servedResearchEntityCopy } from './servedResearchEntityCard';
+import { decideServedResearchEntityTopics } from './researchEntityDto';
 import {
   getResearchEntityRosterByEntityId,
   type ResearchEntityRosterEntry,
@@ -65,9 +64,7 @@ export function servedRowFacts(
   // STORED list, which is why the panel reported topic coverage on 78 served rows
   // that show a student no topic at all, and 797 chips nobody can read (#3379).
   // The guard is not the defect and is left alone; the count was.
-  const searchTopics = publicResearchAreaArray(
-    servedResearchEntityCopy(entity, leadMemberNames).researchAreas,
-  );
+  const searchTopics = decideServedResearchEntityTopics(entity, leadMemberNames).served;
   const shortDescription = textValue(served.shortDescription);
   const areaSummary = textValue(buildResearchAreasCardSummary(searchTopics));
 

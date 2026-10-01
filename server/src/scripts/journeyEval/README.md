@@ -60,11 +60,28 @@ The assertion that carries signal is that every drop is attributable to a named 
 Apply the same shape to any new case.
 Assert that the difference between stored and served is explained, not that it is absent.
 
-The case computes its expectation by calling `withholdUnservableResearchAreas` in `server/src/utils/servedResearchAreaGuards.ts`, the same function the served DTO and the search index document call, rather than restating the guard chain.
-That chain is now two guards: `withoutMeshSourcedGeographicResearchAreas` withholds a MeSH geographic descriptor read from a MeSH-indexed profile, then the coherence guard runs.
-A restated chain goes stale the moment a guard is added: after #3693 added the MeSH geographic withhold to both serve paths, the case reported that guard's drops as unexplained.
-Add a new served topic guard to that function, never to one call site.
-`__tests__/journeyEvalCases.test.ts` runs the case itself over synthetic rows, so it fails if the case stops using that function: a drop of only place names read from a MeSH-indexed profile is attributed, while a drop no guard explains, or a place-name drop from any other source, still fails the invariant.
+The case computes its expectation by calling `decideServedResearchEntityTopics` in `server/src/services/researchEntityDto.ts` on the stored row, after the same `researchEntityListServedSource` step and the same lead names the browse route uses, rather than restating the guard chain.
+The DTO builds its `researchAreas` from that same composition, so a stored-to-served difference the case reports as unexplained is one no named guard accounts for.
+The decision returns the served topics and the guard that withheld each dropped topic, and the case reports both: `drops` lists each drop with its guards, never with a slug or a topic.
+A drop is attributed only when the served list equals the decision and every stored topic missing from it is charged to a guard.
+
+The guards, in serve order, are the stages of `decideServedResearchAreas` in `server/src/utils/servedResearchAreaGuards.ts` plus the two the served copy and the DTO add around it:
+
+- `servedCopyArrayBound`: the served copy bounds the stored list to its array cap before sanitizing.
+- `servedResearchAreaChipHygiene`: comma-blob splitting, role-label and corrupt-label hygiene, and case-folded dedupe.
+- `filterProseResearchAreaChips`: a chip that reads as prose, such as a long named program title, is withheld (#1428).
+- `withoutMeshSourcedGeographicResearchAreas`: a MeSH geographic descriptor read from a MeSH-indexed profile is withheld (#3693).
+- `dropDomainIncoherentUnsourcedResearchAreas`: an unsourced chip sharing no vocabulary with the row's own text is withheld.
+- `publicResearchAreaArray`: the DTO's final projection, label hygiene, contact redaction, and array cap.
+
+The search index document calls the same decision with `surface: 'searchIndex'`, which runs only the two withholds and `normalizeResearchAreaList`, and reads its coherence evidence from the indexed copy rather than from withheld prose.
+That difference is deliberate, because the index matches and facets on topics but never renders them, and changing its topics is a reindex rather than a deploy.
+It is carried by the surface argument rather than by a second chain.
+
+A restated chain goes stale the moment a guard is added: after #3693 added the MeSH geographic withhold to both serve paths, and again when the prose-chip filter from #1428 ran in the served copy alone, the case reported those guards' drops as unexplained (#4075, #4317).
+Add a new served topic guard as a stage of `decideServedResearchAreas`, never at one call site.
+`server/src/utils/__tests__/servedResearchAreaGuards.test.ts` serves synthetic rows through the detail DTO, the browse card, the served copy sanitizer, and the index document, and fails when any of them disagrees with the decision or drops a topic the decision does not charge to a guard.
+`__tests__/journeyEvalCases.test.ts` runs the case itself over synthetic rows, so it fails if the case stops using the decision: a drop of only place names read from a MeSH-indexed profile and a drop of a prose-length chip are attributed, while a drop no guard explains, or a place-name drop from any other source, still fails the invariant.
 Measured on Development on 2026-09-30 at `--window=100`, 2 of 100 cards served fewer topics than they stored and both were attributed, so the invariant passes (#4075).
 
 ## What this harness does not cover

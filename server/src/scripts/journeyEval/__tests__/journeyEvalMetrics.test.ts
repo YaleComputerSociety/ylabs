@@ -31,31 +31,66 @@ const steadyCorpus: CorpusFingerprint = {
 };
 
 describe('attributeTopicDrops', () => {
-  it('attributes a drop the guard fully explains and flags nothing', () => {
+  const coherence = ['dropDomainIncoherentUnsourcedResearchAreas'];
+
+  it('attributes a drop the serve-path decision fully explains and names its guard', () => {
     const tally = attributeTopicDrops([
-      freshObservation({ storedCount: 5, servedCount: 2, guardExpectedCount: 2 }),
-      freshObservation({ storedCount: 3, servedCount: 3, guardExpectedCount: 3 }),
+      freshObservation({
+        storedCount: 5,
+        servedCount: 2,
+        explainedByDecision: true,
+        withheldBy: [...coherence, ...coherence, 'filterProseResearchAreaChips'],
+      }),
+      freshObservation({
+        storedCount: 3,
+        servedCount: 3,
+        explainedByDecision: true,
+        withheldBy: [],
+      }),
     ]);
 
     expect(tally.dropped).toBe(1);
     expect(tally.attributedToGuard).toBe(1);
     expect(tally.unexplained).toBe(0);
     expect(tally.comparable).toBe(2);
+    expect(tally.drops).toEqual([
+      {
+        attributed: true,
+        withheldBy: ['dropDomainIncoherentUnsourcedResearchAreas', 'filterProseResearchAreaChips'],
+      },
+    ]);
   });
 
-  it('flags a drop the guard does not account for', () => {
+  it('flags a drop the serve-path decision does not account for', () => {
     const tally = attributeTopicDrops([
-      freshObservation({ storedCount: 5, servedCount: 1, guardExpectedCount: 4 }),
+      freshObservation({
+        storedCount: 5,
+        servedCount: 1,
+        explainedByDecision: false,
+        withheldBy: coherence,
+      }),
     ]);
 
     expect(tally.dropped).toBe(1);
     expect(tally.unexplained).toBe(1);
+    expect(tally.drops).toEqual([{ attributed: false, withheldBy: coherence }]);
   });
 
   it('excludes a row served at a different version than it is stored at', () => {
     const tally = attributeTopicDrops([
-      { storedCount: 5, servedCount: 1, guardExpectedCount: 4, servedVersionMatchesStored: false },
-      freshObservation({ storedCount: 4, servedCount: 2, guardExpectedCount: 2 }),
+      {
+        storedCount: 5,
+        servedCount: 1,
+        explainedByDecision: false,
+        withheldBy: [],
+        servedVersionMatchesStored: false,
+      },
+      freshObservation({
+        storedCount: 4,
+        servedCount: 2,
+        explainedByDecision: true,
+        withheldBy: coherence,
+      }),
     ]);
 
     expect(tally.skippedStaleIndex).toBe(1);
@@ -64,10 +99,20 @@ describe('attributeTopicDrops', () => {
     expect(tally.unexplained).toBe(0);
   });
 
-  it('separates serving no topic the guard explains from one it does not', () => {
+  it('separates serving no topic the decision explains from one it does not', () => {
     const tally = attributeTopicDrops([
-      freshObservation({ storedCount: 4, servedCount: 0, guardExpectedCount: 0 }),
-      freshObservation({ storedCount: 4, servedCount: 0, guardExpectedCount: 2 }),
+      freshObservation({
+        storedCount: 4,
+        servedCount: 0,
+        explainedByDecision: true,
+        withheldBy: coherence,
+      }),
+      freshObservation({
+        storedCount: 4,
+        servedCount: 0,
+        explainedByDecision: false,
+        withheldBy: [],
+      }),
     ]);
 
     expect(tally.servedNoneWhileStoringSome).toBe(2);
@@ -76,7 +121,12 @@ describe('attributeTopicDrops', () => {
 
   it('does not count a card serving more than it stores as a drop', () => {
     const tally = attributeTopicDrops([
-      freshObservation({ storedCount: 1, servedCount: 3, guardExpectedCount: 1 }),
+      freshObservation({
+        storedCount: 1,
+        servedCount: 3,
+        explainedByDecision: false,
+        withheldBy: [],
+      }),
     ]);
 
     expect(tally.dropped).toBe(0);
@@ -306,6 +356,7 @@ describe('checkTopicDropAttribution', () => {
     unexplained: 0,
     servedNoneWhileStoringSome: 3,
     servedNoneUnexplained: 0,
+    drops: [],
     ...overrides,
   });
 

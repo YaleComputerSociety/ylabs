@@ -1,5 +1,8 @@
-import { withholdUnservableResearchAreas } from '../../utils/servedResearchAreaGuards';
-import { normalizeResearchAreaList } from '../../utils/researchAreaHygiene';
+import {
+  decideServedResearchEntityTopics,
+  researchEntityListServedSource,
+} from '../../services/researchEntityDto';
+import { unattributedResearchAreaDrops } from '../../utils/servedResearchAreaGuards';
 import { maxReachableResearchSearchPage } from '../../services/researchSearchPagination';
 import { researchEntitySortTitle } from '../../utils/servedResearchEntityTitle';
 import {
@@ -62,6 +65,15 @@ export type BrowseFn = (request: BrowseRequest) => Promise<ServedBrowseResult>;
 
 export type ReadStoredRowsFn = (rowKeys: string[]) => Promise<Map<string, Record<string, unknown>>>;
 
+export interface LeadMemberNameRead {
+  byEntityId: ReadonlyMap<string, readonly string[]>;
+  unavailable: boolean;
+}
+
+export type ReadLeadMemberNamesFn = (
+  storedRows: Array<Record<string, unknown>>,
+) => Promise<LeadMemberNameRead>;
+
 export interface UndergradEvidenceSampleRequest {
   seed: string;
   sampleSize: number;
@@ -74,6 +86,7 @@ export interface JourneyEvalContext {
   undergradEvidenceJudgements?: UndergradEvidenceJudgementSet | null;
   undergradEvidenceSampleRequest?: UndergradEvidenceSampleRequest;
   readStoredRows: ReadStoredRowsFn;
+  readLeadMemberNames?: ReadLeadMemberNamesFn;
   readCorpusFingerprint: () => Promise<CorpusFingerprint>;
   readOwnedSlotSurvivorWebsites: () => Promise<{
     survivorsScanned: number;
@@ -207,27 +220,29 @@ const topicDropAttribution: JourneyCase = {
     const result = await context.browse({ page: 1, pageSize: context.window });
     const rows = servedRows(result);
     const stored = await context.readStoredRows(rows.map(rowKey).filter(Boolean));
+    const leadNames = context.readLeadMemberNames
+      ? await context.readLeadMemberNames([...stored.values()])
+      : { byEntityId: new Map<string, readonly string[]>(), unavailable: false };
 
     const observations: TopicDropObservation[] = [];
     for (const row of rows) {
       const storedRow = stored.get(rowKey(row));
       if (!storedRow) continue;
-      const storedAreas = Array.isArray(storedRow.researchAreas)
-        ? (storedRow.researchAreas as string[])
-        : [];
-      const guardExpected = normalizeResearchAreaList(
-        withholdUnservableResearchAreas(storedAreas, storedRow.fieldProvenance, {
-          name: storedRow.name as string,
-          displayName: storedRow.displayName as string,
-          departments: storedRow.departments as string[],
-          shortDescription: storedRow.shortDescription as string,
-          fullDescription: storedRow.fullDescription as string,
-        }),
+      const leadMemberNames = leadNames.byEntityId.get(String(storedRow._id ?? ''));
+      const decision = decideServedResearchEntityTopics(
+        researchEntityListServedSource(storedRow, leadMemberNames, leadNames.unavailable),
+        leadMemberNames,
       );
+      const served = Array.isArray(row.researchAreas) ? row.researchAreas : [];
+      const storedAreas = Array.isArray(storedRow.researchAreas) ? storedRow.researchAreas : [];
       observations.push({
         storedCount: storedAreas.length,
-        servedCount: listLength(row.researchAreas),
-        guardExpectedCount: guardExpected.length,
+        servedCount: served.length,
+        explainedByDecision:
+          served.length === decision.served.length &&
+          served.every((area, index) => area === decision.served[index]) &&
+          unattributedResearchAreaDrops(storedAreas, decision).length === 0,
+        withheldBy: decision.withheld.map((withheld) => withheld.guard),
         servedVersionMatchesStored:
           epochMillis(row.lastObservedAt) === epochMillis(storedRow.lastObservedAt),
       });
