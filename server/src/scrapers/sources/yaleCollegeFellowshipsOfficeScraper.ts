@@ -1232,7 +1232,9 @@ function primaryContentNode($: cheerio.CheerioAPI): cheerio.Cheerio<any> {
   return $('.node, article')
     .filter((_index, node) => {
       const $node = $(node);
-      return !isInExcludedPageRegion($node) && !TEASER_NODE_CLASS_RE.test($node.attr('class') || '');
+      return (
+        !isInExcludedPageRegion($node) && !TEASER_NODE_CLASS_RE.test($node.attr('class') || '')
+      );
     })
     .first();
 }

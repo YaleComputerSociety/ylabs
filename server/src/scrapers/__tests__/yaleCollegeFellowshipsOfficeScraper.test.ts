@@ -2830,7 +2830,10 @@ describe('YaleCollegeFellowshipsOfficeScraper pages that are not programs (#4110
     ],
   ])('keeps a page titled as one award that carries %s', (_shape, body) => {
     const read = readFellowshipCatalogPage(
-      pageWith('Fixture Summer Research Fellowship', `<p>Ten weeks of mentored research.</p>${body}`),
+      pageWith(
+        'Fixture Summer Research Fellowship',
+        `<p>Ten weeks of mentored research.</p>${body}`,
+      ),
       officePageUrl,
       referenceDate,
     );
