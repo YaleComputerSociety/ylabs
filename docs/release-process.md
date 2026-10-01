@@ -12,8 +12,10 @@ Code flows Local -> Beta -> Prod.
 Render auto-deploys each branch from the Render dashboard.
 There is no GitHub Actions deploy step, so moving a branch is what ships.
 
-Every Render service builds with `corepack enable && yarn install:all:immutable`.
-The immutable form is the security-relevant part: a plain `yarn install:all` resolves dependencies afresh at deploy time and can ship a version no lockfile in this repository pins.
+Every Render service's build command should begin with `npm install -g corepack@0.36.0 && corepack enable && bash scripts/install-all.sh --immutable`, the same Corepack pin and the same three immutable builtin installs CI runs.
+The immutable form is the security-relevant part: a plain install resolves dependencies afresh at deploy time and can ship a version no lockfile in this repository pins.
+The command this page used to give, `corepack enable && yarn install:all:immutable`, fails on a clean build for two independent reasons: Node 25 and later ship no Corepack, so `corepack enable` alone exits non-zero, and Yarn cannot run a `package.json` script such as `install:all:immutable` before an install has created its state file (#4035).
+A service still configured with that command builds only while Render's build cache happens to hold an earlier install, so read each service's Build Command in the dashboard and replace it, then run a clear-cache deploy on Beta first.
 This repository declares no Render blueprint, so nothing here can enforce that build command; set it in the dashboard and check it when a service is created or its build settings change.
 
 The Node major is declared once, in `.node-version` at the repository root.

@@ -664,12 +664,12 @@ test('root package exposes a deploy security preflight', () => {
     packageJson.scripts['security:identifiers'],
     'node scripts/check-no-person-identifiers.mjs',
   );
-  // No repo file invokes install:all:immutable: its consumer is the Render
-  // dashboard build command, which docs/release-process.md prescribes. It looks
-  // dead to a caller search, so do not delete it on that evidence.
+  // No repo file invokes install:all:immutable: a Render dashboard build command
+  // configured before #4035 may still call it. It looks dead to a caller search,
+  // so do not delete it on that evidence.
   assert.equal(
     packageJson.scripts['install:all:immutable'],
-    'yarn install --immutable && cd server && yarn install --immutable && cd ../client && yarn install --immutable',
+    'bash scripts/install-all.sh --immutable',
   );
 });
 
@@ -1301,6 +1301,38 @@ test('every workflow takes its Node major from .node-version', () => {
       engines?.node,
       bound,
       `${manifest} must bound engines.node to the major .node-version declares`,
+    );
+  }
+});
+
+test('the documented Render build installs with the same pinned Corepack and builtins as CI', () => {
+  const releaseProcess = fs.readFileSync(
+    new URL('../docs/release-process.md', import.meta.url),
+    'utf8',
+  );
+  const ciCorepack = ciWorkflow.match(/npm install -g (corepack@\d+\.\d+\.\d+)/)?.[1];
+  assert.ok(ciCorepack, 'ci.yml must pin a Corepack version for the documented build to match');
+  assert.ok(
+    releaseProcess.includes(
+      `\`npm install -g ${ciCorepack} && corepack enable && bash scripts/install-all.sh --immutable\``,
+    ),
+    'docs/release-process.md must give the Render build the Corepack pin ci.yml installs and the builtin immutable installs, because a package.json script cannot run on a fresh checkout',
+  );
+});
+
+test('the first-install entry point runs only yarn install builtins', () => {
+  const installAll = fs.readFileSync(new URL('./install-all.sh', import.meta.url), 'utf8');
+  const yarnCalls = installAll.split('\n').filter((line) => /^\s*yarn\b/.test(line));
+  assert.deepEqual(
+    yarnCalls.map((line) => line.trim().replace(/\s*\$\{IMMUTABLE.*$/, '')),
+    ['yarn install', 'yarn --cwd server install', 'yarn --cwd client install'],
+  );
+  for (const doc of ['../README.md', '../DEVELOPER_GUIDE.md']) {
+    const text = fs.readFileSync(new URL(doc, import.meta.url), 'utf8');
+    assert.match(
+      text,
+      /^bash scripts\/install-all\.sh$/m,
+      `${doc} must give the builtin installer as the first install`,
     );
   }
 });

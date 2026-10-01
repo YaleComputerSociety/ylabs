@@ -104,8 +104,12 @@ Expected versions:
 ### 2. Install dependencies
 
 ```bash
-yarn install:all
+bash scripts/install-all.sh
 ```
+
+The script runs the `yarn install` builtin in the root, `server`, and `client`.
+Do not use `yarn install:all` for the first install: Yarn cannot run any `package.json` script before an install has created its state file, so on a fresh checkout every script, `install:all` included, fails before it installs anything.
+Once the root is installed, `yarn install:all` calls the same script.
 
 ### 3. Configure environment
 
@@ -207,36 +211,27 @@ yarn test           # both suites, server then client
 
 ### Troubleshooting Yarn setup
 
-If `yarn install:all` fails with an error like:
+If an install fails with an error like:
 
 ```txt
 Usage Error: Couldn't find the node_modules state file - running an install might help (findPackageLocation)
 ```
 
-or if `yarn`/`corepack` is not found, first confirm you are using the `nvm` Node install rather than a system `apt` Node:
+a `package.json` script ran before the root project was installed.
+Yarn 4 cannot run any script, `yarn install:all`, `yarn build`, or `yarn serve:fresh` among them, until an install has created that state file, and a fresh checkout has none.
+Run the builtin installs instead, which is what CI does:
 
 ```bash
-which node
-node -v
-which corepack
+bash scripts/install-all.sh
 ```
 
-If `which node` prints `/usr/bin/node`, switch to the `nvm` Node:
+If `yarn` or `corepack` is not found, Corepack is missing, because Node 25 and later no longer ship it.
+Install the pinned version and enable it, then rerun the install:
 
 ```bash
-nvm install "$(cat .node-version)"
-nvm use "$(cat .node-version)"
-nvm alias default "$(cat .node-version)"
 npm install -g corepack@0.36.0
 corepack enable
 yarn -v
-```
-
-Then run the root install before the all-workspaces helper:
-
-```bash
-yarn install
-yarn install:all
 ```
 
 ### Dev login bypass
@@ -261,7 +256,7 @@ The auth flow's verbose tracing (per-request deserialization, the find-or-create
 
 | Command                                                                                                                                    | Description                                                                           |
 | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| `yarn install:all`                                                                                                                         | Install deps in root + server + client                                                |
+| `bash scripts/install-all.sh`                                                                                                              | Install deps in root + server + client, also on a fresh checkout                      |
 | `yarn dev:client`                                                                                                                          | Vite dev server (port 3000)                                                           |
 | `yarn dev:server`                                                                                                                          | Express with tsx watch (port 4000)                                                    |
 | `yarn build`                                                                                                                               | Full production build                                                                 |

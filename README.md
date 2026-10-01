@@ -17,8 +17,9 @@ A research-discovery app for Yale students. It helps students find Yale research
 ## Quick Start
 
 ```bash
+npm install -g corepack@0.36.0
 corepack enable
-yarn install:all
+bash scripts/install-all.sh
 ```
 
 Create `server/.env` and `client/.env` - see the [Developer Guide](DEVELOPER_GUIDE.md) for required variables.
