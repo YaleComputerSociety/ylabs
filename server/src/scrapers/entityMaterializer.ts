@@ -4156,11 +4156,22 @@ export function uniqueKeyValueForIdentifier(
 // so a same-title row that already cites a different fund's page is a different fund. On
 // Development, matching on title alone would have folded 19 pairs of distinct funds into
 // one row each, and the two funds would overwrite each other every run (#3984).
-function citesADifferentRecordSpecificApplication(candidate: any, obs: any[]): boolean {
-  const observed = obs.find((o) => o.field === 'applicationLink' && typeof o.value === 'string');
-  const observedFund = recordSpecificApplicationPortalIdentity(
-    String(observed?.value || '').trim(),
+// A fund page that says to apply through a common application asserts that other fund's
+// page as its applicationLink (#4216), so the page the observations were read from names
+// the fund before the applicationLink does.
+function observedRecordSpecificFundPage(obs: any[]): string {
+  const readFromFundPage = obs.find(
+    (o) => typeof o.sourceUrl === 'string' && recordSpecificApplicationPortalIdentity(o.sourceUrl),
   );
+  if (readFromFundPage) return String(readFromFundPage.sourceUrl).trim();
+  const applicationLink = obs.find(
+    (o) => o.field === 'applicationLink' && typeof o.value === 'string',
+  );
+  return String(applicationLink?.value || '').trim();
+}
+
+function citesADifferentRecordSpecificApplication(candidate: any, obs: any[]): boolean {
+  const observedFund = recordSpecificApplicationPortalIdentity(observedRecordSpecificFundPage(obs));
   const candidateFund = recordSpecificApplicationPortalIdentity(
     String(candidate?.applicationLink || '').trim(),
   );
@@ -4250,8 +4261,8 @@ async function findFellowshipBySourceUrl(
 
 /**
  * Cross-source dedupe: a fund enumerated by the Student Grants Database source
- * cites its record-specific CommunityForce FundDetails URL as both its sourceUrl
- * and applicationLink. The same fund linked from a public fellowship page carries
+ * is read from its record-specific CommunityForce FundDetails URL, which is also
+ * its applicationLink unless the page routes applications elsewhere (#4216). The same fund linked from a public fellowship page carries
  * that exact URL as its applicationLink. The FundDetails URL is globally unique
  * per fund, so when the same-source title/sourceUrl fallbacks miss, resolve to
  * any existing active fellowship whose applicationLink matches - so the two
@@ -4264,10 +4275,7 @@ async function findFellowshipByRecordSpecificApplicationLink(
   Model: mongoose.Model<any>,
   obs: any[],
 ): Promise<any | null> {
-  const applicationLinkObs = obs.find(
-    (o) => o.field === 'applicationLink' && typeof o.value === 'string',
-  );
-  const applicationLink = String(applicationLinkObs?.value || '').trim();
+  const applicationLink = observedRecordSpecificFundPage(obs);
   const fund = recordSpecificApplicationPortalIdentity(applicationLink);
   if (!fund) return null;
 

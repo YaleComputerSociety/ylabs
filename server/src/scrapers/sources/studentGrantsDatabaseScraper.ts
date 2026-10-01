@@ -52,6 +52,15 @@ import { type ProgramDateBoundary, parseProgramDate } from '../utils/programDead
 import { Fellowship } from '../../models/fellowship';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
 import { slugify } from '../utils/scraperHelpers';
+import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
+import {
+  FUND_PROSE_BLOCK_BREAK,
+  fundProseLinkMarker,
+  resolveFundApplicationRoute,
+  type FundApplicationRoute,
+  type FundProseSection,
+} from '../utils/fundApplicationRoute';
+import { resolveFundYearOfStudy, type FundEligibilityProse } from '../utils/fundYearOfStudy';
 import { isRecordSpecificApplicationPortalUrl } from '../../utils/researchHomeWebsiteUrl';
 
 export const STUDENT_GRANTS_DATABASE_SOURCE = 'student-grants-database';
@@ -80,6 +89,7 @@ export interface StudentGrantsFund {
   awardAmount?: string;
   deadline?: Date;
   applicationOpenDate?: Date;
+  applicationRoute: FundApplicationRoute;
   yearOfStudy: string[];
   termOfAward: string[];
   purpose: string[];
@@ -244,6 +254,55 @@ function parseFacets($: cheerio.CheerioAPI): Record<FundFacetField, string[]> {
   return facets;
 }
 
+const ROUTE_PROSE_SECTION_IDS = [
+  'lblBriefDescription',
+  'lblDescription',
+  'lblApplicationInformation',
+  'lblSpecialEligibilityRequirements',
+  'lblLinkstoAdditionalInformation',
+];
+
+const ELIGIBILITY_PROSE_SECTION_IDS = [
+  'lblBriefDescription',
+  'lblDescription',
+  'lblApplicationInformation',
+  'lblSpecialEligibilityRequirements',
+];
+
+const PROSE_BLOCK_SELECTOR = 'p, div, li, tr, h2, h3, h4, h5, h6, ul, ol, table';
+
+function proseSectionWithLinkMarkers(
+  $: cheerio.CheerioAPI,
+  id: string,
+  pageUrl: string,
+): FundProseSection {
+  const section = fundDetailElement($, id).clone();
+  section.find('h1, script, style, noscript').remove();
+  const links: FundProseSection['links'] = [];
+  section.find('a').each((_i, anchor) => {
+    const $anchor = $(anchor);
+    links.push({
+      url: absoluteUrl($anchor.attr('href'), pageUrl),
+      text: cleanText($anchor.text()),
+    });
+    $anchor.replaceWith(fundProseLinkMarker(links.length - 1));
+  });
+  section.find('br').replaceWith(` ${FUND_PROSE_BLOCK_BREAK} `);
+  section.find(PROSE_BLOCK_SELECTOR).append(` ${FUND_PROSE_BLOCK_BREAK} `);
+  return { text: extractElementTextWithBlockSeparators(section[0]), links };
+}
+
+function eligibilityProse($: cheerio.CheerioAPI, id: string): FundEligibilityProse {
+  const section = fundDetailElement($, id).clone();
+  section.find('h1, script, style, noscript').remove();
+  section.find('br').replaceWith(` ${FUND_PROSE_BLOCK_BREAK} `);
+  section.find(PROSE_BLOCK_SELECTOR).append(` ${FUND_PROSE_BLOCK_BREAK} `);
+  return {
+    text: extractElementTextWithBlockSeparators(section[0]),
+    isEligibilitySection: id === 'lblSpecialEligibilityRequirements',
+  };
+}
+
 const NUMERIC_CATALOG_DATE = /\b\d{1,2}\/\d{1,2}\/\d{4}\b/;
 
 function applicationWindowBoundary(label: string): ProgramDateBoundary | null {
@@ -291,12 +350,17 @@ export function parseFundDetailPage(
   const { opensAt, deadline } = parseApplicationWindow($);
   const closed = Boolean(sectionText($, 'lblFundClosedOn') || sectionText($, 'lblReasonClosed'));
   const now = referenceDate.getTime();
-  const facets = parseFacets($);
+  const { yearOfStudy: yearOfStudyFilter, ...otherFacets } = parseFacets($);
+  const url = normalizeFundDetailUrl(fund.url);
+  const yearOfStudy = resolveFundYearOfStudy(
+    ELIGIBILITY_PROSE_SECTION_IDS.map((id) => eligibilityProse($, id)),
+    yearOfStudyFilter,
+  );
 
   return {
     sourceKey: sourceKeyForFund(fund.url),
     title,
-    url: normalizeFundDetailUrl(fund.url),
+    url,
     description: sectionProse($, 'lblBriefDescription', 2000),
     applicationInformation: sectionProse($, 'lblApplicationInformation', 2000),
     eligibility: sectionProse($, 'lblSpecialEligibilityRequirements', 500),
@@ -304,7 +368,12 @@ export function parseFundDetailPage(
     awardAmount: awardAmountText($),
     deadline,
     applicationOpenDate: opensAt,
-    ...facets,
+    applicationRoute: resolveFundApplicationRoute(
+      ROUTE_PROSE_SECTION_IDS.map((id) => proseSectionWithLinkMarkers($, id, url)),
+      { url, title },
+    ),
+    yearOfStudy: yearOfStudy.kind === 'unreconcilable' ? [] : yearOfStudy.values,
+    ...otherFacets,
     isAcceptingApplications:
       !closed &&
       Boolean(deadline && deadline.getTime() > now) &&
@@ -329,6 +398,7 @@ function fundFingerprint(fund: StudentGrantsFund): string {
     awardAmount: fund.awardAmount || '',
     deadline: fund.deadline?.toISOString() || '',
     applicationOpenDate: fund.applicationOpenDate?.toISOString() || '',
+    ...(fund.applicationRoute.kind === 'fund-page' ? {} : { route: fund.applicationRoute }),
     yearOfStudy: fund.yearOfStudy,
     termOfAward: fund.termOfAward,
     purpose: fund.purpose,
@@ -337,6 +407,19 @@ function fundFingerprint(fund: StudentGrantsFund): string {
     isAcceptingApplications: fund.isAcceptingApplications,
   };
   return crypto.createHash('sha256').update(JSON.stringify(stable)).digest('hex');
+}
+
+function applicationLinkFor(fund: StudentGrantsFund): string | undefined {
+  if (fund.applicationRoute.kind === 'elsewhere') return fund.applicationRoute.url;
+  return fund.applicationRoute.kind === 'fund-page' ? fund.url : undefined;
+}
+
+// The fund's own page stays in `links` whatever the route, because
+// `loadCitedFundDetailUrls` seeds the crawl from the FundDetails pages rows cite.
+function fundLinks(fund: StudentGrantsFund, applicationLink: string | undefined) {
+  if (applicationLink === fund.url) return [{ label: 'Application', url: fund.url }];
+  const fundPage = { label: fund.title, url: fund.url };
+  return applicationLink ? [{ label: 'Application', url: applicationLink }, fundPage] : [fundPage];
 }
 
 export function fundToObservations(fund: StudentGrantsFund): ObservationInput[] {
@@ -352,6 +435,8 @@ export function fundToObservations(fund: StudentGrantsFund): ObservationInput[] 
     return { ...base, field, value };
   };
 
+  const applicationLink = applicationLinkFor(fund);
+
   return [
     observation('sourceKey', fund.sourceKey),
     observation('sourceName', STUDENT_GRANTS_DATABASE_SOURCE),
@@ -362,8 +447,8 @@ export function fundToObservations(fund: StudentGrantsFund): ObservationInput[] 
     observation('eligibility', fund.eligibility),
     observation('restrictionsToUseOfAward', fund.restrictionsToUseOfAward),
     observation('awardAmount', fund.awardAmount),
-    observation('applicationLink', fund.url),
-    observation('links', [{ label: 'Application', url: fund.url }]),
+    observation('applicationLink', applicationLink),
+    observation('links', fundLinks(fund, applicationLink)),
     observation('deadline', fund.deadline),
     observation('applicationOpenDate', fund.applicationOpenDate),
     observation('yearOfStudy', fund.yearOfStudy),

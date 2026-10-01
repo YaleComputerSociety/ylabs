@@ -54,6 +54,11 @@ function fundDetailHtml(
     deadline?: string;
     closedOn?: string;
     award?: string;
+    title?: string;
+    brief?: string;
+    applicationInformation?: string;
+    eligibility?: string;
+    yearOfStudy?: string[];
   } = {},
 ): string {
   const {
@@ -61,7 +66,14 @@ function fundDetailHtml(
     deadline = '2/12/2099 12:00 PM',
     closedOn = '',
     award = '',
+    title = 'Fixture Summer Research Fellowship',
+    brief = 'The fellowship funds independent summer research projects proposed by Yale College undergraduates working under a faculty mentor.',
+    applicationInformation = '',
+    eligibility = 'Enrolled Yale College undergraduates in good standing.',
+    yearOfStudy = ['Sophomore', 'Junior'],
   } = options;
+  const section = (heading: string, body: string) =>
+    body ? `<h1 class='Grant_Criteria_hd'>${heading}:</h1>${body}` : '';
   return `
   <html><body>
     <nav><a href="/Login.aspx">Login</a></nav>
@@ -71,17 +83,17 @@ function fundDetailHtml(
       <div id="${P}spnDeadlineApplication" class="fdi-start-date-title"> <strong>Deadline Date (EST Time Zone):</strong> </div>
       <div class="fdi-start-date"> ${deadline} </div>
     </div>
-    <span id="${P}lblFundName">Fixture Summer Research Fellowship</span>
+    <span id="${P}lblFundName">${title}</span>
     <span id="${P}lblAwardAmount">${award}</span>
     <span id="${P}lblFundClosedOn">${closedOn}</span>
     <span id="${P}lblReasonClosed"></span>
-    <span id="${P}lblBriefDescription"><h1 class='Grant_Criteria_hd'>Brief Description:</h1>The fellowship funds independent summer research projects proposed by Yale College undergraduates working under a faculty mentor.</span>
-    <span id="${P}lblApplicationInformation"></span>
-    <span id="${P}lblSpecialEligibilityRequirements"><h1 class='Grant_Criteria_hd'>Special Eligibility Requirements:</h1>Enrolled Yale College undergraduates in good standing.</span>
+    <span id="${P}lblBriefDescription">${section('Brief Description', brief)}</span>
+    <span id="${P}lblApplicationInformation">${section('Application Information', applicationInformation)}</span>
+    <span id="${P}lblSpecialEligibilityRequirements">${section('Special Eligibility Requirements', eligibility)}</span>
     <span id="${P}lblRestrictionstoUseofAward"></span>
     <span id="${P}lblFundContactInformation"><h1 class='Grant_Criteria_hd'>Contact Information:</h1>For questions, contact <a href=mailto:fixture.contact@example.org>fixture.contact@example.org</a></span>
     <span id="${P}lblEligibilityRequirements"><h1 class='Grant_Criteria_hd'>Search Filters:</h1></span>
-    ${facetPanel(1, 'Current Year of Study', ['Sophomore', 'Junior'])}
+    ${facetPanel(1, 'Current Year of Study', yearOfStudy)}
     ${facetPanel(2, 'Term of Award', ['Summer'])}
     ${facetPanel(3, 'Grant or Fellowship Purpose', ['Research', 'Travel'])}
     ${facetPanel(4, 'Global Region or Country', ['Europe', '-- France (Western Europe)', 'Asia', '-- Japan (East Asia)'])}
@@ -275,6 +287,215 @@ describe('fundToObservations', () => {
     expect(byField.get('applicationOpenDate')).toEqual(new Date('2099-01-15T05:00:00.000Z'));
     expect(byField.get('archived')).toBe(false);
     expect([...byField.keys()]).not.toContain('contactEmail');
+  });
+});
+
+describe('the application route a fund page names (#4216)', () => {
+  const COMMON_APPLICATION_URL =
+    'https://yale.communityforce.com/Funds/FundDetails.aspx?C0MM0NAPPL1CAT10N';
+  const FORM_URL = 'https://forms.example.org/fixture-grant-form';
+  const DEPARTMENT_URL = 'https://department.example.edu/funding';
+
+  const observationsFor = (options: Parameters<typeof fundDetailHtml>[0]) => {
+    const fund = parseFundDetailPage(fundDetailHtml(options), { title: '', url: FUND_A_URL })!;
+    const observations = fundToObservations(fund);
+    return {
+      applicationLink: observations.find((obs) => obs.field === 'applicationLink')?.value,
+      links: observations.find((obs) => obs.field === 'links')?.value,
+    };
+  };
+
+  it('cites the common application the page says applications go through', () => {
+    const { applicationLink, links } = observationsFor({
+      brief: `Applications for this fellowship will be accepted via the <a href="${COMMON_APPLICATION_URL}">Fixture Summer Research Common Application</a>.`,
+    });
+
+    expect(applicationLink).toBe(COMMON_APPLICATION_URL);
+    expect(links).toEqual([
+      { label: 'Application', url: COMMON_APPLICATION_URL },
+      { label: 'Fixture Summer Research Fellowship', url: FUND_A_URL },
+    ]);
+  });
+
+  it('cites a form the page says to apply through directly', () => {
+    expect(
+      observationsFor({
+        brief: `Please apply directly through this <a href="${FORM_URL}">form link</a>.`,
+      }).applicationLink,
+    ).toBe(FORM_URL);
+  });
+
+  it('cites the page it points to after saying the database does not take applications', () => {
+    expect(
+      observationsFor({
+        applicationInformation: `Applications for this fellowship cannot be submitted via this database.<br>Please see <a href="${DEPARTMENT_URL}">Department Funding</a> for the application process.`,
+      }).applicationLink,
+    ).toBe(DEPARTMENT_URL);
+  });
+
+  it('keeps the fund page when the page says to apply through this database', () => {
+    const { applicationLink, links } = observationsFor({
+      applicationInformation: `ALL APPLICATIONS MUST BE SUBMITTED ONLINE THROUGH THIS DATABASE. See the <a href="${DEPARTMENT_URL}">program page</a> for details.`,
+    });
+
+    expect(applicationLink).toBe(FUND_A_URL);
+    expect(links).toEqual([{ label: 'Application', url: FUND_A_URL }]);
+  });
+
+  it('keeps the fund page when a common application is mentioned but not required', () => {
+    expect(
+      observationsFor({
+        brief: `If your project extends into the fall term, you should apply using the <a href="${COMMON_APPLICATION_URL}">Summer Fellowships Common Application</a>.`,
+        applicationInformation:
+          'All fellowships in this category share a common application form and deadline.',
+      }).applicationLink,
+    ).toBe(FUND_A_URL);
+  });
+
+  it('never routes to an email address', () => {
+    expect(
+      observationsFor({
+        applicationInformation:
+          'Please send your application to <a href="mailto:fixture.office@example.org">fixture.office@example.org</a>.',
+      }).applicationLink,
+    ).toBe(FUND_A_URL);
+  });
+
+  it('emits no application link when the page names a route elsewhere but links none', () => {
+    const { applicationLink, links } = observationsFor({
+      brief:
+        'Note: Application to this fellowship competition will be via the Office of Fellowships Summer Research Common Application.',
+    });
+
+    expect(applicationLink).toBeUndefined();
+    expect(links).toEqual([{ label: 'Fixture Summer Research Fellowship', url: FUND_A_URL }]);
+  });
+
+  it('applies to a common application page directly', () => {
+    expect(
+      observationsFor({
+        title: 'Fixture Summer Research Common Application',
+        brief:
+          'Applications for these fellowships will be accepted via the Fixture Summer Research Common Application.',
+      }).applicationLink,
+    ).toBe(FUND_A_URL);
+  });
+});
+
+describe('the year of study a fund page admits (#4216)', () => {
+  const yearOfStudyFor = (options: Parameters<typeof fundDetailHtml>[0]) =>
+    parseFundDetailPage(fundDetailHtml(options), { title: '', url: FUND_A_URL })!.yearOfStudy;
+  const ALL_UNDERGRADUATE = ['First-Year Student', 'Sophomore', 'Junior', 'Senior'];
+
+  it('uses the filter when the prose is silent on years', () => {
+    expect(
+      yearOfStudyFor({
+        brief: 'The fellowship funds independent summer research.',
+        eligibility: 'Applicants must be in good academic standing.',
+        yearOfStudy: ['Sophomore', 'Junior'],
+      }),
+    ).toEqual(['Sophomore', 'Junior']);
+  });
+
+  it('prefers the years the prose names over a filter that contradicts them', () => {
+    expect(
+      yearOfStudyFor({
+        brief: 'Awarded to a Yale undergraduate for a project of research.',
+        eligibility: 'Freshman, Sophomores &amp; Juniors.',
+        yearOfStudy: ALL_UNDERGRADUATE,
+      }),
+    ).toEqual(['First-Year Student', 'Sophomore', 'Junior']);
+  });
+
+  it('drops a year the prose excludes', () => {
+    expect(
+      yearOfStudyFor({
+        brief: 'The fellowship funds independent summer research.',
+        eligibility: 'Seniors are not eligible.',
+        yearOfStudy: ALL_UNDERGRADUATE,
+      }),
+    ).toEqual(['First-Year Student', 'Sophomore', 'Junior']);
+  });
+
+  it('emits no year of study when the prose admits a level the vocabulary cannot name', () => {
+    const fund = parseFundDetailPage(
+      fundDetailHtml({
+        brief: 'The fellowship funds independent summer research.',
+        eligibility:
+          'Fellowships are ordinarily awarded to juniors, but first years, sophomores and graduate affiliates are eligible.',
+        yearOfStudy: ['First-Year Student', 'Sophomore', 'Junior'],
+      }),
+      { title: '', url: FUND_A_URL },
+    )!;
+
+    expect(fund.yearOfStudy).toEqual([]);
+    expect(fundToObservations(fund).map((obs) => obs.field)).not.toContain('yearOfStudy');
+  });
+
+  it('lets the filter refine a generic level the prose names, and widens a level it omits', () => {
+    expect(
+      yearOfStudyFor({
+        brief: 'The fellowship supports Yale undergraduates who plan summer research projects.',
+        eligibility: '',
+        yearOfStudy: ['First-Year Student', 'Sophomore', 'Junior'],
+      }),
+    ).toEqual(['First-Year Student', 'Sophomore', 'Junior']);
+    expect(
+      yearOfStudyFor({
+        brief:
+          'The award is available to Yale graduate and professional school students and undergraduate students.',
+        eligibility: '',
+        yearOfStudy: ['Master’s Student', 'PhD Pre-Candidacy'],
+      }),
+    ).toEqual([...ALL_UNDERGRADUATE, 'Master’s Student', 'PhD Pre-Candidacy', 'JD', 'MD']);
+  });
+
+  it('admits a whole level the prose quantifies', () => {
+    expect(
+      yearOfStudyFor({
+        brief: 'Any graduate or undergraduate student currently enrolled at Yale may apply.',
+        eligibility: '',
+        yearOfStudy: ['First-Year Student', 'Sophomore', 'Junior'],
+      }),
+    ).toEqual([
+      ...ALL_UNDERGRADUATE,
+      'Master’s Student',
+      'PhD Pre-Candidacy',
+      'PhD Post-Candidacy',
+    ]);
+  });
+
+  it('reads "rising" years as the current year below and a range as every year in it', () => {
+    expect(
+      yearOfStudyFor({
+        brief:
+          'Applications are welcomed from rising sophomores through rising seniors who wish to do research.',
+        eligibility: '',
+        yearOfStudy: ALL_UNDERGRADUATE,
+      }),
+    ).toEqual(['First-Year Student', 'Sophomore', 'Junior']);
+  });
+
+  it('does not read a senior essay or a fellow track as eligibility, and lets a preference add', () => {
+    expect(
+      yearOfStudyFor({
+        brief:
+          'The grants are intended for seniors to support their senior essays. A strong preference will be given to juniors. Fellows join the Junior Director track.',
+        eligibility: '',
+        yearOfStudy: ['Sophomore', 'Junior', 'Senior'],
+      }),
+    ).toEqual(['Junior', 'Senior']);
+  });
+
+  it('does not read a negated relative clause or a qualified refusal as an exclusion', () => {
+    expect(
+      yearOfStudyFor({
+        brief:
+          'This award is designed for Yale undergraduate students who are not enrolled in the seminar.',
+        eligibility: 'Seniors may not apply for this fellowship to be used after their graduation.',
+        yearOfStudy: ALL_UNDERGRADUATE,
+      }),
+    ).toEqual(ALL_UNDERGRADUATE);
   });
 });
 
