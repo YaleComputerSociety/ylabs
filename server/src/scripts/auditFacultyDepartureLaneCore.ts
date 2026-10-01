@@ -37,8 +37,6 @@ export interface FacultyDepartureLaneFacts {
   frozenDepartments: number;
   regressedDepartments?: number;
   incompleteReadDepartments?: number;
-  /** Absent rows whose stored first-absence marker the plan refused as evidence (#3702). */
-  refusedAbsenceMarkers?: number;
   liveEntities: number;
   /** Rows the lane has ever recorded as present in a complete roster. */
   entitiesWithLastSeen: number;

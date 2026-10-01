@@ -1163,6 +1163,7 @@ Absence from a snapshot is only evidence when the snapshot's lane read the whole
 Before this a walk that stopped on a later page's fetch failure or at the 20-page cap reported `ok` whenever it had read anybody, so the people on its unread pages were recorded absent and became suppression candidates on the next run, and the truncated discovery also became the next read's retention baseline.
 `--limit` did the same to the development-sample sweep, and a department whose sibling config the limit never reached published the first config's people as the whole department.
 `loadPreviousDiscoveryCounts` reads only `complete: true` snapshots, so a partial read no longer lowers the baseline either.
+It also reads only snapshots observed no later than the run being judged, so a standing marker's run is measured against the read before it rather than against a later run, including the current one.
 It keys each baseline by the lane's own `deptKey` rather than by canonical department, because two lanes of one department list different people, and a department-keyed baseline judged one lane's full read regressed against its sibling's count and let the sibling govern alone.
 
 A lane's incomplete read withholds its whole canonical department in that run, not just its own snapshot (`rosterHealthRecordsAnIncompleteRead`).
@@ -1186,7 +1187,7 @@ A complete read clears a marker only on a row it classifies `present`, so 20 of 
 Three rules now decide an absence, and none of them writes a field.
 
 1. A standing marker completes a departure only when its own run, re-read with the current rules (`createAbsenceMarkerJudge`), classifies the row `absent` from the row's current departments, and that run carried the #3661 fix (`ROSTER_ABSENCE_MARKER_CUTOFF`, judged by `ScrapeRun.codeSha` ancestry and then `startedAt`, as `fieldRetraction.ts` judges its cutoffs).
-A marker that fails is not trusted and not cleared: an absent row gets a first absence of the current run in its place, counted as `refusedAbsenceMarkers`, and any other row keeps an inert marker that can never prime a suppression.
+A marker that fails is not trusted and not cleared: an absent row gets a first absence of the current run in its place, and any other row keeps an inert marker that can never prime a suppression.
 2. A row is `absent` only from a department whose roster listed it on an earlier read (`loadPreviousRosterListings`, superseded snapshots included).
 A department tag the materialize added, or a row the lane observed only on another department's page, is `inconclusive` there, so moving a row between departments or moving a department across the drop guard cannot turn an unchanged read into first absences.
 3. A row listed anywhere in the run is `present` (`loadRunRosterPresence`): every snapshot's discovered keys, whatever that snapshot was worth as evidence of absence, plus every `researchEntity` key the lane observed in the run, which covers cross-listing tabs that publish no discovery set and departments no `OrgUnit` names.

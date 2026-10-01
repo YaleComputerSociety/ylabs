@@ -176,16 +176,24 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
   // A standing marker completes a departure only when its own run, re-read under the
   // current rules, had the row absent from the same department that listed it before
   // (#3702), so a fixture expecting a suppression has to seed that history.
+  // The marker run is judged against its own department's earlier read, so a fixture
+  // department has to list enough people that one departure is not a regression.
+  const COLLEAGUES = ['colleague-a', 'colleague-b', 'colleague-c'];
+  const rosterRead = (present: string[]) => ({
+    discoveredEntityKeys: [...present, ...COLLEAGUES],
+    discoveredCount: present.length + COLLEAGUES.length,
+  });
+
   const seedPriorRunThatReadAbsent = async (
     listed: string[],
     present: string[],
     deptName = 'Physics',
     markerRead: Record<string, unknown> = {},
   ) => {
-    await seedPriorListing(listed, deptName);
+    await seedPriorListing([...listed, ...COLLEAGUES], deptName);
     await seedDeptHealth(
       priorRun,
-      { discoveredEntityKeys: present, discoveredCount: present.length, ...markerRead },
+      { ...rosterRead(present), ...markerRead },
       deptName,
       MARKER_READ_AT,
     );
@@ -197,7 +205,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     await seedEntity({ slug: 'lab-present' });
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
     await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present']);
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedDeptHealth(run, rosterRead(['lab-present']));
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
@@ -217,8 +225,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
     await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present']);
     await seedDeptHealth(run, {
-      discoveredEntityKeys: ['lab-present'],
-      discoveredCount: 1,
+      ...rosterRead(['lab-present']),
       read: { ...FETCHED_READ, pagesReusedWithinSweep: 1 },
     });
     const profileUrl = TOMBSTONE.url;
@@ -289,7 +296,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       studentVisibilityComputedTier: 'student_ready',
     });
     await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present']);
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedDeptHealth(run, rosterRead(['lab-present']));
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
@@ -310,7 +317,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     await seedEntity({ slug: 'lab-present' });
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
     await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present']);
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedDeptHealth(run, rosterRead(['lab-present']));
     fetchPage.mockResolvedValue(LIVE_PROFILE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
@@ -354,7 +361,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       archived: false,
     });
     await seedPriorRunThatReadAbsent(['lab-present', 'lab-relocated'], ['lab-present']);
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedDeptHealth(run, rosterRead(['lab-present']));
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
@@ -377,7 +384,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       absentFromRosterSinceRunId: priorRun,
     });
     await seedPriorRunThatReadAbsent(['lab-present', 'lab-no-yale-page'], ['lab-present']);
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedDeptHealth(run, rosterRead(['lab-present']));
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
@@ -394,13 +401,12 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       status: 'partial-read',
       complete: false,
     });
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedDeptHealth(run, rosterRead(['lab-present']));
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
     expect(result.planned.suppress_departed).toBe(0);
-    expect(result.refusedAbsenceMarkers).toBe(1);
     expect(fetchPage).not.toHaveBeenCalled();
     expect(await readEntity('lab-gone')).toMatchObject({ absentFromRosterSinceRunId: run });
     expect((await readEntity('lab-gone'))?.activeAtYaleCache).not.toBe(false);
@@ -420,17 +426,12 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       ['lab-other'],
       'Political Science',
     );
-    await seedDeptHealth(
-      run,
-      { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 },
-      'Economics',
-    );
+    await seedDeptHealth(run, rosterRead(['lab-present']), 'Economics');
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
     expect(result.planned.suppress_departed).toBe(0);
-    expect(result.refusedAbsenceMarkers).toBe(1);
     expect(result.plannedRows.find((row) => row.entityKey === 'lab-moved')).toMatchObject({
       action: 'record_first_absence',
       absenceRestsOnRunId: run,
@@ -459,8 +460,24 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
     expect(result.planned.suppress_departed).toBe(0);
-    expect(result.refusedAbsenceMarkers).toBe(1);
     expect(await readEntity('lab-gone')).toMatchObject({ absentFromRosterSinceRunId: run });
+  });
+
+  it('judges a marker run against the read before it, not a later read that grew', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
+    await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present']);
+    const newcomers = ['newcomer-a', 'newcomer-b', 'newcomer-c', 'newcomer-d', 'newcomer-e'];
+    await seedDeptHealth(run, rosterRead(['lab-present', ...newcomers]));
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
+
+    expect(result.regressedDepartments).toBe(0);
+    expect(result.plannedRows.find((row) => row.entityKey === 'lab-gone')).toMatchObject({
+      action: 'suppress_departed',
+      absenceRestsOnRunId: priorRun,
+    });
   });
 
   it('refuses a marker whose run left no record at all', async () => {
@@ -473,7 +490,6 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     const result = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
 
     expect(result.planned).toMatchObject({ suppress_departed: 0, record_first_absence: 1 });
-    expect(result.refusedAbsenceMarkers).toBe(1);
   });
 
   it('records no absence for a row its department roster has never listed', async () => {
@@ -499,10 +515,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       ['lab-cross-listed', 'lab-on-a-tab'],
       ['lab-present', 'lab-present-too'],
     );
-    await seedDeptHealth(run, {
-      discoveredEntityKeys: ['lab-present', 'lab-present-too'],
-      discoveredCount: 2,
-    });
+    await seedDeptHealth(run, rosterRead(['lab-present', 'lab-present-too']));
     await seedDeptHealth(
       run,
       { discoveredEntityKeys: ['lab-cross-listed'], discoveredCount: 1 },
@@ -891,7 +904,6 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       departmentsGoverningNothing: 0,
       regressedDepartments: 0,
       incompleteReadDepartments: 0,
-      refusedAbsenceMarkers: 0,
       regatedEntities: 0,
       planned: {
         refresh_present: 0,
@@ -932,7 +944,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     await seedEntity({ slug: 'lab-present' });
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
     await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present']);
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedDeptHealth(run, rosterRead(['lab-present']));
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
@@ -1002,7 +1014,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     await seedEntity({ slug: 'lab-present' });
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
     await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present']);
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedDeptHealth(run, rosterRead(['lab-present']));
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
@@ -1042,11 +1054,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     });
     await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present'], 'English');
     // The snapshot records the raw roster-config spelling, which no entity carries.
-    await seedDeptHealth(
-      run,
-      { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 },
-      'English',
-    );
+    await seedDeptHealth(run, rosterRead(['lab-present']), 'English');
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);

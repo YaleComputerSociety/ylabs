@@ -59,11 +59,7 @@ export interface DepartmentRosterHealthSnapshot {
 }
 
 export type RosterHealthReadProvenance =
-  | 'fetched'
-  | 'reused-within-sweep'
-  | 'cache-permitted'
-  | 'not-read'
-  | 'unrecorded';
+  'fetched' | 'reused-within-sweep' | 'cache-permitted' | 'not-read' | 'unrecorded';
 
 /**
  * Why a roster-health snapshot may or may not govern departures, as one named verdict.
@@ -86,11 +82,7 @@ export type RosterHealthReadProvenance =
  * (#2542): silence is not a claim, and a failed read is silence.
  */
 export type RosterHealthAdmissibility =
-  | 'read-discovered-people'
-  | 'read-discovered-nobody'
-  | 'incomplete'
-  | 'not-read'
-  | 'unrecorded';
+  'read-discovered-people' | 'read-discovered-nobody' | 'incomplete' | 'not-read' | 'unrecorded';
 
 export function rosterHealthAdmissibility(
   snapshot: DepartmentRosterHealthSnapshot,
@@ -198,11 +190,7 @@ export interface EntityDepartureState {
 export type RunPresenceSignal = 'present' | 'absent' | 'inconclusive';
 
 export type FacultyRosterDepartureAction =
-  | 'noop'
-  | 'refresh_present'
-  | 'record_first_absence'
-  | 'suppress_departed'
-  | 'clear_departed';
+  'noop' | 'refresh_present' | 'record_first_absence' | 'suppress_departed' | 'clear_departed';
 
 export interface FacultyRosterDepartureDecision {
   action: FacultyRosterDepartureAction;
@@ -530,8 +518,6 @@ export interface FacultyRosterDepartureResult {
   regressedDepartments: number;
   /** Departments withheld because one of their lanes left its roster partly unread. */
   incompleteReadDepartments: number;
-  /** Standing markers whose own run did not read the row absent from its departments (#3702). */
-  refusedAbsenceMarkers: number;
   /**
    * How many snapshots landed in each admissibility state, so a department refused for
    * discovering nobody is legible rather than silently skipped (#3302).
@@ -733,11 +719,13 @@ export async function loadRosterObservedEntityKeys(): Promise<ReadonlySet<string
  */
 export async function loadPreviousDiscoveryCounts(
   currentRunObjectId: mongoose.Types.ObjectId,
+  observedNoLaterThan: Date | null,
 ): Promise<Map<string, number>> {
   const snapshots = (await Observation.find({
     entityType: 'departmentRosterHealth',
     field: DEPARTMENT_ROSTER_HEALTH_FIELD,
     scrapeRunId: { $ne: currentRunObjectId },
+    ...(observedNoLaterThan ? { observedAt: { $lte: observedNoLaterThan } } : {}),
   })
     .sort({ observedAt: 1 })
     .select('entityKey value observedAt')
@@ -861,6 +849,13 @@ export async function readRunDepartmentEvidence(
     .lean()) as any[];
   if (snapshots.length === 0) return null;
 
+  const snapshotObservedAts = snapshots
+    .map((entry) => (entry.observedAt instanceof Date ? entry.observedAt.toISOString() : ''))
+    .filter(Boolean);
+  const earliestSnapshotObservedAt = snapshotObservedAts.length
+    ? new Date([...snapshotObservedAts].sort()[0])
+    : null;
+
   const scrapedDeptNames = new Set<string>();
   const healthyDiscoveredByDept = new Map<string, Set<string>>();
   const frozenDiscoveredByDept = new Map<string, string[]>();
@@ -877,7 +872,10 @@ export async function readRunDepartmentEvidence(
   let frozenDepartments = 0;
   const admissibilityCounts: Record<string, number> = {};
   let departmentsGoverningNothing = 0;
-  const previousDiscoveryByLane = await loadPreviousDiscoveryCounts(runObjectId);
+  const previousDiscoveryByLane = await loadPreviousDiscoveryCounts(
+    runObjectId,
+    earliestSnapshotObservedAt,
+  );
   let regressedDepartments = 0;
   let latestObservedAt = new Date();
 
@@ -988,13 +986,6 @@ export async function readRunDepartmentEvidence(
     );
   }
 
-  const snapshotObservedAts = snapshots
-    .map((entry) => (entry.observedAt instanceof Date ? entry.observedAt.toISOString() : ''))
-    .filter(Boolean);
-  const earliestSnapshotObservedAt = snapshotObservedAts.length
-    ? new Date([...snapshotObservedAts].sort()[0])
-    : null;
-
   return {
     snapshotCount: snapshots.length,
     snapshotObservedAts,
@@ -1090,7 +1081,6 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     departmentsGoverningNothing: 0,
     regressedDepartments: 0,
     incompleteReadDepartments: 0,
-    refusedAbsenceMarkers: 0,
     planned: { ...EMPTY_DEPARTURE_PLAN },
     regatedEntities: 0,
     governedDepartments: [] as string[],
@@ -1160,7 +1150,6 @@ export async function reconcileFacultyRosterDeparturesFromRun(
   let suppressed = 0;
   let cleared = 0;
   let held = 0;
-  let refusedAbsenceMarkers = 0;
   const regateIds: string[] = [];
   const planned: FacultyRosterDeparturePlan = { ...EMPTY_DEPARTURE_PLAN };
   const plannedRows: FacultyRosterDepartureRowExplanation[] = [];
@@ -1208,7 +1197,6 @@ export async function reconcileFacultyRosterDeparturesFromRun(
       },
     });
     if (decision.action === 'noop') continue;
-    if (markerIsStanding && decision.action === 'record_first_absence') refusedAbsenceMarkers += 1;
     planned[decision.action] += 1;
     plannedRows.push({
       entityKey: entity.slug,
@@ -1267,7 +1255,6 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     suppressed,
     cleared,
     held,
-    refusedAbsenceMarkers,
     regatedEntities,
   };
 }
