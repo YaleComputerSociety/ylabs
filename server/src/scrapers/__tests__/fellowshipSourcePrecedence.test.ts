@@ -27,7 +27,12 @@ function withheld(
       { contributingSources: [winnerByField[field] ?? observer] },
     ]),
   );
-  return fellowshipFieldsWithheldBySourcePrecedence({ stored, staged, resolved }).sort();
+  return fellowshipFieldsWithheldBySourcePrecedence({
+    stored,
+    staged,
+    resolved,
+    fundTitle: undefined,
+  }).sort();
 }
 
 describe('fellowshipFieldsWithheldBySourcePrecedence', () => {
@@ -119,6 +124,7 @@ describe('the fellowship database as an official source (#4284)', () => {
         stored: { sourceName: 'student-grants-database', sourceUrl: '' },
         staged: { sourceUrl: fundPage },
         resolved: { sourceUrl: { contributingSources: ['student-grants-database'] } },
+        fundTitle: undefined,
       }),
     ).not.toContain('sourceUrl');
   });
@@ -132,6 +138,7 @@ describe('the fellowship database as an official source (#4284)', () => {
         },
         staged: { sourceUrl: fundPage },
         resolved: { sourceUrl: { contributingSources: ['student-grants-database'] } },
+        fundTitle: undefined,
       }),
     ).toContain('sourceUrl');
   });
