@@ -157,6 +157,23 @@ describe('parseHealthSciencesProgramPage', () => {
     expect(candidate?.deadline?.toISOString()).toBe('2027-01-31T23:59:59.999Z');
   });
 
+  it('leaves a photo caption out of the description read from prose paragraphs', () => {
+    const html = `
+      <main>
+        <h1>Fixture Developmental Science Summer Internship</h1>
+        <figure>
+          <img src="/fixture-group-photo.jpg" alt="" />
+          <figcaption class="photo__details"><p>Top (l-r): Fixture Person One, Fixture Person Two, Fixture Person Three.</p></figcaption>
+        </figure>
+        <p>A summer research internship that places undergraduate students in Yale research groups, where each intern joins a lab and works on an ongoing developmental science project.</p>
+        <p>Interns attend weekly seminars, present their work at a closing symposium, and receive mentoring from faculty and graduate students throughout the summer.</p>
+      </main>
+    `;
+    const candidate = parseHealthSciencesProgramPage(html, surfUrl, 'Yale', referenceDate);
+    expect(candidate?.description).toMatch(/^A summer research internship/);
+    expect(candidate?.description).not.toContain('Fixture Person');
+  });
+
   it('returns undefined for a page with no undergraduate summer-research signal', () => {
     const candidate = parseHealthSciencesProgramPage(
       '<main><h1>Department Directory</h1><p>Faculty office hours and contact list.</p></main>',

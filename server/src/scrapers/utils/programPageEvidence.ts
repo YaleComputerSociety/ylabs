@@ -182,6 +182,7 @@ export function programPageDescription(
   const prose = chromeFreeRoot
     .find('p')
     .toArray()
+    .filter((node) => $(node).closest('figure, figcaption').length === 0)
     .map((node) => normalizeWhitespace($(node).text()))
     .filter(
       (text) => text.length >= MIN_PROSE_PARAGRAPH_CHARS && !FAQ_OR_QUESTION_PARAGRAPH.test(text),
