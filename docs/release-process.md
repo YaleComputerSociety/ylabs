@@ -203,10 +203,19 @@ Production is a serve-only environment: evidence accumulates in Development and 
 
 `accounts` is the one promoted collection that Production also writes, because every Production login upserts an account and every saved plan in `research_plans` references one.
 Beta's accounts never carry a Production login, so a plain swap deleted every account a real login had created and orphaned the plans that pointed at it: on 2026-09-30, 277 of 319 Production plans referenced an account that no longer existed (#4091).
+Beta does hold its own logins, though, and has since #4139 made the Development-to-Beta sync carry the target's login rows across the swap, so "Beta is a pseudonymized staging copy that holds no student data" is no longer true of `accounts` and must not be relied on.
 The promotion therefore carries every Production account with login evidence (`lastLoginAt`, or an owned research plan) from the pre-swap backup into the swapped collection before verification, and keeps its Production `_id`.
 The synthetic-user exclusion applies only to the Beta rows being promoted, so a Production account with login evidence is carried whatever its netid or email looks like and its plans never lose their owner.
 Where Beta holds the same netid under another `_id`, the Beta row is re-keyed to the Production `_id` and every account reference follows it.
+
+Because Beta holds real logins, the promotion also constrains what crosses in the other direction, so Production's accounts stay Production's (#4244).
+Every promoted account row is reduced to the same allow-list the Development mirror uses, `MIRRORED_ACCOUNT_FIELDS` and `MIRRORED_ACCOUNT_PROFILE_FIELDS` in `server/src/scripts/mirroredAccountFields.ts`, so a Beta `lastLoginAt` and the student profile fields `college`, `year` and `major` never leave Beta.
+A Beta account that carries login evidence and that no promoted collection references is not promoted at all, because such a row describes a Beta login rather than the identity spine.
+Reachability is measured over the promoted collections only, which is why owning a Beta `research_plans` row is login evidence rather than spine membership: `research_plans` is not promoted, so keeping the account would leave nothing in Production pointing at it.
+That exclusion is deliberately narrower than "every Beta login": an account a promoted `researchers` row reaches is the identity spine and still crosses, reduced to the allow-list.
+Without both halves a promoted Beta login becomes permanent, because its promoted `lastLoginAt` makes the carry read it as a Production login and re-carry it on every later promotion.
 The dry-run report's `productionAccountCarry` counts what will be carried; an `inserted` of 0 while Production has logged-in users is a stop.
+`excludedBetaLoginAccounts` counts the Beta logins the promotion will leave behind, and `excludedSyntheticUsers` counts the synthetic rows, the two parts of the `accounts` row's `excludedCount`.
 
 `--include-observations` flips the observation default.
 `--include-scrape-runs` flips the run-history default, which is off: a promoted `scrape_runs` is Development's history under Production's name (#2589).
