@@ -38,7 +38,8 @@ import { sanitizeResearchEntityShortDescription } from '../utils/descriptionHygi
 import {
   LEAD_GUARD_WITHHELD_PROSE,
   type LeadGuardWithheldProse,
-  sanitizeServedResearchEntityCopyFields,
+  sanitizeServedResearchEntityCopyFieldsWithTopicDecision,
+  type ServedResearchEntityCopyWithTopicDecision,
 } from '../utils/researchEntityDescriptionText';
 import {
   gateAcceptedDerivedCardSubstitute,
@@ -83,6 +84,13 @@ export function servedResearchEntityCopy(
   group: Record<string, any>,
   leadMemberNames: readonly string[] = [],
 ): Record<string, any> {
+  return servedResearchEntityCopyWithTopicDecision(group, leadMemberNames).entity;
+}
+
+export function servedResearchEntityCopyWithTopicDecision(
+  group: Record<string, any>,
+  leadMemberNames: readonly string[] = [],
+): ServedResearchEntityCopyWithTopicDecision<Record<string, any>> {
   const bounded: Record<string, any> = { ...group };
   for (const field of SERVED_COPY_TEXT_FIELDS) {
     if (typeof bounded[field] === 'string') {
@@ -99,7 +107,7 @@ export function servedResearchEntityCopy(
       bounded[field] = bounded[field].slice(0, MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS);
     }
   }
-  return sanitizeServedResearchEntityCopyFields(bounded, leadMemberNames);
+  return sanitizeServedResearchEntityCopyFieldsWithTopicDecision(bounded, leadMemberNames);
 }
 
 /**

@@ -49,8 +49,14 @@ export const buildInconclusiveInvariant = (
 export interface TopicDropObservation {
   storedCount: number;
   servedCount: number;
-  guardExpectedCount: number;
+  explainedByDecision: boolean;
+  withheldBy: readonly string[];
   servedVersionMatchesStored: boolean;
+}
+
+export interface TopicDropAttribution {
+  attributed: boolean;
+  withheldBy: string[];
 }
 
 export interface TopicAttributionTally {
@@ -62,6 +68,8 @@ export interface TopicAttributionTally {
   unexplained: number;
   servedNoneWhileStoringSome: number;
   servedNoneUnexplained: number;
+  withheldTopicsByGuard: Record<string, number>;
+  drops: TopicDropAttribution[];
 }
 
 export function attributeTopicDrops(
@@ -76,6 +84,8 @@ export function attributeTopicDrops(
     unexplained: 0,
     servedNoneWhileStoringSome: 0,
     servedNoneUnexplained: 0,
+    withheldTopicsByGuard: {},
+    drops: [],
   };
 
   for (const observation of observations) {
@@ -86,12 +96,19 @@ export function attributeTopicDrops(
     tally.comparable += 1;
     if (observation.servedCount >= observation.storedCount) continue;
     tally.dropped += 1;
-    if (observation.servedCount === observation.guardExpectedCount) tally.attributedToGuard += 1;
+    const attributed = observation.explainedByDecision;
+    if (attributed) tally.attributedToGuard += 1;
     else tally.unexplained += 1;
+    tally.drops.push({ attributed, withheldBy: [...new Set(observation.withheldBy)] });
+    if (attributed) {
+      for (const guard of observation.withheldBy) {
+        tally.withheldTopicsByGuard[guard] = (tally.withheldTopicsByGuard[guard] ?? 0) + 1;
+      }
+    }
 
     if (observation.servedCount === 0 && observation.storedCount > 0) {
       tally.servedNoneWhileStoringSome += 1;
-      if (observation.guardExpectedCount !== 0) tally.servedNoneUnexplained += 1;
+      if (!attributed) tally.servedNoneUnexplained += 1;
     }
   }
 

@@ -162,7 +162,7 @@ async function readOwnedSlotSurvivorWebsite(
 }
 
 async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> {
-  const { getResearchGroupDetail, searchResearchGroupsViaMeili } =
+  const { getResearchGroupDetail, optionalPublicLeadMemberNames, searchResearchGroupsViaMeili } =
     await import('../../services/researchGroupService');
   const database = mongoose.connection.db;
   if (!database) throw new Error('MongoDB connection is not initialized');
@@ -206,6 +206,7 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
       const rows = await collection.find({ slug: { $in: rowKeys } }).toArray();
       return new Map(rows.map((row) => [String(row.slug), row as Record<string, unknown>]));
     },
+    readLeadMemberNames: (storedRows) => optionalPublicLeadMemberNames(storedRows),
     readOwnedSlotSurvivorWebsites: async () => {
       const survivorIds = await collection.distinct('canonicalGroupId', {
         archived: true,

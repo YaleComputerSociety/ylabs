@@ -72,6 +72,33 @@ describe('topic-drop-attribution case', () => {
     });
   });
 
+  it('attributes a prose-length chip the served copy withholds to the prose-chip filter', async () => {
+    const invariants = await invariantStatuses([
+      {
+        slug: 'synthetic-prose-chip-drop',
+        storedAreas: [
+          'Ion Channels',
+          'Synthetic Interdisciplinary Training Program in Membrane Transport Biology (SITPMTB)',
+        ],
+        servedAreas: ['Ion Channels'],
+        fieldProvenance: {
+          researchAreas: { sourceUrl: 'https://physiology.example.edu/research/' },
+        },
+      },
+    ]);
+
+    expect(invariants['every-topic-drop-is-attributable']).toMatchObject({
+      status: 'pass',
+      detail: {
+        dropped: 1,
+        attributedToGuard: 1,
+        unexplained: 0,
+        withheldTopicsByGuard: { filterProseResearchAreaChips: 1 },
+        drops: [{ attributed: true, withheldBy: ['filterProseResearchAreaChips'] }],
+      },
+    });
+  });
+
   it('attributes a card serving no topic when every stored topic is a place name', async () => {
     const invariants = await invariantStatuses([
       {

@@ -7,8 +7,13 @@ import {
   MAX_SERVED_RESEARCH_ENTITY_TEXT_LENGTH,
   servedResearchEntityCardDescription,
   servedResearchEntityCopy,
+  servedResearchEntityCopyWithTopicDecision,
   withoutLeadGuardedCopy,
 } from './servedResearchEntityCard';
+import {
+  applyServedResearchAreaStage,
+  type ServedResearchAreaDecision,
+} from '../utils/servedResearchAreaGuards';
 import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import {
@@ -172,6 +177,45 @@ export function publicResearchAreaArray(value: unknown): string[] {
     if (labels.length >= MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS) break;
   }
   return filterProseResearchAreaChips(labels);
+}
+
+function servedCopyAndTopics(
+  group: Record<string, any>,
+  leadMemberNames: readonly string[] | undefined,
+): { served: Record<string, any>; topics: ServedResearchAreaDecision } {
+  const { entity: served, researchAreaDecision } = servedResearchEntityCopyWithTopicDecision(
+    group,
+    leadMemberNames,
+  );
+  const sanitized: ServedResearchAreaDecision = {
+    served: Array.isArray(served.researchAreas) ? served.researchAreas : [],
+    withheld: researchAreaDecision?.withheld ?? [],
+  };
+  return {
+    served,
+    topics: applyServedResearchAreaStage(
+      sanitized,
+      'publicResearchAreaArray',
+      publicResearchAreaArray,
+    ),
+  };
+}
+
+// The journey harness attributes a served topic drop by calling this, so a topic guard
+// added to the DTO outside `servedCopyAndTopics` reads there as unexplained (#4317).
+export function decideServedResearchEntityTopics(
+  group: Record<string, any>,
+  leadMemberNames: readonly string[] = [],
+): ServedResearchAreaDecision {
+  const topics = servedCopyAndTopics(group, leadMemberNames).topics;
+  const stored: unknown[] = Array.isArray(group.researchAreas) ? group.researchAreas : [];
+  if (stored.length <= MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS) return topics;
+  // Charged here rather than in `servedCopyAndTopics`, because the serve path must never
+  // read a stored topic past the array cap.
+  const overBound = stored
+    .slice(MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS)
+    .map((area) => ({ area: String(area), guard: 'servedCopyArrayBound' as const }));
+  return { ...topics, withheld: [...overBound, ...topics.withheld] };
 }
 
 function publicMethodsArray(value: unknown, researchAreas: string[]): string[] {
@@ -450,7 +494,7 @@ function derivePublicResearchEntityDto(
   const id = publicResearchEntityId(group);
   const kind = group.kind;
   const entityType = group.entityType || mapResearchGroupKindToEntityType(kind);
-  const served = servedResearchEntityCopy(group, options.leadMemberNames);
+  const { served, topics } = servedCopyAndTopics(group, options.leadMemberNames);
   const servedCard = servedResearchEntityCardDescription(served, entityType);
   const hostOwnerIdentity = {
     name: served.name ?? group.name,
@@ -474,7 +518,7 @@ function derivePublicResearchEntityDto(
     entityKind: kind,
     entityType,
     departments: publicDepartmentArray(group.departments),
-    researchAreas: publicResearchAreaArray(served.researchAreas),
+    researchAreas: topics.served,
     sourceUrls: publicResearchEntitySourceUrls(
       group.sourceUrls,
       hostOwnerIdentity,
@@ -639,6 +683,17 @@ function detailServedSource(
   return buildResearchEntityPublicDescriptionRepresentation({ entity, leadMemberNames }).entity;
 }
 
+export function researchEntityListServedSource(
+  hit: Record<string, any>,
+  leadMemberNames: readonly string[] | undefined,
+  leadMemberNamesUnavailable: boolean | undefined,
+): Record<string, any> {
+  return detailServedSource(
+    leadMemberNamesUnavailable ? withoutLeadGuardedCopy(hit) : hit,
+    leadMemberNames,
+  );
+}
+
 export function addResearchEntitySearchAliases<T extends { hits: Record<string, any>[] }>(
   result: T,
   options: ResearchEntitySearchAliasOptions = {},
@@ -651,10 +706,7 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
     (result.hits || []).map((hit) => {
       const leadMemberNames = leadMemberNamesByEntityId?.get(String(hit?._id || hit?.id || ''));
       return toPublicResearchEntityDto(
-        detailServedSource(
-          leadMemberNamesUnavailable ? withoutLeadGuardedCopy(hit) : hit,
-          leadMemberNames,
-        ),
+        researchEntityListServedSource(hit, leadMemberNames, leadMemberNamesUnavailable),
         { ...listOptions, leadMemberNames },
       );
     }),

@@ -9,10 +9,12 @@ import {
   sanitizeResearchEntityShortDescription,
 } from './descriptionHygiene';
 import { collapseDuplicateResearchHomeSuffix } from './researchEntityNameNormalization';
-import { normalizeResearchAreaList } from './researchAreaHygiene';
-import { sanitizeResearchAreaLabel } from './researchAreaLabelHygiene';
 import { filterProseResearchAreaChips } from './profileResearchTerms';
-import { withholdUnservableResearchAreas } from './servedResearchAreaGuards';
+import {
+  cleanServedResearchAreaChipLabels,
+  decideServedResearchAreas,
+  type ServedResearchAreaDecision,
+} from './servedResearchAreaGuards';
 import { isCareerFactSentence, splitDescriptionSentences } from './careerBiographyDescription';
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 import {
@@ -2908,24 +2910,9 @@ export function sanitizeServedResearchEntityName(value: unknown): string {
  * label-leak chips (#877/#1029/#867), dedupe, then drop prose-sentence chips
  * (#870). Idempotent, so a re-run over already-clean chips is a no-op.
  */
-const MAX_SERVED_RESEARCH_AREA_CHIPS = 200;
-
 export function sanitizeServedResearchAreaChips(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
-  const seen = new Set<string>();
-  const labels: string[] = [];
-  const boundedInput = values
-    .slice(0, MAX_SERVED_RESEARCH_AREA_CHIPS)
-    .filter((v): v is string => typeof v === 'string');
-  for (const raw of normalizeResearchAreaList(boundedInput)) {
-    const cleaned = sanitizeResearchAreaLabel(raw);
-    if (!cleaned) continue;
-    const key = cleaned.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    labels.push(cleaned);
-  }
-  return filterProseResearchAreaChips(labels);
+  return filterProseResearchAreaChips(cleanServedResearchAreaChipLabels(values));
 }
 
 /**
@@ -2955,7 +2942,9 @@ export function sanitizeServedResearchAreaChips(values: unknown): string[] {
  *     research-area chip hygiene (split/relabel/fail-close/prose-drop), so a
  *     serve path that never touched the DTO's per-field helpers still emits the
  *     same names and chips as every other surface;
- *  6. the served topic guards (`withholdUnservableResearchAreas`): a MeSH
+ *  6. the served topic decision (`decideServedResearchAreas`), which runs the
+ *     `researchAreas` chip hygiene of step 5 and then the served topic guards and
+ *     names the guard that withheld each topic (#4317): a MeSH
  *     geographic descriptor read from a MeSH-indexed profile is withheld (#3693),
  *     then the unsourced research-area domain-coherence guard (#1407 second
  *     mechanism) drops a `researchAreas` chip with no `fieldProvenance.researchAreas`
@@ -2985,6 +2974,23 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
   entity: T,
   leadMemberNames: readonly string[] = [],
 ): T {
+  return sanitizeServedResearchEntityCopyFieldsWithTopicDecision(entity, leadMemberNames).entity;
+}
+
+export interface ServedResearchEntityCopyWithTopicDecision<T> {
+  entity: T;
+  researchAreaDecision: ServedResearchAreaDecision | null;
+}
+
+const sameAreas = (left: readonly unknown[], right: readonly unknown[]): boolean =>
+  left.length === right.length && left.every((value, index) => value === right[index]);
+
+export function sanitizeServedResearchEntityCopyFieldsWithTopicDecision<
+  T extends Record<string, any>,
+>(
+  entity: T,
+  leadMemberNames: readonly string[] = [],
+): ServedResearchEntityCopyWithTopicDecision<T> {
   const ownSubject = withoutAnotherOrganizationsBody(entity, leadMemberNames);
   const ownBiography = withoutAnotherPersonsSynthesis(ownSubject.entity, leadMemberNames);
   const withTextGuards = sanitizeResearchHomeSelfReferenceCopyFields(
@@ -3095,27 +3101,23 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
     changed = true;
   }
 
-  for (const field of SERVED_RESEARCH_AREA_FIELDS) {
-    if (!Array.isArray(next[field])) continue;
-    const cleaned = sanitizeServedResearchAreaChips(next[field]);
-    const current = next[field] as unknown[];
-    if (
-      cleaned.length !== current.length ||
-      cleaned.some((value, index) => value !== current[index])
-    ) {
-      next[field] = cleaned;
+  if (Array.isArray(next.profileResearchAreas)) {
+    const cleaned = sanitizeServedResearchAreaChips(next.profileResearchAreas);
+    if (!sameAreas(cleaned, next.profileResearchAreas)) {
+      next.profileResearchAreas = cleaned;
       changed = true;
     }
   }
 
+  let researchAreaDecision: ServedResearchAreaDecision | null = null;
   if (Array.isArray(next.researchAreas)) {
     const leadGuardWithheld = (entity as Record<symbol, LeadGuardWithheldProse | undefined>)[
       LEAD_GUARD_WITHHELD_PROSE
     ];
-    const coherent = withholdUnservableResearchAreas(
-      next.researchAreas as string[],
-      next.fieldProvenance,
-      {
+    researchAreaDecision = decideServedResearchAreas(next.researchAreas, {
+      surface: 'servedCopy',
+      fieldProvenance: next.fieldProvenance,
+      coherenceContext: {
         name: next.name,
         displayName: next.displayName,
         departments: next.departments,
@@ -3130,9 +3132,9 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
         fullDescription:
           next.fullDescription || ownSubject.withheldBody || leadGuardWithheld?.fullDescription,
       },
-    );
-    if (coherent !== next.researchAreas) {
-      next.researchAreas = coherent;
+    });
+    if (!sameAreas(researchAreaDecision.served, next.researchAreas)) {
+      next.researchAreas = researchAreaDecision.served;
       changed = true;
     }
   }
@@ -3156,5 +3158,5 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
     changed = true;
   }
 
-  return changed ? (next as T) : entity;
+  return { entity: changed ? (next as T) : entity, researchAreaDecision };
 }

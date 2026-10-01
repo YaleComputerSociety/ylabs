@@ -79,7 +79,8 @@ Known live instance, so it is not re-discovered from scratch: `entityContentMatc
 
 A serve-time guard is a second-owner risk of its own, because the journey harness must name every guard that changes a served value.
 When a change withholds or rewrites a served program field, put the guard inside that field's serve-path decision (`servedProgramDeadline` in `server/src/services/fellowshipService.ts`, or the field's entry in `PROGRAM_READER_FIELD_DECISIONS` in `server/src/controllers/programPayload.ts`) rather than inline at a call site, and add a synthetic row exercising it to `server/src/scripts/journeyEval/__tests__/programServedFieldAttribution.test.ts`.
-Three guards added inline rather than inside the decision that owns the field (#3693, #4215, #4300) each left an attribution case reporting correct served values as unexplained, repaired in turn by #4111, #4278 and #4304.
+When a change withholds or rewrites a served research topic, add it as a stage of `decideServedResearchAreas` in `server/src/utils/servedResearchAreaGuards.ts`, which the served copy, the DTO, the search index document, and the topic attribution case all call, and add a synthetic row exercising it to `server/src/utils/__tests__/servedResearchAreaGuards.test.ts`.
+Four guards applied outside the decision that owns the field (#3693, #4215, #4300, and the #1428 prose-chip filter) each left an attribution case reporting correct served values as unexplained, repaired in turn by #4111, #4278, #4304 and #4317.
 
 ## Fold durable changes into docs
 
