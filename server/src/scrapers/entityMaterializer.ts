@@ -164,6 +164,7 @@ import {
 } from '../utils/descriptionHygiene';
 import { cleanPublicProfileBio } from '../services/profileService';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../services/researchEntityPublicDescription';
+import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -6014,10 +6015,14 @@ export function servingBarAcceptsFullDescription(
   const projectedFields = Object.fromEntries(
     Object.entries(projected).filter(([field]) => !field.includes('.')),
   );
-  return buildResearchEntityPublicDescriptionRepresentation({
-    entity: { ...(entityDoc || {}), ...projectedFields, fullDescription: candidateText },
-    leadMemberNames: leadPersonName ? [leadPersonName] : [],
-  }).invariant.fullDescriptionUseful;
+  const entity = { ...(entityDoc || {}), ...projectedFields, fullDescription: candidateText };
+  const leadMemberNames = leadPersonName ? [leadPersonName] : [];
+  return (
+    buildResearchEntityPublicDescriptionRepresentation({ entity, leadMemberNames }).invariant
+      .fullDescriptionUseful &&
+    textValue(sanitizeServedResearchEntityCopyFields(entity, leadMemberNames).fullDescription)
+      .length > 0
+  );
 }
 
 export async function projectFromLog(

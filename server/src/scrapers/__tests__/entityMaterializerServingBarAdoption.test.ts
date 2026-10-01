@@ -18,6 +18,9 @@ const TOPIC_ECHO_BODY =
 const RESEARCH_BODY =
   'Synthetic Scholar studies how early childhood programs shape later earnings, using randomized evaluations and structural models of household investment in children.';
 
+const ORGANIZATION_GRAFT =
+  'Synthetic Translational Imaging Center was founded in 2010 to facilitate translational animal research. The facility centralizes imaging instrumentation and provides services to investigators across the university.';
+
 const THIN_BODY = 'Synthetic Scholar studies economics.';
 
 const CAREER_BIOGRAPHY =
@@ -130,6 +133,24 @@ describe('full description adoption asks the serving check (#3437)', () => {
       ...input(resolverObs),
       resolved: { fullDescription: resolvedField(THIN_BODY, 0.82) },
       entityDoc: { ...entityDoc, fullDescription: THIN_BODY },
+    });
+    expect(result.set.fullDescription).toBe(RESEARCH_BODY);
+  });
+
+  it("refuses another organization's body that the served copy withholds on a person row", () => {
+    expect(fullDescriptionQuality(ORGANIZATION_GRAFT).isUseful).toBe(true);
+    expect(servingBarAcceptsFullDescription(entityDoc, {}, ORGANIZATION_GRAFT, '')).toBe(false);
+  });
+
+  it("adopts the person's own research over an organization body the served copy withholds", async () => {
+    const resolverObs = [
+      observation(ORGANIZATION_GRAFT, 'synthetic-page-source', 0.82),
+      observation(RESEARCH_BODY, 'synthetic-signal-source', 0.55),
+    ];
+    const result = await projectFromLog('researchEntity', {
+      ...input(resolverObs),
+      resolved: { fullDescription: resolvedField(ORGANIZATION_GRAFT, 0.82) },
+      entityDoc: { ...entityDoc, fullDescription: ORGANIZATION_GRAFT },
     });
     expect(result.set.fullDescription).toBe(RESEARCH_BODY);
   });
