@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { Fellowship } from '../../models/fellowship';
 import { applyStudentVisibilityGatePlans } from '../studentVisibilityGateService';
-import { archiveFellowship, unarchiveFellowship } from '../fellowshipService';
+import { archiveFellowship, unarchiveFellowship, updateFellowship } from '../fellowshipService';
 import { computeProgramStudentVisibility } from '../studentVisibilityTier';
 
 const id = (hex: string) => new mongoose.Types.ObjectId(hex);
@@ -96,5 +96,42 @@ describe('an archived program stores no student-visibility verdict (#3753)', () 
     expect(row?.studentVisibilityTier).toBe(expected.tier);
     expect(row?.studentVisibilityReasons).toEqual(expected.reasons);
     expect(restored.studentVisibilityTier).toBe(expected.tier);
+  });
+
+  it('withdraws the verdict when an edit archives a program', async () => {
+    await updateFellowship(SUBJECTS.liveStudentReady.toHexString(), {
+      archived: true,
+      studentVisibilityTier: 'student_ready',
+    });
+
+    const row = await rawRow(SUBJECTS.liveStudentReady);
+    expect(row?.archived).toBe(true);
+    expect(row).not.toHaveProperty('studentVisibilityTier');
+    expect(row).not.toHaveProperty('studentVisibilityReasons');
+  });
+
+  it('re-gates a program an edit restores instead of serving its pre-archive verdict', async () => {
+    const restored = await updateFellowship(SUBJECTS.archivedStudentReady.toHexString(), {
+      archived: false,
+    });
+
+    const expected = computeProgramStudentVisibility(
+      (await Fellowship.findById(SUBJECTS.archivedStudentReady).lean()) as any,
+    );
+    const row = await rawRow(SUBJECTS.archivedStudentReady);
+    expect(row?.archived).toBe(false);
+    expect(expected.tier).not.toBe('student_ready');
+    expect(row?.studentVisibilityTier).toBe(expected.tier);
+    expect(restored.studentVisibilityTier).toBe(expected.tier);
+  });
+
+  it('keeps the verdict of a live program an edit leaves live', async () => {
+    await updateFellowship(SUBJECTS.liveStudentReady.toHexString(), {
+      archived: false,
+      title: 'Example Renamed Summer Research Program',
+    });
+
+    const row = await rawRow(SUBJECTS.liveStudentReady);
+    expect(row?.studentVisibilityTier).toBe('student_ready');
   });
 });

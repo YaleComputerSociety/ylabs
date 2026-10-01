@@ -401,7 +401,8 @@ describe('fellowship public serializer', () => {
       raw: { private: true },
     });
 
-    const update = fellowshipModelMock.findByIdAndUpdate.mock.lastCall![1];
+    const { $set: update, $unset: withdrawn } =
+      fellowshipModelMock.findByIdAndUpdate.mock.lastCall![1];
     expect(update.title.length).toBeLessThanOrEqual(5000);
     expect(update.title).toMatch(/^A+$/);
     expect(update.programCategory).toBe('SUMMER_RESEARCH_PROGRAM');
@@ -418,7 +419,8 @@ describe('fellowship public serializer', () => {
     expect(update.sourceUrl).toBe('https://example.yale.edu/source');
     expect(update.hoursPerWeek).toBe(12);
     expect(update.applicationOpenDate).toBeInstanceOf(Date);
-    expect(update.studentVisibilityTier).toBe('student_ready');
+    expect(update).not.toHaveProperty('studentVisibilityTier');
+    expect(withdrawn).toHaveProperty('studentVisibilityTier');
     expect(update).not.toHaveProperty('studentVisibilityOverrideTier');
     expect(update.studentVisibilityReviewedByAccountId).toBe('67d8928150621bcef434a1d6');
     expect(update.archived).toBe(true);

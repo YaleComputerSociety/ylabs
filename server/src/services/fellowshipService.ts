@@ -678,44 +678,38 @@ const filterFellowshipUpdate = (data: any): Record<string, any> => {
   return update;
 };
 
+const withoutClearedVerdict = (update: Record<string, unknown>) =>
+  Object.fromEntries(
+    Object.entries(update).filter(([field]) => !(field in clearedStudentVisibilityVerdict())),
+  );
+
 export const updateFellowship = async (id: any, data: any) => {
   const safeId = normalizeFellowshipObjectId(id);
-  if (safeId) {
-    const safeData = filterFellowshipUpdate(data);
-    const fellowship = await Fellowship.findByIdAndUpdate(safeId, safeData, {
-      new: true,
-      runValidators: true,
-    });
-
-    if (!fellowship) {
-      throw new NotFoundError('Fellowship not found');
-    }
-
-    return fellowship.toObject();
-  } else {
-    throw new ObjectIdError('Did not receive expected id type ObjectId');
-  }
-};
-
-export const archiveFellowship = async (id: any) => {
-  const safeId = normalizeFellowshipObjectId(id);
   if (!safeId) throw new ObjectIdError('Did not receive expected id type ObjectId');
-  const fellowship = await Fellowship.findByIdAndUpdate(
-    safeId,
-    { $set: { archived: true }, $unset: clearedStudentVisibilityVerdict() },
-    { new: true },
-  );
+
+  const safeData = filterFellowshipUpdate(data);
+  const restoring =
+    safeData.archived === false &&
+    (await Fellowship.exists({ _id: safeId, archived: true })) !== null;
+  const withdrawsVerdict = safeData.archived === true || restoring;
+  const update = withdrawsVerdict
+    ? { $set: withoutClearedVerdict(safeData), $unset: clearedStudentVisibilityVerdict() }
+    : safeData;
+  const fellowship = await Fellowship.findByIdAndUpdate(safeId, update, {
+    new: true,
+    runValidators: true,
+  });
   if (!fellowship) throw new NotFoundError('Fellowship not found');
-  return fellowship.toObject();
+  if (!restoring) return fellowship.toObject();
+
+  await runStudentVisibilityGate({ collection: 'programs', mode: 'apply', recordIds: [safeId] });
+  const regated = await Fellowship.findById(safeId).lean();
+  return regated || fellowship.toObject();
 };
 
-export const unarchiveFellowship = async (id: any) => {
-  const restored = await updateFellowship(id, { archived: false });
-  const recordId = serializedDocumentId(restored._id);
-  await runStudentVisibilityGate({ collection: 'programs', mode: 'apply', recordIds: [recordId] });
-  const regated = await Fellowship.findById(restored._id).lean();
-  return regated || restored;
-};
+export const archiveFellowship = async (id: any) => updateFellowship(id, { archived: true });
+
+export const unarchiveFellowship = async (id: any) => updateFellowship(id, { archived: false });
 
 export const addView = async (id: any) => {
   return publicFellowshipForStudent(
