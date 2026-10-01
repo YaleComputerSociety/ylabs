@@ -140,6 +140,7 @@ const PUBLIC_FELLOWSHIP_TEXT_FIELDS = new Set([
   'additionalInformation',
   'contactOffice',
   'sourceName',
+  'sourcePageTitle',
 ]);
 
 // The two prose card fields the student-visibility gate reads through
@@ -192,6 +193,7 @@ const PUBLIC_FELLOWSHIP_FIELDS = [
   'citizenshipStatus',
   'sourceName',
   'sourceUrl',
+  'sourcePageTitle',
   'sourceLinkHealth',
 ] as const;
 

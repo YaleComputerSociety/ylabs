@@ -509,6 +509,14 @@ describe('publicProgramForReader department research guidance (#4285)', () => {
     expect(payload.sourceUrl).toBe(specificPage);
   });
 
+  it('derives the guidance next step from the page title when no next step is stored', () => {
+    const payload = studentPayload(guidancePage) as { bestNextStep: string };
+
+    expect(payload.bestNextStep).toBe(
+      "Use the department's guide to find faculty whose research fits your interests, then contact them directly.",
+    );
+  });
+
   it('serves a guidance kind that states an application cycle as an application', () => {
     const payload = studentPayload({
       ...guidancePage,
