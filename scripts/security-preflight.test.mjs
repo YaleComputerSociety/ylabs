@@ -4737,7 +4737,15 @@ test('public ResearchEntity DTO recursively redacts direct-contact text', () => 
     source,
     /displayName:\s*group\.displayName === undefined\s*\?\s*undefined\s*:\s*servedPersonScopedDisplayName\(group, served\.displayName\)/,
   );
-  assert.match(source, /researchAreas:\s*publicResearchAreaArray\(served\.researchAreas\)/);
+  assert.match(
+    source,
+    /applyServedResearchAreaStage\(\s*sanitized,\s*'publicResearchAreaArray',\s*publicResearchAreaArray,\s*\)/,
+  );
+  assert.match(
+    source,
+    /const \{ served, topics \} = servedCopyAndTopics\(group, options\.leadMemberNames\);/,
+  );
+  assert.match(source, /researchAreas:\s*topics\.served,/);
   assert.match(source, /const cleaned = publicTextString\(sanitizeResearchAreaLabel\(raw\)\)/);
   assert.match(
     source,
