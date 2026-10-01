@@ -65,6 +65,7 @@ Entity pages should answer:
 - Programs and fellowships live only on `/programs` (backed by the `Fellowship` collection), never in the `/research` corpus.
   A program is not a `ResearchEntity`: there is no `PROGRAM` `entityType`, and department "undergraduate research" pages materialize as `Fellowship` records, not research entities (see `docs/decisions.md` 2026-08-26).
   A program is lead-optional and surfaces an "Apply to this program" next step rather than the generic email-a-PI default.
+  The exception is department research guidance (`DEPARTMENT_RESEARCH_GUIDE`), a department's own page on getting into research, which `/programs` serves with no application affordance and the action "Read the department's guidance" (see `docs/glossary.md`).
   The distinct `researchPlanTargetKinds` `'PROGRAM'` is a saved-plan target for a program and is unrelated to any research-entity type.
 - `LAB` and `FACULTY_RESEARCH_AREA` are both first-class, and the line between them is organizational identity versus topical scope.
 A `LAB` is a named organization a student could join; a `FACULTY_RESEARCH_AREA` is the topic a professor works on.

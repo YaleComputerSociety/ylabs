@@ -37,7 +37,12 @@ import useUndoableProgramUnwatch, {
 } from '../hooks/useUndoableProgramUnwatch';
 import { getFellowshipCycleStatus, type FellowshipCycleCategory } from '../utils/fellowshipCycle';
 import { createFellowship } from '../utils/createFellowship';
-import { programKindLabel, entryModeLabel, programCategoryLabel } from '../utils/programJourney';
+import {
+  programKindLabel,
+  entryModeLabel,
+  programCategoryLabel,
+  isDepartmentResearchGuidance,
+} from '../utils/programJourney';
 import {
   emptyProgramBoardSummary,
   isOpenToFirstYears,
@@ -78,6 +83,28 @@ const SectionHeader = ({
   </div>
 );
 
+const quickFilterEmptyCopy = (quickFilter: FellowshipQuickFilter) => {
+  if (quickFilter === 'open')
+    return {
+      title: 'No application windows are open right now',
+      body: 'There are no current program or fellowship applications in this filtered set. Use Next Cycle to track recurring opportunities while you prepare eligibility, mentor fit, and materials.',
+    };
+  if (quickFilter === 'closingSoon')
+    return {
+      title: 'No application windows are closing soon',
+      body: 'There are no open program or fellowship deadlines due in the next 30 days. Use Next Cycle to track recurring opportunities while you prepare eligibility, mentor fit, and materials.',
+    };
+  if (quickFilter === 'guidance')
+    return {
+      title: 'No department research guidance matches',
+      body: 'No department guidance on getting started in research is in this filtered set. Clear the filter to see every program and guide.',
+    };
+  return {
+    title: 'No programs match this filter',
+    body: 'Clear the filter to see every program, fellowship, and department guide.',
+  };
+};
+
 const QuickFilterEmptyState = ({
   quickFilter,
   nextCycleCount,
@@ -89,25 +116,15 @@ const QuickFilterEmptyState = ({
   onViewNextCycle: () => void;
   onClearFilter: () => void;
 }) => {
-  if (quickFilter !== 'open' && quickFilter !== 'closingSoon') return null;
-
-  const copy =
-    quickFilter === 'open'
-      ? {
-          title: 'No application windows are open right now',
-          body: 'There are no current program or fellowship applications in this filtered set. Use Next Cycle to track recurring opportunities while you prepare eligibility, mentor fit, and materials.',
-        }
-      : {
-          title: 'No application windows are closing soon',
-          body: 'There are no open program or fellowship deadlines due in the next 30 days. Use Next Cycle to track recurring opportunities while you prepare eligibility, mentor fit, and materials.',
-        };
+  const copy = quickFilterEmptyCopy(quickFilter);
+  const offersNextCycle = quickFilter === 'open' || quickFilter === 'closingSoon';
 
   return (
     <div className="yr-card rounded-card px-6 py-10 text-center text-muted">
       <h2 className="text-lg font-semibold text-ink">{copy.title}</h2>
       <p className="mx-auto mt-2 max-w-2xl text-sm leading-6">{copy.body}</p>
       <div className="mt-5 flex flex-wrap justify-center gap-2">
-        {nextCycleCount > 0 && (
+        {offersNextCycle && nextCycleCount > 0 && (
           <button
             type="button"
             onClick={onViewNextCycle}
@@ -132,6 +149,7 @@ const STATUS_SUMMARY_COLUMNS: Record<number, string> = {
   4: 'lg:grid-cols-4',
   5: 'lg:grid-cols-5',
   6: 'lg:grid-cols-6',
+  7: 'lg:grid-cols-7',
 };
 
 const ALWAYS_SHOWN_TILES = new Set<ProgramBoardSection>([
@@ -173,6 +191,8 @@ const fellowshipQuickFilters: QuickFilterDef[] = [
   { label: 'Open to First-Years', value: 'firstYear' },
   { label: 'No Mentor Requirement', value: 'noMentorFirst' },
   { label: 'Next Cycle', value: 'nextCycle' },
+  { label: 'Department Guidance', value: 'guidance' },
+  { label: 'Applications Only', value: 'applicationsOnly' },
 ];
 
 const trustTierFilterOptions: Array<{ value: StudentVisibilityTier; label: string }> = [
@@ -221,6 +241,15 @@ const boardSections: Array<{
       "This year's deadline has passed. An estimated date is based on last year's cycle and is not confirmed, so check the source before you plan around it.",
     tileLabel: 'Next cycle',
     tileDetail: 'Deadline passed',
+    tileClassName: '',
+  },
+  {
+    key: 'guidance',
+    title: 'Department Research Guidance',
+    description:
+      "Each department's own advice on finding a faculty mentor and getting started in research. These are guides, not applications.",
+    tileLabel: 'Department guidance',
+    tileDetail: 'Not an application',
     tileClassName: '',
   },
   {
@@ -287,6 +316,7 @@ const DEFAULT_SECTION_SORT: Record<ProgramBoardSection, string> = {
   open: 'deadline',
   openingSoon: 'openDate',
   nextCycle: 'deadline',
+  guidance: 'title',
   noDates: 'title',
   archive: 'title',
 };
@@ -599,6 +629,10 @@ const Fellowships = () => {
 
   const boardItems = useMemo(() => {
     const matchesQuickFilter = (f: Fellowship): boolean => {
+      const guidance = isDepartmentResearchGuidance(f);
+      if (quickFilter === 'guidance') return guidance;
+      if (quickFilter === 'applicationsOnly') return !guidance;
+      if (quickFilter && guidance) return false;
       const cycle = cycleOf.get(f)!;
       if (quickFilter === 'open') return cycle === 'open' || cycle === 'closingSoon';
       if (quickFilter === 'closingSoon') return cycle === 'closingSoon';
@@ -687,7 +721,7 @@ const Fellowships = () => {
     !isLoading &&
     searchExhausted &&
     activeResultCount === 0 &&
-    (quickFilter === 'open' || quickFilter === 'closingSoon') &&
+    !!quickFilter &&
     fellowships.length > 0;
   const hasActiveStructuredFilter =
     selectedProgramCategory.length > 0 ||
@@ -738,8 +772,8 @@ const Fellowships = () => {
               </h1>
               <p className="mt-3 text-base leading-7 text-muted">
                 Yale research programs, fellowships, and grants you can apply to, soonest deadline
-                first. Each card says what it awards and whether you need a mentor lined up before
-                you apply.
+                first, and each department's own guidance on getting started in research. Each card
+                says what it awards and whether you need a mentor lined up before you apply.
               </p>
             </div>
             <div className="flex flex-col gap-2 border-l border-[var(--yr-line)] pl-0 sm:flex-row lg:flex-col lg:pl-5">
@@ -881,7 +915,7 @@ const Fellowships = () => {
               </div>
             ) : showQuickFilterEmptyState ? (
               <QuickFilterEmptyState
-                quickFilter={quickFilter}
+                quickFilter={quickFilter as FellowshipQuickFilter}
                 nextCycleCount={nextCycleFilterCount}
                 onViewNextCycle={() => setQuickFilter('nextCycle')}
                 onClearFilter={() => setQuickFilter(null)}

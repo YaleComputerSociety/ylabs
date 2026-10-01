@@ -3026,3 +3026,56 @@ describe('a program whose apply link is its own information page (#3904)', () =>
     expect(result.reasons).toContain('application_route');
   });
 });
+
+describe('a department research guidance page (#4285)', () => {
+  const guidance = {
+    title: 'Fixture Undergraduate Research',
+    studentFacingCategory: 'Department research guidance',
+    programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+    entryMode: 'CONTACT_FACULTY',
+    summary:
+      'The department explains how undergraduates find faculty research projects and approach a mentor.',
+    sourceUrl: 'https://fixture.yale.edu/undergraduate/undergraduate-research',
+    sourcePageTitle: 'Undergraduate Research Opportunities',
+    applicationLink: 'https://fixture.yale.edu/undergraduate/undergraduate-research',
+    undergraduateOnly: true,
+  };
+
+  it('is served as guidance when its own page title names undergraduate research', () => {
+    const result = computeProgramStudentVisibility(guidance);
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toContain('department_research_guidance');
+    expect(result.reasons).not.toContain('application_route');
+    expect(result.reasons).not.toContain('application_link_is_info_page');
+  });
+
+  it('stays held when the guide kind rests on no page title', () => {
+    const { sourcePageTitle: _omitted, ...withoutPageTitle } = guidance;
+    const result = computeProgramStudentVisibility(withoutPageTitle);
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.reasons).toContain('application_link_is_info_page');
+    expect(result.reasons).not.toContain('department_research_guidance');
+  });
+
+  it('stays held when its page title names a senior essay or a general program page', () => {
+    for (const sourcePageTitle of ['The Senior Essay', 'Undergraduate Program', 'Senior Project']) {
+      const result = computeProgramStudentVisibility({ ...guidance, sourcePageTitle });
+      expect(result.tier).not.toBe('student_ready');
+      expect(result.reasons).not.toContain('department_research_guidance');
+    }
+  });
+
+  it('stays held when another kind carries a guidance page title', () => {
+    const result = computeProgramStudentVisibility({
+      ...guidance,
+      programKind: 'FELLOWSHIP_FUNDING',
+    });
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.reasons).not.toContain('department_research_guidance');
+  });
+
+  it('is not served as guidance without a public description', () => {
+    const result = computeProgramStudentVisibility({ ...guidance, summary: '' });
+    expect(result.tier).not.toBe('student_ready');
+  });
+});

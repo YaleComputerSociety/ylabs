@@ -34,6 +34,11 @@ import {
 } from '../utils/researchEntityYaleStatus';
 import { hasOrganizationalAlternateAccessPath } from '../utils/organizationalAccessPath';
 import { programAudience, programAudienceAdmitsUndergraduates } from './programAudience';
+import {
+  DEPARTMENT_RESEARCH_GUIDANCE_REASON,
+  isDepartmentResearchGuidance,
+  statesApplicationCycle,
+} from './departmentResearchGuidance';
 
 export interface StudentVisibilityResult {
   tier: StudentVisibilityTier;
@@ -114,6 +119,10 @@ export interface ProgramStudentVisibilityInput extends Record<string, any> {
   summary?: string;
   description?: string;
   eligibility?: string;
+  sourcePageTitle?: string;
+  deadline?: unknown;
+  applicationOpenDate?: unknown;
+  isAcceptingApplications?: boolean;
 }
 
 const textValue = (value: unknown): string =>
@@ -1086,14 +1095,14 @@ const comparableUrl = (value: unknown): string =>
  * On Development 18 of 146 served programs were this shape, among them a department's
  * senior-essay registration rules (#3904). A link to
  * the program's own page still counts when the record has an application cycle, because many
- * real programs take applications on the page that describes them.
+ * real programs take applications on the page that describes them. A page whose own title
+ * earns department research guidance is served as guidance instead of being held (#4285).
  */
 function isInfoPageWithoutApplicationCycle(
   program: ProgramStudentVisibilityInput,
   routeUrls: unknown[],
 ): boolean {
-  if (program.deadline || program.applicationOpenDate || program.isAcceptingApplications === true)
-    return false;
+  if (statesApplicationCycle(program)) return false;
   const source = comparableUrl(program.sourceUrl);
   const routes = routeUrls.map(comparableUrl).filter(Boolean);
   return Boolean(source) && routes.length > 0 && routes.every((route) => route === source);
@@ -1117,8 +1126,11 @@ export function computeProgramStudentVisibility(
   ];
   const sourceUrls = [sourceUrl, ...routeUrls];
   const hasOfficialSource = hasHttpUrl(sourceUrl);
-  const applicationRouteIsInfoPage = isInfoPageWithoutApplicationCycle(program, routeUrls);
-  const hasApplicationRoute = hasAnyHttpUrl(routeUrls) && !applicationRouteIsInfoPage;
+  const departmentResearchGuidance = isDepartmentResearchGuidance(program);
+  const applicationRouteIsInfoPage =
+    !departmentResearchGuidance && isInfoPageWithoutApplicationCycle(program, routeUrls);
+  const hasApplicationRoute =
+    !departmentResearchGuidance && hasAnyHttpUrl(routeUrls) && !applicationRouteIsInfoPage;
   const isArchiveReview = category === 'Archive / review';
   const audience = programAudience(program);
   const graduateOnly = audience === 'GRADUATE';
@@ -1134,7 +1146,8 @@ export function computeProgramStudentVisibility(
 
   if (hasOfficialSource) reasons.push('official_source');
   else reasons.push('missing_official_source');
-  if (hasApplicationRoute) reasons.push('application_route');
+  if (departmentResearchGuidance) reasons.push(DEPARTMENT_RESEARCH_GUIDANCE_REASON);
+  else if (hasApplicationRoute) reasons.push('application_route');
   else reasons.push('missing_application_route');
   if (applicationRouteIsInfoPage) reasons.push('application_link_is_info_page');
   if (isArchiveReview) reasons.push('archive_review');
@@ -1150,7 +1163,12 @@ export function computeProgramStudentVisibility(
   let computedTier: StudentVisibilityTier = 'operator_review';
   if (catalogOrAdmin || !researchRelated || context.duplicateOfServedCopy) {
     computedTier = 'suppressed';
-  } else if (!isArchiveReview && audienceKnown && hasOfficialSource && hasApplicationRoute) {
+  } else if (
+    !isArchiveReview &&
+    audienceKnown &&
+    hasOfficialSource &&
+    (hasApplicationRoute || departmentResearchGuidance)
+  ) {
     // A research program with a known audience, an official source, and an
     // application route is student-ready regardless of whether that audience is undergraduate
     // or graduate: on a research-discovery surface, audience is an honest label (surfaced as a

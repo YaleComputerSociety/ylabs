@@ -10,6 +10,7 @@ import { publicHttpUrl } from '../utils/urlSafety';
 import { isUnhelpfulProgramUrl } from '../utils/researchHomeWebsiteUrl';
 import { classifyProgram, type ProgramClassificationInput } from '../services/programClassifier';
 import { programAudience } from '../services/programAudience';
+import { DEPARTMENT_RESEARCH_GUIDE_KIND } from '../services/departmentResearchGuidance';
 
 const MAX_PROGRAM_LINKS = 8;
 
@@ -166,7 +167,10 @@ export const publicProgramForReader = (program: any) => {
     restrictionsToUseOfAward: publicProgramDescription(program.restrictionsToUseOfAward),
     additionalInformation: publicProgramDescription(program.additionalInformation),
     links: publicProgramLinks(program.links, program.sourceUrl),
-    applicationLink: publicSpecificProgramUrl(program.applicationLink, program.sourceUrl),
+    applicationLink:
+      program.programKind === DEPARTMENT_RESEARCH_GUIDE_KIND
+        ? undefined
+        : publicSpecificProgramUrl(program.applicationLink, program.sourceUrl),
     awardAmount: program.awardAmount,
     isAcceptingApplications: program.isAcceptingApplications,
     applicationOpenDate: program.applicationOpenDate,

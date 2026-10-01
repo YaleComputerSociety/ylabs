@@ -284,4 +284,56 @@ describe('Fellowships grouping', () => {
     expect(screen.queryByText('Future Fellowship')).not.toBeInTheDocument();
     expect(screen.queryByText('Closed Fellowship')).not.toBeInTheDocument();
   });
+
+  describe('department research guidance (#4285)', () => {
+    const board = () => [
+      makeFellowship({ id: 'open', title: 'Open Fellowship', programKind: 'FELLOWSHIP_FUNDING' }),
+      makeFellowship({
+        id: 'undated',
+        title: 'Undated Fellowship',
+        programKind: 'FELLOWSHIP_FUNDING',
+        isAcceptingApplications: false,
+        deadline: null,
+      }),
+      makeFellowship({
+        id: 'guidance',
+        title: 'Fixture Guidance Page',
+        programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+        isAcceptingApplications: false,
+        deadline: null,
+        yearOfStudy: [],
+      }),
+    ];
+
+    it('shows guidance by default in its own section, apart from undated programs', () => {
+      renderFellowships({ fellowships: board() });
+
+      const guidanceSection = screen.getByRole('region', { name: 'Department Research Guidance' });
+      expect(within(guidanceSection).getByText('Fixture Guidance Page')).toBeInTheDocument();
+      expect(within(guidanceSection).queryByText('Undated Fellowship')).not.toBeInTheDocument();
+      expect(
+        within(screen.getByRole('region', { name: 'No Dates Posted' })).queryByText(
+          'Fixture Guidance Page',
+        ),
+      ).not.toBeInTheDocument();
+    });
+
+    it('filters to guidance only', () => {
+      renderFellowships({ fellowships: board(), quickFilter: 'guidance' });
+
+      expect(screen.getByText('Fixture Guidance Page')).toBeInTheDocument();
+      expect(screen.queryByText('Open Fellowship')).not.toBeInTheDocument();
+      expect(screen.queryByText('Undated Fellowship')).not.toBeInTheDocument();
+    });
+
+    it('excludes guidance from applications only and from every application filter', () => {
+      for (const quickFilter of ['applicationsOnly', 'noMentorFirst'] as const) {
+        renderFellowships({ fellowships: board(), quickFilter });
+
+        expect(screen.getByText('Open Fellowship')).toBeInTheDocument();
+        expect(screen.queryByText('Fixture Guidance Page')).not.toBeInTheDocument();
+        cleanup();
+      }
+    });
+  });
 });

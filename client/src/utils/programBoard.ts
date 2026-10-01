@@ -1,12 +1,13 @@
 import { Fellowship } from '../types/types';
 import { type FellowshipCycleCategory } from './fellowshipCycle';
-import { programRoleOf } from './programJourney';
+import { isDepartmentResearchGuidance, programRoleOf } from './programJourney';
 
 export type ProgramBoardSection =
   | 'closingSoon'
   | 'open'
   | 'openingSoon'
   | 'nextCycle'
+  | 'guidance'
   | 'noDates'
   | 'archive';
 
@@ -15,6 +16,7 @@ export const PROGRAM_BOARD_SECTIONS: ProgramBoardSection[] = [
   'open',
   'openingSoon',
   'nextCycle',
+  'guidance',
   'noDates',
   'archive',
 ];
@@ -26,6 +28,7 @@ export const emptyProgramBoardSummary = (): ProgramBoardSummary => ({
   open: 0,
   openingSoon: 0,
   nextCycle: 0,
+  guidance: 0,
   noDates: 0,
   archive: 0,
 });
@@ -50,6 +53,7 @@ export function programBoardSectionOf(
   fellowship: Fellowship,
   cycle: FellowshipCycleCategory,
 ): ProgramBoardSection {
+  if (isDepartmentResearchGuidance(fellowship)) return 'guidance';
   if (isArchivedProgramRecord(fellowship)) return 'archive';
   return SECTION_FOR_CYCLE[cycle];
 }

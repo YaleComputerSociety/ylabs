@@ -188,4 +188,38 @@ describe('fellowships surface accessibility', () => {
     expect(dialog.getAttribute('aria-modal')).toBe('true');
     await expectNoAxeViolations(container);
   });
+
+  it('has no serious or critical axe violations for department research guidance (#4285)', async () => {
+    const guidance = baseFellowship({
+      id: 'guidance',
+      title: 'Fixture Guidance Page',
+      programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+      entryMode: 'CONTACT_FACULTY',
+      studentFacingCategory: 'Department research guidance',
+      requiresMentorBeforeApply: false,
+      isAcceptingApplications: false,
+      deadline: null,
+      sourceUrl: 'https://fixture.yale.edu/undergraduate-research',
+    });
+    const { container } = renderPage([baseFellowship(), guidance]);
+    await screen.findByText('Fixture Guidance Page');
+    await expectNoAxeViolations(container);
+    cleanup();
+
+    const modal = render(
+      <MemoryRouter>
+        <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
+          <FellowshipModal
+            fellowship={guidance}
+            isOpen
+            isFavorite={false}
+            onClose={vi.fn()}
+            toggleFavorite={vi.fn()}
+          />
+        </FellowshipSearchContext.Provider>
+      </MemoryRouter>,
+    );
+    await screen.findByRole('dialog');
+    await expectNoAxeViolations(modal.container);
+  });
 });

@@ -488,6 +488,35 @@ describe('publicProgramForReader program role', () => {
   });
 });
 
+describe('publicProgramForReader department research guidance (#4285)', () => {
+  it('serves no application link for guidance, which is not an application', () => {
+    const payload = publicProgramForReader({
+      _id: '6a6f84d074dd496b1d43b18f',
+      title: 'Fixture Undergraduate Research',
+      programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+      sourceUrl: specificPage,
+      applicationLink: 'https://fixture.yale.edu/undergraduate/apply-form',
+      links: [],
+    });
+
+    expect(payload.applicationLink).toBeUndefined();
+    expect(payload.sourceUrl).toBe(specificPage);
+  });
+
+  it('keeps the application link of an application program', () => {
+    const payload = publicProgramForReader({
+      _id: '6a6f84d074dd496b1d43b190',
+      title: 'Fixture Research Internship',
+      programKind: 'MENTOR_MATCHING',
+      sourceUrl: specificPage,
+      applicationLink: 'https://fixture.yale.edu/undergraduate/apply-form',
+      links: [],
+    });
+
+    expect(payload.applicationLink).toBe('https://fixture.yale.edu/undergraduate/apply-form');
+  });
+});
+
 describe('publicProgramForReader card line (#3904)', () => {
   const firstSentence =
     'The fixture program provides summer term support for undergraduate students who do laboratory research with Yale faculty.';

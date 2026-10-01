@@ -10,7 +10,14 @@ import {
 import { getFellowshipCycleStatus, getFellowshipDeadlineSubtitle } from '../utils/fellowshipCycle';
 import { programDeadlineClosingInstant } from '../utils/programDates';
 import { getFellowshipApplicationStatus } from '../utils/fellowshipStatus';
-import { entryModeLabel, programKindLabel } from '../utils/programJourney';
+import {
+  DEPARTMENT_RESEARCH_GUIDANCE_BADGE_CLASS,
+  DEPARTMENT_RESEARCH_GUIDANCE_BADGE,
+  DEPARTMENT_RESEARCH_GUIDANCE_STATUS,
+  entryModeLabel,
+  isDepartmentResearchGuidance,
+  programKindLabel,
+} from '../utils/programJourney';
 
 export const DEPT_CAP = 3;
 export const TAG_CAP = 3;
@@ -72,7 +79,19 @@ export function getItemId(item: BrowsableItem): string {
 }
 
 export function isItemOpen(item: BrowsableItem): boolean {
+  if (isDepartmentResearchGuidance(item.data)) return false;
   return getFellowshipApplicationStatus(item.data).isApplicationWindowOpen;
+}
+
+export function getItemStatusBadge(item: BrowsableItem): { label: string; className: string } {
+  if (isDepartmentResearchGuidance(item.data)) {
+    return {
+      label: DEPARTMENT_RESEARCH_GUIDANCE_BADGE,
+      className: DEPARTMENT_RESEARCH_GUIDANCE_BADGE_CLASS,
+    };
+  }
+  const status = getFellowshipCycleStatus(item.data);
+  return { label: status.label, className: status.className };
 }
 
 interface TagInfo {
@@ -95,9 +114,11 @@ function dedupeTags(tags: TagInfo[]): TagInfo[] {
 }
 
 export function getItemTags(item: BrowsableItem): TagInfo[] {
-  const categoryLabel = item.data.studentFacingCategory;
+  const guidance = isDepartmentResearchGuidance(item.data);
+  const categoryLabel = guidance ? '' : item.data.studentFacingCategory;
   const categoryNorm = categoryLabel ? normalizeTagLabel(categoryLabel) : '';
-  const entryModeChipLabel = item.data.entryMode ? entryModeLabel(item.data.entryMode) : '';
+  const entryModeChipLabel =
+    !guidance && item.data.entryMode ? entryModeLabel(item.data.entryMode) : '';
   const entryModeNorm = normalizeTagLabel(entryModeChipLabel);
   const entryModeImpliedByCategory =
     !!entryModeNorm && !!categoryNorm && categoryNorm.includes(entryModeNorm);
@@ -143,10 +164,12 @@ export function getItemTags(item: BrowsableItem): TagInfo[] {
 }
 
 export function getItemSubtitle(item: BrowsableItem): string {
+  if (isDepartmentResearchGuidance(item.data)) return DEPARTMENT_RESEARCH_GUIDANCE_STATUS;
   return getFellowshipDeadlineSubtitle(item.data);
 }
 
 export function getItemSubtitleColor(item: BrowsableItem): string {
+  if (isDepartmentResearchGuidance(item.data)) return 'text-muted';
   const status = getFellowshipCycleStatus(item.data);
   if (status.category === 'nextCycle' || status.category === 'projectedNextCycle')
     return 'text-sky-700 font-medium';
@@ -180,6 +203,7 @@ export function getFellowshipJourneySummary(fellowship: Fellowship): string | nu
 }
 
 export function getDaysUntilDeadline(item: BrowsableItem): number | null {
+  if (isDepartmentResearchGuidance(item.data)) return null;
   // A projected next-cycle date is the server's estimate, so counting down to it would tell a
   // student a window is closing that nobody has confirmed is open (#3904).
   if (item.data.deadlineProjectedNextCycle) return null;
