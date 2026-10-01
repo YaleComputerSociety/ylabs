@@ -1502,7 +1502,7 @@ A boolean cannot say "open to undergraduate and graduate applicants", so before 
 Both public serializers and the admin payloads serve the derived value as `audience`, and the client's Graduate badge, the detail modal's Audience line and the eligibility Level line read only that field, so they cannot disagree with the gate.
 The "Yale College students only" line is shown only when the audience is `UNDERGRADUATE`, because a year list naming graduate students contradicts it.
 The served `audience` is serve-time, but the gate verdict is stored: `studentVisibilityTier` and `studentVisibilityReasons` change only when the gate reruns.
-So a change to the derivation is a stored-data change, done once `yarn --cwd server student-visibility:gate --collection=programs --apply` has run against Development and the served programs have been re-read.
+So a change to the derivation is a stored-data change, done once `yarn --cwd server student-visibility:gate --collection=programs --apply --confirm-student-visibility-apply --max-apply=<n>` has run against Development and the served programs have been re-read.
 Two classes of row move on that run: a row with neither boolean whose `yearOfStudy` names a class of student, whose audience becomes known and which can leave `operator_review`; and a row stored with `undergraduateOnly: true` beside graduate years only, whose recorded reason becomes `graduate_relevant`.
 Only catalog and administrative program pages (`not_undergraduate_relevant`) and non-research programs (`non_research_program`) stay `suppressed`. This applies to programs and fellowships only; research entities are never suppressed on undergraduate-relevance grounds.
 
