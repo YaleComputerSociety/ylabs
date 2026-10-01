@@ -161,6 +161,15 @@ function employeeRecord(record: YaliesRecord, netid: string): YaliesEmployee {
  * appointment title and organization but no enrolment fields.
  */
 export const lookupYalieByNetid = async (netid: unknown): Promise<YaliesLookup> => {
+  try {
+    return await requestYalieByNetid(netid);
+  } catch (error) {
+    console.error('Error fetching user:', sanitizeLogValue(error));
+    return UNAVAILABLE;
+  }
+};
+
+const requestYalieByNetid = async (netid: unknown): Promise<YaliesLookup> => {
   const normalizedNetid = normalizeYaliesNetid(netid);
   if (!normalizedNetid) return NOT_FOUND;
 

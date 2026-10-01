@@ -4834,6 +4834,7 @@ test('Yalies API client uses bounded requests and credential-free errors', () =>
   assert.match(source, /throw yaliesRequestError\(error\)/);
   assert.match(source, /filters: \{ netid: \[normalizedNetid\] \}/);
   assert.match(source, /sanitizeLogValue\(yaliesRequestError\(error\)\)/);
+  assert.match(source, /console\.error\('Error fetching user:', sanitizeLogValue\(error\)\)/);
   assert.doesNotMatch(source, /filters: \{ netid: \[netid\] \}/);
   assert.doesNotMatch(
     source,
