@@ -192,16 +192,22 @@ The two exhaustive Development modes (`development-full`, `development-increment
 5. `url-identity-dedupe` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES=0`)
 6. `website-url-identity-dedupe` (the same lane family keyed on the whole normalized `websiteUrl` rather than a Yale `/lab/` or `/profile/` path; gated by the same flag)
 7. `source-link-health` (`research-homes:backfill-source-link-health --apply --reprobe-healthy-after-days=7`; ordered before the gate because the gate reads `sourceLinkHealth`; `--full-link-health-reprobe` on the sweep drops the window and probes every URL)
-8. `inferred-pi-lead-reclaim` (`data:materialize-inferred-pi-leads --all --apply`; ordered before the gate so the gate judges the leads it links in the same sweep; its result reports `materialized-lead` and `still-unresolved`, #3741)
-9. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
-10. `search-rebuild` (`meili:rebuild-research-entities --clear`)
-11. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
-12. `coverage-audit`
-13. `data-quality` (`beta:data-quality --strict`)
-14. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
-15. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
-16. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
-17. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
+8. `profile-link-health` (`researchers:verify-official-profile-links --apply --stale-after-days=<window>`; the sibling of `source-link-health` for a lead's `YALE_OFFICIAL` profile link, #3222)
+9. `dead-research-website-clear` (`research-entity:clear-dead-research-websites --apply`; ordered after both link-health probes because it consumes their verdicts, #3309)
+10. `organization-identity-website-retire` (`observations:retire-organization-identity-websites --apply`; idempotent, plans nothing once the corpus is clean, #3484)
+11. `shared-roster-website-retire` (`observations:retire-shared-roster-websites --apply`; ordered before `refusal-lane-attribution` so its refusals are attributed the same sweep, #3615)
+12. `refusal-lane-attribution` (`refusals:attribute-lanes --apply`; after every stage that records a refusal, #3521)
+13. `inferred-pi-lead-reclaim` (`data:materialize-inferred-pi-leads --all --apply`; ordered before the gate so the gate judges the leads it links in the same sweep; its result reports `materialized-lead` and `still-unresolved`, #3741)
+14. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
+15. `search-rebuild` (`meili:rebuild-research-entities --clear`)
+16. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
+17. `engine-benchmark` (`engine:benchmark --apply --replays=2`; never `--capture`, see [`engine-benchmark.md`](engine-benchmark.md))
+18. `coverage-audit`
+19. `data-quality` (`beta:data-quality --strict`)
+20. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
+21. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
+22. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
+23. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 The `researcher-dedupe`, `grant-shell-faculty-port`, `eponymous-fra-merge`, both URL-identity dedupe stages, and merge-residue deletion stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value: `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_PORT_GRANT_SHELLS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. One flag gates the whole URL-identity family, because `url-identity-dedupe` and `website-url-identity-dedupe` are two keys onto one question and an operator suppressing URL-keyed merges wants both off. `url-identity-dedupe` was opt-in until #2699; it defaults on because the never-demote survivor resolution defers rather than demotes (#2070) and because the whole post-run set is unreachable outside Development, so the flag only ever gated Dev. Every `SCRAPER_SWEEP_*` stage flag in either engine parses through the one shared helper pair in `server/src/scripts/sweepStageFlags.ts`, so the accepted truthy values (`1`, `true`, `yes`, `y`, `on`, `enable`, `enabled`) and falsey values (`0`, `false`, `no`, `n`, `off`, `disable`, `disabled`) are identical for every flag.
 
