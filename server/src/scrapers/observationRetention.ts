@@ -272,13 +272,21 @@ export interface ReferencedObservationScan {
   specs: ObservationReferenceSpecCoverage[];
 }
 
-export async function scanReferencedObservations(): Promise<ReferencedObservationScan> {
+/**
+ * `specs` is an argument so a caller retiring a whole field can leave out
+ * `observations.supersededBy`: when every observation of that field is deleted in one
+ * pass, a pointer from one doomed row to another is bookkeeping rather than a reader, and
+ * counting it as protection would keep the entire supersession chain (#4161).
+ */
+export async function scanReferencedObservations(
+  specs: readonly ObservationReferenceSpec[] = OBSERVATION_REFERENCE_SPECS,
+): Promise<ReferencedObservationScan> {
   const referencedIds = new Map<string, unknown>();
-  const specs: ObservationReferenceSpecCoverage[] = [];
+  const coverage: ObservationReferenceSpecCoverage[] = [];
   const presentCollections = new Set(
     (await Observation.db.listCollections()).map((info) => info.name),
   );
-  for (const spec of OBSERVATION_REFERENCE_SPECS) {
+  for (const spec of specs) {
     const collectionPresent = presentCollections.has(spec.collection);
     const rows = await Observation.db
       .collection(spec.collection)
@@ -290,14 +298,14 @@ export async function scanReferencedObservations(): Promise<ReferencedObservatio
       specIds.add(String(row._id));
       referencedIds.set(String(row._id), row._id);
     }
-    specs.push({
+    coverage.push({
       collection: spec.collection,
       field: spec.field,
       collectionPresent,
       referencedObservations: specIds.size,
     });
   }
-  return { ids: Array.from(referencedIds.values()), specs };
+  return { ids: Array.from(referencedIds.values()), specs: coverage };
 }
 
 export async function findReferencedObservationIds(): Promise<unknown[]> {

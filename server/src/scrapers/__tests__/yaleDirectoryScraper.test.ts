@@ -117,12 +117,10 @@ describe('personToObservations', () => {
       last_name: 'Doe',
       preferred_name: 'Janie',
       email: 'jane.doe@yale.edu',
-      phone: '+1 203 555 0001',
       title: 'Associate Professor of Molecular Biophysics & Biochemistry',
       school_code: 'GS',
       school: 'Graduate School of Arts and Sciences',
       school_name: 'Yale Graduate School of Arts and Sciences',
-      college: '',
       organization_name: 'Yale School of Medicine',
       primary_organization_name: 'Yale School of Medicine',
       unit_name: 'Molecular Biophysics & Biochemistry',
@@ -147,7 +145,6 @@ describe('personToObservations', () => {
     expect(byField.secondaryDepartments?.value).toEqual(['Yale School of Medicine']);
     expect(byField.school?.value).toBe('Yale Graduate School of Arts and Sciences');
     expect(byField.imageUrl?.value).toBe('https://yalies.io/images/jdoe24.jpg');
-    expect(byField.phone?.value).toBe('+1 203 555 0001');
     expect(byField.orcid?.value).toBe('0000-0001-2345-6789');
     expect(byField.profileUrls?.value).toEqual({ yalies: 'https://yalies.io/jdoe24' });
 
@@ -158,8 +155,27 @@ describe('personToObservations', () => {
       expect(o.sourceUrl).toBe('https://api.yalies.io/v2/people');
     }
 
-    // College was empty so should not be present.
     expect(byField.college).toBeUndefined();
+    expect(byField.phone).toBeUndefined();
+  });
+
+  it('emits no phone number and no residential college, because nothing reads either', () => {
+    const directoryRecordCarryingContactData = {
+      netid: 'contact01',
+      first_name: 'Synthetic',
+      last_name: 'Person',
+      title: 'Professor of Synthetic Studies',
+      phone: '+1 555 000 0000',
+      college: 'A Synthetic College',
+    };
+
+    const obs = personToObservations(directoryRecordCarryingContactData);
+
+    const fields = obs.map((o) => o.field);
+    expect(fields).toContain('netid');
+    expect(fields).not.toContain('phone');
+    expect(fields).not.toContain('college');
+    expect(fields).not.toContain('physicalLocation');
   });
 
   it('falls back to first_name when preferred_name is absent', () => {

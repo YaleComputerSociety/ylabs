@@ -3,8 +3,12 @@
  *
  * Maintains the faculty roster by paginating Yale faculty/staff
  * records from the Yalies API (https://api.yalies.io/v2/people). It can be re-run on a
- * cadence so that new appointments, title changes, and email/phone updates flow through
+ * cadence so that new appointments, title changes, and email updates flow through
  * the observation pipeline.
+ *
+ * A person's phone number and residential college are deliberately not emitted: nothing
+ * reads them, and an observation nothing reads is retained and copied between
+ * environments for no product purpose (#4161).
  *
  * Source choice: the public web directory at https://directory.yale.edu sits behind a
  * search UI (autocomplete + login wall for full records), so it is not a viable bulk
@@ -317,8 +321,6 @@ export function personToObservations(
   const lname = (person.last_name && String(person.last_name).trim()) || '';
   const email = (person.email && String(person.email).trim()) || '';
   const title = (person.title && String(person.title).trim()) || '';
-  const phone = (person.phone && String(person.phone).trim()) || '';
-  const college = (person.college && String(person.college).trim()) || '';
   const school =
     (person.school_name && String(person.school_name).trim()) ||
     (person.school && String(person.school).trim()) ||
@@ -363,10 +365,8 @@ export function personToObservations(
     ['title', title],
     ['primaryDepartment', primaryDept],
     ['secondaryDepartments', secondaryDepts.length > 0 ? secondaryDepts : undefined],
-    ['college', college],
     ['school', school],
     ['imageUrl', imageUrl],
-    ['phone', phone],
     ['orcid', orcid],
     ['profileUrls', Object.keys(profileUrls).length > 0 ? profileUrls : undefined],
   ];
