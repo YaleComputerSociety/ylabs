@@ -22,7 +22,7 @@ User -> Yale CAS SSO -> passport.ts resolveLoginPrincipalForCas
 ```
 
 Authentication runs on the canonical `Account` (the private login principal); the legacy `User` model has been retired (#2014).
-Classification (undergrad/grad/faculty) is derived at login and carried in the signed session for authorization decisions; a descriptive copy of the Yalies/Directory profile (name, `userType`, title/department for faculty, college/year/major for students) is persisted onto `Account.profile` at login via `recordAccountLogin`, refreshed on each sign-in.
+Classification (undergraduate, graduate, professor, staff) is derived at login and carried in the signed session for authorization decisions; a descriptive copy of the Yalies/Directory profile (name, `userType`, title/department for faculty and staff, college/year/major for students) is persisted onto `Account.profile` at login via `recordAccountLogin`, refreshed on each sign-in that resolves a record and left untouched when the Yalies lookup is unavailable.
 Accounts are created only at login (never by the scraper); the scraper's identity materialization enriches researchers that already exist but mints no Account or Researcher on its own.
 `userType` is a classification/analytics dimension only; it does not authorize anything, whether read from the session or the persisted profile.
 Admin authority is a separate signal: `buildAuthenticatedSessionUser` sets `isAdmin` from `hasActiveAdminGrant`, and that boolean is what guards and the client key off.

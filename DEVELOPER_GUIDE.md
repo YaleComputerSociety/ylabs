@@ -391,9 +391,7 @@ Beta suppresses real student analytics while permitting fixture and admin valida
 
 ```
 User → Yale CAS SSO → passport.ts resolveLoginPrincipalForCas
-     → Yalies API (student/grad detection)
-     → Yale Directory (faculty detection)
-     → Fallback: userType "unknown"
+     → Yalies lookup, then Yale Directory (classification cascade: skills/auth-security/SKILL.md)
      → accountService.recordAccountLogin: resolve-or-create Account (netid/email) → cookie-session
 ```
 
