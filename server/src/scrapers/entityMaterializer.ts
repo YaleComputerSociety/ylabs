@@ -46,6 +46,7 @@ import { relationshipEndpointsAreSameEntity } from '../utils/researchEntityRelat
 import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
 import {
   descriptionEntityKindForResearchEntity,
+  isDemotablePersonBio,
   isHighConfidencePersonBio,
 } from '../utils/researchHomeDescriptionSelection';
 import {
@@ -164,7 +165,7 @@ import {
 } from '../utils/descriptionHygiene';
 import { cleanPublicProfileBio } from '../services/profileService';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../services/researchEntityPublicDescription';
-import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
+import { servedResearchEntityCopy } from '../services/servedResearchEntityCard';
 import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -5515,6 +5516,13 @@ function isPersonBiographyDescription(candidateText: string): boolean {
   return isHighConfidencePersonBio(candidateText) || isCareerBiographyDescription(candidateText);
 }
 
+// The pre-step ranks one servable body below another, so it uses the narrow biography test
+// `researchHomeDescriptionSelection` records as safe for ranking; the wide one also flags
+// research prose that opens on a title (#4280).
+function isRankablePersonBiography(candidateText: string): boolean {
+  return isDemotablePersonBio(candidateText) || isCareerBiographyDescription(candidateText);
+}
+
 /**
  * A `fullDescription` that the served-copy sanitizer strips renders as nothing, so
  * the row serves no description while storing hundreds of characters. The usual
@@ -5602,10 +5610,11 @@ function adoptServableFullDescription(input: {
       ({ materialized }) =>
         textValue(materialized) !== textValue(servedValue) && servesAsDescription(materialized),
     );
-  // A biography is passed over for research prose, but it still outranks an incumbent that
-  // serves nothing: refusing it outright took a served row off the surface (#3437).
+  // Research prose that serves is preferred, and a biography that serves still outranks an
+  // incumbent that serves nothing, because refusing it took a served row off the surface
+  // (#4280).
   const replacement =
-    servable.find(({ materialized }) => !isPersonBiographyDescription(textValue(materialized))) ??
+    servable.find(({ materialized }) => !isRankablePersonBiography(textValue(materialized))) ??
     servable[0];
 
   if (!replacement) return 0;
@@ -6038,12 +6047,26 @@ export function servingBarAcceptsFullDescription(
   const projectedFields = Object.fromEntries(
     Object.entries(projected).filter(([field]) => !field.includes('.')),
   );
-  const entity = { ...(entityDoc || {}), ...projectedFields, fullDescription: candidateText };
+  // Topic canonicalization and derivation run after the description is chosen, so the
+  // stored topics are what the gate will judge the body against (#4280).
+  const researchAreas = entityDoc?.researchAreas ?? projectedFields.researchAreas;
+  // Judged as the row will store it: the stored-text normalization runs at the end of
+  // the pass and repairs harvest defects such as glued sentences (#4280).
+  const storedText = String(withHarvestTextDefectsCorrected('fullDescription', candidateText));
+  const entity = {
+    ...(entityDoc || {}),
+    ...projectedFields,
+    researchAreas,
+    fullDescription: storedText,
+  };
   const leadMemberNames = leadPersonName ? [leadPersonName] : [];
+  const representation = buildResearchEntityPublicDescriptionRepresentation({
+    entity,
+    leadMemberNames,
+  });
   return (
-    buildResearchEntityPublicDescriptionRepresentation({ entity, leadMemberNames }).invariant
-      .fullDescriptionUseful &&
-    textValue(sanitizeServedResearchEntityCopyFields(entity, leadMemberNames).fullDescription)
+    representation.invariant.fullDescriptionUseful &&
+    textValue(servedResearchEntityCopy(representation.entity, leadMemberNames).fullDescription)
       .length > 0
   );
 }
