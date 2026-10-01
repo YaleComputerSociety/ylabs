@@ -175,6 +175,10 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
             planned: 0,
             closed: 0,
             changedSinceRead: 0,
+            scope: 'all',
+            scanned: 0,
+            lagging: 0,
+            tally: { 'materialized-lead': 0, 'still-unresolved': 0 },
           })}\n`,
         );
       }
