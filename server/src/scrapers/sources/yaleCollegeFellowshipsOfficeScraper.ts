@@ -1259,7 +1259,12 @@ function chromeFreeContent(contentRoot: cheerio.Cheerio<any>): cheerio.Cheerio<a
   return chromeFreeRoot;
 }
 
-export type NonProgramPageShape = 'cms-post' | 'news-roundup' | 'program-hub' | 'sign-in-wall';
+export type NonProgramPageShape =
+  | 'cms-post'
+  | 'news-roundup'
+  | 'program-hub'
+  | 'advising-page'
+  | 'sign-in-wall';
 
 const CMS_POST_CONTENT_TYPES = new Set([
   'narrative',
@@ -1342,7 +1347,7 @@ function contentLinkCensus(
   for (const heading of content.find('h2, h3, h4').toArray()) {
     const label = normalizedCandidateTitle($(heading).text());
     const key = compactTitleIdentity(label);
-    if (key && key !== pageTitleKey && isLikelyFellowshipTitle(label)) awardHeadings.add(key);
+    if (key && key !== pageTitleKey && namesAnAward(label)) awardHeadings.add(key);
   }
   return {
     fundRecords: fundRecords.size,
@@ -1357,19 +1362,39 @@ const AWARD_NOUN_RE =
 const AWARD_NAME_CONNECTOR_RE =
   /^(?:and|&|or|the|a|an|of|for|in|on|to|with|by|about|this|that|these|our|your|its|each|per)$/i;
 
-function namesSingleAward(title: string): boolean {
-  const words = normalizeWhitespace(title)
+function titleWords(title: string): string[] {
+  return normalizeWhitespace(title)
     .replace(/(?:\s*\([^)]*\)|\s+\d{4})+$/, '')
-    .split(' ');
-  const finalWord = words[words.length - 1] || '';
-  const qualifier = words[words.length - 2];
+    .split(' ')
+    .map((word) => word.replace(/^[^\p{L}&]+|[^\p{L}&]+$/gu, ''))
+    .filter(Boolean);
+}
+
+function isQualifiedAwardNounAt(words: string[], index: number): boolean {
+  const qualifier = words[index - 1];
   return (
-    isLikelyFellowshipTitle(title) &&
-    AWARD_NOUN_RE.test(finalWord) &&
+    AWARD_NOUN_RE.test(words[index] || '') &&
     !!qualifier &&
     !AWARD_NAME_CONNECTOR_RE.test(qualifier)
   );
 }
+
+function namesSingleAward(title: string): boolean {
+  const words = titleWords(title);
+  return isLikelyFellowshipTitle(title) && isQualifiedAwardNounAt(words, words.length - 1);
+}
+
+function namesAnAward(label: string): boolean {
+  const words = titleWords(label);
+  return words.some((_word, index) => isQualifiedAwardNounAt(words, index));
+}
+
+function endsInAwardNoun(title: string): boolean {
+  const words = titleWords(title);
+  return AWARD_NOUN_RE.test(words[words.length - 1] || '');
+}
+
+const GENERIC_PAGE_CONTENT_TYPE = 'static-page';
 
 const MIN_DATED_ARTICLES_FOR_ROUNDUP = 3;
 const MIN_FUND_RECORDS_FOR_HUB = 2;
@@ -1383,15 +1408,21 @@ export function nonProgramPageShape(
   if (isSignInWall($)) return 'sign-in-wall';
   if (cmsContentTypes($).some((type) => CMS_POST_CONTENT_TYPES.has(type))) return 'cms-post';
   const title = normalizedCandidateTitle($('h1').first().text());
-  if (namesSingleAward(title)) return undefined;
   const census = contentLinkCensus($, chromeFreeContent(detailContentRoot($)), pageUrl, title);
-  if (census.datedArticles >= MIN_DATED_ARTICLES_FOR_ROUNDUP) return 'news-roundup';
+  const singleAwardTitle = namesSingleAward(title);
+  if (!singleAwardTitle && census.datedArticles >= MIN_DATED_ARTICLES_FOR_ROUNDUP) {
+    return 'news-roundup';
+  }
+  if (census.awardHeadings >= MIN_AWARD_SECTIONS_FOR_HUB) return 'program-hub';
+  if (singleAwardTitle) return undefined;
   if (
     census.fundRecords >= MIN_FUND_RECORDS_FOR_HUB ||
-    census.fundRecords + census.otherPrograms >= MIN_LISTED_PROGRAMS_FOR_HUB ||
-    census.awardHeadings >= MIN_AWARD_SECTIONS_FOR_HUB
+    census.fundRecords + census.otherPrograms >= MIN_LISTED_PROGRAMS_FOR_HUB
   ) {
     return 'program-hub';
+  }
+  if (cmsContentTypes($).includes(GENERIC_PAGE_CONTENT_TYPE) && !endsInAwardNoun(title)) {
+    return 'advising-page';
   }
   return undefined;
 }
