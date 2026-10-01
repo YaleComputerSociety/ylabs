@@ -3728,6 +3728,7 @@ async function materializeResearchEntityRelationship(
     };
   }
 
+  const sourceUrl = textValue(resolved.targetEntityKey?.sourceUrl);
   if (!canonicalFacultyResearchAreaTarget && target?._id) {
     await syncProfileBackedFacultyResearchAreaMemberFromIdentity(
       normalizeMaterializerObjectId(target._id) || '',
@@ -3735,7 +3736,7 @@ async function materializeResearchEntityRelationship(
         entityKey: targetEntityKey,
         name: target.name,
         entityType: 'FACULTY_RESEARCH_AREA',
-        sourceUrl: textValue(resolved.sourceUrl?.value),
+        sourceUrl,
         confidence: Math.max(0, ...observations.map((o) => Number(o.confidence) || 0)),
       },
     );
@@ -3753,7 +3754,6 @@ async function materializeResearchEntityRelationship(
   );
   const label = relationshipLabelForType(resolvedRelationshipType);
   const evidenceStrength = textValue(resolved.evidenceStrength?.value) || 'MODERATE';
-  const sourceUrl = textValue(resolved.targetEntityKey?.sourceUrl);
   const confidence = Math.max(0, ...observations.map((o) => Number(o.confidence) || 0));
   const observedAt = latestObservationDate(observations);
 

@@ -17,6 +17,8 @@ vi.mock('../../services/meiliSyncService', async () => {
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { ResearchEntityRelationship } from '../../models/researchEntityRelationship';
+import { Researcher } from '../../models/researcher';
+import { RoleAssignment } from '../../models/roleAssignment';
 import { materializeEntity } from '../entityMaterializer';
 import { appendObservations } from '../observationStore';
 import type { ObservationInput } from '../types';
@@ -29,22 +31,29 @@ const LAB_SLUG = 'synthetic-cited-lab';
 const ENTITY_KEY = `${CENTER_SLUG}:${LAB_SLUG}:MEMBER_RESEARCH_AREA`;
 const ROSTER_URL = 'https://fixture-center.example.edu/people';
 
-const relationshipObservations = (sourceUrl: string): ObservationInput[] => {
+const FACULTY_AREA_SLUG = 'faculty-research-area-synthetic-cited-person';
+const FACULTY_AREA_ENTITY_KEY = `${CENTER_SLUG}:${FACULTY_AREA_SLUG}:MEMBER_RESEARCH_AREA`;
+
+const relationshipObservations = (
+  sourceUrl: string,
+  targetSlug = LAB_SLUG,
+  entityKey = ENTITY_KEY,
+): ObservationInput[] => {
   const base = {
     entityType: 'researchEntityRelationship' as const,
-    entityKey: ENTITY_KEY,
+    entityKey,
     sourceUrl,
   };
   return [
     { ...base, field: 'sourceEntityKey', value: CENTER_SLUG },
-    { ...base, field: 'targetEntityKey', value: LAB_SLUG },
+    { ...base, field: 'targetEntityKey', value: targetSlug },
     { ...base, field: 'relationshipType', value: 'MEMBER_RESEARCH_AREA' },
     { ...base, field: 'evidenceStrength', value: 'MODERATE' },
     { ...base, field: 'confidence', value: 0.72 },
   ];
 };
 
-const observeAndMaterialize = async (observations: ObservationInput[]) => {
+const observeAndMaterialize = async (observations: ObservationInput[], entityKey = ENTITY_KEY) => {
   await appendObservations(observations, {
     scrapeRunId: String(new mongoose.Types.ObjectId()),
     sourceId: String(SOURCE_ID),
@@ -52,7 +61,7 @@ const observeAndMaterialize = async (observations: ObservationInput[]) => {
     sourceWeight: 0.8,
     dryRun: false,
   });
-  return materializeEntity('researchEntityRelationship', { entityKey: ENTITY_KEY });
+  return materializeEntity('researchEntityRelationship', { entityKey });
 };
 
 const storedEdge = async () =>
@@ -78,7 +87,13 @@ describe('a relationship cites the page its observation read (#4024)', () => {
   beforeEach(async () => {
     clearC4Flags();
     const db = mongoose.connection.db!;
-    for (const name of ['observations', 'research_entities', 'research_entity_relationships']) {
+    for (const name of [
+      'observations',
+      'research_entities',
+      'research_entity_relationships',
+      'researchers',
+      'role_assignments',
+    ]) {
       await db.collection(name).deleteMany({});
     }
     await ResearchEntity.create([
@@ -116,5 +131,32 @@ describe('a relationship cites the page its observation read (#4024)', () => {
     expect(result.entityId).toBeDefined();
     expect(await Observation.countDocuments({ superseded: { $ne: true } })).toBeGreaterThan(0);
     expect((await storedEdge())?.sourceUrl).toBe(ROSTER_URL);
+  });
+
+  it('cites the page on the PI membership of a faculty research area it links', async () => {
+    const area = await ResearchEntity.create({
+      slug: FACULTY_AREA_SLUG,
+      name: 'Synthetic Cited Person Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      archived: false,
+    });
+    const researcher = await Researcher.create({
+      displayName: 'Synthetic Cited Person',
+      profileLinks: [],
+      archived: false,
+    });
+
+    const result = await observeAndMaterialize(
+      relationshipObservations(ROSTER_URL, FACULTY_AREA_SLUG, FACULTY_AREA_ENTITY_KEY),
+      FACULTY_AREA_ENTITY_KEY,
+    );
+
+    expect(result.skipped).toBeUndefined();
+    const membership = (await RoleAssignment.findOne({
+      personId: researcher._id,
+      'target.id': area._id,
+    }).lean()) as { rosterProvenance?: { sourceUrl?: string } } | null;
+    expect(membership?.rosterProvenance?.sourceUrl).toBe(ROSTER_URL);
   });
 });
