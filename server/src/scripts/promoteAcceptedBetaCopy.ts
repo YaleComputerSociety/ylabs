@@ -483,7 +483,7 @@ export async function betaOnlyLoginAccountIds(
   const planOwnerKeys = new Set(await distinctReferenceKeys(betaDb, 'research_plans', 'accountId'));
   const accounts = await betaDb
     .collection('accounts')
-    .find({}, { projection: { _id: 1, lastLoginAt: 1 } })
+    .find(SYNTHETIC_USER_FILTER, { projection: { _id: 1, lastLoginAt: 1 } })
     .toArray();
   const withLoginEvidence = accounts.filter(
     (account) => account.lastLoginAt != null || planOwnerKeys.has(String(account._id)),

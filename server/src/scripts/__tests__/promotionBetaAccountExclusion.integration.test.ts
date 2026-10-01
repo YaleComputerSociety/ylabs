@@ -1,13 +1,18 @@
 import { MongoClient, ObjectId, type Db } from 'mongodb';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { applyCopy, type PromotionOptions } from '../promoteAcceptedBetaCopy';
+import {
+  applyCopy,
+  resolvePromotionManifest,
+  type PromotionOptions,
+} from '../promoteAcceptedBetaCopy';
 
 const spineResearcherAccountId = new ObjectId('68f2000000000000000000a1');
 const betaLoginAccountId = new ObjectId('68f2000000000000000000a2');
 const betaPlanOwnerAccountId = new ObjectId('68f2000000000000000000a3');
 const mirrorAccountId = new ObjectId('68f2000000000000000000a4');
 const productionLoginAccountId = new ObjectId('68f2000000000000000000a5');
+const syntheticLoginAccountId = new ObjectId('68f2000000000000000000a6');
 const researcherId = new ObjectId('68f2000000000000000000b1');
 
 const betaLoginAt = new Date('2026-09-28T09:00:00Z');
@@ -76,6 +81,15 @@ async function seedBeta(betaDb: Db): Promise<void> {
       status: 'ACTIVE',
       archived: false,
     },
+    {
+      _id: syntheticLoginAccountId,
+      schemaVersion: 1,
+      netid: 'devadmin',
+      email: 'devadmin@example.invalid',
+      status: 'ACTIVE',
+      archived: false,
+      lastLoginAt: betaLoginAt,
+    },
   ]);
   await betaDb.collection('researchers').insertOne({
     _id: researcherId,
@@ -128,13 +142,14 @@ function promotionOptions(): PromotionOptions {
 describe('Beta to Production promotion leaves Beta logins in Beta', () => {
   let memoryServer: MongoMemoryServer | undefined;
   let client: MongoClient | undefined;
+  let betaDb: Db;
   let productionDb: Db;
 
   beforeAll(async () => {
     memoryServer = await MongoMemoryServer.create({ binary: { version: '8.0.12' } });
     client = new MongoClient(memoryServer.getUri());
     await client.connect();
-    const betaDb = client.db('Beta_account_exclusion_source');
+    betaDb = client.db('Beta_account_exclusion_source');
     productionDb = client.db('Prod_account_exclusion_target');
     await seedBeta(betaDb);
     await seedProduction(productionDb);
@@ -212,6 +227,15 @@ describe('Beta to Production promotion leaves Beta logins in Beta', () => {
     expect(promoted?.lastLoginAt).toBeUndefined();
     expect(promoted?.profile?.college).toBeUndefined();
     expect(promoted?.profile?.major).toBeUndefined();
+  });
+
+  it('counts a synthetic Beta login only as a synthetic exclusion', async () => {
+    const manifest = await resolvePromotionManifest(betaDb, promotionOptions());
+
+    expect(manifest.excludedBetaLoginAccounts).toBe(2);
+    expect(
+      await productionDb.collection('accounts').findOne({ _id: syntheticLoginAccountId }),
+    ).toBeNull();
   });
 
   it('promotes a Beta mirror account that carries no login evidence', async () => {
