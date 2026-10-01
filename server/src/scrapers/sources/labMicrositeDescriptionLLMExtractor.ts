@@ -6,12 +6,23 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { VisibilityReleaseQueueItem } from '../../models/visibilityReleaseQueueItem';
 import {
   deriveShortDescriptionFromFullDescription,
+  describesResearchFocus,
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import { isBibliographyCitationEntryText } from '../../utils/descriptionHygiene';
-import { hasMultipleCareerTimelineSentences } from '../../utils/researchEntityBiographyDescriptionRepair';
+import {
+  hasMultipleCareerTimelineSentences,
+  isEducationOrCareerTimelineSentence,
+  MULTIPLE_CAREER_TIMELINE_SENTENCE_THRESHOLD,
+  protectedSentenceList,
+} from '../../utils/researchEntityBiographyDescriptionRepair';
+import {
+  isCareerBiographyDescription,
+  isCareerFactSentence,
+  splitDescriptionSentences,
+} from '../../utils/careerBiographyDescription';
 import {
   stripLeadingMicrositeBannerPrefix,
   stripTrailingResearchHomeDescription,
@@ -45,6 +56,7 @@ import { personProfileSourceMatchesEntity } from '../utils/personProfileEntityMa
 import {
   describesResearchHome,
   descriptionEntityKindForResearchEntity,
+  isDemotablePersonBio,
   scoreResearchHomeDescriptionCandidate,
   type DescriptionEntityKind,
 } from '../../utils/researchHomeDescriptionSelection';
@@ -975,8 +987,83 @@ function firstPersonShortToCardShort(value: string, fullDescription: string): st
   return '';
 }
 
+/**
+ * A sentence about where a person trained, what they were appointed to, or what they
+ * were awarded, rather than what they study. A sentence that also states research is
+ * kept, because it carries the thing a student opened the page to learn.
+ */
+// Kept out of the shared timeline patterns on purpose: those also drive the
+// whole-extraction refusal, and widening them refused bodies this lane cannot narrow.
+const FIRST_PERSON_TRAINING_OR_AWARD_SENTENCE_PATTERNS: RegExp[] = [
+  /\bI\s+(?:received|earned|obtained|did)\s+(?:my|a)\b[^.!?]{0,60}\b(?:Ph\.?D\.?|doctorate|M\.?D\.?|master'?s|bachelor'?s|degree)\b/i,
+  /\bI\s+was\s+(?:an?\s+)?(?:post-?doc(?:toral)?|research\s+fellow|visiting\s+(?:scholar|scientist|researcher|professor))\b/i,
+  /\bI\s+was\s+awarded\b/i,
+];
+
+function isTrainingOrCareerTimelineSentence(sentence: string): boolean {
+  return (
+    isEducationOrCareerTimelineSentence(sentence) ||
+    FIRST_PERSON_TRAINING_OR_AWARD_SENTENCE_PATTERNS.some((pattern) => pattern.test(sentence))
+  );
+}
+
+function isBiographySentence(sentence: string): boolean {
+  return (
+    (isTrainingOrCareerTimelineSentence(sentence) || isCareerFactSentence(sentence)) &&
+    !describesResearchFocus(sentence)
+  );
+}
+
+// Both splitters can agree on a false boundary inside a spaced degree ("Ph. D."),
+// which surfaces as a kept sentence opening on the degree's second initial.
+const OPENS_ON_BARE_INITIAL = /^[A-Z]\.\s/;
+
+function isBiographyBody(value: string): boolean {
+  return (
+    isDemotablePersonBio(value) ||
+    isCareerBiographyDescription(value) ||
+    protectedSentenceList(value).filter(isTrainingOrCareerTimelineSentence).length >=
+      MULTIPLE_CAREER_TIMELINE_SENTENCE_THRESHOLD
+  );
+}
+
+/**
+ * The research a biography states, with its biography sentences removed. The lane
+ * copies page prose verbatim, so on a personal homepage whose only prose is a CV-style
+ * bio it stored the bio itself, and its award sentence became the card.
+ *
+ * When no sentence the research-focus test recognises survives, the body is returned
+ * unchanged rather than refused. On Development most such bodies still stated research
+ * in wording that test does not know ("a physician-scientist conducting research on the
+ * mechanisms of pain"), so refusing would have blanked them.
+ *
+ * Only a body the existing detectors already call a biography is narrowed. Research or
+ * collection prose that mentions one appointment in passing is returned unchanged: on
+ * Development, narrowing every body rewrote hundreds of good ones to drop a single
+ * career sentence.
+ */
+export function researchSentencesOfBiographyBody(value: string): string {
+  if (!isBiographyBody(value)) return value;
+  const sentences = protectedSentenceList(value);
+  // Deleting a sentence is only safe where its boundaries are certain. The two
+  // splitters break on different abbreviations ("St. Louis", "Ph. D."), and a cut
+  // at a false boundary leaves a fragment such as "Louis where her dissertation".
+  const boundariesAgree =
+    sentences.join('\n') ===
+    splitDescriptionSentences(value)
+      .map((sentence) => sentence.trim())
+      .join('\n');
+  if (!boundariesAgree) return value;
+  const research = sentences.filter((sentence) => !isBiographySentence(sentence));
+  if (research.length === sentences.length) return value;
+  if (research.some((sentence) => OPENS_ON_BARE_INITIAL.test(sentence))) return value;
+  const rebuilt = research.join(' ').trim();
+  return describesResearchFocus(rebuilt) ? rebuilt : value;
+}
+
 function usefulShortDescription(value: unknown, fullDescription: string): string {
-  const text = normalizeKnownDescriptionAcronyms(usefulDescription(value));
+  const candidate = usefulDescription(value);
+  const text = normalizeKnownDescriptionAcronyms(isBiographySentence(candidate) ? '' : candidate);
   if (text && shortDescriptionQuality(text, fullDescription).isUseful) return text;
   const rewritten = text ? firstPersonShortToCardShort(text, fullDescription) : '';
   if (rewritten) return rewritten;
@@ -1055,7 +1142,7 @@ export function descriptionExtractionToObservations(
   if (pageAttribution === 'ANOTHER_PERSONS_LAB') return [];
 
   const fullDescription = normalizeKnownDescriptionAcronyms(
-    usefulDescription(extraction.fullDescription),
+    usefulDescription(researchSentencesOfBiographyBody(textValue(extraction.fullDescription))),
   );
   if (
     !fullDescription ||

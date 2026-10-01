@@ -309,9 +309,15 @@ const hasPaperFragment = (value: string): boolean =>
 const DEGREE_LEVEL_STUDIES_PROGRAM =
   /\b(?:Graduate|Undergraduate|Postgraduate|Doctoral|Professional)\s+Studies\b/g;
 
+// The same noun in a career narrative names a stage of training, not a subject:
+// "During my Ph.D. studies, I was awarded ..." read as a research verb and let an
+// award sentence pass as a card that states research.
+const DEGREE_STAGE_STUDIES_NOUN =
+  /\b(?:Ph\.?\s?D\.?|doctoral|graduate|undergraduate|postgraduate|postdoctoral|master['’]?s)\s+studies\b/gi;
+
 const hasResearchDescriptionVerb = (value: string): boolean =>
   /\b(studies|investigates|examines|explores|focuses on|focused on|revolves? around|works on|works towards|develops|supports|advances|fosters|innovates|uses|employs|researches|analyzes|models|measures|seeks to)\b/i.test(
-    value.replace(DEGREE_LEVEL_STUDIES_PROGRAM, ' '),
+    value.replace(DEGREE_LEVEL_STUDIES_PROGRAM, ' ').replace(DEGREE_STAGE_STUDIES_NOUN, ' '),
   );
 
 // A plural-subject research clause ("his scholarship and teaching examine the

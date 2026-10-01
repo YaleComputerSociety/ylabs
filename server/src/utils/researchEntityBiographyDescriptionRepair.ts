@@ -320,7 +320,7 @@ export function isEducationOrCareerTimelineSentence(sentence: string): boolean {
   return EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS.some((pattern) => pattern.test(sentence));
 }
 
-const MULTIPLE_CAREER_TIMELINE_SENTENCE_THRESHOLD = 2;
+export const MULTIPLE_CAREER_TIMELINE_SENTENCE_THRESHOLD = 2;
 
 /**
  * A first-person CV/bio dump rarely has a name-lead or appointment-opener
