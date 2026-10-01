@@ -235,6 +235,16 @@ export function startMongoKeepAlive(intervalMs = 120000): void {
   keepAliveTimer.unref?.();
 }
 
+/**
+ * Stops the keep-alive pass. A shutdown has to call this before it disconnects,
+ * because the pass reconnects a connection it finds down and would re-open the one
+ * the shutdown just closed.
+ */
+export function stopMongoKeepAlive(): void {
+  if (keepAliveTimer) clearInterval(keepAliveTimer);
+  keepAliveTimer = null;
+}
+
 export interface MongoIndexDrift {
   model: string;
   collection: string;

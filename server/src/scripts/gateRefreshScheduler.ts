@@ -60,6 +60,12 @@ function triggerRefresh(): void {
   });
 }
 
+/** Stops the scheduler so a shutting-down process has no timer left to wake it. */
+export function stopGateRefreshScheduler(): void {
+  if (timer) clearInterval(timer);
+  timer = undefined;
+}
+
 /** Start the scheduler if enabled via env. Returns true if started. Safe to call once at boot. */
 export function startGateRefreshScheduler(env: NodeJS.ProcessEnv = process.env): boolean {
   const intervalMs = gateRefreshIntervalMs(env);

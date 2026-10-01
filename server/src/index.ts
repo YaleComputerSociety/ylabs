@@ -11,6 +11,7 @@ import { sanitizeLogValue } from './utils/logSanitizer';
 import { captureStartupError, initializeErrorTracking } from './utils/errorTracking';
 import { describeFirstContactCeiling } from './middleware/rateLimiters';
 import { serverListenHost } from './utils/environment';
+import { registerGracefulShutdown } from './serverShutdown';
 
 dotenv.config();
 initializeErrorTracking();
@@ -35,7 +36,7 @@ const startApp = async () => {
       ),
     );
 
-    app.listen(port, listenHost, () => {
+    const server = app.listen(port, listenHost, () => {
       console.log(`Server is ready at: ${listenHost}:${port} 🐶`);
       // Log the effective value so an unset or fat-fingered env var is visible
       // rather than inferred from behaviour (#2319).
@@ -53,6 +54,11 @@ const startApp = async () => {
       // corpusQualitySnapshotScheduler.ts.
       startCorpusQualitySnapshotScheduler();
     });
+
+    // The platform stops an instance with SIGTERM, whose default action is an
+    // immediate exit, so without this every request in flight during a deploy is
+    // cut. See serverShutdown.ts for the drain window and why it is bounded.
+    registerGracefulShutdown(server);
   } catch (error) {
     await captureStartupError(error);
     console.error('Failed to start app:', sanitizeLogValue(error));
