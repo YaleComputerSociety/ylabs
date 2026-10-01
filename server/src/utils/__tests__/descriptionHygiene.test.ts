@@ -3324,6 +3324,36 @@ describe('short description whole-sentence cap (#2184)', () => {
     }
   });
 
+  it('keeps a middle initial inside its sentence (#3988)', () => {
+    expect(
+      partitionSentencesForFiltering(
+        'The Jordan Q. Fixture Fund supports research. It is open to juniors.',
+      ),
+    ).toEqual(['The Jordan Q. Fixture Fund supports research. ', 'It is open to juniors.']);
+  });
+
+  it('drops a repeated sentence whole when it holds a middle initial and a degree (#3988)', () => {
+    const named =
+      'The Jordan Q. Fixture Fellowship is named for the first graduate of the program to earn a Ph.D.';
+    expect(
+      collapseRepeatedSentences(
+        `${named} ${named} The fellowship funds summer research. Apply to the Jordan Q. Fixture Fellowship online.`,
+      ),
+    ).toBe(
+      `${named} The fellowship funds summer research. Apply to the Jordan Q. Fixture Fellowship online.`,
+    );
+  });
+
+  it('keeps every sentence without a contact placeholder whole when one sentence has it (#3988)', () => {
+    const lead =
+      'The Jordan Q. Fixture Fellowship is named for the first graduate of the program to earn a Ph.D.';
+    expect(
+      sanitizeStoredCatalogDescription(
+        `${lead} The fellowship funds summer research. For questions, please contact fixture.office@example.edu about eligibility.`,
+      ),
+    ).toBe(`${lead} The fellowship funds summer research.`);
+  });
+
   it('still ends a sentence at a capital letter initial followed by a space (#3866)', () => {
     expect(partitionSentencesForFiltering('Works on vitamin E. Next sentence here.')).toEqual([
       'Works on vitamin E. ',

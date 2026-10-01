@@ -1292,9 +1292,11 @@ function chromeFreeContent(contentRoot: cheerio.Cheerio<any>): cheerio.Cheerio<a
   const chromeFreeRoot = contentRoot.clone();
   chromeFreeRoot
     .find(
-      'script, style, nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs, .menu, .sidebar',
+      'script, style, nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], [class*="breadcrumb"], .menu, .sidebar',
     )
     .remove();
+  chromeFreeRoot.find('br').replaceWith(' ');
+  chromeFreeRoot.find('h1').remove();
   return chromeFreeRoot;
 }
 

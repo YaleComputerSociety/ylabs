@@ -133,12 +133,20 @@ export function stripDanglingSourceSiteReferenceSentences(text: string): string 
 }
 
 const PROTECTED_ABBREVIATION_TAIL =
-  /(?:^|\s)(?:Prof|Drs?|Mr|Mrs|Ms|Mx|Sr|Jr|St|Ave|Rd|Blvd|Inc|Ltd|Co|Corp|Dept|Univ|Assoc|Vol|No|pp|Fig|vs|etc|al)\.\s*$/i;
+  /(?:^|\s)(?:Prof|Drs?|Mr|Mrs|Ms|Mx|Sr|Jr|St|Ave|Rd|Blvd|Inc|Ltd|Co|Corp|Dept|Univ|Assoc|Vol|No|pp|Fig|vs|etc|al|Ph)\.\s*$/i;
+
+// "Jordan Q." is a middle initial; "vitamin E." ends a sentence (#3866). A capitalized
+// word before the initial is what separates the two.
+const MIDDLE_INITIAL_TAIL = /(?:^|\s)[A-Z][a-z]+\s[A-Z]\.\s*$/;
 
 const LATIN_EXAMPLE_ABBREVIATION_TAIL = /(?:^|[\s([])(?:[ei]\.|e\.g\.\s*|i\.e\.\s*)$/i;
 
 function isAbbreviationSplit(segment: string): boolean {
-  return PROTECTED_ABBREVIATION_TAIL.test(segment) || LATIN_EXAMPLE_ABBREVIATION_TAIL.test(segment);
+  return (
+    PROTECTED_ABBREVIATION_TAIL.test(segment) ||
+    MIDDLE_INITIAL_TAIL.test(segment) ||
+    LATIN_EXAMPLE_ABBREVIATION_TAIL.test(segment)
+  );
 }
 
 /**
@@ -359,8 +367,6 @@ const redactionPlaceholderPattern =
 
 const redactionTokenTest = /\[(?:email|phone) redacted\]/i;
 const redactionTokenGlobal = /\[(?:email|phone) redacted\]/gi;
-const splitIntoSentences = (value: string): string[] =>
-  value.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [value];
 const endsWithTerminalPunctuation = (value: string): boolean => /[.!?]["')\]]?$/.test(value.trim());
 const wordCount = (value: string): number => (value.match(/[A-Za-z]{2,}/g) || []).length;
 
@@ -379,11 +385,11 @@ export function stripRedactionPlaceholders(text: string): string {
   const value = normalizeHygieneWhitespace(text);
   if (!value || !redactionTokenTest.test(value)) return value;
   const kept: string[] = [];
-  for (const rawSentence of splitIntoSentences(value)) {
+  for (const rawSentence of partitionSentencesForFiltering(value)) {
     const sentence = rawSentence.trim();
     if (!sentence) continue;
     if (!redactionTokenTest.test(sentence)) {
-      kept.push(sentence);
+      kept.push(rawSentence);
       continue;
     }
     const matches = [...sentence.matchAll(redactionTokenGlobal)];
@@ -394,10 +400,10 @@ export function stripRedactionPlaceholders(text: string): string {
       sentence.replace(redactionPlaceholderPattern, ' ').replace(/\s+([.,;:!?])/g, '$1'),
     );
     if (stripped && endsWithTerminalPunctuation(stripped) && wordCount(stripped) >= 2) {
-      kept.push(stripped);
+      kept.push(`${stripped} `);
     }
   }
-  return normalizeHygieneWhitespace(kept.join(' '));
+  return normalizeHygieneWhitespace(kept.join(''));
 }
 
 /**
@@ -415,10 +421,10 @@ export function stripRedactionPlaceholders(text: string): string {
 export function sanitizeEvidenceExcerpt(value: string): string {
   const redacted = normalizeHygieneWhitespace(redactDirectContactInfo(String(value ?? '')));
   if (!redacted || !redactionTokenTest.test(redacted)) return redacted;
-  const kept = splitIntoSentences(redacted)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence && !redactionTokenTest.test(sentence));
-  return normalizeHygieneWhitespace(kept.join(' '));
+  const kept = partitionSentencesForFiltering(redacted).filter(
+    (sentence) => sentence.trim() && !redactionTokenTest.test(sentence),
+  );
+  return normalizeHygieneWhitespace(kept.join(''));
 }
 
 const CATALOG_CHROME_PATTERNS: RegExp[] = [

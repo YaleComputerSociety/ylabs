@@ -401,6 +401,30 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     }
   });
 
+  it('reads a detail description without the breadcrumb toggle, the page heading, or glued line breaks', () => {
+    const [candidate] = parseFellowshipCatalogPage(
+      `
+        <main>
+          <div class="breadcrumbs__wrapper">
+            <button class="breadcrumbs__button"><span>Fixture Awards</span></button>
+            <nav class="breadcrumbs"><a href="/awards">Fixture Awards</a></nav>
+          </div>
+          <h1>Fixture Research Fellowship</h1>
+          <div class="text">
+            <p>The fellowship funds summer research with a faculty mentor.<br><br>Juniors and seniors may apply.</p>
+          </div>
+        </main>
+      `,
+      detailPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidate.title).toBe('Fixture Research Fellowship');
+    expect(candidate.description).toBe(
+      'The fellowship funds summer research with a faculty mentor. Juniors and seniors may apply.',
+    );
+  });
+
   it('scopes detail links to program content and prefers the Student Grants host', () => {
     const candidates = parseFellowshipCatalogPage(
       `
