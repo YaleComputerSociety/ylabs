@@ -7,6 +7,7 @@ export interface TopicAliasCluster {
   canonical: string[];
   aliases: string[];
   shortAliases?: string[];
+  abbreviations?: string[];
   queryOnly?: boolean;
   freeTextGuarded?: boolean;
   textTriggers?: string[];
@@ -58,12 +59,14 @@ export const RESEARCH_TOPIC_ALIAS_CLUSTERS: TopicAliasCluster[] = [
     kind: 'topical',
     canonical: ['neuroscience', 'neurology', 'neural', 'brain'],
     aliases: ['neuro'],
+    abbreviations: ['neuro'],
     textTriggers: ['neuro', 'neuroscience'],
   },
   {
     kind: 'topical',
     canonical: ['psychology', 'psychiatry', 'cognitive science', 'behavioral science'],
     aliases: ['psych'],
+    abbreviations: ['psych'],
     textTriggers: ['psych', 'psychology'],
   },
   {
@@ -183,6 +186,9 @@ export const RESEARCH_TOPIC_ALIAS_CLUSTERS: TopicAliasCluster[] = [
 const topicalClusters = RESEARCH_TOPIC_ALIAS_CLUSTERS.filter((c) => c.kind === 'topical');
 const departmentClusters = RESEARCH_TOPIC_ALIAS_CLUSTERS.filter((c) => c.kind === 'department');
 
+const isAbbreviationAlias = (cluster: TopicAliasCluster, alias: string): boolean =>
+  Boolean(cluster.shortAliases?.includes(alias) || cluster.abbreviations?.includes(alias));
+
 const clusterFamily = (cluster: TopicAliasCluster): string[] =>
   dedupeInOrder([...cluster.canonical, ...cluster.aliases]);
 
@@ -190,8 +196,9 @@ const normalizeSynonymTerm = (value: string): string => value.normalize('NFKC').
 
 /**
  * Derives the Meili `synonyms` map from a single governed vocabulary: the
- * curated topical alias clusters (query-only vernacular excluded, as it must not
- * expand corpus recall) unioned with `RESEARCH_AREA_ALIASES`, the same
+ * curated topical alias clusters (query-only vernacular one way only: the typed
+ * word widens to its canonical terms, and no canonical term widens to the
+ * metaphor-prone word, #3940) unioned with `RESEARCH_AREA_ALIASES`, the same
  * canonical->variant map ingest uses to tag entities. Each governed group emits
  * bidirectional, lower-cased, whitespace-normalized synonyms so a student query
  * for a known variant ("history of art", "population health", "hci") expands to
@@ -229,6 +236,16 @@ export function buildResearchEntityMeiliSynonyms(
     for (const term of normalized) {
       const others = normalized.filter((other) => other !== term && !oneWayTerms.has(other));
       synonyms[term] = dedupeInOrder([...(synonyms[term] ?? []), ...others]);
+    }
+  }
+  for (const cluster of clusters) {
+    if (cluster.kind !== 'topical' || !cluster.queryOnly) continue;
+    const canonical = cluster.canonical.map(normalizeSynonymTerm);
+    for (const alias of cluster.aliases) {
+      if (isAbbreviationAlias(cluster, alias)) continue;
+      const term = normalizeSynonymTerm(alias);
+      const targets = canonical.filter((target) => target !== term);
+      synonyms[term] = dedupeInOrder([...(synonyms[term] ?? []), ...targets]);
     }
   }
   return synonyms;
@@ -279,8 +296,14 @@ export const DEPARTMENT_SHORTHAND_ALIASES: Record<string, string[]> = (() => {
   return aliases;
 })();
 
+const ABBREVIATION_TOPIC_QUERY_ALIASES: Record<string, string[]> = Object.fromEntries(
+  Object.entries(STUDENT_QUERY_ALIASES).filter(([alias]) =>
+    topicalClusters.some((cluster) => isAbbreviationAlias(cluster, alias)),
+  ),
+);
+
 export const QUERY_TOPIC_ALIASES: Record<string, string[]> = {
-  ...STUDENT_QUERY_ALIASES,
+  ...ABBREVIATION_TOPIC_QUERY_ALIASES,
   ...DEPARTMENT_SHORTHAND_ALIASES,
 };
 
