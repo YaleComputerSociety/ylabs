@@ -4303,10 +4303,12 @@ async function findFellowshipByRecordSpecificApplicationLink(
   if (!fund) return null;
 
   const query = new URL(applicationLink).search.replace(/^\?/, '');
+  const observingLane = observedOwningFellowshipLane(obs);
   const candidates = (
     await Model.find({
       applicationLink: new RegExp(`^https?://[^/?#]+[^?#]*\\?${escapeRegex(query)}$`, 'i'),
       archived: { $ne: true },
+      ...(observingLane ? { sourceName: { $ne: observingLane } } : {}),
     })
       .limit(2)
       .lean()
@@ -4316,6 +4318,15 @@ async function findFellowshipByRecordSpecificApplicationLink(
       fund,
   );
   return candidates.length === 1 ? candidates[0] : null;
+}
+
+// An owning lane finds its own rows by sourceKey, title and page, so a row it already owns
+// that shares this application link is a different program admitted through the same
+// application, not this record (#3988). The enrich-only catalog owns no row in that sense.
+function observedOwningFellowshipLane(obs: any[]): string | null {
+  const sourceName = obs.find((o) => o.field === 'sourceName' && typeof o.value === 'string')
+    ?.value as string | undefined;
+  return sourceName && !ENRICH_ONLY_FELLOWSHIP_SOURCES.has(sourceName) ? sourceName : null;
 }
 
 async function findEntityDocByIdentifier(

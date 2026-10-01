@@ -286,6 +286,81 @@ describe('fellowship materialization', () => {
     expect(result.entityId).toBe('existing-richter-public-page-id');
   });
 
+  it('never folds an owning lane program into another row the lane owns through a shared application (#3988)', async () => {
+    const sharedApplication = 'https://yale.communityforce.com/Funds/FundDetails.aspx?SHAREDAPP';
+    vi.spyOn(Observation, 'find').mockReturnValue({
+      lean: vi.fn().mockResolvedValue(
+        [
+          ['title', 'Fixture Second Research Fellowship'],
+          ['sourceName', 'yale-college-fellowships-office'],
+          ['applicationLink', sharedApplication],
+        ].map(([field, value]) => ({
+          field,
+          value,
+          sourceName: 'yale-college-fellowships-office',
+          confidence: 0.95,
+          observedAt: new Date('2026-03-01T00:00:00Z'),
+        })),
+      ),
+    } as any);
+    vi.spyOn(Fellowship, 'findOne').mockReturnValue({
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const find = vi.spyOn(Fellowship, 'find').mockImplementation((() => ({
+      limit: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue([]) }),
+      lean: vi.fn().mockResolvedValue([]),
+    })) as any);
+
+    const result = await materializeEntity(
+      'fellowship',
+      { entityKey: 'yale-college-fellowships-office:fixture-second-research-fellowship' },
+      { dryRun: true },
+    );
+
+    const applicationLookup = find.mock.calls
+      .map((call) => (call as any[])[0])
+      .find((filter) => filter?.applicationLink);
+    expect(applicationLookup.sourceName).toEqual({ $ne: 'yale-college-fellowships-office' });
+    expect(result.created).toBe(true);
+  });
+
+  it('still lets the enrich-only catalog join any lane row through its fund page', async () => {
+    const fundDetailUrl = 'https://yale.communityforce.com/Funds/FundDetails.aspx?CATALOGFUND';
+    vi.spyOn(Observation, 'find').mockReturnValue({
+      lean: vi.fn().mockResolvedValue(
+        [
+          ['title', 'Fixture Catalog Fellowship'],
+          ['sourceName', 'student-grants-database'],
+          ['applicationLink', fundDetailUrl],
+        ].map(([field, value]) => ({
+          field,
+          value,
+          sourceName: 'student-grants-database',
+          confidence: 0.9,
+          observedAt: new Date('2026-03-01T00:00:00Z'),
+        })),
+      ),
+    } as any);
+    vi.spyOn(Fellowship, 'findOne').mockReturnValue({
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const find = vi.spyOn(Fellowship, 'find').mockImplementation((() => ({
+      limit: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue([]) }),
+      lean: vi.fn().mockResolvedValue([]),
+    })) as any);
+
+    await materializeEntity(
+      'fellowship',
+      { entityKey: 'student-grants-database:funds-funddetails-aspx-catalogfund' },
+      { dryRun: true },
+    );
+
+    const applicationLookup = find.mock.calls
+      .map((call) => (call as any[])[0])
+      .find((filter) => filter?.applicationLink);
+    expect(applicationLookup.sourceName).toBeUndefined();
+  });
+
   it('keys a fund on the page it was read from when its application goes through another fund page (#4216)', async () => {
     const fundUrl = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FUNDOWN';
     const commonApplicationUrl = 'https://yale.communityforce.com/Funds/FundDetails.aspx?COMMONAPP';
