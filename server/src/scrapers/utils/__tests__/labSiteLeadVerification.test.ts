@@ -15,6 +15,7 @@ import {
   siteNamesPerson,
   slugNamesAnotherLead,
   surnameCore,
+  visiblePageText,
   surnameInSiteUrl,
   unreachableLabSiteVerification,
   type LabSiteLeadCandidate,
@@ -172,7 +173,7 @@ describe('personNameTokensFromSlug', () => {
 });
 
 describe('slugNamesAnotherLead', () => {
-  const hay = (html: string) => siteHaystack(html);
+  const hay = (html: string) => visiblePageText(html);
 
   it('counts a namesake with a different given name', () => {
     expect(slugNamesAnotherLead('dale-quill', 'Robin Quill', hay('<p>Members</p>'))).toBe(true);
@@ -195,6 +196,23 @@ describe('slugNamesAnotherLead', () => {
         'robin-quillon',
         'R. Quillon',
         hay('<p>Robin Quillon, principal investigator</p>'),
+      ),
+    ).toBe(false);
+  });
+
+  it('does not count the lead linked surname first when the lead is shown by initial', () => {
+    expect(slugNamesAnotherLead('quillon-robin', 'R. Quillon', hay('<p>Members</p>'))).toBe(false);
+  });
+
+  it('does not let a slug supply its own lead-role evidence through its href', () => {
+    expect(
+      slugNamesAnotherLead(
+        'lab-members',
+        'Robin Quill',
+        hay(
+          '<nav><a href="/people/principal-investigator">PI</a>' +
+            '<a href="/people/lab-members">Members</a></nav>',
+        ),
       ),
     ).toBe(false);
   });

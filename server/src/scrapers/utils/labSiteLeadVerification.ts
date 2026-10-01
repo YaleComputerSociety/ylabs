@@ -220,6 +220,15 @@ export function siteHaystack(html: string, visitedUrls: readonly string[] = []):
   return ` ${flattenForNameMatch(`${pageText(html)} ${html} ${visitedUrls.join(' ')}`)} `;
 }
 
+/**
+ * The page's visible words, flattened, without its markup or the visited URLs.
+ * A slug's own href repeats the slug, so judging a slug against the haystack
+ * would let the slug supply its own evidence.
+ */
+export function visiblePageText(html: string): string {
+  return ` ${flattenForNameMatch(pageText(html))} `;
+}
+
 function pageText(html: string): string {
   return String(html ?? '')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -404,7 +413,8 @@ function slugNamesTheLead(tokens: readonly string[], leadDisplayName: unknown): 
   const given = givenNameCore(leadDisplayName);
   if (given) return tokens.includes(given);
   const initial = givenInitialOnly(leadDisplayName);
-  return Boolean(initial) && tokens[0].startsWith(initial);
+  const surname = surnameCore(leadDisplayName);
+  return Boolean(initial) && tokens.some((token) => token !== surname && token.startsWith(initial));
 }
 
 /**
@@ -421,7 +431,7 @@ function slugNamesTheLead(tokens: readonly string[], leadDisplayName: unknown): 
 export function slugNamesAnotherLead(
   slug: string,
   leadDisplayName: unknown,
-  haystack: string,
+  visibleText: string,
 ): boolean {
   const tokens = personNameTokensFromSlug(slug);
   if (!tokens.length || slugNamesTheLead(tokens, leadDisplayName)) return false;
@@ -430,10 +440,10 @@ export function slugNamesAnotherLead(
   const first = escapeForRegExp(tokens[0]);
   const last = escapeForRegExp(tokens[tokens.length - 1]);
   const named = new RegExp(`(?:^| )${first}(?: [a-z0-9]{1,12}){0,3} ${last}(?= |$)`, 'g');
-  for (const match of haystack.matchAll(named)) {
+  for (const match of visibleText.matchAll(named)) {
     const start = Math.max(0, (match.index ?? 0) - LEAD_ROLE_WINDOW_CHARS);
     const end = (match.index ?? 0) + match[0].length + LEAD_ROLE_WINDOW_CHARS;
-    if (LEAD_ROLE_PHRASE.test(haystack.slice(start, end))) return true;
+    if (LEAD_ROLE_PHRASE.test(visibleText.slice(start, end))) return true;
   }
   return false;
 }
@@ -496,10 +506,12 @@ export function judgeLeadAgainstSite(
       evidenceUrl: reading.website,
     };
   }
+  const visibleText = leadIsTheRecordSubject ? '' : visiblePageText(reading.html);
   const namesSomebodyElse =
     !leadIsTheRecordSubject &&
     [...siteSlugs].some(
-      (slug) => !leadSlugs.includes(slug) && slugNamesAnotherLead(slug, lead.displayName, haystack),
+      (slug) =>
+        !leadSlugs.includes(slug) && slugNamesAnotherLead(slug, lead.displayName, visibleText),
     );
   return {
     ...base,
