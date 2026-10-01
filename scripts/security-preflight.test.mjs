@@ -761,29 +761,48 @@ test('the minimatch the root lint toolchain loads can expand a brace set', () =>
   assert.equal(match('a.md', '*.{js,ts}'), false);
 });
 
-const resolutionTargetName = (key) => {
+const splitDescriptor = (descriptor) => {
+  const [, name, range] = descriptor.match(/^(@?[^@]+)(?:@(.*))?$/);
+  return { name, range };
+};
+
+const lockfileDescriptorsOf = (lockfileText) => {
+  const entries = Object.entries(yaml.load(lockfileText)).filter(([key]) => key !== '__metadata');
+  const locked = entries.flatMap(([key]) => key.split(', ').map(splitDescriptor));
+  const requested = entries.flatMap(([, entry]) =>
+    Object.entries(entry.dependencies ?? {}).map(([name, range]) => ({ name, range })),
+  );
+  return { locked, requested };
+};
+
+const overrideIsLoadBearing = (key, { locked, requested }) => {
   const segments = key.split('/');
   const scope = segments.at(-2);
   const target = scope?.startsWith('@') ? `${scope}/${segments.at(-1)}` : segments.at(-1);
-  return target.replace(/^(@?[^@]+)@.*$/, '$1');
+  const { name, range } = splitDescriptor(target);
+  if (range === undefined) return locked.some((descriptor) => descriptor.name === name);
+  return [...locked, ...requested].some(
+    (descriptor) => descriptor.name === name && descriptor.range === range,
+  );
 };
 
-test('every dependency override matches a package its own lockfile resolves', () => {
+test('every dependency override matches a descriptor its own lockfile resolves', () => {
   for (const workspace of ['.', 'server', 'client']) {
     const manifest = JSON.parse(
       fs.readFileSync(new URL(`../${workspace}/package.json`, import.meta.url), 'utf8'),
     );
-    const lockfile = fs.readFileSync(new URL(`../${workspace}/yarn.lock`, import.meta.url), 'utf8');
+    const descriptors = lockfileDescriptorsOf(
+      fs.readFileSync(new URL(`../${workspace}/yarn.lock`, import.meta.url), 'utf8'),
+    );
     const overrides = Object.keys(manifest.resolutions ?? {});
     assert.ok(
       overrides.length > 0,
       `${workspace} declares no resolutions, so this pin reads nothing`,
     );
     for (const key of overrides) {
-      const name = resolutionTargetName(key);
       assert.ok(
-        lockfile.includes(`\n"${name}@`) || lockfile.includes(`, ${name}@`),
-        `${workspace}/package.json overrides ${key}, which no ${workspace}/yarn.lock entry resolves, so the pin does nothing`,
+        overrideIsLoadBearing(key, descriptors),
+        `${workspace}/package.json overrides ${key}, which no ${workspace}/yarn.lock descriptor matches, so the pin does nothing`,
       );
     }
   }

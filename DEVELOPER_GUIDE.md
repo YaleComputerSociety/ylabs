@@ -179,7 +179,7 @@ Failed, empty, stale, or ambiguous refreshes do not imply an empty team and do n
 
 ```bash
 yarn dev:client    # Vite on port 3000
-yarn dev:server    # Express with nodemon on port 4000
+yarn dev:server    # Express with tsx watch on port 4000
 ```
 
 Run these in two separate terminals.
@@ -263,7 +263,7 @@ The auth flow's verbose tracing (per-request deserialization, the find-or-create
 | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
 | `yarn install:all`                                                                                                                         | Install deps in root + server + client                                                |
 | `yarn dev:client`                                                                                                                          | Vite dev server (port 3000)                                                           |
-| `yarn dev:server`                                                                                                                          | Express with nodemon (port 4000)                                                      |
+| `yarn dev:server`                                                                                                                          | Express with tsx watch (port 4000)                                                    |
 | `yarn build`                                                                                                                               | Full production build                                                                 |
 | `yarn start`                                                                                                                               | Run both servers in production mode                                                   |
 | `yarn clean:all`                                                                                                                           | Remove all node_modules                                                               |
