@@ -2,7 +2,7 @@
 
 Status: canonical record of what is deliberately not scraped, and why
 
-Last updated: 2026-09-22
+Last updated: 2026-09-30
 
 ## What this file is for
 
@@ -59,6 +59,17 @@ Re-opening one needs a new fact about the source, not a fresh look at the same p
   `isProgramApplicationPortalUrl` classifies CommunityForce URLs as `applicationLink` evidence carried on the fellowship they belong to.
   The application flow itself is gated and is never fetched.
   The public, server-rendered `/Funds/FundDetails.aspx` pages are the exception: the `student-grants-database` lane reads them, as recorded in its row in `skills/scrapers/SKILL.md`.
+
+### Undergraduate get-started programs with nothing a program lane can serve
+
+These were found by the 2026-09-30 get-started recall measurement (#4179) and left out of the program seed lists on the merits.
+
+- **NIDDK/KUH Summer Undergraduate Medical Research**, announced only as a PDF on `science.yalecollege.yale.edu`.
+  There is no HTML program page, and the program lanes read HTML, so there is nothing to cite.
+- **Psychiatry POWER undergraduate research internships**, `medicine.yale.edu/psychiatry/research/clinics-and-programs/power/training/`.
+  The only application route is contacting a named program director, and the lanes are fail-closed on contact data, so a row would mint with no application route and stay withheld.
+- **Cancer Center CICRT internship**, listed on `medicine.yale.edu/cancer/education/highschool-and-undergraduates/`.
+  It has no page of its own; that page is an index shared with high-school programs, and its application goes through the BioMed Amgen Scholars form, which the health-sciences lane already cites.
 
 ## Covered indirectly, standalone roster deferred
 

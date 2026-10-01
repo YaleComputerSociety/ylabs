@@ -455,6 +455,25 @@ describe('departmentUndergradResearchScraper', () => {
     expect(records[0].description).not.toContain('coordinator@');
   });
 
+  it('does not take a news link whose slug merely contains "form" as the application route', () => {
+    const html = `
+      <main>
+        <h1>Fixture Scholars</h1>
+        <p>The program places Yale College undergraduates as research assistants with faculty, chosen in a competitive application process in the fall.</p>
+        <a href="https://fixture.yale.edu/news/fellowship-helps-undergraduates-transform-big-questions">Read the story</a>
+      </main>
+    `;
+    const [record] = parseStructuredOpportunityPage(html, {
+      key: 'fixture-scholars',
+      url: 'https://fixture.yale.edu/opportunities/fixture-scholars',
+      department: 'Fixture Institute',
+      school: 'Yale University',
+      parser: 'structured-opportunity',
+      title: 'Fixture Scholars',
+    });
+    expect(record.joinPageUrl).toBeUndefined();
+  });
+
   it('drops sourceChrome, URL fragments, subject-less fragments, and leaked headings (#598)', () => {
     const historyConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
       (page) => page.key === 'history',
@@ -570,6 +589,16 @@ describe('departmentUndergradResearchScraper', () => {
       ]),
     );
     expect(fields).not.toContain('programKind');
+    expect(observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'fellowship',
+          field: 'sourceUrl',
+          value:
+            'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research',
+        }),
+      ]),
+    );
     expect(fields).not.toEqual(
       expect.arrayContaining([
         'postedOpportunityTitle',

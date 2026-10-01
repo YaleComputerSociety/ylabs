@@ -25,9 +25,13 @@ import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
-import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
-import { humanizeProgramLinkLabel } from '../../utils/programLinkLabel';
-import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
+import {
+  PROGRAM_PAGE_NON_PROSE_SELECTOR,
+  isApplyLink,
+  programApplicationLinks,
+  programPageDescription,
+  programPageTitle,
+} from '../utils/programPageEvidence';
 
 export const YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE = 'yale-health-sciences-summer-programs';
 
@@ -50,6 +54,14 @@ export const CURATED_YALE_HEALTH_SCIENCES_SUMMER_PROGRAM_SEEDS: HealthSciencesPr
   {
     url: 'https://medicine.yale.edu/center-clinical-investigation/for-students-and-interns/summer-enrichment-research-experience/',
     hostingOffice: 'Yale Center for Clinical Investigation',
+  },
+  {
+    url: 'https://medicine.yale.edu/center-clinical-investigation/for-students-and-interns/exposures-program/',
+    hostingOffice: 'Yale Center for Clinical Investigation',
+  },
+  {
+    url: 'https://medicine.yale.edu/childstudy/education-and-training/undergraduate-pga/interns/',
+    hostingOffice: 'Yale Child Study Center',
   },
   {
     url: 'https://medicine.yale.edu/labmed/ycceh/enrichment/summer-scholars-program/',
@@ -87,6 +99,9 @@ export const EXCLUDED_ALREADY_COVERED_URLS = [
 
 const MAX_DISCOVERED_PROGRAM_PAGES = 80;
 const MAX_PROGRAM_LINKS = 8;
+
+const PASSED_DEADLINE_RE =
+  /^\s*(?:(?:has|have)\s+(?:now\s+)?passed|(?:is|are)\s+(?:now\s+)?closed)\b/i;
 
 const MONTHS: Record<string, number> = {
   january: 0,
@@ -246,20 +261,21 @@ function sectionTextForHeading($: cheerio.CheerioAPI, headingPattern: RegExp): s
 
 function nearestDeadlineText(text: string): string {
   const normalized = normalizeWhitespace(text);
-  const label =
-    /\b(?:application\s+)?deadline\b|\bapplications?\s+(?:are\s+)?due\b|\bapply\s+by\b|\bdue\s+by\b/i.exec(
-      normalized,
-    );
-  if (!label || label.index === undefined) return '';
   const monthPattern = Object.keys(MONTHS).join('|');
   const namedDate = `(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(?:${monthPattern})\\s+\\d{1,2}(?!\\d)(?:,\\s*\\d{4})?`;
   const numericDate = String.raw`\d{1,2}\/\d{1,2}\/\d{2,4}`;
   const datePattern = new RegExp(`(?:${namedDate}|${numericDate})`, 'i');
-  const after = normalized.slice(
-    label.index + label[0].length,
-    label.index + label[0].length + 120,
+  const labels = normalized.matchAll(
+    /\b(?:application\s+)?deadline\b|\bapplications?\s+(?:are\s+)?due\b|\bapply\s+by\b|\bdue\s+by\b/gi,
   );
-  return datePattern.exec(after)?.[0] || '';
+  for (const label of labels) {
+    const start = (label.index ?? 0) + label[0].length;
+    const after = normalized.slice(start, start + 120);
+    if (PASSED_DEADLINE_RE.test(after)) continue;
+    const date = datePattern.exec(after)?.[0];
+    if (date) return date;
+  }
+  return '';
 }
 
 export function parseDeadlineToUtcEndOfDay(
@@ -306,18 +322,6 @@ function hasActiveApplicationLanguage(text: string): boolean {
   );
 }
 
-function isInExcludedRegion($link: cheerio.Cheerio<any>): boolean {
-  return (
-    $link.closest(
-      'header, nav, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs, .menu, .sidebar',
-    ).length > 0
-  );
-}
-
-function isApplyLink(url: string, label: string): boolean {
-  return /\bapply|application|register\b/i.test(label) || /\bapply|application\b/i.test(url);
-}
-
 function fingerprintCandidate(
   candidate: Omit<HealthSciencesProgramCandidate, 'sourceFingerprint'>,
 ): string {
@@ -355,17 +359,13 @@ export function parseHealthSciencesProgramPage(
   const $ = cheerio.load(html);
   $('script, style, noscript').remove();
 
-  const title = normalizeWhitespace($('h1').first().text());
+  const title = programPageTitle($, pageUrl);
   if (!title || title.length > 200) return undefined;
 
   const contentRoot = $('main, [role="main"], article').first();
   const root = contentRoot.length > 0 ? contentRoot : $('body');
   const chromeFree = root.clone();
-  chromeFree
-    .find(
-      'nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs, .menu, .sidebar',
-    )
-    .remove();
+  chromeFree.find(PROGRAM_PAGE_NON_PROSE_SELECTOR).remove();
   const bodyText = normalizeWhitespace(chromeFree.text());
   const identityText = `${title} ${bodyText}`;
 
@@ -380,7 +380,7 @@ export function parseHealthSciencesProgramPage(
       ));
   if (!hasSummerResearch) return undefined;
 
-  const description = sanitizeStoredCatalogDescription(bodyText, 2000) || undefined;
+  const description = programPageDescription($, chromeFree, bodyText);
   const eligibility = sectionTextForHeading($, ELIGIBILITY_HEADING_RE);
   const applicationInfo = sectionTextForHeading($, APPLICATION_HEADING_RE);
   const deadline = parseDeadlineToUtcEndOfDay(
@@ -388,25 +388,7 @@ export function parseHealthSciencesProgramPage(
     referenceDate,
   );
 
-  const links: Array<{ label: string; url: string }> = [];
-  const seenUrls = new Set<string>();
-  for (const link of root.find('a').toArray()) {
-    const $link = $(link);
-    if (isInExcludedRegion($link)) continue;
-    const rawUrl = absoluteUrl($link.attr('href'), pageUrl);
-    if (!rawUrl) continue;
-    const url = normalizeUrl(rawUrl);
-    if (seenUrls.has(url)) continue;
-    const rawLabel = normalizeWhitespace($link.text());
-    if (!isApplyLink(url, rawLabel)) continue;
-    if (isUnhelpfulProgramUrl(url, pageUrl)) continue;
-    seenUrls.add(url);
-    links.push({
-      label: humanizeProgramLinkLabel(rawLabel, url) || rawLabel || 'Application',
-      url,
-    });
-    if (links.length >= MAX_PROGRAM_LINKS) break;
-  }
+  const links = programApplicationLinks($, root, pageUrl, MAX_PROGRAM_LINKS);
   const applicationLink = links.find((link) => isApplyLink(link.url, link.label))?.url;
 
   const termOfAward = inferTerm(identityText);

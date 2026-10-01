@@ -117,6 +117,33 @@ describe('parseHealthSciencesProgramPage', () => {
     expect(candidate).toBeUndefined();
   });
 
+  it('does not read the program start date after a passed-deadline notice as a deadline', () => {
+    const html = `
+      <main>
+        <h1>Fixture Developmental Science Summer Internship</h1>
+        <p>A summer research internship that places undergraduate students in Yale research groups.</p>
+        <h2>How to Apply</h2>
+        <p>The deadline has passed for the 2026 summer internship, which will take place from June 1 to July 24, 2026.</p>
+      </main>
+    `;
+    const candidate = parseHealthSciencesProgramPage(html, surfUrl, 'Yale', referenceDate);
+    expect(candidate).toBeDefined();
+    expect(candidate?.deadline).toBeUndefined();
+    expect(candidate?.isAcceptingApplications).toBe(false);
+  });
+
+  it('still reads a later deadline after a passed-deadline notice', () => {
+    const html = `
+      <main>
+        <h1>Fixture Developmental Science Summer Internship</h1>
+        <p>A summer research internship that places undergraduate students in Yale research groups.</p>
+        <p>The deadline has passed for this cycle. Next application deadline: January 31, 2027.</p>
+      </main>
+    `;
+    const candidate = parseHealthSciencesProgramPage(html, surfUrl, 'Yale', referenceDate);
+    expect(candidate?.deadline?.toISOString()).toBe('2027-01-31T23:59:59.999Z');
+  });
+
   it('returns undefined for a page with no undergraduate summer-research signal', () => {
     const candidate = parseHealthSciencesProgramPage(
       '<main><h1>Department Directory</h1><p>Faculty office hours and contact list.</p></main>',
