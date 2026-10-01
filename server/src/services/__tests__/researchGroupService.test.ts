@@ -1820,6 +1820,21 @@ describe('searchResearchGroupsViaMeili', () => {
       ).toBe(true);
     });
 
+    it('matches a typed accented name against the same accented name in a lead', () => {
+      const query = normalizeResearchSearchQuery('Jösef Fixtüre');
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            lead('Jösef Fixtüre', [
+              [0, 5],
+              [6, 7],
+            ]),
+          ],
+          query.tokens,
+        ),
+      ).toBe(true);
+    });
+
     it('admits a short first name beside an exact surname, never a lone prefix (#3853)', () => {
       expect(
         keywordLegTopHitIsNameMatch(
@@ -2949,6 +2964,30 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('rankingScoreThreshold');
     expect(mocks.search.mock.calls[1][1]).toHaveProperty('hybrid');
     expect(result.degraded).toBe(true);
+  });
+
+  it('finds an accented name typed with its accents on the Mongo fallback', async () => {
+    mocks.search.mockRejectedValueOnce(new Error('meili unavailable'));
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: '67d8928150621bcef434a1d7',
+          slug: 'accented-fixture-lab',
+          name: 'Ölvexmoor Fixture Lab',
+          departments: [],
+          researchAreas: [],
+          keywords: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('Ölvexmoor', {}, 1, 24);
+
+    expect(result.researchEntities).toEqual([
+      expect.objectContaining({ slug: 'accented-fixture-lab' }),
+    ]);
   });
 
   it('does not let short AI fallback matching resolve Ailong or airway substrings', async () => {

@@ -20,6 +20,7 @@ import {
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
   RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET,
   rebuildResearchEntitySearchIndex,
+  researchEntityTypeSearchTerms,
 } from '../researchEntitySearchIndexService';
 import { RESEARCH_SEARCH_RELEVANCE_TEXT_FIELDS } from '../../scripts/researchSearchRelevanceCore';
 
@@ -547,14 +548,6 @@ describe('researchEntitySearchIndexService', () => {
   });
 
   it('indexes a type word only for types whose label a student searches by, never the raw enum (#3942)', () => {
-    const facultyRow = buildResearchEntitySearchIndexDocument({
-      _id: 'entity-faculty-type-term',
-      name: 'Synthetic Person Faculty Research',
-      kind: 'individual',
-      entityType: 'FACULTY_RESEARCH_AREA',
-      shortDescription: 'Studies tidal sediment transport.',
-      archived: false,
-    });
     const facilityRow = buildResearchEntitySearchIndexDocument({
       _id: 'entity-core-facility-type-term',
       name: 'Synthetic Imaging Suite',
@@ -563,8 +556,9 @@ describe('researchEntitySearchIndexService', () => {
       archived: false,
     });
 
-    const facultyTerms = (facultyRow?.studentSearchTerms ?? []).join(' ').toLowerCase();
-    expect(facultyTerms).not.toMatch(/\b(faculty|area)\b/);
+    expect(researchEntityTypeSearchTerms('FACULTY_RESEARCH_AREA')).toEqual([]);
+    expect(researchEntityTypeSearchTerms('LAB')).toEqual(['lab']);
+    expect(researchEntityTypeSearchTerms('not-a-type')).toEqual([]);
     expect(facilityRow?.studentSearchTerms).toContain('core facility');
     expect(facilityRow).toMatchObject({ kind: 'core_facility', entityType: 'CORE_FACILITY' });
   });
