@@ -50,7 +50,7 @@ The 32 wrong verdicts fell into classes, and each is now a rule in `scrapers/uti
 The website is the defect, not the lead, and for a faculty research profile the lead is the subject by construction, so that type is never `CONTRADICTED` (`leadIsTheRecordSubjectFor`).
 - **8: a two-letter surname.** `siteNamesPerson` refused any surname under three letters, so a site naming its PI in full could never confirm one.
 A two-letter surname now confirms when the given name sits next to it, with at most two initials between.
-- **1: an initial-only given name**, now matched as the initial next to the surname.
+- **1: an initial-only given name**, now matched as the initial, with its period, next to the surname.
 - **6: another person linked without being a lead.** The shipped rule contradicted on ANY person-shaped link other than the lead's, which included a members page, a section word (`collaborators`) and a social handle.
 A contradiction now needs a person-shaped slug that is either a namesake with a different given name, which is the collision the lane was built to find, or a person the page names next to a lead-role phrase (`slugNamesAnotherLead`).
 A bare `director` is not a lead-role phrase, because department pages name directors of undergraduate studies and of cores.

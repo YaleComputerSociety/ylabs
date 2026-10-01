@@ -960,7 +960,7 @@ Five rules earn their place, each because a simpler version was measured to be w
 - **Somebody else must be named as a LEAD, not merely named.** The shipped rule contradicted on any person-shaped link other than the lead's, so a members page, a section word, and a social handle each accused a correct lead; a hand-read of every live contradiction found 32 of 47 decidable verdicts wrong, and 24 of 28 on served rows with no confirmed lead (#3750).
 A contradiction now needs a person-shaped slug (`personNameTokensFromSlug`: two or more name tokens, no dot) that is a namesake with a different given name, or that the page names next to a lead-role phrase (`slugNamesAnotherLead`); a bare `director` does not count.
 A faculty research profile is never `CONTRADICTED`, because its lead is its subject and a site naming others means the website is wrong, not the lead.
-A two-letter surname confirms when written next to its given name, and an initial-only given name confirms as the initial next to the surname, because refusing both left a correct PI unconfirmable.
+A two-letter surname confirms when written next to its given name, and an initial-only given name confirms as the initial with its period next to the surname, because refusing both left a correct PI unconfirmable.
 Nothing reads `leadVerification`, by decision: `docs/decisions.md` (2026-10-01) records the precision and the condition for a first reader.
 
 Pace roughly 1.1s per host: 519 entities plus subpages took about 25 minutes against Yale hosts with no 429s.

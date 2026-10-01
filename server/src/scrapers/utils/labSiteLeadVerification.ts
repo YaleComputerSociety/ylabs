@@ -217,12 +217,15 @@ function givenInitialOnly(displayName: unknown): string {
  * often carries a name only in an `href` or an `aria-label`.
  */
 export function siteHaystack(html: string, visitedUrls: readonly string[] = []): string {
-  const stripped = String(html ?? '')
+  return ` ${flattenForNameMatch(`${pageText(html)} ${html} ${visitedUrls.join(' ')}`)} `;
+}
+
+function pageText(html: string): string {
+  return String(html ?? '')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<!--[\s\S]*?-->/g, ' ')
     .replace(/<[^>]+>/g, ' ');
-  return ` ${flattenForNameMatch(`${stripped} ${html} ${visitedUrls.join(' ')}`)} `;
 }
 
 /**
@@ -235,7 +238,6 @@ export function siteHaystack(html: string, visitedUrls: readonly string[] = []):
 export function siteNamesPerson(haystack: string, displayName: unknown): boolean {
   const given = givenNameCore(displayName);
   const surname = surnameCore(displayName);
-  if (surname.length >= 4 && !given) return siteNamesInitialAndSurname(haystack, displayName);
   if (given.length < 2 || surname.length < 2) return false;
   const shortSurname = surname.length < 3;
   const between = shortSurname ? '(?: [a-z]){0,2}' : '(?: [a-z0-9]{1,12}){0,3}';
@@ -247,16 +249,26 @@ export function siteNamesPerson(haystack: string, displayName: unknown): boolean
     `(?:^| )${escapeForRegExp(surname)} ${escapeForRegExp(given)}(?: |$)`,
   );
   if (reversed.test(haystack)) return true;
-  return given.length >= 3 && haystack.includes(`${given}${surname}`);
+  return !shortSurname && given.length >= 3 && haystack.includes(`${given}${surname}`);
 }
 
 const escapeForRegExp = (token: string) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-function siteNamesInitialAndSurname(haystack: string, displayName: unknown): boolean {
+/**
+ * Whether the page names a lead whose given name is only an initial. The initial
+ * must carry its period, read from the page text rather than the flattened
+ * haystack, because a bare letter before a word is ordinary prose: `A. Young` is
+ * a name and `a young investigator` is not.
+ */
+export function siteNamesInitialAndSurname(html: string, displayName: unknown): boolean {
   const initial = givenInitialOnly(displayName);
-  if (!initial) return false;
   const surname = surnameCore(displayName);
-  return new RegExp(`(?:^| )${initial} ${escapeForRegExp(surname)}(?: |$)`).test(haystack);
+  if (!initial || surname.length < 4) return false;
+  const text = pageText(html).normalize('NFKD').replace(/[̀-ͯ]/g, '');
+  return new RegExp(
+    `(?:^|[^a-z0-9])${initial}\\.\\s*${escapeForRegExp(surname)}(?![a-z0-9])`,
+    'i',
+  ).test(text);
 }
 
 /**
@@ -383,7 +395,16 @@ export function personNameTokensFromSlug(slug: string): string[] {
     .split(/[-_]+/)
     .filter(Boolean);
   if (tokens.length < 2 || tokens.some((token) => !/^[a-z]{2,}$/.test(token))) return [];
+  if (LEAD_ROLE_PHRASE.test(tokens.join(' '))) return [];
   return tokens;
+}
+
+function slugNamesTheLead(tokens: readonly string[], leadDisplayName: unknown): boolean {
+  if (!tokens.includes(surnameCore(leadDisplayName))) return false;
+  const given = givenNameCore(leadDisplayName);
+  if (given) return tokens.includes(given);
+  const initial = givenInitialOnly(leadDisplayName);
+  return Boolean(initial) && tokens[0].startsWith(initial);
 }
 
 /**
@@ -403,12 +424,9 @@ export function slugNamesAnotherLead(
   haystack: string,
 ): boolean {
   const tokens = personNameTokensFromSlug(slug);
-  if (!tokens.length) return false;
+  if (!tokens.length || slugNamesTheLead(tokens, leadDisplayName)) return false;
   const surname = surnameCore(leadDisplayName);
-  const given = givenNameCore(leadDisplayName);
-  if (surname.length >= 2 && tokens.includes(surname) && !(given && tokens.includes(given))) {
-    return true;
-  }
+  if (surname.length >= 2 && tokens.includes(surname)) return true;
   const first = escapeForRegExp(tokens[0]);
   const last = escapeForRegExp(tokens[tokens.length - 1]);
   const named = new RegExp(`(?:^| )${first}(?: [a-z0-9]{1,12}){0,3} ${last}(?= |$)`, 'g');
@@ -454,7 +472,10 @@ export function judgeLeadAgainstSite(
       lead.officialProfileUrls.find((url) => profileSlugFromUrl(url) === linkedSlug) || '';
     return { ...base, verdict: 'CONFIRMED', matchedBy: 'OFFICIAL_PROFILE_LINK', evidenceUrl };
   }
-  if (siteNamesPerson(haystack, lead.displayName)) {
+  if (
+    siteNamesPerson(haystack, lead.displayName) ||
+    siteNamesInitialAndSurname(reading.html, lead.displayName)
+  ) {
     return {
       ...base,
       verdict: 'CONFIRMED',

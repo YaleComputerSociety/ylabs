@@ -11,6 +11,7 @@ import {
   profileSlugFromUrl,
   rollUpVerificationState,
   siteHaystack,
+  siteNamesInitialAndSurname,
   siteNamesPerson,
   slugNamesAnotherLead,
   surnameCore,
@@ -125,15 +126,30 @@ describe('siteNamesPerson', () => {
     expect(siteNamesPerson(hay('<p>Lab head: Vo Vo</p>'), 'Vo Vo')).toBe(true);
   });
 
-  it('accepts a display name whose given name is only an initial', () => {
-    expect(siteNamesPerson(hay('<p>R. Quillon is professor of marketing.</p>'), 'R. Quillon')).toBe(
-      true,
-    );
-  });
-
   it('keeps a two-letter surname strict about what sits between the names', () => {
     expect(siteNamesPerson(hay('<p>Ana works with Dale Vo.</p>'), 'Ana Vo')).toBe(false);
     expect(siteNamesPerson(hay('<p>Dale Vo runs this lab.</p>'), 'Ana Vo')).toBe(false);
+  });
+
+  it('does not read a two-letter surname run into another word as the name', () => {
+    expect(siteNamesPerson(hay('<p>Field work in Panama.</p>'), 'Ana Ma')).toBe(false);
+  });
+});
+
+describe('siteNamesInitialAndSurname', () => {
+  it('accepts a display name whose given name is only an initial', () => {
+    expect(
+      siteNamesInitialAndSurname('<p>R. Quillon is professor of marketing.</p>', 'R. Quillon'),
+    ).toBe(true);
+    expect(
+      siteNamesInitialAndSurname('<p><strong>R.</strong> Quillon, PhD</p>', 'R. Quillon'),
+    ).toBe(true);
+  });
+
+  it('does not read a bare letter before an ordinary word as an initial', () => {
+    expect(siteNamesInitialAndSurname('<p>Support for a young investigator.</p>', 'A. Young')).toBe(
+      false,
+    );
   });
 });
 
@@ -141,6 +157,11 @@ describe('personNameTokensFromSlug', () => {
   it('reads the name parts of a person slug', () => {
     expect(personNameTokensFromSlug('dale-quill')).toEqual(['dale', 'quill']);
     expect(personNameTokensFromSlug('dale_quill93')).toEqual(['dale', 'quill']);
+  });
+
+  it('reads nothing from a role title', () => {
+    expect(personNameTokensFromSlug('principal-investigator')).toEqual([]);
+    expect(personNameTokensFromSlug('lab-director')).toEqual([]);
   });
 
   it('reads nothing from a single word, a handle, or a file name', () => {
@@ -165,6 +186,31 @@ describe('slugNamesAnotherLead', () => {
         hay('<h2>Principal Investigator</h2><p>Ada E. Brook, PhD</p>'),
       ),
     ).toBe(true);
+  });
+
+  it('does not count the lead linked by full name when the lead is shown by initial', () => {
+    expect(slugNamesAnotherLead('robin-quillon', 'R. Quillon', hay('<p>Members</p>'))).toBe(false);
+    expect(
+      slugNamesAnotherLead(
+        'robin-quillon',
+        'R. Quillon',
+        hay('<p>Robin Quillon, principal investigator</p>'),
+      ),
+    ).toBe(false);
+  });
+
+  it('still counts a namesake with a different initial', () => {
+    expect(slugNamesAnotherLead('dale-quillon', 'R. Quillon', hay('<p>Members</p>'))).toBe(true);
+  });
+
+  it('does not count a page linked by its role title', () => {
+    expect(
+      slugNamesAnotherLead(
+        'principal-investigator',
+        'Robin Quill',
+        hay('<a href="/people/principal-investigator">Principal Investigator</a>'),
+      ),
+    ).toBe(false);
   });
 
   it('does not count a member the page lists without a lead role', () => {
