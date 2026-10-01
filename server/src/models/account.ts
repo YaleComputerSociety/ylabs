@@ -15,9 +15,6 @@ export interface AccountProfile {
   userType?: string;
   title?: string;
   department?: string;
-  college?: string;
-  year?: string;
-  major?: string[];
 }
 
 export interface AccountRecord {
@@ -37,9 +34,6 @@ export const accountProfileSchema = new mongoose.Schema<AccountProfile>(
     userType: { type: String, trim: true, maxlength: 40 },
     title: { type: String, trim: true, maxlength: 240 },
     department: { type: String, trim: true, maxlength: 240 },
-    college: { type: String, trim: true, maxlength: 120 },
-    year: { type: String, trim: true, maxlength: 12 },
-    major: { type: [String], default: undefined },
   },
   {
     _id: false,

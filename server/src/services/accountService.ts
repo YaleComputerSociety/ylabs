@@ -11,6 +11,14 @@ export interface AccountLoginInput {
   profile?: AccountProfile;
 }
 
+/**
+ * Paths a login used to persist that nothing ever read (#4162). They are off the schema
+ * now, so a login that resolves a Yalies record replaces `profile` wholesale and sheds
+ * them; a login whose lookup was unavailable writes no profile at all, and unsets them
+ * explicitly so an account that keeps signing in stops carrying them either way.
+ */
+const RETIRED_PROFILE_PATHS = ['profile.college', 'profile.year', 'profile.major'];
+
 const sanitizeLoginProfile = (profile?: AccountProfile): AccountProfile | undefined => {
   if (!profile) return undefined;
   const entries = Object.entries(profile).filter(([, value]) =>
@@ -117,17 +125,27 @@ export const recordAccountLogin = async (input: AccountLoginInput): Promise<Acco
   }
 
   const profile = sanitizeLoginProfile(input.profile);
+  const unsetsRetiredProfilePaths = !profile;
   const account = await Account.findOneAndUpdate(
     { netid: normalizedNetid },
     {
       $set: { lastLoginAt: new Date(), ...(profile ? { profile } : {}) },
+      ...(unsetsRetiredProfilePaths
+        ? { $unset: Object.fromEntries(RETIRED_PROFILE_PATHS.map((path) => [path, ''])) }
+        : {}),
       $setOnInsert: {
         netid: normalizedNetid,
         email: normalizeLoginEmail(input.email, normalizedNetid),
         status: 'ACTIVE',
       },
     },
-    { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true },
+    {
+      new: true,
+      upsert: true,
+      setDefaultsOnInsert: true,
+      runValidators: true,
+      ...(unsetsRetiredProfilePaths ? { strict: false } : {}),
+    },
   ).lean();
 
   return toAccountView(account);

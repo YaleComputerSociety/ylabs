@@ -38,8 +38,10 @@ describe('lookupYalieByNetid', () => {
 
     expect(lookup).toMatchObject({
       kind: 'student',
-      identity: { userType: 'undergraduate', userConfirmed: true, year: 2028 },
+      identity: { userType: 'undergraduate', userConfirmed: true },
     });
+    expect(lookup.kind === 'student' && lookup.identity).not.toHaveProperty('year');
+    expect(lookup.kind === 'student' && lookup.identity).not.toHaveProperty('college');
   });
 
   it('reads a graduate school code as a graduate student', async () => {

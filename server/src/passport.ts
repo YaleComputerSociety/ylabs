@@ -469,9 +469,6 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
       firstName: yalie.fname,
       lastName: yalie.lname,
       userType: yalie.userType,
-      college: yalie.college,
-      year: yalie.year != null ? String(yalie.year) : undefined,
-      major: yalie.major,
     };
   } else if (lookup.kind === 'employee') {
     const employee = lookup.employee;

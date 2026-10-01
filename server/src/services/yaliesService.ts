@@ -90,11 +90,8 @@ export interface YaliesIdentity {
   fname: string;
   lname: string;
   email: string;
-  college: string;
-  year: string | number;
   userType: 'undergraduate' | 'graduate';
   userConfirmed: boolean;
-  major: string[];
 }
 
 export interface YaliesEmployee {
@@ -119,18 +116,20 @@ type YaliesRecord = Record<string, unknown>;
 
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
+/**
+ * The record's `college`, `year` and `major` are deliberately not carried out of here.
+ * Nothing reads them, and a login that copies them onto the account stores three more
+ * personal attributes against a netid for no product purpose (#4162). Enrolment is still
+ * classified from the raw record below, which needs `year` but does not keep it.
+ */
 function studentIdentity(record: YaliesRecord, netid: string): YaliesIdentity {
-  const major = record.major;
   return {
     netid,
     fname: text(record.first_name),
     lname: text(record.last_name),
     email: text(record.email),
-    college: text(record.college),
-    year: record.year as string | number,
     userType: record.school_code === 'YC' ? 'undergraduate' : 'graduate',
     userConfirmed: true,
-    major: Array.isArray(major) ? major.map(String) : major ? [String(major)] : [],
   };
 }
 
