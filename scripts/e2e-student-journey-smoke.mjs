@@ -95,13 +95,23 @@ const screenshot = async (name, targetPage = page) => {
 const bodyText = async (targetPage = page) =>
   targetPage.evaluate(() => document.body.innerText.replace(/\s+/g, ' ').trim());
 
-const failureContext = async () => {
+const failureContext = async (targetPage = page) => {
   try {
-    const url = page.url();
-    const preview = (await bodyText()).slice(0, 600);
+    const url = targetPage.url();
+    const preview = (await bodyText(targetPage)).slice(0, 600);
     return { url, preview };
   } catch {
     return {};
+  }
+};
+
+const withFailureContextOf = async (targetPage, fn) => {
+  try {
+    return await fn();
+  } catch (error) {
+    const failure = error instanceof Error ? error : new Error(String(error));
+    failure.failureContext = await failureContext(targetPage);
+    throw failure;
   }
 };
 
@@ -111,7 +121,7 @@ const step = async (name, fn) => {
     record(name, { status: 'pass' });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const context = await failureContext();
+    const context = error?.failureContext ?? (await failureContext());
     failures.push({ name, message, ...context });
     record(name, { status: 'fail', message, ...context });
   }
@@ -517,7 +527,6 @@ await step('shift-tabbing back through results never parks focus under the stick
 });
 
 const LAYOUT_SHIFT_BUDGET = 0.1;
-const LATE_SESSION_CHECK_MS = 500;
 const syntheticLayoutEntity = (index) => ({
   _id: `e2e-layout-${index}`,
   slug: `e2e-layout-fixture-${index}`,
@@ -534,11 +543,15 @@ const syntheticAdminSession = {
   user: { netId: 'e2eop1', userType: 'undergraduate', userConfirmed: true, isAdmin: true },
 };
 
-const measureBrowseLayoutShift = async (viewport) => {
+const assertLateAdminSessionKeepsBrowseStable = async (viewport) => {
   const shiftContext = await browser.newContext({ viewport, deviceScaleFactor: 1 });
+  let releaseSessionCheck;
+  const sessionCheckReleased = new Promise((resolve) => {
+    releaseSessionCheck = resolve;
+  });
   try {
     await shiftContext.route('**/api/check', async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, LATE_SESSION_CHECK_MS));
+      await sessionCheckReleased;
       await route.fulfill({ json: syntheticAdminSession });
     });
     await shiftContext.route('**/api/research/search', (route) =>
@@ -557,33 +570,58 @@ const measureBrowseLayoutShift = async (viewport) => {
     );
     await shiftContext.route('**/api/analytics/**', (route) => route.fulfill({ status: 204 }));
     const shiftPage = await shiftContext.newPage();
-    await shiftPage.addInitScript(() => {
-      window.__layoutShifts = [];
-      new PerformanceObserver((list) => {
-        for (const entry of list.getEntries()) {
-          if (entry.hadRecentInput) continue;
-          window.__layoutShifts.push({
-            value: entry.value,
-            sources: entry.sources.map((source) => {
-              const node = source.node;
-              const label = node?.getAttribute?.('aria-label') || node?.tagName?.toLowerCase();
-              return `${label ?? 'node'} moved ${Math.round(source.currentRect.y - source.previousRect.y)}px`;
-            }),
-          });
-        }
-      }).observe({ type: 'layout-shift', buffered: true });
+    await withFailureContextOf(shiftPage, async () => {
+      await shiftPage.addInitScript(() => {
+        window.__layoutShifts = [];
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            if (entry.hadRecentInput) continue;
+            window.__layoutShifts.push({
+              startTime: entry.startTime,
+              value: entry.value,
+              sources: entry.sources.map((source) => {
+                const node = source.node;
+                const label = node?.getAttribute?.('aria-label') || node?.tagName?.toLowerCase();
+                return `${label ?? 'node'} moved ${Math.round(source.currentRect.y - source.previousRect.y)}px`;
+              }),
+            });
+          }
+        }).observe({ type: 'layout-shift', buffered: true });
+      });
+      await shiftPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+      await shiftPage
+        .getByRole('link', { name: 'Layout Fixture 0' })
+        .first()
+        .waitFor({ timeout: 20000 });
+      await shiftPage.waitForTimeout(1000);
+      assert(
+        (await shiftPage.getByLabel('Show weakest profiles first').count()) === 0,
+        'The admin control rendered before the held session check was answered, so this case cannot measure a late session.',
+      );
+      const sessionAnsweredAt = await shiftPage.evaluate(() => performance.now());
+      releaseSessionCheck();
+      await shiftPage.getByLabel('Show weakest profiles first').waitFor({ timeout: 20000 });
+      await shiftPage.waitForTimeout(1000);
+      const shifts = await shiftPage.evaluate(
+        (since) => window.__layoutShifts.filter((shift) => shift.startTime >= since),
+        sessionAnsweredAt,
+      );
+      const total = shifts.reduce((sum, shift) => sum + shift.value, 0);
+      const largest = shifts.reduce(
+        (max, shift) => (!max || shift.value > max.value ? shift : max),
+        null,
+      );
+      record('browse layout shift with a late admin session', {
+        width: viewport.width,
+        cumulativeLayoutShift: Number(total.toFixed(4)),
+      });
+      assert(
+        total < LAYOUT_SHIFT_BUDGET,
+        `Browse at ${viewport.width}px shifted by ${total.toFixed(3)} (budget ${LAYOUT_SHIFT_BUDGET}) once a late session check reported an admin grant; largest shift ${largest?.value.toFixed(3)}: ${largest?.sources.join(', ')}.`,
+      );
     });
-    await shiftPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
-    await shiftPage
-      .getByRole('link', { name: 'Layout Fixture 0' })
-      .first()
-      .waitFor({ timeout: 20000 });
-    await shiftPage.getByLabel('Show weakest profiles first').waitFor({ timeout: 20000 });
-    await shiftPage.waitForTimeout(1000);
-    const shifts = await shiftPage.evaluate(() => window.__layoutShifts);
-    const total = shifts.reduce((sum, shift) => sum + shift.value, 0);
-    return { total, largest: shifts.reduce((max, shift) => (!max || shift.value > max.value ? shift : max), null) };
   } finally {
+    releaseSessionCheck();
     await shiftContext.close();
   }
 };
@@ -593,15 +631,7 @@ await step('an admin session answering late does not shift the browse page', asy
     { width: 1280, height: 900 },
     { width: 375, height: 900 },
   ]) {
-    const { total, largest } = await measureBrowseLayoutShift(viewport);
-    record('browse layout shift with a late admin session', {
-      width: viewport.width,
-      cumulativeLayoutShift: Number(total.toFixed(4)),
-    });
-    assert(
-      total < LAYOUT_SHIFT_BUDGET,
-      `Browse at ${viewport.width}px shifted by ${total.toFixed(3)} (budget ${LAYOUT_SHIFT_BUDGET}) when a late session check reported an admin grant; largest shift ${largest?.value.toFixed(3)}: ${largest?.sources.join(', ')}.`,
-    );
+    await assertLateAdminSessionKeepsBrowseStable(viewport);
   }
 });
 
