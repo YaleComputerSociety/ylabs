@@ -150,6 +150,38 @@ describe('full description adoption asks the serving check (#3437)', () => {
     expect(result.set.fullDescription).toBe(CAREER_BIOGRAPHY);
   });
 
+  it('judges a body against the stored topics, because topic canonicalization runs after it is chosen', () => {
+    const storedTopics = ['Artificial Intelligence', 'Epistemology'];
+    const body =
+      'Research on democratic theory, political epistemology, and the ethics and politics of artificial intelligence.';
+    const row = { ...entityDoc, researchAreas: storedTopics, fullDescription: body };
+    expect(servingBarAcceptsFullDescription(row, {}, body, '')).toBe(true);
+    expect(
+      servingBarAcceptsFullDescription(
+        row,
+        { researchAreas: ['Political Science', ...storedTopics] },
+        body,
+        '',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not rank research prose that opens on a title below a thinner body', async () => {
+    const titledResearch =
+      "Professor Scholar's research program spans the economics of early childhood, from randomized evaluations of preschool programs to structural models of how households invest in children over time.";
+    const resolverObs = [
+      observation(ORGANIZATION_GRAFT, 'synthetic-page-source', 0.82),
+      observation(titledResearch, 'synthetic-profile-source', 0.7),
+      observation(RESEARCH_BODY, 'synthetic-signal-source', 0.55),
+    ];
+    const result = await projectFromLog('researchEntity', {
+      ...input(resolverObs),
+      resolved: { fullDescription: resolvedField(ORGANIZATION_GRAFT, 0.82) },
+      entityDoc: { ...entityDoc, fullDescription: ORGANIZATION_GRAFT },
+    });
+    expect(result.set.fullDescription).toBe(titledResearch);
+  });
+
   it("refuses another organization's body that the served copy withholds on a person row", () => {
     expect(fullDescriptionQuality(ORGANIZATION_GRAFT).isUseful).toBe(true);
     expect(servingBarAcceptsFullDescription(entityDoc, {}, ORGANIZATION_GRAFT, '')).toBe(false);
