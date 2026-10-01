@@ -16,6 +16,7 @@ const row = (
   shortDescriptionUseful: true,
   leadSentenceStatesResearch: true,
   shortDescriptionIsAreaEchoOnly: false,
+  fullDescriptionIsBiography: false,
   nameIsGenericFacultyResearchTitle: false,
   publicDescriptionInvariantPasses: true,
   ...overrides,
@@ -37,6 +38,15 @@ describe('buildCorpusQualityReport', () => {
 
     expect(report.richness.hasResearchWebsite).toEqual({ n: 1, of: 3 });
     expect(report.description.leadSentenceStatesResearch).toEqual({ n: 3, of: 3 });
+  });
+
+  it('counts the served rows whose description is a biography fallback', () => {
+    const report = buildCorpusQualityReport({
+      facts: [row({ fullDescriptionIsBiography: true }), row(), row()],
+      corpus,
+    });
+
+    expect(report.description.fullDescriptionIsBiography).toEqual({ n: 1, of: 3 });
   });
 
   it('counts a row with neither a research home nor an area as a dead end', () => {

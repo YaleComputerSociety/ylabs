@@ -20,6 +20,7 @@ import {
   sanitizeResearchEntityShortDescription,
 } from './descriptionHygiene';
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
+import { isBiographyRatherThanResearch } from './biographyRatherThanResearch';
 import { CARD_SYNTHESIS_PROMPT, CARD_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
 
 export const CARD_SYNTHESIS_MODEL = 'gpt-5-mini';
@@ -585,6 +586,17 @@ export function gateAcceptedDerivedCardSubstitute(input: ServedCardBarInput): st
     deriveShortDescriptionFromFullDescription(full),
   );
   if (!derived || derived === cleaned) return '';
+  return servedCardClearsGateBar({ ...input, shortDescription: derived }) ? derived : '';
+}
+
+export function researchCardOverBiographyCard(input: ServedCardBarInput): string {
+  const cleaned = textValue(input.shortDescription);
+  if (!cleaned || !isBiographyRatherThanResearch(cleaned)) return '';
+  if (isProgramLikeResearchEntity({ kind: input.kind })) return '';
+  const derived = sanitizeResearchEntityShortDescription(
+    deriveShortDescriptionFromFullDescription(textValue(input.fullDescription)),
+  );
+  if (!derived || derived === cleaned || isBiographyRatherThanResearch(derived)) return '';
   return servedCardClearsGateBar({ ...input, shortDescription: derived }) ? derived : '';
 }
 

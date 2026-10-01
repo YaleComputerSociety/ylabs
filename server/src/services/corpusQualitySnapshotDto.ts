@@ -28,6 +28,7 @@ export interface CorpusQualitySnapshotDto {
     shortDescriptionUseful: CorpusQualityRatio;
     leadSentenceStatesResearch: CorpusQualityRatio;
     shortDescriptionIsAreaEchoOnly: CorpusQualityRatio;
+    fullDescriptionIsBiography: CorpusQualityRatio;
     nameIsGenericFacultyResearchTitle: CorpusQualityRatio;
   };
   integrity: {
@@ -72,6 +73,7 @@ const DESCRIPTION_KEYS = [
   'shortDescriptionUseful',
   'leadSentenceStatesResearch',
   'shortDescriptionIsAreaEchoOnly',
+  'fullDescriptionIsBiography',
   'nameIsGenericFacultyResearchTitle',
 ] as const;
 

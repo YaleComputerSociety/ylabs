@@ -14,7 +14,7 @@ Most of the panel is a single MongoDB aggregation on the request, so it says wha
 |---|---|---|
 | Coverage, by tier, by school | Live aggregation | Now |
 | Has a research website, Generic "Faculty Research" title | Live aggregation | Now |
-| Has topics, No website and no topics, Opens by stating the research, Card summary only echoes the topics, Public description invariant fails | Latest `corpus_quality_snapshots` row, tagged **measured** on screen | As of that measurement |
+| Has topics, No website and no topics, Opens by stating the research, Card summary only echoes the topics, Serves a biography as its description, Public description invariant fails | Latest `corpus_quality_snapshots` row, tagged **measured** on screen | As of that measurement |
 
 Three rows cannot be an aggregation: each needs the roster resolved and `buildResearchEntityPublicDescriptionRepresentation` built per entity, which is JavaScript rules over 2,839 lines and, measured on 2026-09-14, about **13 seconds** over the served corpus against about **150 ms** for the aggregation.
 Read that 13 seconds as a pre-#4093 upper bound rather than a current figure.

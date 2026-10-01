@@ -42,6 +42,7 @@ import {
 } from '../utils/researchEntityDescriptionText';
 import {
   gateAcceptedDerivedCardSubstitute,
+  researchCardOverBiographyCard,
   isUngroundedSynthesizedCard,
   researchAreasGroundedInFullDescription,
   resolveServedShortDescriptionOutcome,
@@ -205,6 +206,14 @@ export function groundedShortDescriptionString(
     kind: served.kind,
   });
   if (substitute) return substitute;
+  const researchCard = researchCardOverBiographyCard({
+    shortDescription,
+    fullDescription: fullValue,
+    researchAreas: served.researchAreas,
+    entityType,
+    kind: served.kind,
+  });
+  if (researchCard) return researchCard;
   if (isUngroundedSynthesizedCard({ card: shortDescription, body: fullValue })) {
     return surrenderingTheCardReachesTheBody(served, entityType) ? '' : shortDescription;
   }

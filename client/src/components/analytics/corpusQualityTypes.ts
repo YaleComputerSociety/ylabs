@@ -23,6 +23,7 @@ export interface CorpusQualitySnapshotRow {
     shortDescriptionUseful: CorpusQualityRatio;
     leadSentenceStatesResearch: CorpusQualityRatio;
     shortDescriptionIsAreaEchoOnly: CorpusQualityRatio;
+    fullDescriptionIsBiography: CorpusQualityRatio;
     nameIsGenericFacultyResearchTitle: CorpusQualityRatio;
   };
   integrity: {

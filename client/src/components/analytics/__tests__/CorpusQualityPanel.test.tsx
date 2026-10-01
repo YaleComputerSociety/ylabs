@@ -20,6 +20,7 @@ const measurement = (measuredAt: string, served: number): CorpusQualitySnapshotR
     shortDescriptionUseful: { n: 90, of: 100 },
     leadSentenceStatesResearch: { n: 70, of: 100 },
     shortDescriptionIsAreaEchoOnly: { n: 5, of: 100 },
+    fullDescriptionIsBiography: { n: 3, of: 100 },
     nameIsGenericFacultyResearchTitle: { n: 10, of: 100 },
   },
   integrity: { publicDescriptionInvariantFails: { n: 0, of: 100 } },
@@ -53,6 +54,7 @@ const response = (): CorpusQualityResponse => {
     snapshotOnlyMetrics: [
       'leadSentenceStatesResearch',
       'shortDescriptionIsAreaEchoOnly',
+      'fullDescriptionIsBiography',
       'publicDescriptionInvariantFails',
       'hasTopic',
       'topicTotal',
