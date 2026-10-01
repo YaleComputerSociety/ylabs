@@ -46,6 +46,7 @@ describe('purge-unread-directory-contact selection', () => {
     expect(UNREAD_DIRECTORY_CONTACT_SELECTORS).toEqual([
       { field: 'phone', sourceName: 'yale-directory' },
       { field: 'college', sourceName: 'yale-directory' },
+      { field: 'physicalLocation', sourceName: 'yale-directory-csv' },
     ]);
   });
 
