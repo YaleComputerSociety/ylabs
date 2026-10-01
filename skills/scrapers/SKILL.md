@@ -1149,6 +1149,7 @@ Capture it from a structured region before anything starts deleting bio observat
 
 `fullDescription` and `shortDescription` are coupled through the `winnerFullUseful` guard in `server/src/scrapers/entityMaterializer.ts`, and treating either in isolation leaves the other wrong: a stale short makes the guard reject every replacement full, so the ranked walk ends having written nothing distinct.
 Any rollback or replacement of one must revert or re-derive the other in the same operation, then re-materialize.
+The guard's body bar is the serving check itself (`servingBarAcceptsFullDescription`, #3437), so never restate the serve chain's sanitizers in the walk: call it, or the walk adopts a body the server then refuses.
 
 Attribution, not duplication, decides whether a pair is stable, which is why a source must never emit one string as both fields under two different attributions.
 The `studentReadyDescription` emit block in `sources/labMicrositeUndergradLLMExtractor.ts` pushes one string as `fullDescription` and the same string again as `shortDescription` when it is card-length; both pushes share one `...base`, so the two rows carry the same `sourceName` and `sourceUrl`, the materializer reads the projected short as self-derived from the full, the guard is skipped, and the row keeps serving.

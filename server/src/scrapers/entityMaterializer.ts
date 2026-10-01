@@ -86,7 +86,6 @@ import {
   ResolverObservation,
   ResolvedField,
 } from './confidenceResolver';
-import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import {
   MaterializationChunkPrefetch,
   type MaterializationReadSource,
@@ -164,6 +163,7 @@ import {
   sanitizeStoredCatalogDescription,
 } from '../utils/descriptionHygiene';
 import { cleanPublicProfileBio } from '../services/profileService';
+import { buildResearchEntityPublicDescriptionRepresentation } from '../services/researchEntityPublicDescription';
 import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -5523,6 +5523,7 @@ function adoptServableFullDescription(input: {
   manuallyLockedFields: string[];
   manualValues: Record<string, unknown>;
   materializationObs: MaterializerObservationLike[];
+  leadPersonName: string;
 }): number {
   const field = 'fullDescription';
   if (input.manuallyLockedFields.includes(field)) return 0;
@@ -5539,8 +5540,12 @@ function adoptServableFullDescription(input: {
   const servesAsDescription = (value: unknown): boolean => {
     const text = textValue(value);
     if (!text) return false;
-    const served = sanitizeServedResearchEntityCopyFields({ ...identity, fullDescription: text });
-    return textValue((served as { fullDescription?: unknown }).fullDescription).length > 0;
+    return servingBarAcceptsFullDescription(
+      entityDoc,
+      { ...set, kind: identity.kind },
+      text,
+      input.leadPersonName,
+    );
   };
 
   const servedValue = set[field] ?? entityDoc?.[field];
@@ -5555,26 +5560,27 @@ function adoptServableFullDescription(input: {
     .map((candidate) => ({
       candidate,
       provenance: fieldProvenanceForResolvedObservation(field, candidate, input.materializationObs),
+      // Through the projected-field sanitizer rather than `textValue` alone. An adopted
+      // candidate is a stored body like any other, and staging one raw is how a description
+      // reached the corpus still carrying its invisible format characters after #2874 had
+      // already handled the resolver's own winner (#3408). It is judged after sanitizing
+      // because that is the text the row would store (#3437).
+      materialized: sanitizeProjectedField(
+        input.entityType,
+        field,
+        textValue(candidate.value),
+        entityDoc?.[field],
+        { slug: entityDoc?.slug, name: identity.name, displayName: identity.displayName },
+      ),
     }))
     .find(
-      ({ candidate }) =>
-        textValue(candidate.value) !== textValue(servedValue) &&
-        servesAsDescription(candidate.value),
+      ({ materialized }) =>
+        textValue(materialized) !== textValue(servedValue) && servesAsDescription(materialized),
     );
 
   if (!replacement) return 0;
 
-  // Through the projected-field sanitizer rather than `textValue` alone. An adopted
-  // candidate is a stored body like any other, and staging one raw is how a description
-  // reached the corpus still carrying its invisible format characters after #2874 had
-  // already handled the resolver's own winner (#3408).
-  set[field] = sanitizeProjectedField(
-    input.entityType,
-    field,
-    textValue(replacement.candidate.value),
-    entityDoc?.[field],
-    { slug: entityDoc?.slug, name: identity.name, displayName: identity.displayName },
-  );
+  set[field] = replacement.materialized;
   confidenceByField[field] = replacement.candidate.confidence;
   if (replacement.provenance) set[`fieldProvenance.${field}`] = replacement.provenance;
   return 1;
@@ -5985,6 +5991,29 @@ export function descriptionSanitizerRejectedCandidateOverStoredProse(
   );
 }
 
+/**
+ * The serving check's own verdict on a candidate body, asked of the row as this pass
+ * would leave it. The adoption bar used to be `fullDescriptionQuality` alone, which is
+ * weaker than the serve chain's sanitizers, so a body could win the field and then be
+ * refused at serve time while a body that serves sat lower in the ranked list (#3437).
+ * Calling the serving function itself, rather than restating it, is what keeps the two
+ * bars one predicate.
+ */
+export function servingBarAcceptsFullDescription(
+  entityDoc: Record<string, unknown> | null | undefined,
+  projected: Record<string, unknown>,
+  candidateText: string,
+  leadPersonName: string,
+): boolean {
+  const projectedFields = Object.fromEntries(
+    Object.entries(projected).filter(([field]) => !field.includes('.')),
+  );
+  return buildResearchEntityPublicDescriptionRepresentation({
+    entity: { ...(entityDoc || {}), ...projectedFields, fullDescription: candidateText },
+    leadMemberNames: leadPersonName ? [leadPersonName] : [],
+  }).invariant.fullDescriptionUseful;
+}
+
 export async function projectFromLog(
   entityType: ObservedEntityType,
   input: ProjectFromLogInput,
@@ -6123,6 +6152,7 @@ export async function projectFromLog(
       manuallyLockedFields,
       manualValues,
       materializationObs,
+      leadPersonName: input.nameIdentityAuthority.leadPersonName,
     });
     fieldsWritten += await adoptDepartmentNamingCandidate({
       now: input.now,
@@ -6153,14 +6183,22 @@ export async function projectFromLog(
         set.shortDescription ?? entityDoc?.shortDescription,
       );
       const winnerFull = textValue(set.fullDescription);
-      const fullDescriptionIsAcceptable = (candidateText: string): boolean =>
+      const fullDescriptionReadsWell = (candidateText: string): boolean =>
         !!candidateText &&
         fullDescriptionQuality(candidateText).isUseful &&
         !isFullDescriptionRestatementOfShortDescription(
           candidateText,
           currentShortForFullDistinctness,
         );
-      const winnerFullAcceptable = fullDescriptionIsAcceptable(winnerFull);
+      const fullDescriptionServes = (candidateText: string): boolean =>
+        servingBarAcceptsFullDescription(
+          entityDoc,
+          set,
+          candidateText,
+          input.nameIdentityAuthority.leadPersonName,
+        );
+      const winnerFullReadsWell = fullDescriptionReadsWell(winnerFull);
+      const winnerFullAcceptable = winnerFullReadsWell && fullDescriptionServes(winnerFull);
       const winnerFullUseful =
         winnerFullAcceptable && !isPoorerThanCardDescription(winnerFull, cardShortForFullInversion);
       // Both reasons the winner can be rejected above are relationships to the
@@ -6187,6 +6225,7 @@ export async function projectFromLog(
           manualValues,
           descriptionEntityKind: descriptionEntityKindForResearchEntity(entityDoc),
         });
+        let readableFallback: { materialized: unknown; candidate: ResolvedField } | undefined;
         let fallback: { materialized: unknown; candidate: ResolvedField } | undefined;
         let preferred: { materialized: unknown; candidate: ResolvedField } | undefined;
         for (const candidate of rankedFull) {
@@ -6198,8 +6237,10 @@ export async function projectFromLog(
             sourceEntityIdentity,
           );
           const materializedText = textValue(materialized);
-          if (!fullDescriptionIsAcceptable(materializedText)) continue;
+          if (!fullDescriptionReadsWell(materializedText)) continue;
           if (candidateIsPersonBiography(materializedText)) continue;
+          if (!readableFallback) readableFallback = { materialized, candidate };
+          if (!fullDescriptionServes(materializedText)) continue;
           if (!fallback) fallback = { materialized, candidate };
           if (!isPoorerThanCardDescription(materializedText, cardShortForFullInversion)) {
             preferred = { materialized, candidate };
@@ -6209,7 +6250,17 @@ export async function projectFromLog(
         // An already-acceptable winner is only ever replaced by a candidate that
         // also fixes the inversion: falling back to the ranked runner-up when no
         // such candidate exists would demote a full the current rules accept.
-        const chosen = preferred ?? (winnerFullAcceptable ? undefined : fallback);
+        // A candidate the serving check refuses is adopted only where it was before
+        // that check joined the bar, and never over a winner the serving check accepts,
+        // so a row with no servable candidate keeps what it had (#3437).
+        const chosen =
+          preferred ??
+          (winnerFullAcceptable
+            ? undefined
+            : (fallback ??
+              (winnerFullReadsWell || fullDescriptionServes(winnerFull)
+                ? undefined
+                : readableFallback)));
         if (chosen && chosen.materialized !== set.fullDescription) {
           set.fullDescription = chosen.materialized;
           confidenceByField.fullDescription = chosen.candidate.confidence;
