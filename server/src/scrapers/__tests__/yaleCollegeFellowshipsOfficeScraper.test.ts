@@ -3130,6 +3130,19 @@ describe('YaleCollegeFellowshipsOfficeScraper eligibility, year of study and fun
     ]);
   });
 
+  it('never keeps an eligibility sentence whose contact link is labelled with a name', () => {
+    const [candidate] = parseFellowshipCatalogPage(
+      detailHtml(`
+        <p>Juniors are eligible to apply.</p>
+        <p>Eligible students are advised by <a href="mailto:fixture.adviser@example.edu">Fixture Adviser</a>.</p>
+      `),
+      detailPageUrl,
+      referenceDate,
+    );
+
+    expect(candidate.eligibility).toBe('Juniors are eligible to apply.');
+  });
+
   it('emits no eligibility or year of study when the page states neither', () => {
     const [candidate] = parseFellowshipCatalogPage(
       detailHtml('<p>The fellowship funds original summer research in the sciences.</p>'),
@@ -3158,6 +3171,10 @@ describe('YaleCollegeFellowshipsOfficeScraper eligibility, year of study and fun
     ).toEqual([]);
     expect(inferPurpose('Application Year: Junior Senior Can Support Graduate Study:')).toEqual([]);
     expect(inferPurpose('Supports one or two years of undergraduate study.')).toEqual(['Study']);
+    expect(
+      inferPurpose('The fellowship supports students in any field of study conducting research.'),
+    ).toEqual(['Research']);
+    expect(inferPurpose('The program funds research but not study.')).not.toContain('Study');
     expect(inferPurpose('Awards help defray travel costs for conference trips.')).toEqual([
       'Travel',
     ]);

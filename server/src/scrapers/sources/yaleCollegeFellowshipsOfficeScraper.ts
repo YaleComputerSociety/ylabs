@@ -592,7 +592,7 @@ const STUDY_PURPOSE_RE = new RegExp(
     '\\bstudy abroad\\b',
     '\\bcourse of study\\b',
     '\\b(?:supports?|funds?|covers?|pays?)(?: for)?(?: the)? (?:\\w+ ){0,2}(?:course ?work|tuition)\\b',
-    '(?<!can )\\b(?:supports?|funds?) (?:[\\w-]+ ){0,6}study\\b',
+    '(?<!can )\\b(?:supports?|funds?) (?:(?!(?:but|not)\\b)[\\w-]+ ){0,6}(?<!\\bof )study\\b',
     nearAwardInstrument('study'),
     forThePurposeOf('(?:study|course ?work)'),
   ].join('|'),
@@ -742,6 +742,10 @@ const TEXT_BLOCK_SELECTOR = 'p, li, dd, dt, td, th, h1, h2, h3, h4, h5, h6, div,
 
 function textBlocks(root: cheerio.Cheerio<any>): string[] {
   const copy = root.clone();
+  copy.find('a[href^="mailto:" i], a[href^="tel:" i]').each((_, anchor) => {
+    const link = copy.find(anchor);
+    link.text(`${link.text()} ${link.attr('href')}`);
+  });
   copy.find(TEXT_BLOCK_SELECTOR).before('\n').after('\n');
   return copy.text().split('\n').map(normalizeWhitespace).filter(Boolean);
 }

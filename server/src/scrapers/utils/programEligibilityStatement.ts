@@ -40,7 +40,7 @@ const APPLICANT =
   /\b(?:students?|undergraduates?|graduates|applicants?|candidates?|first[- ]years?|sophomores?|juniors?|seniors?|underclassmen|fellows?|scholars?|majors?|citizens(?:hip)?|residents|you)\b/i;
 
 const CONTACT_DATA =
-  /@|\bhttps?:\/\/|\bwww\.|\b(?:e-?mail|contact|phone|call|telephone)\b|\+?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}/i;
+  /@|\bhttps?:\/\/|\bwww\.|\b(?:e-?mail|contact|phone|call|telephone|reach out|get in touch|write to|(?:speak|talk) (?:with|to)|(?:meet|check in) with|consult|(?:in|en)quir(?:e|ies|y))\b|\+?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}/i;
 
 const SENTENCE_BOUNDARY =
   /(?<!\b(?:[A-Z]\.){2,}|\b(?:Dr|Mr|Mrs|Ms|Prof|St|No|vs)\.)(?<=[.!?])\s+(?=["“(*]*[A-Z])/;
