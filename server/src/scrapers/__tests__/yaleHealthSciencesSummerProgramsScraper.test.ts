@@ -132,6 +132,19 @@ describe('parseHealthSciencesProgramPage', () => {
     expect(candidate?.isAcceptingApplications).toBe(false);
   });
 
+  it('skips a deadline label whose own sentence says it has passed, even when words sit between them', () => {
+    const html = `
+      <main>
+        <h1>Fixture Developmental Science Summer Internship</h1>
+        <p>A summer research internship that places undergraduate students in Yale research groups.</p>
+        <p>The application deadline for the 2026 program has passed. The program runs June 1 to July 24.</p>
+      </main>
+    `;
+    const candidate = parseHealthSciencesProgramPage(html, surfUrl, 'Yale', referenceDate);
+    expect(candidate).toBeDefined();
+    expect(candidate?.deadline).toBeUndefined();
+  });
+
   it('still reads a later deadline after a passed-deadline notice', () => {
     const html = `
       <main>

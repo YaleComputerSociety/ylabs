@@ -558,7 +558,7 @@ function bestApplicationUrl($: cheerio.CheerioAPI, pageUrl: string): string | un
     }))
     .filter((link): link is { text: string; url: string } => Boolean(link.url));
   return links.find((link) =>
-    /\b(?:apply|application|forms?)\b|qualtrics|survey/i.test(`${link.text} ${link.url}`),
+    /apply|application|\bforms?\b|qualtrics|survey/i.test(`${link.text} ${link.url}`),
   )?.url;
 }
 

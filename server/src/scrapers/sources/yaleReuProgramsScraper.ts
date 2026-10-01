@@ -26,6 +26,7 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import {
   PROGRAM_PAGE_NON_PROSE_SELECTOR,
   isApplyLink,
+  nearestDeadlineText,
   programApplicationLinks,
   programPageDescription,
   programPageTitle,
@@ -72,9 +73,6 @@ export const NSF_REU_DIRECTORY_SEED_URLS = ['https://www.nsf.gov/crssprgm/reu/re
 
 const MAX_DISCOVERED_YALE_PROGRAM_PAGES = 60;
 const MAX_PROGRAM_LINKS = 8;
-
-const PASSED_DEADLINE_RE =
-  /^\s*(?:(?:has|have)\s+(?:now\s+)?passed|(?:is|are)\s+(?:now\s+)?closed)\b/i;
 
 const MONTHS: Record<string, number> = {
   january: 0,
@@ -221,25 +219,6 @@ function sectionTextForHeading($: cheerio.CheerioAPI, headingPattern: RegExp): s
   });
   const combined = normalizeWhitespace(sections.join(' '));
   return combined ? combined.slice(0, 1200) : undefined;
-}
-
-function nearestDeadlineText(text: string): string {
-  const normalized = normalizeWhitespace(text);
-  const monthPattern = Object.keys(MONTHS).join('|');
-  const namedDate = `(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(?:${monthPattern})\\s+\\d{1,2}(?!\\d)(?:,\\s*\\d{4})?`;
-  const numericDate = String.raw`\d{1,2}\/\d{1,2}\/\d{2,4}`;
-  const datePattern = new RegExp(`(?:${namedDate}|${numericDate})`, 'i');
-  const labels = normalized.matchAll(
-    /\b(?:application\s+)?deadline\b|\bapplications?\s+(?:are\s+)?due\b|\bapply\s+by\b|\bdue\s+by\b/gi,
-  );
-  for (const label of labels) {
-    const start = (label.index ?? 0) + label[0].length;
-    const after = normalized.slice(start, start + 120);
-    if (PASSED_DEADLINE_RE.test(after)) continue;
-    const date = datePattern.exec(after)?.[0];
-    if (date) return date;
-  }
-  return '';
 }
 
 export function parseDeadlineToUtcEndOfDay(
@@ -580,11 +559,6 @@ export class YaleReuProgramsScraper implements IScraper {
     const noteParts: string[] = [];
     if (failedUrls.length > 0) {
       noteParts.push(`Skipped ${failedUrls.length} REU program page(s) after fetch failure.`);
-    }
-    if (this.nsfDirectoryUrls.length > 0 && discoveredUrls.size === 0) {
-      noteParts.push(
-        'The NSF REU directory yielded no Yale site links, so discovery used the curated seeds only.',
-      );
     }
 
     return {

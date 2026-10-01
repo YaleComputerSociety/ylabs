@@ -21,6 +21,33 @@ const FAQ_OR_QUESTION_PARAGRAPH = /\?|\bfaqs?\b|\bfrequently asked questions\b/i
 
 const MIN_PROSE_DESCRIPTION_WORDS = 25;
 
+const MONTH_NAMES = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+];
+
+const DEADLINE_LABEL =
+  /\b(?:application\s+)?deadline\b|\bapplications?\s+(?:are\s+)?due\b|\bapply\s+by\b|\bdue\s+by\b/gi;
+
+const DEADLINE_DATE = new RegExp(
+  `(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(?:${MONTH_NAMES.join('|')})\\s+\\d{1,2}(?!\\d)(?:,\\s*\\d{4})?|\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})`,
+  'i',
+);
+
+const PASSED_OR_CLOSED = /\b(?:(?:has|have)\s+(?:now\s+)?passed|(?:is|are)\s+(?:now\s+)?closed)\b/i;
+
+const SENTENCE_END = /[.!?;](?:\s|$)/;
+
 function wordCount(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
 }
@@ -88,7 +115,7 @@ export function isApplyLink(url: string, label: string): boolean {
   return /\bapply|application|register\b/i.test(label) || /\bapply|application\b/i.test(url);
 }
 
-export function isApplicationFormUrl(value: string): boolean {
+function isApplicationFormUrl(value: string): boolean {
   let url: URL;
   try {
     url = new URL(value);
@@ -107,7 +134,7 @@ export function isApplicationFormUrl(value: string): boolean {
  * link is kept only when it says it is an application and lands on an
  * application-form host, so a department sidebar's admissions links stay out.
  */
-export function isSidebarApplicationFormLink(url: string, label: string): boolean {
+function isSidebarApplicationFormLink(url: string, label: string): boolean {
   return APPLICATION_LABEL.test(label) && isApplicationFormUrl(url);
 }
 
@@ -163,4 +190,22 @@ export function programPageDescription(
   const fromProse = prose ? sanitizeStoredCatalogDescription(prose, maxLength) : '';
   if (wordCount(fromProse) >= MIN_PROSE_DESCRIPTION_WORDS) return fromProse;
   return sanitizeStoredCatalogDescription(bodyText, maxLength) || fromProse || undefined;
+}
+
+/**
+ * A deadline label whose own clause says it has passed or is closed is skipped,
+ * because the date that follows it on these pages is the program's start date.
+ */
+export function nearestDeadlineText(text: string): string {
+  const normalized = normalizeWhitespace(text);
+  for (const label of normalized.matchAll(DEADLINE_LABEL)) {
+    const start = (label.index ?? 0) + label[0].length;
+    const after = normalized.slice(start, start + 120);
+    const clauseEnd = after.search(SENTENCE_END);
+    const clause = clauseEnd === -1 ? after : after.slice(0, clauseEnd);
+    if (PASSED_OR_CLOSED.test(clause)) continue;
+    const date = DEADLINE_DATE.exec(after)?.[0];
+    if (date) return date;
+  }
+  return '';
 }
