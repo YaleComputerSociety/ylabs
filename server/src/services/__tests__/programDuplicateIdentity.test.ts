@@ -24,6 +24,12 @@ describe('programFundTitleKey', () => {
     );
     expect(programFundTitleKey('Fixture’s Fund')).toBe(programFundTitleKey("Fixture's Fund"));
   });
+
+  it('keeps a title that has a word "and" apart from one that does not', () => {
+    expect(programFundTitleKey('Fixture Research and Travel Fund')).not.toBe(
+      programFundTitleKey('Fixture Research Travel Fund'),
+    );
+  });
 });
 
 describe('selectDuplicateProgramCopies', () => {

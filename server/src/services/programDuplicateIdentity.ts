@@ -30,11 +30,7 @@ export function programFundTitleKey(title: unknown): string {
     String(title || '')
       .replace(/&/g, ' and ')
       .replace(/['’]/g, ''),
-  )
-    .replace(/^the /, '')
-    .replace(/\band\b/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  ).replace(/^the /, '');
 }
 
 function descriptionPhrases(description: string): Set<string> {
