@@ -193,7 +193,7 @@ These enrich ranking, badges, and the card's optional sub-payloads, and may hide
 They are the set `STUDENT_READY_SOFT_SIGNAL_REASONS`, and they are never repair blockers either - including the `missing_*` ones that a blanket `missing_` prefix rule would otherwise sweep in.
 
 - `source_backed_description` - anti-fabrication signal; a coherent description is enough on its own, source-backing only strengthens ranking.
-- `biography_description_fallback` - the served body reads as a career biography (`isBiographyRatherThanResearch`), which per the 2026-10-01 decision is served only when no servable research prose exists for the row (#4288).
+- `biography_description_fallback` - the served body reads as a career biography (`isBiographyRatherThanResearch`), which per the 2026-10-01 decision is served only when the row has no servable research prose it could carry without losing its card (#4288, `docs/decisions.md`).
   It flags the row for a lane that can find research prose, and it never holds the row, because refusing a row's only servable body took it off the surface (#4280).
 - `concrete_next_step` / `missing_action_evidence` - reaching out is already the next step and the action.
 - `missing_facet_signal` - facets are query-scoped nice-to-haves, not a student-facing blocker.
