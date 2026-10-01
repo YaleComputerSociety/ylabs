@@ -4,6 +4,7 @@ import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import mongoose from 'mongoose';
 
@@ -16,6 +17,7 @@ const UNHASHED_IMAGE = 'developers/placeholder.png';
 const validateAccount = vi.fn(async () => null);
 
 let clientDistPath = '';
+const clientPublicPath = fileURLToPath(new URL('../../../client/public', import.meta.url));
 
 const signCookie = (name: string, value: string): string =>
   createHmac('sha1', STRONG_SESSION_SECRET)
@@ -56,10 +58,6 @@ describe('client static asset serving', () => {
     writeFileSync(path.join(clientDistPath, 'assets', UNHASHED_IMAGE), 'not-a-real-image');
     writeFileSync(path.join(clientDistPath, 'assets', `${HASHED_ENTRY_CHUNK}.map`), '{}');
     writeFileSync(path.join(clientDistPath, 'index.html'), '<!doctype html><title>t</title>');
-    writeFileSync(
-      path.join(clientDistPath, 'oauth-callback.html'),
-      '<!doctype html><title>t</title>',
-    );
   });
 
   afterAll(() => {
@@ -75,12 +73,12 @@ describe('client static asset serving', () => {
     process.env = { ...ORIGINAL_ENV };
   });
 
-  const prepareDeployedApp = () => {
+  const prepareDeployedApp = (servedClientPath = clientDistPath) => {
     vi.doMock('../middleware/clientStaticAssets', async (importOriginal) => {
       const actual = await importOriginal<typeof import('../middleware/clientStaticAssets')>();
       return {
         ...actual,
-        createClientStaticAssets: () => actual.createClientStaticAssets(clientDistPath),
+        createClientStaticAssets: () => actual.createClientStaticAssets(servedClientPath),
       };
     });
     vi.doMock('../services/accountService', async (importOriginal) => ({
@@ -208,18 +206,26 @@ describe('client static asset serving', () => {
     });
   });
 
-  it('serves the OAuth callback page with no-store', async () => {
-    prepareDeployedApp();
+  it('serves no OAuth callback page, so a token redirect lands on the static 404', async () => {
+    prepareDeployedApp(clientPublicPath);
 
     await withRunningApp(async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/oauth-callback.html`, {
+      const publicFile = await fetch(`${baseUrl}/robots.txt`, {
         headers: { 'x-forwarded-proto': 'https' },
       });
-      await response.text();
+      await publicFile.text();
+      expect(publicFile.status).toBe(200);
 
-      expect(response.status).toBe(200);
-      expect(response.headers.get('cache-control')).toContain('no-store');
-      expect(sessionCookiesOf(response)).toEqual([]);
+      for (const asset of ['/oauth-callback.html', '/oauth-callback.js']) {
+        const response = await fetch(`${baseUrl}${asset}`, {
+          headers: { 'x-forwarded-proto': 'https' },
+        });
+        const body = await response.text();
+
+        expect(response.status).toBe(404);
+        expect(body).toBe('Not found');
+        expect(sessionCookiesOf(response)).toEqual([]);
+      }
     });
   });
 });

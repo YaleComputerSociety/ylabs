@@ -100,7 +100,7 @@ describe('securityHeaders', () => {
       .find((directive) => directive.startsWith('connect-src '));
 
     expect(connectDirective).toBe(
-      "connect-src 'self' https://yalelabs.io https://www.yalelabs.io https://yalelabs.onrender.com https://ylabs-gr4v.onrender.com https://sheets.googleapis.com https://www.google-analytics.com https://analytics.google.com https://region1.google-analytics.com https://stats.g.doubleclick.net",
+      "connect-src 'self' https://yalelabs.io https://www.yalelabs.io https://yalelabs.onrender.com https://ylabs-gr4v.onrender.com https://www.google-analytics.com https://analytics.google.com https://region1.google-analytics.com https://stats.g.doubleclick.net",
     );
     expect(csp).not.toContain('http://localhost:4000');
     expect(connectDirective).not.toMatch(/\shttps:(?:\s|$)/);

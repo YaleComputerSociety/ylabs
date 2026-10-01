@@ -10,7 +10,6 @@ const CONNECT_SRC_ORIGINS = [
   'https://www.yalelabs.io',
   'https://yalelabs.onrender.com',
   'https://ylabs-gr4v.onrender.com',
-  'https://sheets.googleapis.com',
   'https://www.google-analytics.com',
   'https://analytics.google.com',
   'https://region1.google-analytics.com',
