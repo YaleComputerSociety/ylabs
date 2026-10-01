@@ -134,6 +134,8 @@ The comparison is chosen by entity type and field together, so a research-entity
 `yearOfStudy`, `termOfAward`, and `purpose` compare by set equality, with each acceptable set written as a JSON array string, so a superset does not match.
 A `deadline` label written `YYYY-MM-DD` matches an emitted instant that falls on that America/New_York calendar date, and one written `YYYY-MM-DDTHH:MM` matches only the same New York minute.
 `requiresMentorBeforeApply` and `entryMode` compare by exact value, and a fellowship `title` and `contactOffice` keep containment.
+A fellowship `eligibility` is a statement: it matches when it is a clause of an acceptable value at least 20 characters long, or contains one and runs at most 400 characters past it (#4233).
+Plain containment would credit a lane that stored a whole page as the statement, which is the failure a statement field invites.
 No lane emits `requiresMentorBeforeApply` or `entryMode`, because the materializer derives them with the program classifier.
 The scorecard therefore derives both per program from the replay's planned observations with `classificationFromObservedFacts` and scores that derivation, and a program with no planned observations derives nothing.
 

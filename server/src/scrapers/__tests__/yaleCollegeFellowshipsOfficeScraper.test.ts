@@ -1582,10 +1582,8 @@ describe('YaleCollegeFellowshipsOfficeScraper macmillan opportunity catalog (#67
     expect(prize?.summary).toContain('Supports travel to Latin America');
     expect(prize?.deadline?.toISOString()).toBe('2027-03-16T03:59:59.999Z');
     expect(prize?.reviewRequired).toBe(false);
-    expect(prize?.applicationLink).toBeUndefined();
-    expect(prize?.links).toEqual([
-      { label: 'Albert Bildner Travel Prize', url: 'https://bit.ly/3rzeOaf' },
-    ]);
+    expect(prize?.applicationLink).toBe('https://bit.ly/3rzeOaf');
+    expect(prize?.links).toEqual([{ label: 'Application', url: 'https://bit.ly/3rzeOaf' }]);
     expect(prize?.contactOffice).toBe('MacMillan Center');
 
     const grant = candidates.find((candidate) =>
@@ -3040,5 +3038,128 @@ describe('YaleCollegeFellowshipsOfficeScraper collective and advising pages (#41
 
     expect(read.refusedPage).toBeUndefined();
     expect(read.candidates).toHaveLength(1);
+  });
+});
+
+describe('YaleCollegeFellowshipsOfficeScraper eligibility, year of study and fund routes (#4233)', () => {
+  const macmillanPageUrl = 'https://macmillan.yale.edu/fellowships-and-grants';
+  const referenceDate = new Date('2026-08-22T00:00:00.000Z');
+
+  const opportunityRow = (href: string, title: string, summary: string) => `
+    <article class="node-teaser node-teaser--opportunity node-teaser--text">
+      <header class="node-teaser__header">
+        <div class="node-teaser__groups">MacMillan Center</div>
+        <div class="node-teaser__heading"><a href="${href}"><span>${title}</span></a></div>
+      </header>
+      <div class="node-teaser__content">
+        <div class="node-teaser__summary"><div class="ck-content"><p>${summary}</p></div></div>
+      </div>
+    </article>`;
+
+  it('reads a short-link heading on an opportunity row as the fund route, and a page link as none', () => {
+    const html = `<main>
+      ${opportunityRow(
+        'https://bit.ly/fixtureA',
+        'Fixture Travel Prize',
+        'Grants will be awarded to current juniors in Yale College for summer travel.',
+      )}
+      ${opportunityRow(
+        'https://macmillan.yale.edu/fixture-council/fixture-language-grant',
+        'Fixture Language Grant',
+        'Supports summer language study abroad.',
+      )}
+    </main>`;
+    const candidates = parseFellowshipCatalogPage(html, macmillanPageUrl, referenceDate);
+    const prize = candidates.find((candidate) => candidate.title === 'Fixture Travel Prize');
+    const grant = candidates.find((candidate) => candidate.title === 'Fixture Language Grant');
+
+    expect(prize?.applicationLink).toBe('https://bit.ly/fixtureA');
+    expect(prize?.eligibility).toBe(
+      'Grants will be awarded to current juniors in Yale College for summer travel.',
+    );
+    expect(prize?.yearOfStudy).toEqual(['Junior']);
+    expect(grant?.applicationLink).toBeUndefined();
+    expect(grant?.eligibility).toBeUndefined();
+    expect(grant?.yearOfStudy).toEqual([]);
+  });
+
+  const detailHtml = (body: string) => `
+    <main>
+      <h1>Fixture Summer Research Fellowship</h1>
+      <div class="field--name-body">${body}</div>
+    </main>`;
+
+  it('repairs a doubled scheme and is not blocked by an unhelpful link that labels itself an application', () => {
+    const [candidate] = parseFellowshipCatalogPage(
+      detailHtml(`
+        <p>The fellowship funds original summer research.</p>
+        <p><a href="https://science.yalecollege.yale.edu/">Application information</a></p>
+        <p>Apply in the <a href="http://https://bit.ly/fixtureB">Yale Student Grants &amp; Fellowships database</a>.</p>
+      `),
+      detailPageUrl,
+      referenceDate,
+    );
+
+    expect(candidate.applicationLink).toBe('https://bit.ly/fixtureB');
+  });
+
+  it('reads the eligibility statement and the years it admits from a detail page', () => {
+    const [candidate] = parseFellowshipCatalogPage(
+      detailHtml(`
+        <p>Stipend support is granted for ten weeks of full-time summer research.</p>
+        <h2>Eligibility</h2>
+        <p>Currently enrolled first-years proposing research in the sciences are eligible to apply.</p>
+        <p>In order to be eligible, Yale College students must be enrolled at the time of the award.</p>
+        <p>Eligible students with questions should email fixture.office@example.edu.</p>
+        <p>Associate Dean for Graduate Student Engagement</p>
+      `),
+      detailPageUrl,
+      referenceDate,
+    );
+
+    expect(candidate.eligibility).toBe(
+      'Currently enrolled first-years proposing research in the sciences are eligible to apply. In order to be eligible, Yale College students must be enrolled at the time of the award.',
+    );
+    expect(candidate.yearOfStudy).toEqual(['First-Year Student']);
+    const observations = candidateToObservations(candidate);
+    expect(observations.find((obs) => obs.field === 'eligibility')?.value).toBe(
+      candidate.eligibility,
+    );
+    expect(observations.find((obs) => obs.field === 'yearOfStudy')?.value).toEqual([
+      'First-Year Student',
+    ]);
+  });
+
+  it('emits no eligibility or year of study when the page states neither', () => {
+    const [candidate] = parseFellowshipCatalogPage(
+      detailHtml('<p>The fellowship funds original summer research in the sciences.</p>'),
+      detailPageUrl,
+      referenceDate,
+    );
+
+    expect(candidate.eligibility).toBeUndefined();
+    expect(candidate.yearOfStudy).toEqual([]);
+    const fields = candidateToObservations(candidate).map((obs) => obs.field);
+    expect(fields).not.toContain('eligibility');
+    expect(fields).not.toContain('yearOfStudy');
+  });
+
+  it('reads research and study only where the award funds them', () => {
+    expect(inferPurpose('Fixture Graduate Research Fellowships for the summer.')).toEqual([
+      'Research',
+    ]);
+    expect(inferPurpose('Funding for students engaged in dissertation research.')).toEqual([
+      'Research',
+    ]);
+    expect(
+      inferPurpose(
+        'Applicants should have laid a foundation through their coursework. The program covers room and board, as well as the course tuition.',
+      ),
+    ).toEqual([]);
+    expect(inferPurpose('Application Year: Junior Senior Can Support Graduate Study:')).toEqual([]);
+    expect(inferPurpose('Supports one or two years of undergraduate study.')).toEqual(['Study']);
+    expect(inferPurpose('Awards help defray travel costs for conference trips.')).toEqual([
+      'Travel',
+    ]);
   });
 });
