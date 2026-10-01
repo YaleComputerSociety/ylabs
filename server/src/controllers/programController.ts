@@ -8,7 +8,7 @@ import {
   getProgramFilterOptions as readProgramFilterOptions,
 } from '../services/programService';
 import { isStudentVisibilityTier, type StudentVisibilityTier } from '../models/studentVisibility';
-import { publicProgramForReader } from './programPayload';
+import { publicProgramForReader, withProgramAudience } from './programPayload';
 import { hasAdminAuthorityForUser } from '../services/adminGrantService';
 import { isNotFoundError } from '../utils/errors';
 
@@ -150,7 +150,7 @@ export const searchProgramsController = async (request: Request, response: Respo
     includeSuppressed: hasAdminAuthority && includeSuppressed === 'true',
   });
   const programs = hasAdminAuthority
-    ? result.programs
+    ? result.programs.map(withProgramAudience)
     : result.programs.map(publicProgramForReader);
 
   response.json({
@@ -171,7 +171,9 @@ export const getProgramById = async (request: Request, response: Response, next:
     const program = await readProgram(request.params.id, {
       includeNonPublic: hasAdminAuthority,
     });
-    const publicProgram = hasAdminAuthority ? program : publicProgramForReader(program);
+    const publicProgram = hasAdminAuthority
+      ? withProgramAudience(program)
+      : publicProgramForReader(program);
     response.status(200).json({ program: publicProgram, fellowship: publicProgram });
   } catch (error: any) {
     answerProgramError(error, response, next);

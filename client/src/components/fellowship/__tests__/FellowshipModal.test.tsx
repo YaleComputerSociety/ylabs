@@ -35,6 +35,7 @@ const fellowship: Fellowship = {
   requiresMentorBeforeApply: true,
   mentorMatching: false,
   undergraduateOnly: true,
+  audience: 'UNDERGRADUATE',
   yaleCollegeOnly: true,
   compensationSummary: 'Travel funding',
   hoursPerWeek: null,

@@ -9,6 +9,7 @@ import { humanizeProgramLinkLabel } from '../utils/programLinkLabel';
 import { publicHttpUrl } from '../utils/urlSafety';
 import { isUnhelpfulProgramUrl } from '../utils/researchHomeWebsiteUrl';
 import { classifyProgram, type ProgramClassificationInput } from '../services/programClassifier';
+import { programAudience } from '../services/programAudience';
 
 const MAX_PROGRAM_LINKS = 8;
 
@@ -128,6 +129,11 @@ const publicProgramSourceLinkHealth = (
   };
 };
 
+export const withProgramAudience = (program: any) =>
+  program && typeof program === 'object'
+    ? { ...program, audience: programAudience(program) }
+    : program;
+
 export const publicProgramForReader = (program: any) => {
   const id = serializedDocumentId(program._id) || serializedDocumentId(program.id) || '';
   return {
@@ -142,6 +148,7 @@ export const publicProgramForReader = (program: any) => {
     mentorMatching: program.mentorMatching,
     undergraduateOnly: program.undergraduateOnly,
     yaleCollegeOnly: program.yaleCollegeOnly,
+    audience: programAudience(program),
     compensationSummary: publicCompensationSummary(program.compensationSummary),
     hoursPerWeek: program.hoursPerWeek,
     programDates: publicProgramText(program.programDates),

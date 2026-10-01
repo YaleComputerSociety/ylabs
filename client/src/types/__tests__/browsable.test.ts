@@ -16,17 +16,23 @@ const fellowshipItem = (overrides: Partial<Fellowship> = {}): BrowsableItem => (
 
 describe('getItemTags fellowship audience', () => {
   it('labels graduate-only programs with a Graduate tag', () => {
-    const tags = getItemTags(fellowshipItem({ undergraduateOnly: false }));
+    const tags = getItemTags(fellowshipItem({ audience: 'GRADUATE' }));
     expect(tags.map((t) => t.label)).toContain('Graduate');
+  });
+
+  it('does not badge a program open to undergraduates and graduates as Graduate', () => {
+    expect(
+      getItemTags(fellowshipItem({ audience: 'UNDERGRADUATE_AND_GRADUATE' })).map((t) => t.label),
+    ).not.toContain('Graduate');
   });
 
   it('does not add a Graduate tag for undergraduate or unknown-audience programs', () => {
     expect(
-      getItemTags(fellowshipItem({ undergraduateOnly: true })).map((t) => t.label),
+      getItemTags(fellowshipItem({ audience: 'UNDERGRADUATE' })).map((t) => t.label),
     ).not.toContain('Graduate');
-    expect(
-      getItemTags(fellowshipItem({ undergraduateOnly: null })).map((t) => t.label),
-    ).not.toContain('Graduate');
+    expect(getItemTags(fellowshipItem({ audience: null })).map((t) => t.label)).not.toContain(
+      'Graduate',
+    );
   });
 
   it('collapses an entry-mode chip already implied by the student-facing category', () => {
@@ -50,7 +56,7 @@ describe('getItemTags fellowship audience', () => {
   it('keeps a Graduate chip when the category merely shares the substring', () => {
     const labels = getItemTags(
       fellowshipItem({
-        undergraduateOnly: false,
+        audience: 'GRADUATE',
         studentFacingCategory: 'Undergraduate research funding',
       }),
     ).map((t) => t.label);

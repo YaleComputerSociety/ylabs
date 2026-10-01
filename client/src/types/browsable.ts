@@ -101,7 +101,7 @@ export function getItemTags(item: BrowsableItem): TagInfo[] {
   const entryModeImpliedByCategory =
     !!entryModeNorm && !!categoryNorm && categoryNorm.includes(entryModeNorm);
   return dedupeTags([
-    ...(item.data.undergraduateOnly === false
+    ...(item.data.audience === 'GRADUATE'
       ? [
           {
             label: 'Graduate',

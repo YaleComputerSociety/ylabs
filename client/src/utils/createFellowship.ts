@@ -1,7 +1,10 @@
 /**
  * Fellowship creation API helper.
  */
-import { Fellowship } from '../types/types';
+import { Fellowship, PROGRAM_AUDIENCES, type ProgramAudience } from '../types/types';
+
+const programAudienceOf = (value: unknown): ProgramAudience | null =>
+  (PROGRAM_AUDIENCES as readonly unknown[]).includes(value) ? (value as ProgramAudience) : null;
 
 export function createFellowship(data: any): Fellowship {
   return {
@@ -15,6 +18,7 @@ export function createFellowship(data: any): Fellowship {
     mentorMatching: data.mentorMatching || false,
     undergraduateOnly: typeof data.undergraduateOnly === 'boolean' ? data.undergraduateOnly : null,
     yaleCollegeOnly: typeof data.yaleCollegeOnly === 'boolean' ? data.yaleCollegeOnly : null,
+    audience: programAudienceOf(data.audience),
     compensationSummary: data.compensationSummary || '',
     hoursPerWeek: typeof data.hoursPerWeek === 'number' ? data.hoursPerWeek : null,
     programDates: data.programDates || '',

@@ -11,6 +11,7 @@ import {
   formatFellowshipDate,
   getFellowshipApplicationStatus,
   getStructuredEligibilityDetails,
+  programAudienceLabel,
 } from '../../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
 import { buildSafeProgramLinks } from '../../utils/programLinks';
@@ -131,6 +132,7 @@ const FellowshipModal = ({
   const cycleStatus = getFellowshipCycleStatus(fellowship);
   const applicationStatus = getFellowshipApplicationStatus(fellowship);
   const structuredEligibilityDetails = getStructuredEligibilityDetails(fellowship);
+  const audienceLabel = programAudienceLabel(fellowship.audience);
   const mentorFirstAnswer = fellowship.requiresMentorBeforeApply
     ? 'Yes, secure a mentor before applying'
     : fellowship.mentorMatching
@@ -343,16 +345,10 @@ const FellowshipModal = ({
                           programKindLabel(fellowship.programKind)}
                       </p>
                     </div>
-                    {(fellowship.undergraduateOnly === false ||
-                      fellowship.undergraduateOnly === true ||
-                      fellowship.yaleCollegeOnly === true) && (
+                    {audienceLabel && (
                       <div>
                         <span className="text-xs text-muted">Audience</span>
-                        <p className="text-sm font-medium text-ink">
-                          {fellowship.undergraduateOnly === false
-                            ? 'Graduate students'
-                            : 'Undergraduate students'}
-                        </p>
+                        <p className="text-sm font-medium text-ink">{audienceLabel}</p>
                       </div>
                     )}
                     <div>
