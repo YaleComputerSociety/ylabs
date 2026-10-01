@@ -13,6 +13,14 @@ export type FellowshipSourceLinkHealth = {
   httpStatusCode?: number;
 };
 
+// Mirrors `programAudiences` in server/src/services/programAudience.ts; changing either requires updating the other.
+export const PROGRAM_AUDIENCES = [
+  'UNDERGRADUATE',
+  'UNDERGRADUATE_AND_GRADUATE',
+  'GRADUATE',
+] as const;
+export type ProgramAudience = (typeof PROGRAM_AUDIENCES)[number];
+
 export type Fellowship = {
   id: string;
   programCategory: string;
@@ -24,6 +32,7 @@ export type Fellowship = {
   mentorMatching: boolean;
   undergraduateOnly: boolean | null;
   yaleCollegeOnly: boolean | null;
+  audience: ProgramAudience | null;
   compensationSummary: string;
   hoursPerWeek: number | null;
   programDates: string;

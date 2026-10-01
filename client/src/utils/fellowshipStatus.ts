@@ -1,4 +1,4 @@
-import type { Fellowship } from '../types/types';
+import type { Fellowship, ProgramAudience } from '../types/types';
 
 export const CLOSING_SOON_DAYS = 30;
 
@@ -222,6 +222,21 @@ export const getFellowshipApplicationStatus = (
   };
 };
 
+const PROGRAM_AUDIENCE_LEVEL_LABELS: Record<ProgramAudience, string> = {
+  UNDERGRADUATE: 'Undergraduates only',
+  UNDERGRADUATE_AND_GRADUATE: 'Undergraduate and graduate students',
+  GRADUATE: 'Graduate students only',
+};
+
+const PROGRAM_AUDIENCE_LABELS: Record<ProgramAudience, string> = {
+  UNDERGRADUATE: 'Undergraduate students',
+  UNDERGRADUATE_AND_GRADUATE: 'Undergraduate and graduate students',
+  GRADUATE: 'Graduate students',
+};
+
+export const programAudienceLabel = (audience: ProgramAudience | null): string | null =>
+  audience ? PROGRAM_AUDIENCE_LABELS[audience] : null;
+
 export interface EligibilityDetail {
   label: string;
   value: string;
@@ -230,7 +245,7 @@ export interface EligibilityDetail {
 export const getStructuredEligibilityDetails = (
   fellowship: Pick<
     Fellowship,
-    | 'undergraduateOnly'
+    | 'audience'
     | 'yaleCollegeOnly'
     | 'yearOfStudy'
     | 'termOfAward'
@@ -241,12 +256,9 @@ export const getStructuredEligibilityDetails = (
 ): EligibilityDetail[] => {
   const details: EligibilityDetail[] = [];
 
-  if (fellowship.undergraduateOnly === true) {
-    details.push({ label: 'Level', value: 'Undergraduates only' });
-  } else if (fellowship.undergraduateOnly === false) {
-    details.push({ label: 'Level', value: 'Open beyond undergraduates' });
-  }
-  if (fellowship.yaleCollegeOnly === true) {
+  const level = fellowship.audience ? PROGRAM_AUDIENCE_LEVEL_LABELS[fellowship.audience] : null;
+  if (level) details.push({ label: 'Level', value: level });
+  if (fellowship.yaleCollegeOnly === true && fellowship.audience === 'UNDERGRADUATE') {
     details.push({ label: 'School', value: 'Yale College students only' });
   }
   if ((fellowship.yearOfStudy?.length || 0) > 0) {

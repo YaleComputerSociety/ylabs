@@ -33,6 +33,7 @@ import {
   hasRecordedClosureEvidence,
 } from '../utils/researchEntityYaleStatus';
 import { hasOrganizationalAlternateAccessPath } from '../utils/organizationalAccessPath';
+import { programAudience, programAudienceAdmitsUndergraduates } from './programAudience';
 
 export interface StudentVisibilityResult {
   tier: StudentVisibilityTier;
@@ -104,6 +105,7 @@ export interface ProgramStudentVisibilityInput extends Record<string, any> {
   links?: Array<{ url?: string }>;
   undergraduateOnly?: boolean;
   yaleCollegeOnly?: boolean;
+  yearOfStudy?: string[];
   programKind?: string;
   entryMode?: string;
   mentorMatching?: boolean;
@@ -1114,10 +1116,10 @@ export function computeProgramStudentVisibility(
   const sourceIsApplicationPortal =
     /^https:\/\/yale\.communityforce\.com\/Funds\/FundDetails\.aspx\?/i.test(sourceUrl);
   const isArchiveReview = category === 'Archive / review';
-  const graduateOnly = program.undergraduateOnly === false;
-  const undergraduateRelevant =
-    program.undergraduateOnly === true || program.yaleCollegeOnly === true;
-  const audienceKnown = undergraduateRelevant || graduateOnly;
+  const audience = programAudience(program);
+  const graduateOnly = audience === 'GRADUATE';
+  const undergraduateRelevant = programAudienceAdmitsUndergraduates(audience);
+  const audienceKnown = audience !== null;
   const formalizationOnly = isFormalizationOnlyProgram(program);
   const researchRelated = classifyProgramResearchRelevance(program).researchRelated;
   const descriptionState = programPublicDescriptionState(program);

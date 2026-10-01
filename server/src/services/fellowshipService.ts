@@ -17,6 +17,7 @@ import * as itemOps from './itemOperations';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
 import { clearedStudentVisibilityVerdict } from '../models/entityArchival';
 import { programRoleForKind } from './programClassifier';
+import { programAudience } from './programAudience';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { programLikeCardShortDescription } from '../utils/researchEntityDescriptionQuality';
@@ -412,6 +413,8 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
       publicFellowship[field] = publicFellowshipField(field, fellowship[field]);
     }
   }
+
+  publicFellowship.audience = programAudience(fellowship);
 
   const deadlinePast = deadlineIsPast(publicFellowship.deadline, now);
   if (publicFellowship.isAcceptingApplications === true && deadlinePast) {

@@ -18,6 +18,7 @@ const makeFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   requiresMentorBeforeApply: true,
   mentorMatching: false,
   undergraduateOnly: true,
+  audience: 'UNDERGRADUATE',
   yaleCollegeOnly: true,
   compensationSummary: '',
   hoursPerWeek: null,
@@ -237,6 +238,7 @@ describe('getStructuredEligibilityDetails', () => {
     const fellowship = makeFellowship({
       eligibility: '',
       undergraduateOnly: true,
+      audience: 'UNDERGRADUATE',
       yaleCollegeOnly: true,
       yearOfStudy: ['Sophomore', 'Junior'],
       termOfAward: ['Summer'],
@@ -258,6 +260,7 @@ describe('getStructuredEligibilityDetails', () => {
     const fellowship = makeFellowship({
       eligibility: '',
       undergraduateOnly: null,
+      audience: null,
       yaleCollegeOnly: null,
       yearOfStudy: [],
       termOfAward: [],
@@ -266,5 +269,23 @@ describe('getStructuredEligibilityDetails', () => {
       purpose: [],
     });
     expect(getStructuredEligibilityDetails(fellowship)).toEqual([]);
+  });
+
+  it('names a program open to undergraduates and graduates instead of calling it undergraduate-only', () => {
+    const fellowship = makeFellowship({
+      eligibility: '',
+      undergraduateOnly: true,
+      audience: 'UNDERGRADUATE_AND_GRADUATE',
+      yaleCollegeOnly: true,
+      yearOfStudy: ['Junior', 'PhD Pre-Candidacy'],
+      termOfAward: [],
+      citizenshipStatus: [],
+      globalRegions: [],
+      purpose: [],
+    });
+    expect(getStructuredEligibilityDetails(fellowship)).toEqual([
+      { label: 'Level', value: 'Undergraduate and graduate students' },
+      { label: 'Year of study', value: 'Junior, PhD Pre-Candidacy' },
+    ]);
   });
 });
