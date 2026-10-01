@@ -134,9 +134,12 @@ import {
 import { planFellowshipClassification } from './fellowshipClassificationDerivation';
 import {
   ENRICH_ONLY_FELLOWSHIP_SOURCES,
+  FUND_FACET_FIELDS,
+  YALE_FELLOWSHIP_DATABASE_SOURCE,
   fellowshipAbsenceClearWithheldBySourcePrecedence,
   fellowshipFieldsWithheldBySourcePrecedence,
 } from './fellowshipSourcePrecedence';
+import { fundKeysCitedByFellowship, preferFundFacetObservations } from './fellowshipFundFacets';
 import {
   fellowshipFieldsAssertedAbsent,
   planFellowshipAbsenceClears,
@@ -4338,6 +4341,30 @@ function observedOwningFellowshipLane(obs: any[]): string | null {
   return sourceName && !ENRICH_ONLY_FELLOWSHIP_SOURCES.has(sourceName) ? sourceName : null;
 }
 
+async function fundFacetObservationsCitedBy(
+  entityDoc: any,
+  prefetch?: MaterializationReadSource,
+): Promise<any[]> {
+  const fundKeys = fundKeysCitedByFellowship(entityDoc);
+  if (fundKeys.length === 0) return [];
+  const routedFundEvidence = routedObservationsForKeysAndIds('fellowship', fundKeys, [], prefetch);
+  const read =
+    routedFundEvidence ??
+    (await Observation.find({
+      entityType: 'fellowship',
+      ...materializationReadScopeFilter(),
+      entityKey: { $in: fundKeys },
+      sourceName: YALE_FELLOWSHIP_DATABASE_SOURCE,
+      field: { $in: [...FUND_FACET_FIELDS] },
+    }).lean());
+  const { kept } = partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds());
+  return kept.filter(
+    (observation: any) =>
+      observation.sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE &&
+      FUND_FACET_FIELDS.has(String(observation.field)),
+  );
+}
+
 async function findEntityDocByIdentifier(
   Model: mongoose.Model<any>,
   entityType: ObservedEntityType,
@@ -7621,11 +7648,20 @@ export async function materializeEntity(
     entityType === 'fellowship'
       ? fellowshipFieldsAssertedAbsent(obs)
       : new Map<string, Set<string>>();
+  const fellowshipEvidence =
+    entityType === 'fellowship'
+      ? preferFundFacetObservations(
+          obs,
+          await fundFacetObservationsCitedBy(entityDoc, options.chunkPrefetch),
+        )
+      : obs;
   const materializationObs = collapseLatestWins(
     withoutFellowshipFieldsAssertedAbsent(
       withoutWithdrawnUndergradEvidenceQuotes(
         withoutUnpairedProfileHomeIdentity(
-          obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o)),
+          fellowshipEvidence.filter(
+            (o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o),
+          ),
           entityDoc?.fieldValueRefusals,
         ),
         undergradEvidenceQuoteWithdrawnBy,

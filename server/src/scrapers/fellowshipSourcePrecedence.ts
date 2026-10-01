@@ -11,7 +11,8 @@
  *
  * So an enrich-only source owns only a row no other lane owns. On another lane's row it
  * writes no identity field and fills only fields the row lacks, except the application
- * window, where the fund page is Yale's own application system and so the authority.
+ * window and the fund's structured facets, where the fund page is Yale's own application
+ * system and so the authority.
  * The database is an official Yale source (owner decision, #4284), so on a row it owns
  * the fund page is the row's `sourceUrl`. Independently of ownership, a fund page never
  * replaces a program's own web page as `sourceUrl`: the page that describes the program
@@ -37,6 +38,16 @@ const APPLICATION_WINDOW_FIELDS: ReadonlySet<string> = new Set([
   'applicationOpenDate',
   'isAcceptingApplications',
   'reviewRequired',
+]);
+
+// The fund page states these as structured fields, so on another lane's row the fund is
+// their authority too, not an inference read from that lane's page wording (#4173).
+export const FUND_FACET_FIELDS: ReadonlySet<string> = new Set([
+  'purpose',
+  'termOfAward',
+  'yearOfStudy',
+  'citizenshipStatus',
+  'globalRegions',
 ]);
 
 function hasValue(value: unknown): boolean {
@@ -104,7 +115,11 @@ export function fellowshipFieldsWithheldBySourcePrecedence(input: {
       continue;
     }
     if (FELLOWSHIP_IDENTITY_FIELDS.has(field)) withheld.add(field);
-    else if (!APPLICATION_WINDOW_FIELDS.has(field) && hasValue(input.stored?.[field])) {
+    else if (
+      !APPLICATION_WINDOW_FIELDS.has(field) &&
+      !FUND_FACET_FIELDS.has(field) &&
+      hasValue(input.stored?.[field])
+    ) {
       withheld.add(field);
     }
   }
