@@ -71,7 +71,7 @@ describe('attributeProgramServedFields', () => {
     expect(outcomeFor(outcomes, 'isAcceptingApplications')).toEqual({
       field: 'isAcceptingApplications',
       status: 'attributed',
-      guard: 'deadlineIsPast',
+      guard: 'acceptingFromServedWindow',
     });
   });
 
@@ -113,8 +113,46 @@ describe('attributeProgramServedFields', () => {
     expect(outcomeFor(outcomes, 'isAcceptingApplications')).toEqual({
       field: 'isAcceptingApplications',
       status: 'attributed',
-      guard: 'deadlineIsPast',
+      guard: 'acceptingFromServedWindow',
     });
+  });
+
+  it('attributes a window that opened after the lane stored a closed flag (#4231)', () => {
+    const stored = {
+      ...recurringStoredRow,
+      isAcceptingApplications: false,
+      applicationOpenDate: new Date(servedAt.from.getTime() - 14 * 24 * 60 * 60 * 1000),
+      deadline: new Date(servedAt.from.getTime() + 30 * 24 * 60 * 60 * 1000),
+    };
+    const served = publicFellowshipForStudent(stored, servedAt.from);
+
+    expect(served.isAcceptingApplications).toBe(true);
+    expect(
+      outcomeFor(attributeProgramServedFields(stored, served, servedAt), 'isAcceptingApplications'),
+    ).toEqual({
+      field: 'isAcceptingApplications',
+      status: 'attributed',
+      guard: 'acceptingFromServedWindow',
+    });
+  });
+
+  it('flags an application status the served window does not produce (#4231)', () => {
+    const stored = {
+      ...recurringStoredRow,
+      isAcceptingApplications: false,
+      applicationOpenDate: new Date(servedAt.from.getTime() + 14 * 24 * 60 * 60 * 1000),
+      deadline: new Date(servedAt.from.getTime() + 60 * 24 * 60 * 60 * 1000),
+    };
+    expect(
+      outcomeFor(
+        attributeProgramServedFields(
+          stored,
+          { ...stored, isAcceptingApplications: true },
+          servedAt,
+        ),
+        'isAcceptingApplications',
+      ).status,
+    ).toBe('unexplained');
   });
 
   it('keeps an application open until the end of the New York day of a date-only deadline', () => {
