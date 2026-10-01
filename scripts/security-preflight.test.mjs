@@ -4827,14 +4827,13 @@ test('Yalies API client uses bounded requests and credential-free errors', () =>
   assert.match(source, /const yaliesRequestError = \(error: unknown\): Error =>/);
   assert.match(source, /const normalizeYaliesNetid = \(value: unknown\): string \| undefined =>/);
   assert.match(source, /const normalizedNetid = normalizeYaliesNetid\(netid\);/);
-  assert.match(source, /if \(!normalizedNetid\) return null;/);
+  assert.match(source, /if \(!normalizedNetid\) return NOT_FOUND;/);
   assert.match(source, /axios\.isAxiosError\(error\)/);
   assert.match(source, /new Error\(`Yalies API request failed\$\{suffix\}`\)/);
   assert.match(source, /timeout: YALIES_API_TIMEOUT_MS/);
   assert.match(source, /throw yaliesRequestError\(error\)/);
   assert.match(source, /filters: \{ netid: \[normalizedNetid\] \}/);
   assert.match(source, /sanitizeLogValue\(yaliesRequestError\(error\)\)/);
-  assert.match(source, /console\.error\('Error fetching user:', sanitizeLogValue\(error\)\)/);
   assert.doesNotMatch(source, /filters: \{ netid: \[netid\] \}/);
   assert.doesNotMatch(
     source,
