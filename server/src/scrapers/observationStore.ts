@@ -399,19 +399,37 @@ interface AppendContext {
 }
 
 /**
+ * An observation's entity identity as a string. A row read through `.lean()` carries
+ * `entityId` as an ObjectId, and an object used as a Map key equals only itself, so
+ * keying on it made every one of a row's own observations a separate nameless citer.
+ */
+const storedCiterKey = (row: { entityId?: unknown; entityKey?: unknown }): string =>
+  String(row.entityId ?? '') || String(row.entityKey ?? '');
+
+interface ForeignDescriptionCiters {
+  byUrl: Map<string, Map<string, string>>;
+  canonicalKey: (key: string) => string;
+}
+
+/**
  * For each cited URL in the batch that the ownership bar could apply to, the set of
  * entity keys that already hold a live description observation citing it.
  *
  * Keys rather than a count, so the caller can exclude the row being written without a
  * second read: re-asserting a page this row already cites must never look like a
  * foreign citer.
+ *
+ * Every key is canonicalized to the entity's id, because one row's observations carry
+ * either identity form (an id, or only a slug) and counting the two forms separately
+ * made a row a foreign citer of its own page.
  */
 async function loadForeignDescriptionCiters(
   inputs: readonly ObservationInput[],
-): Promise<Map<string, Map<string, string>>> {
+): Promise<ForeignDescriptionCiters> {
   const urls = ownershipGuardedCitedUrls(inputs);
   const byUrl = new Map<string, Map<string, string>>();
-  if (urls.length === 0) return byUrl;
+  const unresolved: ForeignDescriptionCiters = { byUrl, canonicalKey: (key) => key };
+  if (urls.length === 0) return unresolved;
 
   // Filtered by HOST and normalized in JS, never matched on the normalized string.
   // `normalizeEvidenceUrl` drops a query string, a trailing slash and a `www.`, so a
@@ -425,7 +443,7 @@ async function loadForeignDescriptionCiters(
       continue;
     }
   }
-  if (hosts.size === 0) return byUrl;
+  if (hosts.size === 0) return unresolved;
   const wanted = new Set(urls);
   const rows = await Observation.find(
     {
@@ -438,33 +456,41 @@ async function loadForeignDescriptionCiters(
     },
     { sourceUrl: 1, entityKey: 1, entityId: 1 },
   ).lean();
+  const rawKeysByUrl = new Map<string, Set<string>>();
   for (const row of rows as any[]) {
     const url = normalizeEvidenceUrl(row.sourceUrl);
     if (!wanted.has(url)) continue;
-    const key = entityKeyForProse(row);
+    const key = storedCiterKey(row);
     if (!key) continue;
-    const existing = byUrl.get(url) ?? new Map<string, string>();
-    if (!existing.has(key)) existing.set(key, '');
-    byUrl.set(url, existing);
+    rawKeysByUrl.set(url, (rawKeysByUrl.get(url) ?? new Set<string>()).add(key));
   }
+  if (rawKeysByUrl.size === 0) return unresolved;
 
   // Names, resolved once for the whole batch. Subject identity is decided from them, and
   // `citersAreOneSubject` treats a nameless citer as unprovable and therefore as a
   // different subject - so leaving these empty would refuse EVERY multi-citer
   // description rather than only the ones a page cannot be about (#3481).
-  const citerKeys = [...new Set([...byUrl.values()].flatMap((citers) => [...citers.keys()]))];
-  if (citerKeys.length > 0) {
-    const nameByKey = new Map<string, string>();
-    for (const row of await researchEntityNameRows(citerKeys)) {
-      const label = String((row as any).displayName || (row as any).name || '');
-      nameByKey.set(String((row as any).slug), label);
-      nameByKey.set(String((row as any)._id), label);
-    }
-    for (const citers of byUrl.values()) {
-      for (const key of [...citers.keys()]) citers.set(key, nameByKey.get(key) ?? '');
+  const ownKeys = inputs.map((input) => storedCiterKey(input)).filter(Boolean);
+  const lookupKeys = [
+    ...new Set([...[...rawKeysByUrl.values()].flatMap((keys) => [...keys]), ...ownKeys]),
+  ];
+  const nameByKey = new Map<string, string>();
+  const idByKey = new Map<string, string>();
+  for (const row of await researchEntityNameRows(lookupKeys)) {
+    const label = String((row as any).displayName || (row as any).name || '');
+    const id = String((row as any)._id);
+    for (const key of [String((row as any).slug), id]) {
+      nameByKey.set(key, label);
+      idByKey.set(key, id);
     }
   }
-  return byUrl;
+  const canonicalKey = (key: string) => idByKey.get(key) ?? key;
+  for (const [url, keys] of rawKeysByUrl) {
+    const citers = new Map<string, string>();
+    for (const key of keys) citers.set(canonicalKey(key), nameByKey.get(key) ?? '');
+    byUrl.set(url, citers);
+  }
+  return { byUrl, canonicalKey };
 }
 
 const writesOwnershipGuardedDescriptionField = (doc: { entityType: string; field: string }) =>
@@ -553,13 +579,13 @@ export async function appendObservations(
   //
   // One aggregation per batch, over the distinct cited URLs the bar could apply to, so
   // widening the guard costs a single read rather than one per observation.
-  const foreignCitersByUrl = await loadForeignDescriptionCiters(candidateInputs);
+  const foreignCiters = await loadForeignDescriptionCiters(candidateInputs);
   const ownershipRejected: ObservationInput[] = [];
   const ownedInputs: ObservationInput[] = [];
   for (const obs of candidateInputs) {
     const url = normalizeEvidenceUrl(obs.sourceUrl);
-    const citers = foreignCitersByUrl.get(url);
-    const own = entityKeyForProse(obs);
+    const citers = foreignCiters.byUrl.get(url);
+    const own = foreignCiters.canonicalKey(storedCiterKey(obs));
     const foreignNames = citers
       ? [...citers.entries()].filter(([key]) => key !== own).map(([, name]) => name)
       : [];
