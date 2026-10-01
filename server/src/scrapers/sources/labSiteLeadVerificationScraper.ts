@@ -39,6 +39,7 @@ export interface LabSiteVerificationCandidate {
   entityId: string;
   slug: string;
   website: string;
+  entityType?: string;
   leads: LabSiteLeadCandidate[];
 }
 
@@ -63,8 +64,14 @@ export async function readLabSiteVerificationCandidates(options: {
       $or: [{ website: /^https?:\/\//i }, { websiteUrl: /^https?:\/\//i }],
       ...(only.length ? { slug: { $in: only } } : {}),
     },
-    { _id: 1, slug: 1, website: 1, websiteUrl: 1 },
-  ).lean()) as Array<{ _id: unknown; slug?: string; website?: string; websiteUrl?: string }>;
+    { _id: 1, slug: 1, website: 1, websiteUrl: 1, entityType: 1 },
+  ).lean()) as Array<{
+    _id: unknown;
+    slug?: string;
+    website?: string;
+    websiteUrl?: string;
+    entityType?: string;
+  }>;
   if (!entities.length) return [];
 
   const entityIds = entities.map((entity) => entity._id);
@@ -119,7 +126,8 @@ export async function readLabSiteVerificationCandidates(options: {
     const slug = textValue(entity.slug);
     const website = firstHttpUrl(entity.website, entity.websiteUrl);
     if (!leads?.length || !slug || !website) continue;
-    candidates.push({ entityId, slug, website, leads });
+    const entityType = textValue(entity.entityType);
+    candidates.push({ entityId, slug, website, ...(entityType ? { entityType } : {}), leads });
   }
   candidates.sort((a, b) => a.slug.localeCompare(b.slug));
   return typeof options.limit === 'number' && options.limit > 0
@@ -249,6 +257,7 @@ export class LabSiteLeadVerificationScraper implements IScraper {
                 httpStatusCode: reading.httpStatusCode,
               },
               observedAt,
+              candidate.entityType,
             )
           : unreachableLabSiteVerification(candidate.website, observedAt, reading?.httpStatusCode);
       tally[verification.state] += 1;
