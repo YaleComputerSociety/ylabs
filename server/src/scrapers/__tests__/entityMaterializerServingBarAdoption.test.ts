@@ -137,6 +137,19 @@ describe('full description adoption asks the serving check (#3437)', () => {
     expect(result.set.fullDescription).toBe(RESEARCH_BODY);
   });
 
+  it('adopts a biography that serves when the incumbent serves nothing and no research prose does', async () => {
+    const resolverObs = [
+      observation(ORGANIZATION_GRAFT, 'synthetic-page-source', 0.82),
+      observation(CAREER_BIOGRAPHY, 'synthetic-profile-source', 0.7),
+    ];
+    const result = await projectFromLog('researchEntity', {
+      ...input(resolverObs),
+      resolved: { fullDescription: resolvedField(ORGANIZATION_GRAFT, 0.82) },
+      entityDoc: { ...entityDoc, fullDescription: ORGANIZATION_GRAFT },
+    });
+    expect(result.set.fullDescription).toBe(CAREER_BIOGRAPHY);
+  });
+
   it("refuses another organization's body that the served copy withholds on a person row", () => {
     expect(fullDescriptionQuality(ORGANIZATION_GRAFT).isUseful).toBe(true);
     expect(servingBarAcceptsFullDescription(entityDoc, {}, ORGANIZATION_GRAFT, '')).toBe(false);

@@ -5526,8 +5526,8 @@ function isPersonBiographyDescription(candidateText: string): boolean {
  * context, and every predicate it owns reads that text exactly like genuine person
  * research. Only the sanitizer, which knows whose row this is, can tell them apart.
  * So the winner is judged here against `servingBarAcceptsFullDescription` and, when it
- * cannot serve, the next ranked candidate that can, and is not a person biography the
- * walk would refuse, is adopted instead.
+ * cannot serve, the next ranked candidate that can is adopted instead, preferring one
+ * that is not a person biography.
  *
  * Mirrors `enforceResearchEntityNameAuthority`: same `resolveFieldRanked` walk, same
  * refusal discipline. The guard requires the incumbent to be unservable, so this can
@@ -5576,7 +5576,7 @@ function adoptServableFullDescription(input: {
   const servedValue = set[field] ?? entityDoc?.[field];
   if (!textValue(servedValue) || servesAsDescription(servedValue)) return 0;
 
-  const replacement = resolveFieldRanked(field, input.resolverObs, {
+  const servable = resolveFieldRanked(field, input.resolverObs, {
     now: input.now,
     manuallyLockedFields: input.manuallyLockedFields,
     manualValues: input.manualValues,
@@ -5598,12 +5598,15 @@ function adoptServableFullDescription(input: {
         { slug: entityDoc?.slug, name: identity.name, displayName: identity.displayName },
       ),
     }))
-    .find(
+    .filter(
       ({ materialized }) =>
-        textValue(materialized) !== textValue(servedValue) &&
-        !isPersonBiographyDescription(textValue(materialized)) &&
-        servesAsDescription(materialized),
+        textValue(materialized) !== textValue(servedValue) && servesAsDescription(materialized),
     );
+  // A biography is passed over for research prose, but it still outranks an incumbent that
+  // serves nothing: refusing it outright took a served row off the surface (#3437).
+  const replacement =
+    servable.find(({ materialized }) => !isPersonBiographyDescription(textValue(materialized))) ??
+    servable[0];
 
   if (!replacement) return 0;
 
