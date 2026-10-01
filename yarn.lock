@@ -2204,6 +2204,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "rdb@workspace:."
   dependencies:
+    "@eslint/js": "npm:9.39.4"
     concurrently: "npm:^9.2.1"
     dotenv: "npm:^16.3.1"
     eslint: "npm:^9.18.0"

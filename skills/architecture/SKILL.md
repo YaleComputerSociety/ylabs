@@ -51,7 +51,7 @@ Cycles are not the problem here and a cycle rule is not worth adding: the whole 
 | Search          | Meilisearch 0.57 with keyword search plus OpenAI `text-embedding-3-small` semantic search where appropriate |
 | Database        | MongoDB Atlas with separate Development, Beta, and Production databases                                     |
 | Package Manager | Yarn 4 via Corepack                                                                                         |
-| Tooling         | concurrently, nodemon, ts-node, cross-env                                                                   |
+| Tooling         | concurrently, tsx, cross-env                                                                                |
 
 ## Repo map
 
@@ -76,7 +76,7 @@ Cycles are not the problem here and a cycle rule is not worth adding: the whole 
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `yarn install:all`                                               | Install deps in root, server, and client.                                                    |
 | `yarn dev:client`                                                | Vite dev server on port 3000.                                                                |
-| `yarn dev:server`                                                | Express with nodemon on port 4000.                                                           |
+| `yarn dev:server`                                                | Express with tsx watch on port 4000.                                                         |
 | `yarn build`                                                     | Corepack enable, install all deps, build server, build client.                               |
 | `yarn start`                                                     | Run both servers in production.                                                              |
 | `yarn clean:all`                                                 | Remove all `node_modules` directories.                                                       |
