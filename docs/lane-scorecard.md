@@ -39,6 +39,7 @@ A benchmark captured before #3590 has no record of the renderer, so it replays a
 A fund first cited after capture is therefore a page the benchmark never froze, so it counts in `pagesMissed` rather than changing the score, and a benchmark scoped with `--only` holds its fund list still.
 `yale-college-fellowships-office` joined once its page fetch moved from a raw `axios.get` onto `fetchPageWithPolicy` (#4132), and a dry-run explain of the whole lane before and after that move planned the same 4,009 values.
 That lane reads no `--only`, so its capture freezes the whole crawl and the scope only bounds which programs may carry labels.
+It also reads the live corpus once a page is refused as not a program, to find the row that page minted and plan its `archived: true` retraction (#4110), so those retraction values move with the corpus rather than with the lane.
 
 A replay is compared only once it has resolved something from the frozen input.
 One that served none of its frozen pages, or a rendered lane that served none of its frozen renders, is reported as unscored rather than scored, because it measured a path that never engaged.

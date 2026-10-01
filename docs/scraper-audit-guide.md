@@ -360,6 +360,7 @@ Audit focus:
 - Stale Yale College financial-awards links for Mellon Mays must canonicalize to `https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program`.
 - CommunityForce links should be retained as `applicationLink`/`links` values, not fetched.
 - Generic fellowship-administration, advising, navigation, and alternative-funding pages should either be suppressed or kept in operator review rather than becoming student-ready program records.
+- Pages refused as non-programs are counted by shape in `metrics.fellowshipCatalog.nonProgramPagesRefused`, and the earlier rows they retire in `nonProgramRowsRetired`; the refusal rules live in this lane's entry in `skills/scrapers/SKILL.md`.
 - The source should emit program/funding evidence only; it must not create access signals or student-facing research opportunities from fellowship funding pages.
 - Classification is derived during materialization, so read a lane's planned classification with a dry-run materialize, and run `yarn --cwd server student-visibility:gate --collection=programs` in dry-run mode before applying any DB updates.
 

@@ -15,6 +15,9 @@ import {
   STUDENT_FACULTY_AWARDS_INDEX_URL,
   parseFundingYaleSitemapProgramUrls,
   inferPurpose,
+  readFellowshipCatalogPage,
+  rowsMintedByRefusedPages,
+  sourceKeyForTitle,
   YaleCollegeFellowshipsOfficeScraper,
 } from '../sources/yaleCollegeFellowshipsOfficeScraper';
 import { beginBenchmarkReplay, finishBenchmarkReplay } from '../snapshotBenchmarkMode';
@@ -433,7 +436,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     const relevantLinks = Array.from(
       { length: 20 },
       (_value, index) =>
-        `<a href="https://funding.yale.edu/find-funding/fixture-research-fellowship-${index}">Fixture Research Fellowship ${index}</a>`,
+        `<a href="https://funding.yale.edu/find-funding/fixture-research-fellowship/past-project-${index}">Past project ${index}</a>`,
     ).join('\n');
     const candidates = parseFellowshipCatalogPage(
       `
@@ -2252,7 +2255,7 @@ describe('YaleCollegeFellowshipsOfficeScraper MacMillan council grant pages (#15
     expect(candidate.applicationMaterials).toContain('Faculty mentor support');
   });
 
-  it('records a council grant hub page as facts and leaves it for archive review', () => {
+  it('records a thin single-program council page as facts and leaves it for archive review', () => {
     const [candidate] = parseFellowshipCatalogPage(
       southAsiaHtml,
       southAsiaUrl,
@@ -2652,5 +2655,390 @@ describe('YaleCollegeFellowshipsOfficeScraper reference date (#4132)', () => {
   it('gives the same planned deadline on every run pinned to the same moment', async () => {
     const pinned = new Date('2026-01-15T12:00:00Z');
     expect(await plannedDeadline(pinned)).toBe(await plannedDeadline(pinned));
+  });
+});
+
+describe('YaleCollegeFellowshipsOfficeScraper pages that are not programs (#4110)', () => {
+  const officePageUrl = 'https://funding.yale.edu/fixture-fellowships-roundup';
+  const councilPageUrl =
+    'https://macmillan.yale.edu/fixture-council/student-grants-and-fellowships';
+  const referenceDate = new Date('2026-01-01T00:00:00Z');
+  const fundRecord = (fixture: string) =>
+    `https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=${fixture}`;
+
+  const pageWith = (title: string, body: string, bodyClass = 'node-type-static-page') => `
+    <html><body class="html not-front ${bodyClass}">
+      <header><nav><a href="https://funding.yale.edu/find-funding">Find Funding</a></nav></header>
+      <div class="node node-static-page">
+        <h1>${title}</h1>
+        ${body}
+      </div>
+    </body></html>
+  `;
+
+  const programPage = pageWith(
+    'Fixture Summer Research Fellowship',
+    `
+      <p>The fellowship funds ten weeks of mentored summer research for Yale College students.</p>
+      <h2>Eligibility</h2>
+      <p>Open to first-year and sophomore students.</p>
+      <h2>The Award</h2>
+      <p>Fellows receive a stipend.</p>
+      <a href="${fundRecord('summer')}">Apply through the Student Grants Database</a>
+    `,
+  );
+
+  const runScraper = async (scraper: YaleCollegeFellowshipsOfficeScraper) => {
+    const emitted: any[] = [];
+    const result = await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (observations) => {
+        emitted.push(...(Array.isArray(observations) ? observations : [observations]));
+      },
+      log: vi.fn(),
+    });
+    return { emitted, result };
+  };
+
+  it('refuses a page the site publishes as a post rather than an award record', () => {
+    const read = readFellowshipCatalogPage(
+      pageWith(
+        'Fixture Fellowships Flyer Series',
+        '<p>Download this year of fellowship flyers.</p>',
+        'node-type-narrative',
+      ),
+      officePageUrl,
+      referenceDate,
+    );
+
+    expect(read.candidates).toEqual([]);
+    expect(read.refusedPage?.shape).toBe('cms-post');
+  });
+
+  it('refuses a roundup of award news that links dated articles', () => {
+    const articles = [1, 2, 3]
+      .map(
+        (day) =>
+          `<h3>Fixture scholars named</h3><a href="https://news.yale.edu/2026/04/0${day}/fixture-scholars-named">Read More</a>`,
+      )
+      .join('');
+    const read = readFellowshipCatalogPage(
+      pageWith('Fixture Fellowships in the News', articles),
+      officePageUrl,
+      referenceDate,
+    );
+
+    expect(read.candidates).toEqual([]);
+    expect(read.refusedPage?.shape).toBe('news-roundup');
+  });
+
+  it('refuses a page that lists several programs, each with its own fund record', () => {
+    const read = readFellowshipCatalogPage(
+      pageWith(
+        'Student Grants and Fellowships',
+        `
+          <p>The council offers the following grants.</p>
+          <a href="${fundRecord('language')}">Fixture Language Study Grant</a>
+          <a href="${fundRecord('travel')}">Fixture Travel Grant</a>
+        `,
+      ),
+      councilPageUrl,
+      referenceDate,
+    );
+
+    expect(read.candidates).toEqual([]);
+    expect(read.refusedPage?.shape).toBe('program-hub');
+  });
+
+  it('refuses a page whose sections each describe a different award', () => {
+    const read = readFellowshipCatalogPage(
+      pageWith(
+        'Undergraduate Grants and Prizes',
+        `
+          <h2>Fixture Senior Essay Prize</h2><p>Awarded for an exceptional senior essay.</p>
+          <h2>Fixture Travel Research Grant</h2><p>Supports summer research travel.</p>
+          <h2>Fixture Language Study Awards</h2><p>Supports summer language study.</p>
+        `,
+      ),
+      councilPageUrl,
+      referenceDate,
+    );
+
+    expect(read.candidates).toEqual([]);
+    expect(read.refusedPage?.shape).toBe('program-hub');
+  });
+
+  it('refuses a sign-in wall served in place of the page', () => {
+    const read = readFellowshipCatalogPage(
+      `
+        <html><body>
+          <h1>Central Authentication Service</h1>
+          <form action="login" method="post">
+            <input type="text" name="username" /><input type="password" name="password" />
+          </form>
+        </body></html>
+      `,
+      'https://funding.yale.edu/fellowship/fixture-government-fellowship',
+      referenceDate,
+    );
+
+    expect(read.candidates).toEqual([]);
+    expect(read.refusedPage?.shape).toBe('sign-in-wall');
+  });
+
+  it('keeps a program page whose sections describe the one award it offers', () => {
+    const read = readFellowshipCatalogPage(programPage, officePageUrl, referenceDate);
+
+    expect(read.refusedPage).toBeUndefined();
+    expect(read.candidates.map((candidate) => candidate.title)).toEqual([
+      'Fixture Summer Research Fellowship',
+    ]);
+  });
+
+  it.each([
+    [
+      'section headings that each mention the award',
+      `
+        <h2>Fellowship Benefits</h2><p>Fellows receive a stipend.</p>
+        <h2>Program Requirements</h2><p>Fellows present a poster.</p>
+        <h2>Grant Timeline</h2><p>Funds are disbursed in May.</p>
+      `,
+    ],
+    [
+      'links to dated stories about past fellows',
+      [1, 2, 3]
+        .map(
+          (day) =>
+            `<a href="https://news.yale.edu/2025/06/0${day}/fixture-past-fellow-story">Read about a past fellow</a>`,
+        )
+        .join(''),
+    ],
+    [
+      'a fund record per term and links to related programs',
+      `
+        <a href="${fundRecord('summer-term')}">Apply for the summer term</a>
+        <a href="${fundRecord('fall-term')}">Apply for the fall term</a>
+        <p>Related:</p>
+        <a href="https://funding.yale.edu/fellowships/fixture-alpha-fellowship">Fixture Alpha Fellowship</a>
+        <a href="https://funding.yale.edu/fellowships/fixture-beta-grant">Fixture Beta Grant</a>
+        <a href="https://funding.yale.edu/fellowships/fixture-gamma-prize">Fixture Gamma Prize</a>
+      `,
+    ],
+  ])('keeps a page titled as one award that carries %s', (_shape, body) => {
+    const read = readFellowshipCatalogPage(
+      pageWith(
+        'Fixture Summer Research Fellowship',
+        `<p>Ten weeks of mentored research.</p>${body}`,
+      ),
+      officePageUrl,
+      referenceDate,
+    );
+
+    expect(read.refusedPage).toBeUndefined();
+    expect(read.candidates.map((candidate) => candidate.title)).toEqual([
+      'Fixture Summer Research Fellowship',
+    ]);
+  });
+
+  it('keeps a program page that shows a news teaser in its sidebar', () => {
+    const html = programPage.replace(
+      '</body>',
+      `<aside class="layout-sidebar"><article class="node node--type-news node--view-mode-teaser">
+        <a href="https://funding.yale.edu/news/fixture-update">Fixture update</a>
+      </article></aside></body>`,
+    );
+    const read = readFellowshipCatalogPage(html, officePageUrl, referenceDate);
+
+    expect(read.refusedPage).toBeUndefined();
+    expect(read.candidates.map((candidate) => candidate.title)).toEqual([
+      'Fixture Summer Research Fellowship',
+    ]);
+  });
+
+  it('still reads a catalog page that lists many fund records as a catalog', () => {
+    const rows = ['Fixture Alpha Research Fellowship', 'Fixture Beta Travel Grant']
+      .map(
+        (title, index) =>
+          `<li><a href="${fundRecord(`catalog-${index}`)}">${title}</a> Deadline: March 1, 2026</li>`,
+      )
+      .join('');
+    const read = readFellowshipCatalogPage(
+      pageWith('Yale Fellowships offered through the Office of Fellowships', `<ul>${rows}</ul>`),
+      fundingPageUrl,
+      referenceDate,
+    );
+
+    expect(read.refusedPage).toBeUndefined();
+    expect(read.candidates.map((candidate) => candidate.title).sort()).toEqual([
+      'Fixture Alpha Research Fellowship',
+      'Fixture Beta Travel Grant',
+    ]);
+  });
+
+  it('matches only the row a refused page minted for itself, never a program it cites', () => {
+    const refused = {
+      url: councilPageUrl,
+      shape: 'program-hub' as const,
+      sourceKey: sourceKeyForTitle('Student Grants and Fellowships'),
+      title: 'Student Grants and Fellowships',
+    };
+    const selfRow = {
+      sourceKey: refused.sourceKey,
+      title: 'Student Grants and Fellowships',
+      sourceUrl: councilPageUrl,
+    };
+    const listedRow = {
+      sourceKey: sourceKeyForTitle('Fixture Travel Grant'),
+      title: 'Fixture Travel Grant',
+      sourceUrl: councilPageUrl,
+    };
+    const sameTitleElsewhere = {
+      sourceKey: 'yale-college-fellowships-office:other',
+      title: 'Student Grants and Fellowships',
+      sourceUrl: 'https://macmillan.yale.edu/other-council/student-grants-and-fellowships',
+    };
+
+    const matches = rowsMintedByRefusedPages(
+      [selfRow, listedRow, sameTitleElsewhere],
+      [refused],
+      new Set(),
+    );
+
+    expect(matches.map((match) => match.row.sourceKey)).toEqual([refused.sourceKey]);
+    expect(rowsMintedByRefusedPages([selfRow], [refused], new Set([refused.sourceKey]))).toEqual(
+      [],
+    );
+  });
+
+  it('retires the row a refused page minted, and a re-run re-derives the same answer', async () => {
+    const newsHtml = pageWith(
+      'Fixture Fellowships in the News',
+      [1, 2, 3]
+        .map(
+          (day) =>
+            `<a href="https://news.yale.edu/2026/05/0${day}/fixture-award-news">Read More</a>`,
+        )
+        .join(''),
+    );
+    const programUrl = 'https://funding.yale.edu/fellowships/fixture-summer-research-fellowship';
+    const newsKey = sourceKeyForTitle('Fixture Fellowships in the News');
+    const programKey = sourceKeyForTitle('Fixture Summer Research Fellowship');
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [officePageUrl, programUrl],
+      sitemapUrls: [],
+      fetchPage: async (url: string) => {
+        if (url === officePageUrl) return newsHtml;
+        if (url === programUrl) return programPage;
+        throw new Error(`unexpected fetch ${url}`);
+      },
+      loadOwnedRows: async () => [
+        { sourceKey: newsKey, title: 'Fixture Fellowships in the News', sourceUrl: officePageUrl },
+        {
+          sourceKey: programKey,
+          title: 'Fixture Summer Research Fellowship',
+          sourceUrl: programUrl,
+        },
+      ],
+    });
+
+    for (const { emitted, result } of [await runScraper(scraper), await runScraper(scraper)]) {
+      const archived = emitted.filter((obs) => obs.field === 'archived');
+      expect(archived).toHaveLength(2);
+      expect(archived).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ entityKey: newsKey, value: true, sourceUrl: officePageUrl }),
+          expect.objectContaining({ entityKey: programKey, value: false }),
+        ]),
+      );
+      expect(emitted.some((obs) => obs.entityKey === newsKey && obs.field !== 'archived')).toBe(
+        false,
+      );
+      expect(result.metrics?.fellowshipCatalog?.nonProgramRowsRetired).toBe(1);
+      expect(result.metrics?.fellowshipCatalog?.nonProgramPagesRefused).toEqual({
+        'news-roundup': 1,
+      });
+    }
+  });
+
+  it('does not read the stored rows when no page was refused', async () => {
+    const loadOwnedRows = vi.fn(async () => []);
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: ['https://funding.yale.edu/fellowships/fixture-summer-research-fellowship'],
+      sitemapUrls: [],
+      fetchPage: async () => programPage,
+      loadOwnedRows,
+    });
+
+    await runScraper(scraper);
+
+    expect(loadOwnedRows).not.toHaveBeenCalled();
+  });
+});
+
+describe('YaleCollegeFellowshipsOfficeScraper collective and advising pages (#4110)', () => {
+  const referenceDate = new Date('2026-01-01T00:00:00Z');
+  const page = (title: string, body: string, contentType: string) => `
+    <html><body class="html not-front node-type-${contentType}">
+      <div class="node node-${contentType}">
+        <h1>${title}</h1>
+        ${body}
+      </div>
+    </body></html>
+  `;
+
+  it('refuses a collective award title whose sections each name a different award', () => {
+    const read = readFellowshipCatalogPage(
+      page(
+        'Fixture Teaching Prizes',
+        `
+          <h2>The Fixture Alpha Prize for Teaching Excellence</h2><p>Awarded each spring.</p>
+          <h2>The Fixture Beta Prize</h2><p>Awarded each spring.</p>
+          <h2>The Fixture Gamma Award</h2><p>Awarded each spring.</p>
+        `,
+        'page',
+      ),
+      'https://college.yale.edu/life-at-yale/student-faculty-awards/fixture-teaching-prizes',
+      referenceDate,
+    );
+
+    expect(read.candidates).toEqual([]);
+    expect(read.refusedPage?.shape).toBe('program-hub');
+  });
+
+  it('refuses a generic site page whose title names no award', () => {
+    const read = readFellowshipCatalogPage(
+      page(
+        'Fixture Notes on Letters of Reference',
+        '<p>Guidance for recommenders writing for the campus endorsement process.</p>',
+        'static-page',
+      ),
+      'https://funding.yale.edu/fellowships/fixture-notes-letters',
+      referenceDate,
+    );
+
+    expect(read.candidates).toEqual([]);
+    expect(read.refusedPage?.shape).toBe('advising-page');
+  });
+
+  it.each([
+    ['a generic site page titled as an award', 'Fixture Experience Grant (FEG)', 'static-page'],
+    [
+      'a dedicated award record whose title names no award noun',
+      'Fixture in Asia',
+      'external-award',
+    ],
+  ])('keeps %s', (_case, title, contentType) => {
+    const read = readFellowshipCatalogPage(
+      page(title, '<p>Funds a summer of independent work for eligible students.</p>', contentType),
+      'https://funding.yale.edu/fellowships/fixture-award-page',
+      referenceDate,
+    );
+
+    expect(read.refusedPage).toBeUndefined();
+    expect(read.candidates).toHaveLength(1);
   });
 });
