@@ -228,6 +228,79 @@ describe('classifyProgramResearchRelevance', () => {
       ).toBe(false);
     });
 
+    it('does not let a sentence that disclaims research rescue a non-research facet', () => {
+      const practicum = {
+        title: 'Fixture Practicum Fellowship',
+        purpose: ['Study'],
+        description: 'Supports students pursuing in-person internships and practicums.',
+        eligibility:
+          'Although research may be part of an internship, the fund is not meant to support independent or archival research projects.',
+      };
+      expect(classifyProgramResearchRelevance(practicum)).toMatchObject({
+        researchRelated: false,
+        reasons: expect.arrayContaining(['purpose_not_research']),
+      });
+      expect(
+        related({
+          ...practicum,
+          eligibility: 'The fund is meant to support independent or archival research projects.',
+        }),
+      ).toBe(true);
+      expect(
+        related({
+          title: 'Fixture National Scholarship',
+          purpose: ['Study'],
+          description: 'Not limited to one major. For students intending to pursue research careers.',
+        }),
+      ).toBe(true);
+    });
+
+    it('treats a facet that names only language study like a language-study title', () => {
+      const languageProgram = {
+        title: 'Fixture Fields Program',
+        programKind: 'TRAVEL_RESEARCH_GRANT',
+        purpose: ['Language Study'],
+        summary: 'Advanced discipline-specific language study that can support research.',
+      };
+      expect(classifyProgramResearchRelevance(languageProgram)).toMatchObject({
+        researchRelated: false,
+        reasons: expect.arrayContaining(['language_study_purpose']),
+      });
+      expect(related({ ...languageProgram, purpose: ['Language Study', 'Research'] })).toBe(true);
+      expect(related({ ...languageProgram, programKind: 'SENIOR_THESIS_FUNDING' })).toBe(true);
+    });
+
+    it('does not let a kind derived from travel wording exempt a non-research title', () => {
+      expect(
+        related({
+          title: 'Fixture Academic Year Fellowships for Language Study',
+          programKind: 'TRAVEL_RESEARCH_GRANT',
+          purpose: ['Study Abroad'],
+          description: 'Fellowships for students whose research plans require a language.',
+        }),
+      ).toBe(false);
+    });
+
+    it('needs research wording behind a Research purpose that a lane inferred from prose', () => {
+      const prize = {
+        title: 'Fixture Leadership Prize',
+        sourceName: 'yale-college-fellowships-office',
+        programKind: 'TRAVEL_RESEARCH_GRANT',
+        studentFacingCategory: 'Research travel funding',
+        purpose: ['Research', 'Study', 'Travel', 'Service'],
+        description: 'Awarded to graduating seniors for exemplary leadership on campus.',
+      };
+      expect(classifyProgramResearchRelevance(prize)).toMatchObject({
+        researchRelated: false,
+        reasons: expect.arrayContaining(['inferred_research_purpose_unbacked']),
+      });
+      expect(
+        related({ ...prize, description: 'Supports a summer of independent research abroad.' }),
+      ).toBe(true);
+      expect(related({ ...prize, description: '' })).toBe(true);
+      expect(related({ ...prize, sourceName: 'student-grants-database' })).toBe(true);
+    });
+
     it('leaves a record with no facet to the existing text rule', () => {
       expect(
         related({

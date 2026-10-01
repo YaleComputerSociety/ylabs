@@ -1541,6 +1541,12 @@ What counts as a research program is decided by `classifyProgramResearchRelevanc
 When a record carries the source catalog's purpose facet (Research, Study, Travel, Service, and the rest), the facet is the authority: the record is research-related only when a purpose is research, a senior project or dissertation support, its own title names research, its kind is research by construction (senior thesis funding, an RA program, mentor matching, a summer research program), or its own prose says the award funds research or is for students pursuing research careers (#3904).
 The derived `studentFacingCategory` is never read as evidence there, because a label such as "Research travel funding" is the classifier's output rather than the source's statement, and reading it let study, service, internship and postgraduate awards reach `/programs`.
 A record without the facet keeps the text rule.
+Four evidence shapes narrow that rule (#4291).
+A prose rescue counts only from a sentence that does not negate it before the match, so "the fund is not meant to support independent or archival research projects" no longer admits an internship fund.
+A facet that names `Language Study` and no research purpose is read like a title that says language study, because a downstream mention ("language study that can support research") is not what the award funds.
+Only a research-by-construction kind exempts a non-research title or a language-study facet; `TRAVEL_RESEARCH_GRANT` is derived from travel wording and no longer does.
+On a lane whose `purpose` is `inferPurpose` output rather than a catalog facet (`yale-college-fellowships-office`), a `Research` purpose counts only when the record's own prose names research; a record with no prose at all keeps it, because absence is not evidence.
+Applied as a projection over every live Development program on 2026-10-01, it moved exactly 4 of 181 served programs to `suppressed`, each read on its page and none a research opportunity: an advanced language-study program, an academic-year language-study fellowship, an urban-studies internship and practicum fund, and a leadership prize from a student awards page.
 A structured program whose own prose names faculty mentorship is research-related whatever its facet or wording says, because a mentored pathway is a student's way into research even when its page never uses the word (product decision, 2026-09-30).
 This replaced an exemption keyed on a `STARS` title or `/stars/` source URL, so the rule now covers any program of that shape rather than one named family.
 

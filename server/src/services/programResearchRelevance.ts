@@ -14,6 +14,7 @@ export interface ProgramResearchRelevanceInput {
   studentFacingCategory?: string;
   programKind?: string;
   purpose?: string[];
+  sourceName?: string;
   sourceUrl?: string;
   summary?: string;
   description?: string;
@@ -65,6 +66,22 @@ const isMentoredResearchPathway = (programKind: string, prose: string): boolean 
 const RESEARCH_CAREER_AWARD =
   /\b(?:pursue|pursuing|intend(?:s|ing)? to pursue)\s+research careers?\b/i;
 
+const NEGATION = /\b(?:not|no|never|nor|without|cannot)\b|n't\b/i;
+
+const SENTENCE_BOUNDARY = /(?<=[.!?;])\s+/;
+
+const affirmedIn = (prose: string, pattern: RegExp): boolean =>
+  prose.split(SENTENCE_BOUNDARY).some((sentence) => {
+    const match = pattern.exec(sentence);
+    return match !== null && !NEGATION.test(sentence.slice(0, match.index));
+  });
+
+const LANGUAGE_STUDY_PURPOSE = 'Language Study';
+
+// These lanes store `purpose` as inferPurpose output read from page prose rather than as a
+// catalog facet, so changing that inference also requires revisiting this set.
+const PURPOSE_INFERRED_FROM_PROSE_SOURCES = new Set(['yale-college-fellowships-office']);
+
 // Strong non-research markers in the title that override an incidental "Research" purpose tag.
 const NON_RESEARCH_TITLE =
   /\b(journalism|non-research|public service|language study|study abroad scholarship|tuition)\b/i;
@@ -88,14 +105,23 @@ export function classifyProgramResearchRelevance(
   const purposes = Array.isArray(input.purpose) ? input.purpose.map(text) : [];
   const programKind = text(input.programKind).toUpperCase();
   const reasons: string[] = [];
-  const sourceProse = [title, text(input.summary), text(input.description), text(input.eligibility)]
+  const bodyProse = [text(input.summary), text(input.description), text(input.eligibility)]
     .filter(Boolean)
     .join(' ');
+  const sourceProse = [title, bodyProse].filter(Boolean).join(' ');
   const mentoredPathway = isMentoredResearchPathway(programKind, sourceProse);
 
+  const facetResearch = purposes.some((p) => RESEARCH_PURPOSES.has(p));
+  const facetSaysLanguageStudy = purposes.includes(LANGUAGE_STUDY_PURPOSE) && !facetResearch;
   const titleSaysNonResearch = NON_RESEARCH_TITLE.test(title);
-  const purposeResearch = purposes.some((p) => RESEARCH_PURPOSES.has(p));
+  const purposeUnbackedByProse =
+    facetResearch &&
+    PURPOSE_INFERRED_FROM_PROSE_SOURCES.has(text(input.sourceName)) &&
+    bodyProse.length > 0 &&
+    !RESEARCH_TEXT.test(sourceProse);
+  const purposeResearch = facetResearch && !purposeUnbackedByProse;
   const kindResearch = RESEARCH_PROGRAM_KINDS.has(programKind);
+  const inherentKind = INHERENTLY_RESEARCH_PROGRAM_KINDS.has(programKind);
   const textResearch = RESEARCH_TEXT.test(blob);
 
   if (purposeResearch) reasons.push('research_purpose');
@@ -103,11 +129,13 @@ export function classifyProgramResearchRelevance(
   if (textResearch) reasons.push('research_text');
   if (mentoredPathway) reasons.push('mentored_research_pathway');
   if (titleSaysNonResearch) reasons.push('non_research_title');
+  if (facetSaysLanguageStudy) reasons.push('language_study_purpose');
+  if (purposeUnbackedByProse) reasons.push('inferred_research_purpose_unbacked');
 
   // A title that explicitly disclaims research (e.g. "...Non-Research Projects", journalism,
   // language study, study/tuition scholarship) is not research-related even if a generic
   // "Research" purpose tag is attached — unless the program kind is a dedicated research kind.
-  if (titleSaysNonResearch && !kindResearch) {
+  if ((titleSaysNonResearch || facetSaysLanguageStudy) && !inherentKind) {
     return { researchRelated: false, reasons };
   }
 
@@ -118,9 +146,8 @@ export function classifyProgramResearchRelevance(
   // internship and postgraduate awards to a research surface (#3904).
   if (purposes.length > 0 && !purposeResearch && !mentoredPathway) {
     const titleResearch = RESEARCH_TEXT.test(title);
-    const inherentKind = INHERENTLY_RESEARCH_PROGRAM_KINDS.has(programKind);
-    const researchCareer = RESEARCH_CAREER_AWARD.test(sourceProse);
-    const fundsResearch = FUNDS_RESEARCH_PROSE.test(sourceProse);
+    const researchCareer = affirmedIn(sourceProse, RESEARCH_CAREER_AWARD);
+    const fundsResearch = affirmedIn(sourceProse, FUNDS_RESEARCH_PROSE);
     if (!titleResearch && !inherentKind && !researchCareer && !fundsResearch) {
       reasons.push('purpose_not_research');
       return { researchRelated: false, reasons };
