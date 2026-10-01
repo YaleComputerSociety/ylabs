@@ -110,7 +110,7 @@ export function startCorpusQualitySnapshotScheduler(env: NodeJS.ProcessEnv = pro
   return true;
 }
 
-export function stopCorpusQualitySnapshotSchedulerForTests(): void {
+export function stopCorpusQualitySnapshotScheduler(): void {
   if (timer) clearInterval(timer);
   timer = undefined;
   running = false;
