@@ -1511,7 +1511,7 @@ A CommunityForce fund page is reached through an encrypted query that differs fr
 Two live rows with the same normalized title and the same normalized description of at least 80 characters are one fund; the title alone is not enough, because distinct funds share titles.
 The gate keeps the copy most fit to serve on its own, then the copy an owning lane holds rather than the enrich-only catalog, then the oldest, and suppresses the others with `duplicate_program`.
 The verdict is recomputed over every live program on each gate run, including a run scoped to some records, so it writes no field and needs no lock.
-Measured on Development on 2026-10-01 it found 9 redundant copies, 3 of them funds that were served twice, and served programs went from 150 to 147 with no fund lost.
+Projected on Development on 2026-10-01, it finds 9 redundant copies, 3 of them funds that were served twice, and served programs go from 150 to 147 with no fund lost.
 
 What counts as a research program is decided by `classifyProgramResearchRelevance` in `server/src/services/programResearchRelevance.ts`.
 When a record carries the source catalog's purpose facet (Research, Study, Travel, Service, and the rest), the facet is the authority: the record is research-related only when a purpose is research, a senior project or dissertation support, its own title names research, its kind is research by construction (senior thesis funding, an RA program, mentor matching, a summer research program), or its own prose says the award funds research or is for students pursuing research careers (#3904).
