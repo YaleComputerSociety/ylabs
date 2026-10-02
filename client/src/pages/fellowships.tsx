@@ -764,7 +764,7 @@ const Fellowships = () => {
     <div className="yr-page min-h-[calc(100vh-12rem)]">
       <div className="mx-auto w-full max-w-screen-2xl px-4 pb-10 sm:px-6 lg:px-8">
         <div className="pt-8 pb-6">
-          <div className="grid gap-6 border-b border-[var(--yr-line)] pb-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-end">
+          <div className="grid grid-cols-1 gap-6 border-b border-[var(--yr-line)] pb-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-end">
             <div className="max-w-3xl">
               <p className="yr-kicker">Program planning</p>
               <h1 className="yr-display mt-2 text-4xl font-semibold leading-tight text-ink sm:text-5xl">
@@ -801,7 +801,7 @@ const Fellowships = () => {
           )}
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[20rem_minmax(0,1fr)] xl:items-start xl:gap-8">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[20rem_minmax(0,1fr)] xl:items-start xl:gap-8">
           <aside className="space-y-3 xl:sticky xl:top-6">
             <div className="yr-panel flex flex-col gap-3 rounded-card p-3 sm:flex-row sm:flex-wrap sm:items-end xl:flex-col xl:items-stretch">
               <div className="min-w-0 basis-full flex-1 sm:min-w-[220px]">

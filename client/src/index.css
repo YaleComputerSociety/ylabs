@@ -102,6 +102,20 @@ code {
     scroll-padding-top: var(--yr-sticky-filter-bar-height, 0px);
   }
 
+  /* `anywhere`, not `break-word`, because only `anywhere` lowers min-content,
+     which is what lets a flex or auto-sized grid track holding a long served
+     token shrink to the viewport instead of widening the page. */
+  [data-scroll-container],
+  [role='dialog'] {
+    overflow-wrap: anywhere;
+  }
+
+  /* A table keeps whole words and scrolls in its own wrapper rather than
+     squeezing columns until words split. */
+  :is([data-scroll-container], [role='dialog']) table {
+    overflow-wrap: break-word;
+  }
+
   /* Proportional digits in Inter change width between rows, so a column of
      figures fails to align. Every table here is a raw <table>. */
   table {

@@ -250,47 +250,50 @@ await step('signed-in student reaches the research browse home', async () => {
 });
 await screenshot('01-browse-home');
 
-await step('the wide-screen research sidebar fits every filter without its own scrollbar', async () => {
-  const laptopPage = await context.newPage();
-  try {
-    const sidebar = laptopPage.locator('header', {
-      has: laptopPage.getByRole('heading', { level: 1, name: 'Find a Yale lab that fits you.' }),
-    });
-    const assertSidebarFits = async (state) => {
-      const { scrollHeight, clientHeight } = await sidebar.evaluate((element) => ({
-        scrollHeight: element.scrollHeight,
-        clientHeight: element.clientHeight,
-      }));
-      const { width, height } = laptopPage.viewportSize();
-      assert(
-        scrollHeight <= clientHeight,
-        `The sticky research sidebar overflows ${state} at ${width}x${height}: ${scrollHeight}px of content in ${clientHeight}px.`,
-      );
-    };
-    for (const height of [800, 720]) {
-      await laptopPage.setViewportSize({ width: 1280, height });
-      await laptopPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
-      await settleResearchPage(laptopPage);
-      for (const axis of ['type', 'school', 'department']) {
-        await sidebar.getByLabel(`Filter by ${axis}`).waitFor({ timeout: 20000 });
+await step(
+  'the wide-screen research sidebar fits every filter without its own scrollbar',
+  async () => {
+    const laptopPage = await context.newPage();
+    try {
+      const sidebar = laptopPage.locator('header', {
+        has: laptopPage.getByRole('heading', { level: 1, name: 'Find a Yale lab that fits you.' }),
+      });
+      const assertSidebarFits = async (state) => {
+        const { scrollHeight, clientHeight } = await sidebar.evaluate((element) => ({
+          scrollHeight: element.scrollHeight,
+          clientHeight: element.clientHeight,
+        }));
+        const { width, height } = laptopPage.viewportSize();
+        assert(
+          scrollHeight <= clientHeight,
+          `The sticky research sidebar overflows ${state} at ${width}x${height}: ${scrollHeight}px of content in ${clientHeight}px.`,
+        );
+      };
+      for (const height of [800, 720]) {
+        await laptopPage.setViewportSize({ width: 1280, height });
+        await laptopPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+        await settleResearchPage(laptopPage);
+        for (const axis of ['type', 'school', 'department']) {
+          await sidebar.getByLabel(`Filter by ${axis}`).waitFor({ timeout: 20000 });
+        }
+        await assertSidebarFits('while browsing');
+        await sidebar.getByLabel('Search y/labs').fill(SMOKE_SEARCH_TOKEN);
+        await assertSidebarFits('with a query typed');
+        await sidebar.getByRole('button', { name: 'Search', exact: true }).click();
+        await laptopPage
+          .locator('section[aria-label="Search results"]')
+          .getByRole('status')
+          .filter({ hasText: /results? for '.+'/i })
+          .first()
+          .waitFor({ timeout: 20000 });
+        await settleResearchPage(laptopPage);
+        await assertSidebarFits('after a search');
       }
-      await assertSidebarFits('while browsing');
-      await sidebar.getByLabel('Search y/labs').fill(SMOKE_SEARCH_TOKEN);
-      await assertSidebarFits('with a query typed');
-      await sidebar.getByRole('button', { name: 'Search', exact: true }).click();
-      await laptopPage
-        .locator('section[aria-label="Search results"]')
-        .getByRole('status')
-        .filter({ hasText: /results? for '.+'/i })
-        .first()
-        .waitFor({ timeout: 20000 });
-      await settleResearchPage(laptopPage);
-      await assertSidebarFits('after a search');
+    } finally {
+      await laptopPage.close();
     }
-  } finally {
-    await laptopPage.close();
-  }
-});
+  },
+);
 
 await step('search returns a result and the header settles out of loading', async () => {
   await submitSearch(SMOKE_SEARCH_TOKEN);
@@ -331,6 +334,71 @@ await step('opening a result renders the detail identity and description', async
   await assertTextIncludes('marsupials');
 });
 await screenshot('03-detail');
+
+const UNBROKEN_NAME_TOKEN = 'Quokkasynthetictoken'.repeat(6);
+const UNBROKEN_URL_TOKEN = `https://example.test/${'quokkapath'.repeat(10)}`;
+
+const injectUnbrokenTokens = (entity) => {
+  if (!entity || typeof entity !== 'object') return;
+  entity.name = `${entity.name || ''} ${UNBROKEN_NAME_TOKEN}`;
+  for (const field of ['shortDescription', 'fullDescription', 'blurb']) {
+    if (typeof entity[field] === 'string') {
+      entity[field] = `${UNBROKEN_NAME_TOKEN} ${UNBROKEN_URL_TOKEN} ${entity[field]}`;
+    }
+  }
+  if (typeof entity.cardDescription?.text === 'string') {
+    entity.cardDescription.text = `${UNBROKEN_NAME_TOKEN} ${entity.cardDescription.text}`;
+  }
+  if (entity.websiteUrl) entity.websiteUrl = UNBROKEN_URL_TOKEN;
+};
+
+await step('a long unbroken name or URL never scrolls a 320px page sideways', async () => {
+  const phonePage = await context.newPage();
+  try {
+    await phonePage.setViewportSize({ width: 320, height: 800 });
+    await phonePage.route(/\/api\/research\/(search|[^/?]+)(\?.*)?$/, async (route) => {
+      const response = await route.fetch();
+      const body = await response.json().catch(() => null);
+      if (!body) return route.fulfill({ response });
+      (body.researchEntities || []).forEach(injectUnbrokenTokens);
+      injectUnbrokenTokens(body.researchEntity);
+      for (const rail of [
+        'relatedResearchEntities',
+        'affiliatedResearchEntities',
+        'similarResearchEntities',
+      ]) {
+        (body[rail] || []).forEach(injectUnbrokenTokens);
+      }
+      return route.fulfill({ response, json: body });
+    });
+    const assertNoSidewaysScroll = async (surface) => {
+      const { scrollWidth, clientWidth } = await phonePage
+        .locator('[data-scroll-container]')
+        .evaluate((element) => ({
+          scrollWidth: element.scrollWidth,
+          clientWidth: element.clientWidth,
+        }));
+      assert(
+        scrollWidth <= clientWidth,
+        `${surface} scrolls sideways at 320px with a 120-character token: ${scrollWidth}px of content in ${clientWidth}px.`,
+      );
+    };
+    await withFailureContextOf(phonePage, async () => {
+      await phonePage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+      await settleResearchPage(phonePage);
+      await phonePage.locator('article.yr-card-interactive').first().waitFor({ timeout: 20000 });
+      await assertNoSidewaysScroll('Browse');
+      await phonePage.goto(`${baseUrl}/research/${SMOKE_ENTITY_SLUG}`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await settleResearchPage(phonePage);
+      await phonePage.getByRole('heading', { level: 1 }).waitFor({ timeout: 20000 });
+      await assertNoSidewaysScroll('The detail page');
+    });
+  } finally {
+    await phonePage.close();
+  }
+});
 
 await step('a signed-in student saves the entity and it persists', async () => {
   // The button label is optimistic: `useFavorites.setFavorite` updates local state
@@ -491,40 +559,49 @@ await step('an absolutely positioned element deep in a page never scrolls the wi
   );
 });
 
-await step('shift-tabbing back through results never parks focus under the sticky filter bar', async () => {
-  const narrowPage = await context.newPage();
-  try {
-    await narrowPage.setViewportSize({ width: 640, height: 400 });
-    await narrowPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
-    await settleResearchPage(narrowPage);
-    await narrowPage.getByRole('link', { name: SMOKE_ENTITY_NAME }).first().waitFor({ timeout: 20000 });
-    await narrowPage.locator('#main-content').focus();
-    const tabStops = 60;
-    for (let press = 0; press < tabStops; press += 1) await narrowPage.keyboard.press('Tab');
-    const obscured = [];
-    for (let press = 0; press < tabStops; press += 1) {
-      await narrowPage.keyboard.press('Shift+Tab');
-      const stop = await narrowPage.evaluate(() => {
-        const focused = document.activeElement;
-        const main = document.getElementById('main-content');
-        if (!focused || !main?.contains(focused) || focused === main) return null;
-        const bars = [...document.querySelectorAll('[data-scroll-container] .sticky.top-0')];
-        if (bars.length === 0 || bars.some((bar) => bar.contains(focused))) return null;
-        const rect = focused.getBoundingClientRect();
-        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-        if (!hit || !bars.some((bar) => bar.contains(hit))) return null;
-        return `${focused.tagName.toLowerCase()} at y ${Math.round(rect.top)}-${Math.round(rect.bottom)}`;
-      });
-      if (stop) obscured.push(stop);
+await step(
+  'shift-tabbing back through results never parks focus under the sticky filter bar',
+  async () => {
+    const narrowPage = await context.newPage();
+    try {
+      await narrowPage.setViewportSize({ width: 640, height: 400 });
+      await narrowPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+      await settleResearchPage(narrowPage);
+      await narrowPage
+        .getByRole('link', { name: SMOKE_ENTITY_NAME })
+        .first()
+        .waitFor({ timeout: 20000 });
+      await narrowPage.locator('#main-content').focus();
+      const tabStops = 60;
+      for (let press = 0; press < tabStops; press += 1) await narrowPage.keyboard.press('Tab');
+      const obscured = [];
+      for (let press = 0; press < tabStops; press += 1) {
+        await narrowPage.keyboard.press('Shift+Tab');
+        const stop = await narrowPage.evaluate(() => {
+          const focused = document.activeElement;
+          const main = document.getElementById('main-content');
+          if (!focused || !main?.contains(focused) || focused === main) return null;
+          const bars = [...document.querySelectorAll('[data-scroll-container] .sticky.top-0')];
+          if (bars.length === 0 || bars.some((bar) => bar.contains(focused))) return null;
+          const rect = focused.getBoundingClientRect();
+          const hit = document.elementFromPoint(
+            rect.left + rect.width / 2,
+            rect.top + rect.height / 2,
+          );
+          if (!hit || !bars.some((bar) => bar.contains(hit))) return null;
+          return `${focused.tagName.toLowerCase()} at y ${Math.round(rect.top)}-${Math.round(rect.bottom)}`;
+        });
+        if (stop) obscured.push(stop);
+      }
+      assert(
+        obscured.length === 0,
+        `${obscured.length} focus stops were centred under the sticky filter bar at 640x400, first: ${obscured[0]}.`,
+      );
+    } finally {
+      await narrowPage.close();
     }
-    assert(
-      obscured.length === 0,
-      `${obscured.length} focus stops were centred under the sticky filter bar at 640x400, first: ${obscured[0]}.`,
-    );
-  } finally {
-    await narrowPage.close();
-  }
-});
+  },
+);
 
 const LAYOUT_SHIFT_BUDGET = 0.1;
 const syntheticLayoutEntity = (index) => ({

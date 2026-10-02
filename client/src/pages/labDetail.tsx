@@ -111,7 +111,7 @@ const RelatedResearchEntitiesSection = ({
   return (
     <section>
       <SectionHeading>Related labs and groups</SectionHeading>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {relatedResearchEntities.map((entity) => {
           const relationship = relationshipByEntityKey.get(entity.slug || entity.id);
           const description = entity.blurb || '';
@@ -161,7 +161,7 @@ const AffiliatedResearchEntitiesSection = ({
 }) => (
   <section>
     <SectionHeading>Affiliated with</SectionHeading>
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {affiliatedResearchEntities.map((entity) => {
         const content = (
           <>
@@ -211,7 +211,7 @@ const SimilarResearchEntitiesSection = ({
   <section>
     <SectionHeading>More like this</SectionHeading>
     <p className="-mt-2 mb-3 text-sm text-muted">Other research studying similar topics.</p>
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {similarResearchEntities.map((entity) => (
         <Link
           key={entity.slug || entity.id}
@@ -497,7 +497,7 @@ const DecisionSummary = ({
   const pageListsContacts = getInvolvedHasOwnAction || directoryFallbackCandidate;
   return (
     <section className="rounded-card border border-line bg-panel p-4 shadow-yr-raised sm:p-5">
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
         <div>
           <SectionHeading>Research summary</SectionHeading>
           {description ? (

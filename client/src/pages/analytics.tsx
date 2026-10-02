@@ -856,7 +856,7 @@ const Analytics = () => {
           )}
 
           <form
-            className="mb-4 grid gap-3 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto]"
+            className="mb-4 grid grid-cols-1 gap-3 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto]"
             onSubmit={requestGrantAdminAccess}
           >
             <label className="block">
