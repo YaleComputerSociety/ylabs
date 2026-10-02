@@ -1715,41 +1715,6 @@ const Research = () => {
               strong enough.
             </p>
 
-            <div
-              aria-hidden={isAuthLoading || undefined}
-              className={`mt-4 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy${isAuthLoading ? ' invisible' : ''}`}
-            >
-              <p
-                aria-hidden={isAuthenticated || undefined}
-                className={`[grid-area:1/1]${isAuthenticated ? ' invisible' : ''}`}
-              >
-                You&apos;re browsing as a guest.{' '}
-                <Link
-                  to="/login"
-                  state={{ from: `${location.pathname}${location.search}` }}
-                  tabIndex={isAuthenticated ? -1 : undefined}
-                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
-                >
-                  Log in with Yale CAS
-                </Link>{' '}
-                to save research and reach out.
-              </p>
-              <p
-                aria-hidden={!isAuthenticated || undefined}
-                className={`[grid-area:1/1]${isAuthenticated ? '' : ' invisible'}`}
-              >
-                You&apos;re signed in. Research you save is on{' '}
-                <Link
-                  to="/dashboard"
-                  tabIndex={isAuthenticated ? undefined : -1}
-                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
-                >
-                  your dashboard
-                </Link>
-                , ready to compare.
-              </p>
-            </div>
-
             {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
               <div
                 className="mt-4 rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
@@ -1834,6 +1799,40 @@ const Research = () => {
                 {trustTierFilterChips}
               </section>
             )}
+            <div
+              aria-hidden={isAuthLoading || undefined}
+              className={`mt-4 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy${isAuthLoading ? ' invisible' : ''}${isAuthLoading || isAuthenticated ? ' xl:hidden' : ''}`}
+            >
+              <p
+                aria-hidden={isAuthenticated || undefined}
+                className={`[grid-area:1/1]${isAuthenticated ? ' invisible' : ''}`}
+              >
+                You&apos;re browsing as a guest.{' '}
+                <Link
+                  to="/login"
+                  state={{ from: `${location.pathname}${location.search}` }}
+                  tabIndex={isAuthenticated ? -1 : undefined}
+                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
+                >
+                  Log in with Yale CAS
+                </Link>{' '}
+                to save research and reach out.
+              </p>
+              <p
+                aria-hidden={!isAuthenticated || undefined}
+                className={`[grid-area:1/1]${isAuthenticated ? '' : ' invisible'}`}
+              >
+                You&apos;re signed in. Research you save is on{' '}
+                <Link
+                  to="/dashboard"
+                  tabIndex={isAuthenticated ? undefined : -1}
+                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
+                >
+                  your dashboard
+                </Link>
+                , ready to compare.
+              </p>
+            </div>
           </header>
 
           <div className="min-w-0">

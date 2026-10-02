@@ -621,6 +621,7 @@ const syntheticAdminSession = {
 };
 
 const SIGNED_IN_NOTICE = /You're signed in/;
+const USER_MENU_LABEL = 'Open user menu';
 const ADMIN_CONTROL_LABEL = 'Show weakest profiles first';
 
 const syntheticStudentSession = {
@@ -683,12 +684,17 @@ const assertLateSessionKeepsBrowseStable = async (viewport, session) => {
       await shiftPage.waitForTimeout(1000);
       assert(
         !(await shiftPage.getByText(SIGNED_IN_NOTICE).isVisible()) &&
+          (await shiftPage.getByRole('button', { name: USER_MENU_LABEL }).count()) === 0 &&
           (await shiftPage.getByLabel(ADMIN_CONTROL_LABEL).count()) === 0,
         'Signed-in UI rendered before the held session check was answered, so this case cannot measure a late session.',
       );
       const sessionAnsweredAt = await shiftPage.evaluate(() => performance.now());
       releaseSessionCheck();
-      await shiftPage.getByText(SIGNED_IN_NOTICE).waitFor({ state: 'visible', timeout: 20000 });
+      await shiftPage
+        .getByText(SIGNED_IN_NOTICE)
+        .or(shiftPage.getByRole('button', { name: USER_MENU_LABEL }))
+        .first()
+        .waitFor({ state: 'visible', timeout: 20000 });
       await shiftPage.waitForTimeout(1000);
       const shifts = await shiftPage.evaluate(
         (since) => window.__layoutShifts.filter((shift) => shift.startTime >= since),
