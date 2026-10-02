@@ -224,6 +224,26 @@ describe('shared area-filtered directory pages (#4030)', () => {
     expect(candidate.refusedSharedDirectoryUrls).toEqual([areaPage]);
   });
 
+  it('counts each refused page once in the run notes, including rows it leaves with no url', async () => {
+    const docs = [
+      { _id: 'k', slug: 'faculty-ada-fixture', websiteUrl: areaPage, researchAreas: [] },
+      { _id: 'l', slug: 'faculty-bo-fixture', websiteUrl: `${areaPage}/`, researchAreas: [] },
+    ];
+    let fetched = 0;
+    const extractor = new ResearchAreaSourceExtractor({
+      fetchPage: async (url) => {
+        fetched += 1;
+        return { url, html: '' };
+      },
+      canonicalizerLoader: async () => canonicalizer,
+      entityFinder: async () => candidateAreaEntitiesFromDocs(docs, { citerCounts: citers }),
+    });
+    const { ctx } = makeContext();
+    const result = await extractor.run(ctx);
+    expect(fetched).toBe(0);
+    expect(result.notes).toContain('Refused 1 shared area-filtered directory page(s)');
+  });
+
   it('refuses nothing when no citer counts are supplied', () => {
     expect(candidateAreaUrlsForDoc({ websiteUrl: areaPage })).toEqual([areaPage]);
   });

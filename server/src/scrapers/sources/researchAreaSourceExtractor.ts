@@ -218,25 +218,26 @@ export function isSharedAreaFilteredDirectoryUrl(
   return !leafTokens.every((token) => ownTokens.has(token));
 }
 
+function partitionAreaUrlsForDoc(
+  doc: CandidateAreaEntityDoc,
+  citerCounts: ReadonlyMap<string, number> | undefined,
+): { urls: string[]; refused: string[] } {
+  const urls: string[] = [];
+  const refused: string[] = [];
+  for (const url of uniqueStrings([doc.websiteUrl, doc.website, ...(doc.sourceUrls || [])])) {
+    if (isRejectedAreaSourceUrl(url)) continue;
+    if (citerCounts && isSharedAreaFilteredDirectoryUrl(url, doc, citerCounts)) refused.push(url);
+    else urls.push(url);
+  }
+  urls.sort((a, b) => areaSourceUrlPriority(a) - areaSourceUrlPriority(b) || a.localeCompare(b));
+  return { urls, refused };
+}
+
 export function candidateAreaUrlsForDoc(
   doc: CandidateAreaEntityDoc,
   citerCounts?: ReadonlyMap<string, number>,
 ): string[] {
-  return uniqueStrings([doc.websiteUrl, doc.website, ...(doc.sourceUrls || [])])
-    .filter((url) => !isRejectedAreaSourceUrl(url))
-    .filter((url) => !citerCounts || !isSharedAreaFilteredDirectoryUrl(url, doc, citerCounts))
-    .sort((a, b) => areaSourceUrlPriority(a) - areaSourceUrlPriority(b) || a.localeCompare(b));
-}
-
-function refusedSharedDirectoryUrlsForDoc(
-  doc: CandidateAreaEntityDoc,
-  citerCounts: ReadonlyMap<string, number> | undefined,
-): string[] {
-  if (!citerCounts) return [];
-  return uniqueStrings([doc.websiteUrl, doc.website, ...(doc.sourceUrls || [])]).filter(
-    (url) =>
-      !isRejectedAreaSourceUrl(url) && isSharedAreaFilteredDirectoryUrl(url, doc, citerCounts),
-  );
+  return partitionAreaUrlsForDoc(doc, citerCounts).urls;
 }
 
 export interface CandidateAreaSelectionOptions {
@@ -262,8 +263,10 @@ export function candidateAreaEntitiesFromDocs(
   const keys = uniqueStrings(options.only || []);
   return docs.flatMap((doc) => {
     if (!hasResearchAreasToRead(doc, options.evidenceBackedRowIds)) return [];
-    const urls = candidateAreaUrlsForDoc(doc, options.citerCounts);
-    const refusedSharedDirectoryUrls = refusedSharedDirectoryUrlsForDoc(doc, options.citerCounts);
+    const { urls, refused: refusedSharedDirectoryUrls } = partitionAreaUrlsForDoc(
+      doc,
+      options.citerCounts,
+    );
     if (urls.length === 0 && refusedSharedDirectoryUrls.length === 0) return [];
     const candidate: CandidateAreaEntity = {
       _id: doc._id,
@@ -605,7 +608,9 @@ export class ResearchAreaSourceExtractor implements IScraper {
       (candidate) => candidateKeyMatches(candidate, only),
     );
     const refusedSharedDirectoryUrls = new Set(
-      found.flatMap((candidate) => candidate.refusedSharedDirectoryUrls || []),
+      found.flatMap((candidate) =>
+        (candidate.refusedSharedDirectoryUrls || []).map(normalizeEvidenceUrl),
+      ),
     );
     const candidates = found
       .filter((candidate) => candidate.websiteUrl && !isRejectedAreaSourceUrl(candidate.websiteUrl))
