@@ -82,7 +82,9 @@ describe('dated award periods reach the stored row and the served count (#4245)'
 
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
 
-    const stored = await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean();
+    const stored = await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<
+      Record<string, unknown>
+    >();
     expect(stored?.recentGrantPeriods).toHaveLength(12);
     expect(stored?.recentGrantCount).toBe(12);
     const dto = toPublicResearchEntityDto(stored as Record<string, unknown>);
@@ -99,7 +101,9 @@ describe('dated award periods reach the stored row and the served count (#4245)'
 
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
 
-    const stored = await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean();
+    const stored = await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<
+      Record<string, unknown>
+    >();
     expect(stored?.recentGrantPeriods).toEqual([]);
     expect(stored?.recentGrantCount).toBe(7);
   });
