@@ -53,4 +53,15 @@ describe('unbackedResearchAreaCandidateReport', () => {
       only: 'example-unbacked',
     });
   });
+
+  it('leaves out a row whose only url is a refused shared directory page (#4030)', () => {
+    const areaPage = 'https://example.edu/faculty-research/faculty-directory/finance';
+    const report = unbackedResearchAreaCandidateReport(
+      [{ _id: 'e', slug: 'example-graft', websiteUrl: areaPage, researchAreas: ['Physics'] }],
+      new Set(),
+      new Date('2026-01-01T00:00:00Z'),
+      new Map([[areaPage, 5]]),
+    );
+    expect(report).toMatchObject({ unbackedRows: 1, candidateCount: 0, only: '' });
+  });
 });

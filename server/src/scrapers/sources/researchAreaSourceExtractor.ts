@@ -263,16 +263,17 @@ export function candidateAreaEntitiesFromDocs(
   return docs.flatMap((doc) => {
     if (!hasResearchAreasToRead(doc, options.evidenceBackedRowIds)) return [];
     const urls = candidateAreaUrlsForDoc(doc, options.citerCounts);
-    if (urls.length === 0) return [];
+    const refusedSharedDirectoryUrls = refusedSharedDirectoryUrlsForDoc(doc, options.citerCounts);
+    if (urls.length === 0 && refusedSharedDirectoryUrls.length === 0) return [];
     const candidate: CandidateAreaEntity = {
       _id: doc._id,
       slug: doc.slug,
       name: textValue(doc.displayName || doc.name || doc.slug || idValue(doc._id)),
-      websiteUrl: urls[0],
+      websiteUrl: urls[0] || '',
       sourceUrls: urls,
       departments: doc.departments || [],
       manuallyLockedFields: doc.manuallyLockedFields || [],
-      refusedSharedDirectoryUrls: refusedSharedDirectoryUrlsForDoc(doc, options.citerCounts),
+      refusedSharedDirectoryUrls,
     };
     return candidateKeyMatches(candidate, keys) ? [candidate] : [];
   });
@@ -539,7 +540,7 @@ export async function findResearchAreaCandidateEntities(
   return candidateAreaEntitiesFromDocs(docs, { only, evidenceBackedRowIds, citerCounts });
 }
 
-async function loadEvidenceUrlCiterCounts(): Promise<Map<string, number>> {
+export async function loadEvidenceUrlCiterCounts(): Promise<Map<string, number>> {
   const rows = (await ResearchEntity.find(
     { archived: { $ne: true } },
     { _id: 0, websiteUrl: 1, website: 1, sourceUrls: 1 },
@@ -600,20 +601,18 @@ export class ResearchAreaSourceExtractor implements IScraper {
           });
 
     const canonicalizer = await this.canonicalizerLoader();
-    const candidates = (await this.entityFinder({ only, exhaustive: ctx.options.exhaustive }))
-      .filter(
-        (candidate) =>
-          candidateKeyMatches(candidate, only) &&
-          candidate.websiteUrl &&
-          !isRejectedAreaSourceUrl(candidate.websiteUrl),
-      )
+    const found = (await this.entityFinder({ only, exhaustive: ctx.options.exhaustive })).filter(
+      (candidate) => candidateKeyMatches(candidate, only),
+    );
+    const refusedSharedDirectoryUrls = new Set(
+      found.flatMap((candidate) => candidate.refusedSharedDirectoryUrls || []),
+    );
+    const candidates = found
+      .filter((candidate) => candidate.websiteUrl && !isRejectedAreaSourceUrl(candidate.websiteUrl))
       .slice(offset, offset + limit);
 
     let observationCount = 0;
     let entitiesObserved = 0;
-    const refusedSharedDirectoryUrls = new Set(
-      candidates.flatMap((candidate) => candidate.refusedSharedDirectoryUrls || []),
-    );
     const workPlannerPolicy = ctx.options.ignoreWorkPlanner
       ? undefined
       : getWorkPlannerSourcePolicy(this.name);

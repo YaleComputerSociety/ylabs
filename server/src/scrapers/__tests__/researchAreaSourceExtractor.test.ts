@@ -215,6 +215,15 @@ describe('shared area-filtered directory pages (#4030)', () => {
     expect(candidate.refusedSharedDirectoryUrls).toEqual([areaPage]);
   });
 
+  it('records the refusal for a row whose only url is the shared directory page', () => {
+    const [candidate] = candidateAreaEntitiesFromDocs(
+      [{ _id: 'k', slug: 'faculty-ada-fixture', websiteUrl: areaPage, researchAreas: [] }],
+      { citerCounts: citers },
+    );
+    expect(candidate.sourceUrls).toEqual([]);
+    expect(candidate.refusedSharedDirectoryUrls).toEqual([areaPage]);
+  });
+
   it('refuses nothing when no citer counts are supplied', () => {
     expect(candidateAreaUrlsForDoc({ websiteUrl: areaPage })).toEqual([areaPage]);
   });
