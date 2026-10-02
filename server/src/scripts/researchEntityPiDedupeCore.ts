@@ -76,6 +76,18 @@ export interface MultiPersonEntityQuarantine {
   personIds: string[];
 }
 
+export type UrlIdentityLaneName = 'official-lab-url' | 'profile-lab-url' | 'website-url';
+
+export interface UrlIdentityLaneVerdict {
+  lane: UrlIdentityLaneName;
+  candidateRows: number;
+  rowLimit: number;
+  plannedGroups: number;
+  quarantinedGroups: number;
+  plannedSlugs: string[];
+  quarantinedSlugs: string[];
+}
+
 export interface ConflatedPersonProfileQuarantine {
   canonicalEntityId: string;
   canonicalSlug?: string;

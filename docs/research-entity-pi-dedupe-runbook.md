@@ -65,6 +65,9 @@ Every false identity costs a correct merge, because an identity here only ever r
 So judge a change to this predicate on the URL population it newly claims, never on the planned-group count.
 The refusal is unconditional and runs before the plan the decision template is built from, so a quarantined group never reaches an `--accepted-decisions` file and no reviewed decision overrides it; merging one takes correcting the conflating evidence first.
 How often the refusal fires is lane-dependent, so read it per run from `quarantinedConflatedPersonProfileGroups` in the dry-run report rather than from a figure recorded here: the only Development measurement taken (#2724) predates the identity function the guard now uses, so it is not quoted as current.
+The same refusal also binds `research-entity:merge-same-lead-duplicate-groups`, which holds any duplicate-URL group a URL-identity lane already plans or quarantines.
+It computes those verdicts in-process through `planUrlIdentityLaneVerdicts`, running all three URL lanes' loaders and planners, rather than reading lane report files (#3724).
+It refuses to plan at all if a lane was not read or read as many rows as its limit, and its report's `urlLaneInputs` records what each lane read, so a hold that removed nothing because its input was empty cannot pass for one that found nothing.
 The refusal is deliberately independent of `multiPersonEntityQuarantine`, which keys on PI `RoleAssignment` links rather than on cited URLs, so a group carrying no multi-person role links can still be refused on its evidence alone.
 
 **Never-demote survivor selection.** `resolveNonDemotingMerge` runs for every lane, not only the profile-lab-url one it shipped for, because nothing about a demotion is lane-specific: any lane that keeps a less-visible survivor drops a `student_ready` row out of student view (#2060).

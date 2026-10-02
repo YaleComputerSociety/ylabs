@@ -27,9 +27,13 @@ import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   isShellSlug,
   planSameLeadCorroboratedMerges,
+  sameLeadUrlLaneHoldFlags,
+  sameLeadUrlLaneHolds,
+  sameLeadUrlLaneInputsReport,
   summarizeSameLeadMergeHolds,
   type SameLeadMergeMember,
 } from './mergeSameLeadDuplicateGroupsCore';
+import { planUrlIdentityLaneVerdicts } from './dedupeResearchEntitiesByPi';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -54,22 +58,6 @@ const fundingEvidenceKeys = (row: Record<string, any>): Set<string> => {
   return keys;
 };
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
-
-function laneSlugsFrom(file: string, key: string): Set<string> {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
-    const rows = Array.isArray(parsed[key]) ? (parsed[key] as unknown[]) : [];
-    const slugs = new Set<string>();
-    for (const row of rows) {
-      for (const match of JSON.stringify(row).match(/"[a-z0-9][a-z0-9-]{5,}"/g) ?? []) {
-        slugs.add(match.replace(/"/g, ''));
-      }
-    }
-    return slugs;
-  } catch {
-    return new Set();
-  }
-}
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
@@ -122,15 +110,8 @@ async function main(): Promise<void> {
     leadsByEntity.get(entityId)!.add(String(doc.personId ?? ''));
   }
 
-  const lanePlanned = new Set([
-    ...laneSlugsFrom('/tmp/lane-official-lab-url.json', 'plan'),
-    ...laneSlugsFrom('/tmp/lane-profile-lab-url.json', 'plan'),
-    ...laneSlugsFrom('/tmp/lane-website-url.json', 'plan'),
-  ]);
-  const laneQuarantined = new Set([
-    ...laneSlugsFrom('/tmp/lane-official-lab-url.json', 'conflatedPersonProfileQuarantine'),
-    ...laneSlugsFrom('/tmp/lane-profile-lab-url.json', 'conflatedPersonProfileQuarantine'),
-  ]);
+  const urlLaneVerdicts = await planUrlIdentityLaneVerdicts();
+  const urlLaneHolds = sameLeadUrlLaneHolds(urlLaneVerdicts);
 
   const groups = exactDuplicateUrlGroups(rows as any[])
     .map((group) => {
@@ -166,8 +147,7 @@ async function main(): Promise<void> {
         members: planMembers,
         sharesALead,
         everyMemberHasALead: leadSets.every((set) => set.size > 0),
-        alreadyPlannedByUrlLane: slugs.some((slug) => lanePlanned.has(slug)),
-        quarantinedByConflationGuard: slugs.some((slug) => laneQuarantined.has(slug)),
+        ...sameLeadUrlLaneHoldFlags(slugs, urlLaneHolds),
         servingMembers: members.filter(
           (member) => text(member.studentVisibilityTier) === 'student_ready',
         ).length,
@@ -336,6 +316,7 @@ async function main(): Promise<void> {
             (m) => m.corroboration === 'shell-versus-concrete',
           ).length,
         },
+        urlLaneInputs: sameLeadUrlLaneInputsReport(urlLaneVerdicts),
         heldByReason: summarizeSameLeadMergeHolds(outcome.held),
         survivorsGainingFunding: outcome.merges.filter((m) => m.survivorGainsFunding).length,
         // The served trade: a loser only leaves the surface if its group serves more than
