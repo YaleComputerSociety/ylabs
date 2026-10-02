@@ -37,6 +37,36 @@ const CREDIT_WORD_PATTERN =
 /** A Yale catalog code, e.g. `PSYC 4925`, `HIST 4995`, `MB&B 4900`, `S&DS 4910`, `ASTR 490a`. */
 const COURSE_CODE_PATTERN = /\b[A-Z]{2,6}(?:&[A-Z]{1,4})? ?\d{3,4}[ab]?\b/;
 
+const ROUTE_STATEMENT_PATTERN =
+  /\b(?:enrol{1,2}(?:s|ed|ing|ment)?|offers?|offered|receives?|receiving|earns?|earning|(?:take|taken|taking) for|for (?:academic |course |graduation )?credit|(?:completed|written|done|conducted) (?:in|over|through|as)|consists? of|register(?:s|ed|ing)? (?:for|in))\b/i;
+
+const COURSE_NOUN_PATTERN = /\bcourses?\b/i;
+
+/**
+ * Calibrated by hand against the 19 department quotes stored on Development
+ * (#4045), where 4 of 19 named the route and its course yet were a deadline, a
+ * drop warning or a grade threshold.
+ */
+const NOT_A_ROUTE_STATEMENT_PATTERNS: readonly RegExp[] = [
+  /\bdeadlines?\b|\bdue (?:on|by|in)\b|\bno later than\b/i,
+  /\bif (?:you|a student|students|they) (?:do(?:es)? not|don't|fail|miss)\b|\bmust (?:then )?drop\b|\bwill not be (?:able|permitted|allowed)\b/i,
+  /\b(?:receive|earn|get|obtain|achieve|maintain)s? (?:an?|a grade of|a minimum grade of) ["“]?[A-D][+-]?(?![A-Za-z])/,
+  /\bgrades? of\b|\bminimum grade\b|\bwith distinction\b|\bgrade point average\b|\bGPA\b/i,
+  /\b(?:not|cannot|can't|never)\b(?:\s+\S+){0,3}?\s+(?:receive|get|earn|granted|eligible)\b|\bcredit is not\b/i,
+  /\bAP credits?\b|\badvanced placement\b|\btransfer(?:red|ring)? credits?\b|\bstudy abroad\b/i,
+  /\bpetition\b|\bmore than (?:one|two|three|four|five|\d+)\b/i,
+];
+
+export function statesHowToTakeCourseCreditRoute(sentence: string): boolean {
+  if (NOT_A_ROUTE_STATEMENT_PATTERNS.some((pattern) => pattern.test(sentence))) return false;
+  const namesRoute = ROUTE_PHRASE_PATTERN.test(sentence);
+  const namesCourseCode = COURSE_CODE_PATTERN.test(sentence);
+  const statesHow = ROUTE_STATEMENT_PATTERN.test(sentence);
+  if (namesRoute && namesCourseCode) return true;
+  if ((namesRoute || namesCourseCode) && statesHow) return true;
+  return CREDIT_WORD_PATTERN.test(sentence) && COURSE_NOUN_PATTERN.test(sentence) && statesHow;
+}
+
 const UNDERGRADUATE_AUDIENCE_PATTERN =
   /\b(?:undergraduates?|undergraduate students?|majors?|seniors?|juniors?|sophomores?|first[- ]years?|yale college|students?)\b/i;
 
@@ -112,6 +142,7 @@ export function courseCreditRouteEvidenceSentences(page: CourseCreditRoutePage):
     .filter((sentence) => !sourceChromeTextPattern.test(sentence))
     .filter((sentence) => ROUTE_PHRASE_PATTERN.test(sentence) || CREDIT_WORD_PATTERN.test(sentence))
     .filter((sentence) => CREDIT_WORD_PATTERN.test(sentence) || COURSE_CODE_PATTERN.test(sentence))
+    .filter(statesHowToTakeCourseCreditRoute)
     .filter((sentence) => {
       const key = sentence.toLowerCase();
       if (seen.has(key)) return false;

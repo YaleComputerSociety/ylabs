@@ -1,3 +1,7 @@
+import {
+  COURSE_CREDIT_ROUTE_WITHDRAWN_ARCHIVE_REASON,
+  attributedArchiveSet,
+} from '../models/entityArchival';
 import { OrgUnit } from '../models/orgUnit';
 import { Signal, signalTargetIsExactlyOne } from '../models/signal';
 import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
@@ -25,8 +29,26 @@ export interface OrgUnitCourseCreditRouteValue {
   supportingQuoteCount: number;
 }
 
+export interface OrgUnitCourseCreditRouteAbsenceValue {
+  schemaVersion: 1;
+  routeStated: false;
+}
+
+export type OrgUnitCourseCreditRouteObservationValue =
+  | OrgUnitCourseCreditRouteValue
+  | OrgUnitCourseCreditRouteAbsenceValue;
+
+export function isOrgUnitCourseCreditRouteAbsence(
+  value: unknown,
+): value is OrgUnitCourseCreditRouteAbsenceValue {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return record.schemaVersion === 1 && record.routeStated === false;
+}
+
 export interface OrgUnitSignalMaterializationResult {
   signalsWritten: number;
+  signalsWithdrawn: number;
   rejected: number;
   rejectedReason?: string;
 }
@@ -99,7 +121,8 @@ export async function materializeOrgUnitSignalsForObservations(input: {
   const routeObservations = input.observations.filter(
     (observation) => observation.field === ORG_UNIT_COURSE_CREDIT_ROUTE_FIELD,
   );
-  if (routeObservations.length === 0) return { signalsWritten: 0, rejected: 0 };
+  if (routeObservations.length === 0)
+    return { signalsWritten: 0, signalsWithdrawn: 0, rejected: 0 };
 
   const orgUnit = await OrgUnit.findOne({ slug: input.orgUnitSlug, archived: { $ne: true } })
     .select('_id name slug')
@@ -107,12 +130,14 @@ export async function materializeOrgUnitSignalsForObservations(input: {
   if (!orgUnit) {
     return {
       signalsWritten: 0,
+      signalsWithdrawn: 0,
       rejected: routeObservations.length,
       rejectedReason: 'org_unit_not_found',
     };
   }
 
   let signalsWritten = 0;
+  let signalsWithdrawn = 0;
   let rejected = 0;
   let rejectedReason: string | undefined;
 
@@ -127,6 +152,24 @@ export async function materializeOrgUnitSignalsForObservations(input: {
     if (!sourceUrl || !isPublicHttpUrl(sourceUrl)) {
       rejected += 1;
       rejectedReason = rejectedReason || 'source_url_not_public';
+      continue;
+    }
+    if (isOrgUnitCourseCreditRouteAbsence(observation.value)) {
+      const liveRoute = {
+        orgUnitId: (orgUnit as any)._id,
+        type: 'COURSE_CREDIT_PATHWAY',
+        derivationKey: courseCreditRouteDerivationKey(input.orgUnitSlug, sourceName),
+        archived: { $ne: true },
+      };
+      signalsWithdrawn += input.dryRun
+        ? await Signal.countDocuments(liveRoute)
+        : (
+            await Signal.updateOne(liveRoute, {
+              $set: attributedArchiveSet(COURSE_CREDIT_ROUTE_WITHDRAWN_ARCHIVE_REASON, {
+                lastMaterializedAt: new Date(),
+              }),
+            })
+          ).modifiedCount || 0;
       continue;
     }
     const value = readOrgUnitCourseCreditRouteValue(observation.value);
@@ -182,6 +225,7 @@ export async function materializeOrgUnitSignalsForObservations(input: {
 
   return {
     signalsWritten,
+    signalsWithdrawn,
     rejected,
     ...(rejectedReason ? { rejectedReason } : {}),
   };

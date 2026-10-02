@@ -10,7 +10,13 @@ import {
   parseStructuredOpportunityPage,
 } from '../sources/departmentUndergradResearchScraper';
 import { classificationFromObservedFacts } from '../fellowshipClassificationDerivation';
+import { resolveOrgUnitSlugForDepartmentName } from '../orgUnitSignalMaterializer';
 import type { ObservationInput, ScraperContext } from '../types';
+
+vi.mock('../orgUnitSignalMaterializer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../orgUnitSignalMaterializer')>()),
+  resolveOrgUnitSlugForDepartmentName: vi.fn(async () => null),
+}));
 
 const PHYSICS_HTML = `
 <main>
@@ -1444,5 +1450,83 @@ describe('departmentUndergradResearchScraper', () => {
     }).map((page) => `${page.key} -> ${page.url}`);
 
     expect(offenders).toEqual([]);
+  });
+
+  describe('department course-credit route (#4045)', () => {
+    const ROUTE_PAGE = page(
+      '<p>Seniors receive course credit for the senior essay by enrolling in ABCD 4491.</p>',
+    );
+    const DEADLINE_PAGE = page(
+      '<p>For the senior essay in ABCD 4491, the deadline is the Monday of the third to last week of classes.</p>',
+    );
+    const pageConfig = (key: string, url: string) => ({
+      key,
+      url,
+      department: 'Synthetic Studies',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance' as const,
+      title: 'Synthetic Studies Undergraduate Research',
+    });
+    const FIRST = 'https://synthetic.yale.edu/undergraduate/research';
+    const SECOND = 'https://synthetic.yale.edu/undergraduate/senior-essay';
+    const routeObservations = (emitted: ObservationInput[]) =>
+      emitted.filter((obs) => obs.entityType === 'orgUnit');
+
+    function page(body: string): string {
+      return `<html><body><main><h1>Senior Essay</h1>${body}</main></body></html>`;
+    }
+
+    async function runOver(fetchHtml: (url: string) => Promise<string>) {
+      vi.mocked(resolveOrgUnitSlugForDepartmentName).mockImplementation(async (name) =>
+        name === 'Synthetic Studies' ? 'synthetic-studies' : null,
+      );
+      const scraper = new DepartmentUndergradResearchScraper({
+        pageConfigs: [
+          pageConfig('synthetic-research', FIRST),
+          pageConfig('synthetic-essay', SECOND),
+        ],
+        fetchHtml: async (url) =>
+          url.startsWith('https://synthetic.yale.edu/') ? fetchHtml(url) : '',
+      });
+      const emitted: ObservationInput[] = [];
+      const result = await scraper.run(buildContext(scraper, emitted));
+      return { emitted, result };
+    }
+
+    it('withdraws the route when every page for the department states none', async () => {
+      const { emitted, result } = await runOver(async () => DEADLINE_PAGE);
+
+      expect(routeObservations(emitted)).toEqual([
+        expect.objectContaining({
+          entityKey: 'synthetic-studies',
+          value: { schemaVersion: 1, routeStated: false },
+          sourceUrl: SECOND,
+        }),
+      ]);
+      expect(result.notes).toContain('course-credit routes withdrawn: 1');
+    });
+
+    it('states the route when any page for the department states one', async () => {
+      const { emitted } = await runOver(async (url) =>
+        url === FIRST ? ROUTE_PAGE : DEADLINE_PAGE,
+      );
+
+      expect(routeObservations(emitted)).toEqual([
+        expect.objectContaining({
+          entityKey: 'synthetic-studies',
+          value: expect.objectContaining({ evidenceQuote: expect.stringContaining('ABCD 4491') }),
+          sourceUrl: FIRST,
+        }),
+      ]);
+    });
+
+    it('withdraws nothing when a page for the department could not be read', async () => {
+      const { emitted } = await runOver(async (url) => {
+        if (url === FIRST) throw new Error('Request failed with status code 503');
+        return DEADLINE_PAGE;
+      });
+
+      expect(routeObservations(emitted)).toEqual([]);
+    });
   });
 });
