@@ -8,6 +8,11 @@ set -euo pipefail
 attempts=3
 retry_delay_seconds="${KEEP_ALIVE_RETRY_DELAY_SECONDS:-20}"
 status=000
+publish_outputs() {
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    printf 'last-status=%s\nattempts=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"
+  fi
+}
 for attempt in $(seq 1 "$attempts"); do
   # `if !` rather than `|| true`, so a transport failure is recorded as a status
   # instead of swallowing curl's exit under whatever shell flags are in force.
@@ -16,11 +21,12 @@ for attempt in $(seq 1 "$attempts"); do
   fi
   echo "attempt ${attempt}/${attempts}: HTTP ${status}"
   case "$status" in
-    2*) echo "beta answered HTTP ${status}"; exit 0 ;;
+    2*) echo "beta answered HTTP ${status}"; publish_outputs "$status" "$attempt"; exit 0 ;;
   esac
   if [ "$attempt" -lt "$attempts" ]; then
     sleep "$retry_delay_seconds"
   fi
 done
+publish_outputs "$status" "$attempts"
 echo "::error::${BETA_HEALTH_URL} did not answer 2xx after ${attempts} attempts (last HTTP ${status})"
 exit 1

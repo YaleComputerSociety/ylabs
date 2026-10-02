@@ -16,6 +16,9 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      last-status: ${{ steps.probe.outputs.last-status }}
+      attempts: ${{ steps.probe.outputs.attempts }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,6 +31,39 @@ jobs:
       # is the only scheduled signal about beta, so it reports on the route the
       # client cannot start without. A cold start is absorbed by the retries.
       - name: Ping the beta API
+        id: probe
         env:
           BETA_HEALTH_URL: https://ylabs-gr4v.onrender.com/api/config
         run: scripts/keep-alive-probe.sh
+
+  # A red scheduled run notifies only the account that last edited the cron, so
+  # the outcome is relayed as one labelled issue per outage (#4143). The write
+  # scope lives on this job alone, never on the job that talks to beta.
+  alert:
+    needs: ping
+    if: ${{ always() && (needs.ping.result == 'failure' || needs.ping.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Serialised so two overlapping failing runs cannot each open an issue.
+    concurrency:
+      group: keep-alive-alert
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Open, update, or close the beta outage issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROBE_RESULT: ${{ needs.ping.result }}
+          PROBE_LAST_STATUS: ${{ needs.ping.outputs.last-status }}
+          PROBE_ATTEMPTS: ${{ needs.ping.outputs.attempts }}
+          PROBED_ROUTE: /api/config
+          TARGET_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: scripts/keep-alive-alert.sh

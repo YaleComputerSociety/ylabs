@@ -132,6 +132,14 @@ Its cadence is best-effort and much lower than the cron line suggests.
 GitHub delays and drops scheduled runs under load; the observed rate has been roughly 6 to 7 runs a day against a cron that asks for 144.
 So read a red run as a real signal about beta, but never read a green history as proof that beta stayed warm, or that it was healthy, between runs.
 
+A red run is relayed as an issue, because GitHub notifies only the account that last edited a scheduled workflow's cron line (#4143).
+After every passing or failing probe, the workflow's `alert` job runs `scripts/keep-alive-alert.sh`.
+A failing probe opens one issue titled `ops: beta probe failing` with the `beta-probe-failing` label, or comments on that issue if one is already open, so an outage is one issue rather than one per run.
+The first passing probe closes it with a comment, so an open `beta-probe-failing` issue means Beta is failing as of the last run.
+The posted text carries only the probed route, the validated last HTTP status, the attempt count, and the run URL, never a response body.
+Only the `alert` job holds `issues: write`; the job that talks to Beta keeps the read-only token.
+Watch the repository's issues from the maintainer account, or the issue reaches nobody either.
+
 ## Holding one feature instead of the whole release
 
 Holding the whole promotion blocks every other change queued behind it.
