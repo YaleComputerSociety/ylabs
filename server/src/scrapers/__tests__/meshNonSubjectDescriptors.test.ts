@@ -150,6 +150,31 @@ describe('lanes that read a MeSH keyword list', () => {
     expect(result.topics).toEqual(['Epidemiology']);
   });
 
+  it('dept-faculty-roster drops a comma-form MeSH heading whole rather than as fragments', () => {
+    const result = profileEnrichmentFromHtml(
+      interestsPage(MESH_PROFILE_URL, [
+        'Placenta',
+        'Infant, Newborn',
+        'Child, Preschool',
+        'Aged, 80 and over',
+        'Africa, Eastern',
+        'Infant, Premature',
+      ]),
+      MESH_PROFILE_URL,
+    );
+    expect(result.researchInterests).toEqual(['Placenta', 'Infant, Premature']);
+    expect(result.topics).toEqual(['Placenta', 'Infant, Premature']);
+  });
+
+  it('dept-faculty-roster fills its interest cap with subjects after dropping MeSH check tags', () => {
+    const subjects = Array.from({ length: 20 }, (_, i) => `Fixture Subject ${i + 1}`);
+    const result = profileEnrichmentFromHtml(
+      interestsPage(MESH_PROFILE_URL, ['Humans', 'Mice', 'Infant, Newborn', ...subjects]),
+      MESH_PROFILE_URL,
+    );
+    expect(result.researchInterests).toEqual(subjects);
+  });
+
   it('dept-faculty-roster keeps a place a humanities profile names as its field', () => {
     const result = profileEnrichmentFromHtml(
       interestsPage(HUMANITIES_PROFILE_URL, ['Latin America', 'Brazil']),
