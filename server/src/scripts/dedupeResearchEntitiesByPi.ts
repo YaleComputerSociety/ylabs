@@ -40,6 +40,8 @@ import {
   type WebsiteUrlDedupeRow,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
+  type UrlIdentityLaneName,
+  type UrlIdentityLaneVerdict,
 } from './researchEntityPiDedupeCore';
 import { isLowTrustAreaShellSlug } from '../utils/researchEntityShellSlug';
 import {
@@ -2101,6 +2103,54 @@ async function countRemainingDuplicateReferences(
   }
 
   return counts;
+}
+
+export const URL_IDENTITY_LANE_VERDICT_ROW_LIMIT = 10000;
+
+const urlIdentityLaneGroupSlugs = (
+  groups: ReadonlyArray<{ canonicalSlug?: string; duplicateSlugs: string[] }>,
+): string[] =>
+  groups.flatMap((group) => [group.canonicalSlug ?? '', ...group.duplicateSlugs]).filter(Boolean);
+
+function urlIdentityLaneVerdict<
+  T extends Parameters<typeof partitionPlanByPersonProfileConflation>[0][number] & {
+    duplicateEntityIds: string[];
+  },
+>(lane: UrlIdentityLaneName, candidateRows: number, groups: T[]): UrlIdentityLaneVerdict {
+  const { plan, quarantine } = partitionPlanByPersonProfileConflation(dedupePlannedGroups(groups));
+  return {
+    lane,
+    candidateRows,
+    rowLimit: URL_IDENTITY_LANE_VERDICT_ROW_LIMIT,
+    plannedGroups: plan.length,
+    quarantinedGroups: quarantine.length,
+    plannedSlugs: urlIdentityLaneGroupSlugs(plan),
+    quarantinedSlugs: urlIdentityLaneGroupSlugs(quarantine),
+  };
+}
+
+export async function planUrlIdentityLaneVerdicts(): Promise<UrlIdentityLaneVerdict[]> {
+  const limit = URL_IDENTITY_LANE_VERDICT_ROW_LIMIT;
+  const officialLabUrlRows = await loadOfficialLabUrlCandidateRows(limit);
+  const profileLabUrlRows = await loadSpecificProfileLabUrlCandidateRows(limit);
+  const websiteUrlRows = await loadWebsiteUrlCandidateRows(limit);
+  return [
+    urlIdentityLaneVerdict(
+      'official-lab-url',
+      officialLabUrlRows.length,
+      buildOfficialLabUrlResearchEntityDedupePlan(officialLabUrlRows),
+    ),
+    urlIdentityLaneVerdict(
+      'profile-lab-url',
+      profileLabUrlRows.length,
+      buildSpecificProfileLabUrlResearchEntityDedupePlan(profileLabUrlRows),
+    ),
+    urlIdentityLaneVerdict(
+      'website-url',
+      websiteUrlRows.length,
+      buildWebsiteUrlResearchEntityDedupePlan(websiteUrlRows),
+    ),
+  ];
 }
 
 export const SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES_ENV =

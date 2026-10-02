@@ -1,4 +1,8 @@
-import { MERGE_RELINKABLE_OBSERVATION_FIELDS } from './researchEntityPiDedupeCore';
+import {
+  MERGE_RELINKABLE_OBSERVATION_FIELDS,
+  type UrlIdentityLaneName,
+  type UrlIdentityLaneVerdict,
+} from './researchEntityPiDedupeCore';
 
 /**
  * Merge the duplicate-URL groups whose members share a lead person AND carry something
@@ -182,4 +186,58 @@ export function summarizeSameLeadMergeHolds(
   };
   for (const row of held) counts[row.reason] += 1;
   return counts;
+}
+
+export const SAME_LEAD_MERGE_REQUIRED_URL_LANES: readonly UrlIdentityLaneName[] = [
+  'official-lab-url',
+  'profile-lab-url',
+  'website-url',
+];
+
+export interface SameLeadUrlLaneHolds {
+  planned: ReadonlySet<string>;
+  quarantined: ReadonlySet<string>;
+}
+
+export function sameLeadUrlLaneHolds(
+  verdicts: readonly UrlIdentityLaneVerdict[],
+): SameLeadUrlLaneHolds {
+  for (const lane of SAME_LEAD_MERGE_REQUIRED_URL_LANES) {
+    const read = verdicts.filter((verdict) => verdict.lane === lane);
+    if (read.length !== 1) {
+      throw new Error(
+        `the ${lane} URL-identity lane was read ${read.length} times, so its holds cannot be applied`,
+      );
+    }
+    const [verdict] = read;
+    if (verdict.candidateRows >= verdict.rowLimit) {
+      throw new Error(
+        `the ${lane} URL-identity lane read ${verdict.candidateRows} candidate rows, its row limit, so its plan may be truncated`,
+      );
+    }
+  }
+  return {
+    planned: new Set(verdicts.flatMap((verdict) => verdict.plannedSlugs)),
+    quarantined: new Set(verdicts.flatMap((verdict) => verdict.quarantinedSlugs)),
+  };
+}
+
+export function sameLeadUrlLaneHoldFlags(
+  slugs: readonly string[],
+  holds: SameLeadUrlLaneHolds,
+): { alreadyPlannedByUrlLane: boolean; quarantinedByConflationGuard: boolean } {
+  return {
+    alreadyPlannedByUrlLane: slugs.some((slug) => holds.planned.has(slug)),
+    quarantinedByConflationGuard: slugs.some((slug) => holds.quarantined.has(slug)),
+  };
+}
+
+export function sameLeadUrlLaneInputsReport(verdicts: readonly UrlIdentityLaneVerdict[]) {
+  return verdicts.map(({ lane, candidateRows, rowLimit, plannedGroups, quarantinedGroups }) => ({
+    lane,
+    candidateRows,
+    rowLimit,
+    plannedGroups,
+    quarantinedGroups,
+  }));
 }
