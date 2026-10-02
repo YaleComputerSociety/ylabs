@@ -145,19 +145,37 @@ const QuickFilterEmptyState = ({
   );
 };
 
-const STATUS_SUMMARY_COLUMNS: Record<number, string> = {
-  4: 'lg:grid-cols-4',
-  5: 'lg:grid-cols-5',
-  6: 'lg:grid-cols-6',
-  7: 'lg:grid-cols-7',
-};
-
-const ALWAYS_SHOWN_TILES = new Set<ProgramBoardSection>([
-  'closingSoon',
-  'open',
-  'openingSoon',
-  'nextCycle',
-]);
+const statusTiles: Array<{
+  key: ProgramBoardSection;
+  tileLabel: string;
+  tileDetail: string;
+  tileClassName: string;
+}> = [
+  {
+    key: 'closingSoon',
+    tileLabel: 'Due soon',
+    tileDetail: 'Within 30 days',
+    tileClassName: 'yr-pill-gold',
+  },
+  {
+    key: 'open',
+    tileLabel: 'Open now',
+    tileDetail: 'Accepting applications',
+    tileClassName: 'yr-pill-green',
+  },
+  {
+    key: 'openingSoon',
+    tileLabel: 'Opening soon',
+    tileDetail: 'Not open yet',
+    tileClassName: 'yr-pill-blue',
+  },
+  {
+    key: 'nextCycle',
+    tileLabel: 'Next cycle',
+    tileDetail: 'Deadline passed',
+    tileClassName: '',
+  },
+];
 
 const StatusSummary = ({
   summary,
@@ -165,41 +183,29 @@ const StatusSummary = ({
 }: {
   summary: ProgramBoardSummary;
   unavailableLabel?: string;
-}) => {
-  const tiles = boardSections.filter(
-    (section) => ALWAYS_SHOWN_TILES.has(section.key) || summary[section.key] > 0,
-  );
-  return (
-    <dl
-      className={`grid grid-cols-2 gap-px overflow-hidden rounded-card border border-[var(--yr-line)] bg-[var(--yr-line)] ${STATUS_SUMMARY_COLUMNS[tiles.length] ?? 'lg:grid-cols-4'}`}
-    >
-      {tiles.map((section) => (
-        <div
-          key={section.key}
-          className={`bg-[var(--yr-panel)] px-4 py-3 ${section.tileClassName} ${tiles.length % 2 === 1 && section === tiles[tiles.length - 1] ? 'col-span-2 lg:col-span-1' : ''}`}
-        >
-          <dt className="yr-kicker text-[0.68rem]">{section.tileLabel}</dt>
-          <dd className="mt-2 flex min-h-[3rem] flex-col justify-end gap-1">
-            {unavailableLabel ? (
-              <span className="block h-8">
-                <span
-                  aria-hidden="true"
-                  className="mt-1 block h-6 w-8 rounded-control bg-[var(--yr-panel-muted)]"
-                />
-                <span className="sr-only">{unavailableLabel}</span>
-              </span>
-            ) : (
-              <span className="yr-num text-2xl font-semibold text-ink">{summary[section.key]}</span>
-            )}
-            <span className="text-xs font-medium leading-tight text-muted">
-              {section.tileDetail}
+}) => (
+  <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-[var(--yr-line)] bg-[var(--yr-line)] lg:grid-cols-4">
+    {statusTiles.map((tile) => (
+      <div key={tile.key} className={`bg-[var(--yr-panel)] px-4 py-3 ${tile.tileClassName}`}>
+        <dt className="yr-kicker text-[0.68rem]">{tile.tileLabel}</dt>
+        <dd className="mt-2 flex min-h-[3rem] flex-col justify-end gap-1">
+          {unavailableLabel ? (
+            <span className="block h-8">
+              <span
+                aria-hidden="true"
+                className="mt-1 block h-6 w-8 rounded-control bg-[var(--yr-panel-muted)]"
+              />
+              <span className="sr-only">{unavailableLabel}</span>
             </span>
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
-};
+          ) : (
+            <span className="yr-num text-2xl font-semibold text-ink">{summary[tile.key]}</span>
+          )}
+          <span className="text-xs font-medium leading-tight text-muted">{tile.tileDetail}</span>
+        </dd>
+      </div>
+    ))}
+  </dl>
+);
 
 const fellowshipQuickFilters: QuickFilterDef[] = [
   { label: 'Open only', value: 'open' },
@@ -224,68 +230,44 @@ const boardSections: Array<{
   key: ProgramBoardSection;
   title: string;
   description: string;
-  tileLabel: string;
-  tileDetail: string;
-  tileClassName: string;
 }> = [
   {
     key: 'closingSoon',
     title: 'Due in the next 30 days',
     description: 'Open now and closing soon, soonest deadline first.',
-    tileLabel: 'Due soon',
-    tileDetail: 'Within 30 days',
-    tileClassName: 'yr-pill-gold',
   },
   {
     key: 'open',
     title: 'Accepting applications',
     description: 'Open now, soonest deadline first.',
-    tileLabel: 'Open now',
-    tileDetail: 'Accepting applications',
-    tileClassName: 'yr-pill-green',
   },
   {
     key: 'openingSoon',
     title: 'Opening soon',
     description: 'Applications have not opened yet, soonest opening first. Save one to track it.',
-    tileLabel: 'Opening soon',
-    tileDetail: 'Not open yet',
-    tileClassName: 'yr-pill-blue',
   },
   {
     key: 'nextCycle',
     title: 'Plan for the next cycle',
     description:
       "This year's deadline has passed. An estimated date is based on last year's cycle and is not confirmed, so check the source before you plan around it.",
-    tileLabel: 'Next cycle',
-    tileDetail: 'Deadline passed',
-    tileClassName: '',
   },
   {
     key: 'guidance',
     title: 'Department research guidance',
     description:
       "Each department's own advice on finding a faculty mentor and getting started in research. These are guides, not applications.",
-    tileLabel: 'Department guidance',
-    tileDetail: 'Not an application',
-    tileClassName: '',
   },
   {
     key: 'noDates',
     title: 'No dates posted',
     description: 'No application window is listed. Check the source for timing.',
-    tileLabel: 'No dates',
-    tileDetail: 'Check the source',
-    tileClassName: '',
   },
   {
     key: 'archive',
     title: 'Archive / review',
     description:
       'Retained records that need eligibility review or should not be treated as active undergraduate options.',
-    tileLabel: 'Archive / review',
-    tileDetail: 'Needs review; not active',
-    tileClassName: '',
   },
 ];
 

@@ -75,6 +75,9 @@ A tab strip inside a fixed-width popover wraps instead, because a scrolled strip
 
 - Every async surface has an explicit loading state and an explicit error state, not a blank frame.
 - Use skeletons or spinners consistently; do not let layout jump when data arrives.
+A summary row's shape is fixed before data arrives, never derived from it: the `/programs` status tiles once added a tile per non-empty optional section, so a loaded board grew a row at 375 and 768px and widened every column at 1440px (#4356).
+They are now the four timing tiles at every load state, and the other sections keep their counts in their own headers.
+The student-journey smoke holds the first programs search until the loading tiles paint, then fails when the page shifts by 0.01 or more once the data arrives at 375, 768, or 1440px.
 - A fetch keyed on a selection, filter, or search must never let an older response overwrite a newer one.
 Take a ticket from `client/src/hooks/useLatestRequest.ts`, pass its `signal`, and gate every state write, including the one in `finally`, on `isCurrent()`.
 Clear state that belongs to the previous selection in the same handler that changes it, and reset the page or offset in the same state update as the filter change, never in a later effect.
