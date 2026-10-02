@@ -473,5 +473,90 @@ describe(
       expect((await edgeById(twinEdge))?.archived).toBe(true);
       expect(await liveEdgesOf(devon)).toHaveLength(0);
     });
+
+    describe('a profile url two listings share names only the listing whose name agrees (#4337)', () => {
+      const LAB_SITE_URL = 'https://fixture-lab.example.edu/';
+      const labSiteListing = (
+        first: string,
+        role: CenterMember['role'],
+        name = `${first} Synthetic`,
+      ): CenterMember => ({ name, role, profileUrl: LAB_SITE_URL });
+      const labSiteOwner = async (first: string) => {
+        const owner = await accountHolder(first);
+        await Researcher.updateOne(
+          { _id: owner },
+          {
+            $set: {
+              profileLinks: [
+                {
+                  kind: 'LAB_ABOUT',
+                  purpose: 'SCHOLARLY',
+                  url: LAB_SITE_URL,
+                  verifiedAt: LONG_AGO,
+                },
+              ],
+            },
+          },
+        );
+        return owner;
+      };
+      const labSiteKey = (role: string) => `official-profile:${LAB_SITE_URL}|${role}`;
+
+      it('attaches the site owner once, as the role their own listing states', async () => {
+        const avery = await labSiteOwner('Avery');
+        await accountHolder('Blair');
+
+        await runLane({}, [
+          labSiteListing('Avery', 'director'),
+          labSiteListing('Blair', 'core-faculty'),
+        ]);
+
+        const edges = await liveEdgesOf(avery);
+        expect(edges.map((row) => row.role)).toEqual(['DIRECTOR']);
+        expect(edges[0].rosterProvenance).toMatchObject({
+          identityBasis: 'profile-url',
+          membershipKey: labSiteKey('director'),
+        });
+        const served = await servedNames();
+        expect(served.filter((name) => name === 'Avery Synthetic')).toHaveLength(1);
+      });
+
+      it('ends the edge an earlier read attached to the site owner for the other listing', async () => {
+        const avery = await labSiteOwner('Avery');
+        await accountHolder('Blair');
+        const roster = [
+          labSiteListing('Avery', 'director'),
+          labSiteListing('Blair', 'core-faculty'),
+        ];
+        await runLane({}, roster);
+        const misattached = await edgeOn(avery, 'CORE_FACULTY', {
+          rosterProvenance: {
+            sourceName: SOURCE_NAME,
+            profileUrl: LAB_SITE_URL,
+            membershipKey: labSiteKey('core-faculty'),
+            identityBasis: 'profile-url',
+            observedAt: LONG_AGO,
+          },
+        });
+
+        await runLane({}, roster);
+
+        expect((await edgeById(misattached))?.state).toBe('HISTORICAL');
+        expect((await liveEdgesOf(avery)).map((row) => row.role)).toEqual(['DIRECTOR']);
+
+        await runLane({}, roster);
+        expect((await liveEdgesOf(avery)).map((row) => row.role)).toEqual(['DIRECTOR']);
+      });
+
+      it('still joins a sole listing through its profile url when the listed name is misspelled', async () => {
+        const avery = await labSiteOwner('Avery');
+
+        await runLane({}, [labSiteListing('Avery', 'core-faculty', 'Avrey Synthetic')]);
+
+        const edges = await liveEdgesOf(avery);
+        expect(edges.map((row) => row.role)).toEqual(['CORE_FACULTY']);
+        expect(edges[0].rosterProvenance?.identityBasis).toBe('profile-url');
+      });
+    });
   },
 );
