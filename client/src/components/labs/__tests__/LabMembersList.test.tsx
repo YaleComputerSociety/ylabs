@@ -395,7 +395,7 @@ describe('LabMembersList text size floor', () => {
       primaryDepartment: 'Computer Science',
       primary_department: 'Computer Science',
       email: 'ada.fixture@example.test',
-      orcid: '0000-0002-1825-0097',
+      orcid: '9999-9000-9999-9005',
     },
   } as unknown as LabMember;
 
