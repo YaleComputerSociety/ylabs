@@ -933,6 +933,12 @@ The description is read from the page's prose paragraphs before the whole body, 
 A first `<h1>` that is only a link to the site root is the site name, so a later heading that names a program wins over it; on a single-program site whose page heading is generic the site name is kept.
 A deadline label whose own clause says "has passed" or "is closed" is skipped, because the date after it is the program's start date, not a deadline.
 
+When a `yale-college-fellowships-office` page states several dated deadlines, the lane plans the earliest one that has not passed at the run's `referenceDate`, and the latest past one only when none is upcoming (`nextCycleDeadline` in `scrapers/utils/programDeadline.ts`, #4227).
+The first application label still decides whether the page states a deadline at all, with its old nearest-date fallback; a later label only adds another cycle, and only with a date in its own sentence.
+Letting a later label find a deadline the first did not read the open date of an "Application Open/Deadline: <open> to <close>" range on 55 external-award pages; 35 other external-award pages already plan a 2019 date from their first label, which is a separate defect.
+A label whose words up to its date name another step (recommendation letters, notifications, decisions, interviews, an information session, an event) is not a deadline label.
+The grants lane reads one structured Deadline Date field per fund page, so it has no choice among cycles to make.
+
 Every program lane reads a date through `parseProgramDate` in `scrapers/utils/programDeadline.ts` (#4215), which interprets it in America/New_York with the offset in force on that date.
 A stated time is stored as that New York minute, so "3/24/2027 1:00 PM" is `17:00Z`, and "12:00 AM" is the start of its date, not the end.
 A date with no time is its whole New York day: a deadline closes at 23:59:59.999 New York time and an opening starts at New York midnight.

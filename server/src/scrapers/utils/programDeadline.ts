@@ -143,3 +143,21 @@ export function parseProgramDate(
   if (!isRealCalendarDate(date)) return undefined;
   return programDateInstant(date, boundary, statedClockTime(match.rest));
 }
+
+/**
+ * The deadline a student can still meet when a page states several (#4227): the earliest
+ * that has not passed at `referenceDate`, or the latest past one when none is upcoming, so
+ * a page listing a closed fall round and an open spring round reads as open.
+ */
+export function nextCycleDeadline(
+  deadlines: readonly Date[],
+  referenceDate: Date,
+): Date | undefined {
+  const now = referenceDate.getTime();
+  const upcoming = deadlines.filter((deadline) => deadline.getTime() > now);
+  if (upcoming.length > 0) {
+    return upcoming.reduce((earliest, deadline) => (deadline < earliest ? deadline : earliest));
+  }
+  if (deadlines.length === 0) return undefined;
+  return deadlines.reduce((latest, deadline) => (deadline > latest ? deadline : latest));
+}

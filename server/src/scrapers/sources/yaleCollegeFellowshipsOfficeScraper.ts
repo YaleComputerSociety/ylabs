@@ -14,6 +14,7 @@ import {
   NAMED_PROGRAM_DATE_SOURCE,
   NUMERIC_PROGRAM_DATE_SOURCE,
   OPTIONAL_STATED_CLOCK_TIME,
+  nextCycleDeadline,
   parseProgramDate,
 } from '../utils/programDeadline';
 import type {
@@ -793,25 +794,27 @@ function hasExplicitActiveApplicationLanguage(text: string): boolean {
   );
 }
 
-function nearestDateTextForLabel(
-  text: string,
-  labelPattern: RegExp,
-  preferredDirection: 'before' | 'after',
-): string {
-  const normalized = normalizeWhitespace(text);
-  const label = labelPattern.exec(normalized);
-  if (!label || label.index === undefined) return '';
+interface DateNearLabel {
+  text: string;
+  index: number;
+  inLabelSentence: boolean;
+}
 
+function dateNearLabel(
+  normalized: string,
+  label: RegExpMatchArray,
+  preferredDirection: 'before' | 'after',
+): DateNearLabel | undefined {
+  const labelIndex = label.index ?? 0;
+  const labelEnd = labelIndex + label[0].length;
   const datePattern = new RegExp(
     `(?:${NAMED_PROGRAM_DATE_SOURCE}|${NUMERIC_PROGRAM_DATE_SOURCE})${OPTIONAL_STATED_CLOCK_TIME}`,
     'gi',
   );
-  const before = normalized.slice(Math.max(0, label.index - 100), label.index);
+  const beforeStart = Math.max(0, labelIndex - 100);
+  const before = normalized.slice(beforeStart, labelIndex);
   const datesBefore = Array.from(before.matchAll(datePattern));
-  const after = normalized.slice(
-    label.index + label[0].length,
-    label.index + label[0].length + 120,
-  );
+  const after = normalized.slice(labelEnd, labelEnd + 120);
   datePattern.lastIndex = 0;
   const closestBeforeMatch = datesBefore.at(-1);
   const closestAfterMatch = datePattern.exec(after);
@@ -824,21 +827,101 @@ function nearestDateTextForLabel(
   const afterIsInSentence =
     closestAfterMatch !== null &&
     !sentenceBoundaryPattern.test(after.slice(0, closestAfterMatch.index));
+  const fromBefore = (inLabelSentence: boolean): DateNearLabel | undefined =>
+    closestBeforeMatch?.[0]
+      ? {
+          text: closestBeforeMatch[0],
+          index: beforeStart + (closestBeforeMatch.index ?? 0),
+          inLabelSentence,
+        }
+      : undefined;
+  const fromAfter = (inLabelSentence: boolean): DateNearLabel | undefined =>
+    closestAfterMatch?.[0]
+      ? { text: closestAfterMatch[0], index: labelEnd + closestAfterMatch.index, inLabelSentence }
+      : undefined;
 
   if (beforeIsInSentence !== afterIsInSentence) {
-    return beforeIsInSentence ? closestBeforeMatch?.[0] || '' : closestAfterMatch?.[0] || '';
+    return beforeIsInSentence ? fromBefore(true) : fromAfter(true);
   }
-  if (preferredDirection === 'after') {
-    return closestAfterMatch?.[0] || closestBeforeMatch?.[0] || '';
-  }
-  return closestBeforeMatch?.[0] || closestAfterMatch?.[0] || '';
+  return preferredDirection === 'after'
+    ? fromAfter(beforeIsInSentence) || fromBefore(beforeIsInSentence)
+    : fromBefore(beforeIsInSentence) || fromAfter(beforeIsInSentence);
+}
+
+function nearestDateTextForLabel(
+  text: string,
+  labelPattern: RegExp,
+  preferredDirection: 'before' | 'after',
+): string {
+  const normalized = normalizeWhitespace(text);
+  const label = labelPattern.exec(normalized);
+  if (!label) return '';
+  return dateNearLabel(normalized, label, preferredDirection)?.text || '';
 }
 
 const DEADLINE_LABEL =
   /\bdeadline\s+for\s+submission\b|\b(?:application\s+)?deadline\b|\bapplications?\s+due\b|\b(?:apply|submit(?:\s+your\s+application)?|due)\s+by\b/i;
 
-function bestDeadlineText(text: string): string {
-  return nearestDateTextForLabel(text, DEADLINE_LABEL, 'after');
+const EVERY_DEADLINE_LABEL = new RegExp(DEADLINE_LABEL.source, 'gi');
+
+/**
+ * A label can date a step other than the application itself, such as letters of
+ * recommendation being due or decisions being announced, and that date is not the
+ * program's deadline. Only the words joining the label to its date are read, with the
+ * label's own clause when the date follows it, so a "notifications sent" entry beside
+ * the deadline in a timeline does not disqualify it.
+ */
+const ANOTHER_STEP_IN_LABEL_CLAUSE =
+  /\b(?:recommend\w*|references?|referees?|notif\w*|decisions?|announc\w*|interviews?|info(?:rmation(?:al)?)?\s+sessions?|webinars?|events?)\b/i;
+const CLAUSE_BOUNDARY = /[.!?;](?:\s|$)/g;
+const LABEL_CLAUSE_LEAD_CHARS = 60;
+
+function labelDatesAnotherStep(
+  normalized: string,
+  label: RegExpMatchArray,
+  date: DateNearLabel,
+): boolean {
+  const labelIndex = label.index ?? 0;
+  const labelEnd = labelIndex + label[0].length;
+  if (date.index < labelIndex) {
+    return ANOTHER_STEP_IN_LABEL_CLAUSE.test(
+      normalized.slice(date.index + date.text.length, labelEnd),
+    );
+  }
+  const lead = normalized.slice(Math.max(0, labelIndex - LABEL_CLAUSE_LEAD_CHARS), labelIndex);
+  const clauseStart = Array.from(lead.matchAll(CLAUSE_BOUNDARY)).at(-1);
+  const ownLead = clauseStart ? lead.slice((clauseStart.index ?? 0) + clauseStart[0].length) : lead;
+  return ANOTHER_STEP_IN_LABEL_CLAUSE.test(
+    `${ownLead} ${normalized.slice(labelIndex, date.index)}`,
+  );
+}
+
+/**
+ * Every deadline the text states for applying, in page order. The first application label
+ * keeps the nearest-date fallback it has always had and decides whether the text states a
+ * deadline at all; a later label only adds another cycle, and only with a date in its own
+ * sentence. Letting a later label find a deadline the first did not read the open date of
+ * an "Application Open/Deadline: <open> to <close>" range on 55 external-award pages.
+ */
+function statedDeadlines(text: string, referenceDate: Date): Date[] {
+  const normalized = normalizeWhitespace(text);
+  const deadlines: Date[] = [];
+  let isPrimaryLabel = true;
+  for (const label of normalized.matchAll(EVERY_DEADLINE_LABEL)) {
+    const near = dateNearLabel(normalized, label, 'after');
+    if (near && labelDatesAnotherStep(normalized, label, near)) continue;
+    const admitsFallback = isPrimaryLabel;
+    isPrimaryLabel = false;
+    const dated = near && (admitsFallback || near.inLabelSentence) ? near.text : '';
+    const deadline = dated ? parseProgramDate(dated, 'deadline', referenceDate) : undefined;
+    if (admitsFallback && !deadline) return [];
+    if (deadline) deadlines.push(deadline);
+  }
+  return deadlines;
+}
+
+function statedDeadline(text: string, referenceDate: Date): Date | undefined {
+  return nextCycleDeadline(statedDeadlines(text, referenceDate), referenceDate);
 }
 
 /**
@@ -849,7 +932,7 @@ function bestDeadlineText(text: string): string {
  * date is marked as encouragement or preference. Everything else is `unresolved`,
  * including a page that says nothing about applying at all, because this lane's
  * vocabulary is not the page's: a CBEY grant page measured on 2026-10-01 states
- * "Applications are due on September 27" in wording `bestDeadlineText` does not match,
+ * "Applications are due on September 27" in wording `DEADLINE_LABEL` does not match,
  * so reading its silence as an absence would have cleared a real deadline (#2647 is the
  * same mistake made from the other direction).
  *
@@ -1159,7 +1242,7 @@ function candidateFromLink(
   const rowContext = normalizeWhitespace(contextContainer.text());
   const pageContext = normalizeWhitespace($('body').text());
   const contextText = normalizeWhitespace(`${headingContext} ${rowContext}`);
-  const deadline = parseProgramDate(bestDeadlineText(contextText), 'deadline', referenceDate);
+  const deadline = statedDeadline(contextText, referenceDate);
   const applicationLink =
     isCommunityForceUrl(href) || applicationPortalKind(href) ? href : undefined;
   const sourceUrl = pageUrl;
@@ -1226,7 +1309,7 @@ function candidateFromMacmillanOpportunityRow(
   const contactOffice = normalizeWhitespace($row.find('.node-teaser__groups').first().text());
   const summaryText = normalizeWhitespace($row.find('.node-teaser__summary').first().text());
   const rowContext = normalizeWhitespace(`${title} ${summaryText}`);
-  const deadline = parseProgramDate(bestDeadlineText(rowContext), 'deadline', referenceDate);
+  const deadline = statedDeadline(rowContext, referenceDate);
   // An opportunity row has no page of its own on this site: its heading links straight to
   // the fund record, and a short link there redirects to one (#4233).
   const applicationLink =
@@ -1574,9 +1657,7 @@ function candidateFromDetailPage(
   const applicationInformation = applicationSectionText($);
   const deadlineStatement = programDeadlineStatement(bodyText);
   const deadline =
-    deadlineStatement === 'none'
-      ? undefined
-      : parseProgramDate(bestDeadlineText(bodyText), 'deadline', referenceDate);
+    deadlineStatement === 'none' ? undefined : statedDeadline(bodyText, referenceDate);
   const applicationOpenDate = parseProgramDate(
     bestApplicationOpenText(bodyText),
     'opens',
