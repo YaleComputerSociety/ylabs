@@ -21,7 +21,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'researchers:repoint-wrong-person-official-profile-links';
 export const CONFIRM_FLAG = '--confirm-repoint-wrong-person-official-profile-links';

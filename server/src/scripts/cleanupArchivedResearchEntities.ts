@@ -17,7 +17,7 @@ import {
   type ArchivedResearchEntityCleanupPlan,
 } from './cleanupArchivedResearchEntitiesCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const CLEANUP_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;

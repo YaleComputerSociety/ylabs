@@ -307,7 +307,7 @@ const isDirectRun = process.argv[1]
 
 if (isDirectRun) {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+  dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
   main().catch((error) => {
     console.error('Failed to audit the faculty-departure lane:', sanitizeLogValue(error));
     process.exitCode = 1;

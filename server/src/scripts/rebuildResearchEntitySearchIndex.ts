@@ -12,7 +12,7 @@ import {
   type ScriptApplyGuardResult,
 } from './scriptWriteGuards';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 export interface RebuildResearchEntitySearchIndexCliOptions {
   pageSize: number;

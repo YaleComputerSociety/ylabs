@@ -14,7 +14,7 @@ import { classifyVisibilityRepairStage } from '../services/visibilityRepairQueue
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 export const LAUNCH_REVIEW_EXCEPTION_DECISION_VALUES = [
   'keep_capped_formalization_only',

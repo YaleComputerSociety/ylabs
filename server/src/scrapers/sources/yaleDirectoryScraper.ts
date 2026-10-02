@@ -38,7 +38,7 @@ import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatChara
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const SOURCE_NAME = 'yale-directory';
 const SOURCE_URL = 'https://api.yalies.io/v2/people';

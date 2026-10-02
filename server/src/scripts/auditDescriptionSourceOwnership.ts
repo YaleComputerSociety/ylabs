@@ -36,7 +36,7 @@ import {
 import { connectScriptMongo } from '../db/connections';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SERVED_TIER = 'student_ready';
 

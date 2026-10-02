@@ -15,7 +15,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export const CONFIRM_SECTION_RECLASSIFY_FLAG = '--confirm-section-reclassify';
 

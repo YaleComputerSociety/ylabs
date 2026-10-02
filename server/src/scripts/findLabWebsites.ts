@@ -34,9 +34,9 @@ import {
   type LabSiteVerdict,
 } from './findLabWebsitesCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'data:find-lab-websites';
 const FETCH_TIMEOUT_MS = 25000;

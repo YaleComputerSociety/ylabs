@@ -15,7 +15,7 @@ import {
 } from './retiredCollectionDropCore';
 import '../models';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 type MongoDb = NonNullable<typeof mongoose.connection.db>;
 type Mode = 'dry-run' | 'apply' | 'verify' | 'drop-legacy' | 'drop-retired-populated';

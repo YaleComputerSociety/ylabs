@@ -14,7 +14,7 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const DEFAULT_LIMIT = 500;
 const DEFAULT_SAMPLE_SIZE = 20;

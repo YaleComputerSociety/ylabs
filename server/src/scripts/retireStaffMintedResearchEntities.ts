@@ -24,7 +24,7 @@ import {
   type StaffMintedEntityCandidate,
 } from './retireStaffMintedResearchEntitiesCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const SCRIPT_NAME = 'research-entity:retire-staff-minted-entities';
 const DEFAULT_MAX_APPLY = 200;

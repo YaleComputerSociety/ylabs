@@ -29,9 +29,9 @@ import {
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export const SCRIPT_NAME = 'observations:purge-unread-directory-contact';
 export const PURGE_CONFIRM_FLAG = '--confirm-purge-unread-directory-contact';

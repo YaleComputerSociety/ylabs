@@ -18,7 +18,7 @@ import {
   type TitleOwnershipRow,
 } from './auditTitleResearchOwnershipCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const SCRIPT_NAME = 'research-entity:audit-title-research-ownership';
 

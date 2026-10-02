@@ -34,7 +34,7 @@ import {
   stagedSwapCollectionExists,
 } from './stagedCollectionSwap';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 type Mode = 'dry-run' | 'apply';
 type PromotionCollectionCategory = 'research-discovery' | 'source-audit' | 'base-support';

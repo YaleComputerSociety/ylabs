@@ -28,7 +28,7 @@ import {
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:retype-grant-minted-lab-shells';
 export const CONFIRM_FLAG = '--confirm-retype-grant-minted-lab-shells';

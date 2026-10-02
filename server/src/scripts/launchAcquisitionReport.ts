@@ -11,7 +11,7 @@ import {
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 export interface LaunchAcquisitionReportCliOptions extends LaunchAcquisitionReportOptions {
   output?: string;

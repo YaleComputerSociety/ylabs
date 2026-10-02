@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import { requiresDeployedRuntimeSecurity } from './environment';
 if (process.env.YLABS_SKIP_LOCAL_DOTENV !== 'true') {
-  dotenv.config();
+  dotenv.config({ quiet: true });
 }
 
 const LOCAL_MEILISEARCH_HOST = 'http://localhost:7700';

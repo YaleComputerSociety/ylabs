@@ -38,7 +38,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 if (process.env.YLABS_INVENTORY_PROFILE_ACTIVE !== 'true') {
-  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+  dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 }
 
 const COLLECTION_SCAN_CONCURRENCY = 4;

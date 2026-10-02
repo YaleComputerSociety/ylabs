@@ -19,9 +19,9 @@ import { connectScriptMongo } from '../db/connections';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export const SCRIPT_NAME = 'accounts:purge-retired-login-profile-fields';
 export const PURGE_CONFIRM_FLAG = '--confirm-purge-retired-login-profile-fields';

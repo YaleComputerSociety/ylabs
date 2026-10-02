@@ -24,9 +24,9 @@ import {
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 import { isSsrfGuardRefusal } from '../utils/ssrfGuard';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:clear-dead-lab-homes';
 const INDEX_URL = 'https://medicine.yale.edu/about/a-to-z-index/lab-websites/';
