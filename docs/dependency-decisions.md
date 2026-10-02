@@ -17,7 +17,7 @@ The server imports it only for the `AnyNode` and `Element` types it annotates ch
 Declaring 6 installs a second copy beside cheerio's, so those annotations would describe a different release from the nodes cheerio builds; it typechecks today only because the two shapes still match.
 Revisit when `cheerio` moves to `htmlparser2` 12 and `domhandler` 6: `npm view cheerio dependencies.domhandler`.
 
-Three others behind their latest are left where they are.
+Four others behind their latest are left where they are.
 `mongodb` stays on `~7.6` rather than 7.7, because it tracks the driver line Mongoose 9.10 pins, as recorded below.
 `eslint` 10.12, `@sentry/node` 11.3 and 11.4, and `@sentry/react` 11.3 and 11.4 were published less than a day before this change, so `npmMinimalAgeGate` refuses them; they are ordinary minor bumps for the next pass.
 
