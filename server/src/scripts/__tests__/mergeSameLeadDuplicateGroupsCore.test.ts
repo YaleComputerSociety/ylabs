@@ -35,6 +35,7 @@ describe('same-lead corroborated merges (#3326)', () => {
     expect([...SAME_LEAD_MERGE_CARRIED_FIELDS].sort()).toEqual([
       'fundingAgencies',
       'recentGrantCount',
+      'recentGrantPeriods',
       'recentGrants',
     ]);
   });

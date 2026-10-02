@@ -66,13 +66,14 @@ describe('planStrandedFundingObservationRelink', () => {
       duplicateKeys: [duplicateKey],
       observations: [
         { id: 'grants', entityKey: duplicateKey, field: 'recentGrants' },
+        { id: 'periods', entityKey: duplicateKey, field: 'recentGrantPeriods' },
         { id: 'count', entityKey: duplicateKey, field: 'recentGrantCount' },
         { id: 'agencies', entityKey: duplicateKey, field: 'fundingAgencies' },
       ],
     });
     expect(plan).not.toBeNull();
     expect(plan!.survivorKey).toBe(survivorKey);
-    expect(plan!.ids).toEqual(['grants', 'count', 'agencies']);
+    expect(plan!.ids).toEqual(['grants', 'periods', 'count', 'agencies']);
   });
 
   it('never re-keys an identity field, which would move a fabricated lab name (#3160)', () => {
