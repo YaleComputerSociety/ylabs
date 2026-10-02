@@ -174,6 +174,12 @@ import {
 } from './rowKeyedContactEvidence';
 import { planUnsourcedProvenanceWebsiteUrlClear } from './unsourcedProvenanceWebsiteClear';
 import {
+  REFUSED_WEBSITE_URL_FIELD,
+  isLaneWithdrawnWebsiteUrl,
+  planLaneWithdrawnWebsiteUrlClear,
+  withoutLaneRefusedWebsiteUrls,
+} from './laneRefusedWebsiteUrl';
+import {
   planNeverBackedFieldProvenanceRetirement,
   planUnrecordedProvenanceObservationRelink,
 } from './neverBackedFieldProvenance';
@@ -1365,6 +1371,12 @@ export function shouldIgnoreObservationForEntityMaterialization(
     isResearchEntityObservationType(entityType) &&
     observation.field === 'methods' &&
     statesNoAdmissibleMethod(observation.value)
+  ) {
+    return true;
+  }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    observation.field === REFUSED_WEBSITE_URL_FIELD
   ) {
     return true;
   }
@@ -5828,6 +5840,7 @@ export interface ProjectFromLogInput {
   undergradEvidenceQuoteWithdrawnBy?: ReadonlySet<string>;
   fellowshipFieldsAssertedAbsent?: ReadonlyMap<string, ReadonlySet<string>>;
   droppedLoserWebsiteValues?: readonly unknown[];
+  laneWithdrawnWebsiteValues?: readonly unknown[];
   loserRosterReads?: readonly ResolverObservation[];
   now: Date;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
@@ -6547,6 +6560,7 @@ export async function projectFromLog(
       ReadonlySet<string>
     >(),
     droppedLoserWebsiteValues = [],
+    laneWithdrawnWebsiteValues = [],
     loserRosterReads = [],
   } = input;
   const set: Record<string, unknown> = {};
@@ -7160,6 +7174,20 @@ export async function projectFromLog(
       }
       clearLoserOnlySurvivorWebsite('websiteUrl');
       if (
+        planLaneWithdrawnWebsiteUrlClear({
+          stored: entityDoc,
+          staged: set,
+          withdrawnValues: laneWithdrawnWebsiteValues,
+          lockedFields: manuallyLockedFields,
+        })
+      ) {
+        console.log(
+          '[lane-refused-website-url] cleared a websiteUrl its own lane has since refused',
+        );
+        set.websiteUrl = '';
+        fieldsWritten++;
+      }
+      if (
         planUnsourcedProvenanceWebsiteUrlClear({
           stored: entityDoc,
           staged: set,
@@ -7218,8 +7246,19 @@ export async function projectFromLog(
           "[survivor-owned-website] declined to promote a merged-in loser's lab website from a citation",
         );
       }
+      const promotedLaneWithdrawnWebsite =
+        websiteResolution.action === 'set' &&
+        isLaneWithdrawnWebsiteUrl(websiteResolution.websiteUrl, laneWithdrawnWebsiteValues);
+      if (promotedLaneWithdrawnWebsite) {
+        console.log(
+          '[lane-refused-website-url] declined to promote a citation its own lane has since refused',
+        );
+      }
       const promotedValueIsRefused =
-        promotedRowRefusal || Boolean(promotedRuleRefusal) || promotedLoserOwnedWebsite;
+        promotedRowRefusal ||
+        Boolean(promotedRuleRefusal) ||
+        promotedLoserOwnedWebsite ||
+        promotedLaneWithdrawnWebsite;
       if (promotedRowRefusal) {
         console.log(
           '[field-value-refusal] declined to promote a refused websiteUrl from a citation',
@@ -8046,6 +8085,16 @@ export async function materializeEntity(
     entityType === 'fellowship'
       ? fellowshipFieldsAssertedAbsent(obs)
       : new Map<string, Set<string>>();
+  const laneWebsiteWithdrawal = isResearchEntityObservationType(entityType)
+    ? withoutLaneRefusedWebsiteUrls(
+        obs,
+        new Set(
+          [entityIdString, identifier.entityKey, identifier.entityId, textValue(entityDoc?.slug)]
+            .map((value) => String(value || ''))
+            .filter(Boolean),
+        ),
+      )
+    : { observations: obs, withdrawnValues: [] };
   const fellowshipEvidence =
     entityType === 'fellowship'
       ? preferFundFacetObservations(
@@ -8055,7 +8104,7 @@ export async function materializeEntity(
             options.chunkPrefetch,
           ),
         )
-      : obs;
+      : laneWebsiteWithdrawal.observations;
   const materializationObs = collapseLatestWins(
     withoutFellowshipFieldsAssertedAbsent(
       withoutWithdrawnUndergradEvidenceQuotes(
@@ -8256,6 +8305,7 @@ export async function materializeEntity(
     undergradEvidenceQuoteWithdrawnBy,
     fellowshipFieldsAssertedAbsent: fellowshipAbsentByField,
     droppedLoserWebsiteValues,
+    laneWithdrawnWebsiteValues: laneWebsiteWithdrawal.withdrawnValues,
     loserRosterReads,
     now: projectionNow,
     synthesizeCardDescription: options.synthesizeCardDescription,

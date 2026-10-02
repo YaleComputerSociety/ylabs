@@ -228,6 +228,48 @@ describe('the websiteUrl absence the research-entity mint asserts (#2647)', () =
   });
 });
 
+describe('the refused lab link the research-entity mint states (#3926)', () => {
+  const LAB_URL = 'https://riverslab.example.org';
+  const refusalsFor = (options: {
+    labWebsite?: { name: string; url: string };
+    unusable: boolean;
+  }) => {
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        meshKeywords: ['Heart Failure'],
+        labWebsite: options.labWebsite,
+      }),
+      RIVERS,
+    )!;
+    const observations = facultyToResearchEntityObservations(
+      profile,
+      'ysm:jordan-rivers',
+      NO_SURNAME_ROSTER,
+      () => options.unusable,
+    );
+    return {
+      refused: observations
+        .filter((observation) => observation.field === 'refusedWebsiteUrl')
+        .map((observation) => observation.value),
+      websiteUrl: observations.find((observation) => observation.field === 'websiteUrl')?.value,
+    };
+  };
+
+  it('states the link it refused when the slot carries one it will not adopt', () => {
+    expect(
+      refusalsFor({ labWebsite: { name: 'Rivers Lab', url: LAB_URL }, unusable: true }),
+    ).toEqual({ refused: [LAB_URL], websiteUrl: undefined });
+  });
+
+  it('states no refusal for a link it adopts or for an empty slot', () => {
+    expect(
+      refusalsFor({ labWebsite: { name: 'Rivers Lab', url: LAB_URL }, unusable: false }),
+    ).toEqual({ refused: [], websiteUrl: LAB_URL });
+    expect(refusalsFor({ unusable: true })).toEqual({ refused: [], websiteUrl: undefined });
+  });
+});
+
 describe('facultyToUserObservations', () => {
   it('keys on netid derived from a person-specific email and sources the profile page', () => {
     const profile = extractProfile(
