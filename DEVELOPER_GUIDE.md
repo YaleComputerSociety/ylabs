@@ -440,7 +440,8 @@ All mount under `/api`.
 
 ## Testing
 
-Client-side tests run under **Vitest 3** with a `jsdom` environment. Server-side tests also run under **Vitest**.
+Client-side tests run under **Vitest 5** with a `jsdom` 30 environment.
+Server-side tests also run under **Vitest 5**.
 
 ### Running tests
 
