@@ -378,7 +378,7 @@ describe('SavedResearchPlans', () => {
     expect(screen.queryByText('Has hosted undergrads before')).toBeNull();
   });
 
-  it('caps comparison selection at four saved homes', async () => {
+  it('caps comparison selection at four saved research profiles', async () => {
     withManySavedPlans(5);
 
     render(

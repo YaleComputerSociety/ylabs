@@ -371,7 +371,7 @@ const FellowshipModal = ({
               <div className="col-span-1 space-y-6">
                 {fellowship.awardAmount && (
                   <section>
-                    <h3 className={sectionHeadingClass}>Award Amount</h3>
+                    <h3 className={sectionHeadingClass}>Award amount</h3>
                     <div className="bg-emerald-50 rounded-card p-3">
                       <p className="text-sm font-semibold text-emerald-800">
                         {fellowship.awardAmount}
@@ -382,7 +382,7 @@ const FellowshipModal = ({
 
                 {guidance ? (
                   <section>
-                    <h3 className={sectionHeadingClass}>What This Is</h3>
+                    <h3 className={sectionHeadingClass}>What this is</h3>
                     <div className="space-y-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
                       <p className="text-sm font-medium text-ink">
                         {DEPARTMENT_RESEARCH_GUIDANCE_LABEL}
@@ -401,7 +401,7 @@ const FellowshipModal = ({
                   </section>
                 ) : (
                   <section>
-                    <h3 className={sectionHeadingClass}>Program Route</h3>
+                    <h3 className={sectionHeadingClass}>How it works</h3>
                     <div className="space-y-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
                       <div>
                         <span className="text-xs text-muted">What this is</span>
@@ -417,7 +417,7 @@ const FellowshipModal = ({
                         </div>
                       )}
                       <div>
-                        <span className="text-xs text-muted">Entry mode</span>
+                        <span className="text-xs text-muted">How you apply</span>
                         <p className="text-sm font-medium text-ink">
                           {entryModeLabel(fellowship.entryMode)}
                         </p>
@@ -432,10 +432,10 @@ const FellowshipModal = ({
 
                 {!guidance && (
                   <section>
-                    <h3 className={sectionHeadingClass}>Key Dates</h3>
+                    <h3 className={sectionHeadingClass}>Key dates</h3>
                     <div className="bg-[var(--yr-blue-soft)] rounded-card p-3 space-y-3">
                       <div>
-                        <span className="text-xs text-brand">Current Status</span>
+                        <span className="text-xs text-brand">Current status</span>
                         <p className="text-sm font-semibold text-brand-navy">
                           {applicationStatus.label}
                         </p>
@@ -449,7 +449,7 @@ const FellowshipModal = ({
                         </div>
                       )}
                       <div>
-                        <span className="text-xs text-brand">Application Opens</span>
+                        <span className="text-xs text-brand">Application opens</span>
                         <p className="text-sm font-medium text-brand-navy">
                           {formatFellowshipDate(fellowship.applicationOpenDate, 'opens')}
                         </p>
@@ -511,7 +511,7 @@ const FellowshipModal = ({
                   fellowship.hoursPerWeek ||
                   fellowship.programDates) && (
                   <section>
-                    <h3 className={sectionHeadingClass}>Time & Funding</h3>
+                    <h3 className={sectionHeadingClass}>Time & funding</h3>
                     <div className="space-y-2 rounded-card bg-emerald-50 p-3 text-sm text-emerald-900">
                       {fellowship.compensationSummary && <p>{fellowship.compensationSummary}</p>}
                       {fellowship.hoursPerWeek && <p>{fellowship.hoursPerWeek} hours/week</p>}
@@ -552,12 +552,12 @@ const FellowshipModal = ({
 
                 {!guidance && (
                   <section>
-                    <h3 className={sectionHeadingClass}>Eligibility Filters</h3>
+                    <h3 className={sectionHeadingClass}>Eligibility filters</h3>
                     <p className="text-xs text-muted mb-3">Click to find similar fellowships</p>
                     <div className="space-y-3">
                       {fellowship.yearOfStudy.length > 0 && (
                         <div>
-                          <span className="text-xs text-muted">Year of Study</span>
+                          <span className="text-xs text-muted">Year of study</span>
                           <div className="mt-1 flex flex-wrap gap-2">
                             {fellowship.yearOfStudy.map((year) => (
                               <button
@@ -573,7 +573,7 @@ const FellowshipModal = ({
                       )}
                       {fellowship.termOfAward.length > 0 && (
                         <div>
-                          <span className="text-xs text-muted">Term of Award</span>
+                          <span className="text-xs text-muted">Term of award</span>
                           <div className="mt-1 flex flex-wrap gap-2">
                             {fellowship.termOfAward.map((term) => (
                               <button
@@ -605,7 +605,7 @@ const FellowshipModal = ({
                       )}
                       {fellowship.globalRegions.length > 0 && (
                         <div>
-                          <span className="text-xs text-muted">Global Regions</span>
+                          <span className="text-xs text-muted">Global regions</span>
                           <div className="mt-1 flex flex-wrap gap-2">
                             {fellowship.globalRegions.map((region) => (
                               <button
@@ -621,7 +621,7 @@ const FellowshipModal = ({
                       )}
                       {fellowship.citizenshipStatus.length > 0 && (
                         <div>
-                          <span className="text-xs text-muted">Citizenship Status</span>
+                          <span className="text-xs text-muted">Citizenship status</span>
                           <div className="mt-1 flex flex-wrap gap-2">
                             {fellowship.citizenshipStatus.map((status) => (
                               <button
@@ -643,7 +643,7 @@ const FellowshipModal = ({
               <div className="col-span-1 md:col-span-2 space-y-6">
                 {fellowship.bestNextStep && (
                   <section>
-                    <h3 className={sectionHeadingClass}>What To Do Next</h3>
+                    <h3 className={sectionHeadingClass}>What to do next</h3>
                     <p className="rounded-card border border-line-brand bg-brand-soft p-4 text-sm leading-relaxed text-brand-navy">
                       {fellowship.bestNextStep}
                     </p>
@@ -652,7 +652,7 @@ const FellowshipModal = ({
 
                 {fellowship.prepSteps.length > 0 && (
                   <section>
-                    <h3 className={sectionHeadingClass}>Prep Steps</h3>
+                    <h3 className={sectionHeadingClass}>Prep steps</h3>
                     <div className="flex flex-wrap gap-2">
                       {fellowship.prepSteps.map((step) => (
                         <span
@@ -669,7 +669,7 @@ const FellowshipModal = ({
                 {!guidance &&
                   (fellowship.applicationInformation || applicationMaterials.length > 0) && (
                     <section>
-                      <h3 className={sectionHeadingClass}>Application Process</h3>
+                      <h3 className={sectionHeadingClass}>Application process</h3>
                       <div className="space-y-3 rounded-card border border-line-brand bg-brand-soft p-4">
                         {applicationMaterials.length > 0 && (
                           <div>
@@ -715,7 +715,7 @@ const FellowshipModal = ({
                 {hasDistinctSummaryAndDescription ? (
                   <>
                     <section>
-                      <h3 className={sectionHeadingClass}>Brief Description</h3>
+                      <h3 className={sectionHeadingClass}>Brief description</h3>
                       <RichTextBlock
                         text={summaryText}
                         className="text-sm text-ink-soft leading-relaxed"
@@ -723,7 +723,7 @@ const FellowshipModal = ({
                     </section>
 
                     <section>
-                      <h3 className={sectionHeadingClass}>Full Description</h3>
+                      <h3 className={sectionHeadingClass}>Full description</h3>
                       <RichTextBlock
                         text={descriptionText}
                         className="text-sm text-ink-soft leading-relaxed"
@@ -744,7 +744,7 @@ const FellowshipModal = ({
 
                 {fellowship.eligibility && (
                   <section>
-                    <h3 className={sectionHeadingClass}>Eligibility Requirements</h3>
+                    <h3 className={sectionHeadingClass}>Eligibility requirements</h3>
                     <RichTextBlock
                       text={fellowship.eligibility}
                       className="text-sm text-ink-soft leading-relaxed"
@@ -754,7 +754,7 @@ const FellowshipModal = ({
 
                 {!fellowship.eligibility && !guidance && (
                   <section>
-                    <h3 className={sectionHeadingClass}>Eligibility Requirements</h3>
+                    <h3 className={sectionHeadingClass}>Eligibility requirements</h3>
                     {structuredEligibilityDetails.length > 0 ? (
                       <dl className="space-y-1.5">
                         {structuredEligibilityDetails.map((detail) => (
@@ -784,7 +784,7 @@ const FellowshipModal = ({
 
                 {fellowship.additionalInformation && (
                   <section>
-                    <h3 className={sectionHeadingClass}>Additional Information</h3>
+                    <h3 className={sectionHeadingClass}>Additional information</h3>
                     <RichTextBlock
                       text={fellowship.additionalInformation}
                       className="text-sm text-ink-soft leading-relaxed"
@@ -813,10 +813,10 @@ const FellowshipModal = ({
                       }`}
                     >
                       {applicationStatus.isApplicationWindowOpen
-                        ? 'Apply Now'
+                        ? 'Apply now'
                         : applicationStatus.kind === 'notOpenYet'
-                          ? 'Track Opening Date'
-                          : 'Open Fellowship Source'}
+                          ? 'Track the opening date'
+                          : 'Open the fellowship source'}
                       <ExternalLinkIcon className="ml-2" size={16} />
                     </a>
                   </div>

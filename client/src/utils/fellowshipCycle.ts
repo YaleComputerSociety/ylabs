@@ -67,7 +67,7 @@ export function getFellowshipCycleStatus(
   if (applicationStatus.kind === 'notOpenYet') {
     return {
       category: 'openingSoon',
-      label: 'Opens Soon',
+      label: 'Opens soon',
       className: 'bg-blue-50 text-blue-700 border border-blue-100',
       deadlinePassed,
       sourceBacked,
@@ -78,7 +78,7 @@ export function getFellowshipCycleStatus(
   if (applicationStatus.kind === 'projectedNextCycle') {
     return {
       category: 'projectedNextCycle',
-      label: 'Next Cycle (Est.)',
+      label: 'Next cycle (est.)',
       className: 'bg-sky-50 text-sky-700 border border-sky-100',
       deadlinePassed: false,
       sourceBacked,
@@ -91,7 +91,7 @@ export function getFellowshipCycleStatus(
     if (daysUntil <= CLOSING_SOON_DAYS && daysUntil > 0) {
       return {
         category: 'closingSoon',
-        label: 'Closing Soon',
+        label: 'Closing soon',
         className: 'bg-amber-50 text-amber-700 border border-amber-100',
         deadlinePassed,
         sourceBacked,
@@ -114,7 +114,7 @@ export function getFellowshipCycleStatus(
   if (likelyRecurring) {
     return {
       category: 'nextCycle',
-      label: 'Deadline Passed',
+      label: 'Deadline passed',
       className: 'bg-sky-50 text-sky-700 border border-sky-100',
       deadlinePassed,
       sourceBacked,
@@ -124,7 +124,7 @@ export function getFellowshipCycleStatus(
 
   return {
     category: 'closed',
-    label: deadline ? 'Closed' : 'No Dates Posted',
+    label: deadline ? 'Closed' : 'No dates posted',
     className: 'bg-gray-100 text-gray-600 border border-gray-200',
     deadlinePassed,
     sourceBacked,

@@ -517,8 +517,8 @@ const DecisionSummary = ({
             <>
               <h2 className="text-lg font-semibold text-ink">No published research summary yet</h2>
               <p className="mt-2 max-w-[68ch] text-base leading-relaxed text-ink-soft">
-                This section normally explains what the research covers, in its own words. Yale
-                Research has not found a description it can publish for this one
+                This section normally explains what the research covers, in its own words. y/labs
+                has not found a description it can publish for this one
                 {pageListsContacts
                   ? ', so use the sources and contacts listed here to check the work directly before deciding fit.'
                   : '. Check the linked sources further down this page before deciding fit.'}

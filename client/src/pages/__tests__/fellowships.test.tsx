@@ -194,6 +194,7 @@ const renderPage = (
   overrides: Partial<FellowshipSearchContextType> = {},
   initialEntries: string[] = ['/programs'],
   initialIndex: number = initialEntries.length - 1,
+  user: { userType: string; isAdmin?: boolean } = { userType: 'student' },
 ) => {
   if (!mockedAxios.get.getMockImplementation()) {
     mockedAxios.get.mockResolvedValue({ data: { watchedProgramIds: [] } });
@@ -266,7 +267,7 @@ const renderPage = (
         value={{
           isLoading: false,
           isAuthenticated: true,
-          user: { userType: 'student' } as any,
+          user: user as any,
           checkContext: vi.fn(),
         }}
       >
@@ -416,11 +417,11 @@ describe('Programs page', () => {
 
     expect(screen.getByRole('heading', { name: 'Programs & Fellowships' })).toBeTruthy();
     expect(screen.getByText(/you can apply to, soonest deadline first/i)).toBeTruthy();
-    expect(screen.getByText('Due soon')).toBeTruthy();
-    expect(screen.getByText('Open now')).toBeTruthy();
-    expect(screen.getByText('Opening soon')).toBeTruthy();
-    expect(screen.getByText('Next cycle')).toBeTruthy();
-    expect(screen.getByText('Archive / review')).toBeTruthy();
+    expect(screen.getByText('Due soon', { selector: 'dt' })).toBeTruthy();
+    expect(screen.getByText('Open now', { selector: 'dt' })).toBeTruthy();
+    expect(screen.getByText('Opening soon', { selector: 'dt' })).toBeTruthy();
+    expect(screen.getByText('Next cycle', { selector: 'dt' })).toBeTruthy();
+    expect(screen.getByText('Archive / review', { selector: 'dt' })).toBeTruthy();
     expect(screen.queryByText('Get started')).toBeNull();
     expect(screen.getByText('Open Fellowship')).toBeTruthy();
     expect(screen.getByText('Next Cycle Fellowship')).toBeTruthy();
@@ -483,8 +484,8 @@ describe('Programs page', () => {
     });
 
     for (const [title, tile, count] of [
-      ['Due in the Next 30 Days', 'Due soon', 1],
-      ['Accepting Applications', 'Open now', 2],
+      ['Due in the next 30 days', 'Due soon', 1],
+      ['Accepting applications', 'Open now', 2],
     ] as const) {
       const header = screen.getByRole('heading', { name: title }).parentElement;
       expect(header?.textContent).toContain(String(count));
@@ -520,8 +521,8 @@ describe('Programs page', () => {
 
     const [firstCard] = screen.getAllByRole('article');
     expect(within(firstCard).getByText('Open Late Program')).toBeTruthy();
-    const openSection = screen.getByRole('region', { name: 'Accepting Applications' });
-    const nextCycleSection = screen.getByRole('region', { name: 'Plan for the Next Cycle' });
+    const openSection = screen.getByRole('region', { name: 'Accepting applications' });
+    const nextCycleSection = screen.getByRole('region', { name: 'Plan for the next cycle' });
     expect(openSection.compareDocumentPosition(nextCycleSection)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
@@ -554,7 +555,7 @@ describe('Programs page', () => {
     expect(screen.getByRole('combobox', { name: /sort programs/i }).className).toContain(
       'min-h-[44px]',
     );
-    expect(screen.getByRole('button', { name: 'Open Only' }).className).toContain('min-h-[44px]');
+    expect(screen.getByRole('button', { name: 'Open only' }).className).toContain('min-h-[44px]');
 
     await userEvent.click(screen.getByRole('button', { name: /filters/i }));
     await userEvent.click(screen.getByRole('button', { name: 'Year' }));
@@ -565,7 +566,7 @@ describe('Programs page', () => {
     expect(typeof update).toBe('function');
     expect(update([])).toEqual(['Senior']);
     expect(screen.queryByRole('option')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Open Only' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Open only' })).toHaveAttribute(
       'aria-pressed',
       'false',
     );
@@ -638,6 +639,95 @@ describe('Programs page', () => {
     expect(searchInput).toHaveFocus();
   });
 
+  describe('student-facing copy', () => {
+    const PROPER_NOUNS = new Set(['Yale', 'RA']);
+    const isSentenceCase = (text: string) =>
+      text
+        .split(/\s+/)
+        .slice(1)
+        .every((word) => {
+          const bare = word.replace(/[^A-Za-z-]/g, '');
+          return !/^[A-Z]/.test(bare) || PROPER_NOUNS.has(bare);
+        });
+    const allFilterOptions = {
+      programCategory: ['FELLOWSHIP'],
+      programKind: ['STRUCTURED_PROGRAM'],
+      entryMode: ['APPLY_TO_PROGRAM'],
+      studentFacingCategory: ['Structured research program'],
+      yearOfStudy: ['Junior'],
+      termOfAward: ['Summer'],
+      purpose: ['Research'],
+      globalRegions: ['Asia'],
+      citizenshipStatus: ['US Citizen'],
+    };
+    const filterTabNames = async () => {
+      await userEvent.click(screen.getByRole('button', { name: /filters/i }));
+      const dialog = screen.getByRole('dialog', { name: 'Program filters' });
+      return within(dialog)
+        .getAllByRole('button')
+        .map((button) => button.textContent?.trim() || '')
+        .filter(Boolean);
+    };
+
+    it('shows a student only student-worded filter tabs', async () => {
+      renderPage([baseFellowship()], { filterOptions: allFilterOptions });
+
+      const tabs = await filterTabNames();
+
+      expect(tabs).toEqual(
+        expect.arrayContaining(['Opportunity', 'Program type', 'How you apply']),
+      );
+      for (const internal of [
+        'Journey',
+        'Program Kind',
+        'Entry Mode',
+        'Legacy Type',
+        'Legacy category',
+      ]) {
+        expect(tabs).not.toContain(internal);
+      }
+    });
+
+    it('keeps the legacy category facet for operators', async () => {
+      renderPage([baseFellowship()], { filterOptions: allFilterOptions }, ['/programs'], 0, {
+        userType: 'admin',
+        isAdmin: true,
+      });
+
+      expect(await filterTabNames()).toContain('Legacy category');
+    });
+
+    it('sets every quick filter and board section title in sentence case', async () => {
+      renderPage([
+        baseFellowship({
+          id: 'closing',
+          isAcceptingApplications: true,
+          deadline: isoDaysFromNow(10),
+        }),
+        baseFellowship({ id: 'open', isAcceptingApplications: true, deadline: isoDaysFromNow(60) }),
+        baseFellowship({
+          id: 'past',
+          isAcceptingApplications: false,
+          deadline: isoDaysFromNow(-30),
+        }),
+      ]);
+
+      const quickFilters = within(screen.getByRole('group', { name: 'Quick filters' }))
+        .getAllByRole('button')
+        .map((button) => button.textContent?.trim() || '');
+      const sectionTitles = screen
+        .getAllByRole('heading', { level: 2 })
+        .map((heading) => heading.textContent?.trim() || '')
+        .filter((title) => title !== 'Programs & Fellowships');
+
+      expect(quickFilters.length).toBeGreaterThan(0);
+      expect(sectionTitles.length).toBeGreaterThan(0);
+      expect([...quickFilters, ...sectionTitles].filter((label) => !isSentenceCase(label))).toEqual(
+        [],
+      );
+    });
+  });
+
   it('starts desktop filter focus on the first visible tab', async () => {
     const originalMatchMedia = window.matchMedia;
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
@@ -663,7 +753,7 @@ describe('Programs page', () => {
       await userEvent.click(screen.getByRole('button', { name: /filters/i }));
       const dialog = screen.getByRole('dialog', { name: 'Program filters' });
       await waitFor(() =>
-        expect(within(dialog).getByRole('button', { name: 'Journey' })).toHaveFocus(),
+        expect(within(dialog).getByRole('button', { name: 'Opportunity' })).toHaveFocus(),
       );
       expect(within(dialog).getByRole('button', { name: 'Close filters' })).not.toHaveFocus();
     } finally {
@@ -691,7 +781,7 @@ describe('Programs page', () => {
     await userEvent.click(screen.getByText('Name'));
     await userEvent.click(screen.getByRole('button', { name: /sorted descending/i }));
 
-    const openSection = screen.getByRole('region', { name: 'Accepting Applications' });
+    const openSection = screen.getByRole('region', { name: 'Accepting applications' });
     expect(
       within(openSection)
         .getAllByRole('article')
@@ -725,7 +815,7 @@ describe('Programs page', () => {
       }),
     ]);
 
-    await userEvent.click(screen.getByRole('button', { name: /Next Cycle/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Next cycle/i }));
 
     expect(screen.queryByText('Open Fellowship')).toBeNull();
     expect(screen.queryByText('Closing Soon Fellowship')).toBeNull();
@@ -748,15 +838,17 @@ describe('Programs page', () => {
 
     expect(screen.getByText('1 result')).toBeTruthy();
 
-    await userEvent.click(screen.getByRole('button', { name: /Open Only/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Open only/i }));
 
     expect(screen.getByText('0 results')).toBeTruthy();
     expect(
       screen.getByRole('heading', { name: 'No application windows are open right now' }),
     ).toBeTruthy();
-    expect(screen.getByText(/Use Next Cycle to track recurring opportunities/i)).toBeTruthy();
+    expect(
+      screen.getByText(/Use the next cycle filter to track recurring opportunities/i),
+    ).toBeTruthy();
 
-    await userEvent.click(screen.getByRole('button', { name: 'View Next Cycle' }));
+    await userEvent.click(screen.getByRole('button', { name: 'View next cycle' }));
 
     expect(screen.getByText('Next Cycle Fellowship')).toBeTruthy();
     expect(screen.getByText('1 result')).toBeTruthy();
@@ -776,7 +868,7 @@ describe('Programs page', () => {
       }),
     ]);
 
-    await userEvent.click(screen.getByRole('button', { name: /Closing Soon/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Closing soon/i }));
 
     expect(screen.getByText('0 results')).toBeTruthy();
     expect(

@@ -189,10 +189,10 @@ describe('Fellowships grouping', () => {
     });
 
     const regions = [
-      'Due in the Next 30 Days',
-      'Accepting Applications',
-      'Opening Soon',
-      'Plan for the Next Cycle',
+      'Due in the next 30 days',
+      'Accepting applications',
+      'Opening soon',
+      'Plan for the next cycle',
     ].map((name) => screen.getByRole('region', { name }));
     for (let index = 1; index < regions.length; index += 1) {
       expect(regions[index - 1].compareDocumentPosition(regions[index])).toBe(
@@ -309,11 +309,11 @@ describe('Fellowships grouping', () => {
     it('shows guidance by default in its own section, apart from undated programs', () => {
       renderFellowships({ fellowships: board() });
 
-      const guidanceSection = screen.getByRole('region', { name: 'Department Research Guidance' });
+      const guidanceSection = screen.getByRole('region', { name: 'Department research guidance' });
       expect(within(guidanceSection).getByText('Fixture Guidance Page')).toBeInTheDocument();
       expect(within(guidanceSection).queryByText('Undated Fellowship')).not.toBeInTheDocument();
       expect(
-        within(screen.getByRole('region', { name: 'No Dates Posted' })).queryByText(
+        within(screen.getByRole('region', { name: 'No dates posted' })).queryByText(
           'Fixture Guidance Page',
         ),
       ).not.toBeInTheDocument();

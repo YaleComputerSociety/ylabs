@@ -37,6 +37,7 @@ These are the tells that have actually been measured in this client, so check ea
 - **Figures align.** Numbers in a column are tabular. Tables get this from a base rule; a standalone metric needs `.yr-num`.
 - **Pressed state, not just hover.** An interactive card or button needs an `:active` that moves, or it feels like a picture of a button.
 - **Sentence case in headings and labels**, not Title Case On Every Header.
+The `/programs` quick filters, board section titles, cycle badges, and program modal headings are held to it by `fellowships.test.tsx` and `FellowshipModal.test.tsx` (#4273).
 - **No em dash anywhere**, per `AGENTS.md`. Plain hyphens.
 - **Real copy and real data.** No Lorem Ipsum, no "Acme", no `99.99%`, no `Jane Doe`. No "Elevate", "Seamless", "Unleash", "Next-Gen". No `Oops!` and no exclamation mark in a success message: "Connection failed. Please try again."
 - **No three equal cards** as a feature row, and no equal-height cards forced by flex when the content length varies.
@@ -68,6 +69,7 @@ It stops at the first pointer press, because a click gives the browser its own s
 Use `client/src/hooks/useRovingTabs.ts` for the selected tab and arrow, Home, and End roving focus, and give each tab `role="tab"`, `aria-selected`, `aria-controls`, and a matching `role="tabpanel"`.
 `client/src/pages/dashboard.tsx` and `client/src/components/admin/AdminPanel.tsx` are the reference uses.
 A strip that can outgrow a 320px viewport scrolls in its own `overflow-x-auto` region so the page never scrolls sideways.
+A tab strip inside a fixed-width popover wraps instead, because a scrolled strip there cuts a tab at the edge: the `/programs` filter tabs were clipped at 340px until they wrapped, and the student-journey smoke fails when a tab runs past the popover.
 
 ## Content, loading, and errors
 

@@ -188,7 +188,7 @@ const CombinedFilterDropdown = ({
               </button>
             </div>
           )}
-          <div className="flex border-b border-[var(--yr-line)] bg-[var(--yr-panel-muted)] overflow-x-auto">
+          <div className="flex flex-wrap border-b border-[var(--yr-line)] bg-[var(--yr-panel-muted)]">
             {tabs.map((tab) => (
               <button
                 key={tab.key}

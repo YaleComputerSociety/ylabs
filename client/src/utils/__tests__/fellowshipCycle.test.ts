@@ -74,7 +74,7 @@ describe('fellowshipCycle', () => {
     );
 
     expect(status.category).toBe('openingSoon');
-    expect(status.label).toBe('Opens Soon');
+    expect(status.label).toBe('Opens soon');
   });
 
   it('classifies active fellowships as open or closing soon', () => {
@@ -108,7 +108,7 @@ describe('fellowshipCycle', () => {
     expect(isLikelyRecurringFellowship(fellowship)).toBe(true);
     expect(getFellowshipCycleStatus(fellowship, now)).toMatchObject({
       category: 'nextCycle',
-      label: 'Deadline Passed',
+      label: 'Deadline passed',
       likelyRecurring: true,
     });
     expect(getFellowshipDeadlineSubtitle(fellowship, now)).toBe('Past cycle; track for reopening');
@@ -135,7 +135,7 @@ describe('fellowshipCycle', () => {
 
     const status = getFellowshipCycleStatus(fellowship, now);
     expect(status.category).toBe('projectedNextCycle');
-    expect(status.label).toBe('Next Cycle (Est.)');
+    expect(status.label).toBe('Next cycle (est.)');
     expect(status.deadlinePassed).toBe(false);
     expect(getFellowshipDeadlineSubtitle(fellowship, now)).toBe(
       'Est. next cycle ~Feb 17 (unconfirmed)',

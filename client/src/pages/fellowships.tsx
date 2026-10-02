@@ -87,12 +87,12 @@ const quickFilterEmptyCopy = (quickFilter: FellowshipQuickFilter) => {
   if (quickFilter === 'open')
     return {
       title: 'No application windows are open right now',
-      body: 'There are no current program or fellowship applications in this filtered set. Use Next Cycle to track recurring opportunities while you prepare eligibility, mentor fit, and materials.',
+      body: 'There are no current program or fellowship applications in this filtered set. Use the next cycle filter to track recurring opportunities while you prepare eligibility, mentor fit, and materials.',
     };
   if (quickFilter === 'closingSoon')
     return {
       title: 'No application windows are closing soon',
-      body: 'There are no open program or fellowship deadlines due in the next 30 days. Use Next Cycle to track recurring opportunities while you prepare eligibility, mentor fit, and materials.',
+      body: 'There are no open program or fellowship deadlines due in the next 30 days. Use the next cycle filter to track recurring opportunities while you prepare eligibility, mentor fit, and materials.',
     };
   if (quickFilter === 'guidance')
     return {
@@ -130,7 +130,7 @@ const QuickFilterEmptyState = ({
             onClick={onViewNextCycle}
             className="inline-flex min-h-[44px] items-center justify-center rounded-card border border-line-brand bg-brand-soft px-4 text-sm font-semibold text-brand transition-colors hover:bg-panel yr-focus-ring"
           >
-            View Next Cycle
+            View next cycle
           </button>
         )}
         <button
@@ -202,14 +202,16 @@ const StatusSummary = ({
 };
 
 const fellowshipQuickFilters: QuickFilterDef[] = [
-  { label: 'Open Only', value: 'open' },
-  { label: 'Closing Soon', value: 'closingSoon' },
-  { label: 'Next Cycle', value: 'nextCycle' },
-  { label: 'Open to First-Years', value: 'firstYear' },
-  { label: 'No Mentor Required', value: 'noMentorFirst' },
-  { label: 'Department Guidance', value: 'guidance' },
-  { label: 'Applications Only', value: 'applicationsOnly' },
+  { label: 'Open only', value: 'open' },
+  { label: 'Closing soon', value: 'closingSoon' },
+  { label: 'Next cycle', value: 'nextCycle' },
+  { label: 'Open to first-years', value: 'firstYear' },
+  { label: 'No mentor required', value: 'noMentorFirst' },
+  { label: 'Department guidance', value: 'guidance' },
+  { label: 'Applications only', value: 'applicationsOnly' },
 ];
+
+const OPERATOR_FILTER_TAB_KEYS = new Set(['programCategory']);
 
 const trustTierFilterOptions: Array<{ value: StudentVisibilityTier; label: string }> = [
   { value: 'student_ready', label: 'Ready' },
@@ -228,7 +230,7 @@ const boardSections: Array<{
 }> = [
   {
     key: 'closingSoon',
-    title: 'Due in the Next 30 Days',
+    title: 'Due in the next 30 days',
     description: 'Open now and closing soon, soonest deadline first.',
     tileLabel: 'Due soon',
     tileDetail: 'Within 30 days',
@@ -236,7 +238,7 @@ const boardSections: Array<{
   },
   {
     key: 'open',
-    title: 'Accepting Applications',
+    title: 'Accepting applications',
     description: 'Open now, soonest deadline first.',
     tileLabel: 'Open now',
     tileDetail: 'Accepting applications',
@@ -244,7 +246,7 @@ const boardSections: Array<{
   },
   {
     key: 'openingSoon',
-    title: 'Opening Soon',
+    title: 'Opening soon',
     description: 'Applications have not opened yet, soonest opening first. Save one to track it.',
     tileLabel: 'Opening soon',
     tileDetail: 'Not open yet',
@@ -252,7 +254,7 @@ const boardSections: Array<{
   },
   {
     key: 'nextCycle',
-    title: 'Plan for the Next Cycle',
+    title: 'Plan for the next cycle',
     description:
       "This year's deadline has passed. An estimated date is based on last year's cycle and is not confirmed, so check the source before you plan around it.",
     tileLabel: 'Next cycle',
@@ -261,7 +263,7 @@ const boardSections: Array<{
   },
   {
     key: 'guidance',
-    title: 'Department Research Guidance',
+    title: 'Department research guidance',
     description:
       "Each department's own advice on finding a faculty mentor and getting started in research. These are guides, not applications.",
     tileLabel: 'Department guidance',
@@ -270,7 +272,7 @@ const boardSections: Array<{
   },
   {
     key: 'noDates',
-    title: 'No Dates Posted',
+    title: 'No dates posted',
     description: 'No application window is listed. Check the source for timing.',
     tileLabel: 'No dates',
     tileDetail: 'Check the source',
@@ -278,7 +280,7 @@ const boardSections: Array<{
   },
   {
     key: 'archive',
-    title: 'Archive / Review',
+    title: 'Archive / review',
     description:
       'Retained records that need eligibility review or should not be treated as active undergraduate options.',
     tileLabel: 'Archive / review',
@@ -482,14 +484,14 @@ const Fellowships = () => {
   const fellowshipFilterTabs: FilterTabConfig[] = [
     {
       key: 'studentFacingCategory',
-      label: 'Journey',
+      label: 'Opportunity',
       options: filterOptions.studentFacingCategory,
       selected: selectedStudentFacingCategory,
       setSelected: setSelectedStudentFacingCategory,
     },
     {
       key: 'programKind',
-      label: 'Program Kind',
+      label: 'Program type',
       options: filterOptions.programKind,
       labelFn: programKindLabel,
       selected: selectedProgramKind,
@@ -497,7 +499,7 @@ const Fellowships = () => {
     },
     {
       key: 'entryMode',
-      label: 'Entry Mode',
+      label: 'How you apply',
       options: filterOptions.entryMode,
       labelFn: entryModeLabel,
       selected: selectedEntryMode,
@@ -505,7 +507,7 @@ const Fellowships = () => {
     },
     {
       key: 'programCategory',
-      label: 'Legacy Type',
+      label: 'Legacy category',
       options: filterOptions.programCategory,
       labelFn: programCategoryLabel,
       selected: selectedProgramCategory,
@@ -553,7 +555,7 @@ const Fellowships = () => {
       selected: selectedCitizenship,
       setSelected: setSelectedCitizenship,
     },
-  ];
+  ].filter((tab) => isAdmin || !OPERATOR_FILTER_TAB_KEYS.has(tab.key));
 
   const fellowshipFilterGroups: {
     label: string;
@@ -562,24 +564,24 @@ const Fellowships = () => {
     clear: () => void;
   }[] = [
     {
-      label: 'Journey',
+      label: 'Opportunity',
       values: selectedStudentFacingCategory,
       clear: () => setSelectedStudentFacingCategory([]),
     },
     {
-      label: 'Program Kind',
+      label: 'Program type',
       values: selectedProgramKind,
       labelFn: programKindLabel,
       clear: () => setSelectedProgramKind([]),
     },
     {
-      label: 'Entry Mode',
+      label: 'How you apply',
       values: selectedEntryMode,
       labelFn: entryModeLabel,
       clear: () => setSelectedEntryMode([]),
     },
     {
-      label: 'Legacy Type',
+      label: 'Legacy category',
       values: selectedProgramCategory,
       labelFn: programCategoryLabel,
       clear: () => setSelectedProgramCategory([]),
