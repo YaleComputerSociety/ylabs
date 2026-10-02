@@ -783,6 +783,71 @@ await step('every overlay dims the page with the one navy scrim', async () => {
   }
 });
 
+const DIALOG_SHIFT_BUDGET = 0.01;
+const DIALOG_TOP_TOLERANCE = 16;
+
+const assertDeepLinkedProgramDialogRendersInPlace = async (viewport, reducedMotion) => {
+  await withSyntheticBrowsePage(
+    viewport,
+    async (syntheticPage) => {
+      await syntheticPage.addInitScript(() => {
+        window.__dialogShifts = [];
+        window.__dialogTops = [];
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            if (entry.hadRecentInput) continue;
+            if (!entry.sources.some((source) => source.node?.closest?.('[role="dialog"]'))) continue;
+            window.__dialogShifts.push(entry.value);
+          }
+        }).observe({ type: 'layout-shift', buffered: true });
+        const sampleDialogTop = () => {
+          const dialog = document.querySelector('[role="dialog"]');
+          if (dialog) window.__dialogTops.push(dialog.getBoundingClientRect().top);
+          requestAnimationFrame(sampleDialogTop);
+        };
+        requestAnimationFrame(sampleDialogTop);
+      });
+      await syntheticPage.goto(`${baseUrl}/programs?program=e2e-program-1`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await syntheticPage.getByRole('dialog').first().waitFor({ timeout: 20000 });
+      await syntheticPage.waitForTimeout(2000);
+      const { shift, maxTop, finalTop } = await syntheticPage.evaluate(() => ({
+        shift: window.__dialogShifts.reduce((sum, value) => sum + value, 0),
+        maxTop: Math.max(...window.__dialogTops),
+        finalTop: window.__dialogTops[window.__dialogTops.length - 1],
+      }));
+      record('deep-linked program dialog stability', {
+        width: viewport.width,
+        reducedMotion,
+        dialogLayoutShift: Number(shift.toFixed(4)),
+        maxTop: Math.round(maxTop),
+        finalTop: Math.round(finalTop),
+      });
+      assert(
+        maxTop - finalTop <= DIALOG_TOP_TOLERANCE,
+        `A deep-linked program dialog at ${viewport.width}px first painted ${Math.round(maxTop)}px from the top and settled at ${Math.round(finalTop)}px, so it jumped into place.`,
+      );
+      assert(
+        shift < DIALOG_SHIFT_BUDGET,
+        `A deep-linked program dialog at ${viewport.width}px shifted by ${shift.toFixed(3)} (budget ${DIALOG_SHIFT_BUDGET}).`,
+      );
+    },
+    { reducedMotion },
+  );
+};
+
+await step('a deep-linked program dialog renders in place without a layout shift', async () => {
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
+  ]) {
+    await assertDeepLinkedProgramDialogRendersInPlace(viewport, 'no-preference');
+  }
+  await assertDeepLinkedProgramDialogRendersInPlace({ width: 768, height: 1024 }, 'reduce');
+});
+
 const summary = {
   generatedAt: new Date().toISOString(),
   baseUrl,

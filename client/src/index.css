@@ -345,19 +345,20 @@ code {
     outline-offset: -2px;
   }
 
+  /* Opacity only: a transform, filter, or perspective on this wrapper makes it the
+     containing block for every position: fixed descendant, so a modal that opens
+     during the fade is laid out against the page and jumps when the fade ends. */
   .yr-fade-in {
-    animation: yr-fade-in-up var(--yr-motion-slow) ease-out backwards;
+    animation: yr-fade-in var(--yr-motion-slow) ease-out backwards;
   }
 }
 
-@keyframes yr-fade-in-up {
+@keyframes yr-fade-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
