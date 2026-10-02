@@ -46,7 +46,6 @@ const OPERATOR_TOOLS: Record<string, string> = {
   'beta:readiness': 'promotion tooling, run as part of the release process',
   'beta:repair-queue': 'promotion tooling, run as part of the release process',
   'beta:clear-student-analytics': 'promotion tooling, run as part of the release process',
-  'beta:seed-environment': 'promotion tooling, run as part of the release process',
   'beta:refresh-from-development': 'promotion tooling, run as part of the release process',
   'development:refresh-from-beta': 'promotion tooling, run as part of the release process',
   'production:promote-beta-copy': 'promotion tooling, run as part of the release process',

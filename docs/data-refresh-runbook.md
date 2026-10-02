@@ -116,11 +116,11 @@ Two write paths into one environment overwrite each other, and a Beta that was s
 
 ## Fixed Environment Responsibilities
 
-| Environment | MongoDB                      | Meilisearch                               | Responsibility                                                                |
-| ----------- | ---------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------- |
+| Environment | MongoDB                      | Meilisearch                               | Responsibility                                                               |
+| ----------- | ---------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------- |
 | Development | Atlas `Development` database | Local Docker                              | Every scraper sweep, materialization, data repair, and disposable experiment |
-| Beta        | Atlas `Beta` database        | Render private service with `beta` prefix | Mirrored staging candidate and human audit                                    |
-| Production  | Atlas `Production` database  | Render private service with `prod` prefix | Accepted live data only                                                       |
+| Beta        | Atlas `Beta` database        | Render private service with `beta` prefix | Mirrored staging candidate and human audit                                   |
+| Production  | Atlas `Production` database  | Render private service with `prod` prefix | Accepted live data only                                                      |
 
 Development data reaches Beta only through the guarded research-data mirror described below.
 The mirror replaces approved research and evidence collections while preserving Beta operational collections and sanitizing copied account state.
@@ -161,13 +161,13 @@ Copied telemetry would attribute one environment's student behavior to another, 
 
 ## Where Each Step Runs
 
-| Step                                             | Execution location              | MongoDB target                            | Meilisearch target              |
-| ------------------------------------------------ | ------------------------------- | ----------------------------------------- | ------------------------------- |
-| Development sweep, repair, and gates             | Local machine, any network      | Atlas `Development`                       | Local Docker `researchentities` |
-| Development-to-Beta mirror                       | Local approved operator machine | Atlas `Development` to Atlas `Beta`       | None                            |
-| Beta re-gate, reindex, and audit                 | Beta Render shell               | Atlas `Beta`                              | `beta_researchentities`         |
-| Beta-to-Production promotion                     | Local approved operator machine | Atlas `Beta` to Atlas `Production`        | None                            |
-| Production re-gate, reindex, and smoke test      | Production Render shell         | Atlas `Production`                        | `prod_researchentities`         |
+| Step                                        | Execution location              | MongoDB target                      | Meilisearch target              |
+| ------------------------------------------- | ------------------------------- | ----------------------------------- | ------------------------------- |
+| Development sweep, repair, and gates        | Local machine, any network      | Atlas `Development`                 | Local Docker `researchentities` |
+| Development-to-Beta mirror                  | Local approved operator machine | Atlas `Development` to Atlas `Beta` | None                            |
+| Beta re-gate, reindex, and audit            | Beta Render shell               | Atlas `Beta`                        | `beta_researchentities`         |
+| Beta-to-Production promotion                | Local approved operator machine | Atlas `Beta` to Atlas `Production`  | None                            |
+| Production re-gate, reindex, and smoke test | Production Render shell         | Atlas `Production`                  | `prod_researchentities`         |
 
 Finish the Development sweep and its gates before touching Beta.
 Mirror to Beta once, after the whole Development candidate is accepted, and promote to Production once, after Beta is audited.
@@ -447,6 +447,8 @@ Before changing Beta, record its backup or manual recovery artifact and run the 
 SCRAPER_ENV=beta yarn --cwd server beta:readiness
 ```
 
+The diagnostic exits non-zero while any gate is blocked, and `betaBackup` stays blocked until `--confirm-beta-backup` is passed, so a non-zero exit without that flag is expected; read the other gates in the report.
+
 Generate and review the plan locally:
 
 ```bash
@@ -507,10 +509,10 @@ node scripts/reindex-search-index.mjs beta
 node scripts/reindex-search-index.mjs beta --apply
 ```
 
-Then run the strict Beta readiness gate:
+Then run the Beta readiness gate, which exits non-zero when any gate is blocked:
 
 ```bash
-SCRAPER_ENV=beta   yarn --cwd server beta:readiness   --confirm-beta-backup   --strict   --output /tmp/ylabs-beta-readiness-final.json
+SCRAPER_ENV=beta   yarn --cwd server beta:readiness   --confirm-beta-backup   --output /tmp/ylabs-beta-readiness-final.json
 ```
 
 Audit the Beta website after the gates pass.
@@ -700,14 +702,14 @@ The refresh is incomplete if any required artifact, restore point, or independen
 
 ## Fast Decision Table
 
-| Situation                                    | Action                                                                              |
-| -------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Need more data for debugging                 | Run a larger Development scrape locally                                             |
-| Development looks correct                    | Mirror it to Beta with `beta:refresh-from-development`                              |
-| Beta shows a data defect                     | Fix it in Development, verify there, and mirror again                               |
-| Beta search is stale                         | Re-gate, then reindex Beta from the Beta Render shell                               |
-| Beta gates fail                              | Stop, fix in Development, and mirror again                                          |
-| Production Mongo succeeded but search failed | Keep the Mongo result, reindex Production, and do not claim completion              |
+| Situation                                    | Action                                                                 |
+| -------------------------------------------- | ---------------------------------------------------------------------- |
+| Need more data for debugging                 | Run a larger Development scrape locally                                |
+| Development looks correct                    | Mirror it to Beta with `beta:refresh-from-development`                 |
+| Beta shows a data defect                     | Fix it in Development, verify there, and mirror again                  |
+| Beta search is stale                         | Re-gate, then reindex Beta from the Beta Render shell                  |
+| Beta gates fail                              | Stop, fix in Development, and mirror again                             |
+| Production Mongo succeeded but search failed | Keep the Mongo result, reindex Production, and do not claim completion |
 
 ## Recovery
 

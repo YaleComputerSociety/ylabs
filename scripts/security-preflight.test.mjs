@@ -2666,7 +2666,6 @@ test('beta launch gate report paths are constrained to safe JSON artifact roots'
     ['claim gate', '../server/src/scripts/claimGate.ts'],
     ['launch trust contract', '../server/src/scripts/launchTrustContract.ts'],
     ['launch review exceptions', '../server/src/scripts/launchReviewExceptions.ts'],
-    ['beta seed environment', '../server/src/scripts/betaSeedEnvironment.ts'],
     ['beta data quality', '../server/src/scripts/betaDataQualityCore.ts'],
   ]) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
@@ -2705,13 +2704,6 @@ test('beta launch gate report paths are constrained to safe JSON artifact roots'
   );
   assert.match(launchReviewExceptions, /fs\.readFileSync\(safeInputPath, 'utf8'\)/);
   assert.doesNotMatch(launchReviewExceptions, /fs\.readFileSync\(inputPath, 'utf8'\)/);
-
-  const betaSeedEnvironment = fs.readFileSync(
-    new URL('../server/src/scripts/betaSeedEnvironment.ts', import.meta.url),
-    'utf8',
-  );
-  assert.match(betaSeedEnvironment, /function resolveSafeArtifactDir/);
-  assert.match(betaSeedEnvironment, /path\.join\(parsed, 'artifact-root\.json'\)/);
 
   const betaDataQualityCore = fs.readFileSync(
     new URL('../server/src/scripts/betaDataQualityCore.ts', import.meta.url),
@@ -2758,7 +2750,6 @@ test('local process execution remains shell-free', () => {
   for (const [name, file] of [
     ['rendered fetch bridge', '../server/src/scrapers/renderedFetch.ts'],
     ['gate scorecard refresh', '../server/src/scripts/refreshGateScorecards.ts'],
-    ['beta seed environment', '../server/src/scripts/betaSeedEnvironment.ts'],
     ['gate refresh scheduler', '../server/src/scripts/gateRefreshScheduler.ts'],
     ['secret scanner', '../scripts/check-no-secrets.mjs'],
   ]) {
@@ -5086,7 +5077,6 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/scraperIntegrityGate.ts',
     '../server/src/scripts/claimGate.ts',
     '../server/src/scripts/migrateMongoNaming.ts',
-    '../server/src/scripts/betaSeedEnvironment.ts',
     '../server/src/scripts/backfillBrowseRank.ts',
     '../server/src/scripts/auditProgramResearchRelevance.ts',
     '../server/src/scripts/launchTrustContract.ts',

@@ -5,40 +5,30 @@ import { describe, expect, it } from 'vitest';
 import {
   buildBetaReadinessCommands,
   buildBetaReadinessGateOutput,
+  betaReadinessExitCode,
   parseBetaReadinessGateArgs,
-  summarizeReviewedProfileLinkInput,
   writeBetaReadinessGateOutput,
 } from '../betaReadinessGate';
 
 describe('betaReadinessGate CLI helpers', () => {
-  it('parses gate confirmation, strict, root, and output flags', () => {
+  it('parses the backup confirmation and output flags', () => {
     expect(
       parseBetaReadinessGateArgs([
-        '--strict',
         '--confirm-beta-backup',
-        '--root',
-        '/tmp/accepted-inputs',
         '--output',
         '/tmp/ylabs-beta-readiness.json',
       ]),
     ).toEqual({
-      root: '/tmp/accepted-inputs',
-      strict: true,
       confirmBetaBackup: true,
       output: '/tmp/ylabs-beta-readiness.json',
     });
     expect(() => parseBetaReadinessGateArgs(['prod'])).toThrow(
       /Unknown Beta readiness gate argument: prod/,
     );
-    expect(() => parseBetaReadinessGateArgs(['--root'])).toThrow(/--root requires a path/);
-    expect(() => parseBetaReadinessGateArgs(['--root', '--strict'])).toThrow(
-      /--root requires a path/,
-    );
-    expect(() => parseBetaReadinessGateArgs(['--root=--strict'])).toThrow(/--root requires a path/);
-    expect(() => parseBetaReadinessGateArgs(['--output', '--strict'])).toThrow(
+    expect(() => parseBetaReadinessGateArgs(['--output', '--confirm-beta-backup'])).toThrow(
       /--output requires a path/,
     );
-    expect(() => parseBetaReadinessGateArgs(['--output=--strict'])).toThrow(
+    expect(() => parseBetaReadinessGateArgs(['--output=--confirm-beta-backup'])).toThrow(
       /--output requires a path/,
     );
     expect(() => parseBetaReadinessGateArgs(['--output=/var/tmp/beta-readiness.json'])).toThrow(
@@ -49,39 +39,23 @@ describe('betaReadinessGate CLI helpers', () => {
     );
   });
 
-  it('defaults the accepted-input root to empty when omitted', () => {
-    expect(parseBetaReadinessGateArgs([])).toEqual({
-      root: '',
-      strict: false,
-      confirmBetaBackup: false,
-    });
+  it('refuses the retired strict and accepted-input root flags (#3723)', () => {
+    expect(() => parseBetaReadinessGateArgs(['--strict'])).toThrow(
+      /Unknown Beta readiness gate argument: --strict/,
+    );
+    expect(() => parseBetaReadinessGateArgs(['--root', '/tmp/accepted-inputs'])).toThrow(
+      /Unknown Beta readiness gate argument: --root/,
+    );
   });
 
-  it('reports reviewed Scholar profile links without making them a scraper gate', () => {
-    expect(
-      summarizeReviewedProfileLinkInput(
-        { status: 'ready', readyRows: 3, blockedRows: 0 },
-        'Profile links are ready.',
-        'Profile links are optional.',
-      ),
-    ).toEqual({
-      status: 'ready',
-      message: 'Profile links are ready.',
-      readyRows: 3,
-      blockedRows: 0,
-    });
-    expect(
-      summarizeReviewedProfileLinkInput(
-        { status: 'blocked', readyRows: 1, blockedRows: 2 },
-        'Profile links are ready.',
-        'Profile links are optional.',
-      ),
-    ).toEqual({
-      status: 'deferred',
-      message: 'Profile links are optional.',
-      readyRows: 1,
-      blockedRows: 2,
-    });
+  it('defaults to an unconfirmed backup when no flag is passed', () => {
+    expect(parseBetaReadinessGateArgs([])).toEqual({ confirmBetaBackup: false });
+  });
+
+  it('exits non-zero whenever any gate is blocked, with no flag needed (#3723)', () => {
+    expect(betaReadinessExitCode(['betaBackup'])).toBe(1);
+    expect(betaReadinessExitCode(['sourceMetadata', 'canonicalMigration'])).toBe(1);
+    expect(betaReadinessExitCode([])).toBe(0);
   });
 
   it('writes the beta readiness artifact when output is provided', () => {
@@ -111,7 +85,7 @@ describe('betaReadinessGate CLI helpers', () => {
   it('wraps beta readiness artifacts with target metadata and parsed options', () => {
     const output = buildBetaReadinessGateOutput(
       {
-        readyForUnblockedBetaSeed: false,
+        ready: false,
         gates: {
           betaBackup: { status: 'blocked' },
         },
@@ -120,8 +94,6 @@ describe('betaReadinessGate CLI helpers', () => {
         environment: 'beta',
         db: 'Beta',
         options: {
-          root: '/tmp/accepted-inputs',
-          strict: true,
           confirmBetaBackup: true,
           output: '/tmp/ylabs-beta-readiness.json',
         },
@@ -129,28 +101,26 @@ describe('betaReadinessGate CLI helpers', () => {
     );
 
     expect(output).toEqual({
-      readyForUnblockedBetaSeed: false,
+      ready: false,
       gates: {
         betaBackup: { status: 'blocked' },
       },
       environment: 'beta',
       db: 'Beta',
       options: {
-        root: '/tmp/accepted-inputs',
-        strict: true,
         confirmBetaBackup: true,
         output: '/tmp/ylabs-beta-readiness.json',
       },
     });
   });
 
-  it('builds target-explicit Beta follow-up commands', () => {
-    expect(buildBetaReadinessCommands()).toEqual({
-      seedSources:
-        'SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scrape:seed-sources --dry-run --output /tmp/ylabs-seed-sources-dry-run.json',
+  it('advises only the promotion refresh and the guarded reindex, never a Beta write flag', () => {
+    const commands = buildBetaReadinessCommands();
+
+    expect(commands).toEqual({
       refreshFromDevelopment: 'yarn beta:refresh-from-development:plan',
-      meiliRebuild:
-        'SCRAPER_ENV=beta yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild',
+      meiliRebuild: 'node scripts/reindex-search-index.mjs beta',
     });
+    expect(JSON.stringify(commands)).not.toMatch(/ALLOW_NON_PROD_SCRAPER_WRITES|--clear/);
   });
 });

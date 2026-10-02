@@ -22,8 +22,6 @@ const APPLY_GUARD_EXEMPTIONS: Record<string, string> = {
   'reconcileNotCurrentlyAvailableAccessSignals.ts': DEVELOPMENT_ONLY_DATABASE_CHECK,
   'retireStaleAccessSignalFields.ts': DEVELOPMENT_ONLY_DATABASE_CHECK,
   'retireStaleSavedPlanFields.ts': DEVELOPMENT_ONLY_DATABASE_CHECK,
-  'betaSeedEnvironment.ts':
-    'assertBetaSeedAllowed refuses unless SCRAPER_ENV=beta and --confirm-beta-seed is passed',
   'canonicalMongoValidators.ts':
     'a schema operation that requires --environment, a matching confirmation flag, and CONFIRM_PROD_MONGO_VALIDATORS=true for Production',
   'promoteAcceptedBetaCopy.ts': PROMOTION_DATABASE_CHECK,

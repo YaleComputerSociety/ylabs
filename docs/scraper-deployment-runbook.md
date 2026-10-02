@@ -107,29 +107,25 @@ Both failures are silent: the run reports success with degraded research-area da
 Check with `db.taxonomy_terms.countDocuments({ reviewStatus: 'APPROVED', status: 'ACTIVE', archived: false })` and treat zero as a stop.
 Development held 5,291 terms with 638 approved as of 2026-08-29; Beta held none.
 
-Preparation:
+Preparation, from the Beta Render shell:
 
 ```bash
-yarn --cwd server beta:readiness --confirm-beta-backup --strict
-yarn --cwd server scrape:seed-sources --dry-run --output /tmp/ylabs-seed-sources-dry-run.json
-yarn --cwd server scrape:seed-sources --apply --confirm-seed-apply --output /tmp/ylabs-seed-sources-apply.json
+SCRAPER_ENV=beta yarn --cwd server beta:readiness --confirm-beta-backup --output /tmp/ylabs-beta-readiness.json
 ```
 
-Use `yarn --cwd server beta:readiness` without `--strict` for a diagnostic report. The command is read-only: it reports the Mongo target, accepted-input readiness, gated source posture, source metadata presence, and canonical migration residue.
-Use the seed-source dry-run artifact to confirm the target database and source actions before applying source metadata updates. Apply mode requires `--confirm-seed-apply`; production source seeding also requires `SCRAPER_ENV=production` plus `CONFIRM_PROD_SCRAPE=true`.
+The command is read-only: it reports the Mongo target, source metadata presence, and canonical migration residue, and it exits non-zero whenever any gate is blocked, so a script that runs it stops on a failed gate.
+Pass `--confirm-beta-backup` only once a Beta backup or restore point exists; the backup gate reports `ready` because the operator said so.
+Source metadata is not seeded on Beta: the Development-to-Beta refresh copies the `sources` collection with the rest of the corpus.
 
-The canonical Beta operator wrapper is:
+Once the refresh has landed, rebuild the Beta search index with the guarded reindex in [`meilisearch-reindex-runbook.md`](./meilisearch-reindex-runbook.md), which refuses an empty Mongo target or a mismatched index prefix before it clears anything:
 
 ```bash
-SCRAPER_ENV=beta yarn --cwd server beta:seed-meili
-SCRAPER_ENV=beta yarn --cwd server beta:seed --output /tmp/ylabs-beta-seed-plan.json
-SCRAPER_ENV=beta yarn --cwd server beta:seed --apply --confirm-beta-seed --output /tmp/ylabs-beta-seed-result.json
+node scripts/reindex-search-index.mjs beta
+node scripts/reindex-search-index.mjs beta --apply
 ```
 
-Use `beta:seed-meili` on the Beta server when Mongo is already populated and the launch task is to rebuild Meilisearch plus run the related checks. The broader `beta:seed` wrapper plans or runs Beta readiness, Source registry seeding, the ResearchEntity Meilisearch rebuild, and final Meili readiness acceptance.
-It never runs a scraper: `--source` and `--sources` are refused with a pointer to the promotion path.
-
-Use `--skip-meili`, `--skip-source-metadata`, or `--skip-readiness` only for a targeted recovery run after the omitted phase already has a fresh accepted artifact.
+Then run `beta:readiness` again as the acceptance check.
+The former `beta:seed`, `beta:seed-meili`, and `beta:seed-environment` wrapper was retired because its preflight could not block a clearing rebuild (#3723).
 
 OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref ingestion are retired and are not valid sweep sources.
 Researcher profiles may expose reviewed Google Scholar and ORCID links for outbound navigation, but those links do not rebuild a local publication corpus.
