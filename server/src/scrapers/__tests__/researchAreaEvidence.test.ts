@@ -52,6 +52,15 @@ describe('isLiveResearchAreaStatement', () => {
 });
 
 describe('hasLiveResearchAreaEvidence', () => {
+  it('is not backed by an observation citing a source the lane now refuses (#4030)', () => {
+    const areaPage = 'https://example.edu/faculty-research/faculty-directory/finance';
+    const observations = [statement({ entityId: ROW_ID, sourceUrl: areaPage })];
+    expect(hasLiveResearchAreaEvidence(identity, observations, admitsAll)).toBe(true);
+    expect(
+      hasLiveResearchAreaEvidence(identity, observations, admitsAll, (url) => url === areaPage),
+    ).toBe(false);
+  });
+
   it('is backed by an observation carrying the row entityId', () => {
     expect(
       hasLiveResearchAreaEvidence(identity, [statement({ entityId: ROW_ID })], admitsAll),

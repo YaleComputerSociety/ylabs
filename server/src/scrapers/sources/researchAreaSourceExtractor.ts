@@ -534,12 +534,13 @@ export async function findResearchAreaCandidateEntities(
     query.limit(MAX_CANDIDATE_SCAN);
   }
   const docs = (await query.lean()) as CandidateAreaEntityDoc[];
+  const citerCounts = await loadEvidenceUrlCiterCounts();
   const evidenceBackedRowIds = only.length
     ? await loadResearchAreaEvidenceBackedRowIds(
         docs.filter((doc) => !hasEmptyResearchAreas(doc.researchAreas)),
+        (doc, sourceUrl) => isSharedAreaFilteredDirectoryUrl(sourceUrl, doc, citerCounts),
       )
     : undefined;
-  const citerCounts = await loadEvidenceUrlCiterCounts();
   return candidateAreaEntitiesFromDocs(docs, { only, evidenceBackedRowIds, citerCounts });
 }
 
