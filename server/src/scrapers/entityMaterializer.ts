@@ -58,6 +58,7 @@ import {
   defaultCardSynthesisLLM,
   isUngroundedSynthesizedCard,
   resolveGroundedCardDescription,
+  servedCardClearsGateBar,
   synthesizeGroundedCardDescription,
 } from '../utils/groundedCardSynthesis';
 import { isProgramTitleQualifierDrift, normalizedProgramTitleKey } from '../utils/programTitle';
@@ -180,6 +181,7 @@ import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
   sanitizeResearchEntityDescription,
+  sanitizeResearchEntityShortDescription,
   sanitizeStoredCatalogDescription,
 } from '../utils/descriptionHygiene';
 import { cleanPublicProfileBio } from '../services/profileService';
@@ -508,6 +510,7 @@ function resolvedShortDescriptionCandidateIsUsable(
   isProgramLike: boolean,
 ): boolean {
   if (typeof candidate !== 'string' || !candidate.trim()) return false;
+  if (!sanitizeResearchEntityShortDescription(candidate)) return false;
   if (isUngroundedSynthesizedCard({ card: candidate, body: fullDescription })) return false;
   const shortQuality = isProgramLike ? programCardShortDescriptionQuality : shortDescriptionQuality;
   return shortQuality(candidate, fullDescription).isUseful;
@@ -527,6 +530,7 @@ export async function resolveMaterializedShortDescription(
     !!current && current.toLowerCase() === researchAreasCardSummary.toLowerCase();
   const currentClearsCardBar =
     !isBareResearchAreasFallback &&
+    Boolean(sanitizeResearchEntityShortDescription(current)) &&
     shortQuality(input.currentShortDescription, input.fullDescription).isUseful;
   if (currentClearsCardBar && !input.reconsiderCurrentShortDescription) return null;
   const grounded = await resolveGroundedCardDescription({
@@ -534,6 +538,7 @@ export async function resolveMaterializedShortDescription(
     researchAreas: input.researchAreas,
     isProgramLike: input.isProgramLike,
     synthesize: input.synthesize,
+    refuseCandidate: (candidate) => !sanitizeResearchEntityShortDescription(candidate),
   });
   if (
     !grounded ||
@@ -5956,6 +5961,74 @@ function adoptServableFullDescription(input: {
 }
 
 /**
+ * The card analog of `adoptServableFullDescription` (#4392). The write-time card check
+ * reads the quality bar alone, while the serve sanitizer also blanks a first-person
+ * line, so a higher-confidence verbatim "we study ..." card outranked a servable card
+ * from another lane and the row served no card at all. When the projected card would
+ * serve blank, the next ranked candidate that would serve is adopted; when none would,
+ * the stored card is left for the dedicated card re-derivation below, which treats a
+ * card the serve sanitizer blanks as not clearing the card bar and synthesizes one.
+ */
+function adoptServableShortDescription(input: {
+  now: Date;
+  set: Record<string, unknown>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  derivedKind: string | undefined;
+  resolverObs: ResolverObservation[];
+  manuallyLockedFields: string[];
+  manualValues: Record<string, unknown>;
+  materializationObs: MaterializerObservationLike[];
+}): number {
+  const field = 'shortDescription';
+  if (input.manuallyLockedFields.includes(field)) return 0;
+  const { set, entityDoc, confidenceByField } = input;
+  const fullDescription = set.fullDescription ?? entityDoc?.fullDescription;
+  const isProgramLike = isProgramLikeResearchEntity({
+    kind: set.kind ?? input.derivedKind ?? entityDoc?.kind,
+    entityType: set.entityType ?? entityDoc?.entityType,
+  });
+  const servesAsCard = (value: unknown): boolean => {
+    const served = sanitizeResearchEntityShortDescription(textValue(value));
+    return (
+      Boolean(served) &&
+      servedCardClearsGateBar({
+        shortDescription: served,
+        fullDescription,
+        researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
+        entityType: set.entityType ?? entityDoc?.entityType,
+        kind: set.kind ?? input.derivedKind ?? entityDoc?.kind,
+      })
+    );
+  };
+
+  const incumbent = set[field] ?? entityDoc?.[field];
+  if (!textValue(incumbent) || servesAsCard(incumbent)) return 0;
+
+  const replacement = resolveFieldRanked(field, input.resolverObs, {
+    now: input.now,
+    manuallyLockedFields: input.manuallyLockedFields,
+    manualValues: input.manualValues,
+  }).find(
+    (candidate) =>
+      textValue(candidate.value) !== textValue(incumbent) &&
+      servesAsCard(candidate.value) &&
+      resolvedShortDescriptionCandidateIsUsable(candidate.value, fullDescription, isProgramLike),
+  );
+  if (!replacement) return 0;
+
+  set[field] = textValue(replacement.value);
+  confidenceByField[field] = replacement.confidence;
+  const provenance = fieldProvenanceForResolvedObservation(
+    field,
+    replacement,
+    input.materializationObs,
+  );
+  if (provenance) set[`fieldProvenance.${field}`] = provenance;
+  return 1;
+}
+
+/**
  * A department winner that names no department (a school, a campus, a funder's
  * administrative unit) is dropped by org-unit canonicalization, so the row ends with
  * `departments: []` even when a lower-weight observation names a real department.
@@ -6569,6 +6642,17 @@ export async function projectFromLog(
       manualValues,
       materializationObs,
       leadPersonName: input.nameIdentityAuthority.leadPersonName,
+    });
+    fieldsWritten += adoptServableShortDescription({
+      now: input.now,
+      set,
+      confidenceByField,
+      entityDoc,
+      derivedKind,
+      resolverObs,
+      manuallyLockedFields,
+      manualValues,
+      materializationObs,
     });
     fieldsWritten += await adoptDepartmentNamingCandidate({
       now: input.now,
