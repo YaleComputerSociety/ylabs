@@ -934,6 +934,8 @@ describe('resolveServedShortDescription over a research-interests sentence body 
       entityType: 'FACULTY_RESEARCH_AREA',
       kind: 'individual',
     });
-    expect(resolved).toBe('Studies Learning Theory, Optimization, Game Theory, and Mechanism Design.');
+    expect(resolved).toBe(
+      'Studies Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+    );
   });
 });
