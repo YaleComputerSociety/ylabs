@@ -130,7 +130,10 @@ export function planDeadResearchWebsiteClears(
       refused.push({ slug, reason: 'operator-locked' });
       continue;
     }
-    if (deadFields.some((field) => ownerCountFor(normalizeWebsiteUrl(row[field])) > 1)) {
+    const soleOwnedDeadFields = deadFields.filter(
+      (field) => ownerCountFor(normalizeWebsiteUrl(row[field])) <= 1,
+    );
+    if (soleOwnedDeadFields.length === 0) {
       refused.push({ slug, reason: 'url-owned-by-another-row' });
       continue;
     }
@@ -139,7 +142,7 @@ export function planDeadResearchWebsiteClears(
       continue;
     }
     const liveCitationsRemaining = liveCitationsFor(row);
-    for (const field of deadFields) {
+    for (const field of soleOwnedDeadFields) {
       plans.push({ slug, field, url: text(row[field]), liveCitationsRemaining });
     }
   }

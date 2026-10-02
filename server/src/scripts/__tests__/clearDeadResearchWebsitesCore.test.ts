@@ -88,6 +88,20 @@ describe('dead research website clears (#3309)', () => {
     expect(outcome.refused[0].reason).toBe('url-owned-by-another-row');
   });
 
+  it('still clears the dead website a row owns alone when its other dead website is shared', () => {
+    const shared = 'https://sharedcenter.example.edu/';
+    const outcome = planDeadResearchWebsiteClears(
+      [row({ website: shared })],
+      () => true,
+      () => 2,
+      (normalizedUrl) => (normalizedUrl === normalizeWebsiteUrl(shared) ? 2 : 1),
+    );
+    expect(outcome.refused).toEqual([]);
+    expect(outcome.plans).toEqual([
+      { slug: 'dept-physics-avery-lab', field: 'websiteUrl', url: DEAD, liveCitationsRemaining: 2 },
+    ]);
+  });
+
   // A mis-aimed website on a row whose own fields disagree about what it is is a symptom
   // of the identity defect, so clearing it would be the wrong fix.
   it('hands over a row whose identity fields disagree', () => {
