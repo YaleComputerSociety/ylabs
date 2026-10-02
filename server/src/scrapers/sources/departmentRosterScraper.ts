@@ -64,8 +64,8 @@ import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
 import {
   isMeshIndexedProfileUrl,
-  withoutMeshGeographicDescriptors,
-} from '../utils/meshGeographicDescriptors';
+  withoutMeshNonSubjectDescriptors,
+} from '../utils/meshNonSubjectDescriptors';
 import {
   isInstitutionalAdvancementUrl,
   isInstitutionalPublicityPageUrl,
@@ -2880,11 +2880,18 @@ function isTopicLabelChrome(value: string): boolean {
   );
 }
 
-function splitTopicText(value: string | undefined | null): string[] {
+const TOPIC_SEPARATORS = /[,;|•\n\r]+/;
+// A MeSH heading carries its own comma ("Infant, Newborn"), so it is split only between headings.
+const MESH_HEADING_SEPARATORS = /[;|•\n\r]+/;
+
+function splitTopicText(
+  value: string | undefined | null,
+  separators: RegExp = TOPIC_SEPARATORS,
+): string[] {
   const cleaned = String(value || '').trim();
   if (!cleaned) return [];
   const parts = cleaned
-    .split(/[,;|•\n\r]+/)
+    .split(separators)
     .map((part) => stripTopicLabelPrefix(part))
     .filter((part) => part.length > 1 && !/^[-–—]+$/.test(part) && !isTopicLabelChrome(part));
   return uniqueStrings(parts);
@@ -3166,7 +3173,8 @@ function extractBioFromHtml($: cheerio.CheerioAPI): string | undefined {
   return undefined;
 }
 
-function extractResearchInterestsFromHtml($: cheerio.CheerioAPI): string[] {
+function extractResearchInterestsFromHtml($: cheerio.CheerioAPI, meshIndexed: boolean): string[] {
+  const separators = meshIndexed ? MESH_HEADING_SEPARATORS : TOPIC_SEPARATORS;
   const values: string[] = [];
   const selectors = [
     '[class*="research-interest"]',
@@ -3179,7 +3187,7 @@ function extractResearchInterestsFromHtml($: cheerio.CheerioAPI): string[] {
   for (const selector of selectors) {
     $(selector).each((_i, el) => {
       const text = elementTextWithChildSeparators($, el);
-      values.push(...splitTopicText(text));
+      values.push(...splitTopicText(text, separators));
     });
   }
 
@@ -3187,10 +3195,12 @@ function extractResearchInterestsFromHtml($: cheerio.CheerioAPI): string[] {
     const label = cleanText($(heading).text()).toLowerCase();
     if (!/\b(research interests?|fields? of study|topics?)\b/.test(label)) return;
     const next = $(heading).next();
-    if (next[0]) values.push(...splitTopicText(elementTextWithChildSeparators($, next[0])));
+    if (next[0])
+      values.push(...splitTopicText(elementTextWithChildSeparators($, next[0]), separators));
   });
 
-  return uniqueStrings(values).slice(0, 20);
+  const interests = meshIndexed ? withoutMeshNonSubjectDescriptors(values) : values;
+  return uniqueStrings(interests).slice(0, 20);
 }
 
 async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
@@ -3363,10 +3373,10 @@ export function profileEnrichmentFromHtml(
     labUrl = absolute;
   });
 
-  const extractedInterests = extractResearchInterestsFromHtml($);
-  const researchInterests = isMeshIndexedProfileUrl(canonicalUrl)
-    ? withoutMeshGeographicDescriptors(extractedInterests)
-    : extractedInterests;
+  const researchInterests = extractResearchInterestsFromHtml(
+    $,
+    isMeshIndexedProfileUrl(canonicalUrl),
+  );
   const bio = extractBioFromHtml($);
   const officialProse = extractGroundedProfileDescription(html);
 

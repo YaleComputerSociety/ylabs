@@ -14,7 +14,7 @@ import {
   mapWithConcurrency,
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
-import { withoutMeshGeographicDescriptors } from '../utils/meshGeographicDescriptors';
+import { withoutMeshNonSubjectDescriptors } from '../utils/meshNonSubjectDescriptors';
 import { slugify } from '../utils/scraperHelpers';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
@@ -286,7 +286,7 @@ export function parseYsmProfileResearch(
     .find((section) => section.sectionType === 'research');
   if (!research) return null;
   const meshKeywords = Array.isArray(research.meshKeywords) ? research.meshKeywords : [];
-  const meshTerms = withoutMeshGeographicDescriptors(
+  const meshTerms = withoutMeshNonSubjectDescriptors(
     uniqueStrings(
       meshKeywords.map((entry) => {
         const record = (entry || {}) as Record<string, unknown>;

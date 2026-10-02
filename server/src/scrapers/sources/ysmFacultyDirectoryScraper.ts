@@ -59,7 +59,7 @@ import {
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
 } from './yaleDirectoryScraper';
-import { withoutMeshGeographicDescriptors } from '../utils/meshGeographicDescriptors';
+import { withoutMeshNonSubjectDescriptors } from '../utils/meshNonSubjectDescriptors';
 import { normalizeYsmProfileUrl } from './ysmMeshKeywordScraper';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import {
@@ -310,7 +310,7 @@ export function extractProfile(html: string, faculty: RawYsmFaculty): YsmFaculty
   const meshKeywords = Array.isArray(research.meshKeywords)
     ? (research.meshKeywords as Record<string, unknown>[])
     : [];
-  const researchAreas = withoutMeshGeographicDescriptors(
+  const researchAreas = withoutMeshNonSubjectDescriptors(
     uniqueStrings(meshKeywords.map((k) => k.name)),
   ).slice(0, MAX_RESEARCH_AREAS);
   const labWebsite = extractLabWebsite(research, about);

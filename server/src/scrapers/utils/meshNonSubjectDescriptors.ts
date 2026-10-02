@@ -422,8 +422,74 @@ export function isMeshGeographicDescriptor(term: string): boolean {
   return MESH_GEOGRAPHIC_DESCRIPTOR_KEYS.has(meshTermKey(term));
 }
 
-export function withoutMeshGeographicDescriptors(terms: readonly string[]): string[] {
-  return terms.filter((term) => !isMeshGeographicDescriptor(term));
+interface MeshDescriptor {
+  readonly ui: string;
+  readonly name: string;
+  readonly treeNumbers: readonly string[];
+}
+
+// The age-group check tags NLM indexing applies to every study of people, all under MeSH tree
+// M01.060 (Age Groups). Its finer descendants ("Infant, Premature", "Frail Elderly") are not
+// check tags and can be a neonatologist's or geriatrician's real subject, so they stay (#4051).
+export const MESH_AGE_GROUP_CHECK_TAGS: readonly MeshDescriptor[] = [
+  { ui: 'D007231', name: 'Infant, Newborn', treeNumbers: ['M01.060.703.520'] },
+  { ui: 'D007223', name: 'Infant', treeNumbers: ['M01.060.703'] },
+  { ui: 'D002675', name: 'Child, Preschool', treeNumbers: ['M01.060.406.448'] },
+  { ui: 'D002648', name: 'Child', treeNumbers: ['M01.060.406'] },
+  { ui: 'D000293', name: 'Adolescent', treeNumbers: ['M01.060.057'] },
+  { ui: 'D055815', name: 'Young Adult', treeNumbers: ['M01.060.116.815'] },
+  { ui: 'D000328', name: 'Adult', treeNumbers: ['M01.060.116'] },
+  { ui: 'D008875', name: 'Middle Aged', treeNumbers: ['M01.060.116.630'] },
+  { ui: 'D000368', name: 'Aged', treeNumbers: ['M01.060.116.100'] },
+  { ui: 'D000369', name: 'Aged, 80 and over', treeNumbers: ['M01.060.116.100.080'] },
+];
+
+// The other check tags NLM indexing applies to nearly every study: the species and sex of the
+// subjects, and the laboratory organism of an animal study. "Pregnancy" is a check tag too but
+// is deliberately absent: hand-read on Development it named the person's real subject on 4 of
+// the 6 rows that served it, all reproductive or perinatal research (#4051).
+export const MESH_SUBJECT_CHECK_TAGS: readonly MeshDescriptor[] = [
+  { ui: 'D006801', name: 'Humans', treeNumbers: ['B01.050.150.900.649.313.988.400.112.400.400'] },
+  { ui: 'D000818', name: 'Animals', treeNumbers: ['B01.050'] },
+  { ui: 'D008297', name: 'Male', treeNumbers: [] },
+  { ui: 'D005260', name: 'Female', treeNumbers: [] },
+  { ui: 'D051379', name: 'Mice', treeNumbers: ['B01.050.150.900.649.313.992.635.505.500'] },
+  { ui: 'D051381', name: 'Rats', treeNumbers: ['B01.050.150.900.649.313.992.635.505.700'] },
+];
+
+// The headings that frame how a clinical study was reported rather than what it studied: the
+// roots of the Diagnosis (E01) and Therapeutics (E02) trees and the outcome and risk headings
+// indexed onto any trial or cohort.
+export const MESH_STUDY_CONTEXT_DESCRIPTORS: readonly MeshDescriptor[] = [
+  { ui: 'D003933', name: 'Diagnosis', treeNumbers: ['E01'] },
+  { ui: 'D013812', name: 'Therapeutics', treeNumbers: ['E02'] },
+  { ui: 'D011379', name: 'Prognosis', treeNumbers: ['E01.789'] },
+  {
+    ui: 'D016896',
+    name: 'Treatment Outcome',
+    treeNumbers: ['E01.789.800', 'N04.761.559.590.800', 'N05.715.360.575.575.800'],
+  },
+  {
+    ui: 'D012307',
+    name: 'Risk Factors',
+    treeNumbers: ['E05.318.740.600.800.725', 'N05.715.350.200.700'],
+  },
+];
+
+const MESH_NON_SUBJECT_DESCRIPTOR_KEYS: ReadonlySet<string> = new Set(
+  [...MESH_AGE_GROUP_CHECK_TAGS, ...MESH_SUBJECT_CHECK_TAGS, ...MESH_STUDY_CONTEXT_DESCRIPTORS].map(
+    (descriptor) => meshTermKey(descriptor.name),
+  ),
+);
+
+export function isMeshNonSubjectDescriptor(term: string): boolean {
+  return (
+    isMeshGeographicDescriptor(term) || MESH_NON_SUBJECT_DESCRIPTOR_KEYS.has(meshTermKey(term))
+  );
+}
+
+export function withoutMeshNonSubjectDescriptors(terms: readonly string[]): string[] {
+  return terms.filter((term) => !isMeshNonSubjectDescriptor(term));
 }
 
 const MESH_INDEXED_PROFILE_HOSTS: ReadonlySet<string> = new Set([
@@ -447,9 +513,9 @@ function researchAreaProvenanceSourceUrl(fieldProvenance: unknown): string {
   return typeof sourceUrl === 'string' ? sourceUrl : '';
 }
 
-// Serve-time as well as ingest-time, because a stored list whose every entry is a place
-// has no successor observation to supersede it once the lanes stop emitting one.
-export function withoutMeshSourcedGeographicResearchAreas(
+// Serve-time as well as ingest-time, because a stored list whose every entry is a non-subject
+// descriptor has no successor observation to supersede it once the lanes stop emitting one.
+export function withoutMeshSourcedNonSubjectResearchAreas(
   areas: readonly string[],
   fieldProvenance: unknown,
 ): string[] {
@@ -457,7 +523,7 @@ export function withoutMeshSourcedGeographicResearchAreas(
     return areas as string[];
   }
   const kept = areas.filter(
-    (area) => typeof area !== 'string' || !isMeshGeographicDescriptor(area),
+    (area) => typeof area !== 'string' || !isMeshNonSubjectDescriptor(area),
   );
   return kept.length === areas.length ? (areas as string[]) : kept;
 }
