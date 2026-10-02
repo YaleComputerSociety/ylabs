@@ -2454,3 +2454,25 @@ describe('describesResearchFocus reads degree-stage "studies" as a noun', () => 
     ).toBe(true);
   });
 });
+
+describe('a research-interests sentence is a body even when it lists the row topics', () => {
+  const areas = ['Learning Theory', 'Optimization', 'Game Theory', 'Mechanism Design'];
+
+  it('does not flag the sentence as an area echo', () => {
+    expect(
+      fullDescriptionQuality(
+        'My research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+        areas,
+      ).flags,
+    ).not.toContain('area-echo-fallback');
+  });
+
+  it('still flags a bare restatement of the topics', () => {
+    expect(
+      fullDescriptionQuality(
+        'The lab studies learning theory, optimization, game theory, and mechanism design.',
+        areas,
+      ).flags,
+    ).toContain('area-echo-fallback');
+  });
+});

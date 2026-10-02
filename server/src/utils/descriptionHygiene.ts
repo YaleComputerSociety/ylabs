@@ -2367,10 +2367,24 @@ const titleCaseLedField = (field: string): boolean => /^[A-Z]/.test(field.trim()
  * comma-heavy sentence elsewhere is never touched - only a field that IS the
  * list, start to finish, qualifies.
  */
+const INTERESTS_SENTENCE_FRAME_PATTERN =
+  /^[^:]{0,80}\binterests?\s+(?:include|includes|are|span|spans|cover|covers)\s*:?\s/i;
+
+/**
+ * A sentence that states someone's research interests and then lists them: "Her research
+ * interests include: Learning Theory, Optimization, ...". It has a subject and a verb, so
+ * its list is the sentence's object rather than a label. The owner chose to serve it as a
+ * body rather than the biography around it, even when it restates the row's topics (#4299).
+ */
+export function isResearchInterestsSentence(text: string): boolean {
+  return INTERESTS_SENTENCE_FRAME_PATTERN.test(normalizeHygieneWhitespace(text));
+}
+
 export function isBareLabelOrTopicEnumerationText(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
   if (partitionSentencesLossless(normalized).length > 1) return false;
+  if (isResearchInterestsSentence(normalized)) return false;
   const hasLabelLead = LABEL_ENUMERATION_LEAD_PATTERN.test(normalized);
   const body = normalized
     .replace(LABEL_ENUMERATION_LEAD_PATTERN, '')

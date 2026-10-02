@@ -3514,3 +3514,26 @@ describe('stripLeadingAppointmentTitleBlock', () => {
     expect(stripLeadingAppointmentTitleBlock('')).toBe('');
   });
 });
+
+describe('isBareLabelOrTopicEnumerationText reads an interests sentence as a sentence', () => {
+  it('does not flag a list that a research-interests sentence introduces', () => {
+    expect(
+      isBareLabelOrTopicEnumerationText(
+        'My research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+      ),
+    ).toBe(false);
+    expect(
+      isBareLabelOrTopicEnumerationText(
+        'Her research interests are Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+      ),
+    ).toBe(false);
+  });
+
+  it('still flags a labelled topic list', () => {
+    expect(
+      isBareLabelOrTopicEnumerationText(
+        'Research interests: Learning Theory, Optimization, Game Theory, Mechanism Design.',
+      ),
+    ).toBe(true);
+  });
+});

@@ -12,6 +12,7 @@ import {
   isNonSelfContainedShortDescription,
   isPhilanthropicFundAppealText,
   isResearchAreaTemplateLeakText,
+  isResearchInterestsSentence,
   sanitizeResearchEntityDescription,
   isStudiesResearchAreaEchoDescription,
   isStudiesTemplateGlueMalformed,
@@ -1350,6 +1351,7 @@ const isAreaEchoFallbackFullDescription = (value: string, researchAreas: unknown
     ? researchAreas.filter((area): area is string => typeof area === 'string')
     : [];
   if (areas.length === 0) return false;
+  if (isResearchInterestsSentence(value)) return false;
   const areaTokens = areaEchoFallbackContentTokens(areas.join(' '));
   const textTokens = areaEchoFallbackContentTokens(stripAreaEchoSubjectClause(value));
   if (textTokens.size === 0) return false;
