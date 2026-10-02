@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { usableOpenAiApiKey } from '../utils/openAiApiKey';
 import { RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL } from './researchEntitySearchIndexService';
 import {
   recordResearchSearchQueryEmbeddingFailure,
@@ -115,7 +116,7 @@ export const getResearchSearchQueryVector = async (
   const decision = reserveResearchSearchQueryEmbedding(clientKey);
   if (decision !== 'allowed') return { vector: null, semanticLegAffordable: false };
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = usableOpenAiApiKey();
   if (!apiKey) return affordable(null);
 
   const pending = (async () => {

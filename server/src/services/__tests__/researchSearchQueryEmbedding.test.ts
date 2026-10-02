@@ -132,6 +132,16 @@ describe('getResearchSearchQueryVector', () => {
     expect(mocks.post).not.toHaveBeenCalled();
   });
 
+  it('never sends the example placeholder key upstream', async () => {
+    process.env.OPENAI_API_KEY = '<your-openai-key>';
+
+    expect(await getResearchSearchQueryVector('cancer')).toEqual({
+      vector: null,
+      semanticLegAffordable: true,
+    });
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
   it('returns null for a blank query and spends nothing', async () => {
     expect(await getResearchSearchQueryVector('   ')).toEqual({
       vector: null,
