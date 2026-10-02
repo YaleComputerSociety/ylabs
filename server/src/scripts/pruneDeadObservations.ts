@@ -18,11 +18,11 @@ import {
 } from './pruneDeadObservationsCore';
 import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 function writeReport(report: Record<string, unknown>, output?: string): void {
   if (!output) return;

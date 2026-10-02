@@ -54,7 +54,7 @@ import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const ACTIVE_FILTER: Filter<Document> = { archived: { $ne: true } };
 const BETA_SCORECARD_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze([

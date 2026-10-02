@@ -34,7 +34,7 @@ import '../models';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SERVER_SRC_ROOT = path.resolve(__dirname, '..');
 const EXCLUDED_DIR_SEGMENTS = new Set(['scripts', '__tests__', 'node_modules', 'dist']);

@@ -51,7 +51,7 @@ import {
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const AUDITED_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA']);
 

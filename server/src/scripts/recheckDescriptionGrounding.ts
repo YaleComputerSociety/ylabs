@@ -60,7 +60,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 // A browser user agent, because a WAF answering our scraper string with 403 is the
 // mechanism that produced this issue's retracted measurement.

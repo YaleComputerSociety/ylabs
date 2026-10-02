@@ -46,7 +46,7 @@ import {
   type ArchivedVerdictCensus,
 } from './archivedStudentVisibilityVerdictsCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const SCRIPT_NAME = 'research-entity:archived-visibility-verdicts';

@@ -13,7 +13,7 @@ import { describeFirstContactCeiling } from './middleware/rateLimiters';
 import { serverListenHost } from './utils/environment';
 import { registerGracefulShutdown } from './serverShutdown';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 initializeErrorTracking();
 
 const port = Number(process.env.PORT || 4000);

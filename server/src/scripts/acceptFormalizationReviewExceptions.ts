@@ -24,7 +24,7 @@ import { VisibilityReleaseQueueItem } from '../models/visibilityReleaseQueueItem
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 interface CliOptions {
   apply: boolean;

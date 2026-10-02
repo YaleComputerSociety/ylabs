@@ -18,7 +18,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'data:repair-glued-sentence-boundaries';
 const CONFIRM_FLAG = '--confirm-glued-sentence-boundaries';

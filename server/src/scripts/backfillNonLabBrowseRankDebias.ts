@@ -16,7 +16,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-homes:backfill-non-lab-browse-rank-debias';
 const SIGNAL_STRUCTURALLY_LIMITED_ENTITY_TYPES = ['FACULTY_RESEARCH_AREA', 'INDIVIDUAL_RESEARCH'];

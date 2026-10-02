@@ -84,9 +84,9 @@ interface StrandedKeyApplyOutcome {
   errorMessage?: string;
 }
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 interface ReportRow {
   entityKey: string;

@@ -27,7 +27,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { attributedArchiveSet } from '../models/entityArchival';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 interface ArtifactSpec {
   artifactType: ArchivedEntityArtifactType;

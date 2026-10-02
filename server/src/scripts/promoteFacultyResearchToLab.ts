@@ -40,7 +40,7 @@ const PROBE_TIMEOUT_MS = 12_000;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SYNC_BATCH_SIZE = 200;
 

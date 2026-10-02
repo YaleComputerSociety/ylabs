@@ -8,7 +8,7 @@ import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes'
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 type MongoDb = NonNullable<typeof mongoose.connection.db>;
 

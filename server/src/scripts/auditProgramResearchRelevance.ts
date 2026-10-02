@@ -31,7 +31,7 @@ import {
 } from '../services/studentVisibilityGateService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 interface CliOptions {
   apply: boolean;

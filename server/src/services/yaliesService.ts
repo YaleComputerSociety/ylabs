@@ -5,7 +5,7 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const YALIES_API_URL = 'https://api.yalies.io/v2/people';
 const YALIES_API_TIMEOUT_MS = 10_000;

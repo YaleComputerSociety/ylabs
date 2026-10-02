@@ -13,7 +13,7 @@ import type { StudentVisibilityGateCollection } from '../services/studentVisibil
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 interface CliOptions extends LaunchTrustContractOptions {
   strict: boolean;

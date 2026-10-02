@@ -24,7 +24,7 @@ import {
 } from './backfillYaleStatusCacheCore';
 
 if (process.env.YLABS_SKIP_LOCAL_DOTENV !== 'true') {
-  dotenv.config();
+  dotenv.config({ quiet: true });
 }
 
 const SCRIPT_NAME = 'research:backfill-yale-status-cache';

@@ -28,7 +28,7 @@ import {
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const DEFAULT_INPUT = path.join(
   path.dirname(fileURLToPath(import.meta.url)),

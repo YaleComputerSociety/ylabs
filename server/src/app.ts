@@ -40,7 +40,7 @@ const API_URLENCODED_PARAMETER_LIMIT = 100;
 // opt-in per route via writeLimit, so no read/telemetry path lists are needed.
 const WRITE_LIKE_SAFE_METHOD_API_PATHS = new Set<string>();
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const sessionSecret = (process.env.SESSION_SECRET ?? '').trim();
 const MIN_SESSION_SECRET_LENGTH = 32;

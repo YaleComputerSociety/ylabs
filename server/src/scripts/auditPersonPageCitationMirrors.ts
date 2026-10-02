@@ -24,7 +24,7 @@ import {
 } from './auditPersonPageCitationMirrorsCore';
 import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const run = async (): Promise<void> => {
   const mongoUrl = process.env.MONGODBURL;
