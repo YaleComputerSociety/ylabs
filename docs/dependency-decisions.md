@@ -4,6 +4,19 @@ Standing decisions about dependency advisories and version pins, so a Dependabot
 The gate is moderate and above: `yarn security:audit:production` plus the recursive audits in `.github/workflows/ci.yml`.
 A low advisory below that gate is a judgement call, and the ones we have judged are recorded here.
 
+## 2026-10-02: The client moves to MUI 9 and drops `sweetalert` (#4383)
+
+`@mui/material` moves from 7 to 9, with `@emotion/react` and `@emotion/styled` on their current 11.x.
+There is no MUI 8 release: MUI went from 7 to 9 to align its major with MUI X, so the v7 to v9 migration guide is the whole path.
+Its codemods (`deprecations/all` and `v9.0.0/system-props`) change nothing here, because every MUI call site already used `slots` and `slotProps`, and the navbar, user menu, and mobile drawer render pixel-identically before and after.
+MUI 9 raises its own bundle targets to Chrome 117, Firefox 121, and Safari 17, but Vite transpiles dependencies to the build target, so the shipped browser floor is unchanged.
+
+`sweetalert` 2.1.2 is removed, because it had no release in years.
+Its alerts and confirmations now go through `showAlert` and `confirmAction` in `client/src/utils/appDialogs.tsx`, a small shared dialog on MUI `Dialog`; `client/DESIGN.md` §4 records its contract.
+Two consequences of moving onto an MUI modal are deliberate.
+The dialog sets `disableScrollLock`, because pages scroll inside `[data-scroll-container]` rather than the body, and MUI's lock restored a stale inline `overflow: hidden` after the admin fellowship edit modal had cleared it.
+The client test setup mocks the dialog module by default, because the dialog mounts its own React root outside Testing Library's cleanup and an open MUI modal hides every sibling from the accessibility tree, so a dialog that one test opened late hid the next test's render; the dialog's own test unmocks it.
+
 ## 2026-10-02: The server moves to Mongoose 9 and MongoDB driver 7 (#4376)
 
 `mongoose` is on 9.10 in the root and `server` projects, and the server's direct `mongodb` dependency moves from `~6.20` to `~7.6`, the line Mongoose 9.10 pins, so the server and Mongoose share one shipped driver.
