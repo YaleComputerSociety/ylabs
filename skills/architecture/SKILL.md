@@ -46,8 +46,8 @@ Cycles are not the problem here and a cycle rule is not worth adding: the whole 
 
 | Layer           | Technology                                                                                                  |
 | --------------- | ----------------------------------------------------------------------------------------------------------- |
-| Client          | React 19, TypeScript 5.3, Vite 6.3, React Router v7, MUI v9, TailwindCSS v3                                 |
-| Server          | Express 5, TypeScript 5.3, Passport.js 0.7, Mongoose 9                                                      |
+| Client          | React 19, TypeScript 6.0, Vite 8, React Router v7, MUI v9, TailwindCSS v3                                   |
+| Server          | Express 5, TypeScript 6.0, Passport.js 0.7, Mongoose 9                                                      |
 | Search          | Meilisearch 0.62 with keyword search plus OpenAI `text-embedding-3-small` semantic search where appropriate |
 | Database        | MongoDB Atlas with separate Development, Beta, and Production databases                                     |
 | Package Manager | Yarn 4 via Corepack                                                                                         |
@@ -168,10 +168,15 @@ A 503 needs no special case there, because a 500, a 429 and a dropped connection
 
 ## TypeScript
 
-Server: target ES2022, module NodeNext, moduleResolution NodeNext, strict true, output to `build/`.
-Built with `tsup`; dev mode uses `tsx watch`.
+Both projects are on TypeScript 6.0, and `tsc` only type-checks them: each `tsconfig.json` sets `noEmit`, and the bundlers own the output.
+TypeScript 7 is held until `typescript-eslint` admits it; `docs/dependency-decisions.md` records the blocker and its exit condition.
 
-Client: target ES5, module ESNext, JSX `react-jsx`, strict true, noEmit true.
+Server: target ES2022, module ESNext, moduleResolution `bundler`, strict true, noEmit true, `types: ["node"]`.
+Built with `tsup` into `build/`; dev mode uses `tsx watch`.
+The server program also type-checks the client modules that server tests import, so it sets no `rootDir` or `outDir`.
+
+Client: target ES2015, module ESNext, moduleResolution `bundler`, JSX `react-jsx`, strict true, noEmit true, `types` including `vite/client`.
+TypeScript 6 checks side-effect imports by default, and `vite/client` is what declares `import './index.css'`.
 
 ## Routes
 

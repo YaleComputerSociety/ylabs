@@ -418,7 +418,7 @@ export async function replayEngineBenchmark(benchmarkId: string): Promise<Engine
       plannedSet,
       plannedUnset,
       // The frozen stored document, so the direction of a change is read on the outcome (#3871).
-      storedValues: ((captured.entityDoc ?? {}) as Record<string, unknown>) ?? {},
+      storedValues: (captured.entityDoc ?? {}) as Record<string, unknown>,
       tier: verdict.tier,
       computedTier: verdict.computedTier,
       reasons: verdict.reasons,
