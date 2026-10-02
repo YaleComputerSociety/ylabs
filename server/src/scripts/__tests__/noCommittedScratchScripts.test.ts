@@ -7,7 +7,8 @@ const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 const SCRIPTS_DIR = path.join(SERVER_SRC, 'scripts');
 const MIN_SCANNED_SOURCE_FILES = 500;
 
-const HARD_CODED_TMP_READ = /readFileSync\(\s*['"`]\/tmp\//;
+const HARD_CODED_TMP_READ =
+  /\b(?:readFileSync|readFile|createReadStream)\(\s*(?:(?:path\.)?(?:join|resolve)\(\s*)?['"`]\/tmp(?:\/|['"`])/;
 const SCRATCH_SCRIPT_NAME = /^tmp[A-Z0-9_-]/;
 
 const productionSourceFiles = (dir: string): string[] =>
@@ -43,7 +44,13 @@ describe('no committed scratch scripts (#3728)', () => {
     expect(
       HARD_CODED_TMP_READ.test("JSON.parse(fs.readFileSync('/tmp/cohort-read.json', 'utf8'))"),
     ).toBe(true);
+    expect(HARD_CODED_TMP_READ.test('await fs.promises.readFile(`/tmp/${runId}.json`)')).toBe(true);
+    expect(HARD_CODED_TMP_READ.test("readFile(path.join('/tmp', 'cohort.json'))")).toBe(true);
+    expect(HARD_CODED_TMP_READ.test("fs.createReadStream(resolve('/tmp', 'rows.ndjson'))")).toBe(
+      true,
+    );
     expect(HARD_CODED_TMP_READ.test('fs.readFileSync(options.input, "utf8")')).toBe(false);
+    expect(HARD_CODED_TMP_READ.test("path.join('/tmp', 'review-queue.json')")).toBe(false);
     expect(SCRATCH_SCRIPT_NAME.test('tmpArms.ts')).toBe(true);
     expect(SCRATCH_SCRIPT_NAME.test('tempArtifactRoots.ts')).toBe(false);
   });
