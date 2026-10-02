@@ -132,17 +132,13 @@ describe('Research page while the session check is pending', () => {
 
     await waitFor(() => expect(searchCalls()).toHaveLength(1));
     expect(await screen.findByRole('heading', { name: 'Synthetic Timing Lab' })).toBeTruthy();
-    const pendingNoticeSlot = screen.getByText(/browsing as a guest/i).closest('p')?.parentElement;
-    expect(pendingNoticeSlot?.getAttribute('aria-hidden')).toBe('true');
-    expect(pendingNoticeSlot?.className).toContain('invisible');
+    expect(screen.queryByRole('link', { name: /log in with yale cas/i })).toBeNull();
+    expect(screen.queryByRole('link', { name: /your dashboard/i })).toBeNull();
 
     act(() => setAuth({ isLoading: false }));
 
-    const settledNotice = screen.getByText(/browsing as a guest/i).closest('p');
-    expect(settledNotice?.getAttribute('aria-hidden')).toBeNull();
-    expect(settledNotice?.className).not.toContain('invisible');
-    expect(settledNotice?.parentElement?.getAttribute('aria-hidden')).toBeNull();
-    expect(settledNotice?.parentElement?.className).not.toContain('invisible');
+    expect(screen.getByRole('link', { name: /log in with yale cas/i })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /your dashboard/i })).toBeNull();
     expect(searchCalls()).toHaveLength(1);
   });
 
@@ -159,20 +155,13 @@ describe('Research page while the session check is pending', () => {
 
     const guestNotice = screen.getByText(/browsing as a guest/i).closest('p');
     const signedInNotice = screen.getByText(/you're signed in/i).closest('p');
-    expect({
-      sameSlot:
-        guestNotice?.parentElement === noticeSlot && signedInNotice?.parentElement === noticeSlot,
-      guestHidden: guestNotice?.getAttribute('aria-hidden'),
-      guestInvisible: guestNotice?.className.includes('invisible'),
-      signedInHidden: signedInNotice?.getAttribute('aria-hidden'),
-      signedInInvisible: signedInNotice?.className.includes('invisible'),
-    }).toEqual({
-      sameSlot: true,
-      guestHidden: 'true',
-      guestInvisible: true,
-      signedInHidden: null,
-      signedInInvisible: false,
-    });
+    expect(
+      guestNotice?.parentElement === noticeSlot && signedInNotice?.parentElement === noticeSlot,
+    ).toBe(true);
+    expect(screen.queryByRole('link', { name: /log in with yale cas/i })).toBeNull();
+    expect(screen.getByRole('link', { name: /your dashboard/i }).getAttribute('href')).toBe(
+      '/dashboard',
+    );
     await act(async () => {
       await Promise.resolve();
     });
