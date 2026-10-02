@@ -45,6 +45,8 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { ScrapeRun } from '../models/scrapeRun';
+import { DESCRIPTION_SLOT_ATTESTATION_VOCABULARY } from '../scrapers/sources/labMicrositeDescriptionLLMExtractor';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import {
   applyStudentVisibilityGatePlans,
@@ -61,6 +63,7 @@ import {
   planUnassertedDescriptionRefusals,
   type AttestedEmptyRead,
   type DescriptionRefusalRow,
+  partitionAttestedEmptyReadsByVocabulary,
 } from './refuseUnassertedDescriptionsCore';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -112,6 +115,22 @@ async function loadAttestedEmptyReads(slugs: string[]): Promise<AttestedEmptyRea
     }));
 }
 
+async function loadVocabularyRunIds(reads: AttestedEmptyRead[]): Promise<Set<string>> {
+  const runIds = Array.from(new Set(reads.map((read) => read.runId))).filter((id) =>
+    mongoose.isValidObjectId(id),
+  );
+  if (runIds.length === 0) return new Set();
+  const runs = await ScrapeRun.find({
+    _id: { $in: runIds },
+    'metrics.descriptionSlotAttestation.vocabulary': {
+      $gte: DESCRIPTION_SLOT_ATTESTATION_VOCABULARY,
+    },
+  })
+    .select('_id')
+    .lean<Array<{ _id: unknown }>>();
+  return new Set(runs.map((run) => String(run._id)));
+}
+
 async function main(): Promise<void> {
   const options = parseOptions(process.argv.slice(2));
   assertScriptApplyAllowed({
@@ -121,7 +140,11 @@ async function main(): Promise<void> {
   });
   await initializeConnections();
 
-  const reads = await loadAttestedEmptyReads(options.slugs);
+  const allReads = await loadAttestedEmptyReads(options.slugs);
+  const { counted: reads, excludedPreVocabulary } = partitionAttestedEmptyReadsByVocabulary(
+    allReads,
+    await loadVocabularyRunIds(allReads),
+  );
   const attestedSlugs = Array.from(new Set(reads.map((read) => read.entityKey)));
   // The drop-guard denominator is the lane's own read population in the SAME runs that
   // produced the attestations. Scoped any other way it stops measuring whether the
@@ -146,6 +169,7 @@ async function main(): Promise<void> {
   const report: Record<string, unknown> = {
     mode: options.apply ? 'apply' : 'dry-run',
     attestedEmptyObservations: reads.length,
+    excludedPreVocabularyAttestations: excludedPreVocabulary,
     attestedEmptyEntities: attestedSlugs.length,
     examinedRowCount: plan.examinedRowCount,
     attestedEmptyEntityCount: plan.attestedEmptyEntityCount,

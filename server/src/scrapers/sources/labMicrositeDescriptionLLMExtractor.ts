@@ -835,23 +835,60 @@ export function descriptionSlotAttestation({
   crawlIncomplete,
   unopposedCrawledProseSuppressed,
   foreignLabPage,
+  guardRefusal,
 }: {
   primaryPageTextLength: number;
   llmRan: boolean;
   crawlIncomplete: boolean;
   unopposedCrawledProseSuppressed: boolean;
   foreignLabPage: boolean;
-}): 'empty' | 'refused' | undefined {
-  if (unopposedCrawledProseSuppressed || foreignLabPage) return 'refused';
+  guardRefusal?: DescriptionGuardRefusal;
+}): DescriptionSlotAttestation {
+  if (unopposedCrawledProseSuppressed || foreignLabPage || guardRefusal) return 'refused';
   if (crawlIncomplete) return undefined;
   if (primaryPageTextLength < MIN_LLM_PAGE_TEXT_CHARS) return undefined;
   if (!llmRan) return undefined;
   return 'empty';
 }
 
+export type DescriptionSlotAttestation = 'empty' | 'refused' | undefined;
+
+export const DESCRIPTION_SLOT_ATTESTATION_VOCABULARY = 2;
+
+export interface DescriptionSlotAttestationMetrics {
+  vocabulary: typeof DESCRIPTION_SLOT_ATTESTATION_VOCABULARY;
+  empty: number;
+  refused: number;
+  unclaimed: number;
+  refusedByGuard: Partial<Record<DescriptionGuardRefusal, number>>;
+}
+
+export function emptyDescriptionSlotAttestationMetrics(): DescriptionSlotAttestationMetrics {
+  return {
+    vocabulary: DESCRIPTION_SLOT_ATTESTATION_VOCABULARY,
+    empty: 0,
+    refused: 0,
+    unclaimed: 0,
+    refusedByGuard: {},
+  };
+}
+
+export function recordDescriptionSlotAttestation(
+  metrics: DescriptionSlotAttestationMetrics,
+  attestation: DescriptionSlotAttestation,
+  guardRefusal?: DescriptionGuardRefusal,
+): void {
+  if (attestation === 'empty') metrics.empty += 1;
+  else if (attestation === 'refused') metrics.refused += 1;
+  else metrics.unclaimed += 1;
+  if (attestation === 'refused' && guardRefusal) {
+    metrics.refusedByGuard[guardRefusal] = (metrics.refusedByGuard[guardRefusal] ?? 0) + 1;
+  }
+}
+
 export function withDescriptionSlotAttestation(
   observations: ObservationInput[],
-  attestation: 'empty' | 'refused' | undefined,
+  attestation: DescriptionSlotAttestation,
 ): ObservationInput[] {
   if (attestation !== 'empty') return observations;
   return observations.map((observation) => ({
@@ -1154,17 +1191,63 @@ export function groundDescriptionExtraction(
   // overview on a person's row is not that row's research however verbatim it is, and a
   // classification field is followed where an instruction to return nothing was not
   // (the refused-row benchmark kept 9 of 9 known-wrong under the instruction alone).
+  const returnedProse = Boolean(
+    textValue(extraction.fullDescription) || textValue(extraction.shortDescription),
+  );
+  if (!returnedProse) return { ...extraction, subject: undefined };
   if (typeof extraction.subject === 'string' && extraction.subject !== 'named_entity') {
     return { ...extraction, fullDescription: '', shortDescription: '' };
   }
   return { ...extraction, fullDescription: groundedFull, shortDescription: groundedShort };
 }
 
+export type DescriptionGuardRefusal =
+  | 'rejected_source_url'
+  | 'shared_evidence_url'
+  | 'institution_landing_url'
+  | 'another_persons_lab'
+  | 'subject_not_named_entity'
+  | 'bio_directory_dump'
+  | 'career_timeline'
+  | 'bibliography_entry'
+  | 'interest_chip_list'
+  | 'navigation_chrome'
+  | 'another_organization_body'
+  | 'unopposed_crawled_prose';
+
+export interface DescriptionExtractionOutcome {
+  observations: ObservationInput[];
+  refusal?: DescriptionGuardRefusal;
+}
+
+const refusedBy = (refusal: DescriptionGuardRefusal): DescriptionExtractionOutcome => ({
+  observations: [],
+  refusal,
+});
+
+function fullDescriptionContentRefusal(fullDescription: string): DescriptionGuardRefusal | null {
+  if (isMultiPersonBioDirectoryDumpText(fullDescription)) return 'bio_directory_dump';
+  if (hasMultipleCareerTimelineSentences(fullDescription)) return 'career_timeline';
+  if (isBibliographyCitationEntryText(fullDescription)) return 'bibliography_entry';
+  if (isInterestChipListText(fullDescription)) return 'interest_chip_list';
+  if (opensOnNavigationChrome(fullDescription)) return 'navigation_chrome';
+  return null;
+}
+
 export function descriptionExtractionToObservations(
   extraction: DescriptionExtraction,
   context: ExtractedPageIdentityContext & { entityId?: string },
 ): ObservationInput[] {
-  if (isRejectedDescriptionSourceUrl(context.sourceUrl)) return [];
+  return describeDescriptionExtraction(extraction, context).observations;
+}
+
+// A new early return must name its guard: an unnamed one records `empty`, the #2647
+// conflation of a refusal with a page that carries no prose (#3739).
+export function describeDescriptionExtraction(
+  extraction: DescriptionExtraction,
+  context: ExtractedPageIdentityContext & { entityId?: string },
+): DescriptionExtractionOutcome {
+  if (isRejectedDescriptionSourceUrl(context.sourceUrl)) return refusedBy('rejected_source_url');
   // Evidence-side, so it holds whatever the page says: a page cited by more than one
   // row is not about any single one of them (#3148). A person page is exempt because
   // a person's own profile is cited by both their LAB and their research-area row and
@@ -1172,26 +1255,22 @@ export function descriptionExtractionToObservations(
   // entity. What the refusal is left with is the institutional shape: a school landing
   // page, a section index, a programme page, a shared core facility.
   if (context.sharedEvidenceUrl === true && !isPersonProfileOrDirectoryUrl(context.sourceUrl)) {
-    return [];
+    return refusedBy('shared_evidence_url');
   }
-  if (context.institutionLandingUrl === true) return [];
+  if (context.institutionLandingUrl === true) return refusedBy('institution_landing_url');
   const labName = usefulLabName(extraction.name);
   const pageAttribution = classifyExtractedPageAttribution(labName, context);
-  if (pageAttribution === 'ANOTHER_PERSONS_LAB') return [];
+  if (pageAttribution === 'ANOTHER_PERSONS_LAB') return refusedBy('another_persons_lab');
+  if (typeof extraction.subject === 'string' && extraction.subject !== 'named_entity') {
+    return refusedBy('subject_not_named_entity');
+  }
 
   const fullDescription = normalizeKnownDescriptionAcronyms(
     usefulDescription(bodyForBiography(textValue(extraction.fullDescription), context)),
   );
-  if (
-    !fullDescription ||
-    isMultiPersonBioDirectoryDumpText(fullDescription) ||
-    hasMultipleCareerTimelineSentences(fullDescription) ||
-    isBibliographyCitationEntryText(fullDescription) ||
-    isInterestChipListText(fullDescription) ||
-    opensOnNavigationChrome(fullDescription)
-  ) {
-    return [];
-  }
+  if (!fullDescription) return { observations: [] };
+  const contentRefusal = fullDescriptionContentRefusal(fullDescription);
+  if (contentRefusal) return refusedBy(contentRefusal);
   // A profile's single lab-website slot also holds the department, center, program or
   // core facility the person merely belongs to, and this lane reads whatever it
   // links. `classifyExtractedPageAttribution` only judges the NAME such a page gives
@@ -1213,7 +1292,7 @@ export function descriptionExtractionToObservations(
       slug: context.entityKey,
     })
   ) {
-    return [];
+    return refusedBy('another_organization_body');
   }
   const shortDescription = usefulShortDescription(extraction.shortDescription, fullDescription);
 
@@ -1251,7 +1330,7 @@ export function descriptionExtractionToObservations(
       observations.push({ ...nameBase, field: 'kind', value: 'lab' });
     }
   }
-  return observations;
+  return { observations };
 }
 
 /**
@@ -1660,6 +1739,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
       ? undefined
       : getWorkPlannerSourcePolicy(this.name);
     const workPlannerMetrics = createWorkPlannerMetrics();
+    const slotAttestationMetrics = emptyDescriptionSlotAttestationMetrics();
 
     const concurrency = resolveSourceConcurrency(
       ctx.options.sourceConcurrency,
@@ -1989,8 +2069,8 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           recordCitedUrls: lab.sourceUrls,
         };
 
-        let observations: ObservationInput[] = officialProse?.fullDescription
-          ? descriptionExtractionToObservations(
+        const officialOutcome = officialProse?.fullDescription
+          ? describeDescriptionExtraction(
               {
                 fullDescription: officialProse.fullDescription,
                 shortDescription: officialProse.shortDescription || '',
@@ -1999,12 +2079,16 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
               },
               identity,
             )
-          : [];
+          : undefined;
+        let observations: ObservationInput[] = officialOutcome?.observations ?? [];
+        let guardRefusal = officialOutcome?.refusal;
         if (observations.length === 0 && groundedLlmExtraction) {
-          observations = descriptionExtractionToObservations(
+          const llmOutcome = describeDescriptionExtraction(
             { ...groundedLlmExtraction, methods },
             identity,
           );
+          observations = llmOutcome.observations;
+          guardRefusal = guardRefusal ?? llmOutcome.refusal;
         }
 
         if (observations.length === 0) {
@@ -2022,7 +2106,18 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
             crawlIncomplete,
             unopposedCrawledProseSuppressed,
             foreignLabPage,
+            guardRefusal,
           });
+          recordDescriptionSlotAttestation(
+            slotAttestationMetrics,
+            slotAttestation,
+            guardRefusal ??
+              (foreignLabPage
+                ? 'another_persons_lab'
+                : unopposedCrawledProseSuppressed
+                  ? 'unopposed_crawled_prose'
+                  : undefined),
+          );
           const attestedHashObservations = withDescriptionSlotAttestation(
             hashObservations,
             slotAttestation,
@@ -2072,7 +2167,10 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
       observationCount,
       entitiesObserved,
       notes: `Extracted source-backed descriptions for ${entitiesObserved} research entities (${contentUnchangedSkipped} content-unchanged skipped).`,
-      metrics: { workPlanner: workPlannerMetrics },
+      metrics: {
+        workPlanner: workPlannerMetrics,
+        descriptionSlotAttestation: slotAttestationMetrics,
+      },
     };
   }
 }

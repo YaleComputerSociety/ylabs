@@ -979,6 +979,13 @@ Widening coverage is not a configuration change.
 `dept-faculty-roster` holds 15 of the 26 and emits `websiteUrl` only when `entry.labUrl` is set, which looks like the contracted source's shape but is not: `labUrl` is left unset by several refusal paths, a website the same roster lists for two or more people among them, as well as by a genuinely empty entry, so testing `!entry.labUrl` would reintroduce exactly what #2647 measured, where 2 of 4 planned retractions were refusals of links the page still carried.
 An honest contract for a source needs a parse-time "no candidate was present at all" signal kept distinct from every refusal path and from every unread page, which is what `labSlotAttestation` is on the YSM and department-roster sources.
 
+`lab-microsite-description-llm` carries the same signal for the description slot as `descriptionSlotAttestation`, and only its `empty` writes `assertsNoValueFor: ['fullDescription', 'shortDescription']`.
+`describeDescriptionExtraction` names the guard behind every early return, and a named guard makes the read `refused`, which states nothing: a shared-evidence or institution-landing page, another person's lab, a subject that is not this record, a bio directory, a career timeline, a bibliography entry, an interest list, navigation chrome, or another organization's body (#3739).
+Only an extraction that produced no usable prose at all is `empty`.
+Each run records `metrics.descriptionSlotAttestation` with `empty`, `refused`, `unclaimed`, and `refusedByGuard`, so the two stay apart in the run log as well as in the observations.
+Before #3739 the lane wrote `empty` for most of those refusals, and measured on Development on 2026-10-02 304 of the 480 live `empty` attestations cite a page the shared-evidence or institution guard now refuses.
+`research-entity:refuse-unasserted-descriptions` therefore counts only attestations from runs whose metrics carry the vocabulary marker and reports the rest as `excludedPreVocabularyAttestations`; on that date it excluded all 988 and planned nothing, where it had planned 16 refusals before.
+
 ### Fellowship field absence: how a program lane withdraws a value (#4230)
 
 A fellowship lane could not withdraw a value it used to assert, and three mechanisms each ruled themselves out.
