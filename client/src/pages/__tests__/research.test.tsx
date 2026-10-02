@@ -1423,10 +1423,10 @@ describe('Research page', () => {
     response.reject(new Error('facet service unavailable'));
     expect(
       await screen.findByText(
-        'Filter options are temporarily unavailable. Your search still works, and active filters can be cleared.',
+        'Filter options could not load with this search. Active filters can still be cleared.',
       ),
     ).toBeTruthy();
-    expect(screen.getByRole('alert')).toHaveTextContent('Live search metadata is unavailable');
+    expect(screen.getByRole('region', { name: 'Search is limited right now' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Filters' })).not.toBeDisabled();
   });
 
@@ -2230,13 +2230,14 @@ describe('Research page', () => {
       );
     });
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'More research results are temporarily unavailable.',
-    );
+    const notice = await screen.findByRole('region', { name: 'Search is limited right now' });
+    expect(notice.textContent).toContain('may be missing');
+    expect(within(notice).getByRole('button', { name: 'Try again' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     expect(screen.getByLabelText('Filter by school')).toBeTruthy();
     expect(screen.getByLabelText('Filter by department')).toBeTruthy();
-    expect(screen.queryByText('Filter options are temporarily unavailable.')).toBeNull();
+    expect(screen.queryByText(/Filter options could not load/)).toBeNull();
   });
 
   it('does not expose server-provided or hardcoded example search chips', async () => {
@@ -2644,11 +2645,7 @@ describe('Research page', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
-    expect(
-      await screen.findByText(
-        'Live search metadata is unavailable right now. Try another topic or check back soon.',
-      ),
-    ).toBeTruthy();
+    expect(await screen.findByRole('region', { name: 'Search is limited right now' })).toBeTruthy();
     await flushResearchAnalytics();
     const searchJourneyEvents = mockedAxios.post.mock.calls
       .filter(([url]) => url === '/analytics/research/batch')
@@ -3324,6 +3321,64 @@ describe('Research degraded search notice', () => {
     expect(within(notice).getByRole('button', { name: 'Try again' })).toBeTruthy();
     expect(screen.queryByText(/No research matches these filters/)).toBeNull();
   });
+
+  const failedSearches = [
+    {
+      failure: 'an unexpected server error',
+      reject: () => Promise.reject({ response: { status: 500, data: { error: 'Server error' } } }),
+    },
+    {
+      failure: 'a dropped connection',
+      reject: () => Promise.reject(Object.assign(new Error('Network Error'), { request: {} })),
+    },
+  ];
+
+  it.each(failedSearches)(
+    'offers a working retry instead of an empty browse after $failure',
+    async ({ reject }) => {
+      let searchFails = true;
+      mockSearchResponses((url) => {
+        if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+        return searchFails ? reject() : researchSearchResponse([researchEntity]);
+      });
+
+      renderResearch();
+
+      const notice = await screen.findByRole('region', { name: degradedNoticeName });
+      expect(screen.queryByText(/No research matches these filters/)).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+
+      searchFails = false;
+      fireEvent.click(within(notice).getByRole('button', { name: 'Try again' }));
+
+      expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
+      expect(screen.queryByRole('region', { name: degradedNoticeName })).toBeNull();
+    },
+  );
+
+  it.each(failedSearches)(
+    'offers a working retry instead of a zero-result count after $failure',
+    async ({ reject }) => {
+      let searchFails = true;
+      mockSearchResponses((url, body) => {
+        if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+        if (body.q === '') return researchSearchResponse([]);
+        return searchFails ? reject() : researchSearchResponse([researchEntity]);
+      });
+
+      renderResearch(departments, ['/research?q=neural']);
+
+      const notice = await screen.findByRole('region', { name: degradedNoticeName });
+      expect(screen.getByRole('status').textContent).not.toMatch(/0 results for/);
+      expect(screen.queryByRole('region', { name: 'Ways to recover this search' })).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+
+      searchFails = false;
+      fireEvent.click(within(notice).getByRole('button', { name: 'Try again' }));
+
+      expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
+    },
+  );
 
   it('offers a retry instead of recovery advice when a search cannot reach the server', async () => {
     mockSearchResponses((url, body) => {

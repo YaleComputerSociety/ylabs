@@ -203,7 +203,7 @@ const ResearchFilterDisclosure = ({
   }, [closeFilters, isDesktop, isOpen, isSidebar]);
 
   const emptyMessage = hasFacetError
-    ? 'Filter options are temporarily unavailable. Your search still works, and active filters can be cleared.'
+    ? 'Filter options could not load with this search. Active filters can still be cleared.'
     : isApplying
       ? 'Filter options will appear when this search finishes.'
       : 'No additional filters can narrow these results.';

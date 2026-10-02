@@ -61,7 +61,7 @@ Every request is bounded by `MEILISEARCH_REQUEST_TIMEOUT_MS` (5 seconds), so a h
 ### A Meilisearch outage answers 503, not a Mongo search (#4187)
 
 When the primary Meilisearch query still throws after `searchWithFallbacks` has applied its recoverable degradations, `searchResearchGroupsViaMeili` throws `SearchUnavailableError`, and the error handler answers `503` with a `Retry-After` hint.
-The client already renders a `503` from browse or search as the limited-search notice with its retry action (#4188), so no client change rides on this.
+The client already renders any failed browse or search as the limited-search notice with its retry action (#4188, #4266), so no client change rides on this.
 There used to be a Mongo fallback that read every public row and ran the public-description gate over each one in process, and it was removed rather than bounded, for these measured reasons, against Development with Meilisearch unreachable:
 
 - The gate is synchronous CPU: 11.3 s for the 3,444 tier-admitted rows (about 2 ms a row), after a 2.9 s read of 37 MB of documents.
