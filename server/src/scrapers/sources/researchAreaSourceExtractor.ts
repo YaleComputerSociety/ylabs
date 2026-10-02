@@ -26,6 +26,7 @@ import {
   researchAreasAreManuallyLocked,
 } from '../researchAreaEvidence';
 import { extractLabHomepageDescription } from './ysmAtoZScraper';
+import { removeNonSelfDeclaringContent } from '../utils/nonSelfDeclaringPageContent';
 import {
   DEFAULT_SOURCE_CONCURRENCY,
   mapWithConcurrency,
@@ -336,6 +337,7 @@ function htmlToText(html: string): string {
   if (!html) return '';
   const $ = cheerio.load(html);
   $(NON_SUBJECT_CONTENT_SELECTOR).remove();
+  removeNonSelfDeclaringContent($);
   return textValue($('body').text() || $.root().text()).slice(0, MAX_SCAN_CHARS);
 }
 

@@ -25,6 +25,7 @@ const approvedRows = [
   { name: 'Genomics' },
   { name: 'History' },
   { name: 'Psychology' },
+  { name: 'Social Media' },
 ];
 
 const canonicalizer: ResearchAreaCanonicalizer = createResearchAreaCanonicalizer(
@@ -214,6 +215,48 @@ describe('deriveCanonicalResearchAreasFromPage', () => {
       areas: [],
       labeledBacked: false,
     });
+  });
+
+  it('ignores an in-body social-follow block and a social-links label (#4047)', () => {
+    const html = `
+      <h1>Example Institute</h1>
+      <p>The institute studies neuroscience.</p>
+      <div class="quick-links">
+        <h2 class="quick-links__heading">Follow us on social media</h2>
+        <p>Keep up to date and tag us on social media</p>
+        <a href="https://x.com/example">X</a>
+        <a href="https://www.instagram.com/example">Instagram</a>
+      </div>
+      <dl>
+        <dt class="profile-detail__social"><p class="h6">Social media</p></dt>
+        <dd><a href="https://www.linkedin.com/in/example">LinkedIn</a></dd>
+      </dl>`;
+    const result = deriveCanonicalResearchAreasFromPage(canonicalizer, html);
+    expect(result.areas).toEqual(['Neuroscience']);
+  });
+
+  it('keeps a social-media topic the page itself declares or studies (#4047)', () => {
+    const labeled = `
+      <h3>Expertise</h3>
+      <ul><li>Social Media</li><li>Psychology</li></ul>
+      <a href="https://x.com/example">X</a>`;
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, labeled).areas).toEqual(
+      expect.arrayContaining(['Social Media', 'Psychology']),
+    );
+    const prose = '<p>Her research examines how social media shapes adolescent psychology.</p>';
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, prose).areas).toEqual(
+      expect.arrayContaining(['Social Media', 'Psychology']),
+    );
+  });
+
+  it('still reads a talk title that only links to a video platform (#4047)', () => {
+    const html = `
+      <ul class="related-links">
+        <li><a href="https://www.youtube.com/watch?v=example">Machine learning methods in modern genomics</a></li>
+      </ul>`;
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, html).areas).toEqual(
+      expect.arrayContaining(['Machine Learning', 'Genomics']),
+    );
   });
 
   it('ignores a CSS-hidden global mega-menu panel rendered outside a nav tag', () => {
