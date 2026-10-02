@@ -135,13 +135,12 @@ const ResearchHomeCard = ({
     ),
   );
   const mobileTopicCap = isCompact ? 2 : 3;
-  const desktopTopicCap = isCompact ? 3 : 5;
+  const desktopTopicCap = isCompact ? mobileTopicCap : 5;
   const alwaysVisibleTopicBadges = topicBadges.slice(0, mobileTopicCap);
-  const desktopOnlyTopicBadges = isCompact
-    ? []
-    : topicBadges.slice(mobileTopicCap, desktopTopicCap);
-  const mobileMoreCount = topicBadges.length - mobileTopicCap;
-  const desktopMoreCount = topicBadges.length - desktopTopicCap;
+  const desktopOnlyTopicBadges = topicBadges.slice(mobileTopicCap, desktopTopicCap);
+  const mobileMoreCount = Math.max(0, topicBadges.length - mobileTopicCap);
+  const desktopMoreCount = Math.max(0, topicBadges.length - desktopTopicCap);
+  const moreCountIsResponsive = mobileMoreCount !== desktopMoreCount;
   const description = sanitizeResearchEntityCopy(home.description, home.entities[0]);
   const primaryProfileUrl = primaryLinkedEntity
     ? `/research/${safeRouteSegment(primaryLinkedEntity.slug)}`
@@ -264,11 +263,13 @@ const ResearchHomeCard = ({
             </span>
           ))}
           {mobileMoreCount > 0 && (
-            <span className="yr-pill yr-pill-compact px-2 py-0.5 sm:hidden">
+            <span
+              className={`yr-pill yr-pill-compact px-2 py-0.5 ${moreCountIsResponsive ? 'sm:hidden' : ''}`}
+            >
               +{mobileMoreCount} more
             </span>
           )}
-          {desktopMoreCount > 0 && !isCompact && (
+          {moreCountIsResponsive && desktopMoreCount > 0 && (
             <span className="yr-pill hidden yr-pill-compact px-2 py-0.5 sm:inline-flex">
               +{desktopMoreCount} more
             </span>
@@ -377,16 +378,18 @@ const ResearchHomeCard = ({
       )}
 
       {primaryLinkedEntity ? (
-        <div className="mt-auto flex flex-wrap gap-2 border-t border-line pt-3">
-          <Link
-            to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
-            state={profileOpenState}
-            className="yr-focus-ring yr-pressable inline-flex min-h-[44px] flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
-            onClick={(event) => event.stopPropagation()}
-          >
-            View profile
-            <ArrowRightIcon />
-          </Link>
+        <div className="mt-auto pt-4">
+          <div className="flex flex-wrap gap-2 border-t border-line pt-3">
+            <Link
+              to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
+              state={profileOpenState}
+              className="yr-focus-ring yr-pressable inline-flex min-h-[44px] flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
+              onClick={(event) => event.stopPropagation()}
+            >
+              View profile
+              <ArrowRightIcon />
+            </Link>
+          </div>
         </div>
       ) : !primaryLinkedEntity && onSelect ? (
         <div className="mt-auto pt-4">
