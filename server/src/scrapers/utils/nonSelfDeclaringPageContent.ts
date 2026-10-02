@@ -13,7 +13,6 @@ const FOLLOW_LINK_TEXT =
 const LABEL_ELEMENT_SELECTOR =
   'h1, h2, h3, h4, h5, h6, dt, legend, [class*="heading"], [class*="title"], [class*="eyebrow"], [class*="label"]';
 
-const MAX_SOCIAL_BLOCK_OWN_TEXT = 25;
 const MAX_FOLLOW_BLOCK_TEXT = 200;
 
 const collapsedText = (value: string): string => value.replace(/\s+/g, ' ').trim();
@@ -48,7 +47,8 @@ function containsFollowLink($: CheerioAPI, el: Element): boolean {
 function isSocialLinkBlock($: CheerioAPI, el: Element): boolean {
   const links = $(el).find('a[href]').toArray();
   if (links.length === 0 || !links.every((link) => isFollowLink($, link))) return false;
-  return ownTextOutsideLinks($, el).length <= MAX_SOCIAL_BLOCK_OWN_TEXT;
+  const ownText = ownTextOutsideLinks($, el);
+  return ownText === '' || FOLLOW_CALL_TEXT.test(ownText);
 }
 
 function removeSocialFollowBlocks($: CheerioAPI): void {

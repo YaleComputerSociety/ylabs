@@ -281,6 +281,15 @@ describe('deriveCanonicalResearchAreasFromPage', () => {
     );
   });
 
+  it('keeps a short topic line that sits beside icon-only social links (#4047)', () => {
+    const html = `
+      <div class="profile-hero">
+        <p>Studies cancer genomics</p>
+        <a href="https://www.linkedin.com/in/example" aria-label="LinkedIn"><svg></svg></a>
+      </div>`;
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, html).areas).toEqual(['Genomics']);
+  });
+
   it('ignores a CSS-hidden global mega-menu panel rendered outside a nav tag', () => {
     const html = `
       <div class="base-header__navigation-panel">
