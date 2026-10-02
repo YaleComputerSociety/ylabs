@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseVerifyDatabaseNamesArgs, verifyDatabaseNames } from '../verifyDatabaseNames';
 
 const remote = (database: string, host = 'cluster.example.test') =>
-  `mongodb+srv://user:secret@${host}/${database}?retryWrites=true`;
+  `mongodb+srv://user:pass@${host}/${database}?retryWrites=true`;
 
 describe('database:verify-names', () => {
   it('passes the promotion check for Beta to Prod and prints names, never URLs', () => {
@@ -19,7 +19,7 @@ describe('database:verify-names', () => {
       sourceDatabase: 'Beta',
       targetDatabase: 'Prod',
     });
-    expect(JSON.stringify(result)).not.toContain('secret');
+    expect(JSON.stringify(result)).not.toContain('user:pass');
   });
 
   it('fails the promotion check for a target named Production', () => {
