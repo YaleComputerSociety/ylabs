@@ -29,9 +29,13 @@ import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { fetchFailureMessage, fetchFailureStatusCode } from '../utils/fetchFailure';
 import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
-import { readCourseCreditRouteFromHtml } from '../utils/courseCreditRouteEvidence';
+import {
+  readCourseCreditRouteFromHtml,
+  type CourseCreditRouteReading,
+} from '../utils/courseCreditRouteEvidence';
 import {
   ORG_UNIT_COURSE_CREDIT_ROUTE_FIELD,
+  type OrgUnitCourseCreditRouteObservationValue,
   resolveOrgUnitSlugForDepartmentName,
 } from '../orgUnitSignalMaterializer';
 import { evidenceAssertsALab, personScopedResearchRecordIdentity } from '../utils/labClaimEvidence';
@@ -76,6 +80,11 @@ export interface DepartmentUndergradResearchRecord {
 }
 
 type FetchHtml = (url: string, useCache: boolean) => Promise<string>;
+
+interface DepartmentCourseCreditRead {
+  sourceUrl: string;
+  reading: CourseCreditRouteReading | null;
+}
 
 export interface DepartmentUndergradResearchScraperDeps {
   pageConfigs?: DepartmentUndergradResearchPageConfig[];
@@ -867,44 +876,91 @@ export class DepartmentUndergradResearchScraper implements IScraper {
   }
 
   /**
-   * Emits the department's for-credit route as an `orgUnit` observation. Returns
-   * false and emits nothing when the page does not say it or when the org chart
-   * does not know the department, because a signal that cannot cite a page which
-   * states the fact is exactly the fabrication the evidence-first rule forbids.
+   * A withdrawal is emitted only when every page configured for the department's
+   * OrgUnit, under any spelling of its name, was read on this run, so a fetch failure or an `--only` filter never
+   * withdraws a route another page still states (#4045).
    */
-  private async emitCourseCreditRoute(
+  private async emitCourseCreditRoutes(
     ctx: ScraperContext,
+    readsByDepartment: Map<string, DepartmentCourseCreditRead[]>,
+  ): Promise<{ stated: number; withdrawn: number }> {
+    const slugByDepartmentName = new Map<string, string | null>();
+    const resolveSlug = async (departmentName: string): Promise<string | null> => {
+      if (!slugByDepartmentName.has(departmentName)) {
+        slugByDepartmentName.set(
+          departmentName,
+          await resolveOrgUnitSlugForDepartmentName(departmentName),
+        );
+      }
+      return slugByDepartmentName.get(departmentName) ?? null;
+    };
+    const readsByOrgUnit = new Map<string, DepartmentCourseCreditRead[]>();
+    for (const [departmentName, reads] of readsByDepartment) {
+      const orgUnitSlug = await resolveSlug(departmentName);
+      if (!orgUnitSlug) {
+        ctx.log(`No OrgUnit resolves "${departmentName}"; course-credit route not emitted.`);
+        continue;
+      }
+      readsByOrgUnit.set(orgUnitSlug, [...(readsByOrgUnit.get(orgUnitSlug) ?? []), ...reads]);
+    }
+    const configuredUrlsByOrgUnit = new Map<string, Set<string>>();
+    for (const config of [...this.pageConfigs, ...COURSE_CREDIT_ROUTE_SEED_PAGES]) {
+      const orgUnitSlug = await resolveSlug(config.department);
+      if (!orgUnitSlug || !readsByOrgUnit.has(orgUnitSlug)) continue;
+      const urls = configuredUrlsByOrgUnit.get(orgUnitSlug) ?? new Set<string>();
+      urls.add(config.url);
+      configuredUrlsByOrgUnit.set(orgUnitSlug, urls);
+    }
+    let stated = 0;
+    let withdrawn = 0;
+    for (const [orgUnitSlug, reads] of readsByOrgUnit) {
+      const stating = reads.filter((read) => read.reading !== null);
+      const latestStating = stating[stating.length - 1];
+      const readUrls = new Set(reads.map((read) => read.sourceUrl));
+      const everyPageRead = [...(configuredUrlsByOrgUnit.get(orgUnitSlug) ?? [])].every((url) =>
+        readUrls.has(url),
+      );
+      if (!latestStating && !everyPageRead) continue;
+      const value: OrgUnitCourseCreditRouteObservationValue = latestStating?.reading
+        ? {
+            schemaVersion: 1,
+            evidenceQuote: latestStating.reading.evidenceQuote,
+            supportingQuoteCount: latestStating.reading.supportingQuoteCount,
+          }
+        : { schemaVersion: 1, routeStated: false };
+      await ctx.emit([
+        {
+          entityType: 'orgUnit',
+          entityKey: orgUnitSlug,
+          field: ORG_UNIT_COURSE_CREDIT_ROUTE_FIELD,
+          value,
+          sourceUrl: (latestStating ?? reads[reads.length - 1]).sourceUrl,
+        },
+      ]);
+      if (latestStating) stated += 1;
+      else withdrawn += 1;
+    }
+    return { stated, withdrawn };
+  }
+
+  private readCourseCreditRoute(
+    ctx: ScraperContext,
+    readsByDepartment: Map<string, DepartmentCourseCreditRead[]>,
     departmentName: string,
     sourceUrl: string,
     html: string,
-  ): Promise<boolean> {
-    let reading: ReturnType<typeof readCourseCreditRouteFromHtml> = null;
+  ): boolean {
+    let reading: CourseCreditRouteReading | null;
     try {
       reading = readCourseCreditRouteFromHtml(html, sourceUrl);
     } catch (err: unknown) {
       ctx.log(`Course-credit read failed for ${sourceUrl}: ${sanitizeLogValue(err)}`);
       return false;
     }
-    if (!reading) return false;
-    const orgUnitSlug = await resolveOrgUnitSlugForDepartmentName(departmentName);
-    if (!orgUnitSlug) {
-      ctx.log(`No OrgUnit resolves "${departmentName}"; course-credit route not emitted.`);
-      return false;
-    }
-    await ctx.emit([
-      {
-        entityType: 'orgUnit',
-        entityKey: orgUnitSlug,
-        field: ORG_UNIT_COURSE_CREDIT_ROUTE_FIELD,
-        value: {
-          schemaVersion: 1,
-          evidenceQuote: reading.evidenceQuote,
-          supportingQuoteCount: reading.supportingQuoteCount,
-        },
-        sourceUrl,
-      },
-    ]);
-    return true;
+    const reads = readsByDepartment.get(departmentName) ?? [];
+    reads.push({ sourceUrl, reading });
+    readsByDepartment.set(departmentName, reads);
+    return reading !== null;
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -928,7 +984,7 @@ export class DepartmentUndergradResearchScraper implements IScraper {
     let failedPages = 0;
     const summaries: string[] = [];
     const fetchAttempts: ScraperFetchMetric[] = [];
-    let courseCreditRoutes = 0;
+    const courseCreditReads = new Map<string, DepartmentCourseCreditRead[]>();
 
     const pages = this.pageConfigs.filter((page) => !only || only.has(page.key.toLowerCase()));
     for (const page of pages) {
@@ -978,11 +1034,7 @@ export class DepartmentUndergradResearchScraper implements IScraper {
       if (observations.length > 0) await ctx.emit(observations);
       totalObs += observations.length;
       totalEntities += selected.length;
-      const routeEmitted = await this.emitCourseCreditRoute(ctx, page.department, page.url, html);
-      if (routeEmitted) {
-        totalObs += 1;
-        courseCreditRoutes += 1;
-      }
+      this.readCourseCreditRoute(ctx, courseCreditReads, page.department, page.url, html);
       summaries.push(`${page.key}=${selected.length}`);
     }
 
@@ -998,9 +1050,7 @@ export class DepartmentUndergradResearchScraper implements IScraper {
         summaries.push(`${seed.key}=course-credit-fetch-failed`);
         continue;
       }
-      if (await this.emitCourseCreditRoute(ctx, seed.department, seed.url, seedHtml)) {
-        totalObs += 1;
-        courseCreditRoutes += 1;
+      if (this.readCourseCreditRoute(ctx, courseCreditReads, seed.department, seed.url, seedHtml)) {
         summaries.push(`${seed.key}=course-credit`);
       } else {
         summaries.push(`${seed.key}=no-course-credit-evidence`);
@@ -1013,12 +1063,15 @@ export class DepartmentUndergradResearchScraper implements IScraper {
       );
     }
 
+    const courseCreditRoutes = await this.emitCourseCreditRoutes(ctx, courseCreditReads);
+    totalObs += courseCreditRoutes.stated + courseCreditRoutes.withdrawn;
+
     const failureNote =
       failedPages > 0 ? ` (${failedPages} page(s) skipped after fetch/parse failure)` : '';
     return {
       observationCount: totalObs,
       entitiesObserved: totalEntities,
-      notes: `Department undergraduate research evidence rows: ${summaries.join(', ')}${failureNote}; course-credit routes: ${courseCreditRoutes}`,
+      notes: `Department undergraduate research evidence rows: ${summaries.join(', ')}${failureNote}; course-credit routes: ${courseCreditRoutes.stated}; course-credit routes withdrawn: ${courseCreditRoutes.withdrawn}`,
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }

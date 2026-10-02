@@ -88,6 +88,9 @@ export const PI_DEDUPE_SELF_RELATIONSHIP_ARCHIVE_REASON =
 export const SUPERSEDED_RELATIONSHIP_TYPE_ARCHIVE_REASON =
   'materialize:relationship-type-superseded';
 
+export const COURSE_CREDIT_ROUTE_WITHDRAWN_ARCHIVE_REASON =
+  'materialize:course-credit-route-withdrawn';
+
 export const GRANT_SHELL_FACULTY_PORT_ARCHIVE_REASON =
   'research-entity:port-grant-shells-to-faculty-profiles';
 

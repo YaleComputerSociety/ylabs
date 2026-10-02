@@ -344,6 +344,9 @@ Resolved 2026-09-23 by the `OrgUnit` attribution (#2214).
 A `Signal` may now target an `OrgUnit` through `orgUnitId`, and exactly one of `researchEntityId` and `orgUnitId` is set.
 `department-undergrad-research` reads a department's own course page and emits an `orgUnit` observation only when a sentence on that page names the route and names credit or a catalog code; the materializer turns it into a `COURSE_CREDIT_PATHWAY` signal on the department, and `getResearchGroupDetail` inherits it at read time as `departmentCourseCreditRoutes`, attributed to the department by name.
 Nothing is ever written onto an entity, so the department-to-all-entities fan-out is impossible by construction rather than by policy.
+The sentence must also state how a student takes the route, so a deadline, a drop warning, a grade threshold or a statement that credit is not given is refused even when it names the route and its course (`statesHowToTakeCourseCreditRoute`, #4045).
+The lane emits one reading per department per run, and when every page configured for a department was read and none states an admissible route it emits `routeStated: false`, which archives the department's signal, so a department with no admissible quote serves no department context rather than a wrong one.
+A fetch failure or an `--only` run that skips one of the department's pages withdraws nothing.
 Measured on Development: 19 of 40 department pages state a route, producing 19 signals, all on an `OrgUnit` and none on an entity, reaching 517 of 3,314 served entity pages.
 The Beta data-quality scorecard audits the two targets as two edges: `signals.researchEntityId` is required only on a signal with no `orgUnitId`, and `signals.orgUnitId` must resolve to an `org_units` row, so a department-scoped signal no longer reads as a broken entity reference (#3582).
 See `docs/decisions.md` for the recorded decision.
