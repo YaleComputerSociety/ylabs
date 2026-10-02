@@ -1091,6 +1091,25 @@ describe('Research page', () => {
     });
   });
 
+  it('returns to the top of the results when a new search is submitted', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity]);
+    });
+
+    renderResearch();
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    vi.mocked(window.scrollTo).mockClear();
+
+    fireEvent.change(screen.getByLabelText('Search y/labs'), {
+      target: { value: 'ancient DNA' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
+  });
+
   it('returns to the top of the results when a filter changes', async () => {
     mockSearchResponses((url) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);

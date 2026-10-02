@@ -37,6 +37,7 @@ import useUndoableProgramUnwatch, {
 } from '../hooks/useUndoableProgramUnwatch';
 import { getFellowshipCycleStatus, type FellowshipCycleCategory } from '../utils/fellowshipCycle';
 import { createFellowship } from '../utils/createFellowship';
+import { scrollViewportToTop } from '../utils/scrollViewportToTop';
 import {
   programKindLabel,
   entryModeLabel,
@@ -708,6 +709,10 @@ const Fellowships = () => {
 
   const noResults = fellowships.length === 0 && !isLoading;
   const isFirstLoadPending = isLoading && fellowships.length === 0;
+  const chooseQuickFilter = (value: FellowshipQuickFilter) => {
+    if (value !== quickFilter) scrollViewportToTop();
+    setQuickFilter(value);
+  };
   const toggleTrustTierFilter = (tier: StudentVisibilityTier) => {
     setSelectedStudentVisibilityTier((current) =>
       current.includes(tier) ? current.filter((value) => value !== tier) : [...current, tier],
@@ -837,7 +842,7 @@ const Fellowships = () => {
             <ActiveFilters
               quickFilters={fellowshipQuickFilters}
               activeQuickFilter={quickFilter}
-              onQuickFilterChange={(value) => setQuickFilter(value as FellowshipQuickFilter)}
+              onQuickFilterChange={(value) => chooseQuickFilter(value as FellowshipQuickFilter)}
               totalCount={loadError || isFirstLoadPending ? undefined : resultCounterCount}
               isLoading={isLoading}
               chips={fellowshipChips}
@@ -921,8 +926,8 @@ const Fellowships = () => {
               <QuickFilterEmptyState
                 quickFilter={quickFilter as FellowshipQuickFilter}
                 nextCycleCount={nextCycleFilterCount}
-                onViewNextCycle={() => setQuickFilter('nextCycle')}
-                onClearFilter={() => setQuickFilter(null)}
+                onViewNextCycle={() => chooseQuickFilter('nextCycle')}
+                onClearFilter={() => chooseQuickFilter(null)}
               />
             ) : (
               <>

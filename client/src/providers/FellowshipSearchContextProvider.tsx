@@ -12,6 +12,7 @@ import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
 import UserContext from '../contexts/UserContext';
 import { Fellowship, StudentVisibilityTier } from '../types/types';
 import { createFellowship } from '../utils/createFellowship';
+import { scrollViewportToTop } from '../utils/scrollViewportToTop';
 import { showWarningDialog } from '../utils/warningDialog';
 import {
   fellowshipSearchReducer,
@@ -374,6 +375,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   const searchIfParametersChanged = useCallback(() => {
     if (buildSearchUrl(1, pageSize) === lastSearchedUrlRef.current) return;
+    if (lastSearchedUrlRef.current !== null) scrollViewportToTop();
     runFirstPageSearch();
   }, [buildSearchUrl, pageSize, runFirstPageSearch]);
 
