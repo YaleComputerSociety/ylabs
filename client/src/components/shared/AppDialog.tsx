@@ -80,6 +80,10 @@ const AppDialog = ({ request, requestId, open, onResolve, onExited }: AppDialogP
       aria-describedby={isConfirm ? textId : undefined}
       maxWidth="xs"
       fullWidth
+      // Pages scroll inside [data-scroll-container], so a body lock adds nothing, and MUI's lock
+      // restores the inline body overflow it saw on open, which re-locks the page when a caller
+      // that set and cleared that style itself unmounts while this dialog is open.
+      disableScrollLock
       transitionDuration={prefersReducedMotion ? 0 : undefined}
       slotProps={{
         backdrop: { sx: { backgroundColor: 'var(--yr-scrim)' } },

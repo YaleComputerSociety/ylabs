@@ -122,6 +122,20 @@ describe('confirmAction', () => {
 });
 
 describe('showAlert', () => {
+  it('leaves the inline body overflow to the surface that owns it', async () => {
+    document.body.style.overflow = 'hidden';
+    act(() => {
+      void showAlert({ text: 'Synthetic item updated', tone: 'success' });
+    });
+    await screen.findByRole('alertdialog', { name: 'Synthetic item updated' });
+
+    document.body.style.overflow = '';
+    await userEvent.click(screen.getByRole('button', { name: 'OK' }));
+    await waitForNoDialog();
+
+    expect(document.body.style.overflow).toBe('');
+  });
+
   it('names the dialog by its message, focuses OK, and resolves when acknowledged', async () => {
     let settled = false;
     act(() => {
