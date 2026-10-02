@@ -192,9 +192,16 @@ describe('the mounted CAS route tells the limiter which validations it accepted'
           const service = `${SERVER_BASE}${req.originalUrl}`;
           return res.redirect(`${SSO_BASE}/login?service=${encodeURIComponent(service)}`);
         }
-        return req.query.ticket === 'accepted'
-          ? callback(null, { netId: 'synthetic1', userType: 'undergraduate' })
-          : callback(new Error('CAS rejected the ticket'), false);
+        if (req.query.ticket === 'accepted') {
+          return callback(null, { netId: 'synthetic1', userType: 'undergraduate' });
+        }
+        if (req.query.ticket === 'server-fault') {
+          return callback(new Error('user-provided verify function failed'), false);
+        }
+        return callback(
+          new Error('Error in validation', { cause: new Error('Authentication rejected') }),
+          false,
+        );
       };
     vi.spyOn(passport, 'authenticate').mockImplementation(stubbedVerdict as never);
 
@@ -282,6 +289,18 @@ describe('the mounted CAS route tells the limiter which validations it accepted'
       expect(rejected.status).toBe(302);
       expect(rejected.location).toBe('/login-error');
       expect(rejected.remaining).toBe(String(max - attempt - 1));
+    }
+  });
+
+  it('refunds a callback that failed on our side even when the caller asked for an error-page redirect', async () => {
+    const browser = loginSession('203.0.113.34');
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const state = await browser.start();
+      const failed = await browser.request(
+        `?ticket=server-fault&error=%2Flogin-error&state=${state}`,
+      );
+      expect(failed.status).toBe(500);
+      expect(failed.remaining).toBe(String(max - 1));
     }
   });
 

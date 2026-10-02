@@ -789,7 +789,14 @@ describe('auth environment guards', () => {
       .spyOn(passport, 'authenticate')
       .mockImplementation(
         ((_strategy: unknown, callback: any) => (req: any, res: any, next: any) =>
-          callback(new Error('CAS failed'), false, {}, req, res, next)) as any,
+          callback(
+            new Error('Error in validation', { cause: new Error('Authentication rejected') }),
+            false,
+            {},
+            req,
+            res,
+            next,
+          )) as any,
       );
 
     const casRoute = (passportRoutes as any).stack
@@ -835,7 +842,14 @@ describe('auth environment guards', () => {
       .spyOn(passport, 'authenticate')
       .mockImplementation(
         ((_strategy: unknown, callback: any) => (req: any, res: any, next: any) =>
-          callback(new Error('CAS failed'), false, {}, req, res, next)) as any,
+          callback(
+            new Error('Error in validation', { cause: new Error('Authentication rejected') }),
+            false,
+            {},
+            req,
+            res,
+            next,
+          )) as any,
       );
 
     const casRoute = (passportRoutes as any).stack

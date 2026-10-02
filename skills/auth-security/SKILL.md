@@ -50,6 +50,16 @@ The value has to ride inside the request URL rather than beside it, because `pas
 That byte-level equality is the fragile part of the arrangement, so `server/src/__tests__/casLoginCallbackSessionState.test.ts` asserts it directly against a loopback CAS stand-in that, like CAS, issues a ticket for one service URL and validates it against no other.
 The return path is unchanged: `safeRedirectTarget` still decides where a completed login lands.
 
+The callback leg separates a CAS rejection from our own failure, because a student whose login broke on our side must not be told they are unauthorized (#3672).
+`classifyCasCallbackError` in `server/src/utils/casCallbackFailure.ts` walks the error's cause chain, since `passport-cas` wraps every failure, ours included, in a `VError`.
+Only CAS answering `no` to the ticket, or a CAS identity that is not a usable netid (`UnusableCasIdentityError`), is a rejection: it answers `401`, or the caller's `error` page when one is named.
+A CAS that cannot be reached, answers with something malformed, or does not answer within `CAS_VALIDATION_TIMEOUT_MS` (ten seconds), and a database that cannot be reached, answer `503`; any other exception answers `500`.
+Both carry the same student-facing message asking them to try again, never redirect to the `error` page, and are reported through `captureServerError`.
+Unlike the error handler's database `503`, neither sets `Retry-After`, because the callback is a top-level browser navigation that ignores it.
+The report is a fresh `CasLoginServerError` naming the failure and the error names and codes along the cause chain, never the original error, because a duplicate-key message quotes the netid and an axios error carries the validation URL with the ticket in it.
+A verdict that arrives after the timeout has answered is dropped, so a slow CAS can never complete a login the student has already been told failed.
+`server/src/__tests__/casLoginCallbackFailures.test.ts` drives all four outcomes through the mounted app against a stub CAS.
+
 Dev login bypass:
 
 `GET http://localhost:4000/api/dev-login`
@@ -218,7 +228,7 @@ It meters the session mint, and `ensureAnonymousRateLimitId` performs that mint 
 The cost is accepted rather than unnoticed: a `5x` storm spends a NATed cohort's first-contact budget, and their recovery is the one the exhaustion message already names, retrying with the cookie issued regardless of the failure.
 Because express-rate-limit consults `requestWasSuccessful` only when a skip flag is set, declaring the predicate without the flag advertises an exemption that does not exist, so `scripts/security-preflight.test.mjs` pins that no limiter does.
 `server/src/middleware/__tests__/firstContactMetering.test.ts` drives the exported limiter over a `500` and a `404` and asserts the counter keeps climbing, so the guarantee rests on measured counting rather than on how the options block is written.
-`server/src/middleware/__tests__/authLimiterScope.test.ts` does the same for `authLimiter`, driving the exported limiter over a ticketless start, an accepted validation, a rejected one answering `401` or an error-page redirect, and a `503`, and pinning that the two request-scoped limiters still charge a successful response.
+`server/src/middleware/__tests__/authLimiterScope.test.ts` does the same for `authLimiter`, driving the exported limiter over a ticketless start, an accepted validation, a rejected one answering `401` or an error-page redirect, a `503`, and a server-side failure answering `500` even when the caller named an error page, and pinning that the two request-scoped limiters still charge a successful response.
 It needs no CAS: one block uses a stand-in route, and another drives the real `/cas` route with the strategy's verdict stubbed, so the acceptance record is measured where `casLogin` writes it; `server/src/__tests__/appSecurityRuntime.test.ts` covers the route wiring by driving the mounted app's login start.
 That second block drives both legs with one cookie jar, because a callback that does not return the single-use state its session minted is refused before validation (#4081), and it pins that such a callback is charged.
 
