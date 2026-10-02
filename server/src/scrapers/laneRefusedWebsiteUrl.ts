@@ -1,9 +1,9 @@
 /**
  * A refusal is not an absence (#2647), so field retraction cannot withdraw a lane's
  * earlier `websiteUrl` when a later read refuses the link the page still carries. The
- * lane states the refusal as evidence instead, and on every resolve its newest
- * statement about a link wins over its own older assertion of it, without writing the
- * observation log, so another lane's evidence for the link still counts (#3926).
+ * lane states the refusal as evidence instead, and on every resolve that newer read
+ * wins over every older `websiteUrl` the lane asserted on the row, whatever the link,
+ * without writing the observation log, so another lane's evidence still counts (#3926).
  */
 import { websiteIdentity } from './survivorOwnedWebsiteClear';
 
@@ -48,8 +48,11 @@ function identityScope(observation: LaneWebsiteObservation, rowIdentities: Reado
   return forms[0] ?? '';
 }
 
-function refusalKey(sourceName: unknown, scope: string, identity: string): string {
-  return JSON.stringify([String(sourceName ?? ''), scope, identity]);
+function laneScopeKey(observation: LaneWebsiteObservation, rowIdentities: ReadonlySet<string>) {
+  return JSON.stringify([
+    String(observation.sourceName ?? ''),
+    identityScope(observation, rowIdentities),
+  ]);
 }
 
 export function withoutLaneRefusedWebsiteUrls<T extends LaneWebsiteObservation>(
@@ -59,13 +62,8 @@ export function withoutLaneRefusedWebsiteUrls<T extends LaneWebsiteObservation>(
   const newestRefusal = new Map<string, number>();
   for (const observation of observations) {
     if (observation.field !== REFUSED_WEBSITE_URL_FIELD) continue;
-    const identity = websiteIdentity(observation.value);
-    if (!identity) continue;
-    const key = refusalKey(
-      observation.sourceName,
-      identityScope(observation, rowIdentities),
-      identity,
-    );
+    if (!websiteIdentity(observation.value)) continue;
+    const key = laneScopeKey(observation, rowIdentities);
     newestRefusal.set(
       key,
       Math.max(newestRefusal.get(key) ?? 0, observedTime(observation.observedAt)),
@@ -73,26 +71,17 @@ export function withoutLaneRefusedWebsiteUrls<T extends LaneWebsiteObservation>(
   }
   if (newestRefusal.size === 0) return { observations, withdrawnValues: [] };
 
-  const refusalTimeFor = (observation: LaneWebsiteObservation, identity: string) =>
-    newestRefusal.get(
-      refusalKey(observation.sourceName, identityScope(observation, rowIdentities), identity),
-    );
-  const isWithdrawnBySameLane = (observation: LaneWebsiteObservation): boolean => {
-    if (observation.field !== WITHDRAWABLE_FIELD) return false;
-    const identity = websiteIdentity(observation.value);
-    const refusedAt = identity ? refusalTimeFor(observation, identity) : undefined;
+  const isSupersededByLaneRefusal = (observation: LaneWebsiteObservation): boolean => {
+    const refusedAt = newestRefusal.get(laneScopeKey(observation, rowIdentities));
     return refusedAt !== undefined && observedTime(observation.observedAt) < refusedAt;
   };
+  const isWithdrawnBySameLane = (observation: LaneWebsiteObservation): boolean =>
+    observation.field === WITHDRAWABLE_FIELD && isSupersededByLaneRefusal(observation);
   const identitiesStillStatedBy = (observation: LaneWebsiteObservation): string[] => {
     if (!WEBSITE_STATING_FIELDS.has(String(observation.field ?? ''))) return [];
+    if (isSupersededByLaneRefusal(observation)) return [];
     const values = Array.isArray(observation.value) ? observation.value : [observation.value];
-    return values
-      .map((value) => websiteIdentity(value))
-      .filter((identity) => {
-        if (!identity) return false;
-        const refusedAt = refusalTimeFor(observation, identity);
-        return refusedAt === undefined || observedTime(observation.observedAt) >= refusedAt;
-      });
+    return values.map((value) => websiteIdentity(value)).filter(Boolean);
   };
 
   const kept: T[] = [];

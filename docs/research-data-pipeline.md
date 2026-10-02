@@ -993,7 +993,9 @@ Measured on Development on 2026-10-02, 60 non-archived rows served a `websiteUrl
 
 `ysm-faculty-directory` now states the refusal as evidence: a populated lab slot it will not adopt emits a `refusedWebsiteUrl` observation carrying the refused link.
 `withoutLaneRefusedWebsiteUrls` in `scrapers/laneRefusedWebsiteUrl.ts` reads it on every resolve, before the resolver ranks anything.
-For each link, the lane's newest statement wins: its own `websiteUrl` assertions of that link older than the refusal stop counting, on either identity form of the row, and a newer assertion that adopts the link again wins over the refusal.
+The lane's newest read wins over its own older reads of the row: every `websiteUrl` it asserted before the refusal stops counting, whatever the link, on either identity form of the row, because a slot that now carries a refused link no longer carries the earlier one.
+A newer read that adopts a link again wins over the refusal.
+The lane's own older citations stop keeping a withdrawn link standing for the same reason.
 Another lane's assertion of the link resolves normally, and the stored value is cleared only when no other lane asserts or cites it after the withdrawal and the field carries no lock.
 The same pass declines to promote that link back from a citation, because a clear that the citation promotion refills on the same pass does not hold.
 Nothing is written to the observation log and the refusal is never projected onto the row, so a second pass over an unchanged corpus plans nothing.

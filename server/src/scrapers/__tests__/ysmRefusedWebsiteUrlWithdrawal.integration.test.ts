@@ -49,9 +49,9 @@ const PROFILE: YsmFacultyProfile = {
   labName: 'Rivers Lab',
 };
 
-async function readProfile(options: { refused: boolean; observedAt: Date }) {
+async function readProfile(options: { refused: boolean; observedAt: Date; labUrl?: string }) {
   const observations = facultyToResearchEntityObservations(
-    PROFILE,
+    { ...PROFILE, labUrl: options.labUrl ?? LAB_URL },
     'ysm:jordan-rivers',
     NO_SURNAME_ROSTER,
     () => options.refused,
@@ -127,6 +127,24 @@ describe('a ysm read that refuses its lab link withdraws the lane own earlier we
         superseded: { $ne: true },
       }),
     ).toBe(1);
+  }, 120000);
+
+  it('drops the earlier link when a later read refuses a different link in the same slot', async () => {
+    await readProfile({ refused: false, observedAt: new Date('2026-08-20T00:00:00Z') });
+    await resolve();
+    expect(await storedWebsiteUrl()).toBe(LAB_URL);
+
+    await readProfile({
+      refused: true,
+      observedAt: new Date('2026-09-20T00:00:00Z'),
+      labUrl: 'https://affiliatedcenter.example.org/',
+    });
+    await resolve();
+    expect(await storedWebsiteUrl()).toBeFalsy();
+
+    const second = await resolve();
+    expect(second.resolved.websiteUrl).toBeUndefined();
+    expect(await storedWebsiteUrl()).toBeFalsy();
   }, 120000);
 
   it('keeps the link when another lane still asserts it', async () => {

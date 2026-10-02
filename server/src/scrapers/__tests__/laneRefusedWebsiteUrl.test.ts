@@ -86,14 +86,27 @@ describe('withoutLaneRefusedWebsiteUrls (#3926)', () => {
     expect(result.withdrawnValues).toEqual([LAB]);
   });
 
-  it('withdraws only the refused link, on the same key', () => {
-    const otherLink = observation({ value: 'https://another.example.org/' });
-    const otherKey = observation({ entityKey: 'ysm-faculty-someone-else' });
+  it('withdraws the lane own older assertion of a different link once the slot carries a refused one', () => {
+    const previousLink = 'https://another.example.org/';
     const result = withoutLaneRefusedWebsiteUrls(
-      [otherLink, otherKey, observation({ field: REFUSED_WEBSITE_URL_FIELD, observedAt: NEW })],
+      [
+        observation({ value: previousLink }),
+        observation({ field: 'sourceUrls', value: ['https://x.example.org/', previousLink] }),
+        observation({ field: REFUSED_WEBSITE_URL_FIELD, observedAt: NEW }),
+      ],
       ROW,
     );
-    expect(result.observations).toEqual([otherLink, otherKey]);
+    expect(result.observations.map((kept) => kept.field)).toEqual(['sourceUrls']);
+    expect(result.withdrawnValues).toEqual([previousLink]);
+  });
+
+  it('never withdraws an assertion on another key', () => {
+    const otherKey = observation({ entityKey: 'ysm-faculty-someone-else' });
+    const result = withoutLaneRefusedWebsiteUrls(
+      [otherKey, observation({ field: REFUSED_WEBSITE_URL_FIELD, observedAt: NEW })],
+      ROW,
+    );
+    expect(result.observations).toEqual([otherKey]);
     expect(result.withdrawnValues).toEqual([]);
   });
 });
