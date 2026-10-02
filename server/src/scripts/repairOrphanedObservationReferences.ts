@@ -40,7 +40,7 @@ import { attributedArchiveSet } from '../models/entityArchival';
 
 const ORPHANED_REFERENCE_ARCHIVE_REASON = 'observations:repair-orphaned-references';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 interface CliOptions {
   execute: boolean;

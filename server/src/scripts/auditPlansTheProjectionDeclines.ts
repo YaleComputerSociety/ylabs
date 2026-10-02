@@ -13,7 +13,10 @@ import {
   type PlannedFieldChange,
 } from './auditPlansTheProjectionDeclinesCore';
 
-dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.env') });
+dotenv.config({
+  path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.env'),
+  quiet: true,
+});
 
 const MAX_ROWS_PER_SCRIPT = 40;
 

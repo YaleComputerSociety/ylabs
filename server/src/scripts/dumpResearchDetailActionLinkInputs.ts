@@ -24,7 +24,7 @@ import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { getResearchGroupDetail } from '../services/researchGroupService';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(here, '../../.env') });
+dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
 
 const DEFAULT_OUT = '/tmp/research-detail-action-link-inputs.json';
 

@@ -51,7 +51,7 @@ import { resolveFieldLockReleases } from './releaseRevisitableFieldLocksCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(here, '../../.env') });
+dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:refuse-dead-website-values';
 const PROBE_PAUSE_MS = 2500;

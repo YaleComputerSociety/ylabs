@@ -5,6 +5,16 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-02: `dotenv` Loads Quietly, And Prettier Stays On 3.8 For Now (#4367)
+
+`dotenv` 17 and later print `injected env (N) from .env` on every `config()` call unless `quiet` is set, including in deployed runtimes where no `.env` file exists, and 18 sends that line to stderr.
+The server calls `config()` from about 230 modules, so every `dotenv.config(...)` call passes `quiet: true` to keep the silent behaviour 16 had; a new call should do the same.
+`import 'dotenv/config'` is already quiet by default from 18.0.4.
+
+Prettier is held at its exact `3.8.3` pin.
+Prettier 3.9 rewrites the layout of multi-line union types, which reformats about 80 files that no dependency change touches.
+Land that as a formatting-only change of its own once the other #4038 upgrades are in, so the churn does not collide with them.
+
 ## 2026-10-02: A Fund's Upcoming Deadline Is Served Even When Its Database Record Lists A Passed One (#4382)
 
 When a program is served from its Yale fellowship database record (#4289) and another lane's hidden copy of the same fund states a still-upcoming deadline while the record's own deadline has passed or is absent, students see the upcoming deadline (owner decision).

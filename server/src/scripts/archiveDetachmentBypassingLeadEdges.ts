@@ -36,7 +36,7 @@ import {
 } from './archiveDetachmentBypassingLeadEdgesCore';
 
 const __filename = fileURLToPath(import.meta.url);
-dotenv.config({ path: path.resolve(path.dirname(__filename), '../../.env') });
+dotenv.config({ path: path.resolve(path.dirname(__filename), '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'archive-detachment-bypassing-leads';
 

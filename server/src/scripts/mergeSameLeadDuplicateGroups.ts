@@ -36,7 +36,7 @@ import {
 import { planUrlIdentityLaneVerdicts } from './dedupeResearchEntitiesByPi';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:merge-same-lead-duplicate-groups';
 export const CONFIRM_FLAG = '--confirm-merge-same-lead-duplicate-groups';

@@ -14,7 +14,7 @@ import {
   retiredIdentifiedLeadWaysInFilter,
 } from './retireIdentifiedLeadWaysInSignalsCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const SCRIPT_NAME = 'retire:identified-lead-ways-in';

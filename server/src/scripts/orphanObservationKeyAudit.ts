@@ -43,9 +43,9 @@ import {
 } from './orphanObservationKeyAuditCore';
 import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const MINT_INTENT_OBSERVATION_FIELDS = ['name', 'entityType'];
 const LEAD_ROLES = ['PI', 'DIRECTOR'];

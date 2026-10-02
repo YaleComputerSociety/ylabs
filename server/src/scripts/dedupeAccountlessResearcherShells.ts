@@ -27,7 +27,7 @@ import {
   type ShellMergeReason,
 } from './dedupeAccountlessResearcherShellsCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 

@@ -74,7 +74,7 @@ import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 /**
  * Arm A mirrors production exactly: the live system prompt plus the live

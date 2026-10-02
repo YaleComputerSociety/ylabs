@@ -37,9 +37,9 @@ import {
   type StaleLaunchOverridePlan,
 } from './retireStaleLaunchSuppressionOverridesCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const here = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(here, '../../.env') });
+dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'visibility:retire-stale-launch-overrides';
 const ROLLBACK_REASON =

@@ -47,9 +47,9 @@ import {
   type OfficialProfileOwner,
 } from './attachLabSiteNamedLeadsCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:attach-lab-site-named-leads';
 const UA = 'Mozilla/5.0 (compatible; ylabs-linkcheck)';

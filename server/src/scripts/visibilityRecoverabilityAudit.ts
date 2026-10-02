@@ -33,8 +33,8 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 if (process.env.YLABS_SKIP_LOCAL_DOTENV !== 'true') {
-  dotenv.config();
-  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+  dotenv.config({ quiet: true });
+  dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 }
 
 const WITHHELD_TIERS = ['operator_review', 'suppressed'] as const;

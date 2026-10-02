@@ -7,7 +7,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 export const E2E_SMOKE_SLUG_PREFIX = 'e2e-smoke-';
 /**

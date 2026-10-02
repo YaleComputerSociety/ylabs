@@ -13,7 +13,7 @@ import {
   type GlobalRegionsDoc,
 } from './backfillGlobalRegionsDefaultFillCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const SCRIPT_NAME = 'programs:backfill-global-regions';
 

@@ -89,17 +89,15 @@
     "verify": "yarn verify:fast && yarn --cwd server test && yarn model-refactor:inventory:test-operator-tools && yarn test:data-profiles && yarn --cwd client test:ci && yarn security:preflight"
   },
   "dependencies": {
-    "concurrently": "^9.2.1",
-    "dotenv": "^16.3.1",
+    "concurrently": "^9.2.4",
+    "dotenv": "^18.0.5",
     "mongoose": "^9.10.3"
   },
   "resolutions": {
     "mongoose": "9.10.3",
-    "undici": "6.28.1",
     "shell-quote": "1.10.0",
     "brace-expansion@npm:^5.0.5": "5.0.12",
-    "js-yaml": "4.3.2",
-    "tar": "7.5.22"
+    "js-yaml": "4.3.2"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -108,7 +106,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.13.0",
     "js-yaml": "4.3.2",
-    "playwright": "^1.60.0",
+    "playwright": "^1.63.0",
     "prettier": "3.8.3",
     "typescript": "^5.3.0",
     "typescript-eslint": "^8.71.0"
@@ -116,5 +114,5 @@
   "engines": {
     "node": ">=26 <27"
   },
-  "packageManager": "yarn@4.15.0"
+  "packageManager": "yarn@4.18.1"
 }

@@ -6,9 +6,9 @@ import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __filename = fileURLToPath(import.meta.url);
-dotenv.config({ path: path.resolve(path.dirname(__filename), '../../.env') });
+dotenv.config({ path: path.resolve(path.dirname(__filename), '../../.env'), quiet: true });
 
 const INDEX_NAME = 'observationFingerprint_1_superseded_1';
 const CONFIRM_FLAG = '--confirm-repartition-fingerprint-index';

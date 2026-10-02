@@ -23,7 +23,7 @@ import {
 } from './signalConsolidationMigrationCore';
 import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const SCRIPT_NAME = 'signal-consolidation-migration';
 

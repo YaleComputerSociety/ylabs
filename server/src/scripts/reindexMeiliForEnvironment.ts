@@ -25,7 +25,7 @@ import {
 } from './rebuildResearchEntitySearchIndex';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 export interface ReindexMeiliCliOptions {
   confirm: boolean;
