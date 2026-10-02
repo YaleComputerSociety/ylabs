@@ -939,6 +939,7 @@ The only listed authority is `description-derived-research-area`, which the mate
 `$unset` and a subpath repoint of `sourceUrl` author no attribution and are allowed.
 A raw `collection` handle skips those hooks, so `models/__tests__/rawResearchEntityWriteGuard.test.ts` keeps raw writers of `research_entities` to a reviewed list with a reason per file and refuses any raw write that authors a whole entry or its `sourceName` (#3788).
 For stored residue, `planNeverBackedFieldProvenanceRetirement` (`scrapers/neverBackedFieldProvenance.ts`) runs at the end of `projectFromLog` and unsets an entry that names a lane, carries neither `observationId` nor `sourceId`, is not a listed authority, sits on no locked field, and whose lane has no observation of that field on the row at all, live or superseded.
+An entry on a locked field is left to `research-entity:release-field-locks --release-never-backed`, described with the lock release tool above.
 It clears the attribution and never the value: the value stays exactly as evidenced, which is by nothing, and a later lane observation re-attributes it through the normal projection.
 Everything else is history and is kept: an `observationId` that resolves to a superseded observation or to nothing (a pruned one), a bare `sourceId` (the #2897 residue), and an unrecorded-id entry whose lane really did observe the field.
 It needs no lock and a second pass plans nothing, so it is a derivation rather than a repair.
