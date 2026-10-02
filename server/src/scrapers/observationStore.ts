@@ -897,6 +897,8 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   'rosterEnrichment',
   'currentUndergradCount',
   'undergradEvidenceQuote',
+  'undergradRoleEvidenceQuote',
+  'contactInstructionsQuote',
   'applicationInformation',
   'applicationMaterials',
   'researchFocused',

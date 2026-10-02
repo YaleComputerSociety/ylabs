@@ -8,6 +8,7 @@ import {
 } from '../scrapers/rowKeyedContactEvidence';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import type { UnbackedResearchAreaOutcome } from '../scrapers/entityMaterializer';
+import type { AccessSignalChangePlan } from '../scrapers/accessMaterializer';
 
 export interface RematerializeResearchEntitiesArgs {
   slugs: string[];
@@ -17,6 +18,7 @@ export interface RematerializeResearchEntitiesArgs {
   unbackedProvenance: boolean;
   foreignContact: boolean;
   unbackedResearchAreas: boolean;
+  accessSignals: boolean;
   onlyFields: string[];
   includeArchived: boolean;
   output?: string;
@@ -126,6 +128,7 @@ export function parseRematerializeResearchEntitiesArgs(
     unbackedProvenance: false,
     foreignContact: false,
     unbackedResearchAreas: false,
+    accessSignals: false,
     onlyFields: [],
     includeArchived: false,
   };
@@ -159,6 +162,10 @@ export function parseRematerializeResearchEntitiesArgs(
     }
     if (arg === '--unbacked-research-areas') {
       args.unbackedResearchAreas = true;
+      continue;
+    }
+    if (arg === '--access-signals') {
+      args.accessSignals = true;
       continue;
     }
     if (arg.startsWith('--slugs=')) {
@@ -209,11 +216,22 @@ export function parseRematerializeResearchEntitiesArgs(
     !args.reclaimStrandedField &&
     !args.unbackedProvenance &&
     !args.foreignContact &&
-    !args.unbackedResearchAreas
+    !args.unbackedResearchAreas &&
+    !args.accessSignals
   ) {
     throw new Error(
-      '--slugs, --reclaim-stranded, --unbacked-provenance, --foreign-contact or --unbacked-research-areas is required',
+      '--slugs, --reclaim-stranded, --unbacked-provenance, --foreign-contact, --unbacked-research-areas or --access-signals is required',
     );
+  }
+  if (
+    args.accessSignals &&
+    (args.unbackedProvenance ||
+      args.foreignContact ||
+      args.unbackedResearchAreas ||
+      args.reclaimStrandedField ||
+      args.onlyFields.length > 0)
+  ) {
+    throw new Error('--access-signals writes access signals only, so it runs on its own');
   }
   if (
     args.unbackedResearchAreas &&
@@ -508,6 +526,7 @@ export interface RematerializeEntityReport {
   changes: RematerializeReportedChange[];
   clearedContactFields?: string[];
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
+  accessSignalChanges?: AccessSignalChangePlan;
   skipped?: string;
   error?: string;
 }
@@ -662,6 +681,32 @@ export interface RematerializeRegateCandidate {
   found: boolean;
   skipped?: string;
   changes: RematerializeReportedChange[];
+  accessSignalChanges?: AccessSignalChangePlan;
+}
+
+function accessSignalsChanged(changes: AccessSignalChangePlan | undefined): boolean {
+  return Boolean(changes && changes.retired.length + changes.revived.length > 0);
+}
+
+export function summarizeAccessSignalChanges(reports: readonly RematerializeRegateCandidate[]): {
+  entitiesChanged: number;
+  retiredByKey: Record<string, number>;
+  revivedByKey: Record<string, number>;
+} {
+  const retiredByKey: Record<string, number> = {};
+  const revivedByKey: Record<string, number> = {};
+  let entitiesChanged = 0;
+  for (const report of reports) {
+    if (!accessSignalsChanged(report.accessSignalChanges)) continue;
+    entitiesChanged += 1;
+    for (const change of report.accessSignalChanges?.retired ?? []) {
+      retiredByKey[change.derivationKey] = (retiredByKey[change.derivationKey] ?? 0) + 1;
+    }
+    for (const change of report.accessSignalChanges?.revived ?? []) {
+      revivedByKey[change.derivationKey] = (revivedByKey[change.derivationKey] ?? 0) + 1;
+    }
+  }
+  return { entitiesChanged, retiredByKey, revivedByKey };
 }
 
 export function selectRematerializeRegateEntityIds(
@@ -670,7 +715,12 @@ export function selectRematerializeRegateEntityIds(
   const entityIds = new Set<string>();
   for (const report of reports) {
     if (!report.found || report.skipped || !report.entityId) continue;
-    if (rematerializeChangeAffectsVisibilityGate(report.changes)) entityIds.add(report.entityId);
+    if (
+      rematerializeChangeAffectsVisibilityGate(report.changes) ||
+      accessSignalsChanged(report.accessSignalChanges)
+    ) {
+      entityIds.add(report.entityId);
+    }
   }
   return Array.from(entityIds);
 }

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON,
   MATERIALIZED_ACCESS_SIGNAL_TYPES,
   deriveAccessArtifactsFromObservations,
+  planEvidenceGovernedSignalChanges,
   deriveAccessArtifactsForResearchGroup,
   isExplicitUndergradUnavailabilityPhrase,
   normalizeAccessMaterializerObjectId,
@@ -498,7 +500,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
       obs({
         field: 'contactInstructionsQuote',
-        value: 'Call 203-432-1234 or email ada@yale.edu.',
+        value: 'Call 203-432-1234 or email ada@yale.edu to arrange a visit.',
         sourceName: 'lab-microsite-undergrad-llm',
         confidence: 0.5,
       }),
@@ -897,5 +899,168 @@ describe('isExplicitUndergradUnavailabilityPhrase (#1304)', () => {
     for (const quote of notUnavailable) {
       expect(isExplicitUndergradUnavailabilityPhrase(quote)).toBe(false);
     }
+  });
+});
+
+const LANE = 'lab-microsite-undergrad-llm';
+const EARLIER = new Date('2026-05-01T12:00:00.000Z');
+const LATER = new Date('2026-06-01T12:00:00.000Z');
+
+const verdict = (openToUndergrads: 'yes' | 'no', observedAt: Date, id: string) =>
+  obs({
+    _id: id,
+    field: 'undergradAccessEvidence',
+    value: {
+      openToUndergrads,
+      evidenceSource: 'explicit_text',
+      evidenceQuote:
+        openToUndergrads === 'yes'
+          ? 'Undergraduates join our projects each term.'
+          : 'We are not accepting undergraduate researchers at this time.',
+    },
+    sourceName: LANE,
+    confidence: 0.5,
+    observedAt,
+  });
+
+const signalKeys = (observations: AccessObservation[]) =>
+  deriveAccessArtifactsFromObservations('64f000000000000000000001', observations)
+    .accessSignals.map((signal) => signal.derivationKey)
+    .sort();
+
+describe('undergrad lane contact quotes must state an instruction (#3928)', () => {
+  it('mints no microsite contact signal from a quote that is only an address', () => {
+    for (const value of [
+      '[email redacted]',
+      'Contact [email redacted]',
+      '[email redacted] (copy)',
+    ]) {
+      expect(
+        signalKeys([obs({ field: 'contactInstructionsQuote', value, sourceName: LANE })]),
+      ).not.toContain('signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE');
+    }
+  });
+
+  it('still mints it from a quote that tells a student how to reach out', () => {
+    expect(
+      signalKeys([
+        obs({
+          field: 'contactInstructionsQuote',
+          value: 'Interested students should email [email redacted] with a CV.',
+          sourceName: LANE,
+        }),
+      ]),
+    ).toContain('signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE');
+  });
+});
+
+describe('the undergrad lane verdict is latest-wins (#3921)', () => {
+  it('derives no reach-out signal when the newest verdict is no', () => {
+    const keys = signalKeys([
+      verdict('yes', EARLIER, 'older-yes'),
+      verdict('no', LATER, 'newer-no'),
+    ]);
+    expect(keys).not.toContain('signal:REACH_OUT_PLAUSIBLE');
+    expect(keys).toContain('signal:NOT_CURRENTLY_AVAILABLE');
+  });
+
+  it('lets a newer yes lift an older veto on the contact signal', () => {
+    const keys = signalKeys([
+      verdict('no', EARLIER, 'older-no'),
+      verdict('yes', LATER, 'newer-yes'),
+      obs({
+        field: 'contactInstructionsQuote',
+        value: 'Please email the lab manager to join.',
+        sourceName: LANE,
+        observedAt: LATER,
+      }),
+    ]);
+    expect(keys).toContain('signal:REACH_OUT_PLAUSIBLE');
+    expect(keys).toContain('signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE');
+  });
+
+  it('leaves join-page and current-undergraduate minting reading every live read', () => {
+    const keys = signalKeys([
+      verdict('yes', EARLIER, 'older-yes'),
+      verdict('no', LATER, 'newer-no'),
+      obs({
+        field: 'joinPageUrl',
+        value: 'https://lab.example.edu/join',
+        sourceName: LANE,
+        observedAt: EARLIER,
+      }),
+    ]);
+    expect(keys).toContain('signal:APPLICATION_FORM_EXISTS:JOIN_PAGE');
+    expect(keys).not.toContain('signal:REACH_OUT_PLAUSIBLE');
+  });
+});
+
+describe('planEvidenceGovernedSignalChanges', () => {
+  const live = (derivationKey: string, id = '64f0000000000000000000a1') => ({
+    _id: id,
+    derivationKey,
+    archived: false,
+  });
+
+  it('retires a live signal the derivation declined over evidence it read', () => {
+    const plan = planEvidenceGovernedSignalChanges(
+      new Set(['signal:NOT_CURRENTLY_AVAILABLE']),
+      [verdict('no', LATER, 'newer-no')],
+      [live('signal:REACH_OUT_PLAUSIBLE')],
+    );
+    expect(plan.retired).toEqual([
+      { signalId: '64f0000000000000000000a1', derivationKey: 'signal:REACH_OUT_PLAUSIBLE' },
+    ]);
+  });
+
+  it('retires nothing when the read holds none of the signal evidence fields', () => {
+    const plan = planEvidenceGovernedSignalChanges(
+      new Set(),
+      [],
+      [live('signal:REACH_OUT_PLAUSIBLE'), live('signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE')],
+    );
+    expect(plan).toEqual({ retired: [], revived: [] });
+  });
+
+  it('never touches a signal key it does not govern or a suppression-locked signal', () => {
+    const plan = planEvidenceGovernedSignalChanges(
+      new Set(),
+      [verdict('no', LATER, 'newer-no')],
+      [
+        live('signal:CURRENT_UNDERGRADS', '64f0000000000000000000a2'),
+        live('signal:APPLICATION_FORM_EXISTS:JOIN_PAGE', '64f0000000000000000000a6'),
+        live('signal:NOT_CURRENTLY_AVAILABLE', '64f0000000000000000000a7'),
+        {
+          ...live('signal:REACH_OUT_PLAUSIBLE', '64f0000000000000000000a3'),
+          suppression: { reason: 'operator review' },
+        },
+      ],
+    );
+    expect(plan.retired).toEqual([]);
+  });
+
+  it('revives only a signal this lane archived, once the evidence derives it again', () => {
+    const plan = planEvidenceGovernedSignalChanges(
+      new Set(['signal:REACH_OUT_PLAUSIBLE', 'signal:APPLICATION_FORM_EXISTS:JOIN_PAGE']),
+      [verdict('yes', LATER, 'newer-yes')],
+      [
+        {
+          _id: '64f0000000000000000000a4',
+          derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
+          archived: true,
+          archivedReason: ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON,
+        },
+        {
+          _id: '64f0000000000000000000a5',
+          derivationKey: 'signal:APPLICATION_FORM_EXISTS:JOIN_PAGE',
+          archived: true,
+          archivedReason: 'research-entity:dedupe-by-pi',
+        },
+      ],
+    );
+    expect(plan.revived).toEqual([
+      { signalId: '64f0000000000000000000a4', derivationKey: 'signal:REACH_OUT_PLAUSIBLE' },
+    ]);
+    expect(plan.retired).toEqual([]);
   });
 });

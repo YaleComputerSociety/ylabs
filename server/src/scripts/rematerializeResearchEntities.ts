@@ -6,6 +6,11 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
+import { Signal } from '../models/signal';
+import {
+  ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON,
+  EVIDENCE_GOVERNED_ACCESS_SIGNAL_FIELDS,
+} from '../scrapers/accessMaterializer';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import { fieldProvenanceEntries } from '../models/fieldProvenanceBacking';
 import {
@@ -28,6 +33,7 @@ import {
   rematerializeReportedChanges,
   rematerializeSkipReasonForEntity,
   rematerializeStateAfterPlan,
+  summarizeAccessSignalChanges,
   summarizeRematerializeEntities,
   researchEntityFieldIsStranded,
   countProvenanceReconciliation,
@@ -153,6 +159,58 @@ async function processSlug(
     unbackedResearchAreas: result.unbackedResearchAreas,
     skipped: result.skipped,
   });
+}
+
+async function processAccessSignalsSlug(
+  slug: string,
+  apply: boolean,
+  includeArchived: boolean,
+): Promise<RematerializeEntityReport> {
+  const before = await loadComparedFields(slug, ['_id', 'slug', 'studentVisibilityTier']);
+  if (!before) return { slug, found: false, changes: [] };
+  const redirectCanonical = await resolveResearchEntityCanonicalIdentity({
+    slug,
+    entityId: before._id ? String(before._id) : undefined,
+  });
+  const skipReason = rematerializeSkipReasonForEntity(
+    before,
+    includeArchived,
+    redirectCanonical?._id ? String(redirectCanonical._id) : undefined,
+  );
+  const report: RematerializeEntityReport = {
+    slug,
+    found: true,
+    entityId: before._id ? String(before._id) : undefined,
+    studentVisibilityTierBefore: before.studentVisibilityTier,
+    changes: [],
+  };
+  if (skipReason) return { ...report, skipped: skipReason };
+  const result = await materializeEntity(
+    'researchEntity',
+    { entityKey: slug },
+    { dryRun: !apply, accessSignalsOnly: true },
+  );
+  return {
+    ...report,
+    accessSignalChanges: result.accessSignalChanges,
+    ...(result.skipped ? { skipped: result.skipped } : {}),
+  };
+}
+
+async function discoverEvidenceGovernedSignalSlugs(): Promise<string[]> {
+  const keys = Object.keys(EVIDENCE_GOVERNED_ACCESS_SIGNAL_FIELDS);
+  const entityIds = await Signal.distinct('researchEntityId', {
+    derivationKey: { $in: keys },
+    $or: [{ archived: { $ne: true } }, { archivedReason: ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON }],
+  });
+  if (entityIds.length === 0) return [];
+  const rows = await ResearchEntity.find({ _id: { $in: entityIds }, archived: { $ne: true } })
+    .select('slug')
+    .lean<Array<{ slug?: string }>>();
+  return rows
+    .map((row) => row.slug)
+    .filter((slug): slug is string => Boolean(slug))
+    .sort();
 }
 
 async function discoverStrandedFieldSlugs(field: string): Promise<string[]> {
@@ -334,15 +392,23 @@ async function main() {
     slugs = Array.from(new Set([...slugs, ...discoveredUnbackedResearchAreaSlugs]));
   }
 
+  let discoveredAccessSignalSlugs: string[] | undefined;
+  if (args.accessSignals && args.slugs.length === 0) {
+    discoveredAccessSignalSlugs = await discoverEvidenceGovernedSignalSlugs();
+    slugs = discoveredAccessSignalSlugs;
+  }
+
   const entities = await collectRematerializeEntityReports(slugs, (slug) =>
-    processSlug(
-      slug,
-      args.apply,
-      args.onlyFields,
-      args.includeArchived,
-      args.unbackedProvenance,
-      args.foreignContact,
-    ),
+    args.accessSignals
+      ? processAccessSignalsSlug(slug, args.apply, args.includeArchived)
+      : processSlug(
+          slug,
+          args.apply,
+          args.onlyFields,
+          args.includeArchived,
+          args.unbackedProvenance,
+          args.foreignContact,
+        ),
   );
   const failed = entities.filter((entity) => entity.error);
 
@@ -377,6 +443,9 @@ async function main() {
     clearedContactFields: summary.clearedContactFields,
     unbackedResearchAreasMode: args.unbackedResearchAreas,
     discoveredUnbackedResearchAreasCount: discoveredUnbackedResearchAreaSlugs?.length,
+    accessSignalsMode: args.accessSignals,
+    discoveredAccessSignalCount: discoveredAccessSignalSlugs?.length,
+    accessSignalChanges: args.accessSignals ? summarizeAccessSignalChanges(entities) : undefined,
     retiredProvenanceEntries: provenanceReconciliation?.retired,
     relinkedProvenanceEntries: provenanceReconciliation?.relinked,
     onlyFields: args.onlyFields,

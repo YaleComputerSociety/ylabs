@@ -44,6 +44,7 @@ import {
   quoteStatesAnUndergraduateAccessFact,
   rosterSnippetNamesAnUndergraduate,
 } from '../undergradQuoteRelevance';
+import { contactQuoteStatesAnInstruction } from '../contactInstructionQuoteAdmission';
 import {
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
@@ -887,7 +888,7 @@ export function extractionToObservations(
   }
 
   const contactInstructionsQuote = quoteOnPage(extraction.contactInstructionsQuote);
-  if (contactInstructionsQuote) {
+  if (contactInstructionsQuote && contactQuoteStatesAnInstruction(contactInstructionsQuote.text)) {
     out.push({
       ...base,
       sourceUrl: contactInstructionsQuote.sourceUrl,
