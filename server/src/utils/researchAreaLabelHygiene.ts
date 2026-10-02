@@ -280,7 +280,8 @@ const ACTIVITY_LABEL = `(?:(?:${longestFirstAlternation(NON_METHOD_ACTIVITY_MODI
 const ACTIVITY_LABEL_RE = new RegExp(`^${ACTIVITY_LABEL}(?: and ${ACTIVITY_LABEL})?$`);
 const PUBLICATION_LABEL_RE = new RegExp(
   `^(?:(?:${longestFirstAlternation(PUBLICATION_LABEL_MODIFIERS)}) (?:${longestFirstAlternation(PUBLICATION_LABEL_HEADS)})` +
-    '|publications|articles|commentaries|reviews' +
+    '|publications|articles|commentaries|reviews|citations?|references|doi|pmid|pmcid' +
+    '|peer reviewed (?:original research|publications|articles|reviews)(?: .+)?' +
     '|publications? (?:in|of) (?:(?:academic|scholarly|peer reviewed) )?(?:journals|articles))$',
 );
 
