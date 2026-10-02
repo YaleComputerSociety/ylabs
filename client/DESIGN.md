@@ -318,6 +318,8 @@ It shapes a ring box-shadow, and the canonical indicators are outlines.
 - Use a consistent max content width and generous gutters rather than edge to edge layouts.
 - Group related controls; separate distinct actions with whitespace, not dividers, where possible.
 - Sidebars and filter rails are sticky but must never trap content below the fold on short viewports.
+- A block inside a sidebar rail is a panel sized to the rail, not a page-wide toolbar: `yr-panel rounded-card p-3`, the same radius and gutter as its neighbours, and no `max-w-*` or `px-6` container.
+The programs quick filters kept their toolbar styling after moving into the 20rem aside, so a square-cornered strip hung under a rounded panel, the extra gutter wrapped seven chips onto six rows, and the result count floated 152px down a 321px bar; the student-journey smoke now holds that rail to the search panel's radius and padding, at most three chip rows, and the count beside the first row.
 
 ## 5b. Shape and Radius
 

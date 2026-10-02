@@ -188,9 +188,9 @@ const StatusSummary = ({ summary }: { summary: ProgramBoardSummary }) => {
 const fellowshipQuickFilters: QuickFilterDef[] = [
   { label: 'Open Only', value: 'open' },
   { label: 'Closing Soon', value: 'closingSoon' },
-  { label: 'Open to First-Years', value: 'firstYear' },
-  { label: 'No Mentor Requirement', value: 'noMentorFirst' },
   { label: 'Next Cycle', value: 'nextCycle' },
+  { label: 'Open to First-Years', value: 'firstYear' },
+  { label: 'No Mentor Required', value: 'noMentorFirst' },
   { label: 'Department Guidance', value: 'guidance' },
   { label: 'Applications Only', value: 'applicationsOnly' },
 ];

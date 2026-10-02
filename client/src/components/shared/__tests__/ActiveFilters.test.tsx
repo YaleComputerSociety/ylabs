@@ -20,4 +20,34 @@ describe('ActiveFilters', () => {
 
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
+
+  it('renders as a rounded rail panel with the count above the quick filters', () => {
+    render(
+      <ActiveFilters
+        quickFilters={[
+          { label: 'Open Only', value: 'open' },
+          { label: 'Closing Soon', value: 'closingSoon' },
+        ]}
+        activeQuickFilter={null}
+        onQuickFilterChange={vi.fn()}
+        totalCount={42}
+        chips={[]}
+        onClearAll={vi.fn()}
+      />,
+    );
+
+    const group = screen.getByRole('group', { name: 'Quick filters' });
+    const panel = group.parentElement!;
+    const count = screen.getByRole('status');
+
+    expect(panel).toHaveClass('yr-panel', 'rounded-card', 'p-3');
+    expect(panel.className).not.toMatch(/max-w-\[1300px\]|px-6|border-b/);
+    expect(panel.querySelector('.mx-auto')).toBeNull();
+    expect(count).toHaveTextContent('42 results');
+    expect(count.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(group.contains(count)).toBe(false);
+    for (const button of screen.getAllByRole('button')) {
+      expect(button).toHaveClass('min-h-[44px]', 'rounded-control');
+    }
+  });
 });

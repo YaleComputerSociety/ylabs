@@ -848,6 +848,64 @@ await step('a deep-linked program dialog renders in place without a layout shift
   await assertDeepLinkedProgramDialogRendersInPlace({ width: 768, height: 1024 }, 'reduce');
 });
 
+const QUICK_FILTER_MAX_ROWS = 3;
+const QUICK_FILTER_COUNT_TOLERANCE = 8;
+
+await step('the program quick filters fit their rail panel with the count in view', async () => {
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
+  ]) {
+    await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+      await syntheticPage.goto(`${baseUrl}/programs`, { waitUntil: 'domcontentloaded' });
+      const group = syntheticPage.getByRole('group', { name: 'Quick filters' });
+      await group.waitFor({ timeout: 20000 });
+      const bar = await group.evaluate((element) => {
+        const panel = element.parentElement;
+        const search = document.getElementById('program-search')?.closest('.yr-panel');
+        const chipTops = [...element.querySelectorAll('button')].map((button) =>
+          Math.round(button.getBoundingClientRect().top),
+        );
+        const count = panel.querySelector('[role="status"]');
+        const panelStyle = getComputedStyle(panel);
+        return {
+          radius: parseFloat(panelStyle.borderTopLeftRadius),
+          searchRadius: search ? parseFloat(getComputedStyle(search).borderTopLeftRadius) : null,
+          paddingLeft: panelStyle.paddingLeft,
+          searchPaddingLeft: search ? getComputedStyle(search).paddingLeft : null,
+          chips: chipTops.length,
+          rows: new Set(chipTops).size,
+          firstRowTop: Math.min(...chipTops),
+          countTop: count ? Math.round(count.getBoundingClientRect().top) : null,
+          height: Math.round(panel.getBoundingClientRect().height),
+        };
+      });
+      record('program quick filter rail', { width: viewport.width, ...bar });
+      assert(
+        bar.chips === 7,
+        `The rail drew ${bar.chips} quick filters at ${viewport.width}px, not 7.`,
+      );
+      assert(
+        bar.radius > 0 && bar.radius === bar.searchRadius,
+        `The quick filter rail at ${viewport.width}px has a ${bar.radius}px radius under a ${bar.searchRadius}px search panel.`,
+      );
+      assert(
+        bar.paddingLeft === bar.searchPaddingLeft,
+        `The quick filter rail at ${viewport.width}px is padded ${bar.paddingLeft}, the search panel ${bar.searchPaddingLeft}.`,
+      );
+      assert(
+        bar.rows <= QUICK_FILTER_MAX_ROWS,
+        `The quick filters wrap to ${bar.rows} rows at ${viewport.width}px (at most ${QUICK_FILTER_MAX_ROWS}).`,
+      );
+      assert(
+        bar.countTop !== null && bar.countTop <= bar.firstRowTop + QUICK_FILTER_COUNT_TOLERANCE,
+        `The result count at ${viewport.width}px sits ${bar.countTop === null ? 'nowhere' : `${bar.countTop - bar.firstRowTop}px below the first quick filter row`}, so it floats away from the filters it counts.`,
+      );
+    });
+  }
+});
+
 const summary = {
   generatedAt: new Date().toISOString(),
   baseUrl,
