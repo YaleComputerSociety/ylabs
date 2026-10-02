@@ -143,6 +143,7 @@ import {
   newestFundTitle,
 } from './fellowshipSourcePrecedence';
 import {
+  fellowshipCitationsObservedIn,
   fundFacetsDescribeProgram,
   fundKeyCitedByFellowship,
   fundSpeaksForFellowship,
@@ -7936,7 +7937,10 @@ export async function materializeEntity(
     entityType === 'fellowship'
       ? preferFundFacetObservations(
           obs,
-          await fundFacetObservationsCitedBy(entityDoc, options.chunkPrefetch),
+          await fundFacetObservationsCitedBy(
+            entityDoc ?? fellowshipCitationsObservedIn(obs),
+            options.chunkPrefetch,
+          ),
         )
       : obs;
   const materializationObs = collapseLatestWins(

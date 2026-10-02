@@ -272,6 +272,40 @@ describe("a fund's own facets outrank another lane's inference (#4173)", () => {
     }
   });
 
+  it("the owning lane's pass that creates the row already serves the fund's window", async () => {
+    await seedOfficeRow([FUND_PAGE]);
+    await Fellowship.deleteMany({});
+    await observe(
+      OFFICE_KEY,
+      OFFICE,
+      OFFICE_PAGE,
+      { deadline: new Date('2019-11-16T04:59:59.999Z') },
+      '2026-03-02T00:00:00Z',
+    );
+    await observe(
+      FUND_KEY,
+      GRANTS,
+      FUND_PAGE,
+      {
+        title: 'Fixture Summer Inquiry Award (Catalog)',
+        sourceName: GRANTS,
+        sourceUrl: FUND_PAGE,
+        deadline: new Date('2027-03-01T17:00:00.000Z'),
+        isAcceptingApplications: true,
+        reviewRequired: false,
+      },
+      '2026-02-01T00:00:00Z',
+    );
+
+    const outcome = await materializeEntity('fellowship', { entityKey: OFFICE_KEY });
+
+    const row = await officeRow();
+    expect(outcome.created).toBe(true);
+    expect(row?.deadline?.toISOString()).toBe('2027-03-01T17:00:00.000Z');
+    expect(row?.isAcceptingApplications).toBe(true);
+    expect(row?.sourceName).toBe(OFFICE);
+  });
+
   it("an owning lane's window stands where the fund states none", async () => {
     await seedOfficeRow([FUND_PAGE]);
     await observe(

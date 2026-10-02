@@ -84,6 +84,24 @@ export function fundKeyCitedByFellowship(
   return keys.size === 1 ? [...keys][0] : null;
 }
 
+const FUND_CITATION_FIELDS = ['title', 'sourceUrl', 'applicationLink', 'links'] as const;
+
+export function fellowshipCitationsObservedIn(
+  observations: readonly { field?: unknown; value?: unknown; observedAt?: unknown }[],
+): Record<string, unknown> {
+  const newestFirst = [...observations].sort(
+    (a, b) =>
+      new Date((b.observedAt as Date) || 0).getTime() -
+      new Date((a.observedAt as Date) || 0).getTime(),
+  );
+  return Object.fromEntries(
+    FUND_CITATION_FIELDS.map((field) => [
+      field,
+      newestFirst.find((observation) => observation.field === field)?.value,
+    ]),
+  );
+}
+
 export function fundSpeaksForFellowship(
   row: Record<string, any> | null | undefined,
   fundTitle: unknown,
