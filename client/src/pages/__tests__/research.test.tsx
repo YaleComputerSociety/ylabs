@@ -1545,6 +1545,7 @@ describe('Research page', () => {
     });
 
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    fireEvent.click(screen.getByRole('button', { name: /^Filters/ }));
     const toggle = screen.getByLabelText('Show weakest profiles first') as HTMLInputElement;
     expect(toggle.checked).toBe(false);
 
@@ -1614,6 +1615,7 @@ describe('Research page', () => {
     });
 
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    fireEvent.click(screen.getByRole('button', { name: /^Filters/ }));
     fireEvent.click(screen.getByLabelText('Show weakest profiles first'));
     await screen.findByRole('button', { name: 'Description issue' });
 
@@ -1652,6 +1654,8 @@ describe('Research page', () => {
     });
 
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    fireEvent.click(screen.getByRole('button', { name: /^Filters/ }));
+    expect(screen.queryByRole('heading', { name: 'Operator controls' })).toBeNull();
     expect(screen.queryByLabelText('Show weakest profiles first')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Description issue' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Missing lead' })).toBeNull();
@@ -1682,6 +1686,7 @@ describe('Research page', () => {
       isAdmin: true,
     });
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    fireEvent.click(screen.getByRole('button', { name: /^Filters/ }));
     fireEvent.click(screen.getByLabelText('Show weakest profiles first'));
     await screen.findByRole('heading', { name: 'Sparse Lab' });
     adminRender.unmount();

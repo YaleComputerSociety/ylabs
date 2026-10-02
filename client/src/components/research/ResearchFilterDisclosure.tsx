@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChevronDownIcon, CloseIcon, FiltersIcon } from '../shared/icons';
 
 import ActiveFilterChip from './ActiveFilterChip';
@@ -30,6 +30,7 @@ interface ResearchFilterDisclosureProps {
   variant?: 'popover' | 'sidebar';
   isOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
+  operatorControls?: ReactNode;
 }
 
 const positiveFacetOptions = (values: Record<string, number> | undefined): FacetOption[] =>
@@ -58,6 +59,7 @@ const ResearchFilterDisclosure = ({
   variant = 'popover',
   isOpen: controlledIsOpen,
   onOpenChange,
+  operatorControls,
 }: ResearchFilterDisclosureProps) => {
   const isSidebar = variant === 'sidebar';
   const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false);
@@ -432,6 +434,20 @@ const ResearchFilterDisclosure = ({
                 {facetCountWarning}
                 {filterFields}
                 {clearAllButton}
+                {operatorControls && (
+                  <section
+                    aria-labelledby={`${panelId}-operator-controls`}
+                    className="grid gap-3 border-t border-[var(--yr-line)] pt-4"
+                  >
+                    <h4
+                      id={`${panelId}-operator-controls`}
+                      className="text-sm font-semibold text-ink"
+                    >
+                      Operator controls
+                    </h4>
+                    {operatorControls}
+                  </section>
+                )}
               </div>
             </div>
           </>

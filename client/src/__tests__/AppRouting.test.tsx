@@ -177,4 +177,18 @@ describe('App routing', () => {
       skipLink.compareDocumentPosition(main as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
+
+  it('sizes the main landmark to the whole scroll viewport so the footer starts below the fold', () => {
+    window.history.pushState({}, '', '/about');
+
+    const { container } = render(<App />);
+
+    const main = container.querySelector('main');
+    const scrollContainer = container.querySelector('[data-scroll-container]');
+    expect({
+      mainIsScrollChild: main?.parentElement === scrollContainer,
+      fillsViewport: main?.classList.contains('min-h-full'),
+      neverShrinks: main?.classList.contains('flex-shrink-0'),
+    }).toEqual({ mainIsScrollChild: true, fillsViewport: true, neverShrinks: true });
+  });
 });

@@ -73,7 +73,11 @@ const App = () => {
                 data-scroll-container
               >
                 <HttpStatusNotifier />
-                <main id="main-content" tabIndex={-1} className="flex-grow focus:outline-none">
+                <main
+                  id="main-content"
+                  tabIndex={-1}
+                  className="min-h-full flex-shrink-0 flex-grow focus:outline-none"
+                >
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <RouteFade>
                       <Routes>

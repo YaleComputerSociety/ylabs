@@ -1715,22 +1715,37 @@ const Research = () => {
               strong enough.
             </p>
 
-            {!isAuthenticated && (
-              <div
-                aria-hidden={isAuthLoading || undefined}
-                className={`mt-4 rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy${isAuthLoading ? ' invisible' : ''}`}
+            <div className="mt-4 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy">
+              <p
+                aria-hidden={isAuthenticated || isAuthLoading || undefined}
+                className={`[grid-area:1/1]${isAuthenticated || isAuthLoading ? ' invisible' : ''}`}
               >
                 You&apos;re browsing as a guest.{' '}
                 <Link
                   to="/login"
                   state={{ from: `${location.pathname}${location.search}` }}
+                  tabIndex={isAuthenticated || isAuthLoading ? -1 : undefined}
                   className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
                 >
                   Log in with Yale CAS
                 </Link>{' '}
                 to save research and reach out.
-              </div>
-            )}
+              </p>
+              <p
+                aria-hidden={!isAuthenticated || undefined}
+                className={`[grid-area:1/1]${isAuthenticated ? '' : ' invisible'}`}
+              >
+                You&apos;re signed in. Research you save is on{' '}
+                <Link
+                  to="/dashboard"
+                  tabIndex={isAuthenticated ? undefined : -1}
+                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
+                >
+                  your dashboard
+                </Link>
+                , ready to compare.
+              </p>
+            </div>
 
             {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
               <div
@@ -1835,7 +1850,6 @@ const Research = () => {
                       onSortByChange={(field) => applyResearchSort(field)}
                       onToggleSortDirection={toggleResearchSortDirection}
                     />
-                    {isAdmin && !isWideFilterLayout && weakestProfilesToggle}
                   </div>
                 </div>
                 {!isWideFilterLayout && (
@@ -1844,6 +1858,15 @@ const Research = () => {
                       {...browseFilterProps}
                       isOpen={isFilterPanelOpen}
                       onOpenChange={setIsFilterPanelOpen}
+                      operatorControls={
+                        isAdmin ? (
+                          <>
+                            {weakestProfilesToggle}
+                            {qualityFilterChips}
+                            {trustTierFilterChips}
+                          </>
+                        ) : undefined
+                      }
                     />
                   </ResearchStickyFilterBar>
                 )}
@@ -1861,12 +1884,6 @@ const Research = () => {
                       hasResults={defaultClusters.length > 0}
                       onRetry={reloadDefaultResearchHomes}
                     />
-                  </div>
-                )}
-                {isAdmin && !isWideFilterLayout && (
-                  <div className="mb-4 grid gap-4">
-                    {qualityFilterChips}
-                    {trustTierFilterChips}
                   </div>
                 )}
                 {defaultSearchLoading && defaultClusters.length === 0 ? (
