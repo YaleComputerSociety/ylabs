@@ -16,7 +16,7 @@ import {
 import * as itemOps from './itemOperations';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
 import { Observation } from '../models/observation';
-import { clearedStudentVisibilityVerdict } from '../models/entityArchival';
+import { clearedProgramStudentVisibilityVerdict } from '../models/entityArchival';
 import { programRoleForKind } from './programClassifier';
 import { programAudience } from './programAudience';
 import { isDepartmentResearchGuidance } from './departmentResearchGuidance';
@@ -27,6 +27,10 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
 import { newYorkCalendarDate, newYorkInstant, newYorkWallClock } from '../utils/newYorkTime';
 import { programDeadlineClosesAt } from '../utils/programDeadlineInstant';
+import {
+  servedUpcomingDuplicateWindow,
+  type UpcomingDuplicateWindow,
+} from './programUpcomingDuplicateWindow';
 import {
   inferProgramSubjects,
   PROGRAM_TOPIC_TAXONOMY,
@@ -379,9 +383,19 @@ export interface ServedProgramDeadline {
   deadline: Date | undefined;
   closed: boolean;
   projectedNextCycle: boolean;
+  duplicateWindow?: UpcomingDuplicateWindow;
 }
 
 export const servedProgramDeadline = (program: any, now: Date): ServedProgramDeadline => {
+  const duplicateWindow = servedUpcomingDuplicateWindow(program, now);
+  if (duplicateWindow) {
+    return {
+      deadline: programDeadlineClosesAt(duplicateWindow.deadline),
+      closed: false,
+      projectedNextCycle: false,
+      duplicateWindow,
+    };
+  }
   const statedDeadline = toValidDate(program?.deadline);
   if (!statedDeadline) return { deadline: undefined, closed: false, projectedNextCycle: false };
   const closesAt = programDeadlineClosesAt(statedDeadline);
@@ -430,10 +444,17 @@ const stripStalePresentationDate = (text: string, deadline: Date): string => {
   );
 };
 
+// The copy that supplies a served deadline also supplies its opening date when it states one,
+// because the two are one statement of one cycle. Otherwise the row's own opening date stands.
+export const servedApplicationOpenDate = (program: any, served: ServedProgramDeadline): unknown =>
+  served.duplicateWindow?.applicationOpenDate ?? program?.applicationOpenDate;
+
 // The stored flag freezes whatever a lane last wrote, so a window that opened since then would
 // still read as closed (#4231). Where the row states a deadline, the served window decides in
 // both directions; without both a deadline and a stated opening date the dates cannot show the
-// window opened, so the stored flag stands unless the window is closed.
+// window opened, so the stored flag stands unless the window is closed. A deadline served from
+// another copy of the fund (#4382) is that copy's, so where neither copy states an opening date
+// the flag that copy's lane read beside the deadline stands instead of the row's own.
 export const acceptingFromServedWindow = (
   program: any,
   served: ServedProgramDeadline,
@@ -441,8 +462,8 @@ export const acceptingFromServedWindow = (
 ): boolean | undefined => {
   if (!served.deadline) return undefined;
   if (served.closed || served.projectedNextCycle) return false;
-  const opensAt = toValidDate(program?.applicationOpenDate);
-  if (!opensAt) return undefined;
+  const opensAt = toValidDate(servedApplicationOpenDate(program, served));
+  if (!opensAt) return served.duplicateWindow?.isAcceptingApplications;
   return opensAt.getTime() <= now.getTime();
 };
 
@@ -461,6 +482,9 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
 
   const served = servedProgramDeadline(fellowship, now);
   if (served.deadline) publicFellowship.deadline = served.deadline;
+  if (served.duplicateWindow?.applicationOpenDate) {
+    publicFellowship.applicationOpenDate = served.duplicateWindow.applicationOpenDate;
+  }
   const windowAcceptance = acceptingFromServedWindow(fellowship, served, now);
   if (windowAcceptance !== undefined) publicFellowship.isAcceptingApplications = windowAcceptance;
   publicFellowship.deadlineProjectedNextCycle = served.projectedNextCycle;
@@ -715,7 +739,9 @@ const filterFellowshipUpdate = (data: any): Record<string, any> => {
 
 const withoutClearedVerdict = (update: Record<string, unknown>) =>
   Object.fromEntries(
-    Object.entries(update).filter(([field]) => !(field in clearedStudentVisibilityVerdict())),
+    Object.entries(update).filter(
+      ([field]) => !(field in clearedProgramStudentVisibilityVerdict()),
+    ),
   );
 
 const VISIBILITY_OVERRIDE_FIELDS = [
@@ -776,7 +802,7 @@ export const updateFellowship = async (id: any, data: any) => {
     (await Fellowship.exists({ _id: safeId, archived: true })) !== null;
   const withdrawsVerdict = safeData.archived === true || restoring;
   const update = withdrawsVerdict
-    ? { $set: withoutClearedVerdict(safeData), $unset: clearedStudentVisibilityVerdict() }
+    ? { $set: withoutClearedVerdict(safeData), $unset: clearedProgramStudentVisibilityVerdict() }
     : safeData;
   const fellowship = await Fellowship.findByIdAndUpdate(safeId, update, {
     new: true,

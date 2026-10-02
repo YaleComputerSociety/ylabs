@@ -586,3 +586,29 @@ describe('publicProgramForReader card line (#3904)', () => {
     ).toBeUndefined();
   });
 });
+
+describe('publicProgramForReader serves a deadline from another copy of the fund (#4382)', () => {
+  it('carries the served deadline and accepting status, never the stored window', () => {
+    const springDateOnly = new Date('2027-01-05T04:59:59.999Z');
+    const payload = publicProgramForReader(
+      publicFellowshipForStudent(
+        {
+          _id: '6a6f84d074dd496b1d43b1a0',
+          title: 'Fixture Research Fund',
+          isAcceptingApplications: false,
+          deadline: new Date('2026-07-30T21:00:00.000Z'),
+          upcomingDuplicateWindow: {
+            deadline: springDateOnly,
+            isAcceptingApplications: true,
+            sourceProgramId: '6a6f84d074dd496b1d43b1a1',
+          },
+        },
+        new Date('2026-10-02T12:00:00.000Z'),
+      ),
+    );
+    expect(payload.deadline).toEqual(springDateOnly);
+    expect(payload.isAcceptingApplications).toBe(true);
+    expect(payload.deadlineProjectedNextCycle).toBe(false);
+    expect(payload).not.toHaveProperty('upcomingDuplicateWindow');
+  });
+});

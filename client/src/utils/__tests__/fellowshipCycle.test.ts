@@ -4,6 +4,7 @@ import {
   getFellowshipDeadlineSubtitle,
   isLikelyRecurringFellowship,
 } from '../fellowshipCycle';
+import { getFellowshipApplicationStatus } from '../fellowshipStatus';
 import type { Fellowship } from '../../types/types';
 
 const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
@@ -124,6 +125,27 @@ describe('fellowshipCycle', () => {
 
     expect(isLikelyRecurringFellowship(fellowship)).toBe(false);
     expect(getFellowshipCycleStatus(fellowship, now).category).toBe('closed');
+  });
+
+  it('renders a deadline the server serves from another copy of the fund as the confirmed next deadline (#4382)', () => {
+    const servedFromAnotherCopy = baseFellowship({
+      isAcceptingApplications: true,
+      applicationOpenDate: '2026-06-05T04:00:00.000Z',
+      deadline: '2027-01-05T04:59:59.999Z',
+      deadlineProjectedNextCycle: false,
+    });
+    const autumn = new Date('2026-10-02T12:00:00.000Z');
+
+    expect(getFellowshipCycleStatus(servedFromAnotherCopy, autumn)).toMatchObject({
+      category: 'open',
+      deadlinePassed: false,
+    });
+    expect(getFellowshipDeadlineSubtitle(servedFromAnotherCopy, autumn)).toBe('Due Jan 4');
+    expect(getFellowshipApplicationStatus(servedFromAnotherCopy, autumn)).toMatchObject({
+      kind: 'open',
+      label: 'Accepting applications',
+      deadlineLabel: 'Jan 4, 2027',
+    });
   });
 
   it('surfaces a server-projected next-cycle deadline distinctly from a real next-cycle signal', () => {

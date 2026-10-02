@@ -35,6 +35,16 @@ const fellowshipSourceLinkHealthSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const upcomingDuplicateWindowSchema = new mongoose.Schema(
+  {
+    deadline: { type: Date, required: true },
+    applicationOpenDate: { type: Date, required: false },
+    isAcceptingApplications: { type: Boolean, required: true },
+    sourceProgramId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  },
+  { _id: false },
+);
+
 export const programCategories = [
   'FELLOWSHIP',
   'CENTER_INTERNSHIP',
@@ -212,6 +222,11 @@ const fellowshipSchema = new mongoose.Schema(
     },
     deadline: {
       type: Date,
+      required: false,
+    },
+    // Derived by the visibility gate on every run and written by nothing else (#4382).
+    upcomingDuplicateWindow: {
+      type: upcomingDuplicateWindowSchema,
       required: false,
     },
     contactName: {

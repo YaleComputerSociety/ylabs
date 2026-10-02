@@ -75,6 +75,31 @@ describe('attributeProgramServedFields', () => {
     });
   });
 
+  it("attributes a deadline served from another copy of the fund to that copy's window (#4382)", () => {
+    const stored = {
+      ...recurringStoredRow,
+      isAcceptingApplications: false,
+      upcomingDuplicateWindow: {
+        deadline: new Date('2027-01-05T04:59:59.999Z'),
+        isAcceptingApplications: true,
+        sourceProgramId: '000000000000000000004383',
+      },
+    };
+    const served = publicProgramForReader(publicFellowshipForStudent(stored, servedAt.from));
+    const outcomes = attributeProgramServedFields(stored, served, servedAt);
+
+    expect(outcomeFor(outcomes, 'deadline')).toEqual({
+      field: 'deadline',
+      status: 'attributed',
+      guard: 'servedUpcomingDuplicateWindow',
+    });
+    expect(outcomeFor(outcomes, 'isAcceptingApplications')).toEqual({
+      field: 'isAcceptingApplications',
+      status: 'attributed',
+      guard: 'acceptingFromServedWindow',
+    });
+  });
+
   it('attributes a date-only deadline served at the end of its New York day to the close guard', () => {
     const stored = { ...recurringStoredRow, deadline: new Date('2026-12-01T23:59:59.999Z') };
     const served = publicFellowshipForStudent(stored, servedAt.from);

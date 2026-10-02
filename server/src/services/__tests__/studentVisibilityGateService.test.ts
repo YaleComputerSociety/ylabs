@@ -1965,3 +1965,88 @@ describe('a trailing default document is the same destination (#2708)', () => {
     expect([...ids]).toEqual([]);
   });
 });
+
+describe('the gate-derived program window (#4382)', () => {
+  const window = {
+    deadline: new Date('2027-01-05T04:59:59.999Z'),
+    isAcceptingApplications: true,
+    sourceProgramId: 'program-hidden-copy',
+  };
+  const programPlan = (overrides: Partial<StudentVisibilityGatePlan> = {}) =>
+    safePlan({
+      collection: 'programs',
+      recordId: 'program-kept-copy',
+      currentTier: 'student_ready',
+      currentComputedTier: 'student_ready',
+      currentReasons: ['source_backed_description', 'concrete_next_step'],
+      currentUpcomingDuplicateWindow: null,
+      upcomingDuplicateWindow: null,
+      ...overrides,
+    });
+
+  it('writes a newly derived window with updatedAt even when the verdict is unchanged', async () => {
+    const deps = {
+      updateRecordVisibility: vi.fn().mockResolvedValue(undefined),
+      upsertOpenQueueItem: vi.fn().mockResolvedValue(undefined),
+      resolveQueueItem: vi.fn().mockResolvedValue(undefined),
+    };
+    const report = await runStudentVisibilityGateForPlans(
+      [programPlan({ upcomingDuplicateWindow: window })],
+      { mode: 'apply', deps },
+    );
+    expect(report.counts).toMatchObject({ changed: 0, upcomingDuplicateWindowsChanged: 1 });
+    const [, , patch, options] = deps.updateRecordVisibility.mock.calls[0];
+    expect(patch.upcomingDuplicateWindow).toEqual(window);
+    expect(patch).not.toHaveProperty('studentVisibilityTier');
+    expect(options).toEqual({ timestamps: true });
+  });
+
+  it('clears a stored window the run no longer derives', async () => {
+    const deps = {
+      updateRecordVisibility: vi.fn().mockResolvedValue(undefined),
+      upsertOpenQueueItem: vi.fn().mockResolvedValue(undefined),
+      resolveQueueItem: vi.fn().mockResolvedValue(undefined),
+    };
+    await runStudentVisibilityGateForPlans(
+      [programPlan({ currentUpcomingDuplicateWindow: window })],
+      {
+        mode: 'apply',
+        deps,
+      },
+    );
+    const [, , patch, options] = deps.updateRecordVisibility.mock.calls[0];
+    expect(patch).not.toHaveProperty('upcomingDuplicateWindow');
+    expect(options).toEqual({ timestamps: true, unset: ['upcomingDuplicateWindow'] });
+
+    const { programOps, programEvaluationOps } = buildStudentVisibilityGateApplyOps(
+      [programPlan({ currentUpcomingDuplicateWindow: window })],
+      new Set(),
+      new Date('2026-10-02T12:00:00.000Z'),
+    );
+    expect(programEvaluationOps).toEqual([]);
+    expect(programOps[0].updateOne.update.$unset).toEqual({ upcomingDuplicateWindow: '' });
+  });
+
+  it('writes nothing about the window when it is unchanged or the plan is not a program', () => {
+    const { programOps, programEvaluationOps, researchEvaluationOps } =
+      buildStudentVisibilityGateApplyOps(
+        [
+          programPlan({
+            currentUpcomingDuplicateWindow: window,
+            upcomingDuplicateWindow: { ...window },
+          }),
+          safePlan({ currentTier: 'student_ready', currentComputedTier: 'student_ready' }),
+        ],
+        new Set(),
+        new Date('2026-10-02T12:00:00.000Z'),
+      );
+    expect(programOps).toEqual([]);
+    expect(programEvaluationOps[0].updateOne.update).not.toHaveProperty('$unset');
+    expect(programEvaluationOps[0].updateOne.update.$set).not.toHaveProperty(
+      'upcomingDuplicateWindow',
+    );
+    expect(researchEvaluationOps[0].updateOne.update.$set).not.toHaveProperty(
+      'upcomingDuplicateWindow',
+    );
+  });
+});
