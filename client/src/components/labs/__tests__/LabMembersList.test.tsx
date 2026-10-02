@@ -6,6 +6,7 @@ import LabMembersList from '../LabMembersList';
 import ConfigContext, { defaultConfigContext } from '../../../contexts/ConfigContext';
 import type { DepartmentConfig } from '../../../contexts/ConfigContext';
 import type { LabMember } from '../../../types/labDetail';
+import { undersizedRenderedTextClasses } from '../../../testUtils/textSize';
 
 const member = (imageUrl: string, overrides: Partial<LabMember['user']> = {}): LabMember => ({
   role: 'pi',
@@ -398,8 +399,6 @@ describe('LabMembersList text size floor', () => {
     },
   } as unknown as LabMember;
 
-  const UNDERSIZED_TEXT_CLASS = /\btext-\[(?:\d|0\.\d)/;
-
   it.each([true, false])('sets no line below text-xs with singleColumn %s', (singleColumn) => {
     const { container } = render(
       <MemoryRouter>
@@ -410,11 +409,6 @@ describe('LabMembersList text size floor', () => {
     );
 
     expect(screen.getByText('Professor of Synthetic Studies')).toBeTruthy();
-    const undersized = Array.from(container.querySelectorAll('*'))
-      .map((element) => element.className)
-      .filter(
-        (className) => typeof className === 'string' && UNDERSIZED_TEXT_CLASS.test(className),
-      );
-    expect(undersized).toEqual([]);
+    expect(undersizedRenderedTextClasses(container)).toEqual([]);
   });
 });

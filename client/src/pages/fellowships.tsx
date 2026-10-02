@@ -188,7 +188,7 @@ const StatusSummary = ({
   <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-[var(--yr-line)] bg-[var(--yr-line)] lg:grid-cols-4">
     {statusTiles.map((tile) => (
       <div key={tile.key} className={`bg-[var(--yr-panel)] px-4 py-3 ${tile.tileClassName}`}>
-        <dt className="yr-kicker text-[0.68rem]">{tile.tileLabel}</dt>
+        <dt className="yr-kicker">{tile.tileLabel}</dt>
         <dd className="mt-2 flex min-h-[3rem] flex-col justify-end gap-1">
           {unavailableLabel ? (
             <span className="block h-8">

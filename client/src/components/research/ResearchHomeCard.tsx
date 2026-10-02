@@ -328,7 +328,7 @@ const ResearchHomeCard = ({
 
       {home.entities.length > 0 && !singleLinkedEntity && !isCompact && (
         <div className="mt-4 border-t border-[var(--yr-line)] pt-3">
-          <p className="yr-kicker mb-2 text-[0.68rem]">Research entries</p>
+          <p className="yr-kicker mb-2">Research entries</p>
           <div className="flex flex-col gap-1">
             {homeEntities.map((entity) => {
               if (!entity.slug) {
@@ -361,7 +361,7 @@ const ResearchHomeCard = ({
 
       {showEvidenceFooter && (
         <div className="mt-4 border-t border-[var(--yr-line)] pt-3">
-          <p className="yr-kicker mb-2 text-[0.68rem]">Evidence</p>
+          <p className="yr-kicker mb-2">Evidence</p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
             {primaryEvidenceUrl && (
               <a
