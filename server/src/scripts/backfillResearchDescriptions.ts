@@ -471,6 +471,11 @@ export async function runResearchDescriptionBackfill(options: {
   };
 
   const source = options.dryRun ? null : await getSourceByName(SOURCE_NAME);
+  if (!options.dryRun && !source) {
+    throw new Error(
+      `Rewrite apply requires the '${SOURCE_NAME}' source row so the write is backed by a durable observation.`,
+    );
+  }
   const backfillRunId = new mongoose.Types.ObjectId().toString();
 
   for (const entity of entities as any[]) {
@@ -503,7 +508,7 @@ export async function runResearchDescriptionBackfill(options: {
         result.skippedQuality += 1;
         continue;
       }
-      if (!options.dryRun && source) {
+      if (source) {
         const sourceUrl = officialSourceUrl(entity);
         const entityId = serializedDocumentId(entity._id);
         const observations: ObservationInput[] = [
