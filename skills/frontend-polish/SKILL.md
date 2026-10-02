@@ -77,6 +77,11 @@ A strip that can outgrow a 320px viewport scrolls in its own `overflow-x-auto` r
 Take a ticket from `client/src/hooks/useLatestRequest.ts`, pass its `signal`, and gate every state write, including the one in `finally`, on `isCurrent()`.
 Clear state that belongs to the previous selection in the same handler that changes it, and reset the page or offset in the same state update as the filter change, never in a later effect.
 Debounce free-text search inputs with `client/src/hooks/useDebouncedCallback.ts`.
+- A search effect never lists a "has loaded" flag that it also sets, because the flag change re-runs the effect and sends the same request again.
+`/programs` sent three identical first-page searches per visit that way, and the third cleared a load error mid-flight so the error panel flipped to "0 results" and back (#4265).
+Key a search on its request identity instead: `FellowshipSearchContextProvider` compares the built URL with the last one it sent, so only a real change in query, filter, or sort searches again.
+- A failed load stays an error until the student acts or a retry succeeds, and a count or tile with no data behind it shows a placeholder rather than a zero.
+The student-journey smoke counts first-page program searches per visit and fails when the load error disappears for a frame with no input.
 - Empty states say what the surface is for and offer the next action.
 - Every route sets a meaningful page title.
 - Never render placeholder or half-finished content to real users.

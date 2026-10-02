@@ -159,7 +159,13 @@ const ALWAYS_SHOWN_TILES = new Set<ProgramBoardSection>([
   'nextCycle',
 ]);
 
-const StatusSummary = ({ summary }: { summary: ProgramBoardSummary }) => {
+const StatusSummary = ({
+  summary,
+  unavailableLabel,
+}: {
+  summary: ProgramBoardSummary;
+  unavailableLabel?: string;
+}) => {
   const tiles = boardSections.filter(
     (section) => ALWAYS_SHOWN_TILES.has(section.key) || summary[section.key] > 0,
   );
@@ -174,7 +180,17 @@ const StatusSummary = ({ summary }: { summary: ProgramBoardSummary }) => {
         >
           <dt className="yr-kicker text-[0.68rem]">{section.tileLabel}</dt>
           <dd className="mt-2 flex min-h-[3rem] flex-col justify-end gap-1">
-            <span className="yr-num text-2xl font-semibold text-ink">{summary[section.key]}</span>
+            {unavailableLabel ? (
+              <span className="block h-8">
+                <span
+                  aria-hidden="true"
+                  className="mt-1 block h-6 w-8 rounded-control bg-[var(--yr-panel-muted)]"
+                />
+                <span className="sr-only">{unavailableLabel}</span>
+              </span>
+            ) : (
+              <span className="yr-num text-2xl font-semibold text-ink">{summary[section.key]}</span>
+            )}
             <span className="text-xs font-medium leading-tight text-muted">
               {section.tileDetail}
             </span>
@@ -707,6 +723,7 @@ const Fellowships = () => {
   };
 
   const noResults = fellowships.length === 0 && !isLoading;
+  const isFirstLoadPending = isLoading && fellowships.length === 0;
   const toggleTrustTierFilter = (tier: StudentVisibilityTier) => {
     setSelectedStudentVisibilityTier((current) =>
       current.includes(tier) ? current.filter((value) => value !== tier) : [...current, tier],
@@ -794,11 +811,14 @@ const Fellowships = () => {
             </div>
           </div>
 
-          {!loadError && (
-            <div className="mt-5">
-              <StatusSummary summary={boardSummary} />
-            </div>
-          )}
+          <div className="mt-5">
+            <StatusSummary
+              summary={boardSummary}
+              unavailableLabel={
+                loadError ? 'Not available' : isFirstLoadPending ? 'Loading' : undefined
+              }
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[20rem_minmax(0,1fr)] xl:items-start xl:gap-8">
@@ -834,7 +854,7 @@ const Fellowships = () => {
               quickFilters={fellowshipQuickFilters}
               activeQuickFilter={quickFilter}
               onQuickFilterChange={(value) => setQuickFilter(value as FellowshipQuickFilter)}
-              totalCount={loadError ? undefined : resultCounterCount}
+              totalCount={loadError || isFirstLoadPending ? undefined : resultCounterCount}
               isLoading={isLoading}
               chips={fellowshipChips}
               onClearAll={() => {
@@ -896,7 +916,7 @@ const Fellowships = () => {
               </div>
             )}
 
-            {isLoading && fellowships.length === 0 ? (
+            {isFirstLoadPending ? (
               <LoadingSpinner size="lg" />
             ) : loadError ? (
               <LoadErrorNotice

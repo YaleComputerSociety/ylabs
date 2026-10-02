@@ -68,9 +68,6 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     filterOptions,
     quickFilter,
     filterBarHeight,
-    queryStringLoaded,
-    filtersLoaded,
-    initialSearchDone,
     filterOptionsLoaded,
   } = state;
 
@@ -192,8 +189,11 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     sortOrder,
   };
 
+  const lastSearchedUrlRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!isActive) {
+      lastSearchedUrlRef.current = null;
       dispatch({ type: 'RESET_LIFECYCLE_FLAGS' });
     }
   }, [isActive]);
@@ -367,47 +367,25 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   );
 
   const runFirstPageSearch = useCallback(() => {
+    lastSearchedUrlRef.current = buildSearchUrl(1, pageSize);
     dispatch({ type: 'SET_PAGE', payload: 1 });
     loadAllPrograms();
-  }, [loadAllPrograms]);
+  }, [buildSearchUrl, loadAllPrograms, pageSize]);
+
+  const searchIfParametersChanged = useCallback(() => {
+    if (buildSearchUrl(1, pageSize) === lastSearchedUrlRef.current) return;
+    runFirstPageSearch();
+  }, [buildSearchUrl, pageSize, runFirstPageSearch]);
 
   const refreshFellowships = useCallback(() => {
     runFirstPageSearch();
   }, [runFirstPageSearch]);
 
-  useEffect(() => {
-    if (!isActive) return;
-    if (!authReady) return;
-    if (filterOptionsLoaded && !initialSearchDone) {
-      runFirstPageSearch();
-      dispatch({ type: 'MARK_INITIAL_SEARCH_DONE' });
-    }
-  }, [filterOptionsLoaded, initialSearchDone, runFirstPageSearch, isActive, authReady]);
+  const searchReady = isActive && authReady && filterOptionsLoaded;
 
   useEffect(() => {
-    if (!isActive) return;
-    if (!filterOptionsLoaded) return;
-
-    const debounceTimeout = setTimeout(() => {
-      if (queryStringLoaded) {
-        runFirstPageSearch();
-      }
-      dispatch({ type: 'MARK_QUERY_STRING_LOADED' });
-    }, 500);
-
-    return () => {
-      clearTimeout(debounceTimeout);
-    };
-  }, [queryString, queryStringLoaded, filterOptionsLoaded, isActive, runFirstPageSearch]);
-
-  useEffect(() => {
-    if (!isActive) return;
-    if (!filterOptionsLoaded) return;
-
-    if (filtersLoaded) {
-      runFirstPageSearch();
-    }
-    dispatch({ type: 'MARK_FILTERS_LOADED' });
+    if (!searchReady) return;
+    searchIfParametersChanged();
   }, [
     selectedYearOfStudy,
     selectedProgramCategory,
@@ -422,11 +400,19 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     selectedStudentVisibilityTier,
     sortBy,
     sortOrder,
-    filterOptionsLoaded,
-    isActive,
-    filtersLoaded,
-    runFirstPageSearch,
+    searchReady,
+    searchIfParametersChanged,
   ]);
+
+  useEffect(() => {
+    if (!searchReady) return;
+
+    const debounceTimeout = setTimeout(searchIfParametersChanged, 500);
+
+    return () => {
+      clearTimeout(debounceTimeout);
+    };
+  }, [queryString, searchReady, searchIfParametersChanged]);
 
   useEffect(() => {
     if (!isActive) return;

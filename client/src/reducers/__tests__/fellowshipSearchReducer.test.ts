@@ -70,6 +70,10 @@ describe('fellowshipSearchReducer', () => {
     expect(state.filterOptions.yearOfStudy).toEqual([]);
   });
 
+  it('initial state is loading until the first search settles', () => {
+    expect(createInitialFellowshipSearchState().isLoading).toBe(true);
+  });
+
   it('SET_QUERY_STRING updates the query', () => {
     const state = createInitialFellowshipSearchState();
     const next = fellowshipSearchReducer(state, {
@@ -191,17 +195,11 @@ describe('fellowshipSearchReducer', () => {
     expect(next.searchExhausted).toBe(true);
   });
 
-  it('RESET_LIFECYCLE_FLAGS resets all loaded flags', () => {
+  it('RESET_LIFECYCLE_FLAGS marks the filter options as not loaded', () => {
     const state: FellowshipSearchState = createInitialFellowshipSearchState({
-      queryStringLoaded: true,
-      filtersLoaded: true,
-      initialSearchDone: true,
       filterOptionsLoaded: true,
     });
     const next = fellowshipSearchReducer(state, { type: 'RESET_LIFECYCLE_FLAGS' });
-    expect(next.queryStringLoaded).toBe(false);
-    expect(next.filtersLoaded).toBe(false);
-    expect(next.initialSearchDone).toBe(false);
     expect(next.filterOptionsLoaded).toBe(false);
   });
 
@@ -211,7 +209,7 @@ describe('fellowshipSearchReducer', () => {
       fellowships,
       selectedPurpose: ['Research'],
       queryString: 'keep me',
-      filtersLoaded: true,
+      filterOptionsLoaded: true,
     });
     const next = fellowshipSearchReducer(state, { type: 'RESET_LIFECYCLE_FLAGS' });
     expect(next.fellowships).toBe(fellowships);
