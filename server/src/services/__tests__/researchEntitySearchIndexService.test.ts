@@ -1475,6 +1475,10 @@ describe('rebuildResearchEntitySearchIndex replacing the whole index (#4151)', (
         documentsByUid.set(uid, [...(documentsByUid.get(uid) ?? []), ...documents]);
         return enqueue(args.failAddDocuments);
       },
+      deleteDocuments: async (ids: string[]) => {
+        calls.push({ uid, op: 'deleteDocuments', arg: ids });
+        return enqueue();
+      },
       deleteAllDocuments: async () => {
         calls.push({ uid, op: 'deleteAllDocuments' });
         return enqueue();
@@ -1515,7 +1519,7 @@ describe('rebuildResearchEntitySearchIndex replacing the whole index (#4151)', (
     { _id: 'e1', name: 'Sample Lab', archived: false },
     { _id: 'e2', name: 'Other Lab', archived: false },
   ];
-  const rebuild = (client: unknown) =>
+  const rebuild = (client: unknown, changedDuringBuild: unknown[] = []) =>
     rebuildResearchEntitySearchIndex({
       warmVocabulary: async () => new Set<string>(),
       pageSize: 5,
@@ -1526,6 +1530,7 @@ describe('rebuildResearchEntitySearchIndex replacing the whole index (#4151)', (
       },
       fetchPage: async (page: number) => (page === 1 ? rows : []),
       fetchMemberNames: async () => new Map(),
+      fetchChangedSince: async () => changedDuringBuild,
     });
 
   let previousKey: string | undefined;
@@ -1570,10 +1575,44 @@ describe('rebuildResearchEntitySearchIndex replacing the whole index (#4151)', (
         stagingIndexUid: 'researchentities_next',
         createdLiveIndex: false,
         previousIndexDeleted: true,
+        catchUpReindexedCount: 0,
+        catchUpDeletedCount: 0,
       },
     });
     expect(Date.parse(result.finishedAt)).toBeGreaterThanOrEqual(Date.parse(result.startedAt));
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('re-adds a row edited during the build to the live index after the swap', async () => {
+    const { client, calls } = makeFakeMeili();
+    const editedDuringBuild = { _id: 'e1', name: 'Renamed Lab', archived: false };
+
+    const result = await rebuild(client, [editedDuringBuild]);
+
+    const ops = calls.map((call) => `${call.op} ${call.uid}`);
+    expect(ops.indexOf('addDocuments researchentities')).toBeGreaterThan(
+      ops.indexOf('swapIndexes *'),
+    );
+    expect(ops).not.toContain('deleteDocuments researchentities');
+    expect(result.swap).toMatchObject({ catchUpReindexedCount: 1, catchUpDeletedCount: 0 });
+  });
+
+  it('deletes a row archived during the build from the live index after the swap', async () => {
+    const { client, calls } = makeFakeMeili();
+    const archivedDuringBuild = { _id: 'e2', name: 'Other Lab', archived: true };
+
+    const result = await rebuild(client, [archivedDuringBuild]);
+
+    const ops = calls.map((call) => `${call.op} ${call.uid}`);
+    const liveDelete = calls.find(
+      (call) => call.op === 'deleteDocuments' && call.uid === 'researchentities',
+    );
+    expect(liveDelete?.arg).toEqual(['e2']);
+    expect(ops.indexOf('deleteDocuments researchentities')).toBeGreaterThan(
+      ops.indexOf('swapIndexes *'),
+    );
+    expect(ops).not.toContain('addDocuments researchentities');
+    expect(result.swap).toMatchObject({ catchUpReindexedCount: 0, catchUpDeletedCount: 1 });
   });
 
   it('leaves the live index untouched and swaps nothing when a document batch fails', async () => {

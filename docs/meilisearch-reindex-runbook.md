@@ -98,6 +98,7 @@ node scripts/reindex-search-index.mjs beta --apply
 There is a five second pause before it starts, so Ctrl-C is available.
 The rebuild builds every document into a fresh `<prefix>_researchentities_next` index with the same settings and embedder, confirms its document count, swaps it with the serving index in one Meilisearch `swapIndexes` task, and then deletes the old copy, so search never serves an empty or partial index (#4151).
 A failure before the swap deletes the partial `_next` index and leaves the serving index as it was; an `_next` index left by a lost shell is deleted by the next rebuild, and the reconcile plan reports it under `staging` rather than as unknown.
+After the swap, a catch-up pass re-reads every row whose `updatedAt` is at or after the rebuild's `startedAt`, re-adds the non-archived ones to the serving index and deletes the archived ones, so a live sync made during the build is not lost with the old copy; `swap.catchUpReindexedCount` and `swap.catchUpDeletedCount` report it.
 The output records `startedAt`, `finishedAt`, and `durationMs`, and `swap.previousIndexDeleted: false` means only the clean-up failed: the serving index is already the rebuilt one.
 A prefixed index with a stored embedder is refused when the shell has no usable `OPENAI_API_KEY`, because the fresh index would otherwise serve keyword-only search.
 Retired indexes are deleted afterwards.

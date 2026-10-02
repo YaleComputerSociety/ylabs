@@ -498,6 +498,7 @@ SCRAPER_ENV=beta   yarn --cwd server scraper:integrity-gate   --include-samples
 SCRAPER_ENV=beta   yarn --cwd server launch:trust-contract   --collection=all   --mode=student-ready-only   --strict
 ```
 
+Create and verify the required Beta Meilisearch restore point or export.
 Then rebuild the Beta search index after the gate, never before it, because the gate writes the tiers the index carries.
 Follow [the reindex runbook](meilisearch-reindex-runbook.md), which owns the command, the required variables, and how to confirm the rebuilt count:
 
@@ -658,8 +659,13 @@ node --input-type=module --eval '
 '
 ```
 
-The rebuild needs no Meilisearch restore point.
-It builds into a fresh index and swaps it in only once every document is confirmed, so a failure leaves the serving index untouched and the previous index stays the rollback until the swap (#4151).
+Create and verify the Production Meilisearch restore point or export.
+Store its reference in the Production Render environment as `PFR3_MEILI_RESTORE_POINT`.
+Stop if the reference is missing:
+
+```bash
+test -n "$PFR3_MEILI_RESTORE_POINT"
+```
 
 Re-gate visibility and then rebuild the Production search index from the newly promoted Production MongoDB, in that order.
 `docs/release-process.md` ("Promoting data, not just code") owns the gate command and why the order matters, and [the reindex runbook](meilisearch-reindex-runbook.md) owns the reindex command:
@@ -686,7 +692,7 @@ Save the following references in the shared semester refresh record:
 - The Development-to-Beta mirror plan and result artifacts.
 - The Beta visibility-gate, data-quality, integrity, trust-contract, Meilisearch, and readiness artifacts.
 - The Production promotion dataset version and plan.
-- The Production reindex output, including its `durationMs` and `swap` record.
+- The Production Meilisearch restore point and reindex output.
 - The Production smoke results.
 - The operator name, reviewer name, date, and any accepted exceptions.
 

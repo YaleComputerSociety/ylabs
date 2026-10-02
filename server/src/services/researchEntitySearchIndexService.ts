@@ -136,6 +136,7 @@ export interface ResearchEntitySearchIndexRebuildOptions {
   getClient?: () => Promise<ResearchEntitySearchIndexAdminClient>;
   fetchPage?: (page: number, pageSize: number) => Promise<any[]>;
   fetchMemberNames?: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>;
+  fetchChangedSince?: (since: Date) => Promise<any[]>;
   /**
    * Injectable for the same reason the index and the page fetch are: a rebuild test has no
    * database, and a warm that reached for one would make every rebuild assertion wait for a
@@ -626,6 +627,12 @@ async function fetchResearchEntityPage(page: number, pageSize: number): Promise<
     .lean();
 }
 
+async function fetchResearchEntitiesChangedSince(since: Date): Promise<any[]> {
+  return ResearchEntity.find({ updatedAt: { $gte: since } })
+    .sort({ _id: 1 })
+    .lean();
+}
+
 function normalizeRebuildPageSize(pageSize: number | undefined): number {
   if (pageSize === undefined) return 250;
   if (!Number.isSafeInteger(pageSize) || pageSize < 1) {
@@ -762,11 +769,16 @@ export interface ResearchEntitySearchIndexAdminClient {
   tasks?: MeiliTaskWaitingIndex['tasks'];
 }
 
-interface ResearchEntitySearchIndexSwapResult {
+interface ResearchEntitySearchIndexSwapResult extends ResearchEntitySearchIndexCatchUpResult {
   liveIndexUid: string;
   stagingIndexUid: string;
   createdLiveIndex: boolean;
   previousIndexDeleted: boolean;
+}
+
+interface ResearchEntitySearchIndexCatchUpResult {
+  catchUpReindexedCount: number;
+  catchUpDeletedCount: number;
 }
 
 interface ResearchEntitySearchIndexPopulateResult {
@@ -876,12 +888,49 @@ async function assertStagingIndexHoldsEveryDocument(
   }
 }
 
+async function catchUpLiveIndexWithRowsChangedDuringBuild(
+  liveIndex: any,
+  changedRows: any[],
+  fetchMemberNames: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>,
+): Promise<ResearchEntitySearchIndexCatchUpResult> {
+  const archivedIds = changedRows
+    .filter((row) => row?.archived === true)
+    .map(researchEntitySearchDocumentId)
+    .filter(Boolean);
+  if (archivedIds.length > 0) {
+    await assertMeiliTaskSucceeded(
+      liveIndex,
+      await liveIndex.deleteDocuments(archivedIds),
+      'catch-up deleteDocuments',
+      MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+    );
+  }
+
+  const indexDocs = await buildResearchEntitySearchIndexDocumentsWithMemberNames(
+    changedRows.filter((row) => row?.archived !== true),
+    fetchMemberNames,
+  );
+  if (indexDocs.length > 0) {
+    await assertMeiliTaskSucceeded(
+      liveIndex,
+      await liveIndex.addDocuments(indexDocs, {
+        primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
+      }),
+      'catch-up addDocuments',
+      MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+    );
+  }
+
+  return { catchUpReindexedCount: indexDocs.length, catchUpDeletedCount: archivedIds.length };
+}
+
 async function replaceResearchEntitySearchIndexBySwap(args: {
   client: ResearchEntitySearchIndexAdminClient;
   liveUid: string;
   openAiApiKey: string | null;
   targetsPrefixedIndex: boolean;
   populate: (index: any) => Promise<ResearchEntitySearchIndexPopulateResult>;
+  catchUp: (liveIndex: any) => Promise<ResearchEntitySearchIndexCatchUpResult>;
 }): Promise<
   ResearchEntitySearchIndexPopulateResult & { swap: ResearchEntitySearchIndexSwapResult }
 > {
@@ -959,6 +1008,8 @@ async function replaceResearchEntitySearchIndexBySwap(args: {
   }
   invalidateResearchEntitySearchEmbedderCache();
 
+  const catchUp = await args.catchUp(client.index(liveUid));
+
   let previousIndexDeleted = true;
   await deleteMeiliIndexAndConfirm(client, stagingUid).catch((error) => {
     previousIndexDeleted = false;
@@ -975,6 +1026,7 @@ async function replaceResearchEntitySearchIndexBySwap(args: {
       stagingIndexUid: stagingUid,
       createdLiveIndex,
       previousIndexDeleted,
+      ...catchUp,
     },
   };
 }
@@ -994,6 +1046,7 @@ export async function rebuildResearchEntitySearchIndex(
   await (options.warmVocabulary || warmControlledVocabularyHeadings)();
   const fetchPage = options.fetchPage || fetchResearchEntityPage;
   const fetchMemberNames = options.fetchMemberNames || fetchResearchEntitySearchMemberNames;
+  const fetchChangedSince = options.fetchChangedSince || fetchResearchEntitiesChangedSince;
   const liveUid = resolveIndexName(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
   const targetsPrefixedIndex = liveUid !== RESEARCH_ENTITY_SEARCH_INDEX_NAME;
   const openAiApiKey = usableOpenAiApiKey();
@@ -1010,6 +1063,12 @@ export async function rebuildResearchEntitySearchIndex(
       openAiApiKey,
       targetsPrefixedIndex,
       populate,
+      catchUp: async (liveIndex: any) =>
+        catchUpLiveIndexWithRowsChangedDuringBuild(
+          liveIndex,
+          await fetchChangedSince(startedAt),
+          fetchMemberNames,
+        ),
     });
   } else {
     const index = await (options.getIndex || getMeiliIndex)(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
