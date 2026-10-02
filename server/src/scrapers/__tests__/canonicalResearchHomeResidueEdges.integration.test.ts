@@ -106,7 +106,12 @@ describe('resolveCanonicalResearchHomeForResearcher over merge and retirement re
 
     const former = await seedPerson();
     await seedLeadEdge({ personId: former, rowId: home, archived: false });
-    await seedLeadEdge({ personId: former, rowId: otherLive, archived: false, state: 'HISTORICAL' });
+    await seedLeadEdge({
+      personId: former,
+      rowId: otherLive,
+      archived: false,
+      state: 'HISTORICAL',
+    });
 
     await expect(resolveCanonicalResearchHomeForResearcher(String(detached))).resolves.toEqual({
       status: 'ineligible',
