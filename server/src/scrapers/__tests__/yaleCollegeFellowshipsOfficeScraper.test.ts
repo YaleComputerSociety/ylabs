@@ -3561,3 +3561,133 @@ describe('what a program page says about having a deadline (#4230)', () => {
     expect(read.candidates.flatMap((candidate) => claimOf(candidate))).toEqual([]);
   });
 });
+
+describe('the deadline a page with several cycles is planned at (#4227)', () => {
+  const autumn = new Date('2026-10-01T12:00:00Z');
+  const detailPage = (body: string, referenceDate: Date = autumn) =>
+    parseFellowshipCatalogPage(
+      `<main><h1>Fixture Research Fellowship</h1><div class="text">${body}</div></main>`,
+      detailPageUrl,
+      referenceDate,
+    )[0];
+  const endOfNewYorkDay = (date: string, referenceDate: Date = autumn) =>
+    parseProgramDate(date, 'deadline', referenceDate);
+
+  const twoTerms =
+    '<p>The fall term deadline is Thursday, July 30, 2026, and the spring term deadline is Monday, January 4, 2027.</p>';
+
+  it('plans the next cycle over one that has passed, so the program reads as open', () => {
+    const candidate = detailPage(twoTerms);
+
+    expect(candidate.deadline).toEqual(endOfNewYorkDay('January 4, 2027'));
+    expect(candidate.isAcceptingApplications).toBe(true);
+  });
+
+  it('plans the earliest of several upcoming deadlines, not the first one stated', () => {
+    const candidate = detailPage(
+      '<p>The summer deadline is March 3, 2027.</p><p>The spring deadline is January 10, 2027.</p>',
+    );
+
+    expect(candidate.deadline).toEqual(endOfNewYorkDay('January 10, 2027'));
+  });
+
+  it('plans the latest deadline once every stated one has passed', () => {
+    const lateSpring = new Date('2027-06-01T12:00:00Z');
+    const candidate = detailPage(twoTerms, lateSpring);
+
+    expect(candidate.deadline).toEqual(endOfNewYorkDay('January 4, 2027', lateSpring));
+    expect(candidate.isAcceptingApplications).toBe(false);
+  });
+
+  it('plans a single stated deadline as before', () => {
+    const candidate = detailPage('<p>Application deadline: February 20, 2027.</p>');
+
+    expect(candidate.deadline).toEqual(endOfNewYorkDay('February 20, 2027'));
+  });
+
+  it('keeps the stated time of the cycle it plans', () => {
+    const candidate = detailPage(
+      '<p>Fall deadline: September 15, 2026 at 5:00pm ET. Spring deadline: February 1, 2027 at 11:00 pm ET.</p>',
+    );
+
+    expect(candidate.deadline?.toISOString()).toBe('2027-02-02T04:00:00.000Z');
+  });
+
+  it('never plans a date that belongs to another step beside the deadline', () => {
+    const lateWinter = new Date('2026-03-01T12:00:00Z');
+    const candidate = detailPage(
+      '<p>Application deadline: February 20, 2026. Letters of recommendation are due by March 15, 2026. Information session: March 4, 2026. Decisions will be announced by April 1, 2026.</p>',
+      lateWinter,
+    );
+
+    expect(candidate.deadline).toEqual(endOfNewYorkDay('February 20, 2026', lateWinter));
+  });
+
+  it('reads no deadline from a notification date that follows an undated one', () => {
+    const candidate = detailPage(
+      '<p>Application deadline March 2026 Notifications sent May 26, 2026 Program start date July 24, 2026</p>',
+    );
+
+    expect(candidate.deadline).toBeUndefined();
+  });
+
+  it('lets a later label choose a cycle but never find a deadline the first label did not', () => {
+    const candidate = detailPage(
+      '<p>Campus application deadline typically in November.</p><p>Application or Website Link: https://apply.example.org/funds/fixture-fund-record-with-a-long-path-segment-0001</p><p>Application Open/Deadline: Friday, June 21, 2019 to Friday, November 15, 2019</p>',
+    );
+
+    expect(candidate.deadline).toBeUndefined();
+  });
+
+  it('counts a later label only with a date in its own sentence', () => {
+    const candidate = detailPage(
+      '<p>The application deadline is January 15, 2027.</p><p>Spring deadline to be announced.</p><p>Program dates: November 1, 2026.</p>',
+    );
+
+    expect(candidate.deadline).toEqual(endOfNewYorkDay('January 15, 2027'));
+  });
+
+  it('still claims the deadline absent on a rolling page that encourages two dates', () => {
+    const candidate = detailPage(
+      '<p>We review applications as we receive them, and we encourage you to apply by December 15, 2026 for spring or by April 15, 2027 for summer.</p>',
+    );
+
+    expect(candidate.deadlineStatement).toBe('none');
+    expect(candidate.deadline).toBeUndefined();
+    expect(
+      candidateToObservations(candidate).find((obs) => obs.field === 'sourceKey')
+        ?.assertsNoValueFor,
+    ).toEqual(['deadline']);
+  });
+
+  it('chooses the cycle against the pinned reference date of the run', async () => {
+    const programUrl =
+      'https://science.yalecollege.yale.edu/yale-undergraduate-research/fellowship-grants/fixture-cycle-fellowship';
+    const html = `<main><h1>Fixture Cycle Research Fellowship</h1><p>Supports an independent research project.</p>${twoTerms}</main>`;
+    const plannedDeadline = async (referenceDate: Date) => {
+      const emitted: any[] = [];
+      await new YaleCollegeFellowshipsOfficeScraper({
+        pageUrls: [programUrl],
+        fetchPage: vi.fn(async () => html),
+      }).run({
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'yale-college-fellowships-office',
+        sourceWeight: 0.95,
+        options: { dryRun: true, useCache: false, release: false, referenceDate },
+        emit: async (items) => {
+          emitted.push(...(Array.isArray(items) ? items : [items]));
+        },
+        log: vi.fn(),
+      });
+      const deadline = emitted.find((observation) => observation.field === 'deadline')?.value;
+      return deadline ? new Date(deadline).toISOString() : undefined;
+    };
+
+    const midsummer = new Date('2026-07-01T12:00:00Z');
+    expect(await plannedDeadline(midsummer)).toBe(
+      endOfNewYorkDay('July 30, 2026', midsummer)?.toISOString(),
+    );
+    expect(await plannedDeadline(autumn)).toBe(endOfNewYorkDay('January 4, 2027')?.toISOString());
+  });
+});

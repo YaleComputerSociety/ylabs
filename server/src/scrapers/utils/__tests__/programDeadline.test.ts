@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseProgramDate, statedClockTime } from '../programDeadline';
+import { nextCycleDeadline, parseProgramDate, statedClockTime } from '../programDeadline';
 
 const iso = (text: string, boundary: 'deadline' | 'opens' = 'deadline', reference?: Date) =>
   parseProgramDate(text, boundary, reference)?.toISOString();
@@ -85,5 +85,29 @@ describe('parseProgramDate', () => {
     expect(iso('Deadline: February 30, 2026')).toBeUndefined();
     expect(iso('Applications due 13/40/26')).toBeUndefined();
     expect(iso('Application deadline typically in February/March.')).toBeUndefined();
+  });
+});
+
+describe('nextCycleDeadline', () => {
+  const reference = new Date('2026-10-01T12:00:00Z');
+  const passed = new Date('2026-07-31T03:59:59.999Z');
+  const soon = new Date('2027-01-05T04:59:59.999Z');
+  const later = new Date('2027-03-04T04:59:59.999Z');
+
+  it('chooses the earliest deadline that has not passed', () => {
+    expect(nextCycleDeadline([later, passed, soon], reference)).toBe(soon);
+  });
+
+  it('chooses the latest past deadline when none is upcoming', () => {
+    const earlier = new Date('2026-02-01T04:59:59.999Z');
+    expect(nextCycleDeadline([earlier, passed], reference)).toBe(passed);
+  });
+
+  it('reads a deadline at the reference instant as passed', () => {
+    expect(nextCycleDeadline([reference, soon], reference)).toBe(soon);
+  });
+
+  it('chooses nothing from nothing', () => {
+    expect(nextCycleDeadline([], reference)).toBeUndefined();
   });
 });
