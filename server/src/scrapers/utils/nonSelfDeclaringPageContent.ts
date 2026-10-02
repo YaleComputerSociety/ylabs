@@ -7,6 +7,9 @@ const SOCIAL_PLATFORM_HOST =
 const FOLLOW_CALL_TEXT =
   /^(?:(?:follow|connect with|share|tag) us\b.{0,40}|(?:follow us on |our )?social(?: media)?(?: links| channels| accounts)?)[.!:]?$/i;
 
+const FOLLOW_LINK_TEXT =
+  /^(?:|@\S+|.*\b(?:twitter|x|facebook|instagram|linkedin|youtube|tiktok|threads|bluesky|bsky|mastodon|flickr|vimeo|pinterest)\b.*)$/i;
+
 const LABEL_ELEMENT_SELECTOR =
   'h1, h2, h3, h4, h5, h6, dt, legend, [class*="heading"], [class*="title"], [class*="eyebrow"], [class*="label"]';
 
@@ -32,10 +35,19 @@ function ownTextOutsideLinks($: CheerioAPI, el: Element): string {
 }
 
 function isFollowLink($: CheerioAPI, link: Element): boolean {
+  const label = collapsedText($(link).text());
   return (
     isSocialPlatformHref($(link).attr('href')) &&
-    collapsedText($(link).text()).length <= MAX_FOLLOW_LINK_TEXT
+    label.length <= MAX_FOLLOW_LINK_TEXT &&
+    FOLLOW_LINK_TEXT.test(label)
   );
+}
+
+function containsFollowLink($: CheerioAPI, el: Element): boolean {
+  return $(el)
+    .find('a[href]')
+    .toArray()
+    .some((link) => isFollowLink($, link));
 }
 
 function isSocialLinkBlock($: CheerioAPI, el: Element): boolean {
@@ -58,12 +70,9 @@ function removeSocialFollowBlocks($: CheerioAPI): void {
   for (const label of $(LABEL_ELEMENT_SELECTOR).toArray()) {
     if (!FOLLOW_CALL_TEXT.test(collapsedText($(label).text()))) continue;
     const parent = $(label).parent();
-    const parentName = parent.get(0)?.name;
-    if (
-      parent.length &&
-      parentName !== 'body' &&
-      collapsedText(parent.text()).length <= MAX_FOLLOW_BLOCK_TEXT
-    ) {
+    const parentEl = parent.get(0);
+    if (!parentEl || !containsFollowLink($, parentEl)) continue;
+    if (parentEl.name !== 'body' && collapsedText(parent.text()).length <= MAX_FOLLOW_BLOCK_TEXT) {
       parent.remove();
     } else {
       $(label).remove();

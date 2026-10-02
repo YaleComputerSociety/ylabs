@@ -257,6 +257,20 @@ describe('deriveCanonicalResearchAreasFromPage', () => {
     expect(deriveCanonicalResearchAreasFromPage(canonicalizer, html).areas).toEqual(
       expect.arrayContaining(['Machine Learning', 'Genomics']),
     );
+    const shortTitle = `
+      <ul><li><a href="https://www.youtube.com/watch?v=example">Machine Learning in Genomics</a></li></ul>`;
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, shortTitle).areas).toEqual(
+      expect.arrayContaining(['Machine Learning', 'Genomics']),
+    );
+  });
+
+  it('keeps a topic section headed by a social-media label that carries no follow link (#4047)', () => {
+    const html = `
+      <div><h3>Social Media</h3><p>We study misinformation and polarization on social media platforms.</p></div>
+      <div><h3 class="card__title">Social</h3><p>We study the psychology of intergroup relations.</p></div>`;
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, html).areas).toEqual(
+      expect.arrayContaining(['Social Media', 'Psychology']),
+    );
   });
 
   it('ignores a CSS-hidden global mega-menu panel rendered outside a nav tag', () => {
