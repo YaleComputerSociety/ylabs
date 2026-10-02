@@ -19,7 +19,6 @@ export type AppDialogRequest =
       title: string;
       text: string;
       confirmLabel: string;
-      cancelLabel?: string;
       destructive?: boolean;
     };
 
@@ -122,7 +121,7 @@ const AppDialog = ({ request, requestId, open, onResolve, onExited }: AppDialogP
                 autoFocus={cancelFirst}
                 onClick={() => onResolve(false)}
               >
-                {request.cancelLabel ?? 'Cancel'}
+                Cancel
               </button>
               <button
                 type="button"

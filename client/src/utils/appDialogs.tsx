@@ -94,7 +94,6 @@ export interface ConfirmOptions {
   title: string;
   text: string;
   confirmLabel: string;
-  cancelLabel?: string;
   tone?: AppDialogTone;
   destructive?: boolean;
 }
@@ -103,8 +102,7 @@ export const confirmAction = ({
   title,
   text,
   confirmLabel,
-  cancelLabel,
   tone = 'warning',
   destructive = false,
 }: ConfirmOptions): Promise<boolean> =>
-  present({ kind: 'confirm', title, text, confirmLabel, cancelLabel, tone, destructive });
+  present({ kind: 'confirm', title, text, confirmLabel, tone, destructive });
