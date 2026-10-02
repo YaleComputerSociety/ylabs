@@ -202,7 +202,7 @@ The MUI navigation drawer cannot take a class on its backdrop, so it sets `backg
 There is one step, because a sheet and a modal both mean "the page behind this is inert", and two opacities would only be told apart side by side.
 Never write the scrim as an opacity modifier on a token, such as `bg-[var(--yr-navy)]/30` or `bg-brand-navy/30`.
 Every colour alias here is a `var()` with no alpha channel, so Tailwind 3 cannot apply the modifier and emits no rule at all; the filter sheet's backdrop rendered fully transparent that way while reading correctly in review.
-`src/__tests__/overlayScrimGuard.test.ts` fails on any opacity-modified colour class in `src/` that compiles to nothing through the real Tailwind config, and the student-journey smoke checks the rendered scrim on the research sheet, the program sheet, the navigation drawer, and the program modal.
+`src/__tests__/overlayScrimGuard.test.ts` compiles every background class in `src/` through the real Tailwind config and fails on one that compiles to a translucent black, such as `bg-black/50`, and on any opacity-modified colour class that compiles to nothing, and the student-journey smoke checks the rendered scrim on the research sheet, the program sheet, the navigation drawer, and the program modal.
 - `src/__tests__/neutralTextScaleGuard.test.ts` enforces all of this in CI: three distinct declared values, no generic neutral text class in a swept path, and no element carrying the same step at rest and on a state.
 - The sweep covers the whole tree, so the guard has no path list.
 A path list is honest only while a sweep is in progress; kept afterwards it means the next new file sits quietly outside the rule.

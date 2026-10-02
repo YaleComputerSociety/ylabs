@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, relative } from 'path';
 
-import postcss, { type Root } from 'postcss';
+import postcss, { type Root, type Rule } from 'postcss';
 import tailwindcss from 'tailwindcss';
 import loadConfig from 'tailwindcss/loadConfig';
 import { describe, expect, it } from 'vitest';
@@ -12,6 +12,10 @@ const STYLESHEET = join(SRC, 'index.css');
 
 const OPACITY_MODIFIED_COLOR =
   /(?<![\w:[/-])((?:[a-z0-9-]+:)*(?:bg|text|border(?:-[trblxy])?|ring|ring-offset|from|via|to|fill|stroke|outline|divide|decoration|accent|caret|placeholder|shadow)-(?:\[[^\]\s'"`]+\]|[a-z][a-z0-9-]*)\/\d{1,3})(?![\w/])/g;
+
+const BACKGROUND_CLASS = /(?<![\w:[/-])((?:[a-z0-9-]+:)*bg-[^\s'"`{}]+)/g;
+const TRANSLUCENT_BLACK =
+  /^(?:rgba?\(\s*0[\s,]+0[\s,]+0\s*[,/]\s*(?:0?\.\d+|\d{1,2}%)\s*\)|#000000[0-9a-f]{2}|#0000)$/i;
 
 const sourceFiles = (dir: string): string[] =>
   readdirSync(dir).flatMap((entry) => {
@@ -45,6 +49,16 @@ const uncompiledClasses = async (classes: string[]): Promise<string[]> => {
   return classes.filter((name) => !css.includes(`.${escapeClass(name)}`));
 };
 
+const translucentBlackBackgrounds = async (classes: string[]): Promise<string[]> => {
+  const selectors: string[] = [];
+  (await compile(classes)).walkDecls('background-color', (declaration) => {
+    if (TRANSLUCENT_BLACK.test(declaration.value.trim()) && declaration.parent?.type === 'rule') {
+      selectors.push((declaration.parent as Rule).selector);
+    }
+  });
+  return selectors;
+};
+
 const declaredValue = (stylesheet: Root, selector: string, prop: string): string | null => {
   let value: string | null = null;
   stylesheet.walkRules(selector, (rule) => {
@@ -56,6 +70,31 @@ const declaredValue = (stylesheet: Root, selector: string, prop: string): string
 };
 
 describe('overlay scrim guard', () => {
+  it('detects a background class that compiles to translucent black', async () => {
+    const found = await translucentBlackBackgrounds([
+      'bg-black/50',
+      'bg-[rgba(0,0,0,0.6)]',
+      'bg-black',
+      'bg-scrim',
+    ]);
+
+    expect(found).toHaveLength(2);
+    expect(found).toContain('.bg-black\\/50');
+  });
+
+  it('writes no background class that compiles to an untinted black scrim', async () => {
+    const classes = [
+      ...new Set(
+        sourceLines().flatMap(({ line }) =>
+          [...line.matchAll(BACKGROUND_CLASS)].map((match) => match[1]),
+        ),
+      ),
+    ];
+
+    expect(classes).toContain('bg-scrim');
+    expect(await translucentBlackBackgrounds(classes)).toEqual([]);
+  });
+
   it('compiles the scrim to a translucent navy', async () => {
     const stylesheet = await compile(['bg-scrim']);
 
