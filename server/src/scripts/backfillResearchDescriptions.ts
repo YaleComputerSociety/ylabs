@@ -130,6 +130,7 @@ const MIN_SOURCE_CHARS = 150;
 const MIN_GROUNDING = 0.6;
 const SOURCE_NAME = 'lab-microsite-description-llm';
 const REWRITE_CONFIDENCE = 0.85;
+const REWRITE_OBSERVED_FIELD_COUNT = 2;
 // The synthesis lane writes under the same source name as the rewrite lane, so an
 // unequal weight would let one lane silently outrank the other on the same field.
 const SYNTHESIS_CONFIDENCE = REWRITE_CONFIDENCE;
@@ -423,6 +424,7 @@ export interface ResearchDescriptionBackfillResult {
   skippedNoResearch: number;
   skippedUngrounded: number;
   skippedQuality: number;
+  observationDropped: number;
   errors: number;
   samples: Array<{ slug: string; grounding: number; shortDescription: string }>;
 }
@@ -463,6 +465,7 @@ export async function runResearchDescriptionBackfill(options: {
     skippedNoResearch: 0,
     skippedUngrounded: 0,
     skippedQuality: 0,
+    observationDropped: 0,
     errors: 0,
     samples: [],
   };
@@ -500,14 +503,6 @@ export async function runResearchDescriptionBackfill(options: {
         result.skippedQuality += 1;
         continue;
       }
-      result.rewritten += 1;
-      if (result.samples.length < 25) {
-        result.samples.push({
-          slug: entity.slug,
-          grounding: Number(grounding.toFixed(2)),
-          shortDescription: out.shortDescription,
-        });
-      }
       if (!options.dryRun && source) {
         const sourceUrl = officialSourceUrl(entity);
         const entityId = serializedDocumentId(entity._id);
@@ -531,13 +526,20 @@ export async function runResearchDescriptionBackfill(options: {
             confidenceOverride: REWRITE_CONFIDENCE,
           },
         ];
-        await appendObservations(observations, {
+        const appended = await appendObservations(observations, {
           sourceId: source._id,
           sourceName: SOURCE_NAME,
           scrapeRunId: backfillRunId,
           sourceWeight: REWRITE_CONFIDENCE,
           dryRun: false,
         });
+        // A field written with no stored observation behind it is restored to the
+        // incumbent at the next resolve, so the row is neither written nor counted
+        // unless the store kept both observations (#3727, the #3158 rule).
+        if (appended.inserted < REWRITE_OBSERVED_FIELD_COUNT) {
+          result.observationDropped += 1;
+          continue;
+        }
         // Also apply to the entity now so the visibility gate sees it
         // immediately; the observations above are the durable provenance record
         // that keeps the description on future re-materialization. Route through
@@ -553,6 +555,14 @@ export async function runResearchDescriptionBackfill(options: {
             },
           },
         );
+      }
+      result.rewritten += 1;
+      if (result.samples.length < 25) {
+        result.samples.push({
+          slug: entity.slug,
+          grounding: Number(grounding.toFixed(2)),
+          shortDescription: out.shortDescription,
+        });
       }
     } catch (error) {
       result.errors += 1;

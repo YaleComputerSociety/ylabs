@@ -59,7 +59,7 @@ describe('runResearchDescriptionBackfill llm-rewrite immediate write hygiene (#1
       },
     ]);
     mocks.getSourceByName.mockResolvedValue({ _id: 'source-1' });
-    mocks.appendObservations.mockResolvedValue(undefined);
+    mocks.appendObservations.mockResolvedValue({ inserted: 2, skipped: 0, superseded: 0 });
     mocks.updateOne.mockResolvedValue({ acknowledged: true });
 
     const result = await runResearchDescriptionBackfill({
