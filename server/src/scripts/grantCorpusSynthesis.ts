@@ -6,7 +6,8 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
-import { appendObservations, getSourceByName } from '../scrapers/observationStore';
+import { getSourceByName } from '../scrapers/observationStore';
+import { appendSynthesizedDescription } from './synthesizedDescriptionObservation';
 import {
   coverageSynthesisDecision,
   coverageSynthesisSkipReason,
@@ -41,6 +42,7 @@ export interface GrantCorpusEntityReport {
   snippets: number;
   synthesized: boolean;
   written: boolean;
+  observationDropped?: boolean;
   gainedSchool: boolean;
   wouldPromoteToStudentReady: boolean;
   school?: string;
@@ -113,6 +115,7 @@ async function main() {
   const beforeTierByEntityId = new Map<string, string>();
   const reportByEntityId = new Map<string, GrantCorpusEntityReport>();
   let written = 0;
+  let observationDropped = 0;
   let gainedSchool = 0;
 
   for (const entity of entities) {
@@ -176,17 +179,16 @@ async function main() {
     }
 
     if (args.apply && source) {
-      await appendObservations(
-        [
-          {
-            entityType: 'researchEntity',
-            entityKey: entity.slug,
-            field: 'fullDescription',
-            value: result.description,
-            sourceUrl: result.sourceUrls[0],
-            confidenceOverride: GRANT_CORPUS_DESCRIPTION_CONFIDENCE,
-          },
-        ],
+      const stored = await appendSynthesizedDescription(
+        report,
+        {
+          entityType: 'researchEntity',
+          entityKey: entity.slug,
+          field: 'fullDescription',
+          value: result.description,
+          sourceUrl: result.sourceUrls[0],
+          confidenceOverride: GRANT_CORPUS_DESCRIPTION_CONFIDENCE,
+        },
         {
           scrapeRunId: runId,
           sourceId: source._id,
@@ -195,7 +197,11 @@ async function main() {
           dryRun: false,
         },
       );
-      report.written = true;
+      if (!stored) {
+        observationDropped += 1;
+        reports.push(report);
+        continue;
+      }
       written += 1;
 
       const beforeSchool = typeof entity.school === 'string' ? entity.school.trim() : '';
@@ -263,6 +269,7 @@ async function main() {
     synthesized: reports.filter((r) => r.synthesized).length,
     synthesisRefusals: summarizeGrantCorpusSynthesisRefusals(reports),
     written,
+    observationDropped,
     gainedSchool,
     wouldPromoteToStudentReady,
     entities: reports,

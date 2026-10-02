@@ -59,7 +59,7 @@ describe('runResearchDescriptionBackfill llm-rewrite immediate write hygiene (#1
       },
     ]);
     mocks.getSourceByName.mockResolvedValue({ _id: 'source-1' });
-    mocks.appendObservations.mockResolvedValue(undefined);
+    mocks.appendObservations.mockResolvedValue({ inserted: 2, skipped: 0, superseded: 0 });
     mocks.updateOne.mockResolvedValue({ acknowledged: true });
 
     const result = await runResearchDescriptionBackfill({
@@ -80,5 +80,28 @@ describe('runResearchDescriptionBackfill llm-rewrite immediate write hygiene (#1
     expect(writtenFull).not.toContain('director@example.edu');
     expect(writtenShort).not.toContain('director@example.edu');
     expect(writtenShort).toContain('[email redacted]');
+  });
+
+  it('refuses to apply when the observation source row is absent', async () => {
+    stubFind([
+      {
+        _id: 'entity-1',
+        slug: 'quantum-lab',
+        name: 'Quantum Lab',
+        displayName: 'Quantum Lab',
+        fullDescription: groundedSource,
+        websiteUrl: 'https://example.edu/quantum-lab',
+        sourceUrls: ['https://example.edu/quantum-lab'],
+      },
+    ]);
+    mocks.getSourceByName.mockResolvedValue(null);
+    const rewriter = vi.fn(async () => ({ fullDescription: rawFull, shortDescription: rawShort }));
+
+    await expect(runResearchDescriptionBackfill({ dryRun: false, rewriter })).rejects.toThrow(
+      'lab-microsite-description-llm',
+    );
+    expect(rewriter).not.toHaveBeenCalled();
+    expect(mocks.appendObservations).not.toHaveBeenCalled();
+    expect(mocks.updateOne).not.toHaveBeenCalled();
   });
 });

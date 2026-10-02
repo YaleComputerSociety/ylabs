@@ -6,7 +6,8 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
-import { appendObservations, getSourceByName } from '../scrapers/observationStore';
+import { getSourceByName } from '../scrapers/observationStore';
+import { appendSynthesizedDescription } from './synthesizedDescriptionObservation';
 import {
   COVERAGE_CONFIDENCE,
   defaultCoverageSynthesisLLM,
@@ -37,6 +38,7 @@ export interface CoverageEntityReport {
   snippets: number;
   synthesized: boolean;
   written: boolean;
+  observationDropped?: boolean;
   description?: string;
   sourceUrls?: string[];
   synthesisRefusal?: CoverageSynthesisRefusal;
@@ -100,6 +102,7 @@ async function main() {
 
   const reports: CoverageEntityReport[] = [];
   let written = 0;
+  let observationDropped = 0;
   for (const entity of entities) {
     if (
       fullDescriptionQuality(entity.fullDescription, entity.researchAreas, entity.entityType)
@@ -130,17 +133,16 @@ async function main() {
       });
       if (result) {
         if (args.apply && source) {
-          await appendObservations(
-            [
-              {
-                entityType: 'researchEntity',
-                entityKey: entity.slug,
-                field: 'fullDescription',
-                value: result.description,
-                sourceUrl: result.sourceUrls[0],
-                confidenceOverride: COVERAGE_CONFIDENCE,
-              },
-            ],
+          const stored = await appendSynthesizedDescription(
+            report,
+            {
+              entityType: 'researchEntity',
+              entityKey: entity.slug,
+              field: 'fullDescription',
+              value: result.description,
+              sourceUrl: result.sourceUrls[0],
+              confidenceOverride: COVERAGE_CONFIDENCE,
+            },
             {
               scrapeRunId: runId,
               sourceId: source._id,
@@ -149,8 +151,8 @@ async function main() {
               dryRun: false,
             },
           );
-          report.written = true;
-          written += 1;
+          if (stored) written += 1;
+          else observationDropped += 1;
         }
       }
     }
@@ -166,6 +168,7 @@ async function main() {
     synthesized: reports.filter((r) => r.synthesized).length,
     synthesisRefusals: summarizeCoverageSynthesisRefusals(reports),
     written,
+    observationDropped,
     entities: reports,
   };
   console.log(JSON.stringify(report, null, 2));
