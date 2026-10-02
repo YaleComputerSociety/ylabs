@@ -282,6 +282,7 @@ import {
 import { canonicalScholarCitationUrl } from '../scripts/promoteScholarCandidateProfileLinksCore';
 import {
   RoleAssignment,
+  type RoleAssignmentRole,
   type RoleAssignmentRosterProvenance,
   type RosterIdentityBasis,
 } from '../models/roleAssignment';
@@ -2145,20 +2146,86 @@ async function listingsSharingProfileUrl(
   });
 }
 
+const SITE_LEAD_ROLES: RoleAssignmentRole[] = ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'];
+const SITE_ENTITY_LIMIT = 20;
+
+async function liveLeadsOfEntitiesAtWebsite(
+  url: string,
+  scope: RosterListingScope,
+): Promise<any[]> {
+  const identityKey = officialProfileIdentityUrlKey(url);
+  if (!identityKey) return [];
+  const entities = (await ResearchEntity.find({
+    archived: { $ne: true },
+    slug: { $ne: scope.researchGroupKey },
+    websiteUrl: { $in: officialProfileUrlStoredPatterns([identityKey]) },
+  })
+    .select('_id')
+    .limit(SITE_ENTITY_LIMIT)
+    .lean()) as any[];
+  if (entities.length === 0) return [];
+  const leadIds = (await RoleAssignment.distinct('personId', {
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': { $in: entities.map((entity) => entity._id) },
+    role: { $in: SITE_LEAD_ROLES },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })) as unknown[];
+  if (leadIds.length === 0) return [];
+  return Researcher.find({ _id: { $in: leadIds }, archived: { $ne: true } })
+    .select('_id displayName')
+    .lean();
+}
+
+type ProfileUrlHolderForListing = {
+  holder: any | null;
+  holderEdgeToEnd: any | null;
+  urlNamesAnotherSiteLead?: boolean;
+};
+
+/**
+ * A sole listing whose name disagrees with the researcher holding its URL is either the
+ * holder under a variant spelling or someone else whose lab site the holder borrowed
+ * (#4350). A name cannot tell those apart, but the corpus can: when the URL is the website
+ * of a live research entity, that entity's current leads are who the site belongs to. A
+ * holder among them keeps the join, a lead the listed name agrees with takes it, and a
+ * holder who only borrows another lead's site names nobody.
+ */
+async function soleListingProfileUrlHolder(
+  holder: any,
+  listedName: string,
+  profileUrl: string,
+  scope: RosterListingScope,
+): Promise<ProfileUrlHolderForListing> {
+  const leads = await liveLeadsOfEntitiesAtWebsite(profileUrl, scope);
+  if (leads.length === 0) return { holder, holderEdgeToEnd: null };
+  const agreeingLeads = leads.filter((lead) =>
+    observedPersonNameAgreesWith(lead.displayName, listedName),
+  );
+  if (agreeingLeads.length === 1) return { holder: agreeingLeads[0], holderEdgeToEnd: holder };
+  if (leads.some((lead) => String(lead._id) === String(holder._id))) {
+    return { holder, holderEdgeToEnd: null };
+  }
+  return { holder: null, holderEdgeToEnd: holder, urlNamesAnotherSiteLead: true };
+}
+
 async function profileUrlHolderForListing(
   resolved: Record<string, ResolvedField>,
   listedName: string,
   scope: RosterListingScope,
-): Promise<{ holder: any | null; holderEdgeToEnd: any | null }> {
+): Promise<ProfileUrlHolderForListing> {
   const holder = await findUniqueResearcherForRosterMember(resolved);
   if (!holder || observedPersonNameAgreesWith(holder.displayName, listedName)) {
     return { holder, holderEdgeToEnd: null };
   }
-  const listings = await listingsSharingProfileUrl(textValue(resolved.profileUrl?.value), scope);
+  const profileUrl = textValue(resolved.profileUrl?.value);
+  const listings = await listingsSharingProfileUrl(profileUrl, scope);
   const listsAnotherPerson = listings.some((entry) =>
     entry.names.some((name) => !listedNamesAgree(name, listedName)),
   );
-  if (!listsAnotherPerson) return { holder, holderEdgeToEnd: null };
+  if (!listsAnotherPerson) {
+    return soleListingProfileUrlHolder(holder, listedName, profileUrl, scope);
+  }
   const role = normalizeMemberRole(resolved.role?.value);
   const holderOwnListingStatesRole = listings.some(
     (entry) =>
@@ -2177,7 +2244,10 @@ export type RosterMemberUnresolvedReason =
 export type RosterMemberIdentity = (
   | { researcher: any; basis: RosterIdentityBasis }
   | { researcher: null; unresolved: RosterMemberUnresolvedReason }
-) & { misattributedProfileUrlHolderId?: mongoose.Types.ObjectId };
+) & {
+  misattributedProfileUrlHolderId?: mongoose.Types.ObjectId;
+  profileUrlNamesAnotherSiteLead?: boolean;
+};
 
 async function liveResearcherForAccount(accountId: unknown): Promise<any | null> {
   if (!accountId) return null;
@@ -2238,12 +2308,22 @@ export async function resolveRosterMemberIdentity(
   scope: RosterListingScope = { researchGroupKey: '', sourceName: '', now: new Date() },
 ): Promise<RosterMemberIdentity> {
   const byProfileUrl = await profileUrlHolderForListing(resolved, listedName, scope);
-  if (byProfileUrl.holder) return { researcher: byProfileUrl.holder, basis: 'profile-url' };
-  const identity = await resolveRosterMemberIdentityFromEvidence(resolved, listedName);
   const misattributedProfileUrlHolderId = toMaterializerObjectId(byProfileUrl.holderEdgeToEnd?._id);
-  return misattributedProfileUrlHolderId
-    ? { ...identity, misattributedProfileUrlHolderId }
-    : identity;
+  if (byProfileUrl.holder) {
+    return {
+      researcher: byProfileUrl.holder,
+      basis: 'profile-url',
+      ...(misattributedProfileUrlHolderId ? { misattributedProfileUrlHolderId } : {}),
+    };
+  }
+  const identity = await resolveRosterMemberIdentityFromEvidence(resolved, listedName);
+  return {
+    ...identity,
+    ...(misattributedProfileUrlHolderId ? { misattributedProfileUrlHolderId } : {}),
+    ...(byProfileUrl.urlNamesAnotherSiteLead && !identity.researcher
+      ? { profileUrlNamesAnotherSiteLead: true }
+      : {}),
+  };
 }
 
 async function resolveRosterMemberIdentityFromEvidence(
@@ -2618,6 +2698,18 @@ async function materializeRosterMember(
       created: false,
       resolved,
       skipped: 'unresolved-identity-namesake',
+    };
+  }
+  if (identity.profileUrlNamesAnotherSiteLead) {
+    return {
+      entityType: 'researchGroupMember',
+      entityId: materializerDocumentId(entity._id),
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved,
+      skipped: 'profile-url-names-another-site-lead',
     };
   }
   if ('basis' in identity && plan.facts.rosterProvenance) {
