@@ -1174,6 +1174,87 @@ await step('a programs visit sends one search and keeps a failed load an error',
   }
 });
 
+const PROGRAMS_LOADED_SHIFT_BUDGET = 0.01;
+
+await step('a successful programs load keeps its layout when the data arrives', async () => {
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
+  ]) {
+    await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+      let releaseSearch;
+      const searchReleased = new Promise((resolve) => {
+        releaseSearch = resolve;
+      });
+      await syntheticPage.route('**/api/programs/search**', async (route) => {
+        await searchReleased;
+        const results = [
+          ...Array.from({ length: 6 }, (_, index) => ({
+            ...syntheticProgram(index),
+            programKind: 'FELLOWSHIP_FUNDING',
+          })),
+          { ...syntheticProgram(6), departmentResearchGuidance: true },
+          { ...syntheticProgram(7), studentFacingCategory: 'Archive / review' },
+        ];
+        await route.fulfill({ json: { results, total: results.length } });
+      });
+      await syntheticPage.addInitScript(() => {
+        window.__programLoadShifts = [];
+        const elementOf = (node) => (node?.nodeType === 1 ? node : node?.parentElement);
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            if (entry.hadRecentInput) continue;
+            const movesOnlyFooter = entry.sources.every((source) =>
+              elementOf(source.node)?.closest?.('footer'),
+            );
+            if (movesOnlyFooter) continue;
+            window.__programLoadShifts.push({
+              startTime: entry.startTime,
+              value: entry.value,
+              sources: entry.sources.map((source) => {
+                const element = elementOf(source.node);
+                return element
+                  ? `${element.tagName.toLowerCase()}.${String(element.className).slice(0, 60)}`
+                  : 'unknown';
+              }),
+            });
+          }
+        }).observe({ type: 'layout-shift', buffered: true });
+      });
+      await syntheticPage.goto(`${baseUrl}/programs`, { waitUntil: 'domcontentloaded' });
+      await syntheticPage
+        .locator('dl')
+        .getByText('Loading')
+        .first()
+        .waitFor({ state: 'attached', timeout: 20000 });
+      const releasedAt = await syntheticPage.evaluate(async () => {
+        await document.fonts.ready;
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return performance.now();
+      });
+      releaseSearch();
+      await syntheticPage.getByText('Program Fixture 0').first().waitFor({ timeout: 20000 });
+      await syntheticPage.waitForTimeout(PROGRAMS_SETTLE_MS);
+      const shifts = await syntheticPage.evaluate(
+        (since) => window.__programLoadShifts.filter((shift) => shift.startTime >= since),
+        releasedAt,
+      );
+      const total = shifts.reduce((sum, shift) => sum + shift.value, 0);
+      const largest = [...shifts].sort((a, b) => b.value - a.value)[0];
+      record('program successful load layout shift', {
+        width: viewport.width,
+        contentLayoutShift: Number(total.toFixed(4)),
+        largestShiftSources: largest?.sources ?? [],
+      });
+      assert(
+        total < PROGRAMS_LOADED_SHIFT_BUDGET,
+        `A successful programs load at ${viewport.width}px shifted the page by ${total.toFixed(3)} once the data arrived (budget ${PROGRAMS_LOADED_SHIFT_BUDGET}); largest shift ${largest?.value.toFixed(3)}: ${largest?.sources.join(', ')}.`,
+      );
+    });
+  }
+});
+
 const INTERNAL_PROGRAM_FACET_NAMES = [
   'Journey',
   'Program Kind',

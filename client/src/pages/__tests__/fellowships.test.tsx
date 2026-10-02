@@ -421,7 +421,6 @@ describe('Programs page', () => {
     expect(screen.getByText('Open now', { selector: 'dt' })).toBeTruthy();
     expect(screen.getByText('Opening soon', { selector: 'dt' })).toBeTruthy();
     expect(screen.getByText('Next cycle', { selector: 'dt' })).toBeTruthy();
-    expect(screen.getByText('Archive / review', { selector: 'dt' })).toBeTruthy();
     expect(screen.queryByText('Get started')).toBeNull();
     expect(screen.getByText('Open Fellowship')).toBeTruthy();
     expect(screen.getByText('Next Cycle Fellowship')).toBeTruthy();
@@ -451,6 +450,51 @@ describe('Programs page', () => {
     expect(screen.getAllByText('Not available')).toHaveLength(4);
     expect(screen.getByText('Due soon')).toBeTruthy();
     expect(screen.queryByText(/^0$/)).toBeNull();
+  });
+
+  it('keeps the same four status tiles from first paint to a load that fills every section', async () => {
+    const statusTileLabels = () =>
+      screen.getAllByRole('term').map((term) => term.textContent?.trim());
+    const timingTiles = ['Due soon', 'Open now', 'Opening soon', 'Next cycle'];
+
+    renderPage([], { isLoading: true, searchExhausted: false, total: 0 });
+    await waitFor(() => {
+      expect(screen.getAllByText('Loading')).toHaveLength(4);
+    });
+    expect(statusTileLabels()).toEqual(timingTiles);
+    cleanup();
+
+    renderPage([
+      baseFellowship({
+        id: 'closing',
+        title: 'Closing Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(10),
+      }),
+      baseFellowship({
+        id: 'guidance',
+        title: 'Guidance Record',
+        departmentResearchGuidance: true,
+      }),
+      baseFellowship({
+        id: 'undated',
+        title: 'Undated Program',
+        isAcceptingApplications: true,
+        deadline: null,
+      }),
+      baseFellowship({
+        id: 'archived',
+        title: 'Archived Program',
+        studentFacingCategory: 'Archive / review',
+        deadline: isoDaysFromNow(90),
+      }),
+    ]);
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Archive / review' })).toBeTruthy();
+    });
+    expect(screen.getByRole('heading', { name: 'Department research guidance' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'No dates posted' })).toBeTruthy();
+    expect(statusTileLabels()).toEqual(timingTiles);
   });
 
   it('keeps each stat tile equal to its matching section header', async () => {
