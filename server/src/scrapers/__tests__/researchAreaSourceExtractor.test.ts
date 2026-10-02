@@ -7,6 +7,7 @@ import {
   extractLabeledResearchAreaItems,
   isRejectedAreaSourceUrl,
   isSharedAreaFilteredDirectoryUrl,
+  refusesSharedAreaFilteredDirectorySource,
   researchAreaObservationsFromExtraction,
   type CandidateAreaEntity,
   type FetchedAreaPage,
@@ -198,6 +199,12 @@ describe('shared area-filtered directory pages (#4030)', () => {
         citers,
       ),
     ).toBe(false);
+  });
+
+  it('gives the evidence backing check the same refusal for every caller', () => {
+    const refuses = refusesSharedAreaFilteredDirectorySource(citers);
+    expect(refuses(row, areaPage)).toBe(true);
+    expect(refuses(row, ownProfile)).toBe(false);
   });
 
   it('drops the shared directory page from the candidate urls and records the refusal', () => {

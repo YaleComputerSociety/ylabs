@@ -39,6 +39,10 @@ import {
 } from './rematerializeResearchEntitiesCore';
 import { RESEARCH_ENTITY_CONTACT_FIELDS } from '../scrapers/rowKeyedContactEvidence';
 import { loadResearchAreaEvidenceBackedRowIds } from '../scrapers/researchAreaEvidence';
+import {
+  loadEvidenceUrlCiterCounts,
+  refusesSharedAreaFilteredDirectorySource,
+} from '../scrapers/sources/researchAreaSourceExtractor';
 
 dotenv.config({ quiet: true });
 
@@ -234,9 +238,20 @@ async function discoverUnbackedResearchAreaSlugs(): Promise<string[]> {
     archived: { $ne: true },
     manuallyLockedFields: { $ne: 'researchAreas' },
   })
-    .select('_id slug departments manuallyLockedFields')
-    .lean<Array<{ _id: unknown; slug?: string; departments?: unknown }>>();
-  const backed = await loadResearchAreaEvidenceBackedRowIds(rows);
+    .select('_id slug name displayName departments manuallyLockedFields')
+    .lean<
+      Array<{
+        _id: unknown;
+        slug?: string;
+        name?: string;
+        displayName?: string;
+        departments?: unknown;
+      }>
+    >();
+  const backed = await loadResearchAreaEvidenceBackedRowIds(
+    rows,
+    refusesSharedAreaFilteredDirectorySource(await loadEvidenceUrlCiterCounts()),
+  );
   return rows
     .filter((row) => row.slug && !backed.has(String(row._id)))
     .map((row) => row.slug as string)
