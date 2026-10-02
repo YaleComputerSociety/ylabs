@@ -61,6 +61,7 @@ import {
   type GrantEnrichmentTarget,
   type GrantPersonResolution,
 } from '../utils/grantEnrichmentTarget';
+import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const OSTI_ENDPOINT = 'https://www.osti.gov/api/v1/records';
@@ -256,9 +257,11 @@ export function buildResearchEntityObservations(
     entityKey: existingRowSlug,
     sourceUrl: OSTI_ENDPOINT,
   };
+  const periods = recentGrantPeriodsOf(grants);
   const out: ObservationInput[] = [
     { ...base, field: 'recentGrants', value: top },
-    { ...base, field: 'recentGrantCount', value: grants.length },
+    { ...base, field: 'recentGrantPeriods', value: periods },
+    { ...base, field: 'recentGrantCount', value: periods.length },
     { ...base, field: 'fundingAgencies', value: ['DOE'] },
     {
       ...base,

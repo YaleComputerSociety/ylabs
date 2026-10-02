@@ -313,6 +313,11 @@ describe('NsfAwardScraper.run', () => {
     expect(grants[0].id).toBe('2535171');
     expect(grants[1].id).toBe('2200001');
     expect(grantRow.find((o) => o.field === 'recentGrantCount')?.value).toBe(2);
+    expect(
+      (grantRow.find((o) => o.field === 'recentGrantPeriods')?.value as Array<{ id: string }>).map(
+        (period) => period.id,
+      ),
+    ).toEqual(['2535171', '2200001']);
     expect(grantRow.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NSF']);
     const lastObserved = grantRow.find((o) => o.field === 'lastObservedAt')?.value as Date;
     expect(lastObserved.toISOString().slice(0, 10)).toBe('2026-01-01');

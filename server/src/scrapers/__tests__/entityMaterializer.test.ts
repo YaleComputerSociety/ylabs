@@ -167,6 +167,73 @@ describe('entityMaterializer post-materialization metrics', () => {
     expect(evidence.recentGrantCount).toBe(12);
   });
 
+  it('counts distinct dated awards across sources once every counting source dates them', () => {
+    const evidence = aggregateResearchEntityGrantEvidence([
+      {
+        field: 'recentGrants',
+        sourceName: 'nih',
+        observedAt: new Date('2026-01-01'),
+        value: [{ id: 'NIH-1' }, { id: 'SHARED' }],
+      },
+      {
+        field: 'recentGrantPeriods',
+        sourceName: 'nih',
+        observedAt: new Date('2026-01-01'),
+        value: [{ id: 'NIH-1' }, { id: 'NIH-2' }, { id: 'SHARED' }],
+      },
+      {
+        field: 'recentGrantCount',
+        sourceName: 'nih',
+        observedAt: new Date('2026-01-01'),
+        value: 3,
+      },
+      {
+        field: 'recentGrantPeriods',
+        sourceName: 'nsf',
+        observedAt: new Date('2026-01-01'),
+        value: [{ id: 'shared' }, { id: 'NSF-1' }],
+      },
+      {
+        field: 'recentGrantCount',
+        sourceName: 'nsf',
+        observedAt: new Date('2026-01-01'),
+        value: 2,
+      },
+    ]);
+    expect(evidence.recentGrantPeriods).toEqual([
+      { id: 'NIH-1' },
+      { id: 'NIH-2' },
+      { id: 'SHARED' },
+      { id: 'NSF-1' },
+    ]);
+    expect(evidence.recentGrantCount).toBe(4);
+  });
+
+  it('withholds award periods while a counting source has not dated its awards', () => {
+    const evidence = aggregateResearchEntityGrantEvidence([
+      {
+        field: 'recentGrantPeriods',
+        sourceName: 'nih',
+        observedAt: new Date('2026-01-01'),
+        value: [{ id: 'NIH-1' }],
+      },
+      {
+        field: 'recentGrantCount',
+        sourceName: 'nih',
+        observedAt: new Date('2026-01-01'),
+        value: 1,
+      },
+      {
+        field: 'recentGrantCount',
+        sourceName: 'nsf',
+        observedAt: new Date('2026-01-01'),
+        value: 5,
+      },
+    ]);
+    expect(evidence.recentGrantPeriods).toEqual([]);
+    expect(evidence.recentGrantCount).toBe(6);
+  });
+
   it('normalizes materializer ObjectIds without object-shaped coercion', () => {
     expect(normalizeMaterializerObjectId(' 507f1f77bcf86cd799439011 ')).toBe(
       '507f1f77bcf86cd799439011',

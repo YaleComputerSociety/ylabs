@@ -1779,10 +1779,17 @@ A lead membership on an archived row is merge or retirement residue rather than 
 A person whose every lead membership sits on an archived row stays ineligible, and two live official homes still resolve as ambiguous.
 Measured on Development on 2026-10-01 over the 782 leads of served rows holding a live NIH or NSF grant list, the narrowed rule moved 544 of 590 refused leads to one canonical row; 43 stay refused as ambiguous between two live homes and 3 as ineligible on a live row.
 At materialization, only each source's latest grant snapshot participates.
-The public grant display is a recency-sorted, deduplicated union capped at ten records, while `recentGrantCount` sums the independent latest source totals without applying that display cap and funding agencies are unioned across sources.
+An award is one award, not one record per fiscal year: NIH RePORTER returns one record per project per fiscal year, so the NIH lane collapses a project's records into one award keyed by RePORTER's `core_project_num` (or, when that is absent, the activity code, institute code and serial number from `project_num_split`) before it sorts and caps (#3930).
+The collapsed award takes its title, abstract, amount and link from the newest fiscal-year record, starts at the earliest record's project start and ends at the latest record's project end, and has no end date when any record has none, so a project is current while any of its records is.
+The NSF lane needs no collapse, because NSF Award Search returns one record per award id.
+The public grant display is a recency-sorted, deduplicated union capped at ten records, and funding agencies are unioned across sources.
+Each grant lane also emits `recentGrantPeriods`, the id, agency and start and end dates of every distinct award in its window rather than only the ten it lists (#4245).
+When every source that states a grant list or count has also dated its awards, the materializer stores the union of those periods and sets `recentGrantCount` to the number of distinct dated awards; until then it stores no periods and `recentGrantCount` sums the independent latest source totals, as before.
 The stored list is what the lanes read and may hold awards that have since ended, because the NIH and NSF windows admit ended awards and a stored list ages between reads.
 The public DTO (`server/src/services/servedCurrentFunding.ts`) therefore re-reads each award's `endDate` on every request and serves an award as current funding only while its end day has not passed or it has no end date (#3924).
-When it drops an ended award it restates `recentGrantCount` as the number of running awards it serves and keeps only the funding agencies a running award still backs; when every award has ended it serves an empty list and omits both.
+When the stored periods cover every award (their number equals the stored count), the served `recentGrantCount` is the number of distinct running awards across the periods and the list, so an award past the ten listed still counts and an ended one never does, and the agencies follow the running awards.
+Without such periods the list may be a sample, so the DTO restates the count from the running listed awards only when the stored count does not exceed the list, and otherwise omits the count once an award is dropped, rather than serve a number restated from a sample; when every listed award has ended it serves an empty list and omits both the count and the agencies.
+`recentGrantPeriods` is evidence for that count and is never served.
 It never writes the stored list, which stays the lane's evidence.
 
 ### Retired museum, collections, and digital-humanities research homes (#2202)

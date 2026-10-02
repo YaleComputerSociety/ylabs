@@ -44,6 +44,7 @@ import {
   grantAttachSummary,
   resolveGrantEnrichmentTarget,
 } from '../utils/grantEnrichmentTarget';
+import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const USASPENDING_SEARCH_URL = 'https://api.usaspending.gov/api/v2/search/spending_by_award/';
@@ -240,9 +241,11 @@ export function buildResearchHomeObservations(
     entityKey: canonicalResearchHomeSlug,
     sourceUrl,
   };
+  const periods = recentGrantPeriodsOf(records);
   const out: ObservationInput[] = [
     { ...base, field: 'recentGrants', value: top },
-    { ...base, field: 'recentGrantCount', value: records.length },
+    { ...base, field: 'recentGrantPeriods', value: periods },
+    { ...base, field: 'recentGrantCount', value: periods.length },
     { ...base, field: 'fundingAgencies', value: fundingAgenciesForGroup(group) },
   ];
 

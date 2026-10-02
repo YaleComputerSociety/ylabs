@@ -312,7 +312,11 @@ const ACCESS_EVIDENCE_CONFLICT_FIELDS = new Set([
   'joinPageUrl',
   'applicationUrl',
 ]);
-const FUNDING_CONTEXT_CONFLICT_FIELDS = new Set(['recentGrants', 'recentGrantCount']);
+const FUNDING_CONTEXT_CONFLICT_FIELDS = new Set([
+  'recentGrants',
+  'recentGrantPeriods',
+  'recentGrantCount',
+]);
 
 function stringifyId(value: unknown): string | undefined {
   return serializedDocumentId(value);

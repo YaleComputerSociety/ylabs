@@ -171,6 +171,7 @@ export function mergedGrantEvidenceFromEntities(entities: ResearchEntityPiDedupe
  */
 export const MERGE_RELINKABLE_OBSERVATION_FIELDS = [
   'recentGrants',
+  'recentGrantPeriods',
   'recentGrantCount',
   'fundingAgencies',
 ] as const;

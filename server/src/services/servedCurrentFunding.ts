@@ -57,6 +57,48 @@ function agenciesBackedByRunningAwards(
   });
 }
 
+function awardIdentity(award: unknown): string {
+  const id = award && typeof award === 'object' ? (award as { id?: unknown }).id : undefined;
+  return typeof id === 'string' && id.trim()
+    ? `id:${id.trim().toLowerCase()}`
+    : `record:${JSON.stringify(award)}`;
+}
+
+function distinctAwards(...awardLists: readonly (readonly unknown[])[]): unknown[] {
+  const awards = new Map<string, unknown>();
+  for (const award of awardLists.flat()) {
+    const identity = awardIdentity(award);
+    if (!awards.has(identity)) awards.set(identity, award);
+  }
+  return [...awards.values()];
+}
+
+function periodsCoveringEveryAward(group: Record<string, unknown>): unknown[] | undefined {
+  const periods = group.recentGrantPeriods;
+  if (!Array.isArray(periods) || periods.length === 0) return undefined;
+  return periods.length === group.recentGrantCount ? periods : undefined;
+}
+
+function servedFromDatedAwards(
+  group: Record<string, unknown>,
+  storedAwards: readonly unknown[],
+  periods: readonly unknown[],
+  now: number,
+): ServedCurrentFunding {
+  const evidenceAwards = distinctAwards(periods, storedAwards);
+  const runningEvidence = evidenceAwards.filter((award) => !awardEndDayHasPassed(award, now));
+  const runningAwards = storedAwards.filter((award) => !awardEndDayHasPassed(award, now));
+  if (runningEvidence.length === 0) return { recentGrants: [] };
+  const anAwardEnded = runningEvidence.length < evidenceAwards.length;
+  return {
+    recentGrants: runningAwards.length === storedAwards.length ? group.recentGrants : runningAwards,
+    recentGrantCount: runningEvidence.length,
+    fundingAgencies: anAwardEnded
+      ? agenciesBackedByRunningAwards(group.fundingAgencies, evidenceAwards, runningEvidence)
+      : group.fundingAgencies,
+  };
+}
+
 export function servedCurrentFunding(
   group: Record<string, unknown>,
   now: number = Date.now(),
@@ -68,12 +110,16 @@ export function servedCurrentFunding(
   };
   const storedAwards = group.recentGrants;
   if (!Array.isArray(storedAwards)) return stored;
+  const periods = periodsCoveringEveryAward(group);
+  if (periods) return servedFromDatedAwards(group, storedAwards, periods, now);
   const runningAwards = storedAwards.filter((award) => !awardEndDayHasPassed(award, now));
   if (runningAwards.length === storedAwards.length) return stored;
   if (runningAwards.length === 0) return { recentGrants: [] };
+  const storedListHoldsEveryAward =
+    typeof group.recentGrantCount === 'number' && group.recentGrantCount <= storedAwards.length;
   return {
     recentGrants: runningAwards,
-    recentGrantCount: runningAwards.length,
+    ...(storedListHoldsEveryAward ? { recentGrantCount: runningAwards.length } : {}),
     fundingAgencies: agenciesBackedByRunningAwards(
       group.fundingAgencies,
       storedAwards,

@@ -47,6 +47,7 @@ import {
   grantAttachSummary,
   resolveGrantEnrichmentTarget,
 } from '../utils/grantEnrichmentTarget';
+import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -353,9 +354,11 @@ export function buildResearchEntityObservations(
     entityKey: existingRowSlug,
     sourceUrl: NSF_API_URL,
   };
+  const periods = recentGrantPeriodsOf(records);
   const out: ObservationInput[] = [
     { ...base, field: 'recentGrants', value: top },
-    { ...base, field: 'recentGrantCount', value: records.length },
+    { ...base, field: 'recentGrantPeriods', value: periods },
+    { ...base, field: 'recentGrantCount', value: periods.length },
     { ...base, field: 'fundingAgencies', value: ['NSF'] },
   ];
 

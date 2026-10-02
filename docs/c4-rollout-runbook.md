@@ -96,6 +96,7 @@ The canonical-alias ledger is retired (#3027), so there is nothing to seed and n
    This disables observation retention, including a sweep's `--prune-between-phases` prune stage, and that is deliberate: under lossless ingest the read scope widens to the whole retained log, so a superseded row can be the only evidence a field has and the delete stops being a storage reclaim (#2944).
    `docs/research-data-pipeline.md` owns that coupling, the measured sole-evidence counts, and the guard contract.
    To reclaim storage under the flag, either set it to `false` for the prune (unsetting it is the undeclared case above, which refuses to apply) or add a scope-aware filter first; do not work around the guard.
+   Under the flag the additive `recentGrants` union also reads the superseded pre-#3930 `nih-reporter` observations, whose per-fiscal-year `project_num` ids differ from the core project ids now emitted, so those fiscal-year repeats return until the superseded rows are retired before the flag is set.
 5. Run a full re-projection (`yarn research-entity:rematerialize` over the corpus, or the exhaustive Development sweep).
    This applies the decide-late lever to existing rows; it does not retro-resolve existing duplicates, which stay for the dedup engine.
 6. Run the student-visibility gate and let it sync Meilisearch.
