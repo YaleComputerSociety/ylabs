@@ -349,95 +349,99 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
             const stage = stages[program.id] || DEFAULT_RESEARCH_PLAN_STAGE;
             return (
               <li key={program.id} className="mb-2">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-                  <div className="flex-1">
-                    <BrowseListItem
-                      item={fellowshipToBrowsable(program)}
-                      isFavorite={watchedIds.includes(program.id)}
-                      onToggleFavorite={(event) => {
-                        event.stopPropagation();
-                        toggleWatch(program);
-                      }}
-                      onOpenModal={() => openModal(program)}
-                    />
-                  </div>
-                  <div className="flex flex-row gap-1 sm:flex-col sm:justify-center">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditingId((current) => (current === program.id ? null : program.id))
-                      }
-                      aria-expanded={isEditing}
-                      aria-label={
-                        isEditing
-                          ? `Hide note for ${program.title}`
-                          : `Add note for ${program.title}`
-                      }
-                      title={isEditing ? 'Hide note' : 'Add note'}
-                      className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border p-2 transition-colors yr-focus-ring ${
-                        note
-                          ? 'border-yellow-300 bg-yellow-50 text-yellow-600'
-                          : 'border-[var(--yr-line)] text-muted hover:border-[var(--yr-line-strong)] hover:text-ink-soft'
-                      }`}
-                    >
-                      <EditIcon size={16} />
-                    </button>
-                    {upcomingDeadlineEventsByProgramId.has(program.id) && (
-                      <button
-                        type="button"
-                        onClick={() => addProgramDeadlineToCalendar(program)}
-                        aria-label={`Add ${program.title} deadline to calendar`}
-                        title="Add deadline to calendar"
-                        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border border-[var(--yr-line)] p-2 text-muted transition-colors hover:border-[var(--yr-line-strong)] hover:text-ink-soft yr-focus-ring"
-                      >
-                        <CalendarIcon size={16} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                  <span className="ml-1 text-xs font-medium text-muted">Outreach stage</span>
-                  <ResearchPlanStageControl
-                    stage={stage}
-                    onChange={(nextStage) => void changeStage(program.id, nextStage)}
-                    controlLabel={`Outreach stage for ${program.title}`}
-                    status={stageStatuses[program.id]}
-                  />
-                </div>
-                {isEditing && (
-                  <div className="mt-1">
-                    <textarea
-                      aria-label={`Note for ${program.title}`}
-                      value={note}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setNotes((current) => ({ ...current, [program.id]: value }));
-                        scheduleNoteSave(program.id, value);
-                      }}
-                      onBlur={() => void saveNote(program.id, note)}
-                      maxLength={MAX_PROGRAM_NOTE_LENGTH}
-                      placeholder="Add a private note about this program…"
-                      rows={2}
-                      className="w-full rounded-control border border-[var(--yr-line-control)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
-                    />
-                    <p
-                      className={`mt-1 text-xs ${status === 'error' ? 'text-red-700' : 'text-muted'}`}
-                      role={status === 'error' ? 'alert' : 'status'}
-                      aria-live="polite"
-                    >
-                      {status === 'saving'
-                        ? 'Saving…'
-                        : status === 'saved'
-                          ? 'Saved'
-                          : status === 'error'
-                            ? 'Not saved. Check your connection or sign in again, then retry.'
-                            : ''}
-                    </p>
-                  </div>
-                )}
-                {!isEditing && note && (
-                  <p className="ml-1 mt-0.5 truncate text-xs italic text-muted">Note: {note}</p>
-                )}
+                <BrowseListItem
+                  item={fellowshipToBrowsable(program)}
+                  isFavorite={watchedIds.includes(program.id)}
+                  onToggleFavorite={(event) => {
+                    event.stopPropagation();
+                    toggleWatch(program);
+                  }}
+                  onOpenModal={() => openModal(program)}
+                  footer={
+                    <>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                          <span className="text-xs font-medium text-muted">Outreach stage</span>
+                          <ResearchPlanStageControl
+                            stage={stage}
+                            onChange={(nextStage) => void changeStage(program.id, nextStage)}
+                            controlLabel={`Outreach stage for ${program.title}`}
+                            status={stageStatuses[program.id]}
+                          />
+                        </div>
+                        <div className="flex flex-row gap-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingId((current) =>
+                                current === program.id ? null : program.id,
+                              )
+                            }
+                            aria-expanded={isEditing}
+                            aria-label={
+                              isEditing
+                                ? `Hide note for ${program.title}`
+                                : `Add note for ${program.title}`
+                            }
+                            title={isEditing ? 'Hide note' : 'Add note'}
+                            className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border p-2 transition-colors yr-focus-ring ${
+                              note
+                                ? 'border-gold bg-gold-soft text-ink-soft hover:bg-[var(--yr-parchment)]'
+                                : 'border-[var(--yr-line)] text-muted hover:border-[var(--yr-line-strong)] hover:text-ink-soft'
+                            }`}
+                          >
+                            <EditIcon size={16} />
+                          </button>
+                          {upcomingDeadlineEventsByProgramId.has(program.id) && (
+                            <button
+                              type="button"
+                              onClick={() => addProgramDeadlineToCalendar(program)}
+                              aria-label={`Add ${program.title} deadline to calendar`}
+                              title="Add deadline to calendar"
+                              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border border-[var(--yr-line)] p-2 text-muted transition-colors hover:border-[var(--yr-line-strong)] hover:text-ink-soft yr-focus-ring"
+                            >
+                              <CalendarIcon size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {isEditing && (
+                        <div className="mt-2">
+                          <textarea
+                            aria-label={`Note for ${program.title}`}
+                            value={note}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setNotes((current) => ({ ...current, [program.id]: value }));
+                              scheduleNoteSave(program.id, value);
+                            }}
+                            onBlur={() => void saveNote(program.id, note)}
+                            maxLength={MAX_PROGRAM_NOTE_LENGTH}
+                            placeholder="Add a private note about this program…"
+                            rows={2}
+                            className="w-full rounded-control border border-[var(--yr-line-control)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
+                          />
+                          <p
+                            className={`mt-1 text-xs ${status === 'error' ? 'text-red-700' : 'text-muted'}`}
+                            role={status === 'error' ? 'alert' : 'status'}
+                            aria-live="polite"
+                          >
+                            {status === 'saving'
+                              ? 'Saving…'
+                              : status === 'saved'
+                                ? 'Saved'
+                                : status === 'error'
+                                  ? 'Not saved. Check your connection or sign in again, then retry.'
+                                  : ''}
+                          </p>
+                        </div>
+                      )}
+                      {!isEditing && note && (
+                        <p className="mt-2 truncate text-xs italic text-muted">Note: {note}</p>
+                      )}
+                    </>
+                  }
+                />
               </li>
             );
           })}
