@@ -925,8 +925,25 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   'profileIdentityEvidence',
 ]);
 
+/**
+ * Latest-wins fields that are one value per run only on one entity type. A roster member's
+ * `profileUrl` is one link per listing per read, but a center site can serve the same person
+ * under a different program path on each read, so with `value` in the fingerprint every read
+ * left another live link, two live links conflict, and the member's edge is never re-stated or
+ * given provenance (#3799). Elsewhere `profileUrl` is not held to that rule.
+ */
+export const LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE: Readonly<
+  Record<string, ReadonlySet<string>>
+> = {
+  researchGroupMember: new Set(['profileUrl']),
+};
+
 export function usesLatestWinsFingerprint(input: { entityType: string; field: string }): boolean {
-  return input.entityType === 'fellowship' || LATEST_WINS_FINGERPRINT_FIELDS.has(input.field);
+  return (
+    input.entityType === 'fellowship' ||
+    LATEST_WINS_FINGERPRINT_FIELDS.has(input.field) ||
+    Boolean(LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE[input.entityType]?.has(input.field))
+  );
 }
 
 function latestWinsObservedTime(value: unknown): number {

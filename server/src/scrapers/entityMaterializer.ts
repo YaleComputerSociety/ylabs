@@ -2604,9 +2604,10 @@ async function adoptListedPersonUnprovenancedEdges(
 
 async function materializeRosterMember(
   identifier: { entityId?: string; entityKey?: string },
-  observations: any[],
+  listingObservations: any[],
   options: MaterializeOptions,
 ): Promise<MaterializeResult> {
+  const observations = collapseLatestWins(listingObservations, 'researchGroupMember');
   const resolverObs: ResolverObservation[] = observations.map((o: any) => ({
     field: o.field,
     value: o.value,

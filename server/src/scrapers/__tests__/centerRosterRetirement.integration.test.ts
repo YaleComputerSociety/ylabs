@@ -330,6 +330,38 @@ describe(
       expect((await currentEdges('Blair')).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
     });
 
+    it('gives a provenance-less edge the listing provenance when the profile path drifts between reads (#3799)', async () => {
+      await runLane([ROSTER]);
+      const [blair] = await currentEdges('Blair');
+      await RoleAssignment.collection.updateOne(
+        { _id: blair._id },
+        { $unset: { rosterProvenance: '' } },
+      );
+      const listedUnder = (program: string) => [
+        ROSTER[0],
+        {
+          ...ROSTER[1],
+          profileUrl: `https://fixture-center.example.edu/${program}/person/blair-synthetic`,
+        },
+        ...ROSTER.slice(2),
+      ];
+
+      await runLane([listedUnder('first-program')], { useCache: true });
+      await runLane([listedUnder('second-program')], { useCache: true });
+      await runLane([listedUnder('first-program')], { useCache: true });
+
+      const liveProfileClaims = await Observation.countDocuments({
+        entityType: 'researchGroupMember',
+        entityKey: `${CENTER_SLUG}:blair-synthetic`,
+        field: 'profileUrl',
+        superseded: { $ne: true },
+      });
+      expect(liveProfileClaims).toBe(1);
+      const adopted = (await RoleAssignment.findById(blair._id).lean()) as any;
+      expect(adopted.rosterProvenance?.sourceName).toBe(SOURCE_NAME);
+      expect(adopted.archived).not.toBe(true);
+    });
+
     it('keeps a relationship whose target a key this source still lists resolves to', async () => {
       await runLane([ROSTER]);
       const centerEntityId = String(await centerId());

@@ -10,6 +10,7 @@ import {
   prosePreferenceScore,
   retireObservations,
   selfDefeatingCardRestatesFullDescription,
+  usesLatestWinsFingerprint,
 } from '../observationStore';
 import {
   fullDescriptionQuality,
@@ -1489,5 +1490,19 @@ describe('collapseLatestWins weaker-prose collapse (#2232)', () => {
     expect(collapseLatestWins([newer, older], 'researchEntity').map((o) => o.value)).toEqual([
       ['newer'],
     ]);
+  });
+});
+
+describe('a roster member profile link is latest-wins only on a roster member (#3799)', () => {
+  it('drops the value from the fingerprint for a roster member and keeps it elsewhere', () => {
+    expect(
+      usesLatestWinsFingerprint({ entityType: 'researchGroupMember', field: 'profileUrl' }),
+    ).toBe(true);
+    expect(usesLatestWinsFingerprint({ entityType: 'researchEntity', field: 'profileUrl' })).toBe(
+      false,
+    );
+    expect(usesLatestWinsFingerprint({ entityType: 'researchGroupMember', field: 'role' })).toBe(
+      false,
+    );
   });
 });
