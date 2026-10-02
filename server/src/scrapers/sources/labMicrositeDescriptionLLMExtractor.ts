@@ -11,7 +11,10 @@ import {
 } from '../../utils/researchEntityDescriptionQuality';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
-import { isBibliographyCitationEntryText } from '../../utils/descriptionHygiene';
+import {
+  isBibliographyCitationEntryText,
+  sanitizeResearchEntityShortDescription,
+} from '../../utils/descriptionHygiene';
 import {
   hasMultipleCareerTimelineSentences,
   isEducationOrCareerTimelineSentence,
@@ -1085,14 +1088,25 @@ function bodyForBiography(raw: string, context: { entityType?: string; kind?: st
   return served.quality.full.isUseful ? research : raw;
 }
 
+// The serve sanitizer blanks a card the quality bar alone accepts, a first-person line
+// above all, and an emitted card that serves blank also stops `withSynthesizedCard` from
+// writing one that would serve (#4392).
+export function isServableCardLine(card: string, fullDescription: string): boolean {
+  return (
+    Boolean(card) &&
+    shortDescriptionQuality(card, fullDescription).isUseful &&
+    Boolean(sanitizeResearchEntityShortDescription(card))
+  );
+}
+
 function usefulShortDescription(value: unknown, fullDescription: string): string {
   const candidate = usefulDescription(value);
   const text = normalizeKnownDescriptionAcronyms(isBiographySentence(candidate) ? '' : candidate);
-  if (text && shortDescriptionQuality(text, fullDescription).isUseful) return text;
+  if (isServableCardLine(text, fullDescription)) return text;
   const rewritten = text ? firstPersonShortToCardShort(text, fullDescription) : '';
-  if (rewritten) return rewritten;
+  if (isServableCardLine(rewritten, fullDescription)) return rewritten;
   const derived = deriveShortDescriptionFromFullDescription(fullDescription);
-  return shortDescriptionQuality(derived, fullDescription).isUseful ? derived : '';
+  return isServableCardLine(derived, fullDescription) ? derived : '';
 }
 
 export function htmlToText(html: string): string {
@@ -1592,7 +1606,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         }
       },
     });
-    if (!card) return { observations, cardCallFailed };
+    if (!isServableCardLine(card, fullDescription)) return { observations, cardCallFailed };
     return {
       cardCallFailed,
       observations: [
