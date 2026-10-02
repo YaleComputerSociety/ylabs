@@ -1352,9 +1352,11 @@ test('the keep-alive alert job is the only job that may write issues', () => {
   assert.ok(alert, 'keep-alive must have an alert job (ylabs#4143)');
   assert.deepEqual(alert.permissions, { contents: 'read', issues: 'write' });
   assert.equal(alert.needs, 'ping');
-  assert.match(alert.if, /always\(\)/, 'the alert must run after a failed probe');
-  assert.match(alert.if, /needs\.ping\.result == 'failure'/);
-  assert.match(alert.if, /needs\.ping\.result == 'success'/);
+  assert.equal(
+    alert.if,
+    "${{ always() && (needs.ping.result == 'failure' || needs.ping.result == 'success') }}",
+    'the alert must run after a failed or a recovered probe, and never after a cancelled or skipped one',
+  );
   const alertStep = alert.steps.find((step) => step.run === 'scripts/keep-alive-alert.sh');
   assert.ok(alertStep, 'the alert job must run the tested alert script');
   assert.equal(alertStep.env.PROBE_RESULT, '${{ needs.ping.result }}');
